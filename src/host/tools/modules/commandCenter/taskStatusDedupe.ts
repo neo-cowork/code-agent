@@ -120,7 +120,3 @@ export function dropTaskStatusRecordIfIdle(
 ): void {
   if (tasks.length === 0 && subagents.length === 0) recordsBySession.delete(sessionId);
 }
-
-export function resetTaskStatusDedupeForTest(): void {
-  recordsBySession.clear();
-}

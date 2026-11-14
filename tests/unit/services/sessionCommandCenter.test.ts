@@ -30,8 +30,8 @@ import {
 } from '../../../src/shared/constants/sessionCommandCenter';
 import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 import {
+  dropTaskStatusRecordIfIdle,
   recordTaskStatusAnswer,
-  resetTaskStatusDedupeForTest,
   shouldReturnTaskStatusUnchangedHint,
 } from '../../../src/host/tools/modules/commandCenter/taskStatusDedupe';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
@@ -1230,6 +1230,13 @@ describe('task_status same-turn dedupe', () => {
     } as unknown as ToolContext;
   }
 
+  /** 生产入口结果收窄：非 ok 直接判失败，不让失败静默溜过断言（比 if (!ok) return 更强）。 */
+  async function expectOkStatus(ctx: ToolContext) {
+    const result = await executeTaskStatus({}, ctx, allow);
+    if (!result.ok) throw new Error(`task_status unexpectedly failed: ${result.error}`);
+    return result;
+  }
+
   async function spawnRunning() {
     const center = getSessionCommandCenter();
     const spawned = await center.spawn({ ...input(1), sessionId: SESSION });
@@ -1266,7 +1273,9 @@ describe('task_status same-turn dedupe', () => {
   beforeEach(() => {
     resetSessionTaskConcurrencyPoolForTest();
     resetBackgroundTaskLedgerForTest();
-    resetTaskStatusDedupeForTest();
+    // 清上一条用例在本会话留下的去重记录：复用生产侧空闲清理（空会话即清），
+    // 不为测试单开 reset 导出（knip production profile 会判 dead export）。
+    dropTaskStatusRecordIfIdle(SESSION, [], []);
     singletonTaskManagerHolder.manager = new FakeTaskManager();
     resetSessionCommandCenterForTest();
   });
@@ -1281,13 +1290,9 @@ describe('task_status same-turn dedupe', () => {
     await spawnRunning();
     const ctx = statusCtx('turn-1');
 
-    const first = await executeTaskStatus({}, ctx, allow);
-    const second = await executeTaskStatus({}, ctx, allow);
-    const third = await executeTaskStatus({}, ctx, allow);
-    expect(first.ok).toBe(true);
-    expect(second.ok).toBe(true);
-    expect(third.ok).toBe(true);
-    if (!first.ok || !second.ok || !third.ok) return;
+    const first = await expectOkStatus(ctx);
+    const second = await expectOkStatus(ctx);
+    const third = await expectOkStatus(ctx);
 
     // 第 1 次：全量列表（含运行中护栏行），不含短提示
     expect(first.output).toContain('1. 任务1：进行中');
@@ -1304,8 +1309,8 @@ describe('task_status same-turn dedupe', () => {
   it('returns the full answer again once the task completes (status and result text changed)', async () => {
     const task = await spawnRunning();
     const ctx = statusCtx('turn-1');
-    const first = await executeTaskStatus({}, ctx, allow);
-    const second = await executeTaskStatus({}, ctx, allow);
+    const first = await expectOkStatus(ctx);
+    const second = await expectOkStatus(ctx);
     expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
     expect(second.output).toContain(TASK_STATUS_UNCHANGED_HINT);
 
@@ -1316,7 +1321,7 @@ describe('task_status same-turn dedupe', () => {
         expect(getSessionCommandCenter().list(SESSION)).toMatchObject([{ status: 'completed' }]);
       });
 
-      const third = await executeTaskStatus({}, ctx, allow);
+      const third = await expectOkStatus(ctx);
       expect(third.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
       expect(third.output).toContain('已完成：报告已生成并通过检查。');
     } finally {
@@ -1327,8 +1332,8 @@ describe('task_status same-turn dedupe', () => {
   it('returns the full answer again once the task fails', async () => {
     const task = await spawnRunning();
     const ctx = statusCtx('turn-1');
-    const first = await executeTaskStatus({}, ctx, allow);
-    const second = await executeTaskStatus({}, ctx, allow);
+    const first = await expectOkStatus(ctx);
+    const second = await expectOkStatus(ctx);
     expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
     expect(second.output).toContain(TASK_STATUS_UNCHANGED_HINT);
 
@@ -1339,7 +1344,7 @@ describe('task_status same-turn dedupe', () => {
         expect(getSessionCommandCenter().list(SESSION)).toMatchObject([{ status: 'failed' }]);
       });
 
-      const third = await executeTaskStatus({}, ctx, allow);
+      const third = await expectOkStatus(ctx);
       expect(third.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
       expect(third.output).toContain('未完成：上游超时');
     } finally {
@@ -1352,13 +1357,13 @@ describe('task_status same-turn dedupe', () => {
     const firstCtx = statusCtx('turn-1');
     const secondCtx = statusCtx('turn-2');
 
-    const first = await executeTaskStatus({}, firstCtx, allow);
+    const first = await expectOkStatus(firstCtx);
     expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
-    const second = await executeTaskStatus({}, secondCtx, allow);
+    const second = await expectOkStatus(secondCtx);
     expect(second.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
     expect(second.output).toContain('1. 任务1：进行中');
     // 新 turn 的全量回答已入账：同一新 turn 内再查才回短提示
-    const third = await executeTaskStatus({}, secondCtx, allow);
+    const third = await expectOkStatus(secondCtx);
     expect(third.output).toContain(TASK_STATUS_UNCHANGED_HINT);
   });
 
@@ -1366,8 +1371,8 @@ describe('task_status same-turn dedupe', () => {
     await spawnRunning();
     const ctx = statusCtx();
 
-    const first = await executeTaskStatus({}, ctx, allow);
-    const second = await executeTaskStatus({}, ctx, allow);
+    const first = await expectOkStatus(ctx);
+    const second = await expectOkStatus(ctx);
     expect(first.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
     expect(second.output).not.toContain(TASK_STATUS_UNCHANGED_HINT);
     expect(second.output).toContain('1. 任务1：进行中');
@@ -1387,12 +1392,12 @@ describe('task_status same-turn dedupe', () => {
     );
     const ctx = statusCtx('turn-1');
 
-    const first = await executeTaskStatus({}, ctx, allow);
+    const first = await expectOkStatus(ctx);
     expect(first.output).toContain(`（Agent ID: ${agentId}）`);
     expect(first.output).toContain('已用时0 秒');
 
     vi.setSystemTime(new Date('2026-08-24T00:00:05.000Z'));
-    const second = await executeTaskStatus({}, ctx, allow);
+    const second = await expectOkStatus(ctx);
     // 已用时变了但签名把它排除在外：仍回短提示，且保留 collect 所需的 Agent ID 后缀
     expect(second.output).toBe(`${TASK_STATUS_UNCHANGED_HINT}\n- 调研 ：进行中（Agent ID: ${agentId}）`);
     expect(second.output).not.toContain('已用时');
