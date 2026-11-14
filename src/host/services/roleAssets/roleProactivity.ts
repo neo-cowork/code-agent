@@ -1,7 +1,7 @@
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 // Role proactivity: cadence/event → budget → wake → decision → history.
 import { createLogger } from '../infra/logger';
-import { ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY, SWARM_GOAL } from '../../../shared/constants';
 import type {
   RoleProactivityConfig,
   RoleProactivityLevel,
@@ -114,7 +114,7 @@ export function buildWakePrompt(
   externalDeltaSection?: string,
 ): string {
   const lines = [
-    `你被${trigger === 'cadence' ? '定时' : '任务结束事件'}唤醒。这不是用户发来的消息，用户现在不在。`,
+    trigger === 'cadence' ? ROLE_ASSETS.WAKE_PROMPT_HEAD_CADENCE : ROLE_ASSETS.WAKE_PROMPT_HEAD_EVENT,
     '',
     '你的任务：',
     '1. 读你的工作履历（上面角色资产注入块里），找出你经手过的产物',
