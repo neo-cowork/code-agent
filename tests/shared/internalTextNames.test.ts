@@ -61,6 +61,33 @@ describe('humanized names at host persistence boundaries', () => {
     expect(detectInternalTextLeaks(job.name)).toEqual([]);
   });
 
+  it.each(['zh', 'en'] as const)('drops pasted ids from stored names without leaving a placeholder word or empty brackets in %s', (lang) => {
+    state.language = lang;
+    const repo = new SessionRepository(database as unknown as BetterSqlite3.Database);
+    const uuid = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    for (const [raw, clean] of [
+      [`周五周报提醒（工单 ${uuid}）`, '周五周报提醒'],
+      [`Weekly report ${uuid}`, 'Weekly report'],
+      [`整理本周周报 ${uuid}`, '整理本周周报'],
+      [`Weekly report (ticket ${uuid}) for finance`, 'Weekly report for finance'],
+      [`跟进 session_1794668704195_a9f9bc4e 的导出`, '跟进 的导出'],
+      [`Export [call_9f8e7d6c5b4a3f2e1d0c] - sales table`, 'Export - sales table'],
+      [`${uuid} - Weekly report`, 'Weekly report'],
+      ['周五周报提醒（财务）', '周五周报提醒（财务）'],
+    ] as const) {
+      state.writes = [];
+      const session: Session = { id: 'session_names123', title: raw, modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
+      repo.createSession(session);
+      expect(session.title).toBe(clean);
+      expect(String(state.writes.find((w) => w.sql.includes('INSERT INTO sessions'))!.args[2])).toBe(clean);
+      expect(session.title).not.toMatch(/内部记录|internal record|[（(]\s*[）)]/i);
+    }
+    const onlyId: Session = { id: 'session_names456', title: uuid, modelConfig: { provider: 'xiaomi', model: 'test-model' }, createdAt: 100, updatedAt: 200 };
+    repo.createSession(onlyId);
+    expect(onlyId.title.trim().length).toBeGreaterThan(0);
+    expect(detectInternalTextLeaks(onlyId.title)).toEqual([]);
+  });
+
   it.each(['zh', 'en'] as const)('stores a channel session name without the chat id or a placeholder suffix in %s', (lang) => {
     state.language = lang;
     const repo = new SessionRepository(database as unknown as BetterSqlite3.Database);

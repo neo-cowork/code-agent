@@ -1,10 +1,32 @@
 import { splitChannelSessionTitle } from '../../shared/channelSessionTitle';
 import { humanizeInternalText } from '../../shared/humanizeInternalText';
+import { CALL_ID_GLOBAL_RE, OU_ID_GLOBAL_RE, SESSION_ID_GLOBAL_RE, UUID_GLOBAL_RE } from '../../shared/internalTextLeakDetect';
 import { readUiLanguage } from './sessionTitleHostPrompt';
+
+const ID_PATTERNS = [UUID_GLOBAL_RE, SESSION_ID_GLOBAL_RE, CALL_ID_GLOBAL_RE, OU_ID_GLOBAL_RE];
+const ID_MARK = '\uE000';
+const BRACKETED_ID = /\s*[（(\[【][^（()）[\]【】]*\uE000[^（()）[\]【】]*[）)\]】]/g;
+const EDGE_SEPARATORS = /^[\s\-–—·:：,，、]+|[\s\-–—·:：,，、]+$/g;
+
+/**
+ * A pasted id says nothing in a name: drop it (with the bracketed aside that only labelled it)
+ * instead of swapping in a placeholder word. A name that is nothing but an id is left to the shared layer.
+ */
+function dropPastedIds(name: string): string {
+  let marked = name;
+  for (const pattern of ID_PATTERNS) marked = marked.replace(new RegExp(pattern.source, pattern.flags), ID_MARK);
+  if (!marked.includes(ID_MARK)) return name;
+  const cleaned = marked
+    .replace(BRACKETED_ID, ' ')
+    .replaceAll(ID_MARK, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(EDGE_SEPARATORS, '');
+  return cleaned || name;
+}
 
 /** Humanize names before persistence so exports and copies share the same copy. */
 export function humanizeStoredName(name: string): string {
   const channel = splitChannelSessionTitle(name);
   const cleaned = channel ? `${channel.prefix}${channel.name}`.trim() : name;
-  return humanizeInternalText(cleaned, readUiLanguage()).text;
+  return humanizeInternalText(dropPastedIds(cleaned), readUiLanguage()).text;
 }
