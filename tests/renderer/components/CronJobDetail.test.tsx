@@ -393,6 +393,19 @@ describe('Group listener receipt check', () => {
       expect(screen.getByTestId('cron-detail-action').textContent).not.toContain('memory-consolidation');
     });
 
+    it('专家定时巡检任务在中英文界面下显示人话名称与描述，不露出 [Cadence] 前缀、内部标签和「内部文档」', () => {
+      const job = { name: '[Cadence] 明镜', description: '角色主动性：明镜 定时醒来巡检（内部文档）', tags: ['role-cadence'] };
+      const zhDisplay = getBuiltinJobDisplay(job, 'zh');
+      const enDisplay = getBuiltinJobDisplay(job, 'en');
+      expect(zhDisplay?.name).toBe('明镜的定时巡检');
+      expect(enDisplay?.name).toBe('明镜: scheduled check-in');
+      for (const display of [zhDisplay, enDisplay]) {
+        const text = `${display?.name} ${display?.description} ${display?.actionLabel}`;
+        expect(text).not.toMatch(/\[Cadence\]|role-cadence|role-wake|内部文档/);
+      }
+      expect(`${enDisplay?.description} ${enDisplay?.actionLabel}`).not.toMatch(/[\u3400-\u9fff]/);
+    });
+
     it('Dream 与 Distill 内置任务在中英文界面下按同口径映射名称、描述与动作，不暴露 /dream --auto 或 /distill --auto', () => {
       useAppStore.setState({ language: 'zh' });
       const { container, rerender } = render(<CronJobDetail job={builtinDreamJob} />);

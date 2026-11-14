@@ -6,7 +6,7 @@
 // ============================================================================
 
 import type { CronJobDefinition } from '@shared/contract';
-import { MEMORY_CONSOLIDATION } from '@shared/constants';
+import { MEMORY_CONSOLIDATION, ROLE_PROACTIVITY } from '@shared/constants';
 import type { Language } from '../../../i18n';
 
 // Light Memory 的 tag 来自前后端共享常量 MEMORY_CONSOLIDATION.JOB_TAG；
@@ -63,6 +63,22 @@ const BUILTIN_EN_COPY: Record<BuiltinJobTag, BuiltinJobDisplay> = {
   },
 };
 
+/** 专家定时巡检任务：宿主存的是 `[Cadence] <专家>` + 内部说明，展示面按 tag 换成人话。 */
+function getRoleCadenceDisplay(job: Pick<CronJobDefinition, 'name'>, language: Language): BuiltinJobDisplay {
+  const role = job.name.replace(/^\[Cadence\]\s*/i, '').trim();
+  return language === 'en'
+    ? {
+      name: `${role}: scheduled check-in`,
+      description: 'Looks over this expert\u2019s earlier work on schedule and only notifies you when something needs your attention.',
+      actionLabel: 'Scheduled check-in',
+    }
+    : {
+      name: `${role}的定时巡检`,
+      description: '到点回看这位专家经手过的产物，有值得你知道的变化才提醒你。',
+      actionLabel: '定时巡检',
+    };
+}
+
 function isBuiltinTag(tag: string): tag is BuiltinJobTag {
   return tag === MEMORY_CONSOLIDATION.JOB_TAG
     || tag === DREAM_CRON_JOB_TAG
@@ -75,13 +91,14 @@ function findBuiltinTag(tags?: string[]): BuiltinJobTag | null {
 
 /** Internal classification tags stay in storage/search, never in display copy. */
 export function getVisibleJobTags(job: Pick<CronJobDefinition, 'tags'>): string[] {
-  return job.tags?.filter((tag) => !isBuiltinTag(tag)) ?? [];
+  return job.tags?.filter((tag) => !isBuiltinTag(tag) && tag !== ROLE_PROACTIVITY.CADENCE_JOB_TAG) ?? [];
 }
 
 export function getBuiltinJobDisplay(
   job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>,
   language: Language = 'zh',
 ): BuiltinJobDisplay | null {
+  if (job.tags?.includes(ROLE_PROACTIVITY.CADENCE_JOB_TAG)) return getRoleCadenceDisplay(job, language);
   const tag = findBuiltinTag(job.tags);
   if (!tag) return null;
 
