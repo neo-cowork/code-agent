@@ -20,8 +20,28 @@ function expandLeadingHome(rawPath: string): string {
   return rawPath;
 }
 
-/** Parse only the literal operands covered by one plain rm approval. */
+/** Reject shell expansion whose argv cannot be determined without running the shell. */
+function hasUnsafeRmExpansion(command: string): boolean {
+  let quote: "'" | '"' | undefined;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (character === '`' || (character === '$' && command[index + 1] === '(')) return true;
+    if (character === '\\' && quote !== "'") {
+      if (command[index + 1] === '$' || command[index + 1] === '`') return true;
+      index += 1;
+      continue;
+    }
+    if (character === quote) { quote = undefined; continue; }
+    if (!quote && (character === "'" || character === '"')) { quote = character; continue; }
+    // Unquoted variables undergo word splitting and pathname expansion. Status is numeric.
+    if (character === '$' && quote !== '"' && !/^\$(?:\?|\{\?\})/.test(command.slice(index))) return true;
+  }
+  return quote !== undefined;
+}
+
+/** Parse one rm with static prefix bindings and read-only probes, never execute the script. */
 function extractApprovedRmTargets(command: string, workingDirectory: string): {
+  containsRm: boolean;
   targets?: string[];
   operandCount: number;
   reason?: string;
@@ -29,43 +49,65 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
   const parsed = parseShellCommand(command);
   const rmSegments = parsed.segments.filter((segment) => path.posix.basename(segment.words[0] ?? '') === 'rm');
   const operands: string[] = [];
-  let dashDash = false;
-  let unsupportedOption = false;
-  for (const arg of rmSegments[0]?.words.slice(1) ?? []) {
-    if (!dashDash && arg === '--') { dashDash = true; continue; }
-    if (!dashDash && arg.startsWith('-') && arg !== '-') {
-      if (arg !== '-f' && arg !== '--force') unsupportedOption = true;
-      continue;
-    }
-    operands.push(arg);
-  }
-  const refuse = (reason: string) => ({ operandCount: operands.length, reason });
+  const refuse = (reason: string) => ({ containsRm: rmSegments.length > 0, operandCount: operands.length, reason });
+  if (hasUnsafeRmExpansion(command)) return refuse('expansion');
   if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0
     || parsed.uncertain.length > 0 || /[<>]/.test(command) || rmSegments.length !== 1) {
     return refuse('command_shape');
   }
-  let seenRm = false;
+  const bindings = new Map<string, string>();
+  let seenCommand = false;
   for (const current of parsed.segments) {
     if (current.redirects.length > 0 || current.reads.length > 0) return refuse('redirect');
     const program = current.words[0] ?? '';
-    if (current === rmSegments[0]) {
-      seenRm = true;
-    } else {
-      if (!['echo', 'printf', 'true', ':'].includes(program)) return refuse('command_shape');
-      // Status reporting may expand $?, never assign variables or write through printf.
-      if (current.words.slice(1).some((word) => /[$`]/.test(word.replaceAll('${?}', '')))) return refuse('expansion');
-      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(word))) return refuse('command_shape');
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(program)) {
+      // Only unconditional prefix assignments. No command-local env, reassignment, or shell controls.
+      if (seenCommand || ![';', '\n', null].includes(current.terminator)) return refuse('assignment_position');
+      for (const word of current.words) {
+        const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=([^$`*?{}[\]~]*)$/.exec(word);
+        if (!assignment) return refuse('assignment_value');
+        const [, name, value] = assignment;
+        if (bindings.has(name) || name in process.env
+          || /^(?:_|BASH.*|ZSH.*|IFS|ENV|PATH|CDPATH|GLOBIGNORE|FIGNORE|SHELLOPTS|RANDOM|SRANDOM|SECONDS|EPOCH.*|LINENO|PPID|UID|EUID|GROUPS|FUNCNAME|DIRSTACK|PIPESTATUS|OPTIND|OPTARG|PS[0-4]|PROMPT_COMMAND)$/.test(name)) {
+          return refuse('assignment_control');
+        }
+        bindings.set(name, value);
+      }
+      continue;
     }
-    if (current.terminator !== null && current.terminator !== ';' && current.terminator !== '&&'
-      && !(seenRm && current.terminator === '||')) return refuse('command_shape');
+    seenCommand = true;
+    const substitute = (word: string): string => word.replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+      (reference, name: string) => bindings.get(name) ?? reference,
+    );
+    if (current === rmSegments[0]) {
+      if (parsed.segments[parsed.segments.indexOf(current) - 1]?.terminator === '||') return refuse('command_shape');
+      if (!['rm', '/bin/rm', '/usr/bin/rm'].includes(program)) return refuse('command_shape');
+      let dashDash = false;
+      for (const rawArg of current.words.slice(1)) {
+        const arg = substitute(rawArg);
+        if (!dashDash && arg === '--') { dashDash = true; continue; }
+        if (!dashDash && arg.startsWith('-') && arg !== '-') {
+          if (arg !== '-f' && arg !== '--force') return refuse('option');
+          continue;
+        }
+        if (!arg || /[$`*?{}[\]]/.test(arg)) return refuse('literal_operand');
+        // Bound values are literal strings, not a second opportunity for tilde expansion.
+        operands.push(rawArg.includes('$') ? path.resolve(workingDirectory, arg) : expandLeadingHome(arg));
+      }
+    } else {
+      if (!['test', '[', 'ls', 'stat', 'echo', 'printf', 'true', ':'].includes(program)) return refuse('command_shape');
+      if (program === '[' && current.words.at(-1) !== ']') return refuse('command_shape');
+      if (current.words.slice(1).some((word) => /[$`]/.test(substitute(word).replaceAll('${?}', '')))) return refuse('expansion');
+      if (program === 'printf' && current.words.slice(1).some((word) => /^-v|%[^%]*n/.test(substitute(word)))) return refuse('command_shape');
+    }
+    if (current.terminator !== null && ![';', '\n', '&&', '||'].includes(current.terminator)) return refuse('command_shape');
   }
-  if (unsupportedOption) return refuse('option');
-  // Bounded, all-or-nothing: a card must name every file its command can delete.
   if (operands.length < 1 || operands.length > 8) return refuse('operand_count');
-  if (operands.some((operand) => !operand || /[$`*?{}[\]]/.test(operand))) return refuse('literal_operand');
   return {
+    containsRm: true,
     operandCount: operands.length,
-    targets: operands.map((operand) => path.resolve(workingDirectory, expandLeadingHome(operand))),
+    targets: operands.map((operand) => path.resolve(workingDirectory, operand)),
   };
 }
 
@@ -238,6 +280,7 @@ export function approvedSingleFileRmGrant(
   input: Omit<SandboxEscalationEligibilityInput, 'deniedPath' | 'deniedPathCreatesDirectory'>,
 ): string | string[] | undefined {
   const parsed = extractApprovedRmTargets(command, input.workingDirectory);
+  if (!parsed.containsRm) return undefined;
   const conditions = [
     !input.sandboxDecision.sandboxed && 'sandboxed',
     !input.foreground && !input.background && 'foreground', input.pty && 'pty',

@@ -224,6 +224,31 @@ suite('approved rm uses a real seatbelt literal grant', () => {
     },
   );
 
+  it('approved static assignment and probe script deletes both files with real seatbelt', async () => {
+    const targets = [join(slashTmpRoot, 'assigned cache.tmp'), join(outsideRoot, 'assigned cache.tmp')];
+    const neighbor = join(outsideRoot, 'assigned-keep.tmp');
+    [...targets, neighbor].forEach(file => writeFileSync(file, 'cache'));
+    const command = `F1=${shellQuote(targets[0])}; F2=${shellQuote(targets[1])}
+      test -f "$F1" && echo "before $F1"; [ -f "$F2" ] && ls -l "$F2"
+      stat "$F1"; rm -f -- "$F1" "$F2"; printf "rm_exit=%s" "$?"
+      test ! -e "$F1" && test ! -e "$F2" && echo removed`;
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute(
+      'Bash', { command }, { sessionId: 'real-seatbelt-assigned-probes' },
+    );
+    console.log(`ASSIGNMENT_PROBE_SEATBELT output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+    expect(result.success, result.error).toBe(true);
+    expect(grant).toHaveBeenCalledOnce();
+    expect(grant.mock.results[0].value).toHaveLength(2);
+    expect(requests).toHaveLength(1);
+    expect(result.result).toContain('rm_exit=0');
+    expect(result.result).toContain('removed');
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+    expect(targets.map(existsSync)).toEqual([false, false]);
+    expect(existsSync(neighbor)).toBe(true);
+  });
+
   it('approved two-file background rm deletes both files with real seatbelt in an attended session', async () => {
     const targets = [join(slashTmpRoot, 'background-cache.tmp'), join(outsideRoot, 'background-cache.tmp')];
     const neighbors = [join(slashTmpRoot, 'background-keep.tmp'), join(outsideRoot, 'background-keep.tmp')];

@@ -59,6 +59,39 @@ describe('approved rm production approval boundary', () => {
     expect(logs.warn).not.toHaveBeenCalled();
   });
 
+  it('substitutes static assignments around read-only probes at the approval entry', () => {
+    input.params.command = `F1="${files[0]}"; F2="${files[1]}"
+      test -f "$F1" && echo "before $F1"; [ -f "$F2" ] && ls -l "$F2"
+      stat "$F1"; rm -f -- "$F1" "${'${F2}'}"; printf "rm_exit=%s" "$?"
+      test ! -e "$F1" && echo done`;
+    expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+
+  it.each(['ls cache-0.tmp', 'stat cache-0.tmp; echo done', 'printf "%s" rm', 'test -f cache-0.tmp'])(
+    'does not log an rm refusal for approved non-rm %s', command => {
+      input.params.command = command;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['F1="$(printf cache-0.tmp)"; rm "$F1"', 'expansion'],
+    ['F1="$HOME/cache-0.tmp"; rm "$F1"', 'assignment_value'],
+    ['F1="cache-0.tmp"; F2="$F1"; rm "$F2"', 'assignment_value'],
+    ['F1="cache-0.tmp"; rm $F1', 'expansion'],
+    ['PATH="/tmp"; rm cache-0.tmp', 'assignment_control'],
+    ['F1="cache-0.tmp"; echo done; F1="cache-1.tmp"; rm "$F1"', 'assignment_position'],
+    ['F1="cache-0.tmp"; printf -v F1 "%s" cache-1.tmp; rm "$F1"', 'command_shape'],
+    ['F1="cache-0.tmp"; printf "%n" F1; rm "$F1"', 'command_shape'],
+    ['F1="*.tmp"; rm "$F1"', 'assignment_value'],
+    ['for f in *.tmp; do echo "$f"; done; rm cache-0.tmp', 'command_shape'],
+  ])('refuses unsafe assignment/probe script %s', (command, reason) => {
+    input.params.command = command;
+    refused(reason);
+  });
+
   it('accepts eight operands and preserves the one-file grant', () => {
     input.params.command = `rm -- ${files.slice(0, 8).map(file => `'${file}'`).join(' ')}`;
     expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 8));

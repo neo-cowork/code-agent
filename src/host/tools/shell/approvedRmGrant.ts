@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import type { PermissionRequestData, ToolContext } from '../types';
 import { getPermissionModeManager } from '../../permissions/modes';
@@ -27,13 +29,12 @@ export function approvedSingleFileRmGrantForToolApproval(
   input: ApprovedRmToolApprovalInput,
 ): string | string[] | undefined {
   if (!isBashToolName(input.toolName)) return undefined;
+  const command = input.params.command;
+  if (typeof command !== 'string' || !parseShellCommand(command).segments.some(
+    segment => path.posix.basename(segment.words[0] ?? '') === 'rm',
+  )) return undefined;
   if (input.approvalSource !== 'user') {
     logger.warn('APPROVED_RM_GRANT_REFUSED {"conditions":["approval_source"]}');
-    return undefined;
-  }
-  const command = input.params.command;
-  if (typeof command !== 'string') {
-    logger.warn('APPROVED_RM_GRANT_REFUSED {"conditions":["command_type"]}');
     return undefined;
   }
   return approvedSingleFileRmGrant(command, {
