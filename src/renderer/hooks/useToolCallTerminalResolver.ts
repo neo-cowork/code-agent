@@ -18,17 +18,18 @@ export function useToolCallTerminalResolver(
   // Settled history never subscribes: only a call an agent row could still settle does.
   const needsAgentRows = Boolean(sessionId) && calls.some(call => toolCallNeedsAgentRows({ ...call, sessionId, tasks }));
   const { snapshot } = useAgentTreeSnapshot(sessionId ?? null, needsAgentRows);
-  const rows = useMemo(() => buildAgentRows({ members: [], tasks: [],
-    nodes: sessionId ? (snapshot?.nodes ?? []).filter(node => node.sources.some(source =>
-      source !== 'parallelCoordinator' && source !== 'agentWorktree')) : [],
-  }), [sessionId, snapshot]);
+  const rows = useMemo(() => {
+    const nodes = sessionId ? (snapshot?.nodes ?? []).filter(node => node.sources.some(source =>
+      source !== 'parallelCoordinator' && source !== 'agentWorktree')) : [];
+    return nodes.length ? buildAgentRows({ members: [], tasks: [], nodes }) : [];
+  }, [sessionId, snapshot]);
   const live = useAppStore(state => Boolean(sessionId && state.processingSessionIds.has(sessionId)));
   const pendingPermissionRequest = useAppStore(state => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore(state => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore(state => state.queuedPermissionRequests);
   const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, calls.some(call => call.toolCall?.result === undefined));
   return useCallback((toolCall: ToolCall, interruptionReason?: StreamInterruptionReason, agentId?: string, sessionLive?: boolean,
-    delegatedWork?: 'working' | 'completed' | 'failed') =>
+    delegatedWork?: 'working' | 'completed' | 'failed' | 'cancelled') =>
     resolveToolCallTerminalState({ toolCall, sessionId, tasks, agentRows: rows, agentId, sessionLive: sessionLive ?? live,
       interruptionReason, delegatedWork, awaitingApproval: isToolCallAwaitingApproval(toolCall.id, sessionId, {
         pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession,

@@ -109,4 +109,34 @@ describe('PermissionCard grant tiers', () => {
     render(<PermissionCard />);
     await waitFor(() => expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, level === 'session' ? 'allow_session' : 'allow', request.sessionId));
   });
+
+  it.each([
+    ['zh', 'read', '允许读取 飞书？', '飞书的所有只读工具', '用途：每周日程汇总'],
+    ['zh', 'write', '允许写入 飞书？', '仅这个写入操作', '用途：每周日程汇总'],
+    ['en', 'read', 'Allow reading 飞书?', 'All read-only tools in 飞书', 'Purpose: 每周日程汇总'],
+    ['en', 'write', 'Allow writing to 飞书?', 'Only this write operation', 'Purpose: 每周日程汇总'],
+  ] as const)('connector card names access, tier scope and host purpose (%s/%s)', (language, access, title, scope, purpose) => {
+    state.language = language;
+    state.request = { ...request, type: 'mcp', tool: 'mcp__lark__calendar_v4_calendar_primary', details: {
+      connectorAccess: { connectorId: 'lark', connectorName: '飞书', access }, purpose: '每周日程汇总',
+      preview: { type: 'generic', summary: '执行工具 mcp__lark__calendar_v4_calendar_primary' },
+    } };
+    render(<PermissionCard />);
+    expect(screen.getAllByText(title)).toHaveLength(2);
+    expect(screen.getAllByText(new RegExp(scope))).toHaveLength(2);
+    expect(screen.getByTestId('connector-purpose').textContent).toBe(purpose);
+    expect(screen.queryByText('执行工具 mcp__lark__calendar_v4_calendar_primary')).toBeNull();
+  });
+
+  it('omits unknown purpose and ignores legacy renderer allow memory for classified connector cards', () => {
+    state.request = { ...request, type: 'mcp', tool: 'mcp__lark__calendar_v4_calendar_primary', details: {
+      server: 'lark', toolName: 'calendar_v4_calendar_primary',
+      connectorAccess: { connectorId: 'lark', connectorName: '飞书', access: 'read' },
+    } };
+    usePermissionStore.setState({ memory: { session: new Map([['mcp:lark/calendar_v4_calendar_primary', 'allow']]), persistent: {} } });
+    render(<PermissionCard />);
+    expect(screen.queryByTestId('connector-purpose')).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
 });

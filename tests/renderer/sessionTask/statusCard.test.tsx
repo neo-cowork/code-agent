@@ -6,16 +6,15 @@ import type { ToolCall } from '../../../src/shared/contract';
 import persistedResults from './persisted-status.json';
 
 const language = vi.hoisted(() => ({ value: 'zh' as 'zh' | 'en' }));
-vi.mock('../../../src/renderer/stores/appStore', () => {
-  const useAppStore = (selector?: (state: Record<string, unknown>) => unknown) => {
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector?: (state: Record<string, unknown>) => unknown) => {
     const state = {
       processingSessionIds: new Set<string>(), workingDirectory: '/workspace',
       language: language.value, setLanguage: vi.fn(), cloudUIStrings: undefined,
     };
     return selector ? selector(state) : state;
-  };
-  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore() }) };
-});
+  },
+}));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: { currentSessionId: string }) => unknown) =>
     selector({ currentSessionId: 'status-card-session' }),

@@ -14,13 +14,12 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { en } = await import('../../../src/renderer/i18n/en');
   return { useI18n: () => ({ t: lang === 'zh' ? zh : en, language: lang }) };
 });
-vi.mock('../../../src/renderer/stores/appStore', () => {
-  const useAppStore = (selector?: (s: unknown) => unknown) => {
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector?: (s: unknown) => unknown) => {
     const state = { developerMode: false, processingSessionIds: new Set<string>(), pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {}, openPreview: vi.fn() };
     return selector ? selector(state) : state;
-  };
-  return { useAppStore: Object.assign(useAppStore, { getState: () => useAppStore() }) };
-});
+  },
+}));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (s: unknown) => unknown) => selector({ currentSessionId: 'session-1', runningSessionIds: new Set<string>() }),
 }));

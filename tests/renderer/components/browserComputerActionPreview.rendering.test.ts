@@ -17,8 +17,8 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
     cloudUIStrings: undefined,
   };
   return {
-    useAppStore: Object.assign((selector?: (s: typeof state) => unknown) =>
-      (selector ? selector(state) : state), { getState: () => state }),
+    useAppStore: (selector?: (s: typeof state) => unknown) =>
+      (selector ? selector(state) : state),
   };
 });
 

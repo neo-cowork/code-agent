@@ -34,7 +34,7 @@ export function resolveToolCallTerminalState(input: {
   awaitingApproval?: boolean;
   interruptionReason?: StreamInterruptionReason;
   /** State of the work a delegation call handed off, once that work has its own task/agent record. */
-  delegatedWork?: 'working' | 'completed' | 'failed';
+  delegatedWork?: 'working' | 'completed' | 'failed' | 'cancelled';
 }) {
   const { toolCall, sessionId, sessionLive, awaitingApproval, interruptionReason, delegatedWork } = input;
   const { result, task } = ownOutcome(toolCall, sessionId, input.tasks);
@@ -47,7 +47,7 @@ export function resolveToolCallTerminalState(input: {
   let state: TerminalState;
   // A delegation's result only acknowledges the dispatch, so the delegated work's own record outranks it
   // (a failure already recovered by a later success stays settled).
-  if (delegatedWork && result?.metadata?.recovered !== true) state = delegatedWork === 'working' ? 'running' : delegatedWork;
+  if (delegatedWork && result?.metadata?.recovered !== true) state = delegatedWork === 'working' ? 'running' : delegatedWork === 'cancelled' ? 'interrupted' : delegatedWork;
   // Otherwise an actual call outcome takes precedence over every inferred task/agent outcome.
   else if (result) state = result.success || result.metadata?.recovered === true ? 'completed' : 'failed';
   else if (awaitingApproval) state = 'running';

@@ -20,7 +20,7 @@ import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { skipRunAutomaticMemory } from '../../memory/automaticMemoryPolicy';
 import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
-import { buildMaxStepsErrorData } from './maxStepsFallback';
+import { buildMaxStepsErrorData, isCompletedBackgroundReport } from './maxStepsFallback';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
 import { buildEmptyFinalError, hasVisibleAssistantTextAfterLastUser } from './emptyFinalError';
@@ -374,7 +374,7 @@ export class RunFinalizer {
       && !hasTerminalWakeNoopAfterLastUser(this.ctx.messages)
       && !hasToolOwnedTerminalAfterLastUser(this.ctx.messages)
       && !this.ctx.circuitBreaker.isTripped()
-      && iterations < this.ctx.maxIterations
+      && (iterations < this.ctx.maxIterations || this.ctx.completionReportOnly === true)
       && this.ctx.unattendedTurn !== true
     ) {
       terminalStatus = 'failed';
@@ -472,7 +472,7 @@ export class RunFinalizer {
 
       langfuse.endTrace(this.ctx.stats.traceId, `Circuit breaker tripped after ${iterations} iterations`, 'ERROR');
       this.ctx.circuitBreaker.reset();
-    } else if (iterations >= this.ctx.maxIterations) {
+    } else if (iterations >= this.ctx.maxIterations && !isCompletedBackgroundReport(this.ctx)) {
       logger.debug('[AgentLoop] Max iterations reached!');
       logCollector.agent('WARN', `Max iterations reached (${this.ctx.maxIterations})`);
       // 稳定 code：CLI 据此把这次 run 映射为「部分完成」退出码（2），

@@ -249,7 +249,7 @@ describe('delegationDispatchStatus',() => {
   const SESSION='dispatch-session';
   const AGENT='agent_explore_1';
   const SPINNER=/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
-  type Icon='spinner'|'success'|'error';
+  type Icon='spinner'|'success'|'error'|'interrupted';
 
   function task(status: Task['status']): Task {
     return {
@@ -284,7 +284,7 @@ describe('delegationDispatchStatus',() => {
   /** The row's own status icon: the first cell of the row, ahead of the title. */
   function icon(toolName: string): Icon {
     const text=screen.getByTestId(`tool-call-row-${toolName}`).firstElementChild?.textContent??'';
-    return SPINNER.test(text)? 'spinner':text==='✗'? 'error':text==='●'? 'success':(`unexpected:${text}` as Icon);
+    return SPINNER.test(text)? 'spinner':text==='✗'? 'error':text==='⊘'? 'interrupted':text==='●'? 'success':(`unexpected:${text}` as Icon);
   }
 
   beforeEach(() => {
@@ -299,7 +299,7 @@ describe('delegationDispatchStatus',() => {
       ['running','spinner'],
       ['queued','spinner'],
       ['failed','error'],
-      ['cancelled','error'],
+      ['cancelled','interrupted'],
       ['completed','success'],
     ] as const)('background task %s after a successful dispatch shows %s',(status,expected) => {
       useBackgroundTaskStore.setState({ tasks: [task(status)] });

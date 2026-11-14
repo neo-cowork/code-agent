@@ -1,0 +1,112 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ToolCall } from '../../../src/shared/contract';
+
+const openPreview = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  const state = {
+    processingSessionIds: new Set<string>(),
+    openPreview,
+    workingDirectory: '/repo',
+    language: 'en' as const,
+    setLanguage: vi.fn(),
+    cloudUIStrings: undefined,
+  };
+  return {
+    useAppStore: (selector?: (value: typeof state) => unknown) =>
+      selector ? selector(state) : state,
+  };
+});
+
+vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+  useSessionStore: (selector: (value: { currentSessionId: string }) => unknown) =>
+    selector({ currentSessionId: 'session-1' }),
+}));
+
+import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+
+function makeToolCall(overrides: Partial<ToolCall> = {}): ToolCall {
+  return {
+    id: 'tool-1',
+    name: 'Read',
+    arguments: { file_path: '/repo/readme.md' },
+    result: { toolCallId: 'tool-1', success: true, output: 'done' },
+    ...overrides,
+  };
+}
+
+afterEach(() => {
+  cleanup();
+  openPreview.mockReset();
+});
+
+describe('ToolCallDisplay keyboard interaction', () => {
+  it('puts the row in the Tab order and toggles aria-expanded with Enter and Space', () => {
+    const { getByTestId } = render(
+      <ToolCallDisplay toolCall={makeToolCall()} index={0} total={1} />,
+    );
+    const row = getByTestId('tool-call-row-Read');
+
+    expect(row.getAttribute('role')).toBe('button');
+    expect(row.getAttribute('tabindex')).toBe('0');
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(row.getAttribute('aria-expanded')).toBe('true');
+
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('keeps the collapsed result summary on the action row without hover-gated blank space', () => {
+    const { container } = render(
+      <ToolCallDisplay toolCall={makeToolCall()} index={0} total={1} />,
+    );
+
+    expect(container.textContent).toContain('Read 1 lines');
+    expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeNull();
+    expect(container.querySelector('.opacity-0')).toBeNull();
+  });
+
+  it('collapses AskUserQuestion answers to one summary line and expands the existing Q&A', () => {
+    const view = render(
+      <ToolCallDisplay
+        toolCall={makeToolCall({
+          name: 'AskUserQuestion',
+          arguments: {
+            questions: [
+              { header: 'Scope', question: 'Which scope?', options: [{ label: 'A', description: '' }] },
+              { header: 'Proof', question: 'Which proof?', options: [{ label: 'B', description: '' }] },
+            ],
+          },
+          result: {
+            toolCallId: 'tool-1',
+            success: true,
+            output: 'User responses:\n[Scope]: A\n[Proof]: B',
+          },
+        })}
+        index={0}
+        total={1}
+      />,
+    );
+
+    const summary = view.getByRole('button', {
+      name: '2 questions answered · Expand to view',
+    });
+    expect(summary.getAttribute('aria-expanded')).toBe('false');
+    expect(view.queryByText('Which scope?')).toBeNull();
+
+    fireEvent.click(summary);
+    expect(summary.getAttribute('aria-expanded')).toBe('true');
+    expect(view.getByText('Which scope?')).toBeTruthy();
+    expect(view.getByText('Which proof?')).toBeTruthy();
+  });
+
+  // 原来这里还有一条「行尾 Write 文件名按钮不触发整行展开」的用例。那个按钮已经删了
+  // ——写入的文件名只由文件变更卡讲一遍（它带相对路径 + 增删行数 + diff + 撤销），
+  // 步骤行上再挂一个同名按钮是同一个文件名在一屏里的第三次出现。
+});
