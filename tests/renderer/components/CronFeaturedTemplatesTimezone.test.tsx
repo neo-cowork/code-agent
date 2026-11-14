@@ -26,6 +26,11 @@ describe.each(['Pacific/Auckland', 'Asia/Shanghai'])('machine timezone %s', (tim
     ['direct cron', '0 15 * * 1-5', '0 15 * * 1-5'],
     ['daily time', '每天 17:30', '30 17 * * *'],
     ['daily default', '每天', '0 9 * * *'],
+    ['nightly', '每晚', '0 22 * * *'],
+    ['evening with hour', '每天晚上 8 点', '0 20 * * *'],
+    ['morning', '每天早上', '0 9 * * *'],
+    ['weekly night', '每周五晚上', '0 22 * * 5'],
+    ['workday evening', '工作日晚上8点半', '30 20 * * 1-5'],
     ['fallback', '日常查看', '0 9 * * *'],
   ])('quick schedule %s carries the machine timezone', (_branch, schedule, expression) => {
     mockMachineZone();
