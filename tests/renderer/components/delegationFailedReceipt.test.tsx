@@ -114,6 +114,7 @@ describe.each([['zh', '已完成', '代理工作中'], ['en', 'Completed', 'Agen
       const text = view.container.textContent ?? '';
       expect(text).not.toContain(completedWord);
       expect(text).not.toContain(workingWord);
+      expect(text).not.toContain('Done');
       expect(view.queryByTestId('delegation-headline')).toBeNull();
       expect(view.queryByTestId('delegation-failed-actions')).toBeNull();
 

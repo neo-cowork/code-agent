@@ -306,7 +306,7 @@ export function ToolCallDisplay({
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !(delegationTool && displayToolCall.result?.output === '') && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={displayToolCall} inline />
           </span>
