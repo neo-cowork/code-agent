@@ -92,6 +92,7 @@ import {
   handleSubagentAbort,
   finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
   handleSubagentFailure,
+  SubagentTextToolCallGuard,
   type SubagentCompletionDeps,
   type SubagentCompletionTerminal,
 } from './subagentExecutorCompletion';
@@ -516,6 +517,7 @@ export class SubagentExecutor {
       // 注入重入消息督办，上限 2 次（MiMo subagent 上限），防跑飞
       let taskGateReentries = 0;
       let memberInputReentries = 0;
+      const textToolCallGuard = new SubagentTextToolCallGuard();
       // finalOutput 在循环之后才声明。进度回调若读它，会在 TDZ 里抛 ReferenceError，
       // 被记账的 catch 吞掉，重启通知就永远没有花费和进度。
       let latestAssistantText = '';
@@ -680,6 +682,11 @@ export class SubagentExecutor {
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
+          if (textToolCallGuard.retry(response.content, messages, iterations < maxIterations)) {
+            emitContextSnapshot();
+            persistTelemetryTurn(response.content, response.thinking);
+            continue;
+          }
           latestAssistantText = response.content;
           const wind = commitMemberTextAnswer({
             ledger: answerLedger,

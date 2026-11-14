@@ -66,18 +66,17 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(reason).toBeTruthy();
   });
 
-  // ai-review #1741 Important：非文件类工具被拦下时，折叠行必须带上命令原文。否则一轮里
-  // 连着几条命令被权限层拦下，时间线上就是数条一模一样的「未执行 · 需要人工确认」，
-  // 用户分不清拦的是哪条（origin/main 显示的是「运行命令 npm test 未成功」，原文在行内）。
-  it('a blocked command keeps its own text in the folded row', () => {
-    const tool: ToolCall = { id: 'b', name: 'Bash', arguments: { command: 'npm test' },
-      result: { toolCallId: 'b', success: false, error: 'denied', metadata: { failureCode: 'permission-denied' } } };
-    expect(toolPreflightCopy(tool, zh)?.action).toContain('npm test');
-    const other: ToolCall = { ...tool, id: 'c', arguments: { command: 'npm run build' } };
-    expect(toolPreflightCopy(other, zh)?.action).toContain('npm run build');
-    expect(toolPreflightCopy(tool, zh)?.action).not.toBe(toolPreflightCopy(other, zh)?.action);
+  // 2026-11-13 owner decision supersedes the command-preview acceptance:
+  // blocked rows describe the outcome; raw commands remain in explicit details.
+  it('blocked commands use plain outcome text without exposing either command', () => {
+    for (const command of ['npm test', 'npm run build']) {
+      const tool: ToolCall = { id: 'b', name: 'Bash', arguments: { command },
+        result: { toolCallId: 'b', success: false, error: 'denied', metadata: { failureCode: 'permission-denied' } } };
+      expect(toolPreflightCopy(tool, zh)?.action).toBe('未执行');
+      expect(toolPreflightCopy(tool, zh)?.action).not.toContain(command);
+      expect(tool.arguments.command).toBe(command);
+    }
   });
-
   // ai-review #1741 Important：artifactRepairGuard.blocked 是重载字段——执行前拦下会挂它，
   // 执行**之后**锚点失配也会补挂（toolResultLifecycle.ts:144），后者是真跑过的 Edit。
   // 只认 blocked 会把「old_string 对不上」渲染成「未修改 · 超出允许的修复范围」，

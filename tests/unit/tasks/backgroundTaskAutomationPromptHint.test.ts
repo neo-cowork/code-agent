@@ -127,16 +127,19 @@ describe.each([
     const syntax = projectFailure(failedFixture({
       taskId: 'osascript-syntax',
       command: 'osascript -e \'foo\'',
+      displayName: 'osascript -e \'foo\'',
       outputFile: syntaxLog,
     }));
     const unrelated = projectFailure(failedFixture({
       taskId: 'plain-failure',
       command: 'npm test',
+      displayName: 'npm test',
       outputFile: unrelatedLog,
     }));
     const unrelatedWithoutLog = projectFailure(failedFixture({
       taskId: 'plain-failure-without-log',
       command: 'npm test',
+      displayName: 'npm test',
       outputFile: '',
     }));
 

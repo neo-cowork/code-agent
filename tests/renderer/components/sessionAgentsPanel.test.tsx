@@ -281,19 +281,24 @@ describe('SessionAgentsPanel', () => {
     await screen.findByTestId('agents-panel-row-researcher');
     expect(screen.getByTestId('agents-panel-row-writer')).toBeTruthy();
     expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('完成');
-    // 账本完成事件常把 filesChanged 落成 []，没有隔离 worktree 时仍报合到一起
-    expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('2 个代理的改动已经合到一起了');
+    // 账本完成事件没有文件改动证据时只报已汇报，不谎称已合并
+    expect(screen.getByTestId('agents-panel-merge-state').textContent).toBe('2 个代理已汇报');
 
     fireEvent.click(screen.getByTestId('agents-panel-open-researcher'));
     expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher');
   });
 
-  it('账本 filesChanged 为空、角色不是只读时面板仍报合到一起了', async () => {
+  it.each([
+    ['zh', '2 个代理已汇报', '2 个代理的改动已经合到一起了'],
+    ['en', '2 agents reported in', 'Changes from 2 agents are merged'],
+  ] as const)('账本 filesChanged 为空、角色不是只读时面板报已汇报而非合到一起了 (%s)', async (lang, expected, forbidden) => {
+    language = lang;
     mockLedger([record({ filesChanged: [] }), record({ agentId: 'writer', name: '撰稿员', role: 'writer', filesChanged: [] })]);
 
     render(<SessionAgentsPanel />);
     const merge = await screen.findByTestId('agents-panel-merge-state');
-    expect(merge.textContent).toBe('2 个代理的改动已经合到一起了');
+    expect(merge.textContent).toBe(expected);
+    expect(merge.textContent).not.toBe(forbidden);
   });
 
   it('两个只读 explore 完成且无改动后面板是已汇报', async () => {

@@ -40,8 +40,11 @@ case "${SWIFT_BUILD_ARCH:-}" in
   *) echo "❌ 不支持的 SWIFT_BUILD_ARCH=${SWIFT_BUILD_ARCH}（仅 x86_64 / arm64）" >&2; exit 1 ;;
 esac
 
-# 增量检查：源文件未变且产物较新则跳过（交叉编译指定 arch 时强制重编）
-if [[ -z "${SWIFT_BUILD_ARCH:-}" && -f "$OUTPUT" && "$OUTPUT" -nt "$SOURCE" ]]; then
+# 增量检查按源码内容哈希，不比文件时间：worktree 引导会把主树旧产物拷过来，拷出的文件
+# 时间比源码新，按时间判断永远「已是最新」，Swift 改动进不了 Dev 包（N-MEETING-DUALTRACK-FU1 真机查出）。
+# 交叉编译指定 arch 时强制重编。
+LOCAL_SHA="$(shasum -a 256 "$SOURCE" | cut -d' ' -f1)"
+if [[ -z "${SWIFT_BUILD_ARCH:-}" && -f "$OUTPUT" && "$(cat "$OUTPUT.srcsha" 2>/dev/null)" == "$LOCAL_SHA" ]]; then
   echo "✓ vision-ocr 已是最新（源文件未变）"
   exit 0
 fi
@@ -56,5 +59,6 @@ swiftc \
   "$SOURCE"
 
 chmod +x "$OUTPUT"
+if [[ -z "${SWIFT_BUILD_ARCH:-}" ]]; then echo "$LOCAL_SHA" > "$OUTPUT.srcsha"; else rm -f "$OUTPUT.srcsha"; fi
 echo "✓ 产物: $OUTPUT"
 ls -lh "$OUTPUT"

@@ -300,6 +300,7 @@ export interface AppState {
 
   // Model Config
   modelConfig: ModelConfig;
+  settingsLoaded: boolean;
 
   // Workspace State
   workingDirectory: string | null;

@@ -19,6 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { remindersModule } from '../../../../../src/host/tools/modules/connectors/reminders';
+import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -226,6 +227,82 @@ describe('remindersModule (native)', () => {
         const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
         expect(artifact.kind).toBe('text');
         expect(artifact.metadata?.count).toBe(2);
+      }
+    });
+
+    it('list_reminders formats remindAtMs when present and 无提醒时间 when null or missing', async () => {
+      const remindAtMs = Date.UTC(2026, 10, 9, 1, 0, 0); // 2026-11-09T01:00:00Z
+      execMock.mockResolvedValue({
+        data: [
+          { id: 'r1', list: 'Work', title: 'Dated task', completed: false, remindAtMs },
+          { id: 'r2', list: 'Work', title: 'Null task', completed: false, remindAtMs: null },
+          { id: 'r3', list: 'Work', title: 'Missing task', completed: true },
+        ],
+      });
+      const result = await run({ action: 'list_reminders', list: 'Work' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain(
+          `- #r1 [Work] Dated task | 提醒时间：${formatConnectorTime(remindAtMs)}`,
+        );
+        expect(result.output).toContain('- #r2 [Work] Null task | 无提醒时间');
+        expect(result.output).toContain('- #r3 [Work] Missing task (completed) | 无提醒时间');
+      }
+    });
+
+    it('list_reminders distinguishes reminders crossing local midnight', async () => {
+      vi.stubEnv('TZ', 'Asia/Shanghai');
+      try {
+        // Asia/Shanghai is UTC+8:
+        // 2026-11-09T15:30:00Z -> 2026-11-09 23:30 (UTC+8)
+        // 2026-11-09T16:30:00Z -> 2026-11-10 00:30 (UTC+8)
+        const beforeMidnightMs = Date.UTC(2026, 10, 9, 15, 30, 0);
+        const afterMidnightMs = Date.UTC(2026, 10, 9, 16, 30, 0);
+        execMock.mockResolvedValue({
+          data: [
+            { id: 'm1', list: 'Reminders', title: 'Late night', completed: false, remindAtMs: beforeMidnightMs },
+            { id: 'm2', list: 'Reminders', title: 'Early morning', completed: false, remindAtMs: afterMidnightMs },
+          ],
+        });
+        const result = await run({ action: 'list_reminders' });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('- #m1 [Reminders] Late night | 提醒时间：2026-11-09 23:30 (UTC+8)');
+          expect(result.output).toContain('- #m2 [Reminders] Early morning | 提醒时间：2026-11-10 00:30 (UTC+8)');
+        }
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('list_reminders prints date and offset in non-UTC local timezones (Asia/Shanghai and America/Los_Angeles)', async () => {
+      const instantMs = Date.UTC(2026, 10, 10, 2, 15, 0); // 2026-11-10T02:15:00Z
+      execMock.mockResolvedValue({
+        data: [
+          { id: 'tz1', list: 'Inbox', title: 'Cross-zone check', completed: false, remindAtMs: instantMs },
+        ],
+      });
+
+      vi.stubEnv('TZ', 'Asia/Shanghai');
+      try {
+        const shanghai = await run({ action: 'list_reminders' });
+        expect(shanghai.ok).toBe(true);
+        if (shanghai.ok) {
+          expect(shanghai.output).toContain('- #tz1 [Inbox] Cross-zone check | 提醒时间：2026-11-10 10:15 (UTC+8)');
+        }
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      vi.stubEnv('TZ', 'America/Los_Angeles');
+      try {
+        const la = await run({ action: 'list_reminders' });
+        expect(la.ok).toBe(true);
+        if (la.ok) {
+          expect(la.output).toContain('- #tz1 [Inbox] Cross-zone check | 提醒时间：2026-11-09 18:15 (UTC-8)');
+        }
+      } finally {
+        vi.unstubAllEnvs();
       }
     });
 
