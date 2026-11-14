@@ -76,7 +76,7 @@ function firstLineOf(sourceText: string): string {
 }
 
 /** 标题是否只是首条消息的前缀（或反过来）：即「回声」。斜杠命令与 <=8 字首行豁免。 */
-export function isEchoSessionTitle(title: string, sourceText: string): boolean {
+function isEchoSessionTitle(title: string, sourceText: string): boolean {
   const first = firstLineOf(sourceText);
   if (/^\/[\w:.-]+$/.test(first) || Array.from(first).length <= TITLE_ECHO_EXEMPT_MAX_CHARS) return false;
   const tn = title.replace(/(?:\.\.\.|…)+$/, '').trim();
@@ -87,7 +87,7 @@ export function isEchoSessionTitle(title: string, sourceText: string): boolean {
 }
 
 /** 无模型 / 模型仍回声时的规则摘要：首行首个分句去掉请求套话，最多 20 字，不带 `...`。 */
-export function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
+function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
   const first = firstLineOf(sessionTitleSource(sourceText, language)) || APPSHOT_SESSION_TITLE[language];
   let clause = (first.split(CLAUSE_SPLIT).find((part) => part.trim()) ?? first).trim();
   for (let i = 0; i < 3; i++) {
