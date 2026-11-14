@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { registerBrowserJevRouteProbe } from '../../../../../src/shared/constants/jevQuestions';
 
 const loginWallPermission = vi.hoisted(() => ({ unattended: false }));
 vi.mock('../../../../../src/host/permissions/modes', () => ({
@@ -87,10 +88,12 @@ describe('jevBrowserStep', () => {
     loginWallPermission.unattended = false;
   });
   afterEach(() => {
+    registerBrowserJevRouteProbe(null);
     vi.unstubAllEnvs();
   });
 
-  it('CODE_AGENT_BROWSER_JEV_STEP 默认关', () => {
+  it('CODE_AGENT_BROWSER_JEV_STEP=0 关闭', () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '0');
     expect(resolveBrowserJevStep()).toBeUndefined();
   });
 
@@ -129,8 +132,9 @@ describe('jevBrowserStep', () => {
     }
   });
 
-  it('开关开时 description 含回落契约且枚举含 execute_goal', () => {
+  it('开关开且有路由时 description 含回落契约且枚举含 execute_goal', () => {
     vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    registerBrowserJevRouteProbe(() => true);
     expect(BrowserTool.description).toContain('execute_goal');
     expect(BrowserTool.description).toContain('fallback=true');
     expect(BrowserTool.description).toContain('done_verified 以调用方提供的 assertions 为准');

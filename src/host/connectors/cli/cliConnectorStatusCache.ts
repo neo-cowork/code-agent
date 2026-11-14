@@ -1,8 +1,11 @@
+import type { ConnectorLostCode } from '../../../shared/contract/agent';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../../../shared/constants/cliConnectorDescriptors';
 
 interface CliConnectorConnectionStatus {
   connected: boolean;
   checkedAt: number;
+  /** 仅 CONFIRMED 的失联探测原因；stale / 未分类失败恒为空 */
+  lostReason?: ConnectorLostCode;
 }
 
 const cliConnectorIds = new Set(CLI_CONNECTOR_DESCRIPTORS.map((descriptor) => descriptor.id));
@@ -19,13 +22,17 @@ export function getCachedCliConnectorConnectionStatus(
 }
 
 export function replaceCliConnectorConnectionStatusCache(
-  statuses: Array<{ id: string; connected: boolean }>,
+  statuses: Array<{ id: string; connected: boolean; lostReason?: ConnectorLostCode }>,
 ): void {
   statusCache.clear();
   const checkedAt = Date.now();
   for (const status of statuses) {
     if (isCliConnectorId(status.id)) {
-      statusCache.set(status.id, { connected: status.connected, checkedAt });
+      statusCache.set(status.id, {
+        connected: status.connected,
+        checkedAt,
+        ...(!status.connected && status.lostReason ? { lostReason: status.lostReason } : {}),
+      });
     }
   }
 }

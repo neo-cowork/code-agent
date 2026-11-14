@@ -47,7 +47,9 @@ function scopeLabel(source: string, copy: PermissionGrantsText['scope']): string
   return copy.automation.replace('{title}', source);
 }
 
-function kindLabel(kind: PermissionGrantEntry['kind'], copy: PermissionGrantsText['kind']): string {
+function kindLabel(grant: PermissionGrantEntry, copy: PermissionGrantsText['kind']): string {
+  if (grant.source === 'run') return '';
+  const { kind } = grant;
   if (kind === 'app') return copy.app;
   if (kind === 'tool-target') return copy.toolTarget;
   if (kind === 'tool-timed') return copy.toolTimed;
@@ -108,12 +110,10 @@ const PermissionGrantList: React.FC = () => {
             <li key={grant.id} data-testid="permission-grant-row" className="flex items-center justify-between gap-3 py-2">
               <div className="min-w-0">
                 <div className="truncate text-sm text-zinc-200">
-                  {grant.kind === 'app' ? grant.label : toolGrantLabel(grant.label, t.receiptPresentation.humanToolLabels)}
+                  {grant.kind === 'app' || grant.connectorAccess === 'read' ? grant.label : toolGrantLabel(grant.label, t.receiptPresentation.humanToolLabels)}
                 </div>
                 <div className="mt-0.5 text-xs text-zinc-500">
-                  {kindLabel(grant.kind, copy.kind)}
-                  {' · '}
-                  {scopeLabel(grant.source, copy.scope)}
+                  {[kindLabel(grant, copy.kind), grant.connectorAccess === 'read' ? copy.readOnly : '', scopeLabel(grant.source, copy.scope)].filter(Boolean).join(' · ')}
                   {' · '}
                   {copy.grantedOn.replace('{date}', formatDateTime(grant.grantedAt, language))}
                   {grant.expiresAt !== null ? ` · ${grant.kind === 'tool-timed'

@@ -86,6 +86,8 @@ interface DomainActionSet {
 }
 
 interface ToolStepVerbBundle {
+  listSeparator: string;
+  groupSingular: Record<ToolStepStatus, Partial<ToolStepVerbSet['group']>>;
   statusForms: Record<NonCompletedToolStepStatus, ToolStepVerbSet>;
   domainActions: Record<ToolStepStatus, {
     browser: DomainActionSet;
@@ -131,13 +133,15 @@ interface ToolStepVerbBundle {
 }
 
 export const toolStepVerbsZh: ToolStepVerbBundle = {
+  listSeparator: '、',
+  groupSingular: { completed: {}, failed: {}, running: {}, 'pending-approval': {} },
   statusForms: {
     'pending-approval': {
       delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '请求把任务交给{target}', create_new: '请求新建对话并交给它', correct: '请求调整对{target}的委托', stop: '请求停止对{target}的委托', resume: '请求恢复对{target}的委托', unknown: '请求处理一项跨对话委托', reused: '已送达过，未重复发送' },
       listSessionCandidates: '请求查找可委托的对话',
       declared: { tmeetMeetingListUpcoming: '请求查询待开始/进行中的会议', tmeetMeetingListEnded: '请求查询近 30 天已结束的会议', tmeetMeetingCreate: '请求创建会议', tmeetMeetingSearch: '请求搜索会议' },
       read: '请求读取 {target}', readFallback: '请求读取一个文件', write: '请求写入 {target}', writeFallback: '请求写入一个文件',
-      edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行一条命令',
+      edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行命令',
       search: '请求搜索 {query}', searchFallback: '请求搜索内容', listDir: '请求查看 {target} 目录', listDirFallback: '请求查看目录',
       webSearch: '请求联网搜索 {query}', webSearchFallback: '请求联网搜索', webFetch: '请求打开 {target}', webFetchFallback: '请求打开网页',
       mcpTool: '请求调用 {server}', channelMessage: '请求在{channel}发消息', subagentSpawn: '请求启动代理 — {description}', subagentSpawnFallback: '请求启动代理',
@@ -240,6 +244,13 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
 };
 
 export const toolStepVerbsEn: ToolStepVerbBundle = {
+  listSeparator: ', ',
+  groupSingular: {
+    completed: { explored: 'Looked at content {count} time', ran: 'Ran {count} command', searchedWeb: 'Searched the web {count} time', mcp: 'Called tools {count} time', subagent: 'Dispatched {count} agent task', planned: 'Updated tasks {count} time', skill: 'Used skills {count} time', used: 'Ran {count} step' },
+    failed: { explored: 'Could not inspect content {count} time', ran: 'Could not run {count} command', searchedWeb: 'Could not search the web {count} time', mcp: 'Could not call tools {count} time', subagent: 'Could not dispatch {count} agent task', planned: 'Could not update tasks {count} time', skill: 'Could not use skills {count} time', used: 'Could not run {count} step' },
+    running: { explored: 'Inspecting content {count} time', ran: 'Running {count} command', searchedWeb: 'Searching the web {count} time', mcp: 'Calling tools {count} time', subagent: 'Dispatching {count} agent task', planned: 'Updating tasks {count} time', skill: 'Using skills {count} time', used: 'Running {count} step' },
+    'pending-approval': { explored: 'Request to inspect content {count} time', ran: 'Request to run {count} command', searchedWeb: 'Request to search the web {count} time', mcp: 'Request to call tools {count} time', subagent: 'Request to dispatch {count} agent task', planned: 'Request to update tasks {count} time', skill: 'Request to use skills {count} time', used: 'Request to run {count} step' },
+  },
   statusForms: {
     'pending-approval': {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Request to send the task to {target}', create_new: 'Request to create a conversation and send it the task', correct: 'Request to adjust the delegation to {target}', stop: 'Request to stop the delegation to {target}', resume: 'Request to resume the delegation to {target}', unknown: 'Request to handle a cross-conversation delegation', reused: 'Already delivered; not sent again' },

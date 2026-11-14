@@ -18,6 +18,7 @@ import { DateTimeInput24, TimeInput24 } from '../../primitives';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
+import { interpolate } from '../../../i18n/interpolate';
 import { useI18n } from '../../../hooks/useI18n';
 import { listProjects } from '../../../services/projectClient';
 import { listRoles } from '../../../services/rolesClient';
@@ -336,8 +337,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
         )}
         {needTime && time.endsWith(':00') && (
           <p className="text-xs text-badge-warning sm:col-span-2" data-testid="cron-stagger-hint">
-            整点容易和其他任务扎堆触发，建议把分钟错开到{' '}
-            {suggestCronStaggerMinute(`${freq} ${time}`)} 分。
+            {interpolate(cc.simpleStaggerHint, { minute: suggestCronStaggerMinute(`${freq} ${time}`) })}
           </p>
         )}
         {freq === 'hourly' && (

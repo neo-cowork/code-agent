@@ -410,7 +410,7 @@ jobs:
         - /home/runner:/home/runner
     env:
       HOME: /home/runner
-    needs: container-tools
+    needs: [container-tools, node-pty-binding]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -444,6 +444,16 @@ jobs:
         run: |
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
+
+      - name: Fetch node-pty native binding
+        # Real-host unit tests need the binding compiled outside this container.
+        uses: actions/download-artifact@v4
+        with:
+          name: node-pty-binding
+          path: node_modules/node-pty/build/Release
+
+      - name: Assert node-pty binding
+        run: node -e "require('node-pty')"
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
         # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
