@@ -265,6 +265,7 @@ export class ManagedBrowserProviderAdapter {
 
   activateConversationResumeState(conversationId: string): void {
     this.resumeStateStore.activateConversation(conversationId);
+    this.lastPageStore.activateConversation(conversationId);
   }
 
   /**

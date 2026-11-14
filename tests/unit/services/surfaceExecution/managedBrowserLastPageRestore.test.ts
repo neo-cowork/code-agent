@@ -477,4 +477,25 @@ describe('managed browser cross-turn last page restore', () => {
       h.cleanup();
     }
   });
+
+  it('does not re-record the last page when a run still in flight releases after the conversation was cleared', async () => {
+    const h = createHarness();
+    try {
+      const turn1 = h.startAgentRun('conversation-deleted', 'run-1');
+      await h.navigateInRun(turn1, 'https://host/a/b?q=1#h');
+
+      await h.adapter.clearConversationResumeState('conversation-deleted');
+      await h.runtime.endRun(turn1);
+      expect(h.lastPageSecureStorage.values.size).toBe(0);
+
+      // Reactivating the conversation (reset to a new session id reuse) records again.
+      h.adapter.activateConversationResumeState('conversation-deleted');
+      const turn2 = h.startAgentRun('conversation-deleted', 'run-2');
+      await h.navigateInRun(turn2, 'https://host/c');
+      await h.runtime.endRun(turn2);
+      expect(await h.lastPageStore.getForConversation('conversation-deleted')).toBe('https://host/c');
+    } finally {
+      h.cleanup();
+    }
+  });
 });

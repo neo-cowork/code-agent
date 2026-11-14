@@ -20,6 +20,7 @@ export interface BrowserLastPageStore {
   recordForConversation(conversationId: string, rawUrl: string | null | undefined): Promise<void>;
   getForConversation(conversationId: string): Promise<string | null>;
   clearConversation(conversationId: string): Promise<void>;
+  activateConversation(conversationId: string): void;
 }
 
 function createEphemeralKeyValueStore(): SecureKeyValueStore {
@@ -89,7 +90,7 @@ function sanitizeLastPageUrl(rawUrl: string): string | null {
 
 export class SecureBrowserLastPageStore implements BrowserLastPageStore {
   private readonly secureStorage: SecureKeyValueStore;
-  private readonly generations = new Map<string, number>();
+  private readonly inactiveConversations = new Set<string>();
 
   constructor(options: { secureStorage?: SecureKeyValueStore; ephemeral?: boolean } = {}) {
     this.secureStorage = options.secureStorage
@@ -101,10 +102,10 @@ export class SecureBrowserLastPageStore implements BrowserLastPageStore {
     rawUrl: string | null | undefined,
   ): Promise<void> {
     if (typeof rawUrl !== 'string') return;
-    const generation = this.generations.get(conversationId) ?? 0;
+    // Deleted/reset conversation: a run still releasing its window must not resurrect the record.
+    if (this.inactiveConversations.has(conversationId)) return;
     const sanitized = sanitizeLastPageUrl(rawUrl);
     const slot = this.slot(conversationId);
-    if ((this.generations.get(conversationId) ?? 0) !== generation) return;
     if (sanitized) {
       await this.secureStorage.setItem(slot, sanitized);
     } else {
@@ -125,8 +126,12 @@ export class SecureBrowserLastPageStore implements BrowserLastPageStore {
   }
 
   async clearConversation(conversationId: string): Promise<void> {
-    this.generations.set(conversationId, (this.generations.get(conversationId) ?? 0) + 1);
+    this.inactiveConversations.add(conversationId);
     await this.secureStorage.removeItem(this.slot(conversationId));
+  }
+
+  activateConversation(conversationId: string): void {
+    this.inactiveConversations.delete(conversationId);
   }
 
   private slot(conversationId: string): string {
