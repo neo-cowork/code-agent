@@ -8,7 +8,7 @@
 //   plan 里全是只读步骤，abort 不会留下副作用。
 // ============================================================================
 
-import { execFile } from 'child_process';
+import { execFile, type ExecFileOptionsWithStringEncoding } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -185,7 +185,9 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
 
 function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { cwd, argv0: path.basename(bin), env: scrubbedEnv(), timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_CHARS, encoding: 'utf8' }, (err, stdout, stderr) => {
+    // argv0：GNU 工具用 argv[0] 作错误前缀（"ls: …"），与经 shell 以裸命令名执行时一致。类型声明里没有 argv0，运行时 spawn 支持。
+    const options = { cwd, argv0: path.basename(bin), env: scrubbedEnv(), timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_OUTPUT_CHARS, encoding: 'utf8' } as ExecFileOptionsWithStringEncoding;
+    execFile(bin, args, options, (err, stdout, stderr) => {
       if (err && typeof (err as { code?: unknown }).code !== 'number') { reject(new ProbeAbort(`exec ${path.basename(bin)} failed`)); return; }
       resolve({ stdout, stderr, exitCode: err ? (err as unknown as { code: number }).code : 0 });
     });
