@@ -27,6 +27,7 @@ import { SubagentContextProjection } from './subagentContextProjection';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { getPlanApprovalGate } from './planApproval';
+import { getSpawnGuard } from './spawnGuard';
 import { buildChildContext } from './childContext';
 import { AgentTask, type SidecarMetadata } from './agentTask';
 import { generateMessageId } from '../../shared/utils/id';
@@ -438,8 +439,8 @@ export class SubagentExecutor {
 
     const terminal: SubagentCompletionTerminal = { status: 'failed' };
 
-    // 早退失败收口（预算触顶 / 工具装配失败共用）：统一 cleanup + orphan 接管 +
-    // SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
+    // 早退/触顶失败收口（预算触顶 / 工具装配失败 / 迭代耗尽共用）：统一 cleanup + orphan 接管 +
+    // 后代子树取消 + SubagentStop + 结构化失败返回，extra 携带各自的 failureCode/缺失清单等差异化字段。
     const earlyFailure = (error: string, extra: Partial<SubagentResult>): SubagentResult => {
       logger.error(`[${config.name}] ${error}`);
       cleanupTimer();
@@ -449,6 +450,10 @@ export class SubagentExecutor {
       agentTask.fail(error);
       // orphan 接管（roadmap 2.6）：subagent 名下未收口任务释放回主会话
       adoptOrphanTasks(sessionId, pipelineContext.agentId);
+      const leftoverReport = reportSubagentLeftoverShells(executionAgentId, 'early-failure');
+      if (context.spawnGuardId) {
+        getSpawnGuard().cancelDescendants(context.spawnGuardId, 'parent-cancel');
+      }
       context.hooks?.triggerSubagentStop(config.name, undefined, sessionId, agentTask.id)
         .catch(silence(logger, 'triggerSubagentStop:early-failure', 'warn'));
       return {
@@ -461,7 +466,7 @@ export class SubagentExecutor {
         agentId: executionAgentId,
         contextSnapshot: latestContextSnapshot,
         ...extra,
-        output: appendSubagentLeftoverShellReport(extra.output ?? '', reportSubagentLeftoverShells(executionAgentId, 'early-failure')),
+        output: appendSubagentLeftoverShellReport(extra.output ?? '', leftoverReport),
       };
     };
 
