@@ -77,7 +77,7 @@ export function computerBindingKey(
   ]);
 }
 
-export function findBrowserSessionId(
+function findBrowserSessionId(
   sessions: SurfaceSessionManager,
   identity: { conversationId: string; runId: string; agentId: string },
   provider: string,
@@ -91,7 +91,7 @@ export function findBrowserSessionId(
   })?.sessionId || 'unbound';
 }
 
-export function findComputerSessionId(
+function findComputerSessionId(
   sessions: SurfaceSessionManager,
   identity: { conversationId: string; runId: string; agentId: string },
   provider: string,

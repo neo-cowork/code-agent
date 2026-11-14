@@ -110,20 +110,22 @@ describe('reason never names another button', () => {
 
 describe('computer session takeover card', () => {
   function runningComputerSession() {
-    const scope = surfaceScope('comp-1', 'computer');
+    const scope = surfaceScope('comp-1');
     const base = surfaceSession({
       id: 'comp-1',
       surface: 'computer',
       state: 'running',
-      targetSummary: 'Notes — Weekly report',
+      title: 'Notes — Weekly report',
     });
     return {
       ...base,
       availableControls: ['takeover', 'stop', 'end_session'] as typeof base.availableControls,
       events: [surfaceEvent(scope, {
+        surface: 'computer',
+        provider: 'cua-driver',
         sessionState: 'running',
         phase: 'observe',
-        status: 'completed',
+        status: 'succeeded',
         userSummary: '已读取窗口当前界面',
         availableControls: ['takeover', 'stop', 'end_session'],
       })],
@@ -131,25 +133,41 @@ describe('computer session takeover card', () => {
   }
 
   function waitingComputerSession() {
-    const scope = surfaceScope('comp-1', 'computer');
+    const scope = surfaceScope('comp-1');
     const base = surfaceSession({
       id: 'comp-1',
       surface: 'computer',
       state: 'waiting_human',
-      targetSummary: 'Notes — Weekly report',
-      waitingReason: 'Waiting for human control',
+      title: 'Notes — Weekly report',
     });
     return {
       ...base,
       availableControls: ['resume', 'stop', 'end_session'] as typeof base.availableControls,
-      events: [surfaceEvent(scope, {
-        sessionState: 'waiting_human',
-        phase: 'human',
-        status: 'waiting',
-        userSummary: 'Surface control takeover waiting',
-        operation: { action: 'takeover', risk: 'control' },
-        availableControls: ['resume', 'stop', 'end_session'],
-      })],
+      events: [
+        surfaceEvent(scope, {
+          eventId: 'event-comp-1-req',
+          sequence: 1,
+          surface: 'computer',
+          provider: 'cua-driver',
+          sessionState: 'waiting_human',
+          phase: 'human',
+          status: 'waiting',
+          userSummary: 'Waiting for human control',
+          availableControls: ['resume', 'stop', 'end_session'],
+        }),
+        surfaceEvent(scope, {
+          eventId: 'event-comp-1-ctrl',
+          sequence: 2,
+          surface: 'computer',
+          provider: 'cua-driver',
+          sessionState: 'waiting_human',
+          phase: 'human',
+          status: 'waiting',
+          userSummary: 'Surface control takeover waiting',
+          operation: { action: 'takeover', risk: 'control' },
+          availableControls: ['resume', 'stop', 'end_session'],
+        }),
+      ],
     };
   }
 
