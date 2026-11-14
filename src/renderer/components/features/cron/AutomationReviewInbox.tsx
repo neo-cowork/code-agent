@@ -61,11 +61,28 @@ function recordUrgency(record: SessionAutomationRecord): CronUrgency {
   return isCronUrgency(urgency) ? urgency : 'fyi';
 }
 
-function formatWaiting(requestedAt: number): string {
+type InboxCopy = ReturnType<typeof useI18n>['t']['cronCenter'];
+
+function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string {
+  const title = item.displayTool ?? item.tool ?? '';
+  const storedPrefix = '重启前发起 · ';
+  const restarted = title.startsWith(storedPrefix);
+  const name = (restarted ? title.slice(storedPrefix.length) : title).trim();
+  const knownTool = name.toLowerCase();
+  const displayName = knownTool === 'bash' || knownTool === 'write'
+    ? copy.parkedVoided.tools[knownTool]
+    : !name || name === 'unknown' ? copy.parkedPendingAction : name;
+  return `${restarted ? copy.parkedVoided.restartPrefix : ''}${displayName}`;
+}
+
+function formatWaiting(requestedAt: number, copy: InboxCopy): string {
   const mins = Math.max(0, Math.floor((Date.now() - requestedAt) / 60_000));
-  if (mins < 60) return `${mins}m`;
+  if (mins < 1) return copy.parkedWaitingLessThanMinute;
+  if (mins < 60) return copy.parkedWaitingMinutes.replace('{n}', String(mins));
   const hrs = Math.floor(mins / 60);
-  return hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
+  return hrs < 24
+    ? copy.parkedWaitingHours.replace('{n}', String(hrs))
+    : copy.parkedWaitingDays.replace('{n}', String(Math.floor(hrs / 24)));
 }
 
 interface AutomationReviewInboxProps {
@@ -73,6 +90,8 @@ interface AutomationReviewInboxProps {
   onPendingCountChange?: (count: number) => void;
   onParkedResolved?: () => void;
   onParkedChange?: () => void;
+  /** 卡片里「N 个操作等你确认」的 N（status==='pending' 的停车审批数）；页首 tile 并入同一个数 */
+  onParkedPendingChange?: (count: number) => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -111,7 +130,7 @@ function folderDisplayName(folder: string): string {
   return parts[parts.length - 1] ?? folder;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal, onParkedResolved, onParkedChange }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -170,6 +189,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   useEffect(() => {
     load();
   }, [load, refreshSignal]);
+
+  const parkedPendingCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length;
+  useEffect(() => {
+    onParkedPendingChange?.(parkedPendingCount);
+  }, [onParkedPendingChange, parkedPendingCount]);
 
   // 页面停着时定时任务跑完也要自动刷新：可见时低频轮询，切回前台/窗口聚焦立即重拉。
   useEffect(() => {
@@ -295,7 +319,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
               {parked.some((item) => item.status !== 'voided') && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {interpolatePlural(cc.parkedTitle, groupParkedWrites(parked).filter((item) => item.status === 'pending').length)}
+                  {interpolatePlural(cc.parkedTitle, parkedPendingCount)}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -305,7 +329,6 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   const isExternal = item.riskClass === 'external';
                   const isShell = item.tool.toLowerCase() === 'bash';
                   const isFileWrite = item.tool.toLowerCase() === 'write';
-                  const toolTitle = (isShell || isFileWrite) ? voidedToolTitle(item.tool, cc.parkedVoided) : (item.displayTool ?? item.tool);
                   // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
                   // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
                   if (item.sensitiveStep) {
@@ -316,7 +339,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         data-testid="parked-approval-item"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-zinc-200">{toolTitle}</div>
+                          <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc)}</div>
                           {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
@@ -330,7 +353,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
                   const scopeNote = isExternal
-                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (item.displayTool ?? item.tool))
+                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (parkedToolTitle(item, cc)))
                     : null;
                   // B4 铸权入口：仅 external + 能确定性提取 target 时出现（模型侧无入口）。
                   const canMintStanding = isExternal && !!item.standingGrantTarget;
@@ -346,7 +369,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
                               ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
-                              : toolTitle}
+                              : (parkedToolTitle(item, cc))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
@@ -394,7 +417,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           </details>
                         )}
                         <div className="text-[11px] text-zinc-500">
-                          {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
+                          {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt, cc))}
                         </div>
                       </div>
                       {!isOrphaned && (
@@ -432,7 +455,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAllowFolder.replace('{folder}', folderDisplayName(item.writeGrantFolder))}
                             </button>
                           )}
-                          {(item.kind === 'tool_approval' || item.kind === undefined) && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
+                          {(item.kind === 'tool_approval' || item.kind === undefined) && !item.forceConfirm && !isEditableTool(item.tool) && (!isExternal || !!item.standingGrantTarget) && (
                             <>
                               <Button
                                 type="button"

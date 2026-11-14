@@ -233,7 +233,7 @@ function markSurvivorRestartOrigin(
   row: PendingApprovalRecord,
   payload: Partial<ToolApprovalPayload> | null,
 ): void {
-  const tool = payload?.displayTool ?? payload?.tool ?? 'unknown';
+  const tool = payload?.displayTool ?? payload?.tool ?? '';
   const marked = `${RESTART_ORIGIN_PREFIX}${tool.replace(RESTART_ORIGIN_PREFIX_RUN, '')}`;
   try {
     repo.insert({

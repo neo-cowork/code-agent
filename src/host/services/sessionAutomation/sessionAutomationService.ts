@@ -582,7 +582,7 @@ export class SessionAutomationService {
         sessionId: payload.sessionId ?? row.coordinatorId,
         sessionTitle: resolveApprovalSessionTitle(payload.sessionId ?? row.coordinatorId, row.id),
         ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
-        tool: payload.tool ?? 'unknown',
+        tool: payload.tool ?? '',
         displayTool: payload.displayTool,
         // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
         argsPreview: payload.argsPreview,
@@ -591,6 +591,7 @@ export class SessionAutomationService {
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
+        ...(payload.forceConfirm === true ? { forceConfirm: true } : {}),
         ...(row.status !== 'orphaned' && payload.writeGrantFolder ? { writeGrantFolder: payload.writeGrantFolder } : {}),
         sensitiveStep: payload.sensitiveStep,
       };
@@ -961,7 +962,7 @@ function toVoidedInboxItem(
     sessionId,
     sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
     argsPreview: toUserFacingArgsPreview(payload.argsPreview),
-    tool: payload.tool ?? 'unknown',
+    tool: payload.tool ?? '',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,
     status: 'voided',
