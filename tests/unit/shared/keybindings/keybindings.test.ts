@@ -6,6 +6,7 @@ import {
   detectKeybindingSystemWarnings,
   eventToAccelerator,
   formatActionShortcut,
+  formatShortcutForDisplay,
   normalizeAccelerator,
 } from '@shared/keybindings';
 
@@ -105,6 +106,9 @@ describe('keybindings registry', () => {
 
     expect(formatActionShortcut(macSettings, 'commandPalette.open', 'darwin')).toBe('⌘K');
     expect(formatActionShortcut(windowsSettings, 'commandPalette.open', 'win32')).toBe('Ctrl+K');
+    // 未绑定时不带任何给人看的词（「未设置」由界面层按语言补，FB-1293）
+    expect(formatShortcutForDisplay(null, 'darwin')).toBe('');
+    expect(formatShortcutForDisplay('', 'win32')).toBe('');
   });
 
   it('detects conflicts within the same scope only', () => {

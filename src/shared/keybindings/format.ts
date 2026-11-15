@@ -8,13 +8,14 @@ function formatKey(key: string): string {
   return key;
 }
 
+/** 未绑定时返回空串：「未设置」这类给人看的词由调用方按界面语言补，shared 层不带文案。 */
 export function formatShortcutForDisplay(
   accelerator: string | null | undefined,
   platform: KeybindingPlatform = getCurrentKeybindingPlatform()
 ): string {
-  if (!accelerator) return '未设置';
+  if (!accelerator) return '';
   const parts = accelerator.split('+').filter(Boolean);
-  if (parts.length === 0) return '未设置';
+  if (parts.length === 0) return '';
   if (platform === 'darwin') {
     return parts.map((part) => {
       const normalized = part.toLowerCase();
