@@ -5,30 +5,8 @@ import { formatDateTime } from './formatDateTime';
 
 export { formatCronTimeZoneSuffix } from '@shared/cronTimeZone';
 
-type TimeZoneParts = {
-  year: string;
-  month: string;
-  day: string;
-  hour: string;
-  minute: string;
-};
-
 function localeForLanguage(language: Language): string {
   return language === 'zh' ? 'zh-CN' : 'en-US';
-}
-
-function formatZhParts(value: string | number | Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('zh-CN', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(value));
-  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value])) as Partial<TimeZoneParts>;
-  return `${byType.year}/${byType.month}/${byType.day} ${byType.hour}:${byType.minute}`;
 }
 
 /** Full next-run time in the cron job's timezone, naming non-local zones. */
@@ -39,9 +17,7 @@ export function formatCronJobDateTime(
 ): string {
   const resolved = resolveTimeZone(timeZone);
   if (!resolved) return formatDateTime(value, language);
-  const formatted = language === 'zh'
-    ? formatZhParts(value, resolved)
-    : new Date(value).toLocaleString('en-US', { timeZone: resolved });
+  const formatted = formatDateTime(value, language, resolved);
   return formatCronTimeZoneSuffix(formatted, resolved, language);
 }
 
@@ -81,7 +57,7 @@ export function formatCronJobShortTime(
       && date.getDate() === now.getDate();
     const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
     if (sameDay) return time;
-    return `${date.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' })} ${time}`;
+    return formatDateTime(date, language).slice(5);
   }
 
   const date = new Date(value);
@@ -99,6 +75,6 @@ export function formatCronJobShortTime(
   });
   const formatted = sameDay
     ? time
-    : `${date.toLocaleDateString(locale, { timeZone: resolved, month: 'numeric', day: 'numeric' })} ${time}`;
+    : formatDateTime(date, language, resolved).slice(5);
   return formatCronTimeZoneSuffix(formatted, resolved, language);
 }
