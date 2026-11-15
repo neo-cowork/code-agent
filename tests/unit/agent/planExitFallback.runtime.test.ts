@@ -495,7 +495,10 @@ describe('plan exit fallback runtime（ADR-074 K1）', () => {
     expect(modules.toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
     const guidance = modules.contextAssembly.injectSystemMessage.mock.calls
       .find((call: [string, string?]) => call[1] === 'tool-policy-guard');
-    expect(guidance?.[0]).toContain(toolName);
+    // 命令行类调用的工具名不再外露给模型转述；其余工具仍点名。两者都要说明「没有运行」。
+    if (toolName === 'Bash') expect(guidance?.[0]).not.toContain('Bash');
+    else expect(guidance?.[0]).toContain(toolName);
+    expect(guidance?.[0]).toContain('NOT run');
   });
 
   it('④ allowlist：补推理中的 Read 与只读 Bash 照常派发执行', async () => {
