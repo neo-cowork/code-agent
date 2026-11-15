@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { INABILITY_REPLY_CONTRACT } from '../../src/shared/inabilityReplyContract';
+import { getInabilityReplyGuidance, INABILITY_REPLY_CONTRACT } from '../../src/shared/inabilityReplyContract';
+import { wrapWithTurnSystemContext } from '../../src/shared/utils/turnScaffold';
 import { deniedToolRetryGuidance } from '../../src/host/agent/runtime/toolRunPolicy';
 
 const FORBIDDEN_FINAL = /权限|拦下|拦住|不允许|受限|禁用|本轮|终端|工具|模式|permission|blocked|not allowed|restricted|disabled|this turn|terminal|tools|modes/i;
@@ -40,11 +41,17 @@ describe('shared inability reply contract', () => {
       'src/shared/i18n/foregroundShellDenial.ts',
     ]) {
       const source = readFileSync(file, 'utf8');
-      expect(source, file).toMatch(/import \{ INABILITY_REPLY_CONTRACT \} from ['"].*inabilityReplyContract['"]/);
-      expect(source, file).toMatch(/INABILITY_REPLY_CONTRACT(?:\.en\.guidance|\.zh\.guidance|\[locale\]\.finalMessage)/);
+      expect(source, file).toMatch(/import \{ (?:INABILITY_REPLY_CONTRACT|getInabilityReplyGuidance) \} from ['"].*inabilityReplyContract['"]/);
+      expect(source, file).toMatch(/(?:INABILITY_REPLY_CONTRACT\[locale\]\.finalMessage|getInabilityReplyGuidance)/);
     }
     const processor = readFileSync('src/host/agent/runtime/messageProcessor.ts', 'utf8');
-    expect(processor).toMatch(/'<tool-run-policy>',\s*INABILITY_REPLY_CONTRACT.en.guidance,/);
+    expect(processor).toMatch(/'<tool-run-policy>',\s*getInabilityReplyGuidance\(this.ctx.turn\?\.runUserPrompt \?\? ''\),/);
+  });
+
+  it.each(['zh', 'en'] as const)('%s guidance explicitly fixes the reply language despite scaffolding', (locale) => {
+    const prompt = locale === 'en' ? 'Please compress the notes folder into notes-backup.zip.' : '帮我压缩 notes 文件夹';
+    const wrapped = wrapWithTurnSystemContext(['只查看任务文件夹。没有上传附件，不要搜索其他地方。'], prompt);
+    expect(getInabilityReplyGuidance(wrapped)).toBe(INABILITY_REPLY_CONTRACT[locale].guidance + '\n' + (locale === 'en' ? 'Reply in English.' : '用中文回复。'));
   });
 
   it.each([true, false])('retry relay preserves the contract when unattended=%s', (unattendedTurn) => {

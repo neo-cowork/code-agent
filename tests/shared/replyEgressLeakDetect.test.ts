@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { wrapWithTurnSystemContext } from '../../src/shared/utils/turnScaffold';
 import { detectReplyEgressLeaks } from '../../src/shared/replyEgressLeakDetect';
 
 describe('detectReplyEgressLeaks', () => {
@@ -154,6 +155,7 @@ describe('inability reply violation shapes', () => {
     '查日程这件事我没做成，刚才两次尝试都被拦下，没有执行任何操作。',
     '我的权限不允许执行删除',
     '我没有权限删除文件',
+    '我这边没有浏览器和联网权限，页面内容要等任务回流后才能准确总结',
     '我的删除请求被拒了',
     'My command was blocked by policy.',
     'I am not allowed to delete it.',
@@ -170,6 +172,8 @@ describe('inability reply violation shapes', () => {
     '你自己在终端里执行下面这行',
     '粘贴以下这行即可',
     '改成你自己在「终端」里粘贴这三行',
+    '你在右侧终端里粘这两行就能删掉',
+    '你自己在「终端」里跑这两行，把输出贴回来',
     'Open Terminal and paste the command below.',
   ])('observes unsolicited command handover: %s', (reply) => {
     expect(detectReplyEgressLeaks(reply, zhUser).categories).toContain('command_handoff');
@@ -181,12 +185,20 @@ describe('inability reply violation shapes', () => {
     ['Permission denied means the application is not allowed to read that folder.', 'Explain the permission settings in English.'],
     ['你没有权限修改这个共享文件夹，请找文件夹主人确认设置。', '如何处理共享文件夹权限？'],
     ['需要你点允许，然后我会继续删除。', zhUser],
+    ['删除还没生效，需要你点确认卡片，但卡片超时没人点就被自动拒绝了，所以文件原样都在。', zhUser],
     ['广告被浏览器拦住了。', '浏览器为什么没显示广告？'],
     ['删除还没完成，文件没有改动。我可以先只读查看，再交给后台任务，操作前会先问你。', zhUser],
     ['打开「终端」App，粘贴下面这行：\n```sh\nzip -r notes.zip notes\n```', '我自己运行，给我压缩 notes 文件夹的命令'],
     ['Open Terminal and paste this line.\n```sh\nzip -r notes.zip notes\n```', 'I will run it myself, give me the command to compress the notes folder into a zip.'],
     ['下面是示例：\n```text\n删除动作被权限拦下了\n打开「终端」App，粘贴下面这行\nPermission denied.\n```', '查看示例'],
   ])('exempts settings, approvals, explicit command requests and fenced examples', (reply, user) => {
+    expect(detectReplyEgressLeaks(reply, user).categories).toEqual([]);
+  });
+
+  it('uses the actual request language and command intent inside model-only scaffolding', () => {
+    const user = wrapWithTurnSystemContext(['只查看当前任务文件夹，不要搜索其他位置。'],
+      'I will run it myself, give me the command to compress the notes folder into a zip.');
+    const reply = 'Open Terminal and paste the command below. It compresses the notes folder into a zip archive.';
     expect(detectReplyEgressLeaks(reply, user).categories).toEqual([]);
   });
 

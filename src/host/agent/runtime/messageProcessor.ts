@@ -71,7 +71,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
-import { INABILITY_REPLY_CONTRACT } from '../../../shared/inabilityReplyContract';
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -675,7 +675,7 @@ export class MessageProcessor {
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          INABILITY_REPLY_CONTRACT.en.guidance,
+          getInabilityReplyGuidance(this.ctx.turn?.runUserPrompt ?? ''),
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',

@@ -1,5 +1,6 @@
 // 模型面向用户回复的出口泄漏观测（N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-REPLY-EGRESS）：
 // 复用 detectInternalTextLeaks，并补充机制黑话（mechanism_talk）与对中文用户整段回英文（english_reply_to_zh）。
+import { extractUserRequest } from './utils/turnScaffold';
 import { detectInternalTextLeaks, type InternalTextFormat } from './internalTextLeakDetect';
 
 type ReplyEgressLeakCategory =
@@ -42,16 +43,17 @@ const MECHANISM_TALK_REGEXES: readonly RegExp[] = [
 // Match a causal explanation about the assistant's attempted action, not permission documentation.
 const OWN_ACTION_RE = /我|这边|刚才|尝试|操作|动作|命令|执行|删除|清理|打包|查询|检查|读取|备份|运行|压缩|\b(?:I|we|my|our|action|command|attempt|deletion|execution)\b/i;
 const INVENTED_CAUSE_REGEXES: readonly RegExp[] = [
-  /被[^，。！？\n]{0,16}(?:拦下|拦住|拒绝|拒)/gi,
+  /被[^，。！？\n]{0,16}(?:拦下|拦住)/gi,
   /系统不允许[^，。！？\n]{0,16}/gi,
-  /(?:权限[^，。！？\n]{0,16}(?:不允许|被拒)|没有权限)/gi,
+  /(?:权限[^，。！？\n]{0,16}(?:不允许|被拒)|没有[^，。！？\n]{0,16}权限|被拒)/gi,
   /\b(?:blocked\s+by|not\s+allowed|permission\s+denied)\b/gi,
 ];
 const COMMAND_HANDOFF_REGEXES: readonly RegExp[] = [
   /(?:打开|启动)\s*[「“"'‘]?终端[」”"'’]?(?:\s*App)?/gi,
-  /(?:粘贴|复制|贴)[^。！？\n]{0,32}(?:这|下面|下方)(?:[一二三四五六七八九十\d]+)?行/gi,
-  /(?:粘贴|复制|贴到?)[^。！？\n]{0,24}终端/gi,
+  /(?:粘贴?|复制|贴)[^。！？\n]{0,32}(?:这|下面|下方)(?:[一二三四五六七八九十\d]+)?行/gi,
+  /(?:粘贴?|复制|贴到?)[^。！？\n]{0,24}终端/gi,
   /(?:你可以|你自己|请你?)[^。！？\n]{0,24}(?:执行|运行)[^。！？\n]{0,12}(?:这|下面|下方)(?:[一二三四五六七八九十\d]+)?行/gi,
+  /(?:你(?:可以|自己|自行)?|请)[^。！？\n]{0,24}终端[^。！？\n]{0,24}(?:执行|运行|跑|粘|贴|复制)/gi,
   /\bopen\s+(?:the\s+)?["“]?Terminal["”]?\s*(?:app)?[^.!?\n]{0,80}\bpaste\b/gi,
 ];
 
@@ -96,6 +98,7 @@ export function detectReplyEgressLeaks(
     return { categories: [], matchedTokens: [] };
   }
 
+  const userText = extractUserRequest(turnUserText);
   const categories: ReplyEgressLeakCategory[] = [];
   const matchedTokens: string[] = [];
 
@@ -130,7 +133,7 @@ export function detectReplyEgressLeaks(
 
   // Keep causal shapes tied to an attempted action. Code examples have already been removed.
   for (const sentence of outsideFences.split(/[。！？\n]|(?<=[.!?])\s+/)) {
-    if (PERMISSION_SETTINGS_QUESTION_RE.test(turnUserText) && !/我|这边|刚才|\b(?:I|we|my|our)\b/i.test(sentence)) continue;
+    if (PERMISSION_SETTINGS_QUESTION_RE.test(userText) && !/我|这边|刚才|\b(?:I|we|my|our)\b/i.test(sentence)) continue;
     if (!OWN_ACTION_RE.test(sentence) && !/^\s*(?:被.{0,16}(?:拦下|拦住)|permission denied|not allowed|blocked by)/i.test(sentence)) continue;
     for (const regex of INVENTED_CAUSE_REGEXES) {
       for (const match of sentence.matchAll(regex)) {
@@ -140,7 +143,7 @@ export function detectReplyEgressLeaks(
     }
   }
 
-  if (!userExplicitlyRequestsCommand(turnUserText)) {
+  if (!userExplicitlyRequestsCommand(userText)) {
     for (const regex of COMMAND_HANDOFF_REGEXES) {
       for (const match of outsideFences.matchAll(regex)) {
         addCategory('command_handoff');
@@ -158,9 +161,9 @@ export function detectReplyEgressLeaks(
     && !CJK_CHAR_RE.test(trimmedOutside)
   ) {
     if (
-      turnUserText
-      && CJK_CHAR_RE.test(turnUserText)
-      && !userExplicitlyRequestsEnglish(turnUserText)
+      userText
+      && CJK_CHAR_RE.test(userText)
+      && !userExplicitlyRequestsEnglish(userText)
       && trimmedOutside.split(/\s+/).length >= (narration ? MIN_ENGLISH_NARRATION_WORDS : MIN_ENGLISH_WHITESPACE_TOKENS)
     ) {
       const latinWords = trimmedOutside.match(LATIN_WORD_RE) ?? [];

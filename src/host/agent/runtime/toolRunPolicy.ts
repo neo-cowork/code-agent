@@ -1,4 +1,4 @@
-import { INABILITY_REPLY_CONTRACT } from '../../../shared/inabilityReplyContract';
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { ToolDefinition } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
 import { ASK_USER_QUESTION_TOOL_NAMES } from '../../../shared/constants/tools';
@@ -80,7 +80,7 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   // （issue #1994），重试指引不许再把模型引回这个不可用工具。
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
-  return INABILITY_REPLY_CONTRACT.en.guidance + '\n' + (askDenied
+  return getInabilityReplyGuidance(currentTurnUserPrompt(ctx)) + '\n' + (askDenied
     ? 'If user input is needed, state the missing input in your final text instead of calling an interactive tool.'
     : 'AskUserQuestion remains available; call it directly when the current task requires user input.');
 }
