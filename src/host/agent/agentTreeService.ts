@@ -303,7 +303,7 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
     for (let callIndex = calls.length - 1; callIndex >= 0; callIndex -= 1) {
       const call = calls[callIndex];
       if (call.name !== tool) continue;
-      const target = extractToolStepTarget(call.arguments);
+      const target = extractToolStepTarget(call.arguments, call.name);
       const action = extractToolStepAction(call.arguments);
       return {
         tool,

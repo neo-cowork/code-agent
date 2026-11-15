@@ -277,7 +277,7 @@ export class ToolExecutionEngine {
             sessionId: this.ctx.sessionId,
             turnId: this.ctx.turn.currentTurnId,
             agentId: this.ctx.agentId,
-          }) ?? extractToolStepTarget(entry.toolCall.arguments),
+          }) ?? extractToolStepTarget(entry.toolCall.arguments, entry.toolCall.name),
           action: extractToolStepAction(entry.toolCall.arguments),
           ...(parallel
             ? { parallel: true }

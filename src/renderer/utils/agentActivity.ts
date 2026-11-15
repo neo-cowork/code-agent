@@ -58,6 +58,7 @@ export function describeLastToolStep(
   const targetArgs = step.target || step.action
     ? {
       file_path: step.target,
+      output_path: step.target,
       path: step.target,
       notebook_path: step.target,
       command: step.target,

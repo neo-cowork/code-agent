@@ -35,3 +35,12 @@ describe('Excel call labels share host action categories', () => {
     }
   });
 });
+
+
+it('helper generate activity names the written destination when an unused input path is also present', async () => {
+  const { extractToolStepTarget } = await import('../../../src/host/agent/toolStepTarget');
+  const args = { action: 'generate', file_path: '/contracts/source.xlsx', output_path: '/work/汇总.xlsx' };
+  const target = extractToolStepTarget(args, 'ExcelAutomate');
+  expect(target).toBe(args.output_path);
+  expect(describeLastToolStep({ tool: 'ExcelAutomate', action: args.action, target, at: 1 }, zh)).toBe('写入 汇总.xlsx');
+});

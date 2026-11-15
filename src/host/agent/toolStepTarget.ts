@@ -3,9 +3,11 @@ const COMMAND_PREVIEW_LENGTH = 80;
 
 export function extractToolStepTarget(
   args: Record<string, unknown> | undefined,
+  toolName?: string,
 ): string | undefined {
   if (!args) return undefined;
-  for (const key of TOOL_TARGET_KEYS) {
+  const keys = toolName === 'ExcelAutomate' && args.action === 'generate' ? ['output_path'] : TOOL_TARGET_KEYS;
+  for (const key of keys) {
     const value = args[key];
     if (typeof value !== 'string') continue;
     const normalized = value.trim();
