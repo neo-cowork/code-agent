@@ -13,6 +13,8 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: uiState.language } }) }),
 }));
 
+import { wrapWithTurnSystemContext } from '../../../src/shared/utils/turnScaffold';
+import { getInabilityReplyGuidance, INABILITY_REPLY_CONTRACT } from '../../../src/shared/inabilityReplyContract';
 import { describeDeniedShellCalls } from '../../../src/host/agent/runtime/foregroundShellDenial';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
@@ -23,7 +25,7 @@ import { buildRuleString } from '../../../src/shared/permissionRuleTranslate';
 const ctx = { sessionId: 'fg-shell' } as unknown as RuntimeContext;
 const CJK_OR_FULLWIDTH = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/;
 const EXPECTED_ZH_FINAL_MESSAGE =
-  '我这边没法直接帮你执行这条命令，命令没有运行。可以让我交给后台任务来做，届时会按你的权限规则询问你。';
+  '命令没有运行，相关内容没有改动。我可以先帮你查看要处理的内容，或交给后台任务，操作前会先问你。';
 
 function buildTurnCtx(runUserPrompt?: string): RuntimeContext {
   const turn = new TurnState();
@@ -44,7 +46,7 @@ describe('describeDeniedShellCalls', () => {
     getPolicyEngine().loadUserRules({ ask: [buildRuleString({ tool: 'Bash', pattern: 'rm *' })] }, 'user-ui');
     const out = describeDeniedShellCalls(ctx, [{ name: 'Bash' }]);
     expect(out?.finalMessage).toContain('命令没有运行');
-    expect(out?.guidance).toContain('NOT run');
+    expect(out?.guidance).toContain('该动作没有执行');
     expect(out?.guidance).not.toMatch(/Bash is disabled/i);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Bash call dropped before approval'), expect.objectContaining({
       cause: 'tool-not-in-run-toolset',
@@ -72,7 +74,7 @@ describe('describeDeniedShellCalls', () => {
       [{ name: 'Bash' }],
     );
     expect(out?.finalMessage).toBe(EXPECTED_ZH_FINAL_MESSAGE);
-    expect(out?.guidance).toContain('Reply in the same language the user is writing in.');
+    expect(out?.guidance).toContain('用中文回复。');
   });
 
   it('Chinese shell requests with ASCII paths or commands stay Chinese instead of flipping to English', () => {
@@ -123,9 +125,20 @@ describe('describeDeniedShellCalls', () => {
       const out = describeDeniedShellCalls(buildTurnCtx(prompt), [{ name: 'Bash' }]);
       expect(out?.guidance).not.toMatch(BANNED);
       expect(out?.finalMessage).not.toMatch(BANNED);
-      expect(out?.guidance).toContain('NOT run');
-      expect(out?.guidance).toContain('spawn_agent');
+      expect(out?.guidance).toContain(prompt.startsWith('Please') ? 'NOT run' : '该动作没有执行');
+      expect(out?.guidance).toContain(prompt.startsWith('Please') ? 'background task' : '后台任务');
+      expect(out?.guidance).not.toContain('spawn_agent');
+      expect(out?.guidance).toBe(getInabilityReplyGuidance(prompt));
+      expect(out?.finalMessage).not.toMatch(/权限|拦下|不允许|终端|blocked|not allowed|permission|terminal/i);
     }
+  });
+
+  it('English request inside Chinese system scaffolding keeps the English final message', () => {
+    const prompt = wrapWithTurnSystemContext(['本轮未收到任何上传附件。只查看当前任务文件夹，不要搜索其他位置。'],
+      'Please compress the notes folder into notes-backup.zip in the current directory.');
+    const out = describeDeniedShellCalls(buildTurnCtx(prompt), [{ name: 'Bash' }]);
+    expect(out?.finalMessage).toBe(INABILITY_REPLY_CONTRACT.en.finalMessage);
+    expect(out?.finalMessage).not.toMatch(CJK_OR_FULLWIDTH);
   });
 
   it('非 Bash 工具被禁不触发本交代', () => {

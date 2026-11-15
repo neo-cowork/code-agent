@@ -353,6 +353,8 @@ export type PermissionDeliveryOutcome =
 export type PermissionDenialSource =
   /** 真人在审批界面上点了拒绝 */
   | 'user'
+  /** 同一条用户消息（或同一无人值守 run）内真人刚拒绝过同族工具，host 守卫自动拦截（不出卡） */
+  | 'goal-sticky-host'
   /** 运行环境没有审批界面（非交互 CLI / web headless），需确认的一律 fail-closed 自动拒 */
   | 'no-approval-ui'
   /** 审批请求已发出但无人应答，超时自动拒 */

@@ -38,19 +38,21 @@ import { PlanetSphere } from '../brand/PlanetSphere';
 import { NeoBrandMark } from '../features/sidebar/NeoBrandMark';
 import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
+import { interpolate } from '../../i18n/interpolate';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBundledCapabilityStore } from '../../stores/bundledCapabilityStore';
 import {
   buildOnboardingModelSelection,
+  getOnboardingApiCompatibilityOptions,
   getOnboardingProviderCards,
-  ONBOARDING_API_COMPATIBILITY_OPTIONS,
-  ONBOARDING_RELAY_CARD,
+  getOnboardingRelayCard,
   ONBOARDING_STEPS,
   selectOnboardingDefaultModel,
   type OnboardingDiscoveredModel,
   type OnboardingRoute,
   type OnboardingStep,
+  type OnboardingTranslations,
 } from './modelOnboarding';
 import { VoiceHotkeyOnboardingStep } from './VoiceHotkeyOnboardingStep';
 import { ConnectorsOnboardingStep } from './ConnectorsOnboardingStep';
@@ -81,9 +83,13 @@ export interface ModelOnboardingModalProps {
 
 type StepStatus = 'idle' | 'probing' | 'saving' | 'error';
 
-function formatProviderError(result: ProviderTestResult | DiscoverModelsResult | undefined, fallback: string): string {
+function formatProviderError(
+  result: ProviderTestResult | DiscoverModelsResult | undefined,
+  fallback: string,
+  separator: string,
+): string {
   if (!result?.error) return fallback;
-  return [result.error.message, result.error.suggestion].filter(Boolean).join('。');
+  return [result.error.message, result.error.suggestion].filter(Boolean).join(separator);
 }
 
 function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
@@ -98,61 +104,72 @@ function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
   );
 }
 
-function getOnboardingEngineStatus(source: AgentEngineSourceDescriptor): {
+function getOnboardingEngineStatus(
+  source: AgentEngineSourceDescriptor,
+  text: OnboardingTranslations,
+): {
   detail: string;
   badge: string;
 } {
+  const s = text.engineStatus;
   if (source.selectable) {
     return {
-      detail: `${source.version || '已检测'} · Adapter 已开放 · 官方登录已确认`,
-      badge: '可用',
+      detail: interpolate(s.selectableDetail, {
+        version: source.version || s.detectedFallbackVersion,
+      }),
+      badge: s.badgeAvailable,
     };
   }
   if (source.detected) {
     // 找到了客户端但探测没跑通：这是「此刻问不出来」，不是「你没装」也不是「你没登录」。
     // 说成后两者会让用户去装一个已经装好的东西、或去登一个已经登好的账号。
     if (source.probeError) {
-      return { detail: '已检测到客户端 · 本机探测未完成，稍后重试', badge: '待重试' };
+      return { detail: s.probeErrorDetail, badge: s.badgeRetryLater };
     }
     if (source.evidence !== 'production') {
       if (source.authState === 'needs_login') {
         return {
-          detail: '已检测 · CLI 未登录 · 生产 Adapter 未开放',
-          badge: '需登录',
+          detail: s.cliNeedsLoginUnverifiedDetail,
+          badge: s.badgeNeedsLogin,
         };
       }
       return {
         detail: source.evidence === 'local_spike'
-          ? '已检测 · 已有实机 Spike · 生产 Adapter 未开放'
-          : '已检测 · Adapter 尚未验证',
-        badge: '待开放',
+          ? s.localSpikeDetectedDetail
+          : s.unverifiedDetectedDetail,
+        badge: s.badgeComingSoon,
       };
     }
     if (source.authState === 'needs_login') {
-      return { detail: 'Adapter 已开放 · 请先在官方客户端登录', badge: '需登录' };
+      return { detail: s.clientNeedsLoginDetail, badge: s.badgeNeedsLogin };
     }
-    return { detail: 'Adapter 已开放 · 登录状态无法安全确认', badge: '待验证' };
+    return { detail: s.authUnconfirmedDetail, badge: s.badgePendingVerification };
   }
   if (source.evidence === 'production') {
-    return { detail: 'Adapter 已开放 · 本机未检测到客户端', badge: '未安装' };
+    return { detail: s.notInstalledDetail, badge: s.badgeNotInstalled };
   }
   if (source.evidence === 'local_spike') {
-    return { detail: '已有实机 Spike · 生产 Adapter 未开放', badge: '待开放' };
+    return { detail: s.localSpikeNotInstalledDetail, badge: s.badgeComingSoon };
   }
+  // 推荐语按 manifestId 走语言包；manifest 里的中文原文只在语言包没收录时兜底
+  const recommendations: Record<string, { label: string; reason: string } | undefined> = s.recommendations;
+  const recommendation = recommendations[source.manifestId] ?? source.recommendation;
   return {
-    detail: source.recommendation?.reason || '尚无本机协议证据',
-    badge: source.recommendation?.label || '推荐安装',
+    detail: recommendation?.reason || s.noEvidenceDetail,
+    badge: recommendation?.label || s.badgeRecommendedInstall,
   };
 }
 
 function OnboardingEngineCard({
   source,
+  text,
   onSelect,
 }: {
   source: AgentEngineSourceDescriptor;
+  text: OnboardingTranslations;
   onSelect: (source: AgentEngineSourceDescriptor) => void;
 }) {
-  const status = getOnboardingEngineStatus(source);
+  const status = getOnboardingEngineStatus(source, text);
   const content = (
     <>
       <EngineIcon source={source} />
@@ -204,9 +221,11 @@ function sourceModels(
 }
 
 export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onComplete, onSkip }) => {
-  const cards = useMemo(() => getOnboardingProviderCards(), []);
   const { t } = useI18n();
   const text = t.onboarding;
+  const cards = useMemo(() => getOnboardingProviderCards(text), [text]);
+  const compatibilityOptions = useMemo(() => getOnboardingApiCompatibilityOptions(text), [text]);
+  const relayCard = useMemo(() => getOnboardingRelayCard(text), [text]);
   const [step, setStep] = useState<ModalStep>('source');
   const voiceLiveInstalled = useBundledCapabilityStore(
     (state) => state.installed['builtin.voice-live'],
@@ -249,21 +268,21 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     }).catch((error: unknown) => {
       if (cancelled) return;
       setEngineSources([]);
-      setMessage(error instanceof Error ? error.message : '本机客户端探测失败');
+      setMessage(error instanceof Error ? error.message : text.probeLocalClientsFailed);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [text.probeLocalClientsFailed]);
 
-  const selectedCompatibility = ONBOARDING_API_COMPATIBILITY_OPTIONS.find(
+  const selectedCompatibility = compatibilityOptions.find(
     (option) => option.protocol === customProtocol,
   );
   const selectedCard = selectedProvider === 'custom'
     ? {
-        ...ONBOARDING_RELAY_CARD,
-        name: selectedCompatibility?.label || ONBOARDING_RELAY_CARD.name,
-        description: selectedCompatibility?.description || ONBOARDING_RELAY_CARD.description,
+        ...relayCard,
+        name: selectedCompatibility?.label || relayCard.name,
+        description: selectedCompatibility?.description || relayCard.description,
       }
     : cards.find((card) => card.id === selectedProvider);
   const isCustom = selectedProvider === 'custom';
@@ -320,7 +339,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       );
       if (!testResult.success) {
         setStatus('error');
-        setMessage(formatProviderError(testResult, text.connectionFailedFallback));
+        setMessage(formatProviderError(testResult, text.connectionFailedFallback, text.errorJoinSeparator));
         return;
       }
 
@@ -373,7 +392,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     try {
       if (route === 'subscription') {
         if (!selectedSource?.kind || !selectedSource.selectable) {
-          throw new Error('请选择已检测且可执行的官方客户端');
+          throw new Error(text.selectExecutableClientError);
         }
         const workingDirectory = currentSession?.workingDirectory ?? appWorkingDirectory ?? undefined;
         if (currentSessionId && workingDirectory) {
@@ -445,7 +464,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     <Modal
       isOpen
       size="full"
-      title="初始化 Neo"
+      title={text.wizardTitle}
       closeOnBackdropClick={false}
       closeOnEsc={false}
       showCloseButton={false}
@@ -462,7 +481,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
               ? text.voiceHotkeyImmediateHint
               : step === 'connectors'
                 ? text.connectorsFootnote
-                : route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
+                : route === 'subscription' ? text.officialCredentialFootnote : text.keyStaysLocal)}
           </div>
           <div className="flex items-center gap-2">
             {step === 'source' && onSkip ? (
@@ -479,7 +498,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 disabled={isBusy}
                 leftIcon={<ArrowLeft className="h-4 w-4" />}
               >
-                返回
+                {text.backButton}
               </Button>
             ) : null}
             {step === 'connectors' ? (
@@ -513,7 +532,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 disabled={!apiKey.trim() || (isCustom && !endpoint)}
                 leftIcon={<ShieldCheck className="h-4 w-4" />}
               >
-                验证并选择模型
+                {text.verifyAndSelectModelButton}
               </Button>
             ) : null}
             {step === 'model' ? (
@@ -586,7 +605,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     {done ? '✓' : index + 1}
                   </span>
                   <span className={active ? 'font-medium text-zinc-100' : 'font-medium text-zinc-300'}>
-                    {id === 'source' ? '连接来源' : '默认模型'}
+                    {id === 'source' ? text.stepSource : text.stepDefaultModel}
                   </span>
                 </div>
               </div>
@@ -611,7 +630,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             <div
               className="flex border-b border-zinc-700"
               role="tablist"
-              aria-label="连接来源"
+              aria-label={text.routeTabAriaLabel}
               data-testid="onboarding-route-tabs"
             >
               <button
@@ -627,7 +646,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     : 'border-transparent border-b-zinc-700 text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
                 }`}
               >
-                官方账号 / 订阅
+                {text.routeTabSubscription}
               </button>
               <button
                 type="button"
@@ -642,7 +661,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     : 'border-transparent border-b-zinc-700 text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300'
                 }`}
               >
-                API Key
+                {text.routeTabApi}
               </button>
             </div>
 
@@ -654,23 +673,24 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 data-testid="onboarding-subscription-sources"
               >
                 <div>
-                  <h3 className="text-sm font-medium text-zinc-100">选择本机已登录的官方客户端</h3>
-                  <p className="mt-1 text-xs text-zinc-500">整卡点击后直接进入默认模型；未通过 Adapter 门禁的来源不会伪装成可用。</p>
+                  <h3 className="text-sm font-medium text-zinc-100">{text.subscriptionHeading}</h3>
+                  <p className="mt-1 text-xs text-zinc-500">{text.subscriptionHint}</p>
                 </div>
                 {engineSources === null ? (
                   <div className="rounded-lg border border-zinc-800 p-6 text-center text-xs text-zinc-500">
                     <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
-                    正在探测本机客户端…
+                    {text.detectingClients}
                   </div>
                 ) : (
                   <>
                     <div>
-                      <h4 className="text-xs font-medium text-zinc-300">本机已检测</h4>
+                      <h4 className="text-xs font-medium text-zinc-300">{text.detectedSectionTitle}</h4>
                       <div className="mt-2 grid gap-2 md:grid-cols-2">
                         {detectedClientSources.map((source) => (
                           <OnboardingEngineCard
                             key={source.manifestId}
                             source={source}
+                            text={text}
                             onSelect={chooseSubscriptionSource}
                           />
                         ))}
@@ -678,16 +698,17 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     </div>
                     {detectedClientSources.length === 0 ? (
                       <div className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-5 text-center text-xs text-zinc-500">
-                        未检测到本机官方客户端。
+                        {text.noClientsDetected}
                       </div>
                     ) : null}
                     {installClientSources.length > 0 ? <div>
-                      <h4 className="text-xs font-medium text-zinc-300">未安装 / 推荐项</h4>
+                      <h4 className="text-xs font-medium text-zinc-300">{text.notInstalledSectionTitle}</h4>
                       <div className="mt-2 grid gap-2 md:grid-cols-2">
                         {installClientSources.map((source) => (
                           <OnboardingEngineCard
                             key={source.manifestId}
                             source={source}
+                            text={text}
                             onSelect={chooseSubscriptionSource}
                           />
                         ))}
@@ -704,8 +725,8 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 data-testid="onboarding-api-source"
               >
                 <div>
-                  <h3 className="text-sm font-medium text-zinc-100">连接官方 API 或兼容接口</h3>
-                  <p className="mt-1 text-xs text-zinc-500">先验证接口并读取真实模型目录，再进入默认模型。</p>
+                  <h3 className="text-sm font-medium text-zinc-100">{text.apiHeading}</h3>
+                  <p className="mt-1 text-xs text-zinc-500">{text.apiHint}</p>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {cards.map((card) => (
@@ -725,7 +746,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                   ))}
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {ONBOARDING_API_COMPATIBILITY_OPTIONS.map((option) => (
+                  {compatibilityOptions.map((option) => (
                     <button
                       key={option.id}
                       type="button"
@@ -757,7 +778,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     )}
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm text-zinc-200">API Key</label>
+                    <label className="mb-2 block text-sm text-zinc-200">{text.keyFieldLabel}</label>
                     <Input
                       type="password"
                       value={apiKey}
@@ -773,11 +794,15 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         ) : (
           <section className="space-y-4" data-testid="onboarding-model-step">
             <div>
-              <h3 className="text-sm font-medium text-zinc-100">确认默认模型</h3>
+              <h3 className="text-sm font-medium text-zinc-100">{text.confirmDefaultModelHeading}</h3>
               <p className="mt-1 text-xs text-zinc-500">
                 {route === 'subscription'
-                  ? `${selectedSource?.label || '官方客户端'} 只展示探测到的真实模型能力。`
-                  : `${selectedCard?.name || selectedProvider} 已通过连接验证。`}
+                  ? interpolate(text.subscriptionModelHint, {
+                      source: selectedSource?.label || text.officialClientFallbackName,
+                    })
+                  : interpolate(text.apiModelVerifiedHint, {
+                      provider: selectedCard?.name || selectedProvider,
+                    })}
               </p>
             </div>
             {route === 'subscription' && selectedSource?.modelSelection === 'client_default' ? (
@@ -789,9 +814,9 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
               >
                 <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
                   <Check className="h-4 w-4 text-badge-info" />
-                  客户端默认模型
+                  {text.clientDefaultModelTitle}
                 </span>
-                <span className="mt-1 block text-xs text-zinc-500">官方客户端没有返回可枚举目录，模型选择继续由客户端管理。</span>
+                <span className="mt-1 block text-xs text-zinc-500">{text.clientDefaultModelHint}</span>
               </button>
             ) : (
               <div className="grid gap-2 md:grid-cols-2">
