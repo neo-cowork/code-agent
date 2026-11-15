@@ -1,3 +1,4 @@
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { localizeCronSessionTitle, parseCronSessionTitle } from '@shared/cronSessionTitle';
 import type { SessionStatus } from '@shared/contract/session';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -75,6 +76,11 @@ export function matchesSessionStatusFilter(
 }
 
 export function getDisplaySessionTitle(title?: string | null, language: Language = 'zh'): string {
+  const cleanTitle = humanizeInternalText(title ?? '', language, { omitIds: true }).text;
+  return localizeDisplaySessionTitle(cleanTitle, language);
+}
+
+function localizeDisplaySessionTitle(title: string, language: Language): string {
   const rawTitle = title?.trim() ?? '';
   const placeholder = getSessionTitlePlaceholder(rawTitle, language);
   if (placeholder !== null) return placeholder;

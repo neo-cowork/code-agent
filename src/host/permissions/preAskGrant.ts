@@ -12,6 +12,7 @@ import { matchToolGrant } from './toolGrantStore';
 
 export function resolvePreAskGrant(input: {
   toolName: string;
+  command?: string;
   sessionId: string | undefined;
   sourceMessageId?: string;
   runId?: string;
@@ -30,6 +31,7 @@ export function resolvePreAskGrant(input: {
         runId: input.runId,
         turnOrigin: input.turnOrigin,
         tool: input.toolName,
+        details: { command: input.command },
       },
       { log: false },
     )

@@ -805,6 +805,18 @@ export class TaskManager extends EventEmitter {
    * routing_resolved 降级信号。
    */
   emitAgentEventForSession(sessionId: string, event: AgentEvent): void {
+    if (!this.onAgentEvent) {
+      // N-FIX-FLAKY-TERMINAL-RESULT-PROJECTION-LATE-SETTLE：initialize() 之前的迟到
+      // emit（如后台停止说明经投影重试在宿主未起/已拆窗口补投）不能走 handleAgentEvent
+      // —— 里面的 this.onAgentEvent! 抛 TypeError，又因上面的 void 无人接，变成
+      // unhandled rejection 把整轮 vitest 假红。这里安静丢弃并留一条可区分的 warn。
+      logger.warn('Agent event emitted before TaskManager initialize(); event dropped', {
+        reason: 'emit_agent_event_before_initialize',
+        sessionId,
+        eventType: event.type,
+      });
+      return;
+    }
     void this.handleAgentEvent(sessionId, event);
   }
 
