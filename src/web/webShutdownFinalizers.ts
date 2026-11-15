@@ -203,9 +203,26 @@ export async function runShutdownFinalizers(
   now: () => number = Date.now,
 ): Promise<void> {
   // 先记 pid 再断连——断连成功的 server 自己会退，记晚了就没得记了。
+  const startedAt = now();
   const mcpPids = await captureMcpStdioPids();
   const results = await Promise.all(FINALIZERS.map((f) => runOne(f, capMs, now)));
   const killed = killSurvivingMcpChildren(mcpPids);
   log(`[shutdown] ${results.join(' ')} mcp.killed=${killed}/${mcpPids.length}`);
-  await (await import('../host/mcp/cuaHelperReaper')).reapCuaHelperDaemons({ phase: 'shutdown', ownProxyPids: mcpPids, log });
+  // reaper 不得越过关库前总预算：只用本函数 capMs 的剩余额度（含动态 import、ps、收尸等待）
+  const remaining = capMs - (now() - startedAt);
+  if (remaining <= 0) {
+    log('[shutdown] cua.reap skipped(budget_exhausted)');
+    return;
+  }
+  const reaped = (await import('../host/mcp/cuaHelperReaper')).reapCuaHelperDaemons({ phase: 'shutdown', ownProxyPids: mcpPids, log });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = await Promise.race([
+    reaped.then(() => false),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(true), remaining);
+      timer.unref?.();
+    }),
+  ]);
+  clearTimeout(timer);
+  if (timedOut) log(`[shutdown] cua.reap timeout(${remaining}ms)`);
 }

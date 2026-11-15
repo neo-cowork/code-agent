@@ -288,7 +288,8 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
 // ----------------------------------------------------------------------------
 // cua helper daemon reap —— 真实脱管的假进程（PPID 1），经生产入口 runShutdownFinalizers
 // ----------------------------------------------------------------------------
-describe('cua helper daemon reap', () => {
+// reaper 只在 darwin 工作（非 darwin 不打日志）；真进程用例只能在 macOS 跑，Linux CI 跳过
+describe.runIf(process.platform === 'darwin')('cua helper daemon reap', () => {
   let dir: string;
   let fake: string;
   let sock: string;
@@ -439,6 +440,40 @@ describe('cua helper daemon reap', () => {
     await runShutdownFinalizers(1_000, (m) => lines.push(m));
     expect(lines.find((l) => l.includes('cua.reap'))).toContain('helper_path_unresolved');
     expect(alive(daemon)).toBe(true);
+  });
+});
+
+describe('cua reap 受关库前总预算约束', () => {
+  afterEach(() => {
+    vi.doUnmock('../../../src/host/mcp/cuaHelperReaper');
+    vi.resetModules();
+  });
+
+  it('reaper 挂死时到 capMs 剩余额度放行并留痕，不拖过总预算', async () => {
+    vi.resetModules();
+    vi.doMock('../../../src/host/mcp/cuaHelperReaper', () => ({
+      reapCuaHelperDaemons: () => new Promise<void>(() => {}),
+    }));
+    const { runShutdownFinalizers: run } = await import('../../../src/web/webShutdownFinalizers');
+    const lines: string[] = [];
+    const t0 = Date.now();
+    await run(300, (m) => lines.push(m));
+    const elapsed = Date.now() - t0;
+    expect(lines.join('\n')).toMatch(/cua\.reap timeout\(\d+ms\)/);
+    expect(elapsed).toBeLessThan(450);
+  });
+
+  it('预算已被前面步骤烧光时直接跳过并留痕', async () => {
+    vi.resetModules();
+    const reap = vi.fn(async () => {});
+    vi.doMock('../../../src/host/mcp/cuaHelperReaper', () => ({ reapCuaHelperDaemons: reap }));
+    const { runShutdownFinalizers: run } = await import('../../../src/web/webShutdownFinalizers');
+    let clock = 0;
+    const lines: string[] = [];
+    disconnectAll.mockImplementation(async () => { clock += 500; });
+    await run(300, (m) => lines.push(m), () => clock);
+    expect(lines.join('\n')).toContain('cua.reap skipped(budget_exhausted)');
+    expect(reap).not.toHaveBeenCalled();
   });
 });
 
