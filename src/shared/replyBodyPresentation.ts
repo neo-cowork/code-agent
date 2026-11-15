@@ -1,17 +1,58 @@
+import remarkParse from 'remark-parse';
+import { unified } from 'unified';
 import { humanizeInternalText, type InternalTextLanguage } from './humanizeInternalText';
 
-/** Display projection only: never write this result back into stored messages. */
-export function presentReplyBody(input: string, lang: InternalTextLanguage = 'zh') {
+const markdown = unified().use(remarkParse);
+type MarkdownNode = {
+  type: string;
+  lang?: string | null;
+  position?: { start: { offset?: number }; end: { offset?: number } };
+  children?: MarkdownNode[];
+};
+
+/** Display projection for explicitly marked host protocols; stored/user-authored text stays intact. */
+export function presentReplyBody(input: string, lang: InternalTextLanguage = 'zh', options: {
+  protocol?: 'wake' | 'cron';
+  isStreaming?: boolean;
+} = {}) {
   const technical: string[] = [];
   const reasons: string[] = [];
   const evidence: string[] = [];
+  if (!options.protocol) return { text: input, rationale: undefined, evidence: undefined, technicalDetails: undefined };
   const seen = new Set<string>();
-  const tagNames = ['decision', 'rationale', 'evidence', 'cron_event_decision'];
+  const tagNames = options.protocol === 'cron' ? ['cron_event_decision'] : ['decision', 'rationale', 'evidence'];
   const tags = tagNames.join('|');
+  const masked = input.split('');
+  const removed: Array<[number, number]> = [];
+  const conceal = (start: number, end: number) => {
+    technical.push(input.slice(start, end));
+    removed.push([start, end]);
+    masked.fill('\0', start, end);
+  };
+  // CommonMark offsets protect fenced (including ~~~/long fences), indented and inline code.
+  const protectCode = (node: MarkdownNode) => {
+    if (node.type === 'code' || node.type === 'inlineCode') {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start === undefined || end === undefined) return;
+      masked.fill('\0', start, end);
+      if (options.protocol === 'wake' && node.type === 'code' && node.lang
+        && (node.lang === 'wake_proposals' || (options.isStreaming && 'wake_proposals'.startsWith(node.lang)))) {
+        const raw = input.slice(start, end);
+        const fence = /^ {0,3}(`{3,}|~{3,})/.exec(raw)?.[1];
+        const closed = fence && new RegExp(`(?:^|\\n) {0,3}${fence[0]}{${fence.length},}[ \\t]*$`).test(raw);
+        if (closed || options.isStreaming) conceal(start, end);
+      }
+      return;
+    }
+    node.children?.forEach(protectCode);
+  };
+  protectCode(markdown.parse(input));
   const pattern = new RegExp(`<(${tags})\\b[^>]*>([\\s\\S]*?)<\\/\\1\\s*>`, 'gi');
-  let text = input.replace(pattern, (raw: string, tag: string, value: string) => {
-    technical.push(raw);
-    const name = tag.toLowerCase();
+  for (const match of masked.join('').matchAll(pattern)) {
+    const start = match.index;
+    const value = input.slice(start + match[0].indexOf('>') + 1, start + match[0].lastIndexOf('</'));
+    const name = match[1].toLowerCase();
     if (name !== 'decision') {
       const clean = humanizeInternalText(value.trim(), lang).text;
       if (clean && !seen.has(clean)) {
@@ -19,31 +60,27 @@ export function presentReplyBody(input: string, lang: InternalTextLanguage = 'zh
         (name === 'evidence' ? evidence : reasons).push(clean);
       }
     }
-    return '';
-  });
-  // Role wake proposals are parsed by the host into proposal cards; the raw fenced JSON is not reply prose.
-  text = text.replace(/```wake_proposals\b[\s\S]*?(?:```|$)/gi, (raw) => {
-    technical.push(raw);
-    return '';
-  });
-  const fence = text.lastIndexOf('```');
-  if (fence >= 0 && text.length - fence > 3 && '```wake_proposals'.startsWith(text.slice(fence).toLowerCase())) {
-    technical.push(text.slice(fence));
-    text = text.slice(0, fence);
+    conceal(start, start + match[0].length);
   }
-  // A streaming prefix must not flash raw tags before its closing tag arrives.
-  text = text.replace(new RegExp(`<(?:${tags})(?:\\b[^>]*>[\\s\\S]*|[^>]*)$`, 'i'), (raw) => {
-    technical.push(raw);
-    return '';
-  });
-  // Also hide partially received tag names without suppressing ordinary prose.
-  const lastAngle = text.lastIndexOf('<');
-  if (lastAngle >= 0 && tagNames.some((tag) => tag.startsWith(text.slice(lastAngle + 1).toLowerCase()))) {
-    technical.push(text.slice(lastAngle));
-    text = text.slice(0, lastAngle);
+  // Incomplete controls are hidden only while the explicitly marked message is streaming.
+  if (options.isStreaming) {
+    const pending = new RegExp(`<(?:${tags})\\b(?:[^>]*>[\\s\\S]*|[^>]*)$`, 'i').exec(masked.join(''));
+    if (pending) conceal(pending.index, input.length);
+    const visible = masked.join('');
+    const lastAngle = visible.lastIndexOf('<');
+    if (lastAngle >= 0 && tagNames.some((tag) => tag.startsWith(visible.slice(lastAngle + 1).toLowerCase()))) {
+      conceal(lastAngle, input.length);
+    }
   }
+  let cursor = 0;
+  let text = '';
+  for (const [start, end] of removed.sort((a, b) => a[0] - b[0])) {
+    if (start >= cursor) text += input.slice(cursor, start);
+    cursor = Math.max(cursor, end);
+  }
+  text += input.slice(cursor);
   return {
-    text: technical.length ? text.trim() : text,
+    text: removed.length ? text.trim() : text,
     rationale: reasons.join('\n') || undefined,
     evidence: evidence.join('\n') || undefined,
     technicalDetails: technical.join('\n') || undefined,

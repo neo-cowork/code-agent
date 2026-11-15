@@ -189,8 +189,10 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
   it('7 system-inserted reply and wake/event control text', () => {
     const nodes: TraceNode[] = [
       { id: 'system', type: 'system', timestamp: 1, content: `read_file · ${slug} · session_work123` },
-      { id: 'wake', type: 'assistant_text', timestamp: 2, content: 'Report ready.<decision>report</decision><rationale>Review the summary.</rationale>' },
-      { id: 'event', type: 'assistant_text', timestamp: 3, content: 'Mail checked.<cron_event_decision>Nothing to send.</cron_event_decision>' },
+      { id: 'wake', type: 'assistant_text', timestamp: 2, content: 'Report ready.<decision>report</decision><rationale>Review the summary.</rationale>',
+        metadata: { wakeRationale: { rationale: 'Review the summary.', missing: false } } },
+      { id: 'event', type: 'assistant_text', timestamp: 3, content: 'Mail checked.<cron_event_decision>Nothing to send.</cron_event_decision>',
+        metadata: { automation: { automationId: 'cron:mail', automationType: 'cron', event: 'completed', sourceSessionId: 'source' } } },
       { id: 'skill-status', type: 'system', subtype: 'skill_status', timestamp: 4, content: `<command-message>Loading skill: ${slug}</command-message><command-name>${slug}</command-name>` },
     ];
     const { container } = render(<>{nodes.map((node) => <TraceNodeRenderer key={node.id} node={node} />)}</>);

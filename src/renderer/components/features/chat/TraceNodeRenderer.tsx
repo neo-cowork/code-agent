@@ -364,7 +364,10 @@ const AssistantTextNode: React.FC<{
     : t.backgroundPanel.preannounce.generic;
   const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
     ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
-  const reply = presentReplyBody(localizedContent, language);
+  const automationType = node.metadata?.automation?.automationType;
+  const protocol = node.metadata?.wakeRationale || automationType === 'role_wake'
+    ? 'wake' : automationType === 'cron' ? 'cron' : undefined;
+  const reply = presentReplyBody(localizedContent, language, { protocol, isStreaming: Boolean(turnStreaming) });
   const wakeFields = metadataWakeFields ?? (reply.rationale || reply.evidence
     ? { rationale: reply.rationale, evidence: reply.evidence, missing: !reply.rationale }
     : null);
