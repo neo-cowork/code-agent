@@ -49,7 +49,7 @@ export function loadSoul(workingDirectory?: string): string {
 
   // 用户级 SOUL.md — 替换 IDENTITY 核心自我块
   const soulPath = path.join(getUserConfigDir(), 'SOUL.md');
-  const soulContent = neutralizeLegacyLanguageLine(readFileIfExists(soulPath));
+  const soulContent = readFileIfExists(soulPath);
 
   // 项目级 PROFILE.md — 作为项目扩展追加
   let profileContent: string | null = null;
@@ -98,14 +98,14 @@ export function loadSoul(workingDirectory?: string): string {
   }
 
   cachedSoul = parts.join('\n\n').trim();
-  return cachedSoul;
+  return neutralizeLegacyLanguageLine(cachedSoul);
 }
 
 /**
  * 获取当前人格（带缓存）
  */
 export function getSoul(): string {
-  if (cachedSoul !== null) return cachedSoul;
+  if (cachedSoul !== null) return neutralizeLegacyLanguageLine(cachedSoul);
   return loadSoul(currentWorkingDirectory);
 }
 
@@ -175,11 +175,17 @@ export function unwatchSoulFiles(): void {
 const LEGACY_ZH_LANGUAGE_LINE = '用中文沟通';
 const NEUTRAL_LANGUAGE_LINE = "Reply in the user's language";
 
-function neutralizeLegacyLanguageLine(content: string | null): string | null {
-  if (!content || !content.includes(LEGACY_ZH_LANGUAGE_LINE) || readPromptLanguage() !== 'en') {
+let hasLoggedNeutralized = false;
+
+// 每次取用时按当前 UI 语言判断（缓存里存原文），运行中切换语言也不会残留中立句。
+function neutralizeLegacyLanguageLine(content: string): string {
+  if (!content.includes(LEGACY_ZH_LANGUAGE_LINE) || readPromptLanguage() !== 'en') {
     return content;
   }
-  logger.info('SOUL.md contains legacy Chinese-only language line; neutralized for en UI at load time');
+  if (!hasLoggedNeutralized) {
+    logger.info('SOUL.md contains legacy Chinese-only language line; neutralized for en UI at load time');
+    hasLoggedNeutralized = true;
+  }
   return content.split(LEGACY_ZH_LANGUAGE_LINE).join(NEUTRAL_LANGUAGE_LINE);
 }
 
