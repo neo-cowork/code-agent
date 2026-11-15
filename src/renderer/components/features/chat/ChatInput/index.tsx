@@ -1660,7 +1660,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <ContextUsagePill />
 
             {/* 模型选择器（已合并 Agent Engine 选择到下拉框顶部 chip 行） */}
-            <div className="text-xs">
+            {/* min-w-0：窄屏（390）时模型名先截断，让给右端「放弃 / 继续」，不把主操作挤出输入框 */}
+            <div className="flex min-w-0 text-xs">
               <ModelSlot currentModel={modelConfig.model} />
             </div>
 

@@ -130,12 +130,12 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // 停住的任务只有这一处操作入口：「继续」为主，「放弃」并在同一处（输入框上方只说原因）。
   if (hasContinuation && !hasContent) {
     return (
-      <div className="flex items-center gap-1" data-testid="continue-run-control">
+      <div className="flex shrink-0 items-center gap-0.5" data-testid="continue-run-control">
         {onAbandon && (
           <button /* ds-allow:button: 与「继续」同组的紧凑文本按钮，需保持发送区紧凑布局 */
             type="button"
             onClick={onAbandon}
-            className="h-7 rounded-full px-2 text-xs text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200"
+            className="h-7 shrink-0 whitespace-nowrap rounded-full px-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200"
             data-testid="abandon-run-button"
           >
             {t.chat.durableAbandon}
@@ -144,7 +144,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         <button /* ds-allow:button: Continue 胶囊按钮包含图标与文本，需保持发送区紧凑布局 */
           type="button"
           onClick={onContinue}
-          className="flex h-7 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
+          className="flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
           aria-label={t.chatInput.continueAria}
           title={t.chatInput.continueAria}
           data-testid="continue-run-button"
