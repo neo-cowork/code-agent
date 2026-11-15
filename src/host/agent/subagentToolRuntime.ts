@@ -10,6 +10,7 @@ import { permissionModeAutoApproves, type PermissionMode } from '../permissions/
 // 读 run 有效视图；子代理链的 sessionId 在模块内映射到本会话活跃 run 的快照）。
 import { resolveSessionPermissionMode } from '../tools/toolPermissionClassification';
 import { mustAskUnderAcceptEdits } from '../tools/externalSideEffect';
+import { effectivePermissionLevel, excelActionMustAsk } from '../tools/effectivePermissionLevel';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import { isTaskOutputFileWriteAuthorized } from '../tools/fileWriteClassification';
 import type { ToolExecutionRequest } from './subagentPipeline';
@@ -135,7 +136,8 @@ export function createSubagentToolRuntime(input: {
         )
         // acceptEdits 下连接器写以 type:'file_write' 进来，档位判据只看 type 会放过工具名——
         // 出站 / 不可逆 / 进程类工具（mustAskUnderAcceptEdits）仍要落到 permission.request。
-        && !(mode === 'acceptEdits' && mustAskUnderAcceptEdits(request.tool))
+        && !(mode === 'acceptEdits'
+          && (mustAskUnderAcceptEdits(request.tool) || excelActionMustAsk(request.tool, request.details)))
       ) return true;
       return context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity });
     },
@@ -156,7 +158,7 @@ export function createSubagentToolRuntime(input: {
           workingDirectory: context.cwd,
         }),
         toolName,
-        permissionLevel: definition?.permissionLevel ?? 'read',
+        permissionLevel: definition ? effectivePermissionLevel(toolName, definition.permissionLevel, params) : 'read',
         path: (params.path as string | undefined) ?? (params.file_path as string | undefined),
         command: params.command as string | undefined,
         url: params.url as string | undefined,

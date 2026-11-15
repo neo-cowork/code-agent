@@ -9,6 +9,7 @@
 // 2. LLM classifier — 规则无法判断时，调用轻量模型分类
 // 3. Result caching — 避免重复分类相同工具调用模式
 
+import { excelActionIsFileEdit } from './effectivePermissionLevel';
 import { createLogger } from '../services/infra/logger';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -348,6 +349,16 @@ export class PermissionClassifier {
         decision: 'approve',
         reason: `工具权限级别为 read`,
         confidence: 1.0,
+        cached: false,
+      };
+    }
+
+    // R2b: ExcelAutomate edit/generate 不逐次询问（automate 跑宏不在此，落到各档通用询问）
+    if (excelActionIsFileEdit(toolName, args)) {
+      return {
+        decision: 'approve',
+        reason: `ExcelAutomate ${String(args.action)} 不逐次询问`,
+        confidence: 0.95,
         cached: false,
       };
     }

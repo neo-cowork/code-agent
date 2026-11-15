@@ -5,6 +5,7 @@
 import { classifyPermission, type ClassificationContext, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
+import { excelActionMustAsk } from './effectivePermissionLevel';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import {
   getPermissionModeManager,
@@ -582,7 +583,8 @@ export async function resolveToolPermissionClassification(input: {
     // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。
     // bypassPermissions 不受此限，deny / policy / 边界照常生效。
     && !(input.sessionPermissionMode === 'acceptEdits'
-      && mustAskUnderAcceptEdits(input.executionToolName))) {
+      && (mustAskUnderAcceptEdits(input.executionToolName)
+        || excelActionMustAsk(input.executionToolName, input.params as Record<string, unknown>)))) {
     const reason = `权限档 ${input.sessionPermissionMode}：${input.permissionLevel === 'write' ? '写入' : '执行'}操作免确认`;
     classification = {
       decision: 'approve',

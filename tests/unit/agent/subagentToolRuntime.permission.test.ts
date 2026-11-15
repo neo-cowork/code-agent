@@ -200,7 +200,6 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       'tmeetMeetingCreate',
       'mcp_add_server',
       'xlwings_execute',
-      'ExcelAutomate',
       'sleep_until',
       'wake_on',
       'wake_on_event',
@@ -219,6 +218,19 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       expect(approved).toBe(false);
       expect(permissionRequest).toHaveBeenCalledTimes(1);
       expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({ tool }));
+    });
+
+    it('ExcelAutomate 按 action 分档：automate 转发询问，edit/generate/read 不再因工具名询问', async () => {
+      const { requestPermission, permissionRequest } = captureRequestPermission({
+        effectiveMode: 'acceptEdits',
+        permissionResult: false,
+      });
+      for (const action of ['read', 'edit', 'generate', 'list_sheets', 'get_range']) {
+        expect(await requestPermission({ type: 'file_write', tool: 'ExcelAutomate', details: { action } })).toBe(true);
+      }
+      expect(permissionRequest).not.toHaveBeenCalled();
+      expect(await requestPermission({ type: 'file_write', tool: 'ExcelAutomate', details: { action: 'automate' } })).toBe(false);
+      expect(permissionRequest).toHaveBeenCalledTimes(1);
     });
 
     // 对照组：可逆 / 草稿 / 只读浏览类在 acceptEdits 下保持自动放行（不冒确认）

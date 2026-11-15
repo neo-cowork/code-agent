@@ -104,6 +104,7 @@ import {
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { skillBoundaryAllowsTool } from './skillBoundaryScope';
+import { withEffectivePermissionLevel } from './effectivePermissionLevel';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
@@ -684,11 +685,9 @@ export class ToolExecutor {
 
     if (!toolDef) {
       logger.debug('Tool not found', { toolName: requestedToolName });
-      return {
-        success: false,
-        error: `Unknown tool: ${requestedToolName}`,
-      };
+      return { success: false, error: `Unknown tool: ${requestedToolName}` };
     }
+    toolDef = withEffectivePermissionLevel(toolDef, params);
 
     // Check before approval, caches, locks and dispatch; in-flight calls keep running.
     if (toolDef.requiresPermission && isEmergencyStopActive()) {

@@ -134,4 +134,34 @@ describe('ToolStepGroup resolved permission evidence', () => {
     render(<ToolStepGroup nodes={[toolNode]} sessionId="session-1" />);
     expect(screen.queryByTestId('permission-decision-evidence')).toBeNull();
   });
+
+  describe('连续同类「你已允许」折叠（N-FIX-EXCEL-READ-APPROVAL-PER-CALL）', () => {
+    const excelNodes: TraceNode[] = Array.from({ length: 7 }, (_, i) => ({
+      id: `node-x${i}`, type: 'tool_call', content: '', timestamp: i,
+      toolCall: { id: `call-x${i}`, name: 'ExcelAutomate', args: { action: 'read', file_path: `/outside/c${i}.xlsx` }, result: 'ok', success: true },
+    }));
+    const req = (i: number, decision: PermissionRequest['decision']): PermissionRequest => ({
+      id: `perm-x${i}`, sessionId: 'session-1', parentToolUseId: `call-x${i}`, tool: 'ExcelAutomate', type: 'file_read',
+      details: { action: 'read', file_path: `/outside/c${i}.xlsx` } as PermissionRequest['details'], timestamp: i, resolved: true, decision,
+    });
+
+    it('5 条连续已允许 → 1 行带次数', () => {
+      state.resolved = [0, 1, 2, 3, 4].map((i) => req(i, 'once'));
+      render(<ToolStepGroup nodes={excelNodes.slice(0, 5)} sessionId="session-1" />);
+      const rows = screen.getAllByTestId('permission-decision-evidence');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain('你已允许 · 读取了 c0.xlsx · 共 5 次');
+    });
+
+    it('中间夹一条拒绝 → 不被折叠进去', () => {
+      state.resolved = [req(0, 'once'), req(1, 'once'), req(2, 'deny'), req(3, 'once'), req(4, 'once')];
+      render(<ToolStepGroup nodes={excelNodes.slice(0, 5)} sessionId="session-1" />);
+      const rows = screen.getAllByTestId('permission-decision-evidence').map((r) => r.textContent ?? '');
+      expect(rows).toHaveLength(3);
+      expect(rows[0]).toContain('共 2 次');
+      expect(rows[1]).not.toContain('共');
+      expect(rows[1]).not.toContain('你已允许');
+      expect(rows[2]).toContain('共 2 次');
+    });
+  });
 });

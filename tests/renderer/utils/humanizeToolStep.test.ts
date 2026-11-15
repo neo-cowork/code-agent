@@ -428,3 +428,26 @@ describe('file selection patterns use plain step copy', () => {
     }
   });
 });
+
+describe('ExcelAutomate 步骤按 action 落到读 / 写步骤（N-FIX-EXCEL-READ-APPROVAL-PER-CALL）', () => {
+  const FULL = '/Users/leo/work/tmp/rr85/合同资料/13-装修工程合同.xlsx';
+  const statuses = ['pending-approval', 'running', 'completed', 'failed'] as const;
+  const cases: Array<[string, Record<string, unknown>, 'read' | 'write', string]> = [
+    ['read', { action: 'read', file_path: FULL }, 'read', '13-装修工程合同.xlsx'],
+    ['get_range', { action: 'get_range', file_path: FULL }, 'read', '13-装修工程合同.xlsx'],
+    ['edit', { action: 'edit', file_path: FULL }, 'write', '13-装修工程合同.xlsx'],
+    ['generate', { action: 'generate', output_path: '/tmp/out/汇总.xlsx' }, 'write', '汇总.xlsx'],
+  ];
+  for (const [lang, tr] of [['zh', zh], ['en', en]] as const) {
+    for (const status of statuses) {
+      it.each(cases)(`${lang}/${status}/%s`, (_n, args, kind, fileName) => {
+        const text = humanizeToolStep('ExcelAutomate', args, tr, undefined, status);
+        const reference = humanizeToolStep(kind === 'read' ? 'Read' : 'Write', { file_path: fileName }, tr, undefined, status);
+        expect(text).toBe(reference);
+        expect(text).toContain(fileName);
+        expect(text).not.toContain('ExcelAutomate');
+        expect(text).not.toContain('/Users/');
+      });
+    }
+  }
+});
