@@ -22,7 +22,7 @@ const MIN_TOKENS = 30_000;
 const BUDGET_USD = 3;
 const RECENT = 10;
 const SUMMARY_FAIR_MAX_TOKENS = MODEL_MAX_TOKENS.DEFAULT;
-const OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1-fu1/compaction.json';
+const OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1-fu1-fu1/compaction.json';
 const PRIVATE_ROOT = path.join(os.homedir(), 'work/out/N-JEV-COMPACTION-EVAL');
 const REASONS = ['admitted', 'truncated', 'overBudget', 'missing_*', 'empty', 'not_shorter'] as const;
 
@@ -55,6 +55,8 @@ type SummaryArm = Arm & {
   callRecords: CallRecord[];
   validation: ValidationCounts;
   missingIndices: { paths: number[]; errors: number[]; openWork: number[] };
+  requiredPaths: { total: number; missing: number };
+  errorLines: { total: number; missing: number };
 };
 type ManifestCounts = {
   files: number;
@@ -96,7 +98,7 @@ function classifySummaryAdmission(
   if (validation.emptyOrWhitespace) return 'empty';
   if (validation.truncated) return 'truncated';
   if (!ignoreOverBudget && validation.overBudget) return 'overBudget';
-  if (validation.missingPaths > 0 || validation.missingErrors > 0 || validation.missingOpenWork > 0) return 'missing_*';
+  if (validation.missingPaths > 0 || validation.missingErrors > 0) return 'missing_*'; // open work is advisory in production admission
   if (summaryContentTokens >= originalTokens) return 'not_shorter';
   return 'admitted';
 }
@@ -555,6 +557,11 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
             callRecords: [...activeCallRecords],
             validation,
             missingIndices,
+            requiredPaths: {
+              total: plan.manifest.files.filter((file) => file.required === true).length,
+              missing: summary.validation.missingPaths.length,
+            },
+            errorLines: { total: plan.manifest.errors.length, missing: summary.validation.missingErrors.length },
           },
         };
       };

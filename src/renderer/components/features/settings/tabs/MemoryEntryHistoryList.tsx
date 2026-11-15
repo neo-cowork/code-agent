@@ -9,6 +9,7 @@
 // 撤回本身走面板既有 memoryEntryUpdate 通道，journal 自动多一条 user_manual 行。
 // ============================================================================
 
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import React, { useState } from 'react';
 import { History, Loader2, Undo2 } from 'lucide-react';
 import type {
@@ -100,7 +101,7 @@ export const MemoryEntryHistoryList: React.FC<MemoryEntryHistoryListProps> = ({
                     : undoText.truncatedReason;
             return (
               <li key={row.id} className="flex flex-wrap items-baseline gap-2" data-testid="memory-entry-history-row">
-                <span className="text-zinc-600">{new Date(row.timestamp).toLocaleString(locale)}</span>
+                <span className="text-zinc-600">{formatDateTime(row.timestamp, locale.startsWith('en') ? 'en' : 'zh')}</span>
                 <span className="text-zinc-400">{historyText.operationLabels[row.operation] ?? row.operation}</span>
                 <span className={row.actor === 'user_manual' ? 'text-zinc-500' : 'text-badge-info'}>
                   {historyText.actorLabels[row.actor] ?? row.actor}
