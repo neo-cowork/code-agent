@@ -12,6 +12,7 @@ import { DurableRunRepository } from '../../../../src/host/services/core/reposit
 import { PendingApprovalRepository } from '../../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SessionRepository } from '../../../../src/host/services/core/repositories/SessionRepository';
 import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel';
+import { createUnavailableNativeRecoveryPorts } from '../../../../src/host/runtime/nativeRecoveryHost';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { createDurableRecoveryRuntime } from '../../../../src/host/runtime/durableRecoveryRuntime';
 import { mapDurableRunView, projectDurableRunToSessionPayload } from '../../../../src/host/app/durableRunReadService';
@@ -35,6 +36,7 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 
 const SESSION = 'lost-delete-session';
 const RUN = 'lost-delete-root';
+const dispatchTool = vi.fn(async (): Promise<never> => { throw new Error('Unexpected tool execution'); });
 const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 describe('lost background approval restart closure (real file-backed SQLite)', () => {
@@ -72,23 +74,14 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     kernel = new DurableRunKernel({ stores: runs, ownerId: 'host', processInstanceId: 'killed-process', leaseDurationMs: 100 });
     registry.configureDurableKernel(kernel);
     await registry.startDurable({ runId: RUN, sessionId: SESSION, workspace: dir, cwd: dir }, now);
-    const operation = kernel.prepareToolOperation({
-      runId: RUN, logicalCallId: 'delete-logs', attempt: 1,
-      sideEffect: true, canDeduplicate: false, now,
-    });
-    await registry.checkpointDurable(RUN, {
-      now, status: 'running', pendingOperations: [{ ...operation, status: 'dispatched' }],
-      state: {}, childRuns: [], events: [{ type: 'run_checkpointed', payload: {}, recordedAt: now }],
-    });
+    await checkpointTool(RUN, now);
     now = 1_010;
     markSessionCommandTaskRunning({ id: 'delete-task', sessionId: SESSION, title: 'Clean old logs', shortName: 'Cleanup', createdAt: now });
-    registry.clear();
-    registry = new RunRegistry();
-    kernel = new DurableRunKernel({ stores: runs, ownerId: 'host', processInstanceId: 'restarted-process', leaseDurationMs: 100 });
-    registry.configureDurableKernel(kernel);
   });
 
   afterEach(() => {
+    expect(dispatchTool).not.toHaveBeenCalled();
+    dispatchTool.mockClear();
     registry.clear();
     resetBackgroundTaskLedgerForTest();
     db.close();
@@ -98,8 +91,18 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     rmSync(dir, { recursive: true, force: true });
   });
 
-  async function projection() {
-    return projectDurableRunToSessionPayload(mapDurableRunView('session_replay', (await runs.get(RUN))!));
+  function restart() {
+    registry.clear();
+    registry = new RunRegistry();
+    kernel = new DurableRunKernel({ stores: runs, ownerId: 'host', processInstanceId: 'restarted-process', leaseDurationMs: 100 });
+    registry.configureDurableKernel(kernel);
+  }
+
+  async function checkpointTool(runId: string, at: number, status: 'dispatched' | 'succeeded' = 'dispatched') {
+    await registry.checkpointNativeToolOperation({
+      runId, sourceMessageId: 'cleanup-request', toolName: 'Bash', logicalOperationId: `${runId}-delete`,
+      providerOperationId: `${runId}-execution`, sideEffect: true, status, now: at,
+    });
   }
 
   function seedSurvivingApproval() {
@@ -111,179 +114,81 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
   }
 
   function runtime() {
-    return createDurableRecoveryRuntime({ registry, kernel, dataDir: dir });
+    const ports = createUnavailableNativeRecoveryPorts();
+    return createDurableRecoveryRuntime({
+      registry, kernel, dataDir: dir,
+      nativeRecoveryPorts: { ...ports, tool: { ...ports.tool, dispatchPrepared: dispatchTool } },
+    });
   }
 
-  it('① pre-fix kernel recovery projects waiting input without any pending approval row', async () => {
+  it('crash-interrupted native root is untouched by task restart recovery and remains recoverable', async () => {
+    const closeRoot = vi.spyOn(runs, 'closeParkedWaitingRunForSession');
+    const before = await runs.get(RUN);
     expect(await runs.listPendingOperations(RUN)).toMatchObject([
-      { kind: 'tool_call', sideEffect: true, status: 'dispatched' },
+      { kind: 'tool_call', status: 'dispatched', sideEffect: true,
+        providerOperationId: `${RUN}-execution`, requiresHumanConfirmation: undefined },
     ]);
+    restart();
     now = 1_200;
-    const plans = await kernel.recoverOnStartup(now);
-    expect(approvals.listByKindAndStatus('tool_approval', 'pending')).toEqual([]);
-    expect(plans[0].envelope).toMatchObject({ engine: { kind: 'native' }, status: 'waiting' });
+    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
+    expect(closeRoot).not.toHaveBeenCalled();
+    expect(await runs.get(RUN)).toEqual(before);
+    const plans = await registry.recoverDurable(now);
+    expect(plans).toHaveLength(1);
+    expect(plans[0].envelope).toMatchObject({ runId: RUN, status: 'recovering', engine: { kind: 'native' } });
     expect(plans[0].pendingOperations).toMatchObject([
-      { kind: 'tool_call', sideEffect: true, status: 'unknown', requiresHumanConfirmation: true },
+      { kind: 'tool_call', status: 'prepared', providerOperationId: `${RUN}-execution` },
     ]);
-    expect(await projection()).toMatchObject({ durableWaitingInput: true });
-    console.log('PRE-FIX recoverOnStartup engine_kind=native status=waiting pending_approvals=[] payload=', await projection());
+    expect((await runs.get(RUN))?.terminal).toBeUndefined();
   });
 
-  it.each(['running', 'waiting'] as const)('② production startup closes %s orphan; projection clears; second recovery does not rewrite updated_at', async (status) => {
-    if (status === 'waiting') {
-      now = 1_200;
-      await kernel.recoverOnStartup(now);
-    }
-    now = 1_300;
-    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
-    const recovery = runtime();
-    const closed = await runs.get(RUN);
-    expect(closed).toMatchObject({ status: 'cancelled', terminal: { reason: 'approval_lost_on_restart' } });
-    expect(await projection()).toEqual({ status: 'interrupted' });
-    expect(await recovery.recoverAndDispatch(now)).toEqual([]);
-    expect(sessions.getMessages(SESSION).some((message) => message.metadata?.backgroundTaskInterrupted)).toBe(true);
-    const row = db.prepare('SELECT updated_at FROM durable_runs WHERE run_id = ?').get(RUN);
-    now = 1_500;
-    expect(await recoverInterruptedSessionCommandTasks()).toBe(0);
-    expect(await recovery.recoverAndDispatch(now)).toEqual([]);
-    expect(db.prepare('SELECT updated_at FROM durable_runs WHERE run_id = ?').get(RUN)).toEqual(row);
-    await recovery.shutdown();
-  });
-
-  it('③ surviving pending tool_approval keeps waiting run and sidebar marker untouched', async () => {
-    seedSurvivingApproval();
-    now = 1_200;
-    await kernel.recoverOnStartup(now);
-    const before = await runs.get(RUN);
-    expect(await projection()).toMatchObject({ durableWaitingInput: true });
-    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
-    expect(await runs.get(RUN)).toEqual(before);
-    expect(approvals.getById('surviving-delete')?.status).toBe('pending');
-    expect(await projection()).toMatchObject({ durableWaitingInput: true });
-  });
-
-  it('live lease stays fenced until production durable recovery retries after expiry', async () => {
-    const before = await runs.get(RUN);
-    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
-    expect(await runs.get(RUN)).toEqual(before);
-    const recovery = runtime();
-    expect(await recovery.recoverAndDispatch(1_050)).toEqual([]);
-    expect(await runs.get(RUN)).toEqual(before);
-    expect(await recovery.recoverAndDispatch(1_100)).toEqual([]);
-    expect(await runs.get(RUN)).toMatchObject({ status: 'cancelled', terminal: { reason: 'approval_lost_on_restart' } });
-    expect(await projection()).toEqual({ status: 'interrupted' });
-    await recovery.shutdown();
-  });
-
-  it('deferred close rechecks surviving approvals before touching the expired run', async () => {
-    await recoverInterruptedSessionCommandTasks();
-    seedSurvivingApproval();
-    const before = await runs.get(RUN);
-    // Before expiry this production entry retries the queued close, then finds no recoverable lease.
-    const recovery = runtime();
-    await recovery.recoverAndDispatch(1_050);
-    expect(await runs.get(RUN)).toEqual(before);
-    now = 1_200;
-    await kernel.recoverOnStartup(now);
-    const parked = await runs.get(RUN);
-    await recoverInterruptedSessionCommandTasks();
-    expect(await runs.get(RUN)).toEqual(parked);
-    expect(await projection()).toMatchObject({ durableWaitingInput: true });
-    await recovery.shutdown();
-  });
-
-  it.each([
-    ['user_stop waiting run', 'waiting', 'user_stop', true],
-    ['quota_wait waiting run', 'waiting', 'quota_wait', true],
-    ['crashed foreground run with no approval parked', 'running', undefined, false],
-  ] as const)('④ %s of the same session is not an approval-lost run: untouched by task restart closure', async (_name, status, cause, keepOperation) => {
-    const current = (await runs.get(RUN))!;
-    const ops = (await runs.listPendingOperations(RUN)).map((op) => ({
-      ...op, status: 'unknown' as const, requiresHumanConfirmation: true,
-    }));
-    await runs.replaceRecoveryProjection({
-      runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
-      status: status === 'running' ? 'recovering' : status, pendingOperations: keepOperation ? ops : [], updatedAt: 1_020,
-      ...(cause ? { interruptCause: cause } : {}),
-    });
-    if (status === 'running') {
-      await runs.transition({
-        runId: RUN, expectedStatus: 'recovering', nextStatus: 'running',
-        expectedOwnerEpoch: current.owner!.epoch, updatedAt: 1_020,
-      });
-    }
-    now = 1_300;
-    const before = await runs.get(RUN);
-    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
-    expect(await runs.get(RUN)).toEqual(before);
-    const recovery = runtime();
-    await recovery.recoverAndDispatch(1_400);
-    expect((await runs.get(RUN))?.terminal?.reason).not.toBe('approval_lost_on_restart');
-    await recovery.shutdown();
-  });
-
-  it.each([
-    { status: 'dispatched', sideEffect: false, requiresHumanConfirmation: false },
-    { status: 'dispatched', providerOperationId: 'deduplicated-call', requiresHumanConfirmation: false },
-    { status: 'unknown', requiresHumanConfirmation: false },
-    { status: 'prepared' },
-  ] as const)('④ recoverable operation %j does not authorize approval-lost closure', async (operation) => {
-    const current = (await runs.get(RUN))!;
-    const ops = (await runs.listPendingOperations(RUN)).map((op) => ({ ...op, ...operation }));
-    await runs.replaceRecoveryProjection({
-      runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
-      status: 'recovering', pendingOperations: ops, updatedAt: 1_020,
-    });
-    now = 1_300;
-    const before = await runs.get(RUN);
-    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
-    expect(await runs.get(RUN)).toEqual(before);
-  });
-
-  it('settled terminal marker only reprojects its result and leaves the run alone', async () => {
-    now = 1_200;
-    await kernel.recoverOnStartup(now);
+  it('settled terminal marker only reprojects its result and leaves the root alone', async () => {
     const before = await runs.get(RUN);
     settleSessionCommandTaskMarkerForDeferredProjection({
       id: 'delete-task', sessionId: SESSION, title: 'Clean old logs', shortName: 'Cleanup',
       createdAt: 1_010, status: 'completed', resultText: 'Files reviewed',
     });
+    restart();
+    now = 1_200;
     await recoverInterruptedSessionCommandTasks();
     expect(await runs.get(RUN)).toEqual(before);
     expect(sessions.getMessages(SESSION).some((message) => message.metadata?.backgroundTaskInterrupted)).toBe(false);
   });
 
-  it('old interrupted task cannot close a newer root run in the same session', async () => {
-    now = 1_200;
-    await runs.closeParkedWaitingRunForSession({ sessionId: SESSION, now, reason: 'fixture_old_run_ended', approvalRequestedAt: now });
-    await registry.startDurable({ runId: 'newer-root', sessionId: SESSION, workspace: dir, cwd: dir }, now);
-    const newer = await runs.get('newer-root');
-    now = 1_300;
-    await recoverInterruptedSessionCommandTasks();
-    expect(await runs.get('newer-root')).toEqual(newer);
-  });
-
-  async function seedChild(status: 'running' | 'waiting' | 'recovering' = 'running', sessionId = SESSION) {
-    // Complete the parent's pending tool projection before completing the foreground turn.
-    const current = (await runs.get(RUN))!;
-    await runs.replaceRecoveryProjection({
-      runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
-      status: 'recovering', pendingOperations: [], updatedAt: 1_014,
+  async function seedChild(status: 'running' | 'waiting' | 'recovering' = 'running', sessionId = SESSION, options: { sibling?: boolean; completed?: boolean } = {}) {
+    await registry.startAuxiliaryDurableChild({
+      runId: 'delete-task', sessionId, workspace: dir, cwd: dir,
+    }, RUN, 1_020);
+    await checkpointTool('delete-task', 1_020);
+    if (status !== 'running') {
+      // Snapshot the interrupted child's status through the same checkpoint writer,
+      // preserving the production tool operation and native descriptor unchanged.
+      const child = registry.getDurableEnvelope('delete-task')!;
+      await registry.checkpointDurable('delete-task', {
+        now: 1_021, status, state: registry.getDurableCheckpointState('delete-task'),
+        pendingOperations: child.pendingOperations ?? [], childRuns: child.childRuns,
+        events: [{ type: 'run_checkpointed', payload: {}, recordedAt: 1_021 }],
+      });
+    }
+    if (options.sibling) {
+      await registry.startAuxiliaryDurableChild({
+        runId: 'sibling-task', sessionId: SESSION, workspace: dir, cwd: dir,
+      }, RUN, 1_021);
+      await checkpointTool('sibling-task', 1_021);
+    }
+    if (options.completed) {
+      await checkpointTool('delete-task', 1_023, 'succeeded');
+      await registry.terminalDurable('delete-task', {
+        status: 'completed', now: 1_023,
+        event: { type: 'run_completed', payload: {}, recordedAt: 1_023 },
+      });
+    }
+    await checkpointTool(RUN, 1_024, 'succeeded');
+    await registry.terminalDurable(RUN, {
+      now: 1_025, status: 'completed',
+      event: { type: 'run_completed', payload: {}, recordedAt: 1_025 },
     });
-    await runs.transition({
-      runId: RUN, expectedStatus: 'recovering', nextStatus: 'running',
-      expectedOwnerEpoch: current.owner!.epoch, updatedAt: 1_014,
-    });
-    const root = (await runs.get(RUN))!;
-    await runs.commitTerminal({
-      runId: RUN, attempt: root.attempt, expectedOwnerEpoch: root.owner!.epoch,
-      expectedNextEventSeq: root.cursor.nextEventSeq, status: 'completed', terminalAt: 1_015,
-      event: { type: 'run_completed', payload: {}, recordedAt: 1_015 },
-    });
-    await kernel.createRun({
-      runId: 'delete-task', sessionId, parentRunId: RUN, engine: { kind: 'native' },
-      now: 1_020, initialStatus: status,
-    });
+    restart();
     now = 1_200;
   }
 
@@ -294,12 +199,25 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
   it.each(['running', 'waiting', 'recovering'] as const)('child (a) production recovery closes expired %s task child; clears marker; second pass preserves updated_at', async (status) => {
     await seedChild(status);
     const root = await runs.get(RUN);
+    expect(root?.status).toBe('completed');
+    expect(await runs.listPendingOperations('delete-task')).toMatchObject([
+      { kind: 'tool_call', status: 'dispatched', sideEffect: true,
+        providerOperationId: 'delete-task-execution', requiresHumanConfirmation: undefined },
+    ]);
+    expect(approvals.listByKindAndStatus('tool_approval', 'pending')).toEqual([]);
+    if (status === 'waiting') {
+      expect(await latestProjection()).toMatchObject({ durableWaitingInput: true });
+      console.log('PRE-FIX child engine_kind=native status=waiting pending_approvals=[] payload=', await latestProjection());
+    }
+    const closeRoot = vi.spyOn(runs, 'closeParkedWaitingRunForSession');
     await recoverInterruptedSessionCommandTasks();
+    expect(closeRoot).not.toHaveBeenCalled();
     expect(await runs.get('delete-task')).toMatchObject({
       status: 'cancelled', attempt: 2, owner: { epoch: 2 },
       terminal: { reason: 'approval_lost_on_restart' },
     });
     expect(await latestProjection()).toEqual({ status: 'interrupted' });
+    expect(dispatchTool).not.toHaveBeenCalled();
     const child = await runs.get('delete-task');
     const recovery = runtime();
     expect(await recovery.recoverAndDispatch(now)).toEqual([]);
@@ -349,8 +267,7 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
   });
 
   it('child (d) same-session sibling with another run_id stays untouched', async () => {
-    await seedChild();
-    await kernel.createNativeRun({ runId: 'sibling-task', sessionId: SESSION, parentRunId: RUN, now: 1_019 });
+    await seedChild('running', SESSION, { sibling: true });
     const sibling = await runs.get('sibling-task');
     await recoverInterruptedSessionCommandTasks();
     expect(await runs.get('delete-task')).toMatchObject({ status: 'cancelled' });
@@ -365,13 +282,7 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
   });
 
   it('already-terminal child is a no-op without an updated_at rewrite', async () => {
-    await seedChild();
-    const child = (await runs.get('delete-task'))!;
-    await runs.commitTerminal({
-      runId: child.runId, attempt: child.attempt, expectedOwnerEpoch: child.owner!.epoch,
-      expectedNextEventSeq: child.cursor.nextEventSeq, status: 'completed', terminalAt: now,
-      event: { type: 'run_completed', payload: {}, recordedAt: now },
-    });
+    await seedChild('running', SESSION, { completed: true });
     const before = await runs.get('delete-task');
     now = 1_500;
     await recoverInterruptedSessionCommandTasks();
