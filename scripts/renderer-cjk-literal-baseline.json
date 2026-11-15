@@ -117,7 +117,7 @@
     "src/shared/constants/mcpCatalog.ts": 242,
     "src/shared/constants/memory.ts": 6,
     "src/shared/constants/models.ts": 3,
-    "src/shared/constants/providers.ts": 10,
+    "src/shared/constants/providers.ts": 8,
     "src/shared/constants/repair.ts": 2,
     "src/shared/constants/runtimeInput.ts": 2,
     "src/shared/constants/sessionCommandCenter.ts": 9,
