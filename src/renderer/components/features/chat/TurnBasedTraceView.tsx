@@ -48,6 +48,8 @@ interface TurnBasedTraceViewProps {
   onInterruptionPointVisibilityChange?: (visible: boolean) => void;
   /** ChatView 的发送阶段占位可见时，活动 turn 不再另画一条忙信号。 */
   suppressActiveBusySignal?: boolean;
+  /** 用户这次点发送的时刻（ChatView 发送反馈的 startedAt）；每变一次就立刻落底。 */
+  userSendAt?: number | null;
 }
 
 export const ACTIVE_DISPLAY_SCROLL_INTERVAL_MS = 80;
@@ -276,6 +278,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   afterFirstUserMessage,
   onInterruptionPointVisibilityChange,
   suppressActiveBusySignal,
+  userSendAt = null,
 }) => {
   const { t } = useI18n();
   const workDetailPolicy = useWorkDetailPolicy();
@@ -999,6 +1002,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       activeDisplayScrollCancelRef,
     });
   }, [projection.turns]);
+
+  // 用户点发送：不管停在哪、会话是否刚打开，都立刻落底，让刚发的消息和「正在发送」行可见。
+  // 用户消息要等后端接收才进投影（停车中再发、发送卡住时会晚很久），下面 latestUserNodeId
+  // 的顶置管不到发送这一刻（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER 真机返修）。
+  const lastUserSendAtRef = useRef(userSendAt);
+  useEffect(() => {
+    if (userSendAt === null || userSendAt === lastUserSendAtRef.current) return;
+    lastUserSendAtRef.current = userSendAt;
+    handleJumpToBottom();
+  }, [handleJumpToBottom, userSendAt]);
 
   const { handleRailJump, handleRailNodeJump, expansionRequest } = useTurnRailJump({
     sessionId: projection.sessionId, turnsRef: projectionTurnsRef, virtuosoRef,

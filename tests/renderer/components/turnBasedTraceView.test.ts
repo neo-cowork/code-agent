@@ -942,6 +942,31 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     expect(scroller.scrollTop).toBe(2400);
   });
 
+  it('用户点发送：已上滚阅读也立刻落到底（用户消息还没进投影时）', () => {
+    const projection: TraceProjection = { sessionId: 'session-1', turns: [makeTurn(0), makeTurn(1)], activeTurnIndex: -1 };
+    const view = render(React.createElement(TurnBasedTraceView, { projection, userSendAt: null }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 3000 });
+    act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_001 }));
+    for (let frame = 0; frame < 70; frame += 1) flushView();
+    act(() => {
+      fireEvent.wheel(scroller, { deltaY: -600 });
+      vi.advanceTimersByTime(USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS + 50);
+    });
+    scroller.scrollTop = 900;
+    mocks.scrollToIndex.mockClear();
+
+    // 同一份投影重渲染（只换发送时刻）：不该动
+    view.rerender(React.createElement(TurnBasedTraceView, { projection, userSendAt: null }));
+    flushView();
+    expect(scroller.scrollTop).toBe(900);
+
+    view.rerender(React.createElement(TurnBasedTraceView, { projection, userSendAt: 12345 }));
+    for (let frame = 0; frame < 10; frame += 1) flushView();
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 1, align: 'end', behavior: 'auto' });
+    expect(scroller.scrollTop).toBe(3000);
+  });
+
   it('输入框变高压矮消息区：贴底时重新落底，已上滚阅读时不动', () => {
     const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
     vi.stubGlobal('ResizeObserver', class {
