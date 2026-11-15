@@ -19,7 +19,7 @@ const execution: CronJobExecution = {
 function sidebarProps(sessionId = 'download-session'): SidebarSessionItemProps {
   return {
     session: {
-      id: sessionId, title: '[定时] 夜间整理下载文件', type: 'cron', status: 'idle',
+      id: sessionId, title: '[定时] 夜间整理下载文件', type: 'schedule', status: 'idle',
       origin: { kind: 'cron', id: 'nightly-sort', name: '夜间整理下载文件' },
       createdAt: 1, updatedAt: 2, messageCount: 4, turnCount: 1,
       modelConfig: { provider: 'openai', model: 'test-model' },
