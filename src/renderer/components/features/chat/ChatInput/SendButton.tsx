@@ -30,6 +30,8 @@ export interface SendButtonProps {
   onStop?: () => void;
   /** 继续 parked durable run 的回调 */
   onContinue?: () => void;
+  /** 放弃 parked durable run（与「继续」同一处入口） */
+  onAbandon?: () => void;
   /** 自定义按钮文字（如 "开始研究"），传入后按钮会显示文字 */
   label?: string;
 }
@@ -53,6 +55,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onClick,
   onStop,
   onContinue,
+  onAbandon,
   label,
 }) => {
   const { t } = useI18n();
@@ -124,19 +127,32 @@ export const SendButton: React.FC<SendButtonProps> = ({
   }
 
   // parked durable run + 空输入：继续原 run；一旦有草稿，上面的普通发送态优先。
+  // 停住的任务只有这一处操作入口：「继续」为主，「放弃」并在同一处（输入框上方只说原因）。
   if (hasContinuation && !hasContent) {
     return (
-      <button /* ds-allow:button: Continue 胶囊按钮包含图标与文本，需保持发送区紧凑布局 */
-        type="button"
-        onClick={onContinue}
-        className="flex h-7 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
-        aria-label={t.chatInput.continueAria}
-        title={t.chatInput.continueAria}
-        data-testid="continue-run-button"
-      >
-        <RotateCcw className="h-3.5 w-3.5" />
-        <span>{t.chatInput.continueLabel}</span>
-      </button>
+      <div className="flex items-center gap-1" data-testid="continue-run-control">
+        {onAbandon && (
+          <button /* ds-allow:button: 与「继续」同组的紧凑文本按钮，需保持发送区紧凑布局 */
+            type="button"
+            onClick={onAbandon}
+            className="h-7 rounded-full px-2 text-xs text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200"
+            data-testid="abandon-run-button"
+          >
+            {t.chat.durableAbandon}
+          </button>
+        )}
+        <button /* ds-allow:button: Continue 胶囊按钮包含图标与文本，需保持发送区紧凑布局 */
+          type="button"
+          onClick={onContinue}
+          className="flex h-7 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
+          aria-label={t.chatInput.continueAria}
+          title={t.chatInput.continueAria}
+          data-testid="continue-run-button"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          <span>{t.chatInput.continueLabel}</span>
+        </button>
+      </div>
     );
   }
 

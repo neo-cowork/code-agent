@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 // N-QUIT-STOP-REOPEN-HALF-STATE-FU2：user_stop 停靠行旁的「你停止了这次任务」说明。
+// N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT：停靠行只说原因（谁/为什么），操作入口只在输入框一处；
+// 环境授权停车说在等什么、不出「继续」；输入框上方已有录制条时让位不叠行。
 // 装配镜像 ChatView 的接线（同 durableResume.abandonState.test.tsx 的 ParkedRow 先例）。
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -25,9 +27,9 @@ import {
 import { SendButton } from '../../../src/renderer/components/features/chat/ChatInput/SendButton';
 import { useI18n } from '../../../src/renderer/hooks/useI18n';
 
-type Resume = { mode: string; canContinue: boolean; runId?: string; interruptCause?: string; quotaWait?: unknown };
+type Resume = { mode: string; canContinue: boolean; runId?: string; interruptCause?: string; quotaWait?: unknown; envBlocked?: { class: 'perm_automation'; target: string; toolCallId: string } };
 
-function ParkedRow({ resume, turnActive }: { resume: Resume | undefined; turnActive: boolean }) {
+function ParkedRow({ resume, turnActive, statusBar = false }: { resume: Resume | undefined; turnActive: boolean; statusBar?: boolean }) {
   const { t } = useI18n();
   const show = useDurableContinueVisible(resume, turnActive);
   const abandon = useAbandonParkedRun('s1', resume?.runId);
@@ -35,12 +37,10 @@ function ParkedRow({ resume, turnActive }: { resume: Resume | undefined; turnAct
     <>
       {resume?.mode === 'auto-resuming' && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
       {resume?.mode === 'queued' && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-      {shouldShowParkedNotice(show, resume) && (
-        <DurableParkedNotice interruptCause={resume?.interruptCause} actions={
-          <button type="button" onClick={abandon.onAbandon}>{t.chat.durableAbandon}</button>
-        } />
+      {shouldShowParkedNotice(resume, turnActive, statusBar) && (
+        <DurableParkedNotice interruptCause={resume?.interruptCause} envBlocked={resume?.envBlocked} />
       )}
-      <SendButton hasContinuation={show} isProcessing={turnActive} onContinue={() => undefined} onStop={() => undefined} />
+      <SendButton hasContinuation={show} isProcessing={turnActive} onContinue={() => undefined} onAbandon={abandon.onAbandon} onStop={() => undefined} />
     </>
   );
 }
@@ -65,28 +65,54 @@ describe('durable stopped notice (user_stop)', () => {
     expect(screen.getByTestId(NOTICE).textContent).toContain('You stopped this task · press Continue to pick it up');
   });
 
-  it('② hidden for other causes, modes, active turn and canContinue=false', () => {
-    const cases: Array<[Resume, boolean]> = [
-      [{ ...STOP, interruptCause: 'guard_halt' }, false],
-      [{ ...STOP, interruptCause: 'budget_exhausted' }, false],
-      [{ ...STOP, interruptCause: 'crash_or_quit' }, false],
+  it('② each continuable cause says why it stopped; hidden for other modes, active turn, quota wait and canContinue=false', () => {
+    const reasons: Array<[string, string]> = [
+      ['guard_halt', '上一步不确定有没有做完'],
+      ['budget_exhausted', '应用多次意外退出'],
+    ];
+    for (const [cause, text] of reasons) {
+      const { unmount } = render(<ParkedRow resume={{ ...STOP, interruptCause: cause }} turnActive={false} />);
+      expect(screen.getByTestId(NOTICE).textContent).toContain(text);
+      expect(screen.getByTestId(NOTICE).textContent).not.toContain('任务已停止');
+      unmount();
+    }
+    const hidden: Array<[Resume, boolean]> = [
       [{ ...STOP, quotaWait: { dueAt: 1, duePassed: false } }, false],
       [{ mode: 'auto-resuming', canContinue: false, interruptCause: 'user_stop' }, false],
       [{ mode: 'queued', canContinue: false, interruptCause: 'user_stop' }, false],
       [STOP, true],
       [{ ...STOP, canContinue: false }, false],
     ];
-    for (const [resume, active] of cases) {
+    for (const [resume, active] of hidden) {
       const { unmount } = render(<ParkedRow resume={resume} turnActive={active} />);
       expect(screen.queryByTestId(NOTICE)).toBeNull();
       unmount();
     }
   });
 
-  it('non-user_stop continue keeps the legacy parked row with Continue and Abandon', () => {
+  it('③ one action entry: the parked row carries no buttons, Continue + Abandon sit together in the composer', () => {
     render(<ParkedRow resume={{ ...STOP, interruptCause: 'guard_halt' }} turnActive={false} />);
-    expect(screen.getByTestId('durable-resume-notice').textContent).toContain('任务已停止');
+    expect(within(screen.getByTestId(NOTICE)).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.getAllByTestId('continue-run-control')).toHaveLength(1);
+    expect(screen.getAllByTestId('continue-run-button')).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^(放弃|Abandon)$/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /^(放弃|Abandon)$/ }).closest('[data-testid="continue-run-control"]')).not.toBeNull();
+  });
+
+  it('④ yields to a composer status bar (recording / loop) instead of stacking another row; Continue stays', () => {
+    render(<ParkedRow resume={STOP} turnActive={false} statusBar />);
+    expect(screen.queryByTestId(NOTICE)).toBeNull();
     expect(screen.getByTestId('continue-run-button')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^(放弃|Abandon)$/ })).toBeTruthy();
+  });
+
+  it('⑤ env_blocked park says what it waits for, never 中断/已停止, and offers no Continue or Abandon', () => {
+    const env: Resume = { ...STOP, interruptCause: 'env_blocked', envBlocked: { class: 'perm_automation', target: 'calendar', toolCallId: 'c1' } };
+    render(<ParkedRow resume={env} turnActive={false} />);
+    const text = screen.getByTestId(NOTICE).textContent ?? '';
+    expect(text).toBe('等你允许日历 · 允许后自动继续');
+    expect(text).not.toMatch(/中断|已停止/);
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
+    expect(screen.queryByTestId('continue-run-control')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^(继续|放弃|Continue|Abandon)$/ })).toBeNull();
   });
 });

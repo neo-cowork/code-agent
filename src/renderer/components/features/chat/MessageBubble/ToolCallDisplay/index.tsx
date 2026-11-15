@@ -47,6 +47,7 @@ import {
 } from './delegationPresentation';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
+import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -157,6 +158,7 @@ export function ToolCallDisplay({
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
   const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, toolCall.result === undefined);
+  const envWaitingTarget = useEnvParkedTarget(sessionId, toolCall.id);
   const awaitingApproval = toolCall.result === undefined
     && isToolCallAwaitingApproval(toolCall.id, sessionId, {
       pendingPermissionRequest,
@@ -300,6 +302,7 @@ export function ToolCallDisplay({
               status={status}
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
+              envWaitingTarget={envWaitingTarget}
               showDetailName={expanded}
               hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}

@@ -8,6 +8,7 @@ import { useAppStore } from '../stores/appStore';
 import { useProjectChatSeedConsumption } from './features/chat/useProjectChatSeed';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { selectComposerStatusBarActive, useComposerNoticeStore } from '../stores/composerNoticeStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { selectHasStoppableSwarmWork, useSwarmStore } from '../stores/swarmStore';
@@ -709,6 +710,7 @@ export const ChatView: React.FC = () => {
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
   const durableAbandon = useAbandonParkedRun(currentSessionId, durableResume?.runId);
+  const composerStatusBarActive = useComposerNoticeStore(selectComposerStatusBarActive);
 
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
@@ -1058,9 +1060,7 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-          {shouldShowParkedNotice(showDurableContinue, durableResume) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} actions={
-            <button /* ds-allow:button: 停靠行的放弃按钮沿用 DoomLoopHandbackBar 紧凑文本按钮样式 */ type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={durableAbandon.onAbandon}>{t.chat.durableAbandon}</button>
-          } />}
+          {shouldShowParkedNotice(durableResume, effectiveIsProcessing, composerStatusBarActive) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} envBlocked={durableResume?.envBlocked} />}
           <ConnectorRequiredCards />
           {durableResume?.quotaWait && <QuotaWaitNotice dueAt={durableResume.quotaWait.dueAt} duePassed={durableResume.quotaWait.duePassed} onCancel={() => { cancel(); }} onRetryNow={() => { durableContinue.onContinue(); }} />}
 
@@ -1088,7 +1088,7 @@ export const ChatView: React.FC = () => {
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 
