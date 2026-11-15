@@ -138,7 +138,7 @@ function resolveAgentErrorShortReason(
 
 /**
  * 整卡上的「连续 N 次」说明，runLength≥2 才有。不可重试类（NO_RETRY_CATEGORIES）
- * 明说「再发也不会好」；可重试类只陈述次数，不断言重试无效。
+ * 给出下一步（换模型 / 按提示处理）；可重试类只陈述次数。
  */
 function buildRepeatNotice(
   run: Pick<AgentErrorRunInfo, 'runLength'> | undefined,

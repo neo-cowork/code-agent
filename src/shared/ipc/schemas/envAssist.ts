@@ -3,7 +3,7 @@ import { IPC_DOMAINS } from '../domains';
 import { channelSchema } from './core';
 
 const EnvAssistRequest = z.object({
-  action: z.enum(['act', 'getAvailability']),
+  action: z.enum(['act', 'getAvailability', 'recheck']),
   payload: z.unknown().optional(),
 });
 
@@ -15,4 +15,5 @@ export const EnvAssistSchemas = {
     actionKind: z.enum(['open_settings_pane', 'request_grant']),
     payload: z.object({ pane: z.enum(['automation', 'accessibility', 'screenCapture', 'inputMonitoring']) }).strict(),
   }).strict(),
+  recheck: z.object({ noticeId: z.string().min(1) }).strict(),
 };
