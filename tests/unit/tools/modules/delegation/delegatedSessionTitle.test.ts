@@ -9,22 +9,26 @@ const cp = (value: string) => [...value].length;
 // isProvisionalAutoTitle 当临时档，智能标题会回头改写）。
 describe('deriveDelegatedSessionTitle', () => {
   it('60 字符英文句子（无中途句读）截到 19 位 + …，共 20 个 code points', () => {
-    const title = deriveDelegatedSessionTitle('Open a new chat and have it turn the meeting notes into three key points and a summary email.');
+    const task = 'Turn our weekly meeting notes into three points in an email.';
+    expect(cp(task)).toBe(60);
+    const title = deriveDelegatedSessionTitle(task);
     expect(cp(title)).toBe(20);
-    expect(title).toBe('Open a new chat and…');
+    expect(title).toBe('Turn our weekly mee…');
     expect(title.endsWith('…')).toBe(true);
     expect(title.endsWith('...')).toBe(false);
   });
 
-  it('60 字符中文句子：逗号处截断，短于上限不加省略号', () => {
+  it('中文句子：逗号处截断，短于上限不加省略号', () => {
     const title = deriveDelegatedSessionTitle('请把本周会议纪要整理成三个要点，再写一段简短的总结，方便我贴进邮件里发出去。');
     expect(title).toBe('请把本周会议纪要整理成三个要点');
     expect(cp(title)).toBeLessThanOrEqual(20);
     expect(title.endsWith('...')).toBe(false);
   });
 
-  it('无句读的 60 字中文句子截断为 20 个 code points', () => {
-    const title = deriveDelegatedSessionTitle('请把我们这周会上讨论过的所有事情都整理成一份既能贴进邮件又能让人一眼看懂的总结');
+  it('无中途句读的 60 字中文句子截断为 20 个 code points', () => {
+    const task = '请把我们这周会上讨论过的所有事情都整理成一份既能贴进邮件又能让人一眼看懂的总结并列出三个要点以及下一步行动计划和负责人。';
+    expect(cp(task)).toBe(60);
+    const title = deriveDelegatedSessionTitle(task);
     expect(cp(title)).toBe(20);
     expect(title.endsWith('…')).toBe(true);
     expect(title.endsWith('...')).toBe(false);
