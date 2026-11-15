@@ -2,7 +2,7 @@
 // ContextUsagePill - ChatInput toolbar context budget control
 // ============================================================================
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -41,9 +41,30 @@ export const ContextUsagePill: React.FC = () => {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailWidth, setDetailWidth] = useState(440);
   // 压缩结果/失败的反馈行：压缩动作在明细弹层里触发，气泡只读 store 展示结果
   const compactResult = useContextCompactionStore((s) => s.result);
   const compactError = useContextCompactionStore((s) => s.error);
+
+  useLayoutEffect(() => {
+    if (!detailOpen) return;
+    const anchor = wrapperRef.current;
+    const composer = anchor?.closest('form');
+    if (!anchor || !composer) return;
+    const measure = () => setDetailWidth(Math.min(440, Math.max(
+      0,
+      anchor.getBoundingClientRect().right - composer.getBoundingClientRect().left,
+    )));
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(composer);
+    observer?.observe(anchor);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [detailOpen]);
 
   useEffect(() => {
     // context 深链直接落到明细弹层（不再只开气泡）
@@ -173,7 +194,7 @@ export const ContextUsagePill: React.FC = () => {
       )}
 
       {detailOpen && (
-        <ContextHealthDetailPopover onClose={() => setDetailOpen(false)} />
+        <ContextHealthDetailPopover width={detailWidth} onClose={() => setDetailOpen(false)} />
       )}
     </div>
   );

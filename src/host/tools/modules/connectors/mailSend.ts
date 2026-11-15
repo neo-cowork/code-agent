@@ -13,6 +13,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { mailSendSchema as schema } from './mailSend.schema';
@@ -42,7 +43,7 @@ async function executeMailSend(
 
   const connector = getConnectorRegistry().get('mail');
   if (!connector) {
-    return { ok: false, error: 'Mail connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('mail', 'send'), code: 'NOT_INITIALIZED' };
   }
 
   try {

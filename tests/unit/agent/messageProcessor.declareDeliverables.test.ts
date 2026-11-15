@@ -73,6 +73,9 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { calendarSchema } from '../../../src/host/tools/modules/connectors/calendar.schema';
 
 const DECLARE_CALL = { id: 'dd-1', name: 'declare_deliverables', arguments: { final_artifacts: ['/tmp/code-agent-test/brief.md'] } };
 const SEARCH_CALL = { id: 'ws-1', name: 'WebSearch', arguments: { query: 'remote collaboration tools' } };
@@ -336,6 +339,84 @@ describe('declare_deliverables 不吞整批', () => {
     expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
     expect(deps.persisted.find((m) => m.role === 'assistant')?.toolCalls?.[0]?.id).toBe('ws-1');
     expect(deps.persisted.find((m) => m.role === 'tool')?.toolResults?.[0]).toMatchObject({ toolCallId: 'ws-1', success: false });
+  });
+
+  it('foreground denied-call guidance gives only a plain handoff and retains the required method', async () => {
+    const ctx = buildCtx({ foregroundToolFace: true, allowedToolNames: ['delegate_task', 'Read'], maxToolCallRetries: 3 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const processor = makeProcessor(ctx, deps, toolEngine);
+    await processor.handleToolResponse(toolUseResponse([
+      { id: 'denied-shell', name: 'Bash', arguments: { command: 'curl https://example.com' } },
+    ]), false, 1, EVENT_PROC);
+
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const guidance = deps.injected.join('\n');
+    expect(guidance).toContain('我把这件事交给后台任务去做，完成后告诉你结果。');
+    expect(guidance).toContain('requested method');
+    expect(guidance).not.toMatch(/Bash|Browser|工具列表|工具面|not in this turn|unavailable|not loaded/i);
+    const result = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+    expect(result?.success).toBe(false);
+    expect(result?.error).not.toMatch(/tool list|tool face|disabled|permission policy/i);
+  });
+
+  // 生产里 maxToolCallRetries 是 2（agentLoop.ts）：第三次被拒的调用会把终态那句话直接发给用户。
+  it.each([
+    ['前台面被拒的 Bash', { foregroundToolFace: true, allowedToolNames: ['delegate_task', 'Read'] },
+      { id: 'denied-shell', name: 'Bash', arguments: { command: 'rm ~/Desktop/neo-test.txt' } },
+      '这件事这次还没做成，你再说一声，我把这件事交给后台任务去做，完成后告诉你结果。'],
+    ['角色面被拒的非 shell 调用', { agentId: 'calendar-expert', allowedToolNames: ['Read', 'calendar'] },
+      { id: 'denied-send', name: 'mail_send', arguments: { to: 'a@b.c', subject: 's', body: 'b' } },
+      '这件事超出了我能做的范围，所以没有做。'],
+  ])('重试用尽后发给用户的终态一句话不露工具名和内部说法（%s）', async (_label, face, deniedCall, expected) => {
+    const ctx = buildCtx({ ...face, maxToolCallRetries: 2 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const processor = makeProcessor(ctx, deps, toolEngine);
+
+    const actions: string[] = [];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      actions.push(await processor.handleToolResponse(toolUseResponse([deniedCall]), false, attempt, EVENT_PROC));
+    }
+
+    expect(actions).toEqual(['continue', 'continue', 'break']);
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const emitted = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls
+      .map(([event]) => event as { type: string; data: Message })
+      .filter((event) => event.type === 'message' && event.data.role === 'assistant' && !event.data.toolCalls?.length);
+    expect(emitted).toHaveLength(1);
+    const content = emitted[0].data.content;
+    expect(content).toBe(expected);
+    for (const leaked of ['Bash', 'mail_send', 'delegate_task', 'Shell', '工具列表', '工具面', '禁用', '不可用', '没有加载', '权限策略']) {
+      expect(content).not.toContain(leaked);
+    }
+    // 边界与留痕不变：每一次被拒的调用仍按 TOOL_DISABLED_FOR_RUN 落库，没有任何工具被执行。
+    const denied = deps.persisted.filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
+    expect(denied).toHaveLength(3);
+    expect(denied.every((result) => result.success === false && result.metadata?.code === 'TOOL_DISABLED_FOR_RUN')).toBe(true);
+  });
+
+  it('提示词里提到范围外的连接器名不会让它的调用被放行（allowedConnectorIds 收窄仍然生效）', async () => {
+    const registry = getProtocolRegistry();
+    if (!registry.has(calendarSchema.name)) {
+      registry.register(calendarSchema, async () => (await import('../../../src/host/tools/modules/connectors/calendar')).calendarModule);
+    }
+    const prompt = '调用 calendar 看看 calendar 里今天的安排';
+    const toolScope = { allowedConnectorIds: ['mail'] };
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt, toolScope.allowedConnectorIds);
+    expect(allowedToolNames).not.toContain('calendar');
+    const ctx = buildCtx({ foregroundToolFace: true, allowedToolNames, toolScope, maxToolCallRetries: 3 });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const action = await makeProcessor(ctx, deps, toolEngine).handleToolResponse(toolUseResponse([
+      { id: 'cal-1', name: 'calendar', arguments: { action: 'list_events' } },
+    ]), false, 1, EVENT_PROC);
+
+    expect(action).toBe('continue');
+    expect(toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const result = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+    expect(result).toMatchObject({ toolCallId: 'cal-1', success: false });
+    expect(result?.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN' });
   });
 
   it('run 级禁用工具：整批调用和每条合成失败结果都落库（含批内被连带跳过的调用）', async () => {

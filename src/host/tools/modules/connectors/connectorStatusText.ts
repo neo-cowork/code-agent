@@ -11,6 +11,15 @@ interface ConnectorCopy {
   userTarget: string;
 }
 
+export type ConnectorUnavailableAction = 'read' | 'send' | 'create' | 'change';
+
+const UNAVAILABLE_ACTION_PHRASE: Record<ConnectorUnavailableAction, (copy: ConnectorCopy) => string> = {
+  read: (c) => `${c.dataNoun} cannot be read`,
+  send: (c) => `${c.dataNoun} cannot be sent`,
+  create: (c) => `${c.dataNoun} cannot be created`,
+  change: (c) => `${c.dataNoun} cannot be changed`,
+};
+
 const CONNECTOR_COPY: Record<StatusConnectorId, ConnectorCopy> = {
   mail: {
     title: 'Mail',
@@ -38,6 +47,16 @@ function formatReadableList(items: string[]): string {
   if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+// Model-visible error text for a tool call whose connector is missing from the registry.
+// Callers keep their own `ok:false` + `code: 'NOT_INITIALIZED'` shape.
+export function formatConnectorUnavailableMessage(
+  connectorId: StatusConnectorId,
+  action: ConnectorUnavailableAction = 'read',
+): string {
+  const copy = CONNECTOR_COPY[connectorId];
+  return `${copy.title} is not connected on this computer, so ${UNAVAILABLE_ACTION_PHRASE[action](copy)}. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on the Connectors page. Do not quote this line.`;
 }
 
 export function formatConnectorStatusOutput(

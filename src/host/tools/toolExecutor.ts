@@ -116,6 +116,7 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
+import { tryReadOnlyProbe } from './readOnlyProbeHook';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -261,38 +262,8 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-const DELETE_FLAG_PREFIXES = ['recursive_delete', 'root_delete', 'home_delete', 'system_dir_delete', 'container_dir_delete', 'wildcard_delete', 'current_dir_delete', 'sudo_rm'];
-const COMMAND_FILE_COUNT_LIMIT = 10_000;
-
-function extractDeleteTarget(command: string, securityFlags: string[]): string | undefined {
-  if (!securityFlags.some((flag) => DELETE_FLAG_PREFIXES.some((prefix) => flag.startsWith(prefix)))) return undefined;
-  const match = command.match(/(?:^|[;&|]\s*)rm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
-  return match?.[1] ?? match?.[2] ?? match?.[3];
-}
-
-async function countAffectedFiles(targetPath: string): Promise<number | undefined> {
-  try {
-    const root = await nodeFs.lstat(targetPath);
-    if (!root.isDirectory()) return 1;
-    let count = 0;
-    const pending = [targetPath];
-    while (pending.length > 0 && count < COMMAND_FILE_COUNT_LIMIT) {
-      const directory = pending.pop();
-      if (!directory) break;
-      const entries = await nodeFs.readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push(nodePath.join(directory, entry.name));
-        else count += 1;
-        if (count >= COMMAND_FILE_COUNT_LIMIT) break;
-      }
-    }
-    return count;
-  } catch {
-    return undefined;
-  }
-}
-
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
+import { computeDeleteImpact } from './deleteImpact';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -838,7 +809,8 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
       return {
         success: false,
-        error: `Tool not allowed: ${executionToolName} (disabled by --tools/--disallowed-tools)`,
+        error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
+        metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
       };
     }
 
@@ -1813,6 +1785,17 @@ export class ToolExecutor {
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
       }
 
+      // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
+      // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
+      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification) {
+        const probe = await tryReadOnlyProbe({ command: cmd, workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments });
+        if (probe) {
+          logger.info('readonly_probe_plan_hit', { programs: probe.programs });
+          recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+          return { success: true, output: probe.output, metadata: { readonlyProbePlan: true } };
+        }
+      }
+
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
@@ -2217,15 +2200,16 @@ export class ToolExecutor {
           ? [permissionRequest.reason, deterministicAskReason].filter(Boolean).join('；')
           : deterministicAskReason;
       }
-      const deleteTarget = commandValidation && typeof params.command === 'string'
-        ? extractDeleteTarget(params.command, commandValidation.securityFlags)
+      // 删除影响盘点抽到 deleteImpact.ts：与渲染层共用 shared/rmCommandTargets 的解析，
+      // 多目标确切命令求和、通配符/变量/管道一律缺省，绝不定格成 1。
+      const deleteImpact = commandValidation && typeof params.command === 'string'
+        ? await computeDeleteImpact(params.command, commandValidation.securityFlags, bashWorkingDirectory)
         : undefined;
-      if (deleteTarget) {
-        const affectedPath = nodePath.isAbsolute(deleteTarget)
-          ? nodePath.resolve(deleteTarget)
-          : nodePath.resolve(bashWorkingDirectory, deleteTarget);
-        permissionRequest.details.affectedPath = affectedPath;
-        permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
+      if (deleteImpact) {
+        permissionRequest.details.affectedPath = deleteImpact.affectedPath;
+        if (deleteImpact.affectedFileCount !== undefined) {
+          permissionRequest.details.affectedFileCount = deleteImpact.affectedFileCount;
+        }
       }
       if (isBashToolName(policyToolName) && typeof params.command === 'string') {
         const sandboxDecision = resolveOsSandboxDecision({
