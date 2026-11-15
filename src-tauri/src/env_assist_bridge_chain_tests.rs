@@ -3,10 +3,7 @@ use super::*;
 use std::process::Stdio;
 use std::time::Instant;
 
-fn run_host_child(server: &BridgeServer) -> serde_json::Value {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
+fn run_host_child(root: &std::path::Path, server: &BridgeServer) -> serde_json::Value {
     let mut child = Command::new("node")
         .args([
             "--import",
@@ -81,15 +78,21 @@ fn run_host_child(server: &BridgeServer) -> serde_json::Value {
     result
 }
 
-#[test]
-fn real_listener_write_handshake_node_client_two_launches_and_cross_token_rejection() {
+fn run_two_launch_chain(root: &std::path::Path) -> bool {
+    if !root.join("node_modules/tsx/package.json").is_file() {
+        eprintln!(
+            "[env-assist-node-chain] SKIP: node_modules/tsx is missing in this Rust-only checkout; \
+             install the repo npm dependencies to run the real Rust -> Node handshake proof"
+        );
+        return false;
+    }
     let first_fake = Arc::new(FakeBridgeHandlers::default());
     let first = start_bridge_server(make_bridge_token().unwrap(), first_fake.clone()).unwrap();
-    run_host_child(&first);
+    run_host_child(root, &first);
     let second_fake = Arc::new(FakeBridgeHandlers::default());
     let second = start_bridge_server(make_bridge_token().unwrap(), second_fake.clone()).unwrap();
     assert_ne!(first.token, second.token);
-    run_host_child(&second);
+    run_host_child(root, &second);
     let (status, response) = send_raw_http(second.port, &format!(
         "POST /v1/grant/accessibility HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}",
         second.port, first.token,
@@ -110,4 +113,22 @@ fn real_listener_write_handshake_node_client_two_launches_and_cross_token_reject
         );
         println!("[handlers] passive_calls=4 grant_calls=4 (cross-token adds zero)");
     }
+    true
+}
+
+#[test]
+fn real_listener_write_handshake_node_client_two_launches_and_cross_token_rejection() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
+    run_two_launch_chain(root);
+}
+
+#[test]
+fn rust_only_checkout_without_tsx_explicitly_skips_node_chain() {
+    let root = std::env::temp_dir().join(format!("env-assist-rust-only-{}", std::process::id()));
+    std::fs::create_dir(&root).expect("create checkout without npm dependencies");
+    let outcome = std::panic::catch_unwind(|| run_two_launch_chain(&root));
+    std::fs::remove_dir_all(&root).expect("remove test checkout");
+    assert!(!outcome.expect("Rust-only checkout must skip the Node chain"));
 }
