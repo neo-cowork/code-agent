@@ -73,6 +73,7 @@ export type SessionCommandService = Pick<
   AgentApplicationService,
   | 'listSessions'
   | 'createSession'
+  | 'loadSession'
   | 'findExpertThreadSession'
   | 'getMessages'
   | 'sessionExists'
@@ -120,7 +121,7 @@ export interface SessionCommandContext {
   // —— 1.2 drift 表逐项拍板后的显式差异面（归属见文件头） ——
   /** web: sm.listSessions + durable replay projection；桌面: appService.listSessions */
   listSessions(options?: SessionListQueryOptions): Promise<Session[]>;
-  /** web: sm.restoreSession + durable replay projection（null 透传不抛）；桌面: appService.loadSession（缺失抛错） */
+  /** Both use lifecycle load + durable replay; web preserves null for missing sessions. */
   loadSession(sessionId: string): Promise<Session | null>;
   /** web: 挂 streamSnapshot + activeRun（runtime-only，不进 DB）；桌面: no-op */
   decorateLoadedSession(session: Session): Promise<void>;
