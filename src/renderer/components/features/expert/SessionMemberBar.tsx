@@ -220,7 +220,8 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     ? resolveAgentNodeOutcomeKey(outcomeRow.node.status, outcomeRow.node.failureCode) : null;
   const outcomeSummary = outcome
     ? interpolatePlural(text.collapsedOutcome, rows.filter((row) => row.node
-      && resolveAgentNodeOutcomeKey(row.node.status, row.node.failureCode) === outcome).length)
+      ? resolveAgentNodeOutcomeKey(row.node.status, row.node.failureCode) === outcome
+      : text.panel.status[row.status] === t.outcomeWords[outcome].badge.label).length)
       .replace('{status}', t.outcomeWords[outcome].badge.label)
     : null;
   const summary = standby

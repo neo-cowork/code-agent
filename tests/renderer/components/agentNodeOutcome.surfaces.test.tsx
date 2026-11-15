@@ -133,6 +133,20 @@ describe.each(['en', 'zh'] as const)('one tree snapshot across three surfaces (%
     expect(headline.contains(reason)).toBe(false);
   });
 
+  it('counts both tree-backed and member-only agents with the same visible outcome', async () => {
+    language = locale;
+    invoke.mockImplementation((channel: string) => Promise.resolve(channel === 'swarm:list-trace-runs'
+      ? [{ id: 'ledger', sessionId: 'weekly-session' }]
+      : channel === 'swarm:get-trace-run-detail' ? {
+        run: { id: 'ledger', sessionId: 'weekly-session', startedAt: 1, endedAt: null, totalTokensIn: 0, totalTokensOut: 0 },
+        agents: ['weekly-assistant', 'report-editor'].map((agentId) => ({ agentId, name: 'Report assistant', role: 'background', status: 'running', tokensIn: 0, tokensOut: 0, filesChanged: [] })), events: [],
+      } : []));
+    invokeDomain.mockResolvedValue(snapshot(node('running')));
+    render(<SessionMemberBar sessionId="weekly-session" />);
+    await waitFor(() => expect(screen.getByTestId('session-member-bar-collapsed').textContent)
+      .toContain(locale === 'en' ? '2 agents · Working' : '2 个代理 · 工作中'));
+  });
+
   it('a recovered context node overrides a stale running member ledger', async () => {
     language = locale;
     invoke.mockImplementation((channel: string) => Promise.resolve(channel === 'swarm:list-trace-runs'
