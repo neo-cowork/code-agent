@@ -26,4 +26,7 @@ Quote the transcript when you cite what someone said. Do not invent owners or du
   // 转写是会上其他人说的话，不是用户本人的指令：保留原文、标注来源（block 会把整份转写挡掉）
   readsUntrustedContent: 'annotate',
   allowInPlanMode: true,
+  // 只读本地会议库、几十毫秒返回：在文字前台「短时 × 低副作用」口径内。不声明时前台白名单会把预载进来的它剔掉，
+  // 模型只好拿会议名去 Grep 文件（N-MEETING-PAGE 11-15 真机实证）。
+  allowInTextForeground: true,
 };

@@ -75,7 +75,7 @@ async function resolveSessionManager(deps: WebSessionContextDependencies): Promi
 
 /** web 实现（方案 2.2 表「现状平移」列）：与原 switch 逐 case 等价 */
 export function createWebSessionContext(deps: WebSessionContextDependencies): SessionCommandContext {
-  return {
+  const ctx: SessionCommandContext = {
     // 每请求惰性构造（durableRunReadService 异步装配，构造时机不同会冻结 undefined，
     // 保持原 handler 每请求构造的现状）
     sessions: async (): Promise<SessionCommandService> => {
@@ -97,9 +97,11 @@ export function createWebSessionContext(deps: WebSessionContextDependencies): Se
     },
 
     loadSession: async (sessionId: string) => {
-      const session = await (await resolveSessionManager(deps)).restoreSession(sessionId);
+      // Preserve the web missing-session contract before entering the lifecycle,
+      // which throws for missing sessions and owns browser cleanup + activation.
+      const session = await (await resolveSessionManager(deps)).getSession(sessionId, 1);
       return session
-        ? withDurableSessionReplayPayload(session, deps.getDurableRunReadService())
+        ? withDurableSessionReplayPayload(await (await ctx.sessions()).loadSession(sessionId), deps.getDurableRunReadService())
         : null;
     },
 
@@ -212,4 +214,5 @@ export function createWebSessionContext(deps: WebSessionContextDependencies): Se
       },
     },
   };
+  return ctx;
 }

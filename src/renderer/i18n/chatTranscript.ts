@@ -19,7 +19,7 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '代理工作中{name}', completed: `${outcomeWordsZh.outcomeWords.completed.timeline.label}{name}`, failed: `${outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label}{name}`, cancelled: `${outcomeWordsZh.outcomeWords['cancelled-by-user'].detail.label}{name}` },
+    headlines: { working: '{name}正在处理', completed: '{name}已完成', failed: '{name}没有完成', cancelled: '{name}已取消' },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,

@@ -31,6 +31,7 @@ import { getDatabase } from '../core/databaseService';
 import { stripSystemTitlePrefix, toUserFacingArgsPreview } from './parkedCardDisplay';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
+import { pickApprovalOrigin } from '../../permissions/approvalOriginFields';
 import { broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 
@@ -592,6 +593,7 @@ export class SessionAutomationService {
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
         ...(payload.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...pickApprovalOrigin(payload),
         ...(row.status !== 'orphaned' && payload.writeGrantFolder ? { writeGrantFolder: payload.writeGrantFolder } : {}),
         sensitiveStep: payload.sensitiveStep,
       };
@@ -962,6 +964,7 @@ function toVoidedInboxItem(
     sessionId,
     sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
     argsPreview: toUserFacingArgsPreview(payload.argsPreview),
+    ...pickApprovalOrigin(payload),
     tool: payload.tool ?? '',
     displayTool: payload.displayTool,
     requestedAt: payload.requestedAt ?? row.submittedAt,

@@ -3,14 +3,24 @@ import Database from 'better-sqlite3';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
+import { computeActionFingerprint, getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import {
+  bindToolGrantDatabase,
+  clearToolRunGrants,
+  mintTool24hGrant,
+  mintToolRunGrant,
+} from '../../../src/host/permissions/toolGrantStore';
+import { getSessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 import { createLogger } from '../../../src/host/services/infra/logger';
+import { getToolResolver } from '../../../src/host/tools/dispatch/toolResolver';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { getToolLedgerSink, setToolLedgerSink, type ToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+import { PermissionDecisionRepository } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
 import { agentErrorZh, agentErrorEn } from '../../../src/renderer/i18n/agentError';
-import type { AppSettings } from '../../../src/shared/contract';
+import type { AgentEvent, AppSettings } from '../../../src/shared/contract';
 import { HostReasonCode, type PermissionDenialSource } from '../../../src/shared/contract/permission';
 
 vi.unmock('better-sqlite3');
@@ -30,6 +40,8 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
   let cwd: string;
   let db: InstanceType<typeof Database>;
   let repo: PendingApprovalRepository;
+  let decisionRepo: PermissionDecisionRepository;
+  let previousLedgerSink: ToolLedgerSink;
   beforeEach(async () => {
     getDenialRegistry().clearAll();
     resetPermissionModeManager();
@@ -38,10 +50,43 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     db.exec(`CREATE TABLE pending_approvals (
       id TEXT PRIMARY KEY, kind TEXT, agent_id TEXT, agent_name TEXT, coordinator_id TEXT,
       payload_json TEXT, status TEXT, submitted_at INTEGER, resolved_at INTEGER, feedback TEXT
+    );
+    CREATE TABLE permission_decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      tool_name TEXT NOT NULL,
+      summary TEXT,
+      final_outcome TEXT NOT NULL,
+      history_outcome TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      wait_ms INTEGER,
+      origin TEXT,
+      recorded_at INTEGER NOT NULL,
+      trace_json TEXT,
+      policy_hash TEXT
+    );
+    CREATE TABLE tool_permission_grants (
+      tool_key TEXT PRIMARY KEY,
+      tool_name TEXT NOT NULL,
+      target TEXT,
+      granted_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
     )`);
     repo = new PendingApprovalRepository(db);
+    decisionRepo = new PermissionDecisionRepository(db);
+    bindToolGrantDatabase(db, true);
+    previousLedgerSink = getToolLedgerSink();
+    setToolLedgerSink({
+      appendPermissionDecision: (input) => decisionRepo.append(input),
+      appendToolExecutionBegin: () => {},
+      appendToolExecutionComplete: () => {},
+    });
   });
   afterEach(async () => {
+    clearToolRunGrants('goal-session');
+    bindToolGrantDatabase(null, true);
+    setToolLedgerSink(previousLedgerSink);
     resetPermissionModeManager();
     vi.restoreAllMocks();
     db.close();
@@ -58,6 +103,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
       getPermissionModeManager().markUnattendedSession('goal-session');
     }
     let humanPrompts = 0;
+    const events: AgentEvent[] = [];
     const island = new OrchestratorPermissionIsland({
       getSettings: () => ({
         permissions: { autoApprove: { read: false, write: false, execute: false, network: false } },
@@ -67,6 +113,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
       hasApprovalUi: () => !(opts.unattended ?? true),
       injectedPendingApprovalRepo: repo,
       onEvent: (event) => {
+        events.push(event);
         if (event.type === 'permission_request' && !event.data.resolved) {
           humanPrompts += 1;
           const machineDenial = source === 'user' ? undefined : source;
@@ -89,7 +136,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
       permissionModeOverride: readOnly ? 'readOnly' : undefined,
     });
     tool.setAuditEnabled(false);
-    return { tool, requestPermission, getHumanPrompts: () => humanPrompts };
+    return { tool, requestPermission, events, getHumanPrompts: () => humanPrompts };
   }
   const options = { sessionId: 'goal-session', sourceMessageId: 'user-1' };
 
@@ -155,7 +202,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     expect(getHumanPrompts()).toBe(1);
   });
 
-  it.each(['timeout', 'cancelled', 'fail-closed', 'scripted', 'no-approval-ui'] as const)('%s does not trigger goal sticky', async (source) => {
+  it.each(['timeout', 'cancelled', 'fail-closed', 'scripted', 'no-approval-ui', 'goal-sticky-host'] as const)('%s does not trigger goal sticky', async (source) => {
     const { tool, getHumanPrompts } = executor(source);
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
     await tool.execute('Bash', { command: 'find . -name backup -delete' }, options);
@@ -172,5 +219,152 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     const { tool } = executor('user', 'declined from inbox');
     const result = await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
     expect(result.error).toBe(`declined from inbox ${guidance}`);
+  });
+
+  it('interactive denial emits zero permission_request events on retry so renderer memory never sees a card', async () => {
+    const { tool, events } = executor('user', undefined, false, { unattended: false });
+    await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
+    const retry = await tool.execute('Bash', { command: 'mkdir -p sorted' }, options);
+    expect(retry.success).toBe(false);
+    expect(retry.error).toBe(guidance);
+    expect(events.filter((e) => e.type === 'permission_request')).toHaveLength(1);
+  });
+
+  it.each(['run', '24h'] as const)(
+    'prior %s tool grant yields to same-message family denial and resumes on a new sourceMessageId',
+    async (tier) => {
+      if (tier === 'run') {
+        mintToolRunGrant('goal-session', 'Bash');
+      } else {
+        mintTool24hGrant('Bash');
+      }
+      const { tool, events, getHumanPrompts } = executor('user', undefined, false, { unattended: true });
+      const triggerPermissionDenied = vi.fn(async () => {});
+      const hookManager = { triggerPermissionDenied } as unknown as NonNullable<
+        Parameters<ToolExecutor['execute']>[2]
+      >['hookManager'];
+
+      const first = await tool.execute('Bash', { command: 'rm -rf old-installers' }, { ...options, hookManager });
+      expect(first.success).toBe(false);
+      expect(getHumanPrompts()).toBe(1);
+      const pendingAfterFirst = db.prepare('SELECT * FROM pending_approvals').all();
+      expect(pendingAfterFirst).toHaveLength(1);
+
+      const retry = await tool.execute('Bash', { command: 'mkdir -p sorted' }, { ...options, hookManager });
+      expect(retry.success).toBe(false);
+      expect(retry.error).toBe(guidance);
+      expect(getHumanPrompts()).toBe(1);
+      expect(events.filter((e) => e.type === 'permission_request' && !e.data.resolved)).toHaveLength(1);
+      expect(db.prepare('SELECT * FROM pending_approvals').all()).toEqual(pendingAfterFirst);
+      expect(triggerPermissionDenied).toHaveBeenNthCalledWith(1, 'Bash', expect.any(String), 'user', 'goal-session');
+      expect(triggerPermissionDenied).toHaveBeenNthCalledWith(2, 'Bash', guidance, 'runtime', 'goal-session');
+
+      const nextTurn = await tool.execute('Bash', { command: 'mkdir -p sorted' }, {
+        ...options,
+        sourceMessageId: 'user-2',
+        hookManager,
+      });
+      expect(nextTurn.success).toBe(true);
+      expect(getHumanPrompts()).toBe(1);
+
+      const decisions = decisionRepo.getBySession('goal-session');
+      expect(decisions.map((d) => ({ outcome: d.historyOutcome, reason: d.reason }))).toEqual([
+        { outcome: 'ask-denied', reason: 'user' },
+        { outcome: 'ask-denied', reason: 'goal-sticky-host' },
+        { outcome: 'auto-approve', reason: `tool_grant:${tier}` },
+      ]);
+    },
+  );
+
+  it('prior external standing grant yields to same-message messaging denial and resumes on a new sourceMessageId', async () => {
+    const mcpTool = 'mcp__lark__im_v1_message_create';
+    const resolver = getToolResolver();
+    const origGetDef = resolver.getDefinition.bind(resolver);
+    const origExec = resolver.execute.bind(resolver);
+    vi.spyOn(resolver, 'getDefinition').mockImplementation((name) => (
+      name === mcpTool
+        ? {
+            name: mcpTool,
+            description: 'send lark message',
+            inputSchema: { type: 'object', properties: {} },
+            outputSchema: { type: 'object', properties: {} },
+            requiresPermission: true,
+            permissionLevel: 'network',
+          }
+        : origGetDef(name)
+    ));
+    vi.spyOn(resolver, 'execute').mockImplementation(async (name, args, ctx) => (
+      name === mcpTool ? { success: true, output: 'sent' } : origExec(name, args, ctx)
+    ));
+    vi.spyOn(getSessionAutomationService(), 'matchStandingGrant').mockImplementation(
+      (sid, toolName, target) => sid === 'goal-session' && toolName === mcpTool && target === 'open_id:ou_alice',
+    );
+    const { tool, events, getHumanPrompts } = executor('user', undefined, false, { unattended: true });
+
+    const denied = await tool.execute(
+      mcpTool,
+      { params: { receive_id_type: 'open_id' }, data: { receive_id: 'ou_bob', content: 'hi' } },
+      options,
+    );
+    expect(denied.success).toBe(false);
+    const pendingAfterDenied = db.prepare('SELECT * FROM pending_approvals').all();
+    expect(pendingAfterDenied).toHaveLength(1);
+
+    const sameTurnGrantedTarget = await tool.execute(
+      mcpTool,
+      { params: { receive_id_type: 'open_id' }, data: { receive_id: 'ou_alice', content: 'hi' } },
+      options,
+    );
+    expect(sameTurnGrantedTarget.success).toBe(false);
+    expect(sameTurnGrantedTarget.error).toBe(guidance);
+    expect(getHumanPrompts()).toBe(1);
+    expect(events.filter((e) => e.type === 'permission_request' && !e.data.resolved)).toHaveLength(1);
+    expect(db.prepare('SELECT * FROM pending_approvals').all()).toEqual(pendingAfterDenied);
+
+    const nextTurn = await tool.execute(
+      mcpTool,
+      { params: { receive_id_type: 'open_id' }, data: { receive_id: 'ou_alice', content: 'hi' } },
+      { ...options, sourceMessageId: 'user-2' },
+    );
+    expect(nextTurn.success).toBe(true);
+    expect(getHumanPrompts()).toBe(1);
+    const decisions = decisionRepo.getBySession('goal-session');
+    expect(decisions.map((d) => ({ outcome: d.historyOutcome, reason: d.reason }))).toEqual([
+      { outcome: 'ask-denied', reason: 'user' },
+      { outcome: 'ask-denied', reason: 'goal-sticky-host' },
+      { outcome: 'auto-approve', reason: 'standing_grant:open_id:ou_alice' },
+    ]);
+  });
+
+  it('guard refusal records goal-sticky-host without downgrading the real-user fingerprint entry', async () => {
+    const scope = { sessionId: 'goal-session', runId: 'run-ledger-1' };
+    const { tool } = executor('user', undefined, false, { unattended: true });
+    const cmd = 'find . -name draft -delete';
+    const fp = computeActionFingerprint('Bash', { command: cmd }, cwd);
+    expect(fp).toBe('bash:find . -name draft -delete');
+
+    await tool.execute('Bash', { command: cmd }, scope);
+    expect(getDenialRegistry().find('goal-session', fp!)).toMatchObject({
+      byUser: true,
+      reason: 'user',
+    });
+
+    const retry = await tool.execute('Bash', { command: cmd }, scope);
+    expect(retry.success).toBe(false);
+    expect(retry.error).toBe(guidance);
+
+    expect(getDenialRegistry().find('goal-session', fp!)).toMatchObject({
+      byUser: true,
+      reason: 'user',
+    });
+    expect(
+      getDenialRegistry().refuseIfGoalDenied({ sessionId: 'goal-session', runId: 'run-ledger-1', tool: 'Bash' }),
+    ).toMatchObject({ approved: false, denialSource: 'goal-sticky-host' });
+
+    const decisions = decisionRepo.getBySession('goal-session');
+    expect(decisions.map((d) => ({ finalOutcome: d.finalOutcome, historyOutcome: d.historyOutcome, reason: d.reason }))).toEqual([
+      { finalOutcome: 'deny', historyOutcome: 'ask-denied', reason: 'user' },
+      { finalOutcome: 'deny', historyOutcome: 'ask-denied', reason: 'goal-sticky-host' },
+    ]);
   });
 });
