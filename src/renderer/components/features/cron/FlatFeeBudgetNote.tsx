@@ -9,7 +9,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 
 interface FlatFeeBudgetNoteProps {
-  variant: 'settings' | 'cron';
+  variant: 'settings' | 'cron' | 'center';
 }
 
 export const FlatFeeBudgetNote: React.FC<FlatFeeBudgetNoteProps> = ({ variant }) => {
@@ -18,9 +18,11 @@ export const FlatFeeBudgetNote: React.FC<FlatFeeBudgetNoteProps> = ({ variant })
   const model = useAppStore((state) => state.modelConfig.model);
   if (!model || !isZeroPricedModel(provider, model)) return null;
   const cc = t.cronCenter;
-  const template = variant === 'settings' ? cc.flatFeeBudgetNoteSettings : cc.flatFeeBudgetNoteCron;
+  const template = variant === 'settings'
+    ? cc.flatFeeBudgetNoteSettings
+    : variant === 'center' ? cc.flatFeeBudgetNoteCenter : cc.flatFeeBudgetNoteCron;
   return (
-    <p className="text-xs text-zinc-500" role="note" data-testid="flat-fee-budget-note">
+    <p className="text-xs text-zinc-500" role="note" data-testid={variant === 'center' ? 'flat-fee-budget-note-center' : 'flat-fee-budget-note'}>
       {template.replace('{model}', model)}
     </p>
   );
