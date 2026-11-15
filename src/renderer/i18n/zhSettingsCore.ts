@@ -208,6 +208,12 @@ export const zhSettingsCore = {
         openSettingsFailed: '无法打开系统设置，请手动打开“通知”。',
       },
       permissions: {
+        readOnlyLookups: {
+          title: '查询前免确认',
+          description: '开启后，检查文件是否存在或列出文件夹内容无需确认；关闭后，下次查询会先请你确认。',
+          savedOn: '已开启查询前免确认。',
+          savedOff: '已关闭查询前免确认，下次查询会先请你确认。',
+        },
         pageTitle: '权限与安全',
         pageDescription: '管理 Agent 执行敏感操作时的权限检查，以及子 Agent 的权限继承策略。',
         unknownError: '未知错误',

@@ -90,6 +90,7 @@ import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
 import { projectScope } from '../shared/contract/companionLibrary';
 import { IPC_CHANNELS } from '../shared/ipc';
+import { BUILTIN_MAINTENANCE_JOB_TAGS } from '../shared/constants/memory';
 import { broadcastToRenderer } from '../host/platform/windowBridge';
 import { getDatabase } from '../host/services/core/databaseService';
 import type { AgentRunBody } from './routes/agentBodySchemas';
@@ -159,11 +160,14 @@ async function tryGetSessionManager() {
 
 /**
  * 「已启用定时任务」计数的唯一口径：quit-guard 计数与 daemon 空闲快照
- * （armedSchedules 信号）共用同一个 listJobs({ enabled: true }).length，
+ * （armedSchedules 信号）共用同一个已启用用户任务计数，
  * 不另造第二套「armed」定义。cron 是懒加载单例，失败上抛给调用方。
  */
 function countArmedSchedules(): number {
-  return getCronService().listJobs({ enabled: true }).length;
+  // Users did not create maintenance jobs; Cmd+Q must quit when only those remain.
+  return getCronService().listJobs({ enabled: true }).filter((job) =>
+    !Object.values(BUILTIN_MAINTENANCE_JOB_TAGS).some((tag) => job.tags?.includes(tag)),
+  ).length;
 }
 
 /**
