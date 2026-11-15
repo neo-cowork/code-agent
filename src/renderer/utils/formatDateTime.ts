@@ -1,5 +1,5 @@
 // Shared renderer date-time text, independent of machine locale and UI language.
-import type { Language } from '../i18n';
+import { languages, type Language } from '../i18n';
 
 /**
  * Full date-time in zh and en: `YYYY/MM/DD HH:mm`, zero padded, 24-hour, no seconds.
@@ -11,9 +11,10 @@ export function formatDateTime(
   lang: Language = 'zh',
   timeZone?: string,
 ): string {
-  if (value == null) return '未设置';
+  // 没有时间 / 时间无效时的兜底词同样跟界面语言（FB-1495）
+  if (value == null) return languages[lang].dateTime.notSet;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '无效时间';
+  if (Number.isNaN(date.getTime())) return languages[lang].dateTime.invalid;
   const pad = (part: number) => String(part).padStart(2, '0');
   if (timeZone) {
     const parts = new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'zh-CN', {

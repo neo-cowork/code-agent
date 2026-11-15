@@ -195,8 +195,9 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
       >
         <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-mark-warning" aria-hidden="true" />
         <span data-testid="cron-run-status-text">
-          {copy.awaiting}
-          {status.approval.label ? `：${status.approval.label}` : ''}
+          {status.approval.label
+            ? copy.awaitingWithLabel.replace('{label}', status.approval.label)
+            : copy.awaiting}
         </span>
         {status.approval.command !== undefined && (
           <Button
