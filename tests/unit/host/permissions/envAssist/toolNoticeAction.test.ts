@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const bridge = vi.hoisted(() => ({ present: false }));
 vi.mock('../../../../../src/host/permissions/envAssist/shellBridge/client', () => ({ canRequestEnvGrant: () => bridge.present }));
 vi.mock('../../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true }));
+// CI runs headless Linux, where a screenshot failure classifies as no display server; pin the macOS permission cause.
+vi.mock('../../../../../src/host/permissions/envAssist/screenshotFailureCause', () => ({ detectScreenshotFailureCause: () => ({ kind: 'screen_recording_permission' }) }));
 vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ getMessages: async () => [], addMessageToSession: async () => undefined }),
 }));
