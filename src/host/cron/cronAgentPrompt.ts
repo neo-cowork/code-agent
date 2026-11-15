@@ -106,6 +106,7 @@ export function buildCronAgentPrompt(
   const deliveryDigestInstruction =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
     + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`;
+  const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   // notifyWhen 打扰判据（N-CRON-RESTATE-HUMAN-WHEN）：设置后让模型自判本次是否
   // 值得打扰——满足判据才输出 <cron_alert>，host 侧按该标记门通知与推送。
   // 缺省/空白时这条指令整体缺席，产出与旧版逐字节相同。
@@ -114,7 +115,7 @@ export function buildCronAgentPrompt(
     ? `打扰规则（用户设定）：本次运行只有当结果满足「${trimmedNotifyWhen}」时，才在回复末尾追加一行 <cron_alert>用一句话说明满足了什么</cron_alert>；不满足时不要输出 <cron_alert> 标记（该轮将不打扰用户）。`
     : '';
   if (!enabled) {
-    return [prompt, '', timeAnchor, ...(personalSourceInstruction ? ['', personalSourceInstruction] : []), '', deliveryDigestInstruction, ...(notifyGateInstruction ? ['', notifyGateInstruction] : [])].join('\n');
+    return [prompt, '', timeAnchor, ...(personalSourceInstruction ? ['', personalSourceInstruction] : []), '', denialInstruction, '', deliveryDigestInstruction, ...(notifyGateInstruction ? ['', notifyGateInstruction] : [])].join('\n');
   }
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
@@ -122,6 +123,8 @@ export function buildCronAgentPrompt(
     prompt,
     '',
     timeAnchor,
+    '',
+    denialInstruction,
     ...(personalSourceInstruction ? ['', personalSourceInstruction] : []),
     ...(hasSnapshot
       ? [
