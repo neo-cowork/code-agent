@@ -1,3 +1,4 @@
+import { selectBrowserEndedSession } from './browserEndedSession';
 import { resolveBrowserEmptyText } from './browserAgentWindowEmptyText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -19,7 +20,6 @@ import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutio
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppshotsStore } from '../../stores/appshotsStore';
 import {
-  selectSurfaceExecutionRunSessionV1,
   selectActiveBrowserSurfaceSessionV1,
   useSurfaceExecutionStore,
 } from '../../stores/surfaceExecutionStore';
@@ -118,17 +118,11 @@ export const BrowserAgentWindow: React.FC = () => {
     managedSession, preview, ownedByCurrentSession,
     browserSurfaceSessionId, browserSurfaceTitle, browserSurfaceOrigin,
   } = browserSession;
-  // 终态留影：展示层改用**含终态**的选择器拿会话（开流入参仍是上面排除终态的那个，
-  // 护栏不动）。只在「没有活跃 browser 会话 且 选中的是终态 browser 会话」时进留影/摘要卡。
-  const displaySurfaceSession = useSurfaceExecutionStore((state) => (
-    selectSurfaceExecutionRunSessionV1(state.sessionsByScope, { conversationId: currentSessionId })
+  const endedSessionRef = useRef<ReturnType<typeof selectBrowserEndedSession>>(null);
+  const terminalSurfaceSession = useSurfaceExecutionStore((state) => selectBrowserEndedSession(
+    state.sessionsByScope, currentSessionId, browserSurfaceSessionId, managedSession.activeTab?.url, endedSessionRef.current,
   ));
-  const terminalSurfaceSession = !browserSurfaceSessionId
-    && displaySurfaceSession?.session.surface === 'browser'
-    && (displaySurfaceSession.session.state === 'completed'
-      || displaySurfaceSession.session.state === 'failed')
-    ? displaySurfaceSession
-    : null;
+  if (terminalSurfaceSession) endedSessionRef.current = terminalSurfaceSession;
   const terminalScopeKey = terminalSurfaceSession
     ? surfaceExecutionScopeKeyV1(terminalSurfaceSession.scope)
     : null;
@@ -347,7 +341,7 @@ export const BrowserAgentWindow: React.FC = () => {
     workspace: workingDirectory,
     ownedByCurrentSession,
     annotateMode,
-    ready: Boolean(liveStream.frame && browserSurfaceSessionId),
+    ready: Boolean(liveStream.frame && browserSurfaceSessionId && !terminalSurfaceSession),
     agentSurfaceBusy,
     contentWidth: stageFollow?.viewport.width
       ?? liveStream.frame?.width
@@ -775,7 +769,7 @@ export const BrowserAgentWindow: React.FC = () => {
               {navigationPending?.url}
             </div>
           </div>
-        ) : liveStream.frame ? (
+        ) : liveStream.frame && !terminalSurfaceSession ? (
           <img
             data-testid="browser-agent-window-frame"
             src={liveStream.frame.dataUrl}
