@@ -19,6 +19,7 @@ import {
   classifyToolName,
   humanizeToolGroupLabel,
   humanizeToolStep,
+  classifyToolCall,
   parseDelegateSessionReceipt,
   isInternalStreamTool,
 } from '../../../utils/humanizeToolStep';
@@ -301,8 +302,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         : humanizedStep;
     const details = redactCredentialText(JSON.stringify(request.details, null, 2));
 
-    return [{ request, statusLabel, stepLabel, details, timedOut, denied }];
+    const allowed = !denied && !timedOut && !superseded;
+    return [{ request, statusLabel, stepLabel, details, timedOut, denied, nodeIndex: nodes.indexOf(node), foldKey: allowed && request.tool === 'ExcelAutomate' ? `${request.tool}:${classifyToolCall(request.tool, requestDetails)}` : null }];
   }), [nodes, resolvedPermissionRequests, t]);
+  // 连续、同工具同步骤类的「你已允许」折成一行带次数；拒绝 / 超时 / 被顶替从不折叠。
+  const permissionEvidenceRows = useMemo(() => permissionEvidence.reduce<Array<typeof permissionEvidence[number] & { count: number }>>((rows, item) => {
+    const last = rows[rows.length - 1];
+    if (last && item.foldKey && last.foldKey === item.foldKey && last.nodeIndex + last.count === item.nodeIndex) {
+      last.count += 1;
+      last.details = `${last.details}\n${item.details}`;
+      return rows;
+    }
+    rows.push({ ...item, count: 1 });
+    return rows;
+  }, []), [permissionEvidence]);
   // 来自本组里一条已解析的 PermissionRequest——真的「有人/有界面做了这个决定」。
   // 只有它才可以抢在 failureReason 之前：仅凭 metadata.failureCode 的那种猜测（很可能是
   // CLI auto 档 fail-closed、从没到过人眼）由 humanizeToolFailureReason / preflight
@@ -536,7 +549,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      {permissionEvidence.map(({ request, statusLabel, stepLabel, details, timedOut, denied }) => (
+      {permissionEvidenceRows.map(({ request, statusLabel, stepLabel, details, timedOut, denied, count }) => (
         <div
           key={request.id}
           className="ml-4 flex items-start gap-2 pl-3 text-[11px] leading-5 text-zinc-500"
@@ -548,7 +561,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                 ? `${t.outcomeWords['failed-approval-denied'].timeline.label} · ${t.outcomeWords['failed-approval-denied'].timeline.reason} · ${stepLabel}`
                 : timedOut
                   ? `${t.outcomeWords['failed-timeout'].timeline.label} · ${t.outcomeWords['failed-timeout'].timeline.reason} · ${stepLabel}`
-                  : `${statusLabel} · ${stepLabel}`}
+                  : `${statusLabel} · ${stepLabel}${count > 1 ? ` · ${t.decisionCard.permission.settledAllowedFolded.replace('{count}', String(count))}` : ''}`}
             </summary>
             <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-primary px-2 py-1.5 text-[10px] leading-4 text-zinc-500">
               {details}

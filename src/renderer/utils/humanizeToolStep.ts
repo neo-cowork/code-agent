@@ -1,3 +1,4 @@
+import { EXCEL_READ_ACTIONS, EXCEL_WRITE_ACTIONS } from '@shared/constants/excelActions';
 import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
@@ -148,6 +149,24 @@ const MEMORY_STORE_TOOLS = new Set(['memory_store']);
 const MEMORY_SEARCH_TOOLS = new Set(['memory_search']);
 // ToolSearch：工具目录检索，对用户零意义的纯内部动作，不进主流聚合行
 const TOOL_SEARCH_TOOLS = new Set(['ToolSearch', 'tool_search']);
+
+
+
+/** 带入参的分类：ExcelAutomate 按 action 落到既有的读 / 写步骤；其余沿用按工具名分类。 */
+export function classifyToolCall(name: string, args: Record<string, unknown> | undefined): ToolCategory {
+  if (name === 'ExcelAutomate') {
+    const action = args?.action;
+    if (typeof action === 'string' && EXCEL_READ_ACTIONS.has(action)) return 'read';
+    if (typeof action === 'string' && EXCEL_WRITE_ACTIONS.has(action)) return 'write';
+  }
+  return classifyToolName(name);
+}
+
+/** ExcelAutomate 的步骤只显示文件名（不露完整路径）；generate 用 output_path。 */
+function excelFileName(args: Record<string, unknown>): string {
+  const raw = (args.action === 'generate' ? [args.output_path] : [args.file_path]).find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return raw?.trim().split(/[\\/]/).filter(Boolean).pop() ?? '';
+}
 
 export function classifyToolName(name: string): ToolCategory {
   if (READ_TOOLS.has(name)) return 'read';
@@ -430,8 +449,8 @@ export function humanizeToolStep(
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
   // 「按字符类排查」的搜索（控制字符、零宽空格）时，换成一张 pattern → 文案的小表。
-  if (classifyToolName(name) === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
-  const toolKind = classifyToolName(name);
+  const toolKind = classifyToolCall(name, args);
+  if (toolKind === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
   if (toolKind === 'delegateSession' || toolKind === 'listSessionCandidates') {
     const h = status === 'completed' ? t.toolStepHumanize : t.toolStepHumanize.statusForms[status];
     if (toolKind === 'listSessionCandidates') return h.listSessionCandidates;
@@ -488,12 +507,12 @@ export function humanizeToolStep(
 
   switch (toolKind) {
     case 'read': {
-      const target = firstPath(a, ['file_path', 'path']);
-      return target ? h.read.replace('{target}', target) : h.readFallback;
+      const target = name === 'ExcelAutomate' ? excelFileName(a) : firstPath(a, ['file_path', 'path']);
+      return target ? (name === 'ExcelAutomate' && status === 'completed' ? t.toolStepHumanize.excelRead : h.read).replace('{target}', target) : h.readFallback;
     }
     case 'write': {
-      const target = firstPath(a, ['file_path', 'path']);
-      return target ? h.write.replace('{target}', target) : h.writeFallback;
+      const target = name === 'ExcelAutomate' ? excelFileName(a) : firstPath(a, ['file_path', 'path']);
+      return target ? (name === 'ExcelAutomate' && status === 'completed' ? t.toolStepHumanize.excelWrite : h.write).replace('{target}', target) : h.writeFallback;
     }
     case 'edit': {
       const target = firstPath(a, ['file_path', 'path']);

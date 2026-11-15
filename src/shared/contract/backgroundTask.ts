@@ -78,6 +78,7 @@ export interface LastToolStep {
   toolIndex?: number;
   toolTotal?: number;
   target?: string;
+  action?: string;
   at: number;
 }
 
