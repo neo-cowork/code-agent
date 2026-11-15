@@ -8,6 +8,24 @@ export interface JourneyLongTask {
   duration: number;
 }
 
+export interface JourneyCommitTraceEntry {
+  index: number;
+  phase: 'mount' | 'update' | 'nested-update';
+  actualDurationMs: number;
+  startMs: number;
+}
+
+export interface JourneyEnvironment {
+  userAgent: string;
+  devicePixelRatio: number;
+  fontsLoaded: number;
+  bodyFontFamily: string;
+  viewport: {
+    width: number;
+    height: number;
+  };
+}
+
 export interface JourneyProbeResult {
   schemaVersion: 1;
   journey: JourneyId;
@@ -22,6 +40,10 @@ export interface JourneyProbeResult {
   longTaskMaxMs: number;
   extraRenders: number;
   ready: Record<string, unknown>;
+  /** Recorded only. Bounded per-commit trace (cap 200) for diagnosing count drift across environments. */
+  commitTrace?: JourneyCommitTraceEntry[];
+  /** Recorded only. Browser/font/viewport snapshot for diagnosing environment-induced commit differences. */
+  environment?: JourneyEnvironment;
 }
 
 export function isJourneyId(value: string): value is JourneyId {

@@ -50,6 +50,8 @@ export interface PipelineCheckResult {
  * Tool execution request for permission checking
  */
 export interface ToolExecutionRequest {
+  /** Host-derived task output grant; never copied from model arguments. */
+  taskOutputAuthorized?: boolean;
   toolName: string;
   permissionLevel: 'read' | 'write' | 'execute' | 'network';
   path?: string;
@@ -391,7 +393,7 @@ export class SubagentPipeline {
       // For write/execute/network, check if path is in working directory
       if (request.path) {
         const inWorkingDir = isPathWithinRoot(request.path, context.workingDirectory);
-        if (inWorkingDir) {
+        if (inWorkingDir || request.taskOutputAuthorized) {
           return { allowed: true, warnings };
         }
 

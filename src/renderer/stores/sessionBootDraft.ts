@@ -4,6 +4,7 @@ import {
   COMPOSER_DRAFT_ADOPTED_EVENT,
   composerDraftStorageKey,
   readComposerDraft,
+  readComposerDraftEntry,
   removeComposerDraft,
   writeComposerDraftIfAbsent,
 } from '../components/features/chat/ChatInput/composerDraftStore';
@@ -42,9 +43,9 @@ function findBlankSessionWithDraft<T extends { id: string }>(
 /** Move the sessionless home draft onto a freshly created session so the card shows there. */
 function adoptHomeDraft(sessionId: string): void {
   const homeKey = composerDraftStorageKey(null, false);
-  const text = readComposerDraft(homeKey);
-  if (text === null) return;
-  if (writeComposerDraftIfAbsent(composerDraftStorageKey(sessionId, false), text)) {
+  const entry = readComposerDraftEntry(homeKey);
+  if (entry === null) return;
+  if (writeComposerDraftIfAbsent(composerDraftStorageKey(sessionId, false), entry.text, entry.attachments, entry.dropped)) {
     removeComposerDraft(homeKey);
     // The composer may already be mounted on this session and has read its (then empty) draft.
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(COMPOSER_DRAFT_ADOPTED_EVENT));

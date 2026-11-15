@@ -1,3 +1,4 @@
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from './modelSwitcherTooltips';
 // ============================================================================
 // ModelSwitcher - 运行时模型切换下拉框
 // ============================================================================
@@ -50,8 +51,6 @@ import {
   buildProviderMetaTitle,
   CAPABILITY_CONFIG,
   ENGINE_SHORT_LABEL,
-  formatExternalModelSwitcherTooltip,
-  formatNativeModelSwitcherTooltip,
   getEngineEffortOptions,
   getReasoningSegmentMode,
   buildThinkingSegmentOptions,
@@ -184,7 +183,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   // modelSettings IPC 是否已返回（用于打开面板时的锚定时机）
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -685,13 +684,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     : null;
   const triggerTitle = engine.kind !== 'native'
     ? formatExternalModelSwitcherTooltip({
-      engineLabel: ENGINE_SHORT_LABEL[engine.kind],
+      language, engineLabel: ENGINE_SHORT_LABEL[engine.kind],
       model: engine.model ?? '默认模型',
     })
     : showModelSettingsPrompt
       ? '还没有可用模型'
       : formatNativeModelSwitcherTooltip({
-        engineLabel: ENGINE_SHORT_LABEL[engine.kind],
+        language, engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
         displayProvider,
         displayModel,

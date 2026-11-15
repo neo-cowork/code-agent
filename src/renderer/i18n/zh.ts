@@ -51,7 +51,7 @@ import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
 import { renderHumanPipeZh } from './renderHumanPipe';
-import { outcomeWordsZh } from './outcomeWords';
+import { outcomeWordsZh } from './outcomeWords'; import { delegationFailedActionsZh } from './delegationFailedActions';
 import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
@@ -76,7 +76,7 @@ export const zh = {
   ...workbenchTabsZh,
   ...receiptPresentationZh,
   ...renderHumanPipeZh,
-  ...outcomeWordsZh,
+  ...outcomeWordsZh, ...delegationFailedActionsZh,
   ...engineModelPanelZh,
   ...jevAdvisoryZh,
   ...workflowStallZh,

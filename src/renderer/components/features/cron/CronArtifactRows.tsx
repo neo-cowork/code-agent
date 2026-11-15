@@ -10,6 +10,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { cronArtifactFileName, type CronStoredArtifact } from '@shared/cronArtifactPath';
 import ipcService from '../../../services/ipcService';
 import { copyPathToClipboard, isWebMode } from '../../../utils/platform';
+import { formatDisplayPath } from '../../../utils/displayPath';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { GhostButton } from '../../primitives';
@@ -57,7 +58,7 @@ export const CronArtifactRows: React.FC<{ artifacts: readonly CronStoredArtifact
               <GhostButton
                 type="button"
                 size="sm"
-                title={artifact.path}
+                title={formatDisplayPath(artifact.path)}
                 data-testid="cron-artifact-open"
                 className="h-auto min-w-0 flex-1 justify-start px-1 py-0 text-left text-[11px]"
                 onClick={() => { void openOrCopy(artifact, 'openPath'); }}
@@ -67,7 +68,7 @@ export const CronArtifactRows: React.FC<{ artifacts: readonly CronStoredArtifact
             ) : (
               <span
                 className="min-w-0 flex-1 truncate px-1 text-[11px] text-zinc-500"
-                title={artifact.path}
+                title={formatDisplayPath(artifact.path)}
                 data-testid="cron-artifact-text"
               >
                 {name}

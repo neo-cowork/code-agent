@@ -9,7 +9,10 @@ import type { HandlerFn } from '../../../../src/host/platform';
 
 describe('envAssist.act native opening through installed IPC', () => {
   it.each([
-    ['automation', 'Privacy_Automation'], ['accessibility', 'Privacy_Accessibility'], ['screenCapture', 'Privacy_ScreenCapture'],
+    ['automation', 'Privacy_Automation'],
+    ['accessibility', 'Privacy_Accessibility'],
+    ['screenCapture', 'Privacy_ScreenCapture'],
+    ['inputMonitoring', 'Privacy_ListenEvent'],
   ] as const)('opens only the current %s card URL', async (pane, suffix) => {
     let handler: HandlerFn | undefined;
     vi.spyOn(ipcHost, 'handle').mockImplementation((_channel, installed) => { handler = installed; });

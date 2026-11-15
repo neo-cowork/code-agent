@@ -30,7 +30,14 @@
     "MultiEdit",
     "ToolSearch",
     "AgentSpawn",
-    "TaskManager"
+    "TaskManager",
+    "delegate_session",
+    "list_session_candidates",
+    "delegate_existing",
+    "create_new",
+    "candidateSetId",
+    "MemoryRead",
+    "Glob"
   ],
   "englishState": [
     "\\baccepted\\s*[：:]\\s*",
@@ -40,7 +47,10 @@
     "\\bresult was recorded\\b",
     "\\bmail message\\s*·\\s*account\\s+([^\\s·]+)\\s*·\\s*mailbox\\s+([^\\s·\\n]+)",
     "\\bno outbound action attempted\\b",
-    "\\brun result carried no eventDecisions\\b"
+    "\\brun result carried no eventDecisions\\b",
+    "[\"']?\\b(?:status|state)[\"']?\\s*(?:[:=]\\s*[\"']?|\\s+is\\s+[\"']?)active\\b[\"']?",
+    "`active`",
+    "\\bActive:\\s*(\\d+)\\s*\\/\\s*\\d+d\\b"
   ],
   "sandboxExec": "\\bsandbox-exec\\b",
   "tempPath": "(?:\\/private\\/tmp|\\/tmp|\\/var\\/folders)\\/[A-Za-z0-9._/-]+",

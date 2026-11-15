@@ -5,9 +5,11 @@
 //   ① 附着 daemon（stdin 管道早已断开，不会再有 EOF 事件）：intent=stop 的意图
 //      变化本身必须触发去留重查（daemonStateReporter 联动 recheck）→ 排空停机。
 //      none / background 不触发（background 的去留仍由空闲判据说了算）。
-//   ② owned 子进程的停机编排：EOF + intent=stop 后 drainPendingOpsForShutdown
-//      走无看门狗档（isDrainWatchdogActive(false) = false），两个 fake run 跨过
-//      壳档 1s 宽限全部等完；对照档（管道仍在）在同一时点已把第二个 run 强停。
+//   ② 排空档位（drainPendingOpsForShutdown 本身）：无看门狗档（isDrainWatchdogActive(false)
+//      = false）两个 fake run 跨过壳档 1s 宽限全部等完；对照档（管道仍在）在同一时点
+//      已把第二个 run 强停。N-FIX-STOP-AND-QUIT 起 intent=stop 的 webServer.shutdown
+//      不再走这条 60s 排空（改为先 cancel，见 stopIntentShutdownCancel.test.ts）；
+//      这条档位语义现在服务于 intent=none 的 SIGTERM / `neo daemon stop`。
 // 意图是 quitIntent.ts 的进程级单例：同一 it 内按 none→background→stop 排序推进，
 // 只依赖「变化才通知」的幂等语义。
 // ============================================================================
@@ -65,8 +67,8 @@ describe('intent=stop 触发已断管 daemon 的去留重查（FU1 ①：附着 
   });
 });
 
-describe('EOF + intent=stop 的排空档位（FU1 ②：两个 run 都等完再停机）', () => {
-  it('无看门狗档：跨过壳档 1s 宽限，等完两个 run 才完成 shutdown', async () => {
+describe('无看门狗排空档位（SIGTERM / neo daemon stop 仍 60s 排空；stop 意图改走 cancel）', () => {
+  it('无看门狗档（intent=none 的排空）：跨过壳档 1s 宽限，等完两个 run 才完成 shutdown', async () => {
     // 与 webServer.shutdown 相同的编排：EOF 先把 shellPipeAttached 置 false，
     // drain 档位经 isDrainWatchdogActive 流入（macOS/Linux 管道断 = 无看门狗）。
     setDaemonQuitIntent('stop');
