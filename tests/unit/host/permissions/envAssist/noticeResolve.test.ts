@@ -93,11 +93,18 @@ describe('env-assist card closes once the permission is granted', () => {
     expect(await call('recheck', { noticeId: 'missing' })).toMatchObject({ status: 'rejected' });
   });
 
-  it('③model guidance points at the card and never hands the follow-up back to the user', async () => {
+  it('concurrent rechecks (mount + window focus) resolve and broadcast once', async () => {
+    const card = await showCalendarCard();
+    tcc.code = 0;
+    await Promise.all([call('recheck', { noticeId: card.id }), call('recheck', { noticeId: card.id })]);
+    expect(stored().phase).toBe('resolved');
+    expect(mocks.events).toHaveLength(1);
+  });
+
+  it('③model guidance (non-parking runs only) points at the card, asks to resend, and never promises a follow-up', async () => {
     const result = { success: false, error: 'denied', metadata: { code: 'not_authorized' } } as { error?: string };
     await publishEnvAssistToolNotice({ toolName: 'calendar', result: result as never, sessionId: 's', runId: 'run-2', onEvent: () => undefined });
-    expect(result.error).toContain('allow it with that button on the card');
-    expect(result.error).not.toMatch(/then ask again/);
-    expect(result.error).toMatch(/Do not tell them to come back, ask again, or that you will check afterwards/);
+    expect(result.error).toContain('allow it with that button on the card and then send the request again');
+    expect(result.error).toContain('Do not claim you will check or continue on your own');
   });
 });
