@@ -337,6 +337,7 @@ function toSharedManifest(manifest: ContextSurvivorManifest): CompactionSurvivor
     preservedMessageIds: manifest.preservedMessageIds,
     files: manifest.files.map((file) => ({
       path: file.path,
+      required: file.required,
       needsReRead: file.needsReRead,
       reason: file.excerpt
         ? `${file.lastKnownReason || file.reason || 'referenced_before_compaction'}; observed excerpt only, re-read before relying on or editing.`
@@ -417,11 +418,11 @@ Use this exact markdown shape:
 ## Needs Re-read
 
 Hard rules:
-- Preserve every absolute file path from the Survivor Manifest, or explicitly put it in Needs Re-read.
+- Only file paths marked REQUIRED in the Survivor Manifest must appear verbatim (or be listed in Needs Re-read); paths marked optional may be omitted.
 - File survivor excerpts and digests are stale observations from before compaction, not proof of current file contents.
 - Never claim to know a file's latest contents from a survivor record; tell the next model to re-read before editing, quoting, or relying on it.
 - If a file survivor is path_only, only preserve the path and the reason it matters.
-- Preserve unresolved errors and failed commands.
+- Preserve failed commands. Copy every line listed under "## Errors" in the Survivor Manifest verbatim into "Errors And Resolutions" (mark it resolved if it was fixed later).
 - Preserve open work and TODO items.
 - Do not invent files, commands, tests, or outcomes.
 - Be specific enough that the next model can continue without the old messages.
