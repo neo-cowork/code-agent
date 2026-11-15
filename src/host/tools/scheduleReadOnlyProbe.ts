@@ -35,16 +35,25 @@ export function scheduleReadOnlyProbeRoot(sessionId: string | undefined, command
       }
     }
     let hasPath = false;
-    for (const { cmd } of plan.steps) {
-      const paths = cmd.kind === 'ls' ? cmd.paths : cmd.kind === 'test' ? [cmd.path]
+    let directory: string | undefined;
+    for (const { cmd, op } of plan.steps) {
+      // Relative reads may depend only on an unconditional cd and its succeeding
+      // && chain. A skipped/failed conditional cd must never authorize ambient cwd.
+      if (op !== '&&') directory = undefined;
+      if (cmd.kind === 'cd' && op !== ';' && !directory) return undefined;
+      const paths = cmd.kind === 'ls' ? (cmd.paths.length ? cmd.paths : ['.']) : cmd.kind === 'test' || cmd.kind === 'cd' ? [cmd.path]
+        : cmd.kind === 'file-read' ? cmd.paths
         : cmd.kind === 'file-loop' ? [cmd.directory, ...cmd.files.map((file) => file.path)] : undefined;
       if (paths) {
         if (!paths.length) return undefined;
         for (const operand of paths) {
-          if (!path.isAbsolute(operand) || !authorizeProbePath(operand, {
+          if (!path.isAbsolute(operand) && !directory) return undefined;
+          const absolute = path.resolve(directory ?? root, operand);
+          if (!authorizeProbePath(absolute, {
             workingDirectory: root, homeDir: os.homedir(), userTexts: [], attachmentPaths: [],
           })) return undefined;
           hasPath = true;
+          if (cmd.kind === 'cd') directory = absolute;
         }
       } else if (!['noop', 'echo', 'printf'].includes(cmd.kind)) return undefined;
     }

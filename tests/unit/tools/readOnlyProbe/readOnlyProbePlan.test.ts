@@ -192,6 +192,42 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
       expect(permissionAsks).toEqual([]);
     });
 
+    it('cd and literal wc/head reads inside the grant -> no card', async () => {
+      const command = `cd "${elsewhere}" && wc -c doc.pdf secret.txt && echo "---" && head -3 doc.pdf secret.txt`;
+      const result = await cronRun(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('cd and literal cat inside the grant -> no card', async () => {
+      const command = `cd "${elsewhere}" && cat doc.pdf secret.txt`;
+      const result = await cronRun(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    for (const command of [
+      () => `cd "${elsewhere}" && head -3 ../work/x`,
+      () => `cd "${elsewhere}" && wc -c .env`,
+      () => `test -d "${elsewhere}" || cd "${elsewhere}"; ls .`,
+      () => `cd "${elsewhere}" && cd - && ls .`,
+    ]) {
+      it('directory tracking cannot authorize outside, credential, or skipped-cd reads', async () => {
+        await fs.writeFile(path.join(elsewhere, '.env'), 'EXAMPLE=fixture');
+        await cronRun(command());
+        expect(permissionAsks).toHaveLength(1);
+      });
+    }
+
+    it('deny on a primitive wc in a cd chain stays a hard deny', async () => {
+      getPolicyEngine().loadUserRules({ deny: ['Bash(wc *)'] });
+      const result = await cronRun(`cd "${elsewhere}" && wc -c doc.pdf`);
+      expect(result.success).toBe(false);
+      expect(permissionAsks).toEqual([]);
+    });
+
     for (const outside of [true, false]) {
       it(`conditional loop checks ${outside ? 'outside prefix' : 'credential file'} -> card`, async () => {
         await fs.writeFile(path.join(elsewhere, '.env'), 'EXAMPLE=fixture');

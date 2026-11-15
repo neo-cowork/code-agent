@@ -39,7 +39,7 @@ class ProbeAbort extends Error {}
 const MAX_OUTPUT_CHARS = 256 * 1024;
 const EXEC_TIMEOUT_MS = 5000;
 const SHELL_BUILTINS = new Set(['echo', 'printf', 'test', 'command', 'cd', 'pwd', 'type', 'read', 'true', 'false', 'export', 'unset', 'set', 'exit']);
-const FIXED_BINARIES = { ls: '/bin/ls', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
+const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
 
 // ----------------------------------------------------------------------------
 // 路径授权
@@ -257,6 +257,22 @@ class Runner {
 
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
+      case 'cd': {
+        const directory = this.need(cmd.path);
+        if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
+        this.auth.workingDirectory = directory;
+        return 0;
+      }
+      case 'file-read': {
+        for (const operand of cmd.paths) {
+          const target = this.need(operand);
+          const stat = fs.statSync(target);
+          if (!stat.isFile() || stat.size > MAX_OUTPUT_CHARS) throw new ProbeAbort('read file unavailable or too large');
+        }
+        const result = await runFixed(FIXED_BINARIES[cmd.program], [...cmd.flags, '--', ...cmd.paths], this.auth.workingDirectory);
+        this.emit(redirect, result.stdout, result.stderr);
+        return result.exitCode;
+      }
       case 'file-loop': {
         const directory = this.need(cmd.directory);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('loop directory unavailable');
@@ -279,7 +295,7 @@ class Runner {
               else if (part.value === 'file') text += file.label;
               else {
                 if (bytes === undefined) {
-                  const result = await runFixed('/usr/bin/wc', ['-c'], directory, content);
+                  const result = await runFixed(FIXED_BINARIES.wc, ['-c'], directory, content);
                   if (result.exitCode !== 0 || result.stderr) throw new ProbeAbort('loop byte count failed');
                   bytes = result.stdout.replace(/\n+$/, '');
                 }

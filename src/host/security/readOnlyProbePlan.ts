@@ -38,6 +38,8 @@ export type ProbeCommand =
   | { kind: 'printf'; text: string }
   | { kind: 'command-v'; name: string }
   | { kind: 'ls'; flags: string[]; paths: string[]; headLines?: number }
+  | { kind: 'cd'; path: string }
+  | { kind: 'file-read'; program: 'cat' | 'wc' | 'head'; flags: string[]; paths: string[] }
   | { kind: 'xattr'; paths: string[] }
   | { kind: 'id-un' }
   | { kind: 'whoami' }
@@ -406,6 +408,28 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
   const program = head.value;
   if (program !== 'echo' && argv.some((word) => word.includes(PROBE_EXIT_STATUS))) return null;
   switch (program) {
+    case 'cd':
+      return argv.length === 1 && argv[0] !== '' && !argv[0].startsWith('-') ? { program, cmd: { kind: 'cd', path: argv[0] } } : null;
+    case 'cat':
+    case 'wc':
+    case 'head': {
+      let rest = [...argv];
+      const flags: string[] = [];
+      if (program === 'wc') {
+        if (!['-c', '-l'].includes(rest[0])) return null;
+        flags.push(rest.shift() as string);
+      } else if (program === 'head') {
+        let count = '10';
+        if (/^-\d+$/.test(rest[0] ?? '')) count = (rest.shift() as string).slice(1);
+        else if (rest[0] === '-n') { rest.shift(); count = rest.shift() ?? ''; }
+        if (!/^\d+$/.test(count) || Number(count) < 1 || Number(count) > 10000) return null;
+        flags.push('-n', String(Number(count)));
+      }
+      const endOfFlags = rest[0] === '--';
+      if (endOfFlags) rest = rest.slice(1);
+      if (!rest.length || rest.some((operand) => !operand || operand === '-' || (!endOfFlags && operand.startsWith('-')))) return null;
+      return { program, cmd: { kind: 'file-read', program, flags, paths: rest } };
+    }
     case 'test': {
       if (argv.length !== 2 || !['-e', '-f', '-d'].includes(argv[0]) || argv[1] === '') return null;
       return { program, cmd: { kind: 'test', flag: argv[0] as '-e' | '-f' | '-d', path: argv[1] } };

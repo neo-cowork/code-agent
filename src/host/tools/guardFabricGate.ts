@@ -120,7 +120,7 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
   // on cat/head must remain a hard deny, never become an approvable topology ask.
   const plan = isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
     ? compileReadOnlyProbePlan(input.params.command, { homeDir: homedir(), platform: process.platform }) : null;
-  for (const source of plan?.steps.flatMap((step) => step.extraSources ?? []) ?? []) {
+  for (const source of plan?.steps.flatMap((step) => [step.source, ...step.extraSources ?? []]) ?? []) {
     const primitive = { ...input, params: { ...input.params, command: source } };
     const denied = evaluateUserDeny(primitive) ?? evaluateBuiltinHardDeny(primitive);
     if (denied) return { deny: denied };
