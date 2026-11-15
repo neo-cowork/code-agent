@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   describeLastToolStep,
+  isAgentNodeTerminalStatus,
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../src/renderer/utils/agentActivity';
@@ -253,5 +254,15 @@ describe('resolveAgentActivityStepStatus', () => {
     const task = taskFixture({ id: 'task-1', runId: 'run-9', metadata: { childRunId: 'child-7' } });
     expect(taskActivityIds(task)).toEqual(['task-1', 'run-9', 'child-7']);
     expect(taskActivityIds(taskFixture({ id: 'task-2' }))).toEqual(['task-2']);
+  });
+});
+
+describe('agent lifecycle activity guard', () => {
+  it('keeps an unmarked current-process context active', () => {
+    expect(isAgentNodeTerminalStatus('unknown')).toBe(false);
+  });
+
+  it.each(['cancelled', 'dead-log-only', 'failed'] as const)('keeps %s inactive after restart', (status) => {
+    expect(isAgentNodeTerminalStatus(status)).toBe(true);
   });
 });

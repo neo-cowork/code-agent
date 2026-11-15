@@ -1,4 +1,6 @@
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
+import { mkdtempSync, mkdirSync, readFileSync as readFile, rmSync, writeFileSync, chmodSync } from 'fs';
+import { tmpdir } from 'os';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,6 +64,8 @@ const ALL_LABELS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // 默认让 cua reaper 指向一个不存在的 helper 路径，绝不碰本机真实的 Agent Neo Computer Use 进程
+  process.env.CODE_AGENT_CUA_DRIVER_PATH = '/nonexistent/Fake Helper Default.app/Contents/MacOS/cua-driver';
   disconnectAll.mockImplementation(async () => {});
   getStdioChildPids.mockImplementation(() => []);
   shutdownPostHog.mockImplementation(async () => {});
@@ -82,7 +86,7 @@ describe('runShutdownFinalizers — 死文件 lifecycle.ts 记的责任，接进
     expect(cleanupSessionStateManager).toHaveBeenCalledTimes(1);
     expect(disposeAgentRegistry).toHaveBeenCalledTimes(1);
 
-    expect(lines).toHaveLength(1);
+    expect(lines.filter((l) => !l.includes('cua.reap'))).toHaveLength(1);
     for (const label of ALL_LABELS) {
       expect(lines[0]).toContain(`${label}=ok(`);
     }
@@ -278,5 +282,264 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
       chrome.kill('SIGKILL');
       bystander.kill('SIGKILL');
     }
+  });
+});
+
+// ----------------------------------------------------------------------------
+// cua helper daemon reap —— 真实脱管的假进程（PPID 1），经生产入口 runShutdownFinalizers
+// ----------------------------------------------------------------------------
+// reaper 只在 darwin 工作（非 darwin 不打日志）；真进程用例只能在 macOS 跑，Linux CI 跳过
+describe.runIf(process.platform === 'darwin')('cua helper daemon reap', () => {
+  let dir: string;
+  let fake: string;
+  let sock: string;
+
+  const psRows = () =>
+    execFileSync('/bin/ps', ['-axww', '-o', 'pid=,ppid=,command=']).toString().split('\n');
+  const findPid = (needle: string): number | null => {
+    const row = psRows().find((r) => r.includes(needle));
+    return row ? Number(row.trim().split(/\s+/)[0]) : null;
+  };
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const launchDetached = async (sub: 'serve' | 'mcp'): Promise<number> => {
+    const needle = `${fake} ${sub} --socket ${sock}`;
+    spawn(
+      'sh',
+      ['-c', 'nohup "$0" "$@" >/dev/null 2>&1 &', fake, sub, '--socket', sock, '--host-bundle-id', 'com.example.fake'],
+      { stdio: 'ignore' },
+    ).unref();
+    for (let i = 0; i < 100; i++) {
+      const pid = findPid(needle);
+      if (pid) return pid;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    throw new Error(`fake ${sub} did not start`);
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'cua-reap-'));
+    const macos = join(dir, 'Fake Helper.app', 'Contents', 'MacOS');
+    mkdirSync(macos, { recursive: true });
+    fake = join(macos, 'cua-driver');
+    sock = join(dir, 'x.sock');
+    writeFileSync(
+      fake,
+      '#!/bin/sh\n' +
+        'if [ "$1" = serve ] && [ "$6" != --cua-internal-gate-engaged ]; then\n' +
+        '  "$0" serve --socket "$3" --host-bundle-id com.example.fake --cua-internal-gate-engaged &\n' +
+        '  echo $! > "$(dirname "$0")/child.$1.pid"\n' +
+        'else\n  sleep 60 &\nfi\nwait\n',
+    );
+    chmodSync(fake, 0o755);
+    process.env.CODE_AGENT_CUA_DRIVER_PATH = fake;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const r of psRows()) {
+      if (r.includes(dir)) {
+        try { process.kill(Number(r.trim().split(/\s+/)[0]), 'SIGKILL'); } catch { /* gone */ }
+      }
+    }
+    for (const sub of ['serve', 'mcp']) {
+      try { process.kill(Number(readFile(join(dir, 'Fake Helper.app/Contents/MacOS', `child.${sub}.pid`), 'utf-8')), 'SIGKILL'); } catch { /* none */ }
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('① 停机后 PPID=1 的假 serve 守护进程（含其子进程）被收掉，日志留痕', async () => {
+    const pid = await launchDetached('serve');
+    const row = psRows().find((r) => r.trim().startsWith(`${pid} `))!;
+    console.log('BEFORE', row.trim().slice(0, 60), '...');
+    expect(row.trim().split(/\s+/)[1]).toBe('1');
+    await new Promise((r) => setTimeout(r, 150));
+    const child = Number(readFile(join(dir, 'Fake Helper.app/Contents/MacOS/child.serve.pid'), 'utf-8'));
+    expect(alive(child)).toBe(true);
+
+    const lines: string[] = [];
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+
+    const line = lines.find((l) => l.includes('cua.reap'))!;
+    console.log('LINE', line);
+    expect(line).toContain('cua.reap daemons=1 killed=1 kept=0 failed=0');
+    expect(alive(pid)).toBe(false);
+    expect(alive(child)).toBe(false);
+    console.log('AFTER ps -p', pid, psRows().filter((r) => r.trim().startsWith(`${pid} `)).length, 'rows');
+  });
+
+  it('① 断连永不返回（cua-driver 不盯 stdin）时 reap 仍在 capMs 窗口内收掉 daemon 与子进程', async () => {
+    const pid = await launchDetached('serve');
+    await new Promise((r) => setTimeout(r, 150));
+    const child = Number(readFile(join(dir, 'Fake Helper.app/Contents/MacOS/child.serve.pid'), 'utf-8'));
+    disconnectAll.mockImplementation(() => new Promise<void>(() => {}));
+
+    const lines: string[] = [];
+    const t0 = Date.now();
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+    const elapsed = Date.now() - t0;
+
+    const trace = lines.join('\n');
+    console.log('TRACE', trace);
+    expect(trace).toContain('cua.reap daemons=1 killed=1');
+    expect(alive(pid)).toBe(false);
+    expect(alive(child)).toBe(false);
+    expect(elapsed).toBeLessThan(1_500);
+  });
+
+  it('② 另有 <fake> mcp --socket 同 socket 的代理活着 ⇒ 守护进程保留，日志 shared_by_1_proxy', async () => {
+    const daemon = await launchDetached('serve');
+    const proxy = await launchDetached('mcp');
+
+    const lines: string[] = [];
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+
+    const line = lines.find((l) => l.includes('cua.reap'))!;
+    console.log('LINE', line);
+    expect(line).toContain('cua.reap daemons=1 killed=0 kept=1 failed=0');
+    expect(line).toContain('shared_by_1_proxy');
+    expect(alive(daemon)).toBe(true);
+    expect(alive(proxy)).toBe(true);
+  });
+
+  it('②b 另一槽的 helper 副本（不同路径、同 socket）的代理活着 ⇒ 守护进程保留', async () => {
+    const daemon = await launchDetached('serve');
+    const macos2 = join(dir, 'Fake Helper 2.app', 'Contents', 'MacOS');
+    mkdirSync(macos2, { recursive: true });
+    const fake2 = join(macos2, 'cua-driver');
+    writeFileSync(fake2, '#!/bin/sh\nsleep 60 &\nwait\n');
+    chmodSync(fake2, 0o755);
+    spawn('sh', ['-c', 'nohup "$0" "$@" >/dev/null 2>&1 &', fake2, 'mcp', '--socket', sock], { stdio: 'ignore' }).unref();
+    let proxy: number | null = null;
+    for (let i = 0; i < 100 && !proxy; i++) {
+      proxy = findPid(`${fake2} mcp --socket ${sock}`);
+      if (!proxy) await new Promise((r) => setTimeout(r, 30));
+    }
+    expect(proxy).not.toBeNull();
+
+    const lines: string[] = [];
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+
+    const line = lines.find((l) => l.includes('cua.reap'))!;
+    console.log('LINE', line);
+    expect(line).toContain('cua.reap daemons=1 killed=0 kept=1 failed=0');
+    expect(line).toContain('shared_by_1_proxy');
+    expect(alive(daemon)).toBe(true);
+  });
+
+  it('③ kill 失败（EPERM）⇒ failed=1 且原因入日志，进程仍在', async () => {
+    const daemon = await launchDetached('serve');
+    const realKill = process.kill.bind(process);
+    vi.spyOn(process, 'kill').mockImplementation(((pid: number, sig?: string | number) => {
+      if (sig === 'SIGTERM' && pid === daemon) {
+        throw Object.assign(new Error('nope'), { code: 'EPERM' });
+      }
+      return realKill(pid, sig as NodeJS.Signals);
+    }) as typeof process.kill);
+
+    const lines: string[] = [];
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+
+    const line = lines.find((l) => l.includes('cua.reap'))!;
+    console.log('LINE', line);
+    expect(line).toContain('cua.reap daemons=1 killed=0 kept=0 failed=1');
+    expect(line).toContain('failed(EPERM)');
+  });
+
+  it('路径回退成裸 cua-driver ⇒ 什么都不碰，留痕 helper_path_unresolved', async () => {
+    process.env.CODE_AGENT_CUA_DRIVER_PATH = 'cua-driver';
+    const daemon = await launchDetached('serve');
+    const lines: string[] = [];
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+    expect(lines.find((l) => l.includes('cua.reap'))).toContain('helper_path_unresolved');
+    expect(alive(daemon)).toBe(true);
+  });
+});
+
+describe('cua reap 受关库前总预算约束', () => {
+  afterEach(() => {
+    vi.doUnmock('../../../src/host/mcp/cuaHelperReaper');
+    vi.resetModules();
+  });
+
+  it('reaper 挂死时到 capMs 剩余额度放行并留痕，不拖过总预算', async () => {
+    vi.resetModules();
+    vi.doMock('../../../src/host/mcp/cuaHelperReaper', () => ({
+      reapCuaHelperDaemons: () => new Promise<void>(() => {}),
+    }));
+    const { runShutdownFinalizers: run } = await import('../../../src/web/webShutdownFinalizers');
+    const lines: string[] = [];
+    const t0 = Date.now();
+    await run(300, (m) => lines.push(m));
+    const elapsed = Date.now() - t0;
+    expect(lines.join('\n')).toMatch(/cua\.reap timeout\(\d+ms\)/);
+    expect(elapsed).toBeLessThan(450);
+  });
+
+  it('reap 与收尾步骤并行：断连挂死期间 reaper 已经被调用', async () => {
+    vi.resetModules();
+    let reapCalledWhileDisconnectPending = false;
+    let disconnectSettled = false;
+    vi.doMock('../../../src/host/mcp/cuaHelperReaper', () => ({
+      reapCuaHelperDaemons: async () => {
+        reapCalledWhileDisconnectPending = !disconnectSettled;
+      },
+    }));
+    const { runShutdownFinalizers: run } = await import('../../../src/web/webShutdownFinalizers');
+    disconnectAll.mockImplementation(() => new Promise<void>((r) => setTimeout(() => { disconnectSettled = true; r(); }, 400)));
+    await run(1_000, () => {});
+    expect(reapCalledWhileDisconnectPending).toBe(true);
+  });
+});
+
+describe('cua helper daemon reap — 启动入口（注入 ps / 时钟）', () => {
+  const D = '/x/Fake Helper.app/Contents/MacOS/cua-driver';
+  const run = async (psOut: string) => {
+    const { reapCuaHelperDaemons } = await import('../../../src/host/mcp/cuaHelperReaper');
+    const kill = vi.fn();
+    const lines: string[] = [];
+    await reapCuaHelperDaemons({
+      phase: 'startup',
+      log: (m) => lines.push(m),
+      deps: { platform: 'darwin', resolveDriverPath: async () => D, ps: async () => psOut, kill, sleep: async () => {} },
+    });
+    return { kill, line: lines.join('\n') };
+  };
+
+  it('④ 超过 60s 且零代理 ⇒ 收（含子进程树）', async () => {
+    const { kill, line } = await run(
+      `100 1 02:00:00 ${D} serve --socket /s.sock --host-bundle-id a\n101 100 02:00:00 ${D} serve --socket /s.sock --cua-internal-gate-x\n`,
+    );
+    expect(line).toContain('cua.reap daemons=1 killed=1');
+    expect(kill).toHaveBeenCalledWith(100, 'SIGTERM');
+    expect(kill).toHaveBeenCalledWith(101, 'SIGTERM');
+  });
+
+  it('④ 年轻于 60s ⇒ 保留 younger_than_60s', async () => {
+    const { kill, line } = await run(`100 1 00:59 ${D} serve --socket /s.sock\n`);
+    expect(line).toContain('kept=1');
+    expect(line).toContain('younger_than_60s');
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it('④ 有活代理 ⇒ 保留 shared_by_1_proxy', async () => {
+    const { kill, line } = await run(
+      `100 1 1-02:00:00 ${D} serve --socket /s.sock\n200 50 05:00 ${D} mcp --socket /s.sock\n`,
+    );
+    expect(line).toContain('shared_by_1_proxy');
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it('非 darwin ⇒ 无操作', async () => {
+    const { reapCuaHelperDaemons } = await import('../../../src/host/mcp/cuaHelperReaper');
+    const lines: string[] = [];
+    await reapCuaHelperDaemons({ phase: 'startup', log: (m) => lines.push(m), deps: { platform: 'linux' } });
+    expect(lines).toEqual([]);
   });
 });

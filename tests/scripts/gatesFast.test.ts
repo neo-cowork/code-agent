@@ -67,6 +67,11 @@ describe('fast gate fail-closed contracts', () => {
     }
     for (const file of policy.ciNotRunExact) expect(yml, file).toContain(`--exclude '${file}'`);
   });
+  it('swarm-ci paths cover every testsTypecheckInputs glob (local tests-typecheck can defer to CI)', () => {
+    const yml = fs.readFileSync(path.join(root, '.github/workflows/swarm-ci.yml'), 'utf8');
+    const paths = yml.slice(yml.indexOf('paths:'), yml.indexOf('jobs:')).split('\n').filter((l) => l.trim().startsWith('- ')).map((l) => l.trim().slice(2).replace(/'/g, ''));
+    for (const glob of policy.testsTypecheckInputs) expect(paths, glob).toContain(glob);
+  });
   it('keeps zero, invalid, missing, excluded and escaping paths red even with deferral enabled', () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-path-contract-')));
     try {
