@@ -87,7 +87,7 @@ describe('armed schedules through createApp and its daemon idle registration', (
       name,
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: '0 0 9 * * 1-5' },
-      action: { type: 'reminder', message: 'Send the weekly report' },
+      action: { type: 'agent', agentType: 'default', prompt: 'Send the weekly report' },
       enabled: true,
       tags,
     });
