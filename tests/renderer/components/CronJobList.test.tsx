@@ -40,6 +40,7 @@ beforeEach(() => {
     executionsByJobId: {},
     selectedJobId: null,
     filterMode: 'all',
+    locationFilter: 'all',
     searchQuery: '',
     isLoading: false,
     isEditorOpen: false,
