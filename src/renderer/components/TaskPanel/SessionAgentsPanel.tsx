@@ -10,6 +10,7 @@
 // 面板不画输入框：对代理续话是后置单 N-SUBAGENT-INPUT。
 // ============================================================================
 
+import { resolveAgentNodeOutcomeKey } from '../../i18n/outcomeWords';
 import React, { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
@@ -166,14 +167,15 @@ export const SessionAgentsPanel: React.FC = () => {
   const statusLabel = (row: AgentRow): string => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
+    const outcomeKey = row.node ? resolveAgentNodeOutcomeKey(row.node.status, row.node.failureCode) : null;
+    const label = outcomeKey ? t.outcomeWords[outcomeKey].badge.label : labels[row.status];
     if (row.status === 'failed') {
       const reason = row.failureReason;
       return reason
-        ? t.chat.delegationReceipt.failureDetail.replace('{status}', labels.failed).replace('{reason}', reason)
-        : labels.failed;
+        ? t.chat.delegationReceipt.failureDetail.replace('{status}', label).replace('{reason}', reason)
+        : label;
     }
-    if (row.status === 'cancelled') return labels.stopped;
-    return labels[row.status];
+    return label;
   };
 
   const mergeLabel = mergeState === 'merged'

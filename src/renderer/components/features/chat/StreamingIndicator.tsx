@@ -9,7 +9,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Brain, StopCircle } from 'lucide-react';
+import { resolveAgentNodeOutcomeKey } from '../../../i18n/outcomeWords';
 import type { TraceNode } from '@shared/contract/trace';
+import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
+import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
 
@@ -116,6 +120,14 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   subagentCount,
 }) => {
   const { t } = useI18n();
+  const sessionId = useSessionStore((state) => state.currentSessionId);
+  const liveTurn = useSessionTurnActive(sessionId);
+  const { snapshot } = useAgentTreeSnapshot(sessionId, waitingReason === 'subagent' && liveTurn, true);
+  const liveChildren = snapshot?.nodes.filter((node) => resolveAgentNodeOutcomeKey(node.status, node.failureCode) === 'working');
+  // Persisted trace calls are not proof that a child survived a restart.
+  const effectiveWaitingReason = waitingReason === 'subagent' && sessionId && (!liveTurn || !liveChildren?.length)
+    ? undefined : waitingReason;
+  const liveCount = liveChildren?.length ?? subagentCount;
   // 首帧就按 runningToolStartTime 初始化，避免挂载后先闪一帧 active 再升级。
   const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(() =>
     runningToolStartTime !== undefined
@@ -198,13 +210,13 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
 
   // 具名等待（回响/编队信号）：点名在等谁，中性静态文字——比裸光标多一句交代，
   // 但依旧不放计时器：等待长短不该被演成焦虑。
-  if (waitingReason) {
+  if (effectiveWaitingReason) {
     const label =
-      waitingReason === 'approval'
+      effectiveWaitingReason === 'approval'
         ? t.chat.waitingApproval
-        : waitingReason === 'subagent'
-        ? subagentCount !== undefined && subagentCount >= 2
-          ? interpolatePlural(t.chat.waitingSubagentFleet, subagentCount)
+        : effectiveWaitingReason === 'subagent'
+        ? liveCount !== undefined && liveCount >= 2
+          ? interpolatePlural(t.chat.waitingSubagentFleet, liveCount)
           : t.chat.waitingSubagent
         : t.chat.waitingModel;
     return (

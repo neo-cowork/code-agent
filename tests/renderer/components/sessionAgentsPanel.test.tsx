@@ -332,7 +332,7 @@ describe('SessionAgentsPanel', () => {
 
     render(<SessionAgentsPanel />);
     await screen.findByTestId('agents-panel-row-researcher');
-    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('已停');
+    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe(zh.outcomeWords['cancelled-by-user'].badge.label);
     expect(screen.queryByTestId('agents-panel-stop-researcher')).toBeNull();
     expect(screen.queryByTestId('agents-panel-stop-all')).toBeNull();
   });
