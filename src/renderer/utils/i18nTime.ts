@@ -3,6 +3,7 @@
 // 仓内相对时间格式化此前散落 7+ 处且硬编码中文，统一收口到这里（逐批迁移接入）。
 // ============================================================================
 
+import { formatDateTime } from './formatDateTime';
 import type { Language, Translations } from '../i18n';
 
 /** 当前 UI 语言对应的 BCP47 locale（Intl.* / toLocale* 的 locale 参数一律从这里拿） */
@@ -14,13 +15,8 @@ export function localeForLanguage(language: Language): string {
 export function formatLocalDateTime(timestamp: number, language: Language, now: Date = new Date()): string {
   const date = new Date(timestamp);
   const includeYear = date.getFullYear() !== now.getFullYear();
-  return new Intl.DateTimeFormat(localeForLanguage(language), {
-    ...(includeYear ? { year: 'numeric' as const } : {}),
-    month: language === 'zh' ? 'long' : 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
+  const full = formatDateTime(date, language);
+  return includeYear ? full : full.slice(5);
 }
 
 /** 相对时间：刚刚 / N分钟前 / N小时前 / N天前 / N个月前 */
