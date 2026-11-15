@@ -291,6 +291,22 @@ describe('BackgroundSubagentRegistry', () => {
       expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: conclusion });
     });
 
+    it('a user Stop that settles with empty output stays a cancellation, never a "stopped without conclusion" failure', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      let finish: (() => void) | undefined;
+      const agentId = reg.spawn(() => new Promise<SubagentResult>((resolve) => {
+        finish = () => resolve({ success: true, output: '', toolsUsed: [], iterations: 0 });
+      }), { sessionId: 'session-stop', abort: () => finish?.() });
+
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+      const [fired] = reg.cancelSession('session-stop');
+      await fired.settled;
+
+      expect(reg.getStatus(agentId)?.status).toBe('completed');
+      expect(reg.getStatus(agentId)?.result?.stopKind).toBeUndefined();
+      expect(reg.getStatus(agentId)?.error).toBeUndefined();
+    });
+
     it('keeps the raw error on the entry (diagnosis) for thrown and returned failures', async () => {
       const reg = new BackgroundSubagentRegistry();
       const thrown = reg.spawn(async () => { throw new Error('Durable Run persistence is unavailable'); });

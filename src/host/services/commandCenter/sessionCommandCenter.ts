@@ -565,13 +565,15 @@ export class SessionCommandCenter {
       return;
     }
     if (event.type === 'task_error') {
+      const rawError = typeof data?.error === 'string' ? data.error : '执行失败';
       const stopped = resolveStoppedTaskOutcome({
         status: 'failed',
-        detail: typeof data?.error === 'string' ? data.error : '执行失败',
+        detail: rawError,
         lastUrl: this.lastUrlByTask.get(task.id),
       });
       if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
-      await this.settle(task, 'failed', stopped.detail);
+      // 任务记录 / ledger / 给模型的 [任务结果] 保留原始错误（诊断依据）；白话说明只走 backgroundTaskStopped 通道。
+      await this.settle(task, 'failed', rawError);
       return;
     }
     if (event.type === 'task_cancelled') {

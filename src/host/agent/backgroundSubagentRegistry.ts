@@ -55,6 +55,8 @@ export interface BackgroundSubagentHandle {
 }
 
 interface BackgroundSubagentEntry extends BackgroundSubagentHandle {
+  /** 用户 Stop 已对该 run 发出 abort：之后收线（哪怕返回空输出的「成功」）都是取消，不是「没有结论就停下」。 */
+  cancelRequested?: boolean;
   /** 后台 run 的 promise——await(agentId) 复用它，不重复触发。 */
   done: Promise<SubagentResult | undefined>;
   /** 运行中快照，只给 durable 账本；不进 getStatus/list。 */
@@ -151,6 +153,7 @@ export class BackgroundSubagentRegistry {
     const fired: Array<{ agentId: string; settled: Promise<unknown> }> = [];
     for (const entry of this.entries.values()) {
       if (entry.sessionId !== sessionId || entry.status !== 'running' || !entry.abort) continue;
+      entry.cancelRequested = true;
       try {
         entry.abort();
       } catch (error) {
@@ -305,7 +308,8 @@ export class BackgroundSubagentRegistry {
       try {
         const returned = await promise;
         // 前台共用的执行器只给 stopHint、不改判；后台注册表才把「没有结论就停下」落成失败 + 白话说明。
-        const hint: SubagentResult['stopHint'] | undefined = returned.success
+        const cancelRequested = this.entries.get(agentId)?.cancelRequested === true;
+        const hint: SubagentResult['stopHint'] | undefined = returned.success && !cancelRequested
           ? returned.stopHint ?? (!returned.output.trim()
             ? { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail }
             : undefined)
@@ -375,7 +379,7 @@ export class BackgroundSubagentRegistry {
     });
     const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
       || entry.failureCode === AgentFailureCode.CancelledByParent;
-    if (entry.status === 'failed' && entry.sessionId && !cancelled) {
+    if (entry.status === 'failed' && entry.sessionId && !cancelled && !entry.cancelRequested) {
       try {
         // 给用户的白话说明只在这条用户可见通道里生成；entry.error / durable terminal.reason 保留原始错误。
         const plain = entry.result?.stopHint?.kind === 'step_cap'
@@ -421,7 +425,7 @@ export class BackgroundSubagentRegistry {
   }
 
   private toHandle(entry: BackgroundSubagentEntry): BackgroundSubagentHandle {
-    const { done: _done, liveProgress: _liveProgress, abort: _abort, ...handle } = entry;
+    const { done: _done, liveProgress: _liveProgress, abort: _abort, cancelRequested: _cancelRequested, ...handle } = entry;
     return handle;
   }
 
