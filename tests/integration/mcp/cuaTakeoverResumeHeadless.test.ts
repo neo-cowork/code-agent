@@ -96,6 +96,7 @@ describe('N-CUA-TAKEOVER-RESUME-FU1 headless ToolExecutor + HTTP control bridge 
   let httpPort = 0;
   let projectionService: SurfaceConversationProjectionService | undefined;
   let runRegistry: RunRegistry;
+  let surfaceRuntime: SurfaceExecutionRuntime;
   let activeRunIds: string[] = [];
   const prevLockEnv = process.env.CODE_AGENT_CU_LOCK_PATH;
   const prevStateV2Env = process.env.CODE_AGENT_CUA_STATE_V2;
@@ -153,6 +154,7 @@ describe('N-CUA-TAKEOVER-RESUME-FU1 headless ToolExecutor + HTTP control bridge 
     // Production SurfaceExecutionRuntime + CuaStatefulComputerUseHandler registered in ProtocolRegistry
     runRegistry = new RunRegistry();
     const runtime = new SurfaceExecutionRuntime({ runRegistry });
+    surfaceRuntime = runtime;
     const adapter = new CuaStateAdapter(new CuaMcpDriverPort());
     const handler = new CuaStatefulComputerUseHandler(adapter, runtime);
     getProtocolRegistry().register(cuaStatefulComputerUseSchema, async () => ({
@@ -669,5 +671,39 @@ describe('N-CUA-TAKEOVER-RESUME-FU1 headless ToolExecutor + HTTP control bridge 
     }
 
     expect(readDriverLog(driverJsonlPath).filter((c) => INPUT_TOOL_NAMES.has(c.toolName))).toHaveLength(0);
+  });
+
+  it('④b run cancel during takeover: held act settles <1s and the run-end cleanup (RunFinalizer path) ends the Surface session instead of leaving it waiting_human', async () => {
+    const conv = 'conv-it-cancel-cleanup';
+    const run = 'run-it-cancel-cleanup';
+    const executor = startConversationAndRun(conv, run);
+    const { stateId, surfaceSessionId } = await seedObservedViaExecutor(executor, conv, run);
+    await postSurfaceBridge('control', { version: 1, conversationId: conv, surfaceSessionId, action: 'takeover' });
+
+    const pending = executor.execute(
+      'computer_use',
+      { operation: 'act', targetApp: 'Notes', stateId, mutation: { kind: 'click', elementRef: 'e2' } },
+      { sessionId: conv, runId: run, agentId: 'main', currentToolCallId: `${run}:act-cancel` },
+    );
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Normal stop API: RunHandle.cancel (what POST /api/cancel calls) — run stays registered while its loop unwinds.
+    const t0 = Date.now();
+    await runRegistry.get(run)?.cancel('user');
+    const settled = await pending;
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(settled.success).toBe(false);
+    clearApprovalWait(`${run}:act-cancel`);
+
+    // RunFinalizer calls surfaceRuntime.endRun for the cancelled run.
+    await surfaceRuntime.endRun({ conversationId: conv, runId: run, agentId: 'main' });
+    const snap = await postSurfaceBridge<{
+      sessions: Array<{ session: { sessionId: string; state: string } }>;
+    }>('getSnapshot', { version: 1, conversationId: conv });
+    const states = (snap.data?.sessions ?? [])
+      .filter((s) => s.session.sessionId === surfaceSessionId)
+      .map((s) => s.session.state);
+    expect(states).toEqual(['completed']);
+    expect(isHumanWaitActive(conv)).toBe(false);
   });
 });
