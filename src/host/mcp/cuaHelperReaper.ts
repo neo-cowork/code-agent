@@ -120,8 +120,12 @@ export async function reapCuaHelperDaemons(opts: CuaReapOptions): Promise<void> 
     }
     const rows = parsePs(await deps.ps());
     const own = new Set(opts.ownProxyPids ?? []);
-    const daemons = rows.filter((r) => r.command.includes(`${driver} serve `));
-    const proxies = rows.filter((r) => r.command.includes(`${driver} mcp `) && !own.has(r.pid));
+    const serveRows = rows.filter((r) => r.command.includes(`${driver} serve `));
+    const servePids = new Set(serveRows.map((r) => r.pid));
+    // 真实形状：daemon 自带带 --cua-internal-gate-* 的 serve 子进程，属于父 daemon 的树，不单独计数
+    const daemons = serveRows.filter((r) => !servePids.has(r.ppid));
+    // 各 dev 槽各带一份 helper（路径不同）但共用同一 socket ⇒ 代理按 socket 认，不限本机解析出的路径
+    const proxies = rows.filter((r) => /cua-driver mcp /.test(r.command) && !own.has(r.pid));
 
     let killed = 0;
     let kept = 0;

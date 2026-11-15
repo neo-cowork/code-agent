@@ -330,7 +330,11 @@ describe('cua helper daemon reap', () => {
     sock = join(dir, 'x.sock');
     writeFileSync(
       fake,
-      '#!/bin/sh\nsleep 60 &\necho $! > "$(dirname "$0")/child.$1.pid"\nwait\n',
+      '#!/bin/sh\n' +
+        'if [ "$1" = serve ] && [ "$6" != --cua-internal-gate-engaged ]; then\n' +
+        '  "$0" serve --socket "$3" --host-bundle-id com.example.fake --cua-internal-gate-engaged &\n' +
+        '  echo $! > "$(dirname "$0")/child.$1.pid"\n' +
+        'else\n  sleep 60 &\nfi\nwait\n',
     );
     chmodSync(fake, 0o755);
     process.env.CODE_AGENT_CUA_DRIVER_PATH = fake;
@@ -384,6 +388,31 @@ describe('cua helper daemon reap', () => {
     expect(alive(proxy)).toBe(true);
   });
 
+  it('②b 另一槽的 helper 副本（不同路径、同 socket）的代理活着 ⇒ 守护进程保留', async () => {
+    const daemon = await launchDetached('serve');
+    const macos2 = join(dir, 'Fake Helper 2.app', 'Contents', 'MacOS');
+    mkdirSync(macos2, { recursive: true });
+    const fake2 = join(macos2, 'cua-driver');
+    writeFileSync(fake2, '#!/bin/sh\nsleep 60 &\nwait\n');
+    chmodSync(fake2, 0o755);
+    spawn('sh', ['-c', 'nohup "$0" "$@" >/dev/null 2>&1 &', fake2, 'mcp', '--socket', sock], { stdio: 'ignore' }).unref();
+    let proxy: number | null = null;
+    for (let i = 0; i < 100 && !proxy; i++) {
+      proxy = findPid(`${fake2} mcp --socket ${sock}`);
+      if (!proxy) await new Promise((r) => setTimeout(r, 30));
+    }
+    expect(proxy).not.toBeNull();
+
+    const lines: string[] = [];
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+
+    const line = lines.find((l) => l.includes('cua.reap'))!;
+    console.log('LINE', line);
+    expect(line).toContain('cua.reap daemons=1 killed=0 kept=1 failed=0');
+    expect(line).toContain('shared_by_1_proxy');
+    expect(alive(daemon)).toBe(true);
+  });
+
   it('③ kill 失败（EPERM）⇒ failed=1 且原因入日志，进程仍在', async () => {
     const daemon = await launchDetached('serve');
     const realKill = process.kill.bind(process);
@@ -431,7 +460,7 @@ describe('cua helper daemon reap — 启动入口（注入 ps / 时钟）', () =
     const { kill, line } = await run(
       `100 1 02:00:00 ${D} serve --socket /s.sock --host-bundle-id a\n101 100 02:00:00 ${D} serve --socket /s.sock --cua-internal-gate-x\n`,
     );
-    expect(line).toContain('cua.reap daemons=2 killed=2');
+    expect(line).toContain('cua.reap daemons=1 killed=1');
     expect(kill).toHaveBeenCalledWith(100, 'SIGTERM');
     expect(kill).toHaveBeenCalledWith(101, 'SIGTERM');
   });
