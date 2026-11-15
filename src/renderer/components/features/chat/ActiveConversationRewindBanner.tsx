@@ -1,3 +1,4 @@
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { History, Loader2, X as XIcon } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
   onRestored,
 }) => {
   const { t } = useI18n();
+  const roleLabels = useRoleLabels();
   const currentSessionIdRef = useRef(sessionId);
   currentSessionIdRef.current = sessionId;
   const [activeRewindId, setActiveRewindId] = useState<string | null>(null);
@@ -68,11 +70,12 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
     const projected = formatEditRoleUserPrompt(
       extractUserRequest(anchor?.message.content ?? ''),
       t.roleEditReceipt.userPrompt,
+      roleLabels,
     );
     const raw = projected.replace(/\s+/g, ' ').trim();
     const excerpt = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || null;
     return { rewindId, excerpt };
-  }, [t.roleEditReceipt.userPrompt]);
+  }, [t.roleEditReceipt.userPrompt, roleLabels]);
 
   const clearBanner = useCallback(() => {
     if (dismissTimerRef.current) {
