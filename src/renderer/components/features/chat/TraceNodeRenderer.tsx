@@ -462,7 +462,7 @@ const AssistantTextNode: React.FC<{
   return (
     <div
       ref={rootRef}
-      aria-label={t.agentRoleLabels.assistant}
+      aria-label={t.assistantMessageAria}
       className="relative group/msg"
       onMouseUp={updateSelectionCopy}
       onKeyUp={updateSelectionCopy}

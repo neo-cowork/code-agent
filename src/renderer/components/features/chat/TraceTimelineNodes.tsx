@@ -191,7 +191,7 @@ const HOOK_EVENT_LABELS: Record<string, string> = {
 };
 
 const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const labels = t.turnHooks;
   const activity = timeline.hookActivity;
   const [expanded, setExpanded] = useState(false);

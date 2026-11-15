@@ -25,7 +25,7 @@ export function formatNativeModelSwitcherTooltip(args: {
       : labels.model.replace('{model}', `${args.displayProvider}/${args.displayModel}`);
   return [
     modelLine,
-    args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherTooltip.billingModes[args.billingSummary.mode]) : null,
+    args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,
     args.healthSummary && args.healthSummary.state !== 'unknown'
       ? `${labels.service}: ${languages[language].settings.model.models.switcherTooltip.health[args.healthSummary.state]}` : null,
     args.effort ? `${labels.effort}: ${language === 'zh' ? args.effort.shortLabel : args.effort.label}` : null,

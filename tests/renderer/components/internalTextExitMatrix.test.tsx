@@ -9,6 +9,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import { CronJobList } from '../../../src/renderer/components/features/cron/CronJobList';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
@@ -43,7 +44,12 @@ function visibleChrome(container: HTMLElement): string {
   for (const details of copy.querySelectorAll('details:not([open])')) {
     for (const child of [...details.children]) if (child.tagName !== 'SUMMARY') child.remove();
   }
-  return [copy.textContent, ...[...copy.querySelectorAll('*')].flatMap((el) =>
+  // Text-node boundaries must survive scanning: a count next to a pill otherwise becomes
+  // `1weekly-report-synthesis`, incorrectly passing the identifier word boundary.
+  const walker = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+  const segments: string[] = [];
+  while (walker.nextNode()) segments.push(walker.currentNode.textContent ?? '');
+  return [segments.join(' '), ...[...copy.querySelectorAll('*')].flatMap((el) =>
     ['title', 'aria-label', 'placeholder'].map((attr) => el.getAttribute(attr) ?? ''))].join(' ');
 }
 
@@ -81,6 +87,19 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
         ] } },
     }} />);
     assertClean('timeline', visibleChrome(container), language);
+  });
+  it('1 production turn skill activity banner', () => {
+    const { container } = render(<TurnCard turn={{
+      turnNumber: 1, turnId: 'weekly-turn', status: 'completed', startTime: 1, endTime: 4,
+      nodes: [{ id: 'request', type: 'user', timestamp: 1, content: 'Summarize the notes' }, skillNode,
+        { id: 'timeline-banner', type: 'turn_timeline', timestamp: 2, content: '',
+          turnTimeline: { id: 'skill-banner', kind: 'skill_activity', tone: 'neutral', timestamp: 2,
+            skillActivity: { summary: `Skill 触发了 ${slug} skill`, items: [
+              { skillId: slug, label: slug, action: 'triggered', timestamp: 2, detail: 'skill tool' },
+            ] } } },
+        { id: 'answer', type: 'assistant_text', timestamp: 3, content: 'Report ready.' }],
+    }} />);
+    assertClean('turn-skill-banner', visibleChrome(container), language);
   });
   it('2 error card from a raw failing connector event', () => {
     const { container } = render(<AgentErrorPresentation messageId="failed-mail" error={{

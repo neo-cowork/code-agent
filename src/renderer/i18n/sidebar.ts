@@ -6,7 +6,8 @@ import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 
 export const sidebarZh = {
-  skillTimeline: { selected: '本轮使用', triggered: '已使用', written: '已加载' },
+  assistantMessageAria: '助手消息',
+  skillTimeline: { selected: '本轮使用', triggered: '已触发', written: '已加载' },
   modelSwitcherTooltip: {
     engine: '运行引擎', service: '服务状态', effort: '推理强度', thinking: '思考',
     model: '主任务模型: {model}', billing: '计费: {billing}',
@@ -401,6 +402,7 @@ export const sidebarZh = {
 };
 
 export const sidebarEn: typeof sidebarZh = {
+  assistantMessageAria: 'Assistant message',
   skillTimeline: { selected: 'Selected', triggered: 'Used', written: 'Loaded' },
   modelSwitcherTooltip: {
     engine: 'Engine', service: 'Provider', effort: 'Effort', thinking: 'Thinking',
