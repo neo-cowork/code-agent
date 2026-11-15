@@ -20,7 +20,12 @@ afterAll(async () => {
 });
 
 async function evaluate(params: Record<string, unknown>, response: string) {
-  const expectation: Expectation = { type: 'response_contains', weight: 0.8, params };
+  const expectation: Expectation = {
+    type: 'response_contains',
+    description: 'reply states the expected text',
+    weight: 0.8,
+    params,
+  };
   const result = await runExpectations([expectation], {
     toolExecutions: [],
     responses: [response],
