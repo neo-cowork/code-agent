@@ -2,16 +2,16 @@
 import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserAgentWindow } from '../../../../src/renderer/components/workbench/BrowserAgentWindow';
-import { useAppStore } from '../../../../src/renderer/stores/appStore';
-import { useSessionStore } from '../../../../src/renderer/stores/sessionStore';
-import { useSurfaceExecutionStore } from '../../../../src/renderer/stores/surfaceExecutionStore';
-import { surfaceExecutionScopeKeyV1 } from '../../../../src/renderer/utils/surfaceExecutionProjection';
-import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
-import type { SurfaceConversationSnapshotV1 } from '../../../../src/shared/contract/surfaceExecution';
-import type { useWorkbenchBrowserSession } from '../../../../src/renderer/hooks/useWorkbenchBrowserSession';
-import type { LiveAgentPointerState } from '../../../../src/renderer/hooks/useLiveAgentPointer';
-import type { SurfaceLiveFrameStreamState } from '../../../../src/renderer/hooks/useSurfaceLiveFrames';
+import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/BrowserAgentWindow';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
+import { surfaceExecutionScopeKeyV1 } from '../../../src/renderer/utils/surfaceExecutionProjection';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../src/shared/contract/surfaceExecution';
+import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract/surfaceExecution';
+import type { useWorkbenchBrowserSession } from '../../../src/renderer/hooks/useWorkbenchBrowserSession';
+import type { LiveAgentPointerState } from '../../../src/renderer/hooks/useLiveAgentPointer';
+import type { SurfaceLiveFrameStreamState } from '../../../src/renderer/hooks/useSurfaceLiveFrames';
 
 type BrowserSessionState = ReturnType<typeof useWorkbenchBrowserSession>;
 
@@ -19,13 +19,13 @@ let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;
 let liveFrameState: SurfaceLiveFrameStreamState;
 
-vi.mock('../../../../src/renderer/hooks/useWorkbenchBrowserSession', () => ({
+vi.mock('../../../src/renderer/hooks/useWorkbenchBrowserSession', () => ({
   useWorkbenchBrowserSession: () => browserSessionState,
 }));
-vi.mock('../../../../src/renderer/hooks/useLiveAgentPointer', () => ({
+vi.mock('../../../src/renderer/hooks/useLiveAgentPointer', () => ({
   useLiveAgentPointer: () => pointerState,
 }));
-vi.mock('../../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
+vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
   useSurfaceLiveFrames: () => liveFrameState,
 }));
 
@@ -33,7 +33,7 @@ const mocks = vi.hoisted(() => ({
   getPersistedSurfaceTerminalFrame: vi.fn(),
 }));
 
-vi.mock('../../../../src/renderer/services/surfaceExecutionClient', () => ({
+vi.mock('../../../src/renderer/services/surfaceExecutionClient', () => ({
   getPersistedSurfaceTerminalFrame: mocks.getPersistedSurfaceTerminalFrame,
   deletePersistedSurfaceTerminalFrames: vi.fn(),
   // The live window now loads the takeover control client at import time.
