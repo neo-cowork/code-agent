@@ -87,10 +87,11 @@ describe('TurnCard skill activity', () => {
 
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
-    expect(html).toContain('Skill 触发 1 · 写入 1');
+    expect(html).toContain('lark-doc · 已触发、lark-doc · 已加载');
+    expect(html).not.toContain('Skill 触发 1 · 写入 1');
     expect(html).toContain('lark-doc');
     expect(html).toContain('已触发');
-    expect(html).toContain('已写入');
+    expect(html).toContain('已加载');
     expect(html).not.toContain('debug-skill-source');
     expect(html).not.toContain('command-message');
   });
