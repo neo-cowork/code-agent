@@ -14,9 +14,10 @@
 // ============================================================================
 
 import type { CronJobDefinition } from '../../../shared/contract/cron';
+import { BUILTIN_MAINTENANCE_JOB_TAGS } from '../../../shared/constants/memory';
 import { DISTILL } from '../../../shared/constants';
 
-export const DISTILL_CRON_JOB_TAG = 'distill-workflow-packaging';
+export const DISTILL_CRON_JOB_TAG = BUILTIN_MAINTENANCE_JOB_TAGS.DISTILL_WORKFLOW;
 export const DISTILL_AUTO_PROMPT = '/distill --auto';
 
 type DistillCronDefinition = Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>;
