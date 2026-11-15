@@ -46,7 +46,8 @@ import {
 } from '../../../src/host/services/infra/timeoutController';
 import { clearApprovalWait, getApprovalWaitMs } from '../../../src/host/tools/toolExecutionTelemetry';
 import { getToolExecutionTimeoutMs } from '../../../src/shared/constants/timeouts';
-import type { AgentEvent, SessionWithMessages } from '../../../src/shared/contract';
+import type { AgentEvent } from '../../../src/shared/contract';
+import type { SessionWithMessages } from '../../../src/host/services/infra/sessionManager';
 
 const FAKE_CUA_DRIVER = path.resolve(__dirname, '../../fixtures/mcp/fake-cua-driver.mjs');
 
@@ -179,6 +180,7 @@ describe('N-CUA-TAKEOVER-RESUME-FU1 headless ToolExecutor + HTTP control bridge 
             workingDirectory: stored.workingDirectory,
             metadata: stored.metadata,
             messages: [],
+            todos: [],
           };
         },
         async patchSessionMetadata(conversationId, patch, options) {
