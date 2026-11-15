@@ -12,6 +12,7 @@ import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
 // 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
@@ -62,7 +63,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   onChange,
   onMemoryRouteChange,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const strategyText = t.settings.model.taskStrategy;
   const effectiveSettings = useMemo<AppSettings | null>(() => {
     if (!settings) return null;
@@ -121,13 +122,13 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   const groupedOptions = useMemo(() => {
     const groups = new Map<string, { label: string; options: typeof modelOptions }>();
     for (const option of modelOptions) {
-      const key = option.providerLabel || option.provider;
+      const key = resolveProviderLabel(option.provider, option.providerLabel, language);
       const group = groups.get(key) ?? { label: key, options: [] as typeof modelOptions };
       group.options.push(option);
       groups.set(key, group);
     }
     return Array.from(groups.values());
-  }, [modelOptions]);
+  }, [language, modelOptions]);
 
   // 自愈目标必须来自运行时可选列表；展示豁免不授权把其他档位改写成该模型。
   useEffect(() => {

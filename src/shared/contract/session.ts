@@ -6,7 +6,7 @@ import type { ModelConfig } from './model';
 import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { SessionWorkbenchProvenance, SessionWorkbenchSnapshot } from './sessionWorkspace';
 import type { StreamInterruptionReason } from './message';
-import type { RunInterruptCause } from './durableRun';
+import type { RunEnvelope, RunInterruptCause } from './durableRun';
 
 /**
  * 会话运行状态
@@ -25,6 +25,8 @@ export interface DurableResumeState {
   canContinue: boolean;
   /** Present when the park is a quota wait. `duePassed` is computed at projection time. */
   quotaWait?: { dueAt: number; duePassed: boolean };
+  /** Present when the park waits on an environment grant; the run resumes itself once granted. */
+  envBlocked?: RunEnvelope['envBlocked'];
 }
 
 /**

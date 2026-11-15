@@ -199,6 +199,8 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
     ...snapshotMessage,
     ...liveMessage,
     content: mergedContentOf(snapshotMessage, liveMessage),
+    // live 草稿的时间戳是开轮时刻，落库那条是写入时刻；取晚的，轮次用时才覆盖到最终回复。
+    timestamp: Math.max(snapshotMessage.timestamp, liveMessage.timestamp),
     reasoning: pickBody(snapshotMessage.reasoning, liveMessage.reasoning),
     // live 草稿的 metadata 可能只有 correlation 一个键（turn_start 建的草稿就是），
     // 整体铺开会把 snapshot 落库的 agentError / turnQuality 等键抹掉——按键合并，

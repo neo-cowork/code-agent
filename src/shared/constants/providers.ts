@@ -267,7 +267,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
     aliases: ['volcengine'],
     defaultModel: 'doubao-1.5-pro-256k',
     endpoint: MODEL_API_ENDPOINTS.volcengine,
-    displayName: '火山引擎 (豆包)',
+    displayName: 'Volcengine (Doubao)',
   },
   longcat: {
     aliases: ['longcat'],
@@ -279,7 +279,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
     aliases: ['xiaomi'],
     defaultModel: 'mimo-v2.5-pro',
     endpoint: MODEL_API_ENDPOINTS.xiaomi,
-    displayName: '小米 MiMo',
+    displayName: 'Xiaomi MiMo',
   },
   custom: {
     aliases: ['custom'],

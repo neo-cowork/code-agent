@@ -429,9 +429,14 @@ describe('side chat floater', () => {
       resolve(__dirname, '../../../src/renderer/components/features/chat/SideChatFloater.tsx'),
       'utf8',
     );
-    const shell = 'absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur';
+    const placement = 'absolute bottom-full right-0 z-30 mb-2';
+    expect(popover).toContain(placement);
+    expect(floater).toContain(placement);
+    const shell = 'rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur';
     expect(popover).toContain(shell);
     expect(floater).toContain(shell);
+    expect(popover).toContain('style={{ width }}');
+    expect(floater).toContain('w-[440px] max-w-[calc(100vw-2rem)]');
     const tokenRe = /(?:[\w-]+:)*(?:text|bg|border|ring|fill|stroke|from|to|via|shadow|z)-[^\s"'`]+/g;
     const popoverTokens = new Set(popover.match(tokenRe) ?? []);
     for (const token of floater.match(tokenRe) ?? []) {
