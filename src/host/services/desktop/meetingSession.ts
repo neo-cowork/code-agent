@@ -169,7 +169,7 @@ function defaultTitle(ms: number): string {
 // 存储：和 audio_segments 同一个 desktop-activity.sqlite3，同样走 sqlite3 CLI
 // ============================================================================
 
-const MEETINGS_DDL = `CREATE TABLE IF NOT EXISTS meetings (
+export const MEETINGS_DDL = `CREATE TABLE IF NOT EXISTS meetings (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   started_at_ms INTEGER NOT NULL,
@@ -202,7 +202,8 @@ export function createSqliteMeetingStore(
   };
   return {
     save(r, updatedAtMs) {
-      exec(`INSERT OR REPLACE INTO meetings (id, title, started_at_ms, ended_at_ms, state, end_reason, updated_at_ms) VALUES (${q(r.id)}, ${q(r.title)}, ${r.startedAtMs}, ${r.endedAtMs ?? 'NULL'}, ${q(r.state)}, ${r.endReason ? q(r.endReason) : 'NULL'}, ${updatedAtMs});`);
+      // upsert 而不是 INSERT OR REPLACE：REPLACE 会删行重插，把会议页写的纪要列（meetingRecords.ts）冲掉
+      exec(`INSERT INTO meetings (id, title, started_at_ms, ended_at_ms, state, end_reason, updated_at_ms) VALUES (${q(r.id)}, ${q(r.title)}, ${r.startedAtMs}, ${r.endedAtMs ?? 'NULL'}, ${q(r.state)}, ${r.endReason ? q(r.endReason) : 'NULL'}, ${updatedAtMs}) ON CONFLICT(id) DO UPDATE SET title = excluded.title, started_at_ms = excluded.started_at_ms, ended_at_ms = excluded.ended_at_ms, state = excluded.state, end_reason = excluded.end_reason, updated_at_ms = excluded.updated_at_ms;`);
     },
     closeInterrupted() {
       exec(`UPDATE meetings SET state = 'ended', end_reason = 'interrupted', ended_at_ms = updated_at_ms WHERE state != 'ended';`);

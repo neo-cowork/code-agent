@@ -48,6 +48,13 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   ToolSearch: { zh: '查找可用工具', en: 'Find available tools' },
   AgentSpawn: { zh: '启动协作助手', en: 'Start helper' },
   TaskManager: { zh: '管理后台任务', en: 'Manage background tasks' },
+  delegate_session: { zh: '转交到另一个会话', en: 'Hand off to another chat' },
+  list_session_candidates: { zh: '查找可转交的会话', en: 'Find chats to hand off to' },
+  delegate_existing: { zh: '转交到已有会话', en: 'Hand off to an existing chat' },
+  create_new: { zh: '新建会话', en: 'Create a new chat' },
+  candidateSetId: { zh: '候选会话', en: 'candidate chats' },
+  MemoryRead: { zh: '读取记忆', en: 'Read memory' },
+  Glob: { zh: '按名称查找文件', en: 'Find files by name' },
 };
 
 interface EnglishStatePattern {
@@ -111,6 +118,19 @@ const ENGLISH_STATE_PATTERNS: EnglishStatePattern[] = [
     regex: ENGLISH_STATE_REGEXES[7],
     replace: (_match, lang) =>
       lang === 'en' ? 'No event handling records for this run' : '本次运行未产生事件处理记录',
+  },
+  {
+    regex: ENGLISH_STATE_REGEXES[8],
+    replace: (_match, lang) => (lang === 'en' ? 'Status: in progress' : '状态：进行中'),
+  },
+  {
+    regex: ENGLISH_STATE_REGEXES[9],
+    replace: (_match, lang) => (lang === 'en' ? 'in progress' : '进行中'),
+  },
+  {
+    regex: ENGLISH_STATE_REGEXES[10],
+    replace: (_match, lang, count) =>
+      lang === 'en' ? `Active chats: ${count}` : `活跃会话 ${count} 个`,
   },
 ];
 

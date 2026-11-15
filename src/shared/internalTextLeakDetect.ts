@@ -36,16 +36,9 @@ export const INTERNAL_TOOL_GLOBAL_RE = new RegExp(
   'g',
 );
 
-export const ENGLISH_STATE_REGEXES: RegExp[] = [
-  new RegExp(leakPatterns.englishState[0], 'g'),
-  new RegExp(leakPatterns.englishState[1], 'gi'),
-  new RegExp(leakPatterns.englishState[2], 'gi'),
-  new RegExp(leakPatterns.englishState[3], 'gi'),
-  new RegExp(leakPatterns.englishState[4], 'gi'),
-  new RegExp(leakPatterns.englishState[5], 'gi'),
-  new RegExp(leakPatterns.englishState[6], 'gi'),
-  new RegExp(leakPatterns.englishState[7], 'gi'),
-];
+export const ENGLISH_STATE_REGEXES: RegExp[] = leakPatterns.englishState.map(
+  (pattern, index) => new RegExp(pattern, index === 0 ? 'g' : 'gi'),
+);
 
 export const SANDBOX_EXEC_COMMAND_RE = new RegExp(`${leakPatterns.sandboxExec}\\s+-f\\s+\\S+`, 'g');
 export const SANDBOX_EXEC_TOKEN_RE = new RegExp(leakPatterns.sandboxExec, 'g');
