@@ -15,7 +15,9 @@
 //          · JSX 子节点里直接写的字符串：<p>{'中文'}</p> / <p>{`中文 ${n}`}</p>
 //          · 直接写在函数/构造调用入参里的字符串：createSession('中文')、toast.error(`失败：${e}`)
 //            （口径 2 新增：标题、提示这类文案常常就是这么漏出去的）
-//        三元、|| 兜底、变量、对象字段里的字符串不计（那是匹配表/数据表）。
+//          · 以上两种花括号里经三元 / || / ?? / && / 括号选出来的分支字面量：
+//            {label ? `：${label}` : ''}、title={ok ? '已完成' : '未完成'}（口径 3 新增）
+//        变量、对象字段、不在 JSX 花括号里的三元和兜底不计（那是匹配表/数据表）。
 //     2) 「面向用户的清单和常量」与宿主诊断，任意 CJK 字符串或模板字面量都计
 //        （StringLiteral / NoSubstitutionTemplateLiteral / TemplateExpression，
 //        整条模板表达式含至少一段 CJK 静态片段计 1）：
@@ -168,6 +170,31 @@ function isHanTemplate(node) {
     (HAN_RE.test(node.head.text) || node.templateSpans.some((span) => HAN_RE.test(span.literal.text)));
 }
 
+const JSX_BRANCH_OPERATORS = new Set([
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.AmpersandAmpersandToken,
+]);
+
+// JSX 花括号里「直接决定显示什么」的字面量：表达式本身，或它经三元 / || / ?? / && / 括号
+// 选出来的分支。`{label ? `：${label}` : ''}` 的那段模板就是这么数到的（FB-1497）。
+// 不进函数调用和对象：那里的字面量由「函数入参」规则管，或不属于渲染位置口径。
+function jsxLiteralLeaves(node, out = []) {
+  if (!node) return out;
+  if (isHanPlainString(node) || isHanTemplate(node)) {
+    out.push(node);
+  } else if (ts.isParenthesizedExpression(node)) {
+    jsxLiteralLeaves(node.expression, out);
+  } else if (ts.isConditionalExpression(node)) {
+    jsxLiteralLeaves(node.whenTrue, out);
+    jsxLiteralLeaves(node.whenFalse, out);
+  } else if (ts.isBinaryExpression(node) && JSX_BRANCH_OPERATORS.has(node.operatorToken.kind)) {
+    jsxLiteralLeaves(node.left, out);
+    jsxLiteralLeaves(node.right, out);
+  }
+  return out;
+}
+
 function scanRendererFile(sourceFile, relPosix) {
   const findings = [];
   const visit = (node) => {
@@ -177,16 +204,13 @@ function scanRendererFile(sourceFile, relPosix) {
       const value = node.initializer && ts.isJsxExpression(node.initializer)
         ? node.initializer.expression
         : node.initializer;
-      if (value && (isHanPlainString(value) || isHanTemplate(value))) {
-        findings.push(makeFinding(sourceFile, relPosix, value, 'jsx-attribute'));
+      for (const leaf of jsxLiteralLeaves(value)) {
+        findings.push(makeFinding(sourceFile, relPosix, leaf, 'jsx-attribute'));
       }
-    } else if (
-      ts.isJsxExpression(node) &&
-      !ts.isJsxAttribute(node.parent) &&
-      node.expression &&
-      (isHanPlainString(node.expression) || isHanTemplate(node.expression))
-    ) {
-      findings.push(makeFinding(sourceFile, relPosix, node.expression, 'jsx-text'));
+    } else if (ts.isJsxExpression(node) && !ts.isJsxAttribute(node.parent)) {
+      for (const leaf of jsxLiteralLeaves(node.expression)) {
+        findings.push(makeFinding(sourceFile, relPosix, leaf, 'jsx-text'));
+      }
     } else if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments) {
       for (const argument of node.arguments) {
         if (isHanPlainString(argument) || isHanTemplate(argument)) {

@@ -109,24 +109,24 @@ describe('renderer-cjk-literal-ratchet', () => {
     );
 
     writeBaseline({
-      'src/renderer/components/Sample.tsx': 6,
+      'src/renderer/components/Sample.tsx': 7,
       'src/shared/contract/privacy.ts': 2,
     });
 
     const res = runCli();
     expect(res.status, res.stderr).toBe(0);
-    expect(res.stdout).toContain('src/renderer/components/Sample.tsx: current=6 baseline=6');
+    expect(res.stdout).toContain('src/renderer/components/Sample.tsx: current=7 baseline=7');
     expect(res.stdout).toContain('src/shared/contract/privacy.ts: current=2 baseline=2');
     expect(res.stdout).toContain('未做手工上调比对');
 
-    // 基线清零后，被计入的 6 处逐条按 file:line 点名；三元和变量引用那两行不出现
+    // 基线清零后，被计入的 7 处逐条按 file:line 点名（含 JSX 花括号里三元的中文分支，口径 3）；
+    // 变量引用那一行和不在 JSX 里的普通字符串不出现
     writeBaseline({ 'src/shared/contract/privacy.ts': 2 });
     const named = runCli();
     expect(named.status).toBe(1);
-    for (const line of [5, 6, 7, 8, 9]) {
+    for (const line of [5, 6, 7, 8, 9, 10]) {
       expect(named.stderr).toContain(`src/renderer/components/Sample.tsx:${line}:`);
     }
-    expect(named.stderr).not.toContain('src/renderer/components/Sample.tsx:10:');
     expect(named.stderr).not.toContain('src/renderer/components/Sample.tsx:11:');
     expect(named.stderr).not.toContain('src/renderer/components/Sample.tsx:2:');
   });
@@ -382,6 +382,7 @@ describe('renderer-cjk-literal-ratchet', () => {
         '      {`Needs your approval：${label}`}',
         '      <span>Done。</span>',
         '      <span>{n} items · ok</span>',
+        "      <span>{label ? `：${label}` : ''}{label || '（无）'}</span>",
         '    </p>',
         '  );',
         '}',
@@ -410,12 +411,15 @@ describe('renderer-cjk-literal-ratchet', () => {
     expect(res.stderr).toContain('src/renderer/components/Punct.tsx:4:8 [jsx-text]');
     expect(res.stderr).toContain('src/renderer/components/Punct.tsx:5:13 [jsx-text]');
     expect(res.stderr).not.toContain('src/renderer/components/Punct.tsx:6:');
+    // 三元分支和 || 兜底里的标点（FB-1497 的原样形状）
+    expect(res.stderr).toContain('src/renderer/components/Punct.tsx:7:22 [jsx-text] `：${label}`');
+    expect(res.stderr).toContain("src/renderer/components/Punct.tsx:7:49 [jsx-text] '（无）'");
     // utils 下：return 的字面量和对象字段里的字面量都计（渲染位置口径数不到这两种）
     expect(res.stderr).toContain("src/renderer/utils/formatThing.ts:2:29 [literal-string] '未设置'");
     expect(res.stderr).toContain("src/renderer/utils/formatThing.ts:3:26 [literal-string] '（空）'");
 
     writeBaseline({
-      'src/renderer/components/Punct.tsx': 3,
+      'src/renderer/components/Punct.tsx': 5,
       'src/renderer/utils/formatThing.ts': 2,
       'src/shared/contract/ok.ts': 1,
     });
