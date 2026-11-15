@@ -62,11 +62,12 @@ export async function enableCalendarReminder(deps: CalendarSettingDeps, state: P
 }
 
 /**
- * 设置页打开 / 窗口重新聚焦：被动再看一眼。只有发起过、还没等到答复的那次开启请求，
- * 在用户后来点了「允许」时补成开；从没发起过请求的一律不自动开。
+ * 设置页打开 / 窗口重新聚焦：被动再看一眼（从不弹框）。设置已开但授权没了 → 显示关（revoked）。
+ * 只有发起过、还没等到答复的那次开启请求，在用户后来点了「允许」时补成开；从没发起过请求的一律不自动开。
  */
 export async function recheckCalendarReminder(deps: CalendarSettingDeps, state: PendingEnable): Promise<CalendarSettingResult> {
-  if (deps.readSetting()) return { on: true };
+  // 显示为开 = 设置是开 && 被动探针仍是完全访问；授权被撤（tccutil reset / 系统设置里关掉）就显示关并提示重新允许
+  if (deps.readSetting()) return (await deps.access()) === 'granted' ? { on: true } : { on: false, reason: 'revoked' };
   if (!state.pending) return { on: false };
   const access = await deps.access();
   if (access === 'granted') return finish(deps, state, access);

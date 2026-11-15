@@ -54,7 +54,7 @@ export interface EnvAssistActResult {
 export interface CalendarSettingResult {
   on: boolean;
   /** Why it stayed off: write_only = 「隐私与安全性 → 日历」里只给了「仅添加事件」，要改成「完全访问」 */
-  reason?: 'denied' | 'restricted' | 'write_only' | 'undecided' | 'unavailable';
+  reason?: 'denied' | 'restricted' | 'write_only' | 'undecided' | 'unavailable' | 'revoked';
   /** System Settings → Privacy & Security → Calendars was opened for the user */
   opened?: boolean;
 }

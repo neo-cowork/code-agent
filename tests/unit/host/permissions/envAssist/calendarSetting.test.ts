@@ -150,6 +150,18 @@ describe('envAssist enableSettingGrant / recheckSettingGrant (验收②)', () =>
     expect(kit.prompts).toBe(1);
   });
 
+  it('设置是开但授权已撤（tccutil reset / 系统设置关掉）：显示关并提示重新允许，不弹框、不改设置', async () => {
+    setting = true;
+    for (const status of [0, 1, 2, 4] as const) {
+      const kit = new FakeEventKit(); kit.status = status;
+      expect(await install(kit)('recheckSettingGrant')).toEqual({ on: false, reason: 'revoked' });
+      expect(kit.prompts).toBe(0);
+    }
+    const kit = new FakeEventKit(); kit.status = 3;
+    expect(await install(kit)('recheckSettingGrant')).toEqual({ on: true });
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('A：从没发起过开启请求的，即使已是完全访问，复查也不自动开', async () => {
     const kit = new FakeEventKit(); kit.status = 3;
     expect(await install(kit)('recheckSettingGrant')).toEqual({ on: false });

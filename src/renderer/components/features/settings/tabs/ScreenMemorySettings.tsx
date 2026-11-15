@@ -366,6 +366,8 @@ export const ScreenMemorySettings: React.FC = () => {
           fallbackKind="daemon"
         />
         <OpenchronicleSettings embedded />
+        {/* 会前提醒放在显眼处（真机反馈：藏在默认折叠的诊断区里找不到） */}
+        {tauri && <MeetingCalendarReminderToggle />}
       </SettingsSection>
 
       <SettingsDetails
@@ -398,12 +400,9 @@ export const ScreenMemorySettings: React.FC = () => {
             fallbackKind="bundled"
           />
           {tauri ? (
-            <>
-              <MeetingCalendarReminderToggle />
-              <div className="h-[460px] rounded-lg border border-zinc-700/60 overflow-hidden bg-zinc-900">
-                <NativeDesktopSection />
-              </div>
-            </>
+            <div className="h-[460px] rounded-lg border border-zinc-700/60 overflow-hidden bg-zinc-900">
+              <NativeDesktopSection />
+            </div>
           ) : (
             <NativeDesktopUnavailable />
           )}

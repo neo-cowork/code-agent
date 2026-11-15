@@ -56,6 +56,15 @@ describe('会前提醒（只提醒，不自动开录）', () => {
     expect(t.deps.notify).toHaveBeenCalledTimes(2);
   });
 
+  it('巡检中途失权：停止读日程、不提醒、不抛（不刷屏）', async () => {
+    const t = setup({ events: [{ id: 'a', title: '周会', startAtMs: 1_060_000 }] });
+    t.deps.granted.mockResolvedValue(false);
+    for (let i = 0; i < 5; i++) await expect(t.r.tick()).resolves.toBeUndefined();
+    expect(t.deps.granted).toHaveBeenCalledTimes(5);
+    expect(t.deps.upcoming).not.toHaveBeenCalled();
+    expect(t.deps.notify).not.toHaveBeenCalled();
+  });
+
   it('已经在记录：不提醒', async () => {
     const t = setup({ active: true, events: [{ id: 'a', title: '周会', startAtMs: 1_060_000 }] });
     await t.r.tick();

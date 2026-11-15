@@ -32,6 +32,7 @@ export const meetingBarZh = {
       restricted: '这台 Mac 的日历权限被家长控制或公司管理限制了，Agent Neo 读不到日程。',
       undecided: '系统授权框还没作答。点「允许」后回到这里，开关会自己打开。',
       unavailable: '这里读不了日历（只有桌面版能用），开关先关着。',
+      revoked: '日历权限已失效，点开关重新允许。',
     },
   },
 };
@@ -66,6 +67,7 @@ export const meetingBarEn: typeof meetingBarZh = {
       restricted: 'Calendar access on this Mac is restricted by parental controls or your organization, so Agent Neo cannot read your schedule.',
       undecided: "The system prompt hasn't been answered yet. Click Allow and come back — this switch will turn on by itself.",
       unavailable: "Calendar can't be read here (desktop app only), so this stays off.",
+      revoked: 'Calendar access is no longer granted. Turn this on to allow it again.',
     },
   },
 };
