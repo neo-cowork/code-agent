@@ -115,7 +115,7 @@ export const PRIVACY_BOUNDARY_INDEX: Record<PrivacyBoundaryIndexId, PrivacyBound
     id: 'model_provider',
     title: '模型服务和密钥',
     summary: '模型服务的密钥是凭证边界；prompt/工具结果是否出云端是数据边界。',
-    data: ['模型服务密钥', '接口地址', '模型请求上下文', '工具摘要'],
+    data: ['provider API key', 'base URL', '模型请求上下文', '工具摘要'],
     storage: '密钥进入 secure storage / Keychain；普通设置读取只显示 configured。',
     cloud: '使用云端模型时，prompt、工具摘要和必要附件会发给模型服务。',
     revoke: '删除模型服务密钥，切换本地模型，或去服务商控制台轮换。',

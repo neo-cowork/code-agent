@@ -8,6 +8,9 @@
   "literals": ["/v1", "X-API-Key", "mimo providers login"],
   "phrases": [
     { "text": "Provider connectivity", "human": "模型服务连通性" },
-    { "text": "Provider health", "human": "模型服务健康" }
+    { "text": "Provider health", "human": "模型服务健康" },
+    { "text": "provider API key", "human": "模型服务密钥" },
+    { "text": "base URL", "human": "接口地址" },
+    { "text": "HTTP API key", "human": "HTTP API 通道密钥" }
   ]
 }

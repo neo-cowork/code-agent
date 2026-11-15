@@ -33,7 +33,7 @@ export const AUTH_INVENTORY: Record<AuthInventoryItemId, AuthInventoryItem> = {
   'channel.token': {
     id: 'channel.token',
     title: '通道 Token 和 App Secret',
-    examples: ['HTTP API 通道密钥', 'Feishu appSecret', 'Telegram botToken'],
+    examples: ['HTTP API key', 'Feishu appSecret', 'Telegram botToken'],
     storage: '通道配置保存在 secure storage。',
     display: '表单默认 password/masked；复制完整值必须是显式动作。',
     revoke: '禁用/删除通道，或在外部平台撤销 token。',
