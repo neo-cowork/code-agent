@@ -36,6 +36,8 @@ import type {
 } from '../../../protocol/tools';
 import { grepSchema as schema } from './grep.schema';
 import { applyPartialToOutput, parseSearchErrorStderr } from './partialResults';
+import { isPathMissing } from '../../file/pathUtils';
+import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { GREP, BASH } from '../../../../shared/constants';
 import {
   collectForeignSlotTraversalExcludes,
@@ -131,6 +133,15 @@ function isEagainError(error: unknown): boolean {
     text.includes('eagain') ||
     err.code === 'EAGAIN'
   );
+}
+
+/**
+ * rg/grep 对缺失路径报 exit 2，stderr 文本带 No such file or directory / os error 2
+ * —— 同样是「路径不存在」，归 ENOENT；FS_ERROR 只留给真正的读写失败。
+ */
+function isMissingPathErrorText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return lower.includes('no such file or directory') || lower.includes('os error 2');
 }
 
 interface RgResult {
@@ -585,6 +596,26 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     const ctxBefore = contextLines ?? beforeContext;
     const ctxAfter = contextLines ?? afterContext;
 
+    // 搜索路径不存在时在进引擎前拦下（rg 对缺失目录报 exit 2 的 IO error，不该走到那一步）：
+    // 计划中的会话产出目录（任务_/Task_ 形状，懒创建、尚未落盘）按空目录处理，返回与
+    // 零匹配相同的形状，不建目录、不跑引擎（与 ListDirectory 的 planned-empty 分支同一策略）；
+    // 其余缺失路径报 ENOENT，让界面说「找不到」，而不是落成「被占用/没权限」的 FS_ERROR。
+    if (await isPathMissing(searchPath)) {
+      if (isPlannedSessionWorkDirectory(searchPath)) {
+        onProgress?.({ stage: 'completing', percent: 100 });
+        ctx.logger.info('Grep done (planned empty session work directory)', {
+          pattern: pattern.slice(0, 80),
+          searchPath,
+        });
+        return {
+          ok: true,
+          output: 'No matches found',
+          meta: buildNoMatchesMeta('rg', pattern, searchPath, ctx),
+        };
+      }
+      return { ok: false, error: `Path not found: ${searchPath}`, code: 'ENOENT' };
+    }
+
     try {
       let stdout: string;
       let engine: 'rg' | 'grep';
@@ -775,6 +806,17 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: false,
           error: `Path not found: ${errMsg}`,
+          code: 'ENOENT',
+        };
+      }
+
+      // rg/grep exit 2 的 stderr 文本形态（No such file or directory / os error 2）
+      // 也是「路径不存在」——上面的 code 分流接不住这种文本，归 ENOENT 让界面说
+      // 「找不到」；FS_ERROR 只留给真正的读写失败。
+      if (isMissingPathErrorText(errMsg)) {
+        return {
+          ok: false,
+          error: `Path not found: ${searchPath}`,
           code: 'ENOENT',
         };
       }
