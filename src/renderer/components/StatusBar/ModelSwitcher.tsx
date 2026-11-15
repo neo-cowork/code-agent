@@ -17,7 +17,8 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
-import { getProviderDisplayName, isAgenticVerifiedModel } from '@shared/constants';
+import { isAgenticVerifiedModel } from '@shared/constants';
+import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
   groupRuntimeModelOptionsByProvider,
@@ -251,14 +252,14 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
     return visibleModelOptions.filter((opt) => {
-      const providerName = (opt.providerLabel || getProviderDisplayName(opt.provider) || opt.provider).toLowerCase();
+      const providerName = resolveProviderLabel(opt.provider, opt.providerLabel, language).toLowerCase();
       return (
         opt.label.toLowerCase().includes(q) ||
         opt.model.toLowerCase().includes(q) ||
         providerName.includes(q)
       );
     });
-  }, [searchQuery, visibleModelOptions]);
+  }, [language, searchQuery, visibleModelOptions]);
 
   const groupedFilteredOptions = useMemo(() => {
     let nextIndex = 1;
@@ -913,10 +914,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                         >
                           <ProviderLogo
                             provider={group.provider}
-                            label={group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
+                            label={resolveProviderLabel(group.provider, group.providerLabel, language)}
                             icon={group.providerIcon}
                           />
-                          <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
+                          <span>{resolveProviderLabel(group.provider, group.providerLabel, language)}</span>
                           {group.providerFavorite && (
                             <Star className="h-3 w-3 fill-badge-warning text-badge-warning" />
                           )}

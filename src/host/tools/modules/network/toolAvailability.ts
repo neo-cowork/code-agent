@@ -65,11 +65,11 @@ const TOOL_KEY_CHECKS: Record<string, () => boolean> = {
  * 单测用同一批 i18n 导出拼路径核对：
  *   sidebarZh/En.sidebar.menuSettings
  *   zhSettingsCore/enSettingsCore.tabs.model
- *   zhSettingsModels/enSettingsModels.model.providers.zhipu.name（两种语言都是「智谱 AI」）
+ *   zhSettingsModels/enSettingsModels.model.providers.zhipu.name（en=Zhipu GLM，zh=智谱 AI）
  *   model.list.addKey
  * gui_agent 只认 env、设置页没有入口，不进这张表。
  */
-const ZHIPU_SETTINGS_PATH_EN = 'Settings -> General model -> 智谱 AI (Add Key)';
+const ZHIPU_SETTINGS_PATH_EN = 'Settings -> General model -> Zhipu GLM (Add Key)';
 const ZHIPU_SETTINGS_PATH_ZH = '设置 -> 通用模型 -> 智谱 AI（添加 Key）';
 
 interface ToolUnlockHint {
