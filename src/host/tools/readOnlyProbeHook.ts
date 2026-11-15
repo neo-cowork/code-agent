@@ -70,7 +70,7 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
   const plan = compileReadOnlyProbePlan(input.command, { homeDir: os.homedir(), platform: process.platform });
   if (!plan) return null;
   const programs = [...new Set(plan.steps.map((s) => s.program))];
-  if (!userRulesAllow([input.command, ...plan.steps.map((s) => s.source)], input.sessionId)) {
+  if (!userRulesAllow([input.command, ...plan.steps.flatMap((s) => [s.source, ...s.extraSources ?? []])], input.sessionId)) {
     logger.info('readonly_probe_plan_miss', { cause: 'user-or-builtin-rule', programs });
     return null;
   }

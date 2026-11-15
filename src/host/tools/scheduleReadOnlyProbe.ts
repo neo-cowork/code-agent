@@ -28,7 +28,7 @@ export function scheduleReadOnlyProbeRoot(sessionId: string | undefined, command
     const rules = resolveEffectivePolicyRules(sessionId);
     // The existing safe-command shortcut runs before the probe hook. Recheck each
     // fragment here too, so its shortcut cannot hide a user's ask/deny on a tail.
-    for (const source of [command, ...plan.steps.map((step) => step.source)]) {
+    for (const source of [command, ...plan.steps.flatMap((step) => [step.source, ...step.extraSources ?? []])]) {
       for (const tool of ['Bash', 'bash']) {
         const matched = getPolicyEngine().evaluate({ tool, level: 'execute', command: source, description: `tool: ${tool}`, sessionId }, rules).matchedRule;
         if (matched && matched.action !== 'allow') return undefined;

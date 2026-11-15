@@ -34,7 +34,7 @@ export type ProbeCommand =
   | { kind: 'echo'; text: string; newline: boolean }
   | { kind: 'printf'; text: string }
   | { kind: 'command-v'; name: string }
-  | { kind: 'ls'; flags: string[]; paths: string[] }
+  | { kind: 'ls'; flags: string[]; paths: string[]; headLines?: number }
   | { kind: 'xattr'; paths: string[] }
   | { kind: 'id-un' }
   | { kind: 'whoami' }
@@ -49,6 +49,8 @@ interface ProbeStep {
   program: string;
   /** 该步对应的原文片段，供用户规则逐段匹配。 */
   source: string;
+  /** Additional literal pipeline programs, each checked against user rules. */
+  extraSources?: string[];
 }
 
 export interface ReadOnlyProbePlan {
@@ -72,6 +74,7 @@ interface Word {
 type Token =
   | { type: 'word'; word: Word; start: number; end: number }
   | { type: 'op'; op: ';' | '&&' | '||'; start: number; end: number }
+  | { type: 'pipe'; start: number; end: number }
   | { type: 'redir'; fd: 1 | 2; target: 'null' | 1 | 2; start: number; end: number };
 
 const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -99,6 +102,7 @@ function tokenize(src: string, vars: Map<string, string>, home: string): Token[]
         if (src[i + 2] === ch || src[i + 2] === '&' || src[i + 2] === '|') return null;
         tokens.push({ type: 'op', op: ch === '&' ? '&&' : '||', start: i, end: i + 2 }); atStart = true; i += 2; continue;
       }
+      if (ch === '|') { tokens.push({ type: 'pipe', start: i, end: i + 1 }); i++; atStart = true; continue; }
       return null;
     }
     // 重定向只在 token 起点识别，且只认 2>&1 / >/dev/null / 2>/dev/null / 1>/dev/null / 1>&2
@@ -466,6 +470,27 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
   let group: Token[] = [];
   const flush = (): boolean => {
     if (group.length === 0) return false;
+    const pipe = group.findIndex((token) => token.type === 'pipe');
+    if (pipe >= 0) {
+      const left = group.slice(0, pipe);
+      const right = group.slice(pipe + 1);
+      if (!left.length || right.some((token) => token.type !== 'word') || right.length < 2) return false;
+      const words = right.map((token) => (token as Extract<Token, { type: 'word' }>).word);
+      const [head, ...args] = words;
+      if (!head.bare || head.value !== 'head' || words.some((word) => word.assignName !== undefined)) return false;
+      const count = args.length === 1 && /^-\d+$/.test(args[0].value) ? args[0].value.slice(1)
+        : args.length === 2 && args[0].value === '-n' && /^\d+$/.test(args[1].value) ? args[1].value : undefined;
+      if (count === undefined || Number(count) < 1 || Number(count) > 10000) return false;
+      if (left.some((token) => token.type !== 'word' && token.type !== 'redir')) return false;
+      const compiled = compileSimple(left.filter((token) => token.type === 'word').map((token) => token.word));
+      if (compiled?.cmd.kind !== 'ls') return false;
+      const source = command.slice(group[0].start, group[group.length - 1].end).trim();
+      const headSource = command.slice(right[0].start, right[right.length - 1].end).trim();
+      const redirs = left.filter((token) => token.type === 'redir');
+      steps.push({ op, cmd: { ...compiled.cmd, headLines: Number(count) }, redirect: foldRedirect(redirs), program: 'ls', source, extraSources: [headSource] });
+      group = [];
+      return true;
+    }
     const words: Word[] = [];
     const redirs: Extract<Token, { type: 'redir' }>[] = [];
     for (const t of group) {

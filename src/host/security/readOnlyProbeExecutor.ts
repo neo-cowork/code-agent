@@ -275,6 +275,13 @@ class Runner {
         const targets = cmd.paths.length > 0 ? cmd.paths : ['.'];
         for (const p of targets) this.need(p);
         const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.auth.workingDirectory);
+        if (cmd.headLines !== undefined) {
+          const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
+          const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+          const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
+          this.emit({ out: 'out', err: 'err' }, lines.slice(0, cmd.headLines).join(''), stderr);
+          return 0; // The last program is a literal head, with no pipefail.
+        }
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }

@@ -144,6 +144,44 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
       expect(probeRows()).toHaveLength(0);
     });
 
+    for (const head of ['head -30', 'head -n 1']) {
+      it(`inside folder ls pipe ${head} -> no card, matching real shell`, async () => {
+        const command = `ls -la "${elsewhere}" 2>&1 | ${head}`;
+        const result = await cronRun(command);
+        expect(result.success).toBe(true);
+        expect(result.output).toBe(realBash(command));
+        expect(permissionAsks).toEqual([]);
+        const plan = compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform });
+        expect(plan).not.toBeNull();
+        const probe = await executeReadOnlyProbePlan(plan!, {
+          workingDirectory: fx, workspaceRoot: elsewhere, userTexts: [], attachmentPaths: [], homeDir: os.homedir(),
+        });
+        expect('stdout' in probe && `[cwd: ${fx}]\n${probe.stdout}`).toBe(realBash(command));
+      });
+    }
+
+    for (const target of ['outside', 'credential']) {
+      it(`ls pipe head with ${target} path -> card`, async () => {
+        const file = target === 'outside' ? fx : path.join(elsewhere, '.env');
+        if (target === 'credential') await fs.writeFile(file, 'EXAMPLE=fixture');
+        await cronRun(`ls -la "${file}" 2>&1 | head -30`);
+        expect(permissionAsks).toHaveLength(1);
+      });
+    }
+
+    it('user ask on head remains effective', async () => {
+      getPolicyEngine().loadUserRules({ ask: ['Bash(head *)'] });
+      await cronRun(`ls -la "${elsewhere}" | head -30`);
+      expect(permissionAsks).toHaveLength(1);
+    });
+
+    for (const tail of ['head -n 0', 'head -30 x', 'cat', 'head -30 | cat', 'head -30; rm -f x', 'head -30 > x']) {
+      it(`unproven or writing pipeline still asks: ${tail}`, async () => {
+        await cronRun(`ls -la "${elsewhere}" | ${tail}`);
+        expect(permissionAsks.length).toBeGreaterThan(0);
+      });
+    }
+
     it('inside-folder test and exit-status echo preserve shell output', async () => {
       const command = `test -e "${elsewhere}/missing" || echo "---EXIT:$?"`;
       const result = await cronRun(command);
