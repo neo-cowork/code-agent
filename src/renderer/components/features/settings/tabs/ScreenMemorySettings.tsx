@@ -20,6 +20,7 @@ import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { NativeDesktopSection } from '../sections/NativeDesktopSection';
+import { MeetingCalendarReminderToggle } from '../sections/MeetingCalendarReminderToggle';
 import { OpenchronicleSettings } from './OpenchronicleSettings';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
@@ -365,6 +366,8 @@ export const ScreenMemorySettings: React.FC = () => {
           fallbackKind="daemon"
         />
         <OpenchronicleSettings embedded />
+        {/* 会前提醒放在显眼处（真机反馈：藏在默认折叠的诊断区里找不到） */}
+        {tauri && <MeetingCalendarReminderToggle />}
       </SettingsSection>
 
       <SettingsDetails

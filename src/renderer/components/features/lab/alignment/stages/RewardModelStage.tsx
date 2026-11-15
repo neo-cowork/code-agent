@@ -19,41 +19,11 @@ interface RewardModelStageProps {
   onBack: () => void;
 }
 
-// 偏好对比数据 - 更贴近生活的例子
-const preferenceExamples = [
-  {
-    prompt: '我今天心情不好',
-    responseA: '心情不好是一种负面情绪状态，建议你运动或者早点休息。',
-    responseB: '抱抱～有什么想说的吗？如果不想说也没关系，我陪着你 💙',
-    preferredResponse: 'B',
-    reason: '回答 B 更有温度，表达了关心和陪伴',
-    labelA: '机械',
-    labelB: '温暖',
-  },
-  {
-    prompt: '推荐一部电影',
-    responseA: '《肖申克的救赎》，豆瓣评分 9.7，讲述囚犯安迪的故事。',
-    responseB: '你喜欢什么类型的呀？治愈系、刺激冒险、还是烧脑悬疑？告诉我你现在的心情，我帮你挑一个最适合的！',
-    preferredResponse: 'B',
-    reason: '回答 B 更贴心，先了解用户需求再推荐',
-    labelA: '直接给答案',
-    labelB: '先问再答',
-  },
-  {
-    prompt: '怎么做番茄炒蛋？',
-    responseA: '番茄切块，鸡蛋打散，先炒蛋再炒番茄。',
-    responseB: '番茄炒蛋超简单！\n\n1. 番茄切小块（熟一点的更好吃）\n2. 鸡蛋打散，加一点点盐\n3. 油热后先炒蛋，嫩一点就盛出来\n4. 再炒番茄，软了加蛋翻两下\n5. 加盐，喜欢甜口加点糖\n\n小技巧：蛋不要炒老了，嫩嫩的最好吃！',
-    preferredResponse: 'B',
-    reason: '回答 B 步骤清晰，还有实用小技巧',
-    labelA: '太简略',
-    labelB: '详细实用',
-  },
-];
-
 export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, onBack }) => {
   const { t } = useI18n();
   const s = t.labAlignment.reward;
   const common = t.labAlignment.common;
+  const preferenceExamples = s.preferenceExamples;
   const [currentExample, setCurrentExample] = useState(0);
   const [userChoice, setUserChoice] = useState<'A' | 'B' | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -321,8 +291,12 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.meaning}</span>
+                {term.meaning && term.meaning !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.meaning}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
