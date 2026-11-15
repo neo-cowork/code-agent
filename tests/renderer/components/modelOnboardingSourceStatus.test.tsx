@@ -116,6 +116,9 @@ describe('first-run wizard source status copy', () => {
       expect(card.badge.trim(), card.id).not.toBe('');
     }
     expect(dialog.textContent?.match(BANNED[language])?.[0]).toBeUndefined();
+    // 未登录但本身还不支持的来源：登录白做，所以必须同时说明「暂未支持」
+    const unsupported = language === 'zh' ? '暂未支持' : 'Not supported yet';
+    expect(cards.find((card) => card.id === 's03_detected_unverified_needs_login')!.detail).toContain(unsupported);
     if (language === 'en') expect(dialog.textContent).not.toMatch(/[㐀-鿿]/u);
   });
 
