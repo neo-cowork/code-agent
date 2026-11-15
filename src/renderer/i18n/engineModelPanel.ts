@@ -1,8 +1,4 @@
-import { engineManifestEn, engineManifestZh } from './engineManifest';
-
-// 引擎清单文案（engineManifest）随本包一起并入 zh/en 总表：两个总表文件已贴行数上限，不再各加一行。
 export const engineModelPanelZh = {
-  ...engineManifestZh,
   engineModelPanel: {
     loadingSubtitle: '正在读取模型列表…',
     searchPlaceholder: '搜索 {engine} 模型…',
@@ -37,7 +33,6 @@ export const engineModelPanelZh = {
 };
 
 export const engineModelPanelEn: typeof engineModelPanelZh = {
-  ...engineManifestEn,
   engineModelPanel: {
     loadingSubtitle: 'Reading model list...',
     searchPlaceholder: 'Search {engine} models...',
