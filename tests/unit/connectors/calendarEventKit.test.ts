@@ -155,6 +155,18 @@ describe('calendar connector over EventKit', () => {
     expect(fake.paths().filter((p) => p === '/v1/grant/calendar')).toEqual([]);
   });
 
+  it('connector page「修复权限」is the same single exit: one EventKit dialog, then ready — never the Apple-events dialog', async () => {
+    fake.state.status = 0;
+    fake.state.answer = 3; // user clicks Allow in the one dialog
+    const result = await calendarConnector.execute('repair_permissions', {});
+    expect(fake.state.grants).toBe(1);
+    expect(result.data).toMatchObject({ connected: true, readiness: 'ready' });
+    expect(runAppleScript).not.toHaveBeenCalled();
+    // Already granted: clicking again shows no dialog.
+    await calendarConnector.execute('repair_permissions', {});
+    expect(fake.state.grants).toBe(1);
+  });
+
   it('without the desktop shell bridge the connector is unavailable (no AppleScript fallback)', async () => {
     const client = fake.client;
     (fake as { client: unknown }).client = null;
