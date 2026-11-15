@@ -72,12 +72,12 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     kernel = new DurableRunKernel({ stores: runs, ownerId: 'host', processInstanceId: 'killed-process', leaseDurationMs: 100 });
     registry.configureDurableKernel(kernel);
     await registry.startDurable({ runId: RUN, sessionId: SESSION, workspace: dir, cwd: dir }, now);
-    const operation = kernel.prepareOperation({
-      runId: RUN, operationId: 'approval:delete-logs', attempt: 1, kind: 'approval',
-      sideEffect: false, canDeduplicate: false, now,
+    const operation = kernel.prepareToolOperation({
+      runId: RUN, logicalCallId: 'delete-logs', attempt: 1,
+      sideEffect: true, canDeduplicate: false, now,
     });
     await registry.checkpointDurable(RUN, {
-      now, status: 'running', pendingOperations: [{ ...operation, status: 'waiting' }],
+      now, status: 'running', pendingOperations: [{ ...operation, status: 'dispatched' }],
       state: {}, childRuns: [], events: [{ type: 'run_checkpointed', payload: {}, recordedAt: now }],
     });
     now = 1_010;
@@ -115,10 +115,16 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
   }
 
   it('① pre-fix kernel recovery projects waiting input without any pending approval row', async () => {
+    expect(await runs.listPendingOperations(RUN)).toMatchObject([
+      { kind: 'tool_call', sideEffect: true, status: 'dispatched' },
+    ]);
     now = 1_200;
     const plans = await kernel.recoverOnStartup(now);
     expect(approvals.listByKindAndStatus('tool_approval', 'pending')).toEqual([]);
     expect(plans[0].envelope).toMatchObject({ engine: { kind: 'native' }, status: 'waiting' });
+    expect(plans[0].pendingOperations).toMatchObject([
+      { kind: 'tool_call', sideEffect: true, status: 'unknown', requiresHumanConfirmation: true },
+    ]);
     expect(await projection()).toMatchObject({ durableWaitingInput: true });
     console.log('PRE-FIX recoverOnStartup engine_kind=native status=waiting pending_approvals=[] payload=', await projection());
   });
@@ -190,12 +196,14 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     ['user_stop waiting run', 'waiting', 'user_stop', true],
     ['quota_wait waiting run', 'waiting', 'quota_wait', true],
     ['crashed foreground run with no approval parked', 'running', undefined, false],
-  ] as const)('④ %s of the same session is not an approval-lost run: untouched by task restart closure', async (_name, status, cause, keepApproval) => {
+  ] as const)('④ %s of the same session is not an approval-lost run: untouched by task restart closure', async (_name, status, cause, keepOperation) => {
     const current = (await runs.get(RUN))!;
-    const ops = (await runs.listPendingOperations(RUN)).map((op) => ({ ...op, status: 'waiting' as const }));
+    const ops = (await runs.listPendingOperations(RUN)).map((op) => ({
+      ...op, status: 'unknown' as const, requiresHumanConfirmation: true,
+    }));
     await runs.replaceRecoveryProjection({
       runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
-      status: status === 'running' ? 'recovering' : status, pendingOperations: keepApproval ? ops : [], updatedAt: 1_020,
+      status: status === 'running' ? 'recovering' : status, pendingOperations: keepOperation ? ops : [], updatedAt: 1_020,
       ...(cause ? { interruptCause: cause } : {}),
     });
     if (status === 'running') {
@@ -212,6 +220,24 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     await recovery.recoverAndDispatch(1_400);
     expect((await runs.get(RUN))?.terminal?.reason).not.toBe('approval_lost_on_restart');
     await recovery.shutdown();
+  });
+
+  it.each([
+    { status: 'dispatched', sideEffect: false, requiresHumanConfirmation: false },
+    { status: 'dispatched', providerOperationId: 'deduplicated-call', requiresHumanConfirmation: false },
+    { status: 'unknown', requiresHumanConfirmation: false },
+    { status: 'prepared' },
+  ] as const)('④ recoverable operation %j does not authorize approval-lost closure', async (operation) => {
+    const current = (await runs.get(RUN))!;
+    const ops = (await runs.listPendingOperations(RUN)).map((op) => ({ ...op, ...operation }));
+    await runs.replaceRecoveryProjection({
+      runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
+      status: 'recovering', pendingOperations: ops, updatedAt: 1_020,
+    });
+    now = 1_300;
+    const before = await runs.get(RUN);
+    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
+    expect(await runs.get(RUN)).toEqual(before);
   });
 
   it('settled terminal marker only reprojects its result and leaves the run alone', async () => {
@@ -238,7 +264,7 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
   });
 
   async function seedChild(status: 'running' | 'waiting' | 'recovering' = 'running', sessionId = SESSION) {
-    // Complete the parent's pending approval projection before completing the foreground turn.
+    // Complete the parent's pending tool projection before completing the foreground turn.
     const current = (await runs.get(RUN))!;
     await runs.replaceRecoveryProjection({
       runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
