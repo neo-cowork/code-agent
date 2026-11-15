@@ -96,6 +96,11 @@ const toolCallSchema: z.ZodType<ToolCall> = typed<ToolCall>(z.object({
     'tmeetMeetingListEnded',
     'tmeetMeetingCreate',
     'tmeetMeetingSearch',
+    'tmeetRecordList',
+    'tmeetRecordRead',
+    'feishuMinutesSearch',
+    'feishuMinutesRead',
+    'meetingRecords',
   ]).optional(),
   targetContext: z.object({
     kind: z.enum(['app', 'browser', 'mcp_server', 'file', 'memory']).optional(),

@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { useCronStore } from '../../../stores/cronStore';
+import { filterVisibleCronJobs, useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
@@ -94,6 +94,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     jobNamesLoaded,
     stats,
     selectedJobId,
+    locationFilter,
+    searchQuery,
     isEditorOpen,
     editingJobId,
     copyingJobId,
@@ -228,10 +230,32 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditorOpen, onClose]);
 
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) || null,
-    [jobs, selectedJobId]
+  const visibleJobs = useMemo(
+    () => filterVisibleCronJobs(jobs, searchQuery, locationFilter, language),
+    [jobs, searchQuery, locationFilter, language],
   );
+
+  const selectedJob = useMemo(() => {
+    if (selectedJobId) {
+      const matched = visibleJobs.find((job) => job.id === selectedJobId);
+      if (matched) return matched;
+    }
+    return visibleJobs[0] ?? null;
+  }, [visibleJobs, selectedJobId]);
+
+  useEffect(() => {
+    // 选中回写只在「可见列表可信」时执行。挂载首轮 render 闭包里的 isLoading 是 false，
+    // 但 refresh effect（声明在前）已同步把 store.isLoading 置 true、jobs 尚未返回——
+    // 此时可见列表不可信，不能把通知点击在面板挂载前 selectJob 预设好的 selectedJobId
+    // 覆写成 null（否则 loadJobs 完成后回落选中第一个任务，PR review r1）。
+    // 读 store 的实时 isLoading：加载期间不动 selectedJobId，交给 loadJobs 的
+    // resolveSelectedCronJobId 按新可见列表收敛；加载完成后本 effect 随依赖重跑再收敛。
+    if (isLoading || useCronStore.getState().isLoading) return;
+    const nextSelectedJobId = selectedJob?.id ?? null;
+    if (nextSelectedJobId !== selectedJobId) {
+      useCronStore.setState({ selectedJobId: nextSelectedJobId });
+    }
+  }, [isLoading, selectedJob, selectedJobId]);
 
   const editingJob = useMemo(
     () => jobs.find((job) => job.id === editingJobId) || null,

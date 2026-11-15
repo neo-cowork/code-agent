@@ -23,7 +23,7 @@ import { buildRuleString } from '../../../src/shared/permissionRuleTranslate';
 const ctx = { sessionId: 'fg-shell' } as unknown as RuntimeContext;
 const CJK_OR_FULLWIDTH = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/;
 const EXPECTED_ZH_FINAL_MESSAGE =
-  '本轮前台不直接执行 Shell 命令（Bash），命令没有运行。可以让我把它交给后台代理执行，届时会按你的权限规则询问你。';
+  '我这边没法直接帮你执行这条命令，命令没有运行。可以让我交给后台任务来做，届时会按你的权限规则询问你。';
 
 function buildTurnCtx(runUserPrompt?: string): RuntimeContext {
   const turn = new TurnState();
@@ -62,7 +62,7 @@ describe('describeDeniedShellCalls', () => {
     expect(out?.finalMessage).not.toMatch(CJK_OR_FULLWIDTH);
     expect(out?.finalMessage).toMatch(/did not run/i);
     expect(out?.finalMessage).toMatch(/background task/i);
-    expect(out?.guidance).toContain('Reply in the same language the user is writing in this turn.');
+    expect(out?.guidance).toContain('Reply in the same language the user is writing in.');
   });
 
   it('Chinese turn keeps the exact Chinese finalMessage unchanged even when UI language is English', () => {
@@ -72,7 +72,7 @@ describe('describeDeniedShellCalls', () => {
       [{ name: 'Bash' }],
     );
     expect(out?.finalMessage).toBe(EXPECTED_ZH_FINAL_MESSAGE);
-    expect(out?.guidance).toContain('Reply in the same language the user is writing in this turn.');
+    expect(out?.guidance).toContain('Reply in the same language the user is writing in.');
   });
 
   it('Chinese shell requests with ASCII paths or commands stay Chinese instead of flipping to English', () => {
@@ -115,6 +115,17 @@ describe('describeDeniedShellCalls', () => {
     uiState.language = 'zh';
     const zhNeutral = describeDeniedShellCalls(buildTurnCtx('12345 ???'), [{ name: 'Bash' }]);
     expect(zhNeutral?.finalMessage).toBe(EXPECTED_ZH_FINAL_MESSAGE);
+  });
+
+  it('model-visible and user-visible denial strings carry none of the internal-mechanism tokens', () => {
+    const BANNED = /被禁用|本轮|这一轮|本次运行|disabled for this|tool face|bash|shell/i;
+    for (const prompt of ['帮我把 .tmp 临时文件删掉', 'Please delete my tmp files']) {
+      const out = describeDeniedShellCalls(buildTurnCtx(prompt), [{ name: 'Bash' }]);
+      expect(out?.guidance).not.toMatch(BANNED);
+      expect(out?.finalMessage).not.toMatch(BANNED);
+      expect(out?.guidance).toContain('NOT run');
+      expect(out?.guidance).toContain('spawn_agent');
+    }
   });
 
   it('非 Bash 工具被禁不触发本交代', () => {

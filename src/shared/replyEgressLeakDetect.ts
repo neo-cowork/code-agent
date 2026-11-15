@@ -16,12 +16,18 @@ const MIN_ENGLISH_WHITESPACE_TOKENS = 6;
 // 审计样本如两句工具间英文旁白（"Both mail and calendar connectors are connected. Now let me..."，18 词 / 104 字符），
 // 在无 CJK、去代码围栏、>=30 字符且 >=6 空白分词前提下，15 个拉丁词已足以排除短回复与标识符误报。
 const MIN_ENGLISH_LATIN_WORDS = 15;
+// 带工具调用的回复是工具间旁白：用户盯着这句话等结果，短英文旁白（"I'll first look at what's there..."，10 词）也算错配。
+const MIN_ENGLISH_NARRATION_CHARS = 20;
+const MIN_ENGLISH_NARRATION_WORDS = 4;
 const MAX_TOKEN_SAMPLE_CHARS = 60;
 const ENGLISH_SAMPLE_WORD_LIMIT = 5;
 
 const MECHANISM_TALK_REGEXES: readonly RegExp[] = [
-  /(?:本轮|这一轮|当前轮次?).{0,12}(?:不可用|没有可用|被禁用|未开放|没有.{0,6}工具)/gi,
-  /(?:工具|能力).{0,6}(?:本轮|这一轮|当前轮次?).{0,6}(?:不可用|没有)/gi,
+  /(?:本轮|这一轮|本回合|这一回合|当前回合|当前轮次?).{0,12}(?:不可用|没有可用|被禁用|未开放|没有.{0,6}工具)/gi,
+  /(?:工具|能力).{0,6}(?:本轮|这一轮|本回合|这一回合|当前回合|当前轮次?).{0,6}(?:不可用|没有)/gi,
+  /(?:shell|终端|命令|Bash)[^，。！？\n]{0,8}(?:被禁用|不可用|跑不了|不能运行|无法运行)/gi,
+  /(?:本轮|这一轮|本回合|这一回合|当前回合|本次(?:运行)?|当前轮次?).{0,6}(?:跑不了|被禁用|不能运行|无法运行)/gi,
+  /不在(?:本轮|这一轮|本回合|这一回合|当前回合|本次(?:运行)?|当前轮次?).{0,6}可用/gi,
   /工具列表(?:里|中)/gi,
   /(?:本轮|这一轮|当前)工具表/gi,
   /系统提示词?|system prompt|被(?:注入|路由)|function call|上下文(?:被)?压缩/gi,
@@ -50,6 +56,7 @@ function userExplicitlyRequestsEnglish(userText: string): boolean {
 export function detectReplyEgressLeaks(
   replyText: string,
   turnUserText = '',
+  opts: { hasToolCalls?: boolean } = {},
 ): { categories: ReplyEgressLeakCategory[]; matchedTokens: string[] } {
   if (!replyText) {
     return { categories: [], matchedTokens: [] };
@@ -95,8 +102,9 @@ export function detectReplyEgressLeaks(
 
   // Cheap gates first: only inspect turnUserText when reply outside fences has >=30 chars,
   // does not start with `<`, and contains no CJK characters.
+  const narration = opts.hasToolCalls === true;
   if (
-    trimmedOutside.length >= MIN_ENGLISH_REPLY_CHARS
+    trimmedOutside.length >= (narration ? MIN_ENGLISH_NARRATION_CHARS : MIN_ENGLISH_REPLY_CHARS)
     && !trimmedOutside.startsWith('<')
     && !CJK_CHAR_RE.test(trimmedOutside)
   ) {
@@ -104,10 +112,10 @@ export function detectReplyEgressLeaks(
       turnUserText
       && CJK_CHAR_RE.test(turnUserText)
       && !userExplicitlyRequestsEnglish(turnUserText)
-      && trimmedOutside.split(/\s+/).length >= MIN_ENGLISH_WHITESPACE_TOKENS
+      && trimmedOutside.split(/\s+/).length >= (narration ? MIN_ENGLISH_NARRATION_WORDS : MIN_ENGLISH_WHITESPACE_TOKENS)
     ) {
       const latinWords = trimmedOutside.match(LATIN_WORD_RE) ?? [];
-      if (latinWords.length >= MIN_ENGLISH_LATIN_WORDS) {
+      if (latinWords.length >= (narration ? MIN_ENGLISH_NARRATION_WORDS : MIN_ENGLISH_LATIN_WORDS)) {
         addCategory('english_reply_to_zh');
         for (const word of latinWords.slice(0, ENGLISH_SAMPLE_WORD_LIMIT)) {
           addToken(word);

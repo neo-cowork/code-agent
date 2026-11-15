@@ -621,7 +621,12 @@
             "tmeetMeetingListUpcoming",
             "tmeetMeetingListEnded",
             "tmeetMeetingCreate",
-            "tmeetMeetingSearch"
+            "tmeetMeetingSearch",
+            "tmeetRecordList",
+            "tmeetRecordRead",
+            "feishuMinutesSearch",
+            "feishuMinutesRead",
+            "meetingRecords"
           ]
         },
         "targetContext": {

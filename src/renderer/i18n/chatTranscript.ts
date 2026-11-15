@@ -243,9 +243,9 @@ toolGroup: {
 toolStepHumanize: {
   ...toolStepVerbsZh,
   declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
-    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议' },
+    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议', tmeetRecordList: '查了腾讯会议录制', tmeetRecordRead: '读了腾讯会议转写和纪要', feishuMinutesSearch: '搜了飞书妙记', feishuMinutesRead: '读了一条飞书妙记', meetingRecords: '查了会议记录' },
   intent: { tmeetMeetingListUpcoming: '查待开始/进行中的会议', tmeetMeetingListEnded: '查近 30 天已结束的会议',
-    tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议' },
+    tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议', tmeetRecordList: '查腾讯会议录制', tmeetRecordRead: '读腾讯会议转写和纪要', feishuMinutesSearch: '搜飞书妙记', feishuMinutesRead: '读一条飞书妙记', meetingRecords: '查会议记录' },
   read: '读取了 {target}', readFallback: '读取了一个文件',
   write: '写入了 {target}',
   writeFallback: '写入了一个文件',
@@ -742,9 +742,9 @@ toolGroup: {
 toolStepHumanize: {
   ...toolStepVerbsEn,
   declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
-    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings' },
+    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings', tmeetRecordList: 'Checked Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Searched Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Checked meeting records' },
   intent: { tmeetMeetingListUpcoming: 'Check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Check meetings ended in the last 30 days',
-    tmeetMeetingCreate: 'Create a meeting', tmeetMeetingSearch: 'Search meetings' },
+    tmeetMeetingCreate: 'Create a meeting', tmeetMeetingSearch: 'Search meetings', tmeetRecordList: 'Check Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Search Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Check meeting records' },
   read: 'Read {target}',
   readFallback: 'Read a file',
   write: 'Wrote {target}',
