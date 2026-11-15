@@ -23,7 +23,6 @@ vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) 
 
 import { mailConnector } from '../../../src/host/connectors/native/mail';
 import { remindersConnector } from '../../../src/host/connectors/native/reminders';
-import { calendarConnector } from '../../../src/host/connectors/native/calendar';
 import { ConnectorRegistry } from '../../../src/host/connectors/registry';
 
 describe('native office connector lazy status', () => {
@@ -59,20 +58,7 @@ describe('native office connector lazy status', () => {
     expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
   });
 
-  it('keeps calendar status side-effect free on startup', async () => {
-    const status = await calendarConnector.getStatus();
-
-    expect(status).toMatchObject({
-      connected: false,
-      readiness: platformReadiness,
-      capabilities: calendarConnector.capabilities,
-    });
-    if (process.platform === 'darwin') {
-      expect(status.actions).toEqual(['repair_permissions', 'disconnect', 'remove']);
-    }
-    expect(status.detail).toContain(process.platform === 'darwin' ? '还未检查本地授权' : '仅在 macOS 可用');
-    expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
-  });
+  // 日历状态改读 EventKit 被动探针，见 calendarEventKit.test.ts
 
   it('runs the real native probe only when explicitly requested', async () => {
     osascriptMocks.runAppleScript.mockClear();
@@ -98,13 +84,13 @@ describe('native office connector lazy status', () => {
     osascriptMocks.runAppleScript.mockClear();
 
     if (process.platform !== 'darwin') {
-      await expect(calendarConnector.execute('repair_permissions', {})).rejects.toThrow('仅在 macOS 可用');
+      await expect(remindersConnector.execute('repair_permissions', {})).rejects.toThrow('仅在 macOS 可用');
       expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
       return;
     }
 
-    const result = await calendarConnector.execute('repair_permissions', {});
-    const status = result.data as Awaited<ReturnType<typeof calendarConnector.getStatus>>;
+    const result = await remindersConnector.execute('repair_permissions', {});
+    const status = result.data as Awaited<ReturnType<typeof remindersConnector.getStatus>>;
 
     expect(osascriptMocks.runAppleScript).toHaveBeenCalledTimes(1);
     expect(status).toMatchObject({
@@ -167,8 +153,8 @@ describe('native office connector lazy status', () => {
 
     // 非空列表不许误报
     osascriptMocks.runAppleScript.mockResolvedValue('Work\nPersonal');
-    await calendarConnector.execute('repair_permissions', {});
-    expect(await calendarConnector.getStatus()).toMatchObject({
+    await remindersConnector.execute('repair_permissions', {});
+    expect(await remindersConnector.getStatus()).toMatchObject({
       connected: true,
       readiness: 'ready',
       noAccessibleItems: false,
@@ -181,7 +167,7 @@ describe('native office connector lazy status', () => {
       new Error(`Command failed: osascript -e ${script}\n0:5: execution error: Calendar got an error: Not authorized to send Apple events to Calendar. (-1743)`),
       { code: 1 },
     );
-    for (const connector of [calendarConnector, mailConnector, remindersConnector]) {
+    for (const connector of [mailConnector, remindersConnector]) {
       osascriptMocks.runAppleScript.mockRejectedValueOnce(raw);
       await expect(connector.execute('repair_permissions', {})).rejects.toBe(raw);
       const status = await connector.getStatus();

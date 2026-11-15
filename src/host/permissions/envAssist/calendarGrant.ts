@@ -1,6 +1,6 @@
 // 日历只有一项授权（ADR-090 perm_calendars，N-CALENDAR-ONE-PERMISSION-EVENTKIT）：
 // - 唯一真相 = 原生桥被动探针 calendarAccess（从不弹框）；授权卡、会前提醒开关、连接器页都读它。
-// - 唯一授权出口 = askCalendarOnce（点击凭证弹一次 + 轮询）；本文件给连接器页「修复权限」与授权卡用。
+// - 唯一授权出口 = askCalendarOnce（点击凭证弹一次 + 轮询）；点击凭证只在 envAssist.ipc.ts 里签发（授权边界）。
 // - 任何入口读到完全访问 → settleCalendarGranted：所有会话里还挂着的日历授权卡一起收口，停在日历上的任务进入续做轮询。
 import type { EnvAssistNotice } from '../../../shared/contract/envAssist';
 import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
@@ -9,11 +9,7 @@ import { getDatabase } from '../../services/core/databaseService';
 import { getSessionManager } from '../../services/infra/sessionManager';
 import { createLogger } from '../../services/infra/logger';
 import { askCalendarOnce, type CalendarAskDeps } from './calendarSetting';
-import { createDefaultGrantBridge, mintClickToken, requestGrant } from './grants/requestGrant';
-import { calendarAccess, type CalendarAccess } from './probes/passiveProbes';
-import { createShellPassiveBridge } from './probes/shellPassiveBridge';
-import { canOpenEnvSettings, openEnvSettings } from './settingsPane';
-import { resolveShellBridgeClientFromEnv } from './shellBridge/client';
+import type { CalendarAccess } from './probes/passiveProbes';
 import { resolveEnvAssistNotice } from './toolNotice';
 
 const logger = createLogger('CalendarGrant');
@@ -33,21 +29,6 @@ export async function askCalendarFromClick(deps: CalendarClickDeps): Promise<{ a
   const access = asked?.access ?? 'unavailable';
   const opened = (access === 'denied' || access === 'write_only') && deps.available() && await deps.open('calendars');
   return { access, opened };
-}
-
-/** 连接器页「修复权限」：桌面壳原生桥 + 默认设置页打开器 */
-export async function grantCalendarFromClick(clickId: string): Promise<CalendarAccess> {
-  const client = resolveShellBridgeClientFromEnv();
-  const passive = client ? createShellPassiveBridge(client) : null;
-  const result = await askCalendarFromClick({
-    access: () => calendarAccess(passive),
-    prompt: () => requestGrant(mintClickToken(clickId), { pane: 'calendars' }, client ? createDefaultGrantBridge(client) : null)
-      .catch(() => 'not_available' as const),
-    open: openEnvSettings,
-    available: canOpenEnvSettings,
-  });
-  if (result.access === 'granted') await settleCalendarGranted('connector_repair');
-  return result.access;
 }
 
 /**

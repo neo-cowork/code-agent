@@ -235,6 +235,21 @@ function buildDefaultDependencies(): EnvAssistDependencies {
   };
 }
 
+/**
+ * Connector page「修复权限」on the calendar (the user's click, via connector IPC): the same calendar exit as the card
+ * and the reminder switch — one click token, one dialog, poll; refused opens Privacy → Calendars; granted settles every card.
+ */
+export async function grantCalendarFromConnectorClick(): Promise<void> {
+  const deps = buildDefaultDependencies();
+  const asked = await askCalendarFromClick({
+    access: () => calendarAccess(deps.passiveBridge ?? null),
+    prompt: () => requestGrant(mintClickToken('connector:calendar'), { pane: 'calendars' }, deps.grantBridge ?? null)
+      .catch(() => 'not_available' as const),
+    open: deps.open, available: deps.available,
+  });
+  if (asked.access === 'granted') await settleCalendarGranted('connector_repair');
+}
+
 /** Opener injection is also used by hosts without a desktop; it never grants permission. */
 export function registerEnvAssistHandlers(deps: EnvAssistDependencies = defaults): void {
   const resolved = deps === defaults ? buildDefaultDependencies() : deps;

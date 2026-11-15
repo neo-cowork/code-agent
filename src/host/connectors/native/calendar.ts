@@ -2,7 +2,7 @@
 // Native Calendar Connector - macOS Calendar via EventKit (ADR-090 perm_calendars)
 //
 // 走桌面壳原生桥的 EventKit 路由（src-tauri/src/env_assist_calendar_items.rs），与会前提醒是同一项「日历」授权：
-// 不打开「日历」app、主机不起 osascript、从不弹框（弹框只在用户点击签发的凭证里，见 envAssist/calendarGrant.ts）。
+// 不打开「日历」app、主机不起任何脚本子进程、从不弹框（弹框只在用户点击签发的凭证里，见 envAssist/calendarGrant.ts 与 ipc/envAssist.ipc.ts）。
 // 原生层每次读写前自己重查「完全访问」，这里不传、也不信任何授权状态。
 // ============================================================================
 
@@ -54,14 +54,17 @@ export function isCalendarFailure(error: unknown): error is CalendarFailure {
   return error instanceof CalendarFailure;
 }
 
-function failureFromBridge(error: unknown): CalendarFailure {
+const WRITE_UNCONFIRMED = 'Calendar did not confirm the change, so the result is unknown. Check the calendar before retrying; do not retry blindly. （日历没有确认这次修改，结果无法确认：请先查看日历是否已改好，不要直接重试。）';
+
+function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
   if (isCalendarFailure(error)) return error;
   switch (bridgeErrorCode(error)) {
     case 'calendar_not_authorized': return new CalendarFailure('not_authorized');
     case 'event_not_found': case 'calendar_not_found': return new CalendarFailure('not_found');
     case 'no_writable_calendar':
       return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.');
-    default: return new CalendarFailure('read_failed');
+    // 写操作超时 / 桥断开：改没改成不知道，不能劝模型重试
+    default: return write ? new CalendarFailure('read_failed', WRITE_UNCONFIRMED) : new CalendarFailure('read_failed');
   }
 }
 
@@ -78,7 +81,7 @@ async function call<T>(path: string, body: Record<string, unknown> = {}): Promis
   try {
     return await client.post<T>(path, body);
   } catch (error) {
-    throw failureFromBridge(error);
+    throw failureFromBridge(error, path.startsWith('/v1/write/'));
   }
 }
 
@@ -296,8 +299,8 @@ export const calendarConnector: Connector = {
       }
       case 'repair_permissions': {
         // 用户在连接器页点「修复权限」：与授权卡、会前提醒开关同一个授权出口（点击凭证弹一次 / 已拒绝开系统设置）
-        const { grantCalendarFromClick } = await import('../../permissions/envAssist/calendarGrant');
-        await grantCalendarFromClick('connector:calendar');
+        const { grantCalendarFromConnectorClick } = await import('../../ipc/envAssist.ipc');
+        await grantCalendarFromConnectorClick();
         const count = await probe();
         return { data: buildCalendarStatus(this.capabilities), summary: probeSummary(count) };
       }
