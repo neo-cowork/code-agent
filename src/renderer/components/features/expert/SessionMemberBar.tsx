@@ -214,17 +214,27 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
 
   // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
+  const outcomeRow = firstWorking ?? waiting[0] ?? failed[0] ?? cancelled[0] ?? rows.find((row) => row.status === 'done');
+  const outcome = outcomeRow?.outcomeKey;
+  const outcomeSummary = outcome
+    ? interpolatePlural(text.collapsedOutcome, rows.filter((row) => row.outcomeKey
+      ? row.outcomeKey === outcome
+      : text.panel.status[row.status] === t.outcomeWords[outcome].badge.label).length)
+      .replace('{status}', t.outcomeWords[outcome].badge.label)
+    : null;
   const summary = standby
     ? interpolatePlural(text.collapsedStandby, rows.length)
-    : firstWorking
-      ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.name}`
-      : waiting.length > 0
-        ? interpolatePlural(text.collapsedWaiting, waiting.length)
-        : failed.length > 0
-          ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].name}`
-          : cancelled.length > 0
-            ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].name}`
-            : interpolatePlural(text.collapsedDone, rows.length);
+    : outcomeSummary
+      ? `${outcomeSummary} · ${outcomeRow?.name}`
+      : firstWorking
+        ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.name}`
+        : waiting.length > 0
+          ? interpolatePlural(text.collapsedWaiting, waiting.length)
+          : failed.length > 0
+            ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].name}`
+            : cancelled.length > 0
+              ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].name}`
+              : interpolatePlural(text.collapsedDone, rows.length);
   const failureTitle = [...failed, ...cancelled].map((row) => row.failureReason
     ? t.chat.delegationReceipt.failureDetail.replace('{status}', row.name).replace('{reason}', row.failureReason)
     : row.name).join('\n') || undefined;

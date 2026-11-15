@@ -1,6 +1,8 @@
+import { reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from './agentRoleLabel';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
+import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
 import { useAppStore } from '../stores/appStore';
 import {
@@ -16,11 +18,11 @@ import {
 //   1) Team 成员（useSessionMembers 的 MemberPill，含 standby 预选）
 //   2) agentTree 快照节点（spawn/parallel/后台代理）
 //   3) delegate_task 后台任务（backgroundTaskStore 的 Task）
-// 九态→四态映射只有 agentRowStatus 一处；去重规则只有 buildAgentRows 一处。
-// 枚举值绝不直接铺给用户——用户只看到 工作中/等你回应/需要授权/已停/完成/失败/待命。
+// 节点结局由 resolveAgentNodeOutcomeKey 统一；去重规则只有 buildAgentRows 一处。
+// 枚举值绝不直接铺给用户；状态词从共享 outcomeWords 投影。
 // ============================================================================
 
-import type { AgentTreeNode, AgentTreeNodeStatus } from '@shared/contract/agentTree';
+import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { Task, TaskStatus } from '@shared/contract/backgroundTask';
 
 /** 用户可见四态 + 待命（预选名单）。 */
@@ -70,38 +72,34 @@ export interface AgentRow {
   /** 原始引用：成员视图 / 行级停 / 头像用。 */
   member?: MemberRowSource;
   node?: AgentTreeNode;
+  /** Resolved display lifecycle; node remains the unmodified host snapshot. */
+  outcomeKey?: OutcomeKey;
   task?: Task;
 }
 
-/**
- * 九态→四态全表（agentTree 10 态 + 后台任务 10 态，有重叠）。
- * 改这张表就是改用户看到的口径，别在组件里另写映射。
- *   working：还在干活（含排队/暂停/状态不明——宁可说在干，别说死）
- *   waiting：卡住了在等人（waiting_input/stalled/blocked）
- *   done：正常完成
- *   cancelled：被用户或父任务停掉
- *   failed：失败/被强杀/只剩日志/过期/孤儿
- */
-const AGENT_ROW_STATUS_TABLE: Record<string, AgentRowStatus> = {
+/** Background tasks and member-only ledgers retain their own lifecycle contract. */
+const TASK_ROW_STATUS_TABLE: Record<TaskStatus, AgentRowStatus> = {
   queued: 'working',
   running: 'working',
-  'running-recovered': 'working',
   paused: 'working',
-  unknown: 'working',
   waiting_input: 'waiting',
   stalled: 'waiting',
-  blocked: 'waiting',
   completed: 'done',
   cancelled: 'cancelled',
   failed: 'failed',
-  killed: 'failed',
-  'dead-log-only': 'failed',
   expired: 'failed',
   orphaned: 'failed',
 };
 
-function agentRowStatus(status: AgentTreeNodeStatus | TaskStatus | string): AgentRowStatus {
-  return AGENT_ROW_STATUS_TABLE[status] ?? 'working';
+function agentRowStatus(status: TaskStatus): AgentRowStatus {
+  return TASK_ROW_STATUS_TABLE[status];
+}
+
+function nodeRowStatus(outcome: OutcomeKey): AgentRowStatus {
+  if (outcome === 'working') return 'working';
+  if (outcome === 'waiting-input') return 'waiting';
+  if (outcome === 'completed') return 'done';
+  return outcome === 'cancelled-by-user' ? 'cancelled' : 'failed';
 }
 
 function memberRowStatus(status: MemberRowSource['status']): AgentRowStatus {
@@ -163,7 +161,7 @@ export function buildAgentRows(input: {
   const { members, nodes, tasks } = input;
   const t = languages[useAppStore.getState().language] ?? languages.zh;
   const rows: AgentRow[] = [];
-  const memberKeys = new Set(members.map((member) => member.key));
+  const memberById = new Map(members.map((member) => [member.key, member]));
 
   for (const member of members) {
     rows.push({
@@ -184,19 +182,21 @@ export function buildAgentRows(input: {
   }
 
   const nodeIds = new Set<string>();
-  for (const node of nodes) {
+  for (const candidate of nodes) {
+    const member = memberById.get(candidate.id);
+    const node = reconcileAgentNodeLifecycle(candidate, member);
+    const outcome = resolveAgentNodeOutcomeKey(node.status, node.failureCode);
     // Team 成员同时出现在 spawnGuard/parallelCoordinator 里：专家行已经代表他，不重复列；
     // 但节点上的最近工具步/预算是真数据，并回专家行
-    if (memberKeys.has(node.id)) {
+    if (member) {
       const row = rows.find((candidate) => candidate.key === node.id);
       if (row) {
-        row.node = node;
+        row.node = candidate;
+        row.outcomeKey = outcome;
         if (node.background && t === languages.en) row.name = agentNodeLabel(node, t.agentRoleLabels);
-        // Execution lifecycle beats an older persisted member snapshot, in either direction.
-        if (node.sources.some((source) => source === 'spawnGuard' || source === 'backgroundRegistry')) {
-          row.status = agentRowStatus(node.status);
-          row.stoppable = row.status === 'working';
-        }
+        // Explicit lifecycle wins; weak unknown contexts retain the member terminal above.
+        row.status = nodeRowStatus(outcome);
+        row.stoppable = row.status === 'working';
         if (typeof node.budgetSummary.tokensUsed === 'number') row.tokens = node.budgetSummary.tokensUsed;
         if (row.status !== 'failed' && row.status !== 'cancelled') {
           row.failureReason = undefined;
@@ -212,7 +212,7 @@ export function buildAgentRows(input: {
       continue;
     }
     nodeIds.add(node.id);
-    const status = agentRowStatus(node.status);
+    const status = nodeRowStatus(outcome);
     rows.push({
       key: node.id,
       kind: 'agent',
@@ -223,7 +223,8 @@ export function buildAgentRows(input: {
       failureReason: agentFailureCopy(node.failureCode, t, node.failureReason) ?? undefined,
       stoppable: status === 'working',
       tokens: node.budgetSummary.tokensUsed,
-      node,
+      node: candidate,
+      outcomeKey: outcome,
     });
   }
 

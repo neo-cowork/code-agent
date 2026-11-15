@@ -74,7 +74,7 @@ function resolveCuaMcpLaunch(command: string): Pick<MCPStdioServerConfig, 'comma
  *   4. 回退 PATH 上的 `cua-driver`（dev 未跑 fetch 脚本时）
  * 探针顺序跟 rtkRewriter.findRtkBinary 同模式。
  */
-function resolveCuaDriverPath(): string {
+export function resolveCuaDriverPath(): string {
   const override = process.env.CODE_AGENT_CUA_DRIVER_PATH;
   if (override) return override;
   const roots = [
