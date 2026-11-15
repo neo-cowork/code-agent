@@ -100,6 +100,17 @@ describe.each([['probe', 'probe_access'], ['repairPermission', 'repair_permissio
   });
 });
 
+describe('unrecognized osascript failure', () => {
+  it('不认识的失败给通用「读取失败，请稍后重试」，不含命令行', async () => {
+    const err = Object.assign(new Error(`Command failed: osascript -e ${SCRIPT}\nsomething odd`), { code: 1, stderr: 'something odd' });
+    connector(async () => { throw err; });
+    const res = await call('probe', { connectorId: 'calendar' });
+    expect(JSON.stringify(res)).not.toMatch(/osascript|Command failed|tell application/);
+    expect(res.error?.message).toBe('Calendar：读取失败，请稍后重试');
+    expect(env.warn).toHaveBeenCalledWith('Connector action failed', expect.objectContaining({ code: 'read_failed' }));
+  });
+});
+
 describe('errorCode / openAutomationSettings', () => {
   it('listStatuses 下发结构化 errorCode', async () => {
     connector(async () => ({}));

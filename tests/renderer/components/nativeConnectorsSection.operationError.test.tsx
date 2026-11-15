@@ -64,15 +64,4 @@ describe('NativeConnectorsSection operation error', () => {
     await screen.findByText(/响应超时/);
     expect(screen.queryByRole('button', { name: zh.settings.nativeConnectors.openAutomationSettings })).toBeNull();
   });
-
-  for (const language of ['zh', 'en'] as const) {
-    it(`原始命令行形态的报错不外露，显示通用文案 (${language})`, async () => {
-      testLocale.value = language;
-      setup(new Error('Command failed: osascript -e tell application "Calendar" ... (-1743)'));
-      await clickCheck();
-      const text = (language === 'zh' ? zh : en).settings.nativeConnectors;
-      await waitFor(() => expect(screen.getByText(new RegExp(text.checkDidNotSucceed))).toBeTruthy());
-      expect(document.body.textContent).not.toMatch(/osascript|Command failed/);
-    });
-  }
 });

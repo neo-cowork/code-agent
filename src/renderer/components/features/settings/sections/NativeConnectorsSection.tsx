@@ -462,12 +462,6 @@ interface NativeConnectorsSectionProps {
   presentation?: 'diagnostic' | 'grid';
 }
 
-/** 兜底：host 已改写成人话；若仍像命令行（execFile 原文），绝不外露，改显示通用文案 */
-function toDisplayError(err: unknown, fallback: string): string {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.startsWith('Command failed:') || message.includes('osascript') ? fallback : message;
-}
-
 const OperationError: React.FC<{
   className: string;
   prefix: string;
@@ -521,15 +515,15 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       setError(null);
     } catch (err) {
       logger.error('Failed to load native connector inventory/statuses', err);
-      setError(toDisplayError(err, connectorText.checkDidNotSucceed));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [connectorText.checkDidNotSucceed]);
+  }, []);
 
   useEffect(() => {
     void refresh();
-  }, [refresh, connectorText.checkDidNotSucceed]);
+  }, [refresh]);
 
   const toggle = useCallback(async (id: string, enabled: boolean) => {
     setBusyKey(`${id}:toggle`);
@@ -543,11 +537,11 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       await refresh();
     } catch (err) {
       logger.error('Failed to toggle native connector', { id, enabled, err });
-      setError(toDisplayError(err, connectorText.checkDidNotSucceed));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyKey(null);
     }
-  }, [refresh, connectorText.checkDidNotSucceed]);
+  }, [refresh]);
 
   // 失败后只静默更新状态（拿 errorCode），不清 error
   const refreshStatusesQuietly = useCallback(async () => {
@@ -572,12 +566,12 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       await refresh();
     } catch (err) {
       logger.error('Failed to run native connector lifecycle action', { id, action, err });
-      setError(toDisplayError(err, connectorText.checkDidNotSucceed));
+      setError(err instanceof Error ? err.message : String(err));
       await refreshStatusesQuietly();
     } finally {
       setBusyKey(null);
     }
-  }, [refresh, refreshStatusesQuietly, connectorText.checkDidNotSucceed]);
+  }, [refresh, refreshStatusesQuietly]);
 
   const rows = useMemo(
     () => buildNativeConnectorRows(items, statuses),
@@ -601,11 +595,11 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       await refresh();
     } catch (err) {
       logger.error('Failed to run runtime connector lifecycle action', { id, action, err });
-      setError(toDisplayError(err, connectorText.checkDidNotSucceed));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyKey(null);
     }
-  }, [refresh, connectorText.checkDidNotSucceed]);
+  }, [refresh]);
 
   if (presentation === 'grid') {
     if (loading) {
