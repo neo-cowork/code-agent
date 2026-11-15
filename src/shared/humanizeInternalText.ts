@@ -189,9 +189,18 @@ function summarizeParsedJson(
 export function humanizeInternalText(
   input: string,
   lang: InternalTextLanguage = 'zh',
+  options: { omitIds?: boolean } = {},
 ): HumanizedInternalTextResult {
   if (!input) {
     return { text: input, detectedFormats: [] };
+  }
+
+  if (options.omitIds) {
+    const withoutIds = input.replace(UUID_GLOBAL_RE, '').replace(SESSION_ID_GLOBAL_RE, '')
+      .replace(CALL_ID_GLOBAL_RE, '').replace(OU_ID_GLOBAL_RE, '')
+      .replace(/[（(]\s*(?:工单|ID|id|record)?\s*[）)]/g, '')
+      .replace(/(?:\s*[·:：,，;；|—-]\s*)+$/g, '').replace(/\s{2,}/g, ' ').trim();
+    return humanizeInternalText(withoutIds, lang);
   }
 
   const leaks = detectInternalTextLeaks(input);
