@@ -17,7 +17,9 @@ import type { ProjectArtifact } from '@shared/contract/project';
 import type { Session } from '@shared/contract/session';
 import { getSessionPin, listLibraryItems, setSessionPin } from '../../../../services/libraryClient';
 import { getProjectArtifacts, listProjects } from '../../../../services/projectClient';
+import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { notifyLibraryPinChanged } from '../../knowledge/libraryPinEvents';
 import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
@@ -41,6 +43,26 @@ import {
 } from './atMentionPanelModel';
 
 const AT_TRIGGER_RE = /@([^\s@]*)$/;
+
+// FB-1531：@ 面板的「工作区文件」必须来自会话/项目的工作目录，而不是 host 进程 cwd。
+// host 的 handleListFiles 直接 fs.readdir(payload.dirPath)，传裸 '.' 会列到 host 进程自己的
+// 目录（空项目里却列出宿主的 build-info.json/dist）。基目录与文件行选中的口径一致：
+// appStore.workingDirectory 优先，其次当前会话的 workingDirectory，两者皆无返回 null。
+function resolveAtMentionBaseDir(sessionId: string | null): string | null {
+  const fromSession = sessionId
+    ? useSessionStore.getState().sessions.find((session) => session.id === sessionId)?.workingDirectory ?? null
+    : null;
+  return useAppStore.getState().workingDirectory ?? fromSession;
+}
+
+/** '@' 后的 query → 要列的目录：含 '/' 时列 <base>/<最后一个 '/' 及之前>（@src/ 浏览 src），否则列 base。
+ *  base 来自会话/项目工作目录（绝对路径），绝不给 host 传裸相对路径。 */
+function atMentionListDir(baseDir: string, searchQuery: string): string {
+  const base = baseDir.endsWith('/') ? baseDir.slice(0, -1) : baseDir;
+  const slashIndex = searchQuery.lastIndexOf('/');
+  if (slashIndex < 0) return base;
+  return `${base}/${searchQuery.slice(0, slashIndex + 1)}`;
+}
 
 async function listWorkspaceFiles(dirPath: string): Promise<AtMentionFileMatch[]> {
   const response = await window.domainAPI?.invoke<Array<{ name: string; path?: string; isDirectory?: boolean }>>(
@@ -189,16 +211,19 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
     }
 
     debounceRef.current = setTimeout(async () => {
-      try {
-        const entries = await listWorkspaceFiles(searchQuery || '.');
-        setFiles(entries);
-        setIsOpen(true);
-        wasOpenRef.current = true;
-      } catch {
-        setFiles([]);
-        setIsOpen(true);
-        wasOpenRef.current = true;
+      const baseDir = resolveAtMentionBaseDir(sessionId);
+      let entries: AtMentionFileMatch[] = [];
+      if (baseDir) {
+        try {
+          entries = await listWorkspaceFiles(atMentionListDir(baseDir, searchQuery));
+        } catch {
+          entries = [];
+        }
       }
+      // 无工作目录（草稿/空间槽）也不发 listFiles：files 恒空，面板仍打开展示其他组
+      setFiles(entries);
+      setIsOpen(true);
+      wasOpenRef.current = true;
     }, 200);
   }, [projectId, refreshLibrary, refreshReferences, sessionId]);
 
@@ -237,9 +262,12 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       : [],
     [activeTab, groupLimit, libraryItems, projectId, pinnedIds, query],
   );
+  // 文件名过滤只取最后一个 '/' 之后的部分：@src/fo 应列 <base>/src 再按 'fo' 过滤；
+  // 整个 query 当子串会把 'src/' 也算进文件名，@src/ 会一行都不剩（浏览子目录就废了）。
+  const fileNameFilter = query.slice(query.lastIndexOf('/') + 1);
   const fileRows = useMemo(
-    () => activeTab === 'all' || activeTab === 'files' ? buildFileRows(files, query, groupLimit) : [],
-    [activeTab, files, groupLimit, query],
+    () => activeTab === 'all' || activeTab === 'files' ? buildFileRows(files, fileNameFilter, groupLimit) : [],
+    [activeTab, fileNameFilter, files, groupLimit],
   );
   const sessionRows = useMemo(
     () => activeTab === 'all' || activeTab === 'sessions'
