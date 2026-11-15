@@ -14,6 +14,7 @@ export const sidebarZh = {
     model: '主任务模型: {model}', billing: '计费: {billing}',
     adaptive: '自动路由（按任务、成本和能力切换，当前主任务 {model}）',
     overridden: '已覆盖: {model} (原主任务: {original})',
+    switched: '这一轮实际在用: {shown}（你选的是 {original}，已自动换过）',
   },
 
   sidebar: {
@@ -411,6 +412,7 @@ export const sidebarEn: typeof sidebarZh = {
     model: 'Task model: {model}', billing: 'Billing: {billing}',
     adaptive: 'Automatic selection (current task model: {model})',
     overridden: 'Selected: {model} (original task model: {original})',
+    switched: 'Actually in use this turn: {shown} (you selected {original}, switched automatically)',
   },
 
   sidebar: {
