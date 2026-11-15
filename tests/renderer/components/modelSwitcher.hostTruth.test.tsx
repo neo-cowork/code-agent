@@ -19,31 +19,19 @@ const sessionState = {
   updateSessionEngine: vi.fn(),
 };
 
-const useAppStoreMock = vi.hoisted(() => ({ store: null as null | ReturnType<typeof import('zustand').create> }));
+// 渲染层设置快照：故意与 host 不一致（现场就是这样：快照 gpt-5.5，host 实跑 LongCat-2.0）。
+const appState = {
+  modelConfig: { provider: 'custom-team-relay', model: 'gpt-5.5' },
+  workingDirectory: null,
+  openSettingsTab: () => {},
+};
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: typeof sessionState) => unknown) => selector(sessionState),
 }));
 
-vi.mock('../../../src/renderer/stores/appStore', async () => {
-  const { create: createStore } = await import('zustand');
-  const store = createStore(() => ({
-    modelConfig: { provider: 'custom-team-relay', model: 'gpt-5.5' },
-    workingDirectory: null,
-    openSettingsTab: () => {},
-  }));
-  useAppStoreMock.store = store as never;
-  return { useAppStore: store };
-});
-
-// 渲染层重拉设置 = 把 host 现在的默认写回 appStore（真实实现走 settings.get IPC）。
-const loadModelSettings = vi.fn(async () => {
-  (useAppStoreMock.store as unknown as { setState: (s: object) => void }).setState({
-    modelConfig: { ...mocks.hostDefault },
-  });
-});
-vi.mock('../../../src/renderer/services/modelSettings', () => ({
-  loadModelSettings: () => loadModelSettings(),
+vi.mock('../../../src/renderer/stores/appStore', () => ({
+  useAppStore: (selector: (state: typeof appState) => unknown) => selector(appState),
 }));
 
 vi.mock('../../../src/renderer/stores/modeStore', () => {
@@ -61,17 +49,17 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
 import { ModelSwitcher } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 
 function Harness() {
-  const model = (useAppStoreMock.store as unknown as (sel: (s: { modelConfig: { model: string } }) => string) => string)(
-    (s) => s.modelConfig.model,
-  );
-  return <ModelSwitcher currentModel={model} />;
+  return <ModelSwitcher currentModel={appState.modelConfig.model} />;
 }
 
 const getModelOverride = vi.fn(async () => ({ success: true, data: mocks.hostOverride }));
+// host 侧 getEffectiveModel = 运行循环同款解析（override > 默认含回落）
+const getEffectiveModel = vi.fn(async () => ({ success: true, data: { ...(mocks.hostOverride ?? mocks.hostDefault), adaptive: false } }));
 
 function installDomainApi() {
   const invoke = vi.fn(async (_domain: string, action: string) => {
     if (action === 'getModelOverride') return getModelOverride();
+    if (action === 'getEffectiveModel') return getEffectiveModel();
     if (action === 'listSources') return { success: true, data: [] };
     if (action === 'listModels') return { success: true, data: { catalog: null } };
     return { success: false, data: null };
@@ -94,14 +82,11 @@ const trigger = () => screen.getByRole('button', { name: '切换模型' });
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
-  mocks.hostDefault = { provider: 'custom-team-relay', model: 'gpt-5.5' };
+  mocks.hostDefault = { provider: 'custom-team-relay', model: 'LongCat-2.0' };
   mocks.hostOverride = null;
   useStatusStore.getState().setLastModelDecision(null);
-  (useAppStoreMock.store as unknown as { setState: (s: object) => void }).setState({
-    modelConfig: { provider: 'custom-team-relay', model: 'gpt-5.5' },
-  });
-  loadModelSettings.mockClear();
   getModelOverride.mockClear();
+  getEffectiveModel.mockClear();
   installDomainApi();
 });
 
@@ -111,16 +96,20 @@ afterEach(() => {
 });
 
 describe('ModelSwitcher 显示 host 实际调用的模型', () => {
-  it('新会话默认：渲染层快照是 gpt-5.5，host 按实时设置跑 LongCat-2.0 → 决策到达后显示 LongCat-2.0', async () => {
+  it('新会话、还没发消息：渲染层快照是 gpt-5.5，host 回落是 LongCat-2.0 → 输入框显示 LongCat', async () => {
     render(<Harness />);
-    await waitFor(() => expect(getModelOverride).toHaveBeenCalledTimes(1));
-    expect(trigger().textContent).toMatch(/gpt-5\.5/i);
-
-    mocks.hostDefault = { provider: 'custom-team-relay', model: 'LongCat-2.0' };
-    decide(['custom-team-relay', 'LongCat-2.0'], ['custom-team-relay', 'LongCat-2.0'], 'default-model');
-
     await waitFor(() => expect(trigger().textContent).toMatch(/longcat/i));
-    expect(loadModelSettings).toHaveBeenCalled();
+    expect(trigger().textContent).not.toMatch(/gpt-5\.5/i);
+  });
+
+  it('host 默认后来又变了：下一轮决策到达后跟着变', async () => {
+    render(<Harness />);
+    await waitFor(() => expect(trigger().textContent).toMatch(/longcat/i));
+
+    mocks.hostDefault = { provider: 'custom-tokenrhythm', model: 'mimo-v2.6-flash' };
+    decide(['custom-tokenrhythm', 'mimo-v2.6-flash'], ['custom-tokenrhythm', 'mimo-v2.6-flash'], 'default-model');
+
+    await waitFor(() => expect(trigger().textContent).toMatch(/mimo v?-?2\.6/i));
   });
 
   it('session/switchModel 接口在外部改成 mimo：决策到达后不再显示旧的 DeepSeek', async () => {

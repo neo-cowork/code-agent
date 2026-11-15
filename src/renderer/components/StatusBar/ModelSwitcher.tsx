@@ -71,7 +71,6 @@ import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
 import { modelOverrideFailureToast } from './modelOverrideErrorCopy';
 import { resolveDisplayedModel, useResyncModelFromHost } from './sessionModelTruth';
-import { loadModelSettings } from '../../services/modelSettings';
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -179,6 +178,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
   const [overrideProvider, setOverrideProvider] = useState<ModelProvider | null>(null);
   const [overrideAdaptive, setOverrideAdaptive] = useState<boolean>(false);
+  const [hostModel, setHostModel] = useState<{ provider: ModelProvider; model: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
@@ -418,14 +418,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     setOverrideModel(null);
     setOverrideProvider(null);
     setOverrideAdaptive(false);
+    setHostModel(null);
   }, [sessionId]);
 
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
-  // 会话 override 以 host 为准：首次进入会话、以及 host 每轮模型决策后都重拉（外部接口也能改它）。
+  // 会话 override 与下一轮实际模型都以 host 为准：首次进入会话、host 每轮模型决策后、窗口重新聚焦都重拉
+  // （外部接口能改 override，默认模型的回落只有 host 算得准）。
   const refreshOverride = useCallback(async (silent: boolean) => {
     const requestedFor = sessionIdRef.current;
     if (!requestedFor) return;
+    window.domainAPI?.invoke<{ provider: string; model: string }>(IPC_DOMAINS.SESSION, 'getEffectiveModel', { sessionId: requestedFor })
+      .then((res) => {
+        if (sessionIdRef.current === requestedFor && res?.success && res.data?.model) {
+          setHostModel({ provider: res.data.provider as ModelProvider, model: res.data.model });
+        }
+      })
+      .catch(() => { /* 拿不到就沿用设置快照，不打扰用户 */ });
     try {
       const res = await window.domainAPI?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
         IPC_DOMAINS.SESSION,
@@ -449,11 +458,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     void refreshOverride(false);
   }, [sessionId, refreshOverride]);
 
-  const lastDecision = useResyncModelFromHost(sessionId, () => {
-    void refreshOverride(true);
-    // 默认模型同理：设置可能在渲染层之外被改（云端下发团队模型、别的窗口改默认）。
-    loadModelSettings().catch(() => { /* 保留上次快照，下一次决策/聚焦再试 */ });
-  });
+  const lastDecision = useResyncModelFromHost(sessionId, () => { void refreshOverride(true); });
 
   const handleSelect = useCallback(
     async (option: RuntimeModelOption) => {
@@ -545,6 +550,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideModel(null);
       setOverrideProvider(null);
       setOverrideAdaptive(false);
+      void refreshOverride(true);
       emitModelOverrideChange({ sessionId, override: null });
       trackModelSelected({
         sessionId,
@@ -557,7 +563,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     } catch (err) {
       toast.error(modelOverrideFailureToast('clear', err));
     }
-  }, [sessionId, defaultProvider, currentModel]);
+  }, [sessionId, defaultProvider, currentModel, refreshOverride]);
 
   const selectableOptionCount = showModelSettingsPrompt ? 0 : 1 + filteredOptions.length;
 
@@ -615,9 +621,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     selectableOptionCount,
   ]);
 
-  const displayModel = overrideModel || currentModel;
+  // 没有会话 override 时显示 host 算出的下一轮模型；host 还没回话的首帧才用渲染层设置快照。
+  const displayModel = overrideModel || hostModel?.model || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
-  const displayProvider = overrideProvider || defaultProvider;
+  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
 
   // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
   // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
