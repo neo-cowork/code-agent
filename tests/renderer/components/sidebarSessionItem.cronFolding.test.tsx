@@ -541,10 +541,10 @@ it.each(['zh', 'en'] as const)('rename dialog round trip retains a recognized cr
 
 it('empty cron heading follows UI language without changing the stored title', () => {
   const stored = { id: 'session-1', title: '[Schedule] 每晨整理周会纪要', modelConfig: { provider: 'openai', model: 'gpt-5.4' }, createdAt: 1, updatedAt: Date.now() - 9 * 60 * 60 * 1000, messageCount: 0, turnCount: 0 } as any;
-  const view = render(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+  const view = render(<NewSessionWelcome onSend={vi.fn()} onFillDraft={vi.fn()} session={stored} />);
   expect(screen.getByTestId('chat-welcome-title').textContent).toBe('继续上次的会话：[定时] 每晨整理周会纪要');
   i18nState.language = 'en';
-  view.rerender(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+  view.rerender(<NewSessionWelcome onSend={vi.fn()} onFillDraft={vi.fn()} session={stored} />);
   expect(screen.getByTestId('chat-welcome-title').textContent).toBe('Picking up your last session: [Schedule] 每晨整理周会纪要');
   expect(screen.getByTestId('chat-welcome-title').textContent).not.toContain('[定时]');
   expect(stored.title).toBe('[Schedule] 每晨整理周会纪要');

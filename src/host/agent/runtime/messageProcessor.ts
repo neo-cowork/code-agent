@@ -70,7 +70,8 @@ import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
-import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { deniedToolFinalReply, deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { isBashToolName } from '../../tools/toolNames';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -670,12 +671,12 @@ export class MessageProcessor {
           error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
       }
       this.guardState.toolCallRetryCount++;
-      const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
       const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
+          this.ctx.foregroundToolFace ? 'The previous call was NOT run.'
+            : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
@@ -687,7 +688,7 @@ export class MessageProcessor {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: shellDenial?.finalMessage ?? `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
+          content: deniedToolFinalReply(this.ctx),
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),

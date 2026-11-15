@@ -15,6 +15,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // 两行工具带对齐同一横向节奏 px-6；
 // 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Eye, FileText, Globe, Link, Loader2, Package, Pencil, RefreshCw, Share2, Trash2, Upload, X } from 'lucide-react';
 import { LIBRARY_ITEM_KINDS, type LibraryItem, type LibraryItemKind } from '@shared/contract/library';
@@ -40,6 +41,7 @@ import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
+import { MeetingsView } from '../meetings/MeetingsView';
 import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../stores/composerStore';
 import { DeliverablePublishBadge } from '../../DeliverablePublishBadge';
 import { ShareLinkPanel } from '../chat/MessageBubble/ShareLinkPanel';
@@ -51,7 +53,8 @@ const closeEmbeddedBrandManager = () => undefined;
 // 「记忆」tab 已撤（2026-07-27 审美关：记忆是个人设置不是资料库）——它的家在
 // 设置 → 记忆（SettingsModal 的 MemoryTab，深链 openSettingsTab('memory')），
 // 整窗页 KnowledgeMemoryPanel 2026-08-02 退役后，这是唯一的家。一个能力只留一个家。
-type LibraryView = 'items' | 'brands';
+// meetings = 会议列表与会议页（N-MEETING-PAGE），与品牌套件同一次级入口模式，不新造容器
+type LibraryView = 'items' | 'brands' | 'meetings';
 
 interface LibraryItemDraft {
   title: string;
@@ -99,7 +102,15 @@ export const LibraryPanel: React.FC = () => {
   const [search, setSearch] = useState('');
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<LibraryView>('items');
+  const meetingTarget = useAppStore((state) => state.libraryMeetingTarget);
+  const [view, setView] = useState<LibraryView>(meetingTarget ? 'meetings' : 'items');
+  const [meetingEntryId, setMeetingEntryId] = useState<string | null>(meetingTarget?.meetingId ?? null);
+  useEffect(() => {
+    if (!meetingTarget) return;
+    setView('meetings');
+    setMeetingEntryId(meetingTarget.meetingId);
+    useAppStore.getState().clearLibraryMeetingTarget();
+  }, [meetingTarget]);
   // 任务 16b：行勾选多选 → 底部浮条「带进新会话」
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bringing, setBringing] = useState(false);
@@ -458,7 +469,18 @@ export const LibraryPanel: React.FC = () => {
                 className="h-8 w-56 min-w-0 text-xs"
               />
             )}
-            {view === 'brands' ? (
+            {view === 'items' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 whitespace-nowrap"
+                data-testid="library-meetings-entry"
+                onClick={() => { setMeetingEntryId(null); setView('meetings'); }}
+              >
+                {t.library.meetingsTab}
+              </Button>
+            )}
+            {view !== 'items' ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -588,7 +610,7 @@ export const LibraryPanel: React.FC = () => {
                                   <div key={version.version} className="flex items-center gap-2 border-b border-zinc-800/70 px-3 py-2 text-xs last:border-b-0">
                                     <span className="font-medium text-zinc-200">v{version.version}</span>
                                     {index === 0 && <span className="rounded bg-teal-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">{t.deliverable.currentPublished}</span>}
-                                    <span className="text-zinc-500">{new Date(version.publishedAt).toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}</span>
+                                    <span className="text-zinc-500">{formatDateTime(version.publishedAt, language)}</span>
                                     {version.note && <span className="min-w-0 flex-1 truncate text-zinc-400">{version.note}</span>}
                                     {!version.note && <span className="flex-1" />}
                                     <button /* ds-allow:button: 版本行内文字动作 */ type="button" onClick={() => handlePreviewVersion(version.snapshotPath)} className="inline-flex items-center gap-1 text-badge-info hover:underline"><Eye className="h-3 w-3" />{t.deliverable.viewVersion}</button>
@@ -621,6 +643,10 @@ export const LibraryPanel: React.FC = () => {
               </table>
             </div>
           )}
+        </PageContent>
+      ) : view === 'meetings' ? (
+        <PageContent id="library-meetings-panel" role="tabpanel" scroll={false} padding={false}>
+          <MeetingsView key={meetingEntryId ?? 'list'} initialMeetingId={meetingEntryId} />
         </PageContent>
       ) : (
         <PageContent id="library-brands-panel" role="tabpanel">

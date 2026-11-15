@@ -1,3 +1,5 @@
+import { resolveAgent } from '../../agentRegistry';
+import { resolveTurnToolFace } from '../turnToolFace';
 import type { RuntimeContext } from '../runtimeContext';
 import { getToolSearchService } from '../../../services/toolSearch';
 import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/deferredTools';
@@ -12,7 +14,7 @@ const logger = createLogger('ContextAssembly');
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
-  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope'
+  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundToolFace' | 'agentId'
 > & { sessionId?: string };
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -40,6 +42,10 @@ const MCP_MANAGEMENT_INTENT_RE =
 
 // 简报/用户直接点名 spawn_agent（组队主理人首轮的固定脚手架就是这样）——不预载会白花一个 ToolSearch 来回。
 const SPAWN_AGENT_INTENT_RE = /\bspawn_agent\b/i;
+// 问过去的会、或会议页「交给 Neo」的首句（带 meeting_records 与会议编号）：meeting_records 是 deferred，
+// 不预加载时模型会拿会议名去 Grep 文件、全部落空（N-MEETING-PAGE 11-15 真机实证）。只在命中时进面，不加每轮固定开销。
+// 不收裸「会议」：「帮我记录当前会议内容」是要操作桌面（computer_use），不是查过去的会。
+const MEETING_RECORDS_INTENT_RE = /\bmeeting_records\b|meeting-(?:tmeet|feishu|\d)|那场会|这场会|上次.{0,6}会|开的会|会上|会议上|会议里|会议记录|纪要|妙记/i;
 
 // 原生连接器（提醒/邮件/日历）写工具的意图判据已抽到 connectors/nativeConnectorIntent.ts
 // （单一真源，N-FG-CONNECTOR-TOOLS）：deferred 预载与文字前台 per-turn allowlist 扩展
@@ -106,6 +112,10 @@ export function getDeferredToolsToPreloadForTurn(
 
   if (SPAWN_AGENT_INTENT_RE.test(userText)) {
     tools.add('spawn_agent');
+  }
+
+  if (MEETING_RECORDS_INTENT_RE.test(userText)) {
+    tools.add('meeting_records');
   }
 
   // 用户通常只会说“每天一次”或“少烦我”，不会点名 deferred 工具。执行层仍负责
@@ -175,7 +185,12 @@ export function getDeferredToolsToPreloadForTurn(
   }
 
   const denied = new Set((runtime.deniedToolNames ?? []).map((name) => resolveToolAlias(name).toLowerCase()));
-  return Array.from(tools).filter((name) => !denied.has(resolveToolAlias(name).toLowerCase()));
+  return (resolveTurnToolFace({
+    baseToolNames: [...tools], prompt: runtime.turn.runUserPrompt || userText, foreground: runtime.foregroundToolFace,
+    declaredToolNames: runtime.agentId ? resolveAgent(runtime.agentId)?.tools : undefined,
+    turnExtraToolNames: runtime.agentId ? runtime.allowedToolNames : undefined,
+    hardBoundary: (name) => !denied.has(resolveToolAlias(name).toLowerCase()),
+  }) ?? []).filter((name) => name !== '__role_boundary_deny_all__' && !isCoreToolName(name));
 }
 
 export function preloadDeferredToolsForTurn(

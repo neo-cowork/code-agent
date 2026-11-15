@@ -19,7 +19,7 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '代理工作中{name}', completed: `${outcomeWordsZh.outcomeWords.completed.timeline.label}{name}`, failed: `${outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label}{name}`, cancelled: `${outcomeWordsZh.outcomeWords['cancelled-by-user'].detail.label}{name}` },
+    headlines: { working: '{name}正在处理', completed: '{name}已完成', failed: '{name}没有完成', cancelled: '{name}已取消' },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
@@ -83,7 +83,7 @@ chat: {
   quotaWaitDue: '已到点，点继续',
   quotaWaitRetryNow: '现在重试',
   welcomeTitle: '这次想去哪颗星球？',
-  welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
+  welcomeSubtitle: '选一个示例填进输入框，改成你自己的内容再发送；或者直接输入你想完成的事。',
   resumedEmptyTitle: '继续上次的会话：{title}',
   resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
   // 专家（角色绑定）会话的空态副标题：专家主 thread 的标题就是角色名，「继续上次的
@@ -243,9 +243,9 @@ toolGroup: {
 toolStepHumanize: {
   ...toolStepVerbsZh,
   declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
-    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议' },
+    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议', tmeetRecordList: '查了腾讯会议录制', tmeetRecordRead: '读了腾讯会议转写和纪要', feishuMinutesSearch: '搜了飞书妙记', feishuMinutesRead: '读了一条飞书妙记', meetingRecords: '查了会议记录' },
   intent: { tmeetMeetingListUpcoming: '查待开始/进行中的会议', tmeetMeetingListEnded: '查近 30 天已结束的会议',
-    tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议' },
+    tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议', tmeetRecordList: '查腾讯会议录制', tmeetRecordRead: '读腾讯会议转写和纪要', feishuMinutesSearch: '搜飞书妙记', feishuMinutesRead: '读一条飞书妙记', meetingRecords: '查会议记录' },
   read: '读取了 {target}', readFallback: '读取了一个文件',
   write: '写入了 {target}',
   writeFallback: '写入了一个文件',
@@ -579,7 +579,7 @@ chat: {
   quotaWaitDue: 'The wait is over. Continue to resume',
   quotaWaitRetryNow: 'Retry now',
   welcomeTitle: 'Which planet are we heading to?',
-  welcomeSubtitle: 'Pick an example, or just type what you want to do.',
+  welcomeSubtitle: 'Pick an example to fill the box, edit it to your own content, then send — or just type what you want to do.',
   resumedEmptyTitle: 'Picking up your last session: {title}',
   resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',
   // Expert (role-bound) session empty state: the expert main thread is titled with the
@@ -742,9 +742,9 @@ toolGroup: {
 toolStepHumanize: {
   ...toolStepVerbsEn,
   declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
-    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings' },
+    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings', tmeetRecordList: 'Checked Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Searched Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Checked meeting records' },
   intent: { tmeetMeetingListUpcoming: 'Check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Check meetings ended in the last 30 days',
-    tmeetMeetingCreate: 'Create a meeting', tmeetMeetingSearch: 'Search meetings' },
+    tmeetMeetingCreate: 'Create a meeting', tmeetMeetingSearch: 'Search meetings', tmeetRecordList: 'Check Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Search Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Check meeting records' },
   read: 'Read {target}',
   readFallback: 'Read a file',
   write: 'Wrote {target}',

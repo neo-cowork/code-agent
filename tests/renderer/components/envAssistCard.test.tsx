@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
@@ -69,8 +69,47 @@ describe('EnvAssistCard', () => {
     await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
     expect(screen.getByTestId('env-assist-card').textContent).toBe('要看你的日程，需要你允许 Neo 控制「日历」。');
   });
+  it.each([['zh', '已允许 Neo 控制「日历」。'], ['en', 'Neo can now control Calendar.']] as const)('a resolved notice shows the done sentence and no button, also after reload (%s)', async (language, done) => {
+    mocks.language = language;
+    const resolved: EnvAssistNotice = { ...notice, phase: 'resolved', doneKey: 'env.done.calendar', action: undefined, updatedAt: 2 };
+    render(<EnvAssistCard notice={resolved} />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'getAvailability'));
+    expect(screen.getByTestId('env-assist-card').textContent).toBe(done);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(mocks.invoke).not.toHaveBeenCalledWith('domain:envAssist', 'recheck', expect.anything());
+  });
+  it('rechecks on mount and on window focus, and the broadcast resolved notice replaces the button', async () => {
+    render(<EnvAssistCard notice={notice} />);
+    await screen.findByRole('button');
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: notice.id }));
+    mocks.invoke.mockClear();
+    window.dispatchEvent(new Event('focus'));
+    expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: notice.id });
+    act(() => useEnvAssistStore.getState().report({ ...notice, phase: 'resolved', doneKey: 'env.done.calendar', action: undefined, updatedAt: 2 }));
+    await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
+    expect(screen.getByTestId('env-assist-card').textContent).toBe('已允许 Neo 控制「日历」。');
+  });
   it('does not render host diagnostics or forged copy keys and parameters', async () => {
     render(<EnvAssistCard notice={{ ...notice, sentenceKey: 'osascript', sentenceParams: { raw: '-1743' }, devDiagnostic: { rawRef: 'TCC' } }} />);
     expect(screen.getByTestId('env-assist-card').textContent).not.toMatch(/-1743|osascript|TCC/);
+  });
+  it.each([
+    ['zh', 'helperScreen', 'screenCapture', '要查看你的屏幕，需要你允许 Neo 的电脑控制助手录制屏幕。', '允许查看屏幕'],
+    ['en', 'helperComputer', 'accessibility', "To use your computer, Neo's computer-control helper needs your OK to use accessibility features.", 'Allow accessibility'],
+  ] as const)('cua helper notice renders one sentence and one Allow button, no ids or raw text (%s/%s)', async (language, target, pane, sentence, button) => {
+    mocks.language = language;
+    const cua: EnvAssistNotice = {
+      ...notice, id: `run|perm|${target}`, class: pane === 'screenCapture' ? 'perm_screen_recording' : 'perm_accessibility',
+      target: { id: target, labelKey: `env.target.${target}` }, sentenceKey: `env.sentence.${target}`,
+      action: { kind: 'request_grant', labelKey: `env.allow.${target}`, payload: { pane } },
+    };
+    render(<EnvAssistCard notice={cua} />);
+    const view = await screen.findByRole('button');
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByTestId('env-assist-card').querySelector('p')!.textContent).toBe(sentence);
+    expect(view.textContent).toBe(button);
+    expect(screen.getByTestId('env-assist-card').textContent).not.toMatch(/com\.agentneo|mcp__|cua-driver|check_permissions|\.app/i);
+    fireEvent.click(view);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'act', { noticeId: cua.id, actionKind: 'request_grant', payload: { pane } }));
   });
 });

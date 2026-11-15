@@ -9,6 +9,7 @@ const CARDS = [
   { key: 'meeting-notes', title: /整理一份会议纪要|Write up meeting minutes/, promptHead: /把下面这段会议速记整理成正式会议纪要|Turn this raw meeting scribble/ },
   { key: 'weekly-report', title: /写一份本周工作周报|status report/i, promptHead: /帮我把这周的工作要点写成一份|Turn this week/ },
   { key: 'sales-data', title: /分析一组销售数据|Analyze a sales spreadsheet/, promptHead: /分析下面这份月度销售数据|Analyze this monthly sales dataset/ },
+  { key: 'competitor-brief', title: /搜一份竞品简报|Research a competitor brief/, promptHead: /写一份竞品简报|Write a competitor brief/ },
 ] as const;
 const DRAFT = 'draft XY77 keep test';
 const NO_MODEL_NOTICE = /No API Key for .+ yet|尚未配置 API Key/;
@@ -56,12 +57,17 @@ for (const card of CARDS) {
     console.log(`[draft:${card.key}] sessions ${before}->${await sessionCount(page)} composer=${JSON.stringify(text.slice(0, 40))}`);
   });
 
-  test(`空输入框点「${card.key}」卡：照旧立即走发送路径（不是填充）`, async ({ page }) => {
+  test(`空输入框点「${card.key}」卡：只填充输入框，不发送、不建会话`, async ({ page }) => {
     await openFreshWelcome(page);
+    const before = await sessionCount(page);
     await page.getByRole('button', { name: card.title }).click();
-    // e2e 数据目录没配模型：发送路径在 sendMessage 入口被「请先配置模型」拦下并弹提示，
-    // 这条提示只可能来自 onSend 路径（填充路径不会触发）；同时输入框保持空、没把模板填进去。
-    await expect(page.locator('body')).toContainText(NO_MODEL_NOTICE, { timeout: 10_000 });
-    console.log(`[empty:${card.key}] send path taken (model-not-configured notice shown)`);
+    // 误走 onSend 会在没配模型的 e2e 环境里弹「先配置一个模型」提示；填充路径绝不能出现。
+    await page.waitForTimeout(1_000);
+    await expect(page.locator('body')).not.toContainText(NO_MODEL_NOTICE);
+    await expect(page.getByTestId('chat-composer-textarea')).toBeFocused();
+    expect(await composerText(page)).toMatch(card.promptHead);
+    await expect(page.getByTestId('chat-welcome-title')).toBeVisible();
+    expect(await sessionCount(page)).toBe(before);
+    console.log(`[empty:${card.key}] filled composer, no send (sessions ${before}->${await sessionCount(page)})`);
   });
 }

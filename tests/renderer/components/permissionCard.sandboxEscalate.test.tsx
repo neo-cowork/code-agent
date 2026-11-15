@@ -286,7 +286,10 @@ describe('other approval cards stay word-for-word', () => {
     expect(html).toContain('执行命令');
     expect(html).toContain('危险');
     expect(html).toContain('允许执行这条命令？');
-    expect(html).toContain('将永久删除 /tmp/x（约 1 个文件），不进回收站。');
+    // N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED：无宿主盘点的递归目标数不出确切
+    // 文件数（可能是文件也可能是目录），不再回退「约 1 个文件」，直接不写数字。
+    expect(html).toContain('将永久删除 /tmp/x，不进回收站。');
+    expect(html).not.toContain('约 1 个文件');
     expect(buttonLabel(html, '仍然执行', 'y')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain('允许一次');

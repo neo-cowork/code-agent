@@ -167,7 +167,7 @@ describe('goal registry is independent of fingerprint availability', () => {
         },
       });
     };
-    expect(await runHandler()).toMatchObject({ approved: false, denialSource: 'user' });
+    expect(await runHandler()).toMatchObject({ approved: false, denialSource: 'goal-sticky-host' });
     expect(humanPrompts).toBe(0);
     for (const delta of [{ toolName: 'another_action' }, { sessionId: 'elsewhere' }, { sourceMessageId: 'user-2' }]) {
       expect(await runHandler(delta)).toMatchObject({ approved: true });
@@ -315,7 +315,7 @@ describe('OrchestratorPermissionIsland.requestPermission goal-sticky after autom
     });
     expect(refusedHuman).toEqual({
       approved: false,
-      denialSource: 'user',
+      denialSource: 'goal-sticky-host',
       message: userDeniedGoalStickyError('bash').modelText,
     });
     expect(events).toHaveLength(1);
@@ -444,7 +444,7 @@ describe('OrchestratorPermissionIsland.requestPermission goal-sticky after autom
     });
     expect(outOfGrantRetry).toEqual({
       approved: false,
-      denialSource: 'user',
+      denialSource: 'goal-sticky-host',
       message: userDeniedGoalStickyError('Write').modelText,
     });
     expect(db.prepare('SELECT * FROM pending_approvals').all()).toEqual(rowsBeforeRefusal);
@@ -492,7 +492,7 @@ describe('OrchestratorPermissionIsland.requestPermission goal-sticky after autom
     });
     expect(secondDanger).toEqual({
       approved: false,
-      denialSource: 'user',
+      denialSource: 'goal-sticky-host',
       message: userDeniedGoalStickyError('Bash').modelText,
     });
     expect(prompts).toEqual(['rm -rf build']);
