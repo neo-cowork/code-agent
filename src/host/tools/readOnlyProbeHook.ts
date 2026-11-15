@@ -42,7 +42,8 @@ function sessionAuthority(input: ReadOnlyProbeInput): { userTexts: string[]; att
   if (input.sessionId) {
     try {
       for (const message of getDatabase().getMessages(input.sessionId)) {
-        if (message.role !== 'user') continue;
+        // isMeta = 宿主/模型自写的消息（委派提示、后台完成回报）：不是真人说的话，不能当授权来源
+        if (message.role !== 'user' || message.isMeta) continue;
         if (typeof message.content === 'string') userTexts.push(message.content);
         for (const a of message.attachments ?? []) if (a.path) attachmentPaths.push(a.path);
       }

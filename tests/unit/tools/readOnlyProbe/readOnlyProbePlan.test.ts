@@ -18,7 +18,7 @@ vi.mock('../../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: async () => null,
 }));
 
-const sessionMessages = vi.hoisted(() => [] as Array<{ role: string; content: string; attachments?: Array<{ path?: string }> }>);
+const sessionMessages = vi.hoisted(() => [] as Array<{ role: string; isMeta?: boolean; content: string; attachments?: Array<{ path?: string }> }>);
 vi.mock('../../../../src/host/services/core/databaseService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../src/host/services/core/databaseService')>();
   return { ...actual, getDatabase: () => ({ getMessages: () => sessionMessages }) as unknown as ReturnType<typeof actual.getDatabase> };
@@ -255,6 +255,14 @@ print(os.listdir('${fx}/link'))
       const result = await run(outsideCmd());
       expect(permissionAsks).toEqual([]);
       expect(result.output).toBe(realBash(outsideCmd()));
+    });
+
+    it('模型自写的 meta 用户消息（委派提示/后台完成回报）里出现路径不算用户点名 → 仍审批', async () => {
+      sessionMessages.push({ role: 'user', isMeta: true, content: `在终端里检查 ${elsewhere}/doc.pdf` });
+      sessionMessages.push({ role: 'user', isMeta: true, content: '带附件的委派提示', attachments: [{ path: `${elsewhere}/doc.pdf` }] });
+      await run(outsideCmd());
+      expect(permissionAsks.length).toBeGreaterThan(0);
+      expect(probeRows()).toHaveLength(0);
     });
 
     it('点名的是另一个前缀相同的路径 → 仍审批', async () => {
