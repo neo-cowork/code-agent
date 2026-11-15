@@ -154,6 +154,8 @@ export type CompactionSource =
 
 export interface CompactionSurvivorFile {
   path: string;
+  /** true = 摘要必须逐字包含；false = 仅提示（缺失只记 warning）；缺省 = 旧行为（视为必须） */
+  required?: boolean;
   reason?: string;
   needsReRead?: boolean;
   survival?: 'path_only' | 'digest' | 'excerpt';
@@ -451,6 +453,11 @@ export interface MessageMetadata {
    */
   roleFlowStalled?: {
     skillName: 'create-role' | 'edit-role';
+  };
+  /** Deterministic user-visible note when a background task stops before producing its conclusion. */
+  backgroundTaskStopped?: {
+    taskId: string;
+    kind: 'step_cap' | 'no_conclusion' | 'error';
   };
   /**
    * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，

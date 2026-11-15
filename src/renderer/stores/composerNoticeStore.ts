@@ -119,6 +119,10 @@ const selectLayerHasActive = (state: ComposerNoticeState, layer: ComposerSlotLay
   (Object.keys(COMPOSER_SLOT_LAYER) as ComposerSlotOccupantId[])
     .some((id) => COMPOSER_SLOT_LAYER[id] === layer && selectOccupantActive(state, id));
 
+/** 输入框上方是否已有 L3 状态条（录制条 / 循环条）：停住任务的原因行据此让位，不叠成多行。 */
+export const selectComposerStatusBarActive = (state: ComposerNoticeState): boolean =>
+  selectOccupantActive(state, 'meeting-status') || selectOccupantActive(state, 'loop-status');
+
 /** 当前唯一允许显示的「进行中」占用者。顺序只在本文件定义一次。 */
 const selectCurrentComposerInProgress = (
   state: ComposerNoticeState,

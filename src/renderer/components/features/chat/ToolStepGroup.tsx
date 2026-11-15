@@ -45,6 +45,7 @@ import { redactCredentialText } from '@shared/security/secretPatterns';
 import { foldSessionTaskStatus } from '../../../utils/foldSessionTaskStatus';
 import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalResolver';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
+import { useEnvParkedStep } from '../../../hooks/useEnvParkedTarget';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -94,6 +95,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     }),
     [nodes, terminalById],
   );
+  const envParkedStep = useEnvParkedStep(sessionId);
   const label = useMemo(() => {
     if (streamVisibleNodes.length === 0) return '';
     if (streamVisibleNodes.length === 1) {
@@ -104,8 +106,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         if (!terminal) return '';
         // 陈旧未完成（会话已离线）：与展开行同一句中断文案（buildToolStatusLineCopy
         // 就是 ToolHeader 渲染 interrupted 态用的那个装配器），不进进行时词表。
+        // 中断行自带动作（连接器名已在动作里），不再另加连接器前缀——否则成了
+        // 「日历 · 已中断 · 日历 · 查询日程未成功」（N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT）。
         if (terminal.state === 'interrupted') {
-          const staleLine = buildToolStatusLineCopy({
+          return buildToolStatusLineCopy({
             status: 'interrupted',
             toolCall: {
               name: tc.name,
@@ -113,13 +117,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               shortDescription: tc.shortDescription,
               stepLabel: tc.stepLabel,
             },
+            envWaitingTarget: envParkedStep?.toolCallId === tc.id ? envParkedStep.target : undefined,
           }, t).line;
-          if (!connectorId) return staleLine;
-          const connector = getHumanToolLabel({
-            toolName: tc.name,
-            labels: t.receiptPresentation.humanToolLabels,
-          });
-          return `${connector} · ${staleLine}`;
         }
         const stepStatus = terminal.stepStatus;
         const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
@@ -154,6 +153,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     let blockedCommands = 0;
     let blockedSteps = 0;
     let staleUnfinished = 0;
+    let envWaiting: string | undefined;
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
       if (!tc) continue;
@@ -175,7 +175,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       // 陈旧未完成（会话已离线）：不进进行时/未成功词表，统一用展开行同源的
       // 中断结局词收口（多步组没有逐条人话行，只报结局词，明细展开可看）。
       if (terminalById.get(tc.id)?.state === 'interrupted') {
-        staleUnfinished += 1;
+        if (envParkedStep?.toolCallId === tc.id) envWaiting = envParkedStep.target;
+        else staleUnfinished += 1;
         continue;
       }
       const stepStatus = benign
@@ -186,10 +187,11 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return [
       ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
+      envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
       blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
-  }, [terminalById, streamVisibleNodes, t]);
+  }, [terminalById, streamVisibleNodes, t, envParkedStep]);
 
   const status = useMemo<'pending-approval' | 'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;
@@ -427,7 +429,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   if (streamVisibleNodes.length === 0 || !label) {
     return null;
   }
-  if (toolCalls.length === 1 && interruptedNode) {
+  // 单步中断（含陈旧未完成、等环境授权）只出一行：不再套一层组头，组头和展开行就不会逐字重复。
+  if (toolCalls.length === 1 && (interruptedNode || terminalById.get(toolCalls[0].id)?.state === 'interrupted')) {
     const toolCall = toolCalls[0];
     return (
       <div className="my-0.5">
@@ -438,10 +441,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           index={0}
           total={1}
           compact
-          interruptionReason={interruptedNode.metadata?.streamInterruptionReason ?? 'app-restart'}
+          interruptionReason={interruptedNode ? interruptedNode.metadata?.streamInterruptionReason ?? 'app-restart' : undefined}
           mediaContext={{
             sessionId,
-            messageId: interruptedNode.messageId || toolCall.id,
+            messageId: interruptedNode?.messageId || nodes.find((node) => node.toolCall?.id === toolCall.id)?.messageId || toolCall.id,
           }}
         />
       </div>

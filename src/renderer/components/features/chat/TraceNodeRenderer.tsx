@@ -5,6 +5,7 @@
 // dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
@@ -190,6 +191,7 @@ const UserNode: React.FC<{
   streaming?: boolean;
 }> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
+  const roleLabels = useRoleLabels();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
@@ -201,7 +203,7 @@ const UserNode: React.FC<{
   const displayContent = sourceType === 'voice'
     ? normalizeSpokenFileName(rawDisplayContent)
     : rawDisplayContent;
-  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt);
+  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt, roleLabels);
   const showUserChrome = Boolean(shownContent) || sendFailed;
 
   return (
@@ -785,6 +787,15 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
 
   if (node.subtype === 'voice_call_summary' && node.metadata?.voiceCallSummary) {
     return <VoiceCallSummaryCard summary={node.metadata.voiceCallSummary} />;
+  }
+
+  // 后台任务提前停下的结论句：是会话末尾的结论行，不是过程噪音——正常字号/字重、不斜体。
+  if (node.metadata?.backgroundTaskStopped) {
+    return (
+      <div className="py-1.5 text-sm leading-relaxed text-zinc-300" data-testid="background-task-stopped-note">
+        {node.content}
+      </div>
+    );
   }
 
   // generic system

@@ -1,3 +1,4 @@
+import type { RoleLabels } from '../stores/roleLabelsStore';
 import type { Message } from '@shared/contract';
 import { getLocalizedSessionTitle, splitCronSessionTitleParts } from './sessionPresentation';
 import { formatEditRoleUserPrompt } from './formatEditRoleUserPrompt';
@@ -67,6 +68,7 @@ export function buildOverviewRunHeaderModel(args: {
   backgroundChildren?: number;
   sessionTitle?: string | null;
   language?: Language;
+  roleLabels?: RoleLabels;
   now: number;
   /** TODO 进度（summarizeTodoProgress）；total=0 视为无 TODO，不出步骤段 */
   todoProgress?: { completed: number; total: number } | null;
@@ -85,7 +87,7 @@ export function buildOverviewRunHeaderModel(args: {
   const automaticTitle = sessionTitle && splitCronSessionTitleParts(sessionTitle)
     ? getLocalizedSessionTitle(sessionTitle, language) : null;
   const runTitle = args.run.title?.trim()
-    ? formatEditRoleUserPrompt(args.run.title.trim(), languages[language].roleEditReceipt.userPrompt)
+    ? formatEditRoleUserPrompt(args.run.title.trim(), languages[language].roleEditReceipt.userPrompt, args.roleLabels)
     : undefined;
   const title = automaticTitle || runTitle || sessionTitle || args.run.phase;
   const total = args.todoProgress?.total ?? 0;

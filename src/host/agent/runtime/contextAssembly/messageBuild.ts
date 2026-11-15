@@ -154,6 +154,7 @@ export function buildDynamicPromptCacheKey(
   return [
     ctx.runtime.sessionId,
     ctx.runtime.agentId || '',
+    ctx.runtime.systemPrompt || '',
     ctx.runtime.workingDirectory || '',
     String(ctx.runtime.isDefaultWorkingDirectory),
     String(ctx.runtime.turn.isSimpleTaskMode),
@@ -247,7 +248,8 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       bytes: projectSystemPrompt.custom.length,
     });
   } else {
-    systemPrompt = getPromptForTask();
+    // Keep the entry point's existing identity/routing instructions when rebuilding requests.
+    systemPrompt = ctx.runtime.systemPrompt || getPromptForTask();
   }
 
   // provider 变体（roadmap 2.4）：按 provider 家族追加纪律段落

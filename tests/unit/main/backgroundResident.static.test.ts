@@ -50,9 +50,9 @@ describe('scheduled-only shell residency and explicit complete quit', () => {
     for (const forbidden of ['show_quit_confirm_dialog', 'begin_request', 'query_quit_guard']) {
       expect(handler).not.toContain(forbidden);
     }
-    const dialog = between('fn show_quit_confirm_dialog(', 'fn execute_quit_exit_plan(');
+    const dialog = between('fn show_quit_confirm_dialog<', 'fn execute_quit_exit_plan<');
     expect(dialog).toContain('execute_quit_exit_plan(app, coordinator, origin, plan)');
-    const helper = between('fn execute_quit_exit_plan(', 'static MAC_QUIT_GUARD_APP:');
+    const helper = between('fn execute_quit_exit_plan<', 'static MAC_QUIT_GUARD_APP:');
     expect(helper).toContain('post_quit_intent(');
     expect(helper).toMatch(/set_stop_intent_landed\(\);\s*hide_windows_for_stop_wait\(&app\)/);
     expect(helper.indexOf('post_quit_intent(')).toBeLessThan(helper.indexOf('allow_exit()'));
@@ -63,7 +63,7 @@ describe('scheduled-only shell residency and explicit complete quit', () => {
   });
 
   it('HideToBackground in spawn_quit_guard_flow keeps the shell alive and cancels macOS terminate', () => {
-    const flow = between('fn spawn_quit_guard_flow(', 'fn show_quit_confirm_dialog(');
+    const flow = between('fn spawn_quit_guard_flow<', 'fn show_quit_confirm_dialog<');
     const arm = flow.slice(flow.indexOf('quit_guard::QuitDecision::HideToBackground'), flow.indexOf('quit_guard::QuitDecision::Confirm'));
     expect(arm).toContain('background_resident::minimize_and_hint(&app, language)');
     expect(arm).toContain('coordinator.finish()');
