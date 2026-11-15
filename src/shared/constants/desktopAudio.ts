@@ -26,4 +26,7 @@ export const MEETING_SESSION_LIMITS = {
   MINUTES_MAX_ITERATIONS: 6,
   /** 纪要里每类最多收几条，防止模型把整场逐句抄进来 */
   MINUTES_MAX_ITEMS_PER_KIND: 30,
+  /** 会前提醒：每分钟看一次日历，会开始前 2 分钟内提醒（开始后 2 分钟内录制条仍挂着） */
+  CALENDAR_POLL_MS: 60 * 1000,
+  CALENDAR_LEAD_MS: 2 * 60 * 1000,
 } as const;

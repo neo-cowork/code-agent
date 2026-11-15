@@ -157,3 +157,6 @@ scratchpad/
 # 工单本地暂存目录（任务书规定的 .tmp/<单号>/ scratch：私有 cases 副本、编排器、真跑产物），
 # 永不入库；不忽略会让 check-repository-structure 把 .tmp 数成多余的顶层 tracked 目录
 .tmp/
+
+# tsc-tests-ratchet 增量缓存（每个 worktree 各一份，bootstrap 可从主树拷热缓存）
+/.cache/

@@ -38,6 +38,29 @@ export function inputMonitoringProbe(bridge: PassiveBridge | null): ReadOnlyProb
   });
 }
 
+/**
+ * EventKit calendar data (ADR-090 perm_calendars). Only full access can read events:
+ * writeOnly (macOS 14+) and restricted are reported separately so the UI can say what to change.
+ */
+export type CalendarAccess = 'granted' | 'undecided' | 'denied' | 'restricted' | 'write_only' | 'unavailable';
+
+export async function calendarAccess(bridge: PassiveBridge | null): Promise<CalendarAccess> {
+  if (!bridge) return 'unavailable';
+  try {
+    switch (await bridge.EKAuthorizationStatusForEvents()) {
+      case 3: return 'granted';
+      case 0: return 'undecided';
+      case 1: return 'restricted';
+      case 2: return 'denied';
+      case 4: return 'write_only';
+      default: throw new Error('probe_invalid_native_code');
+    }
+  } catch {
+    logger.warn('probe_unavailable:calendars:native_error');
+    return 'unavailable';
+  }
+}
+
 export function automationProbe(bridge: PassiveBridge | null, targetBundleId: string): ReadOnlyProbe {
   return passiveProbe('automation', bridge, async (native) => {
     const code = await native.AEDeterminePermissionToAutomateTarget(targetBundleId, false);

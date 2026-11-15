@@ -35,5 +35,11 @@ export function createShellPromptingBridge(client: ShellBridgeClient): Prompting
         throw new Error('env_assist_bridge:invalid_grant_automation_response');
       }
     },
+    async requestFullAccessToEvents(): Promise<void> {
+      const res = await client.post<RequestedResponse>('/v1/grant/calendar');
+      if (res?.requested !== true) {
+        throw new Error('env_assist_bridge:invalid_grant_calendar_response');
+      }
+    },
   };
 }

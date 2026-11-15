@@ -49,10 +49,12 @@ const tcc = { code: -1744 as 0 | -1743 | -1744 };
 const passive: PassiveBridge = {
   AXIsProcessTrusted: async () => false, CGPreflightScreenCaptureAccess: async () => false, IOHIDCheckAccess: async () => 1,
   AEDeterminePermissionToAutomateTarget: async () => tcc.code,
+  EKAuthorizationStatusForEvents: async () => 0,
 };
 const grant: PromptingBridge = {
   requestAccessibility: async () => undefined, CGRequestScreenCaptureAccess: async () => undefined, IOHIDRequestAccess: async () => undefined,
   AEDeterminePermissionToAutomateTarget: async () => { tcc.code = 0; },
+  requestFullAccessToEvents: async () => undefined,
 };
 
 let fixture: Awaited<ReturnType<typeof harness>> | undefined;

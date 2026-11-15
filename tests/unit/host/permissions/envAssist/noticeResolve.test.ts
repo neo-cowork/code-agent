@@ -29,10 +29,12 @@ const tcc = { code: -1744 as 0 | -1743 | -1744, allowOnPrompt: true, prompts: 0 
 const passive: PassiveBridge = {
   AXIsProcessTrusted: async () => false, CGPreflightScreenCaptureAccess: async () => false, IOHIDCheckAccess: async () => 1,
   AEDeterminePermissionToAutomateTarget: async () => tcc.code,
+  EKAuthorizationStatusForEvents: async () => 0,
 };
 const grant: PromptingBridge = {
   requestAccessibility: async () => undefined, CGRequestScreenCaptureAccess: async () => undefined, IOHIDRequestAccess: async () => undefined,
   AEDeterminePermissionToAutomateTarget: async () => { tcc.prompts++; if (tcc.allowOnPrompt) tcc.code = 0; },
+  requestFullAccessToEvents: async () => undefined,
 };
 
 let handler: HandlerFn;

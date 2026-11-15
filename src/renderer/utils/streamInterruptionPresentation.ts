@@ -76,6 +76,7 @@ function basename(filePath: string): string {
 export function humanizeInterruptedToolAction(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'shortDescription' | 'stepLabel'>,
   t: Translations,
+  renderContext: { connectorPrefixRendered?: boolean } = {},
 ): string {
   const args = toolCall.arguments as Record<string, unknown> | undefined;
   if (WRITE_TOOLS.has(toolCall.name)) {
@@ -96,6 +97,7 @@ export function humanizeInterruptedToolAction(
       toolCall.shortDescription,
       'failed',
       toolCall.stepLabel,
+      renderContext,
     ),
     t,
   );
@@ -121,11 +123,14 @@ function stripFailedTerminalFromAction(text: string, t: Translations): string {
   if (idx < 0) return text;
   const prefix = wrap.slice(0, idx);
   const suffix = wrap.slice(idx + placeholder.length);
+  // 终态词可能在任一段：连接器前缀（「日历 · 查询日程未成功」）把它顶到第二段，
+  // 只看首段就会留下「已中断 · 日历 · 查询日程未成功」两个终态（N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT）。
   const segments = text.split(ACTION_SEGMENT_SEPARATOR);
-  const head = segments[0] ?? '';
-  if ((prefix === '' || head.startsWith(prefix)) && (suffix === '' || head.endsWith(suffix))) {
-    const stripped = head.slice(prefix.length, head.length - suffix.length).trim();
-    if (stripped) return [stripped, ...segments.slice(1)].join(ACTION_SEGMENT_SEPARATOR);
-  }
-  return text;
+  const index = segments.findIndex((segment) => (prefix === '' || segment.startsWith(prefix))
+    && (suffix === '' || segment.endsWith(suffix))
+    && segment.length > prefix.length + suffix.length);
+  if (index < 0) return text;
+  const segment = segments[index];
+  segments[index] = segment.slice(prefix.length, segment.length - suffix.length).trim();
+  return segments.join(ACTION_SEGMENT_SEPARATOR);
 }
