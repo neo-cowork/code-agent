@@ -304,9 +304,11 @@ export function createCliConnector(
     onOutput?: (combinedOutput: string, child: RunningChild) => void,
     trackConnect = false,
     commandTimeoutMs = timeoutMs,
+    cwd?: string,
   ): Promise<CliCommandResult> => {
     const child = spawn(executable, args, {
       env,
+      cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (trackConnect) activeConnectProcess = child;
@@ -812,9 +814,10 @@ export function createCliConnector(
     }
   };
 
-  const execute = async (args: string[], label: string): Promise<CliCommandResult> => {
+  /** cwd：命令要往当前目录写文件时用（lark-cli minutes +detail 的转写只收相对路径） */
+  const execute = async (args: string[], label: string, options: { cwd?: string } = {}): Promise<CliCommandResult> => {
     await ensureInstalled();
-    return run(binaryPath, args, label);
+    return run(binaryPath, args, label, undefined, false, timeoutMs, options.cwd);
   };
 
   return { ensureInstalled, status, connect, cancelConnect, disconnect, execute };

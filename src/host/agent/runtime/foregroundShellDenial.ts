@@ -37,10 +37,11 @@ export function describeDeniedShellCalls(
   });
   const locale = detectMessageLanguage(ctx.turn?.runUserPrompt ?? '') ?? readUiLanguage();
   return {
-    guidance: 'Bash is not part of this turn\'s tool face, so no approval prompt can be raised for it here. '
-      + 'Do not retry Bash. Tell the user plainly that shell commands cannot run directly in this turn '
-      + '(the command was NOT run), and offer to hand it to a background agent with spawn_agent. '
-      + 'Reply in the same language the user is writing in this turn.',
+    guidance: 'That command cannot be run directly here, and no approval prompt can be raised for it. '
+      + 'Do not retry it. In one plain sentence, tell the user what you could not do for them and that the command was NOT run, '
+      + 'then say what you will do instead (for example list what would be affected first, or hand it to a background task with spawn_agent). '
+      + 'Do not name tools or internal modes, and do not suggest the user turned anything off. '
+      + 'Reply in the same language the user is writing in.',
     finalMessage: formatForegroundShellDenialFinalMessage(locale),
   };
 }

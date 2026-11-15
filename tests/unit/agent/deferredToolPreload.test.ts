@@ -312,7 +312,7 @@ describe('deferred tool preload', () => {
   it('preloads every deferred tool declared by a selected CLI connector', () => {
     expect(getDeferredToolsToPreloadForTurn(runtime({
       toolScope: { allowedConnectorIds: ['tmeet'] },
-    }))).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch']);
+    }))).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch', 'tmeetRecordList', 'tmeetRecordRead']);
   });
 
   it('preloads deferred MCP tools from selected servers only', () => {
