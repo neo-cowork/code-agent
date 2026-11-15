@@ -1,6 +1,7 @@
 export const roleEditReceiptZh = {
   roleEditReceipt: {
     userPrompt: '修改专家：{role}',
+    expertLabel: '{name}（{profession}）',
     updated: '已更新专家「{role}」。',
     unchanged: '专家「{role}」的能力、简介和工作规则均未变化。',
     unavailable: '已更新专家「{role}」，但无法比较本次变化。',
@@ -16,6 +17,7 @@ export const roleEditReceiptZh = {
 export const roleEditReceiptEn = {
   roleEditReceipt: {
     userPrompt: 'Edit expert: {role}',
+    expertLabel: '{name} ({profession})',
     updated: 'Updated expert “{role}”.',
     unchanged: 'Expert “{role}”: capabilities, description and working rules are unchanged.',
     unavailable: 'Updated expert “{role}”, but the changes could not be compared.',

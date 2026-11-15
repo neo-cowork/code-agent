@@ -13,6 +13,7 @@ import type { RolePanelDetail } from '@shared/contract/roleAssets';
 import { listExternalEngineManifests } from '@shared/externalEngineManifest';
 import { buildRuntimeModelOptions, groupRuntimeModelOptionsByProvider } from '@shared/modelRuntime';
 import { useI18n } from '../../../hooks/useI18n';
+import { resolveProviderLabel } from '../../../i18n/providerDisplay';
 import { SettingsSection } from '../settings/SettingsLayout';
 
 type Equipment = NonNullable<RolePanelDetail['equipment']>;
@@ -33,7 +34,7 @@ interface RoleModelTabProps {
 }
 
 export const RoleModelTab: React.FC<RoleModelTabProps> = ({ equipment, busy, onSave }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.expert.roleModel;
   const [tier, setTier] = useState<Tier>(equipment.model);
   const [override, setOverride] = useState<ModelOverride | null>(equipment.modelOverride ?? null);
@@ -162,7 +163,7 @@ export const RoleModelTab: React.FC<RoleModelTabProps> = ({ equipment, busy, onS
           <div className="max-h-96 space-y-3 overflow-y-auto" data-testid="role-model-override-list">
             {groups.map((group) => (
               <div key={group.provider}>
-                <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">{group.providerLabel}</div>
+                <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">{resolveProviderLabel(group.provider, group.providerLabel, language)}</div>
                 <div className="space-y-1">
                   {group.options.map((option) => {
                     const selected = override?.provider === option.provider && override?.model === option.model;

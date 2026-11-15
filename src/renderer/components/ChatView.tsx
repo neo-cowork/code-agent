@@ -70,7 +70,8 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
-import { DEFAULT_PROVIDER, getProviderInfo } from '@shared/constants';
+import { DEFAULT_PROVIDER } from '@shared/constants';
+import { getLocalizedProviderDisplayName } from '../i18n/providerDisplay';
 import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
@@ -126,7 +127,7 @@ import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
 
 export const ChatView: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const searchEnabled = useModeStore((state) => state.searchEnabled);
   const thinkingEnabled = useModeStore((state) => state.thinkingEnabled);
   const effortLevel = useModeStore((state) => state.effortLevel);
@@ -591,22 +592,20 @@ export const ChatView: React.FC = () => {
   const ensureModelConfigured = useCallback(async (): Promise<boolean> => {
     try {
       const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
-      if (hasConfiguredDefaultRuntimeModel(settings)) {
-        return true;
-      }
+      if (hasConfiguredDefaultRuntimeModel(settings)) return true;
       if (hasConfiguredRuntimeModels(settings)) {
         toast.info(t.chat.configureModelKeyFirst);
         openSettingsTab('model');
         return false;
       }
       const provider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
-      toast.info(t.modelSetup.missingApiKey.replace('{provider}', getProviderInfo(provider)?.displayName || t.modelSetup.thisModel));
+      toast.info(t.modelSetup.missingApiKey.replace('{provider}', getLocalizedProviderDisplayName(provider, language) || t.modelSetup.thisModel));
       useAppStore.getState().openModelSettings(provider);
       return false;
     } catch {
       return true;
     }
-  }, [openSettingsTab, t]);
+  }, [openSettingsTab, t, language]);
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
@@ -979,11 +978,14 @@ export const ChatView: React.FC = () => {
               />
             </ErrorBoundary>
           )}
+        </div>
+
+        <div className="shrink-0">
+          {/* 发送中占位行占自己的高度，排在消息区之下：叠在消息区上的绝对定位会压住
+              最后一张卡片（「正在发送消息…」压在「查询日程未成功」那行上，
+              N-FIX-TURN-DURATION-ZERO-AND-SENDING-OVERLAP）。 */}
           {pendingAssistantFeedback !== null && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-4 chat-col-pad"
-              data-testid="assistant-send-placeholder"
-            >
+            <div className="w-full chat-col-pad" data-testid="assistant-send-placeholder">
               <div className="mx-auto max-w-3xl px-4">
                 <StreamingIndicator
                   startTime={pendingAssistantFeedback.startedAt}
@@ -995,9 +997,6 @@ export const ChatView: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="shrink-0">
           {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
           {researchDetected && (
             <div className="w-full chat-col-pad">
