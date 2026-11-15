@@ -66,15 +66,22 @@ describe('RoleBasicSummary via RoleDetailPage', () => {
     expect(screen.queryByTestId('role-basic-summary-intro')).toBeNull();
   });
 
-  it('never shows the internal roleId when displayName is empty', async () => {
+  it('chat-created expert (no display-name) shows the roleId the user chose as its name', async () => {
+    const d = detail(['Read']);
+    d.visual = {};
+    mockDetail(d);
+    render(<RoleDetailPage roleId="研究员" />);
+    expect((await screen.findByTestId('role-basic-summary-name')).textContent).toBe('研究员');
+  });
+
+  it('never shows a generated internal id as the name', async () => {
     const d = detail(['Read']);
     d.roleId = 'role-3f2a9c1e-7b44-4d0e-9a51-0c8d2e6b1f77';
     d.visual = {};
     mockDetail(d);
     render(<RoleDetailPage roleId={d.roleId} />);
     const name = await screen.findByTestId('role-basic-summary-name');
-    expect(name.textContent).toBe('未命名专家');
-    expect(screen.getByTestId('role-basic-summary').textContent).not.toContain(d.roleId);
+    expect(name.textContent).not.toContain('3f2a9c1e');
   });
 
   it('shows a plain line when there are no abilities', async () => {

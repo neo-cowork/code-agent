@@ -127,7 +127,7 @@ export const expertZh = {
       close: '关闭',
       loading: '正在读取工作记录…',
     },
-    basicSummary: { unnamed: '未命名专家', abilities: '能力', noAbilities: '暂时没有额外能力。' },
+    basicSummary: { abilities: '能力', noAbilities: '暂时没有额外能力。' },
     visual: {
       title: '基本信息',
       description: '这些信息展示在专家卡片和详情页，不会改动角色的人设正文。',
@@ -463,7 +463,7 @@ export const expertEn: typeof expertZh = {
       close: 'Close',
       loading: 'Loading work record…',
     },
-    basicSummary: { unnamed: 'Unnamed expert', abilities: 'Abilities', noAbilities: 'No extra abilities yet.' },
+    basicSummary: { abilities: 'Abilities', noAbilities: 'No extra abilities yet.' },
     visual: {
       title: 'Basic information',
       description: 'Shown on expert cards and this page; role prompt text is unchanged.',
