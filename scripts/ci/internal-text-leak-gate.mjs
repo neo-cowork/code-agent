@@ -63,6 +63,8 @@ const VALID_RULES = new Set([
   'sandbox_exec',
   'temp_path',
   'raw_json',
+  'cjk_in_en_ui',
+  'catalog_slug',
 ]);
 
 const USER_FACING_JSX_ATTRS = new Set([
@@ -81,6 +83,20 @@ const USER_FACING_JSX_ATTRS = new Set([
 const INTERNAL_TOOL_NAMES = [...SHARED_PATTERNS.internalToolNames].sort(
   (a, b) => b.length - a.length,
 );
+
+const catalogSource = ts.createSourceFile('skillCatalog.ts', fs.readFileSync(
+  path.join(REPO_ROOT, 'src/shared/constants/skillCatalog.ts'), 'utf8',
+), ts.ScriptTarget.Latest, true);
+const catalogNames = new Set();
+function collectCatalogNames(node) {
+  if (ts.isPropertyAssignment(node) && node.name.getText(catalogSource) === 'name'
+    && ts.isStringLiteral(node.initializer) && node.initializer.text.includes('-')) {
+    catalogNames.add(node.initializer.text);
+  }
+  ts.forEachChild(node, collectCatalogNames);
+}
+collectCatalogNames(catalogSource);
+const CATALOG_SLUG_RE = new RegExp(`(?<![A-Za-z0-9_/-])(?:${[...catalogNames].join('|')})(?![A-Za-z0-9_/-])`);
 
 const UUID_RE = new RegExp(SHARED_PATTERNS.uuid, 'i');
 const SESSION_ID_RE = new RegExp(SHARED_PATTERNS.sessionId);
@@ -101,13 +117,15 @@ const RAW_JSON_RE =
   );
 const RAW_JSON_STRINGIFY_RE = /\bJSON\.stringify\s*\(/;
 
-export function detectStaticStringLeaks(text) {
+export function detectStaticStringLeaks(text, language) {
   if (!text || !text.trim()) return [];
   const rules = [];
   const push = (rule) => {
     if (!rules.includes(rule)) rules.push(rule);
   };
 
+  if (language === 'en' && /[\u3400-\u9fff\uf900-\ufaff]/.test(text)) push('cjk_in_en_ui');
+  if (CATALOG_SLUG_RE.test(text)) push('catalog_slug');
   if (UUID_RE.test(text)) push('uuid');
   if (SESSION_ID_RE.test(text) || SESSION_PREFIX_RE.test(text)) push('session_id');
   if (CALL_ID_RE.test(text) || CALL_PREFIX_RE.test(text)) push('call_id');
