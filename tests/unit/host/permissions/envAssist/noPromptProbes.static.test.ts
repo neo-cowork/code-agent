@@ -8,6 +8,7 @@ const probes = 'src/host/permissions/envAssist/probes/';
 const grantFiles = new Set([
   'src/host/permissions/envAssist/grants/requestGrant.ts',
   'src/host/permissions/envAssist/grants/shellPromptingBridge.ts',
+  'src/host/permissions/envAssist/grants/cuaHelperGrantBridge.ts',
 ]);
 
 // Existing host exceptions are frozen by exact line, never blanket file exemptions.
