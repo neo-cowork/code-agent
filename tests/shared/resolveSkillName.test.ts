@@ -23,3 +23,8 @@ it.each(['zh', 'en'] as const)('removes identifiers from names without placehold
   }
   expect(humanizeInternalText('Report (ID)', language, { omitIds: true }).text).toBe('Report (ID)');
 });
+
+
+it('keeps user file names that resemble catalog ids', () => {
+  expect(humanizeInternalText('Read weekly-report-synthesis.md', 'en').text).toBe('Read weekly-report-synthesis.md');
+});

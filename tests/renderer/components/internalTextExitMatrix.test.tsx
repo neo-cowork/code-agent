@@ -131,7 +131,7 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
     assertClean('notification', `${sanitizeNotificationText(body)} ${visibleChrome(container)}`, language);
   });
   it('4 active task status bar', () => {
-    useSessionStore.setState({ sessions: [{ id: 'weekly', title, modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' }, createdAt: 1, updatedAt: 1 }] });
+    useSessionStore.setState({ sessions: [{ id: 'weekly', title, messageCount: 1, turnCount: 1, modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' }, createdAt: 1, updatedAt: 1 }] });
     useTaskStore.setState({ sessionStates: { weekly: { status: 'running', startTime: Date.now() } }, stats: { running: 1, queued: 0, available: 3, maxConcurrent: 3 } });
     const { container } = render(<TaskStatusBar />);
     assertClean('status-bar', visibleChrome(container), language);

@@ -96,7 +96,7 @@ function collectCatalogNames(node) {
   ts.forEachChild(node, collectCatalogNames);
 }
 collectCatalogNames(catalogSource);
-const CATALOG_SLUG_RE = new RegExp(`(?<![A-Za-z0-9_/-])(?:${[...catalogNames].join('|')})(?![A-Za-z0-9_/-])`);
+const CATALOG_SLUG_RE = new RegExp(`(?<![A-Za-z0-9_./-])(?:${[...catalogNames].join('|')})(?![A-Za-z0-9_/-]|\\.[A-Za-z0-9])`);
 
 const UUID_RE = new RegExp(SHARED_PATTERNS.uuid, 'i');
 const SESSION_ID_RE = new RegExp(SHARED_PATTERNS.sessionId);

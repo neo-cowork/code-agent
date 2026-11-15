@@ -7,6 +7,9 @@ describe('render language and catalog leak detection', () => {
       expect(detectInternalTextLeaks(`Used ${slug}`)).toContainEqual({ format: 'catalog_slug', sample: slug });
     },
   );
+  it('detects a catalog id before sentence punctuation without renaming a user file', () => {
+    expect(detectInternalTextLeaks('Used weekly-report-synthesis.')).toContainEqual({ format: 'catalog_slug', sample: 'weekly-report-synthesis' });
+  });
   it('detects Chinese chrome in English renders, with an explicit language', () => {
     expect(detectInternalTextLeaks('Report ready 已完成', 'en')).toEqual([{ format: 'cjk_in_en_ui', sample: '已完成' }]);
     expect(detectInternalTextLeaks('Report ready', 'en')).toEqual([]);
@@ -15,8 +18,7 @@ describe('render language and catalog leak detection', () => {
   });
   it.each(['my-custom-skill', 'weekly report synthesis', 'weekly-report-synthesis-extra', 'weekly-report-synthesis.md'])(
     'keeps ordinary/user names and longer tokens: %s', (text) => {
-      // A filename with a catalog id still exposes that id; arbitrary slugs do not.
-      expect(detectInternalTextLeaks(text).some((hit) => hit.format === 'catalog_slug')).toBe(text.endsWith('.md'));
+      expect(detectInternalTextLeaks(text)).toEqual([]);
     },
   );
   it('detects untranslated completion receipts in Chinese chrome', () => {

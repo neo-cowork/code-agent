@@ -22,7 +22,7 @@ const catalogNames = [...new Set([
   ...SKILL_ROLE_BUNDLES.flatMap((bundle) => bundle.skills.map((skill) => skill.name)),
 ])].filter((name) => name.includes('-')).sort((a, b) => b.length - a.length);
 export const CATALOG_SLUG_GLOBAL_RE = new RegExp(
-  `(?<![A-Za-z0-9_/-])(?:${catalogNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?![A-Za-z0-9_/-])`, 'g',
+  `(?<![A-Za-z0-9_./-])(?:${catalogNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})(?![A-Za-z0-9_/-]|\\.[A-Za-z0-9])`, 'g',
 );
 const CJK_GLOBAL_RE = /[\u3400-\u9fff\uf900-\ufaff]+/g;
 
