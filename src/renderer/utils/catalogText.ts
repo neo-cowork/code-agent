@@ -12,7 +12,7 @@ export function translateCatalogText(text: string, language: Language): string;
 export function translateCatalogText(text: string | undefined, language: Language): string | undefined;
 export function translateCatalogText(text: string | undefined, language: Language): string | undefined {
   if (language !== 'en' || !text) return text;
-  return CATALOG_TEXT_EN[text] ?? text;
+  return CATALOG_TEXT_EN.get(text) ?? text;
 }
 
 /** 连接器目录（内置或云端下发的整份 payload）：把会上屏的字段按语言换好，其余字段原样。 */

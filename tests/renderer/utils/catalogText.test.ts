@@ -56,7 +56,8 @@ describe('能力中心目录数据跟随界面语言（FB-1301）', () => {
   });
 
   it('英文表里的每一条译文本身都不含中文', () => {
-    expect(Object.entries(CATALOG_TEXT_EN).filter(([, en]) => HAN.test(en) || !en.trim())).toEqual([]);
+    expect([...CATALOG_TEXT_EN].filter(([, en]) => HAN.test(en) || !en.trim())).toEqual([]);
+    expect(CATALOG_TEXT_EN.size).toBeGreaterThan(300);
   });
 
   it('中文界面原样返回；表里没有的（用户自己的内容）两种语言都原样返回', () => {
