@@ -50,6 +50,8 @@ import { resetPermissionModeManager } from '../../../../src/host/permissions/mod
 import { getPolicyEngine, resetPolicyEngine } from '../../../../src/host/permissions/policyEngine';
 import { getDecisionHistory, resetDecisionHistory } from '../../../../src/host/security/decisionHistory';
 import { getConfigService } from '../../../../src/host/services/core/configService';
+import { tryReadOnlyProbe } from '../../../../src/host/tools/readOnlyProbeHook';
+import * as readOnlyProbeCompiler from '../../../../src/host/security/readOnlyProbePlan';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
 
 const SESSION = 'ro-probe-session';
@@ -315,6 +317,17 @@ print(os.listdir('${fx}/link'))
       await run(historical()['1129']);
       expect(permissionAsks.length).toBeGreaterThan(0);
       expect(probeRows()).toHaveLength(0);
+    });
+
+    it('does not call the compiler through tryReadOnlyProbe when readOnlyProbePlan is false', async () => {
+      const settings = getConfigService().getSettings();
+      vi.spyOn(getConfigService(), 'getSettings').mockReturnValue({
+        ...settings, permissions: { ...settings.permissions, readOnlyProbePlan: false },
+      });
+      const compiler = vi.spyOn(readOnlyProbeCompiler, 'compileReadOnlyProbePlan');
+
+      expect(await tryReadOnlyProbe({ command: 'ls', workingDirectory: fx })).toBeNull();
+      expect(compiler).not.toHaveBeenCalled();
     });
 
     it('设置 permissions.readOnlyProbePlan=false', async () => {
