@@ -47,6 +47,7 @@ function harness() {
     getPageContent: vi.fn(async () => ({ url: tab.url, title: tab.title, text: 'Invoice portal', links: [] })),
     ensureSession: vi.fn(async () => { running = true; return {}; }),
     isRunning: () => running,
+    isProcessAlive: () => running,
     getActiveTab: () => (running ? { ...tab } : null),
     listTabs: () => [{ ...tab }],
     navigate,

@@ -149,6 +149,13 @@ export const MEMORY_CONSOLIDATION = {
   AUDIT_FILENAME: 'consolidation-audit.jsonl',
 } as const;
 
+/** Built-in maintenance is not a user-created schedule and must not keep the app resident. */
+export const BUILTIN_MAINTENANCE_JOB_TAGS = {
+  LIGHT_MEMORY: MEMORY_CONSOLIDATION.JOB_TAG,
+  DREAM_MEMORY: 'dream-memory-consolidation',
+  DISTILL_WORKFLOW: 'distill-workflow-packaging',
+} as const;
+
 /** 持久化角色资产（roles/<name>/ 三层记忆 + 履历 + 写回，内部文档） */
 export const ROLE_ASSETS = {
   /** 角色资产根目录名（相对 getUserConfigDir()）：~/.code-agent/roles/ */

@@ -19,57 +19,12 @@ interface AlignmentComparisonProps {
   onBack: () => void;
 }
 
-// 对比示例数据 - 更贴近日常的例子
-const comparisonExamples = [
-  {
-    prompt: '如何做一道简单的番茄炒蛋？',
-    category: '生活问答',
-    responses: {
-      base: '番茄炒蛋是一道常见的中国菜，需要番茄和鸡蛋。番茄富含维生素C，鸡蛋含有蛋白质。中国人经常吃这道菜，它很受欢迎。番茄的英文是tomato…',
-      sft: '番茄炒蛋的做法：\n1. 准备：2个番茄、3个鸡蛋\n2. 鸡蛋打散加盐\n3. 番茄切块\n4. 先炒蛋盛出\n5. 炒番茄，加蛋翻炒\n6. 加盐调味',
-      rlhf: '番茄炒蛋超简单！\n\n材料：番茄2个、鸡蛋3个\n\n步骤：\n1. 蛋打散加点盐\n2. 番茄切块（熟的更好吃）\n3. 油热炒蛋，嫩一点盛出\n4. 炒番茄出汁，放蛋\n5. 加盐，甜口加糖\n\n小技巧：蛋不要炒老，嫩嫩的最好！',
-    },
-    comments: {
-      base: '跑题了，没说怎么做',
-      sft: '步骤清楚，但有点干巴巴',
-      rlhf: '既实用又贴心，还有小技巧',
-    },
-  },
-  {
-    prompt: '我今天心情不好',
-    category: '情感交流',
-    responses: {
-      base: '心情不好是一种情绪状态。情绪受到多种因素影响，包括生理、心理和环境因素。研究表明，运动可以改善心情…',
-      sft: '很抱歉听到你心情不好。建议：\n1. 深呼吸放松\n2. 和朋友聊天\n3. 做喜欢的事\n4. 适当运动\n5. 保持睡眠\n\n希望你能好起来。',
-      rlhf: '抱抱你 💙\n\n有时候就是会有这样的时刻，很正常。想说说发生什么了吗？\n\n不想说也没关系。也许可以：\n- 泡杯热茶暖暖心\n- 听听喜欢的歌\n- 或者就躺一会儿\n\n低落会过去的，对自己温柔一点 🌟',
-    },
-    comments: {
-      base: '像在讲科普，冷冰冰的',
-      sft: '给了建议，但缺少温度',
-      rlhf: '有温度、有共情、很贴心',
-    },
-  },
-  {
-    prompt: '推荐一部电影',
-    category: '推荐请求',
-    responses: {
-      base: '电影是一种艺术形式。电影产业起源于19世纪末。好莱坞是美国电影工业的中心。电影可以分为剧情片、喜剧片、动作片等类型…',
-      sft: '推荐《肖申克的救赎》\n- 豆瓣评分：9.7\n- 类型：剧情\n- 讲述囚犯安迪的故事\n- 关于希望和自由',
-      rlhf: '你喜欢什么类型呀？\n\n治愈系 → 《千与千寻》\n烧脑悬疑 → 《盗梦空间》\n幽默搞笑 → 《功夫》\n感动催泪 → 《寻梦环游记》\n\n告诉我你现在的心情，我帮你挑一个最适合的！',
-    },
-    comments: {
-      base: '完全没有推荐电影',
-      sft: '推荐了，但没考虑我的喜好',
-      rlhf: '先问喜好再推荐，很周到',
-    },
-  },
-];
-
 export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack }) => {
   const { t } = useI18n();
   const s = t.labAlignment.comparison;
   const common = t.labAlignment.common;
   const [selectedExample, setSelectedExample] = useState(0);
+  const comparisonExamples = s.examples;
   const example = comparisonExamples[selectedExample];
 
   return (
@@ -247,8 +202,12 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.meaning}</span>
+                {term.meaning && term.meaning !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.meaning}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
