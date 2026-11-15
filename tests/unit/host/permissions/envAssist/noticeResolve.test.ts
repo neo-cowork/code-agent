@@ -104,7 +104,7 @@ describe('env-assist card closes once the permission is granted', () => {
   it('③model guidance (non-parking runs only) points at the card, asks to resend, and never promises a follow-up', async () => {
     const result = { success: false, error: 'denied', metadata: { code: 'not_authorized' } } as { error?: string };
     await publishEnvAssistToolNotice({ toolName: 'calendar', result: result as never, sessionId: 's', runId: 'run-2', onEvent: () => undefined });
-    expect(result.error).toContain('allow it with that button on the card and then send the request again');
+    expect(result.error).toContain('allow it with that button on the card and then ask again');
     expect(result.error).toContain('Do not claim you will check or continue on your own');
   });
 });

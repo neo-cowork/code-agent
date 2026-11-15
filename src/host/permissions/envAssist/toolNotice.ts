@@ -38,7 +38,7 @@ export async function publishEnvAssistToolNotice(input: {
     // Only runs that cannot park reach this text (a parked calendar run never shows it to the model), and nothing
     // resumes them: the honest follow-up is asking again. The card closes itself once granted.
     notice.action
-      ? "The card has an allow button. In one short sentence in the user's language, tell them to allow it with that button on the card and then send the request again. Do not claim you will check or continue on your own. Do not suggest a different authorization route."
+      ? "The card has an allow button. In one short sentence in the user's language, tell them to allow it with that button on the card and then ask again. Do not claim you will check or continue on your own. Do not suggest a different authorization route."
       : "The card has no button because opening settings is unavailable here. In one short sentence in the user's language, explain that permission must be granted on the desktop and then ask again. Do not claim a button is available.",
   ].join(' ');
   input.result.output = undefined;
