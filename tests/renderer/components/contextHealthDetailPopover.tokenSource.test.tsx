@@ -7,7 +7,7 @@
 // ============================================================================
 
 import React from 'react';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextHealthState } from '../../../src/shared/contract/contextHealth';
 
@@ -44,7 +44,7 @@ const pillMocks = vi.hoisted(() => ({
     setActiveWorkbenchTab: vi.fn(),
     setWorkbenchHighlight: vi.fn(),
     // useI18n() 无 selector 整取 store，这几个字段得在。
-    language: 'zh' as const,
+    language: 'zh' as 'zh' | 'en',
     setLanguage: vi.fn(),
     cloudUIStrings: undefined,
   },
@@ -108,17 +108,22 @@ import { ContextUsagePill } from '../../../src/renderer/components/features/chat
 import { useContextCompactionStore } from '../../../src/renderer/stores/contextCompactionStore';
 
 function openPopover() {
-  render(<ContextUsagePill />);
-  fireEvent.click(screen.getByRole('button', { name: '上下文使用' }));
+  render(<form><ContextUsagePill /></form>);
+  fireEvent.click(screen.getByRole('button', { name: /上下文使用|Context usage/ }));
 }
 
 describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    pillMocks.appState.language = 'zh';
     useContextCompactionStore.setState({ status: 'idle', result: null, error: null, updatedAt: 0 });
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it('provider 实报轮次：显示估/实偏差，不显示「估算」标注', () => {
     // 估算 12000 vs 实报 10000 → 偏差 +20.0%
@@ -129,7 +134,8 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
     openPopover();
 
     const deviation = screen.getByTestId('context-health-deviation');
-    expect(deviation.textContent).toContain('+20.0%');
+    expect(deviation.textContent).toBe('用量为估算值，可能有出入');
+    expect(deviation.textContent).not.toMatch(/\d%/);
     expect(screen.queryByTestId('context-health-estimated-badge')).toBeNull();
   });
 
@@ -160,7 +166,85 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
       estimatedTokens: 10500,
     });
     openPopover();
-    expect(screen.getByTestId('context-health-deviation').textContent).toContain('+5.0%');
+    expect(screen.getByTestId('context-health-deviation').textContent).toBe('用量为估算值，可能有出入');
+  });
+
+  it.each(['zh', 'en'] as const)('plain language for a +280.6 percent estimate and no fee placeholder (%s)', (language) => {
+    pillMocks.appState.language = language;
+    pillMocks.appState.contextHealth = makeHealth({
+      tokenSource: 'provider',
+      currentTokens: 10000,
+      estimatedTokens: 38060,
+      systemPromptCacheCost: {
+        status: 'known_cached', tokens: 1000, costUsd: 0.0001, inputCostPercent: 12,
+      },
+    });
+    openPopover();
+    const deviation = screen.getByTestId('context-health-deviation');
+    expect(deviation.textContent).toBe(language === 'zh'
+      ? '用量为估算值，可能有出入'
+      : 'Usage is an estimate and may be off');
+    expect(deviation.textContent).not.toMatch(/\d%/);
+    expect(deviation.title).toBe(language === 'zh'
+      ? '这是 Neo 自己估的用量，和模型服务商实际统计的会有差距'
+      : "Neo's own estimate; the provider's real count may differ");
+    const ranking = screen.getByTestId('context-cost-ranking-status');
+    expect(ranking.textContent).toBe(language === 'zh' ? '占用最多：对话' : 'Most space used: Conversation');
+    expect(screen.getByTestId('context-health-detail').textContent)
+      .not.toMatch(/费用最多|Highest fee|待确认|To be confirmed/);
+  });
+
+  it('clamps to composer space on open, window resize, container resize and reopen', () => {
+    let composerLeft = 260;
+    let ringRight = 500;
+    let resized: ResizeObserverCallback | undefined;
+    const disconnect = vi.fn();
+    const observe = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resized = callback; }
+      observe = observe;
+      disconnect = disconnect;
+    });
+    const nativeRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === 'context-health-detail') {
+        // jsdom has no CSS layout: project the declared width into the mocked anchor space.
+        const width = this.style.width ? Number.parseFloat(this.style.width)
+          : this.classList.contains('w-[440px]') ? 440 : 0;
+        return new DOMRect(ringRight - width, 300, width, 400);
+      }
+      if (this.tagName === 'FORM') return new DOMRect(composerLeft, 700, 650, 100);
+      if (this.classList.contains('relative') && this.querySelector('button')) {
+        return new DOMRect(ringRight - 32, 750, 32, 32);
+      }
+      return nativeRect.call(this);
+    });
+    pillMocks.appState.contextHealth = makeHealth({ tokenSource: 'provider' });
+    openPopover();
+    const assertInside = (expectedWidth: number) => {
+      const panel = screen.getByTestId('context-health-detail');
+      const rect = panel.getBoundingClientRect();
+      expect(rect.left).toBeGreaterThanOrEqual(composerLeft);
+      expect(rect.right).toBeLessThanOrEqual(ringRight);
+      expect(rect.width).toBe(expectedWidth);
+      expect(panel.className).not.toContain('w-[440px]');
+    };
+    assertInside(240);
+    ringRight = 450;
+    act(() => window.dispatchEvent(new Event('resize')));
+    assertInside(190);
+    composerLeft = 300;
+    act(() => resized?.([], {} as ResizeObserver));
+    assertInside(150);
+    ringRight = 1000;
+    act(() => resized?.([], {} as ResizeObserver));
+    assertInside(440);
+    expect(observe).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    ringRight = 600;
+    fireEvent.click(screen.getByRole('button', { name: '上下文使用' }));
+    assertInside(300);
   });
 
   it('窗口兜底：停用已用占比，标上限未获取', () => {
