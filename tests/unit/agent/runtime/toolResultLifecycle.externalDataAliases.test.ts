@@ -65,6 +65,11 @@ import { calendarSchema } from '../../../../src/host/tools/modules/connectors/ca
 import { remindersSchema } from '../../../../src/host/tools/modules/connectors/reminders.schema';
 import { tmeetMeetingListSchema } from '../../../../src/host/tools/modules/connectors/tmeetMeetingList.schema';
 import { tmeetMeetingSearchSchema } from '../../../../src/host/tools/modules/connectors/tmeetMeetingSearch.schema';
+import { tmeetRecordListSchema } from '../../../../src/host/tools/modules/connectors/tmeetRecordList.schema';
+import { tmeetRecordReadSchema } from '../../../../src/host/tools/modules/connectors/tmeetRecordRead.schema';
+import { feishuMinutesSearchSchema } from '../../../../src/host/tools/modules/connectors/feishuMinutesSearch.schema';
+import { feishuMinutesReadSchema } from '../../../../src/host/tools/modules/connectors/feishuMinutesRead.schema';
+import { meetingRecordsSchema } from '../../../../src/host/tools/modules/lightMemory/meetingRecords.schema';
 import { mailSendSchema } from '../../../../src/host/tools/modules/connectors/mailSend.schema';
 import { mailDraftSchema } from '../../../../src/host/tools/modules/connectors/mailDraft.schema';
 import { calendarCreateEventSchema } from '../../../../src/host/tools/modules/connectors/calendarCreateEvent.schema';
@@ -104,6 +109,11 @@ const UNTRUSTED_CONTENT_SCHEMAS = [
   remindersSchema,
   tmeetMeetingListSchema,
   tmeetMeetingSearchSchema,
+  tmeetRecordListSchema,
+  tmeetRecordReadSchema,
+  feishuMinutesSearchSchema,
+  feishuMinutesReadSchema,
+  meetingRecordsSchema,
 ] satisfies readonly ToolSchema[];
 
 const EXPECTED_UNTRUSTED_CONTENT_POLICIES: Readonly<Record<string, UntrustedContentPolicy>> = {
@@ -134,6 +144,12 @@ const EXPECTED_UNTRUSTED_CONTENT_POLICIES: Readonly<Record<string, UntrustedCont
   reminders: 'annotate',
   tmeetMeetingList: 'block',
   tmeetMeetingSearch: 'block',
+  // 会议转写是参会人说的话：像指令的句子标注来源保留，block 会让整份转写读不出来、纪要出不了
+  tmeetRecordList: 'annotate',
+  tmeetRecordRead: 'annotate',
+  feishuMinutesSearch: 'annotate',
+  feishuMinutesRead: 'annotate',
+  meeting_records: 'annotate',
 };
 
 function findSchemaFiles(directory: string): string[] {

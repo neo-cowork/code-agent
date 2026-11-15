@@ -80,8 +80,8 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   return askDenied
-    ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
-    : 'Continue without those tools. AskUserQuestion remains available; call it directly when the current task requires user input.';
+    ? 'Carry on another way. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
+    : 'Carry on another way. AskUserQuestion remains available; call it directly when the current task requires user input.';
 }
 
 export function filterToolsByRunPolicy(

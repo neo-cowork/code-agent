@@ -45,6 +45,8 @@ export interface PermissionRequestDetails {
   toolName?: string;
   connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
   purpose?: string;
+  userRequest?: { text: string; truncated: boolean };
+  startedByAutomation?: boolean;
   commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];
   affectedPath?: string;

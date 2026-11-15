@@ -621,7 +621,12 @@
             "tmeetMeetingListUpcoming",
             "tmeetMeetingListEnded",
             "tmeetMeetingCreate",
-            "tmeetMeetingSearch"
+            "tmeetMeetingSearch",
+            "tmeetRecordList",
+            "tmeetRecordRead",
+            "feishuMinutesSearch",
+            "feishuMinutesRead",
+            "meetingRecords"
           ]
         },
         "targetContext": {
@@ -1160,6 +1165,25 @@
             },
             "purpose": {
               "type": "string"
+            },
+            "userRequest": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "text",
+                "truncated"
+              ],
+              "additionalProperties": false
+            },
+            "startedByAutomation": {
+              "type": "boolean"
             },
             "commandRiskLevel": {
               "type": "string",

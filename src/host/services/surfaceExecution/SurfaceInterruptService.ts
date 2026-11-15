@@ -1,7 +1,7 @@
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
-import { forgetBrowserTakeoverCapExpired, noteBrowserHumanReleased, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
+import { forgetBrowserTakeoverCapExpired, noteBrowserHumanReleased, waitingHumanModelGuidance } from './browserHumanTakeoverWait';
 
 interface ActiveOperation {
   subject: SurfaceGrantSubjectV1;
@@ -39,7 +39,7 @@ export class SurfaceInterruptService {
     if (session.state !== 'running') {
       throw new SurfaceExecutionRuntimeError({
         code: session.state === 'stopping' ? 'SURFACE_USER_ABORTED' : 'SURFACE_SESSION_BUSY',
-        message: `Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
+        message: `Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${waitingHumanModelGuidance(session.surface)}` : ''),
         phase: 'prepare',
         retryable: session.state === 'paused' || session.state === 'waiting_human',
         userActionRequired: session.state === 'waiting_human',

@@ -4,15 +4,19 @@ import type {
   ComputerUseStateViewV1,
 } from '../../../shared/contract/desktop';
 import type {
+  InteractiveSurfaceSessionV1,
   SurfaceExecutionEventV1,
   SurfaceExpectationV1,
   SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
 import type { CuaInputLockLifecycleEvent } from '../../mcp/cuaSessionLock';
+import { beginApprovalWait, endApprovalWait } from '../../tools/toolExecutionTelemetry';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
+import { waitForSurfaceHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import type { SurfaceEventHub } from './SurfaceEventHub';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import type { SurfaceSessionManager } from './SurfaceSessionManager';
+import { subjectFor } from './surfaceRuntimeHelpers';
 
 export function computerTargetFromState(
   state: ComputerUseStateViewV1,
@@ -131,4 +135,58 @@ function computerInputLockSummary(event: CuaInputLockLifecycleEvent): string {
   return event.status === 'succeeded'
     ? 'Computer input ownership acquired'
     : 'Computer input ownership is unavailable';
+}
+
+export async function awaitComputerHumanTakeoverRelease(input: {
+  sessions: SurfaceSessionManager;
+  subject: SurfaceGrantSubjectV1;
+  conversationId: string;
+  operationId: string;
+  toolCallId?: string;
+  parentSignal?: AbortSignal;
+}): Promise<InteractiveSurfaceSessionV1> {
+  beginApprovalWait(input.toolCallId, input.conversationId);
+  try {
+    return await waitForSurfaceHumanTakeoverRelease({
+      readSession: () => input.sessions.requireOwned(input.subject.sessionId, input.subject),
+      operationId: input.operationId,
+      ...(input.parentSignal ? { parentSignal: input.parentSignal } : {}),
+    });
+  } finally {
+    endApprovalWait(input.toolCallId, input.conversationId);
+  }
+}
+
+export function findActiveOwnedComputerSession(
+  sessions: SurfaceSessionManager,
+  identity: { conversationId: string; runId: string; agentId: string },
+  provider = 'cua-driver',
+): InteractiveSurfaceSessionV1 | null {
+  return sessions.findActive({
+    conversationId: identity.conversationId,
+    runId: identity.runId,
+    agentId: identity.agentId,
+    surface: 'computer',
+    provider,
+  }) ?? null;
+}
+
+export async function awaitOwnedComputerSessionReady(input: {
+  sessions: SurfaceSessionManager;
+  identity: { conversationId: string; runId: string; agentId: string };
+  operationId: string;
+  provider?: string;
+  toolCallId?: string;
+  parentSignal?: AbortSignal;
+}): Promise<InteractiveSurfaceSessionV1 | null> {
+  const session = findActiveOwnedComputerSession(input.sessions, input.identity, input.provider);
+  if (session?.state !== 'waiting_human') return session;
+  return awaitComputerHumanTakeoverRelease({
+    sessions: input.sessions,
+    subject: subjectFor(session),
+    conversationId: input.identity.conversationId,
+    operationId: input.operationId,
+    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+    ...(input.parentSignal ? { parentSignal: input.parentSignal } : {}),
+  });
 }

@@ -42,6 +42,10 @@ export interface DelegationPresentation {
   sessionId?: string;
   /** delegate_session 回执：委托目标会话 id（来自工具结果 metadata，模型不可见）。 */
   targetSessionId?: string;
+  /** 失败回执「查看详情」的成员 id（agentTree 节点 id / 后台任务 id），与成员条 chip 打开的是同一个成员视图。 */
+  memberId?: string;
+  /** 失败回执「重试」草稿里的任务标题（来自派发时的任务描述，不是角色名）。 */
+  retryTitle?: string;
 }
 
 const TASK_STATS_MARKER = '\nStats:\n';
@@ -134,13 +138,19 @@ export function toDelegationDisplayToolCall(
   const result = toolCall.result;
   const shortDescription = toolCall.shortDescription;
   let output = result?.output;
+  let handedOff = false;
   if (typeof output === 'string') {
     if (result?.success) {
       if (/^Agent \[[^\n]+\] (?:exceeded foreground budget and continues in background|spawned in background):/.test(output)
         || /^已在后台开始处理「/.test(output)) {
-        output = presentation && presentation.state !== 'working'
-          ? t.chat.delegationReceipt[presentation.state]
-          : t.chat.delegationReceipt.working;
+        // 展示副本里英文标记被改写掉了：把「已交给后台」这一事实留在 metadata，状态词才不会退成「已完成」。
+        handedOff = true;
+        // 没有子代理的实时事实（树未载入/节点已不在）时不下断言：既不说「工作中」也不说「已完成」。
+        output = !presentation
+          ? ''
+          : presentation.state === 'working'
+            ? t.chat.delegationReceipt.working
+            : t.chat.delegationReceipt[presentation.state];
       } else {
         output = toolCall.name === 'wait_agent' ? waitReport(output, t) : reportBody(output);
       }
@@ -157,7 +167,7 @@ export function toDelegationDisplayToolCall(
         ? undefined
         : displayPaths(shortDescription),
     } : {}),
-    ...(result ? { result: { ...result, output } } : {}),
+    ...(result ? { result: { ...result, output, ...(handedOff ? { metadata: { ...result.metadata, background: true } } : {}) } } : {}),
   };
 }
 
@@ -206,6 +216,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
       return output ? [output] : [];
     }),
     failure: state === 'failed' ? backgroundTaskFailureCopy(task, t) ?? undefined : undefined,
+    memberId: task.id,
     toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
@@ -215,6 +226,18 @@ function extractSpawnAgentId(toolCall: ToolCall): string | undefined {
   if (typeof metadataAgentId === 'string' && metadataAgentId.trim()) return metadataAgentId.trim();
   const match = toolCall.result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m);
   return match?.[1];
+}
+
+// 重启后 failureCode/Reason 丢失时 progress 可能是子代理最后一段原始工具回显（「Tool results: …」），
+// 那不是失败原因；宁可落「原因暂不明确」，也不能把它当原因展示给用户。
+const RAW_TOOL_DUMP = /^Tool results:|^Tool \w+: (?:Success|Error|Failed)\b/;
+
+function agentFailureReason(node: AgentTreeNode, t: Translations): string | undefined {
+  const progress = node.progress?.trim();
+  const rawDump = Boolean(progress && RAW_TOOL_DUMP.test(progress));
+  const reason = node.failureReason || (rawDump ? undefined : node.progress);
+  return agentFailureCopy(node.failureCode, t, reason)
+    ?? (rawDump ? agentFailureCopy(AgentFailureCode.Unknown, t) ?? undefined : undefined);
 }
 
 function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation {
@@ -239,10 +262,21 @@ function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation
         kind: ref.ref.startsWith('http://') || ref.ref.startsWith('https://') ? 'url' as const : 'file' as const,
       }];
     }),
-    failure: state === 'failed' ? agentFailureCopy(node.failureCode, t, node.failureReason || node.progress) ?? undefined : undefined,
+    failure: state === 'failed' ? agentFailureReason(node, t) : undefined,
+    memberId: node.id,
     branch: terminal && node.worktreeState.status === 'preserved' ? node.worktreeState.branch : undefined,
     failureCode: state === 'failed' ? node.failureCode : undefined,
   };
+}
+
+function retryTitleFrom(toolCall: ToolCall): string | undefined {
+  const args = toolCall.arguments ?? {};
+  const raw = [args.title, args.task, args.description, args.prompt].find((value) => typeof value === 'string' && value.trim());
+  if (typeof raw !== 'string') return undefined;
+  const line = raw.split('\n').map((part) => part.trim()).find((part) => part && !/^\[工作目录[:：]/.test(part));
+  if (!line) return undefined;
+  const title = displayPaths(line);
+  return title.length > 60 ? `${title.slice(0, 60)}…` : title;
 }
 
 export function deriveDelegationPresentation(
@@ -250,6 +284,17 @@ export function deriveDelegationPresentation(
   tasks: Task[],
   agentNodes: AgentTreeNode[],
   t: Translations = languages[useAppStore.getState().language] ?? languages.zh,
+): DelegationPresentation | null {
+  const presentation = derivePresentation(toolCall, tasks, agentNodes, t);
+  if (presentation?.state !== 'failed') return presentation;
+  return { ...presentation, retryTitle: retryTitleFrom(toolCall) ?? presentation.title };
+}
+
+function derivePresentation(
+  toolCall: ToolCall,
+  tasks: Task[],
+  agentNodes: AgentTreeNode[],
+  t: Translations,
 ): DelegationPresentation | null {
   if (!toolCall.result) return null;
   if (toolCall.name === 'delegate_session') {
