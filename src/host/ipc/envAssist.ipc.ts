@@ -9,7 +9,7 @@ import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/se
 import { createCuaHelperGrantBridge, type CuaHelperGrantBridge } from '../permissions/envAssist/grants/cuaHelperGrantBridge';
 import { createDefaultGrantBridge, mintClickToken, requestGrant, requestHelperGrant } from '../permissions/envAssist/grants/requestGrant';
 import { accessibilityProbe, automationProbe, calendarAccess, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
-import { enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps } from '../permissions/envAssist/calendarSetting';
+import { enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps, type PendingEnable } from '../permissions/envAssist/calendarSetting';
 import { readCuaHelperPermissionState, type CuaHelperPermissionState } from '../permissions/envAssist/cua/helperPermissionState';
 import { cuaHelperProbe } from '../permissions/envAssist/probes/cuaHelperProbe';
 import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
@@ -54,6 +54,14 @@ async function defaultCalendarReminderSetting(): Promise<NonNullable<EnvAssistDe
     read: () => config.getSettings().meeting?.calendarReminder === true,
     write: (on) => config.updateSettings({ meeting: { calendarReminder: on } }),
   };
+}
+
+/** One pending-enable flag per installed handler set (one per process in production). */
+const calendarPending = new WeakMap<EnvAssistDependencies, PendingEnable>();
+function pendingFor(deps: EnvAssistDependencies): PendingEnable {
+  let state = calendarPending.get(deps);
+  if (!state) calendarPending.set(deps, state = { pending: false });
+  return state;
 }
 
 async function calendarSettingDeps(deps: EnvAssistDependencies): Promise<CalendarSettingDeps> {
@@ -132,12 +140,12 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
   /** Settings switch off→on (the click): passive check → one-shot dialog → poll; the host writes the setting only when granted. */
   enableSettingGrant: async (deps: EnvAssistDependencies, payload: unknown): Promise<CalendarSettingResult> => {
     if (!EnvAssistSchemas.settingGrant.safeParse(payload).success) return { on: false, reason: 'unavailable' };
-    return enableCalendarReminder(await calendarSettingDeps(deps));
+    return enableCalendarReminder(await calendarSettingDeps(deps), pendingFor(deps));
   },
   /** Settings page mount / window focus: passive only, never prompts. */
   recheckSettingGrant: async (deps: EnvAssistDependencies, payload: unknown): Promise<CalendarSettingResult> => {
     if (!EnvAssistSchemas.settingGrant.safeParse(payload).success) return { on: false, reason: 'unavailable' };
-    return recheckCalendarReminder(await calendarSettingDeps(deps));
+    return recheckCalendarReminder(await calendarSettingDeps(deps), pendingFor(deps));
   },
   act: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
     const parsed = EnvAssistSchemas.act.safeParse(payload);

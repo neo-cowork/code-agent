@@ -16,36 +16,38 @@ export interface CalendarSettingDeps {
   now?: () => number;
 }
 
-// 发起过、但 60 秒确认窗口里还没等到答复的那次开启请求（验收补充 A）。
-// ponytail: 只在内存里记，重启 Neo 就忘；跨重启补开要落盘时再加。
-let pendingEnable = false;
+/**
+ * 发起过、但 60 秒确认窗口里还没等到答复的那次开启请求（验收补充 A）。
+ * ponytail: 只在内存里记，重启 Neo 就忘；跨重启补开要落盘时再加。
+ */
+export interface PendingEnable { pending: boolean }
 
 const settled = (access: CalendarAccess): access is 'granted' | 'denied' | 'restricted' | 'write_only' =>
   access === 'granted' || access === 'denied' || access === 'restricted' || access === 'write_only';
 
-async function finish(deps: CalendarSettingDeps, access: CalendarAccess): Promise<CalendarSettingResult> {
+async function finish(deps: CalendarSettingDeps, state: PendingEnable, access: CalendarAccess): Promise<CalendarSettingResult> {
   if (access === 'granted') {
-    pendingEnable = false;
+    state.pending = false;
     await deps.writeSetting(true);
     return { on: true };
   }
   if (access === 'denied' || access === 'write_only') {
-    pendingEnable = false;
+    state.pending = false;
     // 拒绝过的不会再弹框，只能去系统设置改；受限（家长控制/公司管理）打开也改不了，不打开
     const opened = deps.available() && await deps.open('calendars');
     return { on: false, reason: access, opened };
   }
-  if (access === 'restricted') pendingEnable = false;
+  if (access === 'restricted') state.pending = false;
   return { on: false, reason: access };
 }
 
 /** 用户把开关从关点到开 */
-export async function enableCalendarReminder(deps: CalendarSettingDeps): Promise<CalendarSettingResult> {
+export async function enableCalendarReminder(deps: CalendarSettingDeps, state: PendingEnable): Promise<CalendarSettingResult> {
   const before = await deps.access();
-  if (before !== 'undecided') return finish(deps, before);
-  pendingEnable = true;
+  if (before !== 'undecided') return finish(deps, state, before);
+  state.pending = true;
   if (await deps.prompt() !== 'requested') {
-    pendingEnable = false;
+    state.pending = false;
     return { on: false, reason: 'unavailable' };
   }
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -54,7 +56,7 @@ export async function enableCalendarReminder(deps: CalendarSettingDeps): Promise
   while (now() < deadline) {
     await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
     const access = await deps.access();
-    if (settled(access)) return finish(deps, access);
+    if (settled(access)) return finish(deps, state, access);
   }
   return { on: false, reason: 'undecided' }; // 还在系统框里没作答：开关退回关，回头再看（recheck）
 }
@@ -63,19 +65,14 @@ export async function enableCalendarReminder(deps: CalendarSettingDeps): Promise
  * 设置页打开 / 窗口重新聚焦：被动再看一眼。只有发起过、还没等到答复的那次开启请求，
  * 在用户后来点了「允许」时补成开；从没发起过请求的一律不自动开。
  */
-export async function recheckCalendarReminder(deps: CalendarSettingDeps): Promise<CalendarSettingResult> {
+export async function recheckCalendarReminder(deps: CalendarSettingDeps, state: PendingEnable): Promise<CalendarSettingResult> {
   if (deps.readSetting()) return { on: true };
-  if (!pendingEnable) return { on: false };
+  if (!state.pending) return { on: false };
   const access = await deps.access();
-  if (access === 'granted') return finish(deps, access);
+  if (access === 'granted') return finish(deps, state, access);
   if (settled(access)) {
-    pendingEnable = false;
+    state.pending = false;
     return { on: false, reason: access };
   }
   return { on: false };
-}
-
-/** 测试用：清掉未完成的开启请求 */
-export function resetPendingCalendarEnable(): void {
-  pendingEnable = false;
 }

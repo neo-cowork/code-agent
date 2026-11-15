@@ -5,7 +5,6 @@ import { createShellPassiveBridge } from '../../../../../src/host/permissions/en
 import { createShellPromptingBridge } from '../../../../../src/host/permissions/envAssist/grants/shellPromptingBridge';
 import { mintClickToken, requestGrant } from '../../../../../src/host/permissions/envAssist/grants/requestGrant';
 import { createCalendarEventsReader } from '../../../../../src/host/permissions/envAssist/calendarEvents';
-import { resetPendingCalendarEnable } from '../../../../../src/host/permissions/envAssist/calendarSetting';
 import type { PassiveBridge, PromptingBridge } from '../../../../../src/host/permissions/envAssist/probes/types';
 import { registerEnvAssistHandlers } from '../../../../../src/host/ipc/envAssist.ipc';
 import { ipcHost, type HandlerFn } from '../../../../../src/host/platform';
@@ -79,7 +78,7 @@ describe('envAssist enableSettingGrant / recheckSettingGrant (验收②)', () =>
   const write = vi.fn(async (on: boolean) => { setting = on; });
   beforeEach(() => {
     vi.spyOn(ipcHost, 'handle').mockImplementation((_c, fn) => { handler = fn; });
-    setting = false; clock = 0; resetPendingCalendarEnable();
+    setting = false; clock = 0;
   });
   afterEach(() => { vi.restoreAllMocks(); open.mockClear(); write.mockClear(); });
 
