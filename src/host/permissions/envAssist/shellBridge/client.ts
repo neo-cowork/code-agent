@@ -161,3 +161,8 @@ export function resolveShellBridgeClientFromEnv(
     },
   };
 }
+
+/** Cards only offer the prompting button when the desktop shell bridge can actually show the system dialog. */
+export function canRequestEnvGrant(): boolean {
+  return resolveShellBridgeClientFromEnv() !== null;
+}

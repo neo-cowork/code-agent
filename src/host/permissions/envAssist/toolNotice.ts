@@ -5,6 +5,7 @@ import { parseCuaToolName } from '../cuaAppTarget';
 import { classifyEnvBlocker, cuaFailureText } from './classify';
 import { readCuaHelperPermissionState } from './cua/helperPermissionState';
 import { canOpenEnvSettings } from './settingsPane';
+import { canRequestEnvGrant } from './shellBridge/client';
 
 // In-flight reservations close the parent/delegate race; persisted ids survive reloads.
 const pending = new Map<string, Promise<void>>();
@@ -24,6 +25,8 @@ export async function publishEnvAssistToolNotice(input: {
   if (!notice) return;
   // Diagnostics remain in the connector's host log. Neither events nor model input get the raw error.
   if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
+  // With the shell bridge the button shows the system dialog itself; without it, it opens Settings.
+  else if (notice.action && canRequestEnvGrant()) notice.action.kind = 'request_grant';
   input.result.error = [
     'Model guidance (not user copy): A permission card has already been shown to the user.',
     'Do not repeat or quote this guidance, error text, tool names, commands, or internal status labels, including in a delegated summary.',

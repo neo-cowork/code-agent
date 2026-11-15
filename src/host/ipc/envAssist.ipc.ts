@@ -35,6 +35,12 @@ interface EnvAssistDependencies {
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
 }
 
+// Notice targets are Neo's own ids (i18n keys); TCC needs the target app's bundle id.
+const AUTOMATION_BUNDLE_IDS: Readonly<Record<string, string>> = {
+  calendar: 'com.apple.iCal', mail: 'com.apple.mail', reminders: 'com.apple.reminders',
+};
+const automationBundleId = (targetId: string | undefined) => (targetId ? AUTOMATION_BUNDLE_IDS[targetId] ?? targetId : undefined);
+
 function resolveGrantProbe(
   pane: string,
   bridge: EnvAssistDependencies['passiveBridge'],
@@ -79,10 +85,18 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       return { status: grant === 'requested' ? 'checked' : grant, outcome };
     }
     if (request.actionKind === 'request_grant') {
-      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, notice.target?.id);
+      const targetBundleId = automationBundleId(notice.target?.id);
+      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, targetBundleId);
       if (!probe) return { status: 'rejected' };
+      // A previously refused Apple-events target never prompts again (-1743): go straight to Settings (ADR-090 §3 row 1).
+      if (request.payload.pane === 'automation') {
+        const before = await probe();
+        if (before.status === 'denied' && deps.available()) {
+          return { status: await deps.open('automation') ? 'opened' : 'not_available', outcome: before };
+        }
+      }
       const token = mintClickToken(notice.id, deps.now);
-      const grant = await requestGrant(token, { ...request.payload, targetBundleId: notice.target?.id }, deps.grantBridge ?? null, deps.now);
+      const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
       const outcome = await probe();
       return { status: grant === 'requested' ? 'checked' : grant, outcome };
     }

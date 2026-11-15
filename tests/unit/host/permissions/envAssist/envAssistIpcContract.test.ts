@@ -90,6 +90,16 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
       expect(mint).toHaveBeenCalledTimes(0);
       process.stdout.write(`[clause1] ${pane} × code(${code}) diagnosis=${first.status} prompting=${fake.total} mintClickToken=${mint.mock.calls.length}\n`);
 
+      // A refused Apple-events target never prompts again: the click opens Settings instead, still zero prompts.
+      if (pane === 'automation' && code === -1743) {
+        const res = await call('act', { noticeId: `n-${pane}-request_grant`, actionKind: 'request_grant', payload: { pane } });
+        expect(res).toMatchObject({ data: { status: 'opened', outcome: { status: 'denied' } } });
+        expect(open).toHaveBeenLastCalledWith('automation');
+        expect(fake.total).toBe(0);
+        expect(mint).toHaveBeenCalledTimes(0);
+        return;
+      }
+
       // Clause 2: exactly one click.
       const res = await call('act', { noticeId: `n-${pane}-request_grant`, actionKind: 'request_grant', payload: { pane } });
       expect(res).toMatchObject({ data: { status: 'checked', outcome: { status: code === 0 ? 'granted' : pane === 'automation' ? fixtures.find((f) => f.code === code)!.status : 'denied' } } });
@@ -104,6 +114,21 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
       process.stdout.write(`[clause2] ${pane} × code(${code}) click prompting=${afterClick} mintClickToken=${mint.mock.calls.length} re-diagnosis delta=${fake.total - afterClick} after-grant status=granted\n`);
     });
   }
+
+  it('automation targets are Neo ids on the notice and reach the native bridge as bundle ids', async () => {
+    const fake = new NativeFake(-1744);
+    const seen: string[] = [];
+    const passive = { ...fake.passive, AEDeterminePermissionToAutomateTarget: async (t: string, ask: boolean) => { seen.push(`passive:${t}`); return fake.passive.AEDeterminePermissionToAutomateTarget(t, ask); } };
+    const grant = { ...fake.grant, AEDeterminePermissionToAutomateTarget: async (t: string, ask: boolean) => { seen.push(`grant:${t}`); return fake.grant.AEDeterminePermissionToAutomateTarget(t, ask); } };
+    registerEnvAssistHandlers({
+      available: () => true, open: vi.fn(async () => true), passiveBridge: passive, grantBridge: grant,
+      findNotice: async () => notice('automation', 'perm_automation', 'request_grant', { target: { id: 'calendar', labelKey: 'env.target.calendar' } }),
+    });
+    const res = await handler!({} as never, { action: 'act', payload: { noticeId: 'n-automation-request_grant', actionKind: 'request_grant', payload: { pane: 'automation' } } });
+    expect(res).toMatchObject({ data: { status: 'checked', outcome: { status: 'undecided' } } });
+    expect(seen).toEqual(['passive:com.apple.iCal', 'grant:com.apple.iCal', 'passive:com.apple.iCal']);
+    expect(fake.total).toBe(1);
+  });
 
   it('mismatching pane, wrong phase, unknown notice, input monitoring and replayed token never prompt', async () => {
     const fake = new NativeFake(-1744);
