@@ -201,6 +201,10 @@ export const ROLE_ASSETS = {
   /** 首次醒来内部指令的固定首行（两个提示词模板共用）。写回层拿它识别「这份
    *  taskPrompt 不是用户原话」：合成指令绝不外显为履历摘要/专家列表的最近工作行。 */
   FIRST_WAKE_PROMPT_HEAD: '你刚被用户创建为一位持久化专家，此刻是创建后的第一次巡览。这不是用户发来的消息，用户现在不在场。',
+  /** 定时巡检醒来内部指令的固定首行（供 roleProactivity.buildWakePrompt 构造、isSyntheticWakeTask 识别） */
+  WAKE_PROMPT_HEAD_CADENCE: '你被定时唤醒。这不是用户发来的消息，用户现在不在。',
+  /** 事件巡检醒来内部指令的固定首行（供 roleProactivity.buildWakePrompt 构造、isSyntheticWakeTask 识别） */
+  WAKE_PROMPT_HEAD_EVENT: '你被任务结束事件唤醒。这不是用户发来的消息，用户现在不在。',
   /** 首次醒来写回无人工摘要时的履历回落短句：不外显内部指令，也不装作干过活
    *  （2026-11-12 owner 裁决：首次见面的最近工作行绝不回落到任务提示词）。 */
   FIRST_WAKE_HISTORY_FALLBACK_SUMMARY: '刚创建，还没开始工作',

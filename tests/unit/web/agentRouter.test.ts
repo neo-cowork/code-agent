@@ -95,6 +95,7 @@ const mockDb = vi.hoisted(() => ({
   getMessages: vi.fn(() => []),
   getRecentMessages: vi.fn(() => []),
   getTodos: vi.fn(() => []),
+  listRecordedWorkingDirectories: vi.fn(() => []),
   getSessionForkLineage: vi.fn<() => unknown>(() => null),
   getSessionForkContextSource: vi.fn<() => unknown>(() => null),
   getSessionForkContextHandoff: vi.fn<() => unknown>(() => null),
@@ -373,18 +374,23 @@ async function startAgentApi(deps: {
   baseUrl = `http://127.0.0.1:${address.port}`;
 }
 
+const disconnectedRunIds = new Set<string>();
+
 async function disconnectAndStop(controller: AbortController): Promise<void> {
   if (controller.signal.aborted) return;
-  const previousLogs = logger.info.mock.calls.length;
   controller.abort();
   let runId = '';
   await waitForAssertion(() => {
-    const line = logger.info.mock.calls.slice(previousLogs)
+    const line = logger.info.mock.calls
       .map((call) => String(call[0]))
-      .find((line) => line.includes('continues detached'));
+      .find((entry) => {
+        const match = entry.match(/run (\S+) continues detached/);
+        return Boolean(match && !disconnectedRunIds.has(match[1]));
+      });
     expect(line).toBeDefined();
     runId = line!.match(/run (\S+) continues detached/)![1];
   });
+  disconnectedRunIds.add(runId);
   const response = await fetch(`${baseUrl}/api/cancel`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ runId }),
@@ -578,6 +584,7 @@ describe('createAgentRouter', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     runRegistry.clear();
+    disconnectedRunIds.clear();
     sseClients.clear();
     runRegistry.configureDurableKernel(testRunKernel);
     inMemorySessions.clear();
@@ -610,6 +617,7 @@ describe('createAgentRouter', () => {
     mockDb.getMessages.mockReturnValue([]);
     mockDb.getRecentMessages.mockReturnValue([]);
     mockDb.getTodos.mockReturnValue([]);
+    mockDb.listRecordedWorkingDirectories.mockReturnValue([]);
     mockDb.getDb.mockReturnValue({});
     mockDb.getSessionForkLineage.mockReturnValue(null);
     mockDb.getSessionForkContextSource.mockReturnValue(null);
@@ -650,6 +658,7 @@ describe('createAgentRouter', () => {
       process.env.CODE_AGENT_DATA_DIR = originalCodeAgentDataDir;
     }
     runRegistry.clear();
+    disconnectedRunIds.clear();
     sseClients.clear();
     inMemorySessions.clear();
     sessionMessages.clear();
@@ -1073,7 +1082,7 @@ describe('createAgentRouter', () => {
         if (!chunk || chunk.done) break;
         buffer += decoder.decode(chunk.value, { stream: true });
       }
-      await reader.cancel().catch(() => {});
+      reader.releaseLock();
       return buffer;
     }
 
@@ -2760,7 +2769,7 @@ describe('createAgentRouter', () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({ error: 'Missing prompt' });
+    expect(body).toEqual({ error: 'Invalid request', code: 'REQUEST_INVALID' });
     expect(mockCreateAgentLoop).not.toHaveBeenCalled();
     expect(createCLIAgent).not.toHaveBeenCalled();
   });
@@ -2774,6 +2783,19 @@ describe('createAgentRouter', () => {
       });
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'Missing prompt', code: 'PROMPT_REQUIRED' });
+    }
+    expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-prompt body failure with REQUEST_INVALID, not the prompt-missing code', async () => {
+    for (const body of [{ prompt: 'Prepare a weekly report', sessionId: 42 }, { prompt: 42 }]) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid request', code: 'REQUEST_INVALID' });
     }
     expect(mockCreateAgentLoop).not.toHaveBeenCalled();
   });

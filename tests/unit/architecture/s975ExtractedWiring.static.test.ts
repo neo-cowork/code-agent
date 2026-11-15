@@ -81,6 +81,6 @@ describe('S9.75 extracted wiring boundaries', () => {
     expect(flat(read('src/host/agent/agentTeamDurableLaunch.ts')))
       .toContain('markApprovalWaiting');
     expect(flat(read('src/host/agent/subagentToolRuntime.ts')))
-      .toContain('context.permission.request({ ...request, ...input.identity })');
+      .toContain('context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity })');
   });
 });

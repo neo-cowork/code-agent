@@ -21,6 +21,7 @@ import type { PendingApprovalRepository } from '../services/core/repositories/Pe
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { ToolExecutor } from '../tools/toolExecutor';
+import { permissionDenialError } from '../tools/toolPermissionClassification';
 import {
   dispatchLedgerToolApproval,
   rejectLedgerToolApproval,
@@ -277,7 +278,7 @@ async function resumeWithPorts(
     if (input.response === 'user_did_it') {
       return deny('user did it themselves after restart', NL_RULE_K2_TEXT.handbackDoneModelText(payload.tool));
     }
-    return deny('rejected by user after restart', 'approval rejected by user after restart');
+    return deny('rejected by user after restart', permissionDenialError(payload.tool, 'user').modelText);
   }
 
   // 指纹复算（执行前置）：台账 args 重算 canonical 哈希，与停车时落盘的指纹比对——

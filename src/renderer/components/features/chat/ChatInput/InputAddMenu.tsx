@@ -3,7 +3,7 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, MonitorUp, Bot, ChevronRight, Plug, Sparkles, UsersRound, BookX } from 'lucide-react';
+import { Plus, Image as ImageIcon, MonitorUp, Bot, ChevronRight, Plug, Sparkles, UsersRound, BookX, Mic } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../../../../stores/appStore';
@@ -16,7 +16,8 @@ import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
-import { getNativeDesktopPermissionStatus } from '../../../../services/nativeDesktop';
+import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../../../../services/nativeDesktop';
+import { useMeetingSessionStore } from '../../../../stores/meetingSessionStore';
 import {
   invokeNativeCommandAction,
   isNativeCommandRuntimeAvailable,
@@ -96,6 +97,9 @@ export const InputAddMenu: React.FC<Props> = ({
     }
     setDraftMemoryOff(next);
   };
+  // 「记这场会」：只在桌面端出现（录音靠本机采集）；已在记录时禁用，录制条上操作
+  const meetingRecording = useMeetingSessionStore((s) => Boolean(s.status?.current));
+  const startMeeting = useMeetingSessionStore((s) => s.start);
   const [lastFrontApp, setLastFrontApp] = useState<AppshotsLastFrontApp | null>(null);
   const [appshotsEnabled, setAppshotsEnabled] = useState(true);
   const [lastFrontAppLoading, setLastFrontAppLoading] = useState(false);
@@ -363,6 +367,25 @@ export const InputAddMenu: React.FC<Props> = ({
               <span className="max-w-[9rem] truncate text-[10px] text-zinc-500">{lastFrontAppReason}</span>
             )}
           </button>
+
+          {isNativeDesktopAvailable() && (
+            <button /* ds-allow:button: 添加菜单整行热区（图标+标签+提示），与上方上传项同形，Button primitive 不适配 */
+              type="button"
+              data-testid="input-add-meeting"
+              disabled={meetingRecording}
+              onClick={() => { void startMeeting(); closeMenu(); }}
+              onMouseEnter={closeSubmenuNow}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Mic className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{t.inputAddMenu.meetingLabel}</span>
+                <span className="block truncate text-[10px] text-zinc-500">
+                  {meetingRecording ? t.inputAddMenu.meetingRecordingHint : t.inputAddMenu.meetingHint}
+                </span>
+              </span>
+            </button>
+          )}
 
           <div className="border-t border-zinc-700/60 mt-1 pt-1">
             {([

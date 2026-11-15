@@ -59,7 +59,9 @@ import {
   trashUserRole,
   listTrashedRoles,
   restoreTrashedRole,
+  isSyntheticWakeTask,
 } from '../services/roleAssets';
+import { ROLE_PROACTIVITY } from '../../shared/constants';
 import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
 import type { RoleMemoryFile } from '../services/roleAssets/roleAssetService';
 import { handleSaveTextToDownloads } from './workspaceSaveExport';
@@ -106,11 +108,20 @@ export function sanitizeLastWork(line: string): string {
   const normalizedLine = line.replace(ROLE_HISTORY_PREFIX, '');
   const segments = normalizedLine.split(' | ');
   if (segments.length < 3) {
+    if (isSyntheticWakeTask(normalizedLine)) return '';
     return cleanLastWorkText(normalizedLine);
   }
 
   const [date, label, ...summarySegments] = segments;
-  const summary = cleanLastWorkText(summarySegments.join(' | '));
+  const metadataStart = summarySegments.findIndex((part) => /^(?:why|evidence): /.test(part));
+  const summarySegment = summarySegments.slice(0, metadataStart < 0 ? undefined : metadataStart).join(' | ');
+  // Synthetic wake prompts and duplicate write-back rows are not user work.
+  if (isSyntheticWakeTask(summarySegment)) return '';
+  // Do not expose model rationale, evidence or internal decision tags here.
+  if (isSyntheticWakeTask(label)) {
+    return `${cleanLastWorkText(date)} ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`;
+  }
+  const summary = cleanLastWorkText(summarySegment);
   const visibleWork = summary || cleanLastWorkText(label);
   return [cleanLastWorkText(date), visibleWork].filter(Boolean).join(' ');
 }

@@ -15,6 +15,7 @@ import type { PermissionRequestData } from '../host/tools/types';
 import type { PermissionAskResult } from '../shared/contract/permission';
 import type { DecisionTrace } from '../shared/contract/decisionTrace';
 import { classifyPermission } from '../host/tools/permissionClassifier';
+import { getDenialRegistry } from '../host/security/denialRegistry';
 import { resolveBackgroundWorkspaceAuthority } from '../host/runtime/workspaceAuthority';
 
 /** CLI 侧颗粒度权限档。chat/TTY 默认 auto；ask 恢复「每条都弹卡」。 */
@@ -103,12 +104,12 @@ export function createCLIPermissionHandler(
       const autoResult = await decideAutoMode(request, options);
       if (autoResult.approved) return autoResult;
       // TTY：分类器没放行的再交给审批卡；headless 没有人可问，沿用 fail-closed。
-      if (provider) return provider(request);
+      if (provider) return getDenialRegistry().refuseIfGoalDenied(request) ?? provider(request);
       warn(autoResult.message ?? `[permission] --permission-mode auto 拒绝: ${request.tool}`);
       return autoResult;
     }
     if (provider) {
-      return provider(request);
+      return getDenialRegistry().refuseIfGoalDenied(request) ?? provider(request);
     }
     if (requiresHumanConfirmation(request)) {
       const target = String(

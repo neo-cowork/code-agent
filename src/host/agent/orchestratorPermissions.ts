@@ -11,6 +11,7 @@ import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
+import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
@@ -34,6 +35,8 @@ import { getConfirmationGate } from './confirmationGate';
 import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
+import { withUserRequestQuote } from '../permissions/approvalUserRequest';
+import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -513,7 +516,7 @@ export class OrchestratorPermissionIsland {
   async requestPermission(
     request: OrchestratorPermissionRequest,
   ): Promise<PermissionAskResult> {
-    const details = connectorApprovalDetails(request);
+    const details = withUserRequestQuote(request.sessionId, connectorApprovalDetails(request));
     const fullRequest: PermissionRequest = {
       ...request,
       type: details.connectorAccess ? 'mcp' : request.type,
@@ -618,9 +621,13 @@ export class OrchestratorPermissionIsland {
       : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
-    if (detached || unattended || voice) {
+    const backgroundExactFile = hasBackgroundRunIdentity(fullRequest)
+      && request.tool === 'browser_action.upload_file' && forceConfirm;
+    if (detached || unattended || voice || backgroundExactFile) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
+        const parkedGoalDenial = getDenialRegistry().refuseIfGoalDenied(fullRequest);
+        if (parkedGoalDenial) return parkedGoalDenial;
         return this.parkApproval(
           fullRequest,
           permissionLevel,
@@ -647,6 +654,9 @@ export class OrchestratorPermissionIsland {
         return { approved: true, approvalSource: 'auto-approve-level' };
       }
     }
+
+    const goalDenial = getDenialRegistry().refuseIfGoalDenied(fullRequest);
+    if (goalDenial) return goalDenial;
 
     // 有审批 UI 的交互会话一直等待真人裁决；无 UI 的 headless 路径仍按 60s/5min
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
@@ -853,6 +863,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),

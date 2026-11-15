@@ -21,6 +21,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 
 import { ProjectCollaborationDetailPane } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane';
 import type { NeoWorkCardDetail } from '../../../src/shared/contract/tag';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const UPDATED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
@@ -62,10 +63,10 @@ describe('ProjectCollaborationDetailPane 时间口径（跟随 UI language）', 
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', () => {
+  it('en UI：更新于时间跟随 formatDateTime', () => {
     i18nState.language = 'en';
     const html = renderPane();
-    expect(html).toContain('11/9/2026, 4:05:00 PM');
-    expect(html).not.toContain('16:05');
+    expect(html).toContain(formatDateTime(UPDATED_AT, 'en'));
+    expect(html).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

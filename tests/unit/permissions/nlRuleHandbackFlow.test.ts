@@ -222,6 +222,31 @@ describe('② 无人值守 handback：停车 + 通知，不执行、不失败', 
     expect(repo.rows.get(rowId)?.feedback).toBe('user did it themselves');
   });
 
+  it('「我做完了」不算用户拒绝：同一条消息里的下一步 handback 照常停车，不被同轮拒绝守卫自动挡掉', async () => {
+    getPolicyEngine().loadUserRules({
+      nlRules: [{ behavior: 'handback', rule: TRANSFER_TOOL }],
+    });
+    startUnattendedRun('月底给两家供应商打款');
+    const repo = makeMemoryRepo();
+    const island = makeAttendedIsland(repo);
+    const executor = makeExecutor(island);
+    const scope = { sessionId: SESSION, sourceMessageId: 'k2-handback-message', runId: RUN_ID };
+
+    const first = executor.execute(TRANSFER_TOOL, { amount: 100 }, scope);
+    const firstRow = await waitForPark(repo);
+    expect(island.handlePermissionResponse(firstRow, 'user_did_it')).toBe('delivered');
+    expect((await first).success).toBe(true);
+
+    repo.rows.clear();
+    const second = executor.execute(TRANSFER_TOOL, { amount: 200 }, scope);
+    const secondRow = await waitForPark(repo);
+    expect(await isStillPending(second)).toBe(true);
+    expect(repo.rows.get(secondRow)?.payload.handback).toBe(true);
+    expect(island.handlePermissionResponse(secondRow, 'allow')).toBe('delivered');
+    expect((await second).success).toBe(true);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
   it('「让 Neo 做这一次」：执行一次', async () => {
     getPolicyEngine().loadUserRules({
       nlRules: [{ behavior: 'handback', rule: TRANSFER_TOOL }],

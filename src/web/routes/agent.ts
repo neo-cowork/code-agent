@@ -30,6 +30,7 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
+import { resolveForegroundMcpToolScope } from '../../host/mcp/foregroundMcpServers';
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
@@ -51,7 +52,7 @@ import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
 import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
-import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
+import { PROMPT_REQUIRED, REQUEST_INVALID } from '../../shared/contract/agentRunErrors';
 import {
   AgentRunBodySchema,
   isPromptRequiredFailure,
@@ -1340,6 +1341,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
+        config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
         config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
@@ -1916,10 +1918,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
-      res.status(400).json({
-        error: 'Missing prompt',
-        ...(isPromptRequiredFailure(parsedBody.error, req.body) ? { code: PROMPT_REQUIRED } : {}),
-      });
+      res.status(400).json(isPromptRequiredFailure(parsedBody.error, req.body)
+        ? { error: 'Missing prompt', code: PROMPT_REQUIRED }
+        : { error: 'Invalid request', code: REQUEST_INVALID });
       return;
     }
     // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。

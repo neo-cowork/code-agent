@@ -72,8 +72,9 @@ describe('Playwright install lives in the composite action', () => {
     const swarm = byFile.get('.github/workflows/swarm-ci.yml') ?? [];
     const main = byFile.get('.github/workflows/main-full-gate.yml') ?? [];
     const scroll = byFile.get('.github/workflows/long-session-scroll-gate.yml') ?? [];
-    // swarm-ci jobs run inside the Playwright image (see the container test); no install step.
-    expect(swarm).toHaveLength(0);
+    // smoke/unit/full run inside the Playwright image; perf-journey-ratchet stays on the plain runner.
+    expect(swarm).toHaveLength(1);
+    expect(swarm.every(wantsDeps)).toBe(true);
     expect(main).toHaveLength(1);
     expect(main.some(wantsDeps)).toBe(false);
     expect(scroll).toHaveLength(1);
@@ -100,13 +101,36 @@ describe('Playwright install lives in the composite action', () => {
 
 
 describe('swarm-ci Playwright jobs use the pinned Playwright image instead of apt', () => {
-  const containerJobs = ['smoke', 'unit', 'full', 'perf-journey-ratchet'];
+  const containerJobs = ['smoke', 'unit', 'full'];
   const doc = loadYaml(readFileSync(path.join(workflowsDir, 'swarm-ci.yml'), 'utf8')) as {
-    jobs: Record<string, { container?: string | { image?: string; options?: string; volumes?: string[] }; steps?: WorkflowStep[] }>;
+    jobs: Record<string, {
+      container?: string | { image?: string; options?: string; volumes?: string[] };
+      env?: Record<string, string>;
+      needs?: string | string[];
+      steps?: WorkflowStep[];
+    }>;
   };
   const lockVersion = (JSON.parse(readFileSync(path.join(repoRoot, 'package-lock.json'), 'utf8')) as {
     packages: Record<string, { version: string }>;
   }).packages['node_modules/playwright'].version;
+
+  it('perf-journey-ratchet stays on the plain runner with setup-playwright --with-deps', () => {
+    const perfJob = doc.jobs['perf-journey-ratchet'];
+    expect(perfJob.container).toBeUndefined();
+    expect(perfJob.env?.HOME).toBeUndefined();
+    const needs = ([] as string[]).concat(perfJob.needs ?? []);
+    expect(needs).not.toContain('container-tools');
+    const steps = perfJob.steps ?? [];
+    expect(steps.some((step) => String(step.uses ?? '') === './.github/actions/container-tools')).toBe(false);
+    expect(steps.some((step) => String(step.run ?? '').includes('safe.directory'))).toBe(false);
+    const installIdx = steps.findIndex((step) => String(step.run ?? '').includes('npm ci'));
+    const setupIdx = steps.findIndex(isSetupPlaywright);
+    const probeIdx = steps.findIndex((step) => String(step.run ?? '').includes('scripts/perf-journey-ratchet.mjs'));
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(setupIdx).toBeGreaterThan(installIdx);
+    expect(probeIdx).toBeGreaterThan(setupIdx);
+    expect(wantsDeps(steps[setupIdx])).toBe(true);
+  });
 
   it.each(containerJobs)('%s runs in mcr playwright image matching package-lock', (name) => {
     const container = doc.jobs[name].container;

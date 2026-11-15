@@ -380,6 +380,8 @@ export interface SwarmVerificationResult {
  * 因此两个 Team 的重叠事件不会互相改写身份。
  */
 export interface SwarmEvent {
+  /** Diagnostic publisher identity; never used for lifecycle decisions. */
+  publisher?: string;
   type: SwarmEventType;
   timestamp: number;
   runId: string;

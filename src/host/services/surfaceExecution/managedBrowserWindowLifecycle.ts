@@ -1,12 +1,14 @@
 import type { BrowserService } from '../infra/browserService';
 import { browserPool } from '../infra/browserPool';
 import type { ToolExecutionResult } from '../../tools/types';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
+import type { BrowserLastPageStore } from './browserLastPageStore';
 import type { KeptBrowserRegistry } from './keptBrowserRegistry';
 
 /** The Surface session ends; only its physical window survives the handover. */
 export async function releaseManagedBrowserWindow(input: {
   binding: {
-    identity: { conversationId: string };
+    identity: { conversationId: string; agentId?: string };
     serviceKey: string;
     browserService: BrowserService;
   };
@@ -15,10 +17,23 @@ export async function releaseManagedBrowserWindow(input: {
   personalServiceKey: string;
   keptRegistry: KeptBrowserRegistry;
   releaseBrowser(serviceKey: string): Promise<void>;
+  lastPageStore?: BrowserLastPageStore;
+  onLastPageRecordError?(error: unknown): void;
 }): Promise<void> {
   const { binding, stillShared, keptRegistry } = input;
   const { browserService, serviceKey, identity } = binding;
   const activeTab = browserService.getActiveTab();
+  if (
+    input.lastPageStore
+    && identity.agentId !== SURFACE_USER_BROWSER_AGENT_ID
+    && serviceKey !== input.personalServiceKey
+  ) {
+    try {
+      await input.lastPageStore.recordForConversation(identity.conversationId, activeTab?.url);
+    } catch (error) {
+      input.onLastPageRecordError?.(error);
+    }
+  }
   // wait_for_user already parked this exact window on its timeout (parkedForUser slot):
   // re-parking it as a takeover would flip its reason and attach the sign-in handoff
   // note to the reclaiming run, which wait_for_user's own wording covers. Skip; the

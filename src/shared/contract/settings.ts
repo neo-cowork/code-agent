@@ -299,6 +299,11 @@ export interface AppSettings {
     /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
     live?: VoiceLiveSettings;
   };
+  /** 会议（N-MEETING-PAGE） */
+  meeting?: {
+    /** 散会后自动交记言出纪要；每场会调一次模型、产生费用。缺省视为开 */
+    autoMinutes?: boolean;
+  };
   // 记忆维护配置（N-MEM-CONSOLSAFE）。可选，未配置 = 自动整理只演练（dry-run）。
   memory?: {
     /** true = 定时整理真写回记忆文件（有审计）；false/缺省 = 只出演练报告不落盘 */

@@ -80,9 +80,9 @@ import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCa
 import { ModelSlot } from '../../../StatusBar/ModelSlot';
 import ipcService from '../../../../services/ipcService';
 import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
-import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
+import { MeetingBar } from './MeetingBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { ScheduleConfirmCard } from './ScheduleConfirmCard';
 import { GoalConfirmCard } from './GoalConfirmCard';
@@ -104,6 +104,7 @@ import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
 import { mergeAttachments } from './attachmentDedupe';
+import { notifyAttachmentMerge } from './attachmentMergeToast';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -351,6 +352,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     scopeProjectId,
     value,
     setValue,
+    attachments,
+    setAttachments,
     suspend: editingQueuedInputId !== null,
   });
 
@@ -712,9 +715,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   useImperativeHandle(ref, () => ({
     addAttachments: (items: MessageAttachment[]) => {
       if (items.length === 0) return;
-      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS_DROP);
+      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS);
       setAttachments(result.attachments);
-      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
+      notifyAttachmentMerge(result, t.chatInput);
     },
     setDraft: (draft) => {
       const mode = composerEditModeState(
@@ -724,7 +727,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       );
       inputMemoryTainted.current = true;
       setValue(draft.content);
-      setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS));
       pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
       setEditingQueuedInputId(mode.editingQueuedInputId);
       setVoiceInputContext(null);
@@ -748,7 +751,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       setValue((prev) => appendComposerPrompt(prev, prompt));
       inputAreaRef.current?.focus();
     },
-  }), [inlineChips, pendingAppshot, t.chatInput.attachmentAlreadyAdded]);
+  }), [inlineChips, pendingAppshot, t.chatInput]);
 
   useEffect(() => {
     setVoiceInputContext(null);
@@ -852,13 +855,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     void (async () => {
       const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
-      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS_DROP);
+      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS);
       const freshCaret = editor.getCaretOffset();
       const freshBefore = latestValueRef.current.slice(0, freshCaret);
       const freshMatch = freshBefore.match(/@([^\s@]*)$/);
       if (freshMatch) {
         const triggerStart = freshCaret - freshMatch[0].length;
-        if (result.skippedCount > 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
+        if (result.addedCount === 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
         else editor.replaceRangeWithChip(triggerStart, freshCaret, {
           key: `file:${attachment.id}`,
           kind: 'file',
@@ -866,10 +869,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         });
       }
       setAttachments(result.attachments);
-      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', attachment.name));
+      notifyAttachmentMerge(result, t.chatInput);
     })();
     editor.focus();
-  }, [currentSessionId, t.chatInput.attachmentAlreadyAdded]);
+  }, [currentSessionId, t.chatInput]);
   const replaceAtTriggerWithChip = useCallback((chip: InlineChipRef) => {
     const editor = inputAreaRef.current;
     if (!editor) return;
@@ -1298,6 +1301,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <LoopStatusBar sessionId={currentSessionId} />
           </SlotEntry>
 
+          {/* 「记这场会」录制条（L3 上下文层，组件自闸；入口在 + 菜单） */}
+          <SlotEntry id="meeting-status">
+            <MeetingBar />
+          </SlotEntry>
+
           {/* 定时任务对话式创建卡片（/schedule 不带参数时）（L1 阻塞决策层） */}
           <SlotEntry id="schedule-composer" active={scheduleComposerOpen}>
             {scheduleComposerOpen && (
@@ -1471,6 +1479,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
+            attachmentNames={composerDraft.notice.attachmentNames}
+            droppedNames={composerDraft.notice.droppedNames}
             onPutBack={composerDraft.putBack}
             onDiscard={composerDraft.discard}
           />

@@ -37,6 +37,8 @@ const PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES = [
   'Edit',
   'Grep',
   'AskUserQuestion',
+  // N-MEETING-PAGE（11-15）：问过去的会走本机会议记录，与委派开关无关
+  'meeting_records',
 ] as const;
 
 // 不命中任何连接器意图的英文委派 prompt（getNativeConnectorToolNamesForIntent 零副作用，

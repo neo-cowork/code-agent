@@ -1,3 +1,4 @@
+import { formatDisplayPath } from '../../../utils/displayPath';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React from 'react';
 import { X } from 'lucide-react';
@@ -419,7 +420,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       {focusedBackgroundTask.outputRefs.slice(0, 6).map((ref) => (
                         <span
                           key={`focused:${focusedBackgroundTask.id}:output:${ref.id}`}
-                          title={ref.path || ref.uri || ref.label}
+                          title={ref.path ? formatDisplayPath(ref.path) : ref.uri || ref.label}
                           className="rounded border border-zinc-700/60 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] text-zinc-400"
                         >
                           {formatTaskOutputRef(ref)}
@@ -602,7 +603,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       {task.outputRefs.slice(0, 4).map((ref) => (
                         <span
                           key={ref.id}
-                          title={ref.path || ref.uri || ref.label}
+                          title={ref.path ? formatDisplayPath(ref.path) : ref.uri || ref.label}
                           className="rounded border border-zinc-700/60 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400"
                         >
                           {formatTaskOutputRef(ref)}

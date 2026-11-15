@@ -27,7 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '@shared/contract/conversationEnvelope';
-import type { PermissionApprovalSource } from '@shared/contract/permission';
+import type { PermissionApprovalSource, PermissionRequestReason } from '@shared/contract/permission';
 import type { SwarmRunScope } from '@shared/contract/swarm';
 import type { WorkspaceScope } from '@shared/contract/project';
 import type { AgentEvent } from './events';
@@ -196,6 +196,8 @@ export interface ToolModule<Args = Record<string, unknown>, Output = unknown> {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   readonly runId?: string;
+  /** Native parent used for child-agent settlement, distinct from a surface owner. */
+  readonly spawnParentRunId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   readonly turnId?: string;
   /** Stable user message that originated this native turn. */
@@ -405,6 +407,7 @@ export interface CanUseToolRequestHint {
   readonly tool?: string;
   readonly details?: Record<string, unknown>;
   readonly reason?: string;
+  readonly reasonCode?: PermissionRequestReason;
   readonly dangerLevel?: 'normal' | 'warning' | 'danger';
   readonly decisionTrace?: unknown;
   /** True when a child ToolExecutor records its own ledger row for this forwarded ask. */

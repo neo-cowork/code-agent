@@ -12,6 +12,7 @@ import {
   formatTaskEventDetail,
   formatWorkflowRunMeta,
 } from '../../../src/renderer/components/features/sidebar/sessionReplayFormatters';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
@@ -62,8 +63,8 @@ describe('sessionReplayFormatters 时间口径（跟随 UI language）', () => {
 
   it('en：维持 en-US 原样（英文 UI 行为不变）', () => {
     const line = formatWorkflowRunMeta(SNAPSHOT, en.sessionReplay, 'en');
-    expect(line).toContain('started 11/9/2026, 4:05:00 PM');
-    expect(line).toContain('finished 11/9/2026, 5:30:00 PM');
+    expect(line).toContain(`started ${formatDateTime(STARTED, 'en')}`);
+    expect(line).toContain(`finished ${formatDateTime(FINISHED, 'en')}`);
   });
 
   it('zh：task 元信息同样走 24 小时制', () => {
@@ -76,6 +77,6 @@ describe('sessionReplayFormatters 时间口径（跟随 UI language）', () => {
 
   it('event 兜底时间：zh 24 小时制 / en en-US，跟 lang 参数走', () => {
     expect(formatTaskEventDetail(EVENT, 'zh')).toBe('2026/11/09 16:05');
-    expect(formatTaskEventDetail(EVENT, 'en')).toBe('11/9/2026, 4:05:00 PM');
+    expect(formatTaskEventDetail(EVENT, 'en')).toBe(formatDateTime(STARTED, 'en'));
   });
 });

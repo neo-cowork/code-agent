@@ -28,6 +28,8 @@ export interface Tool extends ToolDefinition {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   runId?: string;
+  /** Native parent used for child-agent settlement, distinct from a surface owner. */
+  spawnParentRunId?: string;
   /** Conversation turn that owns this tool call and its durable projections. */
   turnId?: string;
   /** Stable user message that originated this native turn. */
