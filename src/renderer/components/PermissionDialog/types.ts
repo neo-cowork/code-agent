@@ -3,7 +3,13 @@
 // ============================================================================
 
 import type { ReactNode } from 'react';
-import type { FileTargetKind, PermissionBoundaryRef, PermissionDecision, PermissionRequestReason } from '@shared/contract';
+import type {
+  FileTargetKind,
+  PermissionBoundaryRef,
+  PermissionDecision,
+  PermissionRequest as ContractPermissionRequest,
+  PermissionRequestReason,
+} from '@shared/contract';
 
 // 权限类型
 export type PermissionType =
@@ -70,7 +76,7 @@ export interface PermissionRequestDetails {
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
   /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
-  requestedAccess?: string;
+  requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
   access?: string;
   // E2: 确认门控预览
   preview?: {
