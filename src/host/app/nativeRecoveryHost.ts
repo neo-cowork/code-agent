@@ -25,6 +25,8 @@ import type { ToolExecutionResult } from '../tools/types';
 import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinitions';
 import { classifyToolReplaySafety } from '../tools/toolReplaySafety';
 import { createLogger } from '../services/infra/logger';
+import { isPlannedSessionWorkDirectory } from '../config/sessionWorkDirectory';
+import { materializeRunWorkDirectoryOnce } from '../agent/runtime/workDirectoryMaterializer';
 import type { TurnCostEstimateInput } from '../../shared/contract/turnCost';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 import { INTERRUPTED_TOOL_CALL_PLACEHOLDER } from '../agent/runtime/cancelledToolCallClosure';
@@ -316,6 +318,13 @@ export function createApplicationNativeRecoveryPorts(
   return {
     continuationExecutor: 'available',
     async resolveWorkspace(descriptor) {
+      // A planned session folder (任务_/Task_) is created lazily by the first cwd-writing tool and recycled
+      // empty at run end, so a run that only read (e.g. calendar) parks with no folder on disk. Its absence
+      // means "nothing written yet", not "the user removed the workspace": recreate it before the identity check.
+      // Any other missing root still fails closed below.
+      if (isPlannedSessionWorkDirectory(descriptor.workspace.root) && descriptor.workspace.cwd === descriptor.workspace.root) {
+        await materializeRunWorkDirectoryOnce(descriptor.workspace.root);
+      }
       try {
         const [root, cwd] = await Promise.all([
           realpath(descriptor.workspace.root),

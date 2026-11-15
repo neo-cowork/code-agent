@@ -115,7 +115,12 @@ describe('remindersCreateModule (native)', () => {
       getMock.mockReturnValue(undefined);
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
+      if (!result.ok) {
+        expect(result.code).toBe('NOT_INITIALIZED');
+        expect(result.error).toContain('Reminders is not connected on this computer, so reminders cannot be created');
+        expect(result.error).toContain('Connectors page');
+        expect(result.error).not.toContain('connector is not available');
+      }
     });
 
     it('wraps connector errors', async () => {

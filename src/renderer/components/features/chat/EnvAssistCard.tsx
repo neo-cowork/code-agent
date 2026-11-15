@@ -19,10 +19,22 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
       .catch(() => { if (active) setAvailable(false); });
     return () => { active = false; };
   }, []);
+  // A grant made in System Settings (not via the button) is picked up on mount and whenever the user comes back to Neo.
+  // The host persists + broadcasts the resolved notice; this card only re-reads through the store.
+  const waiting = available && notice.phase === 'needs_user' && Boolean(notice.action);
+  useEffect(() => {
+    if (!waiting) return;
+    const recheck = () => { void invokeDomain(IPC_DOMAINS.ENV_ASSIST, 'recheck', { noticeId: notice.id }).catch(() => undefined); };
+    recheck();
+    window.addEventListener('focus', recheck);
+    return () => window.removeEventListener('focus', recheck);
+  }, [waiting, notice.id]);
   // Resolve only our own copy catalogue. Arbitrary host strings/params never become visible copy.
   const target = notice.target?.id as keyof typeof t.env.sentence;
   const known = Object.hasOwn(t.env.sentence, target);
-  const sentence = known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
+  const sentence = notice.phase === 'resolved'
+    ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
+    : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
   const label = known && notice.action?.labelKey === `env.allow.${target}` ? t.env.allow[target] : '';
   const act = async () => {
     if (!notice.action || busy) return;
@@ -38,7 +50,7 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
     <div data-testid="env-assist-card" data-notice-id={notice.id} className="my-2 rounded-lg border border-border-strong bg-void p-3 text-sm text-text-primary">
       <p>{sentence}</p>
       {notice.progress && <progress className="mt-2 w-full" max={100} value={notice.progress.percent} />}
-      {available && notice.phase === 'needs_user' && notice.action && label && (
+      {waiting && label && (
         <Button className="mt-2" size="sm" variant="secondary" disabled={busy} onClick={() => void act()}>{label}</Button>
       )}
     </div>

@@ -75,6 +75,24 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
 
   afterEach(() => cleanup());
 
+  it('后台浏览器还在空白页时说明工作在后台进行', () => {
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: true, tabCount: 1, activeTab: { id: 'tab-bg', url: 'about:blank', title: '' } },
+    });
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('Neo 正在后台浏览器里操作')).toBeTruthy();
+    expect(screen.queryByText('Neo 还没开始操作网页')).toBeNull();
+  });
+
+  it('已停下但保留最后页面时说明浏览发生在后台，不再说尚未开始', () => {
+    browserSessionState = buildBrowserSessionState({
+      managedSession: { running: false, tabCount: 1, activeTab: { id: 'tab-last', url: 'https://baike.baidu.com/', title: '百度百科' } },
+    });
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('浏览操作在后台浏览器里进行')).toBeTruthy();
+    expect(screen.queryByText('Neo 还没开始操作网页')).toBeNull();
+  });
+
   it('无流空态：居中一句话提示 + 一个主按钮，不摆状态卡片堆', () => {
     browserSessionState = buildBrowserSessionState({
       blocked: true,

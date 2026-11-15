@@ -35,12 +35,12 @@ export const enSettingsModels = {
           description: 'Relay service (Gemini/Claude/GPT)',
         },
         zhipu: {
-          name: '智谱 AI',
+          name: 'Zhipu GLM',
           description: 'GLM-4 model series',
         },
         qwen: {
-          name: '通义千问',
-          description: 'Alibaba Cloud 通义千问 models — one API key also powers live voice, image generation, and dictation',
+          name: 'Qwen',
+          description: 'Alibaba Cloud Qwen models — one API key also powers live voice, image generation, and dictation',
         },
         moonshot: {
           name: 'Kimi',
