@@ -1,3 +1,4 @@
+import { withConnectorReconnectGuidance } from './connectorReconnectGuidance';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
 // ============================================================================
 // Tool Resolver — subagent 使用的工具解析 + dispatch 接口
@@ -173,7 +174,7 @@ class ProtocolToolResolver implements ToolResolver {
       });
       const canUseTool = buildCanUseToolFromLegacy(ctx, dispatchName);
 
-      const protoResult = await handler.execute(args, protoCtx, canUseTool);
+      const protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, canUseTool));
       if (protoResult.ok) {
         const output = typeof protoResult.output === 'string'
           ? protoResult.output
