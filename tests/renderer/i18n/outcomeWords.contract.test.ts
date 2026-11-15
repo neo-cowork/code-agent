@@ -10,6 +10,8 @@ import {
 const I18N_DIR = path.resolve(process.cwd(), 'src/renderer/i18n');
 
 const OUTCOME_KEYS = [
+  'working',
+  'waiting-input',
   'cancelled-by-user',
   'interrupted-session-switch',
   'interrupted-restart',
@@ -32,7 +34,7 @@ const OUTCOME_KEYS = [
   'goal-met',
 ] as const;
 
-const OUTCOME_AUDIENCES = ['timeline', 'badge', 'detail', 'notification'] as const;
+const OUTCOME_AUDIENCES = ['timeline', 'badge', 'detail', 'notification', 'assistant'] as const;
 
 const LEGACY_DICTIONARIES = [
   'chatTranscript.ts',
