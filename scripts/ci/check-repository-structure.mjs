@@ -85,7 +85,11 @@ const limits = {
   // 2026-11-14 +2: scripts/renderer-cjk-literal-ratchet.mjs 及其按文件基线
   // scripts/renderer-cjk-literal-baseline.json（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC：
   // renderer 渲染文案与 shared/contract CJK 字面量棘轮，package / gates:local / swarm-ci 共用）。
-  directScriptFiles: 173,
+  // 2026-11-15 +1: scripts/i18n-plural-baseline.json（N-FIX-EN-COUNT-PLURAL-IN-STEP-SUMMARY：
+  // i18n-plural-ratchet.mjs 的按文件基线，锁存八个转换文件之外尚未转 {one,other} 的
+  // {count} <复数> 串，只许缩不许涨；与 knip / attention-budget / renderer-cjk-literal
+  // 等棘轮的显式基线同族，跟随其脚本占一个直属名额）。
+  directScriptFiles: 174,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.
