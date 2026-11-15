@@ -6,6 +6,8 @@ import {
   getWorkbenchReferenceTitle,
   getWorkbenchStatusPresentation,
 } from '../../utils/workbenchPresentation';
+import { useI18n } from '../../hooks/useI18n';
+import { interpolate } from '../../i18n/interpolate';
 
 function joinClasses(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
@@ -136,12 +138,14 @@ export function WorkbenchCapabilityDetailButton({
   onClick,
   className,
 }: WorkbenchCapabilityDetailButtonProps) {
+  const { t } = useI18n();
+  const detailLabel = interpolate(t.capabilityDetail.viewDetailsOf, { name: label });
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={`查看 ${label} 详情`}
-      title={`查看 ${label} 详情`}
+      aria-label={detailLabel}
+      title={detailLabel}
       className={joinClasses(
         'inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-zinc-900/60 text-zinc-500 transition-colors hover:border-white/[0.14] hover:text-zinc-200',
         className,

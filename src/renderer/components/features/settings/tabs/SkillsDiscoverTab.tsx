@@ -17,6 +17,7 @@ import { findRecommendedRepository, groupRecommendedSkillsByCategory, normalizeS
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeSkillCatalog } from '../../../../utils/catalogText';
 import { zh } from '../../../../i18n/zh';
 import {
   RecommendedRepoCard,
@@ -166,10 +167,11 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   onClearSearch,
   onInstallFromSearch,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const discoverText = t.settings.skills.discover;
   // 云端 catalog 可能半截返回；发现页是默认落地 tab，缺字段不能让整页崩
-  const catalog = normalizeSkillCatalogPayload(rawCatalog);
+  // 目录里的名称/说明/角标按界面语言显示（FB-1301）
+  const catalog = localizeSkillCatalog(normalizeSkillCatalogPayload(rawCatalog), language);
   const categoryGroups = groupRecommendedSkillsByCategory(catalog);
 
   // 推荐 skill 的安装动作 = 安装其来源仓库

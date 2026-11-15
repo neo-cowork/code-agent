@@ -11,6 +11,7 @@ import React from 'react';
 import { AlertTriangle, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { RolePackListItem } from '../../../services/rolesClient';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeCatalogObject } from '../../../utils/catalogText';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
@@ -91,7 +92,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
   onRetryMissingSkills,
   hideWhenEmpty = false,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.rolePack;
 
   if (hideWhenEmpty && !loading && !error && items.length === 0) return null;
@@ -117,7 +118,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
       {!loading && !error && items.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => {
-            const { entry } = item;
+            const entry = localizeCatalogObject(item.entry, language);
             const busy = busyRoleId === entry.roleId;
             return (
               <article key={entry.roleId} data-testid={`role-pack-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
