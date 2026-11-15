@@ -36,6 +36,7 @@ import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
+import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
 import { interpolate } from '../../../i18n/interpolate';
 import { getStreamInterruptionReasonLabel } from '../../../utils/streamInterruptionPresentation';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
@@ -200,7 +201,8 @@ const UserNode: React.FC<{
   const displayContent = sourceType === 'voice'
     ? normalizeSpokenFileName(rawDisplayContent)
     : rawDisplayContent;
-  const showUserChrome = Boolean(displayContent) || sendFailed;
+  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt);
+  const showUserChrome = Boolean(shownContent) || sendFailed;
 
   return (
     <div>
@@ -240,12 +242,12 @@ const UserNode: React.FC<{
                 </button>
               </div>
             )}
-            {telemetryRecovered && displayContent && (
+            {telemetryRecovered && shownContent && (
               <div data-testid="user-message-recovered-note" className="mb-1 text-right text-2xs text-zinc-500">
                 {t.turnCard.recoveredFromRecord}
               </div>
             )}
-            {displayContent && (
+            {shownContent && (
               <div className="group/user-prompt flex items-start gap-1.5">
                 {onRewind && (
                   <button
@@ -264,7 +266,7 @@ const UserNode: React.FC<{
                 <div className={`rounded-2xl px-4 py-2.5 bg-zinc-800/60 border ${sendFailed ? 'border-red-500/40' : 'border-border-muted'}`}>
                   <div className="text-zinc-200 leading-relaxed select-text">
                     <MessageContent
-                      content={displayContent}
+                      content={shownContent}
                       isUser={true}
                       messageId={messageId}
                       mediaContext={{ sessionId, messageId }}

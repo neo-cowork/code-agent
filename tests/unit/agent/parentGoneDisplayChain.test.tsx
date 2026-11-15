@@ -248,8 +248,10 @@ const sessionId = 'session-parent-gone-display';
 const title = 'Compare three note-taking apps';
 const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\uff00-\uffef]/u;
 
-// Literal byte baselines from origin/main; do not derive the expectation from the active dictionary.
-const chineseCard = '执行失败助手上级任务已经结束';
+// Literal byte baselines; do not derive the expectation from the active dictionary.
+const chineseHeadline = '助手没有完成';
+const chineseReason = '上级任务已经结束';
+const chineseCard = '助手没有完成上级任务已经结束查看详情重试';
 const chinesePanelRow = '助手失败：上级任务已经结束';
 
 async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {
@@ -276,7 +278,10 @@ async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {
       expect(cardText).not.toMatch(cjk);
       expect(cardText).not.toContain('Not completed background');
     } else {
+      expect(card.getByTestId('delegation-headline').textContent).toBe(chineseHeadline);
+      expect(card.getByTestId('delegation-failure').textContent).toBe(chineseReason);
       expect(cardText).toBe(chineseCard);
+      expect(cardText).not.toContain('执行失败助手');
     }
     card.unmount();
     // Only the IPC boundary is stubbed. SessionAgentsPanel runs the real useSessionAgentRows.
@@ -324,7 +329,7 @@ afterEach(() => {
 });
 
 describe('parent-gone production-to-display chain', () => {
-  it('Producer A: real execute reaps a detached child after its first iteration, then renders EN and unchanged ZH', async () => {
+  it('Producer A: real execute reaps a detached child after its first iteration, then renders EN and ZH headlines', async () => {
     const registry = new BackgroundSubagentRegistry();
     const isParentAlive = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
     mocks.responses.push({ type: 'tool_use', toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 } });
@@ -350,7 +355,7 @@ describe('parent-gone production-to-display chain', () => {
     await assertSurfaces(buildAgentTreeSnapshot({ sessionId, backgroundAgents: registry.list() }), 'Producer A');
   });
 
-  it('Producer B: real recovery terminalizes a durable child and renders EN and unchanged ZH', async () => {
+  it('Producer B: real recovery terminalizes a durable child and renders EN and ZH headlines', async () => {
     const db = new Database(':memory:');
     const repository = new DurableRunRepository(db);
     repository.migrate();
@@ -426,10 +431,15 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
     }, [], snapshot.nodes, locale === 'en' ? en : zh));
     const card = render(<ToolCallDisplay toolCall={interrupted} index={0} total={1} />);
     await waitFor(() => expect(card.container.textContent).toContain(locale === 'en'
-      ? "Background assistant didn't finish" : '执行失败助手')).catch(() => undefined);
-    expect.soft(card.container.textContent).toContain(locale === 'en' ? "Background assistant didn't finish" : '执行失败助手');
+      ? "Background assistant didn't finish" : chineseHeadline)).catch(() => undefined);
+    expect.soft(card.container.textContent).toContain(locale === 'en' ? "Background assistant didn't finish" : chineseHeadline);
     printEvidence(`r2 ${locale} restarted card textContent=${JSON.stringify(card.container.textContent)}`);
-    expect.soft(card.container.textContent).toContain(locale === 'en' ? 'The parent task has already ended' : '上级任务已经结束');
+    expect.soft(card.container.textContent).toContain(locale === 'en' ? 'The parent task has already ended' : chineseReason);
+    if (locale === 'zh') {
+      expect.soft(card.getByTestId('delegation-headline').textContent).toBe(chineseHeadline);
+      expect.soft(card.getByTestId('delegation-failure').textContent).toBe(chineseReason);
+      expect.soft(card.container.textContent).not.toContain('执行失败助手');
+    }
     if (locale === 'en') expect(card.container.textContent).not.toMatch(cjk);
     card.unmount();
     // A real restart has a durable trace member AND a node. Exercise the merged row,

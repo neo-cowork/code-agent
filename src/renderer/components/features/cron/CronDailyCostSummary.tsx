@@ -15,6 +15,18 @@ interface CronDailyCostSummaryProps {
   testId?: string;
 }
 
+function hasUnrecordedSessionCost(execution: CronJobExecution): boolean {
+  if (execution.cost != null || readWakeSkipFromResult(execution.result) !== null) return false;
+  if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(execution.status)) return false;
+  // A missing cost alone is normal for non-model actions and wakes resolved before
+  // creating a session. Only a finished session can have an unrecorded model cost.
+  const result = execution.result;
+  const sessionId = execution.sessionId ?? (
+    typeof result === 'object' && result !== null && 'sessionId' in result ? result.sessionId : undefined
+  );
+  return typeof sessionId === 'string' && sessionId.length > 0;
+}
+
 export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
   executions,
   testId = 'cron-daily-cost-summary',
@@ -28,6 +40,10 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
     runsOn: execution.runsOn,
     skipped: readWakeSkipFromResult(execution.result) !== null,
   })));
+  const incompleteDays = new Set(cronDailyCostTotals(executions
+    .filter(hasUnrecordedSessionCost)
+    .map((execution) => ({ scheduledAt: execution.scheduledAt, startedAt: execution.startedAt, runsOn: execution.runsOn })))
+    .map((bucket) => bucket.dayKey));
   if (totals.length === 0) return null;
   const { today, yesterday } = cronTodayYesterdayKeys(Date.now());
   return (
@@ -46,7 +62,7 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
         return (
           <span key={bucket.dayKey} data-testid={`${testId}-day`} className="text-zinc-400">
             {label}{' '}
-            <span className="font-medium tabular-nums text-zinc-200">{formatRunCostUsd(bucket.totalUsd)}</span>
+            <span className="font-medium tabular-nums text-zinc-200">{incompleteDays.has(bucket.dayKey) ? cc.dailyCostIncomplete : formatRunCostUsd(bucket.totalUsd)}</span>
             <span className="text-zinc-600">{runsNote}</span>
           </span>
         );

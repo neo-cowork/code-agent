@@ -65,7 +65,7 @@ describe('validateCompactionSummary', () => {
     expect(result.missingErrors).toEqual(['Vitest failure: autoCompressor retry test is still failing']);
   });
 
-  it('fails when open work is missing', () => {
+  it('only warns (advisory) when open work is missing', () => {
     const summary = [
       'Files covered: src/host/context/autoCompressor.ts and tests/unit/context/autoCompressor.test.ts.',
       'Unresolved error: autoCompressor retry test is still failing.',
@@ -73,8 +73,9 @@ describe('validateCompactionSummary', () => {
 
     const result = validateCompactionSummary(summary, manifest);
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
     expect(result.missingOpenWork).toEqual(['Todo: wire validator into the retry prompt later']);
+    expect(result.warnings.join('\n')).toContain('open-work');
   });
 
   it('weakly passes basename coverage when needs re-read is explicit', () => {

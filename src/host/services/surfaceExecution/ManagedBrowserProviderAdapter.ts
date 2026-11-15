@@ -2,24 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { takeHostDomSnapshot } from '../infra/browser/domSnapshotHandoff';
 import { withManagedBrowserActivity } from '../infra/browser/managedBrowserActivity';
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
+import { browserPool, getBrowserService } from '../infra/browserPool';
+import type { BrowserDomSnapshot, BrowserService } from '../infra/browserService';
+import type { ManagedBrowserProfileMode, ManagedBrowserSessionState } from '../../../shared/contract/desktop';
 import {
-  browserPool,
-  getBrowserService,
-} from '../infra/browserPool';
-import type {
-  BrowserDomSnapshot,
-  BrowserService,
-} from '../infra/browserService';
-import type {
-  ManagedBrowserProfileMode,
-  ManagedBrowserSessionState,
-} from '../../../shared/contract/desktop';
-import type {
-  SurfaceExecutionErrorV1,
-  SurfaceObservationV1,
-  SurfaceTargetRefV1,
+  SURFACE_USER_BROWSER_AGENT_ID,
+  type SurfaceExecutionErrorV1,
+  type SurfaceObservationV1,
+  type SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
-import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import { createLogger } from '../infra/logger';
 
 const organicNavLogger = createLogger('ManagedBrowserOrganicNav');
@@ -30,16 +21,11 @@ import {
 } from './SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
-import {
-  SecureBrowserResumeStateStore,
-  type BrowserResumeStateStore,
-} from './BrowserResumeStateStore';
+import { SecureBrowserResumeStateStore, type BrowserResumeStateStore } from './BrowserResumeStateStore';
+import { restoreManagedBrowserLastPage, SecureBrowserLastPageStore, type BrowserLastPageStore } from './browserLastPageStore';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
-import {
-  getKeptBrowserRegistry,
-  type KeptBrowserRegistry,
-} from './keptBrowserRegistry';
+import { getKeptBrowserRegistry, type KeptBrowserRegistry } from './keptBrowserRegistry';
 import { releaseManagedBrowserWindow, withTakeoverHandoffNote } from './managedBrowserWindowLifecycle';
 import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
@@ -47,6 +33,7 @@ const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
 const CRON_LOGIN_STATE_EXPORT_LEASE_OWNER = 'cron-login-state-export';
 interface BrowserResumeLogger {
+  info?(message: string, metadata?: unknown): void;
   warn?(message: string, metadata?: unknown): void;
   error(message: string, metadata?: unknown): void;
 }
@@ -246,6 +233,9 @@ export class ManagedBrowserProviderAdapter {
     private readonly resumeStateStore: BrowserResumeStateStore = new SecureBrowserResumeStateStore(),
     private readonly resumeLogger: BrowserResumeLogger = createLogger('ManagedBrowserResume'),
     private readonly keptRegistry: KeptBrowserRegistry = getKeptBrowserRegistry(),
+    private readonly lastPageStore: BrowserLastPageStore = new SecureBrowserLastPageStore({
+      ephemeral: !(resumeStateStore instanceof SecureBrowserResumeStateStore),
+    }),
   ) {}
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
@@ -269,12 +259,13 @@ export class ManagedBrowserProviderAdapter {
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
   }
 
-  async clearConversationResumeState(conversationId: string): Promise<void> {
-    await this.resumeStateStore.clearConversation(conversationId);
+  async clearConversationResumeState(conversationId: string, opts: { keepLastPage?: boolean } = {}): Promise<void> {
+    await Promise.all([this.resumeStateStore.clearConversation(conversationId), opts.keepLastPage ? undefined : this.lastPageStore.clearConversation(conversationId)]);
   }
 
   activateConversationResumeState(conversationId: string): void {
     this.resumeStateStore.activateConversation(conversationId);
+    this.lastPageStore.activateConversation(conversationId);
   }
 
   /**
@@ -608,6 +599,9 @@ export class ManagedBrowserProviderAdapter {
           { cause: error },
         );
       }
+      if (!shared && !keptService && !isUserRun(identity) && serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+        await restoreManagedBrowserLastPage({ conversationId: identity.conversationId, conversationIdHash: hashIdentity([identity.conversationId]), browserService, store: this.lastPageStore, logger: this.resumeLogger });
+      }
       const state = browserService.getSessionState();
       const provider = state.provider || DEFAULT_PROVIDER;
       const prepared = this.runtime.prepareBrowserSession({ identity, provider });
@@ -720,6 +714,7 @@ export class ManagedBrowserProviderAdapter {
       && candidate.browserService === binding.browserService
     ));
     if (!stillShared) binding.browserService.setLeaseInUse(false);
+    await this.exportResumeStateOnNormalRelease(binding);
     await releaseManagedBrowserWindow({
       binding,
       stillShared,
@@ -727,6 +722,10 @@ export class ManagedBrowserProviderAdapter {
       personalServiceKey: MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
       keptRegistry: this.keptRegistry,
       releaseBrowser: this.releaseBrowser,
+      lastPageStore: this.lastPageStore,
+      onLastPageRecordError: (error) => this.resumeLogger.warn?.('Failed to record managed browser last page', {
+        reason: 'last_page_record_failed', conversationIdHash: hashIdentity([binding.identity.conversationId]), error: error instanceof Error ? error.message : String(error),
+      }),
     });
     if (abortShutdownError) throw abortShutdownError;
   }
@@ -849,6 +848,27 @@ export class ManagedBrowserProviderAdapter {
     } finally {
       signal.removeEventListener('abort', closeOnAbort);
       await binding.abortShutdown;
+    }
+  }
+
+  /**
+   * Normal run end saves login state through the same store as the abort path, so the
+   * next turn of this conversation is still signed in. Same exclusions as the last page
+   * record: personal-profile and user-browser runs never write conversation state. An
+   * aborted run already exported and closed its window (not running here), so it is skipped.
+   */
+  private async exportResumeStateOnNormalRelease(binding: ManagedBrowserBinding): Promise<void> {
+    const { identity, serviceKey, browserService } = binding;
+    if (identity.agentId === SURFACE_USER_BROWSER_AGENT_ID || serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) return;
+    if (!browserService.isRunning()) return;
+    try {
+      await this.resumeStateStore.exportForConversation(identity.conversationId, browserService);
+    } catch (error) {
+      this.resumeLogger.warn?.('Failed to save managed browser login state at run end; next turn starts signed out', {
+        reason: 'resume_state_export_on_release_failed',
+        conversationIdHash: hashIdentity([identity.conversationId]),
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

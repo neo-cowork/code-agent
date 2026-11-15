@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, planVitest, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
 import { runPrivateCheckCached } from './lib/casebank-private-cache.mjs';
 import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
@@ -116,6 +116,11 @@ async function gate(id, applicable, run) {
   const record = { id, budgetMs: policy.budgetsMs[id], status: applicable ? 'running' : 'not-applicable', reason: applicable ? 'required by policy/PR paths' : 'no matching PR paths', durationMs: 0 };
   receipt.gates.push(record);
   if (!applicable) return;
+  if (id === 'vitest' && receipt.vitestDeferred && !receipt.vitestDeferred.localFiles.length) {
+    record.status = 'deferred-to-ci';
+    record.reason = 'over-cap; full selected test set deferred to PR CI';
+    return;
+  }
   const began = performance.now();
   activeGate = { id, began };
   console.log(`▶ gates:fast ${id}`);
@@ -137,6 +142,7 @@ try {
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
   if (policy.maxFiles !== 16) throw new Error('FAIL: policy requires 16-file maximum');
+  if (policy.deferMaxFiles !== 200) throw new Error('FAIL: policy requires 200-file deferral ceiling');
   validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')), shipOuterMs);
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
@@ -154,7 +160,10 @@ try {
     receipt.changedFiles = diff.filter((_value, index) => index % 2 === 1);
     receipt.deletedFiles = receipt.changedFiles.filter((_file, index) => diff[index * 2] === 'D');
     const selected = selectTests(policy, receipt.changedFiles, regressions, receipt.deletedFiles);
-    validateFiles(root, selected.files, policy.maxFiles);
+    const plan = planVitest(root, selected.files, policy);
+    if (plan.mode === 'deferred') {
+      receipt.vitestDeferred = { reason: 'over-cap', selected: plan.selected, maxFiles: plan.cap, files: plan.deferredFiles, localFiles: plan.localFiles };
+    }
     receipt.selectedFiles = selected.files;
     receipt.matchedRules = selected.matchedRules;
     receipt.manualRegressions = regressions;
@@ -193,8 +202,9 @@ try {
     if (lintFiles.length) await command([process.execPath, 'node_modules/eslint/bin/eslint.js', ...lintFiles]);
   });
   await gate('vitest', true, async () => {
+    const localFiles = receipt.vitestDeferred?.localFiles ?? receipt.selectedFiles;
     const manifest = path.join(temp, 'selection.json'); const report = path.join(temp, 'vitest.json');
-    fs.writeFileSync(manifest, JSON.stringify({ files: receipt.selectedFiles, maxFiles: policy.maxFiles }));
+    fs.writeFileSync(manifest, JSON.stringify({ files: localFiles, maxFiles: policy.maxFiles }));
     try {
       await command([process.execPath, 'node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.fast.config.ts'], { GATES_FAST_MANIFEST: manifest, GATES_FAST_REPORT: report });
     } catch (error) {
@@ -203,7 +213,7 @@ try {
       if (!failures.length) throw error;
       throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`, { cause: error });
     }
-    receipt.report = validateReport(receipt.selectedFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
+    receipt.report = validateReport(localFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
   });
   await gate('package-typechecks', receipt.packageChecks.length > 0, async () => {
     for (const pkg of receipt.packageChecks) await command(['npm', '--prefix', pkg, 'run', 'typecheck']);

@@ -34,6 +34,8 @@ import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
+import { withUserRequestQuote } from '../permissions/approvalUserRequest';
+import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -508,7 +510,7 @@ export class OrchestratorPermissionIsland {
   async requestPermission(
     request: OrchestratorPermissionRequest,
   ): Promise<PermissionAskResult> {
-    const details = connectorApprovalDetails(request);
+    const details = withUserRequestQuote(request.sessionId, connectorApprovalDetails(request));
     const fullRequest: PermissionRequest = {
       ...request,
       type: details.connectorAccess ? 'mcp' : request.type,
@@ -855,6 +857,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),

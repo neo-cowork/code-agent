@@ -23,6 +23,7 @@ import { buildSlidesOutline } from '../../../services/design/slidesGenerator';
 import { estimateIllustrateCost } from '../../../services/design/slidesIllustrator';
 import { imageModelById, defaultImageModelId } from '../../../../shared/constants/visualModels';
 import { confirmGenerationCost } from './generationCostConfirm';
+import { readUiLanguage } from '../../../session/sessionTitleHostPrompt';
 import { proposeSlidesOpsSchema as schema } from './proposeSlidesOps.schema';
 
 const logger = createLogger('ProposeSlidesOps');
@@ -75,10 +76,12 @@ export async function executeProposeSlidesOps(
     const { count, costCny } = estimateIllustrateCost(outline, imageModel, maxImages);
     if (count > 0 && costCny > 0) {
       confirmedImageCount = count;
+      // 明细单位词跟随 UI 语言（zh「张」/ en「images」），媒介名词由确认卡模块映射。
+      const uiLang = readUiLanguage();
       const confirmed = await confirmGenerationCost({
-        mediaLabel: '演示稿配图',
+        mediaLabel: 'slideImages',
         estCny: costCny,
-        detail: `${count} 张 · ${imageModel}`,
+        detail: uiLang === 'en' ? `${count} images · ${imageModel}` : `${count} 张 · ${imageModel}`,
         sessionId: ctx.sessionId,
         abortSignal: ctx.abortSignal,
       });

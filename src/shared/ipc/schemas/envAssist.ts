@@ -13,6 +13,6 @@ export const EnvAssistSchemas = {
   act: z.object({
     noticeId: z.string().min(1),
     actionKind: z.enum(['open_settings_pane', 'request_grant']),
-    payload: z.object({ pane: z.enum(['automation', 'accessibility', 'screenCapture']) }).strict(),
+    payload: z.object({ pane: z.enum(['automation', 'accessibility', 'screenCapture', 'inputMonitoring']) }).strict(),
   }).strict(),
 };

@@ -26,6 +26,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
+import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorTime } from './connectorTime';
 
 type MailAction = 'get_status' | 'list_accounts' | 'list_mailboxes' | 'list_messages' | 'read_message';
@@ -105,14 +106,14 @@ async function executeMail(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = `Mail connector: unavailable\n${status.detail}\nCapabilities: none`;
+      const output = formatConnectorStatusOutput('mail', status);
       return {
         ok: true,
         output,
         meta: buildMailMeta(ctx, action, output, { status }),
       };
     }
-    return { ok: false, error: 'Mail connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('mail', 'read'), code: 'NOT_INITIALIZED' };
   }
 
   try {
@@ -121,7 +122,7 @@ async function executeMail(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
-      const output = `Mail connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`;
+      const output = formatConnectorStatusOutput('mail', status);
       return {
         ok: true,
         output,

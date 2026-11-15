@@ -1,3 +1,4 @@
+import { sessionTaskStatusLabel } from '../../../src/shared/i18n/sessionTaskStatus';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -78,8 +79,8 @@ for (const wrapped of [true, false]) {
     const helper = startHelper(id, '总结B', wrapped);
     if (!wrapped) expect(getBackgroundSubagentRegistry().listBySession(id)).toEqual([]);
     const first = await executeTaskStatus({}, context(id), allow);
-    expect(first.ok && first.output).toContain('总结B [running]');
-    expect(first.ok && first.output).toContain('No remaining-time data exists. Do not estimate an ETA.');
+    expect(first.ok && first.output).toContain('总结B ：进行中');
+    expect(first.ok && first.output).toContain('没有剩余时间数据，请勿估算完成时间。');
     // The executor publishes fresh context independently of lifecycle recording.
     const record = getSubagentContextStore().get(id, helper.agentId)!;
     const { lifecycle: _lifecycle, ...snapshotUpdate } = record;
@@ -93,10 +94,10 @@ for (const wrapped of [true, false]) {
     const second = await executeTaskStatus({}, context(id), allow);
     expect(second.ok).toBe(true);
     if (!second.ok) throw new Error(second.error);
-    expect(second.output.match(/\[completed\]/g)).toHaveLength(1);
-    expect(second.output).toContain(`总结B [completed] id=${panel.nodes[0].id} duration=`);
-    expect(second.output).not.toContain('[running]');
-    expect(second.output).not.toContain('No remaining-time');
+    expect(second.output.match(/已完成/g)).toHaveLength(1);
+    expect(second.output).toContain(`总结B ：已完成，已用时`);
+    expect(second.output).not.toContain('进行中');
+    expect(second.output).not.toContain('没有剩余时间');
     console.log('snapshot proof', JSON.stringify({ variant: wrapped ? 'run_in_background:true' : 'waitForCompletion:false', first: first.ok ? first.output : first.error, second: second.output, panel: panel.nodes.map(({ id, status, sources }) => ({ id, status, sources })) }));
   });
 }
@@ -109,8 +110,8 @@ it('same-role helpers keep their spawn names and exclude another session and for
   const foregroundId = 'foreground-helper';
   getSpawnGuard().register(foregroundId, 'explore', 'Foreground work', Promise.resolve(result()), new AbortController(), { treeId: id });
   const read = await executeTaskStatus({}, context(id), allow);
-  expect(read.ok && read.output).toContain('总结A [running]');
-  expect(read.ok && read.output).toContain('总结B [running]');
+  expect(read.ok && read.output).toContain('总结A ：进行中');
+  expect(read.ok && read.output).toContain('总结B ：进行中');
   expect(read.ok && read.output).not.toContain('Other session');
   expect(read.ok && read.output).not.toContain(foregroundId);
   for (const helper of [a, b, other]) helper.resolve(result());
@@ -134,8 +135,8 @@ it.each(['completed', 'failed', 'cancelled'] as const)('persisted %s beats the b
   expect(snapshot.nodes).toHaveLength(1);
   expect(snapshot.nodes[0].status).toBe(status);
   const read = await executeTaskStatus({}, context(id), allow);
-  expect(read.ok && read.output).toContain(`总结B [${status}]`);
-  expect(read.ok && read.output).toContain('duration=44 s');
+  expect(read.ok && read.output).toContain(`总结B ：${sessionTaskStatusLabel(status)}`);
+  expect(read.ok && read.output).toContain('已用时44 秒');
 });
 
 it('unfinished old contexts remain cancelled, never resurrected by the new lifecycle fields', async () => {
@@ -155,7 +156,7 @@ it('keeps the spawn name before the executor context exists', async () => {
     sessionId: id, title: 'Read all folder-b notes', role: 'explore', displayName: '总结B',
   });
   const status = await executeTaskStatus({}, context(id), allow);
-  expect(status.ok && status.output).toContain(`总结B [running] id=${agentId}`);
+  expect(status.ok && status.output).toContain(`总结B ：进行中`);
   expect(getAgentTreeSnapshot({ sessionId: id }).nodes).toHaveLength(1);
   resolve(result());
   await registry.await(agentId);
@@ -200,7 +201,7 @@ it.each(['Explore', 'Skill:notes'])('%s inherits only parent agentId without ove
       id: parent.agentId, displayName: '总结B', status: 'running', background: true,
     });
     const status = await executeTaskStatus({}, context(id), allow);
-    expect(status.ok && status.output).toContain('总结B [running]');
+    expect(status.ok && status.output).toContain('总结B ：进行中');
     expect(status.ok && status.output).not.toContain(name);
 
     // Reload the real parent record as if the host restarted before the parent finished.

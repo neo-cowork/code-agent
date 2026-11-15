@@ -415,11 +415,13 @@ type FirstWakeRunner = (input: {
  * 那个私有函数的工具面在内部解析，没有只读交集参数，导出并改签名会超出本单对
  * roleProactivity.ts「只加 export」的约束。
  */
-async function defaultFirstWakeRunner(input: {
+export async function defaultFirstWakeRunner(input: {
   roleId: string;
   sessionId: string;
   prompt: string;
   allowedToolNames: string[];
+  /** 缺省 = 首次醒来的上限；会后纪要（meetingMinutes.ts）复用本执行器时传自己的 */
+  maxIterations?: number;
 }): Promise<{ finalOutput: string }> {
   const { getSessionManager } = await import('../infra/sessionManager');
   const sessionManager = getSessionManager();
@@ -442,7 +444,7 @@ async function defaultFirstWakeRunner(input: {
         systemInstructions: [UNATTENDED_TRUST_NOTICE],
         disableAutoAgent: true,
         agentOverrideId: input.roleId,
-        maxIterations: ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS,
+        maxIterations: input.maxIterations ?? ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS,
         allowedToolNames: input.allowedToolNames,
       });
     } finally {
@@ -476,7 +478,7 @@ async function defaultFirstWakeRunner(input: {
     }
 
     config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
-    config.maxIterations = ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS;
+    config.maxIterations = input.maxIterations ?? ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS;
     // 首次醒来是无人值守发起，不进上线后评测分母。
     config.originKind = 'headless';
     config.allowedToolNames = input.allowedToolNames;

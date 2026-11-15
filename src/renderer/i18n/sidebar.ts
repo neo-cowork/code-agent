@@ -1,4 +1,5 @@
 import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
+import { CHOOSE_FOLDER_ENTRY_LABEL } from '@shared/i18n/chooseFolderEntry';
 // ============================================================================
 // 侧边栏导航域词条（Sidebar / features/sidebar 各组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / chatTranscript.ts 先例）。
@@ -6,8 +7,14 @@ import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 
 export const sidebarZh = {
+  modelSwitcherTooltip: {
+    engine: '运行引擎', service: '服务状态', effort: '推理强度', thinking: '思考',
+  },
+
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.zh,
+    scheduleSessionPrefix: '[定时]',
+    heartbeatSessionPrefix: '[心跳]',
     // 顶部 / 搜索
     newTask: '新任务',
     collapseSidebar: '收起侧栏',
@@ -218,7 +225,8 @@ export const sidebarZh = {
     tierCollapse: '折叠分区',
     tierExpand: '展开分区',
     tierNewSpace: '新建协作空间',
-    tierNewProject: '新建独立空间',
+    tierNewProject: CHOOSE_FOLDER_ENTRY_LABEL.zh,
+    chooseFolderEntry: CHOOSE_FOLDER_ENTRY_LABEL.zh,
     tierNewQuickChat: '新建快速对话',
     // 分组头展开/收起 tooltip 与 aria（sidebarGroupExpansion 纯工具由调用方注入词条）
     collapseGroupTitle: '折叠项目',
@@ -391,8 +399,14 @@ export const sidebarZh = {
 };
 
 export const sidebarEn: typeof sidebarZh = {
+  modelSwitcherTooltip: {
+    engine: 'Engine', service: 'Provider', effort: 'Effort', thinking: 'Thinking',
+  },
+
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.en,
+    scheduleSessionPrefix: '[Schedule]',
+    heartbeatSessionPrefix: '[Heartbeat]',
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
@@ -584,7 +598,8 @@ export const sidebarEn: typeof sidebarZh = {
     tierCollapse: 'Collapse section',
     tierExpand: 'Expand section',
     tierNewSpace: 'New space',
-    tierNewProject: 'New local space',
+    tierNewProject: CHOOSE_FOLDER_ENTRY_LABEL.en,
+    chooseFolderEntry: CHOOSE_FOLDER_ENTRY_LABEL.en,
     tierNewQuickChat: 'New quick chat',
     collapseGroupTitle: 'Collapse project',
     expandGroupTitle: 'Expand project',

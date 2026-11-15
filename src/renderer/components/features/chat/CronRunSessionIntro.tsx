@@ -11,17 +11,19 @@ import { useI18n } from '../../../hooks/useI18n';
 
 export const CronRunSessionIntro: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
-  const isCronRunSession = useSessionStore((state) => {
-    if (!sessionId) return false;
+  const label = useSessionStore((state) => {
+    if (!sessionId) return null;
     const origin = state.sessions.find((session) => session.id === sessionId)?.origin;
-    if (origin?.metadata?.trigger === 'first_wake') return false;
+    if (origin?.metadata?.trigger === 'first_wake') return null;
+    // 散会后记言出纪要的会话不是定时任务（N-MEETING-PAGE）
+    if (origin?.metadata?.trigger === 'meeting_minutes') return 'meeting_minutes';
     const kind = origin?.kind;
-    return kind === 'cron' || kind === 'heartbeat';
+    return kind === 'cron' || kind === 'heartbeat' ? 'cron' : null;
   });
-  if (!isCronRunSession) return null;
+  if (!label) return null;
   return (
     <p className="py-1 text-xs text-zinc-500" data-testid="cron-run-intro-label">
-      {t.cronRunRecord.kindLabel}
+      {label === 'meeting_minutes' ? t.library.meetings.minutesSessionLabel : t.cronRunRecord.kindLabel}
     </p>
   );
 };

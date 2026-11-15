@@ -4,12 +4,13 @@
 // 注入发送器断言：只在 background 弹；none/stop 不弹；发送器抛错不炸通知主路径。
 // 意图状态机没有复位到 none 的入口——用例按序先测「非 background」再切 background。
 // ============================================================================
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../../../src/shared/parkedApprovalLocation';
 
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
   broadcast: vi.fn(),
+  info: vi.fn(),
 }));
 
 vi.mock('../../../../src/host/platform', () => ({
@@ -21,7 +22,7 @@ vi.mock('../../../../src/host/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({ register: vi.fn() }),
 }));
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ debug: vi.fn(), info: platformMocks.info, warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
@@ -37,9 +38,14 @@ const nativeSender = vi.fn();
 beforeEach(() => {
   platformMocks.focusedWindow = null;
   platformMocks.broadcast.mockClear();
+  platformMocks.info.mockClear();
   nativeSender.mockClear();
   notificationService.clearRecentNotifications();
   notificationService.setNativeNotificationSender(nativeSender);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('needs-input 原生通知兜底（fallback B）', () => {
@@ -118,5 +124,39 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     }, { force: true });
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
     expect(nativeSender).not.toHaveBeenCalled();
+  });
+
+  it('CODE_AGENT_NOTIFICATION_DRY_RUN=1 + background 时只记录不弹原生通知（记 dry-run 跳过日志）', () => {
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '1');
+    setDaemonQuitIntent('background');
+    notificationService.notifyNeedsInput({
+      sessionId: 's1',
+      title: '有操作等你确认',
+      body: '无人值守任务请求执行 write_file',
+    });
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(0);
+    expect(nativeSender).toHaveBeenCalledTimes(0);
+    expect(notificationService.getRecentNotifications()).toEqual([
+      expect.objectContaining({ sessionId: 's1', type: 'needs_input', delivery: 'dry_run' }),
+    ]);
+    expect(platformMocks.info).toHaveBeenCalledWith('Native needs-input notification skipped', {
+      reason: 'dry-run',
+    });
+  });
+
+  it('未开启 dry-run（CODE_AGENT_NOTIFICATION_DRY_RUN 为空）+ background 时照常调用一次原生发送器', () => {
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '');
+    nativeSender.mockImplementation(() => {});
+    setDaemonQuitIntent('background');
+    notificationService.notifyNeedsInput({
+      sessionId: 's1',
+      title: '有操作等你确认',
+      body: '无人值守任务请求执行 write_file',
+    });
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+    expect(nativeSender).toHaveBeenCalledTimes(1);
+    expect(platformMocks.info).not.toHaveBeenCalledWith('Native needs-input notification skipped', {
+      reason: 'dry-run',
+    });
   });
 });

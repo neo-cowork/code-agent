@@ -483,9 +483,14 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
 
     await screen.findByTestId('role-quiet-hours-start');
-    fireEvent.change(screen.getByTestId('role-quiet-hours-start-hour'), { target: { value: '23' } });
-    fireEvent.change(screen.getByTestId('role-quiet-hours-end-hour'), { target: { value: '07' } });
-    fireEvent.change(screen.getByTestId('role-quiet-hours-end-minute'), { target: { value: '30' } });
+    // 慢机上编辑器会在异步加载完成时重置本地草稿，吞掉先前的输入；编辑到读回值一致再点保存。
+    await waitFor(() => {
+      fireEvent.change(screen.getByTestId('role-quiet-hours-start-hour'), { target: { value: '23' } });
+      fireEvent.change(screen.getByTestId('role-quiet-hours-end-hour'), { target: { value: '07' } });
+      fireEvent.change(screen.getByTestId('role-quiet-hours-end-minute'), { target: { value: '30' } });
+      expect(screen.getByTestId('role-quiet-hours-start-hour')).toHaveProperty('value', '23');
+      expect(screen.getByTestId('role-quiet-hours-end-hour')).toHaveProperty('value', '07');
+    });
     fireEvent.click(screen.getByTestId('role-quiet-hours-save'));
 
     await waitFor(() => {

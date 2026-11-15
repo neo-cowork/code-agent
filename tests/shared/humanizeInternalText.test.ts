@@ -134,4 +134,32 @@ describe('humanizeInternalText', () => {
       expect(zh.collapseIntoDetails).toBeUndefined();
     }
   });
+
+  it('handover tool names are humanized in zh and en; ordinary prose is untouched', () => {
+    const raw = 'call delegate_session after list_session_candidates (candidateSetId), then delegate_existing or create_new; MemoryRead, Glob';
+    const zh = humanizeInternalText(raw, 'zh').text;
+    const en = humanizeInternalText(raw, 'en').text;
+    for (const name of ['delegate_session', 'list_session_candidates', 'candidateSetId', 'delegate_existing', 'create_new', 'MemoryRead', 'Glob']) {
+      expect(zh).not.toContain(name);
+      expect(en).not.toContain(name);
+    }
+    expect(zh).toContain('转交到另一个会话');
+    expect(en).toContain('Hand off to another chat');
+    const prose = 'Globally, the user wants a new chat for the picnic plan.';
+    expect(humanizeInternalText(prose, 'en')).toEqual({ text: prose, detectedFormats: [] });
+  });
+
+  it('internal `active` state forms are humanized; ordinary prose with "active" is unchanged', () => {
+    const raw = 'state is active; {"status":"active"}; status: active; `active`; Active: 1/1d';
+    const zh = humanizeInternalText(raw, 'zh').text;
+    const en = humanizeInternalText(raw, 'en').text;
+    for (const out of [zh, en]) expect(out).not.toMatch(/state is active|status: active|"status"|`active`|1\/1d/);
+    expect(zh).toContain('状态：进行中');
+    expect(zh).toContain('活跃会话 1 个');
+    expect(en).toContain('Status: in progress');
+    expect(en).toContain('Active chats: 1');
+    for (const prose of ["There's an active background task", 'no background tasks active', 'the status of active tasks']) {
+      expect(humanizeInternalText(prose, 'en')).toEqual({ text: prose, detectedFormats: [] });
+    }
+  });
 });

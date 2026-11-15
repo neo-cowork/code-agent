@@ -154,6 +154,8 @@ export type CompactionSource =
 
 export interface CompactionSurvivorFile {
   path: string;
+  /** true = 摘要必须逐字包含；false = 仅提示（缺失只记 warning）；缺省 = 旧行为（视为必须） */
+  required?: boolean;
   reason?: string;
   needsReRead?: boolean;
   survival?: 'path_only' | 'digest' | 'excerpt';
