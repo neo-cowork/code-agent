@@ -24,7 +24,10 @@ const LAB_DIR = path.join(COMPONENTS_DIR, 'features/lab');
 const ZERO_TOLERANCE: string[] = [
   'features/lab/LabPage.tsx',
   'features/lab/alignment/AlignmentLab.tsx',
+  'features/lab/alignment/stages/AlignmentComparison.tsx',
   'features/lab/alignment/stages/PPOStage.tsx',
+  'features/lab/alignment/stages/RewardModelStage.tsx',
+  'features/lab/alignment/stages/SFTStage.tsx',
   'features/lab/gpt1/GPT1Lab.tsx',
   'features/lab/gpt1/RealModePanel.tsx',
   'features/lab/gpt1/stages/ModelArchitecture.tsx',
@@ -33,6 +36,9 @@ const ZERO_TOLERANCE: string[] = [
   'features/lab/llamafactory/stages/IntroStage.tsx',
   'features/lab/llamafactory/stages/MethodStage.tsx',
   'features/lab/llamafactory/stages/PracticeStage.tsx',
+  'features/lab/llamafactory/stages/PreferenceStage.tsx',
+  'features/lab/llamafactory/stages/RLHFStage.tsx',
+  'features/lab/llamafactory/stages/SFTStage.tsx',
   'features/lab/nanogpt/NanoGPTLab.tsx',
   'features/lab/nanogpt/RealModePanel.tsx',
   'features/lab/nanogpt/stages/ModelArchitecture.tsx',
@@ -45,15 +51,9 @@ const ZERO_TOLERANCE: string[] = [
  * 莎士比亚语料等），不是解释给用户看的 UI 文案，故意保留原文。
  */
 const CONTENT_ALLOWLIST: Record<string, number> = {
-  'features/lab/alignment/stages/AlignmentComparison.tsx': 24, // 三阶段模型输出对比样本（base/sft/rlhf）
-  'features/lab/alignment/stages/RewardModelStage.tsx': 18, // RM 偏好对比样本（responseA/B + 标签）
-  'features/lab/alignment/stages/SFTStage.tsx': 17, // SFT 指令-回答训练样本 + before/after 对比
   'features/lab/gpt1/stages/DataPreparation.tsx': 8, // 样例对话训练语料（sampleDialogues）
   'features/lab/gpt1/stages/InferenceTest.tsx': 11, // 模拟已训练模型的候选回复查找表
   'features/lab/gpt1/stages/TokenizerStage.tsx': 7, // mockVocab 词表 + 绑定的默认输入文本
-  'features/lab/llamafactory/stages/PreferenceStage.tsx': 6, // DPO 偏好样本（chosen/rejected）
-  'features/lab/llamafactory/stages/RLHFStage.tsx': 1, // RFT 演示题目（question）
-  'features/lab/llamafactory/stages/SFTStage.tsx': 9, // Alpaca/ShareGPT/OpenAI 数据格式 JSON 样本
   'features/lab/nanogpt/stages/DataPreparation.tsx': 15, // 莎士比亚语料预览 + 分词映射样本
   'features/lab/nanogpt/stages/Finetuning.tsx': 8, // 微调前后生成文本对比样本
   'features/lab/nanogpt/stages/Inference.tsx': 31, // 候选 token 概率分布 + 生成文本样例

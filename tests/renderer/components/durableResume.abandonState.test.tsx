@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// N-STOP-ABANDON-ENTRY：停靠（user_stop 等）待「继续」的 run 在 resume-notice 行里加「放弃」。
+// N-STOP-ABANDON-ENTRY：停靠（user_stop 等）待「继续」的 run 的「放弃」入口。
+// N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT 起「放弃」并入输入框里「继续」同一处，停靠行只说原因不带按钮。
 // 这里钉的是渲染层契约：行何时出现、模态先于 IPC、确认才终态化、投影翻终态后行消失。
 // 装配方式镜像 ChatView 的接线（同 durableResume.continueState.test.tsx 的 ParkedComposer 先例），
 // composer 核心键（Stop/Continue）不在本单改动面，⑤ 只钉「没多出新的 composer 按钮」。
@@ -20,6 +21,7 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useI18n } from '../../../src/renderer/hooks/useI18n';
 import {
+  DurableParkedNotice,
   DurableResumeNotice,
   shouldShowParkedNotice,
   useAbandonParkedRun,
@@ -33,29 +35,27 @@ const PARKED = { mode: 'continue', canContinue: true, runId: 'run-parked-1' };
 // preserveParkedContinueOnRefresh），在首个用例覆写前抓原始引用。
 const realLoadSessions = useSessionStore.getState().loadSessions;
 
-// 与 ChatView 相同的接线：mode 行 + 停靠行（带放弃）+ confirmDialog + composer。
+// 与 ChatView 相同的接线：mode 行 + 停靠原因行（无按钮）+ confirmDialog + composer（继续/放弃同处）。
 function ParkedRow({ resume, turnActive }: {
   resume: { mode: string; canContinue: boolean; runId?: string; quotaWait?: unknown } | undefined;
   turnActive: boolean;
 }) {
   const { t } = useI18n();
   const show = useDurableContinueVisible(resume, turnActive);
-  const showRow = shouldShowParkedNotice(show, resume);
+  const showRow = shouldShowParkedNotice(resume, turnActive);
   const abandon = useAbandonParkedRun(SESSION_ID, resume?.runId);
   return (
     <>
       {resume?.mode === 'auto-resuming' && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
       {resume?.mode === 'queued' && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-      {showRow && (
-        <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={
-          <button type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={abandon.onAbandon}>{t.chat.durableAbandon}</button>
-        } />
-      )}
+      {showRow && <DurableParkedNotice />}
       {abandon.confirmDialog}
-      <SendButton hasContinuation={show} isProcessing={turnActive} onContinue={() => undefined} onStop={() => undefined} />
+      <SendButton hasContinuation={show} isProcessing={turnActive} onContinue={() => undefined} onAbandon={abandon.onAbandon} onStop={() => undefined} />
     </>
   );
 }
+
+const ROW = 'durable-stopped-notice';
 
 function dialogConfirmButton(): HTMLElement {
   const dialog = screen.getByRole('dialog');
@@ -66,9 +66,9 @@ function dialogConfirmButton(): HTMLElement {
 describe('abandon entry in the durable resume notice row', () => {
   it('quota_wait park (continue+canContinue+quotaWait) shows no stopped row / abandon button', () => {
     const { rerender } = render(<ParkedRow resume={PARKED} turnActive={false} />);
-    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+    expect(screen.getByTestId(ROW)).toBeTruthy();
     rerender(<ParkedRow resume={{ ...PARKED, quotaWait: { dueAt: 1, duePassed: false } }} turnActive={false} />);
-    expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+    expect(screen.queryByTestId(ROW)).toBeNull();
   });
 
   let loadSessions: ReturnType<typeof vi.fn>;
@@ -82,7 +82,7 @@ describe('abandon entry in the durable resume notice row', () => {
 
   it('① parked row carries the abandon button only for idle continue+canContinue; other modes show no abandon; active turn / not continuable hide the row', () => {
     const { rerender } = render(<ParkedRow resume={PARKED} turnActive={false} />);
-    expect(screen.getAllByTestId('durable-resume-notice')).toHaveLength(1);
+    expect(screen.getAllByTestId(ROW)).toHaveLength(1);
     expect(screen.getByRole('button', { name: /^(放弃|Abandon)$/ })).toBeTruthy();
 
     rerender(<ParkedRow resume={{ mode: 'auto-resuming', canContinue: false }} turnActive={false} />);
@@ -95,12 +95,12 @@ describe('abandon entry in the durable resume notice row', () => {
 
     // 活跃轮（Stop 显示中）：停靠行整行不出现
     rerender(<ParkedRow resume={PARKED} turnActive={true} />);
-    expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+    expect(screen.queryByTestId(ROW)).toBeNull();
     expect(screen.queryByRole('button', { name: /^(放弃|Abandon)$/ })).toBeNull();
 
     // canContinue=false：同样不出现
     rerender(<ParkedRow resume={{ mode: 'continue', canContinue: false, runId: 'run-parked-1' }} turnActive={false} />);
-    expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+    expect(screen.queryByTestId(ROW)).toBeNull();
   });
 
   it('② abandon opens the danger modal and no cancel IPC fires; dialog Cancel closes it, still no IPC', () => {
@@ -128,7 +128,7 @@ describe('abandon entry in the durable resume notice row', () => {
     expect(ipcInvoke).toHaveBeenCalledWith('agent:cancel', { sessionId: SESSION_ID, runId: 'run-parked-1', abandonParked: true });
     await waitFor(() => expect(loadSessions).toHaveBeenCalledWith({ silent: true }));
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+    expect(screen.getByTestId(ROW)).toBeTruthy();
 
     // IPC 拒绝：toast.error 带原始 message，停靠行不动（投影没翻终态）
     ipcInvoke.mockRejectedValueOnce(new Error('cancel route down'));
@@ -136,26 +136,27 @@ describe('abandon entry in the durable resume notice row', () => {
     fireEvent.click(screen.getByRole('button', { name: /^(放弃|Abandon)$/ }));
     fireEvent.click(dialogConfirmButton());
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('cancel route down'));
-    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+    expect(screen.getByTestId(ROW)).toBeTruthy();
   });
 
   it('④ once the refreshed projection has no durableResume the row and abandon button disappear', () => {
     const { rerender } = render(<ParkedRow resume={PARKED} turnActive={false} />);
-    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+    expect(screen.getByTestId(ROW)).toBeTruthy();
     expect(screen.getByRole('button', { name: /^(放弃|Abandon)$/ })).toBeTruthy();
 
     rerender(<ParkedRow resume={undefined} turnActive={false} />);
-    expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+    expect(screen.queryByTestId(ROW)).toBeNull();
     expect(screen.queryByRole('button', { name: /^(放弃|Abandon)$/ })).toBeNull();
   });
 
-  it('⑤ composer core actions unchanged: parked renders Continue, active turn renders Stop, abandon never lives in the composer', () => {
+  it('⑤ one action entry: Continue and Abandon live together in the composer, the parked row has no buttons; active turn renders Stop only', () => {
     const { rerender } = render(<ParkedRow resume={PARKED} turnActive={false} />);
-    const composerContinue = screen.getByTestId('continue-run-button');
-    expect(composerContinue).toBeTruthy();
-    // 放弃钮挂在 notice 行内，不在 composer 按钮位上
-    expect(composerContinue.closest('[data-testid="durable-resume-notice"]')).toBeNull();
-    expect(screen.getByRole('button', { name: /^(放弃|Abandon)$/ }).closest('[data-testid="durable-resume-notice"]')).not.toBeNull();
+    const control = screen.getByTestId('continue-run-control');
+    expect(screen.getAllByTestId('continue-run-control')).toHaveLength(1);
+    expect(within(control).getByTestId('continue-run-button')).toBeTruthy();
+    expect(within(control).getByRole('button', { name: /^(放弃|Abandon)$/ })).toBeTruthy();
+    expect(within(screen.getByTestId(ROW)).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.getAllByRole('button', { name: /^(放弃|Abandon)$/ })).toHaveLength(1);
 
     rerender(<ParkedRow resume={PARKED} turnActive={true} />);
     expect(screen.queryByTestId('continue-run-button')).toBeNull();
@@ -176,11 +177,8 @@ describe('abandon clears the parked projection against the stale-guarded session
     const abandon = useAbandonParkedRun(SESSION_ID, resume?.runId);
     return (
       <>
-        {show && (
-          <DurableResumeNotice text="parked" actions={
-            <button type="button" onClick={abandon.onAbandon}>放弃</button>
-          } />
-        )}
+        {show && <DurableParkedNotice interruptCause={resume?.interruptCause} />}
+        <SendButton hasContinuation={show} onContinue={() => undefined} onAbandon={abandon.onAbandon} />
         {abandon.confirmDialog}
       </>
     );
@@ -213,13 +211,13 @@ describe('abandon clears the parked projection against the stale-guarded session
 
   it('confirmed abandon removes the row even though the refreshed row is not newer and carries no projection', async () => {
     render(<StoreDrivenRow turnActive={false} />);
-    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+    expect(screen.getByTestId(ROW)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '放弃' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '放弃' }));
 
     await waitFor(() => {
-      expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+      expect(screen.queryByTestId(ROW)).toBeNull();
     }, { timeout: 2_000 });
     expect(useSessionStore.getState().sessions.find((session) => session.id === SESSION_ID)?.durableResume).toBeUndefined();
   });

@@ -5,6 +5,9 @@
 //! `CODE_AGENT_ENV_ASSIST_BRIDGE_URL` and `CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN`.
 
 #[cfg(target_os = "macos")]
+mod calendar;
+
+#[cfg(target_os = "macos")]
 mod imp {
     use serde::Deserialize;
     use std::io::{Read, Write};
@@ -28,6 +31,16 @@ mod imp {
         fn grant_screen(&self) -> Result<bool, String>;
         fn grant_input(&self) -> Result<bool, String>;
         fn grant_automation(&self, target_bundle_id: &str) -> Result<i32, String>;
+        // EventKit calendar routes live in env_assist_bridge_calendar.rs; defaults are the real native calls.
+        fn passive_calendar(&self) -> Result<i64, String> {
+            crate::env_assist_calendar::authorization_status()
+        }
+        fn grant_calendar(&self) -> Result<(), String> {
+            crate::env_assist_calendar::request_full_access()
+        }
+        fn read_calendar_events(&self, from_ms: i64, to_ms: i64) -> Result<Vec<crate::env_assist_calendar::CalendarEvent>, String> {
+            crate::env_assist_calendar::list_events(from_ms, to_ms)
+        }
     }
 
     struct RealBridgeHandlers;
@@ -134,7 +147,7 @@ mod imp {
         buf.windows(4).position(|window| window == b"\r\n\r\n")
     }
 
-    fn parse_empty_or_empty_object(body: &[u8]) -> Result<(), ()> {
+    pub(super) fn parse_empty_or_empty_object(body: &[u8]) -> Result<(), ()> {
         if body.iter().all(|b| b.is_ascii_whitespace()) {
             return Ok(());
         }
@@ -502,6 +515,9 @@ mod imp {
                         .map(|code| serde_json::json!({ "requested": true, "code": code }))
                         .map_err(native_err)
                 }),
+            "/v1/passive/calendar" | "/v1/grant/calendar" | "/v1/read/calendar-events" => {
+                super::calendar::route(path, &body, handlers)
+            }
             _ => Err((
                 404,
                 "Not Found",
@@ -517,7 +533,7 @@ mod imp {
         }
     }
 
-    fn bad_body() -> (u16, &'static str, serde_json::Value) {
+    pub(super) fn bad_body() -> (u16, &'static str, serde_json::Value) {
         (
             400,
             "Bad Request",
@@ -525,7 +541,7 @@ mod imp {
         )
     }
 
-    fn native_err(detail: String) -> (u16, &'static str, serde_json::Value) {
+    pub(super) fn native_err(detail: String) -> (u16, &'static str, serde_json::Value) {
         (
             500,
             "Internal Server Error",
@@ -673,6 +689,10 @@ mod imp {
                 .parse()
                 .expect("numeric status");
             (code, resp)
+        }
+
+        mod node_chain {
+            include!("env_assist_bridge_chain_tests.rs");
         }
 
         #[test]

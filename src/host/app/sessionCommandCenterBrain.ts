@@ -1,8 +1,11 @@
+import { BACKGROUND_HANDOFF_REPLY, DELEGATED_METHOD_REQUIREMENT } from '../services/commandCenter/delegationGuidance';
+import { resolveTurnToolFace } from '../agent/runtime/turnToolFace';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
+import { isScheduleTaskChatIntent } from './scheduleTaskChatIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
 import { createLogger } from '../services/infra/logger';
 import { resolveModelInfo } from '../model/modelInfo';
@@ -31,7 +34,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '派活纪律：short_name 用 2-4 个字符，中文或英文均可；同一目标沿用 lane_key；同一 turn 的重试沿用 submission_key。',
   'delegate_task 返回 accepted 只表示后台已接单。你可以告诉用户已经开始或排队，但不得声称完成；完成、失败和取消只以后续任务终态回流为准。',
   '绝不描述你没有真做过的事。只有对应工具返回成功后，才可以说已经读取、修改或执行。',
-  '不要用“好的收到”空承接。派活后用一句话说明哪件短名已开始、排队或需要选择，然后结束当前 turn。',
+  BACKGROUND_HANDOFF_REPLY + ' ' + DELEGATED_METHOD_REQUIREMENT,
   // 只讲能做什么，不枚举缺什么：ADR-056 首轮真机 FAIL 的机制是负向枚举本身——原文点名
   // 「Bash/Write/Edit 一概没有」并在同句写「不要说"环境禁用了"」，模型把三个工具名和「禁用」
   // 原样还了回来（session_1786186241326_0bce358d）。删起因优于再加一层反向指令。
@@ -100,11 +103,19 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
 /**
  * 回合级规则块（不含常驻基块）：存草稿判据命中的轮才有内容。
  * web 主链（routes/agent.ts）把这份并进模型面 turn 脚手架——config.systemPrompt 那份
- * 会在 contextAssembly 重建系统消息时被丢（ctx.systemPrompt 不进请求，2026-11-11 FU1
- * 真机抓包实证）；桌面 envelope 路仍走 withSessionCommandCenterBrain 的全量清单。
+ * 由 contextAssembly 保留为系统身份的一部分；桌面 envelope 路仍走
+ * withSessionCommandCenterBrain 的全量清单。
  */
 export function getSessionCommandCenterTurnRulesForPrompt(prompt: string): string[] {
-  return isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
+  const rules = isMorningBriefSaveDraftReply(prompt) ? [MORNING_BRIEF_SAVE_DRAFT_CONTEXT] : [];
+  if (isScheduleTaskChatIntent(prompt)) rules.push([
+    '<schedule_task_draft>',
+    '用户要求新建定时、周期、自动执行或一次性预约任务时，调用 schedule_task 一次，description 原样传入用户请求（包括时间和要做的事），不要翻译。它打开与 /schedule 相同的草案确认卡，用户确认前不创建任务。',
+    '不要用 reminders_* 代替自动执行任务，不要搜索文件或 cron_summary，不要委派后台去创建。调用后以用户原话的语言回复：英文请求只用英文，中文请求用中文；简短说明草案卡已准备好、确认后才会创建，不能声称任务已存在。',
+    '若只是询问如何创建、解释功能、讨论故障或开发工作，直接回答或处理原请求，不调用 schedule_task；启用、删除、列出已有任务也不调用。单次提醒联系某人等提醒事项仍走提醒事项路径。',
+    '</schedule_task_draft>',
+  ].join('\n'));
+  return rules;
 }
 
 /**
@@ -174,12 +185,11 @@ export function getTextForegroundToolNamesForPrompt(
   // 角色主动性写入必须留在用户亲自参与的前台轮次，并继续走工具内 force-confirm。
   // 只在相关请求命中时进 allowlist，避免每轮挂载写工具 schema。
   if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
+  if (isScheduleTaskChatIntent(prompt)) extras.push('schedule_task');
   // 无意图命中时零副作用（不触 configService/registry）。
   extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
   extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
-  if (extras.length === 0) return base;
-  // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
-  return Array.from(new Set([...base, ...extras]));
+  return resolveTurnToolFace({ baseToolNames: base, requiredToolNames: extras, prompt, foreground: true }) ?? base;
 }
 
 /** Shared logging and explicit-cap clamp for desktop and web assembly. */

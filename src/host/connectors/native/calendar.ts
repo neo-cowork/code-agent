@@ -13,6 +13,9 @@ import {
   sharedAppleScriptHandlers,
 } from './osascript';
 
+/** Every Calendar script may be the one that shows the automation dialog. */
+const runCalendarScript = (lines: string[]) => runAppleScript(lines, { permissionTarget: 'com.apple.iCal' });
+
 interface CalendarEventItem {
   uid: string;
   calendar: string;
@@ -99,7 +102,7 @@ function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
 }
 
 async function listCalendars(): Promise<string[]> {
-  const output = await runAppleScript([
+  const output = await runCalendarScript([
     ...sharedAppleScriptHandlers(),
     'tell application "Calendar"',
     'set outputLines to {}',
@@ -117,7 +120,7 @@ async function listCalendars(): Promise<string[]> {
 }
 
 async function listWritableCalendars(): Promise<string[]> {
-  const output = await runAppleScript([
+  const output = await runCalendarScript([
     ...sharedAppleScriptHandlers(),
     'tell application "Calendar"',
     'set outputLines to {}',
@@ -275,7 +278,7 @@ async function listEvents(payload: Record<string, unknown>): Promise<ListEventsO
   const eventLimit = Math.max(1, Math.min(limit, 200));
 
   if (calendarName) {
-    const output = await runAppleScript(buildSingleCalendarEventsScript(calendarName, fromMs, toMs, eventLimit));
+    const output = await runCalendarScript(buildSingleCalendarEventsScript(calendarName, fromMs, toMs, eventLimit));
     return {
       events: sortAndTruncateEvents(parseEventsFromAppleScriptOutput(output, fromMs, toMs), limit),
     };
@@ -298,7 +301,7 @@ async function listEvents(payload: Record<string, unknown>): Promise<ListEventsO
       break;
     }
     try {
-      const output = await runAppleScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));
+      const output = await runCalendarScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));
       const parsed = parseEventsFromAppleScriptOutput(output, fromMs, toMs);
       collected.push(...parsed);
       if (collected.length >= eventLimit) {
@@ -335,7 +338,7 @@ async function getEvent(payload: Record<string, unknown>): Promise<CalendarEvent
     throw new Error('event_uid is required for get_event');
   }
 
-  const output = await runAppleScript([
+  const output = await runCalendarScript([
     ...sharedAppleScriptHandlers(),
     'tell application "Calendar"',
     `tell calendar "${escapeAppleScriptString(calendarName)}"`,
@@ -404,7 +407,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     propertyParts.push(`location:"${escapeAppleScriptString(location)}"`);
   }
 
-  const output = await runAppleScript([
+  const output = await runCalendarScript([
     ...sharedAppleScriptHandlers(),
     ...buildAppleScriptDateVar('startDate', startMs),
     ...buildAppleScriptDateVar('endDate', endMs),
@@ -491,7 +494,7 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
     'end tell',
   );
 
-  const output = await runAppleScript(lines);
+  const output = await runCalendarScript(lines);
   const [uid, calendar, parsedTitle, startRaw, endRaw, parsedLocation] = parseLine(output);
   return {
     uid,
@@ -519,7 +522,7 @@ async function deleteEvent(payload: Record<string, unknown>): Promise<{
     throw new Error('event_uid is required for delete_event');
   }
 
-  const output = await runAppleScript([
+  const output = await runCalendarScript([
     ...sharedAppleScriptHandlers(),
     'tell application "Calendar"',
     `tell calendar "${escapeAppleScriptString(calendarName)}"`,
