@@ -10,9 +10,9 @@ const { sendMessageMock, invokeDomainMock } = vi.hoisted(() => ({
   invokeDomainMock: vi.fn(),
 }));
 
-vi.mock('../../../src/renderer/services/rolesClient', () => ({
+vi.mock('../../../src/renderer/services/rolesClient', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/renderer/services/rolesClient')>(),
   getFirstWake: vi.fn(async () => null),
-  listRoles: vi.fn(async () => []),
   listWakeProposals: vi.fn(async () => []),
 }));
 
@@ -85,6 +85,8 @@ vi.mock('../../../src/renderer/components/features/surfaceExecution/SurfaceExecu
 }));
 
 import { ChatView } from '../../../src/renderer/components/ChatView';
+import { useRoleLabelsStore } from '../../../src/renderer/stores/roleLabelsStore';
+import { listRoles } from '../../../src/renderer/services/rolesClient';
 import { startEditRoleChat } from '../../../src/renderer/utils/startEditRoleChat';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useAuthStore } from '../../../src/renderer/stores/authStore';
@@ -96,6 +98,7 @@ const initialSessionState = useSessionStore.getState();
 
 afterEach(() => {
   cleanup();
+  useRoleLabelsStore.getState().setRoles([]);
   vi.clearAllMocks();
   delete (window as unknown as { domainAPI?: unknown }).domainAPI;
   useAppStore.setState(initialAppState, true);
@@ -113,6 +116,7 @@ describe('startEditRoleChat + ChatView deterministic seed path', () => {
     };
 
     invokeDomainMock.mockImplementation(async (domain: string, action: string, payload?: { title?: string }) => {
+      if (domain === IPC_DOMAINS.ROLES && action === 'list') return [{ roleId: '数据分析师', displayName: '知微', profession: '数据分析师', description: '', source: 'builtin', memoryCount: 0, lastWork: null }];
       if (domain === IPC_DOMAINS.SETTINGS && action === 'get') {
         return configuredSettings;
       }
@@ -160,10 +164,11 @@ describe('startEditRoleChat + ChatView deterministic seed path', () => {
       isHydratingSession: false,
     });
 
+    await listRoles();
     const { container } = render(<ChatView />);
 
     await act(async () => {
-      await startEditRoleChat('研究员');
+      await startEditRoleChat('数据分析师');
     });
 
     await waitFor(() => {
@@ -171,13 +176,13 @@ describe('startEditRoleChat + ChatView deterministic seed path', () => {
     });
 
     const outboundEnvelope = sendMessageMock.mock.calls[0]![0] as { content: string };
-    expect(outboundEnvelope.content).toBe('/edit-role 研究员');
+    expect(outboundEnvelope.content).toBe('/edit-role 数据分析师');
     expect(outboundEnvelope.content.startsWith('/edit-role')).toBe(true);
     expect(useAppStore.getState().showSettings).toBe(false);
     expect(useAppStore.getState().pendingRoleChatSeed).toBeNull();
-    expect(useSessionStore.getState().sessions[0]?.title).toBe('修改角色：研究员');
+    expect(useSessionStore.getState().sessions[0]?.title).toBe('修改专家：知微（数据分析师）');
 
-    expect(await screen.findByText('修改专家：研究员')).toBeTruthy();
+    expect(await screen.findByText('修改专家：知微（数据分析师）')).toBeTruthy();
     expect(container.textContent).not.toContain('/edit-role');
   });
 });

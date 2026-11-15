@@ -1,3 +1,4 @@
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React from 'react';
 import {
   formatSidebarMessageSearchHitMeta,
@@ -29,6 +30,7 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
   onSelectHit,
 }) => {
   const { t } = useI18n();
+  const roleLabels = useRoleLabels();
   const additionalHits = hits.slice(1, 4);
   if (additionalHits.length === 0) {
     return null;
@@ -38,7 +40,7 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
     <div className="mt-1.5 space-y-1">
       {additionalHits.map((hit) => {
         const displaySnippet = hit.role === 'user'
-          ? formatEditRoleUserPrompt(hit.snippet, t.roleEditReceipt.userPrompt)
+          ? formatEditRoleUserPrompt(hit.snippet, t.roleEditReceipt.userPrompt, roleLabels)
           : hit.snippet;
         return (
         <button

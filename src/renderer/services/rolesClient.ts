@@ -8,6 +8,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeProposal, TrashedRoleEntry } from '@shared/contract/roleAssets';
 import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
+import { useRoleLabelsStore } from '../stores/roleLabelsStore';
 
 export interface RolePackListItem {
   entry: RolePackEntry;
@@ -36,7 +37,9 @@ export interface RolePackActionResult {
 }
 
 export async function listRoles(): Promise<RolePanelEntry[]> {
-  return ipcService.invokeDomain<RolePanelEntry[]>(IPC_DOMAINS.ROLES, 'list');
+  const roles = await ipcService.invokeDomain<RolePanelEntry[]>(IPC_DOMAINS.ROLES, 'list');
+  useRoleLabelsStore.getState().setRoles(roles);
+  return roles;
 }
 
 export async function listDeletedRoles(): Promise<TrashedRoleEntry[]> {

@@ -9,7 +9,6 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({ useSessionStore: {
 
 import { getDisplaySessionTitle } from '../../../src/renderer/utils/sessionPresentation';
 import { startCreateRoleChat } from '../../../src/renderer/utils/startCreateRoleChat';
-import { startEditRoleChat } from '../../../src/renderer/utils/startEditRoleChat';
 
 beforeEach(() => {
   appState.language = 'zh';
@@ -18,15 +17,14 @@ beforeEach(() => {
 
 describe('对话式建/改角色会话的标题跟随界面语言（FB-1302）', () => {
   it('创建时按当前界面语言写标题；中文界面与改动前逐字相同', async () => {
+    // 「修改角色」会话的创建标题现在由 main 上的 formatEditRoleUserPrompt 按语言生成（另有其单测），这里只管新建
     await startCreateRoleChat();
-    await startEditRoleChat('研究员');
-    expect(createSession.mock.calls.map((call) => call[0])).toEqual(['新建角色', '修改角色：研究员']);
+    expect(createSession.mock.calls.map((call) => call[0])).toEqual(['新建角色']);
 
     createSession.mockClear();
     appState.language = 'en';
     await startCreateRoleChat();
-    await startEditRoleChat('研究员');
-    expect(createSession.mock.calls.map((call) => call[0])).toEqual(['New role', 'Edit role: 研究员']);
+    expect(createSession.mock.calls.map((call) => call[0])).toEqual(['New role']);
   });
 
   it('展示层：库里存的中文固定名在英文界面显示英文，反过来也成立，角色名本身不动', () => {
