@@ -195,6 +195,10 @@ export function humanizeInternalText(
     return { text: input, detectedFormats: [] };
   }
 
+  if (input.trim() === 'Done' && lang === 'zh') {
+    return { text: '已完成', detectedFormats: ['english_state_word'] };
+  }
+
   if (options.omitIds) {
     const withoutIds = input.replace(UUID_GLOBAL_RE, '').replace(SESSION_ID_GLOBAL_RE, '')
       .replace(CALL_ID_GLOBAL_RE, '').replace(OU_ID_GLOBAL_RE, '')

@@ -98,6 +98,7 @@ export function detectInternalTextLeaks(input: string, language?: 'zh' | 'en'): 
   }
 
   if (language === 'en') collectRegexMatches(CJK_GLOBAL_RE, 'cjk_in_en_ui');
+  if (language === 'zh') collectRegexMatches(/\bDone\b/g, 'english_state_word');
   collectRegexMatches(CATALOG_SLUG_GLOBAL_RE, 'catalog_slug');
   collectRegexMatches(UUID_GLOBAL_RE, 'uuid');
   collectRegexMatches(SESSION_ID_GLOBAL_RE, 'session_id');

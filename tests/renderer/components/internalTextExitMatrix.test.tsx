@@ -74,7 +74,7 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
   const t = languages[language];
 
   it('1 tool card, status variants and grouped line', () => {
-    const { container } = render(<ToolStepGroup nodes={[skillNode]} defaultExpanded />);
+    const { container } = render(<><ToolStepGroup nodes={[skillNode]} defaultExpanded /><ToolStepGroup nodes={[{ ...skillNode, id: 'skill-success', toolCall: { ...skillNode.toolCall!, id: 'skill-success-call', success: true, result: 'Done' } }]} defaultExpanded /></>);
     const statusLines = (['running', 'completed', 'failed'] as const).map((status) => humanizeToolStep('Skill', { command: slug }, t, undefined, status));
     assertClean('tool-card', [visibleChrome(container), ...statusLines, humanizeToolGroupLabel(['Skill', 'Skill'], t)].join(' '), language);
   });
@@ -100,6 +100,22 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
         { id: 'answer', type: 'assistant_text', timestamp: 3, content: 'Report ready.' }],
     }} />);
     assertClean('turn-skill-banner', visibleChrome(container), language);
+    const toggle = container.querySelector('[data-testid="skill-activity-banner"] button');
+    if (!toggle) throw new Error('production skill banner toggle missing');
+    fireEvent.click(toggle);
+    assertClean('turn-skill-banner-expanded', visibleChrome(container), language);
+  });
+  it('1 expanded hook tool names use the shared humanizer', () => {
+    const { container } = render(<TurnTimelineNodeRenderer node={{
+      id: 'hook-timeline', type: 'turn_timeline', timestamp: 1, content: '',
+      turnTimeline: { id: 'hook', kind: 'hook_activity', tone: 'neutral', timestamp: 1,
+        hookActivity: { summary: 'Hook activity', items: [{ timestamp: 1, event: 'PreToolUse', action: 'allow',
+          hookCount: 1, durationMs: 1, sources: ['project'], hookType: 'decision', toolName: 'read_file', names: ['File check'] }] } },
+    }} />);
+    const toggle = container.querySelector('button');
+    if (!toggle) throw new Error('production hook toggle missing');
+    fireEvent.click(toggle);
+    assertClean('hook-tool-name', visibleChrome(container), language);
   });
   it('2 error card from a raw failing connector event', () => {
     const { container } = render(<AgentErrorPresentation messageId="failed-mail" error={{

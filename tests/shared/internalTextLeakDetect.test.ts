@@ -19,6 +19,10 @@ describe('render language and catalog leak detection', () => {
       expect(detectInternalTextLeaks(text).some((hit) => hit.format === 'catalog_slug')).toBe(text.endsWith('.md'));
     },
   );
+  it('detects untranslated completion receipts in Chinese chrome', () => {
+    expect(detectInternalTextLeaks('Used a skill Done', 'zh')).toContainEqual({ format: 'english_state_word', sample: 'Done' });
+    expect(detectInternalTextLeaks('Done', 'en')).toEqual([]);
+  });
   it('still detects internal tool names alongside catalog names', () => {
     expect(detectInternalTextLeaks('read_file weekly-report-synthesis').map((hit) => hit.format))
       .toEqual(['catalog_slug', 'internal_tool_name']);
