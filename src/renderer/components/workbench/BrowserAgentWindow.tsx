@@ -12,7 +12,6 @@ import {
 import { useAppStore } from '../../stores/appStore';
 import { useI18n } from '../../hooks/useI18n';
 import { useLiveAgentPointer } from '../../hooks/useLiveAgentPointer';
-import { useSessionTurnActive } from '../../hooks/useSessionTurnActive';
 import { useSurfaceLiveFrames } from '../../hooks/useSurfaceLiveFrames';
 import { useWorkbenchBrowserSession } from '../../hooks/useWorkbenchBrowserSession';
 import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutionClient';
@@ -95,7 +94,6 @@ export const BrowserAgentWindow: React.FC = () => {
   const openLocalOpsPanel = useAppStore((state) => state.openLocalOpsPanel);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const sessionTurnActive = useSessionTurnActive(currentSessionId);
   // 节流护栏的「可见」判据取自 store，不靠「组件挂载了就等于看得见」——右栏收起时
   // 视图仍可能挂着，那种情况下开流就是后台无人看还在烧 CPU。
   const activeWorkbenchTab = useAppStore((state) => state.activeWorkbenchTab);
@@ -875,7 +873,7 @@ export const BrowserAgentWindow: React.FC = () => {
         <BrowserKeptResultBar
           conversationId={currentSessionId}
           workspace={workingDirectory}
-          turnActive={sessionTurnActive}
+          turnActive={agentSurfaceBusy}
           pageRunning={managedSession.running}
         />
         {annotateMode && pins.map((pin) => (

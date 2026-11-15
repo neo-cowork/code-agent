@@ -264,6 +264,17 @@ function seedActiveUserLinkSession(): void {
   useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', snapshot);
 }
 
+function setAgentSurfaceState(state: 'running' | 'completed'): void {
+  const current = useSurfaceExecutionStore.getState().nativeByConversation['session-a'];
+  useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+    ...current,
+    sessions: current.sessions.map((entry) => entry.session.sessionId === 'surface-agent-done'
+      ? { ...entry, session: { ...entry.session, state }, updatedAt: 70_000 }
+      : entry),
+    updatedAt: 70_000,
+  });
+}
+
 describe('BrowserAgentWindow kept result bar under active user-browser-link session', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -340,7 +351,7 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
     });
     render(<BrowserAgentWindow />);
     await screen.findByTestId('browser-kept-result-bar-kept');
-    await act(async () => useAppStore.getState().setSessionProcessing('session-a', true));
+    await act(async () => setAgentSurfaceState('running'));
     expect(screen.queryByTestId('browser-kept-result-adopt')).toBeNull();
     expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
     await vi.advanceTimersByTimeAsync(31_000);
@@ -350,7 +361,7 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
     getKeptResultPage.mockResolvedValue({
       state: 'kept', url: 'http://127.0.0.1:8898/next', title: '新结果', reason: 'keep_result_page',
     });
-    await act(async () => useAppStore.getState().setSessionProcessing('session-a', false));
+    await act(async () => setAgentSurfaceState('completed'));
     expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('新结果');
   });
 
@@ -376,7 +387,6 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
       updatedAt: 63_000,
     };
     await act(async () => {
-      useAppStore.getState().setSessionProcessing('session-a', true);
       useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', running);
     });
     getKeptResultPage.mockResolvedValue({
@@ -391,15 +401,25 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
     };
     await act(async () => {
       useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', completed);
-      useAppStore.getState().setSessionProcessing('session-a', false);
     });
     render(<BrowserAgentWindow />);
     expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('新结果');
   });
 
-  it('refreshes immediately on conversation run end without waiting for the 30s poll', async () => {
+  it('shows the kept bar while only the parent turn is still active after the browser task ended', async () => {
     seedActiveUserLinkSession();
     useAppStore.getState().setSessionProcessing('session-a', true);
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/submit', title: '报名成功', reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+    expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('报名成功');
+    expect(screen.getByTestId('browser-kept-result-adopt')).toBeDefined();
+  });
+
+  it('refreshes immediately on conversation run end without waiting for the 30s poll', async () => {
+    seedActiveUserLinkSession();
+    setAgentSurfaceState('running');
     getKeptResultPage.mockResolvedValue({ state: 'none', url: null, title: null, reason: null });
 
     render(<BrowserAgentWindow />);
@@ -413,7 +433,7 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
       reason: 'keep_result_page',
     });
     await act(async () => {
-      useAppStore.getState().setSessionProcessing('session-a', false);
+      setAgentSurfaceState('completed');
     });
 
     const bar = await screen.findByTestId('browser-kept-result-bar-kept');
