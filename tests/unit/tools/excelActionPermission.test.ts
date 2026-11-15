@@ -27,16 +27,24 @@ beforeAll(() => {
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 beforeEach(() => getPermissionClassifier().clearCache());
 
-async function production(params: Record<string, unknown>, workingDirectory = workspace, mode: PermissionMode = 'acceptEdits') {
+async function production(params: Record<string, unknown>, workingDirectory = workspace, mode: PermissionMode = 'acceptEdits', overrides: Partial<Parameters<typeof resolveToolPermissionClassification>[0]> = {}) {
   return resolveToolPermissionClassification({
     executionToolName: 'ExcelAutomate', policyToolName: 'ExcelAutomate', params,
     policyForcesConfirmation: false, boundaryViolation: undefined,
     workingDirectory, workspaceRoot: workspace, permissionLevel: 'write',
-    permStartTime: Date.now(), readOnlyForcesConfirmation: mode === 'readOnly', sessionPermissionMode: mode,
+    permStartTime: Date.now(), readOnlyForcesConfirmation: mode === 'readOnly', sessionPermissionMode: mode, ...overrides,
   });
 }
 
 describe('Excel action policy through production classification', () => {
+  it('keeps explicit policy and skill boundaries even for read actions', async () => {
+    const args = { action: 'read', file_path: path.join(outside, 'contract.xlsx') };
+    expect((await production(args, workspace, 'acceptEdits', { policyForcesConfirmation: true })).decision).toBe('ask');
+    expect((await production(args, workspace, 'acceptEdits', { boundaryViolation: { skillName: 'task-planning', allowedTools: ['Read'] } })).decision).toBe('ask');
+  });
+  it.each(['edit', 'generate'])('readOnly still asks for %s in the workspace', async (action) => {
+    expect((await production({ action, file_path: 'summary.xlsx', output_path: 'summary.xlsx' }, workspace, 'readOnly')).decision).toBe('ask');
+  });
   it('removes the tool-wide acceptEdits exception', () => {
     expect(mustAskUnderAcceptEdits('ExcelAutomate')).toBe(false);
   });
@@ -99,10 +107,10 @@ describe('Excel action policy through production classification', () => {
     fs.symlinkSync(outside, link, 'dir');
     expect((await production(args)).decision).toBe('ask');
   });
-  it('read targets do not acquire write ownership; writes use the shared destinations', () => {
+  it('retains conservative read security targets; writes use the shared destinations', () => {
     const definition = { ...excelAutomateSchema, requiresPermission: true };
-    expect(resolveToolWriteTargets({ definition, params: { action: 'read', file_path: path.join(outside, 'contract.xlsx') }, workingDirectory: workspace }).targets).toEqual([]);
-    const params = { action: 'generate', file_path: path.join(outside, 'ignored-input.xlsx'), output_path: 'summary.xlsx' };
+    expect(resolveToolWriteTargets({ definition, params: { action: 'read', file_path: path.join(outside, 'contract.xlsx') }, workingDirectory: workspace }).targets).toEqual([path.join(fs.realpathSync(outside), 'contract.xlsx')]);
+    const params = { action: 'generate', output_path: 'summary.xlsx' };
     expect(resolveToolWriteTargets({ definition, params, workingDirectory: workspace }).targets).toEqual(resolveExcelWriteTargets(params, workspace).map(p => path.join(fs.realpathSync(path.dirname(p)), path.basename(p))));
   });
 });

@@ -604,7 +604,7 @@ export async function resolveToolPermissionClassification(input: {
   // ADR-067 D3：peer 消息触发的写/执行一律升 ask——放在档位自动放行之后改写，
   // bypassPermissions / acceptEdits / classifier approve 都不得静默放行机器转述的请求。
   // deny 保持原判（不弱化成可批卡），只读工具不进此旗标（调用方只给非只读置位）。
-  if (input.peerOriginForcesConfirmation && classification.decision === 'approve') {
+  if (input.peerOriginForcesConfirmation && !excelRead && classification.decision === 'approve') {
     const reason = '本轮输入来自其他 agent 的消息：写入/执行操作需要人工确认';
     classification = {
       decision: 'ask',

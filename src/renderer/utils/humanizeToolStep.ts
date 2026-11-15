@@ -492,6 +492,7 @@ export function humanizeToolStep(
     : schemaDescription;
   if (
     isSemanticToolUIEnabled()
+    && !(name === 'ExcelAutomate' && (toolKind === 'read' || toolKind === 'write'))
     && status === 'completed'
     && preferredDescription
     && matchesUiScript(preferredDescription, t)

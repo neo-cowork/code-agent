@@ -153,6 +153,12 @@ describe('ToolStepGroup resolved permission evidence', () => {
       expect(rows[0].textContent).toContain('你已允许 · 读取 c0.xlsx · 共 5 次');
     });
 
+    it('non-adjacent Excel calls do not fold across another tool', () => {
+      state.resolved = [req(0, 'once'), req(1, 'once')];
+      render(<ToolStepGroup nodes={[excelNodes[0], toolNode, excelNodes[1]]} sessionId="session-1" />);
+      expect(screen.getAllByTestId('permission-decision-evidence')).toHaveLength(2);
+    });
+
     it('中间夹一条拒绝 → 不被折叠进去', () => {
       state.resolved = [req(0, 'once'), req(1, 'once'), req(2, 'deny'), req(3, 'once'), req(4, 'once')];
       render(<ToolStepGroup nodes={excelNodes.slice(0, 5)} sessionId="session-1" />);
