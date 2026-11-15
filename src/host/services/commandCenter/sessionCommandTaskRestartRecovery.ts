@@ -440,6 +440,7 @@ export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
       await closeSessionParkedRun(database.getDurableRunRepository(), marker.sessionId,
         Date.now(), marker.startedAt, {
           reason: 'approval_lost_on_restart', pendingApprovals: database.getPendingApprovalRepo(),
+          requireWaitingApproval: true,
         });
     } catch (error) {
       logger.warn('Lost approval restart closure unavailable', {

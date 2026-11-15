@@ -186,6 +186,28 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     await recovery.shutdown();
   });
 
+  it.each([
+    ['user_stop waiting run', 'waiting', 'user_stop', true],
+    ['quota_wait waiting run', 'waiting', 'quota_wait', true],
+    ['crashed foreground run with no approval parked', 'running', undefined, false],
+  ] as const)('④ %s of the same session is not an approval-lost run: untouched by task restart closure', async (_name, status, cause, keepApproval) => {
+    const current = (await runs.get(RUN))!;
+    const ops = (await runs.listPendingOperations(RUN)).map((op) => ({ ...op, status: 'waiting' as const }));
+    await runs.replaceRecoveryProjection({
+      runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
+      status, pendingOperations: keepApproval ? ops : [], updatedAt: 1_020,
+      ...(cause ? { interruptCause: cause } : {}),
+    });
+    now = 1_300;
+    const before = await runs.get(RUN);
+    expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
+    expect(await runs.get(RUN)).toEqual(before);
+    const recovery = runtime();
+    await recovery.recoverAndDispatch(1_400);
+    expect((await runs.get(RUN))?.terminal?.reason).not.toBe('approval_lost_on_restart');
+    await recovery.shutdown();
+  });
+
   it('settled terminal marker only reprojects its result and leaves the run alone', async () => {
     now = 1_200;
     await kernel.recoverOnStartup(now);

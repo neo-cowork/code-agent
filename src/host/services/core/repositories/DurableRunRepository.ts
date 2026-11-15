@@ -598,6 +598,8 @@ export class DurableRunRepository implements DurableRunStores {
     reason: string;
     /** 被收口审批的 requestedAt：只有「审批发起时已存在」的 run 才是它停靠的那条；更晚创建的 run 不是。 */
     approvalRequestedAt: number;
+    /** 重启收口专用：root run 必须真的停在审批待办上（approval 操作 waiting 且无 user_stop/quota_wait 等中断原因）。 */
+    requireWaitingApproval?: boolean;
   }): Promise<{ closed: boolean; skippedReason?: string }> {
     return runWithSqliteBusyRetry(() => this.db.transaction((): { closed: boolean; skippedReason?: string } => {
       const row = this.db.prepare(`SELECT * FROM durable_runs
@@ -614,6 +616,13 @@ export class DurableRunRepository implements DurableRunStores {
       // 栅栏：run 比审批还晚创建 → 是后来的 run2（user_stop/quota_wait/MCP 等待…），不是审批停靠的那条。
       if (Number(row.created_at) > input.approvalRequestedAt) return { closed: false, skippedReason: 'root_run_newer_than_approval' };
       const envelope = rowToEnvelope(row);
+      if (input.requireWaitingApproval) {
+        const cause = getRunInterruptCause(envelope);
+        if (cause !== undefined && cause !== 'crash_or_quit') return { closed: false, skippedReason: `root_run_interrupt_${cause}` };
+        const waiting = this.db.prepare(`SELECT 1 FROM durable_run_pending_operations
+          WHERE run_id = ? AND kind = 'approval' AND status = 'waiting' LIMIT 1`).get(envelope.runId);
+        if (!waiting) return { closed: false, skippedReason: 'root_run_not_awaiting_approval' };
+      }
       const terminalSeq = envelope.cursor.nextEventSeq;
       const owner = envelope.owner
         ? { ...envelope.owner, epoch: envelope.owner.epoch + 1, leaseExpiresAt: input.now }

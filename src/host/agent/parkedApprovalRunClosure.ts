@@ -39,6 +39,8 @@ interface CloseOptions {
   reason?: string;
   /** Restart closure must recheck durable approvals even after a lease-live deferral. */
   pendingApprovals?: PendingApprovalRepository;
+  /** Restart closure only: refuse runs not actually parked on an approval (crash/user-stop/quota runs stay recoverable). */
+  requireWaitingApproval?: boolean;
 }
 
 const deferredCloses = new Map<string, {
@@ -69,6 +71,7 @@ export async function retryDeferredParkedRunCloses(now: number): Promise<void> {
         now,
         reason: entry.options.reason ?? PARKED_APPROVAL_RUN_CLOSE_REASON,
         approvalRequestedAt: entry.approvalRequestedAt,
+        requireWaitingApproval: entry.options.requireWaitingApproval,
       });
       if (closed) {
         deferredCloses.delete(sessionId);
@@ -110,6 +113,7 @@ export async function closeSessionParkedRun(
       now,
       reason,
       approvalRequestedAt,
+      requireWaitingApproval: options.requireWaitingApproval,
     });
     if (closed) {
       if (options.reason) logger.warn('Closed parked durable run after approval closure', { sessionId, reason });
