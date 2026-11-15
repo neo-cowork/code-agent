@@ -14,7 +14,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
 import { getDatabase } from '../core';
-import { closeSessionParkedRun } from '../../agent/parkedApprovalRunClosure';
+import { closeInterruptedCommandTaskChild, closeSessionParkedRun } from '../../agent/parkedApprovalRunClosure';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
@@ -433,6 +433,8 @@ export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
     writeInterruptedLedgerRow(ledger, marker, text);
     try {
       const database = getDatabase();
+      await closeInterruptedCommandTaskChild(database.getDurableRunRepository(), database.getPendingApprovalRepo(),
+        marker.sessionId, marker.taskId, Date.now());
       // The task's start bounds the old root: never cancel a newer user request.
       // A live lease is deferred to the durable sweeper; no approval is replayed.
       await closeSessionParkedRun(database.getDurableRunRepository(), marker.sessionId,

@@ -208,4 +208,149 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     await recoverInterruptedSessionCommandTasks();
     expect(await runs.get('newer-root')).toEqual(newer);
   });
+
+  async function seedChild(status: 'running' | 'waiting' | 'recovering' = 'running', sessionId = SESSION) {
+    // Complete the parent's pending approval projection before completing the foreground turn.
+    const current = (await runs.get(RUN))!;
+    await runs.replaceRecoveryProjection({
+      runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
+      status: 'recovering', pendingOperations: [], updatedAt: 1_014,
+    });
+    await runs.transition({
+      runId: RUN, expectedStatus: 'recovering', nextStatus: 'running',
+      expectedOwnerEpoch: current.owner!.epoch, updatedAt: 1_014,
+    });
+    const root = (await runs.get(RUN))!;
+    await runs.commitTerminal({
+      runId: RUN, attempt: root.attempt, expectedOwnerEpoch: root.owner!.epoch,
+      expectedNextEventSeq: root.cursor.nextEventSeq, status: 'completed', terminalAt: 1_015,
+      event: { type: 'run_completed', payload: {}, recordedAt: 1_015 },
+    });
+    await kernel.createRun({
+      runId: 'delete-task', sessionId, parentRunId: RUN, engine: { kind: 'native' },
+      now: 1_020, initialStatus: status,
+    });
+    now = 1_200;
+  }
+
+  async function latestProjection() {
+    return projectDurableRunToSessionPayload(mapDurableRunView('session_replay', (await runs.getLatestBySession(SESSION))!));
+  }
+
+  it.each(['running', 'waiting', 'recovering'] as const)('child (a) production recovery closes expired %s task child; clears marker; second pass preserves updated_at', async (status) => {
+    await seedChild(status);
+    const root = await runs.get(RUN);
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toMatchObject({
+      status: 'cancelled', attempt: 2, owner: { epoch: 2 },
+      terminal: { reason: 'approval_lost_on_restart' },
+    });
+    expect(await latestProjection()).toEqual({ status: 'interrupted' });
+    const child = await runs.get('delete-task');
+    const recovery = runtime();
+    expect(await recovery.recoverAndDispatch(now)).toEqual([]);
+    now = 1_500;
+    expect(await recoverInterruptedSessionCommandTasks()).toBe(0);
+    expect(await recovery.recoverAndDispatch(now)).toEqual([]);
+    expect(await runs.get('delete-task')).toEqual(child);
+    expect(await runs.get(RUN)).toEqual(root);
+    await recovery.shutdown();
+  });
+
+  it('child (b) live lease remains untouched until production deferred retry at expiry', async () => {
+    await seedChild();
+    now = 1_050;
+    const before = await runs.get('delete-task');
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toEqual(before);
+    const recovery = runtime();
+    expect(await recovery.recoverAndDispatch(1_100)).toEqual([]);
+    expect(await runs.get('delete-task')).toEqual(before);
+    expect(await recovery.recoverAndDispatch(1_120)).toEqual([]);
+    expect(await runs.get('delete-task')).toMatchObject({ status: 'cancelled', terminal: { reason: 'approval_lost_on_restart' } });
+    expect(await latestProjection()).toEqual({ status: 'interrupted' });
+    await recovery.shutdown();
+  });
+
+  it('child (c) surviving pending tool approval preserves waiting child and marker', async () => {
+    await seedChild('waiting');
+    seedSurvivingApproval();
+    const before = await runs.get('delete-task');
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toEqual(before);
+    expect(await latestProjection()).toMatchObject({ durableWaitingInput: true });
+  });
+
+  it('child deferred retry rechecks a pending tool approval inserted after startup', async () => {
+    await seedChild('waiting');
+    now = 1_050;
+    await recoverInterruptedSessionCommandTasks();
+    seedSurvivingApproval();
+    const before = await runs.get('delete-task');
+    const recovery = runtime();
+    await recovery.recoverAndDispatch(1_100);
+    expect(await runs.get('delete-task')).toEqual(before);
+    expect(await latestProjection()).toMatchObject({ durableWaitingInput: true });
+    await recovery.shutdown();
+  });
+
+  it('child (d) same-session sibling with another run_id stays untouched', async () => {
+    await seedChild();
+    await kernel.createNativeRun({ runId: 'sibling-task', sessionId: SESSION, parentRunId: RUN, now: 1_019 });
+    const sibling = await runs.get('sibling-task');
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toMatchObject({ status: 'cancelled' });
+    expect(await runs.get('sibling-task')).toEqual(sibling);
+  });
+
+  it('child belonging to another session is untouched even if taskId matches', async () => {
+    await seedChild('waiting', 'another-session');
+    const before = await runs.get('delete-task');
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toEqual(before);
+  });
+
+  it('already-terminal child is a no-op without an updated_at rewrite', async () => {
+    await seedChild();
+    const child = (await runs.get('delete-task'))!;
+    await runs.commitTerminal({
+      runId: child.runId, attempt: child.attempt, expectedOwnerEpoch: child.owner!.epoch,
+      expectedNextEventSeq: child.cursor.nextEventSeq, status: 'completed', terminalAt: now,
+      event: { type: 'run_completed', payload: {}, recordedAt: now },
+    });
+    const before = await runs.get('delete-task');
+    now = 1_500;
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toEqual(before);
+  });
+
+  it('existing abandoned claims still support their explicit live-lease takeover without the new opt-in', async () => {
+    await seedChild();
+    const child = (await runs.get('delete-task'))!;
+    expect(await runs.claimAbandonedLease({
+      runId: child.runId, expectedEpoch: child.owner!.epoch,
+      abandonedProcessInstanceId: child.owner!.processInstanceId,
+      ownerId: 'host', processInstanceId: 'explicit-abandoned-recovery', now: 1_050, leaseDurationMs: 100,
+    })).toMatchObject({ envelope: { status: 'recovering' }, owner: { epoch: 2 } });
+  });
+
+  it('lease renewed between child read and abandoned claim is fenced atomically', async () => {
+    await seedChild();
+    const child = (await runs.get('delete-task'))!;
+    const claim = runs.claimAbandonedLease.bind(runs);
+    vi.spyOn(runs, 'claimAbandonedLease').mockImplementationOnce(async (input) => {
+      await runs.renewLease(child.runId, child.owner!, 1_500);
+      return claim(input);
+    });
+    await recoverInterruptedSessionCommandTasks();
+    expect(await runs.get('delete-task')).toMatchObject({
+      status: 'running', attempt: 1, owner: { epoch: 1, leaseExpiresAt: 1_500 },
+    });
+    expect((await runs.get('delete-task'))?.terminal).toBeUndefined();
+    const recovery = runtime();
+    expect(await recovery.recoverAndDispatch(1_500)).toEqual([]);
+    expect(await runs.get('delete-task')).toMatchObject({ status: 'cancelled' });
+    await recovery.shutdown();
+  });
+
 });
