@@ -1,6 +1,9 @@
 import type { AgentEvent, Message, ToolResult } from '../../../shared/contract';
 import { getSessionManager } from '../../services/infra/sessionManager';
-import { classifyEnvBlocker } from './classify';
+import { classifyCuaFailure } from '../../mcp/cuaFailureStats';
+import { parseCuaToolName } from '../cuaAppTarget';
+import { classifyEnvBlocker, cuaFailureText } from './classify';
+import { readCuaHelperPermissionState } from './cua/helperPermissionState';
 import { canOpenEnvSettings } from './settingsPane';
 
 // In-flight reservations close the parent/delegate race; persisted ids survive reloads.
@@ -13,7 +16,11 @@ export async function publishEnvAssistToolNotice(input: {
   onEvent: (event: AgentEvent) => void;
 }): Promise<void> {
   if (!input.runId) return;
-  const notice = classifyEnvBlocker({ ...input, runId: input.runId });
+  // A cua denial is attributed to the helper app's identity, so ask the helper (passively) which pane it lacks.
+  const cuaTool = parseCuaToolName(input.toolName);
+  const cuaPermissions = !input.result.success && cuaTool !== null && cuaTool !== 'check_permissions'
+    && classifyCuaFailure(cuaFailureText(input.result)) === 'permission' ? await readCuaHelperPermissionState() : undefined;
+  const notice = classifyEnvBlocker({ ...input, runId: input.runId, cuaPermissions });
   if (!notice) return;
   // Diagnostics remain in the connector's host log. Neither events nor model input get the raw error.
   if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
