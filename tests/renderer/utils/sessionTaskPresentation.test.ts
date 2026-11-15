@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TASK_STATUS_UNCHANGED_HINT } from '../../../src/shared/constants/sessionCommandCenter';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { formatSessionTaskOutput } from '../../../src/renderer/utils/sessionTaskPresentation';
@@ -93,5 +94,30 @@ describe('sessionTaskPresentation', () => {
       const out2 = formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [{ shortName: '写稿', status: 'running' }] } }, mixed, t);
       expect(out2).not.toMatch(/Agent ID|agent_/);
     }
+  });
+
+  // N-FIX-BGTASK-STATUS-POLL-TRIPLE-CARDS-REST1：task_status 同 turn 去重回短提示时
+  // meta 原样保留，卡片文案必须与全量回答逐字一致；提示行本身不含内部 id 与英文状态词。
+  it('renders the dedupe hint card exactly like the full answer, without ids or English state words', () => {
+    const meta = { sessionTask: { outcome: 'status', tasks: [
+      { shortName: '写稿', status: 'running' },
+      { shortName: '校对', status: 'completed', detail: '已经核对' },
+    ] } };
+    const fullRaw = '1. 写稿 [running] id=session-work-running\n2. 校对 [completed] id=session-work-completed：已经核对';
+    // 行形状由 tests/unit/services/sessionCommandCenter.test.ts 的去重用例钉死（生产 hint 字节）
+    const hintRaw = `${TASK_STATUS_UNCHANGED_HINT}\n1. 写稿：进行中\n- 校对：已完成`;
+    expect(formatSessionTaskOutput(meta, fullRaw, zh)).toBe('写稿　进行中\n校对　已完成：已经核对');
+    expect(formatSessionTaskOutput(meta, hintRaw, zh)).toBe(formatSessionTaskOutput(meta, fullRaw, zh));
+    expect(formatSessionTaskOutput(meta, hintRaw, en)).toBe(formatSessionTaskOutput(meta, fullRaw, en));
+    expect(formatSessionTaskOutput(meta, hintRaw, zh)).not.toContain('session-work-');
+    expect(formatSessionTaskOutput(meta, hintRaw, zh)).not.toMatch(/\[(running|completed|failed|cancelled|queued)\]/);
+  });
+
+  it('keeps the sub-agent-only dedupe hint readable with the Agent ID suffix as the only identifier', () => {
+    const hint = `${TASK_STATUS_UNCHANGED_HINT}\n- 调研 ：进行中（Agent ID: subagent-bg-abc123）`;
+    const out = formatSessionTaskOutput({ sessionTask: { outcome: 'status', tasks: [] } }, hint, zh);
+    expect(out).toContain('调研 ：进行中');
+    expect(out).not.toMatch(/Agent ID|subagent-bg-/);
+    expect(hint).not.toMatch(/\b(running|completed|failed|cancelled|queued)\b/);
   });
 });

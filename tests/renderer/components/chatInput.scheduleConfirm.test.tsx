@@ -389,14 +389,13 @@ describe('buildScheduleConfirmRows — when 行按 UI 语言说人话', () => {
     expect(whenRow(schedule as CreateCronJobInput['schedule'], lang as 'zh' | 'en')).toBe(expected);
   });
 
-  it('at 按语言本地化日期（zh/en 形状不同）；解析不了的 datetime 给一次性/Once', () => {
-    const ts = Date.UTC(2026, 11, 25, 1, 30);
+  it('at 按语言格式化本地日期时间；解析不了的 datetime 给一次性/Once', () => {
+    const ts = new Date(2026, 11, 25, 1, 30).getTime();
     const zhLabel = whenRow({ type: 'at', datetime: ts }, 'zh');
     const enLabel = whenRow({ type: 'at', datetime: ts }, 'en');
-    // 数字随运行机时区漂，只锁形状与「两种语言确实不同」
-    expect(zhLabel).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
-    expect(enLabel).toMatch(/^\d{2}\/\d{2}, \d{2}:\d{2} (AM|PM)$/);
-    expect(zhLabel).not.toBe(enLabel);
+    expect(zhLabel).toMatch(/^(?:2026\/)?12\/25 01:30$/);
+    expect(zhLabel).not.toMatch(/AM|PM/);
+    expect(enLabel).toMatch(/(?<!\d)12\/25(?!\d).*\s01:30(?!\d)/);
     expect(whenRow({ type: 'at', datetime: 'garbage' }, 'zh')).toBe('一次性');
     expect(whenRow({ type: 'at', datetime: 'garbage' }, 'en')).toBe('Once');
   });

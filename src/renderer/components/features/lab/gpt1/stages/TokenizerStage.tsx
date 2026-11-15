@@ -163,6 +163,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                 placeholder={tk.liveInputPlaceholder}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-badge-info"
               />
+              {tk.demoInputNote && <p className="text-xs text-zinc-500 mt-1">{tk.demoInputNote}</p>}
             </div>
 
             {/* 分词结果 */}
@@ -262,8 +263,12 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                {term.zh && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.zh}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>

@@ -672,11 +672,10 @@ describe('AutomationReviewInbox', () => {
     const cards = screen.getAllByTestId('parked-approval-voided');
     expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
     cards.forEach((card, index) => {
-      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      });
+      const prefix = language === 'en' ? 'Started' : '开始于';
+      const minute = String(32 + index).padStart(2, '0');
       expect(card.textContent).toContain(names[index % 3]);
-      expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
+      expect(card.textContent).toMatch(new RegExp(`${prefix} (?:2026/)?11/0?7,? 00:${minute}(?!\\d)`));
       expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
       expect(card.querySelector('button')).toBeNull();
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
@@ -1257,5 +1256,27 @@ describe('localized parked approval copy', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('AutomationReviewInbox parked row origin (N-APPROVAL-CARD-USER-QUOTE-FU1-FIX ③④)', () => {
+  it.each([
+    ['zh', '由定时任务「每日飞书日历周会」启动', '由定时任务启动'],
+    ['en', 'Started by scheduled task “每日飞书日历周会”', 'Started by a scheduled task'],
+  ] as const)('%s: cron-origin row names the task, has no user quote; blank name falls back to generic', async (language, named, generic) => {
+    i18nState.language = language;
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'cron-row', tool: 'Bash', startedByAutomation: true, scheduledTaskName: '每日飞书日历周会' }),
+    ]);
+    const view = render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getByTestId('scheduled-task-origin')).toBeTruthy());
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(named);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+
+    listParkedApprovals.mockResolvedValue([makeParked({ id: 'cron-row-2', tool: 'Bash', startedByAutomation: true })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getByTestId('scheduled-task-origin')).toBeTruthy());
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
   });
 });

@@ -4,6 +4,9 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDefaultWorkDirectory, getLegacyDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
+import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../../src/shared/i18n/chooseFolderEntry';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import { expandSlashPromptForModel } from '../../../src/web/routes/agentSlashExpansion';
 
 vi.mock('../../../src/host/mcp/mcpClient', () => ({
@@ -14,7 +17,7 @@ vi.mock('../../../src/host/security/folderTrustService', () => ({
   isProjectConfigTrusted: async () => false,
 }));
 
-const NO_FOLDER_INSTRUCTION = 'Call no tools. Reply with exactly one plain sentence in the user\'s language saying that no folder has been chosen yet and directing them to the sidebar project menu item "Select working directory" (Chinese label: "选择工作目录"), then asking them to send /init-memory again.';
+const NO_FOLDER_INSTRUCTION = `Call no tools. Reply with exactly one plain sentence in the user's language saying that no folder has been chosen yet and directing them to click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" (Chinese label: "${CHOOSE_FOLDER_ENTRY_LABEL.zh}") in the sidebar, then asking them to send /init-memory again.`;
 
 describe('expandSlashPromptForModel /init-memory working directory guard', () => {
   let tempRoot: string;
@@ -49,6 +52,9 @@ describe('expandSlashPromptForModel /init-memory working directory guard', () =>
     const result = await expandSlashPromptForModel('/init-memory', workingDirectory());
 
     expect(result).toBe(NO_FOLDER_INSTRUCTION);
+    // 提示词点名的入口必须与侧栏实际渲染的文案字面一致
+    expect(result).toContain(`"${zh.sidebarProject.chooseFolderEntry}"`);
+    expect(result).toContain(`"${en.sidebarProject.chooseFolderEntry}"`);
     expect(result).not.toContain('ProposeProjectMemory');
     expect(result).not.toContain('ListDirectory');
   });

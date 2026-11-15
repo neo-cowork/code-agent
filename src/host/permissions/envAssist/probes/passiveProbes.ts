@@ -26,6 +26,18 @@ export function screenRecordingProbe(bridge: PassiveBridge | null): ReadOnlyProb
   return passiveProbe('screen_recording', bridge, async (native) => ({ status: await native.CGPreflightScreenCaptureAccess() ? 'granted' : 'denied' }));
 }
 
+export function inputMonitoringProbe(bridge: PassiveBridge | null): ReadOnlyProbe {
+  return passiveProbe('input_monitoring', bridge, async (native) => {
+    const code = await native.IOHIDCheckAccess();
+    switch (code) {
+      case 0: return { status: 'granted' };
+      case 1: return { status: 'denied' };
+      case 2: return { status: 'undecided' };
+      default: throw new Error('probe_invalid_native_code');
+    }
+  });
+}
+
 export function automationProbe(bridge: PassiveBridge | null, targetBundleId: string): ReadOnlyProbe {
   return passiveProbe('automation', bridge, async (native) => {
     const code = await native.AEDeterminePermissionToAutomateTarget(targetBundleId, false);

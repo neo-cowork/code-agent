@@ -192,6 +192,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   devServerLauncherOpen: false,
 
   showLibraryPanel: false,
+  libraryMeetingTarget: null,
   expertDetailRoleId: null,
 
   // Initial file preview registry
@@ -457,6 +458,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowLibraryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLibraryPanel: show }),
+  openMeetingPage: (meetingId = null) => set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showLibraryPanel: true, libraryMeetingTarget: { meetingId } }),
+  clearLibraryMeetingTarget: () => set({ libraryMeetingTarget: null }),
   openExpertRoleDetail: (roleId) => set({ ...SECONDARY_PAGES_CLOSED, expertDetailRoleId: roleId }),
 
   openPreview: (filePath, options) => {

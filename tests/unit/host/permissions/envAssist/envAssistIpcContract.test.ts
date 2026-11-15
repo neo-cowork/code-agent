@@ -26,13 +26,16 @@ const panes: ReadonlyArray<{ pane: Pane; klass: EnvAssistNotice['class']; probe:
 
 /** One native state: passive reads and prompting calls are counted per method. */
 class NativeFake {
-  prompting: Record<'CGRequestScreenCaptureAccess' | 'requestAccessibility' | 'AEDeterminePermissionToAutomateTarget', number> =
-    { CGRequestScreenCaptureAccess: 0, requestAccessibility: 0, AEDeterminePermissionToAutomateTarget: 0 };
+  prompting: Record<'CGRequestScreenCaptureAccess' | 'requestAccessibility' | 'AEDeterminePermissionToAutomateTarget' | 'IOHIDRequestAccess', number> =
+    { CGRequestScreenCaptureAccess: 0, requestAccessibility: 0, AEDeterminePermissionToAutomateTarget: 0, IOHIDRequestAccess: 0 };
   constructor(public code: Code) {}
+  /** Real IOHIDAccessType shape (Granted=0 / Denied=1 / Unknown=2), mapped from the Apple-event fixture. */
+  get iohid(): 0 | 1 | 2 { return this.code === 0 ? 0 : this.code === -1744 ? 2 : 1; }
   get total() { return Object.values(this.prompting).reduce((a, b) => a + b, 0); }
   passive: PassiveBridge = {
     AXIsProcessTrusted: async () => this.code === 0,
     CGPreflightScreenCaptureAccess: async () => this.code === 0,
+    IOHIDCheckAccess: async () => this.iohid,
     AEDeterminePermissionToAutomateTarget: async (_t, ask) => {
       if ((ask as boolean) === true) this.prompting.AEDeterminePermissionToAutomateTarget++;
       return this.code;
@@ -41,6 +44,7 @@ class NativeFake {
   grant: PromptingBridge = {
     requestAccessibility: async () => { this.prompting.requestAccessibility++; },
     CGRequestScreenCaptureAccess: async () => { this.prompting.CGRequestScreenCaptureAccess++; },
+    IOHIDRequestAccess: async () => { this.prompting.IOHIDRequestAccess++; },
     AEDeterminePermissionToAutomateTarget: async (_t, ask) => {
       if (ask) this.prompting.AEDeterminePermissionToAutomateTarget++;
     },
@@ -115,7 +119,7 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
     expect(await call('act', { noticeId: 'wrong-phase', actionKind: 'request_grant', payload: { pane: 'screenCapture' } })).toMatchObject(rejected);
     expect(await call('act', { noticeId: 'no-target', actionKind: 'request_grant', payload: { pane: 'automation' } })).toMatchObject(rejected);
     expect(await call('act', { noticeId: 'missing', actionKind: 'request_grant', payload: { pane: 'accessibility' } })).toMatchObject(rejected);
-    // Input monitoring has no passive probe on this base and the IPC schema does not admit the pane.
+    // Input monitoring now routes to its own probe; this notice's pane (accessibility) mismatches the requested pane, so it is rejected before any grant.
     expect(await call('act', { noticeId: 'n-accessibility-request_grant', actionKind: 'request_grant', payload: { pane: 'inputMonitoring' } })).toMatchObject(rejected);
     expect(fake.total).toBe(0);
     expect(mint).toHaveBeenCalledTimes(0);
