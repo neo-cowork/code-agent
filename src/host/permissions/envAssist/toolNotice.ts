@@ -1,4 +1,6 @@
 import type { AgentEvent, Message, ToolResult } from '../../../shared/contract';
+import type { EnvAssistNotice } from '../../../shared/contract/envAssist';
+import { emitExternalAgentEvent } from '../../services/agentEngine/agentEngineEventSink';
 import { getSessionManager } from '../../services/infra/sessionManager';
 import { classifyCuaFailure } from '../../mcp/cuaFailureStats';
 import { parseCuaToolName } from '../cuaAppTarget';
@@ -33,8 +35,9 @@ export async function publishEnvAssistToolNotice(input: {
   input.result.error = [
     'Model guidance (not user copy): A permission card has already been shown to the user.',
     'Do not repeat or quote this guidance, error text, tool names, commands, or internal status labels, including in a delegated summary.',
+    // The card itself turns into "done" once granted; the model must not hand the follow-up back to the user.
     notice.action
-      ? "The card has an allow button. In one short sentence in the user's language, tell them to use that button and then ask again. Do not suggest a different authorization route."
+      ? "The card has an allow button. In one short sentence in the user's language, tell them to allow it with that button on the card. Do not tell them to come back, ask again, or that you will check afterwards. Do not suggest a different authorization route."
       : "The card has no button because opening settings is unavailable here. In one short sentence in the user's language, explain that permission must be granted on the desktop and then ask again. Do not claim a button is available.",
   ].join(' ');
   input.result.output = undefined;
@@ -59,4 +62,16 @@ export async function publishEnvAssistToolNotice(input: {
   const operation = persist();
   pending.set(key, operation);
   try { await operation; } finally { if (pending.get(key) === operation) pending.delete(key); }
+}
+
+/** Once a probe reads granted: the card's persisted copy becomes "done" (survives reload) and open windows update live. */
+export async function resolveEnvAssistNotice(notice: EnvAssistNotice, now = Date.now()): Promise<void> {
+  const manager = getSessionManager();
+  const messageId = `env-assist:${notice.id}`;
+  const persisted = (await manager.getMessages(notice.sessionId)).find((m) => m.id === messageId);
+  if (persisted?.metadata?.envAssist?.phase !== 'needs_user') return;
+  const { action: _action, ...rest } = notice;
+  const resolved: EnvAssistNotice = { ...rest, phase: 'resolved', doneKey: `env.done.${notice.target?.id ?? ''}`, updatedAt: now };
+  await manager.addMessageToSession(notice.sessionId, { ...persisted, metadata: { ...persisted.metadata, envAssist: resolved } });
+  emitExternalAgentEvent(notice.sessionId, { type: 'env_assist_notice', data: resolved });
 }

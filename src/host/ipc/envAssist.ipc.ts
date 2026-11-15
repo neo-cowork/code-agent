@@ -14,6 +14,10 @@ import { cuaHelperProbe } from '../permissions/envAssist/probes/cuaHelperProbe';
 import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
 import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
+import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('EnvAssistIpc');
 
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;
@@ -33,6 +37,8 @@ interface EnvAssistDependencies {
   available: () => boolean;
   open: (pane: string) => Promise<boolean>;
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
+  /** Persists + broadcasts the notice as resolved once a probe reads granted (default: resolveEnvAssistNotice). */
+  resolve?: (notice: EnvAssistNotice) => Promise<void>;
 }
 
 // Notice targets are Neo's own ids (i18n keys); TCC needs the target app's bundle id.
@@ -56,11 +62,40 @@ function resolveGrantProbe(
   }
 }
 
+/** Passive (never-prompting) probe for the permission a notice is waiting on. */
+function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane: string): ReadOnlyProbe | null {
+  if (notice.target?.id.startsWith('helper')) {
+    return pane === 'accessibility' || pane === 'screenCapture' ? cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane) : null;
+  }
+  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(notice.target?.id));
+}
+
+/** Every probe that reads granted closes the card, whether the grant came from the button or from System Settings. */
+async function settle<T extends EnvAssistActResult>(deps: EnvAssistDependencies, notice: EnvAssistNotice, result: T): Promise<T> {
+  if (result.outcome?.status !== 'granted') return result;
+  // The grant itself already happened; a failed write-back must not turn the click into an error.
+  try { await (deps.resolve ?? resolveEnvAssistNotice)(notice); } catch (error) {
+    logger.warn('Env-assist notice resolve failed', { noticeId: notice.id, error: error instanceof Error ? error.message : String(error) });
+  }
+  return result;
+}
+
 const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
 /** A cua-helper grant notice is single-use: one click, one helper call. */
 const consumedHelperNotices = new Set<string>();
 const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
   getAvailability: (deps: EnvAssistDependencies) => ({ available: deps.available() }),
+  /** Card mount / window focus: a passive re-read, so a grant made in System Settings also closes the card. */
+  recheck: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
+    const parsed = EnvAssistSchemas.recheck.safeParse(payload);
+    if (!parsed.success) return { status: 'rejected' };
+    const notice = await deps.findNotice(parsed.data.noticeId);
+    const actionPayload = notice?.action?.payload;
+    if (notice?.phase !== 'needs_user' || !actionPayload || !('pane' in actionPayload)) return { status: 'rejected' };
+    const probe = noticeProbe(deps, notice, actionPayload.pane);
+    if (!probe) return { status: 'rejected' };
+    return settle(deps, notice, { status: 'checked', outcome: await probe() });
+  },
   act: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
     const parsed = EnvAssistSchemas.act.safeParse(payload);
     if (!parsed.success) return { status: 'rejected' };
@@ -82,11 +117,11 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       if (outcome.status !== 'granted' && deps.available()) {
         return { status: await deps.open(pane) ? 'opened' : 'not_available', outcome };
       }
-      return { status: grant === 'requested' ? 'checked' : grant, outcome };
+      return settle(deps, notice, { status: grant === 'requested' ? 'checked' : grant, outcome });
     }
     if (request.actionKind === 'request_grant') {
       const targetBundleId = automationBundleId(notice.target?.id);
-      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, targetBundleId);
+      const probe = noticeProbe(deps, notice, request.payload.pane);
       if (!probe) return { status: 'rejected' };
       // Only "undecided" can show the system dialog. Refused (-1743) never prompts again and a target that isn't running (-600)
       // can't be asked, so both go straight to Settings instead of a click that does nothing (ADR-090 §3 row 1).
@@ -99,8 +134,7 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       }
       const token = mintClickToken(notice.id, deps.now);
       const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
-      const outcome = await probe();
-      return { status: grant === 'requested' ? 'checked' : grant, outcome };
+      return settle(deps, notice, { status: grant === 'requested' ? 'checked' : grant, outcome: await probe() });
     }
     if (!deps.available()) return { status: 'not_available' };
     return { status: await deps.open(request.payload.pane) ? 'opened' : 'not_available' };
