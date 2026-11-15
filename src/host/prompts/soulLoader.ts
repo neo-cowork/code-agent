@@ -22,6 +22,7 @@ import {
   TOOL_DISCIPLINE,
   MEMORY_SYSTEM,
 } from './identity';
+import { readPromptLanguage } from './communication';
 import { isProjectConfigTrustedSync } from '../security/folderTrustService';
 
 const logger = createLogger('SoulLoader');
@@ -48,7 +49,7 @@ export function loadSoul(workingDirectory?: string): string {
 
   // 用户级 SOUL.md — 替换 IDENTITY 核心自我块
   const soulPath = path.join(getUserConfigDir(), 'SOUL.md');
-  const soulContent = readFileIfExists(soulPath);
+  const soulContent = neutralizeLegacyLanguageLine(readFileIfExists(soulPath));
 
   // 项目级 PROFILE.md — 作为项目扩展追加
   let profileContent: string | null = null;
@@ -168,6 +169,19 @@ export function unwatchSoulFiles(): void {
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
+
+// 旧版 init-soul 模板把「用中文沟通」写进了用户的 SOUL.md；UI 为 en 时在加载期换成语言中立句，
+// 不改用户文件。zh 路径原样返回（字节不变）。
+const LEGACY_ZH_LANGUAGE_LINE = '用中文沟通';
+const NEUTRAL_LANGUAGE_LINE = "Reply in the user's language";
+
+function neutralizeLegacyLanguageLine(content: string | null): string | null {
+  if (!content || !content.includes(LEGACY_ZH_LANGUAGE_LINE) || readPromptLanguage() !== 'en') {
+    return content;
+  }
+  logger.info('SOUL.md contains legacy Chinese-only language line; neutralized for en UI at load time');
+  return content.split(LEGACY_ZH_LANGUAGE_LINE).join(NEUTRAL_LANGUAGE_LINE);
+}
 
 function readFileIfExists(filePath: string): string | null {
   try {
