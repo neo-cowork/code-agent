@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, planVitest, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, planVitest, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs, isCi } from './lib/gates-fast-contract.mjs';
 import { runPrivateCheckCached } from './lib/casebank-private-cache.mjs';
 import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
@@ -87,7 +87,8 @@ async function command(argv, env = {}) {
   receipt.commands.push(record);
   const now = performance.now();
   const deadline = commandDeadline(policy, activeGate?.id, now - started, activeGate ? now - activeGate.began : 0);
-  if (deadline.remainingMs <= 0) throw new Error(budgetFailure(deadline, argv));
+  const overBudget = () => Object.assign(new Error(budgetFailure(deadline, argv)), { budgetTimeout: true, budgetLimit: deadline.limit });
+  if (deadline.remainingMs <= 0) throw overBudget();
   await new Promise((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), { cwd: root, detached: true, stdio: 'inherit', env: { ...process.env, npm_config_offline: 'true', ...env } });
     let timedOut = false;
@@ -105,7 +106,7 @@ async function command(argv, env = {}) {
     child.once('error', (error) => { cleanup(); reject(error); });
     child.once('close', (code, signal) => {
       cleanup(); record.exit = code; record.signal = signal;
-      if (timedOut) reject(new Error(budgetFailure(deadline, argv)));
+      if (timedOut) reject(overBudget());
       else if (signalled) reject(new Error(`FAIL: interrupted by signal in ${argv.join(' ')}`));
       else if (code !== 0) reject(new Error(`FAIL: exit ${code} in ${argv.join(' ')}`));
       else resolve();
@@ -124,7 +125,11 @@ async function gate(id, applicable, run) {
   const began = performance.now();
   activeGate = { id, began };
   console.log(`▶ gates:fast ${id}`);
-  try { await run(); record.status = 'passed'; }
+  try {
+    const outcome = await run();
+    record.status = outcome === 'deferred-to-ci' ? 'deferred-to-ci' : 'passed';
+    if (outcome === 'deferred-to-ci') record.reason = 'local budget exceeded without an error count; deferred to PR CI';
+  }
   catch (error) { record.status = 'failed'; throw error; }
   finally { activeGate = null; record.durationMs = Math.round(performance.now() - began); record.overBudget = record.durationMs > record.budgetMs; }
 }
@@ -218,7 +223,16 @@ try {
   await gate('package-typechecks', receipt.packageChecks.length > 0, async () => {
     for (const pkg of receipt.packageChecks) await command(['npm', '--prefix', pkg, 'run', 'typecheck']);
   });
-  await gate('tests-typecheck', receipt.testsTypecheck, () => command([process.execPath, 'scripts/tsc-tests-ratchet.mjs']));
+  await gate('tests-typecheck', receipt.testsTypecheck, async () => {
+    try { await command([process.execPath, 'scripts/tsc-tests-ratchet.mjs']); }
+    catch (error) {
+      // 只有「本格预算截停、没拿到 error 计数」才交 CI；拿到计数超基线是普通非零退出，照常失败。CI 上不许 deferred。
+      if (!(error?.budgetTimeout && error.budgetLimit === 'gate') || isCi(process.env)) throw error;
+      receipt.testsTypecheckDeferred = { reason: 'local-over-budget', budgetMs: policy.budgetsMs['tests-typecheck'] };
+      console.log('gates:fast tests-typecheck 本机超预算，未拿到 error 计数，交 PR CI 全量验证');
+      return 'deferred-to-ci';
+    }
+  });
   const drift = changedInputs(initial, snapshot(receipt.baseSha));
   if (drift.length) throw new Error(`FAIL: inputs changed during gates:fast; receipt invalid (${drift.join(', ')})`);
   if (performance.now() - started > policy.budgetMs) throw new Error(`FAIL: total budget ${policy.budgetMs}ms exhausted`);

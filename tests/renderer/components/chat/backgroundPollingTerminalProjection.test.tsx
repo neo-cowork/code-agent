@@ -451,7 +451,7 @@ describe('stale running header fixtures',() => {
       useSessionStore.setState({ currentSessionId: null });
     });
 
-    it('(a) idle session + result-less Bash: collapsed header equals the expanded-row interrupted line',() => {
+    it('(a) idle session + result-less Bash: one interrupted row, no group header repeating it',() => {
       useAppStore.setState({ language: 'zh',processingSessionIds: new Set(),isProcessing: false });
       useSessionStore.setState({ currentSessionId: 'sess-stale-a' });
       const node=staleBashNode('tool-a',1_000);
@@ -470,11 +470,9 @@ describe('stale running header fixtures',() => {
       expect(expandedLabel).toBe('已中断');
       expect(expandedLine.line).toBe(`${expandedLabel} · ${expandedLine.action}`);
 
-      const header=headLabelText();
-      expect(header).not.toContain('运行中');
-      expect(header).not.toContain('正在运行命令');
-      // 折叠头 === 展开行装配线：同一结局词、同一动作短语、同一句
-      expect(header).toBe(expandedLine.line);
+      // N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT：单步中断不再套组头（组头与展开行会逐字重复），只出这一行。
+      expect(screen.queryByTestId('tool-group-head-label')).toBeNull();
+      expect(screen.getAllByTestId('interrupt-timeline-step')).toHaveLength(1);
 
       // 真实展开行 DOM（ToolCallDisplay → ToolHeader）确实渲染这两段
       const headerBlock=screen.getByTestId('tool-call-row-Bash').children[1] as HTMLElement;

@@ -6,5 +6,9 @@
 	<string>Agent Neo 需要麦克风权限来录制会议音频并生成会议纪要。</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Agent Neo 需要自动化权限来与你指定的桌面应用协作完成任务。</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>打开「会前提醒」后，Agent Neo 会读取日历里快开始的会，提醒你要不要记这场会。只提醒，不会自动录音。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>打开「会前提醒」后，Agent Neo 会读取日历里快开始的会，提醒你要不要记这场会。只提醒，不会自动录音。</string>
 </dict>
 </plist>

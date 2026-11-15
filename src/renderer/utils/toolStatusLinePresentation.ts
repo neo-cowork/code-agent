@@ -17,7 +17,9 @@ type ToolStatusLineTerminal =
   | 'interrupted'
   | 'failed'
   | 'not-executed'
-  | 'restart-interrupted';
+  | 'restart-interrupted'
+  /** 环境授权停车：在等用户允许，不是中断。 */
+  | 'env-waiting';
 
 interface ToolStatusLineFlags {
   /** Would have emitted 已中断 (status === interrupted). */
@@ -38,6 +40,11 @@ export interface ToolStatusLineInput {
   interruptionReason?: StreamInterruptionReason;
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'shortDescription' | 'stepLabel' | 'result'>;
   awaitingApproval?: boolean;
+  /**
+   * 这一步停在等环境授权上（env_blocked 停车）：人话授权目标（「日历」）。不是中断——
+   * 终态说在等什么，连接器名只在这里出现一次，动作不再带连接器前缀。
+   */
+  envWaitingTarget?: string;
 }
 
 export interface ToolStatusLineCopy {
@@ -70,7 +77,7 @@ function deriveToolStatusLineFlags(input: ToolStatusLineInput): ToolStatusLineFl
  */
 function resolveToolStatusLineTerminal(
   flags: ToolStatusLineFlags,
-): ToolStatusLineTerminal {
+): Exclude<ToolStatusLineTerminal, 'env-waiting'> {
   if (flags.restartInterrupted) return 'restart-interrupted';
   if (flags.interrupted) return 'interrupted';
   if (flags.notExecuted) return 'not-executed';
@@ -78,7 +85,7 @@ function resolveToolStatusLineTerminal(
 }
 
 function formatToolStatusLineTerminal(
-  terminal: ToolStatusLineTerminal,
+  terminal: Exclude<ToolStatusLineTerminal, 'env-waiting'>,
   t: Translations,
   interruptionReason?: StreamInterruptionReason,
 ): string {
@@ -115,6 +122,11 @@ export function buildToolStatusLineCopy(
   input: ToolStatusLineInput,
   t: Translations,
 ): ToolStatusLineCopy {
+  if (input.status === 'interrupted' && input.envWaitingTarget) {
+    const terminal = t.durableStopped.envWaitingStep.replace('{target}', input.envWaitingTarget);
+    const action = humanizeInterruptedToolAction(input.toolCall, t, { connectorPrefixRendered: true });
+    return { terminalKey: 'env-waiting', terminal, action, line: `${terminal} · ${action}` };
+  }
   const flags = deriveToolStatusLineFlags(input);
   const terminalKey = resolveToolStatusLineTerminal(flags);
   const terminal = formatToolStatusLineTerminal(terminalKey, t, input.interruptionReason);

@@ -154,6 +154,10 @@ export interface ChatInputProps {
   onStop?: () => void;
   /** parked durable run 的用户继续回调 */
   onContinue?: () => void;
+  /** 放弃停靠的 durable run（与「继续」同处，输入框上方不再另放一组） */
+  onAbandonContinuation?: () => void;
+  /** 停着但不给「继续」的 run（等环境授权）：发送键旁留「放弃」 */
+  canAbandonParked?: boolean;
   /** 当前会话有可手动继续的 durable run */
   hasContinuation?: boolean;
   /** 是否有 Plan */
@@ -305,6 +309,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isStopping,
   onStop,
   onContinue,
+  onAbandonContinuation,
+  canAbandonParked,
   hasContinuation,
   hasPlan,
   onPlanClick,
@@ -1657,7 +1663,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <ContextUsagePill />
 
             {/* 模型选择器（已合并 Agent Engine 选择到下拉框顶部 chip 行） */}
-            <div className="text-xs">
+            {/* min-w-0：窄屏（390）时模型名先截断，让给右端「放弃 / 继续」，不把主操作挤出输入框 */}
+            <div className="flex min-w-0 text-xs">
               <ModelSlot currentModel={modelConfig.model} />
             </div>
 
@@ -1686,6 +1693,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}
               onContinue={onContinue}
+              onAbandon={onAbandonContinuation}
+              canAbandon={canAbandonParked}
             />
             </>
             )}

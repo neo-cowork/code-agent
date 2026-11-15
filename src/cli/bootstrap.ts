@@ -39,7 +39,8 @@ import type { PlanningService } from '../host/planning';
 import { SYSTEM_PROMPT } from '../host/prompts/builder';
 import { MEMORY_OFF_DENYLIST } from '../host/agent/routingToolPolicy';
 import { applyProviderVariant } from '../host/prompts/providerVariants';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
+import { DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
+import { fallbackModelForProvider } from '../shared/modelRuntime';
 import { resolveConfiguredProvider } from '../host/model/configuredProvider';
 import { resolveConfiguredDefaultProvider } from '../shared/modelDefaults';
 import { SWARM_TRACE } from '../shared/constants/storage';
@@ -593,7 +594,10 @@ export function buildCLIConfig(options: {
   const providerId = options.provider
     ?? resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
   const { connection, providerConfig: providerCfg } = resolveConfiguredProvider(config, settings, providerId);
-  const model = options.model || providerCfg?.model || DEFAULT_MODELS.chat;
+  // 与渲染层 applyModelSettings、会话默认 resolveSessionDefaultModelConfig、编排器 resolveModelConfig
+  // 同一个回落函数：provider 没写 model 时取登记默认 / 该 provider 运行时列表第一项，最后才是全局默认。
+  // 之前这里直接掉到 DEFAULT_MODELS.chat，输入框显示 gpt-5.5、实跑却是 LongCat-2.0（N-FIX-MODEL-PICKER-SHOWS-WRONG-MODEL）。
+  const model = options.model || providerCfg?.model || fallbackModelForProvider(connection.provider, settings);
 
   const modelConfig: ModelConfig = {
     ...connection,
