@@ -109,7 +109,8 @@ export const agentErrorZh = {
     rateLimitedInline: '模型服务商限流，稍后重试',
     hostReasons: hostReasonZh,
     // 连续同因折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：早先失败轮压成的灰字行
-    // 与整卡上的「连续 N 次」说明。noRetry 只用于重试必然无效的分类。
+    // 与整卡上的「连续 N 次」说明。noRetry 只用于重试必然无效的分类：说明情况 + 给下一步，
+    // 不说「再发也不会好」这类像在怪用户的话（N-FIX-AGENT-ERROR-CARD-STICKS-TO-LATER-TURNS）。
     mutedLine: '没有回复 · {reason}',
     shortReasons: {
       auth: '账号没通过授权',
@@ -126,8 +127,8 @@ export const agentErrorZh = {
       generic: '运行失败',
     },
     repeat: {
-      noRetry: '连续 {n} 次都是这个原因，再发也不会好。',
-      retryable: '连续 {n} 次都是这个原因。',
+      noRetry: '同样的问题已连续出现 {n} 次。可以先换个模型继续，或按上面的提示处理好再发。',
+      retryable: '同样的问题已连续出现 {n} 次。',
     },
     categories: {
       auth: {
@@ -241,8 +242,8 @@ export const agentErrorEn: typeof agentErrorZh = {
       generic: 'run failed',
     },
     repeat: {
-      noRetry: 'The same failure has happened {n} times in a row — resending will not fix it.',
-      retryable: 'The same failure has happened {n} times in a row.',
+      noRetry: 'This has happened {n} times in a row. Switch to another model to keep going, or fix the issue above before sending again.',
+      retryable: 'This has happened {n} times in a row.',
     },
     categories: {
       auth: {
