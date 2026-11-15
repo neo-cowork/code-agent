@@ -49,6 +49,9 @@ mod imp {
         fn read_calendar_items(&self, from_ms: i64, to_ms: i64, calendar_id: Option<&str>, limit: usize) -> Result<Vec<crate::env_assist_calendar_items::CalendarItem>, String> {
             crate::env_assist_calendar_items::list_items(from_ms, to_ms, calendar_id, limit)
         }
+        fn get_calendar_item(&self, event_id: &str, occurrence_ms: Option<i64>) -> Result<crate::env_assist_calendar_items::CalendarItem, String> {
+            crate::env_assist_calendar_items::get_item(event_id, occurrence_ms)
+        }
         fn write_calendar_event(&self, op: crate::env_assist_calendar_items::WriteOp) -> Result<crate::env_assist_calendar_items::WriteOutcome, String> {
             crate::env_assist_calendar_items::write(op)
         }
@@ -527,7 +530,7 @@ mod imp {
                         .map_err(native_err)
                 }),
             "/v1/passive/calendar" | "/v1/grant/calendar" | "/v1/read/calendar-events" | "/v1/read/calendars"
-            | "/v1/read/calendar-items" | "/v1/write/calendar-event" => {
+            | "/v1/read/calendar-items" | "/v1/read/calendar-event" | "/v1/write/calendar-event" => {
                 super::calendar::route(path, &body, handlers)
             }
             _ => Err((

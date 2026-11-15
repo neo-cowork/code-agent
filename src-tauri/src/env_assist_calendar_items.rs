@@ -229,6 +229,14 @@ mod imp {
         text(unsafe { msg_send![&*err, localizedDescription] })
     }
 
+    pub(super) fn get_item(event_id: &str, occurrence_ms: Option<i64>) -> Result<CalendarItem, String> {
+        autoreleasepool(|_| {
+            let store = store()?;
+            let ev = find_event(&store, event_id, occurrence_ms)?;
+            Ok(item(&ev))
+        })
+    }
+
     pub(super) fn write(op: WriteOp) -> Result<WriteOutcome, String> {
         autoreleasepool(|_| {
             let store = store()?;
@@ -284,8 +292,18 @@ pub fn list_items(from_ms: i64, to_ms: i64, calendar_id: Option<&str>, limit: us
 }
 
 #[cfg(target_os = "macos")]
+pub fn get_item(event_id: &str, occurrence_ms: Option<i64>) -> Result<CalendarItem, String> {
+    imp::get_item(event_id, occurrence_ms)
+}
+
+#[cfg(target_os = "macos")]
 pub fn write(op: WriteOp) -> Result<WriteOutcome, String> {
     imp::write(op)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn get_item(_event_id: &str, _occurrence_ms: Option<i64>) -> Result<CalendarItem, String> {
+    Err("env_assist_calendar_items is only supported on macOS".to_string())
 }
 
 #[cfg(not(target_os = "macos"))]

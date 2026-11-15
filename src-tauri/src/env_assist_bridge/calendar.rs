@@ -6,6 +6,7 @@
 //! - `/v1/read/calendar-events`  → `{ "events": [...] }` (meeting reminder: starts in a ≤1h window).
 //! - `/v1/read/calendars`        → `{ "calendars": [{ id, title, writable }] }` (chat calendar tool).
 //! - `/v1/read/calendar-items`   → `{ "events": [...] }` overlapping a ≤400-day window (chat calendar tool).
+//! - `/v1/read/calendar-event`   → `{ "event": {...} }` one event / occurrence by id (+ occurrence start).
 //! - `/v1/write/calendar-event`  → create / update / delete one event or one occurrence (chat calendar tool).
 //!
 //! Every route but passive/grant re-reads the authorization status natively first and refuses anything short of
@@ -53,6 +54,15 @@ fn parse_items(body: &[u8]) -> Result<ItemsRequest, ()> {
         return Err(());
     }
     Ok(req)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventRequest {
+    #[serde(rename = "eventId")]
+    event_id: String,
+    #[serde(rename = "occurrenceMs")]
+    occurrence_ms: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -157,6 +167,17 @@ pub(super) fn route(path: &str, body: &[u8], handlers: &dyn BridgeHandlers) -> O
                 .map(|events| serde_json::json!({ "events": events }))
                 .map_err(item_err)
         }
+        "/v1/read/calendar-event" => {
+            let req: EventRequest = serde_json::from_slice(body).map_err(|_| bad_body())?;
+            if req.event_id.is_empty() {
+                return Err(bad_body());
+            }
+            require_full_access(handlers)?;
+            handlers
+                .get_calendar_item(&req.event_id, req.occurrence_ms)
+                .map(|event| serde_json::json!({ "event": event }))
+                .map_err(item_err)
+        }
         "/v1/write/calendar-event" => {
             let op = parse_write(body).map_err(|_| bad_body())?;
             require_full_access(handlers)?;
@@ -222,6 +243,13 @@ mod tests {
                 return Err("calendar_not_found".into());
             }
             Ok(self.items.lock().unwrap().iter().take(limit).cloned().collect())
+        }
+        fn get_calendar_item(&self, event_id: &str, occurrence_ms: Option<i64>) -> Result<CalendarItem, String> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            let items = self.items.lock().unwrap();
+            let keyed: Vec<(String, i64)> = items.iter().map(|e| (e.id.clone(), e.start_ms)).collect();
+            let i = pick_occurrence(&keyed, event_id, occurrence_ms).ok_or("event_not_found")?;
+            Ok(items[i].clone())
         }
         /// Same occurrence addressing as the native layer: id + start time picks one occurrence of the series.
         fn write_calendar_event(&self, op: WriteOp) -> Result<WriteOutcome, String> {
@@ -342,9 +370,10 @@ mod tests {
         assert_eq!(fake.grants.load(Ordering::SeqCst), 0);
     }
 
-    const CHAT_ROUTES: [(&str, &str); 3] = [
+    const CHAT_ROUTES: [(&str, &str); 4] = [
         ("/v1/read/calendars", "{}"),
         ("/v1/read/calendar-items", r#"{"fromMs":0,"toMs":86400000}"#),
+        ("/v1/read/calendar-event", r#"{"eventId":"series"}"#),
         ("/v1/write/calendar-event", r#"{"op":"delete","eventId":"series"}"#),
     ];
 
@@ -424,6 +453,11 @@ mod tests {
     fn write_addresses_one_occurrence_of_a_recurring_series() {
         let (fake, server) = start(FULL_ACCESS);
         fake.items.lock().unwrap().extend([occurrence(1_000), occurrence(1_000 + WEEK)]);
+        let body = format!(r#"{{"eventId":"series","occurrenceMs":{}}}"#, 1_000 + WEEK);
+        let (code, raw) = post(server.port, &server.token, "/v1/read/calendar-event", &body);
+        assert_eq!(code, 200, "{raw}");
+        assert!(raw.contains(&format!(r#""startMs":{}"#, 1_000 + WEEK)), "{raw}");
+        assert_eq!(post(server.port, &server.token, "/v1/read/calendar-event", r#"{"eventId":""}"#).0, 400);
         let body = format!(r#"{{"op":"update","eventId":"series","occurrenceMs":{},"title":"改期"}}"#, 1_000 + WEEK);
         let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", &body);
         assert_eq!(code, 200, "{raw}");
