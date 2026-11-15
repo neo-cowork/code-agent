@@ -33,7 +33,7 @@ function shelfLines(): string[] {
     <RolePackShelf
       items={[item]}
       loading={false}
-      error={null}
+      error={false}
       busyRoleId={null}
       onRetryLoad={noop}
       onInstall={noop}
