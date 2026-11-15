@@ -44,6 +44,7 @@ import { JevKeyConfig } from './JevKeyConfig';
 import { NotificationPermissionRow } from './NotificationPermissionRow';
 import { CronCloudSettingsCard } from './CronCloudSettingsCard';
 import { NlRuleTranslator } from '../permissions/NlRuleTranslator';
+import { ReadOnlyLookupsRow } from '../permissions/ReadOnlyLookupsRow';
 
 export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
@@ -311,6 +312,7 @@ export const GeneralSettings: React.FC = () => {
   const [ruleErrors, setRuleErrors] = useState<Partial<Record<PermissionRuleList, string>>>({});
   const [showMigrationBanner, setShowMigrationBanner] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [readOnlyLookupsEnabled, setReadOnlyLookupsEnabled] = useState(true);
   const [pendingPermissionMode, setPendingPermissionMode] = useState<PermissionMode | null>(null);
   const [foregroundBudget, setForegroundBudget] = useState('10.00');
   const [unattendedBudget, setUnattendedBudget] = useState('3.00');
@@ -355,6 +357,7 @@ export const GeneralSettings: React.FC = () => {
       }
 
       const perms = settings?.permissions;
+      setReadOnlyLookupsEnabled(perms?.readOnlyProbePlan !== false);
       if (perms?.inheritance && isInheritanceMode(perms.inheritance)) {
         setInheritance(perms.inheritance);
       }
@@ -861,6 +864,8 @@ export const GeneralSettings: React.FC = () => {
           </div>
         </div>
       </SettingsSection>
+
+      <ReadOnlyLookupsRow enabled={readOnlyLookupsEnabled} disabled={isLoading} onSave={persistPermissions} />
 
       <SettingsDetails
         title={generalText.userRules.title}
