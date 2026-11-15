@@ -70,6 +70,8 @@ import { loadEnginePanelData } from './enginePanelLoader';
 import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
 import { modelOverrideFailureToast } from './modelOverrideErrorCopy';
+import { resolveDisplayedModel, useResyncModelFromHost } from './sessionModelTruth';
+import { loadModelSettings } from '../../services/modelSettings';
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -418,34 +420,40 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     setOverrideAdaptive(false);
   }, [sessionId]);
 
-  useEffect(() => {
-    if (!sessionId) return;
-    let cancelled = false;
-    window.domainAPI
-      ?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  // 会话 override 以 host 为准：首次进入会话、以及 host 每轮模型决策后都重拉（外部接口也能改它）。
+  const refreshOverride = useCallback(async (silent: boolean) => {
+    const requestedFor = sessionIdRef.current;
+    if (!requestedFor) return;
+    try {
+      const res = await window.domainAPI?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
         IPC_DOMAINS.SESSION,
         'getModelOverride',
-        { sessionId }
-      )
-      .then((res) => {
-        if (cancelled) return;
-        if (res?.success) {
-          setOverrideModel(res.data?.model ?? null);
-          setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
-          setOverrideAdaptive(!!res.data?.adaptive);
-        } else {
-          toast.error(modelOverrideFailureToast('load', res?.error?.message));
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          toast.error(modelOverrideFailureToast('load', err));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
+        { sessionId: requestedFor }
+      );
+      if (sessionIdRef.current !== requestedFor) return;
+      if (res?.success) {
+        setOverrideModel(res.data?.model ?? null);
+        setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
+        setOverrideAdaptive(!!res.data?.adaptive);
+      } else if (!silent) {
+        toast.error(modelOverrideFailureToast('load', res?.error?.message));
+      }
+    } catch (err: unknown) {
+      if (!silent && sessionIdRef.current === requestedFor) toast.error(modelOverrideFailureToast('load', err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOverride(false);
+  }, [sessionId, refreshOverride]);
+
+  const lastDecision = useResyncModelFromHost(sessionId, () => {
+    void refreshOverride(true);
+    // 默认模型同理：设置可能在渲染层之外被改（云端下发团队模型、别的窗口改默认）。
+    loadModelSettings().catch(() => { /* 保留上次快照，下一次决策/聚焦再试 */ });
+  });
 
   const handleSelect = useCallback(
     async (option: RuntimeModelOption) => {
@@ -643,7 +651,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
 
-  const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
+  const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, lastDecision);
+  const switchedLabel = shown.switchedFrom
+    ? `${getRuntimeModelLabel(shown.model, shown.provider, modelSettings)}（已换）`
+    : null;
+  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings));
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -700,6 +712,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         healthSummary: selectedNativeHealthSummary,
         effort: selectedEffort,
         thinkingLabel: thinkingShortLabel,
+        switchedFrom: shown.switchedFrom,
+        shownProvider: shown.provider,
+        shownModel: shown.model,
       });
 
   const handleTriggerClick = useCallback(() => {
