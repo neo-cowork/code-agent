@@ -13,7 +13,9 @@ import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
-  const template = t.chat.delegationReceipt.headlines[presentation.state];
+  const template = presentation.outcomeKey
+    ? t.outcomeWords[presentation.outcomeKey].assistant.label
+    : t.chat.delegationReceipt.headlines[presentation.state];
   const [prefix, suffix] = template.split('{name}');
   const headline = template.replace('{name}', presentation.title);
   return (
