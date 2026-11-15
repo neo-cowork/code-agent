@@ -81,7 +81,7 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
   it('2 error card from a raw failing connector event', () => {
     const { container } = render(<AgentErrorPresentation messageId="failed-mail" error={{
       category: 'generic', timestamp: 1,
-      rawMessage: language === 'en' ? 'mcp__mail__list_recent_emails unavailable' : '连接器 mcp__mail__list_recent_emails 不可用',
+      rawMessage: language === 'en' ? 'mcp__mail__list unavailable' : '连接器 mcp__mail__list 不可用',
     }} />);
     assertClean('error-card', visibleChrome(container), language);
   });

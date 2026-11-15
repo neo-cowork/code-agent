@@ -1,3 +1,4 @@
+import { HumanizedText } from '../../HumanizedText';
 import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
 // ============================================================================
 // AgentErrorCard - 会话区运行失败卡片
@@ -254,11 +255,11 @@ const AgentErrorCard: React.FC<{
     >
       <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-status-error" aria-hidden="true" />
-        <div className="min-w-0 flex-1">{title}</div>
+        <div className="min-w-0 flex-1"><HumanizedText text={title} /></div>
       </div>
 
       <div className="mt-0.5 pl-[22px] text-[13px] leading-relaxed text-text-secondary">
-        {suggestion}
+        <HumanizedText text={suggestion} />
         {repeatNotice && (
           <span className={language === 'zh' ? undefined : 'ml-1'}>{repeatNotice}</span>
         )}
@@ -269,7 +270,7 @@ const AgentErrorCard: React.FC<{
           data-testid="agent-error-provider-reason"
           className="mt-1 pl-[22px] text-xs text-text-tertiary"
         >
-          {providerReasonLine}
+          <HumanizedText text={providerReasonLine} />
         </div>
       )}
       {lastFailure && <BackgroundChildrenNotice sessionId={sessionId} />}
