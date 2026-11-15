@@ -6,9 +6,11 @@ import { getDatabase } from '../services/core/databaseService';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
-import { mintClickToken, requestGrant } from '../permissions/envAssist/grants/requestGrant';
+import { createDefaultGrantBridge, mintClickToken, requestGrant } from '../permissions/envAssist/grants/requestGrant';
 import { accessibilityProbe, automationProbe, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
 import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
+import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;
@@ -68,8 +70,21 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
   },
 });
 
+function buildDefaultDependencies(): EnvAssistDependencies {
+  const client = resolveShellBridgeClientFromEnv();
+  if (!client) {
+    return { ...defaults, passiveBridge: null, grantBridge: null };
+  }
+  return {
+    ...defaults,
+    passiveBridge: createShellPassiveBridge(client),
+    grantBridge: createDefaultGrantBridge(client),
+  };
+}
+
 /** Opener injection is also used by hosts without a desktop; it never grants permission. */
 export function registerEnvAssistHandlers(deps: EnvAssistDependencies = defaults): void {
-  installDomainRoutes(ipcHost, routes, deps);
+  const resolved = deps === defaults ? buildDefaultDependencies() : deps;
+  installDomainRoutes(ipcHost, routes, resolved);
 }
 registerEnvAssistHandlers.routes = routes;
