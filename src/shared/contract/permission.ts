@@ -182,6 +182,10 @@ export interface PermissionRequest {
     /** Host catalog classification; never trusted from tool arguments or renderer input. */
     connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
     purpose?: string;
+    /** Host-owned quote of the user's latest own message in this session; never trusted from tool arguments. */
+    userRequest?: { text: string; truncated: boolean };
+    /** Host-owned: the session was started by a scheduled/background task, so there is no user quote. */
+    startedByAutomation?: boolean;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
     commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
     commandSecurityFlags?: string[];

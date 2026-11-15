@@ -6,6 +6,7 @@ import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
 import { durableStoppedEn, durableStoppedZh } from './durableStopped';
+import { unsentDraftCopyEn, unsentDraftCopyZh } from './unsentDraft';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -39,6 +40,7 @@ export const chatInputZh = {
     attachPages: '{count} 页',
     attachRemoveAria: '移除附件 {name}',
     attachmentAlreadyAdded: '{name} 已添加，无需重复添加',
+    attachmentLimitReached: '已添加 {added} 个，其余 {dropped} 个未添加（每条消息最多 {max} 个）。请先发送这一批，再继续添加。',
     connectorIconRemoveAria: '取消挂载 {name}',
     // 底栏图标 / 框内胶囊的「来源三态」小卡：回答「这是啥、谁放的、为什么在」。
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
@@ -101,9 +103,7 @@ export const chatInputZh = {
     importedNoticeNoAnchor: '这段导入的对话还没有可以续接的助手回复，暂时无法在这里继续。',
     importedSendBlocked: '暂时无法继续：这段导入的对话还没有可以续接的助手回复。',
     importedForkFailed: '没能开启续接会话：{reason}',
-    unsentDraftNotice: '上次输入框里还有一段内容：「{preview}」',
-    unsentDraftPutBack: '放回输入框',
-    unsentDraftDiscard: '丢弃',
+    ...unsentDraftCopyZh,
   },
   scheduleComposer: {
     title: '创建定时任务',
@@ -540,6 +540,7 @@ export const chatInputEn: typeof chatInputZh = {
     attachPages: '{count} pages',
     attachRemoveAria: 'Remove attachment {name}',
     attachmentAlreadyAdded: '{name} is already attached',
+    attachmentLimitReached: 'Added {added}; {dropped} more were not added (limit {max} per message). Send this batch, then add the rest.',
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',
@@ -599,9 +600,7 @@ export const chatInputEn: typeof chatInputZh = {
     importedNoticeNoAnchor: 'This imported chat has no assistant reply to continue from yet.',
     importedSendBlocked: 'Cannot continue yet: this imported chat has no assistant reply to continue from.',
     importedForkFailed: 'Could not open a continuation session: {reason}',
-    unsentDraftNotice: 'There is still text from the input box: "{preview}"',
-    unsentDraftPutBack: 'Put it back in the input',
-    unsentDraftDiscard: 'Discard',
+    ...unsentDraftCopyEn,
   },
   scheduleComposer: {
     title: 'Create scheduled task',

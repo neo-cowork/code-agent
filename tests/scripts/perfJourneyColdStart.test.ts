@@ -11,6 +11,14 @@ describe('perf-journey cold-start slot', () => {
   it.skipIf(!shouldRunJourneyProbe())('commit count holds the baseline', () => {
     const result = runJourneyRatchet('cold-start');
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stdout).toContain('cold-start commitCount current=');
+    const countMatch = result.stdout.match(/cold-start commitCount current=(\d+)/);
+    expect(countMatch).not.toBeNull();
+    const commitCount = Number(countMatch?.[1]);
+    const traceMatch = result.stdout.match(/\[perf-journey-ratchet\] cold-start commit-trace: (.+)/);
+    expect(traceMatch).not.toBeNull();
+    const entries = (traceMatch?.[1] ?? '').split(' | ');
+    expect(entries).toHaveLength(commitCount);
+    expect(entries[0]).toMatch(/^#1 (mount|update|nested-update)@-?\d+\.\dms\/\d+\.\dms$/);
+    expect(result.stdout).toContain('[perf-journey-ratchet] cold-start environment: viewport=');
   }, 90_000);
 });

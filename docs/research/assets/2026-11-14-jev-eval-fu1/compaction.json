@@ -1,0 +1,1435 @@
+{
+  "baselineSubscription": {
+    "xiaomi": {
+      "neohorse-1.5-flash-preview": 1
+    }
+  },
+  "productionDefaultCompactWhenOmitted": {
+    "moonshot": {
+      "kimi-k2.5": 1
+    }
+  },
+  "productionDefaultCompactWhenUnsetOnBaseline": {
+    "xiaomi": {
+      "neohorse-1.5-flash-preview": 1
+    }
+  },
+  "jevModel": {
+    "jev-1.13.0": 1
+  },
+  "summaryAsProductionMaxTokens": 1000,
+  "summaryFairMaxTokens": 16384,
+  "originalPlannedSessions": 20,
+  "authorizedSessions": 15,
+  "evaluatedSessions": 15,
+  "directionalOnly": 1,
+  "evaluationNonLinkMatchFastPath": 1,
+  "budgetUsd": 3,
+  "paidUsd": 0.010431540000000005,
+  "previousAttemptsPaidUsd": 0.030941694000000016,
+  "cumulativePaidUsd": 0.04137323400000002,
+  "rejectionHistogramS": {
+    "admitted": 3,
+    "truncated": 9,
+    "overBudget": 0,
+    "missing_*": 3,
+    "empty": 0,
+    "not_shorter": 0
+  },
+  "rejectionHistogramSFair": {
+    "admitted": 11,
+    "truncated": 0,
+    "overBudget": 0,
+    "missing_*": 3,
+    "empty": 0,
+    "not_shorter": 1
+  },
+  "rows": [
+    {
+      "id": "session_1792833597296_2482acd5",
+      "beforeTokens": 4720,
+      "planOriginalTokens": 1120,
+      "needles": 1,
+      "S": {
+        "tokens": 4720,
+        "retained": 1,
+        "retention": 1,
+        "ms": 10769,
+        "calls": 2,
+        "inputTokens": 7760,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 962,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 2,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 4720,
+        "retained": 1,
+        "retention": 1,
+        "ms": 11613,
+        "calls": 2,
+        "inputTokens": 7728,
+        "outputTokens": 1970,
+        "rejected": 1,
+        "summaryTokens": 951,
+        "callRecords": [
+          {
+            "outputTokens": 985,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 985,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 2,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 3297,
+        "retained": 1,
+        "retention": 1,
+        "ms": 976,
+        "usd": 0.00033940200000000004,
+        "calls": 1,
+        "inputTokens": 8081,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793699747736_6210aeb1",
+      "beforeTokens": 5903,
+      "planOriginalTokens": 7159,
+      "needles": 2,
+      "S": {
+        "tokens": 5903,
+        "retained": 2,
+        "retention": 1,
+        "ms": 11273,
+        "calls": 2,
+        "inputTokens": 28618,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 1005,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 2507,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 8852,
+        "calls": 2,
+        "inputTokens": 28724,
+        "outputTokens": 2182,
+        "rejected": 0,
+        "summaryTokens": 1067,
+        "callRecords": [
+          {
+            "outputTokens": 1107,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1075,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 3902,
+        "retained": 2,
+        "retention": 1,
+        "ms": 810,
+        "usd": 0.000351708,
+        "calls": 1,
+        "inputTokens": 8374,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793712034015_82afcadc",
+      "beforeTokens": 5261,
+      "planOriginalTokens": 6357,
+      "needles": 5,
+      "S": {
+        "tokens": 2137,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 22031,
+        "calls": 1,
+        "inputTokens": 13698,
+        "outputTokens": 913,
+        "rejected": 0,
+        "summaryTokens": 920,
+        "callRecords": [
+          {
+            "outputTokens": 913,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 2173,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 5428,
+        "calls": 1,
+        "inputTokens": 13698,
+        "outputTokens": 951,
+        "rejected": 0,
+        "summaryTokens": 956,
+        "callRecords": [
+          {
+            "outputTokens": 951,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 5162,
+        "retained": 5,
+        "retention": 1,
+        "ms": 864,
+        "usd": 0.000339318,
+        "calls": 1,
+        "inputTokens": 8079,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793786871148_7fa28926",
+      "beforeTokens": 5139,
+      "planOriginalTokens": 5420,
+      "needles": 5,
+      "S": {
+        "tokens": 5139,
+        "retained": 5,
+        "retention": 1,
+        "ms": 10665,
+        "calls": 2,
+        "inputTokens": 26133,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 1006,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 77,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 3737,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 16299,
+        "calls": 2,
+        "inputTokens": 26415,
+        "outputTokens": 3351,
+        "rejected": 0,
+        "summaryTokens": 2001,
+        "callRecords": [
+          {
+            "outputTokens": 1264,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2087,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 2003,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1002,
+        "usd": 0.00030949800000000006,
+        "calls": 1,
+        "inputTokens": 7369,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793799207013_9966126c",
+      "beforeTokens": 11547,
+      "planOriginalTokens": 7194,
+      "needles": 2,
+      "S": {
+        "tokens": 11547,
+        "retained": 2,
+        "retention": 1,
+        "ms": 14049,
+        "calls": 2,
+        "inputTokens": 31792,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 1002,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 4210,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 19141,
+        "calls": 2,
+        "inputTokens": 32078,
+        "outputTokens": 2616,
+        "rejected": 0,
+        "summaryTokens": 1309,
+        "callRecords": [
+          {
+            "outputTokens": 1287,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1329,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 4482,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 958,
+        "usd": 0.000385266,
+        "calls": 1,
+        "inputTokens": 9173,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794030501431_fa9bef70",
+      "beforeTokens": 110321,
+      "planOriginalTokens": 17122,
+      "needles": 5,
+      "S": {
+        "tokens": 3186,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 6457,
+        "calls": 1,
+        "inputTokens": 19374,
+        "outputTokens": 927,
+        "rejected": 0,
+        "summaryTokens": 934,
+        "callRecords": [
+          {
+            "outputTokens": 927,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 3332,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 10543,
+        "calls": 2,
+        "inputTokens": 39873,
+        "outputTokens": 2140,
+        "rejected": 0,
+        "summaryTokens": 1080,
+        "callRecords": [
+          {
+            "outputTokens": 1070,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1070,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 2664,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1453,
+        "usd": 0.0011724720000000001,
+        "calls": 2,
+        "inputTokens": 27916,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794041583647_dd5f6b06",
+      "beforeTokens": 27077,
+      "planOriginalTokens": 7703,
+      "needles": 5,
+      "S": {
+        "tokens": 27077,
+        "retained": 5,
+        "retention": 1,
+        "ms": 14745,
+        "calls": 2,
+        "inputTokens": 36718,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 887,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 24,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 3030,
+        "retained": 4,
+        "retention": 0.8,
+        "ms": 21415,
+        "calls": 2,
+        "inputTokens": 36426,
+        "outputTokens": 3041,
+        "rejected": 0,
+        "summaryTokens": 2125,
+        "callRecords": [
+          {
+            "outputTokens": 725,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2316,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 2205,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 986,
+        "usd": 0.0005558280000000001,
+        "calls": 1,
+        "inputTokens": 13234,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794051270959_4abbd841",
+      "beforeTokens": 326039,
+      "planOriginalTokens": 23524,
+      "needles": 5,
+      "S": {
+        "tokens": 326039,
+        "retained": 5,
+        "retention": 1,
+        "ms": 10797,
+        "calls": 2,
+        "inputTokens": 40550,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 914,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 34900,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 12066,
+        "calls": 2,
+        "inputTokens": 40820,
+        "outputTokens": 2876,
+        "rejected": 0,
+        "summaryTokens": 1468,
+        "callRecords": [
+          {
+            "outputTokens": 1277,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1599,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 36425,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 2208,
+        "usd": 0.002554944,
+        "calls": 5,
+        "inputTokens": 60832,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794113000000_rr58long",
+      "beforeTokens": 58970,
+      "planOriginalTokens": 37584,
+      "needles": 5,
+      "S": {
+        "tokens": 2959,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 12449,
+        "calls": 2,
+        "inputTokens": 50958,
+        "outputTokens": 2000,
+        "rejected": 0,
+        "summaryTokens": 979,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 3204,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 12102,
+        "calls": 2,
+        "inputTokens": 51199,
+        "outputTokens": 2484,
+        "rejected": 0,
+        "summaryTokens": 1224,
+        "callRecords": [
+          {
+            "outputTokens": 1242,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1242,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 23725,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 1738,
+        "usd": 0.001483734,
+        "calls": 3,
+        "inputTokens": 35327,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794458764754_fa52c046",
+      "beforeTokens": 22057,
+      "planOriginalTokens": 13842,
+      "needles": 5,
+      "S": {
+        "tokens": 22057,
+        "retained": 5,
+        "retention": 1,
+        "ms": 14027,
+        "calls": 2,
+        "inputTokens": 38076,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 926,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 28,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 4014,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 22604,
+        "calls": 2,
+        "inputTokens": 38852,
+        "outputTokens": 4024,
+        "rejected": 0,
+        "summaryTokens": 2160,
+        "callRecords": [
+          {
+            "outputTokens": 1751,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2273,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 5880,
+        "retained": 0,
+        "retention": 0,
+        "ms": 1355,
+        "usd": 0.0008468040000000002,
+        "calls": 2,
+        "inputTokens": 20162,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794476700129_12251397",
+      "beforeTokens": 10751,
+      "planOriginalTokens": 2665,
+      "needles": 5,
+      "S": {
+        "tokens": 10751,
+        "retained": 5,
+        "retention": 1,
+        "ms": 14266,
+        "calls": 2,
+        "inputTokens": 23121,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 865,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 24,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 10751,
+        "retained": 5,
+        "retention": 1,
+        "ms": 35228,
+        "calls": 2,
+        "inputTokens": 23561,
+        "outputTokens": 5932,
+        "rejected": 1,
+        "summaryTokens": 2919,
+        "callRecords": [
+          {
+            "outputTokens": 2545,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 3387,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 1
+        }
+      },
+      "J": {
+        "tokens": 3997,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 952,
+        "usd": 0.000302022,
+        "calls": 1,
+        "inputTokens": 7191,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794487413728_72da5cce",
+      "beforeTokens": 2818,
+      "planOriginalTokens": 5532,
+      "needles": 2,
+      "S": {
+        "tokens": 2818,
+        "retained": 2,
+        "retention": 1,
+        "ms": 13656,
+        "calls": 2,
+        "inputTokens": 32680,
+        "outputTokens": 1913,
+        "rejected": 1,
+        "summaryTokens": 979,
+        "callRecords": [
+          {
+            "outputTokens": 913,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 2818,
+        "retained": 2,
+        "retention": 1,
+        "ms": 10883,
+        "calls": 2,
+        "inputTokens": 32555,
+        "outputTokens": 1688,
+        "rejected": 1,
+        "summaryTokens": 852,
+        "callRecords": [
+          {
+            "outputTokens": 788,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 900,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 10,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 1497,
+        "retained": 0,
+        "retention": 0,
+        "ms": 817,
+        "usd": 0.000182028,
+        "calls": 1,
+        "inputTokens": 4334,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794511239872_acbe9414",
+      "beforeTokens": 5711,
+      "planOriginalTokens": 7605,
+      "needles": 2,
+      "S": {
+        "tokens": 5711,
+        "retained": 2,
+        "retention": 1,
+        "ms": 13190,
+        "calls": 2,
+        "inputTokens": 33393,
+        "outputTokens": 1944,
+        "rejected": 1,
+        "summaryTokens": 959,
+        "callRecords": [
+          {
+            "outputTokens": 944,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 23,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 3235,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 14527,
+        "calls": 2,
+        "inputTokens": 33378,
+        "outputTokens": 2536,
+        "rejected": 0,
+        "summaryTokens": 1456,
+        "callRecords": [
+          {
+            "outputTokens": 970,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1566,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 3513,
+        "retained": 0,
+        "retention": 0,
+        "ms": 810,
+        "usd": 0.00024864,
+        "calls": 1,
+        "inputTokens": 5920,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794539777942_13fbb74f",
+      "beforeTokens": 10845,
+      "planOriginalTokens": 12509,
+      "needles": 5,
+      "S": {
+        "tokens": 10845,
+        "retained": 5,
+        "retention": 1,
+        "ms": 10995,
+        "calls": 2,
+        "inputTokens": 38731,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 916,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 1
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 1,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 6,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 3468,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 16141,
+        "calls": 2,
+        "inputTokens": 39012,
+        "outputTokens": 2838,
+        "rejected": 0,
+        "summaryTokens": 1415,
+        "callRecords": [
+          {
+            "outputTokens": 1257,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1581,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 4733,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1089,
+        "usd": 0.00049854,
+        "calls": 1,
+        "inputTokens": 11870,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794562219359_756a4981",
+      "beforeTokens": 38299,
+      "planOriginalTokens": 2400,
+      "needles": 5,
+      "S": {
+        "tokens": 38299,
+        "retained": 5,
+        "retention": 1,
+        "ms": 19887,
+        "calls": 2,
+        "inputTokens": 17709,
+        "outputTokens": 2000,
+        "rejected": 1,
+        "summaryTokens": 942,
+        "callRecords": [
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1000,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 23,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "SFair": {
+        "tokens": 38299,
+        "retained": 5,
+        "retention": 1,
+        "ms": 53844,
+        "calls": 2,
+        "inputTokens": 18951,
+        "outputTokens": 4801,
+        "rejected": 1,
+        "summaryTokens": 2337,
+        "callRecords": [
+          {
+            "outputTokens": 2401,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2400,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 1,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 23,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        }
+      },
+      "J": {
+        "tokens": 23349,
+        "retained": 5,
+        "retention": 1,
+        "ms": 1268,
+        "usd": 0.0008613360000000001,
+        "calls": 2,
+        "inputTokens": 20508,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    }
+  ],
+  "S": {
+    "totals": {
+      "tokens": 479188,
+      "retained": 50,
+      "ms": 199256,
+      "calls": 28,
+      "inputTokens": 439311,
+      "outputTokens": 27697,
+      "rejected": 12,
+      "needles": 59
+    },
+    "medians": {
+      "tokens": 5903,
+      "retained": 3,
+      "ms": 13190,
+      "calls": 2,
+      "inputTokens": 31792,
+      "outputTokens": 2000,
+      "rejected": 1,
+      "retention": 1
+    }
+  },
+  "SFair": {
+    "totals": {
+      "tokens": 124398,
+      "retained": 36,
+      "ms": 270686,
+      "calls": 29,
+      "inputTokens": 463270,
+      "outputTokens": 43430,
+      "rejected": 4,
+      "needles": 59
+    },
+    "medians": {
+      "tokens": 3468,
+      "retained": 2,
+      "ms": 14527,
+      "calls": 2,
+      "inputTokens": 32555,
+      "outputTokens": 2616,
+      "rejected": 0,
+      "retention": 0.6
+    }
+  },
+  "J": {
+    "totals": {
+      "tokens": 126834,
+      "retained": 25,
+      "ms": 17286,
+      "calls": 24,
+      "inputTokens": 248370,
+      "outputTokens": 0,
+      "rejected": 0,
+      "needles": 59,
+      "usd": 0.010431540000000005
+    },
+    "medians": {
+      "tokens": 3997,
+      "retained": 1,
+      "ms": 986,
+      "calls": 1,
+      "inputTokens": 9173,
+      "outputTokens": 0,
+      "rejected": 0,
+      "retention": 0.4,
+      "usd": 0.000385266
+    }
+  },
+  "likeForLikeSFairAdmitted": {
+    "count": 11,
+    "stillRejected": 4,
+    "SFair": {
+      "totals": {
+        "tokens": 67810,
+        "retained": 23,
+        "ms": 159118,
+        "calls": 21,
+        "inputTokens": 380475,
+        "outputTokens": 29039,
+        "rejected": 0,
+        "needles": 46
+      },
+      "medians": {
+        "tokens": 3332,
+        "retained": 2,
+        "ms": 14527,
+        "calls": 2,
+        "inputTokens": 36426,
+        "outputTokens": 2616,
+        "rejected": 0,
+        "retention": 0.5
+      }
+    },
+    "J": {
+      "totals": {
+        "tokens": 94694,
+        "retained": 17,
+        "ms": 13273,
+        "calls": 19,
+        "inputTokens": 208256,
+        "outputTokens": 0,
+        "rejected": 0,
+        "needles": 46,
+        "usd": 0.008746752
+      },
+      "medians": {
+        "tokens": 4482,
+        "retained": 1,
+        "ms": 1002,
+        "calls": 1,
+        "inputTokens": 11870,
+        "outputTokens": 0,
+        "rejected": 0,
+        "retention": 0.4,
+        "usd": 0.00049854
+      }
+    }
+  },
+  "likeForLikeSProdAdmitted": {
+    "count": 3,
+    "stillRejected": 12,
+    "S": {
+      "totals": {
+        "tokens": 8282,
+        "retained": 6,
+        "ms": 40937,
+        "calls": 4,
+        "inputTokens": 84030,
+        "outputTokens": 3840,
+        "rejected": 0,
+        "needles": 15
+      },
+      "medians": {
+        "tokens": 2959,
+        "retained": 2,
+        "ms": 12449,
+        "calls": 1,
+        "inputTokens": 19374,
+        "outputTokens": 927,
+        "rejected": 0,
+        "retention": 0.4
+      }
+    },
+    "J": {
+      "totals": {
+        "tokens": 31551,
+        "retained": 8,
+        "ms": 4055,
+        "calls": 6,
+        "inputTokens": 71322,
+        "outputTokens": 0,
+        "rejected": 0,
+        "needles": 15,
+        "usd": 0.0029955240000000003
+      },
+      "medians": {
+        "tokens": 5162,
+        "retained": 2,
+        "ms": 1453,
+        "calls": 2,
+        "inputTokens": 27916,
+        "outputTokens": 0,
+        "rejected": 0,
+        "retention": 0.4,
+        "usd": 0.0011724720000000001
+      }
+    }
+  }
+}

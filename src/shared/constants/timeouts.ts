@@ -19,6 +19,8 @@ export const INFERENCE_TIMEOUTS = {
 export const MCP_TIMEOUTS = {
   /** SSE 连接超时 */
   SSE_CONNECT: 30_000,
+  /** 文字前台开跑前等用户 MCP 预连接的上限（超时后连接继续，工具下一轮/首次调用时可用） */
+  FOREGROUND_PRECONNECT: 5_000,
   /** stdio 连接超时 */
   STDIO_CONNECT: 120_000,
   /** 首次运行超时（需要安装依赖等） */

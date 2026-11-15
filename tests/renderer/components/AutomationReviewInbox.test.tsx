@@ -672,11 +672,10 @@ describe('AutomationReviewInbox', () => {
     const cards = screen.getAllByTestId('parked-approval-voided');
     expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
     cards.forEach((card, index) => {
-      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      });
+      const prefix = language === 'en' ? 'Started' : '开始于';
+      const minute = String(32 + index).padStart(2, '0');
       expect(card.textContent).toContain(names[index % 3]);
-      expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
+      expect(card.textContent).toMatch(new RegExp(`${prefix} (?:2026/)?11/0?7,? 00:${minute}(?!\\d)`));
       expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
       expect(card.querySelector('button')).toBeNull();
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
