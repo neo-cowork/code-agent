@@ -14,6 +14,7 @@ import type { MeetingActionItem, MeetingDetail, MeetingMinutesItem, MeetingSumma
 import { getMeetingDetail, regenerateMeetingMinutes } from '../../../services/nativeDesktop';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { Button } from '../../primitives/Button';
@@ -101,7 +102,7 @@ const ActionItems: React.FC<{ meeting: MeetingSummaryRecord; items: MeetingActio
 );
 
 export const MeetingPage: React.FC<{ meetingId: string; onBack: () => void }> = ({ meetingId, onBack }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.library.meetings;
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -170,7 +171,7 @@ export const MeetingPage: React.FC<{ meetingId: string; onBack: () => void }> = 
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-medium text-zinc-100">{meeting.title}</h2>
           <div className="text-[11px] text-zinc-500">
-            {new Date(meeting.startedAtMs).toLocaleDateString()} {formatClock(meeting.startedAtMs)}
+            {formatDateTime(meeting.startedAtMs, language)}
             {meeting.endedAtMs ? ` – ${formatClock(meeting.endedAtMs)}` : ` · ${copy.inProgress}`}
             {duration !== null ? ` · ${interpolate(copy.durationMinutes, { n: duration })}` : ''} · {sourceLabel(meeting.source, copy)}
           </div>

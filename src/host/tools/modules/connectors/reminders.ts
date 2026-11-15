@@ -17,7 +17,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { formatConnectorStatusOutput } from './connectorStatusText';
+import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
@@ -106,7 +106,7 @@ async function executeReminders(
         meta: buildRemindersMeta(ctx, action, output, { status }),
       };
     }
-    return { ok: false, error: 'Reminders connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'read'), code: 'NOT_INITIALIZED' };
   }
 
   try {

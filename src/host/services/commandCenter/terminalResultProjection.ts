@@ -11,6 +11,7 @@ import { buildSessionTaskResultMessage } from './sessionCommandTaskRestartRecove
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError, type SessionAccessRetryOutcome } from './sessionAccessRetry';
 import { recordBackgroundWakeFailureNoteWithOwnerRetry } from './backgroundWakeNoteRetry';
+import { recordBackgroundTaskStopNote } from './backgroundTaskStopNote';
 import { getSessionManager } from '../infra/sessionManager';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
@@ -43,6 +44,13 @@ export async function projectTerminalResult(
     task.sessionId,
     buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale()),
   );
+  // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等）。放在 [任务结果] 行之后：
+  // 说明写失败会抛出并随整条投影重试，但绝不会挡住结果行落库。
+  if (task.stopped) {
+    await recordBackgroundTaskStopNote(task.sessionId, task.shortName, task.stopped.content, {
+      taskId: task.id, kind: task.stopped.kind,
+    });
+  }
 }
 
 /**

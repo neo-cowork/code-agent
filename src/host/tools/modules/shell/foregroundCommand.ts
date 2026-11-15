@@ -5,6 +5,64 @@ import { spawnWindowsShell, killProcessTree } from '../../shell/platformShell';
 import type { TimedOutCommandHandoverResult } from '../../shell/timeoutHandover';
 
 const MAX_LIVE_OUTPUT_DELTA_LENGTH = 2_000;
+
+interface ActiveForegroundCommand {
+  child: ReturnType<typeof spawn>;
+  isHandedOver: () => boolean;
+  kill: () => Promise<void>;
+}
+
+const activeForegroundCommands = new Set<ActiveForegroundCommand>();
+const MAX_TRACKED_FOREGROUND_GROUPS = 256;
+
+function hasLiveForegroundTree(child: ReturnType<typeof spawn>): boolean {
+  const pid = child.pid;
+  if (pid === undefined) return false;
+  if (child.exitCode === null && child.signalCode === null) return true;
+  if (process.platform === 'win32') return false;
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+function pruneDeadForegroundCommands(): void {
+  for (const entry of activeForegroundCommands) {
+    if (entry.isHandedOver() || !hasLiveForegroundTree(entry.child)) {
+      activeForegroundCommands.delete(entry);
+    }
+  }
+  while (activeForegroundCommands.size >= MAX_TRACKED_FOREGROUND_GROUPS) {
+    const oldest = activeForegroundCommands.values().next().value;
+    if (!oldest) break;
+    activeForegroundCommands.delete(oldest);
+  }
+}
+
+/**
+ * 停机收尸用：对全部仍在跑（或直接 shell 虽已退出但进程组里仍有 `&`/`nohup`
+ * 后台化孙进程存活）的前台 shell 命令执行整组收树并等待确认退出。
+ */
+export async function reapForegroundCommands(): Promise<number> {
+  const candidates = [...activeForegroundCommands];
+  activeForegroundCommands.clear();
+  const live = candidates.filter((entry) => !entry.isHandedOver() && hasLiveForegroundTree(entry.child));
+  const results = await Promise.all(
+    live.map(async (entry) => {
+      try {
+        await entry.kill();
+        return true;
+      } catch (error) {
+        console.warn('[shutdown] failed to kill foreground command:', error);
+        return false;
+      }
+    }),
+  );
+  return results.filter(Boolean).length;
+}
+
 class BashForegroundExecutionError extends Error {
   stdout: string;
   stderr: string;
@@ -115,26 +173,37 @@ export function runForegroundCommand(options: {
     let exitSignal: NodeJS.Signals | null = null;
     let postExitTimer: NodeJS.Timeout | undefined;
 
+    let handedOver = false;
+    let treeExit: Promise<void> | undefined;
+
+    const killChild = (): Promise<void> => {
+      if (!treeExit) {
+        treeExit = killProcessTree(child, {
+          posixGroupKill: true,
+          graceMs: BASH.KILL_GRACE_MS,
+        });
+      }
+      return treeExit;
+    };
+
+    const activeEntry: ActiveForegroundCommand = {
+      child,
+      isHandedOver: () => handedOver,
+      kill: () => {
+        if (!settled) aborted = true;
+        return killChild();
+      },
+    };
+    pruneDeadForegroundCommands();
+    activeForegroundCommands.add(activeEntry);
+
     const cleanup = () => {
+      if (handedOver || !hasLiveForegroundTree(child)) {
+        activeForegroundCommands.delete(activeEntry);
+      }
       clearTimeout(timeoutTimer);
       if (postExitTimer) clearTimeout(postExitTimer);
       abortSignal.removeEventListener('abort', abortHandler);
-    };
-
-    // 整组收树并等到整树确认退出：POSIX detached 下 child.pid 即组长，-pid 命中组内
-    // 全部(含被后台化的孙进程)，组不存在(进程已退)时回退到直接子进程；win32 走
-    // taskkill /T。SIGTERM → 宽限 → SIGKILL → 探活确认全在 killProcessTree 内部。
-    //
-    // 只对 child 的进程组发信号，宿主自己不在这个组里（宿主是 spawn 的父进程，
-    // detached 让 child 另开了一组）——对照 claude-code #45717：Bash 工具超时的
-    // SIGTERM 传播把宿主进程自己杀了。
-    let treeExit: Promise<void> | undefined;
-
-    const killChild = () => {
-      treeExit = killProcessTree(child, {
-        posixGroupKill: true,
-        graceMs: BASH.KILL_GRACE_MS,
-      });
     };
 
     // 'close'(管道 EOF) 与 exit 后兜底共用的收尾逻辑（顺序：abort > timeout > maxBuffer > 非零退出 > 成功）。
@@ -234,6 +303,7 @@ export function runForegroundCommand(options: {
         }
       })();
       if (handover) {
+        handedOver = true;
         settled = true;
         cleanup();
         child.stdout?.removeListener('data', onStdout);
