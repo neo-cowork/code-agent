@@ -1,5 +1,8 @@
+import { getDisplaySessionTitle } from '../../utils/sessionPresentation';
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { formatDisplayPath } from '../../utils/displayPath';
 import { resolveRunCancellationOutcomeKey } from '../../i18n/outcomeWords';
+import { HumanizedText } from '../HumanizedText';
 import type React from 'react';
 import { useState } from 'react';
 import { BackgroundTaskSchemas } from '@shared/ipc/schemas';
@@ -137,18 +140,18 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             {isCompleted ? (
-              <span className="truncate text-xs text-zinc-300">{run.phase}</span>
+              <span className="truncate text-xs text-zinc-300"><HumanizedText text={run.phase} /></span>
             ) : (
               <span className={`shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
                 {getRunUiStatusLabel(run.status, t, run.terminalReason)}
               </span>
             )}
             {run.activeToolName && (
-              <span className="truncate text-[11px] text-zinc-500">{run.activeToolName}</span>
+              <span className="truncate text-[11px] text-zinc-500"><HumanizedText text={run.activeToolName} /></span>
             )}
           </div>
           {!isCompleted && (
-            <div className="mt-1 truncate text-xs text-zinc-200">{run.phase}</div>
+            <div className="mt-1 truncate text-xs text-zinc-200"><HumanizedText text={run.phase} /></div>
           )}
           {/* 与任务轨同口径（ADR-050）：agent 的人话优先，判成 raw 日志时退回类别文案 */}
           {runBlockedHint && (
@@ -278,9 +281,9 @@ export const TaskDashboardSummary = ({
           <span className={`shrink-0 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
             {getRunUiStatusLabel(run.status, t, run.terminalReason)}
           </span>
-          <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{run.phase}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-zinc-200"><HumanizedText text={run.phase} /></span>
           {run.activeToolName && (
-            <span className="truncate text-[11px] text-zinc-500">{run.activeToolName}</span>
+            <span className="truncate text-[11px] text-zinc-500"><HumanizedText text={run.activeToolName} /></span>
           )}
         </div>
       );
@@ -398,7 +401,7 @@ const TaskRecordRow = ({
   primary?: boolean;
   showOutputRefs?: boolean;
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rail = deriveTaskRailView(task, run);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
   const rw = t.taskStatusPanels.runWorkbench;
@@ -433,7 +436,7 @@ const TaskRecordRow = ({
           >
             {getTaskStatusLabel(rail.status, t, rail.failed)}
           </span>
-          <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{getDisplaySessionTitle(rail.title, language)}</span>
         </div>
       )}
 
@@ -458,7 +461,7 @@ const TaskRecordRow = ({
       {/* 结果/原因/当前动作行只挂在非 checklist 行（后台任务等）——checklist 会话任务的
           当前动作与「任务」模块进度线的 phase 是同一份内容，不重复（四模块禁止内容重复） */}
       {rail.mode !== 'checklist' && detailCopy && (
-        <div className="mt-1 line-clamp-3 text-[11px] text-zinc-500" title={detailCopy}>{detailCopy}</div>
+        <div className="mt-1 line-clamp-3 text-[11px] text-zinc-500" title={humanizeInternalText(detailCopy, language).text}><HumanizedText text={detailCopy} /></div>
       )}
 
       {showOutputRefs && task.outputRefs && task.outputRefs.length > 0 && (
@@ -471,7 +474,7 @@ const TaskRecordRow = ({
 // 进度计数只在「任务」模块的进度线出现一次（四模块禁止内容重复）——
 // checklist 头部不再摆「已完成 x/y」大计数，步骤行自己讲进度。
 const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailView> }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const waitingOnUser = rail.status === 'needs_decision' || rail.status === 'user_action';
   return (
     <div className="flex items-center gap-2">
@@ -483,7 +486,7 @@ const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailV
         {getTaskStatusLabel(rail.status, t, rail.failed)}
       </span>
       {waitingOnUser ? (
-        <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{getDisplaySessionTitle(rail.title, language)}</span>
       ) : null}
     </div>
   );
@@ -679,7 +682,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
               ? 'text-zinc-600 line-through decoration-zinc-600/80'
               : 'text-zinc-200'
         }`}>
-          {step.title}
+          <HumanizedText text={step.title} />
         </span>
         {stuckHint && (
           <span
@@ -769,7 +772,7 @@ export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActi
               <div className="truncate text-xs text-zinc-200">{activity.title}</div>
               <div className="truncate text-[11px] text-zinc-500">{activity.reason}</div>
               {activity.sourceSessionId && (
-                <div className="truncate text-[11px] text-zinc-600">source {activity.sourceSessionId}</div>
+                <div className="truncate text-[11px] text-zinc-600"><HumanizedText text={activity.sourceSessionId} /></div>
               )}
               {(activity.filename || activity.targetPath) && (
                 <div className="truncate text-[11px] text-zinc-600">{activity.filename || activity.targetPath}</div>

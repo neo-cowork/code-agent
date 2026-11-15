@@ -8,7 +8,6 @@ import type {
 } from '@shared/contract/agentEngine';
 import { AGENT_ENGINE_LABELS } from '@shared/contract/agentEngine';
 import { useI18n } from '../../hooks/useI18n';
-import { getEngineRecommendation, getEngineSummary } from '../../utils/engineManifestCopy';
 import { Button } from '../primitives/Button';
 
 export type EngineMenuView = 'models' | 'engines';
@@ -83,13 +82,12 @@ function sourceForKind(
 export function filterEngineSources(
   sources: readonly AgentEngineSourceDescriptor[],
   query: string,
-  summaryOf: (source: AgentEngineSourceDescriptor) => string = (source) => source.summary,
 ): AgentEngineSourceDescriptor[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [...sources];
   return sources.filter((source) => (
     source.label.toLowerCase().includes(normalized)
-    || summaryOf(source).toLowerCase().includes(normalized)
+    || source.summary.toLowerCase().includes(normalized)
     || source.manifestId.toLowerCase().includes(normalized)
   ));
 }
@@ -112,14 +110,11 @@ export function EngineScopedModelPanel({
   onOpenSettings,
   onRetryCatalog,
 }: EngineScopedModelPanelProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.engineModelPanel;
   const currentSource = sourceForKind(sources, currentEngine);
   const currentEngineLabel = AGENT_ENGINE_LABELS[currentEngine];
-  const filteredSources = useMemo(
-    () => filterEngineSources(sources, query, (source) => getEngineSummary(source, t.engineManifest)),
-    [query, sources, t.engineManifest],
-  );
+  const filteredSources = useMemo(() => filterEngineSources(sources, query), [query, sources]);
   const externalCatalog = currentEngine === 'native'
     ? undefined
     : catalog?.engines.find((entry) => entry.kind === currentEngine);
@@ -150,8 +145,8 @@ export function EngineScopedModelPanel({
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-zinc-100">{copy.engineListTitle}</div>
-            <div className="text-[10px] text-zinc-500">{copy.engineListSubtitle}</div>
+            <div className="text-xs font-medium text-zinc-100">{copy.pickEngineTitle}</div>
+            <div className="text-[10px] text-zinc-500">{copy.pickEngineHint}</div>
           </div>
           <button
             type="button"
@@ -171,7 +166,7 @@ export function EngineScopedModelPanel({
               autoFocus
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              placeholder={copy.engineSearchPlaceholder}
+              placeholder={copy.searchEnginePlaceholder}
               data-engine-search-input
               className="w-full rounded border border-zinc-700 bg-zinc-900 py-1 pl-7 pr-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
             />
@@ -194,9 +189,9 @@ export function EngineScopedModelPanel({
                   ? copy.stateNeedsLogin
                   : (source.authState === 'not_checked' || source.authState === 'unknown')
                     && source.evidence === 'production'
-                    ? copy.stateAuthUnverified
+                    ? copy.stateLoginUnverified
                     : copy.stateAdapterClosed
-                : getEngineRecommendation(source, t.engineManifest)?.label ?? copy.stateUnavailable;
+                : language === 'en' ? copy.stateUnavailable : source.recommendation?.label ?? copy.stateUnavailable;
             return (
               <button
                 key={source.manifestId}

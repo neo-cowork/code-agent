@@ -17,9 +17,10 @@ import {
   type EngineModelCompatContext,
   type EngineModelCompatReasonCode,
 } from '@shared/constants/engineCompat';
-import { languages, type Translations } from '../../i18n';
+import type { Translations } from '../../i18n';
 import { interpolate } from '../../i18n/interpolate';
-import { useAppStore } from '../../stores/appStore';
+import { useI18n } from '../../hooks/useI18n';
+import { zh } from '../../i18n/zh';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import { getProviderLogoBadge, getProviderLogoMark } from './providerLogoCatalog';
 import { useProviderIconImageSource } from '../../utils/providerIconAssets';
@@ -71,19 +72,6 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   kimi_code_acp: 'Kimi·ACP',
 };
 
-type ModelSwitcherCopy = Translations['modelSwitcherCopy'];
-
-/**
- * 当前界面语言下的文案（FB-1489）。这个文件里是一批被很多组件调用的纯函数和标签表，
- * 语言直接从 store 读：组件在语言切换时会重渲染并重新调用它们。
- */
-const copy = (): ModelSwitcherCopy => languages[useAppStore.getState?.().language ?? 'zh'].modelSwitcherCopy;
-
-/** 按语言取值的标签表：用法和普通对象一样（TABLE[key]），每次读取都落到当前语言的那一份。 */
-function localized<T extends object>(pick: (c: ModelSwitcherCopy) => T): T {
-  return new Proxy({} as T, { get: (_target, key) => pick(copy())[key as keyof T] });
-}
-
 const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
   ready: 'Ready',
   not_configured: 'Needs config',
@@ -92,29 +80,17 @@ const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string
   unknown: 'Unknown',
 };
 
-const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = localized((c) => c.engineRisk);
+export type ModelSwitcherPanelText = Translations['settings']['model']['models']['switcherPanel'];
+/** 未显式传文案的调用方（纯函数测试、验收脚本）按中文取；组件一律传当前界面语言的文案。 */
+const ZH_PANEL_TEXT: ModelSwitcherPanelText = zh.settings.model.models.switcherPanel;
 
-const ENGINE_CLI_STATUS_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['cliStatus'], string> = localized((c) => c.engineCliStatus);
-
-const ENGINE_AUTH_STATE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['authState'], string> = localized((c) => c.engineAuthState);
-
-const ENGINE_QUOTA_STATE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['quotaState'], string> = localized((c) => c.engineQuotaState);
-
-const ENGINE_STREAMING_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['streamingMode'], string> = localized((c) => c.engineStreamingMode);
-
-const ENGINE_TRANSCRIPT_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['transcriptMode'], string> = localized((c) => c.engineTranscriptMode);
-
-const ENGINE_TOOL_SUPPORT_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['toolSupport'], string> = localized((c) => c.engineToolSupport);
-
-const ENGINE_FAILURE_LABEL: Record<AgentEngineFailureDiagnostics['category'], string> = localized((c) => c.engineFailure);
-
-function formatEngineFailureAge(occurredAt?: number, now = Date.now()): string | null {
+function formatEngineFailureAge(text: ModelSwitcherPanelText, occurredAt?: number, now = Date.now()): string | null {
   if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
   const ageMs = Math.max(0, now - occurredAt);
-  if (ageMs < 60_000) return copy().failedJustNow;
-  if (ageMs < 60 * 60_000) return interpolate(copy().failedMinutesAgo, { count: Math.floor(ageMs / 60_000) });
-  if (ageMs < 24 * 60 * 60_000) return interpolate(copy().failedHoursAgo, { count: Math.floor(ageMs / (60 * 60_000)) });
-  return interpolate(copy().failedDaysAgo, { count: Math.floor(ageMs / (24 * 60 * 60_000)) });
+  if (ageMs < 60_000) return text.engine.failedJustNow;
+  if (ageMs < 60 * 60_000) return interpolate(text.engine.failedMinutesAgo, { count: Math.floor(ageMs / 60_000) });
+  if (ageMs < 24 * 60 * 60_000) return interpolate(text.engine.failedHoursAgo, { count: Math.floor(ageMs / (60 * 60_000)) });
+  return interpolate(text.engine.failedDaysAgo, { count: Math.floor(ageMs / (24 * 60 * 60_000)) });
 }
 
 export interface EffortOption {
@@ -129,28 +105,28 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
   low: {
     value: 'low',
     label: 'Low',
-    get shortLabel() { return copy().effortShort.low; },
+    shortLabel: '低',
     color: 'text-zinc-400',
     tint: 'bg-zinc-700',
   },
   medium: {
     value: 'medium',
     label: 'Med',
-    get shortLabel() { return copy().effortShort.medium; },
+    shortLabel: '中',
     color: 'text-badge-info',
     tint: 'bg-blue-500/15',
   },
   high: {
     value: 'high',
     label: 'High',
-    get shortLabel() { return copy().effortShort.high; },
+    shortLabel: '高',
     color: 'text-badge-warning',
     tint: 'bg-amber-500/15',
   },
   xhigh: {
     value: 'xhigh',
     label: 'XHigh',
-    get shortLabel() { return copy().effortShort.xhigh; },
+    shortLabel: '极高',
     color: 'text-badge-warning',
     tint: 'bg-orange-500/15',
   },
@@ -188,12 +164,9 @@ const CODE_EFFORT_OPTIONS = [
   EFFORT_OPTION_CONFIG.ultra_code,
 ];
 
-// 逐字段取值、不用展开：shortLabel 是按语言取值的 getter，展开会在模块加载时就读一次语言。
 const SINGLE_EFFORT_OPTION: EffortOption[] = [
   {
-    value: EFFORT_OPTION_CONFIG.low.value,
-    color: EFFORT_OPTION_CONFIG.low.color,
-    tint: EFFORT_OPTION_CONFIG.low.tint,
+    ...EFFORT_OPTION_CONFIG.low,
     label: 'Default',
     shortLabel: 'Default',
   },
@@ -275,8 +248,6 @@ const PROVIDER_HEALTH_RANK: Record<ProviderAvailabilityState, number> = {
   unavailable: 4,
 };
 
-const PROVIDER_HEALTH_LABEL: Record<ProviderAvailabilityState, string> = localized((c) => c.providerHealth);
-
 const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
   healthy: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
   recovering: 'border-badge-info/20 bg-sky-500/10 text-badge-info',
@@ -284,10 +255,6 @@ const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
   degraded: 'border-badge-warning/20 bg-amber-500/10 text-badge-warning',
   unavailable: 'border-red-500/20 bg-red-500/10 text-badge-danger',
 };
-
-const PROVIDER_BILLING_LABEL: Record<BillingMode, string> = localized((c) => c.billingLabel);
-
-const PROVIDER_BILLING_DETAIL: Record<BillingMode, string> = localized((c) => c.billingDetail);
 
 const PROVIDER_BILLING_BADGE_CLASS: Record<BillingMode, string> = {
   free: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
@@ -325,17 +292,20 @@ function displayAvailabilityState(health: ProviderHealthSnapshot): ProviderAvail
   return state;
 }
 
-export function buildProviderHealthSummary(health?: ProviderHealthSnapshot | null): ProviderHealthSummary {
+export function buildProviderHealthSummary(
+  health?: ProviderHealthSnapshot | null,
+  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+): ProviderHealthSummary {
   const state = health ? displayAvailabilityState(health) : 'unknown';
-  const label = state === 'unknown' && health?.status ? copy().healthUnknown : PROVIDER_HEALTH_LABEL[state];
+  const label = state === 'unknown' && health?.status ? text.healthUnknownReported : text.health[state];
   const latencyLine = typeof health?.latencyP50 === 'number' && Number.isFinite(health.latencyP50)
     ? `P50 ${Math.round(health.latencyP50)}ms`
     : null;
   const errorLine = typeof health?.errorRate === 'number' && Number.isFinite(health.errorRate)
-    ? interpolate(copy().errorRate, { percent: Math.round(health.errorRate * 100) })
+    ? interpolate(text.healthErrorRate, { percent: Math.round(health.errorRate * 100) })
     : null;
   const detail = [latencyLine, errorLine].filter(Boolean).join(' · ')
-    || (health ? interpolate(copy().providerStatus, { status: health.status || 'unknown' }) : copy().healthNotReported);
+    || (health ? interpolate(text.healthStatusDetail, { status: health.status || 'unknown' }) : text.healthNotReported);
 
   return {
     state,
@@ -376,18 +346,17 @@ export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGr
   });
 }
 
-const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network' | 'quota', string> = localized((c) => c.availabilityKind);
-
 export function buildModelRowHealthSummary(
   snapshot: ProviderHealthSnapshot | undefined,
   modelId: string,
+  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
 ): ProviderHealthSummary | null {
   const kind = snapshot?.providerMark?.kind ?? snapshot?.modelMarks?.[modelId]?.kind;
   if (kind) {
     return {
       state: 'unavailable',
-      label: AVAILABILITY_KIND_LABEL[kind],
-      detail: AVAILABILITY_KIND_LABEL[kind],
+      label: text.availability[kind],
+      detail: text.availability[kind],
       rank: PROVIDER_HEALTH_RANK.unavailable,
       dotClass: HEALTH_DOT_COLOR.unavailable,
       badgeClass: PROVIDER_HEALTH_BADGE_CLASS.unavailable,
@@ -395,15 +364,18 @@ export function buildModelRowHealthSummary(
   }
   if (!snapshot) return null;
   // 无标记的 unavailable 照实显示（429/超时熔断）：模型行不再改写成健康，界面与路由一致。
-  return buildProviderHealthSummary(snapshot);
+  return buildProviderHealthSummary(snapshot, text);
 }
 
-export function buildProviderBillingSummary(mode?: BillingMode | null): ProviderBillingSummary {
+export function buildProviderBillingSummary(
+  mode?: BillingMode | null,
+  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+): ProviderBillingSummary {
   const billingMode = mode ?? 'unknown';
   return {
     mode: billingMode,
-    label: PROVIDER_BILLING_LABEL[billingMode],
-    detail: PROVIDER_BILLING_DETAIL[billingMode],
+    label: text.billing[billingMode],
+    detail: text.billingDetail[billingMode],
     badgeClass: PROVIDER_BILLING_BADGE_CLASS[billingMode],
   };
 }
@@ -495,12 +467,13 @@ export function EngineBillingBadge({ summary }: { summary: EngineBillingSummary 
 }
 
 export function ProviderHealthBadge({ summary }: { summary: ProviderHealthSummary }) {
+  const text = useI18n().t.settings.model.models.switcherPanel;
   return (
     <Badge
       className={summary.badgeClass}
       dot={summary.dotClass}
       title={summary.detail}
-      aria-label={interpolate(copy().providerStatus, { status: summary.label })}
+      aria-label={interpolate(text.providerStatusAria, { label: summary.label })}
       data-provider-health-state={summary.state}
     >
       {summary.label}
@@ -509,14 +482,15 @@ export function ProviderHealthBadge({ summary }: { summary: ProviderHealthSummar
 }
 
 export function ProviderSourceBadge({ sourceLabel }: { sourceLabel?: string }) {
+  const text = useI18n().t.settings.model.models.switcherPanel;
   if (!sourceLabel) return null;
   return (
     <span
       className="text-[10px] font-medium text-zinc-500"
-      title={interpolate(copy().sourceTitle, { source: sourceLabel })}
+      title={interpolate(text.sourceTitle, { label: sourceLabel })}
       data-provider-source-label={sourceLabel}
     >
-      {interpolate(copy().sourceText, { source: sourceLabel })}
+      {interpolate(text.sourceBadge, { label: sourceLabel })}
     </span>
   );
 }
@@ -540,12 +514,13 @@ export function ProviderTransportBadge({
   transportLabel?: string;
   endpoint?: string;
 }) {
+  const text = useI18n().t.settings.model.models.switcherPanel;
   const label = transportLabel || (protocol === 'claude' ? 'Claude-compatible' : protocol === 'openai' ? 'OpenAI-compatible' : undefined);
   if (!label && !endpoint) return null;
 
   const endpointDisplay = endpoint ? formatProviderEndpointDisplay(endpoint) : undefined;
   const title = [
-    label ? interpolate(copy().protocolTitle, { label }) : null,
+    label ? interpolate(text.protocolTitle, { label }) : null,
     endpoint ? `Endpoint: ${endpoint}` : null,
   ].filter(Boolean).join(' · ');
 
@@ -572,15 +547,15 @@ export function buildProviderMetaTitle(group: {
   providerProtocol?: ModelProviderProtocol;
   providerTransportLabel?: string;
   providerEndpoint?: string;
-}): string {
+}, text: ModelSwitcherPanelText = ZH_PANEL_TEXT): string {
   const protocolLabel = group.providerTransportLabel
     || (group.providerProtocol === 'claude' ? 'Claude-compatible'
       : group.providerProtocol === 'openai' ? 'OpenAI-compatible' : undefined);
   return [
-    interpolate(copy().metaStatus, { label: group.healthSummary.label, detail: group.healthSummary.detail }),
-    interpolate(copy().metaBilling, { label: group.billingSummary.label, detail: group.billingSummary.detail }),
-    group.providerSourceLabel ? interpolate(copy().sourceTitle, { source: group.providerSourceLabel }) : null,
-    protocolLabel ? interpolate(copy().protocolTitle, { label: protocolLabel }) : null,
+    interpolate(text.metaStatus, { label: group.healthSummary.label, detail: group.healthSummary.detail }),
+    interpolate(text.metaBilling, { label: group.billingSummary.label, detail: group.billingSummary.detail }),
+    group.providerSourceLabel ? interpolate(text.sourceTitle, { label: group.providerSourceLabel }) : null,
+    protocolLabel ? interpolate(text.protocolTitle, { label: protocolLabel }) : null,
     group.providerEndpoint ? `Endpoint: ${group.providerEndpoint}` : null,
   ].filter(Boolean).join('\n');
 }
@@ -588,10 +563,11 @@ export function buildProviderMetaTitle(group: {
 export function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,
+  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
 ): string | null {
-  if (needsWorkspace) return copy().needsWorkspace;
-  if (!descriptor.executable) return descriptor.lastError || copy().cliNotExecutable;
-  if (descriptor.installState === 'missing') return descriptor.lastError || copy().notInstalled;
+  if (needsWorkspace) return text.engine.needsWorkspace;
+  if (!descriptor.executable) return descriptor.lastError || text.engine.cliNotExecutable;
+  if (descriptor.installState === 'missing') return descriptor.lastError || text.engine.notInstalled;
   if (descriptor.runtimeState === 'error' || descriptor.runtimeState === 'blocked') {
     return descriptor.lastError || ENGINE_RUNTIME_LABEL[descriptor.runtimeState];
   }
@@ -608,17 +584,20 @@ export interface EngineReliabilitySummary {
   capabilityLine?: string;
 }
 
-export function formatEngineReliabilityContract(descriptor: AgentEngineDescriptor): string | null {
+export function formatEngineReliabilityContract(
+  descriptor: AgentEngineDescriptor,
+  text: ModelSwitcherPanelText = ZH_PANEL_TEXT,
+): string | null {
   const reliability = descriptor.reliability;
   if (!reliability) return null;
   const parts = [
-    ENGINE_CLI_STATUS_LABEL[reliability.cliStatus],
-    ENGINE_AUTH_STATE_LABEL[reliability.authState],
-    ENGINE_QUOTA_STATE_LABEL[reliability.quotaState],
-    ENGINE_STREAMING_MODE_LABEL[reliability.streamingMode],
+    text.engine.cli[reliability.cliStatus],
+    text.engine.auth[reliability.authState],
+    text.engine.quota[reliability.quotaState],
+    text.engine.streaming[reliability.streamingMode],
     reliability.partialMessages ? 'partial messages' : null,
-    ENGINE_TRANSCRIPT_MODE_LABEL[reliability.transcriptMode],
-    ENGINE_TOOL_SUPPORT_LABEL[reliability.toolSupport],
+    text.engine.transcript[reliability.transcriptMode],
+    text.engine.tools[reliability.toolSupport],
     reliability.mcpBridge ? 'MCP bridge' : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
@@ -630,8 +609,10 @@ export function buildEngineReliabilitySummary(args: {
   selectedModel?: AgentEngineModelCatalogModel | null;
   sessionFailure?: AgentEngineFailureDiagnostics | null;
   now?: number;
+  text?: ModelSwitcherPanelText;
 }): EngineReliabilitySummary | null {
   const { descriptor, needsWorkspace, selectedModel, sessionFailure, now } = args;
+  const text = args.text ?? ZH_PANEL_TEXT;
   if (!descriptor || descriptor.kind === 'native') return null;
 
   if (sessionFailure) {
@@ -642,26 +623,26 @@ export function buildEngineReliabilitySummary(args: {
           ...descriptor.reliability,
           ...sessionFailure.reliability,
         },
-      })
+      }, text)
       : null;
     return {
       tone: sessionFailure.retryable || sessionFailure.category === 'timeout' || sessionFailure.category === 'network'
         ? 'warning'
         : 'error',
-      label: ENGINE_FAILURE_LABEL[sessionFailure.category],
+      label: text.engine.failure[sessionFailure.category],
       summary: sessionFailure.suggestion,
       detail: [
         sessionFailure.reason,
-        formatEngineFailureAge(sessionFailure.occurredAt, now),
+        formatEngineFailureAge(text, sessionFailure.occurredAt, now),
         typeof sessionFailure.statusCode === 'number' ? `HTTP ${sessionFailure.statusCode}` : null,
         typeof sessionFailure.exitCode === 'number' ? `exit ${sessionFailure.exitCode}` : null,
-        sessionFailure.retryable ? copy().retryable : copy().needsAction,
+        sessionFailure.retryable ? text.engine.retryable : text.engine.needsAction,
       ].filter(Boolean).join(' · '),
       ...(reliabilityLine ? { capabilityLine: reliabilityLine } : {}),
     };
   }
 
-  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace);
+  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace, text);
   if (unavailableReason) {
     const tone: EngineReliabilityTone =
       descriptor.installState === 'missing' || descriptor.runtimeState === 'error' || descriptor.runtimeState === 'blocked'
@@ -669,17 +650,17 @@ export function buildEngineReliabilitySummary(args: {
         : 'warning';
     return {
       tone,
-      label: tone === 'error' ? copy().unavailableLabel : copy().needsHandlingLabel,
+      label: tone === 'error' ? text.engine.unavailable : text.engine.needsHandling,
       summary: unavailableReason,
-      detail: copy().unavailableDetail,
+      detail: text.engine.chainDetail,
     };
   }
 
   if (descriptor.runtimeState === 'not_configured') {
     return {
       tone: 'warning',
-      label: copy().needsConfigLabel,
-      summary: interpolate(copy().needsConfigSummary, { engine: descriptor.label }),
+      label: text.engine.needsConfig,
+      summary: interpolate(text.engine.needsConfigSummary, { engine: descriptor.label }),
       detail: descriptor.lastError,
     };
   }
@@ -687,39 +668,38 @@ export function buildEngineReliabilitySummary(args: {
   if (selectedModel?.disabledReason) {
     return {
       tone: 'warning',
-      label: copy().modelLimitedLabel,
+      label: text.engine.modelLimited,
       summary: selectedModel.disabledReason,
-      detail: copy().modelLimitedDetail,
+      detail: text.engine.modelLimitedDetail,
     };
   }
 
   if (descriptor.runtimeState === 'unknown') {
     return {
       tone: 'info',
-      label: copy().pendingLabel,
-      summary: interpolate(copy().pendingSummary, { engine: descriptor.label }),
+      label: text.engine.pending,
+      summary: interpolate(text.engine.pendingSummary, { engine: descriptor.label }),
       detail: descriptor.lastError,
     };
   }
 
   const streamLine = descriptor.capabilities.includes('stream_events')
-    ? copy().streamYes
-    : copy().streamNo;
+    ? text.engine.streamYes
+    : text.engine.streamNo;
   const executionLine = descriptor.capabilities.includes('execute')
-    ? copy().execYes
-    : copy().execNo;
+    ? text.engine.execYes
+    : text.engine.execNo;
   const modelLine = selectedModel?.capabilities.includes('code')
-    ? copy().modelCodeYes
-    : copy().modelCodeNo;
+    ? text.engine.codeYes
+    : text.engine.codeNo;
   const modelMatchesAgentTasks = selectedModel?.capabilities.includes('code') ?? false;
-  const reliabilityLine = formatEngineReliabilityContract(descriptor);
+  const reliabilityLine = formatEngineReliabilityContract(descriptor, text);
 
   return {
     tone: descriptor.capabilities.includes('execute') && modelMatchesAgentTasks ? 'ready' : 'info',
-    label: copy().readyLabel,
-    summary: interpolate(copy().readySummary, {
-      engine: descriptor.label,
-      model: selectedModel?.label ?? selectedModel?.id ?? copy().defaultSelection,
+    label: text.engine.available,
+    summary: interpolate(text.engine.availableSummary, {
+      engine: descriptor.label, model: selectedModel?.label ?? selectedModel?.id ?? text.engine.defaultSelection,
     }),
     capabilityLine: [streamLine, executionLine, modelLine, reliabilityLine].filter(Boolean).join(' · '),
   };

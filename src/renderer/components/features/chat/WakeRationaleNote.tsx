@@ -1,3 +1,4 @@
+import { HumanizedText } from '../../HumanizedText';
 // ============================================================================
 // WakeRationaleNote - 主动建议卡片上的「为什么」入口
 // ============================================================================
@@ -41,7 +42,8 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
   const { t } = useI18n();
   const text = t.wakeRationale;
   const [open, setOpen] = useState(false);
-  const showMissing = fields.missing || !fields.rationale?.trim();
+  const { rationale, evidence } = fields;
+  const showMissing = fields.missing || !rationale?.trim();
 
   return (
     <div className="mt-2" data-testid="wake-rationale">
@@ -65,10 +67,10 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
             <p data-testid="wake-rationale-missing">{text.missing}</p>
           ) : (
             <>
-              <p data-testid="wake-rationale-text">{fields.rationale}</p>
-              {fields.evidence ? (
+              <p data-testid="wake-rationale-text"><HumanizedText text={rationale ?? ''} /></p>
+              {evidence && evidence !== rationale ? (
                 <p data-testid="wake-rationale-evidence" className="mt-1 text-zinc-500">
-                  {text.evidenceLabel}{t.punctuation.colon}{fields.evidence}
+                  {text.evidenceLabel}{t.punctuation.colon}<HumanizedText text={evidence} />
                 </p>
               ) : null}
             </>

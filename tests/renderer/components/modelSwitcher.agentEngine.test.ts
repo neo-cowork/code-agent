@@ -388,11 +388,11 @@ describe('ModelSwitcher Agent Engine selection', () => {
       displayProvider: 'xiaomi', displayModel: 'main', adaptive: false, overridden: false,
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'High', shortLabel: '高' }, thinkingLabel: 'Think',
-    })).toBe('Main task model: xiaomi/main · Effort: High · Thinking: Think');
+    })).toBe('Task model: xiaomi/main · Effort: High · Thinking: Think');
     expect(formatExternalModelSwitcherTooltip({
       language: 'en', engineLabel: 'Claude', model: 'sonnet',
       effort: { label: 'High', shortLabel: '高' }, reliabilityLabel: 'ready',
-    })).toBe('Engine: Claude · Main task model: sonnet · Effort: High · Provider: ready');
+    })).toBe('Engine: Claude · Task model: sonnet · Effort: High · Provider: ready');
   });
 
   it('shows the model settings prompt only for native sessions after settings prove no configured models', () => {

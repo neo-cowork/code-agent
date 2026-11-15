@@ -47,7 +47,7 @@
     "src/renderer/components/features/chat/SessionDiffSummary.tsx": 2,
     "src/renderer/components/features/chat/StallNoticeLine.tsx": 4,
     "src/renderer/components/features/chat/StreamingIndicator.tsx": 1,
-    "src/renderer/components/features/chat/TraceNodeRenderer.tsx": 8,
+    "src/renderer/components/features/chat/TraceNodeRenderer.tsx": 7,
     "src/renderer/components/features/chat/TraceTimelineNodes.tsx": 1,
     "src/renderer/components/features/chat/TurnQualityStrip.tsx": 15,
     "src/renderer/components/features/computerUse/ComputerUseContent.tsx": 51,

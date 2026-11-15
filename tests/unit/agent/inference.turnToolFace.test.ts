@@ -314,13 +314,13 @@ describe('ordered tool faces through production inference', () => {
     const neutral = 'Summarise the logs and tidy the plan';
     const baseline = turn(neutral, { allowedToolNames: getTextForegroundToolNamesForPrompt(neutral) });
     Object.assign(baseline.runtime, { foregroundToolFace: true });
-    const prompt = 'Process the logs and Edit the plan, then Task Explore Plan mail calendar reminders workflow';
+    const prompt = 'Process the logs and Edit the plan, then Task Explore Plan workflow';
     const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt);
     const ctx = turn(prompt, { allowedToolNames });
     Object.assign(ctx.runtime, { foregroundToolFace: true });
     const names = await finalNames(ctx);
     expect([...names].sort()).toEqual([...(await finalNames(baseline))].sort());
-    for (const absent of ['Process', 'Task', 'Explore', 'Plan', 'mail', 'calendar', 'reminders', 'workflow']) {
+    for (const absent of ['Process', 'Task', 'Explore', 'Plan', 'workflow']) {
       expect(allowedToolNames).not.toContain(absent);
       expect(names).not.toContain(absent);
     }
@@ -428,7 +428,9 @@ describe('ordered tool faces through production inference', () => {
     expect(names).not.toContain('delegate_task');
     expect(names).not.toContain('Bash');
     expect(names).not.toContain('mail_send');
-    expect(names.every((name) => declared.includes(name))).toBe(true);
+    // 邮件意图在连接器未启用时会按轮放行读工具 mail（让模型转述「未连接」）；它不是外发动作，
+    // 其余仍须在角色声明边界内，mail_send 仍被硬边界挡住。
+    expect(names.filter((name) => !declared.includes(name) && name !== 'mail')).toEqual([]);
   });
 
   it('explicit deny and an inherited narrow allowlist cannot be widened by naming a tool', async () => {

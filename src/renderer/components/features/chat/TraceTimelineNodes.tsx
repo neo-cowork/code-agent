@@ -1,3 +1,5 @@
+import { resolveSkillName } from '@shared/resolveSkillName';
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 // ============================================================================
 // TraceTimelineNodes - turn_timeline 节点的子渲染器（从 TraceNodeRenderer 抽出，
 // 逐行搬移，无 JSX/逻辑改动）：BlockedCapabilities / RoutingEvidence / HookActivity /
@@ -189,7 +191,7 @@ const HOOK_EVENT_LABELS: Record<string, string> = {
 };
 
 const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const labels = t.turnHooks;
   const activity = timeline.hookActivity;
   const [expanded, setExpanded] = useState(false);
@@ -229,7 +231,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-zinc-200">{(item.names || []).join(t.punctuation.listSeparator) || labels.unnamed}</span>
                   <WorkbenchPill tone="neutral">{HOOK_EVENT_LABELS[item.event] || item.event}</WorkbenchPill>
-                  {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
+                  {item.toolName && <WorkbenchPill tone="neutral">{humanizeInternalText(item.toolName, language).text}</WorkbenchPill>}
                   <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
                     {item.action === 'block' ? labels.blocked : labels.allowed}
                   </WorkbenchPill>
@@ -248,21 +250,8 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
   );
 };
 
-function getSkillActionLabel(action: string): string {
-  switch (action) {
-    case 'selected':
-      return '本轮挂载';
-    case 'triggered':
-      return '已触发';
-    case 'written':
-      return '已写入';
-    default:
-      return action;
-  }
-}
-
 const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const activity = timeline.skillActivity;
   if (!activity || activity.items.length === 0) return null;
 
@@ -271,7 +260,7 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
       <div className="mb-1 flex items-center gap-2 text-[11px] text-zinc-300">
         <Wrench className="h-3.5 w-3.5 text-badge-accent" />
         <span>{t.turnSections.skills}</span>
-        <span className="text-zinc-500">{activity.summary.replace(/^Skill\s*/, '')}</span>
+        <span className="text-zinc-500">{activity.items.length}</span>
       </div>
       <div className="mt-2 space-y-1.5">
         {activity.items.map((item, index) => (
@@ -279,12 +268,10 @@ const SkillActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeli
             <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-mark-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <WorkbenchPill tone="skill">{item.label}</WorkbenchPill>
-                <span className="text-zinc-300">{getSkillActionLabel(item.action)}</span>
+                <WorkbenchPill tone="skill">{resolveSkillName(item.skillId, language, t.turnSections.skills)}</WorkbenchPill>
+                <span className="text-zinc-300">{t.skillTimeline[item.action]}</span>
               </div>
-              {item.detail && (
-                <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.detail}</div>
-              )}
+
             </div>
           </div>
         ))}
