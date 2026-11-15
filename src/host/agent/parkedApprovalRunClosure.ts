@@ -32,24 +32,43 @@ export function sessionHasPendingToolApproval(
  * 此刻不能碰（可能属于活进程）。登记下来，等恢复清扫器每次认领前重试——租约过期后在被
  * recoverOnStartup 回收成 waiting 之前把它收掉。只登记「审批已被收口」的会话，幸存会话不会进来。
  */
-const deferredCloses = new Map<string, { repository: DurableRunRepository; approvalRequestedAt: number }>();
+interface CloseOptions {
+  reason?: string;
+  /** Restart closure must recheck durable approvals even after a lease-live deferral. */
+  pendingApprovals?: PendingApprovalRepository;
+}
+
+const deferredCloses = new Map<string, {
+  repository: DurableRunRepository;
+  approvalRequestedAt: number;
+  options: CloseOptions;
+}>();
 
 /** 在每次 durable 恢复认领之前调用：重试此前因租约未过期而跳过的收口。绝不抛。 */
 export async function retryDeferredParkedRunCloses(now: number): Promise<void> {
   for (const [sessionId, entry] of [...deferredCloses]) {
     try {
+      if (entry.options.pendingApprovals && sessionHasPendingToolApproval(entry.options.pendingApprovals, sessionId)) {
+        deferredCloses.delete(sessionId);
+        logger.warn('Deferred durable run close skipped', {
+          sessionId, reason: entry.options.reason, skippedReason: 'pending_tool_approval',
+        });
+        continue;
+      }
       const { closed, skippedReason } = await entry.repository.closeParkedWaitingRunForSession({
         sessionId,
         now,
-        reason: PARKED_APPROVAL_RUN_CLOSE_REASON,
+        reason: entry.options.reason ?? PARKED_APPROVAL_RUN_CLOSE_REASON,
         approvalRequestedAt: entry.approvalRequestedAt,
       });
       if (closed) {
         deferredCloses.delete(sessionId);
-        logger.info('Closed parked durable run on deferred retry after lease expiry', { sessionId });
+        if (entry.options.reason) {
+          logger.warn('Closed parked durable run on deferred retry after lease expiry', { sessionId, reason: entry.options.reason });
+        } else logger.info('Closed parked durable run on deferred retry after lease expiry', { sessionId });
       } else if (!skippedReason?.endsWith('_lease_live')) {
         deferredCloses.delete(sessionId);
-        logger.warn('Deferred parked durable run close dropped', { sessionId, reason: skippedReason });
+        logger.warn('Deferred parked durable run close dropped', { sessionId, reason: entry.options.reason ?? PARKED_APPROVAL_RUN_CLOSE_REASON, skippedReason });
       }
     } catch (error) {
       logger.warn('Deferred parked durable run close failed', {
@@ -66,20 +85,28 @@ export async function closeSessionParkedRun(
   sessionId: string,
   now: number,
   approvalRequestedAt: number,
+  options: CloseOptions = {},
 ): Promise<boolean> {
+  const reason = options.reason ?? PARKED_APPROVAL_RUN_CLOSE_REASON;
   try {
+    if (options.pendingApprovals && sessionHasPendingToolApproval(options.pendingApprovals, sessionId)) {
+      logger.warn('Durable run close skipped', { sessionId, reason, skippedReason: 'pending_tool_approval' });
+      return false;
+    }
     const { closed, skippedReason } = await repository.closeParkedWaitingRunForSession({
       sessionId,
       now,
-      reason: PARKED_APPROVAL_RUN_CLOSE_REASON,
+      reason,
       approvalRequestedAt,
     });
-    if (closed) logger.info('Closed parked durable run after approval closure', { sessionId });
-    else {
-      logger.warn('Parked durable run not closed after approval closure', { sessionId, reason: skippedReason });
+    if (closed) {
+      if (options.reason) logger.warn('Closed parked durable run after approval closure', { sessionId, reason });
+      else logger.info('Closed parked durable run after approval closure', { sessionId });
+    } else {
+      logger.warn('Parked durable run not closed after approval closure', { sessionId, reason, skippedReason });
       if (skippedReason?.endsWith('_lease_live')) {
         const prior = deferredCloses.get(sessionId)?.approvalRequestedAt ?? approvalRequestedAt;
-        deferredCloses.set(sessionId, { repository, approvalRequestedAt: Math.min(prior, approvalRequestedAt) });
+        deferredCloses.set(sessionId, { repository, approvalRequestedAt: Math.min(prior, approvalRequestedAt), options });
       }
     }
     return closed;
