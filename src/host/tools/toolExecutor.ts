@@ -120,6 +120,7 @@ import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { tryReadOnlyProbe } from './readOnlyProbeHook';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
+import { tryReadOnlyProbeBehindGates } from './readOnlyProbeGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -1788,6 +1789,24 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
     }
 
+    // 只读探测闸门（2b）：全部为假才跑 tryReadOnlyProbe；被挡时 readonly_probe_plan_miss 带上变量名。
+    const readOnlyProbeGates = {
+      forcePermissionHandler: Boolean(this.forcePermissionHandler), readArgumentForcesClassification, protectedWriteForcesConfirmation,
+      policyForcesConfirmation, readOnlyForcesConfirmation, boundaryViolation: Boolean(boundaryViolation), unresolvedWriteTargetForcesAsk,
+      writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification, commandAnalysisFailedReason: Boolean(commandAnalysisFailedReason),
+      peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
+    };
+    const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments };
+    // 拓扑 ask（async_agent 后台 Bash）使下面的 P0 块整体跳过：只读探测在此单独放行，其余捷径仍被拓扑 ask 挡住。
+    if (isBashToolName(policyToolName) && params.command && !isPreApproved && guardFabricForcesApproval && !guardFabricAskRuleOnly) {
+      const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput);
+      if (probe) {
+        logger.info('readonly_probe_plan_hit', { programs: probe.programs, topology: executionTopology });
+        recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+        return { success: true, output: probe.output, metadata: { readonlyProbePlan: true } };
+      }
+    }
+
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批。
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
     // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
@@ -1824,8 +1843,8 @@ export class ToolExecutor {
 
       // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
       // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
-      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification) {
-        const probe = await tryReadOnlyProbe({ command: cmd, workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments });
+      if (!isSafeCommand) {
+        const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput);
         if (probe) {
           logger.info('readonly_probe_plan_hit', { programs: probe.programs });
           recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
