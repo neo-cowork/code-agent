@@ -62,7 +62,7 @@ function assertClean(exit: string, text: string, language: Language) {
 }
 
 beforeEach(() => {
-  useAppStore.setState({ developerMode: false, cloudUIStrings: {} });
+  useAppStore.setState({ developerMode: false, cloudUIStrings: null });
   useTaskStore.setState({ initialized: true, sessionStates: {}, stats: { running: 0, queued: 0, available: 3, maxConcurrent: 3 } });
   useSessionStore.setState({ sessions: [], backgroundSessions: [], runningSessionIds: new Set() });
   useToastStore.setState({ toasts: [] });
