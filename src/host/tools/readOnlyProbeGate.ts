@@ -21,6 +21,7 @@ export type ReadOnlyProbeGates = Record<string, boolean>;
 export async function tryReadOnlyProbeBehindGates(
   gates: ReadOnlyProbeGates,
   input: ReadOnlyProbeInput,
+  detail?: Record<string, unknown>,
 ): Promise<{ output: string; programs: string[] } | null> {
   const blocking = Object.keys(gates).filter((name) => gates[name]);
   try {
@@ -29,9 +30,26 @@ export async function tryReadOnlyProbeBehindGates(
     // exec policy 未初始化：与主链一致，视为无规则
   }
   if (blocking.length === 0) return tryReadOnlyProbe(input);
+  logProbeMiss(blocking, input, detail);
+  return null;
+}
+
+/**
+ * 探测根本没被尝试（外层 P0 块被跳过 / 命令已被 safe-command 短路）时的留痕：
+ * 只记「某个强制确认信号为真」的情形，不改任何决策。
+ */
+export function noteReadOnlyProbeSkipped(
+  gates: ReadOnlyProbeGates,
+  input: ReadOnlyProbeInput,
+  detail?: Record<string, unknown>,
+): void {
+  const blocking = Object.keys(gates).filter((name) => gates[name]);
+  if (blocking.length > 0) logProbeMiss(blocking, input, detail);
+}
+
+function logProbeMiss(blocking: string[], input: ReadOnlyProbeInput, detail?: Record<string, unknown>): void {
   // 只在命令本可被证明只读、却被闸门挡下时记 info；不可编译的命令走审批是常态，不刷屏。
   if (compileReadOnlyProbePlan(input.command, { homeDir: os.homedir(), platform: process.platform })) {
-    logger.info('readonly_probe_plan_miss', { cause: `gate:${blocking[0]}`, gates: blocking });
+    logger.info('readonly_probe_plan_miss', { cause: `gate:${blocking[0]}`, gates: blocking, ...detail });
   }
-  return null;
 }

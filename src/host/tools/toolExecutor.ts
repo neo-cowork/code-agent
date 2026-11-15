@@ -118,9 +118,8 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
-import { tryReadOnlyProbe } from './readOnlyProbeHook';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
-import { tryReadOnlyProbeBehindGates } from './readOnlyProbeGate';
+import { noteReadOnlyProbeSkipped, tryReadOnlyProbeBehindGates } from './readOnlyProbeGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -1796,10 +1795,11 @@ export class ToolExecutor {
       writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification, commandAnalysisFailedReason: Boolean(commandAnalysisFailedReason),
       peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
     };
+    const readOnlyProbeDetail = boundaryViolation ? { skillName: boundaryViolation.skillName } : undefined;
     const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments };
     // 拓扑 ask（async_agent 后台 Bash）使下面的 P0 块整体跳过：只读探测在此单独放行，其余捷径仍被拓扑 ask 挡住。
     if (isBashToolName(policyToolName) && params.command && !isPreApproved && guardFabricForcesApproval && !guardFabricAskRuleOnly) {
-      const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput);
+      const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput, readOnlyProbeDetail);
       if (probe) {
         logger.info('readonly_probe_plan_hit', { programs: probe.programs, topology: executionTopology });
         recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1844,12 +1844,14 @@ export class ToolExecutor {
       // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
       // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
       if (!isSafeCommand) {
-        const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput);
+        const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput, readOnlyProbeDetail);
         if (probe) {
           logger.info('readonly_probe_plan_hit', { programs: probe.programs });
           recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return { success: true, output: probe.output, metadata: { readonlyProbePlan: true } };
         }
+      } else {
+        noteReadOnlyProbeSkipped(readOnlyProbeGates, readOnlyProbeInput, { ...readOnlyProbeDetail, shortCircuit: 'safe-command' });
       }
 
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
@@ -1868,6 +1870,8 @@ export class ToolExecutor {
           recordDecision(executionToolName, params, 'auto-approve', 'lenient-mode', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
         }
       }
+    } else if (isBashToolName(policyToolName) && params.command && !(guardFabricForcesApproval && !guardFabricAskRuleOnly)) {
+      noteReadOnlyProbeSkipped({ ...readOnlyProbeGates, isPreApproved }, readOnlyProbeInput, { ...readOnlyProbeDetail, shortCircuit: 'p0-block-skipped' });
     }
     if (deferredRepeatedAnalysisDenial) return deferredRepeatedAnalysisDenial();
     // N-ROLE-WAKE-OWN-MEMORY-NO-APPROVAL：无人值守醒来写「自己的」角色层记忆的窄
