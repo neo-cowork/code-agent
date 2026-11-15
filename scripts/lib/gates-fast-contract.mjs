@@ -156,7 +156,8 @@ export function renderReceipt(receipt) {
     ? 'CI: pending (PR not created; authoritative CI evidence will be bound after creation).'
     : `CI: ${receipt.ci.status}`;
   const deferred = receipt.vitestDeferred;
-  return [local, ...(deferred ? [`gates:fast vitest deferred to PR CI: selected ${deferred.selected} files > ${deferred.maxFiles}`] : []),
+  const tt = receipt.testsTypecheckDeferred;
+  return [local, ...(tt ? [`gates:fast tests-typecheck 本机超预算（${tt.budgetMs}ms），交 PR CI`] : []), ...(deferred ? [`gates:fast vitest deferred to PR CI: selected ${deferred.selected} files > ${deferred.maxFiles}`] : []),
     ci, ...(receipt.privateCheck ? [`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`] : [])];
 }
 
@@ -255,4 +256,10 @@ export function budgetFailure(deadline, argv) {
   return deadline.limit === 'gate'
     ? `FAIL: gate budget ${deadline.limitMs}ms exceeded${where}`
     : `FAIL: total budget ${deadline.limitMs}ms exhausted${where}`;
+}
+
+/** CI 环境（GitHub Actions 等设 CI=true）：tests-typecheck 不允许 deferred，必须全量跑完 */
+export function isCi(env = {}) {
+  const v = env.CI;
+  return v !== undefined && v !== '' && v !== '0' && v.toLowerCase?.() !== 'false';
 }
