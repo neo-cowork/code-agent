@@ -444,6 +444,19 @@ export function applyConversationStreamEvent(
           provider: decisionData.resolvedProvider,
           model: decisionData.resolvedModel,
         });
+        // 输入框模型名的真源：host 这一轮实际解析出的模型（不是渲染层启动时的设置快照）
+        // 不带 sessionId 的决策不归到当前会话（可能是后台会话的），宁可不记。
+        const decisionSessionId = event.sessionId;
+        if (decisionSessionId) {
+          useStatusStore.getState().setLastModelDecision({
+            sessionId: decisionSessionId,
+            requestedProvider: decisionData.requestedProvider,
+            requestedModel: decisionData.requestedModel,
+            resolvedProvider: decisionData.resolvedProvider,
+            resolvedModel: decisionData.resolvedModel,
+            reason: decisionData.reason,
+          });
+        }
         const targetMessageId = decisionData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
