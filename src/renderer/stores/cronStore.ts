@@ -3,20 +3,61 @@ import type { CronEventActionMode } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
+  CronRunsOn,
   CronServiceStats,
 } from '@shared/contract';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
+import { getBuiltinJobDisplay } from '../components/features/cron/builtinJobDisplay';
+import type { Language } from '../i18n';
 import {
   cronClient,
   type CreateCronJobInput,
   type UpdateCronJobInput,
 } from '../services/cronClient';
 import { createLogger } from '../utils/logger';
+import { useAppStore } from './appStore';
 
 const logger = createLogger('CronStore');
 
 export type CronJobFilterMode = 'all' | 'enabled' | 'disabled';
+export type CronLocationFilter = 'all' | CronRunsOn;
+
+export function filterVisibleCronJobs(
+  jobs: readonly CronJobDefinition[],
+  searchQuery: string,
+  locationFilter: CronLocationFilter,
+  language: Language,
+): CronJobDefinition[] {
+  const q = searchQuery.trim().toLowerCase();
+  return jobs.filter((job) => {
+    if (locationFilter !== 'all' && job.runsOn !== locationFilter) return false;
+    if (!q) return true;
+    const builtinDisplay = getBuiltinJobDisplay(job, language);
+    const haystacks = [
+      job.name,
+      job.description || '',
+      builtinDisplay?.name || '',
+      builtinDisplay?.description || '',
+      job.tags?.join(' ') || '',
+    ];
+    return haystacks.some((value) => value.toLowerCase().includes(q));
+  });
+}
+
+function resolveSelectedCronJobId(
+  visibleJobs: readonly CronJobDefinition[],
+  selectedJobId: string | null,
+): string | null {
+  if (selectedJobId && visibleJobs.some((job) => job.id === selectedJobId)) {
+    return selectedJobId;
+  }
+  return visibleJobs[0]?.id ?? null;
+}
+
+function currentLanguage(): Language {
+  return useAppStore.getState().language;
+}
 
 interface CronState {
   jobs: CronJobDefinition[];
@@ -30,6 +71,7 @@ interface CronState {
   recentExecutions: CronJobExecution[];
   selectedJobId: string | null;
   filterMode: CronJobFilterMode;
+  locationFilter: CronLocationFilter;
   searchQuery: string;
   isLoading: boolean;
   isEditorOpen: boolean;
@@ -38,6 +80,7 @@ interface CronState {
   error: string | null;
 
   setFilterMode: (mode: CronJobFilterMode) => void;
+  setLocationFilter: (filter: CronLocationFilter) => void;
   setSearchQuery: (query: string) => void;
   selectJob: (jobId: string | null) => void;
   openCreateEditor: () => void;
@@ -79,6 +122,7 @@ export const useCronStore = create<CronState>()((set, get) => ({
   recentExecutions: [],
   selectedJobId: null,
   filterMode: 'all',
+  locationFilter: 'all',
   searchQuery: '',
   isLoading: false,
   isEditorOpen: false,
@@ -86,9 +130,49 @@ export const useCronStore = create<CronState>()((set, get) => ({
   copyingJobId: null,
   error: null,
 
-  setFilterMode: (mode) => set({ filterMode: mode }),
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  selectJob: (jobId) => set({ selectedJobId: jobId }),
+  setFilterMode: (mode) => {
+    set({ filterMode: mode });
+    void get().loadJobs();
+  },
+  setLocationFilter: (filter) => set((state) => ({
+    locationFilter: filter,
+    selectedJobId: resolveSelectedCronJobId(
+      filterVisibleCronJobs(state.jobs, state.searchQuery, filter, currentLanguage()),
+      state.selectedJobId,
+    ),
+  })),
+  setSearchQuery: (query) => set((state) => ({
+    searchQuery: query,
+    selectedJobId: resolveSelectedCronJobId(
+      filterVisibleCronJobs(state.jobs, query, state.locationFilter, currentLanguage()),
+      state.selectedJobId,
+    ),
+  })),
+  selectJob: (jobId) => set((state) => {
+    if (!jobId) return { selectedJobId: null };
+    const hasActiveFilter = state.searchQuery.trim().length > 0
+      || state.locationFilter !== 'all'
+      || state.filterMode !== 'all';
+    if (!hasActiveFilter) {
+      return { selectedJobId: jobId };
+    }
+    const visibleJobs = filterVisibleCronJobs(
+      state.jobs,
+      state.searchQuery,
+      state.locationFilter,
+      currentLanguage(),
+    );
+    if (visibleJobs.some((job) => job.id === jobId)) {
+      return { selectedJobId: jobId };
+    }
+    const resetFilterMode = state.filterMode !== 'all';
+    return {
+      searchQuery: '',
+      locationFilter: 'all',
+      ...(resetFilterMode ? { filterMode: 'all' as const, jobs: state.allJobs.length > 0 ? state.allJobs : state.jobs } : {}),
+      selectedJobId: jobId,
+    };
+  }),
 
   openCreateEditor: () => set({ isEditorOpen: true, editingJobId: null, copyingJobId: null }),
   openEditEditor: (jobId) => set({ isEditorOpen: true, editingJobId: jobId, copyingJobId: null }),
@@ -96,7 +180,7 @@ export const useCronStore = create<CronState>()((set, get) => ({
   closeEditor: () => set({ isEditorOpen: false, editingJobId: null, copyingJobId: null }),
 
   loadJobs: async () => {
-    const { filterMode, selectedJobId } = get();
+    const { filterMode } = get();
     set({ isLoading: true, error: null });
 
     const filter = filterMode === 'all' ? undefined : { enabled: filterMode === 'enabled' };
@@ -113,15 +197,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
       );
       const latestExecutions = Object.fromEntries(latestPairs);
 
-      const nextSelectedJobId =
-        selectedJobId && jobs.some((job) => job.id === selectedJobId)
-          ? selectedJobId
-          : jobs[0]?.id || null;
-
-      set({
-        jobs,
-        latestExecutions,
-        selectedJobId: nextSelectedJobId,
+      set((state) => {
+        const visibleJobs = filterVisibleCronJobs(
+          jobs,
+          state.searchQuery,
+          state.locationFilter,
+          currentLanguage(),
+        );
+        return {
+          jobs,
+          latestExecutions,
+          selectedJobId: resolveSelectedCronJobId(visibleJobs, state.selectedJobId),
+        };
       });
     } else {
       logger.error('Failed to load cron jobs', filteredResult.reason);
@@ -236,14 +323,25 @@ export const useCronStore = create<CronState>()((set, get) => ({
   createJob: async (input) => {
     const created = await cronClient.createJob(input);
     await get().refresh();
-    set({
-      selectedJobId: created.id,
-      // 角色绑定任务保存后编辑器保持打开：组件切到「已保存」复述视图，Done 才关
-      // （N-ROLE-ROUTINE-RESTATE）。这里若照旧落 isEditorOpen:false，Modal 会连带
-      // 复述视图一起卸载，视图永远出不来。webhook 任务同理：一次性链接卡（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）。
-      ...(isRoleBoundCronJob(created) || isWebhookCronJob(created)
-        ? {}
-        : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
+    set((state) => {
+      const candidateJobs = state.jobs.some((job) => job.id === created.id)
+        ? state.jobs
+        : [created, ...state.jobs];
+      const visibleJobs = filterVisibleCronJobs(
+        candidateJobs,
+        state.searchQuery,
+        state.locationFilter,
+        currentLanguage(),
+      );
+      return {
+        selectedJobId: resolveSelectedCronJobId(visibleJobs, created.id),
+        // 角色绑定任务保存后编辑器保持打开：组件切到「已保存」复述视图，Done 才关
+        // （N-ROLE-ROUTINE-RESTATE）。这里若照旧落 isEditorOpen:false，Modal 会连带
+        // 复述视图一起卸载，视图永远出不来。webhook 任务同理：一次性链接卡（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）。
+        ...(isRoleBoundCronJob(created) || isWebhookCronJob(created)
+          ? {}
+          : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
+      };
     });
     return created;
   },
@@ -263,14 +361,25 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const ok = await cronClient.deleteJob(jobId);
     if (ok) {
       set((state) => {
+        const nextJobs = state.jobs.filter((job) => job.id !== jobId);
+        const visibleJobs = filterVisibleCronJobs(
+          nextJobs,
+          state.searchQuery,
+          state.locationFilter,
+          currentLanguage(),
+        );
         const nextExecutions = { ...state.executionsByJobId };
         const nextLatest = { ...state.latestExecutions };
         delete nextExecutions[jobId];
         delete nextLatest[jobId];
         return {
+          jobs: nextJobs,
           executionsByJobId: nextExecutions,
           latestExecutions: nextLatest,
-          selectedJobId: state.selectedJobId === jobId ? null : state.selectedJobId,
+          selectedJobId: resolveSelectedCronJobId(
+            visibleJobs,
+            state.selectedJobId === jobId ? null : state.selectedJobId,
+          ),
         };
       });
       await get().refresh();
