@@ -1,5 +1,7 @@
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useCronStore } from '../../../stores/cronStore';
+import { getLatestExecutionStatus, isPermissionDeniedExecution } from '../cron/types';
 import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
 import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
 import React from 'react';
@@ -137,6 +139,17 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const { t, language } = useI18n();
   const s = t.sidebarSession;
   const projectCopy = t.sidebarProject;
+  const cronTaskId = getSidebarCronTaskId(session);
+  const cronExecution = useCronStore((state) => {
+    if (!cronTaskId) return undefined;
+    const latest = state.latestExecutions[cronTaskId];
+    return latest?.sessionId === session.id ? latest
+      : state.recentExecutions.find((execution) => execution.sessionId === session.id)
+        ?? state.executionsByJobId[cronTaskId]?.find((execution) => execution.sessionId === session.id);
+  });
+  const deniedStatus = cronExecution && isPermissionDeniedExecution(cronExecution)
+    ? getLatestExecutionStatus(cronExecution, t.cronCenter)
+    : undefined;
   const isUnread = unreadSessionIds.has(session.id);
   const isSelected = currentSessionId === session.id;
   const isChecked = selectedSessionIds.has(session.id);
@@ -188,7 +201,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
   const forkParentSessionId = getForkParentSessionId(session);
-  const cronTaskId = getSidebarCronTaskId(session);
   const cronRunAggregate = cronTaskId ? cronRunAggregatesByTaskId?.[cronTaskId] : undefined;
   const latestRunTime = formatLocalDateTime(latestActivityAt, language);
   const cronRunsToggleLabel = cronRunsExpanded
@@ -282,6 +294,14 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               </div>
             )}
           </div>
+        )}
+        {!isRenaming && !isRunning && deniedStatus && (
+          <span
+            data-testid="sidebar-cron-permission-denied"
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${deniedStatus.className}`}
+          >
+            {deniedStatus.label}
+          </span>
         )}
         {!isRenaming && cronRunAggregate && cronRunAggregate.runCount > 1 && cronRunAggregate.latestSessionId === session.id && (
           onToggleCronRuns && cronTaskId ? (
