@@ -75,3 +75,22 @@ describe.each(['zh', 'en'] as const)('declined cron verdict (%s)', (language) =>
     expect(within(view.container).queryByTestId('sidebar-cron-permission-denied')).toBeNull();
   });
 });
+
+describe.each(['zh', 'en'] as const)('declined cron detail urgency chip (%s)', (language) => {
+  const digestResult = (urgency: 'fyi' | 'must_today', reason: 'user' | 'timeout') => ({
+    agentType: 'agent', prompt: 'sort downloads', sessionId: 'download-session', urgency,
+    digest: { summary: 'urgency: must_today\nNothing was moved; the step was declined.', artifacts: [] },
+    permissionDenied: { count: 1, steps: [{ tool: 'Bash', summary: 'Move Downloads into folders', reason }] },
+  });
+  const chip = (result: unknown) => {
+    useAppStore.setState({ language });
+    const view = render(<CronExecutionDetail execution={{ ...execution, result }} />);
+    return within(view.container).queryByTestId('cron-result-urgency')?.textContent ?? null;
+  };
+  it('shows the host-capped tier, not the must_today header in the digest, for a user-only denial', () => {
+    expect(chip(digestResult('fyi', 'user'))).toBe(language === 'zh' ? '仅供参考' : 'FYI');
+  });
+  it('keeps the declared tier when the denial was a timeout', () => {
+    expect(chip(digestResult('must_today', 'timeout'))).toBe(language === 'zh' ? '今日必办' : 'Must do today');
+  });
+});
