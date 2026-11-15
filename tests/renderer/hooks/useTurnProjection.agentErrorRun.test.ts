@@ -188,7 +188,7 @@ describe('projectTurns 连续同因失败折叠', () => {
     expect((html.match(/agent-error-muted-line/g) ?? []).length).toBe(2);
     expect((html.match(/role="alert"/g) ?? []).length).toBe(1);
     expect(html).toContain('没有回复 · 账号没通过授权');
-    expect(html).toContain('密钥可能填错、过期，或者额度用完了。<span>连续 3 次都是这个原因，再发也不会好。</span>');
+    expect(html).toContain('密钥可能填错、过期，或者额度用完了。<span>同样的问题已连续出现 3 次。可以先换个模型继续，或按上面的提示处理好再发。</span>');
     // 整卡动作不受折叠影响：auth 仍是换个模型 + 检查账号，无重试
     expect(html).toContain('换个模型');
     expect(html).toContain('检查账号');
@@ -217,7 +217,7 @@ describe('projectTurns 连续同因失败折叠', () => {
       .join('\n');
     expect((html.match(/agent-error-muted-line/g) ?? []).length).toBe(2);
     expect((html.match(/role="alert"/g) ?? []).length).toBe(1);
-    expect(html).toContain('连续 3 次都是这个原因，再发也不会好。');
+    expect(html).toContain('同样的问题已连续出现 3 次。可以先换个模型继续，或按上面的提示处理好再发。');
   });
 
   it('端到端渲染：A,A,B → 灰字(A) + 整卡(A) + 整卡(B)，只有段内最新的卡报连续次数', () => {
@@ -232,7 +232,7 @@ describe('projectTurns 连续同因失败折叠', () => {
 
     expect((html.match(/agent-error-muted-line/g) ?? []).length).toBe(1);
     expect((html.match(/role="alert"/g) ?? []).length).toBe(2);
-    expect(html).toContain('连续 2 次都是这个原因，再发也不会好。');
+    expect(html).toContain('同样的问题已连续出现 2 次。可以先换个模型继续，或按上面的提示处理好再发。');
     expect(html).toContain('暂时连不上模型服务');
   });
 });
