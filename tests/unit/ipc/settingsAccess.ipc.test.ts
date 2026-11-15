@@ -272,7 +272,7 @@ describe('settings.ipc access control', () => {
     expect(updateSettings).not.toHaveBeenCalled();
   });
 
-  it.each([null, 'false', 0, {}, [], undefined])('keeps non-boolean readOnlyProbePlan=%j behind the admin gate', async (value) => {
+  it.each([[null], ['false'], [0], [{}], [[]], [undefined]])('keeps non-boolean readOnlyProbePlan=%j behind the admin gate', async (value) => {
     const updateSettings = vi.fn();
     const ipc = makeFakeIpc();
     registerSettingsHandlers(ipc as never, () => ({ updateSettings }) as never);
