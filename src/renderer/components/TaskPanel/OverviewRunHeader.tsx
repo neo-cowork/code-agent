@@ -13,6 +13,7 @@ import { useLiveBackgroundAgentCount } from '../../hooks/useLiveBackgroundAgentC
 // ============================================================================
 
 import { useRoleLabels } from '../../stores/roleLabelsStore';
+import { interpolatePlural } from '../../i18n/interpolate';
 import React, { useEffect, useState } from 'react';
 import { Square } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
@@ -132,7 +133,7 @@ export const OverviewRunHeader: React.FC = () => {
                 total: model.steps.total,
               })
               : model.terminal === 'completed' || !terminalWord
-                ? formatTemplate(wt.overviewRunStepsDone, { total: model.steps.total })
+                ? interpolatePlural(wt.overviewRunStepsDone, model.steps.total)
                 : terminalWord.label}
           </span>
         )}
