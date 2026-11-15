@@ -261,5 +261,5 @@ export function budgetFailure(deadline, argv) {
 /** CI 环境（GitHub Actions 等设 CI=true）：tests-typecheck 不允许 deferred，必须全量跑完 */
 export function isCi(env = {}) {
   const v = env.CI;
-  return v !== undefined && v !== '' && v !== '0' && v.toLowerCase?.() !== 'false';
+  return v !== undefined && v !== '' && v !== '0' && String(v).toLowerCase() !== 'false';
 }
