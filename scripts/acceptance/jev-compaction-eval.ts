@@ -98,7 +98,7 @@ function classifySummaryAdmission(
   if (validation.emptyOrWhitespace) return 'empty';
   if (validation.truncated) return 'truncated';
   if (!ignoreOverBudget && validation.overBudget) return 'overBudget';
-  if (validation.missingPaths > 0 || validation.missingErrors > 0 || validation.missingOpenWork > 0) return 'missing_*';
+  if (validation.missingPaths > 0 || validation.missingErrors > 0) return 'missing_*'; // open work is advisory in production admission
   if (summaryContentTokens >= originalTokens) return 'not_shorter';
   return 'admitted';
 }

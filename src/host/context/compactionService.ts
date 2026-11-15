@@ -422,7 +422,7 @@ Hard rules:
 - File survivor excerpts and digests are stale observations from before compaction, not proof of current file contents.
 - Never claim to know a file's latest contents from a survivor record; tell the next model to re-read before editing, quoting, or relying on it.
 - If a file survivor is path_only, only preserve the path and the reason it matters.
-- Preserve unresolved errors and failed commands.
+- Preserve failed commands. Copy every line listed under "## Errors" in the Survivor Manifest verbatim into "Errors And Resolutions" (mark it resolved if it was fixed later).
 - Preserve open work and TODO items.
 - Do not invent files, commands, tests, or outcomes.
 - Be specific enough that the next model can continue without the old messages.

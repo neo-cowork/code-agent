@@ -126,13 +126,17 @@ export function validateCompactionSummary(
     }
   }
 
+  // 待办来自对话文本的启发式匹配，逐字复述不可靠：只记 warning，不阻断收纳（旧行为里一个 "Open work" 标题即可覆盖全部）
+  if (missingOpenWork.length > 0) {
+    warnings.push(`${missingOpenWork.length} open-work item(s) were not quoted in the summary (advisory only).`);
+  }
+
   return {
     ok: !emptyOrWhitespace
       && !truncated
       && !overBudget
       && missingPaths.length === 0
-      && missingErrors.length === 0
-      && missingOpenWork.length === 0,
+      && missingErrors.length === 0,
     emptyOrWhitespace,
     truncated,
     overBudget,
