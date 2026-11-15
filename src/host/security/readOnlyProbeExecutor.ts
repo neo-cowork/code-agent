@@ -14,7 +14,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { getShellPath } from '../services/infra/shellEnvironment';
 import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
-import type { ProbeCommand, ProbeRedirect, PyExpr, PyStmt, ReadOnlyProbePlan } from './readOnlyProbePlan';
+import { PROBE_EXIT_STATUS, type ProbeCommand, type ProbeRedirect, type PyExpr, type PyStmt, type ReadOnlyProbePlan } from './readOnlyProbePlan';
 
 export interface ProbeAuthority {
   workingDirectory: string;
@@ -103,7 +103,7 @@ function namedVerbatim(candidates: string[], texts: string[]): boolean {
 }
 
 /** 返回规范化绝对路径；未授权返回 null。 */
-function authorizeProbePath(raw: string, auth: ProbeAuthority): string | null {
+export function authorizeProbePath(raw: string, auth: ProbeAuthority): string | null {
   if (!raw || raw.includes('\0')) return null;
   const abs = path.resolve(auth.workingDirectory, raw);
   const real = realpathOfPrefix(abs);
@@ -367,7 +367,10 @@ export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: Pr
     for (const step of plan.steps) {
       if (step.op === '&&' && status !== 0) continue;
       if (step.op === '||' && status === 0) continue;
-      status = await runner.run(step.cmd, step.redirect);
+      const cmd = step.cmd.kind === 'echo'
+        ? { ...step.cmd, text: step.cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) }
+        : step.cmd;
+      status = await runner.run(cmd, step.redirect);
     }
   } catch (err) {
     // PyException 逃出 try 块 = 脚本会以 traceback 退出；ProbeAbort = 无法证明。其余意外同样交回审批链。

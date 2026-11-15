@@ -13,6 +13,8 @@ import { createLogger } from '../services/infra/logger';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { isBashToolName } from './toolNames';
 import { matchUserAskRule } from './userAskRuleGate';
+import { isReadOnlyProbeEnabled } from './readOnlyProbeHook';
+import { scheduleReadOnlyProbeRoot } from './scheduleReadOnlyProbe';
 
 const logger = createLogger('GuardFabricGate');
 
@@ -124,6 +126,15 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
   }
 
   const topologyResult = evaluateTopologyGate(input);
+  // Option B: the cron folder grant covers proven local reads too. Only relax the
+  // topology ask; all remaining ToolExecutor guards and in-process probe checks run.
+  if (!userAsk && input.topology === 'async_agent' && topologyResult.forceApproval
+    && topologyResult.traceStep?.rule === 'topology: bash/async_agent'
+    && isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
+    && isReadOnlyProbeEnabled() && scheduleReadOnlyProbeRoot(input.sessionId, input.params.command)) {
+    logger.info('schedule_readonly_probe_topology_covered', { sessionId: input.sessionId });
+    return askResult;
+  }
   if (topologyResult.deny || topologyResult.forceApproval) return topologyResult;
   return askResult;
 }

@@ -60,6 +60,8 @@ const RESERVED_VAR_NAMES = new Set([
 ]);
 const LS_FLAG_CHARS = 'lahAFdtrSpOi@e1ns';
 const MAX_COMMAND_LENGTH = 8000;
+// A typed echo-only placeholder: never passed to a shell or interpreted as a path.
+export const PROBE_EXIT_STATUS = '\u0001probe-status\u0001';
 
 interface Word {
   value: string;
@@ -140,6 +142,11 @@ function tokenize(src: string, vars: Map<string, string>, home: string): Token[]
             return null;
           }
           if (d === '$') {
+            if (src.slice(i, i + 2) === '$?') {
+              value += PROBE_EXIT_STATUS;
+              i += 2;
+              continue;
+            }
             const braced = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(src.slice(i));
             const plain = /^\$([A-Za-z_][A-Za-z0-9_]*)/.exec(src.slice(i));
             const m = braced ?? plain;
@@ -390,6 +397,7 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
   if (!head.bare) return null;
   const argv = rest.map((w) => w.value);
   const program = head.value;
+  if (program !== 'echo' && argv.some((word) => word.includes(PROBE_EXIT_STATUS))) return null;
   switch (program) {
     case 'test': {
       if (argv.length !== 2 || !['-e', '-f', '-d'].includes(argv[0]) || argv[1] === '') return null;
@@ -449,7 +457,7 @@ export interface ProbeCompileContext {
 /** 编译；任何一处不能证明只读就返回 null（调用方原样走审批）。 */
 export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileContext): ReadOnlyProbePlan | null {
   if (ctx.platform === 'win32') return null;
-  if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0')) return null;
+  if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0') || command.includes('\u0001')) return null;
   const tokens = tokenize(command, new Map(), ctx.homeDir);
   if (!tokens) return null;
 
@@ -471,6 +479,7 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
     if (head.assignName !== undefined) {
       const name = head.assignName;
       if (words.length !== 1 || redirs.length > 0 || op !== ';') return false;
+      if (head.value.includes(PROBE_EXIT_STATUS)) return false;
       if (RESERVED_VAR_NAMES.has(name) || /^(LD_|DYLD_|LC_)/.test(name)) return false;
       steps.push({ op, cmd: { kind: 'noop' }, redirect: { out: 'out', err: 'err' }, program: 'assign', source });
       return true;

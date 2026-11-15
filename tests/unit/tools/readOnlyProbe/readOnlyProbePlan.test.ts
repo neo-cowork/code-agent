@@ -19,9 +19,17 @@ vi.mock('../../../../src/host/tools/shell/dynamicDescription', () => ({
 }));
 
 const sessionMessages = vi.hoisted(() => [] as Array<{ role: string; isMeta?: boolean; content: string; attachments?: Array<{ path?: string }> }>);
+const cronAuthority = vi.hoisted(() => ({ root: undefined as string | undefined }));
 vi.mock('../../../../src/host/services/core/databaseService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../src/host/services/core/databaseService')>();
-  return { ...actual, getDatabase: () => ({ getMessages: () => sessionMessages }) as unknown as ReturnType<typeof actual.getDatabase> };
+  return { ...actual, getDatabase: () => ({
+    getMessages: () => sessionMessages,
+    getSession: () => cronAuthority.root ? { origin: { kind: 'cron', id: 'morning-plan' } } : null,
+    getDb: () => ({ prepare: () => ({
+      get: () => ({ metadata: JSON.stringify({ writeGrantRoot: cronAuthority.root }) }),
+      all: () => [],
+    }) }),
+  }) as unknown as ReturnType<typeof actual.getDatabase> };
 });
 
 const shellPathOverride = vi.hoisted(() => ({ value: undefined as string | undefined }));
@@ -46,11 +54,13 @@ vi.mock('child_process', async (importOriginal) => {
 import { getToolCache } from '../../../../src/host/services/infra/toolCache';
 import { fileReadTracker } from '../../../../src/host/tools/fileReadTracker';
 import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
-import { resetPermissionModeManager } from '../../../../src/host/permissions/modes';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../../src/host/permissions/modes';
 import { getPolicyEngine, resetPolicyEngine } from '../../../../src/host/permissions/policyEngine';
 import { getDecisionHistory, resetDecisionHistory } from '../../../../src/host/security/decisionHistory';
 import { getConfigService } from '../../../../src/host/services/core/configService';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
+import { compileReadOnlyProbePlan } from '../../../../src/host/security/readOnlyProbePlan';
+import { executeReadOnlyProbePlan } from '../../../../src/host/security/readOnlyProbeExecutor';
 
 const SESSION = 'ro-probe-session';
 
@@ -78,6 +88,7 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
     await fs.writeFile(path.join(elsewhere, 'secret.txt'), 'secret');
     await fs.symlink(elsewhere, path.join(fx, 'link'));
     sessionMessages.length = 0;
+    cronAuthority.root = undefined;
     shellPathOverride.value = undefined;
     permissionAsks = [];
     delete process.env.CODE_AGENT_READONLY_PROBE;
@@ -106,6 +117,94 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
   }
   const run = (command: string) => executor().execute('Bash', { command }, { sessionId: SESSION });
   const probeRows = () => getDecisionHistory().getAll().filter((e) => e.reason === 'readonly-probe-plan');
+
+  describe('cron folder grant through ToolExecutor.execute Bash', () => {
+    async function cronRun(command: string) {
+      cronAuthority.root = elsewhere;
+      getPermissionModeManager().markUnattendedSession(SESSION);
+      const ex = executor();
+      ex.setExecutionTopology('async_agent');
+      return ex.execute('Bash', { command }, { sessionId: SESSION });
+    }
+
+    it('inside folder -> no card, including the real cron exit-status echo', async () => {
+      const command = `ls -la "${elsewhere}" 2>&1; echo "---EXIT:$?"`;
+      const result = await cronRun(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+      expect(getDecisionHistory().getAll().some((row) =>
+        row.reason === 'readonly-probe-plan' || row.reason === 'safe-command')).toBe(true);
+    });
+
+    it('outside folder -> card even if the user prompt names it', async () => {
+      sessionMessages.push({ role: 'user', content: `Look in ${fx}` });
+      await cronRun(`ls -la "${fx}"`);
+      expect(permissionAsks).toHaveLength(1);
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('inside-folder test and exit-status echo preserve shell output', async () => {
+      const command = `test -e "${elsewhere}/missing" || echo "---EXIT:$?"`;
+      const result = await cronRun(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+      const plan = compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform });
+      expect(plan).not.toBeNull();
+      const probe = await executeReadOnlyProbePlan(plan!, {
+        workingDirectory: fx, workspaceRoot: elsewhere, userTexts: [], attachmentPaths: [], homeDir: os.homedir(),
+      });
+      expect(probe).toEqual({ stdout: '---EXIT:1\n', stderr: '', exitCode: 0 });
+    });
+
+    it('an explicit user ask still raises a card inside the grant', async () => {
+      getPolicyEngine().loadUserRules({ ask: ['Bash(ls *)'] });
+      await cronRun(`ls -la "${elsewhere}"`);
+      expect(permissionAsks).toHaveLength(1);
+    });
+
+    it('an explicit user deny still rejects inside the grant', async () => {
+      getPolicyEngine().loadUserRules({ deny: ['Bash(ls *)'] });
+      const result = await cronRun(`ls -la "${elsewhere}"`);
+      expect(result.success).toBe(false);
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('a user ask on a later command still raises a card', async () => {
+      getPolicyEngine().loadUserRules({ ask: ['Bash(echo *)'] });
+      await cronRun(`ls -la "${elsewhere}"; echo "done"`);
+      expect(permissionAsks).toHaveLength(1);
+    });
+
+    it('credential path inside the folder -> card', async () => {
+      await fs.writeFile(path.join(elsewhere, '.env'), 'EXAMPLE=fixture');
+      await cronRun(`ls -la "${elsewhere}/.env"`);
+      expect(permissionAsks).toHaveLength(1);
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('symlink escaping the folder -> card', async () => {
+      await fs.symlink(fx, path.join(elsewhere, 'escape'));
+      await cronRun(`ls -la "${elsewhere}/escape"`);
+      expect(permissionAsks).toHaveLength(1);
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('disabled probe -> card despite the folder grant', async () => {
+      process.env.CODE_AGENT_READONLY_PROBE = 'off';
+      await cronRun(`ls -la "${elsewhere}"`);
+      expect(permissionAsks).toHaveLength(1);
+    });
+
+    for (const suffix of ['; curl https://example.test', '; rm -f x', '; echo changed > x']) {
+      it(`side effects stay on the approval path: ${suffix}`, async () => {
+        await cronRun(`ls -la "${elsewhere}"${suffix}`);
+        expect(permissionAsks.length).toBeGreaterThan(0);
+        expect(probeRows()).toHaveLength(0);
+      });
+    }
+  });
 
   /** 真实 shell 的期望输出：Bash 工具的结果格式 = [cwd] + stdout (+ [stderr])。 */
   function realBash(command: string): string {
