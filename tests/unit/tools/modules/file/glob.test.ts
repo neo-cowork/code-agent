@@ -364,4 +364,68 @@ describe('globModule (native)', () => {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT：懒创建的会话产出目录（任务_/Task_ 形状，
+  // 尚未落盘）按空目录处理——返回零匹配形状、不建目录、不跑 glob；其余缺失路径报
+  // ENOENT（glob 库会吞掉缺失 cwd 的 readdir 错误静默返回空，必须在进引擎前拦下）。
+  // ---------------------------------------------------------------------------
+  describe('missing search path: planned work directory vs ordinary ENOENT', () => {
+    const setWorkRootEnv = (dataDir: string): void => {
+      process.env.CODE_AGENT_HOME = tmpDir;
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+    };
+    const restoreWorkRootEnv = (): void => {
+      delete process.env.CODE_AGENT_HOME;
+      delete process.env.CODE_AGENT_DATA_DIR;
+    };
+
+    it('planned 任务_ folder not on disk yet: ok + zero-match shape, folder still absent', async () => {
+      const dataDir = path.join(tmpDir, '.code-agent');
+      const workRoot = path.join(tmpDir, 'Neo');
+      const plannedDir = path.join(workRoot, '任务_1114_整理周报素材');
+      setWorkRootEnv(dataDir);
+      try {
+        const handler = await globModule.createHandler();
+        const result = await handler.execute(
+          { pattern: '**/*.md', path: plannedDir },
+          makeCtx({ workingDir: plannedDir }),
+          allowAll,
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toBe('No files matched the pattern');
+          expect(result.meta).toMatchObject({
+            pattern: '**/*.md',
+            searchPath: plannedDir,
+            totalMatches: 0,
+            returned: 0,
+            matches: [],
+            artifact: expect.objectContaining({ kind: 'search', sourceTool: 'Glob' }),
+          });
+        }
+        // 只读搜索不为懒目录落盘：计划目录与其工作根都保持不存在
+        await expect(fs.stat(plannedDir)).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(fs.stat(workRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        restoreWorkRootEnv();
+      }
+    });
+
+    it('ordinary missing path (not a planned folder): structured ENOENT naming the path', async () => {
+      const missing = path.join(tmpDir, '__plain_missing_dir__');
+      const handler = await globModule.createHandler();
+      const result = await handler.execute(
+        { pattern: '**/*.ts', path: missing },
+        makeCtx({ workingDir: tmpDir }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.error).toBe(`Path not found: ${missing}`);
+      }
+    });
+  });
 });

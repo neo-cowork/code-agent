@@ -12,7 +12,7 @@ export const SYSTEM_PROMPT_TOKEN_BUDGET = 6400;
 
 import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';
-import { NON_PROGRAMMER_COMMUNICATION_CONTRACT } from './communication';
+import { NON_PROGRAMMER_COMMUNICATION_CONTRACT, readPromptLanguage, replyLanguageDirective } from './communication';
 import { QUESTION_FORM_PROMPT } from './questionForm';
 import {
   ARTIFACT_TASK_BRIEF_PROMPT,
@@ -22,7 +22,6 @@ import {
 } from './artifactGeneration';
 import { DYNAMIC_BOUNDARY_MARKER } from './cacheBreakDetection';
 import { formatTodayAnchor } from '../../shared/todayAnchor';
-import { getConfigService } from '../services/core/configService';
 import { applyOverlays, type OverlayConfig } from './overlayEngine';
 import { type PromptProfile, type PromptContext, getProfileOverlays } from './profiles';
 import { buildTrustedRemotePromptFragmentsBlock } from './remoteFragments';
@@ -101,14 +100,6 @@ export const WEB_SOURCE_OUTPUT_RULE = `## Web 来源展示约定
 // Prompt Builder
 // ----------------------------------------------------------------------------
 
-function readPromptLanguage(): 'zh' | 'en' {
-  try {
-    return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
-  } catch {
-    return 'zh';
-  }
-}
-
 export function buildPrompt(): string {
   const basePrompt = TOOLS_PROMPT;
 
@@ -116,14 +107,18 @@ export function buildPrompt(): string {
     throw new Error('Base prompt not found');
   }
 
+  const promptLanguage = readPromptLanguage();
+  const replyDirective = replyLanguageDirective(promptLanguage);
+
   // Stable prefix (cacheable across turns)
   const stablePrefix = [
     getSoul(),
     basePrompt,
     NON_PROGRAMMER_COMMUNICATION_CONTRACT,
+    ...(replyDirective ? [replyDirective] : []),
     CITATION_CONVENTIONS,
     ...getToolDescriptions(),
-    formatTodayAnchor(new Date(), undefined, readPromptLanguage()).prompt,
+    formatTodayAnchor(new Date(), undefined, promptLanguage).prompt,
   ].join('\n\n');
   // Dynamic section (rules 等；GENERATIVE_UI_PROMPT 改为按意图注入)
   const dynamicSection = [
@@ -336,8 +331,10 @@ export function buildProfilePrompt(profile: PromptProfile, context: PromptContex
   const activeOverlays = getProfileOverlays(profile);
 
   // L1: Base Substrate — identity + citation conventions + tools
+  const replyDirective = replyLanguageDirective();
   const substrate = [
     getSoul(),
+    ...(replyDirective ? [replyDirective] : []),
     TOOLS_PROMPT,
     CITATION_CONVENTIONS,
     ...getToolDescriptions(),

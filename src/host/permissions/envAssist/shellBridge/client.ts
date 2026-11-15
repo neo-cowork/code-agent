@@ -161,3 +161,11 @@ export function resolveShellBridgeClientFromEnv(
     },
   };
 }
+
+/** Cards only offer the prompting button when the desktop shell bridge can actually show the system dialog. */
+let grantBridgeAvailable: boolean | undefined;
+export function canRequestEnvGrant(): boolean {
+  // The shell hands credentials over once per process, so the answer never changes; resolve (and warn) once.
+  grantBridgeAvailable ??= resolveShellBridgeClientFromEnv() !== null;
+  return grantBridgeAvailable;
+}

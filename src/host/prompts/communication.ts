@@ -1,4 +1,5 @@
 import { applyOverride } from './registry';
+import { getConfigService } from '../services/core/configService';
 
 export const NON_PROGRAMMER_COMMUNICATION_CONTRACT = applyOverride(
   {
@@ -17,3 +18,25 @@ Treat the user as a non-programmer collaborator by default. Explain what changed
 </non_programmer_communication_contract>
 `.trim(),
 );
+
+export type PromptLanguage = 'zh' | 'en';
+
+/** ui.language 读取；设置不可读时回落 zh（与历史行为一致） */
+export function readPromptLanguage(): PromptLanguage {
+  try {
+    return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
+const EN_REPLY_LANGUAGE_DIRECTIVE = `
+<reply_language>
+Reply in English by default, including narration between tool calls and closing summaries. This overrides any earlier line in this prompt that asks for Chinese. If the user explicitly asks for another language, follow the user.
+</reply_language>
+`.trim();
+
+/** 回复语言指令：zh 返回空串（zh 提示词字节不变），en 返回英文指令 */
+export function replyLanguageDirective(lang: PromptLanguage = readPromptLanguage()): string {
+  return lang === 'en' ? EN_REPLY_LANGUAGE_DIRECTIVE : '';
+}

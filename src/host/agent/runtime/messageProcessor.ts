@@ -71,6 +71,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import { isBashToolName } from '../../tools/toolNames';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
@@ -676,7 +677,8 @@ export class MessageProcessor {
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          `The previous tool call asked for something that cannot be done here${otherDeniedNames ? ` (${otherDeniedNames})` : ''}; it was NOT run.`,
+          getInabilityReplyGuidance(this.ctx.turn?.runUserPrompt ?? ''),
+          `The previous call was NOT run.${otherDeniedNames ? ` Internal call identifiers, not user-facing wording: ${otherDeniedNames}.` : ''}`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',

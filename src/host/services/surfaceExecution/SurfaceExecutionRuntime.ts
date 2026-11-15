@@ -757,7 +757,7 @@ export class SurfaceExecutionRuntime {
             phase: 'cleanup',
             status: 'succeeded',
             userSummary: 'Surface session ended and control was released',
-            ...(session.activeTarget ? { target: session.activeTarget } : {}),
+            ...(this.latestActiveTarget(subject.sessionId, session) ? { target: this.latestActiveTarget(subject.sessionId, session) } : {}),
             evidenceRefs: [],
             artifactRefs: [],
             availableControls: [],
@@ -768,7 +768,7 @@ export class SurfaceExecutionRuntime {
             phase: 'cleanup',
             status: 'failed',
             userSummary: error instanceof Error ? error.message : 'Surface cleanup failed',
-            ...(session.activeTarget ? { target: session.activeTarget } : {}),
+            ...(this.latestActiveTarget(subject.sessionId, session) ? { target: this.latestActiveTarget(subject.sessionId, session) } : {}),
             evidenceRefs: [],
             artifactRefs: [],
             availableControls: ['end_session'],
@@ -778,6 +778,11 @@ export class SurfaceExecutionRuntime {
         }
       });
     }
+  }
+
+  /** Cleanup (window release, login-state export) can advance the target revision; closing events must carry the current one. */
+  private latestActiveTarget(sessionId: string, fallback: InteractiveSurfaceSessionV1) {
+    return (this.sessions.get(sessionId) ?? fallback).activeTarget;
   }
 
   surfaceErrorFromComputerResult(input: SurfaceComputerErrorInputV1) {
