@@ -367,4 +367,93 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
       { finalOutcome: 'deny', historyOutcome: 'ask-denied', reason: 'goal-sticky-host' },
     ]);
   });
+  // Tool double: the real sandbox cannot be made to fail on every CI machine, so the Bash handler is
+  // replaced for the magic command below and calls the executor-built context.requestPermission
+  // exactly like bash.ts' sandbox_escalate_once branch does (tool 'bash', forceConfirm, no sessionId).
+  describe('in-tool sandbox-widening ask joins the goal-sticky table', () => {
+    const ESCALATE = 'pwd # sandbox-escalate';
+    let handlerCalls: number;
+    let escalationResults: boolean[];
+    beforeEach(() => {
+      handlerCalls = 0;
+      escalationResults = [];
+      const resolver = getToolResolver();
+      const origExec = resolver.execute.bind(resolver);
+      vi.spyOn(resolver, 'execute').mockImplementation(async (name, args, ctx) => {
+        if (name === 'Bash' && (args as { command?: string }).command === ESCALATE) {
+          handlerCalls += 1;
+          const allowed = await ctx.requestPermission({
+            type: 'command',
+            tool: 'bash',
+            details: { command: ESCALATE, action: 'sandbox_escalate_once' },
+            reason: 'sandbox blocked this write',
+            forceConfirm: true,
+          } as never);
+          escalationResults.push(allowed);
+          return allowed ? { success: true, output: 'ok' } : { success: false, error: 'sandbox denied' };
+        }
+        return origExec(name, args, ctx);
+      });
+    });
+    const ledgerReasons = () => decisionRepo.getBySession('goal-session').map((d) => d.reason);
+
+    it('denied in-tool card refuses the next same-message in-tool ask before a card', async () => {
+      const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      expect(escalationResults).toEqual([false]);
+      expect(handlerCalls).toBe(1);
+      const promptsAfterFirst = getHumanPrompts();
+      expect(promptsAfterFirst).toBeGreaterThanOrEqual(1);
+      expect(getDenialRegistry().refuseIfGoalDenied(
+        { sessionId: 'goal-session', sourceMessageId: 'user-1', tool: 'Bash' }, { log: false },
+      )).toMatchObject({ approved: false, denialSource: 'goal-sticky-host' });
+
+      // reworded top-level ask in the same message: refused before any card, handler not invoked again
+      const retry = await tool.execute('Bash', { command: 'find . -name backup -delete' }, options);
+      expect(retry.success).toBe(false);
+      expect(retry.error).toBe(guidance);
+      // second in-tool ask in the same message: the (read-only) top-level call runs, the in-tool ask is refused, no card
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      expect(handlerCalls).toBe(2);
+      expect(escalationResults).toEqual([false, false]);
+      expect(getHumanPrompts()).toBe(promptsAfterFirst);
+      expect(ledgerReasons().filter((r) => r === 'user')).toHaveLength(1);
+      expect(ledgerReasons()).toContain('goal-sticky-host');
+    });
+
+    it('a new sourceMessageId asks again', async () => {
+      const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      const before = getHumanPrompts();
+      await tool.execute('Bash', { command: ESCALATE }, { ...options, sourceMessageId: 'user-2' });
+      expect(getHumanPrompts()).toBeGreaterThan(before);
+    });
+
+    it('read-only command still passes after an in-tool denial', async () => {
+      const { tool } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      const result = await tool.execute('Bash', { command: 'pwd' }, options);
+      expect(result.success).toBe(true);
+    });
+
+    it('top-level denial first, then in-tool ask is refused without a card', async () => {
+      const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
+      const before = getHumanPrompts();
+      const r = await tool.execute('Bash', { command: ESCALATE }, options);
+      expect(r.success).toBe(false);
+      expect(escalationResults).toEqual([false]);
+      expect(getHumanPrompts()).toBe(before);
+    });
+
+    it('approving the in-tool card registers nothing', async () => {
+      const approving = new ToolExecutor({ workingDirectory: cwd, requestPermission: async () => ({ approved: true }) });
+      approving.setAuditEnabled(false);
+      await approving.execute('Bash', { command: ESCALATE }, options);
+      expect(escalationResults).toEqual([true]);
+      expect(getDenialRegistry().refuseIfGoalDenied(
+        { sessionId: 'goal-session', sourceMessageId: 'user-1', tool: 'Bash' }, { log: false },
+      )).toBeNull();
+    });
+  });
 });
