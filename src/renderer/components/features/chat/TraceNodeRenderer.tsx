@@ -5,6 +5,7 @@
 // dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
@@ -190,6 +191,7 @@ const UserNode: React.FC<{
   streaming?: boolean;
 }> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
+  const roleLabels = useRoleLabels();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
@@ -201,7 +203,7 @@ const UserNode: React.FC<{
   const displayContent = sourceType === 'voice'
     ? normalizeSpokenFileName(rawDisplayContent)
     : rawDisplayContent;
-  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt);
+  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt, roleLabels);
   const showUserChrome = Boolean(shownContent) || sendFailed;
 
   return (

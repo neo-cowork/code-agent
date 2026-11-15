@@ -15,6 +15,9 @@
 // ============================================================================
 
 import { useAppStore } from '../stores/appStore';
+import { useRoleLabelsStore } from '../stores/roleLabelsStore';
+import { languages } from '../i18n';
+import { formatEditRoleUserPrompt } from './formatEditRoleUserPrompt';
 import { useSessionStore } from '../stores/sessionStore';
 
 /**
@@ -34,7 +37,11 @@ export async function startEditRoleChat(roleId: string): Promise<void> {
   // 从设置页触发，先关闭设置弹层回到聊天
   app.setShowSettings(false);
 
-  const session = await useSessionStore.getState().createSession(`修改角色：${trimmed}`);
+  const title = formatEditRoleUserPrompt(
+    buildEditRoleSeed(trimmed), languages[app.language].roleEditReceipt.userPrompt,
+    useRoleLabelsStore.getState().labels[app.language],
+  );
+  const session = await useSessionStore.getState().createSession(title);
   if (!session) return;
 
   // 新会话已成为 currentSessionId，写入待发种子消息，由 ChatView 自动发出
