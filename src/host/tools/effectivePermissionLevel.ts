@@ -2,7 +2,7 @@
 // 先例：permissionClassifier.ts 的 MCPUNIFIED_READ_ONLY_ACTIONS。
 // ExcelAutomate：read / list_sheets / get_range / validate_formulas 只读；automate 可跑宏，
 // 在每个会询问的档位仍询问；edit / generate 保持写档（通用写边界照常生效），但没有 Excel 专属询问。
-import type { ToolDefinition } from './types';
+import type { ToolDefinition } from '../../shared/contract';
 
 const EXCEL_AUTOMATE = 'ExcelAutomate';
 const EXCEL_READ_ACTIONS = new Set(['read', 'list_sheets', 'get_range', 'validate_formulas']);
