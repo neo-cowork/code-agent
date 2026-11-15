@@ -287,6 +287,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
             name: mcpTool,
             description: 'send lark message',
             inputSchema: { type: 'object', properties: {} },
+            outputSchema: { type: 'object', properties: {} },
             requiresPermission: true,
             permissionLevel: 'network',
           }
