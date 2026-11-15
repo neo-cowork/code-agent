@@ -17,7 +17,7 @@ export function useEnvTargetLabel(block: Pick<EnvBlock, 'target'> | undefined): 
  */
 export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string } | undefined {
   const block = useSessionStore((state) => {
-    const resume = sessionId ? state.sessions.find((session) => session.id === sessionId)?.durableResume : undefined;
+    const resume = sessionId ? state.sessions?.find((session) => session.id === sessionId)?.durableResume : undefined;
     return resume?.interruptCause === 'env_blocked' ? resume.envBlocked : undefined;
   });
   const target = useEnvTargetLabel(block);
