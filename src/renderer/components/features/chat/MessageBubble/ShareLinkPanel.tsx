@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import React, { useEffect, useState } from 'react';
 import { Copy, ExternalLink, Link, RefreshCw, ShieldCheck, Upload } from 'lucide-react';
 import type { DeliverableShareLinkInfo } from '@shared/contract';
@@ -189,7 +190,6 @@ export const ShareLinkPanel: React.FC<ShareLinkPanelProps> = ({
   const share = info?.share ?? null;
   const expired = Boolean(share?.expiresAt && share.expiresAt <= Date.now());
   const inactive = Boolean(share?.revokedAt || expired);
-  const locale = language === 'zh' ? 'zh-CN' : 'en-US';
 
   return (
     <>
@@ -270,7 +270,7 @@ export const ShareLinkPanel: React.FC<ShareLinkPanelProps> = ({
                 <div className="space-y-2 rounded-lg border border-border-muted bg-surface-subtle p-3 text-xs">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-zinc-500">{labels.expiresLabel}</span>
-                    <span className="text-zinc-300">{share.expiresAt === null ? labels.permanent : new Date(share.expiresAt).toLocaleString(locale)}</span>
+                    <span className="text-zinc-300">{share.expiresAt === null ? labels.permanent : formatDateTime(share.expiresAt, language)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-zinc-500">{labels.contentLabel}</span>
