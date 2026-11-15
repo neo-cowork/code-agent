@@ -30,6 +30,7 @@ mod appshots_hotkey_gate;
 mod background_resident;
 mod env_assist_bridge;
 mod env_assist_calendar;
+mod env_assist_calendar_items;
 mod env_assist_grant;
 mod env_assist_passive;
 mod menu_i18n;

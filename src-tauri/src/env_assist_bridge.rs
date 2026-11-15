@@ -18,7 +18,8 @@ mod imp {
     use std::time::Duration;
 
     const BRIDGE_TOKEN_BYTES: usize = 32;
-    const MAX_BODY_BYTES: usize = 1024;
+    // Room for a calendar write (title + location in CJK); every other route takes an empty or tiny body.
+    const MAX_BODY_BYTES: usize = 4096;
     const MAX_HEADER_BYTES: usize = 8192;
     const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -40,6 +41,16 @@ mod imp {
         }
         fn read_calendar_events(&self, from_ms: i64, to_ms: i64) -> Result<Vec<crate::env_assist_calendar::CalendarEvent>, String> {
             crate::env_assist_calendar::list_events(from_ms, to_ms)
+        }
+        // Chat calendar tool (env_assist_calendar_items.rs): same full-access re-check in the route, then these.
+        fn list_calendars(&self) -> Result<Vec<crate::env_assist_calendar_items::CalendarInfo>, String> {
+            crate::env_assist_calendar_items::list_calendars()
+        }
+        fn read_calendar_items(&self, from_ms: i64, to_ms: i64, calendar_id: Option<&str>, limit: usize) -> Result<Vec<crate::env_assist_calendar_items::CalendarItem>, String> {
+            crate::env_assist_calendar_items::list_items(from_ms, to_ms, calendar_id, limit)
+        }
+        fn write_calendar_event(&self, op: crate::env_assist_calendar_items::WriteOp) -> Result<crate::env_assist_calendar_items::WriteOutcome, String> {
+            crate::env_assist_calendar_items::write(op)
         }
     }
 
@@ -515,7 +526,8 @@ mod imp {
                         .map(|code| serde_json::json!({ "requested": true, "code": code }))
                         .map_err(native_err)
                 }),
-            "/v1/passive/calendar" | "/v1/grant/calendar" | "/v1/read/calendar-events" => {
+            "/v1/passive/calendar" | "/v1/grant/calendar" | "/v1/read/calendar-events" | "/v1/read/calendars"
+            | "/v1/read/calendar-items" | "/v1/write/calendar-event" => {
                 super::calendar::route(path, &body, handlers)
             }
             _ => Err((

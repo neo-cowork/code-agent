@@ -3,11 +3,17 @@
 //!
 //! - `/v1/passive/calendar`      → `{ "status": 0..4 }`, never prompts.
 //! - `/v1/grant/calendar`        → `{ "requested": true }`, fires the system dialog and returns at once.
-//! - `/v1/read/calendar-events`  → `{ "events": [...] }`; the authorization status is re-read natively
-//!   before every read, so a caller can't skip the grant by claiming it was given.
+//! - `/v1/read/calendar-events`  → `{ "events": [...] }` (meeting reminder: starts in a ≤1h window).
+//! - `/v1/read/calendars`        → `{ "calendars": [{ id, title, writable }] }` (chat calendar tool).
+//! - `/v1/read/calendar-items`   → `{ "events": [...] }` overlapping a ≤400-day window (chat calendar tool).
+//! - `/v1/write/calendar-event`  → create / update / delete one event or one occurrence (chat calendar tool).
+//!
+//! Every route but passive/grant re-reads the authorization status natively first and refuses anything short of
+//! full access with 403, so a caller can't skip the grant by claiming it was given. None of them prompts.
 
 use super::imp::{bad_body, native_err, parse_empty_or_empty_object, BridgeHandlers};
 use crate::env_assist_calendar::{FULL_ACCESS, MAX_WINDOW_MS};
+use crate::env_assist_calendar_items::{EventFields, WriteOp, WriteOutcome, MAX_ITEMS, MAX_ITEMS_WINDOW_MS};
 use serde::Deserialize;
 
 type Outcome = Result<serde_json::Value, (u16, &'static str, serde_json::Value)>;
@@ -29,6 +35,94 @@ fn parse_read(body: &[u8]) -> Result<ReadRequest, ()> {
     Ok(req)
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ItemsRequest {
+    #[serde(rename = "fromMs")]
+    from_ms: i64,
+    #[serde(rename = "toMs")]
+    to_ms: i64,
+    #[serde(rename = "calendarId")]
+    calendar_id: Option<String>,
+    limit: Option<usize>,
+}
+
+fn parse_items(body: &[u8]) -> Result<ItemsRequest, ()> {
+    let req: ItemsRequest = serde_json::from_slice(body).map_err(|_| ())?;
+    if req.to_ms <= req.from_ms || req.to_ms - req.from_ms > MAX_ITEMS_WINDOW_MS || req.limit == Some(0) {
+        return Err(());
+    }
+    Ok(req)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WriteRequest {
+    op: String,
+    #[serde(rename = "calendarId")]
+    calendar_id: Option<String>,
+    #[serde(rename = "eventId")]
+    event_id: Option<String>,
+    #[serde(rename = "occurrenceMs")]
+    occurrence_ms: Option<i64>,
+    title: Option<String>,
+    #[serde(rename = "startMs")]
+    start_ms: Option<i64>,
+    #[serde(rename = "endMs")]
+    end_ms: Option<i64>,
+    location: Option<String>,
+}
+
+/// Shape checks only; whether the event / calendar exists is the native layer's answer (404).
+fn parse_write(body: &[u8]) -> Result<WriteOp, ()> {
+    let r: WriteRequest = serde_json::from_slice(body).map_err(|_| ())?;
+    let fields = EventFields { title: r.title, start_ms: r.start_ms, end_ms: r.end_ms, location: r.location };
+    if let (Some(start), Some(end)) = (fields.start_ms, fields.end_ms) {
+        if end < start {
+            return Err(());
+        }
+    }
+    let event_id = r.event_id.filter(|id| !id.is_empty());
+    match r.op.as_str() {
+        "create" => {
+            let titled = fields.title.as_deref().is_some_and(|t| !t.trim().is_empty());
+            if event_id.is_some() || r.occurrence_ms.is_some() || !titled || fields.start_ms.is_none() || fields.end_ms.is_none() {
+                return Err(());
+            }
+            Ok(WriteOp::Create { calendar_id: r.calendar_id, fields })
+        }
+        "update" => {
+            if r.calendar_id.is_some() || fields == EventFields::default() {
+                return Err(());
+            }
+            Ok(WriteOp::Update { event_id: event_id.ok_or(())?, occurrence_ms: r.occurrence_ms, fields })
+        }
+        "delete" => {
+            if r.calendar_id.is_some() || fields != EventFields::default() {
+                return Err(());
+            }
+            Ok(WriteOp::Delete { event_id: event_id.ok_or(())?, occurrence_ms: r.occurrence_ms })
+        }
+        _ => Err(()),
+    }
+}
+
+/// Native "nothing by that id" answers are 404s the host can tell apart from a failed read.
+fn item_err(detail: String) -> (u16, &'static str, serde_json::Value) {
+    match detail.as_str() {
+        "event_not_found" | "calendar_not_found" | "no_writable_calendar" => (404, "Not Found", serde_json::json!({ "error": detail })),
+        _ => native_err(detail),
+    }
+}
+
+fn require_full_access(handlers: &dyn BridgeHandlers) -> Result<(), (u16, &'static str, serde_json::Value)> {
+    let status = handlers.passive_calendar().map_err(native_err)?;
+    if status != FULL_ACCESS {
+        return Err((403, "Forbidden", serde_json::json!({ "error": "calendar_not_authorized", "status": status })));
+    }
+    Ok(())
+}
+
 pub(super) fn route(path: &str, body: &[u8], handlers: &dyn BridgeHandlers) -> Outcome {
     match path {
         "/v1/passive/calendar" => parse_empty_or_empty_object(body)
@@ -47,16 +141,36 @@ pub(super) fn route(path: &str, body: &[u8], handlers: &dyn BridgeHandlers) -> O
                     .map(|()| serde_json::json!({ "requested": true }))
                     .map_err(native_err)
             }),
+        "/v1/read/calendars" => {
+            parse_empty_or_empty_object(body).map_err(|_| bad_body())?;
+            require_full_access(handlers)?;
+            handlers
+                .list_calendars()
+                .map(|calendars| serde_json::json!({ "calendars": calendars }))
+                .map_err(native_err)
+        }
+        "/v1/read/calendar-items" => {
+            let req = parse_items(body).map_err(|_| bad_body())?;
+            require_full_access(handlers)?;
+            handlers
+                .read_calendar_items(req.from_ms, req.to_ms, req.calendar_id.as_deref(), req.limit.unwrap_or(MAX_ITEMS))
+                .map(|events| serde_json::json!({ "events": events }))
+                .map_err(item_err)
+        }
+        "/v1/write/calendar-event" => {
+            let op = parse_write(body).map_err(|_| bad_body())?;
+            require_full_access(handlers)?;
+            handlers
+                .write_calendar_event(op)
+                .map(|outcome| match outcome {
+                    WriteOutcome::Saved(event) => serde_json::json!({ "event": event }),
+                    WriteOutcome::Deleted { title } => serde_json::json!({ "deleted": true, "title": title }),
+                })
+                .map_err(item_err)
+        }
         _ => {
             let req = parse_read(body).map_err(|_| bad_body())?;
-            let status = handlers.passive_calendar().map_err(native_err)?;
-            if status != FULL_ACCESS {
-                return Err((
-                    403,
-                    "Forbidden",
-                    serde_json::json!({ "error": "calendar_not_authorized", "status": status }),
-                ));
-            }
+            require_full_access(handlers)?;
             handlers
                 .read_calendar_events(req.from_ms, req.to_ms)
                 .map(|events| serde_json::json!({ "events": events }))
@@ -70,10 +184,11 @@ mod tests {
     use super::super::imp::{make_bridge_token, start_bridge_server, BridgeServer};
     use super::*;
     use crate::env_assist_calendar::CalendarEvent;
+    use crate::env_assist_calendar_items::{pick_occurrence, CalendarInfo, CalendarItem};
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     #[derive(Default)]
@@ -82,9 +197,56 @@ mod tests {
         status_reads: AtomicUsize,
         grants: AtomicUsize,
         reads: AtomicUsize,
+        writes: AtomicUsize,
+        items: Mutex<Vec<CalendarItem>>,
+    }
+
+    const WEEK: i64 = 7 * 24 * 3_600_000;
+
+    fn occurrence(start_ms: i64) -> CalendarItem {
+        CalendarItem {
+            id: "series".into(), calendar_id: "c1".into(), calendar: "工作".into(), title: "周会".into(),
+            start_ms, end_ms: start_ms + 3_600_000, all_day: false, recurring: true,
+            location: String::new(), notes: String::new(), url: String::new(),
+        }
     }
 
     impl BridgeHandlers for FakeCalendar {
+        fn list_calendars(&self) -> Result<Vec<CalendarInfo>, String> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![CalendarInfo { id: "c1".into(), title: "工作".into(), writable: true }])
+        }
+        fn read_calendar_items(&self, _: i64, _: i64, calendar_id: Option<&str>, limit: usize) -> Result<Vec<CalendarItem>, String> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            if calendar_id == Some("missing") {
+                return Err("calendar_not_found".into());
+            }
+            Ok(self.items.lock().unwrap().iter().take(limit).cloned().collect())
+        }
+        /// Same occurrence addressing as the native layer: id + start time picks one occurrence of the series.
+        fn write_calendar_event(&self, op: WriteOp) -> Result<WriteOutcome, String> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            let mut items = self.items.lock().unwrap();
+            let keyed: Vec<(String, i64)> = items.iter().map(|e| (e.id.clone(), e.start_ms)).collect();
+            match op {
+                WriteOp::Create { fields, .. } => {
+                    let mut created = occurrence(fields.start_ms.unwrap());
+                    created.id = "new".into();
+                    created.title = fields.title.unwrap();
+                    items.push(created.clone());
+                    Ok(WriteOutcome::Saved(created))
+                }
+                WriteOp::Update { event_id, occurrence_ms, fields } => {
+                    let i = pick_occurrence(&keyed, &event_id, occurrence_ms).ok_or("event_not_found")?;
+                    if let Some(title) = fields.title { items[i].title = title; }
+                    Ok(WriteOutcome::Saved(items[i].clone()))
+                }
+                WriteOp::Delete { event_id, occurrence_ms } => {
+                    let i = pick_occurrence(&keyed, &event_id, occurrence_ms).ok_or("event_not_found")?;
+                    Ok(WriteOutcome::Deleted { title: items.remove(i).title })
+                }
+            }
+        }
         fn passive_accessibility(&self) -> Result<bool, String> { unreachable!() }
         fn passive_screen(&self) -> Result<bool, String> { unreachable!() }
         fn passive_input(&self) -> Result<i32, String> { unreachable!() }
@@ -178,5 +340,108 @@ mod tests {
         assert_eq!(fake.status_reads.load(Ordering::SeqCst), 0);
         assert_eq!(fake.reads.load(Ordering::SeqCst), 0);
         assert_eq!(fake.grants.load(Ordering::SeqCst), 0);
+    }
+
+    const CHAT_ROUTES: [(&str, &str); 3] = [
+        ("/v1/read/calendars", "{}"),
+        ("/v1/read/calendar-items", r#"{"fromMs":0,"toMs":86400000}"#),
+        ("/v1/write/calendar-event", r#"{"op":"delete","eventId":"series"}"#),
+    ];
+
+    #[test]
+    fn chat_routes_recheck_status_natively_and_refuse_unless_full_access() {
+        for status in [0, 1, 2, 4] {
+            for (path, body) in CHAT_ROUTES {
+                let (fake, server) = start(status);
+                fake.items.lock().unwrap().push(occurrence(1_000));
+                let (code, raw) = post(server.port, &server.token, path, body);
+                assert_eq!(code, 403, "{path} status {status}: {raw}");
+                assert!(raw.contains("calendar_not_authorized"));
+                assert_eq!(fake.status_reads.load(Ordering::SeqCst), 1);
+                assert_eq!(fake.reads.load(Ordering::SeqCst) + fake.writes.load(Ordering::SeqCst), 0, "{path}");
+                assert_eq!(fake.grants.load(Ordering::SeqCst), 0);
+                assert_eq!(fake.items.lock().unwrap().len(), 1, "{path} must not touch data");
+            }
+        }
+        let wrong = "0".repeat(64);
+        let (fake, server) = start(FULL_ACCESS);
+        for (path, body) in CHAT_ROUTES {
+            assert_eq!(post(server.port, &wrong, path, body).0, 401, "{path}");
+        }
+        assert_eq!(fake.status_reads.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn chat_reads_return_calendars_and_items() {
+        let (fake, server) = start(FULL_ACCESS);
+        fake.items.lock().unwrap().push(occurrence(1_000));
+        let (code, raw) = post(server.port, &server.token, "/v1/read/calendars", "{}");
+        assert_eq!(code, 200, "{raw}");
+        assert!(raw.ends_with(r#"{"calendars":[{"id":"c1","title":"工作","writable":true}]}"#), "{raw}");
+        let (code, raw) = post(server.port, &server.token, "/v1/read/calendar-items", r#"{"fromMs":0,"toMs":86400000,"calendarId":"c1","limit":5}"#);
+        assert_eq!(code, 200, "{raw}");
+        assert!(raw.contains(r#""calendarId":"c1""#) && raw.contains(r#""startMs":1000"#) && raw.contains(r#""recurring":true"#), "{raw}");
+        let (code, raw) = post(server.port, &server.token, "/v1/read/calendar-items", r#"{"fromMs":0,"toMs":1,"calendarId":"missing"}"#);
+        assert_eq!(code, 404, "{raw}");
+        assert!(raw.contains("calendar_not_found"));
+    }
+
+    #[test]
+    fn chat_routes_reject_bad_bodies_before_touching_eventkit() {
+        let (fake, server) = start(FULL_ACCESS);
+        let window = 400 * 24 * 3_600_000_i64 + 1;
+        let items_bad = [
+            "{}".to_string(),
+            r#"{"fromMs":5,"toMs":5}"#.to_string(),
+            format!(r#"{{"fromMs":0,"toMs":{window}}}"#),
+            r#"{"fromMs":0,"toMs":1,"limit":0}"#.to_string(),
+            r#"{"fromMs":0,"toMs":1,"x":1}"#.to_string(),
+        ];
+        for body in &items_bad {
+            assert_eq!(post(server.port, &server.token, "/v1/read/calendar-items", body).0, 400, "{body}");
+        }
+        let writes_bad = [
+            r#"{"op":"create","title":"","startMs":0,"endMs":1}"#,
+            r#"{"op":"create","title":"a","startMs":0}"#,
+            r#"{"op":"create","title":"a","startMs":5,"endMs":1}"#,
+            r#"{"op":"create","title":"a","startMs":0,"endMs":1,"eventId":"x"}"#,
+            r#"{"op":"update","eventId":"series"}"#,
+            r#"{"op":"update","title":"a"}"#,
+            r#"{"op":"delete","eventId":"series","title":"a"}"#,
+            r#"{"op":"delete"}"#,
+            r#"{"op":"move","eventId":"series"}"#,
+            r#"{"op":"delete","eventId":"series","extra":1}"#,
+        ];
+        for body in writes_bad {
+            assert_eq!(post(server.port, &server.token, "/v1/write/calendar-event", body).0, 400, "{body}");
+        }
+        assert_eq!(fake.status_reads.load(Ordering::SeqCst), 0);
+        assert_eq!(fake.reads.load(Ordering::SeqCst) + fake.writes.load(Ordering::SeqCst), 0);
+    }
+
+    /// One weekly series, two occurrences sharing the id: the occurrence time picks the second one only.
+    #[test]
+    fn write_addresses_one_occurrence_of_a_recurring_series() {
+        let (fake, server) = start(FULL_ACCESS);
+        fake.items.lock().unwrap().extend([occurrence(1_000), occurrence(1_000 + WEEK)]);
+        let body = format!(r#"{{"op":"update","eventId":"series","occurrenceMs":{},"title":"改期"}}"#, 1_000 + WEEK);
+        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", &body);
+        assert_eq!(code, 200, "{raw}");
+        let titles: Vec<String> = fake.items.lock().unwrap().iter().map(|e| e.title.clone()).collect();
+        assert_eq!(titles, ["周会", "改期"]);
+
+        let body = format!(r#"{{"op":"delete","eventId":"series","occurrenceMs":{}}}"#, 1_000 + WEEK);
+        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", &body);
+        assert_eq!(code, 200, "{raw}");
+        assert!(raw.ends_with(r#"{"deleted":true,"title":"改期"}"#), "{raw}");
+        assert_eq!(fake.items.lock().unwrap().iter().map(|e| e.start_ms).collect::<Vec<_>>(), [1_000]);
+
+        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", r#"{"op":"delete","eventId":"series","occurrenceMs":7}"#);
+        assert_eq!(code, 404, "{raw}");
+        assert!(raw.contains("event_not_found"));
+
+        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", r#"{"op":"create","title":"新会","startMs":10,"endMs":20,"location":"三楼"}"#);
+        assert_eq!(code, 200, "{raw}");
+        assert!(raw.contains(r#""id":"new""#) && raw.contains(r#""title":"新会""#), "{raw}");
     }
 }
