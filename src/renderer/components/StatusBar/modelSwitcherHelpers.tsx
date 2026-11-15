@@ -188,9 +188,12 @@ const CODE_EFFORT_OPTIONS = [
   EFFORT_OPTION_CONFIG.ultra_code,
 ];
 
+// 逐字段取值、不用展开：shortLabel 是按语言取值的 getter，展开会在模块加载时就读一次语言。
 const SINGLE_EFFORT_OPTION: EffortOption[] = [
   {
-    ...EFFORT_OPTION_CONFIG.low,
+    value: EFFORT_OPTION_CONFIG.low.value,
+    color: EFFORT_OPTION_CONFIG.low.color,
+    tint: EFFORT_OPTION_CONFIG.low.tint,
     label: 'Default',
     shortLabel: 'Default',
   },

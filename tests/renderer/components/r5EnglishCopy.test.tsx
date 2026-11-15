@@ -15,6 +15,7 @@ import {
   buildProviderBillingSummary,
   buildProviderHealthSummary,
   buildProviderMetaTitle,
+  getEngineEffortOptions,
   getEngineUnavailableReason,
 } from '../../../src/renderer/components/StatusBar/modelSwitcherHelpers';
 import {
@@ -86,6 +87,16 @@ describe('FB-1489 模型切换器', () => {
     expect(en.filter((text) => CJK.test(text))).toEqual([]);
     expect(en).toContain('Choose a working folder first');
     expect(en).toContain('Codex CLI is ready. Current model: default selection.');
+  });
+
+  it('推理强度的短标签在取值那一刻才看语言（不是模块加载时定死）', () => {
+    const shortLabels = () => getEngineEffortOptions('codex_cli').map((option) => option.shortLabel);
+    const zh = shortLabels();
+    expect(zh.some((label) => ['低', '中', '高', '极高'].includes(label))).toBe(true);
+    useAppStore.setState({ language: 'en' });
+    const en = shortLabels();
+    expect(en.length).toBe(zh.length);
+    expect(en.filter((label) => CJK.test(label))).toEqual([]);
   });
 
   it('悬停提示：中文与迁入前逐字相同，英文不含中文', () => {
