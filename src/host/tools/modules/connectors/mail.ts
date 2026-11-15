@@ -26,7 +26,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
-import { formatConnectorStatusOutput } from './connectorStatusText';
+import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorTime } from './connectorTime';
 
 type MailAction = 'get_status' | 'list_accounts' | 'list_mailboxes' | 'list_messages' | 'read_message';
@@ -113,7 +113,7 @@ async function executeMail(
         meta: buildMailMeta(ctx, action, output, { status }),
       };
     }
-    return { ok: false, error: 'Mail connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('mail', 'read'), code: 'NOT_INITIALIZED' };
   }
 
   try {
