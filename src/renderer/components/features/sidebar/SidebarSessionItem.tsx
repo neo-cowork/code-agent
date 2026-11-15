@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
 import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
@@ -10,7 +11,7 @@ import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getLocalizedSessionTitle, getSessionStatusPresentation, splitCronSessionTitleParts } from '../../../utils/sessionPresentation';
-import { formatLocalDateTime, localeForLanguage } from '../../../utils/i18nTime';
+import { formatLocalDateTime } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
 import { getSidebarCronTaskId } from './sidebarCronRunFolding';
@@ -214,7 +215,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       data-testid={`sidebar-session-${session.id}`}
-      title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
+      title={formatDateTime(latestActivityAt, language)}
       className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">

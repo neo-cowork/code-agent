@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Terminal } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
@@ -29,14 +30,7 @@ function formatCatalogDate(value?: string, locale: string = localeForLanguage('z
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(locale, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  return formatDateTime(date, locale.startsWith('en') ? 'en' : 'zh');
 }
 
 export const AgentEngineModelCatalogSection: React.FC = () => {
