@@ -281,7 +281,7 @@ describe('two-step onboarding', () => {
 
     expect(card).toBeTruthy();
     expect(card?.querySelector('button')).toBeNull();
-    expect(card?.textContent).toContain('Adapter 已开放');
+    expect(card?.textContent).toContain('已支持 · 这台电脑上没找到');
     expect(card?.textContent).toContain('未安装');
   });
 
@@ -292,8 +292,7 @@ describe('two-step onboarding', () => {
 
     expect(card).toBeTruthy();
     expect(card?.querySelector('button')).toBeNull();
-    expect(card?.textContent).toContain('CLI 未登录');
-    expect(card?.textContent).toContain('生产 Adapter 未开放');
+    expect(card?.textContent).toContain('已检测到 · 还没登录');
     expect(card?.textContent).toContain('需登录');
   });
 
@@ -340,7 +339,7 @@ describe('two-step onboarding', () => {
     expect(dialog.textContent).toContain('Detected on this computer');
     expect(dialog.textContent).toContain('Not installed / recommended');
     const cursorCard = dialog.querySelector('[data-onboarding-recommendation="cursor_cli"]');
-    expect(cursorCard?.textContent).toContain('Requires official protocol verification before it can be selected in Neo.');
+    expect(cursorCard?.textContent).toContain('Not supported in Neo yet.');
     expect(cursorCard?.textContent).toContain('Recommended');
     expect(dialog.textContent).not.toMatch(HAN_RE);
 
@@ -391,16 +390,16 @@ describe('two-step onboarding', () => {
       '官方账号 / 订阅',
       'API Key',
       '选择本机已登录的官方客户端',
-      '整卡点击后直接进入默认模型；未通过 Adapter 门禁的来源不会伪装成可用。',
+      '点一下已就绪的卡片即可去选默认模型；暂时用不了的会标明原因。',
       '本机已检测',
-      'codex-cli 1.0.0 · Adapter 已开放 · 官方登录已确认',
+      'codex-cli 1.0.0 · 已支持 · 已登录',
       '可用',
-      '已检测 · CLI 未登录 · 生产 Adapter 未开放',
+      '已检测到 · 还没登录',
       '需登录',
       '未安装 / 推荐项',
-      'Adapter 已开放 · 本机未检测到客户端',
+      '已支持 · 这台电脑上没找到',
       '未安装',
-      '需要完成官方协议与实机验证后才能在 Neo 中选择。',
+      '暂时还不能在 Neo 里使用。',
       '推荐了解',
       '官方登录凭证始终由对应客户端管理',
       '跳过，稍后在设置里配置',
@@ -414,7 +413,7 @@ describe('two-step onboarding', () => {
     await screen.findByTestId('onboarding-model-step');
     for (const expected of [
       '确认默认模型',
-      'Codex CLI 只展示探测到的真实模型能力。',
+      'Codex CLI 只展示这个客户端实际提供的模型。',
       '返回',
       '下一步',
     ]) {
@@ -427,7 +426,7 @@ describe('two-step onboarding', () => {
     await screen.findByTestId('onboarding-api-source');
     const expectedApiStrings = [
       '连接官方 API 或兼容接口',
-      '先验证接口并读取真实模型目录，再进入默认模型。',
+      '先验证接口并读取可用模型列表，再进入默认模型。',
       '日常聊天、代码和高性价比任务',
       '长文本、中文写作和文档处理',
       '智谱 GLM',
