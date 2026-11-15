@@ -12,6 +12,7 @@ import { useLiveBackgroundAgentCount } from '../../hooks/useLiveBackgroundAgentC
 // useAgent cancel，这里不自己发 IPC。
 // ============================================================================
 
+import { useRoleLabels } from '../../stores/roleLabelsStore';
 import React, { useEffect, useState } from 'react';
 import { Square } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
@@ -59,6 +60,7 @@ function formatTemplate(template: string, values: Record<string, string | number
 
 export const OverviewRunHeader: React.FC = () => {
   const { t, language } = useI18n();
+  const roleLabels = useRoleLabels();
   const runWorkbench = useRunWorkbenchModel();
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const sessionStatus = useSessionStore((state) => state.sessions.find((session) => session.id === state.currentSessionId)?.status);
@@ -80,6 +82,7 @@ export const OverviewRunHeader: React.FC = () => {
     backgroundChildren,
     sessionTitle,
     language,
+    roleLabels,
     now,
     todoProgress: summarizeTodoProgress(runWorkbench.tasks),
   });

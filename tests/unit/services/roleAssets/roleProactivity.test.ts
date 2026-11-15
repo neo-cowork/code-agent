@@ -461,6 +461,23 @@ describe('roleProactivity', () => {
       }
     });
 
+    it('cadence reconnect report does not advance because its diagnostic rationale says no pending work', async () => {
+      await seedProductHistory(RESEARCHER);
+      primeWakeRun('report', 'reconnect-report');
+      const reply = '这次还没读到所需数据，请在设置 > 连接器重新连接后再试。';
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'reconnect-report',
+        messages: [{ id: 'report', role: 'assistant', content: `${reply}<decision>report</decision><rationale>清单存在且无待办，数据源尚未连接。</rationale><evidence>日历和邮件的本轮查询。</evidence>`, timestamp: 2 }],
+      });
+
+      const result = await wakeRole(RESEARCHER, 'cadence', { wakeTimeoutMs: 30 });
+
+      expect(result.decision).toBe('report');
+      expect(result.summary).toBe(reply);
+      expect(result.advanceGoalStatus).toBeUndefined();
+      expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('cadence 醒来完整循环：实例化 → 跑实例 → 决策 → 履历（单测版 E2E AC2）', async () => {
       await seedProductHistory(RESEARCHER);
       primeWakeRun('report');

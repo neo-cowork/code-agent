@@ -5,7 +5,8 @@
 // 用户保存的「rm 先问我」规则连审批卡都到不了——表现为无卡、无 pending、模型回
 // 「Bash is disabled」，用户看到一个无原因的中断。这里保证这条路径一定：
 // ① warn 日志带可区分原因（工具不在本轮工具面 / 是否存在用户 Bash 规则）；
-// ② 给模型一句不再死路重试的指引；③ 超过重试上限时给用户一句人话终态。
+// ② 给模型一句不再死路重试的指引。超过重试上限时 messageProcessor 发给用户的那句话
+// 走 toolRunPolicy 的 deniedToolFinalReply（按工具面取、不点名工具）。
 
 import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { ToolCall } from '../../../shared/contract';

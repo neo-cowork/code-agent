@@ -37,6 +37,7 @@ export interface DurableRunView {
   /** 本进程能否接手这条停靠 run（重启后未被认领的旧 run 为 false，「继续」会找不到它）。 */
   continuable?: boolean;
   quotaWaitDueAt?: number;
+  envBlocked?: RunEnvelope['envBlocked'];
 }
 
 export interface LegacyRunViewInput {
@@ -109,6 +110,7 @@ export function mapDurableRunView(consumer: DurableRunConsumer, envelope: RunEnv
     ...(getRunInterruptCause(envelope) ? { interruptCause: getRunInterruptCause(envelope) } : {}),
     autoResumeCount: envelope.autoResumeCount ?? 0,
     ...(typeof envelope.quotaWaitDueAt === 'number' ? { quotaWaitDueAt: envelope.quotaWaitDueAt } : {}),
+    ...(envelope.envBlocked ? { envBlocked: envelope.envBlocked } : {}),
   };
 }
 
@@ -197,5 +199,6 @@ function projectDurableResumeState(view: DurableRunView): DurableResumeState | u
     maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,
     canContinue: true,
     ...(quotaWait ? { quotaWait } : {}),
+    ...(view.interruptCause === 'env_blocked' && view.envBlocked ? { envBlocked: view.envBlocked } : {}),
   };
 }

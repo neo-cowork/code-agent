@@ -14,10 +14,16 @@ export function formatNativeModelSwitcherTooltip(args: {
   healthSummary?: ProviderHealthSummary | null;
   effort?: Pick<EffortOption, 'label' | 'shortLabel'> | null;
   thinkingLabel?: string | null;
+  /** host 这一轮把模型换掉了（路由/回落）：显示真正在用的那个，并说清从哪个换来 */
+  switchedFrom?: { provider: string; model: string; reason: string } | null;
+  shownProvider?: string;
+  shownModel?: string;
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
-  const modelLine = args.adaptive
+  const modelLine = args.switchedFrom
+    ? `这一轮实际在用: ${args.shownProvider}/${args.shownModel}（你选的是 ${args.switchedFrom.provider}/${args.switchedFrom.model}，已自动换过）`
+    : args.adaptive
     ? `自动路由（按任务、成本和能力切换，当前主任务 ${args.currentModel}）`
     : args.overridden
       ? `已覆盖: ${args.displayProvider}/${args.displayModel} (原主任务: ${args.currentModel})`
