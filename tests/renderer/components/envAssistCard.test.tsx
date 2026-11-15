@@ -16,6 +16,7 @@ import { AgentErrorPresentation, buildAgentErrorReport } from '../../../src/rend
 import { EnvAssistCard } from '../../../src/renderer/components/features/chat/EnvAssistCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useEnvAssistStore } from '../../../src/renderer/stores/envAssistStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const notice: EnvAssistNotice = {
   id: 'run|perm_automation|calendar', sessionId: 'session', runId: 'run', class: 'perm_automation',
@@ -112,4 +113,22 @@ describe('EnvAssistCard', () => {
     fireEvent.click(view);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'act', { noticeId: cua.id, actionKind: 'request_grant', payload: { pane } }));
   });
+  // N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT：停车等授权的那一轮，卡上说清「允许后会自动接着做」，
+  // 输入框上方不再另起一行重复；不属于停车 run 的卡（不会自动续做的失败路径）不许这么说。
+  it.each(['zh', 'en'] as const)('says the task picks back up by itself only for the parked run (%s)', async (language) => {
+    mocks.language = language;
+    const t = language === 'zh' ? zh : en;
+    const parked = { runId: 'run', mode: 'continue', interruptCause: 'env_blocked', autoResumeCount: 0, maxAutoResumeCount: 3, canContinue: true,
+      envBlocked: { class: 'perm_automation', target: 'calendar', toolCallId: 'c1' } };
+    useSessionStore.setState({ sessions: [{ id: 'session', title: 't', createdAt: 1, updatedAt: 1, durableResume: parked }] as never });
+    const { unmount } = render(<EnvAssistCard notice={notice} />);
+    expect(screen.getByTestId('env-assist-card').textContent).toContain(`${t.env.sentence.calendar}${t.env.autoResume}`);
+    unmount();
+    useSessionStore.setState({ sessions: [{ id: 'session', title: 't', createdAt: 1, updatedAt: 1, durableResume: { ...parked, runId: 'other' } }] as never });
+    render(<EnvAssistCard notice={notice} />);
+    expect(screen.getByTestId('env-assist-card').textContent).not.toContain(t.env.autoResume);
+    useSessionStore.setState({ sessions: [] });
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalled());
+  });
 });
+

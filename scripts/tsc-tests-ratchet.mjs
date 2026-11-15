@@ -47,6 +47,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { buildTscArgs, isIncremental, TESTS_BUILDINFO_REL } from './lib/tsc-tests-args.mjs';
 
 const BASELINE_MAX = 0;
 const MAX_FINDINGS_TO_PRINT = 40;
@@ -66,9 +67,10 @@ if (!fs.existsSync(tsconfigPath)) {
   process.exit(1);
 }
 
+if (isIncremental(process.env)) fs.mkdirSync(path.dirname(path.join(repoRoot, TESTS_BUILDINFO_REL)), { recursive: true });
 const result = spawnSync(
   process.execPath,
-  [tscBin, '-p', tsconfigPath, '--noEmit', '--pretty', 'false'],
+  buildTscArgs({ tscBin, tsconfigPath, repoRoot, env: process.env }),
   { cwd: repoRoot, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 },
 );
 
