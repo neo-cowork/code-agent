@@ -85,7 +85,7 @@ export const TeamRecipeDraftCard: React.FC<{ drafts: TeamRecipeDraftSummary[]; o
       {draft.lead ? <div className="text-[11px] text-zinc-400">{draft.lead.briefTemplate}</div> : null}
       <div className="mt-1 text-[11px] text-zinc-300">{text.draftMembers}</div>
       <ul className="space-y-0.5 text-[11px] text-zinc-400">{draft.members.map((member, index) => <li key={`${member.id ?? member.roleId}-${index}`} className="min-w-0"><RoleLabel roleId={member.roleId} profession={professionOf(member.roleId)} />：{member.taskTemplate}</li>)}</ul>
-      {draft.unknownRoleNames?.length ? <div className="mt-1 text-[11px] text-badge-warning" role="alert">{text.draftUnknownRoles.replace('{roles}', draft.unknownRoleNames.join('、'))} {text.draftUnknownActions}</div> : null}
+      {draft.unknownRoleNames?.length ? <div className="mt-1 text-[11px] text-badge-warning" role="alert">{text.draftUnknownRoles.replace('{roles}', draft.unknownRoleNames.join(t.punctuation.listSeparator))} {text.draftUnknownActions}</div> : null}
       <div className="mt-2 flex gap-2"><button /* ds-allow:button: 草稿确认需在卡内与放弃并列呈现 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'confirmDraft')} className="flex items-center gap-1 px-2 py-1 text-xs bg-violet-500/20 text-badge-accent rounded disabled:opacity-50">{busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}{text.draftConfirm}</button><button /* ds-allow:button: 草稿放弃与确认构成同一行紧凑决策 */ type="button" disabled={busyId !== null} onClick={() => void process(draft.id, 'rejectDraft')} className="px-2 py-1 text-xs text-zinc-400 rounded disabled:opacity-50">{text.draftReject}</button></div>
     </div>)}
   </div>;

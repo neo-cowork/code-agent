@@ -132,15 +132,15 @@ export const MemberInputBar: React.FC<{
       case 'redirect_next': return text.receiptRedirectNextStep;
       case 'rejected': {
         if (receipt.detail === 'external_engine') {
-          return `${text.receiptRejected}：${interpolate(text.rejectExternalEngine, { engine: receipt.engineLabel ?? '' })}`;
+          return `${text.receiptRejected}${t.punctuation.colon}${interpolate(text.rejectExternalEngine, { engine: receipt.engineLabel ?? '' })}`;
         }
         const reasonText = receipt.detail === 'finished' ? text.rejectFinished : text.rejectNotFound;
         const leftover = receipt.undeliveredCount
           ? interpolatePlural(text.undeliveredFollowUps, receipt.undeliveredCount)
           : '';
-        return `${text.receiptRejected}：${reasonText}${leftover ? ` ${leftover}` : ''}`;
+        return `${text.receiptRejected}${t.punctuation.colon}${reasonText}${leftover ? ` ${leftover}` : ''}`;
       }
-      case 'failed': return `${text.receiptRejected}：${text.sendFailed}`;
+      case 'failed': return `${text.receiptRejected}${t.punctuation.colon}${text.sendFailed}`;
       default: return text.receiptDelivered;
     }
   };

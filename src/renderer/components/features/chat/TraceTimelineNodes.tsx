@@ -197,7 +197,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
 
   const sourceLabel = (sources: Array<'global' | 'project'>): string => sources
     .map((source) => (source === 'global' ? labels.sourceGlobal : labels.sourceProject))
-    .join('、');
+    .join(t.punctuation.listSeparator);
 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
@@ -227,7 +227,7 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
               }`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-zinc-200">{(item.names || []).join('、') || labels.unnamed}</span>
+                  <span className="text-zinc-200">{(item.names || []).join(t.punctuation.listSeparator) || labels.unnamed}</span>
                   <WorkbenchPill tone="neutral">{HOOK_EVENT_LABELS[item.event] || item.event}</WorkbenchPill>
                   {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
                   <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>

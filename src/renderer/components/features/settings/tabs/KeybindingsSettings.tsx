@@ -304,7 +304,7 @@ export const KeybindingsSettings: React.FC = () => {
               .join(' / ');
             return (
               <div key={`${conflict.scope}:${conflict.normalizedShortcut}`} className="text-xs text-badge-warning/80">
-                {keybindingsText.scopes[conflict.scope]} · {shortcutLabelOf(conflict.shortcut)}：{conflictLabels}
+                {keybindingsText.scopes[conflict.scope]} · {shortcutLabelOf(conflict.shortcut)}{t.punctuation.colon}{conflictLabels}
               </div>
             );
           })}
@@ -319,7 +319,7 @@ export const KeybindingsSettings: React.FC = () => {
           </div>
           {systemWarnings.map((warning) => (
             <div key={`${warning.actionId}:${warning.normalizedShortcut}`} className="text-xs text-badge-info/80">
-              {keybindingsText.actions[warning.actionId].label} · {shortcutLabelOf(warning.shortcut)}：
+              {keybindingsText.actions[warning.actionId].label} · {shortcutLabelOf(warning.shortcut)}{t.punctuation.colon}
               {getSystemReservedReason(keybindingsText, platform, warning.normalizedShortcut, warning.reason)}
             </div>
           ))}

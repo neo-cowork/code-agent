@@ -201,7 +201,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   <span>
                     {cc.connectorNeededHint.replace(
                       '{name}',
-                      gateHint.missing.map((status) => status.label).join('、'),
+                      gateHint.missing.map((status) => status.label).join(t.punctuation.listSeparator),
                     )}
                   </span>
                   <button

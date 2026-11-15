@@ -229,8 +229,8 @@ function formatTemplate(template: string, values: Record<string, string | number
   );
 }
 
-function joinDependencyTitles(titles: string[], language: string): string {
-  return titles.join(language === 'en' ? ', ' : '、');
+function joinDependencyTitles(titles: string[], t: Translations): string {
+  return titles.join(t.punctuation.listSeparator);
 }
 
 function dependencySummaryLabel(
@@ -413,7 +413,7 @@ const TaskRecordRow = ({
   // 退回 taskBlockedReason[category] 类别文案，行上永不出现报错原文。
   const currentActionCopy = rail.currentAction
     ?? (rail.currentActionCategory ? t.taskPanel.taskBlockedReason[rail.currentActionCategory] : null);
-  const detailCopy = currentActionCopy ? `${detailLabel}：${currentActionCopy}` : null;
+  const detailCopy = currentActionCopy ? `${detailLabel}${t.punctuation.colon}${currentActionCopy}` : null;
 
   return (
     <div
@@ -626,14 +626,14 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
 };
 
 const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const openWorkbenchTab = useAppStore((state) => state.openWorkbenchTab);
   const targetLogsTurn = useRightPanelTabsStore((state) => state.targetLogsTurn);
   const blockedByTitles = step.blockedByTitles?.length
-    ? joinDependencyTitles(step.blockedByTitles, language)
+    ? joinDependencyTitles(step.blockedByTitles, t)
     : null;
   const blockedTaskTitles = step.blockedTaskTitles?.length
-    ? joinDependencyTitles(step.blockedTaskTitles, language)
+    ? joinDependencyTitles(step.blockedTaskTitles, t)
     : null;
   const waitingHint = step.blockedByTitles?.length
     ? formatTemplate(t.taskPanel.taskDependencyWaiting, { tasks: blockedByTitles ?? '' })

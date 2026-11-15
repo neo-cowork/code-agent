@@ -663,7 +663,7 @@ export const voiceEn = {
       assistant: 'Assistant',
     },
     sourceBadge: 'Voice',
-    dispatchLabel: 'Dispatched by voice as「{title}」— this is the instruction sent to the execution engine',
+    dispatchLabel: 'Dispatched by voice as “{title}” — this is the instruction sent to the execution engine',
     /** W6-5 task card: work dispatched during a call folds into one card. Status is only shown with evidence. */
     taskCard: {
       expandProcess: 'Show process',

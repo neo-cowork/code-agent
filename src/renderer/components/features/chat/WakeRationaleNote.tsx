@@ -68,7 +68,7 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
               <p data-testid="wake-rationale-text">{fields.rationale}</p>
               {fields.evidence ? (
                 <p data-testid="wake-rationale-evidence" className="mt-1 text-zinc-500">
-                  {text.evidenceLabel}：{fields.evidence}
+                  {text.evidenceLabel}{t.punctuation.colon}{fields.evidence}
                 </p>
               ) : null}
             </>

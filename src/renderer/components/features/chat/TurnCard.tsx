@@ -822,7 +822,7 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
             // 「是哪几个 hook」用配置里的 name（没写就退回脚本名），不再拿 hook 的输出原文顶替——
             // 那份原文是任意内容，实测把整份记忆索引连 HTML 注释一起漏给了用户。
             // 来源(全局/项目)、可干预/仅观察对非程序员是噪音，连 hover tooltip 也不放。
-            const injectedContentLabel = (item.names || []).join('、') || item.toolName || item.matcher || undefined;
+            const injectedContentLabel = (item.names || []).join(t.punctuation.listSeparator) || item.toolName || item.matcher || undefined;
             const title = injectedContentLabel;
             const itemStatus = getHookItemStatusText(item, t);
             return (

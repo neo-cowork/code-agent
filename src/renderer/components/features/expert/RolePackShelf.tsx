@@ -40,7 +40,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
             <span>{text.degraded.replace('{count}', String(missingSkills.length))}</span>
           </div>
           <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
-            {text.missingSkills.replace('{skills}', missingSkills.join('、'))}
+            {text.missingSkills.replace('{skills}', missingSkills.join(t.punctuation.listSeparator))}
           </p>
           <Button
             variant="secondary"
@@ -145,8 +145,8 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                   </div>
                 ) : null}
                 <div className="space-y-1 text-[11px] text-zinc-500">
-                  <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join('、')}</p>
-                  <p><span className="text-zinc-400">{text.tools}</span>{': '}{item.tools.join('、')}</p>
+                  <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join(t.punctuation.listSeparator)}</p>
+                  <p><span className="text-zinc-400">{text.tools}</span>{': '}{item.tools.join(t.punctuation.listSeparator)}</p>
                   <p><span className="text-zinc-400">{text.publisher}</span>{': '}{entry.publisher}</p>
                   <p><span className="text-zinc-400">{text.version}</span>{': '}{entry.packVersion}</p>
                 </div>

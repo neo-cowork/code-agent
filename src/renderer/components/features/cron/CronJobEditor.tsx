@@ -561,7 +561,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <span>
                   {cc.connectorNeededHint.replace(
                     '{name}',
-                    missingConnectors.map((status) => cc.connectorNames[status.id] ?? status.label).join('、'),
+                    missingConnectors.map((status) => cc.connectorNames[status.id] ?? status.label).join(t.punctuation.listSeparator),
                   )}
                 </span>
                 <button

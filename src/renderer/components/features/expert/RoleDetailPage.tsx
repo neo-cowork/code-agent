@@ -766,12 +766,12 @@ const TopicsEditor: React.FC<{
       <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
         {includeActive ? (
           <div data-testid="role-topics-include-active">
-            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join("、"))}
+            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {excludeActive ? (
           <div data-testid="role-topics-exclude-active">
-            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join("、"))}
+            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {!includeActive && !excludeActive ? <div>{text.topicsInactive}</div> : null}

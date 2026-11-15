@@ -749,7 +749,7 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
-    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided：${enSentence}`);
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided: ${enSentence}`);
     expect(screen.getByTestId('parked-approval-voided').textContent).not.toContain(zhSentence);
   });
 
@@ -762,7 +762,7 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
-    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided：已手动取消');
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided: 已手动取消');
   });
 
   // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）

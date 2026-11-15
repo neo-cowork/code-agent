@@ -648,20 +648,20 @@ export const ExpertPanel: React.FC = () => {
                     : (pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)}</li>
                   {consentToolSummary.groups.map(({ group, effects }) => (
                     <li key={group} className="ml-3 text-zinc-400">
-                      {t.expert.rolePackConsent.toolGroups[group]}：
-                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join('、')}
+                      {t.expert.rolePackConsent.toolGroups[group]}{t.punctuation.colon}
+                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join(t.punctuation.listSeparator)}
                     </li>
                   ))}
                   {/* 映射表没收录的工具原样露出：漏显示一项能力等于骗用户，看不懂也好过看不见 */}
                   {consentToolSummary.unmapped.length > 0 ? (
                     <li className="ml-3 text-zinc-400">
-                      {t.expert.rolePackConsent.toolsOther}：{consentToolSummary.unmapped.join('、')}
+                      {t.expert.rolePackConsent.toolsOther}{t.punctuation.colon}{consentToolSummary.unmapped.join(t.punctuation.listSeparator)}
                     </li>
                   ) : null}
                   {pendingConsent.connectors.length > 0 ? (
                     <li>· {t.expert.rolePackConsent.connectors.replace(
                       '{connectors}',
-                      pendingConsent.connectors.map(describeConnector).join('、'),
+                      pendingConsent.connectors.map(describeConnector).join(t.punctuation.listSeparator),
                     )}</li>
                   ) : null}
                   {pendingConsent.permissionPreset ? (

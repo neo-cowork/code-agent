@@ -799,7 +799,7 @@ export const MemoryTab: React.FC = () => {
                     {memoryText.import.receiptPrefix}{importResult.applied}{memoryText.import.receiptMiddle}{importResult.created}{memoryText.import.receiptCreatedMiddle}{importResult.updatedApplied}{memoryText.import.receiptUpdatedMiddle}{importResult.skippedApply}
                   </div>
                   <div className="mt-2 text-badge-success/80">
-                    {memoryText.import.writtenFilesPrefix}{importResult.writtenFiles.length > 0 ? importResult.writtenFiles.slice(0, 4).join('、') : memoryText.import.none}
+                    {memoryText.import.writtenFilesPrefix}{importResult.writtenFiles.length > 0 ? importResult.writtenFiles.slice(0, 4).join(t.punctuation.listSeparator) : memoryText.import.none}
                     {importResult.writtenFiles.length > 4 ? `${memoryText.import.extraFilesPrefix}${importResult.writtenFiles.length}${memoryText.import.extraFilesSuffix}` : ''}
                   </div>
                   {importResult.mirrorRebuild && (
