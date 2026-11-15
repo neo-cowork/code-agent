@@ -1,6 +1,4 @@
-// ============================================================================
-// TurnCard - A single conversation turn (user prompt + assistant responses)
-// ============================================================================
+import { SkillActivityBanner } from './SkillActivityBanner';
 import { isProjectTrustPendingTurn, isSendFailureTurn } from '../../../utils/projectTrustTurn';
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
@@ -70,7 +68,6 @@ import { resolveBusySignal } from '../../../utils/turnBusySignal';
 import { useTurnCardExpansion } from './useTurnCardExpansion';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
 import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
-
 interface TurnCardProps {
   turn: TraceTurn;
   sessionId?: string;
@@ -95,7 +92,6 @@ interface TurnCardProps {
   /** 渲染在该 turn 用户消息下方（目前用于定时任务运行记录的状态行） */
   afterUserMessage?: React.ReactNode; suppressBusySignal?: boolean;
 }
-
 export const TurnCard: React.FC<TurnCardProps> = ({
   turn,
   sessionId,
@@ -135,10 +131,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     });
     return { duration, time };
   }, [turn]);
-
   const isStreaming = turn.status === 'streaming';
-
-  // 把相邻的非 Edit/Write 工具调用聚合成 tool_group
   const displayNodes = useMemo(
     () => groupAdjacentToolCalls(turn.nodes),
     [turn.nodes]
@@ -162,10 +155,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const hasStreamInterruption = useMemo(() => turn.nodes.some((node) => (
     !isBareInterruptionNode(node) && Boolean(node.metadata?.streamInterruptionReason || node.metadata?.streamRecovery)
   )), [turn.nodes]);
-
-  // 语音派活任务卡（W6-5）：一通电话里派出去的活，整轮折叠成一张任务卡——
-  // 卡头说清「这件活是什么 + 谁做的 + 什么结果」，过程（工具调用、中间文本）默认折叠，
-  // 结论留在卡外。判据：轮内首个带 metadata.voiceDispatch 的节点（投影层保证它是轮首）。
   const voiceDispatch = useMemo(() => {
     for (const node of turn.nodes) {
       const dispatch = node.metadata?.voiceDispatch;
@@ -174,14 +163,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     return null;
   }, [turn.nodes]);
   const isVoiceTurn = Boolean(voiceDispatch);
-
-  // 「用户那句 + 结论」的取法与轮次导航共用（turnRailItems.ts），两处别各写一套。
   const foldedView = useMemo(() => ({
     userNode: getTurnUserNode(turn),
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
   }), [turn, isVoiceTurn]);
-
-  // 语音任务卡始终可折；定时运行终态由状态行接管折叠，live 态同时铺开已保存步骤。
   const observedCronRunStatus = useSyncExternalStore(subscribeObservedCronRunStatus, () => getObservedCronRunStatusForSession(sessionId), () => null);
   const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn); const hasLiveExternalStatusLine = hasExternalStatusLine && isLiveCronRunStatusKind(observedCronRunStatus?.kind);
   const canFold = isVoiceTurn ? turn.nodes.length > 0
@@ -196,15 +181,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     canFold, hasExternalStatusLine, keepLastTurnOpen: policy.keepLastTurnOpen,
     defaultExpanded, isSessionProcessing, forceExpanded, expandRequest,
   });
-
-  // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
-  // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
   const lastIndex = displayNodes.length - 1;
   const lastDisplay = displayNodes[lastIndex];
   const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
   const busySignal = resolveBusySignal(turn);
-  // 末个展示节点是否正在流式输出可见正文。正文出字时，
-  // 通用光标留在节点流底部，作为文本尾唯一的进行中信号。
   const lastNodeIsStreamingText =
     busySignal === 'text-caret' &&
     !!lastDisplayNode &&
@@ -228,13 +208,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   );
   const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
   const skillActivity = useMemo(() => getTurnSkillActivity(turn), [turn]);
-  // @neo tag 触发的 turn：回复以 Neo 参与者身份标识（轻量名字+头像，不是卡片）
   const isNeoTagTurn = useMemo(
     () => turn.nodes.some((node) => node.type === 'user' && Boolean(node.metadata?.neoTag)),
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
-  // `resolveBusySignal` 仍只负责三选一；真正出字才画光标，两个空档改用具名文字态。
   const hasTimelineActivity = turn.nodes.some((node) => node.type !== 'user' && (
     node.type !== 'assistant_text'
     || Boolean(node.content?.trim())
@@ -262,8 +240,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     () => getHasNonThinkingContentAfterThinking(turn, thinkingSegments),
     [thinkingSegments, turn],
   );
-  // 投影层已经挑好了这一轮该被评价的那个节点（markFeedbackEligibleNodes），
-  // 这里只借它的 messageId 当锚点，判定逻辑不搬也不复制一份。
   const feedbackAnchor = useMemo(() => {
     if (isStreaming) return null;
     const node = turn.nodes.find((item) => item.feedbackEligible === true);
@@ -275,23 +251,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   }, [isStreaming, turn.nodes]);
   const forkAnchor = useMemo(() => {
     if (isStreaming) return null;
-    // X5.5-D3：fork 锚点与 feedback 锚点用同一份 eligible 判定（投影层
-    // markFeedbackEligibleNodes，feedbackEligible 只在轮 completed 时落）。
-    // 此前 fork 自己找「最后一条有正文的 assistant_text」——轮被切成 completed
-    // 且轮尾恰挂 tool_call 时 feedback 锚隐、fork 锚显，动作条只剩一个 fork 图标。
     const node = turn.nodes.find((item) => item.feedbackEligible === true);
     if (!node) return null;
     const messageId = node.messageId
       || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
     return { messageId };
   }, [isStreaming, turn.nodes]);
-
-  // 排查报告 §2 序列③④：点赞/分叉动作行此前按「node.content 原始全量非空」挂载，
-  // 与正文实际显示的打字机 displayContent 各走各的——turn 一 completed 按钮立刻出现，
-  // 正文却还在 flush 追帧（最长 4s），造成「按钮先于正文」的抢跑感。改为等打字机
-  // 追平：复用下方节点渲染早已在上报的 isAnimating 信号（useSmoothStreamingText 已暴露，
-  // 经 onStreamingDisplayUpdate 回调上抛），不新造判定逻辑，只是把这行按钮也接进去听。
-  // 注意比对用的是回调上报的原始 node.id，不是 feedbackAnchor/forkAnchor 里派生的 messageId。
   const feedbackEligibleNodeId = useMemo(
     () => turn.nodes.find((item) => item.feedbackEligible === true)?.id ?? null,
     [turn.nodes],
@@ -306,7 +271,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     },
     [onStreamingDisplayUpdate, feedbackEligibleNodeId],
   );
-
   const hasVoiceFailureEvidence = useMemo(
     () => isVoiceTurn && (
       turn.status === 'error'
@@ -317,19 +281,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     ),
     [isVoiceTurn, turn.nodes, turn.status],
   );
-
-  // X5.5-D2 顺手收：startTask 是 fire-and-forget，running 态到达前派活轮短暂呈现
-  // 「completed + 有正文」，动作条会先闪一下。通话还在进行时、既无结局印章也无失败
-  // 证据的任务轮不渲染动作条；挂断后（phase 回 idle）或印章落下后恢复。
   const suppressReplyActions =
     (isVoiceTurn && voiceCallInFlight && !turn.voiceWorkOutcome && !hasVoiceFailureEvidence)
-    // 这一轮还在写就不摆动作条：答案没定稿时给出「复制/点赞/分叉」，等于请人给半句话
-    // 打分，而且正文每长一行动作条就往下跳一次（真机反馈 2026-08-01）。
     || (isLastTurn && turnActive);
-
-  // 压缩摘要不再以整条横幅插在消息流里（2026-08-21 爸拍板：太扎眼），降级为操作行
-  // 最右侧的一枚象征性标记（Archive 图标），点开仍可读摘要原文。标记锚在压缩点
-  // 所在轮（投影层把 compaction 节点挂到压缩前那一轮的末尾）的操作行右端。
   const compactionNodes = useMemo(
     () => turn.nodes.filter((n) => n.type === 'system' && n.subtype === 'compaction'),
     [turn.nodes],
@@ -337,18 +291,15 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const [compactionExpanded, setCompactionExpanded] = useState(false);
   const showReplyActions =
     Boolean(forkAnchor || feedbackAnchor) && !suppressReplyActions && anchorTypewriterCaughtUp;
-
   const handleFork = async () => {
     if (!forkAnchor || isForking || turnActive) return;
     setIsForking(true);
     try {
-      // 单击即分叉：默认「历史对话 + 当前文件」；隔离锚点工作区保留在服务层，前台不给选项
       await createForkFromReply(forkAnchor.messageId, 'shared_current');
     } finally {
       setIsForking(false);
     }
   };
-
   return (
     <div
       className={`mb-2 transition-colors group/turncard ${
@@ -368,7 +319,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           <div className="h-px flex-1 bg-zinc-800"></div>
         </div>
       )}
-
       {/* Content */}
       <div className="space-y-2 px-4">
         {beforeUserMessage}
@@ -385,7 +335,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           />
         )}
         {afterUserMessage}
-
         {/* Neo 以参与者身份回复（像 Claude Tag）：轻量身份标识挂在回复头部，会话里不出现工作卡 */}
         {isNeoTagTurn && (
           <div className="flex items-center gap-1.5 pt-0.5" data-testid="neo-turn-identity">
@@ -395,7 +344,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             <span className="text-[11px] font-medium text-badge-success/90">Neo</span>
           </div>
         )}
-
         {/* 语音派活任务卡卡头：整轮的头一句话——这件活是什么、谁做的。
             不显示任何状态徽章（X5.5 返工批 R4a 产品拍板）：结局判定是 host 证据门的事，
             卡片不转述。过程折叠在卡身里，结论（最后一条有正文的 assistant_text）走下方既有
@@ -409,16 +357,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onToggle={handleToggleExpanded}
           />
         )}
-
         <TurnRunHeader turn={turn} streamingState={streamingState} />
         {developerMode && <TurnOutcomeBadge turn={turn} sessionId={sessionId} />}
         {shouldShowStreamingState(streamingState) && (
           <StreamingStateBanner state={streamingState} />
         )}
-
         {hookActivity && <HookExecutionBanner activity={hookActivity} />}
         {skillActivity && <SkillActivityBanner activity={skillActivity} />}
-
         {/* "Worked for Xm Ys" toggle — always visible when foldable。
             语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮；
             定时任务运行记录首轮同理（CronRunSessionStatusBar 已显示用时与状态）。 */}
@@ -442,7 +387,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             </span>
           </button>
         )}
-
         {/* Middle content (folded: hide; expanded: show all except user) */}
         {!folded && (
           <>
@@ -472,8 +416,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 );
               }
               const node: TraceNode = d.node;
-              // 中间区跳过规则（置顶/横幅/锚点/变更卡归属等）与折叠可见性共用一份判据，
-              // 逐条理由见 turnFoldVisibility.ts。折叠态下结论在卡外渲染（finalTextAnchoredBelow）。
               if (isNodeSkippedInMiddle(node, foldedView.userNode, foldedView.finalTextNode, canFold)) {
                 return null;
               }
@@ -481,8 +423,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 && i === lastIndex
                 && node.type === 'assistant_text'
                 && lastNodeIsStreamingText;
-              // 不再要求外部传了 onStreamingDisplayUpdate 才上报——动作行的追平判定
-              // (handleAnchorStreamingDisplayUpdate) 自己也要听这个信号，与外部回调解耦。
               const shouldReportDisplayUpdate =
                 node.type === 'assistant_text' &&
                 (isNodeStreaming || (!isStreaming && node.id === foldedView?.finalTextNode?.id));
@@ -500,13 +440,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 />
               );
             })}
-
             {/* 忙信号永远跟在最后一个已渲染时间线节点后；空时间线时它自然成为首节点。
                 正文流式时这里只留下唯一的文本尾光标。 */}
             {streamingIndicator}
           </>
         )}
-
         {/* 语音任务卡折叠态仍在流式时：过程收在卡身里，live 信号不能全灭——
             底部保留呼吸态指示。 */}
         {isVoiceTurn && folded && isStreaming && busySignal === 'text-caret' && (
@@ -518,7 +456,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             subagentCount={getRunningSubagentCount(turn.nodes)}
           />
         )}
-
         {/* Final AI answer (always shown when foldable; non-foldable turns already rendered in map above).
             定时任务运行记录若在工具调用前有过渡句且后续工具尚未完成（等批准/运行中/已中断），
             不把那句过渡话当最终结果展示。 */}
@@ -536,7 +473,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onStreamingDisplayUpdate={handleAnchorStreamingDisplayUpdate}
           />
         )}
-
         {/* 产物/来源固定锚点：始终渲染在最终答案之后，位置稳定（与正文内 Sources 一致），
             不再随工具调用在流中的位置而在答案上方/下方漂移。 */}
         {(() => {
@@ -550,12 +486,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             />
           ) : null;
         })()}
-
         {/* 非交付物继续走轮级 diff；deliverable 的 diff 收在产物卡内。 */}
         {!hasStreamInterruption && (
           <TurnDiffSummary turn={turn} excludedFilePaths={deliverableDiffPaths} />
         )}
-
         {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
             它产出的文件卡之间，看起来像在给上面那一句话打分。
             操作行（复制/好评/差评/分叉）只在最后一轮常驻；历史轮 hover 进入该轮才显示，
@@ -597,7 +531,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             )}
           </div>
         )}
-
         {/* 压缩标记点开后的摘要原文：只在要读的时候占地方 */}
         {compactionExpanded && compactionNodes.map((node) => (
           <div
@@ -608,7 +541,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             <ExpandableContent content={node.content} maxLines={30} />
           </div>
         ))}
-
         {/* 操作行不渲染的轮（流式中/语音在飞等），压缩标记降级为独立的右对齐小行，
             不让「压过」这件事在消息流里彻底消失。 */}
         {!showReplyActions && compactionNodes.length > 0 && (
@@ -623,20 +555,6 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     </div>
   );
 };
-
-// ---- 语音派活任务卡卡头（W6-5）----
-// 卡头两要素：这是什么活（title）+ 谁做的（speaker，只有用户点名了专家才有——
-// 没有就一个人名都不显示，不编默认署名）。不显示任何状态徽章（X5.5 返工批 R4a
-// 产品拍板）：结局判定收在 host 证据门（turn.voiceWorkOutcome 照常落库），卡片不转述。
-// 整行是一个 Button primitive（点卡头展开/收起），[&>span] 覆盖是让 Button 内部的
-// 单个子 span 撑满整行左对齐——不改变 primitive 本身。
-//
-// 左缘基线（X5.5 返工批 R4b，真机截图实锤卡头比正文右移一截）：
-// 正文（assistant 文本 / 结论气泡）的左缘 = 卡容器 px-4 的内容边；Button size=sm
-// 自带 px-3，此前 className 里的 px-2 是死类——TW4 层叠里同族间距大值赢（px-3 盖住
-// px-2），与书写顺序无关——于是图标/标题被顶到内容边右 12px。修法不是再写一个新
-// px 去压（那是同一条死路），而是保留 px-3 的点击/hover 面积，用 -mx-3 把整行
-// 负 margin 回内容边、宽度同步补偿：图标与正文同一左缘，hover 底色外扩进 px-4 排水沟。
 const VoiceDispatchCardHeader: React.FC<{
   title: string;
   speaker?: { agentId: string; displayName: string };
@@ -644,7 +562,6 @@ const VoiceDispatchCardHeader: React.FC<{
   onToggle: () => void;
 }> = ({ title, speaker, expanded, onToggle }) => {
   const { t } = useI18n();
-
   return (
     <Button
       type="button"
@@ -674,12 +591,9 @@ const VoiceDispatchCardHeader: React.FC<{
     </Button>
   );
 };
-
-// UX round2 20i：每轮常驻的「复制回答」小图标按钮，与点赞/点踩/分叉同形同排。
 const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
-
   const handleCopy = async () => {
     if (!content.trim()) return;
     try {
@@ -687,10 +601,8 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
     } catch {
-      // 剪贴板不可用（权限/非安全上下文）时静默，不阻塞其它操作
     }
   };
-
   return (
     <button /* ds-allow:button: 「复制回答」是回复操作行的图标级小按钮，Button primitive 无此紧凑图标变体 */
       type="button"
@@ -706,7 +618,6 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
     </button>
   );
 };
-
 const HOOK_EVENT_LABELS: Record<string, string> = {
   UserPromptSubmit: '用户提示提交',
   SessionStart: '会话开始',
@@ -732,7 +643,6 @@ const HOOK_EVENT_LABELS: Record<string, string> = {
   VoiceCallPaused: '通话暂停',
   VoiceCallEnded: '通话结束',
 };
-
 function getTurnHookActivity(turn: TraceTurn): TurnHookActivity | null {
   const node = turn.nodes.find((candidate) => (
     candidate.turnTimeline?.kind === 'hook_activity'
@@ -740,7 +650,6 @@ function getTurnHookActivity(turn: TraceTurn): TurnHookActivity | null {
   ));
   return node?.turnTimeline?.hookActivity ?? null;
 }
-
 function getTurnSkillActivity(turn: TraceTurn): TurnSkillActivity | null {
   const node = turn.nodes.find((candidate) => (
     candidate.turnTimeline?.kind === 'skill_activity'
@@ -748,19 +657,15 @@ function getTurnSkillActivity(turn: TraceTurn): TurnSkillActivity | null {
   ));
   return node?.turnTimeline?.skillActivity ?? null;
 }
-
-// 颜色语义：红只给 hook 自身执行出错；「拦下」「改写输入」是 hook 的正常决策，给 amber。
 function getHookActivityTone(activity: TurnHookActivity): 'success' | 'warning' | 'error' {
   if (activity.items.some((item) => (item.errorCount || 0) > 0)) return 'error';
   if (activity.items.some((item) => item.action === 'block' || item.modified)) return 'warning';
   return 'success';
 }
-
 function getHookStatusText(activity: TurnHookActivity, t: Translations): string {
   const blockedItems = activity.items.filter((item) => item.action === 'block');
   if (blockedItems.length > 0) {
     const base = t.turnHooks.blockedCount.replace('{count}', String(blockedItems.length));
-    // 单条拦截直接带原因（首行截断已在 host 侧做过）；多条只计数，原因去展开里看
     const reason = blockedItems.length === 1 ? blockedItems[0]?.reason : undefined;
     return reason ? `${base} · ${t.turnHooks.reason.replace('{reason}', reason)}` : base;
   }
@@ -770,15 +675,12 @@ function getHookStatusText(activity: TurnHookActivity, t: Translations): string 
   if (modified > 0) return t.turnHooks.modifiedCount.replace('{count}', String(modified));
   return t.turnHooks.allowed;
 }
-
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
-  // 默认折叠：折叠行已经说清「哪个时机、是哪几个 hook」，展开是给想细看的人留的。
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const tone = getHookActivityTone(activity);
   const statusText = getHookStatusText(activity, t);
   const showStatus = tone !== 'success' && activity.items.length > 0;
-
   return (
     <div className="py-0.5 text-sm text-zinc-500">
       {activity.items.length > 0 && (
@@ -819,9 +721,6 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
-            // 「是哪几个 hook」用配置里的 name（没写就退回脚本名），不再拿 hook 的输出原文顶替——
-            // 那份原文是任意内容，实测把整份记忆索引连 HTML 注释一起漏给了用户。
-            // 来源(全局/项目)、可干预/仅观察对非程序员是噪音，连 hover tooltip 也不放。
             const injectedContentLabel = (item.names || []).join('、') || item.toolName || item.matcher || undefined;
             const title = injectedContentLabel;
             const itemStatus = getHookItemStatusText(item, t);
@@ -857,65 +756,6 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
     </div>
   );
 };
-
-function getSkillActionLabel(action: TurnSkillActivity['items'][number]['action']): string {
-  switch (action) {
-    case 'selected':
-      return '本轮挂载';
-    case 'triggered':
-      return '已触发';
-    case 'written':
-      return '已写入';
-    default:
-      return action;
-  }
-}
-
-function getSkillActivityTitle(activity: TurnSkillActivity): string {
-  const labels = activity.items.map((item) => `${item.label} ${getSkillActionLabel(item.action)}`);
-  return labels.join(' · ');
-}
-
-const SkillActivityBanner: React.FC<{ activity: TurnSkillActivity }> = ({ activity }) => {
-  // 默认折叠：摘要行已说明 skill 活动，展开才看逐条明细，与 Hook 横幅一致。
-  const [expanded, setExpanded] = useState(false);
-  const summary = activity.summary.replace(/^Skill\s*/, '');
-
-  return (
-    <div className="py-0.5 text-sm text-zinc-500">
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        title={getSkillActivityTitle(activity)}
-      >
-        <Sparkles className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 truncate font-medium">Skill {summary}</span>
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        )}
-      </button>
-      {expanded && (
-        <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
-          {activity.items.map((item, index) => (
-            <div
-              key={`${item.skillId}-${item.action}-${index}`}
-              className="flex min-w-0 items-center gap-1.5"
-              title={item.detail || undefined}
-            >
-              <span className="min-w-0 truncate text-zinc-400">{item.label}</span>
-              <span className="shrink-0">{getSkillActionLabel(item.action)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 function getHookItemStatusText(
   item: TurnHookActivity['items'][number],
   t: Translations,

@@ -17,22 +17,24 @@ describe('SkillStatusMessage', () => {
     const html = renderToStaticMarkup(
       React.createElement(SkillStatusMessage, { content }),
     );
-    expect(html).toContain('Using');
+    expect(html).toContain('使用了技能');
     expect(html).toContain('lark-doc');
-    expect(html).toContain('skill');
-    // 通过 title 暴露原始消息（含 skill 描述）
-    expect(html).toContain('Loading skill: lark-doc');
+    expect(html).toContain('技能');
+    // The hover follows the same localized name as the visible status.
+    expect(html).toContain('title="使用了技能 lark-doc"');
+    expect(html).not.toContain('Loading skill: lark-doc');
     // 不再使用大紫色 Sparkles 徽章
     expect(html).not.toContain('text-accent-purple');
     expect(html).not.toContain('bg-gradient-to-r');
   });
 
-  it('falls back to message text when skill name is absent', () => {
+  it('uses the localized no-name wording when skill name is absent', () => {
     const content = '<command-message>Loading skill: foo</command-message>';
     const html = renderToStaticMarkup(
       React.createElement(SkillStatusMessage, { content }),
     );
-    expect(html).toContain('Loading skill: foo');
+    expect(html).toContain('使用了一个技能');
+    expect(html).not.toContain('Loading skill: foo');
   });
 });
 
