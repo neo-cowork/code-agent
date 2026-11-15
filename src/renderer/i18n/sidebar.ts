@@ -107,6 +107,7 @@ export const sidebarZh = {
     newSessionTitle: '新对话',
     unnamedSessionTitle: '未命名会话',
     appshotSessionTitle: 'Appshot 会话',
+    editRoleSessionTitlePrefix: '修改角色：',
     goalSessionTitle: '目标：{title}',
     // 能力区（会话列表上方：自动化 / 专家 / 资料库）
     capabilityZone: {
@@ -486,6 +487,7 @@ export const sidebarEn: typeof sidebarZh = {
     newSessionTitle: 'New conversation',
     unnamedSessionTitle: 'Untitled conversation',
     appshotSessionTitle: 'Appshot conversation',
+    editRoleSessionTitlePrefix: 'Edit role: ',
     goalSessionTitle: 'Goal: {title}',
     capabilityZone: {
       automation: 'Automations',

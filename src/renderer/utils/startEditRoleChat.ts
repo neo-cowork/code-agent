@@ -16,6 +16,7 @@
 
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { languages } from '../i18n';
 
 /**
  * 确定性 slash 种子：`/edit-role <roleId>`。
@@ -34,7 +35,9 @@ export async function startEditRoleChat(roleId: string): Promise<void> {
   // 从设置页触发，先关闭设置弹层回到聊天
   app.setShowSettings(false);
 
-  const session = await useSessionStore.getState().createSession(`修改角色：${trimmed}`);
+  const session = await useSessionStore.getState().createSession(
+    `${languages[app.language].sidebar.editRoleSessionTitlePrefix}${trimmed}`,
+  );
   if (!session) return;
 
   // 新会话已成为 currentSessionId，写入待发种子消息，由 ChatView 自动发出

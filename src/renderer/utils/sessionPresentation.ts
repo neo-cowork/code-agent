@@ -74,6 +74,20 @@ export function matchesSessionStatusFilter(
   }
 }
 
+/**
+ * 对话式建/改角色会话的固定名：库里存的是创建那一刻界面语言的写法，
+ * 展示时按当前界面语言换回来（存量中文名在英文界面下不再原样露出）。
+ */
+function localizeRoleChatSessionTitle(title: string, language: Language): string {
+  const target = languages[language];
+  for (const pack of Object.values(languages)) {
+    if (title === pack.settings.roles.newRole) return target.settings.roles.newRole;
+    const prefix = pack.sidebar.editRoleSessionTitlePrefix;
+    if (title.startsWith(prefix)) return `${target.sidebar.editRoleSessionTitlePrefix}${title.slice(prefix.length)}`;
+  }
+  return title;
+}
+
 export function getDisplaySessionTitle(title?: string | null, language: Language = 'zh'): string {
   const rawTitle = title?.trim() ?? '';
   const placeholder = getSessionTitlePlaceholder(rawTitle, language);
@@ -91,7 +105,9 @@ export function getDisplaySessionTitle(title?: string | null, language: Language
       return name ? `${t.automationPresentation.channel} · ${name}` : t.automationPresentation.channel;
     }
     return localizeCronSessionTitle(
-      localizeAppshotSessionTitle(stripped, language), language, languages[language].sidebar.cronTitlePrefixes,
+      localizeRoleChatSessionTitle(localizeAppshotSessionTitle(stripped, language), language),
+      language,
+      languages[language].sidebar.cronTitlePrefixes,
     );
   }
   if (rawTitle.startsWith('<appshot')) {
