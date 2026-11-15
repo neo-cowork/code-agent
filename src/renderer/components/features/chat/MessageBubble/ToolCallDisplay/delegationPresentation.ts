@@ -1,15 +1,16 @@
+import { reconcileAgentNodeLifecycle } from '../../../../../utils/agentNodeLifecycle';
 import { agentNodeLabel, backgroundTaskLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
 import { AgentFailureCode } from '@shared/contract/agentFailure';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
+import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../../../../../i18n/outcomeWords';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { agentFailureCopy, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import {
-  isAgentNodeTerminalStatus,
   isLastToolFailureVisible,
   isTaskTerminalStatus,
   taskActivityIds,
@@ -26,6 +27,7 @@ interface DelegationReceiptOutput {
 
 export interface DelegationPresentation {
   state: DelegationReceiptState;
+  outcomeKey?: OutcomeKey;
   title: string;
   lastToolStep?: LastToolStep;
   stepCount?: number;
@@ -130,7 +132,7 @@ export function toDelegationDisplayToolCall(
   storedToolCall: ToolCall,
   t: Translations,
   /** 子代理节点/任务的实时状态：交接回执落库后不会改写，终态时用它收口，避免「已完成」旁还写着「工作中」。 */
-  presentation?: Pick<DelegationPresentation, 'state'> | null,
+  presentation?: Pick<DelegationPresentation, 'state' | 'outcomeKey'> | null,
 ): ToolCall {
   if (!RESULT_TOOLS.has(storedToolCall.name)
     && storedToolCall.result?.metadata?.artifactRole !== 'multiagent-result') return storedToolCall;
@@ -148,8 +150,8 @@ export function toDelegationDisplayToolCall(
         // 没有子代理的实时事实（树未载入/节点已不在）时不下断言：既不说「工作中」也不说「已完成」。
         output = !presentation
           ? ''
-          : presentation.state === 'working'
-            ? t.chat.delegationReceipt.working
+          : presentation.outcomeKey
+            ? t.outcomeWords[presentation.outcomeKey].badge.label
             : t.chat.delegationReceipt[presentation.state];
       } else {
         output = toolCall.name === 'wait_agent' ? waitReport(output, t) : reportBody(output);
@@ -241,14 +243,16 @@ function agentFailureReason(node: AgentTreeNode, t: Translations): string | unde
 }
 
 function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation {
-  const state: DelegationReceiptState = node.status === 'completed'
-    ? 'completed'
-    : isAgentNodeTerminalStatus(node.status)
-      ? 'failed'
-      : 'working';
+  const outcomeKey = resolveAgentNodeOutcomeKey(node.status, node.failureCode);
+  const state: DelegationReceiptState = outcomeKey === 'working' || outcomeKey === 'waiting-input'
+    ? 'working'
+    : outcomeKey === 'completed'
+      ? 'completed'
+      : outcomeKey === 'cancelled-by-user' ? 'cancelled' : 'failed';
   const terminal = state !== 'working';
   return {
     state,
+    outcomeKey,
     title: agentNodeLabel(node, t.agentRoleLabels),
     lastToolStep: node.lastToolStep,
     activityIds: [node.id],
@@ -284,8 +288,11 @@ export function deriveDelegationPresentation(
   tasks: Task[],
   agentNodes: AgentTreeNode[],
   t: Translations = languages[useAppStore.getState().language] ?? languages.zh,
+  members: readonly { agentId: string; status: string }[] = [],
 ): DelegationPresentation | null {
-  const presentation = derivePresentation(toolCall, tasks, agentNodes, t);
+  const memberById = new Map(members.map((member) => [member.agentId, member]));
+  const nodes = agentNodes.map((node) => reconcileAgentNodeLifecycle(node, memberById.get(node.id)));
+  const presentation = derivePresentation(toolCall, tasks, nodes, t);
   if (presentation?.state !== 'failed') return presentation;
   return { ...presentation, retryTitle: retryTitleFrom(toolCall) ?? presentation.title };
 }
