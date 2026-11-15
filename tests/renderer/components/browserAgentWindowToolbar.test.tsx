@@ -318,6 +318,83 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
       conversationId: 'session-a',
       workspace: null,
     }));
+    await waitFor(() => expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull());
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+    cleanup();
+    render(<BrowserAgentWindow />);
+    await waitFor(() => expect(getKeptResultPage).toHaveBeenCalledTimes(3));
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+
+    getKeptResultPage.mockResolvedValue({
+      state: 'closed', url: 'http://127.0.0.1:8898/submit', title: '报名成功', reason: 'keep_result_page',
+    });
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(await screen.findByTestId('browser-kept-result-bar-closed')).toBeDefined();
+  });
+
+  it('suppresses the old result action throughout an active conversation turn', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/submit', title: '旧结果', reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+    await screen.findByTestId('browser-kept-result-bar-kept');
+    await act(async () => useAppStore.getState().setSessionProcessing('session-a', true));
+    expect(screen.queryByTestId('browser-kept-result-adopt')).toBeNull();
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+    expect(adoptKeptResultPage).not.toHaveBeenCalled();
+
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/next', title: '新结果', reason: 'keep_result_page',
+    });
+    await act(async () => useAppStore.getState().setSessionProcessing('session-a', false));
+    expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('新结果');
+  });
+
+  it('offers a new kept result after a browser agent replaces the adopted result', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/submit', title: '旧结果', reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+    fireEvent.click(await screen.findByTestId('browser-kept-result-adopt'));
+    await waitFor(() => expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull());
+    cleanup();
+
+    // Native snapshots also arrive when the browser pane is unmounted.
+    const current = useSurfaceExecutionStore.getState().nativeByConversation['session-a'];
+    const running = {
+      ...current,
+      sessions: current.sessions.map((entry) => entry.session.sessionId === 'surface-agent-done' ? {
+        ...entry,
+        session: { ...entry.session, sessionId: 'surface-agent-next', runId: 'run-agent-next', state: 'running' },
+        updatedAt: 63_000,
+      } : entry),
+      updatedAt: 63_000,
+    };
+    await act(async () => {
+      useAppStore.getState().setSessionProcessing('session-a', true);
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', running);
+    });
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/next', title: '新结果', reason: 'keep_result_page',
+    });
+    const completed = {
+      ...running,
+      sessions: running.sessions.map((entry) => entry.session.sessionId === 'surface-agent-next' ? {
+        ...entry, session: { ...entry.session, state: 'completed' }, updatedAt: 64_000,
+      } : entry),
+      updatedAt: 64_000,
+    };
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', completed);
+      useAppStore.getState().setSessionProcessing('session-a', false);
+    });
+    render(<BrowserAgentWindow />);
+    expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('新结果');
   });
 
   it('refreshes immediately on conversation run end without waiting for the 30s poll', async () => {
@@ -352,7 +429,8 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
       title: '报名成功',
       reason: 'keep_result_page',
     });
-    render(<BrowserAgentWindow />);
+    browserSessionState.managedSession = { running: true, tabCount: 1, activeTab: null };
+    const { rerender } = render(<BrowserAgentWindow />);
 
     const bar = await screen.findByTestId('browser-kept-result-bar-closed');
     expect(bar.textContent).toContain('结果页已关闭');
@@ -362,5 +440,11 @@ describe('BrowserAgentWindow kept result bar under active user-browser-link sess
       conversationId: 'session-a',
       workspace: null,
     }));
+    await waitFor(() => expect(screen.queryByTestId('browser-kept-result-bar-closed')).toBeNull());
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(screen.queryByTestId('browser-kept-result-bar-closed')).toBeNull();
+    browserSessionState.managedSession = { running: false, tabCount: 0, activeTab: null };
+    rerender(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-kept-result-bar-closed')).toBeDefined();
   });
 });

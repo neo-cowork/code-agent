@@ -87,7 +87,15 @@ export interface SurfaceExecutionRunSessionSelectorV1 {
   excludeUserOpened?: boolean;
 }
 
+interface OpenedKeptResultView {
+  surfaceSessionId: string;
+  state: 'kept' | 'closed';
+}
+
 interface SurfaceExecutionStoreState {
+  /** UI handoff only: a retained host window is still kept after the user opens it. */
+  openedKeptResultsByConversation: Record<string, OpenedKeptResultView>;
+  noteKeptResultOpened: (conversationId: string, opened: OpenedKeptResultView) => void;
   nativeByConversation: Record<string, RendererSurfaceConversationProjectionV1>;
   compatibilityByConversation: Record<string, RendererSurfaceConversationProjectionV1>;
   sessionsByScope: Record<string, RendererSurfaceSessionProjectionV1>;
@@ -236,6 +244,10 @@ export function selectActiveBrowserSurfaceSessionV1(
 }
 
 export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((set, get) => ({
+  openedKeptResultsByConversation: {},
+  noteKeptResultOpened: (conversationId, opened) => set((state) => ({
+    openedKeptResultsByConversation: { ...state.openedKeptResultsByConversation, [conversationId]: opened },
+  })),
   nativeByConversation: {},
   compatibilityByConversation: {},
   sessionsByScope: {},
@@ -262,7 +274,18 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
         ...state.nativeByConversation,
         [conversationId]: projection,
       };
+      const openedKeptResultsByConversation = { ...state.openedKeptResultsByConversation };
+      const opened = openedKeptResultsByConversation[conversationId];
+      const liveBrowsers = projection.sessions.filter(({ session }) => (
+        session.surface === 'browser' && !TERMINAL_SURFACE_SESSION_STATES.has(session.state)
+      ));
+      // A new agent browser owns the next result; a finished user link no longer covers a live page.
+      if (opened && (liveBrowsers.some((session) => !isUserOpenedSurfaceV1(session))
+        || !liveBrowsers.some(({ session }) => session.sessionId === opened.surfaceSessionId))) {
+        delete openedKeptResultsByConversation[conversationId];
+      }
       return {
+        openedKeptResultsByConversation,
         nativeByConversation,
         sessionsByScope: replaceConversationSessions(
           state.sessionsByScope,
@@ -362,7 +385,10 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
     const compatibilityByConversation = { ...state.compatibilityByConversation };
     delete nativeByConversation[conversationId];
     delete compatibilityByConversation[conversationId];
+    const openedKeptResultsByConversation = { ...state.openedKeptResultsByConversation };
+    delete openedKeptResultsByConversation[conversationId];
     return {
+      openedKeptResultsByConversation,
       nativeByConversation,
       compatibilityByConversation,
       sessionsByScope: withoutConversation(state.sessionsByScope, conversationId),
@@ -373,6 +399,7 @@ export const useSurfaceExecutionStore = create<SurfaceExecutionStoreState>()((se
   }),
 
   reset: () => set({
+    openedKeptResultsByConversation: {},
     nativeByConversation: {},
     compatibilityByConversation: {},
     sessionsByScope: {},

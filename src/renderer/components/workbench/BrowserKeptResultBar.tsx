@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives';
+import { useSurfaceExecutionStore } from '../../stores/surfaceExecutionStore';
 import { browserStageOverlayMarker } from '../../utils/browserStageInteractionGate';
 import {
   adoptKeptResultPage,
@@ -29,14 +30,19 @@ export interface BrowserKeptResultBarProps {
   conversationId: string | null | undefined;
   workspace: string | null | undefined;
   turnActive?: boolean;
+  pageRunning?: boolean;
 }
 
 export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   conversationId,
   workspace,
   turnActive = false,
+  pageRunning = false,
 }) => {
   const { t } = useI18n();
+  const openedState = useSurfaceExecutionStore((state) => (
+    conversationId ? state.openedKeptResultsByConversation[conversationId]?.state : undefined
+  ));
   const copy: KeptCopy = t.workbenchTabs.agentWindow.keptResult;
   const [kept, setKept] = useState<KeptResultPage>({ state: 'none', url: null, title: null, reason: null });
   const [busy, setBusy] = useState<'adopt' | 'reopen' | null>(null);
@@ -71,12 +77,14 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   }, [turnActive, refresh]);
 
   const onAdopt = useCallback(async () => {
-    if (!conversationId) return;
+    if (!conversationId || turnActiveRef.current) return;
     setBusy('adopt');
     setError(null);
     try {
-      await adoptKeptResultPage({ conversationId, workspace });
-      // 认领成功后活跃 browser surface 会话接管画面，本条随终态消失。
+      const opened = await adoptKeptResultPage({ conversationId, workspace });
+      useSurfaceExecutionStore.getState().noteKeptResultOpened(conversationId, {
+        surfaceSessionId: opened.surfaceSessionId, state: 'kept',
+      });
     } catch (caught) {
       setError(formatTemplate(copy.adoptFailed, {
         error: caught instanceof Error ? caught.message : String(caught),
@@ -88,11 +96,14 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   }, [conversationId, workspace, copy.adoptFailed, refresh]);
 
   const onReopen = useCallback(async () => {
-    if (!kept.url || !conversationId) return;
+    if (!kept.url || !conversationId || turnActiveRef.current) return;
     setBusy('reopen');
     setError(null);
     try {
-      await openHttpLinkInRailAsync({ href: kept.url, conversationId, workspace });
+      const opened = await openHttpLinkInRailAsync({ href: kept.url, conversationId, workspace });
+      useSurfaceExecutionStore.getState().noteKeptResultOpened(conversationId, {
+        surfaceSessionId: opened.surfaceSessionId, state: 'closed',
+      });
     } catch (caught) {
       setError(formatTemplate(copy.reopenFailed, {
         error: caught instanceof Error ? caught.message : String(caught),
@@ -104,7 +115,8 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   // N-FIX-FIX-BROWSER-SECRETREF-HARDEN：takeover 停靠不经过本条（聊天里的「继续」卡
   // 负责），避免同一扇窗出现两个不同口径的入口。
-  if (kept.state === 'none' || kept.reason === 'takeover') return null;
+  const openedLivePage = kept.state === openedState && (kept.state === 'kept' || pageRunning);
+  if (turnActive || openedLivePage || kept.state === 'none' || kept.reason === 'takeover') return null;
 
   return (
     <div

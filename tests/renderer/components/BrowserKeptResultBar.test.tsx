@@ -3,6 +3,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
 import { BrowserKeptResultBar } from '../../../src/renderer/components/workbench/BrowserKeptResultBar';
 
 const { getKeptResultPage, adoptKeptResultPage, openHttpLinkInRailAsync } = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
 }));
 
 beforeEach(() => {
+  useSurfaceExecutionStore.getState().reset();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getKeptResultPage.mockReset();
   adoptKeptResultPage.mockReset();
