@@ -38,6 +38,8 @@ mod native_manifest;
 mod native_notification;
 mod pip;
 mod quit_guard;
+#[cfg(test)]
+mod quit_flow_tests;
 mod quit_dialog_i18n;
 mod resident_host;
 mod resident_host_windows;
@@ -1085,7 +1087,7 @@ fn packaged_exe_roots(exe_path: &Path) -> Vec<PathBuf> {
     roots
 }
 
-fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
+fn candidate_roots<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Vec<PathBuf> {
     let mut dev_roots = Vec::new();
     let mut packaged_roots = Vec::new();
 
@@ -1134,7 +1136,7 @@ fn candidate_roots(app: &tauri::AppHandle) -> Vec<PathBuf> {
     unique_paths(roots)
 }
 
-fn resolve_server_script(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> {
+fn resolve_server_script<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(PathBuf, PathBuf), String> {
     let relative_path = Path::new("dist").join("web").join("webServer.cjs");
 
     for root in candidate_roots(app) {
@@ -1163,7 +1165,7 @@ fn web_server_runtime_env(
     values
 }
 
-fn web_server_log_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+fn web_server_log_dir<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
     app.path()
         .app_data_dir()
         .ok()
@@ -1299,7 +1301,7 @@ fn boot_diagnostics_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     web_server_log_dir(app).map(|dir| dir.join(BOOT_DIAGNOSTICS_FILE))
 }
 
-fn shell_events_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+fn shell_events_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
     web_server_log_dir(app).map(|dir| dir.join(SHELL_EVENTS_FILE))
 }
 
@@ -1358,7 +1360,7 @@ fn desktop_shell_event_payload(
     payload
 }
 
-fn append_shell_event_payload(app: &tauri::AppHandle, payload: serde_json::Value) {
+fn append_shell_event_payload<R: tauri::Runtime>(app: &tauri::AppHandle<R>, payload: serde_json::Value) {
     let json = match serde_json::to_string(&payload) {
         Ok(json) => json,
         Err(_) => return,
@@ -1394,7 +1396,7 @@ fn write_shell_event(
     );
 }
 
-fn write_process_cleanup_event(app: &tauri::AppHandle, cleanup: DesktopShellProcessCleanup) {
+fn write_process_cleanup_event<R: tauri::Runtime>(app: &tauri::AppHandle<R>, cleanup: DesktopShellProcessCleanup) {
     append_shell_event_payload(
         app,
         serde_json::json!({
@@ -2365,7 +2367,7 @@ fn show_startup_failure(error: &str, diagnostic_file: Option<&str>) {
     let _ = Command::new("osascript").arg("-e").arg(&script).status();
 }
 
-fn cleanup_server(app: &tauri::AppHandle) {
+fn cleanup_server<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     // 先立停机牌再收尸：监督重启路径（spawn 前后两道检查 + store_child 的锁内
     // 检查）从此绝不再拉起/入槽，退出竞态下不会漏出一个孤儿 webServer。
     app.state::<AppState>()
@@ -2383,7 +2385,7 @@ fn cleanup_server(app: &tauri::AppHandle) {
 /// 「停止并退出」意图落地后的等待期藏掉全部 webview 窗口：排空最多 65s
 /// （STOP_INTENT_WAIT），用户已拍板退出，不能让无响应的窗口杵在屏幕上——main 之外
 /// halo / pip / appshots overlay 也都是独立窗口，一样要藏（fallback 的 3s 旧通道不藏）。
-fn hide_windows_for_stop_wait(app: &AppHandle) {
+fn hide_windows_for_stop_wait<R: tauri::Runtime>(app: &AppHandle<R>) {
     for win in app.webview_windows().into_values() {
         win.hide().ok();
     }
@@ -2459,8 +2461,8 @@ enum QuitFlowOrigin {
     MacApplicationTerminate,
 }
 
-fn spawn_quit_guard_flow(
-    app: AppHandle,
+fn spawn_quit_guard_flow<R: tauri::Runtime>(
+    app: AppHandle<R>,
     coordinator: Arc<quit_guard::QuitCoordinator>,
     origin: QuitFlowOrigin,
 ) {
@@ -2523,8 +2525,8 @@ fn spawn_quit_guard_flow(
 /// （三键组「后台继续」、两键组「停止并退出」；rfd 无独立于槽位的默认键
 /// 入口），槽位序单一来源 resident_host 的 yes_no_cancel_slots /
 /// ok_cancel_slots，见 quit_guard::dialog_answer_action。
-fn show_quit_confirm_dialog(
-    app: &AppHandle,
+fn show_quit_confirm_dialog<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
     message: &str,
     language: quit_guard::QuitDialogLanguage,
@@ -2619,8 +2621,8 @@ fn show_quit_confirm_dialog(
 }
 
 // Shared stop-and-quit sequence: the dialog and explicit full_quit cannot drift.
-fn execute_quit_exit_plan(
-    app: AppHandle,
+fn execute_quit_exit_plan<R: tauri::Runtime>(
+    app: AppHandle<R>,
     coordinator: Arc<quit_guard::QuitCoordinator>,
     origin: QuitFlowOrigin,
     plan: quit_guard::QuitExitPlan,
@@ -2676,7 +2678,7 @@ fn execute_quit_exit_plan(
 static MAC_QUIT_GUARD_APP: OnceLock<AppHandle> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
-fn reply_to_mac_application_terminate(app: &AppHandle, should_terminate: bool) {
+fn reply_to_mac_application_terminate<R: tauri::Runtime>(app: &AppHandle<R>, should_terminate: bool) {
     if let Err(error) = app.run_on_main_thread(move || {
         use objc2::MainThreadMarker;
         use objc2_app_kit::NSApplication;
