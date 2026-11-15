@@ -1135,6 +1135,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     processFile,
     inputAreaRef,
     setIsUploading: handleUploadStateChange,
+    attachmentCount: attachments.length,
     setAttachments,
     setValue,
     setVoiceInputContext,
