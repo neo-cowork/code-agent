@@ -118,6 +118,17 @@ describe('DurableRunReadService migrated consumers', () => {
     });
   });
 
+  it('carries the env_blocked park target to the session projection (N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT ⑤)', async () => {
+    const envBlocked = { class: 'perm_automation' as const, target: 'calendar', toolCallId: 'call_cal' };
+    const parked = { ...envelope, runId: 'env-parked', status: 'waiting' as const, terminal: undefined, interruptCause: 'env_blocked' as const, envBlocked };
+    const reader = { getLatestBySession: vi.fn(async () => parked) };
+    const service = new DurableRunReadService(resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }), reader, () => true);
+    const view = await service.readSessionReplay('session', () => ({ status: 'idle' }));
+    expect(projectDurableRunToSessionPayload(view).durableResume).toMatchObject({ mode: 'continue', interruptCause: 'env_blocked', envBlocked });
+    // 其它停靠原因不带授权目标
+    expect(projectDurableRunToSessionPayload({ ...view, interruptCause: 'user_stop' }).durableResume?.envBlocked).toBeUndefined();
+  });
+
   it('hides Continue for a parked run this process cannot take over (e.g. user_stop left unclaimed after restart)', async () => {
     const parked = { ...envelope, runId: 'parked', status: 'waiting' as const, terminal: undefined, interruptCause: 'user_stop' as const };
     const reader = { getLatestBySession: vi.fn(async () => parked) };

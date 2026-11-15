@@ -136,6 +136,7 @@ export const zhSettingsCore = {
       modelUsage: '模型使用',
       automaticScreenMemory: '自动屏幕记忆',
       manualDesktopActivity: '手动桌面活动',
+      meetingCalendarReminder: '会前提醒（日历会议提醒）',
       appshots: '应用截图',
       permissionDataBoundary: '权限与数据边界',
       voiceTranscription: '语音转写',
