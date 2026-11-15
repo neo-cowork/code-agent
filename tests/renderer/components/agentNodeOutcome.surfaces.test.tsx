@@ -171,6 +171,7 @@ it('the real turn indicator stays quiet for a restored trace without a live sour
   const view = render(<StreamingIndicator startTime={1} waitingReason="subagent" subagentCount={1} />);
   expect(view.container.textContent).not.toContain('Agent working');
   expect(view.container.textContent).not.toContain('agents working');
+  expect(view.container.innerHTML).toBe('');
 });
 
 it('the real indicator names an assistant only while a live turn and live tree node agree', async () => {

@@ -149,6 +149,7 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   }, [runningToolStartTime]);
 
   const { mode } = getStreamingIndicatorState(runningToolElapsed);
+  if (waitingReason === 'subagent' && !effectiveWaitingReason) return null;
 
   // 长跑工具（巡航信号）—— 唯一真正值得浮现的状态。中性、平静、信息性：
   // 不用警告色，不用惊悚措辞；秒表是「陈述一切正常」，不是催促。
