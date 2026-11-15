@@ -97,6 +97,18 @@ describe('纪要校验：纪要里不许有会上没说过的话', () => {
     expect(r.minutes.actionItems.map((a) => a.owner)).toEqual(['林晨', null, null]);
   });
 
+  it('原话只有标点（归一后为空）不算出处，整条丢掉', () => {
+    const r = validateMinutes(block({ decisions: [{ text: '编的决策', quote: '。，！' }], actionItems: [], openQuestions: [] }), TRANSCRIPT)!;
+    expect(r.minutes.decisions).toEqual([]);
+    expect(r.dropped).toBe(1);
+  });
+
+  it('上次退出时没出完的纪要（pending/running）新进程收尾成 failed，会议页可重新出', () => {
+    store.setMinutesState('m1', 'running', 'sess-old');
+    store.closeStaleMinutes();
+    expect(store.get('m1')).toMatchObject({ minutesState: 'failed', minutesSessionId: 'sess-old' });
+  });
+
   it('没有纪要块或不是 JSON：返回 null', () => {
     expect(validateMinutes('这场会主要讨论了报价。', TRANSCRIPT)).toBeNull();
     expect(validateMinutes('```meeting_minutes\n{决策: 1}\n```', TRANSCRIPT)).toBeNull();

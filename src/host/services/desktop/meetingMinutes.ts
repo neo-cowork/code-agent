@@ -66,7 +66,7 @@ export function validateMinutes(output: string, lines: MeetingTranscriptLine[]):
   const grounded = (item: Record<string, unknown>): MeetingMinutesItem | null => {
     const text = str(item.text);
     const quote = str(item.quote);
-    if (!text || !quote || !source.includes(norm(quote))) {
+    if (!text || !norm(quote) || !source.includes(norm(quote))) { // 纯标点的 quote 归一后是空串，includes('') 恒真
       dropped += 1;
       return null;
     }

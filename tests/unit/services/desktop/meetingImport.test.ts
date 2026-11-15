@@ -60,6 +60,12 @@ describe('导入外部会议', () => {
     expect(errors.feishu).toContain('飞书还没连接');
   });
 
+  it('腾讯会议返回的不是 JSON：只丢腾讯会议那一家，飞书候选照常列', async () => {
+    const { candidates, errors } = await listMeetingImportCandidates({ store, lark, tmeet: async () => 'Not logged in.' });
+    expect(candidates.map((c) => c.source)).toEqual(['feishu']);
+    expect(errors.tmeet).toContain('invalid JSON');
+  });
+
   it('导入妙记：成为一场会，转写带绝对时刻和说话人；同一条再导入不重复建', async () => {
     const first = await importMeeting({ source: 'feishu', ref: 'https://x.feishu.cn/minutes/tok1', title: '', startedAtMs: null }, { store, lark, tmeet });
     expect(first.created).toBe(true);

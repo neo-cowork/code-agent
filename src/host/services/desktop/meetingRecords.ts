@@ -98,6 +98,8 @@ export interface MeetingRecordStore {
   /** 纪要进度；不碰 updated_at_ms（那是「记这场会」的心跳，意外退出收尾要用） */
   setMinutesState(id: string, state: MeetingMinutesState, minutesSessionId?: string | null): void;
   saveMinutes(id: string, minutes: MeetingMinutes): void;
+  /** 出纪要排队只在内存里：新进程里遗留的 pending/running 都是上次没跑完的，收尾成 failed，会议页可重新出 */
+  closeStaleMinutes(): void;
   /** 导入外部转写成一场会；同一来源同一外部编号导入过就返回原来那场，不重复建 */
   importMeeting(input: ImportedMeetingInput): { id: string; created: boolean };
 }
@@ -189,6 +191,9 @@ export function createMeetingRecordStore(run: MeetingSqlRunner): MeetingRecordSt
     setMinutesState(id, state, minutesSessionId) {
       const session = minutesSessionId === undefined ? '' : `, minutes_session_id = ${minutesSessionId === null ? 'NULL' : q(minutesSessionId)}`;
       exec(`UPDATE meetings SET minutes_state = ${q(state)}${session} WHERE id = ${q(id)};`);
+    },
+    closeStaleMinutes() {
+      exec(`UPDATE meetings SET minutes_state = 'failed' WHERE minutes_state IN ('pending', 'running');`);
     },
     saveMinutes(id, minutes) {
       exec(`UPDATE meetings SET minutes_json = ${q(JSON.stringify(minutes))}, minutes_state = 'done' WHERE id = ${q(id)};`);

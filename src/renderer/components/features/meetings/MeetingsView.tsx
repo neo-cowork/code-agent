@@ -21,6 +21,8 @@ function minutesBadge(m: MeetingSummaryRecord, copy: Copy): string {
   if (m.state !== 'ended') return copy.inProgress;
   if (m.minutesState === 'done') return `${copy.minutes} · ${m.minutes?.actionItems.length ?? 0} ${copy.actionItems}`;
   if (m.minutesState === 'pending' || m.minutesState === 'running') return copy.minutesRunning;
+  if (m.minutesState === 'failed') return copy.minutesFailedShort;
+  if (m.minutesState === 'skipped') return copy.minutesSkippedShort;
   return copy.minutesNone;
 }
 

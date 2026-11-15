@@ -51,8 +51,16 @@ export async function listMeetingImportCandidates(deps: MeetingImportDeps): Prom
   } else {
     errors.feishu = feishu.reason instanceof Error ? feishu.reason.message : String(feishu.reason);
   }
+  let tmeetData: Record<string, unknown> | null = null;
   if (tmeet.status === 'fulfilled') {
-    const data = obj(obj(JSON.parse(tmeet.value)).data);
+    try {
+      tmeetData = obj(obj(JSON.parse(tmeet.value)).data);
+    } catch {
+      errors.tmeet = 'tmeet record list returned invalid JSON';
+    }
+  }
+  if (tmeetData) {
+    const data = tmeetData;
     for (const m of arr(data.record_meetings).map(obj)) {
       for (const f of arr(m.record_files).map(obj)) {
         const startedAtMs = Date.parse(str(f.record_start_time));
@@ -66,7 +74,7 @@ export async function listMeetingImportCandidates(deps: MeetingImportDeps): Prom
         });
       }
     }
-  } else {
+  } else if (tmeet.status === 'rejected') {
     errors.tmeet = tmeet.reason instanceof Error ? tmeet.reason.message : String(tmeet.reason);
   }
   if (errors.feishu || errors.tmeet) logger.warn('[会议导入] 列候选时有一家没取到', errors);
