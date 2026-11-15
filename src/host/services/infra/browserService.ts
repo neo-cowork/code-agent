@@ -353,6 +353,24 @@ export class BrowserService implements Disposable {
     return this.browser !== null || this.context !== null;
   }
 
+  /**
+   * kept 结果窗活性真源：isRunning() 只看 browser/context 引用，进程被杀或静默退出后
+   * 缓存引用仍为真；这里结合连接、未关页面与子进程 OS 句柄（EPERM 视为存活）判活。
+   */
+  isProcessAlive(): boolean {
+    if (!this.browser?.isConnected() || !this.context?.pages().some((page) => !page.isClosed())) return false;
+    if (!this.browserProcess) return true;
+    const pid = this.browserProcess.pid;
+    if (!pid || pid <= 0) return false;
+    if (this.browserProcess.exitCode !== null || this.browserProcess.signalCode !== null) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'EPERM';
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Tab Management
   // --------------------------------------------------------------------------

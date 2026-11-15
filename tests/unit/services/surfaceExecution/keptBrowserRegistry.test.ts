@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BrowserPool } from '../../../../src/host/services/infra/browserPool';
+import { BrowserService } from '../../../../src/host/services/infra/browserService';
 import {
   KeptBrowserRegistry,
   type KeptBrowserPoolFacade,
@@ -248,5 +250,92 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       title: 'Result',
       reason: 'keep_result_page',
     });
+  });
+
+  it('revalidates liveness on snapshot and getAlive when window died silently without close event', () => {
+    const { pool, released } = createFakePool();
+    let alive = true;
+    pool.isServiceAlive = vi.fn(() => alive);
+    const registry = new KeptBrowserRegistry(pool);
+    registry.register(baseInput());
+
+    expect(registry.snapshot('conversation-a').state).toBe('kept');
+    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-1');
+    expect(released).toEqual([]);
+
+    alive = false;
+    expect(registry.snapshot('conversation-a')).toEqual({
+      state: 'closed',
+      url: 'https://example.test/result',
+      title: 'Result',
+      reason: 'keep_result_page',
+    });
+    expect(registry.getAlive('conversation-a')).toBeNull();
+    expect(released).toEqual(['surface-key-1']);
+  });
+});
+
+function configuredService({
+  connected = true,
+  open = true,
+  processHandle = null,
+}: {
+  connected?: boolean;
+  open?: boolean;
+  processHandle?: { pid?: number; exitCode: number | null; signalCode: string | null } | null;
+} = {}): BrowserService {
+  const service = new BrowserService('liveness-test-agent');
+  Reflect.set(service, 'browser', { isConnected: () => connected });
+  Reflect.set(service, 'context', { pages: () => [{ isClosed: () => !open }] });
+  Reflect.set(service, 'browserProcess', processHandle);
+  return service;
+}
+
+describe('BrowserPool.isServiceAlive and BrowserService.isProcessAlive', () => {
+  it('real BrowserPool provides KeptBrowserPoolFacade.isServiceAlive backed by BrowserService.isProcessAlive', () => {
+    let alive = true;
+    const defaultSvc = configuredService();
+    const pool = new BrowserPool(2, defaultSvc, () => {
+      const svc = configuredService();
+      vi.spyOn(svc, 'isProcessAlive').mockImplementation(() => alive);
+      return svc;
+    });
+    const facade: Required<KeptBrowserPoolFacade> = pool;
+    expect(facade.isServiceAlive('missing-key')).toBe(false);
+
+    pool.acquire('kept-agent');
+    const registry = new KeptBrowserRegistry(pool);
+    registry.register(baseInput({ serviceKey: 'kept-agent' }));
+    expect(registry.snapshot('conversation-a').state).toBe('kept');
+
+    alive = false;
+    expect(facade.isServiceAlive('kept-agent')).toBe(false);
+    expect(registry.snapshot('conversation-a').state).toBe('closed');
+  });
+
+  it('checks connected browser, open pages, and OS pid liveness (including EPERM and ESRCH)', () => {
+    expect(configuredService().isProcessAlive()).toBe(true);
+    expect(configuredService({ connected: false }).isProcessAlive()).toBe(false);
+    expect(configuredService({ open: false }).isProcessAlive()).toBe(false);
+
+    const kill = vi.spyOn(process, 'kill');
+    try {
+      expect(configuredService({ processHandle: { exitCode: 1, signalCode: null, pid: 123 } }).isProcessAlive()).toBe(false);
+      expect(configuredService({ processHandle: { exitCode: null, signalCode: null } }).isProcessAlive()).toBe(false);
+      expect(kill).not.toHaveBeenCalled();
+
+      kill.mockImplementationOnce(() => {
+        throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
+      });
+      expect(configuredService({ processHandle: { exitCode: null, signalCode: null, pid: 321 } }).isProcessAlive()).toBe(true);
+
+      kill.mockImplementationOnce(() => {
+        throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      });
+      expect(configuredService({ processHandle: { exitCode: null, signalCode: null, pid: 321 } }).isProcessAlive()).toBe(false);
+      expect(kill).toHaveBeenLastCalledWith(321, 0);
+    } finally {
+      kill.mockRestore();
+    }
   });
 });
