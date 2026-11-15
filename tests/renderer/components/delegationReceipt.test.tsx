@@ -189,7 +189,8 @@ describe('delegation receipt', () => {
     const view = renderCall();
 
     expect(view.getByTestId('delegation-activity').textContent).toContain('读取了 /repo/release.md');
-    expect(view.getByText('代理工作中')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单正在处理');
+    expect(view.getByText('正在处理')).toBeTruthy();
   });
 
   it('keeps a completed receipt with title, step count and clickable output refs', () => {
@@ -225,7 +226,8 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByText('执行失败')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单没有完成');
+    expect(view.getByText('没有完成')).toBeTruthy();
     expect(view.getByTestId('delegation-failure').textContent).toBe('远端服务超时');
   });
 

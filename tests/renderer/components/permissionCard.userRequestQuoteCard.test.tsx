@@ -82,6 +82,21 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
   });
 
   it.each([
+    ['zh', zh, '由定时任务「每日飞书日历周会」启动', '由定时任务启动'],
+    ['en', en, 'Started by scheduled task “每日飞书日历周会”', 'Started by a scheduled task'],
+  ] as const)('%s cron-origin card names the task, no user quote; blank name falls back to generic', (language, _m, named, generic) => {
+    state.language = language;
+    state.request = { ...connectorRequest(), details: { startedByAutomation: true, scheduledTaskName: '每日飞书日历周会' } as PermissionRequest['details'] };
+    const view = render(<PermissionCard />);
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(named);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+    state.request = { ...connectorRequest(), details: { startedByAutomation: true } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
+  });
+
+  it.each([
     ['zh', zh, '每日简报'],
     ['en', en, 'Daily brief'],
   ] as const)('%s scheduled-task connector card shows scheduled-task-origin and hides duplicate connector-purpose', (language, messages, taskName) => {
@@ -91,6 +106,7 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
       details: {
         connectorAccess: { connectorId: 'lark', connectorName: language === 'en' ? 'Feishu' : '飞书', access: 'write' },
         purpose: taskName,
+        scheduledTaskName: taskName,
         startedByAutomation: true,
       } as PermissionRequest['details'],
     };
@@ -135,5 +151,23 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
     expect(screen.getByTestId('user-request-quote').textContent)
       .toBe(messages.decisionCard.permission.userRequestQuote.replace('{text}', '把简报发到项目群'));
     expect(screen.queryByTestId('scheduled-task-origin')).toBeNull();
+  });
+
+  it.each([['zh', zh], ['en', en]] as const)('%s cron connector card whose purpose differs from the task name keeps both rows', (language, messages) => {
+    state.language = language;
+    state.request = {
+      ...connectorRequest(),
+      details: {
+        connectorAccess: { connectorId: 'lark', connectorName: 'Feishu', access: 'write' },
+        purpose: '同步下周会议',
+        scheduledTaskName: '每日简报',
+        startedByAutomation: true,
+      } as PermissionRequest['details'],
+    };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('scheduled-task-origin').textContent)
+      .toBe(messages.decisionCard.permission.startedByScheduledTask.replace('{name}', '每日简报'));
+    expect(screen.getByTestId('connector-purpose').textContent)
+      .toBe(messages.decisionCard.permission.connectorPurpose.replace('{purpose}', '同步下周会议'));
   });
 });
