@@ -591,6 +591,78 @@ describe('delegate_session outcome telemetry (ADR-072 E6)', () => {
 });
 
 // ============================================================================
+// create_new 会话名（确定性短主题）：createSession 收到的 title 与回执里的
+// target（targetName）来自同一次 deriveDelegatedSessionTitle 计算，侧栏与回执
+// 同名；两个值都 ≤20 code points，截断以单个 `…` 收尾（绝不 `...`，否则
+// isProvisionalAutoTitle 会把它当自动临时档让智能标题回头改写）。
+// ============================================================================
+describe('delegate_session create_new title (short topic)', () => {
+  const LONG_TASK = 'Open a new chat and have it turn the meeting notes in notes.txt into three key points and a short summary I can paste into an email';
+
+  function createNewFixture() {
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const created: Array<{ id: string; title: string }> = [];
+    const createSession = vi.fn(async (input: { id: string; title: string; commit?: (write: () => void) => void }) => {
+      created.push({ id: input.id, title: input.title });
+      input.commit?.(() => {});
+      return { id: input.id };
+    });
+    setRuntime({
+      getDb: () => db,
+      getSessionRow: () => null,
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      notifyEnqueued: () => {},
+      randomId: (prefix: string) => `${prefix}new1`,
+      now: () => 100,
+      getSessionManager: () => ({ createSession }),
+    });
+    return { db, createSession, created };
+  }
+
+  it('② 长任务文本：createSession 的 title ≤20 code points 且与回执 target 同名', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, createSession, created } = createNewFixture();
+    try {
+      const result = await executeDelegateSession({ action: 'create_new', content: LONG_TASK }, ctx, async () => ({ allow: true }));
+      expect(result.ok).toBe(true);
+      expect(createSession).toHaveBeenCalledTimes(1);
+      expect(created).toHaveLength(1);
+      const title = created[0].title;
+      expect([...title].length, `sidebar title must be ≤20 code points, got ${[...title].length}: ${title}`).toBeLessThanOrEqual(20);
+      expect(title.endsWith('…'), `truncated title must end with U+2026, got: ${title}`).toBe(true);
+      expect(title.endsWith('...')).toBe(false);
+      const receipt = JSON.parse((result as { output: string }).output);
+      expect(receipt.target, 'receipt targetName must equal the createSession title').toBe(title);
+      expect(result.meta).toMatchObject({ target: title, targetSessionId: 'session_new1' });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('② 中文长任务文本：标题取逗号前短句，侧栏与回执同名', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, created } = createNewFixture();
+    try {
+      const result = await executeDelegateSession({ action: 'create_new', content: '请把本周会议纪要整理成三个要点，再写一段简短的总结，方便我贴进邮件里发出去。' }, ctx, async () => ({ allow: true }));
+      expect(result.ok).toBe(true);
+      const title = created[0].title;
+      expect(title).toBe('请把本周会议纪要整理成三个要点');
+      expect([...title].length).toBeLessThanOrEqual(20);
+      const receipt = JSON.parse((result as { output: string }).output);
+      expect(receipt.target).toBe(title);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+
+// ============================================================================
 // FB-772 发起轮身份：submission_key 按 origin_turn_id 派生
 // （session\0turn\0action\0target）。旧代码在 ctx.turnId 缺失时落 'unknown-turn'
 // 跨轮共享常量，同 origin session 同目标第二个不同正文的委托被 G4 误拒。

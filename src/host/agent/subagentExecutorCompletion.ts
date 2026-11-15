@@ -29,6 +29,8 @@ import {
   flushSubagentCancellation,
   getSubagentIdleTimeout,
 } from './subagentExecutorCancellation';
+import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
+import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import {
   agentFailureCodeFromCancellationReason,
   inferAgentFailureCode,
@@ -112,6 +114,9 @@ export interface SubagentCompletionDeps {
 
 export interface SubagentCompletionState {
   iterations: number;
+  /** 步数上限与对话记录：步数用尽且无文字时据此拼收尾话术 */
+  maxIterations?: number;
+  messages?: ReadonlyArray<{ role: string; content?: unknown; toolCalls?: ReadonlyArray<{ arguments?: Record<string, unknown> }> }>;
   latestContextSnapshot: SubagentContextSnapshot;
 }
 
@@ -204,6 +209,9 @@ export function finalizeSubagentSuccess(
   if (new AntiPatternDetector().detectFailedToolCallPattern(finalOutput, 'explicit-calls')) {
     return handleSubagentFailure(deps, { ...state, error: new SubagentTextToolCallError() });
   }
+  const stepCapConclusion = !finalOutput && state.maxIterations !== undefined && iterations >= state.maxIterations
+    ? buildStepCapConclusion({ iterations, maxIterations: state.maxIterations, messages: state.messages ?? [] })
+    : undefined;
 
   // Get final cost
   cleanupTimer();
@@ -213,7 +221,7 @@ export function finalizeSubagentSuccess(
   // Record final output in transcript and close AgentTask lifecycle
   agentTask.appendTranscript({
     role: 'assistant',
-    content: finalOutput || 'Subagent completed without output',
+    content: finalOutput || stepCapConclusion || 'Subagent completed without output',
     timestamp: Date.now(),
   });
   agentTask.stop();
@@ -252,6 +260,12 @@ export function finalizeSubagentSuccess(
     recordRoleParticipation(sessionId, config.roleId);
   }
 
+  // leftoverReport 来自上面唯一一次 reportSubagentLeftoverShells（有副作用，不重扫），随 stopHint 带给后台注册表。
+  const stopHint: SubagentResult['stopHint'] | undefined = finalOutput ? undefined
+    : stepCapConclusion
+      ? { kind: 'step_cap', conclusion: stepCapConclusion, leftoverReport }
+      : { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail, leftoverReport };
+
   terminal.status = 'completed';
   return {
     success: true,
@@ -269,6 +283,8 @@ export function finalizeSubagentSuccess(
     // N-SUBAGENT-ZEROTOOLS：部分声明的工具没装配上时不失败，但清单必须带回
     // 父模型（由调用方透传），让父模型自行裁量这结果可信到什么程度。
     ...(surface.missingToolNames.length > 0 ? { missingTools: [...surface.missingToolNames] } : {}),
+    // 仅提示、不改判：前台 Task / 工作流子代理照旧按成功返回，只有后台注册表据此改写成白话停止说明。
+    ...(stopHint ? { stopHint } : {}),
   };
 }
 
