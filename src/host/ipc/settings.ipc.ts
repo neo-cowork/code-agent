@@ -300,6 +300,8 @@ async function handleSet(
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
   const updates = extractSettingsUpdate(payload);
+  // 会前提醒只能由宿主在日历授权确认后打开（envAssist.enableSettingGrant，ADR-090）；这里只许关
+  if (updates?.meeting?.calendarReminder === true) delete updates.meeting.calendarReminder;
   await configService.updateSettings((updates ?? {}) as Partial<AppSettings>);
   const liveUpdates = updates.voice?.live;
   if (liveUpdates && Object.prototype.hasOwnProperty.call(liveUpdates, 'speechRate')) {

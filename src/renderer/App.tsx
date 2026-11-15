@@ -5,6 +5,7 @@
 
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
+import { listRoles } from './services/rolesClient';
 import { useWorkbenchFocusStore } from './stores/workbenchFocusStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
@@ -149,6 +150,9 @@ function useWindowWidth(): number {
 }
 
 export const App: React.FC = () => {
+  useEffect(() => {
+    void listRoles().catch((error) => logger.warn('Failed to load expert labels', { error: String(error) }));
+  }, []);
   const { t } = useI18n();
   const [shellLanguageReady, setShellLanguageReady] = useState(false);
   useShellLanguage(shellLanguageReady);
