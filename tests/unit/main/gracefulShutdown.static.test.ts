@@ -229,7 +229,7 @@ describe('「停止并退出」意图落地后的停止通道（FU1）', () => {
     const dialogBody = main.slice(main.indexOf('fn show_quit_confirm_dialog'));
     const call = /(\w+for_stop_wait)\(&app\);/.exec(dialogBody);
     expect(call, 'stop-wait 藏窗 helper 调用点缺失').not.toBeNull();
-    const fnBlock = new RegExp(`fn ${call![1]}\\(app: &AppHandle\\)[\\s\\S]*?\\n\\}`).exec(main);
+    const fnBlock = new RegExp(`fn ${call![1]}<R: tauri::Runtime>\\(app: &AppHandle<R>\\)[\\s\\S]*?\\n\\}`).exec(main);
     expect(fnBlock, `fn ${call![1]} 函数体锚点失效`).not.toBeNull();
     // 必须 iterate app.webview_windows() 逐个 hide
     expect(fnBlock![0]).toMatch(/app\.webview_windows\(\)/);
