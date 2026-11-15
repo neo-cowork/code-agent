@@ -188,7 +188,7 @@ export async function buildPackedSeedMemory(options: {
 
     // 用量淘汰（N-MEM-CITEBACK-RANK-EVICT + N-MEM-EVICT-NEVER-READ）：用过但 >30 天没再用、
     // 或从没用过且过了宽限期的记忆不再自动注入。与调用方传入的 excludeEntryIds 取并集；
-    // 只作用于 packed seed 注入这一条路。
+    // fallback buildSeedMemoryBlock 用同一份 memoryInjectionPauses 过滤（N-MEM-EVICT-NEVER-READ-FU1）。
     const pausedEntryIds = memoryInjectionPauses(memoryDb).keys();
 
     const packed = await packMemoryEntries({
