@@ -102,6 +102,18 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
     expect(trigger().textContent).not.toMatch(/gpt-5\.5/i);
   });
 
+  it('渲染层默认被别的路径改了（首启引导/中转下发）：立刻重拉 host，不被旧缓存盖住', async () => {
+    const view = render(<Harness />);
+    await waitFor(() => expect(trigger().textContent).toMatch(/longcat/i));
+
+    mocks.hostDefault = { provider: 'custom-tokenrhythm', model: 'mimo-v2.6-flash' };
+    appState.modelConfig = { provider: 'custom-tokenrhythm', model: 'mimo-v2.6-flash' };
+    view.rerender(<Harness />);
+
+    await waitFor(() => expect(trigger().textContent).toMatch(/mimo v?-?2\.6/i));
+    appState.modelConfig = { provider: 'custom-team-relay', model: 'gpt-5.5' };
+  });
+
   it('host 默认后来又变了：下一轮决策到达后跟着变', async () => {
     render(<Harness />);
     await waitFor(() => expect(trigger().textContent).toMatch(/longcat/i));

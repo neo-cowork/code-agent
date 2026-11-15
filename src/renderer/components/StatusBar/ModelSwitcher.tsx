@@ -460,6 +460,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   const lastDecision = useResyncModelFromHost(sessionId, () => { void refreshOverride(true); });
 
+  // 渲染层默认被别的路径改了（首启引导、团队中转下发、设置重试）：host 那份也跟着重拉，别让旧缓存盖住。
+  useEffect(() => {
+    void refreshOverride(true);
+  }, [currentModel, defaultProvider, refreshOverride]);
+
   const handleSelect = useCallback(
     async (option: RuntimeModelOption) => {
       if (!sessionId) return;
@@ -658,7 +663,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
 
-  const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, lastDecision);
+  // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
+  const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
   const switchedLabel = shown.switchedFrom
     ? `${getRuntimeModelLabel(shown.model, shown.provider, modelSettings)}（已换）`
     : null;
