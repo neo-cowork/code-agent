@@ -16,8 +16,10 @@
 // ============================================================================
 import type { CronJobDefinition } from '../../../shared/contract/cron';
 
+import { BUILTIN_MAINTENANCE_JOB_TAGS } from '../../../shared/constants/memory';
+
 export const DREAM_INTERVAL_DAYS = 7;
-export const DREAM_CRON_JOB_TAG = 'dream-memory-consolidation';
+export const DREAM_CRON_JOB_TAG = BUILTIN_MAINTENANCE_JOB_TAGS.DREAM_MEMORY;
 export const DREAM_AUTO_PROMPT = '/dream --auto';
 
 type DreamCronDefinition = Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>;

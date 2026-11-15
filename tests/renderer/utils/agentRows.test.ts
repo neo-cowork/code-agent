@@ -39,8 +39,11 @@ function task(overrides: Partial<Task>): Task {
 /** 九态→四态只在 agentRows 内部一处；对外只经 buildAgentRows 可见，所以全表走公共入口。 */
 function rowStatusOf(status: string) {
   return buildAgentRows({
-    members: [], tasks: [],
-    nodes: [node({ id: `n-${status}`, status: status as AgentTreeNode['status'] })],
+    members: [],
+    tasks: ['paused', 'waiting_input', 'stalled', 'expired', 'orphaned'].includes(status)
+      ? [task({ status: status as Task['status'] })] : [],
+    nodes: ['paused', 'waiting_input', 'stalled', 'expired', 'orphaned'].includes(status)
+      ? [] : [node({ id: `n-${status}`, status: status as AgentTreeNode['status'] })],
   })[0]?.status;
 }
 
@@ -65,8 +68,8 @@ describe('agentRowStatus 九态→四态全表（经 buildAgentRows）', () => {
     expect(rowStatusOf(input)).toBe(expected);
   });
 
-  it('表外状态宁可说在干（working），别说死', () => {
-    expect(rowStatusOf('some-future-status')).toBe('working');
+  it('unrecognized tree states cannot claim a live assistant', () => {
+    expect(rowStatusOf('some-future-status')).toBe('failed');
   });
 });
 
