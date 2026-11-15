@@ -19,6 +19,7 @@ import {
   prettyJson,
 } from './types';
 import { formatDateTime } from '../../../utils/formatDateTime';
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';
@@ -62,6 +63,8 @@ interface CronExecutionDetailProps {
   /** Complete catalog has loaded; otherwise an absent name is not evidence of deletion. */
   jobNamesLoaded?: boolean;
   runsOn?: CronJobDefinition['runsOn'];
+  /** 该任务设了单次美元预算时，包月模型下补一句「上限不会触发」。 */
+  hasRunBudget?: boolean;
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
   awaitingRun?: Pick<AwaitingApprovalRun, 'executionId' | 'tool' | 'commandPreview'> | null;
   onReviewAwaiting?: () => void;
@@ -72,6 +75,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   jobName,
   jobNamesLoaded = true,
   runsOn = 'local',
+  hasRunBudget = false,
   awaitingRun = null,
   onReviewAwaiting,
 }) => {
@@ -262,6 +266,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
+      {hasRunBudget && <div className="mt-3"><FlatFeeBudgetNote variant="center" /></div>}
 
       {stopReason && stopReason.sessionId === reasonSessionId && (
         <section className="mt-4" data-testid="cron-exec-stop-reason">
