@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  detectStaticStringLeaks,
   evaluateGate,
   loadAndValidateAllowlist,
   loadAndValidateDynamicAllowlist,
@@ -27,6 +28,13 @@ afterEach(() => {
 });
 
 describe('internal-text-leak-gate', () => {
+  it('shares catalog and explicit render-language rules with the dynamic detector', () => {
+    expect(detectStaticStringLeaks('Used weekly-report-synthesis')).toContain('catalog_slug');
+    expect(detectStaticStringLeaks('Used my-custom-skill')).toEqual([]);
+    expect(detectStaticStringLeaks('Report 已完成', 'en')).toContain('cjk_in_en_ui');
+    expect(detectStaticStringLeaks('Report ready', 'en')).toEqual([]);
+    expect(detectStaticStringLeaks('已完成', 'zh')).toEqual([]);
+  });
   it('fails loud when the allowlist contains an entry with an empty or missing reason', () => {
     const dir = createTempDir();
     const allowlistPath = path.join(dir, 'allowlist.json');

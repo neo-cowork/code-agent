@@ -36,8 +36,11 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
     const result = await execute(path, 'list_events');
     expect(result.success).toBe(false);
     expect(result.metadata?.code).toBe('NOT_INITIALIZED');
-    expect(result.error).toContain('Settings > Connectors');
-    expect(result.error).toContain('这次还没读到所需数据，请在设置 > 连接器重新连接后再试。');
+    expect(result.error).toContain('Capability Hub > Connectors');
+    expect(result.error).not.toContain('设置 > 连接器');
+    expect(result.error).not.toContain('Settings > Connectors');
+    expect(result.error).toContain('日历还没有连接，所以这次看不到你的日程，请在能力中心 > 连接器打开后再试。');
+    expect(result.error).toContain('never state that there are no events');
     expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', expect.objectContaining({
       connectorId: 'calendar', reason: 'not-enabled-or-registered',
     }));
@@ -47,10 +50,13 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
   it.each(['resolver', 'adapter'])('%s adds the exit to a disconnected status without inventing authorization', async (path) => {
     const result = await execute(path, 'get_status');
     expect(result.success).toBe(true);
-    expect(result.output).toContain('Settings > Connectors');
+    expect(result.output).toContain('Capability Hub > Connectors');
+    expect(result.output).not.toContain('设置 > 连接器');
+    expect(result.output).not.toContain('Settings > Connectors');
     expect(result.output).toContain('complete user-facing answer is exactly this single everyday sentence');
     expect(result.output).not.toMatch(/not configured|Capabilities: none/i);
-    expect(result.output).toContain('这次还没读到所需数据，请在设置 > 连接器重新连接后再试。');
+    expect(result.output).toContain('日历还没有连接，所以这次看不到你的日程，请在能力中心 > 连接器打开后再试。');
+    expect(result.output).toContain('never state that there are no events');
     expect(result.metadata?.status).toMatchObject({ connected: false, unavailable: true });
     expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', expect.objectContaining({
       connectorId: 'calendar', reason: 'status-not-connected',
