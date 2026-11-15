@@ -2,16 +2,16 @@
 import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/BrowserAgentWindow';
-import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
-import { surfaceExecutionScopeKeyV1 } from '../../../src/renderer/utils/surfaceExecutionProjection';
-import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../src/shared/contract/surfaceExecution';
-import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract/surfaceExecution';
-import type { useWorkbenchBrowserSession } from '../../../src/renderer/hooks/useWorkbenchBrowserSession';
-import type { LiveAgentPointerState } from '../../../src/renderer/hooks/useLiveAgentPointer';
-import type { SurfaceLiveFrameStreamState } from '../../../src/renderer/hooks/useSurfaceLiveFrames';
+import { BrowserAgentWindow } from '../../../../src/renderer/components/workbench/BrowserAgentWindow';
+import { useAppStore } from '../../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../../src/renderer/stores/sessionStore';
+import { useSurfaceExecutionStore } from '../../../../src/renderer/stores/surfaceExecutionStore';
+import { surfaceExecutionScopeKeyV1 } from '../../../../src/renderer/utils/surfaceExecutionProjection';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
+import type { SurfaceConversationSnapshotV1 } from '../../../../src/shared/contract/surfaceExecution';
+import type { useWorkbenchBrowserSession } from '../../../../src/renderer/hooks/useWorkbenchBrowserSession';
+import type { LiveAgentPointerState } from '../../../../src/renderer/hooks/useLiveAgentPointer';
+import type { SurfaceLiveFrameStreamState } from '../../../../src/renderer/hooks/useSurfaceLiveFrames';
 
 type BrowserSessionState = ReturnType<typeof useWorkbenchBrowserSession>;
 
@@ -19,13 +19,13 @@ let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;
 let liveFrameState: SurfaceLiveFrameStreamState;
 
-vi.mock('../../../src/renderer/hooks/useWorkbenchBrowserSession', () => ({
+vi.mock('../../../../src/renderer/hooks/useWorkbenchBrowserSession', () => ({
   useWorkbenchBrowserSession: () => browserSessionState,
 }));
-vi.mock('../../../src/renderer/hooks/useLiveAgentPointer', () => ({
+vi.mock('../../../../src/renderer/hooks/useLiveAgentPointer', () => ({
   useLiveAgentPointer: () => pointerState,
 }));
-vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
+vi.mock('../../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
   useSurfaceLiveFrames: () => liveFrameState,
 }));
 
@@ -33,7 +33,7 @@ const mocks = vi.hoisted(() => ({
   getPersistedSurfaceTerminalFrame: vi.fn(),
 }));
 
-vi.mock('../../../src/renderer/services/surfaceExecutionClient', () => ({
+vi.mock('../../../../src/renderer/services/surfaceExecutionClient', () => ({
   getPersistedSurfaceTerminalFrame: mocks.getPersistedSurfaceTerminalFrame,
   deletePersistedSurfaceTerminalFrames: vi.fn(),
   // The live window now loads the takeover control client at import time.
@@ -180,6 +180,45 @@ describe('BrowserAgentWindow 终态留影：重启后从盘上读回', () => {
     expect(mocks.getPersistedSurfaceTerminalFrame).toHaveBeenCalledWith({
       version: 1, conversationId: 'session-a', surfaceSessionId: 'surface-1',
     });
+  });
+
+  it.each([
+    ['zh', '已结束', '执行中'],
+    ['en', 'Ended', 'Running'],
+  ] as const)('ended history uses coherent badge and address text (%s)', async (language, ended, running) => {
+    useAppStore.setState({ language });
+    const snapshot = seedTerminalSessionWithoutFrame('running', true);
+    showBlankManagedPage(true);
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    const badge = screen.getByTestId('browser-agent-window-ended-badge');
+    const address = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe(ended);
+    expect.soft(badge.textContent).toBe(ended);
+    expect.soft(badge.textContent).not.toContain(running);
+    expect.soft(address.value).toBe('example.com');
+    expect.soft(address.value).not.toContain('about:blank');
+    // The placeholder's partial snapshot must not bring its state/URL back into the card.
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+        ...snapshot, sessions: snapshot.sessions.slice(1), updatedAt: 63_000,
+      });
+    });
+    expect.soft(screen.getByTestId('browser-agent-window-ended-badge').textContent).toBe(ended);
+    expect.soft(address.value).toBe('example.com');
+  });
+
+  it('does not display the placeholder URL when the ended target has no origin', async () => {
+    const snapshot = seedTerminalSessionWithoutFrame();
+    delete snapshot.sessions[0].session.activeTarget;
+    useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', snapshot);
+    browserSessionState.managedSession = {
+      running: true, tabCount: 1, activeTab: { id: 'blank', url: 'about:blank', title: '' },
+    };
+    mocks.getPersistedSurfaceTerminalFrame.mockResolvedValue({ version: 1, frame: null });
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    expect((screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement).value).toBe('');
   });
 
   it('keeps the read-only card when the placeholder response replaces the historical snapshot', async () => {
