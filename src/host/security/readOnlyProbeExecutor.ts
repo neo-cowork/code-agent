@@ -236,10 +236,20 @@ function lookupOnPath(name: string): string | null {
 class Runner {
   stdout = '';
   stderr = '';
-  constructor(private readonly auth: ProbeAuthority) {}
+  private readonly auth: ProbeAuthority;
+  private currentDirectory: string;
+
+  constructor(auth: ProbeAuthority) {
+    this.currentDirectory = auth.workingDirectory;
+    // Path mentions and attachment directories authorize individual paths, not
+    // new subtree roots. Keep authority fixed while cd changes path resolution.
+    this.auth = { ...auth, readRoots: (auth.readRoots ?? [auth.workingDirectory, auth.workspaceRoot])
+      .filter((root): root is string => Boolean(root))
+      .map((root) => path.resolve(root)) };
+  }
 
   private need(raw: string): string {
-    const abs = authorizeProbePath(raw, this.auth);
+    const abs = authorizeProbePath(path.resolve(this.currentDirectory, raw), this.auth);
     if (abs === null) throw new ProbeAbort('path not authorized');
     return abs;
   }
@@ -260,7 +270,7 @@ class Runner {
       case 'cd': {
         const directory = this.need(cmd.path);
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
-        this.auth.workingDirectory = directory;
+        this.currentDirectory = directory;
         return 0;
       }
       case 'file-read': {
@@ -269,7 +279,7 @@ class Runner {
           const stat = fs.statSync(target);
           if (!stat.isFile() || stat.size > MAX_OUTPUT_CHARS) throw new ProbeAbort('read file unavailable or too large');
         }
-        const result = await runFixed(FIXED_BINARIES[cmd.program], [...cmd.flags, '--', ...cmd.paths], this.auth.workingDirectory);
+        const result = await runFixed(FIXED_BINARIES[cmd.program], [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
         this.emit(redirect, result.stdout, result.stderr);
         return result.exitCode;
       }
@@ -330,7 +340,7 @@ class Runner {
       case 'ls': {
         const targets = cmd.paths.length > 0 ? cmd.paths : ['.'];
         for (const p of targets) this.need(p);
-        const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
         if (cmd.headLines !== undefined) {
           const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
           const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
@@ -344,17 +354,17 @@ class Runner {
       case 'xattr': {
         if (process.platform !== 'darwin') throw new ProbeAbort('xattr unavailable');
         for (const p of cmd.paths) this.need(p);
-        const res = await runFixed(FIXED_BINARIES.xattr, ['-l', ...cmd.paths], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.xattr, ['-l', ...cmd.paths], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
       case 'id-un': {
-        const res = await runFixed(FIXED_BINARIES.id, ['-un'], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.id, ['-un'], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
       case 'whoami': {
-        const res = await runFixed(FIXED_BINARIES.whoami, [], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.whoami, [], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }

@@ -516,6 +516,61 @@ print(os.listdir('${fx}/link'))
   describe('授权来源：用户点名 / 附件', () => {
     const outsideCmd = () => `command -v ls; test -e "${elsewhere}/doc.pdf" && echo EXISTS || echo MISSING`;
 
+    for (const authority of ['attachment', 'named-directory']) {
+      for (const command of ['cat secret.txt', 'head -1 secret.txt', 'wc -c secret.txt', 'ls secret.txt']) {
+        it(`main-session cd preserves original read roots: ${authority}, ${command}`, async () => {
+          sessionMessages.push(authority === 'attachment'
+            ? { role: 'user', content: 'Review this document', attachments: [{ path: `${elsewhere}/doc.pdf` }] }
+            : { role: 'user', content: `Inspect ${elsewhere}` });
+          const result = await run(`cd "${elsewhere}" && ${command}`);
+          expect(permissionAsks).toHaveLength(1);
+          expect(result.success).toBe(false);
+          expect(probeRows()).toHaveLength(0);
+        });
+      }
+    }
+
+    it('main-session cd cannot regain authority through a skipped conditional cd', async () => {
+      sessionMessages.push({ role: 'user', content: `Inspect ${elsewhere}` });
+      const result = await run(`cd "${elsewhere}" || cd "${fx}" && cat secret.txt`);
+      expect(permissionAsks).toHaveLength(1);
+      expect(result.success).toBe(false);
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('main-session cd still permits the explicitly attached file', async () => {
+      sessionMessages.push({ role: 'user', content: 'Review this document', attachments: [{ path: `${elsewhere}/doc.pdf` }] });
+      const command = `cd "${elsewhere}" && cat doc.pdf`;
+      const result = await run(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('main-session cd still permits listing the attachment directory itself', async () => {
+      sessionMessages.push({ role: 'user', content: 'Review this document', attachments: [{ path: `${elsewhere}/doc.pdf` }] });
+      const command = `cd "${elsewhere}" && ls .`;
+      const result = await run(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('main-session cd still permits reads under the original workspace root', async () => {
+      const command = `cd "${fx}/contracts-en" && cat a.txt`;
+      const result = await run(command);
+      expect(result.success).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('an outside-cd confirmation cannot downgrade a later hard deny', async () => {
+      const result = await run(`cd "${elsewhere}" && chmod -R 777 doc.pdf`);
+      expect(result.success).toBe(false);
+      expect(permissionAsks).toEqual([]);
+      expect((await fs.stat(path.join(elsewhere, 'doc.pdf'))).mode & 0o777).not.toBe(0o777);
+    });
+
     it('用户消息逐字写了该路径 → 免卡', async () => {
       sessionMessages.push({ role: 'user', content: `请看看 ${elsewhere}/doc.pdf 在不在` });
       const result = await run(outsideCmd());

@@ -27,6 +27,35 @@ import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutom
 import { isBashToolName } from './toolNames';
 import type { BrowserService } from '../services/infra/browserService';
 import { createLogger } from '../services/infra/logger';
+import * as os from 'os';
+import * as path from 'path';
+import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
+import { authorizeProbePath } from '../security/readOnlyProbeExecutor';
+
+/** Successful authorized probes return before classification. A fallback must not
+ * turn a cd to a single authorized path into authority to read its whole subtree.
+ * Keep this at the effective tool boundary: the syntax classifier alone has no
+ * session/attachment authority and is also used outside actual tool execution.
+ */
+function probeChangesReadRoot(command: unknown, workingDirectory: string, workspaceRoot?: string): boolean {
+  if (typeof command !== 'string') return false;
+  const plan = compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform });
+  if (!plan) return false;
+  const auth = { workingDirectory, workspaceRoot, homeDir: os.homedir(), userTexts: [], attachmentPaths: [] };
+  let directory = workingDirectory;
+  let outside = false;
+  for (const { cmd } of plan.steps) {
+    if (cmd.kind === 'cd') {
+      directory = path.resolve(directory, cmd.path);
+      // Conditional cd steps may be skipped. Once a branch can leave the roots,
+      // a later syntactic cd cannot prove that every read has returned inside.
+      outside ||= authorizeProbePath(directory, auth) === null;
+    } else if (outside && ['file-read', 'file-loop', 'ls', 'xattr', 'test', 'python'].includes(cmd.kind)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -666,6 +695,17 @@ export async function resolveToolPermissionClassification(input: {
         reason,
         input.permStartTime,
       ),
+    };
+  }
+  // A grammar-only approval cannot overrule the probe's read-authority boundary.
+  // Run after permission-mode conveniences; hard denies retain their precedence.
+  if (classification.decision === 'approve' && isBashToolName(input.policyToolName)
+    && probeChangesReadRoot(input.params.command, input.workingDirectory, input.workspaceRoot)) {
+    const reason = 'Changing directory outside the read workspace requires confirmation';
+    classification = {
+      decision: 'ask', reason, confidence: 1, cached: false, trustBoundary: true,
+      hostReason: createHostReason(HostReasonCode.PermissionClassifierConfirmationRequired, reason, { toolName: input.executionToolName }),
+      traceStep: createTraceStep('permission_classifier', 'probe_read_root_change', 'ask', reason, input.permStartTime),
     };
   }
   return enforceWriteFenceObligation({ ...classification, external });
