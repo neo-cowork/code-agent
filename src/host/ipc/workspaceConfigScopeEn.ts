@@ -103,7 +103,7 @@ const PATTERNS: Array<[RegExp, (match: RegExpExecArray) => string]> = [
 ];
 
 /** 单条字符串：已知中文句子换成英文，其余原样返回。 */
-export function translateConfigScopeText(text: string): string {
+function translateConfigScopeText(text: string): string {
   const exact = EXACT[text];
   if (exact !== undefined) return exact;
   for (const [pattern, render] of PATTERNS) {

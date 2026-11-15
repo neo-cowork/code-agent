@@ -8,7 +8,7 @@ const ui = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/host/session/sessionTitleHostPrompt', () => ({ readUiLanguage: () => ui.language }));
 
 import { buildConfigScopeSummary, handleGetConfigScope } from '../../../src/host/ipc/workspaceConfigScope';
-import { toEnglishConfigScope, translateConfigScopeText } from '../../../src/host/ipc/workspaceConfigScopeEn';
+import { toEnglishConfigScope } from '../../../src/host/ipc/workspaceConfigScopeEn';
 
 const HAN = /[㐀-䶿一-鿿豈-﫿]/u;
 const SOURCE = path.resolve('src/host/ipc/workspaceConfigScope.ts');
@@ -43,7 +43,7 @@ describe('配置范围摘要的英文文案（FB-1290）', () => {
   it('源码里的每一条中文句子都有英文对应', () => {
     const sentences = chineseSentencesInSource();
     expect(sentences.length).toBeGreaterThan(70);
-    const untranslated = sentences.filter((sentence) => HAN.test(translateConfigScopeText(sentence)));
+    const untranslated = sentences.filter((sentence) => HAN.test(toEnglishConfigScope(sentence)));
     expect(untranslated).toEqual([]);
   });
 
@@ -73,9 +73,9 @@ describe('配置范围摘要的英文文案（FB-1290）', () => {
   });
 
   it('不认识的字符串原样返回；数量句按数字出', () => {
-    expect(translateConfigScopeText('/Users/someone/项目/config.json')).toBe('/Users/someone/项目/config.json');
-    expect(translateConfigScopeText('1 项')).toBe('1 item');
-    expect(translateConfigScopeText('8 项')).toBe('8 items');
-    expect(translateConfigScopeText('发现 2 处疑似凭证或敏感字段。')).toBe('Found 2 possible credential(s) or sensitive field(s).');
+    expect(toEnglishConfigScope('/Users/someone/项目/config.json')).toBe('/Users/someone/项目/config.json');
+    expect(toEnglishConfigScope('1 项')).toBe('1 item');
+    expect(toEnglishConfigScope('8 项')).toBe('8 items');
+    expect(toEnglishConfigScope('发现 2 处疑似凭证或敏感字段。')).toBe('Found 2 possible credential(s) or sensitive field(s).');
   });
 });
