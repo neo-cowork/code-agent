@@ -11,7 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Message } from '../../src/shared/contract';
 import type { ProjectableMessage } from '../../src/host/context/projectionEngine';
 import { estimateConversationTokens, estimateTokens } from '../../src/host/context/tokenEstimator';
-import { MODEL_MAX_TOKENS } from '../../src/shared/constants';
+import { COMPACTION_SUMMARY, MODEL_MAX_TOKENS } from '../../src/shared/constants';
 import { JEV_MODEL, estimateJevCallUsd, type JevSystemOneCall } from '../../src/shared/constants/jevQuestions';
 import { resolveModelPrice } from '../../src/shared/pricing/resolveModelPrice';
 
@@ -21,9 +21,8 @@ const MIN_RESULTS = 20;
 const MIN_TOKENS = 30_000;
 const BUDGET_USD = 3;
 const RECENT = 10;
-const SUMMARY_AS_PROD_MAX_TOKENS = 1000;
 const SUMMARY_FAIR_MAX_TOKENS = MODEL_MAX_TOKENS.DEFAULT;
-const OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1/compaction.json';
+const OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1-fu1-fu1/compaction.json';
 const PRIVATE_ROOT = path.join(os.homedir(), 'work/out/N-JEV-COMPACTION-EVAL');
 const REASONS = ['admitted', 'truncated', 'overBudget', 'missing_*', 'empty', 'not_shorter'] as const;
 
@@ -55,11 +54,22 @@ type SummaryArm = Arm & {
   summaryTokens: number;
   callRecords: CallRecord[];
   validation: ValidationCounts;
+  missingIndices: { paths: number[]; errors: number[]; openWork: number[] };
+  requiredPaths: { total: number; missing: number };
+  errorLines: { total: number; missing: number };
+};
+type ManifestCounts = {
+  files: number;
+  errors: number;
+  openWork: number;
+  commands: number;
+  tokens: number;
 };
 type Row = {
   id: string;
   beforeTokens: number;
   planOriginalTokens: number;
+  manifest: ManifestCounts;
   needles: number;
   S: SummaryArm;
   SFair: SummaryArm;
@@ -88,7 +98,7 @@ function classifySummaryAdmission(
   if (validation.emptyOrWhitespace) return 'empty';
   if (validation.truncated) return 'truncated';
   if (!ignoreOverBudget && validation.overBudget) return 'overBudget';
-  if (validation.missingPaths > 0 || validation.missingErrors > 0 || validation.missingOpenWork > 0) return 'missing_*';
+  if (validation.missingPaths > 0 || validation.missingErrors > 0) return 'missing_*'; // open work is advisory in production admission
   if (summaryContentTokens >= originalTokens) return 'not_shorter';
   return 'admitted';
 }
@@ -305,7 +315,8 @@ function selfCheck(): void {
   assert.deepEqual(buildReasonHistogram(['admitted', 'truncated', 'truncated', 'missing_*']), {
     admitted: 1, truncated: 2, overBudget: 0, 'missing_*': 1, empty: 0, not_shorter: 0,
   });
-  console.log('self-check: 27 passed / 0 failed / 0 skipped; network_calls=0');
+  assert.equal(COMPACTION_SUMMARY.MAX_TOKENS, 4096);
+  console.log('self-check: 28 passed / 0 failed / 0 skipped; network_calls=0');
 }
 
 function median(values: number[]): number {
@@ -375,6 +386,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
   const { getConfigService } = await import('../../src/host/services/core/configService');
   const { compactModelSummarizeWithMetadata, resetCompactModel } = await import('../../src/host/context/compactModel');
   const { createCompactionPlan, summarizeCompactionPlan } = await import('../../src/host/context/compactionService');
+  const { renderSurvivorManifestForPrompt } = await import('../../src/host/context/survivorManifest');
   const { ModelRouter } = await import('../../src/host/model/modelRouter');
   const { applyJevCompaction } = await import('../../src/host/context/jevCompaction');
   const { systemOne, resolveJevRoute } = await import('../../src/host/model/providers/typesafeProvider');
@@ -397,7 +409,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     }), { mode: 0o600 });
     await getConfigService().initialize();
     resetCompactModel();
-    const resOmitted = await compactModelSummarizeWithMetadata('probe', SUMMARY_AS_PROD_MAX_TOKENS);
+    const resOmitted = await compactModelSummarizeWithMetadata('probe', COMPACTION_SUMMARY.MAX_TOKENS);
     omittedCompact = { provider: resOmitted.metadata.provider, model: resOmitted.metadata.model };
 
     fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({
@@ -407,12 +419,13 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     }), { mode: 0o600 });
     await getConfigService().initialize();
     resetCompactModel();
-    const resUnset = await compactModelSummarizeWithMetadata('probe', SUMMARY_AS_PROD_MAX_TOKENS);
+    const resUnset = await compactModelSummarizeWithMetadata('probe', COMPACTION_SUMMARY.MAX_TOKENS);
     unsetCompact = { provider: resUnset.metadata.provider, model: resUnset.metadata.model };
   } finally {
     ModelRouter.prototype.inference = originalInference;
     resetCompactModel();
   }
+  check(probedMaxTokens === COMPACTION_SUMMARY.MAX_TOKENS, 'router_max_tokens_clamped');
   console.log(`default_compact_resolution omitted=${omittedCompact.provider}/${omittedCompact.model} unset_on_baseline=${unsetCompact.provider}/${unsetCompact.model} pinned_eval=${baseline.provider}/${baseline.model} router_max_tokens=${probedMaxTokens} probe_network_calls=0`);
 
   // Isolated config never borrows OpenRouter/hosted credentials or relay settings.
@@ -482,6 +495,14 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
         anchorMessageId: sMessages[Math.max(2, sMessages.length - RECENT)]?.id,
         messages: sMessages, skipAudit: true });
       check(plan, 'summary_plan_missing');
+      const manifestFiles = plan.manifest.files.filter((file) => Boolean(file.path));
+      const manifestCounts: ManifestCounts = {
+        files: manifestFiles.length,
+        errors: plan.manifest.errors.length,
+        openWork: plan.manifest.todos.length,
+        commands: plan.manifest.commands.length,
+        tokens: estimateTokens(renderSurvivorManifestForPrompt(plan.manifest)),
+      };
 
       const runSummaryArm = async (fair: boolean): Promise<{ arm: SummaryArm; reason: SummaryReason; modelTag: string }> => {
         liftMaxTokens = fair ? SUMMARY_FAIR_MAX_TOKENS : 0;
@@ -505,6 +526,14 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
           missingOpenWork: summary.validation.missingOpenWork.length,
           notShorter: Number(summaryContentTokens >= plan.originalTokens),
         };
+        const missingPathSet = new Set(summary.validation.missingPaths);
+        const missingErrorSet = new Set(summary.validation.missingErrors);
+        const missingOpenWorkSet = new Set(summary.validation.missingOpenWork);
+        const missingIndices = {
+          paths: manifestFiles.flatMap((file, idx) => (missingPathSet.has(file.path) ? [idx] : [])),
+          errors: plan.manifest.errors.flatMap((err, idx) => (missingErrorSet.has(`Unresolved error: ${err.text}`) ? [idx] : [])),
+          openWork: plan.manifest.todos.flatMap((todo, idx) => (missingOpenWorkSet.has(`Open work: ${todo.text}`) ? [idx] : [])),
+        };
         const reason = classifySummaryAdmission(validation, summaryContentTokens, plan.originalTokens, fair);
         const admitted = reason === 'admitted';
         if (!fair) {
@@ -527,6 +556,12 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
             summaryTokens: summaryContentTokens,
             callRecords: [...activeCallRecords],
             validation,
+            missingIndices,
+            requiredPaths: {
+              total: plan.manifest.files.filter((file) => file.required === true).length,
+              missing: summary.validation.missingPaths.length,
+            },
+            errorLines: { total: plan.manifest.errors.length, missing: summary.validation.missingErrors.length },
           },
         };
       };
@@ -560,6 +595,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
         id: session.id,
         beforeTokens: tokens(original),
         planOriginalTokens: plan.originalTokens,
+        manifest: manifestCounts,
         needles: needles.length,
         S: sOut.arm,
         SFair: sfOut.arm,
@@ -629,7 +665,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     productionDefaultCompactWhenOmitted: { [omittedCompact.provider]: { [omittedCompact.model]: 1 } },
     productionDefaultCompactWhenUnsetOnBaseline: { [unsetCompact.provider]: { [unsetCompact.model]: 1 } },
     jevModel: { [JEV_MODEL]: 1 },
-    summaryAsProductionMaxTokens: SUMMARY_AS_PROD_MAX_TOKENS,
+    summaryAsProductionMaxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
     summaryFairMaxTokens: SUMMARY_FAIR_MAX_TOKENS,
     originalPlannedSessions: 20,
     authorizedSessions: MIN_SESSIONS,

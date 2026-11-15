@@ -8,12 +8,15 @@
 
 // channelDataDir 只依赖 devSlot/configPaths（无 keytar 等 native 副作用），安全前置。
 import * as os from 'os';
+import { captureShellBridgeEnv } from '../host/permissions/envAssist/shellBridge/client';
 import { resolveChannelDataDir, resolveChannelWebPort, expandDataDirLongPath } from './channelDataDir';
 import { detectDevSlotRuntime } from './devSlotRuntime';
 import { devSlotDataDirName, devSlotWebPort } from '../shared/devSlot';
 
 process.env.CODE_AGENT_CLI_MODE = 'true';
 process.env.CODE_AGENT_WEB_MODE = 'true';
+// Capture and scrub desktop shell bridge credentials before any child spawn (git/lsof/shell/MCP/plugins/tools).
+captureShellBridgeEnv();
 
 // 测试/开发通道：在任何模块读取数据目录（含 getUserConfigDir 的 module-level const）之前，
 // 把 CODE_AGENT_DATA_DIR 切到对应 dev 槽，确保调试不污染生产包的 ~/.code-agent。

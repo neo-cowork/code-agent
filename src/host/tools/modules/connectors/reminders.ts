@@ -17,6 +17,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { formatConnectorStatusOutput } from './connectorStatusText';
 import { formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
@@ -98,7 +99,7 @@ async function executeReminders(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = `Reminders connector: unavailable\n${status.detail}\nCapabilities: none`;
+      const output = formatConnectorStatusOutput('reminders', status);
       return {
         ok: true,
         output,
@@ -114,7 +115,7 @@ async function executeReminders(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
-      const output = `Reminders connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`;
+      const output = formatConnectorStatusOutput('reminders', status);
       return {
         ok: true,
         output,

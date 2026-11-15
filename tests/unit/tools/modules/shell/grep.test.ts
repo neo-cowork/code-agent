@@ -449,6 +449,120 @@ describe('grepModule (native)', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT：懒创建的会话产出目录（任务_/Task_ 形状，
+  // 尚未落盘）按空目录处理——返回零匹配形状、不建目录、不跑引擎；其余缺失路径报
+  // ENOENT；rg exit 2 的 "No such file or directory" stderr 也归 ENOENT 而非 FS_ERROR。
+  // ---------------------------------------------------------------------------
+  describe('missing search path: planned work directory vs ordinary ENOENT', () => {
+    const setWorkRootEnv = (dataDir: string): void => {
+      process.env.CODE_AGENT_HOME = tempDir;
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+    };
+    const restoreWorkRootEnv = (): void => {
+      delete process.env.CODE_AGENT_HOME;
+      delete process.env.CODE_AGENT_DATA_DIR;
+    };
+
+    it('planned 任务_ folder not on disk yet: ok + "No matches found", folder still absent, engines never run', async () => {
+      const dataDir = path.join(tempDir, '.code-agent');
+      const workRoot = path.join(tempDir, 'Neo');
+      const plannedDir = path.join(workRoot, '任务_1114_整理周报素材');
+      setWorkRootEnv(dataDir);
+      try {
+        // 不桩 rg：真 rg/grep 对缺失目录只能报 exit 2 的 IO error，绝不会返回零匹配。
+        // 因此 ok + "No matches found" 本身就证明引擎从未被拉起（分支在进引擎前拦下）。
+        const result = await run(
+          { pattern: 'weekly report', path: plannedDir },
+          makeCtx({ workingDir: plannedDir }),
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('No matches found');
+          expect(result.meta).toMatchObject({
+            pattern: 'weekly report',
+            searchPath: plannedDir,
+            totalMatches: 0,
+            matches: [],
+            artifact: expect.objectContaining({ kind: 'search', sourceTool: 'Grep' }),
+          });
+        }
+        // 只读搜索不为懒目录落盘：计划目录与其工作根都保持不存在
+        await expect(fs.stat(plannedDir)).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(fs.stat(workRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        restoreWorkRootEnv();
+      }
+    });
+
+    it('ordinary missing path (not a planned folder): structured ENOENT naming the path', async () => {
+      const missing = path.join(tempDir, '__plain_missing_dir__');
+      const result = await run({ pattern: 'hello', path: missing });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.error).toBe(`Path not found: ${missing}`);
+      }
+    });
+
+    it('rg exit 2 with "No such file or directory (os error 2)" stderr classifies as ENOENT, not FS_ERROR', async () => {
+      const fakeRg = path.join(tempDir, 'fake-rg.sh');
+      await fs.writeFile(
+        fakeRg,
+        '#!/bin/sh\necho "rg: /some/dir: No such file or directory (os error 2)" >&2\nexit 2\n',
+        { mode: 0o755 },
+      );
+      __setRgBinaryPathForTest(fakeRg);
+      try {
+        // 搜索路径本身存在（tempDir），stat 拦不住；缺失信号只能来自 rg 的 stderr
+        const result = await run({ pattern: 'needle', path: tempDir });
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('ENOENT');
+          expect(result.code).not.toBe('FS_ERROR');
+          // 归 ENOENT 但不能断言是 searchPath 缺失（预检已确认它存在）：真实缺失的
+          // 路径（rg 遍历的内部路径 / stat 后被删的竞态）与原始 stderr 必须保留在
+          // 错误文本里，否则模型误判目录不存在、真实原因无法排查（rework r1）。
+          expect(result.error).toContain('Path not found');
+          expect(result.error).toContain('No such file or directory (os error 2)');
+          expect(result.error).not.toBe(`Path not found: ${tempDir}`);
+        }
+      } finally {
+        __setRgBinaryPathForTest(undefined);
+      }
+    });
+
+    it('rg exit 2 with a non-ENOENT errno (os error 20/24) stays FS_ERROR and keeps the stderr', async () => {
+      // rework r1：'os error 2' 裸子串会命中 os error 20(ENOTDIR)/21/24(EMFILE)/28
+      // ——这些是真实读写失败，必须留在 FS_ERROR 并保留原始 stderr，不得误报
+      // 「路径不存在」（否则模型误判目录不存在，真实错误原因丢失）。
+      const cases: Array<[string, string]> = [
+        ['20', 'rg: /some/dir: Not a directory (os error 20)'],
+        ['24', 'rg: /some/dir: Too many open files (os error 24)'],
+      ];
+      for (const [errno, stderrLine] of cases) {
+        const fakeRg = path.join(tempDir, `fake-rg-err${errno}.sh`);
+        await fs.writeFile(
+          fakeRg,
+          `#!/bin/sh\necho "${stderrLine}" >&2\nexit 2\n`,
+          { mode: 0o755 },
+        );
+        __setRgBinaryPathForTest(fakeRg);
+        try {
+          const result = await run({ pattern: 'needle', path: tempDir });
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.code).toBe('FS_ERROR');
+            expect(result.error).toContain(stderrLine);
+          }
+        } finally {
+          __setRgBinaryPathForTest(undefined);
+        }
+      }
+    });
+  });
+
   describe('foreign-slot ignore globs (ai-review round 6)', () => {
     // 这条锁的是 grep.ts 给 rg 传排除项时必须用的形式。rg 走 gitignore 语义：
     // **不含 `/` 的模式匹配任意深度**，裸的 `!.code-agent` 会连带排掉

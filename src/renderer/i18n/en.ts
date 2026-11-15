@@ -832,7 +832,7 @@ export const en = {
     skip: 'Generate now',
     skipHint: 'Don’t want to fill this in? Skip clarification and let the AI decide.',
     sampleSerif: 'Design system sample',
-    sampleSans: 'Aa Bb Cc 字体样例',
+    sampleSans: 'Aa Bb Cc Font sample',
     continueMessage: 'Design brief locked—generate the deliverable directly from it.',
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
   },
