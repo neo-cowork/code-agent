@@ -42,6 +42,24 @@ export function validateFiles(root, files, maxFiles) {
   }
 }
 
+// Plans the vitest gate. <= maxFiles: everything runs locally. Above that, only files PR CI
+// really runs (covered prefix, not in the exclude list) may be deferred; the rest stay local.
+export function planVitest(root, files, policy) {
+  const { maxFiles, deferMaxFiles } = policy;
+  if (files.length <= maxFiles) {
+    validateFiles(root, files, maxFiles);
+    return { mode: 'all-local', selected: files.length, cap: maxFiles, localFiles: [...files], deferredFiles: [] };
+  }
+  validateFiles(root, files, deferMaxFiles);
+  const deferred = (file) => policy.ciCoveredPrefixes.some((prefix) => file.startsWith(prefix)) && !policy.ciNotRunExact.includes(file);
+  const deferredFiles = files.filter(deferred);
+  const localFiles = files.filter((file) => !deferred(file));
+  if (localFiles.length > maxFiles) {
+    throw new Error(`FAIL: selected ${files.length} files; allowed 1..${maxFiles}/${deferMaxFiles}; ${localFiles.length} not covered by PR CI must run locally; never truncate`);
+  }
+  return { mode: 'deferred', selected: files.length, cap: maxFiles, localFiles, deferredFiles };
+}
+
 export function selectTests(policy, changed, regressions = [], deletedFiles = []) {
   const deleted = new Set(deletedFiles);
   const files = new Set(policy.baseline);
@@ -137,7 +155,9 @@ export function renderReceipt(receipt) {
   const ci = receipt.ci.status === 'pending' && receipt.prNumber === null
     ? 'CI: pending (PR not created; authoritative CI evidence will be bound after creation).'
     : `CI: ${receipt.ci.status}`;
-  return [local, ci, ...(receipt.privateCheck ? [`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`] : [])];
+  const deferred = receipt.vitestDeferred;
+  return [local, ...(deferred ? [`gates:fast vitest deferred to PR CI: selected ${deferred.selected} files > ${deferred.maxFiles}`] : []),
+    ci, ...(receipt.privateCheck ? [`private check: ${receipt.privateCheck.mode} inputHash=${receipt.privateCheck.inputHash.slice(0, 16)}`] : [])];
 }
 
 // ship pr 外层给 gates:fast 180s（~/.local/bin/ship），总上限必须留 10s 给回执落盘与核验。

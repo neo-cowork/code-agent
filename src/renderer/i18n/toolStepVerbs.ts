@@ -231,7 +231,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   notRunPrefix: '未执行',
   rawFailureCodes: {
-    ENOENT: '文件或目录不存在，请确认路径是否正确',
+    ENOENT: '找不到这个文件或目录，请确认路径是否正确',
     INVALID_ARGS: '参数不正确，请换个说法重新描述需求',
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
   },
@@ -316,7 +316,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   notRunPrefix: 'Not run',
   rawFailureCodes: {
-    ENOENT: 'That file or folder does not exist; double-check the path',
+    ENOENT: 'Could not find that file or folder; check the path',
     INVALID_ARGS: 'The request was not understood; try rephrasing it',
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
   },
