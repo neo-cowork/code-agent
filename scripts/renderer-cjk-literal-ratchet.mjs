@@ -3,18 +3,25 @@
 // renderer-cjk-literal-ratchet — renderer 渲染文案与 shared/contract CJK 字面量棘轮
 // ============================================================================
 //
-// N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC 扫描口径：
+// N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC 扫描口径（SCOPE_VERSION = 2，2026-11-15 扩围）：
+//   - 任意 i18n/ 目录、__tests__/、*.test.*、*.spec.*、*.d.ts 一律不扫（语言包就该放在 i18n/ 里）。
 //   - 扫描根：
-//     1) src/renderer/**/*.{ts,tsx}（排除任意 i18n/ 目录、__tests__/、*.test.*、*.spec.*、*.d.ts）
-//        计数目标（eslint-plugin-i18next mode: 'jsx-only' 同口径）：
+//     1) src/renderer/**/*.{ts,tsx}
+//        计数目标（eslint-plugin-i18next mode: 'jsx-only' 同口径，外加函数入参）：
 //          · JsxText 节点含 CJK
 //          · JsxAttribute 的字符串值含 CJK：attr="中文"，以及只多包一层花括号的
 //            attr={'中文'} / attr={`中文 ${n}`}（同一个渲染位置，不留换个写法就绕过的口子）
 //          · JSX 子节点里直接写的字符串：<p>{'中文'}</p> / <p>{`中文 ${n}`}</p>
-//        三元、|| 兜底、变量、函数入参里的字符串不计（那是 2000+ 处匹配表/数据表，不在本门口径内）。
-//     2) src/shared/contract/**/*.{ts,tsx}（排除 __tests__/、*.test.*、*.spec.*、*.d.ts）
-//        计数目标：任意 CJK 字符串或模板字面量（StringLiteral / NoSubstitutionTemplateLiteral /
-//        TemplateExpression，整条模板表达式含至少一段 CJK 静态片段计 1）。
+//          · 直接写在函数/构造调用入参里的字符串：createSession('中文')、toast.error(`失败：${e}`)
+//            （口径 2 新增：标题、提示这类文案常常就是这么漏出去的）
+//        三元、|| 兜底、变量、对象字段里的字符串不计（那是匹配表/数据表）。
+//     2) 「面向用户的清单和常量」与宿主诊断，任意 CJK 字符串或模板字面量都计
+//        （StringLiteral / NoSubstitutionTemplateLiteral / TemplateExpression，
+//        整条模板表达式含至少一段 CJK 静态片段计 1）：
+//          · src/shared/contract/**
+//          · src/shared/constants/**            （口径 2 新增：技能/连接器/多模态模型等目录）
+//          · src/shared/externalEngineManifest.ts（口径 2 新增：执行引擎清单）
+//          · src/host/diagnostics/**            （口径 2 新增：诊断报告文案）
 //   - 基线文件：scripts/renderer-cjk-literal-baseline.json（按文件计数，只降不升）。
 //     · 已有文件计数不得超过基线；
 //     · 基线外文件命中 > 0 立即失败；
@@ -25,6 +32,9 @@
 //       基线文件时退到 HEAD），数字变大或新增条目必须是带非空 reason 的对象条目，否则失败。
 //       比较基点可用 RENDERER_CJK_RATCHET_BASE_REF 指定；
 //     · 不支持行内豁免注释（禁止 // cjk-allow 类逃生口）；合法例外写入基线并附非空 reason。
+//     · 基线记着它是按哪一版口径录的（scopeVersion）。脚本口径升级后旧基线直接失效，
+//       用 --init-baseline 按新口径重录（只有口径不一致时才允许覆盖已有基线）；
+//       重录的那一次不与旧口径的已提交基线做上调比对（两者数的不是同一批东西）。
 //   - Fail loud：0 扫描文件、0 命中目标、TS 解析报错、基线损坏、git 仓库内解析不出比较基点
 //     或参数未知均非零退出。
 // ============================================================================
@@ -39,8 +49,15 @@ import { fileURLToPath } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '..');
 
+const SCOPE_VERSION = 2;
 const RENDERER_ROOT = 'src/renderer';
-const CONTRACT_ROOT = 'src/shared/contract';
+// 任意 CJK 字面量都计的根（目录或单个文件）
+const LITERAL_ROOTS = [
+  'src/shared/contract',
+  'src/shared/constants',
+  'src/shared/externalEngineManifest.ts',
+  'src/host/diagnostics',
+];
 const DEFAULT_BASELINE_REL = 'scripts/renderer-cjk-literal-baseline.json';
 const BASE_REF_ENV = 'RENDERER_CJK_RATCHET_BASE_REF';
 const DEFAULT_BASE_REFS = ['origin/main', 'main'];
@@ -68,8 +85,11 @@ function collectFiles(rootDir, subRoot, { excludeI18n }) {
     throw new Error(`扫描根不存在：${subRoot} (${absRoot})`);
   }
   const stat = fs.statSync(absRoot);
+  if (stat.isFile()) {
+    return [{ absPath: absRoot, relPosix: toPosix(path.relative(rootDir, absRoot)) }];
+  }
   if (!stat.isDirectory()) {
-    throw new Error(`扫描根不是目录：${subRoot} (${absRoot})`);
+    throw new Error(`扫描根既不是目录也不是文件：${subRoot} (${absRoot})`);
   }
 
   const out = [];
@@ -160,6 +180,12 @@ function scanRendererFile(sourceFile, relPosix) {
       (isHanPlainString(node.expression) || isHanTemplate(node.expression))
     ) {
       findings.push(makeFinding(sourceFile, relPosix, node.expression, 'jsx-text'));
+    } else if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && node.arguments) {
+      for (const argument of node.arguments) {
+        if (isHanPlainString(argument) || isHanTemplate(argument)) {
+          findings.push(makeFinding(sourceFile, relPosix, argument, 'call-argument'));
+        }
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -167,13 +193,13 @@ function scanRendererFile(sourceFile, relPosix) {
   return findings;
 }
 
-function scanContractFile(sourceFile, relPosix) {
+function scanLiteralFile(sourceFile, relPosix) {
   const findings = [];
   const visit = (node) => {
     if (isHanPlainString(node)) {
-      findings.push(makeFinding(sourceFile, relPosix, node, 'contract-string'));
+      findings.push(makeFinding(sourceFile, relPosix, node, 'literal-string'));
     } else if (isHanTemplate(node)) {
-      findings.push(makeFinding(sourceFile, relPosix, node, 'contract-template'));
+      findings.push(makeFinding(sourceFile, relPosix, node, 'literal-template'));
     }
     ts.forEachChild(node, visit);
   };
@@ -182,45 +208,35 @@ function scanContractFile(sourceFile, relPosix) {
 }
 
 function scanAll(rootDir) {
-  const rendererFiles = collectFiles(rootDir, RENDERER_ROOT, { excludeI18n: true });
-  const contractFiles = collectFiles(rootDir, CONTRACT_ROOT, { excludeI18n: false });
-
-  if (rendererFiles.length === 0) {
-    throw new Error(`扫描 0 个源文件：${RENDERER_ROOT}`);
-  }
-  if (contractFiles.length === 0) {
-    throw new Error(`扫描 0 个源文件：${CONTRACT_ROOT}`);
-  }
-
   const findingsByFile = new Map();
+  const scannedByRoot = [];
   let totalTargets = 0;
 
-  for (const { absPath, relPosix } of rendererFiles) {
-    const sourceFile = parseSourceFile(absPath, relPosix);
-    const findings = scanRendererFile(sourceFile, relPosix);
-    if (findings.length > 0) {
-      findingsByFile.set(relPosix, findings);
-      totalTargets += findings.length;
+  const scanRoot = (subRoot, scanFile) => {
+    const files = collectFiles(rootDir, subRoot, { excludeI18n: true });
+    if (files.length === 0) {
+      throw new Error(`扫描 0 个源文件：${subRoot}`);
     }
-  }
-
-  for (const { absPath, relPosix } of contractFiles) {
-    const sourceFile = parseSourceFile(absPath, relPosix);
-    const findings = scanContractFile(sourceFile, relPosix);
-    if (findings.length > 0) {
-      findingsByFile.set(relPosix, findings);
-      totalTargets += findings.length;
+    for (const { absPath, relPosix } of files) {
+      const findings = scanFile(parseSourceFile(absPath, relPosix), relPosix);
+      if (findings.length > 0) {
+        findingsByFile.set(relPosix, findings);
+        totalTargets += findings.length;
+      }
     }
-  }
+    scannedByRoot.push({ root: subRoot, count: files.length });
+  };
 
-  const totalScanned = rendererFiles.length + contractFiles.length;
+  scanRoot(RENDERER_ROOT, scanRendererFile);
+  for (const root of LITERAL_ROOTS) scanRoot(root, scanLiteralFile);
+
+  const totalScanned = scannedByRoot.reduce((sum, entry) => sum + entry.count, 0);
   if (totalTargets === 0) {
     throw new Error(`扫描 ${totalScanned} 个源文件但命中 0 个 CJK 字面量；扫描器或口径可能已失效`);
   }
 
   return {
-    rendererScannedCount: rendererFiles.length,
-    contractScannedCount: contractFiles.length,
+    scannedByRoot,
     totalScannedCount: totalScanned,
     totalTargets,
     findingsByFile,
@@ -263,6 +279,11 @@ function parseBaseline(jsonText, baselinePath) {
   if (parsed.schemaVersion !== 1) {
     throw new Error(`基线 schemaVersion 无效（期望 1）：${String(parsed.schemaVersion)}`);
   }
+  // 口径 1 的基线没有这个字段
+  const scopeVersion = parsed.scopeVersion ?? 1;
+  if (!Number.isInteger(scopeVersion) || scopeVersion < 1) {
+    throw new Error(`基线 scopeVersion 无效：${String(parsed.scopeVersion)}`);
+  }
   if (!parsed.files || typeof parsed.files !== 'object' || Array.isArray(parsed.files)) {
     throw new Error(`基线 files 字段缺失或格式无效：${baselinePath}`);
   }
@@ -280,6 +301,7 @@ function parseBaseline(jsonText, baselinePath) {
     raw: parsed,
     entries,
     baselineTotal,
+    scopeVersion,
   };
 }
 
@@ -327,7 +349,14 @@ function readCommittedBaseline(repoRoot, baselinePath) {
     const shown = runGit(repoRoot, ['show', `${ref}:${relPath}`]);
     if (shown.status === 0) {
       const label = ref === 'HEAD' ? 'HEAD' : ref.slice(0, 9);
-      return { label, entries: parseBaseline(shown.stdout, `${label}:${relPath}`).entries };
+      const committed = parseBaseline(shown.stdout, `${label}:${relPath}`);
+      if (committed.scopeVersion !== SCOPE_VERSION) {
+        return {
+          skipped: `已提交的基线（${label}）按口径 ${committed.scopeVersion} 录制，当前口径 ${SCOPE_VERSION}；` +
+            '口径升级后的重录不与旧基线逐条比对',
+        };
+      }
+      return { label, entries: committed.entries };
     }
   }
   return { skipped: `比较基点 ${mergeBase.slice(0, 9)} 与 HEAD 都还没有已提交的基线（首次引入）` };
@@ -403,7 +432,7 @@ function runCli() {
     const report = scanAll(repoRoot);
 
     if (initBaseline) {
-      if (fs.existsSync(baselinePath)) {
+      if (fs.existsSync(baselinePath) && readBaseline(baselinePath).scopeVersion === SCOPE_VERSION) {
         throw new Error(`基线已存在，禁止 --init-baseline 覆盖：${baselinePath}（下调请用 --update-baseline）`);
       }
       const initialEntries = new Map();
@@ -412,6 +441,7 @@ function runCli() {
       }
       const payload = {
         schemaVersion: 1,
+        scopeVersion: SCOPE_VERSION,
         files: serializeBaselineFiles(initialEntries),
       };
       fs.mkdirSync(path.dirname(baselinePath), { recursive: true });
@@ -421,10 +451,16 @@ function runCli() {
     }
 
     const baseline = readBaseline(baselinePath);
+    if (baseline.scopeVersion !== SCOPE_VERSION) {
+      throw new Error(
+        `基线按口径 ${baseline.scopeVersion} 录制，脚本当前口径 ${SCOPE_VERSION}：两者数的不是同一批东西。` +
+        '运行 node scripts/renderer-cjk-literal-ratchet.mjs --init-baseline 按新口径重录并一并提交。',
+      );
+    }
 
     console.log(
-      `[renderer-cjk-literal-ratchet] 扫描 ${report.totalScannedCount} 个源文件` +
-      `（${RENDERER_ROOT}=${report.rendererScannedCount}, ${CONTRACT_ROOT}=${report.contractScannedCount}）`,
+      `[renderer-cjk-literal-ratchet] 口径 ${SCOPE_VERSION}，扫描 ${report.totalScannedCount} 个源文件` +
+      `（${report.scannedByRoot.map((entry) => `${entry.root}=${entry.count}`).join(', ')}）`,
     );
 
     const allFiles = [...new Set([...baseline.entries.keys(), ...report.findingsByFile.keys()])]
@@ -465,7 +501,7 @@ function runCli() {
         .join('\n');
       const actionHint = updateBaseline
         ? '--update-baseline 拒绝上调基线或新增命中文件；请将新增中文迁入 src/renderer/i18n/ 语言包。'
-        : '新增渲染中文必须迁入 src/renderer/i18n/ 语言包（contract 文案改用稳定键或双语字典），禁止硬编码。';
+        : '新增中文必须迁入语言包：renderer 放 src/renderer/i18n/，shared 清单/常量与宿主诊断放各自的 i18n/ 目录或改用稳定键，禁止硬编码。';
       throw new Error(
         `检测到 ${regressions.length} 个文件超出 CJK 字面量棘轮基线：\n${summary}\n` +
         `${actionHint}\n命中位置：\n${formatFindingLines(regressionFindings)}`,
@@ -512,6 +548,7 @@ function runCli() {
       const nextPayload = {
         ...baseline.raw,
         schemaVersion: 1,
+        scopeVersion: SCOPE_VERSION,
         files: serializeBaselineFiles(nextEntries),
       };
       fs.writeFileSync(baselinePath, `${JSON.stringify(nextPayload, null, 2)}\n`, 'utf8');

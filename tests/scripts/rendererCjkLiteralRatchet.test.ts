@@ -20,6 +20,12 @@ describe('renderer-cjk-literal-ratchet', () => {
     mkdirSync(rendererRoot, { recursive: true });
     mkdirSync(contractRoot, { recursive: true });
     mkdirSync(join(repoRoot, 'scripts'), { recursive: true });
+    // 口径 2 的其余扫描根：每个根至少要有一个源文件，否则脚本按「扫描 0 个源文件」失败
+    mkdirSync(join(repoRoot, 'src/shared/constants'), { recursive: true });
+    mkdirSync(join(repoRoot, 'src/host/diagnostics'), { recursive: true });
+    writeFileSync(join(repoRoot, 'src/shared/constants/placeholder.ts'), 'export const PLACEHOLDER = "ok";\n', 'utf8');
+    writeFileSync(join(repoRoot, 'src/shared/externalEngineManifest.ts'), 'export const MANIFESTS = [];\n', 'utf8');
+    writeFileSync(join(repoRoot, 'src/host/diagnostics/placeholder.ts'), 'export const DOCTOR = "ok";\n', 'utf8');
   });
 
   afterEach(() => {
@@ -50,7 +56,7 @@ describe('renderer-cjk-literal-ratchet', () => {
   function writeBaseline(files: Record<string, number | { count: number; reason?: string }>) {
     writeFileSync(
       baselinePath,
-      JSON.stringify({ schemaVersion: 1, files }, null, 2),
+      JSON.stringify({ schemaVersion: 1, scopeVersion: 2, files }, null, 2),
       'utf8',
     );
   }
@@ -314,6 +320,79 @@ describe('renderer-cjk-literal-ratchet', () => {
     const parseErr = runCli();
     expect(parseErr.status).toBe(1);
     expect(parseErr.stderr).toContain('TypeScript 解析失败');
+  });
+
+  it('scope 2: counts call arguments in renderer and any literal in shared constants / engine manifest / host diagnostics', () => {
+    writeFileSync(
+      join(rendererRoot, 'Calls.tsx'),
+      [
+        'declare function createSession(title: string): void;',
+        'declare const toast: { error(message: string): void };',
+        'const table = { label: "对象字段里的中文不计入" };',
+        'export function Calls({ reason }: { reason: string }) {',
+        "  createSession('新建角色');",
+        '  toast.error(`保存失败：${reason}`);',
+        "  const picked = reason ? '三元里的中文不计入' : table.label;",
+        '  return <div data-x={picked}>ok</div>;',
+        '}',
+      ].join('\n'),
+      'utf8',
+    );
+    writeFileSync(join(repoRoot, 'src/shared/constants/catalog.ts'), 'export const CATALOG = [{ id: "a", label: "目录里的中文" }];\n', 'utf8');
+    writeFileSync(join(repoRoot, 'src/shared/externalEngineManifest.ts'), 'export const MANIFESTS = [{ id: "x", summary: "引擎简介" }];\n', 'utf8');
+    writeFileSync(join(repoRoot, 'src/host/diagnostics/check.ts'), 'export const check = () => ({ message: "已跳过" });\n', 'utf8');
+    // 语言包目录不扫：宿主诊断的双语文案就放在这里
+    mkdirSync(join(repoRoot, 'src/host/diagnostics/i18n'), { recursive: true });
+    writeFileSync(join(repoRoot, 'src/host/diagnostics/i18n/copy.ts'), 'export const COPY = { zh: "语言包里的中文应被排除" };\n', 'utf8');
+    writeFileSync(join(contractRoot, 'ok.ts'), 'export const OK = "契约存量";\n', 'utf8');
+
+    writeBaseline({ 'src/shared/contract/ok.ts': 1 });
+    const res = runCli();
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("src/renderer/components/Calls.tsx:5:17 [call-argument] '新建角色'");
+    expect(res.stderr).toContain('src/renderer/components/Calls.tsx:6:15 [call-argument]');
+    expect(res.stderr).not.toContain('src/renderer/components/Calls.tsx:3:');
+    expect(res.stderr).not.toContain('src/renderer/components/Calls.tsx:7:');
+    expect(res.stderr).toContain('src/shared/constants/catalog.ts:1:');
+    expect(res.stderr).toContain('src/shared/externalEngineManifest.ts:1:');
+    expect(res.stderr).toContain('src/host/diagnostics/check.ts:1:');
+    expect(res.stderr).not.toContain('src/host/diagnostics/i18n/copy.ts');
+
+    writeBaseline({
+      'src/host/diagnostics/check.ts': 1,
+      'src/renderer/components/Calls.tsx': 2,
+      'src/shared/constants/catalog.ts': 1,
+      'src/shared/contract/ok.ts': 1,
+      'src/shared/externalEngineManifest.ts': 1,
+    });
+    const ok = runCli();
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout).toContain('口径 2');
+    expect(ok.stdout).toContain('src/shared/constants=2');
+    expect(ok.stdout).toContain('src/host/diagnostics=2');
+  });
+
+  it('scope version: a baseline recorded under the old scope is rejected and can be re-recorded only then', () => {
+    writeFileSync(join(rendererRoot, 'Clean.tsx'), 'export const Clean = () => <div>Hello</div>;\n', 'utf8');
+    writeFileSync(join(contractRoot, 'ok.ts'), 'export const OK = "契约存量";\n', 'utf8');
+    writeFileSync(baselinePath, JSON.stringify({ schemaVersion: 1, files: { 'src/shared/contract/ok.ts': 1 } }), 'utf8');
+
+    const stale = runCli();
+    expect(stale.status).toBe(1);
+    expect(stale.stderr).toContain('基线按口径 1 录制，脚本当前口径 2');
+
+    const rerecorded = runCli(['--init-baseline']);
+    expect(rerecorded.status, rerecorded.stderr).toBe(0);
+    const saved = JSON.parse(readFileSync(baselinePath, 'utf8')) as { scopeVersion: number; files: Record<string, number> };
+    expect(saved.scopeVersion).toBe(2);
+    expect(saved.files).toEqual({ 'src/shared/contract/ok.ts': 1 });
+    expect(runCli().status).toBe(0);
+
+    // 口径一致时 --init-baseline 仍然拒绝覆盖（不能拿它当「重置基线」的后门）
+    writeFileSync(join(contractRoot, 'ok.ts'), 'export const OK = "契约存量";\nexport const MORE = "新增";\n', 'utf8');
+    const refused = runCli(['--init-baseline']);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('禁止 --init-baseline 覆盖');
   });
 
   it('passes on the live repository baseline', () => {
