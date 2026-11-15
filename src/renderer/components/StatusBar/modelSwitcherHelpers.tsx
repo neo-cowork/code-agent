@@ -17,7 +17,9 @@ import {
   type EngineModelCompatContext,
   type EngineModelCompatReasonCode,
 } from '@shared/constants/engineCompat';
-import type { Translations } from '../../i18n';
+import { languages, type Translations } from '../../i18n';
+import { interpolate } from '../../i18n/interpolate';
+import { useAppStore } from '../../stores/appStore';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import { getProviderLogoBadge, getProviderLogoMark } from './providerLogoCatalog';
 import { useProviderIconImageSource } from '../../utils/providerIconAssets';
@@ -69,6 +71,19 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   kimi_code_acp: 'Kimi·ACP',
 };
 
+type ModelSwitcherCopy = Translations['modelSwitcherCopy'];
+
+/**
+ * 当前界面语言下的文案（FB-1489）。这个文件里是一批被很多组件调用的纯函数和标签表，
+ * 语言直接从 store 读：组件在语言切换时会重渲染并重新调用它们。
+ */
+const copy = (): ModelSwitcherCopy => languages[useAppStore.getState?.().language ?? 'zh'].modelSwitcherCopy;
+
+/** 按语言取值的标签表：用法和普通对象一样（TABLE[key]），每次读取都落到当前语言的那一份。 */
+function localized<T extends object>(pick: (c: ModelSwitcherCopy) => T): T {
+  return new Proxy({} as T, { get: (_target, key) => pick(copy())[key as keyof T] });
+}
+
 const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
   ready: 'Ready',
   not_configured: 'Needs config',
@@ -77,77 +92,29 @@ const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string
   unknown: 'Unknown',
 };
 
-const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
-  low: '低风险',
-  medium: '中风险',
-  high: '高风险',
-};
+const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = localized((c) => c.engineRisk);
 
-const ENGINE_CLI_STATUS_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['cliStatus'], string> = {
-  available: 'CLI 可用',
-  missing: 'CLI 缺失',
-  error: 'CLI 异常',
-  not_checked: 'CLI 未检测',
-};
+const ENGINE_CLI_STATUS_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['cliStatus'], string> = localized((c) => c.engineCliStatus);
 
-const ENGINE_AUTH_STATE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['authState'], string> = {
-  authenticated: '已登录',
-  needs_login: '需登录',
-  not_checked: '登录未检测',
-  unknown: '登录未知',
-};
+const ENGINE_AUTH_STATE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['authState'], string> = localized((c) => c.engineAuthState);
 
-const ENGINE_QUOTA_STATE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['quotaState'], string> = {
-  available: 'quota 可用',
-  limited: 'quota 受限',
-  exhausted: 'quota 耗尽',
-  not_checked: 'quota 未检测',
-  unknown: 'quota 未知',
-};
+const ENGINE_QUOTA_STATE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['quotaState'], string> = localized((c) => c.engineQuotaState);
 
-const ENGINE_STREAMING_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['streamingMode'], string> = {
-  stream_json: 'stream-json',
-  json: 'json',
-  text: 'text',
-  none: '无流式',
-  unknown: '流式未知',
-};
+const ENGINE_STREAMING_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['streamingMode'], string> = localized((c) => c.engineStreamingMode);
 
-const ENGINE_TRANSCRIPT_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['transcriptMode'], string> = {
-  clean_stream_json: '干净 transcript',
-  raw_terminal: '原始终端 transcript',
-  final_text: '仅最终回答 transcript',
-  session_import: '历史导入 transcript',
-  unknown: 'transcript 未知',
-};
+const ENGINE_TRANSCRIPT_MODE_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['transcriptMode'], string> = localized((c) => c.engineTranscriptMode);
 
-const ENGINE_TOOL_SUPPORT_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['toolSupport'], string> = {
-  none: '无工具',
-  read_only_cli_tools: '只读工具',
-  workspace_tools: '工作区工具',
-  mcp_bridge: 'MCP bridge',
-  unknown: '工具未知',
-};
+const ENGINE_TOOL_SUPPORT_LABEL: Record<NonNullable<AgentEngineDescriptor['reliability']>['toolSupport'], string> = localized((c) => c.engineToolSupport);
 
-const ENGINE_FAILURE_LABEL: Record<AgentEngineFailureDiagnostics['category'], string> = {
-  auth: '认证失败',
-  quota: '额度受限',
-  timeout: '运行超时',
-  network: '网络异常',
-  permission: '权限不足',
-  missing_cli: 'CLI 不可用',
-  model_config: '模型配置错误',
-  runtime: '运行失败',
-  unknown: '运行失败',
-};
+const ENGINE_FAILURE_LABEL: Record<AgentEngineFailureDiagnostics['category'], string> = localized((c) => c.engineFailure);
 
 function formatEngineFailureAge(occurredAt?: number, now = Date.now()): string | null {
   if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
   const ageMs = Math.max(0, now - occurredAt);
-  if (ageMs < 60_000) return '刚刚失败';
-  if (ageMs < 60 * 60_000) return `${Math.floor(ageMs / 60_000)} 分钟前失败`;
-  if (ageMs < 24 * 60 * 60_000) return `${Math.floor(ageMs / (60 * 60_000))} 小时前失败`;
-  return `${Math.floor(ageMs / (24 * 60 * 60_000))} 天前失败`;
+  if (ageMs < 60_000) return copy().failedJustNow;
+  if (ageMs < 60 * 60_000) return interpolate(copy().failedMinutesAgo, { count: Math.floor(ageMs / 60_000) });
+  if (ageMs < 24 * 60 * 60_000) return interpolate(copy().failedHoursAgo, { count: Math.floor(ageMs / (60 * 60_000)) });
+  return interpolate(copy().failedDaysAgo, { count: Math.floor(ageMs / (24 * 60 * 60_000)) });
 }
 
 export interface EffortOption {
@@ -162,28 +129,28 @@ const EFFORT_OPTION_CONFIG: Record<EffortLevel, EffortOption> = {
   low: {
     value: 'low',
     label: 'Low',
-    shortLabel: '低',
+    get shortLabel() { return copy().effortShort.low; },
     color: 'text-zinc-400',
     tint: 'bg-zinc-700',
   },
   medium: {
     value: 'medium',
     label: 'Med',
-    shortLabel: '中',
+    get shortLabel() { return copy().effortShort.medium; },
     color: 'text-badge-info',
     tint: 'bg-blue-500/15',
   },
   high: {
     value: 'high',
     label: 'High',
-    shortLabel: '高',
+    get shortLabel() { return copy().effortShort.high; },
     color: 'text-badge-warning',
     tint: 'bg-amber-500/15',
   },
   xhigh: {
     value: 'xhigh',
     label: 'XHigh',
-    shortLabel: '极高',
+    get shortLabel() { return copy().effortShort.xhigh; },
     color: 'text-badge-warning',
     tint: 'bg-orange-500/15',
   },
@@ -305,13 +272,7 @@ const PROVIDER_HEALTH_RANK: Record<ProviderAvailabilityState, number> = {
   unavailable: 4,
 };
 
-const PROVIDER_HEALTH_LABEL: Record<ProviderAvailabilityState, string> = {
-  healthy: '健康',
-  recovering: '恢复中',
-  unknown: '未检测',
-  degraded: '降级',
-  unavailable: '不可用',
-};
+const PROVIDER_HEALTH_LABEL: Record<ProviderAvailabilityState, string> = localized((c) => c.providerHealth);
 
 const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
   healthy: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
@@ -321,19 +282,9 @@ const PROVIDER_HEALTH_BADGE_CLASS: Record<ProviderAvailabilityState, string> = {
   unavailable: 'border-red-500/20 bg-red-500/10 text-badge-danger',
 };
 
-const PROVIDER_BILLING_LABEL: Record<BillingMode, string> = {
-  free: '免费',
-  plan: '套餐',
-  payg: '按量',
-  unknown: '计费未知',
-};
+const PROVIDER_BILLING_LABEL: Record<BillingMode, string> = localized((c) => c.billingLabel);
 
-const PROVIDER_BILLING_DETAIL: Record<BillingMode, string> = {
-  free: '免费额度：成本压力低，自动策略主要按能力和速度选择。',
-  plan: '套餐/订阅：切换快模型通常不省钱，自动策略主要按速度和能力选择。',
-  payg: '按量付费：简单任务可由自动策略切到快模型降低成本和延迟。',
-  unknown: '计费未知：自动策略会保守处理，不把省钱作为切换依据。',
-};
+const PROVIDER_BILLING_DETAIL: Record<BillingMode, string> = localized((c) => c.billingDetail);
 
 const PROVIDER_BILLING_BADGE_CLASS: Record<BillingMode, string> = {
   free: 'border-badge-success/20 bg-emerald-500/10 text-badge-success',
@@ -373,15 +324,15 @@ function displayAvailabilityState(health: ProviderHealthSnapshot): ProviderAvail
 
 export function buildProviderHealthSummary(health?: ProviderHealthSnapshot | null): ProviderHealthSummary {
   const state = health ? displayAvailabilityState(health) : 'unknown';
-  const label = state === 'unknown' && health?.status ? '未知' : PROVIDER_HEALTH_LABEL[state];
+  const label = state === 'unknown' && health?.status ? copy().healthUnknown : PROVIDER_HEALTH_LABEL[state];
   const latencyLine = typeof health?.latencyP50 === 'number' && Number.isFinite(health.latencyP50)
     ? `P50 ${Math.round(health.latencyP50)}ms`
     : null;
   const errorLine = typeof health?.errorRate === 'number' && Number.isFinite(health.errorRate)
-    ? `错误率 ${Math.round(health.errorRate * 100)}%`
+    ? interpolate(copy().errorRate, { percent: Math.round(health.errorRate * 100) })
     : null;
   const detail = [latencyLine, errorLine].filter(Boolean).join(' · ')
-    || (health ? `Provider 状态: ${health.status || 'unknown'}` : '最近健康状态未上报');
+    || (health ? interpolate(copy().providerStatus, { status: health.status || 'unknown' }) : copy().healthNotReported);
 
   return {
     state,
@@ -422,12 +373,7 @@ export function sortProviderGroupsByModelStrategy<T extends RuntimeModelOptionGr
   });
 }
 
-const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network' | 'quota', string> = {
-  model: '这个模型用不了了',
-  auth: '密钥用不了',
-  network: '最近连不上',
-  quota: '余额或额度用完了',
-};
+const AVAILABILITY_KIND_LABEL: Record<'model' | 'auth' | 'network' | 'quota', string> = localized((c) => c.availabilityKind);
 
 export function buildModelRowHealthSummary(
   snapshot: ProviderHealthSnapshot | undefined,
@@ -551,7 +497,7 @@ export function ProviderHealthBadge({ summary }: { summary: ProviderHealthSummar
       className={summary.badgeClass}
       dot={summary.dotClass}
       title={summary.detail}
-      aria-label={`Provider 状态: ${summary.label}`}
+      aria-label={interpolate(copy().providerStatus, { status: summary.label })}
       data-provider-health-state={summary.state}
     >
       {summary.label}
@@ -564,10 +510,10 @@ export function ProviderSourceBadge({ sourceLabel }: { sourceLabel?: string }) {
   return (
     <span
       className="text-[10px] font-medium text-zinc-500"
-      title={`来源: ${sourceLabel}`}
+      title={interpolate(copy().sourceTitle, { source: sourceLabel })}
       data-provider-source-label={sourceLabel}
     >
-      来源 {sourceLabel}
+      {interpolate(copy().sourceText, { source: sourceLabel })}
     </span>
   );
 }
@@ -596,7 +542,7 @@ export function ProviderTransportBadge({
 
   const endpointDisplay = endpoint ? formatProviderEndpointDisplay(endpoint) : undefined;
   const title = [
-    label ? `协议: ${label}` : null,
+    label ? interpolate(copy().protocolTitle, { label }) : null,
     endpoint ? `Endpoint: ${endpoint}` : null,
   ].filter(Boolean).join(' · ');
 
@@ -628,10 +574,10 @@ export function buildProviderMetaTitle(group: {
     || (group.providerProtocol === 'claude' ? 'Claude-compatible'
       : group.providerProtocol === 'openai' ? 'OpenAI-compatible' : undefined);
   return [
-    `状态: ${group.healthSummary.label} · ${group.healthSummary.detail}`,
-    `计费: ${group.billingSummary.label} · ${group.billingSummary.detail}`,
-    group.providerSourceLabel ? `来源: ${group.providerSourceLabel}` : null,
-    protocolLabel ? `协议: ${protocolLabel}` : null,
+    interpolate(copy().metaStatus, { label: group.healthSummary.label, detail: group.healthSummary.detail }),
+    interpolate(copy().metaBilling, { label: group.billingSummary.label, detail: group.billingSummary.detail }),
+    group.providerSourceLabel ? interpolate(copy().sourceTitle, { source: group.providerSourceLabel }) : null,
+    protocolLabel ? interpolate(copy().protocolTitle, { label: protocolLabel }) : null,
     group.providerEndpoint ? `Endpoint: ${group.providerEndpoint}` : null,
   ].filter(Boolean).join('\n');
 }
@@ -640,9 +586,9 @@ export function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,
 ): string | null {
-  if (needsWorkspace) return '需要先选择工作目录';
-  if (!descriptor.executable) return descriptor.lastError || 'CLI 不可执行';
-  if (descriptor.installState === 'missing') return descriptor.lastError || '未安装';
+  if (needsWorkspace) return copy().needsWorkspace;
+  if (!descriptor.executable) return descriptor.lastError || copy().cliNotExecutable;
+  if (descriptor.installState === 'missing') return descriptor.lastError || copy().notInstalled;
   if (descriptor.runtimeState === 'error' || descriptor.runtimeState === 'blocked') {
     return descriptor.lastError || ENGINE_RUNTIME_LABEL[descriptor.runtimeState];
   }
@@ -706,7 +652,7 @@ export function buildEngineReliabilitySummary(args: {
         formatEngineFailureAge(sessionFailure.occurredAt, now),
         typeof sessionFailure.statusCode === 'number' ? `HTTP ${sessionFailure.statusCode}` : null,
         typeof sessionFailure.exitCode === 'number' ? `exit ${sessionFailure.exitCode}` : null,
-        sessionFailure.retryable ? '可重试' : '需处理',
+        sessionFailure.retryable ? copy().retryable : copy().needsAction,
       ].filter(Boolean).join(' · '),
       ...(reliabilityLine ? { capabilityLine: reliabilityLine } : {}),
     };
@@ -720,17 +666,17 @@ export function buildEngineReliabilitySummary(args: {
         : 'warning';
     return {
       tone,
-      label: tone === 'error' ? '不可用' : '需要处理',
+      label: tone === 'error' ? copy().unavailableLabel : copy().needsHandlingLabel,
       summary: unavailableReason,
-      detail: '这条外部引擎链路会影响订阅模型的输出可靠性。',
+      detail: copy().unavailableDetail,
     };
   }
 
   if (descriptor.runtimeState === 'not_configured') {
     return {
       tone: 'warning',
-      label: '需要配置',
-      summary: `${descriptor.label} 已检测到，但还需要完成登录或默认配置。`,
+      label: copy().needsConfigLabel,
+      summary: interpolate(copy().needsConfigSummary, { engine: descriptor.label }),
       detail: descriptor.lastError,
     };
   }
@@ -738,37 +684,40 @@ export function buildEngineReliabilitySummary(args: {
   if (selectedModel?.disabledReason) {
     return {
       tone: 'warning',
-      label: '模型受限',
+      label: copy().modelLimitedLabel,
       summary: selectedModel.disabledReason,
-      detail: '请选择可用模型，避免这一轮落到不可用订阅模型。',
+      detail: copy().modelLimitedDetail,
     };
   }
 
   if (descriptor.runtimeState === 'unknown') {
     return {
       tone: 'info',
-      label: '待确认',
-      summary: `${descriptor.label} 已列出，但运行状态还没有确认。`,
+      label: copy().pendingLabel,
+      summary: interpolate(copy().pendingSummary, { engine: descriptor.label }),
       detail: descriptor.lastError,
     };
   }
 
   const streamLine = descriptor.capabilities.includes('stream_events')
-    ? '支持流式事件'
-    : '仅确认任务完成状态';
+    ? copy().streamYes
+    : copy().streamNo;
   const executionLine = descriptor.capabilities.includes('execute')
-    ? 'CLI 执行能力可用'
-    : 'CLI 执行能力受限';
+    ? copy().execYes
+    : copy().execNo;
   const modelLine = selectedModel?.capabilities.includes('code')
-    ? '模型目录标记适合代码任务'
-    : '模型目录未标记代码任务能力';
+    ? copy().modelCodeYes
+    : copy().modelCodeNo;
   const modelMatchesAgentTasks = selectedModel?.capabilities.includes('code') ?? false;
   const reliabilityLine = formatEngineReliabilityContract(descriptor);
 
   return {
     tone: descriptor.capabilities.includes('execute') && modelMatchesAgentTasks ? 'ready' : 'info',
-    label: '可用',
-    summary: `${descriptor.label} 可用，当前模型 ${selectedModel?.label ?? selectedModel?.id ?? '使用默认选择'}。`,
+    label: copy().readyLabel,
+    summary: interpolate(copy().readySummary, {
+      engine: descriptor.label,
+      model: selectedModel?.label ?? selectedModel?.id ?? copy().defaultSelection,
+    }),
     capabilityLine: [streamLine, executionLine, modelLine, reliabilityLine].filter(Boolean).join(' · '),
   };
 }

@@ -1,5 +1,6 @@
 import type { ModelProvider } from '@shared/contract';
 import { languages, type Language } from '../../i18n';
+import { interpolate } from '../../i18n/interpolate';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
 
 export function formatNativeModelSwitcherTooltip(args: {
@@ -21,16 +22,20 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
+  const copy = languages[language].modelSwitcherCopy;
   const modelLine = args.switchedFrom
-    ? `这一轮实际在用: ${args.shownProvider}/${args.shownModel}（你选的是 ${args.switchedFrom.provider}/${args.switchedFrom.model}，已自动换过）`
+    ? interpolate(copy.tooltipSwitched, {
+      shown: `${args.shownProvider}/${args.shownModel}`,
+      chosen: `${args.switchedFrom.provider}/${args.switchedFrom.model}`,
+    })
     : args.adaptive
-    ? `自动路由（按任务、成本和能力切换，当前主任务 ${args.currentModel}）`
+    ? interpolate(copy.tooltipAdaptive, { current: args.currentModel })
     : args.overridden
-      ? `已覆盖: ${args.displayProvider}/${args.displayModel} (原主任务: ${args.currentModel})`
-      : `主任务模型: ${args.displayProvider}/${args.displayModel}`;
+      ? interpolate(copy.tooltipOverridden, { model: `${args.displayProvider}/${args.displayModel}`, current: args.currentModel })
+      : interpolate(copy.tooltipMainModel, { model: `${args.displayProvider}/${args.displayModel}` });
   return [
     modelLine,
-    args.billingSummary ? `计费: ${args.billingSummary.label}` : null,
+    args.billingSummary ? interpolate(copy.tooltipBilling, { label: args.billingSummary.label }) : null,
     args.healthSummary && args.healthSummary.state !== 'unknown'
       ? `${labels.service}: ${args.healthSummary.label}` : null,
     args.effort ? `${labels.effort}: ${language === 'zh' ? args.effort.shortLabel : args.effort.label}` : null,
@@ -47,9 +52,10 @@ export function formatExternalModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
+  const copy = languages[language].modelSwitcherCopy;
   return [
     `${labels.engine}: ${args.engineLabel}`,
-    `主任务模型: ${args.model}`,
+    interpolate(copy.tooltipMainModel, { model: args.model }),
     args.effort ? `${labels.effort}: ${language === 'zh' ? args.effort.shortLabel : args.effort.label}` : null,
     args.reliabilityLabel ? `${labels.service}: ${args.reliabilityLabel}` : null,
   ].filter(Boolean).join(' · ');
