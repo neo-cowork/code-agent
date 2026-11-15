@@ -286,6 +286,8 @@ export interface AppSettings {
   meeting?: {
     /** 散会后自动交记言出纪要；每场会调一次模型、产生费用。缺省视为开 */
     autoMinutes?: boolean;
+    /** 会前提醒（读日历，只提醒不自动开录），默认关；只由宿主在日历授权确认后写成 true */
+    calendarReminder?: boolean;
   };
   // 记忆维护配置（N-MEM-CONSOLSAFE）。可选，未配置 = 自动整理只演练（dry-run）。
   memory?: {

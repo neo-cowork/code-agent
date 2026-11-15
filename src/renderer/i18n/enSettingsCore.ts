@@ -136,6 +136,7 @@ export const enSettingsCore = {
       modelUsage: 'Model usage',
       automaticScreenMemory: 'Automatic screen memory',
       manualDesktopActivity: 'Manual desktop activity',
+      meetingCalendarReminder: 'Meeting reminder (calendar)',
       appshots: 'App snapshots',
       permissionDataBoundary: 'Permissions and data boundary',
       voiceTranscription: 'Voice transcription',

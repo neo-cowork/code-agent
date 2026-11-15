@@ -47,5 +47,12 @@ export function createShellPassiveBridge(client: ShellBridgeClient): PassiveBrid
       }
       return res.code;
     },
+    async EKAuthorizationStatusForEvents(): Promise<0 | 1 | 2 | 3 | 4> {
+      const res = await client.post<{ status: number }>('/v1/passive/calendar');
+      if (res?.status !== 0 && res?.status !== 1 && res?.status !== 2 && res?.status !== 3 && res?.status !== 4) {
+        throw new Error('env_assist_bridge:invalid_passive_calendar_response');
+      }
+      return res.status;
+    },
   };
 }

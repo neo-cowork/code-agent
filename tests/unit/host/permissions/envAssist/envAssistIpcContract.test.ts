@@ -26,8 +26,8 @@ const panes: ReadonlyArray<{ pane: Pane; klass: EnvAssistNotice['class']; probe:
 
 /** One native state: passive reads and prompting calls are counted per method. */
 class NativeFake {
-  prompting: Record<'CGRequestScreenCaptureAccess' | 'requestAccessibility' | 'AEDeterminePermissionToAutomateTarget' | 'IOHIDRequestAccess', number> =
-    { CGRequestScreenCaptureAccess: 0, requestAccessibility: 0, AEDeterminePermissionToAutomateTarget: 0, IOHIDRequestAccess: 0 };
+  prompting: Record<'CGRequestScreenCaptureAccess' | 'requestAccessibility' | 'AEDeterminePermissionToAutomateTarget' | 'IOHIDRequestAccess' | 'requestFullAccessToEvents', number> =
+    { CGRequestScreenCaptureAccess: 0, requestAccessibility: 0, AEDeterminePermissionToAutomateTarget: 0, IOHIDRequestAccess: 0, requestFullAccessToEvents: 0 };
   constructor(public code: Code) {}
   /** Real IOHIDAccessType shape (Granted=0 / Denied=1 / Unknown=2), mapped from the Apple-event fixture. */
   get iohid(): 0 | 1 | 2 { return this.code === 0 ? 0 : this.code === -1744 ? 2 : 1; }
@@ -40,6 +40,7 @@ class NativeFake {
       if ((ask as boolean) === true) this.prompting.AEDeterminePermissionToAutomateTarget++;
       return this.code;
     },
+    EKAuthorizationStatusForEvents: async () => 0,
   };
   grant: PromptingBridge = {
     requestAccessibility: async () => { this.prompting.requestAccessibility++; },
@@ -48,6 +49,7 @@ class NativeFake {
     AEDeterminePermissionToAutomateTarget: async (_t, ask) => {
       if (ask) this.prompting.AEDeterminePermissionToAutomateTarget++;
     },
+    requestFullAccessToEvents: async () => { this.prompting.requestFullAccessToEvents++; },
   };
 }
 

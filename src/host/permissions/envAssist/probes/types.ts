@@ -11,6 +11,8 @@ export interface PassiveBridge {
   CGPreflightScreenCaptureAccess(): Promise<boolean>;
   IOHIDCheckAccess(): Promise<0 | 1 | 2>;
   AEDeterminePermissionToAutomateTarget(targetBundleId: string, askUserIfNeeded: false): Promise<0 | -1743 | -1744 | -600>;
+  /** EKAuthorizationStatus for events: 0 notDetermined, 1 restricted, 2 denied, 3 fullAccess, 4 writeOnly. */
+  EKAuthorizationStatusForEvents(): Promise<0 | 1 | 2 | 3 | 4>;
 }
 
 /** Declaration only; consumption is restricted to the grant boundary. */
@@ -19,4 +21,6 @@ export interface PromptingBridge {
   CGRequestScreenCaptureAccess(): Promise<void>;
   IOHIDRequestAccess(): Promise<void>;
   AEDeterminePermissionToAutomateTarget(targetBundleId: string, askUserIfNeeded: true): Promise<void>;
+  /** Fire-and-forget: the host confirms the answer by polling EKAuthorizationStatusForEvents. */
+  requestFullAccessToEvents(): Promise<void>;
 }
