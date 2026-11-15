@@ -18,7 +18,7 @@ function meetingDate(ms: number): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function buildMeetingActionSeed(meeting: Pick<MeetingSummaryRecord, 'id' | 'title' | 'startedAtMs'>, item: MeetingActionItem): string {
+function buildMeetingActionSeed(meeting: Pick<MeetingSummaryRecord, 'id' | 'title' | 'startedAtMs'>, item: MeetingActionItem): string {
   return [
     `会议「${meeting.title}」（${meetingDate(meeting.startedAtMs)}）上的一条行动项，请帮我推进：${item.text}`,
     `原话：「${item.quote}」`,

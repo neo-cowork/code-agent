@@ -13,6 +13,7 @@ import type { AudioSegment } from '@shared/contract/desktop';
 import type { MeetingActionItem, MeetingDetail, MeetingMinutesItem, MeetingSummaryRecord } from '@shared/contract/audioCapture';
 import { getMeetingDetail, regenerateMeetingMinutes } from '../../../services/nativeDesktop';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolate } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { Button } from '../../primitives/Button';
@@ -172,7 +173,7 @@ export const MeetingPage: React.FC<{ meetingId: string; onBack: () => void }> = 
           <div className="text-[11px] text-zinc-500">
             {new Date(meeting.startedAtMs).toLocaleDateString()} {formatClock(meeting.startedAtMs)}
             {meeting.endedAtMs ? ` – ${formatClock(meeting.endedAtMs)}` : ` · ${copy.inProgress}`}
-            {duration !== null ? ` · ${duration} min` : ''} · {sourceLabel(meeting.source, copy)}
+            {duration !== null ? ` · ${interpolate(copy.durationMinutes, { n: duration })}` : ''} · {sourceLabel(meeting.source, copy)}
           </div>
         </div>
       </div>

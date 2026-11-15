@@ -102,7 +102,7 @@ export interface MeetingRecordStore {
   importMeeting(input: ImportedMeetingInput): { id: string; created: boolean };
 }
 
-export interface ImportedMeetingInput {
+interface ImportedMeetingInput {
   source: Exclude<MeetingSource, 'recorded'>;
   externalRef: string;
   title: string;

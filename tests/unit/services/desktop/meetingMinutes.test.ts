@@ -44,7 +44,7 @@ ${LINES.map((t, i) => `INSERT INTO audio_segments VALUES ('a${i}', ${T0 + (i + 1
 });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-const TRANSCRIPT = LINES.join('\n');
+const TRANSCRIPT = LINES.map((text, i) => ({ atMs: null, speaker: i % 2 ? 'James' : '林晨', text }));
 const block = (v: unknown) => `整理好了：\n\`\`\`meeting_minutes\n${JSON.stringify(v)}\n\`\`\``;
 
 describe('纪要校验：纪要里不许有会上没说过的话', () => {
@@ -84,6 +84,19 @@ describe('纪要校验：纪要里不许有会上没说过的话', () => {
     expect(r.cleared).toBe(3);
   });
 
+  it('原话是说话人自己认领（「这个我来跟」）：负责人可以是这句话的说话人，换成别人就清空', () => {
+    const r = validateMinutes(block({
+      decisions: [],
+      actionItems: [
+        { text: '给客户报价', quote: '报价下周三前给到客户，这个我来跟', owner: '林晨', due: null },
+        { text: '给客户报价', quote: '报价下周三前给到客户，这个我来跟', owner: 'James', due: null },
+        { text: '确认交付范围', quote: '交付周期还没定，等客户确认需求范围再说', owner: '林晨', due: null },
+      ],
+      openQuestions: [],
+    }), TRANSCRIPT)!;
+    expect(r.minutes.actionItems.map((a) => a.owner)).toEqual(['林晨', null, null]);
+  });
+
   it('没有纪要块或不是 JSON：返回 null', () => {
     expect(validateMinutes('这场会主要讨论了报价。', TRANSCRIPT)).toBeNull();
     expect(validateMinutes('```meeting_minutes\n{决策: 1}\n```', TRANSCRIPT)).toBeNull();
@@ -121,6 +134,25 @@ describe('散会自动出纪要', () => {
     expect(m.minutesState).toBe('done');
     expect(m.minutesSessionId).toBe('sess-1');
     expect(m.minutes?.actionItems[0]).toMatchObject({ owner: '我', due: '下周三' });
+  });
+
+  it('记言会话里那条 JSON 回复改写成人能读的纪要：原话、负责人/截止，没有 JSON', async () => {
+    const rewriteOutput = vi.fn(async () => {});
+    await runMeetingMinutes('m1', deps({ rewriteOutput }));
+    expect(rewriteOutput).toHaveBeenCalledTimes(1);
+    const [sessionId, content] = rewriteOutput.mock.calls[0] as unknown as [string, string];
+    expect(sessionId).toBe('sess-1');
+    expect(content).toContain('### 决策');
+    expect(content).toContain('- 给客户报价（负责人：我；截止：下周三）');
+    expect(content).toContain('> 报价下周三前给到客户，这个我来跟');
+    expect(content).toContain('### 未解问题\n（无）');
+    expect(content).not.toContain('{"');
+  });
+
+  it('没按格式交回（纪要失败）时不改写会话，保留原回复方便查原因', async () => {
+    const rewriteOutput = vi.fn(async () => {});
+    await runMeetingMinutes('m1', deps({ rewriteOutput, runner: vi.fn(async () => ({ finalOutput: '好的' })) }));
+    expect(rewriteOutput).not.toHaveBeenCalled();
   });
 
   it('开关关着：不调模型，标跳过；会议页手动点「重新出纪要」照出', async () => {

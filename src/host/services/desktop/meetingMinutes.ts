@@ -15,6 +15,7 @@ import type {
   MeetingMinutes,
   MeetingMinutesItem,
   MeetingSummaryRecord,
+  MeetingTranscriptLine,
 } from '../../../shared/contract/audioCapture';
 import { createLogger } from '../infra/logger';
 import type { MeetingRecordStore } from './meetingRecords';
@@ -40,7 +41,15 @@ export interface MinutesValidation {
 }
 
 /** 解析记言的输出并逐条核对原话；没有纪要块或不是 JSON 返回 null */
-export function validateMinutes(output: string, transcript: string): MinutesValidation | null {
+/** 第一人称认领：「这个我来」「我改一下」「我这边先核」——说这句话的人就是负责人 */
+const SELF_CLAIM = /我(来|去|改|做|负责|跟|这边|先|会|整理|核|对|写|看|发|约|找|补|画|拆|确认)/;
+
+/**
+ * 解析记言的输出并逐条核对原话；没有纪要块或不是 JSON 返回 null。
+ * lines 带说话人：负责人要么在原话里点了名，要么是说出这句第一人称认领原话的那个人。
+ */
+export function validateMinutes(output: string, lines: MeetingTranscriptLine[]): MinutesValidation | null {
+  const transcript = lines.map((l) => l.text).join('\n');
   const block = BLOCK_PATTERN.exec(output)?.[1];
   if (!block) return null;
   let raw: Record<string, unknown>;
@@ -70,12 +79,36 @@ export function validateMinutes(output: string, transcript: string): MinutesVali
     cleared += 1;
     return null;
   };
+  const ownerOf = (value: unknown, quote: string): string | null => {
+    const v = str(value);
+    if (!v) return null;
+    if (norm(quote).includes(norm(v))) return v;
+    const q = norm(quote);
+    const speakers = lines.filter((l) => l.speaker && norm(l.text).includes(q)).map((l) => l.speaker);
+    if (SELF_CLAIM.test(quote) && speakers.includes(v)) return v;
+    cleared += 1;
+    return null;
+  };
   const items = (key: string) => pick(key).map(grounded).filter((x): x is MeetingMinutesItem => x !== null);
   const actionItems: MeetingActionItem[] = pick('actionItems').flatMap((item) => {
     const g = grounded(item);
-    return g ? [{ ...g, owner: statedIn(item.owner, g.quote), due: statedIn(item.due, g.quote) }] : [];
+    return g ? [{ ...g, owner: ownerOf(item.owner, g.quote), due: statedIn(item.due, g.quote) }] : [];
   });
   return { minutes: { decisions: items('decisions'), actionItems, openQuestions: items('openQuestions') }, dropped, cleared };
+}
+
+/** 记言会话里那条 JSON 回复改写成的正文（会议页「本场产物」点进来看到的就是它） */
+export function formatMinutesMarkdown(meeting: Pick<MeetingSummaryRecord, 'title'>, minutes: MeetingMinutes): string {
+  const items = (list: MeetingMinutesItem[]) => (list.length ? list.map((x) => `- ${x.text}\n  > ${x.quote}`).join('\n') : '（无）');
+  const actions = minutes.actionItems.length
+    ? minutes.actionItems.map((a) => `- ${a.text}（负责人：${a.owner ?? '待认领'}；截止：${a.due ?? '待定'}）\n  > ${a.quote}`).join('\n')
+    : '（无）';
+  return [
+    `已整理「${meeting.title}」的会后纪要，会议页里可以把行动项一键交给 Neo。每条下面是会上的原话。`,
+    `### 决策\n${items(minutes.decisions)}`,
+    `### 行动项\n${actions}`,
+    `### 未解问题\n${items(minutes.openQuestions)}`,
+  ].join('\n\n');
 }
 
 export function buildMinutesPrompt(meeting: MeetingSummaryRecord): string {
@@ -84,7 +117,7 @@ export function buildMinutesPrompt(meeting: MeetingSummaryRecord): string {
     `1. 先调用 meeting_records，action 用 read，meeting_id 用 ${meeting.id}，读完整场转写。`,
     '2. 只依据转写整理三类内容：决策（会上明确定下来的）、行动项（会上明确要做的事）、未解问题（提出了但没定的）。',
     '3. 每一条都要带 quote：从转写里原样复制的一句原话，不改字、不拼接。找不到原话支撑的不要写。',
-    '4. 行动项的 owner / due 只有在那句原话里明说了才填（例如「这个我来跟」「周五前给到」），没说就填 null，不要从上下文推测，也不要采用妙记或腾讯会议 AI 列的负责人。',
+    '4. 行动项的 text 只写要做的事，不写人名。owner / due 只有原话里明说了才填：原话点了名就填那个名字，原话是说话人自己认领（「这个我来跟」「我改一下」）就填这句话的说话人；截止同理（「周五前给到」）。没说就填 null，不要从上下文推测，也不要采用妙记或腾讯会议 AI 列的负责人。',
     '5. 最后只输出一个代码块，不要别的文字：',
     '```meeting_minutes',
     '{"decisions":[{"text":"…","quote":"…"}],"actionItems":[{"text":"…","quote":"…","owner":null,"due":null}],"openQuestions":[{"text":"…","quote":"…"}]}',
@@ -107,6 +140,8 @@ export interface MeetingMinutesDeps {
   isEnabled: () => boolean;
   createSession: (meeting: MeetingSummaryRecord) => Promise<{ id: string }>;
   runner: MinutesRunner;
+  /** 把会话里最后一条带 meeting_minutes 块的回复改写成正文；失败只记日志 */
+  rewriteOutput?: (sessionId: string, content: string) => Promise<void>;
 }
 
 /** 一场会出一次纪要。manual=true 是会议页上用户点「重新出纪要」，不看自动开关 */
@@ -122,7 +157,8 @@ export async function runMeetingMinutes(meetingId: string, deps: MeetingMinutesD
     store.setMinutesState(meetingId, 'skipped');
     return;
   }
-  const transcript = store.transcript(meeting).map((l) => l.text).join('\n');
+  const lines = store.transcript(meeting);
+  const transcript = lines.map((l) => l.text).join('\n');
   if (transcript.replace(/\s/g, '').length < MEETING_SESSION_LIMITS.MINUTES_MIN_TRANSCRIPT_CHARS) {
     logger.info('[会议纪要] 转写太短，跳过', { meetingId, chars: transcript.length });
     store.setMinutesState(meetingId, 'skipped');
@@ -141,13 +177,14 @@ export async function runMeetingMinutes(meetingId: string, deps: MeetingMinutesD
       allowedToolNames: ['meeting_records'],
       maxIterations: MEETING_SESSION_LIMITS.MINUTES_MAX_ITERATIONS,
     });
-    const result = validateMinutes(finalOutput, transcript);
+    const result = validateMinutes(finalOutput, lines);
     if (!result) {
       logger.warn('[会议纪要] 记言没有按格式交回纪要', { meetingId, sessionId, outputChars: finalOutput.length });
       store.setMinutesState(meetingId, 'failed', sessionId);
       return;
     }
     store.saveMinutes(meetingId, result.minutes);
+    await deps.rewriteOutput?.(sessionId, formatMinutesMarkdown(meeting, result.minutes));
     logger.info('[会议纪要] 已出纪要', {
       meetingId,
       decisions: result.minutes.decisions.length,
@@ -189,7 +226,25 @@ async function defaultDeps(): Promise<MeetingMinutesDeps> {
     isEnabled: () => getConfigService().getSettings().meeting?.autoMinutes !== false,
     createSession: createMinutesSession,
     runner: defaultFirstWakeRunner,
+    rewriteOutput: rewriteMinutesMessage,
   };
+}
+
+/** 同首次醒来 stripPersistedSuggestions：走 SessionManager.updateMessage（写库并同步缓存） */
+async function rewriteMinutesMessage(sessionId: string, content: string): Promise<void> {
+  try {
+    const { getSessionManager } = await import('../infra/sessionManager');
+    const sessionManager = getSessionManager();
+    const messages = (await sessionManager.getSession(sessionId))?.messages ?? [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m?.role !== 'assistant' || typeof m.content !== 'string') continue;
+      if (m.id && m.content.includes('```meeting_minutes')) await sessionManager.updateMessage(m.id, { content });
+      return;
+    }
+  } catch (error) {
+    logger.warn('[会议纪要] 改写记言会话里的纪要回复失败（纪要已落库，会议页不受影响）', { sessionId, error: String(error) });
+  }
 }
 
 /** 记言出纪要的会话：会议页「本场产物」从这里进。建法与首次醒来相同（不落到 process.cwd()，那是安装目录） */
