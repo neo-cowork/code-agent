@@ -1,0 +1,1728 @@
+{
+  "baselineSubscription": {
+    "xiaomi": {
+      "neohorse-1.5-flash-preview": 1
+    }
+  },
+  "productionDefaultCompactWhenOmitted": {
+    "moonshot": {
+      "kimi-k2.5": 1
+    }
+  },
+  "productionDefaultCompactWhenUnsetOnBaseline": {
+    "xiaomi": {
+      "neohorse-1.5-flash-preview": 1
+    }
+  },
+  "jevModel": {
+    "jev-1.13.0": 1
+  },
+  "summaryAsProductionMaxTokens": 4096,
+  "summaryFairMaxTokens": 16384,
+  "originalPlannedSessions": 20,
+  "authorizedSessions": 15,
+  "evaluatedSessions": 15,
+  "directionalOnly": 1,
+  "evaluationNonLinkMatchFastPath": 1,
+  "budgetUsd": 3,
+  "paidUsd": 0.010431540000000005,
+  "previousAttemptsPaidUsd": 0.04137323400000002,
+  "cumulativePaidUsd": 0.051804774000000026,
+  "rejectionHistogramS": {
+    "admitted": 12,
+    "truncated": 0,
+    "overBudget": 0,
+    "missing_*": 3,
+    "empty": 0,
+    "not_shorter": 0
+  },
+  "rejectionHistogramSFair": {
+    "admitted": 12,
+    "truncated": 0,
+    "overBudget": 0,
+    "missing_*": 2,
+    "empty": 0,
+    "not_shorter": 1
+  },
+  "rows": [
+    {
+      "id": "session_1792833597296_2482acd5",
+      "beforeTokens": 4720,
+      "planOriginalTokens": 1120,
+      "manifest": {
+        "files": 2,
+        "errors": 2,
+        "openWork": 5,
+        "commands": 0,
+        "tokens": 1169
+      },
+      "needles": 1,
+      "S": {
+        "tokens": 4720,
+        "retained": 1,
+        "retention": 1,
+        "ms": 11576,
+        "calls": 2,
+        "inputTokens": 7758,
+        "outputTokens": 2030,
+        "rejected": 1,
+        "summaryTokens": 976,
+        "callRecords": [
+          {
+            "outputTokens": 1015,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1015,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 2,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [
+            0,
+            1
+          ],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 4720,
+        "retained": 1,
+        "retention": 1,
+        "ms": 11399,
+        "calls": 2,
+        "inputTokens": 7857,
+        "outputTokens": 2228,
+        "rejected": 1,
+        "summaryTokens": 1081,
+        "callRecords": [
+          {
+            "outputTokens": 1114,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1114,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 2,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [
+            0,
+            1
+          ],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 3297,
+        "retained": 1,
+        "retention": 1,
+        "ms": 861,
+        "usd": 0.00033940200000000004,
+        "calls": 1,
+        "inputTokens": 8081,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793699747736_6210aeb1",
+      "beforeTokens": 5903,
+      "planOriginalTokens": 7159,
+      "manifest": {
+        "files": 1,
+        "errors": 0,
+        "openWork": 18,
+        "commands": 0,
+        "tokens": 2965
+      },
+      "needles": 2,
+      "S": {
+        "tokens": 2609,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 7478,
+        "calls": 1,
+        "inputTokens": 13781,
+        "outputTokens": 1172,
+        "rejected": 0,
+        "summaryTokens": 1169,
+        "callRecords": [
+          {
+            "outputTokens": 1172,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 2318,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 5105,
+        "calls": 1,
+        "inputTokens": 13781,
+        "outputTokens": 874,
+        "rejected": 0,
+        "summaryTokens": 878,
+        "callRecords": [
+          {
+            "outputTokens": 874,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 2179,
+        "retained": 2,
+        "retention": 1,
+        "ms": 834,
+        "usd": 0.000351708,
+        "calls": 1,
+        "inputTokens": 8374,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793712034015_82afcadc",
+      "beforeTokens": 5261,
+      "planOriginalTokens": 6357,
+      "manifest": {
+        "files": 2,
+        "errors": 0,
+        "openWork": 29,
+        "commands": 0,
+        "tokens": 3626
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 2124,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 5838,
+        "calls": 1,
+        "inputTokens": 13698,
+        "outputTokens": 899,
+        "rejected": 0,
+        "summaryTokens": 907,
+        "callRecords": [
+          {
+            "outputTokens": 899,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 2304,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 5964,
+        "calls": 1,
+        "inputTokens": 13698,
+        "outputTokens": 1084,
+        "rejected": 0,
+        "summaryTokens": 1087,
+        "callRecords": [
+          {
+            "outputTokens": 1084,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 5261,
+        "retained": 5,
+        "retention": 1,
+        "ms": 951,
+        "usd": 0.000339318,
+        "calls": 1,
+        "inputTokens": 8079,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793786871148_7fa28926",
+      "beforeTokens": 5139,
+      "planOriginalTokens": 5420,
+      "manifest": {
+        "files": 81,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 3988
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 3492,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 14728,
+        "calls": 2,
+        "inputTokens": 26239,
+        "outputTokens": 2965,
+        "rejected": 0,
+        "summaryTokens": 1756,
+        "callRecords": [
+          {
+            "outputTokens": 1104,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1861,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 5334,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 28532,
+        "calls": 2,
+        "inputTokens": 28022,
+        "outputTokens": 7268,
+        "rejected": 0,
+        "summaryTokens": 3598,
+        "callRecords": [
+          {
+            "outputTokens": 3495,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 3773,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 2003,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 859,
+        "usd": 0.00030949800000000006,
+        "calls": 1,
+        "inputTokens": 7369,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1793799207013_9966126c",
+      "beforeTokens": 11547,
+      "planOriginalTokens": 7194,
+      "manifest": {
+        "files": 2,
+        "errors": 1,
+        "openWork": 37,
+        "commands": 0,
+        "tokens": 4438
+      },
+      "needles": 2,
+      "S": {
+        "tokens": 3906,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 12731,
+        "calls": 2,
+        "inputTokens": 31758,
+        "outputTokens": 2008,
+        "rejected": 0,
+        "summaryTokens": 1005,
+        "callRecords": [
+          {
+            "outputTokens": 983,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1025,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 4057,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 13984,
+        "calls": 2,
+        "inputTokens": 31874,
+        "outputTokens": 2257,
+        "rejected": 0,
+        "summaryTokens": 1156,
+        "callRecords": [
+          {
+            "outputTokens": 1087,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1170,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 4482,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 859,
+        "usd": 0.000385266,
+        "calls": 1,
+        "inputTokens": 9173,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794030501431_fa9bef70",
+      "beforeTokens": 110321,
+      "planOriginalTokens": 17122,
+      "manifest": {
+        "files": 8,
+        "errors": 0,
+        "openWork": 12,
+        "commands": 0,
+        "tokens": 4177
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 3289,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 18448,
+        "calls": 1,
+        "inputTokens": 19374,
+        "outputTokens": 1060,
+        "rejected": 0,
+        "summaryTokens": 1037,
+        "callRecords": [
+          {
+            "outputTokens": 1060,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 3449,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 6221,
+        "calls": 1,
+        "inputTokens": 19374,
+        "outputTokens": 1214,
+        "rejected": 0,
+        "summaryTokens": 1197,
+        "callRecords": [
+          {
+            "outputTokens": 1214,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 2664,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1427,
+        "usd": 0.0011724720000000001,
+        "calls": 2,
+        "inputTokens": 27916,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794041583647_dd5f6b06",
+      "beforeTokens": 27077,
+      "planOriginalTokens": 7703,
+      "manifest": {
+        "files": 2,
+        "errors": 8,
+        "openWork": 24,
+        "commands": 0,
+        "tokens": 5226
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 2226,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 12874,
+        "calls": 2,
+        "inputTokens": 36709,
+        "outputTokens": 2448,
+        "rejected": 0,
+        "summaryTokens": 1321,
+        "callRecords": [
+          {
+            "outputTokens": 1021,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1427,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 3231,
+        "retained": 4,
+        "retention": 0.8,
+        "ms": 13244,
+        "calls": 2,
+        "inputTokens": 36606,
+        "outputTokens": 3464,
+        "rejected": 0,
+        "summaryTokens": 2326,
+        "callRecords": [
+          {
+            "outputTokens": 905,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2559,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 2205,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 1047,
+        "usd": 0.0005558280000000001,
+        "calls": 1,
+        "inputTokens": 13234,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794051270959_4abbd841",
+      "beforeTokens": 326039,
+      "planOriginalTokens": 23524,
+      "manifest": {
+        "files": 12,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 4496
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 34923,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 14847,
+        "calls": 2,
+        "inputTokens": 40870,
+        "outputTokens": 2894,
+        "rejected": 0,
+        "summaryTokens": 1491,
+        "callRecords": [
+          {
+            "outputTokens": 1288,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1606,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 35104,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 14101,
+        "calls": 2,
+        "inputTokens": 40784,
+        "outputTokens": 3068,
+        "rejected": 0,
+        "summaryTokens": 1672,
+        "callRecords": [
+          {
+            "outputTokens": 1205,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1863,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 36425,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 2164,
+        "usd": 0.002554944,
+        "calls": 5,
+        "inputTokens": 60832,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794113000000_rr58long",
+      "beforeTokens": 58970,
+      "planOriginalTokens": 37584,
+      "manifest": {
+        "files": 0,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 8786
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 3267,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 9378,
+        "calls": 1,
+        "inputTokens": 24951,
+        "outputTokens": 1298,
+        "rejected": 0,
+        "summaryTokens": 1287,
+        "callRecords": [
+          {
+            "outputTokens": 1298,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 3221,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 6571,
+        "calls": 1,
+        "inputTokens": 24951,
+        "outputTokens": 1221,
+        "rejected": 0,
+        "summaryTokens": 1241,
+        "callRecords": [
+          {
+            "outputTokens": 1221,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 23725,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 1845,
+        "usd": 0.001483734,
+        "calls": 3,
+        "inputTokens": 35327,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794458764754_fa52c046",
+      "beforeTokens": 22057,
+      "planOriginalTokens": 13842,
+      "manifest": {
+        "files": 44,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 4180
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 3749,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 18454,
+        "calls": 2,
+        "inputTokens": 38534,
+        "outputTokens": 3488,
+        "rejected": 0,
+        "summaryTokens": 1895,
+        "callRecords": [
+          {
+            "outputTokens": 1480,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2008,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 3849,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 16916,
+        "calls": 2,
+        "inputTokens": 38665,
+        "outputTokens": 3608,
+        "rejected": 0,
+        "summaryTokens": 1995,
+        "callRecords": [
+          {
+            "outputTokens": 1506,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2102,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 5880,
+        "retained": 0,
+        "retention": 0,
+        "ms": 1351,
+        "usd": 0.0008468040000000002,
+        "calls": 2,
+        "inputTokens": 20162,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794476700129_12251397",
+      "beforeTokens": 10751,
+      "planOriginalTokens": 2665,
+      "manifest": {
+        "files": 37,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 5492
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 10300,
+        "retained": 4,
+        "retention": 0.8,
+        "ms": 18766,
+        "calls": 2,
+        "inputTokens": 23594,
+        "outputTokens": 4512,
+        "rejected": 0,
+        "summaryTokens": 2299,
+        "callRecords": [
+          {
+            "outputTokens": 1890,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2622,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 10751,
+        "retained": 5,
+        "retention": 1,
+        "ms": 18938,
+        "calls": 2,
+        "inputTokens": 23656,
+        "outputTokens": 5286,
+        "rejected": 1,
+        "summaryTokens": 3220,
+        "callRecords": [
+          {
+            "outputTokens": 1570,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 3716,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 1
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 3997,
+        "retained": 2,
+        "retention": 0.4,
+        "ms": 966,
+        "usd": 0.000302022,
+        "calls": 1,
+        "inputTokens": 7191,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794487413728_72da5cce",
+      "beforeTokens": 2818,
+      "planOriginalTokens": 5532,
+      "manifest": {
+        "files": 5,
+        "errors": 10,
+        "openWork": 18,
+        "commands": 0,
+        "tokens": 5591
+      },
+      "needles": 2,
+      "S": {
+        "tokens": 2818,
+        "retained": 2,
+        "retention": 1,
+        "ms": 12178,
+        "calls": 2,
+        "inputTokens": 32926,
+        "outputTokens": 2396,
+        "rejected": 1,
+        "summaryTokens": 1161,
+        "callRecords": [
+          {
+            "outputTokens": 1198,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1198,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 10,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 2818,
+        "retained": 2,
+        "retention": 1,
+        "ms": 8692,
+        "calls": 2,
+        "inputTokens": 32645,
+        "outputTokens": 1805,
+        "rejected": 1,
+        "summaryTokens": 890,
+        "callRecords": [
+          {
+            "outputTokens": 878,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 927,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 10,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 1497,
+        "retained": 0,
+        "retention": 0,
+        "ms": 783,
+        "usd": 0.000182028,
+        "calls": 1,
+        "inputTokens": 4334,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794511239872_acbe9414",
+      "beforeTokens": 5711,
+      "planOriginalTokens": 7605,
+      "manifest": {
+        "files": 16,
+        "errors": 3,
+        "openWork": 23,
+        "commands": 0,
+        "tokens": 4566
+      },
+      "needles": 2,
+      "S": {
+        "tokens": 3235,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 11634,
+        "calls": 2,
+        "inputTokens": 33277,
+        "outputTokens": 2400,
+        "rejected": 0,
+        "summaryTokens": 1456,
+        "callRecords": [
+          {
+            "outputTokens": 828,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1572,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 3281,
+        "retained": 1,
+        "retention": 0.5,
+        "ms": 10925,
+        "calls": 2,
+        "inputTokens": 33254,
+        "outputTokens": 2468,
+        "rejected": 0,
+        "summaryTokens": 1502,
+        "callRecords": [
+          {
+            "outputTokens": 805,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1663,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 3513,
+        "retained": 0,
+        "retention": 0,
+        "ms": 791,
+        "usd": 0.00024864,
+        "calls": 1,
+        "inputTokens": 5920,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794539777942_13fbb74f",
+      "beforeTokens": 10845,
+      "planOriginalTokens": 12509,
+      "manifest": {
+        "files": 38,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 4126
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 3537,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 12589,
+        "calls": 2,
+        "inputTokens": 38792,
+        "outputTokens": 2693,
+        "rejected": 0,
+        "summaryTokens": 1484,
+        "callRecords": [
+          {
+            "outputTokens": 1049,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1644,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 3445,
+        "retained": 3,
+        "retention": 0.6,
+        "ms": 11831,
+        "calls": 2,
+        "inputTokens": 38821,
+        "outputTokens": 2552,
+        "rejected": 0,
+        "summaryTokens": 1392,
+        "callRecords": [
+          {
+            "outputTokens": 1024,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1528,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 4733,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 962,
+        "usd": 0.00049854,
+        "calls": 1,
+        "inputTokens": 11870,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    },
+    {
+      "id": "session_1794562219359_756a4981",
+      "beforeTokens": 38299,
+      "planOriginalTokens": 2400,
+      "manifest": {
+        "files": 69,
+        "errors": 0,
+        "openWork": 0,
+        "commands": 0,
+        "tokens": 4324
+      },
+      "needles": 5,
+      "S": {
+        "tokens": 38299,
+        "retained": 5,
+        "retention": 1,
+        "ms": 21854,
+        "calls": 2,
+        "inputTokens": 18522,
+        "outputTokens": 3638,
+        "rejected": 1,
+        "summaryTokens": 1742,
+        "callRecords": [
+          {
+            "outputTokens": 1810,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 1828,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 0,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 29,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [
+            11,
+            12,
+            13,
+            15,
+            16,
+            17,
+            21,
+            22,
+            23,
+            27,
+            28,
+            33,
+            34,
+            35,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            47,
+            48,
+            52,
+            53,
+            54,
+            55,
+            57,
+            58,
+            59
+          ],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "SFair": {
+        "tokens": 28799,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 18184,
+        "calls": 2,
+        "inputTokens": 18593,
+        "outputTokens": 3635,
+        "rejected": 0,
+        "summaryTokens": 2307,
+        "callRecords": [
+          {
+            "outputTokens": 1169,
+            "truncated": 0
+          },
+          {
+            "outputTokens": 2466,
+            "truncated": 0
+          }
+        ],
+        "validation": {
+          "ok": 1,
+          "truncated": 0,
+          "overBudget": 0,
+          "emptyOrWhitespace": 0,
+          "missingPaths": 0,
+          "missingErrors": 0,
+          "missingOpenWork": 0,
+          "notShorter": 0
+        },
+        "missingIndices": {
+          "paths": [],
+          "errors": [],
+          "openWork": []
+        }
+      },
+      "J": {
+        "tokens": 10247,
+        "retained": 1,
+        "retention": 0.2,
+        "ms": 1468,
+        "usd": 0.0008613360000000001,
+        "calls": 2,
+        "inputTokens": 20508,
+        "outputTokens": 0,
+        "rejected": 0
+      },
+      "skipped": 0,
+      "unavailable": 0,
+      "badShape": 0
+    }
+  ],
+  "S": {
+    "totals": {
+      "tokens": 122494,
+      "retained": 33,
+      "ms": 203373,
+      "calls": 26,
+      "inputTokens": 400783,
+      "outputTokens": 35901,
+      "rejected": 3,
+      "needles": 59
+    },
+    "medians": {
+      "tokens": 3492,
+      "retained": 2,
+      "ms": 12731,
+      "calls": 2,
+      "inputTokens": 26239,
+      "outputTokens": 2400,
+      "rejected": 0,
+      "retention": 0.5
+    }
+  },
+  "SFair": {
+    "totals": {
+      "tokens": 116681,
+      "retained": 32,
+      "ms": 190607,
+      "calls": 26,
+      "inputTokens": 402581,
+      "outputTokens": 42032,
+      "rejected": 3,
+      "needles": 59
+    },
+    "medians": {
+      "tokens": 3449,
+      "retained": 2,
+      "ms": 11831,
+      "calls": 2,
+      "inputTokens": 28022,
+      "outputTokens": 2468,
+      "rejected": 0,
+      "retention": 0.5
+    }
+  },
+  "J": {
+    "totals": {
+      "tokens": 112108,
+      "retained": 21,
+      "ms": 17168,
+      "calls": 24,
+      "inputTokens": 248370,
+      "outputTokens": 0,
+      "rejected": 0,
+      "needles": 59,
+      "usd": 0.010431540000000005
+    },
+    "medians": {
+      "tokens": 3997,
+      "retained": 1,
+      "ms": 962,
+      "calls": 1,
+      "inputTokens": 9173,
+      "outputTokens": 0,
+      "rejected": 0,
+      "retention": 0.4,
+      "usd": 0.000385266
+    }
+  },
+  "likeForLikeSFairAdmitted": {
+    "count": 12,
+    "stillRejected": 3,
+    "SFair": {
+      "totals": {
+        "tokens": 98392,
+        "retained": 24,
+        "ms": 151578,
+        "calls": 20,
+        "inputTokens": 338423,
+        "outputTokens": 32713,
+        "rejected": 0,
+        "needles": 51
+      },
+      "medians": {
+        "tokens": 3447,
+        "retained": 2,
+        "ms": 12537.5,
+        "calls": 2,
+        "inputTokens": 29948,
+        "outputTokens": 2510,
+        "rejected": 0,
+        "retention": 0.5
+      }
+    },
+    "J": {
+      "totals": {
+        "tokens": 103317,
+        "retained": 18,
+        "ms": 14558,
+        "calls": 21,
+        "inputTokens": 228764,
+        "outputTokens": 0,
+        "rejected": 0,
+        "needles": 51,
+        "usd": 0.009608088
+      },
+      "medians": {
+        "tokens": 4607.5,
+        "retained": 1,
+        "ms": 1004.5,
+        "calls": 1,
+        "inputTokens": 12552,
+        "outputTokens": 0,
+        "rejected": 0,
+        "retention": 0.30000000000000004,
+        "usd": 0.000527184
+      }
+    }
+  },
+  "likeForLikeSProdAdmitted": {
+    "count": 12,
+    "stillRejected": 3,
+    "S": {
+      "totals": {
+        "tokens": 76657,
+        "retained": 25,
+        "ms": 157765,
+        "calls": 20,
+        "inputTokens": 341577,
+        "outputTokens": 27837,
+        "rejected": 0,
+        "needles": 51
+      },
+      "medians": {
+        "tokens": 3390.5,
+        "retained": 2,
+        "ms": 12802.5,
+        "calls": 2,
+        "inputTokens": 28998.5,
+        "outputTokens": 2424,
+        "rejected": 0,
+        "retention": 0.5
+      }
+    },
+    "J": {
+      "totals": {
+        "tokens": 97067,
+        "retained": 19,
+        "ms": 14056,
+        "calls": 20,
+        "inputTokens": 215447,
+        "outputTokens": 0,
+        "rejected": 0,
+        "needles": 51,
+        "usd": 0.009048774
+      },
+      "medians": {
+        "tokens": 4239.5,
+        "retained": 1.5,
+        "ms": 964,
+        "calls": 1,
+        "inputTokens": 10521.5,
+        "outputTokens": 0,
+        "rejected": 0,
+        "retention": 0.4,
+        "usd": 0.000441903
+      }
+    }
+  }
+}
