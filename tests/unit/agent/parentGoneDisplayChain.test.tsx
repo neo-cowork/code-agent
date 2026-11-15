@@ -251,6 +251,7 @@ const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\u3000-\u303f\
 // Literal byte baselines; do not derive the expectation from the active dictionary.
 const chineseHeadline = '助手没有完成';
 const chineseReason = '上级任务已经结束';
+const chineseCard = '助手没有完成上级任务已经结束查看详情重试';
 const chinesePanelRow = '助手失败：上级任务已经结束';
 
 async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {
@@ -279,6 +280,7 @@ async function assertSurfaces(snapshot: AgentTreeSnapshot, producer: string) {
     } else {
       expect(card.getByTestId('delegation-headline').textContent).toBe(chineseHeadline);
       expect(card.getByTestId('delegation-failure').textContent).toBe(chineseReason);
+      expect(cardText).toBe(chineseCard);
       expect(cardText).not.toContain('执行失败助手');
     }
     card.unmount();
