@@ -2141,7 +2141,7 @@ export class ToolExecutor {
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
-        sessionId: effectiveSessionId,
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
@@ -2494,7 +2494,7 @@ export class ToolExecutor {
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
         // 在该路径是误导——给模型可转述的真实原因与出路。
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
-        const defaultDenialReason = readOnlyForcesConfirmation
+        const defaultDenialReason = readOnlyForcesConfirmation && denialSource !== 'goal-sticky-host'
           ? readOnlyDenialError(executionToolName)
           : permissionDenialError(executionToolName, denialSource, computerApp);
         const hostReason = ask.message
@@ -2523,8 +2523,9 @@ export class ToolExecutor {
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
-        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）
-        if (actionFingerprint && effectiveSessionId) {
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）。
+        // goal-sticky-host 是本轮真人拒之后的宿主守卫拦截，不重写登记以免把早先的 byUser:true 降级。
+        if (actionFingerprint && effectiveSessionId && denialSource !== 'goal-sticky-host') {
           getDenialRegistry().record({
             sessionId: effectiveSessionId,
             fingerprint: actionFingerprint,

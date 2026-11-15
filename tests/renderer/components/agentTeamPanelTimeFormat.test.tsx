@@ -25,11 +25,12 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 import { AgentTeamPanel } from '../../../src/renderer/components/features/agentTeam/AgentTeamPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const MESSAGE_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(MESSAGE_AT, 'en');
 
 const AGENT_ID = 'reviewer';
 
@@ -94,13 +95,13 @@ describe('AgentTeamPanel 消息时间戳（跟随 UI language）', () => {
     expect(document.body.textContent ?? '').not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：消息时间跟随 formatDateTime', async () => {
     useAppStore.setState({ language: 'en' });
     render(<AgentTeamPanel sessionId="session-a" runId="run-a" />);
     await screen.findByText('同步一下进度');
     await waitFor(() => {
       expect(document.body.textContent ?? '').toContain(EN);
     });
-    expect(document.body.textContent ?? '').not.toContain('16:05');
+    expect(document.body.textContent ?? '').toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

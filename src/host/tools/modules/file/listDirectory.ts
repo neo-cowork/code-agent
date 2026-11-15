@@ -22,6 +22,7 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
 interface DirEntry {
@@ -359,6 +360,7 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
             },
           };
         }
+        if (isChatUploadPath(dirPath)) return buildExpiredChatUploadResult(dirPath);
         return { ok: false, error: `Directory not found: ${dirPath}`, code: 'ENOENT' };
       }
       return { ok: false, error: e.message ?? 'Failed to list directory', code: 'FS_ERROR' };

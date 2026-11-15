@@ -52,7 +52,7 @@ import { persistAgentLoopMessageToSession } from '../../../src/cli/bootstrap';
 import { CLISessionManager } from '../../../src/cli/session';
 import { getCLIDatabase } from '../../../src/cli/database';
 import {
-  deriveFallbackSessionTitle,
+  resolveSessionTitle,
   isPlaceholderSessionTitle,
 } from '../../../src/shared/sessionTitlePlaceholder';
 import { isPlaceholderSessionTitle as webIsPlaceholderSessionTitle } from '../../../src/web/helpers/webSessionStore';
@@ -61,6 +61,8 @@ import { SessionManager } from '../../../src/host/services/infra/sessionManager'
 import Database from 'better-sqlite3';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 
+const ruleSummary = (source: string, language: 'zh' | 'en' = 'zh') =>
+  resolveSessionTitle(source, language, async () => ({ title: null, unavailable: true }), { info: vi.fn(), warn: vi.fn() });
 const LOGGER = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -127,7 +129,7 @@ describe('CLI session titles', () => {
     });
     await settle();
 
-    expect(readTitle(sessionId)).toBe('fix the login redirect');
+    expect(readTitle(sessionId)).toBe(await ruleSummary('fix the login redirect'));
   });
 
   it('title prompt follows the language of the first message, not a hardcoded Chinese-first rule', async () => {
@@ -171,7 +173,7 @@ describe('CLI session titles', () => {
     });
     await settle();
 
-    expect(readTitle(sessionId)).toBe('rename the export button');
+    expect(readTitle(sessionId)).toBe(await ruleSummary('rename the export button'));
   });
 
   it('does not overwrite a title the user set while the model call is in flight', async () => {
@@ -248,7 +250,7 @@ describe('CLI session titles', () => {
     await manager.addMessageToSession(session.id, userMessage('msg-provisional', longPrompt));
     await settle();
 
-    expect(readTitle(session.id)).toBe(deriveFallbackSessionTitle(longPrompt));
+    expect(readTitle(session.id)).toBe(await ruleSummary(longPrompt));
   });
 });
 
@@ -278,7 +280,7 @@ describe('placeholder predicate call sites', () => {
     telemetryDb = new Database(':memory:');
     applySchema(telemetryDb, LOGGER);
     const manager = new CLISessionManager();
-    const fallback = deriveFallbackSessionTitle(USER_TEXT);
+    const fallback = await ruleSummary(USER_TEXT);
 
     for (const [title, expected] of cases) {
       expect(isPlaceholderSessionTitle(title), `shared ${JSON.stringify(title)}`).toBe(expected);
@@ -363,7 +365,7 @@ describe('placeholder predicate call sites', () => {
       await (host as unknown as {
         maybeUpdateTitleForSession: (sessionId: string, firstMessage: string) => Promise<void>;
       }).maybeUpdateTitleForSession('host-session', longText);
-      expect(written.includes(deriveFallbackSessionTitle(longText)), `title=${JSON.stringify(title)}`).toBe(shouldWrite);
+      expect(written.includes(await ruleSummary(longText)), `title=${JSON.stringify(title)}`).toBe(shouldWrite);
       vi.restoreAllMocks();
     }
   });

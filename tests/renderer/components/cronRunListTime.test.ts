@@ -10,12 +10,11 @@ describe('formatRunListTime (run-list time column)', () => {
   });
 
   it('pads month/day/hour/minute to two digits', () => {
-    // 2023-02-05T07:08:00 → 月=02 日=05 时=07 分=08（UTC 分量；构造对应 UTC 瞬时）
-    const d = new Date(Date.UTC(2023, 1, 5, 7, 8, 0));
+    const d = new Date(2023, 1, 5, 7, 8, 0);
     const text = formatRunListTime(d.getTime());
-    expect(text).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
-    const [md, hm] = text.split(' ');
-    md.split('/').concat(hm.split(':')).forEach((part) => expect(part).toHaveLength(2));
+    expect(text).toMatch(/^(?:2023\/)?02\/05 07:08$/);
+    const [datePart, hm] = text.split(' ');
+    datePart.split('/').slice(-2).concat(hm.split(':')).forEach((part) => expect(part).toHaveLength(2));
   });
 
   it('undefined gives the dash', () => {

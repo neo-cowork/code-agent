@@ -64,6 +64,7 @@ const mockDb = vi.hoisted(() => ({
   updateMessage: vi.fn(),
   getMessages: vi.fn(() => []),
   getMessageById: vi.fn<() => Message | null>(() => null),
+  listRecordedWorkingDirectories: vi.fn(() => []),
   getDurableRunRepository: vi.fn(() => durableStub),
   getSessionForkLineage: vi.fn<() => unknown>(() => null),
   getSessionForkContextSource: vi.fn<() => unknown>(() => null),

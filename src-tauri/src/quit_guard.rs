@@ -119,11 +119,10 @@ fn unknown_outcome(reason: &str) -> GuardOutcome {
 // 退出决策（纯函数）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 弹框文案的四种形态（text key），由 decide_quit 从计数推导。
+/// 弹框文案的三种形态（text key），由 decide_quit 从计数推导。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuitPrompt {
     RunningTasks,
-    ScheduledTasks,
     Both,
     Unverified,
 }
@@ -132,6 +131,8 @@ pub enum QuitPrompt {
 pub enum QuitDecision {
     /// 直接退出，不弹框。
     ExitNow,
+    /// Keep the shell and schedules alive without a dialog.
+    HideToBackground { language: QuitDialogLanguage },
     /// 弹原生确认框，携带对应文案。
     Confirm {
         prompt: QuitPrompt,
@@ -167,10 +168,7 @@ pub fn decide_quit(outcome: GuardOutcome, skip: Option<QuitSkip>) -> QuitDecisio
                 prompt: QuitPrompt::RunningTasks,
                 language,
             },
-            (false, true) => QuitDecision::Confirm {
-                prompt: QuitPrompt::ScheduledTasks,
-                language,
-            },
+            (false, true) => QuitDecision::HideToBackground { language },
             (true, true) => QuitDecision::Confirm {
                 prompt: QuitPrompt::Both,
                 language,
@@ -179,7 +177,7 @@ pub fn decide_quit(outcome: GuardOutcome, skip: Option<QuitSkip>) -> QuitDecisio
     }
 }
 
-/// 四种弹框文案。`offers_background_continue` 来自按钮组是否含「后台继续」
+/// 三种弹框文案。`offers_background_continue` 来自按钮组是否含「后台继续」
 /// （调用方用 `resident_host::quit_dialog_button_set_current()`，本模块不反依赖它）。
 /// 三键：先一行现状，再各一行写明两个退出按钮的后果。两键：只说退出会停掉任务，
 /// 不出现「后台继续」。三键默认键是留下任务继续跑，正文因此不写「将被中断」。
@@ -568,11 +566,19 @@ mod tests {
             ),
             (
                 counts(0, 1),
-                QuitDecision::Confirm { prompt: QuitPrompt::ScheduledTasks, language: QuitDialogLanguage::Zh },
+                QuitDecision::HideToBackground { language: QuitDialogLanguage::Zh },
             ),
             (
                 counts(0, 9),
-                QuitDecision::Confirm { prompt: QuitPrompt::ScheduledTasks, language: QuitDialogLanguage::Zh },
+                QuitDecision::HideToBackground { language: QuitDialogLanguage::Zh },
+            ),
+            (
+                counts_with_language(0, 1, QuitDialogLanguage::En),
+                QuitDecision::HideToBackground { language: QuitDialogLanguage::En },
+            ),
+            (
+                GuardOutcome::Unknown { language: QuitDialogLanguage::En },
+                QuitDecision::Confirm { prompt: QuitPrompt::Unverified, language: QuitDialogLanguage::En },
             ),
             (counts(2, 3), QuitDecision::Confirm { prompt: QuitPrompt::Both, language: QuitDialogLanguage::Zh }),
             (
@@ -596,7 +602,7 @@ mod tests {
             QuitSkip::UpdateRestart,
             QuitSkip::SignalExit,
         ];
-        let outcomes = [counts(0, 0), counts(1, 1), unknown()];
+        let outcomes = [counts(0, 0), counts(1, 0), counts(0, 1), counts(1, 1), unknown()];
         for skip in skips {
             for outcome in outcomes {
                 assert_eq!(
@@ -612,7 +618,6 @@ mod tests {
     fn quit_prompt_texts_match_the_button_set() {
         let prompts = [
             QuitPrompt::RunningTasks,
-            QuitPrompt::ScheduledTasks,
             QuitPrompt::Both,
             QuitPrompt::Unverified,
         ];
@@ -643,8 +648,6 @@ mod tests {
             );
             assert!(two.contains("停止"), "{two}");
         }
-        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, true, QuitDialogLanguage::Zh).contains("不再运行"));
-        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, false, QuitDialogLanguage::Zh).contains("不再运行"));
         assert!(quit_prompt_text(QuitPrompt::Unverified, true, QuitDialogLanguage::Zh).contains("无法确认是否有任务在运行"));
         assert!(
             quit_prompt_text(QuitPrompt::Unverified, false, QuitDialogLanguage::Zh).contains("无法确认是否有任务在运行")

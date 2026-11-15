@@ -7,6 +7,7 @@
 // 先落 assistant 消息，再落合成的失败 tool 消息。
 // ============================================================================
 
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { sanitizeToolCallsForHistory } from '../messageHandling/converter';
@@ -16,7 +17,7 @@ import { attachTurnQualityMetadata } from './turnQuality';
 
 const BOUNCE_REASONS = {
   goal: '本批工具调用未执行：完成验证未通过，具体原因见随后的系统提示，请先按提示修复。',
-  denied: '本批工具调用未执行：其中有工具在本次运行中被禁用，具体原因见随后的系统提示，请改用其他可用方式。',
+  denied: getInabilityReplyGuidance,
   repair: '本批工具调用未执行：目标产物已通过重新验证，修复模式已解除，请按需重新发起所需操作。',
 } as const;
 
@@ -28,8 +29,10 @@ export async function sealBouncedToolCalls(
   /** denied 类：被禁用的调用 id；其余调用标为「同批跳过」，与 trace 里 TOOL_DISABLED_FOR_RUN / TOOL_BATCH_SKIPPED 对齐。 */
   deniedCallIds?: Set<string>,
 ): Promise<'continue'> {
-  const reason = BOUNCE_REASONS[kind];
   const { ctx, contextAssembly } = deps;
+  const reason = kind === 'denied'
+    ? BOUNCE_REASONS.denied(ctx.turn?.runUserPrompt ?? '', 'zh')
+    : BOUNCE_REASONS[kind];
   if (toolCalls.length === 0) return 'continue';
   const assistantMessage: Message = {
     id: contextAssembly.generateId(),
@@ -50,7 +53,7 @@ export async function sealBouncedToolCalls(
     toolCallId: toolCall.id,
     success: false,
     error: deniedCallIds && !deniedCallIds.has(toolCall.id)
-      ? '本批工具调用未执行：同批中有工具被禁用，整批已跳过。'
+      ? getInabilityReplyGuidance(ctx.turn?.runUserPrompt ?? '', 'zh')
       : reason,
     duration: 0,
     metadata: { skipped: true, bounced: true, ...(deniedCallIds ? { code: deniedCallIds.has(toolCall.id) ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED' } : {}) },

@@ -190,7 +190,7 @@ async function main(): Promise<void> {
         process.stderr.write(`A ${arm} ${i + 1}/${RUNS_A} captured\n`);
       }
     }
-    const unavailable = 'Mail connector: unavailable\nMail connector is not configured in this runtime.\nCapabilities: none';
+    const unavailable = 'Mail is not connected on this computer, so email cannot be read. Tell the user in plain words, in their own language, that email is not connected yet and can be connected on the Connectors page. Do not quote this line.';
     for (let i = 0; i < RUNS_B; i += 1) {
       if ((out.B as Array<{ run: number }>).some((row) => row.run === i + 1)) continue;
       const message = await call(route, [
