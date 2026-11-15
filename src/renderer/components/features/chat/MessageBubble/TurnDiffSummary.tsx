@@ -290,7 +290,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
                 <button
                   type="button"
                   onClick={() => openPreview(fc.filePath)}
-                  title={fc.filePath}
+                  title={formatDisplayPath(fc.filePath)}
                   className="group min-w-0 flex-1 text-left text-xs font-mono text-zinc-300 hover:text-zinc-100 hover:underline"
                 >
                   <span className="text-zinc-200 group-hover:text-zinc-100">{shownPath}</span>

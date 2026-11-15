@@ -636,47 +636,6 @@ export function buildProviderMetaTitle(group: {
   ].filter(Boolean).join('\n');
 }
 
-export function formatNativeModelSwitcherTooltip(args: {
-  engineLabel: string;
-  currentModel: string;
-  displayProvider: ModelProvider;
-  displayModel: string;
-  adaptive: boolean;
-  overridden: boolean;
-  billingSummary?: ProviderBillingSummary | null;
-  healthSummary?: ProviderHealthSummary | null;
-  effort?: Pick<EffortOption, 'label'> | null;
-  thinkingLabel?: string | null;
-}): string {
-  const modelLine = args.adaptive
-    ? `自动路由（按任务、成本和能力切换，当前主任务 ${args.currentModel}）`
-    : args.overridden
-      ? `已覆盖: ${args.displayProvider}/${args.displayModel} (原主任务: ${args.currentModel})`
-      : `主任务模型: ${args.displayProvider}/${args.displayModel}`;
-  return [
-    modelLine,
-    `Engine: ${args.engineLabel}`,
-    args.billingSummary ? `计费: ${args.billingSummary.label}` : null,
-    args.healthSummary ? `Provider: ${args.healthSummary.label}` : null,
-    args.effort ? `Effort: ${args.effort.label}` : null,
-    args.thinkingLabel ? `Thinking: ${args.thinkingLabel}` : null,
-  ].filter(Boolean).join(' · ');
-}
-
-export function formatExternalModelSwitcherTooltip(args: {
-  engineLabel: string;
-  model: string;
-  effort?: Pick<EffortOption, 'label'> | null;
-  reliabilityLabel?: string | null;
-}): string {
-  return [
-    `Engine: ${args.engineLabel}`,
-    `主任务模型: ${args.model}`,
-    args.effort ? `Effort: ${args.effort.label}` : null,
-    args.reliabilityLabel ? `状态: ${args.reliabilityLabel}` : null,
-  ].filter(Boolean).join(' · ');
-}
-
 export function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,

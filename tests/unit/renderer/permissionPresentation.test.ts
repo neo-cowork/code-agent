@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
 import { permissionConsequence, permissionSummary, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
-import { decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
+import { decisionCardEn, decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
   id: 'permission-test',
@@ -375,5 +375,100 @@ describe('device / special path copy', () => {
       },
     };
     expect(permissionConsequence(request, zh)).toBe('将永久删除 /tmp/projects/foo（约 3 个文件），不进回收站。');
+  });
+});
+
+// N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED：多目标删除命令的文件数不得虚报成
+// 「约 1 个文件」。口径与宿主 details.affectedFileCount 共用 shared/rmCommandTargets。
+describe('deletion consequence file count for multi-target rm', () => {
+  const zh = decisionCardZh as never;
+
+  function deletionRequest(command: string, details: PermissionRequest['details'] = {}): PermissionRequest {
+    return {
+      ...baseRequest,
+      tool: 'Bash',
+      type: 'command',
+      details: { command, ...details },
+    };
+  }
+
+  it('2 个确切目标（宿主未盘点）按解析目标数显示约 2 个文件', () => {
+    const request = deletionRequest('sudo rm ./旧日志-1.log ./旧日志-2.log', {
+      commandSecurityFlags: ['sudo_rm'],
+    });
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./旧日志-1.log（约 2 个文件），不进回收站。');
+  });
+
+  it('3 个确切目标（带 -- 与引号）按解析目标数显示约 3 个文件', () => {
+    const request = deletionRequest('sudo rm -- "./旧日志-1.log" "./旧日志-2.log" "./旧日志-3.log"', {
+      commandSecurityFlags: ['sudo_rm'],
+    });
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./旧日志-1.log（约 3 个文件），不进回收站。');
+  });
+
+  it('宿主盘点的计数优先于解析目标数（3 目标求和=3）', () => {
+    const request = deletionRequest('rm -rf ./旧日志-1.log ./旧日志-2.log ./旧日志-3.log', {
+      commandSecurityFlags: ['recursive_delete_targeted'],
+      affectedPath: '/workspace/旧日志-1.log',
+      affectedFileCount: 3,
+    });
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 /workspace/旧日志-1.log（约 3 个文件），不进回收站。');
+  });
+
+  it('递归多目标且宿主未盘点：不写数字，改说「多个文件」', () => {
+    const request = deletionRequest('rm -rf ./d1 ./d2');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./d1（多个文件），不进回收站。');
+  });
+
+  it('通配符命令说「多个文件」，绝不退回「约 1 个文件」', () => {
+    // 生产里宿主会对 ./*.log 设 affectedPath 但盘点不出文件数。
+    const request = deletionRequest('rm -rf ./*.log', {
+      commandSecurityFlags: ['recursive_delete_targeted'],
+      affectedPath: '/workspace/./*.log',
+    });
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toBe('将永久删除 /workspace/./*.log（多个文件），不进回收站。');
+    expect(consequence).toContain('多个文件');
+    expect(consequence).not.toContain('约 1 个文件');
+  });
+
+  it('变量展开说「多个文件」，不写具体数字', () => {
+    const request = deletionRequest('rm -rf $LOGS');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 $LOGS（多个文件），不进回收站。');
+  });
+
+  it('管道喂入的 rm（ls | xargs rm）去掉数量，不写任何数字', () => {
+    const request = deletionRequest('ls | xargs rm -rf');
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toBe('将永久删除 目标，不进回收站。');
+    expect(consequence).not.toContain('约');
+    expect(consequence).not.toContain('个文件');
+  });
+
+  it('find -delete 解析不出 rm 目标：去掉数量，不写任何数字', () => {
+    const request = deletionRequest("find . -name '*.log' -delete", {
+      commandSecurityFlags: ['recursive_delete_targeted'],
+    });
+    const consequence = permissionConsequence(request, zh);
+    expect(consequence).toBe('将永久删除 目标，不进回收站。');
+    expect(consequence).not.toContain('约');
+    expect(consequence).not.toContain('个文件');
+  });
+
+  it('en: 2 个确切目标显示 (2 files)，通配符显示 (multiple files)', () => {
+    const en = decisionCardEn as never;
+    const twoTargets = deletionRequest('sudo rm ./old-log-1.log ./old-log-2.log', {
+      commandSecurityFlags: ['sudo_rm'],
+    });
+    expect(permissionConsequence(twoTargets, en)).toBe('Permanently deletes ./old-log-1.log (2 files) without using Trash.');
+
+    const wildcard = deletionRequest('rm -rf ./*.log', {
+      commandSecurityFlags: ['recursive_delete_targeted'],
+      affectedPath: '/workspace/./*.log',
+    });
+    const consequence = permissionConsequence(wildcard, en);
+    expect(consequence).toBe('Permanently deletes /workspace/./*.log (multiple files) without using Trash.');
+    expect(consequence).toContain('(multiple files)');
+    expect(consequence).not.toMatch(/\(1 files?\)/);
   });
 });

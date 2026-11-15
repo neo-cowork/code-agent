@@ -22,7 +22,17 @@ interface FastReport {
 }
 export function digest(value: string | Uint8Array): string;
 export function assertExactFiles(expected: string[], actual: string[], phase: string): void;
+interface VitestDeferred {
+  reason: 'over-cap';
+  selected: number;
+  maxFiles: number;
+  files: string[];
+  localFiles: string[];
+}
 export function validateFiles(root: string, files: string[], maxFiles: number): void;
+export function planVitest(root: string, files: string[], policy: { maxFiles: number; deferMaxFiles: number; ciCoveredPrefixes: string[]; ciNotRunExact: string[] }): {
+  mode: 'all-local' | 'deferred'; selected: number; cap: number; localFiles: string[]; deferredFiles: string[];
+};
 export function selectTests(policy: FastPolicy, changed: string[], regressions?: Regression[], deletedFiles?: string[]): {
   files: string[]; matchedRules: string[]; packages: string[]; testsTypecheck: boolean;
 };
@@ -36,6 +46,7 @@ export function changedInputs(initial: Record<string, string>, current: Record<s
 export function renderReceipt(receipt: {
   status: string; schemaVersion: number; headSha: string; baseSha: string;
   receiptId: string; ci: { status: string }; prNumber: number | null; error?: string;
+  vitestDeferred?: VitestDeferred;
 }): string[];
 interface BudgetPolicy {
   budgetMs: number;

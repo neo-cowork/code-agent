@@ -71,6 +71,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolFinalReply, deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { isBashToolName } from '../../tools/toolNames';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -674,8 +675,8 @@ export class MessageProcessor {
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          this.ctx.foregroundToolFace ? 'The requested operation has not been executed here.'
-            : `The requested operation has not been executed here: ${Array.from(new Set(deniedToolCalls.map((call) => call.name))).join(', ')}.`,
+          this.ctx.foregroundToolFace ? 'The previous call was NOT run.'
+            : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',

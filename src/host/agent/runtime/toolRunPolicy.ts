@@ -6,6 +6,7 @@ import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { resolveTurnToolFace } from './turnToolFace';
 import { resolveAgent } from '../agentRegistry';
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { ToolDefinition } from '../../../shared/contract';
 import type { RuntimeContext } from './runtimeContext';
 import { ASK_USER_QUESTION_TOOL_NAMES } from '../../../shared/constants/tools';
@@ -105,9 +106,9 @@ export function deniedToolRetryGuidance(ctx: RuntimeContext): string {
   const askDenied = ctx.unattendedTurn === true
     || ASK_USER_QUESTION_TOOL_NAMES.some((name) => isToolDeniedForRun(ctx, name));
   if (canHandOffToBackground(ctx)) return BACKGROUND_HANDOFF_GUIDANCE;
-  return askDenied
-    ? 'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.'
-    : 'Continue without those tools. AskUserQuestion remains available; call it directly when the current task requires user input.';
+  return getInabilityReplyGuidance(currentTurnUserPrompt(ctx)) + '\n' + (askDenied
+    ? 'If user input is needed, state the missing input in your final text instead of calling an interactive tool.'
+    : 'AskUserQuestion remains available; call it directly when the current task requires user input.');
 }
 
 export function filterToolsByRunPolicy(

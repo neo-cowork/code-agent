@@ -134,7 +134,7 @@ describe('Feishu lark-cli driver', () => {
       ['config', 'init', '--new', '--lang', 'zh', '--name', 'neo'],
       [
         'auth', 'login', '--no-wait', '--json',
-        '--scope', 'offline_access im:message im:message.send_as_user',
+        '--scope', 'offline_access im:message im:message.send_as_user minutes:minutes:readonly minutes:minutes.basic:read minutes:minutes.search:read minutes:minutes.artifacts:read minutes:minutes.transcript:export',
         '--profile', 'neo',
       ],
       ['auth', 'login', '--device-code', 'device-fake', '--profile', 'neo'],

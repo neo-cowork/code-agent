@@ -11,6 +11,13 @@ describe('perf-journey session-switch slot', () => {
   it.skipIf(!shouldRunJourneyProbe())('commit count holds the baseline', () => {
     const result = runJourneyRatchet('session-switch');
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stdout).toContain('session-switch commitCount current=');
+    const countMatch = result.stdout.match(/session-switch commitCount current=(\d+)/);
+    expect(countMatch).not.toBeNull();
+    const commitCount = Number(countMatch?.[1]);
+    const traceMatch = result.stdout.match(/\[perf-journey-ratchet\] session-switch commit-trace: (.+)/);
+    expect(traceMatch).not.toBeNull();
+    const entries = (traceMatch?.[1] ?? '').split(' | ');
+    expect(entries).toHaveLength(commitCount);
+    expect(result.stdout).toContain('[perf-journey-ratchet] session-switch environment: viewport=');
   }, 90_000);
 });

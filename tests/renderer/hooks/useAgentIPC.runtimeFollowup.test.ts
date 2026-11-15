@@ -28,9 +28,18 @@ describe('runtime follow-up helpers', () => {
     expect(message).not.toContain('中断失败');
   });
 
-  it('uses actionable copy when send-message rejects without an Error message', () => {
-    expect(getAgentSendFailureMessage(undefined)).toBe('Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
-    expect(getAgentSendFailureMessage(new Error('network down'))).toBe('Error: network down');
+  it.each([
+    ['zh', 'Neo 暂时没能完成这次请求，请稍后再试。'],
+    ['en', 'Neo could not complete the request; please try again in a moment.'],
+  ] as const)('uses actionable %s copy when send-message rejects without an HTTP status or Error message', (language, sentence) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language });
+    try {
+      expect(getAgentSendFailureMessage(undefined)).toBe(sentence);
+      expect(getAgentSendFailureMessage(new Error('network down'))).toBe(sentence);
+    } finally {
+      useAppStore.setState({ language: original });
+    }
   });
 
   it.each([
@@ -47,6 +56,22 @@ describe('runtime follow-up helpers', () => {
         expect(message).toBe(sentence);
         expect(message).not.toMatch(/云端代理请求失败|Missing prompt|400/);
       }
+    } finally {
+      useAppStore.setState({ language: original });
+    }
+  });
+
+  it.each([
+    ['zh', '本地服务没有接受这次请求，请刷新页面后重试。'],
+    ['en', 'Neo could not accept this request. Refresh the page and try again.'],
+  ] as const)('maps REQUEST_INVALID to the refresh sentence in %s, not the add-a-sentence copy', (language, sentence) => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language: language });
+    try {
+      const error = Object.assign(new Error('云端代理请求失败 (400): Invalid request'), { status: 400, code: 'REQUEST_INVALID' });
+      const message = getAgentSendFailureMessage(error);
+      expect(message).toBe(sentence);
+      expect(message).not.toMatch(/云端代理请求失败|Invalid request|400/);
     } finally {
       useAppStore.setState({ language: original });
     }
@@ -102,8 +127,17 @@ describe('runtime follow-up helpers', () => {
     }
   });
 
-  // 非 HTTP 失败（无 status）保持原有 Error: 前缀路径，不受状态映射影响。
-  it('keeps the Error: prefix path for failures without an HTTP status', () => {
-    expect(getAgentSendFailureMessage(new Error('network down'))).toBe('Error: network down');
+  // 非 HTTP 失败（无 status）同样输出当前语言的人话重试句，原始报错转入 console.warn 留痕。
+  it('moves raw message to console.warn without Error: prefix for failures without an HTTP status', () => {
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language: 'en' });
+    try {
+      const message = getAgentSendFailureMessage(new Error('network down'));
+      expect(message).toBe('Neo could not complete the request; please try again in a moment.');
+      expect(message).not.toContain('Error:');
+      expect(message).not.toContain('network down');
+    } finally {
+      useAppStore.setState({ language: original });
+    }
   });
 });

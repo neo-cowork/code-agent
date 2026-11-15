@@ -3,9 +3,13 @@ import { join, relative } from 'node:path';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
 
-const forbidden = /osascript|runAppleScript|CGRequest|askUserIfNeeded\s*:\s*true|requestAccess|requestAccessibility/;
+const forbidden = /osascript|runAppleScript|CGRequest|IOHIDRequestAccess|askUserIfNeeded\s*:\s*true|requestAccess|requestAccessibility/;
 const probes = 'src/host/permissions/envAssist/probes/';
-const grant = 'src/host/permissions/envAssist/grants/requestGrant.ts';
+const grantFiles = new Set([
+  'src/host/permissions/envAssist/grants/requestGrant.ts',
+  'src/host/permissions/envAssist/grants/shellPromptingBridge.ts',
+  'src/host/permissions/envAssist/grants/cuaHelperGrantBridge.ts',
+]);
 
 // Existing host exceptions are frozen by exact line, never blanket file exemptions.
 // Each listed file is justified below; additions within these files still fail.
@@ -87,7 +91,7 @@ it('static-contract: diagnosis contains no prompting calls or grant imports', ()
   const violations: string[] = [];
   for (const file of files('src/host')) {
     const path = relative('.', file).replaceAll('\\', '/');
-    if (path === grant) continue;
+    if (grantFiles.has(path)) continue;
     const source = readFileSync(file, 'utf8');
     if (/AEDeterminePermissionToAutomateTarget\([^;]*,\s*true\s*\)/.test(source)) violations.push(path);
     if (path !== 'src/host/ipc/envAssist.ipc.ts' && /from\s*['"][^'"]*grants\//.test(source)) violations.push(path);
@@ -109,4 +113,34 @@ it('static-contract: diagnosis contains no prompting calls or grant imports', ()
     }
   }
   expect(violations, 'prompting symbols outside the grant boundary').toEqual([]);
+});
+
+it('static-contract: probes never contain /grant strings and grants never contain /passive strings', () => {
+  const violations: string[] = [];
+  const scanDirForRouteStrings = (dir: string, forbiddenRouteFragment: string) => {
+    for (const file of files(dir)) {
+      const path = relative('.', file).replaceAll('\\', '/');
+      const source = readFileSync(file, 'utf8');
+      const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+      const visit = (node: ts.Node): void => {
+        if (ts.isStringLiteralLike(node) && node.text.includes(forbiddenRouteFragment)) {
+          violations.push(`${path}: ${JSON.stringify(node.text)}`);
+        } else if (ts.isTemplateExpression(node)) {
+          if (node.head.text.includes(forbiddenRouteFragment)) {
+            violations.push(`${path}: ${JSON.stringify(node.head.text)}`);
+          }
+          for (const span of node.templateSpans) {
+            if (span.literal.text.includes(forbiddenRouteFragment)) {
+              violations.push(`${path}: ${JSON.stringify(span.literal.text)}`);
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(ast);
+    }
+  };
+  scanDirForRouteStrings('src/host/permissions/envAssist/probes', '/grant');
+  scanDirForRouteStrings('src/host/permissions/envAssist/grants', '/passive');
+  expect(violations, 'cross-boundary /grant or /passive route strings').toEqual([]);
 });

@@ -8,8 +8,10 @@
 // ② 给模型一句不再死路重试的指引。超过重试上限时 messageProcessor 发给用户的那句话
 // 走 toolRunPolicy 的 deniedToolFinalReply（按工具面取、不点名工具）。
 
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { ToolCall } from '../../../shared/contract';
 import { formatForegroundShellDenialFinalMessage } from '../../../shared/i18n/foregroundShellDenial';
+import { extractUserRequest } from '../../../shared/utils/turnScaffold';
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { resolveEffectivePolicyRules } from '../../permissions/runPolicySnapshot';
 import { createLogger } from '../../services/infra/logger';
@@ -36,11 +38,9 @@ export function describeDeniedShellCalls(
     sessionId: ctx.sessionId,
     userBashRules: userBashRules.map((rule) => rule.id),
   });
-  const locale = detectMessageLanguage(ctx.turn?.runUserPrompt ?? '') ?? readUiLanguage();
+  const locale = detectMessageLanguage(extractUserRequest(ctx.turn?.runUserPrompt ?? '')) ?? readUiLanguage();
   return {
-    guidance: 'The requested operation was NOT run. Follow the accompanying next-action guidance '
-      + 'and use its everyday handoff sentence as the complete reply after acceptance. '
-      + 'Reply in the same language the user is writing in this turn.',
+    guidance: getInabilityReplyGuidance(ctx.turn?.runUserPrompt ?? '', locale),
     finalMessage: formatForegroundShellDenialFinalMessage(locale),
   };
 }

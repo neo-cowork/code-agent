@@ -35,11 +35,12 @@ vi.mock('../../../src/renderer/utils/logger', () => ({
 
 import { VoiceLiveSettingsSection } from '../../../src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const CLEANUP_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(CLEANUP_AT, 'en');
 
 const OVERVIEW = {
   dir: '/tmp/voice-recordings',
@@ -88,6 +89,8 @@ describe('VoiceLiveSettingsSection 录音最近清理行（跟随 UI language）
     await waitFor(() => {
       expect(screen.getByTestId('call-recording-cleanup').textContent).toContain(`Last cleanup: ${EN}`);
     });
-    expect(screen.getByTestId('call-recording-cleanup').textContent).not.toContain('16:05');
+    const withoutEn = (screen.getByTestId('call-recording-cleanup').textContent ?? '').replace(`Last cleanup: ${EN}`, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });
