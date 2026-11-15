@@ -92,6 +92,26 @@ describe('projectTurns 连续同因失败折叠', () => {
     ]);
   });
 
+  it('后台内部 user 消息不划分真实用户轮，也不增加连续失败次数', () => {
+    const internal = (content: string): Message => ({ ...userMsg(content), isMeta: true });
+    const messages = [
+      userMsg('开始'), internal('后台任务提示'), errMsg('rate_limited'),
+      internal('后台结果唤醒'),
+      userMsg('再试一次'), internal('子任务提示'), errMsg('rate_limited'),
+      internal('后台结果唤醒'),
+      userMsg('再试一次'), internal('子任务提示'), errMsg('rate_limited'),
+    ];
+    const nodes = errorNodes(messages);
+    expect(nodes.map((node) => node.agentErrorRun)).toEqual([
+      { runLength: 1, latest: false },
+      { runLength: 2, latest: false },
+      { runLength: 3, latest: true },
+    ]);
+    const html = nodes.map((node) => renderToStaticMarkup(React.createElement(TraceNodeRenderer, { node }))).join('');
+    expect((html.match(/agent-error-muted-line/g) ?? [])).toHaveLength(2);
+    expect((html.match(/rate-limited-error-line/g) ?? [])).toHaveLength(1);
+  });
+
   it('A,A,B：换 category 结束前一段 → 灰字(A)、整卡(A)、整卡(B)', () => {
     const messages = [
       userMsg(), errMsg('auth'),
