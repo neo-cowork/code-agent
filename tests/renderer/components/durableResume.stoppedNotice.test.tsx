@@ -21,6 +21,7 @@ import {
   DurableParkedNotice,
   DurableResumeNotice,
   shouldShowParkedNotice,
+  useParkedNoticeYields,
   useAbandonParkedRun,
   useDurableContinueVisible,
 } from '../../../src/renderer/components/features/chat/durableResume';
@@ -115,4 +116,30 @@ describe('durable stopped notice (user_stop)', () => {
     expect(screen.queryByTestId('continue-run-control')).toBeNull();
     expect(screen.queryByRole('button', { name: /^(继续|放弃|Continue|Abandon)$/ })).toBeNull();
   });
+
+  it('⑥ env_blocked park with an open grant card in this turn: the card says it all, the parked row is not rendered; resolved card / no card brings the row back', () => {
+    const env: Resume = { ...STOP, interruptCause: 'env_blocked', envBlocked: { class: 'perm_automation', target: 'calendar', toolCallId: 'c1' } };
+    function WiredRow() {
+      const yields = useParkedNoticeYields(env as never);
+      return shouldShowParkedNotice(env, false, yields)
+        ? <DurableParkedNotice interruptCause={env.interruptCause} envBlocked={env.envBlocked} />
+        : null;
+    }
+    const card = (phase: string) => ({
+      id: 'env-assist:r1|perm_automation|calendar', role: 'assistant', content: '', timestamp: 1,
+      metadata: { envAssist: { id: 'r1|perm_automation|calendar', sessionId: 's1', runId: 'r1', class: 'perm_automation',
+        target: { id: 'calendar', labelKey: 'env.target.calendar' }, phase, sentenceKey: 'env.sentence.calendar',
+        resume: { mode: 'manual' }, updatedAt: 1 } },
+    });
+    useSessionStore.setState({ messages: [card('needs_user')] } as never);
+    const { rerender } = render(<WiredRow />);
+    expect(screen.queryByTestId(NOTICE)).toBeNull();
+    useSessionStore.setState({ messages: [card('resolved')] } as never);
+    rerender(<WiredRow />);
+    expect(screen.getByTestId(NOTICE).textContent).toBe('等你允许日历 · 允许后自动继续');
+    useSessionStore.setState({ messages: [] } as never);
+    rerender(<WiredRow />);
+    expect(screen.getByTestId(NOTICE).textContent).toBe('等你允许日历 · 允许后自动继续');
+  });
 });
+

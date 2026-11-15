@@ -8,7 +8,6 @@ import { useAppStore } from '../stores/appStore';
 import { useProjectChatSeedConsumption } from './features/chat/useProjectChatSeed';
 import { useComposerStore } from '../stores/composerStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { selectComposerStatusBarActive, useComposerNoticeStore } from '../stores/composerNoticeStore';
 import { useSessionUIStore } from '../stores/sessionUIStore';
 import { useStreamingMessageAccumulatorStore } from '../stores/streamingMessageAccumulatorStore';
 import { selectHasStoppableSwarmWork, useSwarmStore } from '../stores/swarmStore';
@@ -120,7 +119,7 @@ import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
-import { DurableParkedNotice, DurableResumeNotice, shouldShowParkedNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
+import { DurableParkedNotice, DurableResumeNotice, shouldShowParkedNotice, useParkedNoticeYields, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
@@ -710,7 +709,7 @@ export const ChatView: React.FC = () => {
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
   const durableAbandon = useAbandonParkedRun(currentSessionId, durableResume?.runId);
-  const composerStatusBarActive = useComposerNoticeStore(selectComposerStatusBarActive);
+  const parkedNoticeYields = useParkedNoticeYields(durableResume);
 
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
@@ -1060,7 +1059,7 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-          {shouldShowParkedNotice(durableResume, effectiveIsProcessing, composerStatusBarActive) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} envBlocked={durableResume?.envBlocked} />}
+          {shouldShowParkedNotice(durableResume, effectiveIsProcessing, parkedNoticeYields) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} envBlocked={durableResume?.envBlocked} />}
           <ConnectorRequiredCards />
           {durableResume?.quotaWait && <QuotaWaitNotice dueAt={durableResume.quotaWait.dueAt} duePassed={durableResume.quotaWait.duePassed} onCancel={() => { cancel(); }} onRetryNow={() => { durableContinue.onContinue(); }} />}
 

@@ -76,7 +76,10 @@ describe('single-step tool row: one sentence, connector once, one terminal', () 
     render(<ToolStepGroup nodes={[calendarNode()]} sessionId={SESSION} />);
     expect(screen.queryByTestId('tool-group-head-label')).toBeNull();
     const text = rowText();
-    expect(text).toMatchInlineSnapshot(`"⊘等你允许日历 ·查询日程"`);
+    expect(text).toMatchInlineSnapshot(`"等你允许日历 ·查询日程"`);
+    // 等待不是中断：沙漏图标，不是禁止符号 ⊘
+    expect(screen.getByTestId('env-waiting-icon')).toBeTruthy();
+    expect(screen.getByTestId('tool-call-row-calendar').textContent).not.toContain('⊘');
     expect(count(text, '日历')).toBe(1);
     expect(text).not.toMatch(/中断|未成功/);
   });

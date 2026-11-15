@@ -6,7 +6,8 @@ import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import type { DurableResumeState } from '@shared/contract/session';
-import { useEnvTargetLabel } from '../../../hooks/useEnvParkedTarget';
+import { useEnvParkedCardOpen, useEnvTargetLabel } from '../../../hooks/useEnvParkedTarget';
+import { selectComposerStatusBarActive, useComposerNoticeStore } from '../../../stores/composerNoticeStore';
 
 type ParkedResume = { mode: string; canContinue: boolean; interruptCause?: string; quotaWait?: unknown };
 
@@ -30,6 +31,13 @@ export function shouldShowParkedNotice(
   composerStatusBarActive = false,
 ): boolean {
   return isParkedForUser(resume, turnActive) && !resume?.quotaWait && !composerStatusBarActive;
+}
+
+/** 停住行让位：输入框上方已有录制条/循环条，或这一轮还挂着没收起的授权卡（卡已把话说全）。 */
+export function useParkedNoticeYields(resume: Pick<DurableResumeState, 'interruptCause' | 'runId'> | undefined): boolean {
+  const statusBarActive = useComposerNoticeStore(selectComposerStatusBarActive);
+  const envCardOpen = useEnvParkedCardOpen(resume);
+  return statusBarActive || envCardOpen;
 }
 
 /** The durable resume notice is the single recovery action for these modes. */
