@@ -1,7 +1,7 @@
 // Evidence class: hermetic-protocol (SQLite durable kernel + production engine/resolver/finalizer/IPC; fake TCC bridges).
 // N-FIX-ENV-ASSIST-CARD-STAYS-AFTER-GRANT ⑤: a refused calendar read parks the run, the card is shown,
 // and the grant (button click) resumes the same run/tool call without the user re-asking.
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +42,7 @@ import { registerEnvResumeContinuer } from '../../../../src/host/runtime/envResu
 import { ENV_RESUME_POLL_INTERVAL_MS, ENV_RESUME_TIMEOUT_MS } from '../../../../src/shared/constants/envResume';
 import { envResumeProbeFactory, registerEnvAssistHandlers } from '../../../../src/host/ipc/envAssist.ipc';
 import { ipcHost, type HandlerFn } from '../../../../src/host/platform';
+import { getDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
 
 /** -1744 undecided → the one dialog → 0 granted. */
 const tcc = { code: -1744 as 0 | -1743 | -1744 };
@@ -62,9 +63,9 @@ afterEach(() => {
   if (workspace) rmSync(workspace, { recursive: true, force: true });
 });
 
-async function parkedCalendar() {
+async function parkedCalendar(plannedFolder?: string) {
   vi.useFakeTimers();
-  workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'env-resume-cal-')));
+  workspace = plannedFolder ?? realpathSync(mkdtempSync(path.join(tmpdir(), 'env-resume-cal-')));
   fixture = await harness(workspace, ':memory:', false, true);
   store.db = databasePorts.current;
   return fixture;
@@ -82,6 +83,23 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     const card = emitted.find((e) => e.type === 'env_assist_notice')?.data as { id: string; phase: string; action: { kind: string } };
     expect(card).toMatchObject({ phase: 'needs_user', target: { id: 'calendar' }, action: { kind: 'request_grant', payload: { pane: 'automation' } } });
     expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist?.phase).toBe('needs_user');
+  });
+
+  it('real shape: the session folder (任务_…) was never created because the run only read — resume recreates it instead of native_workspace_unavailable', async () => {
+    const planned = path.join(getDefaultWorkDirectory(), `任务_1115_日历续做-${process.pid}-${Date.now()}`);
+    expect(existsSync(planned)).toBe(false);
+    const f = await parkedCalendar(planned);
+    let granted = false;
+    f.wire(async () => granted ? 'green' : 'red');
+    await f.park();
+    expect(existsSync(planned)).toBe(false); // what the Dev package had at resume time
+    f.green(); granted = true;
+    await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    // mkdir/realpath are real filesystem I/O: let the event loop run instead of only fake-timer ticks.
+    await vi.waitFor(() => expect(f.counts().resumes + warn.mock.calls.length).toBeGreaterThan(0), { timeout: 5000 });
+    expect(warn).not.toHaveBeenCalledWith('Environment auto-continue stopped', expect.anything());
+    expect(existsSync(planned)).toBe(true);
+    expect(f.counts()).toMatchObject({ executions: 2, resumes: 1, seenCalls: ['env-call', 'env-call'] });
   });
 
   it('clicking allow after the waiter timed out still resumes the same run/call once, and closes the card', async () => {
@@ -103,7 +121,8 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     expect(res).toMatchObject({ data: { status: 'checked', outcome: { status: 'granted' } } });
     f.green(); granted = true;
     await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
-    for (let i = 0; i < 20 && f.counts().resumes === 0; i++) await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    await vi.waitFor(() => expect(f.counts().resumes + warn.mock.calls.length).toBeGreaterThan(1), { timeout: 5000 });
     expect(f.counts()).toEqual({ executions: 2, resumes: 1, seenCalls: ['env-call', 'env-call'], seenRuns: ['env-run', 'env-run'] });
     expect(f.messages().filter((m) => m.role === 'user')).toHaveLength(1);
     expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist).toMatchObject({ phase: 'resolved' });
