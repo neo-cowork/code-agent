@@ -286,6 +286,8 @@ export interface AppSettings {
   meeting?: {
     /** 散会后自动交记言出纪要；每场会调一次模型、产生费用。缺省视为开 */
     autoMinutes?: boolean;
+    /** 会前提醒（读日历，只提醒不自动开录），默认关；只由宿主在日历授权确认后写成 true */
+    calendarReminder?: boolean;
   };
   // 记忆维护配置（N-MEM-CONSOLSAFE）。可选，未配置 = 自动整理只演练（dry-run）。
   memory?: {
@@ -339,6 +341,12 @@ export interface AppSettings {
     ask?: string[];
     /** 用户级 allow 规则（最低优先级，不能压过 deny） */
     allow?: string[];
+    /**
+     * 只读探测免卡（ReadOnlyProbePlan）：可证明只读的 Bash 探测（存在性/目录列表/工具查找）
+     * 在进程内直接执行、不弹审批卡。缺省 = 开；显式 false 立即关闭，所有 Bash 回到原审批链。
+     * 环境变量 CODE_AGENT_READONLY_PROBE=off 同样关闭。
+     */
+    readOnlyProbePlan?: boolean;
     /**
      * 内部标记：true 表示配置升级到 6.8.x 但用户尚未显式声明 inheritance。
      * UI 检测到该标记会弹一次性引导，提醒用户选择继承策略。

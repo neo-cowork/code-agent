@@ -40,6 +40,7 @@ class NativeFake implements PassiveBridge {
   async CGRequestScreenCaptureAccess() { this.promptingCalls++; }
   async IOHIDRequestAccess() { this.promptingCalls++; }
   async requestAccessibility() { this.promptingCalls++; }
+  async EKAuthorizationStatusForEvents(): Promise<0> { return 0; }
 }
 
 const factories = {
@@ -114,6 +115,7 @@ describe('diagnosis never prompts', () => {
         expect(ask).toBe(true);
         calls++;
       },
+      requestFullAccessToEvents: async () => { throw new Error('wrong_grant'); },
     };
     const notice: EnvAssistNotice = {
       id: 'current', sessionId: 'session', runId: 'run', class: 'perm_automation', phase: 'needs_user',
@@ -193,6 +195,7 @@ describe('diagnosis never prompts', () => {
         automationCalls++;
         order.push('AEDeterminePermissionToAutomateTarget(true)');
       },
+      requestFullAccessToEvents: async () => { throw new Error('wrong_grant'); },
     };
 
     const notice: EnvAssistNotice = {
@@ -237,12 +240,14 @@ describe('diagnosis never prompts', () => {
       CGPreflightScreenCaptureAccess: async () => { nativeCallsOnUnsupported++; return true; },
       IOHIDCheckAccess: async () => { nativeCallsOnUnsupported++; return 0; },
       AEDeterminePermissionToAutomateTarget: async () => { nativeCallsOnUnsupported++; return 0; },
+      EKAuthorizationStatusForEvents: async () => { nativeCallsOnUnsupported++; return 0; },
     };
     const countingGrant: PromptingBridge = {
       requestAccessibility: async () => { nativeCallsOnUnsupported++; },
       CGRequestScreenCaptureAccess: async () => { nativeCallsOnUnsupported++; },
       IOHIDRequestAccess: async () => { nativeCallsOnUnsupported++; },
       AEDeterminePermissionToAutomateTarget: async () => { nativeCallsOnUnsupported++; },
+      requestFullAccessToEvents: async () => { nativeCallsOnUnsupported++; },
     };
     const unsupportedNotice: EnvAssistNotice = {
       ...notice,

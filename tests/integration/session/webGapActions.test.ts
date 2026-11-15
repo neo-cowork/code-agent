@@ -67,6 +67,8 @@ import JSZip from 'jszip';
 import type { Message } from '../../../src/shared/contract';
 import { initDatabase } from '../../../src/host/services/core/databaseService';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
+import { getTaskManager } from '../../../src/host/task';
+import { getConfigService } from '../../../src/host/services/core/configService';
 import { installDomainRoutes } from '../../../src/host/ipc/domainRoutes/registry';
 import { defineSessionRoutes } from '../../../src/host/ipc/domainRoutes/sessionRoutes';
 import { createWebSessionContext } from '../../../src/web/sessionDomainHandler';
@@ -126,6 +128,8 @@ describe('web 形态 session 域 5 个补齐 action（刀 3）', () => {
   beforeAll(async () => {
     fs.mkdirSync(env.dir, { recursive: true });
     await seedSession();
+    // 生产 web server 经 createAgentRuntime 初始化 TaskManager；#3398 之后 load 走生命周期服务依赖它
+    getTaskManager().initialize({ configService: getConfigService(), onAgentEvent: () => {} });
   });
 
   afterAll(async () => {

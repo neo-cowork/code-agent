@@ -551,6 +551,8 @@ export const listMeetingImportCandidates = () =>
 export const importMeeting = (candidate: MeetingImportCandidate) =>
   postDesktopAction<{ id: string; created: boolean }>('importMeeting', { ...candidate });
 
+export const dismissMeetingUpcoming = () => postDesktopAction<MeetingSessionStatus>('dismissMeetingUpcoming');
+
 export async function getMeetingStatus(): Promise<MeetingSessionStatus | null> {
   try {
     return await postDesktopAction<MeetingSessionStatus>('getMeetingStatus');
