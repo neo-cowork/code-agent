@@ -70,7 +70,11 @@ function findLiveCounterpart(
     if (snapshotById.has(liveMessage.id)) continue;
     if (liveMessage.role !== 'assistant') continue;
     if (precedingUserId(live, liveMessage) !== snapshotUserId) continue;
-    if (!isStreamingAssistantCounterpart(snapshotMessage.content, liveMessage.content)) continue;
+    // 失败轮的错误载体正文为空，正文判据配不上：renderer 自补的 `agent-error-<ts>`
+    // 与落库那条同轮同为失败消息即是同一次失败。配不上就会落到尾部、挂进最新一轮
+    // （N-FIX-AGENT-ERROR-CARD-STICKS-TO-LATER-TURNS）。
+    const sameFailure = Boolean(snapshotMessage.metadata?.agentError && liveMessage.metadata?.agentError);
+    if (!sameFailure && !isStreamingAssistantCounterpart(snapshotMessage.content, liveMessage.content)) continue;
     if (hasConflictingToolCalls(snapshotMessage, liveMessage)) continue;
     return liveMessage;
   }
