@@ -195,9 +195,15 @@ describe('lost background approval restart closure (real file-backed SQLite)', (
     const ops = (await runs.listPendingOperations(RUN)).map((op) => ({ ...op, status: 'waiting' as const }));
     await runs.replaceRecoveryProjection({
       runId: RUN, attempt: current.attempt, expectedOwnerEpoch: current.owner!.epoch,
-      status, pendingOperations: keepApproval ? ops : [], updatedAt: 1_020,
+      status: status === 'running' ? 'recovering' : status, pendingOperations: keepApproval ? ops : [], updatedAt: 1_020,
       ...(cause ? { interruptCause: cause } : {}),
     });
+    if (status === 'running') {
+      await runs.transition({
+        runId: RUN, expectedStatus: 'recovering', nextStatus: 'running',
+        expectedOwnerEpoch: current.owner!.epoch, updatedAt: 1_020,
+      });
+    }
     now = 1_300;
     const before = await runs.get(RUN);
     expect(await recoverInterruptedSessionCommandTasks()).toBe(1);
