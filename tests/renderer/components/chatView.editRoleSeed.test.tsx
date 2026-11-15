@@ -2,7 +2,6 @@
 import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_MODELS } from '../../../src/shared/constants';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import type { Message } from '../../../src/shared/contract';
 
@@ -108,7 +107,6 @@ describe('startEditRoleChat + ChatView deterministic seed path', () => {
   it('sends /edit-role <roleId> to the backend while rendering plain language in the user bubble', async () => {
     const configuredSettings = {
       models: {
-        default: DEFAULT_MODELS.xiaomi,
         defaultProvider: 'xiaomi',
         providers: { xiaomi: { enabled: true, apiKeyConfigured: true } },
       },
@@ -126,7 +124,7 @@ describe('startEditRoleChat + ChatView deterministic seed path', () => {
           updatedAt: 1,
           messageCount: 0,
           turnCount: 0,
-          modelConfig: { provider: 'xiaomi', model: DEFAULT_MODELS.xiaomi },
+          modelConfig: { provider: 'xiaomi' },
         };
       }
       if (domain === IPC_DOMAINS.SESSION && action === 'replayConversationBranch') {
