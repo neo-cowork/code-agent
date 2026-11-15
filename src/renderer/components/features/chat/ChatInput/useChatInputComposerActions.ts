@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import type { SpeechTranscribeResult } from '@shared/contract';
@@ -6,7 +6,7 @@ import type { ConversationVoiceInputMetadata } from '@shared/contract/conversati
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 import { mergeAttachments } from './attachmentDedupe';
-import { notifyAttachmentMerge } from './attachmentMergeToast';
+import { dismissAttachmentLimitToast, notifyAttachmentMerge } from './attachmentMergeToast';
 import type { InputAreaRef } from './InputArea';
 
 type VoiceInputContextValue = {
@@ -18,6 +18,7 @@ export interface UseChatInputComposerActionsParams {
   processFile: (file: File) => Promise<MessageAttachment | null>;
   inputAreaRef: React.RefObject<InputAreaRef | null>;
   setIsUploading: (uploading: boolean) => void;
+  attachmentCount: number;
   setAttachments: React.Dispatch<React.SetStateAction<MessageAttachment[]>>;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   setVoiceInputContext: React.Dispatch<React.SetStateAction<VoiceInputContextValue>>;
@@ -33,11 +34,17 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     processFile,
     inputAreaRef,
     setIsUploading,
+    attachmentCount,
     setAttachments,
     setValue,
     setVoiceInputContext,
   } = params;
   const { t } = useI18n();
+
+  // 附件清空（发送后或用户逐个移除）后，「附件已满」提示不再适用
+  useEffect(() => {
+    if (attachmentCount === 0) dismissAttachmentLimitToast();
+  }, [attachmentCount]);
 
   const appendAttachments = useCallback((incoming: MessageAttachment[]) => {
     if (incoming.length === 0) return;
