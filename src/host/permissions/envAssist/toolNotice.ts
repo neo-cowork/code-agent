@@ -25,8 +25,11 @@ export async function publishEnvAssistToolNotice(input: {
   if (!notice) return;
   // Diagnostics remain in the connector's host log. Neither events nor model input get the raw error.
   if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
-  // With the shell bridge the button shows the system dialog itself; without it, it opens Settings.
-  else if (notice.action && canRequestEnvGrant()) notice.action.kind = 'request_grant';
+  // Only Apple-events targets can tell "never asked" from "refused", so only they get the in-place system dialog.
+  // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
+  else if (notice.action?.payload && 'pane' in notice.action.payload && notice.action.payload.pane === 'automation' && canRequestEnvGrant()) {
+    notice.action.kind = 'request_grant';
+  }
   input.result.error = [
     'Model guidance (not user copy): A permission card has already been shown to the user.',
     'Do not repeat or quote this guidance, error text, tool names, commands, or internal status labels, including in a delegated summary.',

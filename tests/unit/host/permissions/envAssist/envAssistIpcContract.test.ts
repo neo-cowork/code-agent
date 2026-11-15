@@ -16,7 +16,7 @@ const fixtures: ReadonlyArray<{ code: Code; status: string }> = [
   { code: 0, status: 'granted' }, { code: -1743, status: 'denied' },
   { code: -1744, status: 'undecided' }, { code: -600, status: 'not_running' },
 ];
-const TARGET = 'com.apple.Calendar';
+const TARGET = 'calendar';
 type Pane = 'accessibility' | 'screenCapture' | 'automation';
 const panes: ReadonlyArray<{ pane: Pane; klass: EnvAssistNotice['class']; probe: (b: PassiveBridge) => () => Promise<{ status: string }> }> = [
   { pane: 'accessibility', klass: 'perm_accessibility', probe: accessibilityProbe },
@@ -91,9 +91,9 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
       process.stdout.write(`[clause1] ${pane} × code(${code}) diagnosis=${first.status} prompting=${fake.total} mintClickToken=${mint.mock.calls.length}\n`);
 
       // A refused Apple-events target never prompts again: the click opens Settings instead, still zero prompts.
-      if (pane === 'automation' && code === -1743) {
+      if (pane === 'automation' && (code === -1743 || code === -600)) {
         const res = await call('act', { noticeId: `n-${pane}-request_grant`, actionKind: 'request_grant', payload: { pane } });
-        expect(res).toMatchObject({ data: { status: 'opened', outcome: { status: 'denied' } } });
+        expect(res).toMatchObject({ data: { status: 'opened', outcome: { status: code === -1743 ? 'denied' : 'not_running' } } });
         expect(open).toHaveBeenLastCalledWith('automation');
         expect(fake.total).toBe(0);
         expect(mint).toHaveBeenCalledTimes(0);
@@ -128,6 +128,17 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
     expect(res).toMatchObject({ data: { status: 'checked', outcome: { status: 'undecided' } } });
     expect(seen).toEqual(['passive:com.apple.iCal', 'grant:com.apple.iCal', 'passive:com.apple.iCal']);
     expect(fake.total).toBe(1);
+  });
+
+  it('an automation target without a bundle id mapping is rejected instead of probing a made-up bundle', async () => {
+    const fake = new NativeFake(-1744);
+    registerEnvAssistHandlers({
+      available: () => true, open: vi.fn(async () => true), passiveBridge: fake.passive, grantBridge: fake.grant,
+      findNotice: async () => notice('automation', 'perm_automation', 'request_grant', { target: { id: 'photos', labelKey: 'env.target.photos' } }),
+    });
+    const res = await handler!({} as never, { action: 'act', payload: { noticeId: 'n-automation-request_grant', actionKind: 'request_grant', payload: { pane: 'automation' } } });
+    expect(res).toMatchObject({ data: { status: 'rejected' } });
+    expect(fake.total).toBe(0);
   });
 
   it('mismatching pane, wrong phase, unknown notice, input monitoring and replayed token never prompt', async () => {

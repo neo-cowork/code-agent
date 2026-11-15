@@ -39,7 +39,7 @@ interface EnvAssistDependencies {
 const AUTOMATION_BUNDLE_IDS: Readonly<Record<string, string>> = {
   calendar: 'com.apple.iCal', mail: 'com.apple.mail', reminders: 'com.apple.reminders',
 };
-const automationBundleId = (targetId: string | undefined) => (targetId ? AUTOMATION_BUNDLE_IDS[targetId] ?? targetId : undefined);
+const automationBundleId = (targetId: string | undefined) => (targetId ? AUTOMATION_BUNDLE_IDS[targetId] : undefined);
 
 function resolveGrantProbe(
   pane: string,
@@ -88,10 +88,12 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       const targetBundleId = automationBundleId(notice.target?.id);
       const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, targetBundleId);
       if (!probe) return { status: 'rejected' };
-      // A previously refused Apple-events target never prompts again (-1743): go straight to Settings (ADR-090 §3 row 1).
+      // Only "undecided" can show the system dialog. Refused (-1743) never prompts again and a target that isn't running (-600)
+      // can't be asked, so both go straight to Settings instead of a click that does nothing (ADR-090 §3 row 1).
+      // ponytail: not_running opens Settings rather than launching the target first; launch-then-ask when S4 owns Apple events.
       if (request.payload.pane === 'automation') {
         const before = await probe();
-        if (before.status === 'denied' && deps.available()) {
+        if ((before.status === 'denied' || before.status === 'not_running') && deps.available()) {
           return { status: await deps.open('automation') ? 'opened' : 'not_available', outcome: before };
         }
       }
