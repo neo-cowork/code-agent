@@ -72,7 +72,7 @@ pub fn sort_and_cap(mut items: Vec<CalendarItem>, limit: usize) -> Vec<CalendarI
 pub fn pick_occurrence(candidates: &[(String, i64)], event_id: &str, occurrence_ms: Option<i64>) -> Option<usize> {
     candidates
         .iter()
-        .position(|(id, start)| id == event_id && occurrence_ms.map_or(true, |occ| *start == occ))
+        .position(|(id, start)| id == event_id && occurrence_ms.is_none_or(|occ| *start == occ))
 }
 
 #[cfg(target_os = "macos")]

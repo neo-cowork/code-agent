@@ -98,7 +98,7 @@ export function resetCalendarConnectorReadiness(): void {
 }
 
 /** The single calendar authorization truth (same probe as the card and the meeting reminder switch). */
-export async function readCalendarAccess(): Promise<CalendarAccess> {
+async function readCalendarAccess(): Promise<CalendarAccess> {
   const client = bridge();
   lastAccess = client ? await calendarAccess(createShellPassiveBridge(client)) : 'unavailable';
   lastCheckedAt = Date.now();
@@ -157,7 +157,7 @@ function toUid(item: NativeItem): string {
   return item.recurring ? `${item.id}@${item.startMs}` : item.id;
 }
 
-export function parseCalendarUid(uid: string): { eventId: string; occurrenceMs?: number } {
+function parseCalendarUid(uid: string): { eventId: string; occurrenceMs?: number } {
   const match = /^(.+)@(-?\d+)$/.exec(uid);
   return match ? { eventId: match[1], occurrenceMs: Number(match[2]) } : { eventId: uid };
 }

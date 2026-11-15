@@ -43,8 +43,8 @@ export async function settleCalendarGranted(entry: string): Promise<void> {
       .all() as Array<{ id: string; session_id: string }> | undefined;
     const bySession = new Map<string, Set<string>>();
     for (const row of rows ?? []) {
-      if (!bySession.has(row.session_id)) bySession.set(row.session_id, new Set());
-      bySession.get(row.session_id)!.add(row.id);
+      const ids = bySession.get(row.session_id) ?? new Set<string>();
+      bySession.set(row.session_id, ids.add(row.id));
     }
     for (const [sessionId, ids] of bySession) {
       // SessionManager applies the signed-in user's session ownership fence.
