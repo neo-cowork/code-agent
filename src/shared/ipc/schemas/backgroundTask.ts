@@ -60,6 +60,7 @@ export const TaskProgressSchema: z.ZodType<TaskProgress> = z.object({
     toolIndex: z.number().optional(),
     toolTotal: z.number().optional(),
     target: z.string().optional(),
+    action: z.string().optional(),
     at: z.number(),
   }).optional(),
   lastToolFailure: z.object({

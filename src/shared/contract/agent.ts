@@ -51,6 +51,7 @@ export interface TaskProgressData {
   toolIndex?: number;      // 当前工具索引
   toolTotal?: number;      // 工具总数
   target?: string;         // 当前工具最像宾语的一个参数（已截断）
+  action?: string;         // 当前工具的 action 参数（同名工具按 action 区分读/写，如 ExcelAutomate）
 }
 
 // 任务完成事件数据

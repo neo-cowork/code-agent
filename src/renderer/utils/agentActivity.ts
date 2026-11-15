@@ -62,7 +62,7 @@ export function describeLastToolStep(
   status: ToolStepStatus = 'completed',
 ): string | undefined {
   if (!step) return undefined;
-  const targetArgs = step.target
+  const targetArgs = step.target || step.action
     ? {
       file_path: step.target,
       path: step.target,
@@ -70,6 +70,7 @@ export function describeLastToolStep(
       command: step.target,
       agentId: step.target,
       target: step.target,
+      ...(step.action ? { action: step.action } : {}),
     }
     : undefined;
   return humanizeToolStep(step.tool, targetArgs, t, undefined, status);

@@ -31,7 +31,7 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
-import { extractToolStepTarget } from './toolStepTarget';
+import { extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 
 export interface AgentTreeSpawnAgentSource {
@@ -304,9 +304,11 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
       const call = calls[callIndex];
       if (call.name !== tool) continue;
       const target = extractToolStepTarget(call.arguments);
+      const action = extractToolStepAction(call.arguments);
       return {
         tool,
         ...(target ? { target } : {}),
+        ...(action ? { action } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
     }
