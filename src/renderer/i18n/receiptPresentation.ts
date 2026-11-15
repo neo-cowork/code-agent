@@ -15,6 +15,7 @@ export const receiptPresentationZh = {
         calendar: '日历',
         reminders: '提醒事项',
         tmeet: '腾讯会议',
+        feishu: '飞书',
       },
       tools: {
         runCommand: '运行命令',
@@ -57,6 +58,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         calendar: 'Calendar',
         reminders: 'Reminders',
         tmeet: 'Tencent Meeting',
+        feishu: 'Feishu',
       },
       tools: {
         runCommand: 'Run command',
