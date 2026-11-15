@@ -541,3 +541,39 @@ describe('excelAutomateModule (native)', () => {
     });
   });
 });
+
+
+describe('Excel resolver parity at the actual handler boundary', () => {
+  it.each(['edit', 'generate'])('%s forwards exactly the classified destination', async (action) => {
+    const { resolveExcelWriteTargets } = await import('../../../../../src/host/tools/modules/excel/resolveExcelWriteTargets');
+    const { classifyPermission, getPermissionClassifier } = await import('../../../../../src/host/tools/permissionClassifier');
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'excel-handler-parity-'));
+    fs.mkdirSync(path.join(root, 'workspace'));
+    fs.mkdirSync(path.join(root, 'outside'));
+    fs.symlinkSync(path.join(root, 'outside'), path.join(root, 'workspace', 'escape'), 'dir');
+    const cwd = path.join(root, 'workspace');
+    const key = action === 'edit' ? 'file_path' : 'output_path';
+    try {
+      for (const raw of ['summary.xlsx', '~/Desktop/parity.xlsx', path.join(root, 'outside', 'a.xlsx'), '../outside/a.xlsx', 'escape/a.xlsx', '.npmrc', undefined]) {
+        if (action === 'edit' && raw === undefined) continue;
+        const args = { action, [key]: raw, title: 'Summary', data: '[{"Amount":10}]', operations: [{ action: 'set_cell', cell: 'A1', value: 10 }] };
+        getPermissionClassifier().clearCache();
+        const classified = await classifyPermission('ExcelAutomate', args, { workingDirectory: cwd, workspaceRoot: cwd, permissionLevel: 'write' });
+        const [target] = resolveExcelWriteTargets(args, cwd);
+        executeExcelEditMock.mockResolvedValue({ success: false, error: 'parity boundary captured' });
+        excelGenerateExecuteMock.mockResolvedValue({ ok: false, error: 'parity boundary captured' });
+        await run(args, makeCtx({ workingDir: cwd }));
+        const forwarded = action === 'edit' ? executeExcelEditMock.mock.lastCall?.[0].file_path : excelGenerateExecuteMock.mock.lastCall?.[0].output_path;
+        expect(forwarded).toBe(target);
+        if (classified.decision === 'ask') {
+          expect(classified.hostReason?.metadata?.path).toBe(path.join(fs.realpathSync(path.dirname(target)), path.basename(target)));
+        } else {
+          expect(raw === 'summary.xlsx' || raw === undefined).toBe(true);
+        }
+      }
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+});
