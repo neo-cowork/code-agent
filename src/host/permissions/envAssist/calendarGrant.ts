@@ -23,11 +23,12 @@ export interface CalendarClickDeps extends CalendarAskDeps {
   available: () => boolean;
 }
 
-/** 一次点击：未决定弹一次框并等答复；拒绝 / 只给了「仅添加」打开「隐私与安全性 → 日历」（受限打开也改不了，不打开）。授权后的收口由调用方做。 */
+/** 一次点击：未决定弹一次框并等答复；之前就拒绝 / 只给了「仅添加」打开「隐私与安全性 → 日历」（受限打开也改不了，不打开）。授权后的收口由调用方做。 */
 export async function askCalendarFromClick(deps: CalendarClickDeps): Promise<{ access: CalendarAccess; opened: boolean }> {
   const asked = await askCalendarOnce(deps);
   const access = asked?.access ?? 'unavailable';
-  const opened = (access === 'denied' || access === 'write_only') && deps.available() && await deps.open('calendars');
+  // 已拒绝过（这次没弹框）才去系统设置；刚在框里点了「不允许」就尊重这次答复，不追着开设置页
+  const opened = !asked?.prompted && (access === 'denied' || access === 'write_only') && deps.available() && await deps.open('calendars');
   return { access, opened };
 }
 

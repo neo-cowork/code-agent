@@ -24,18 +24,20 @@ import { publishEnvAssistToolNotice } from '../../../../../src/host/permissions/
 import { registerEnvAssistHandlers } from '../../../../../src/host/ipc/envAssist.ipc';
 import { ipcHost, type HandlerFn } from '../../../../../src/host/platform';
 
-/** -1744 undecided; a prompt that the user allows flips it to 0 granted. -1743 = refused. */
-const tcc = { code: -1744 as 0 | -1743 | -1744, allowOnPrompt: true, prompts: 0 };
+/** Calendar is EventKit (perm_calendars): 0 undecided; the dialog answer flips it to 3 full access or 2 refused. */
+const tcc = { status: 0 as 0 | 2 | 3, allowOnPrompt: true, prompts: 0 };
 const passive: PassiveBridge = {
   AXIsProcessTrusted: async () => false, CGPreflightScreenCaptureAccess: async () => false, IOHIDCheckAccess: async () => 1,
-  AEDeterminePermissionToAutomateTarget: async () => tcc.code,
-  EKAuthorizationStatusForEvents: async () => 0,
+  AEDeterminePermissionToAutomateTarget: async () => { throw new Error('calendar must not touch Apple events'); },
+  EKAuthorizationStatusForEvents: async () => tcc.status,
 };
 const grant: PromptingBridge = {
   requestAccessibility: async () => undefined, CGRequestScreenCaptureAccess: async () => undefined, IOHIDRequestAccess: async () => undefined,
-  AEDeterminePermissionToAutomateTarget: async () => { tcc.prompts++; if (tcc.allowOnPrompt) tcc.code = 0; },
-  requestFullAccessToEvents: async () => undefined,
+  AEDeterminePermissionToAutomateTarget: async () => { throw new Error('calendar must not touch Apple events'); },
+  requestFullAccessToEvents: async () => { tcc.prompts++; tcc.status = tcc.allowOnPrompt ? 3 : 2; },
 };
+const settledAll = vi.fn(async () => undefined);
+const open = vi.fn(async () => true);
 
 let handler: HandlerFn;
 const call = async (action: string, payload: unknown) => ((await handler({} as never, { action, payload })) as { data: unknown }).data;
@@ -49,10 +51,12 @@ async function showCalendarCard(): Promise<EnvAssistNotice> {
 
 beforeEach(() => {
   mocks.messages.length = 0; mocks.events.length = 0;
-  Object.assign(tcc, { code: -1744, allowOnPrompt: true, prompts: 0 });
+  Object.assign(tcc, { status: 0, allowOnPrompt: true, prompts: 0 });
+  settledAll.mockClear(); open.mockClear();
   vi.spyOn(ipcHost, 'handle').mockImplementation((_c, fn) => { handler = fn; });
   registerEnvAssistHandlers({
-    available: () => true, open: vi.fn(async () => true), passiveBridge: passive, grantBridge: grant,
+    available: () => true, open, passiveBridge: passive, grantBridge: grant,
+    calendarGranted: settledAll, sleep: async () => undefined,
     findNotice: async (id) => mocks.messages.find((m) => m.id === `env-assist:${id}`)?.metadata?.envAssist,
   });
 });
@@ -60,32 +64,41 @@ beforeEach(() => {
 describe('env-assist card closes once the permission is granted', () => {
   it('①clicking allow → granted: persisted notice is resolved with no button, and broadcast', async () => {
     const card = await showCalendarCard();
-    expect(card).toMatchObject({ phase: 'needs_user', action: { kind: 'request_grant' } });
-    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'automation' } }))
+    expect(card).toMatchObject({ class: 'perm_calendars', phase: 'needs_user', action: { kind: 'request_grant', payload: { pane: 'calendars' } } });
+    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'calendars' } }))
       .toMatchObject({ status: 'checked', outcome: { status: 'granted' } });
     // What a reload reads back.
     expect(stored()).toMatchObject({ id: card.id, phase: 'resolved', doneKey: 'env.done.calendar' });
     expect(stored().action).toBeUndefined();
     expect(mocks.events).toEqual([{ sessionId: 's', event: { type: 'env_assist_notice', data: stored() } }]);
+    expect(tcc.prompts).toBe(1);
+    // One permission: the same grant settles every other calendar card / parked run too.
+    expect(settledAll).toHaveBeenCalledWith('env_assist_granted');
     // A resolved card can't be clicked again.
-    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'automation' } })).toMatchObject({ status: 'rejected' });
+    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'calendars' } })).toMatchObject({ status: 'rejected' });
   });
 
   it('①a click the user declines keeps the card open', async () => {
     tcc.allowOnPrompt = false;
     const card = await showCalendarCard();
-    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'automation' } }))
-      .toMatchObject({ outcome: { status: 'undecided' } });
+    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'calendars' } }))
+      .toMatchObject({ status: 'checked', outcome: { status: 'denied' } });
     expect(stored()).toMatchObject({ phase: 'needs_user', action: { kind: 'request_grant' } });
     expect(mocks.events).toHaveLength(0);
+    expect(open).not.toHaveBeenCalled(); // just answered "Don't Allow": respect it, don't chase with Settings
+    // A later click on the refused card no longer prompts (macOS won't ask twice): it opens Privacy → Calendars.
+    expect(await call('act', { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'calendars' } }))
+      .toMatchObject({ status: 'opened', outcome: { status: 'denied' } });
+    expect(open).toHaveBeenCalledWith('calendars');
+    expect(tcc.prompts).toBe(1);
   });
 
   it('②granted in System Settings (no click): recheck closes the card without prompting', async () => {
     const card = await showCalendarCard();
-    tcc.code = -1743;
+    tcc.status = 2;
     expect(await call('recheck', { noticeId: card.id })).toMatchObject({ status: 'checked', outcome: { status: 'denied' } });
     expect(stored().phase).toBe('needs_user');
-    tcc.code = 0; // user flipped the switch in Settings
+    tcc.status = 3; // user flipped the switch in Settings
     expect(await call('recheck', { noticeId: card.id })).toMatchObject({ status: 'checked', outcome: { status: 'granted' } });
     expect(stored()).toMatchObject({ phase: 'resolved', doneKey: 'env.done.calendar' });
     expect(stored().action).toBeUndefined();
@@ -97,10 +110,26 @@ describe('env-assist card closes once the permission is granted', () => {
 
   it('concurrent rechecks (mount + window focus) resolve and broadcast once', async () => {
     const card = await showCalendarCard();
-    tcc.code = 0;
+    tcc.status = 3;
     await Promise.all([call('recheck', { noticeId: card.id }), call('recheck', { noticeId: card.id })]);
     expect(stored().phase).toBe('resolved');
     expect(mocks.events).toHaveLength(1);
+  });
+
+  it('④an old card from before the switch (perm_automation|calendar, pane automation) reads the EventKit truth, never Apple events', async () => {
+    const old: EnvAssistNotice = {
+      id: 'run-0|perm_automation|calendar', sessionId: 's', runId: 'run-0', class: 'perm_automation',
+      target: { id: 'calendar', labelKey: 'env.target.calendar' }, phase: 'needs_user', sentenceKey: 'env.sentence.calendar',
+      action: { kind: 'request_grant', labelKey: 'env.allow.calendar', payload: { pane: 'automation' } },
+      resume: { mode: 'manual' }, updatedAt: 1,
+    };
+    mocks.messages.push({ id: `env-assist:${old.id}`, role: 'assistant', content: '', timestamp: 1, metadata: { envAssist: old } });
+    expect(await call('recheck', { noticeId: old.id })).toMatchObject({ outcome: { status: 'undecided' } });
+    // One click, one EventKit dialog (the legacy Apple-events grant is not asked again).
+    expect(await call('act', { noticeId: old.id, actionKind: 'request_grant', payload: { pane: 'automation' } }))
+      .toMatchObject({ status: 'checked', outcome: { status: 'granted' } });
+    expect(tcc.prompts).toBe(1);
+    expect(stored()).toMatchObject({ phase: 'resolved', doneKey: 'env.done.calendar' });
   });
 
   it('③model guidance (non-parking runs only) points at the card, asks to resend, and never promises a follow-up', async () => {

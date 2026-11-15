@@ -126,17 +126,14 @@ function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane:
 /** Every probe that reads granted closes the card, whether the grant came from the button or from System Settings. */
 async function settle<T extends EnvAssistActResult>(deps: EnvAssistDependencies, notice: EnvAssistNotice, result: T): Promise<T> {
   if (result.outcome?.status !== 'granted') return result;
-  // One calendar permission: this grant closes every calendar card in every session and wakes their parked runs.
-  if (isCalendarNotice(notice)) {
-    await (deps.calendarGranted ?? settleCalendarGranted)('env_assist_granted');
-    return result;
-  }
   // The grant itself already happened; a failed write-back must not turn the click into an error.
   try { await (deps.resolve ?? resolveEnvAssistNotice)(notice); } catch (error) {
     logger.warn('Env-assist notice resolve failed', { noticeId: notice.id, error: error instanceof Error ? error.message : String(error) });
   }
   // Wake the run this card parked (no-op when nothing is parked or a waiter is already polling; never throws).
   armEnvResumeOnSessionReturn(notice.sessionId, getApplicationRunRegistry(), 'env_assist_granted');
+  // One calendar permission: the same grant also closes calendar cards in every other session and wakes their runs.
+  if (isCalendarNotice(notice)) await (deps.calendarGranted ?? settleCalendarGranted)('env_assist_granted');
   return result;
 }
 

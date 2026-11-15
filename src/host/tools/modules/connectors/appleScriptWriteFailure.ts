@@ -29,7 +29,7 @@ export function describeAppleScriptWriteFailure(
   return `${failurePrefix}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-/** Calendar writes go through EventKit (no osascript); the failure keeps its machine code for the permission card. */
+/** Calendar writes go through EventKit (no Apple-events script); the failure keeps its machine code for the permission card. */
 export function describeCalendarWriteFailure(failurePrefix: string, error: unknown, logger: Logger, toolName: string): string {
   if (isCalendarFailure(error)) {
     logger.warn(`${toolName} failed`, { connector: 'calendar', code: error.code });
