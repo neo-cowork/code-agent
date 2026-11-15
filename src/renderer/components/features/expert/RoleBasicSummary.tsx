@@ -19,7 +19,7 @@ export const RoleBasicSummary: React.FC<{ detail: RolePanelDetail }> = ({ detail
   return (
     <div data-testid="role-basic-summary" className="space-y-2 rounded-lg border border-zinc-700 bg-zinc-800/40 p-3 text-sm">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span data-testid="role-basic-summary-name" className="font-medium text-zinc-100">{detail.visual.displayName || detail.roleId}</span>
+        <span data-testid="role-basic-summary-name" className="font-medium text-zinc-100">{detail.visual.displayName || text.unnamed}</span>
         {detail.visual.profession ? <span className="text-xs text-zinc-400">{detail.visual.profession}</span> : null}
       </div>
       {showIntro ? <p data-testid="role-basic-summary-intro" className="text-zinc-300">{intro}</p> : null}
