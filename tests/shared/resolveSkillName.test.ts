@@ -14,3 +14,12 @@ describe('catalog entity presentation', () => {
     expect(humanizeInternalText('weekly-report-synthesis read_file', language).text).not.toContain('weekly-report-synthesis');
   });
 });
+
+
+it.each(['zh', 'en'] as const)('removes identifiers from names without placeholders (%s)', (language) => {
+  const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  for (const suffix of [` · ${id}`, ` (ticket ${id})`, `（工单 ${id}）`]) {
+    expect(humanizeInternalText(`Weekly report${suffix}`, language, { omitIds: true }).text).toBe('Weekly report');
+  }
+  expect(humanizeInternalText('Report (ID)', language, { omitIds: true }).text).toBe('Report (ID)');
+});

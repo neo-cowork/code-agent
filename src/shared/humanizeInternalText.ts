@@ -201,10 +201,11 @@ export function humanizeInternalText(
 
   if (options.omitIds) {
     const withoutIds = input.replace(UUID_GLOBAL_RE, '').replace(SESSION_ID_GLOBAL_RE, '')
-      .replace(CALL_ID_GLOBAL_RE, '').replace(OU_ID_GLOBAL_RE, '')
-      .replace(/[（(]\s*(?:工单|ID|id|record)?\s*[）)]/g, '')
+      .replace(CALL_ID_GLOBAL_RE, '').replace(OU_ID_GLOBAL_RE, '');
+    const cleanName = withoutIds === input ? input : withoutIds
+      .replace(/[（(]\s*(?:工单|ID|record|ticket|issue)?\s*[）)]/gi, '')
       .replace(/(?:\s*[·:：,，;；|—-]\s*)+$/g, '').replace(/\s{2,}/g, ' ').trim();
-    return humanizeInternalText(withoutIds, lang);
+    return humanizeInternalText(cleanName, lang);
   }
 
   const leaks = detectInternalTextLeaks(input);

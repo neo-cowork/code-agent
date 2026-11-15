@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { detectInternalTextLeaks } from '../../../src/shared/internalTextLeakDetect';
@@ -154,9 +154,14 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
     });
     Object.defineProperty(window, 'domainAPI', { configurable: true, value: { invoke } });
     try {
+      if (language === 'en') useAppStore.setState({ language: 'zh' });
       const { container } = render(<ModelSwitcher currentModel="mimo-v2.6-flash" />);
       fireEvent.click(container.querySelector('button')!);
       await waitFor(() => expect(document.querySelector('[data-model-search-input]')).toBeTruthy());
+      if (language === 'en') {
+        await waitFor(() => expect(document.body.textContent).toContain('小米'));
+        act(() => useAppStore.setState({ language: 'en' }));
+      }
       assertClean('model-status-control', visibleChrome(document.body), language);
     } finally {
       delete (window as unknown as Record<string, unknown>).domainAPI;

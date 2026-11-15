@@ -245,7 +245,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         index: nextIndex++,
       })),
     }));
-  }, [filteredOptions, healthMap]);
+  }, [filteredOptions, healthMap, panelText]);
   useEffect(() => {
     if (open) {
       setSearchQuery('');
@@ -426,7 +426,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         toast.error(interpolate(panelText.switchFailed, { reason: err instanceof Error ? err.message : panelText.unknownError }));
       }
     },
-    [sessionId]
+    [sessionId, panelText]
   );
   const handleOpenModelSettings = useCallback(() => {
     setOpen(false);
@@ -463,7 +463,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     } catch (err) {
       toast.error(interpolate(panelText.autoSwitchFailed, { reason: err instanceof Error ? err.message : panelText.unknownError }));
     }
-  }, [sessionId, defaultProvider, currentModel]);
+  }, [sessionId, defaultProvider, currentModel, panelText]);
   const handleClear = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -491,7 +491,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     } catch (err) {
       toast.error(modelOverrideFailureToast('clear', err, panelText));
     }
-  }, [sessionId, defaultProvider, currentModel]);
+  }, [sessionId, defaultProvider, currentModel, panelText]);
   const selectableOptionCount = showModelSettingsPrompt ? 0 : 1 + filteredOptions.length;
   useEffect(() => {
     if (!open) return;
