@@ -151,16 +151,16 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
 
   // page 形态：标题块坐在内容区顶部（px-6 与 PageContent 同横向节奏），
   // 返回按钮与标题同一行（标题左侧，-ml-2 把按钮内边距借回、让 chevron 与下方
-  // 内容左边线对齐），视觉从属于标题；大标题独占视觉一等位、actions 与标题同行
-  // 右对齐，描述压在标题下方。
+  // 内容左边线对齐），视觉从属于标题；actions 优先与标题同行右对齐，空间不足时
+  // 换行，标题块保留可读宽度，描述在标题下方最多展示三行。
   // 二级页在位时右侧顶栏不渲染，本标题块就是窗口顶部——原生标题栏撤掉后它得能拖窗口。
   // 用 ="deep"：Tauri 的 drag.js 对裸值只认「直接点在该元素上」，内层内容行会把有效区
   // 挤成一条边（2026-07-30 产品负责人：二级页双击标题栏不能缩放）；deep 让整个子树可拖，
   // 按钮/链接等可点元素仍由 Tauri 自动豁免。
   return (
     <header data-tauri-drag-region="deep" className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-      <div className="flex items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div className="flex min-w-0 flex-1 basis-96 items-center gap-3">
           {backButton ? <div className="-ml-2 shrink-0">{backButton}</div> : null}
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700/70 bg-zinc-800">
             {icon}
@@ -170,10 +170,10 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
               <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-100">{title}</h1>
               {badge}
             </div>
-            {description ? <p className="mt-1 truncate text-sm text-zinc-500" title={description}>{description}</p> : null}
+            {description ? <p className="mt-1 line-clamp-3 break-words text-sm text-zinc-500" title={description}>{description}</p> : null}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 pt-1">{actions}</div>
+        <div className="ml-auto flex shrink-0 items-center gap-2 pt-1">{actions}</div>
       </div>
     </header>
   );
