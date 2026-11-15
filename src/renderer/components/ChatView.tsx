@@ -978,11 +978,14 @@ export const ChatView: React.FC = () => {
               />
             </ErrorBoundary>
           )}
+        </div>
+
+        <div className="shrink-0">
+          {/* 发送中占位行占自己的高度，排在消息区之下：叠在消息区上的绝对定位会压住
+              最后一张卡片（「正在发送消息…」压在「查询日程未成功」那行上，
+              N-FIX-TURN-DURATION-ZERO-AND-SENDING-OVERLAP）。 */}
           {pendingAssistantFeedback !== null && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-4 chat-col-pad"
-              data-testid="assistant-send-placeholder"
-            >
+            <div className="w-full chat-col-pad" data-testid="assistant-send-placeholder">
               <div className="mx-auto max-w-3xl px-4">
                 <StreamingIndicator
                   startTime={pendingAssistantFeedback.startedAt}
@@ -994,9 +997,6 @@ export const ChatView: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="shrink-0">
           {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
           {researchDetected && (
             <div className="w-full chat-col-pad">
