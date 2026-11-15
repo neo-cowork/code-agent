@@ -15,6 +15,7 @@ import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import { Button } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { translateCatalogText } from '../../../../utils/catalogText';
 
 export interface SkillsMPSearchResult {
   id: string;
@@ -38,7 +39,7 @@ export const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
   onInstall,
   isInstalling,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cardsText = t.settings.skills.cards;
 
   return (
@@ -46,9 +47,9 @@ export const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
       <div className="flex items-center gap-3">
         <Package className="w-5 h-5 text-badge-info shrink-0" />
         <div>
-          <h4 className="text-sm font-medium text-zinc-200">{repo.name}</h4>
+          <h4 className="text-sm font-medium text-zinc-200">{translateCatalogText(repo.name, language)}</h4>
           {repo.description && (
-            <p className="text-xs text-zinc-400 mt-0.5">{repo.description}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">{translateCatalogText(repo.description, language)}</p>
           )}
         </div>
       </div>
@@ -86,7 +87,7 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
   onInstall,
   isInstalling,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cardsText = t.settings.skills.cards;
   const isBuiltin = entry.repoId === BUILTIN_REPO_ID;
 
@@ -95,14 +96,14 @@ export const RecommendedSkillCard: React.FC<RecommendedSkillCardProps> = ({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h5 className="text-sm font-medium text-zinc-200 truncate">{entry.displayName}</h5>
+            <h5 className="text-sm font-medium text-zinc-200 truncate">{translateCatalogText(entry.displayName, language)}</h5>
             {entry.badge && (
               <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-badge-info">
-                {entry.badge}
+                {translateCatalogText(entry.badge, language)}
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{entry.description}</p>
+          <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{translateCatalogText(entry.description, language)}</p>
         </div>
       </div>
       <div className="flex items-center justify-between gap-2 mt-auto">
@@ -149,14 +150,14 @@ export const RoleBundleCard: React.FC<RoleBundleCardProps> = ({
   onInstall,
   isInstalling,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cardsText = t.settings.skills.cards;
 
   return (
     <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 hover:border-zinc-600 transition-colors flex flex-col gap-3">
       <div>
-        <h5 className="text-sm font-medium text-zinc-200">{bundle.name}</h5>
-        <p className="text-xs text-zinc-400 mt-1">{bundle.description}</p>
+        <h5 className="text-sm font-medium text-zinc-200">{translateCatalogText(bundle.name, language)}</h5>
+        <p className="text-xs text-zinc-400 mt-1">{translateCatalogText(bundle.description, language)}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {bundle.skills.map((skill) => (
@@ -164,7 +165,7 @@ export const RoleBundleCard: React.FC<RoleBundleCardProps> = ({
             key={skill.name}
             className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-300"
           >
-            {skill.displayName}
+            {translateCatalogText(skill.displayName, language)}
           </span>
         ))}
       </div>
