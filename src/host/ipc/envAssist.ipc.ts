@@ -10,10 +10,12 @@ import { createCuaHelperGrantBridge, type CuaHelperGrantBridge } from '../permis
 import { createDefaultGrantBridge, mintClickToken, requestGrant, requestHelperGrant } from '../permissions/envAssist/grants/requestGrant';
 import { accessibilityProbe, automationProbe, calendarAccess, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
 import { enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps, type PendingEnable } from '../permissions/envAssist/calendarSetting';
+import { askCalendarFromClick, isCalendarNotice, settleCalendarGranted } from '../permissions/envAssist/calendarGrant';
+import type { CalendarAccess } from '../permissions/envAssist/probes/passiveProbes';
 import { readCuaHelperPermissionState, type CuaHelperPermissionState } from '../permissions/envAssist/cua/helperPermissionState';
 import { cuaHelperProbe } from '../permissions/envAssist/probes/cuaHelperProbe';
 import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
-import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
+import type { ProbeResult, ReadOnlyProbe } from '../permissions/envAssist/probes/types';
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
 import { createLogger } from '../services/infra/logger';
@@ -44,6 +46,8 @@ interface EnvAssistDependencies {
   resolve?: (notice: EnvAssistNotice) => Promise<void>;
   /** Reads / writes the gated setting (default: configService). Only the host turns it on, after a granted probe. */
   calendarReminderSetting?: { read: () => boolean; write: (on: boolean) => Promise<void> };
+  /** A probe read calendar full access: settle every calendar card in every session (default: settleCalendarGranted). */
+  calendarGranted?: (entry: string) => Promise<void>;
   sleep?: CalendarSettingDeps['sleep'];
 }
 
@@ -77,12 +81,20 @@ async function calendarSettingDeps(deps: EnvAssistDependencies): Promise<Calenda
     writeSetting: setting.write,
     sleep: deps.sleep,
     now: deps.now,
+    granted: () => (deps.calendarGranted ?? settleCalendarGranted)('meeting_reminder_setting'),
   };
 }
 
+/** The one calendar truth as a card outcome: anything short of full access reads as not granted. */
+function calendarOutcome(access: CalendarAccess): ProbeResult {
+  if (access === 'granted' || access === 'undecided') return { status: access };
+  return access === 'unavailable' ? { status: 'unavailable', reason: 'calendar_probe_unavailable' } : { status: 'denied' };
+}
+
 // Notice targets are Neo's own ids (i18n keys); TCC needs the target app's bundle id.
+// Calendar is not an Apple-events target any more: it is EventKit's perm_calendars (one permission, see calendarGrant.ts).
 const AUTOMATION_BUNDLE_IDS: Readonly<Record<string, string>> = {
-  calendar: 'com.apple.iCal', mail: 'com.apple.mail', reminders: 'com.apple.reminders',
+  mail: 'com.apple.mail', reminders: 'com.apple.reminders',
 };
 const automationBundleId = (targetId: string | undefined) => (targetId ? AUTOMATION_BUNDLE_IDS[targetId] : undefined);
 
@@ -103,6 +115,8 @@ function resolveGrantProbe(
 
 /** Passive (never-prompting) probe for the permission a notice is waiting on. */
 function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane: string): ReadOnlyProbe | null {
+  // New calendar cards (pane calendars) and cards parked before the switch (pane automation) read the same EventKit truth.
+  if (isCalendarNotice(notice)) return async () => calendarOutcome(await calendarAccess(deps.passiveBridge ?? null));
   if (notice.target?.id.startsWith('helper')) {
     return pane === 'accessibility' || pane === 'screenCapture' ? cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane) : null;
   }
@@ -112,6 +126,11 @@ function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane:
 /** Every probe that reads granted closes the card, whether the grant came from the button or from System Settings. */
 async function settle<T extends EnvAssistActResult>(deps: EnvAssistDependencies, notice: EnvAssistNotice, result: T): Promise<T> {
   if (result.outcome?.status !== 'granted') return result;
+  // One calendar permission: this grant closes every calendar card in every session and wakes their parked runs.
+  if (isCalendarNotice(notice)) {
+    await (deps.calendarGranted ?? settleCalendarGranted)('env_assist_granted');
+    return result;
+  }
   // The grant itself already happened; a failed write-back must not turn the click into an error.
   try { await (deps.resolve ?? resolveEnvAssistNotice)(notice); } catch (error) {
     logger.warn('Env-assist notice resolve failed', { noticeId: notice.id, error: error instanceof Error ? error.message : String(error) });
@@ -170,6 +189,17 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       }
       return settle(deps, notice, { status: grant === 'requested' ? 'checked' : grant, outcome });
     }
+    if (request.actionKind === 'request_grant' && isCalendarNotice(notice)) {
+      // Same exit as the reminder switch and the connector page: one click token, one dialog, then poll for the answer.
+      const asked = await askCalendarFromClick({
+        access: () => calendarAccess(deps.passiveBridge ?? null),
+        prompt: () => requestGrant(mintClickToken(notice.id, deps.now), { pane: 'calendars' }, deps.grantBridge ?? null, deps.now)
+          .catch(() => 'not_available' as const),
+        open: deps.open, available: deps.available, sleep: deps.sleep, now: deps.now,
+      });
+      if (asked.opened) return { status: 'opened', outcome: calendarOutcome(asked.access) };
+      return settle(deps, notice, { status: 'checked', outcome: calendarOutcome(asked.access) });
+    }
     if (request.actionKind === 'request_grant') {
       const targetBundleId = automationBundleId(notice.target?.id);
       const probe = noticeProbe(deps, notice, request.payload.pane);
@@ -217,6 +247,15 @@ registerEnvAssistHandlers.routes = routes;
  * Distinguishable degrade reasons are logged; 'unavailable' stops the waiter (manual Continue still works).
  */
 export const envResumeProbeFactory: EnvResumeProbeFactory = (block) => {
+  // Calendar runs (perm_calendars, and perm_automation runs parked before the switch) resume on the EventKit truth.
+  if (block.target === 'calendar' && (block.class === 'perm_calendars' || block.class === 'perm_automation')) {
+    const client = resolveShellBridgeClientFromEnv();
+    const passive = client ? createShellPassiveBridge(client) : null;
+    return async () => {
+      const access = await calendarAccess(passive);
+      return access === 'granted' ? 'green' : access === 'unavailable' ? 'unavailable' : 'red';
+    };
+  }
   const bundleId = block.class === 'perm_automation' ? automationBundleId(block.target) : undefined;
   if (!bundleId) logger.warn('Env resume probe unavailable', { reason: 'unsupported_target', class: block.class, target: block.target });
   const client = bundleId ? resolveShellBridgeClientFromEnv() : null; // logs env_assist_bridge:no_shell itself

@@ -13,7 +13,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 
@@ -88,8 +88,7 @@ async function executeCalendarDeleteEvent(
       },
     };
   } catch (error) {
-    const failure = describeAppleScriptWriteFailure(
-      'Calendar',
+    const failure = describeCalendarWriteFailure(
       'Calendar delete failed',
       error,
       ctx.logger,
@@ -98,6 +97,7 @@ async function executeCalendarDeleteEvent(
     return {
       ok: false,
       error: failure,
+      ...calendarFailureCode(error),
       meta: {
         action: 'delete_event',
         connector: 'calendar',

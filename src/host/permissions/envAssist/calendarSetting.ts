@@ -14,6 +14,30 @@ export interface CalendarSettingDeps {
   writeSetting: (on: boolean) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** 探针读到完全访问时：所有入口的日历授权卡一起收口、停住的任务续做（calendarGrant.settleCalendarGranted） */
+  granted?: () => Promise<void>;
+}
+
+export type CalendarAskDeps = Pick<CalendarSettingDeps, 'access' | 'prompt' | 'sleep' | 'now'>;
+
+/**
+ * 一次点击里的日历授权（卡片按钮 / 会前提醒开关 / 连接器页修复权限共用）：被动看一眼，只有「未决定」才凭点击凭证弹一次系统框，
+ * 再每秒被动轮询到有答复（≤ ENV_ASSIST_CALENDAR_CONFIRM_MS）。null = 没能发起系统框。
+ */
+export async function askCalendarOnce(deps: CalendarAskDeps, onPrompt?: () => void): Promise<{ access: CalendarAccess; prompted: boolean } | null> {
+  const before = await deps.access();
+  if (before !== 'undecided') return { access: before, prompted: false };
+  onPrompt?.();
+  if (await deps.prompt() !== 'requested') return null;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const now = deps.now ?? Date.now;
+  const deadline = now() + ENV_ASSIST_CALENDAR_CONFIRM_MS;
+  while (now() < deadline) {
+    await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
+    const access = await deps.access();
+    if (settled(access)) return { access, prompted: true };
+  }
+  return { access: 'undecided', prompted: true }; // 还在系统框里没作答
 }
 
 /**
@@ -29,6 +53,7 @@ async function finish(deps: CalendarSettingDeps, state: PendingEnable, access: C
   if (access === 'granted') {
     state.pending = false;
     await deps.writeSetting(true);
+    await deps.granted?.();
     return { on: true };
   }
   if (access === 'denied' || access === 'write_only') {
@@ -43,22 +68,14 @@ async function finish(deps: CalendarSettingDeps, state: PendingEnable, access: C
 
 /** 用户把开关从关点到开 */
 export async function enableCalendarReminder(deps: CalendarSettingDeps, state: PendingEnable): Promise<CalendarSettingResult> {
-  const before = await deps.access();
-  if (before !== 'undecided') return finish(deps, state, before);
-  state.pending = true;
-  if (await deps.prompt() !== 'requested') {
+  const asked = await askCalendarOnce(deps, () => { state.pending = true; });
+  if (!asked) {
     state.pending = false;
     return { on: false, reason: 'unavailable' };
   }
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const now = deps.now ?? Date.now;
-  const deadline = now() + ENV_ASSIST_CALENDAR_CONFIRM_MS;
-  while (now() < deadline) {
-    await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
-    const access = await deps.access();
-    if (settled(access)) return finish(deps, state, access);
-  }
-  return { on: false, reason: 'undecided' }; // 还在系统框里没作答：开关退回关，回头再看（recheck）
+  // 窗口内没等到答复：开关退回关，回头再看（recheck）
+  if (asked.prompted && asked.access === 'undecided') return { on: false, reason: 'undecided' };
+  return finish(deps, state, asked.access);
 }
 
 /**
@@ -67,7 +84,11 @@ export async function enableCalendarReminder(deps: CalendarSettingDeps, state: P
  */
 export async function recheckCalendarReminder(deps: CalendarSettingDeps, state: PendingEnable): Promise<CalendarSettingResult> {
   // 显示为开 = 设置是开 && 被动探针仍是完全访问；授权被撤（tccutil reset / 系统设置里关掉）就显示关并提示重新允许
-  if (deps.readSetting()) return (await deps.access()) === 'granted' ? { on: true } : { on: false, reason: 'revoked' };
+  if (deps.readSetting()) {
+    if ((await deps.access()) !== 'granted') return { on: false, reason: 'revoked' };
+    await deps.granted?.();
+    return { on: true };
+  }
   if (!state.pending) return { on: false };
   const access = await deps.access();
   if (access === 'granted') return finish(deps, state, access);
