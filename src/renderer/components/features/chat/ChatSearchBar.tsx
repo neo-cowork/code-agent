@@ -15,6 +15,7 @@ import { createPendingSearchJumpFromCrossSessionResult } from '../../../utils/se
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
+import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
 
 export interface SearchMatch {
   turnIndex: number;
@@ -312,7 +313,10 @@ const CrossSessionResultRow: React.FC<{
     : null;
 
   // Strip markdown bold markers from snippet for display
-  const cleanSnippet = item.snippet.replace(/\*\*/g, '');
+  const strippedSnippet = item.snippet.replace(/\*\*/g, '');
+  const cleanSnippet = item.role === 'user'
+    ? formatEditRoleUserPrompt(strippedSnippet, t.roleEditReceipt.userPrompt)
+    : strippedSnippet;
 
   return (
     <button
