@@ -204,6 +204,8 @@ export interface AgentRunOptions {
   goalRecoverySnapshot?: import('../agent/goalModeController').GoalRecoverySnapshot;
   /** 本轮迭代数硬上限（角色主动性醒来等预算受限场景；不传用 AgentLoop 默认值） */
   maxIterations?: number;
+  /** Completion delivery only: one text response, with no further tool work. */
+  completionReportOnly?: boolean;
   /** Neo Tag approved work card runtime context. */
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
   /** Optional source text persisted for this run; the current model turn still receives the raw task input. */

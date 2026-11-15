@@ -1,52 +1,12 @@
 import { formatCronExpressionLabel, type CronHumanLang } from '@shared/cronHumanize';
+import { formatCronTimeZoneSuffix, hasDifferentTimeZone, resolveTimeZone } from '@shared/cronTimeZone';
 import type { Language } from '../i18n';
 import { formatDateTime } from './formatDateTime';
 
+export { formatCronTimeZoneSuffix } from '@shared/cronTimeZone';
+
 function localeForLanguage(language: Language): string {
   return language === 'zh' ? 'zh-CN' : 'en-US';
-}
-
-function resolveTimeZone(timeZone?: string): string | undefined {
-  if (!timeZone) return undefined;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone }).format();
-    return timeZone;
-  } catch {
-    return undefined;
-  }
-}
-
-function machineTimeZone(): string | undefined {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-function hasDifferentTimeZone(timeZone?: string): timeZone is string {
-  const resolved = resolveTimeZone(timeZone);
-  return resolved !== undefined && resolved !== machineTimeZone();
-}
-
-function getTimeZoneName(timeZone: string, language: Language): string | undefined {
-  const part = new Intl.DateTimeFormat(localeForLanguage(language), {
-    timeZone,
-    timeZoneName: 'long',
-  }).formatToParts(new Date()).find((item) => item.type === 'timeZoneName');
-  return part?.value;
-}
-
-function withTimeZoneSuffix(value: string, timeZone: string | undefined, language: Language): string {
-  if (!timeZone || !hasDifferentTimeZone(timeZone)) return value;
-  const zoneName = getTimeZoneName(timeZone, language);
-  if (!zoneName) return value;
-  return language === 'zh' ? `${value}（${zoneName}）` : `${value} (${zoneName})`;
-}
-
-/** Append the configured cron zone name when it differs from this machine. */
-export function formatCronTimeZoneSuffix(
-  value: string,
-  timeZone: string | undefined,
-  language: Language = 'zh',
-): string {
-  return withTimeZoneSuffix(value, resolveTimeZone(timeZone), language);
 }
 
 /** Full next-run time in the cron job's timezone, naming non-local zones. */
@@ -58,7 +18,7 @@ export function formatCronJobDateTime(
   const resolved = resolveTimeZone(timeZone);
   if (!resolved) return formatDateTime(value, language);
   const formatted = formatDateTime(value, language, resolved);
-  return withTimeZoneSuffix(formatted, resolved, language);
+  return formatCronTimeZoneSuffix(formatted, resolved, language);
 }
 
 /** Machine-local next-run time for the detail page's comparison line. */
@@ -116,5 +76,5 @@ export function formatCronJobShortTime(
   const formatted = sameDay
     ? time
     : formatDateTime(date, language, resolved).slice(5);
-  return withTimeZoneSuffix(formatted, resolved, language);
+  return formatCronTimeZoneSuffix(formatted, resolved, language);
 }

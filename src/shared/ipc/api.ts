@@ -34,6 +34,12 @@ export interface ElectronAPI {
   // Electron 33+ 获取文件的本地路径
   getPathForFile: (file: File) => string | Promise<string>;
 
+  /** Browser transports only; native bridges retain their real file paths. */
+  uploadFolderBatch?: (files: Array<{ file: File; relativePath: string }>) => Promise<{
+    root: string;
+    files: Array<{ relativePath: string; path: string }>;
+  }>;
+
   // PDF 文本提取（在主进程处理）
   extractPdfText: (filePath: string) => Promise<{ text: string; pageCount: number }>;
 

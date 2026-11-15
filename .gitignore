@@ -102,6 +102,7 @@ scripts/system-audio-capture
 scripts/voice-aec-io
 scripts/vision-ocr
 scripts/vision-tagger
+scripts/*.srcsha
 
 # Upstream sidecar binaries (run scripts/fetch-*.sh to regenerate)
 # 裸路径（无尾斜杠）：worktree-bootstrap 把这些软链成主仓产物，尾斜杠目录模式

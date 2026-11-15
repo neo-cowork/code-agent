@@ -66,6 +66,15 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
+      - 'scripts/ci/internal-text-leak-gate.mjs'
+      - 'scripts/ci/internal-text-leak-gate.d.mts'
+      - 'scripts/lib/internal-text-leak-allowlist.json'
+      - 'scripts/lib/internal-text-leak-dynamic-allowlist.json'
+      - 'src/shared/humanizeInternalText.ts'
+      - 'src/shared/internalTextLeakPatterns.json'
+      - 'tests/renderer/components/internalTextLeakDynamicScan.test.tsx'
+      - 'tests/shared/humanizeInternalText.test.ts'
+      - 'tests/scripts/internalTextLeakGate.test.ts'
       - 'scripts/attention-budget-ratchet.mjs'
       # 基线也要触发：只改基线 = 手工放宽棘轮，不能溜过门（与 knip 基线同理）
       - 'scripts/attention-budget-ratchet-baseline.json'
@@ -274,6 +283,12 @@ jobs:
         # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
         run: node scripts/host-chinese-error-ratchet.mjs
 
+      - name: Internal text leak gate
+        # N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE：拦截 renderer 用户可见表面的 9 类内部格式泄漏
+        # （UUID、session_id、call_id/toolu_、ou_/oc_、内部工具名、裸英文状态词、sandbox-exec、
+        # 临时路径、裸 JSON）。白名单每条必填归属单号/理由；对 0 文件、TS 解析失败、白名单缺理由 fail loud。
+        run: npm run gate:internal-text-leak
+
       - name: Attention budget ratchet (injection fixed cost)
         # 注入固定开销棘轮：无守卫静态注入总量 + 实时语音固定文案 token，只降不升（语音 ±10% 容差见基线）。
         # 此前只在 gates-local 本地跑、CI 零执行——#1199 改语音文案后 CI 全绿合入，把主线门带红（N-L8-ATT11/12）。
@@ -395,7 +410,7 @@ jobs:
         - /home/runner:/home/runner
     env:
       HOME: /home/runner
-    needs: container-tools
+    needs: [container-tools, node-pty-binding]
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -429,6 +444,16 @@ jobs:
         run: |
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
+
+      - name: Fetch node-pty native binding
+        # Real-host unit tests need the binding compiled outside this container.
+        uses: actions/download-artifact@v4
+        with:
+          name: node-pty-binding
+          path: node_modules/node-pty/build/Release
+
+      - name: Assert node-pty binding
+        run: node -e "require('node-pty')"
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
         # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
@@ -674,33 +699,14 @@ jobs:
   perf-journey-ratchet:
     name: Perf journey ratchet (post-merge)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Stays on the plain ubuntu-24.04 runner instead of the Playwright container:
+    # container Chromium/fonts yield commitCount=14 on long-session vs the 13 baseline
+    # (see N-FIX-MAIN-RED-PERF-LONGSESSION-COMMITCOUNT).
     runs-on: ubuntu-24.04
-    # 系统库/字体/浏览器烤在微软镜像里（MCR，不依赖 Ubuntu apt 源）；版本须与 package-lock 的 playwright 一致，
-    # 由 tests/scripts/playwrightInstallWorkflow.test.ts 钉死。容器内不得再 apt / playwright install。
-    container:
-      image: mcr.microsoft.com/playwright:v1.60.0-noble
-      # 非 root：测试里的 EACCES / chmod / 只读目录断言在 root 下不成立；
-      # --init：PID 1 回收僵尸，否则 killProcessTree 整树退出证明会把僵尸当存活。
-      options: --user 1001 --init
-      # 宿主 runner 的真实家目录：HOME=/github/home 会让「/home/<用户>」形态的脱敏断言失配，
-      # 且该目录不可写。挂同路径 + 下面 env.HOME，让 os.homedir() 与宿主一致。
-      volumes:
-        - /home/runner:/home/runner
-    env:
-      HOME: /home/runner
-    needs: container-tools
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Trust workspace for git (container runs as root, workspace owned by runner uid)
-        # actions/checkout 只在自己的临时全局配置里写 safe.directory；后续步骤的 git
-        # （merge-base / fetch / ls-files）会报 dubious ownership，棘轮门静默失明或整门红。
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Host tools (lsof / ps) for container
-        uses: ./.github/actions/container-tools
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -710,6 +716,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Install Playwright browsers
+        uses: ./.github/actions/setup-playwright
+        with:
+          with-deps: true
 
       - name: Run all journey commit-count probes
         env:

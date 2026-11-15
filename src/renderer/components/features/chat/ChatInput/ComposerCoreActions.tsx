@@ -19,6 +19,7 @@ interface ComposerCoreActionsProps {
   configured: boolean;
   isProcessing: boolean;
   isInterrupting?: boolean;
+  isStopping?: boolean;
   hasContent: boolean;
   hasContinuation?: boolean;
   onStop?: () => void;
@@ -38,6 +39,7 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
   configured,
   isProcessing,
   isInterrupting,
+  isStopping,
   hasContent,
   hasContinuation,
   onStop,
@@ -70,6 +72,7 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
             // action==='stop' 已经含「无草稿」判定，所以这里不会误进排队发送分支。
             isProcessing={isProcessing || action === 'stop'}
             isInterrupting={isInterrupting}
+            isStopping={isStopping}
             hasContent={hasContent}
             canSendEmpty={stepLimitContinuation.available}
             hasContinuation={action === 'continue' && hasContinuation}

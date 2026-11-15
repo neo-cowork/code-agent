@@ -2,7 +2,7 @@
 // ============================================================================
 // VoiceCallSummaryCard 字幕行时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // 展开字幕里每行的裸 toLocaleTimeString 改走 utils/formatDateTime(ts, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // ============================================================================
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -13,11 +13,12 @@ import type { VoiceCallSummary } from '../../../src/shared/contract/voice';
 import { VoiceCallSummaryCard } from '../../../src/renderer/components/features/voice/VoiceCallSummaryCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const LINE_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(LINE_AT, 'en');
 
 const summary: VoiceCallSummary = {
   durationSec: 60,
@@ -48,7 +49,7 @@ describe('VoiceCallSummaryCard 字幕行时间（跟随 UI language）', () => {
     expect(document.body.textContent ?? '').not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', () => {
+  it('en UI：维持 en-US 原样（英文 UI 行为不变）', () => {
     useAppStore.setState({ language: 'en' });
     useSessionStore.setState({
       messages: [
@@ -59,6 +60,8 @@ describe('VoiceCallSummaryCard 字幕行时间（跟随 UI language）', () => {
     fireEvent.click(screen.getByRole('button'));
     const row = screen.getByText('check the build').closest('li');
     expect(row?.textContent).toContain(EN);
-    expect(row?.textContent).not.toMatch(/\b[AP]M\b/);
+    const withoutEn = (row?.textContent ?? '').replace(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

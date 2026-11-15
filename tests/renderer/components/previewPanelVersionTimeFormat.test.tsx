@@ -2,7 +2,7 @@
 // ============================================================================
 // PreviewPanel 已发布版本菜单时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // 版本菜单里历史版本的裸 toLocaleDateString 改走 utils/formatDateTime(publishedAt, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // 菜单挂在标题栏徽记上（versionsOpen），点开才能看到历史版本行。
 // ============================================================================
 import React from 'react';
@@ -19,11 +19,12 @@ vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
 
 import { PreviewPanel } from '../../../src/renderer/components/PreviewPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const V1_PUBLISHED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(V1_PUBLISHED_AT, 'en');
 
 const TAB: PreviewTab = {
   id: 'preview-test',
@@ -84,7 +85,7 @@ describe('PreviewPanel 版本菜单历史版本时间（跟随 UI language）', 
     expect(menu.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', async () => {
+  it('en UI：历史版本时间跟随 formatDateTime', async () => {
     useAppStore.setState({ language: 'en' });
     render(<PreviewPanel />);
     await screen.findByTestId('preview-publish-state');
@@ -93,6 +94,6 @@ describe('PreviewPanel 版本菜单历史版本时间（跟随 UI language）', 
     await waitFor(() => {
       expect(menu.textContent).toContain(`v1 ${EN}`);
     });
-    expect(menu.textContent).not.toMatch(/\b[AP]M\b/);
+    expect(menu.textContent).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

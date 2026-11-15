@@ -62,9 +62,11 @@ vi.mock('../../../src/host/context/compactionAuditRecorder', () => ({
   recordCompactionAuditSnapshot: compactionServiceMocks.recordAudit,
 }));
 
+import { COMPACTION_SUMMARY } from '../../../src/shared/constants';
 import {
   compactMessagesWithSummary,
   createCompactionPlan,
+  summarizeCompactionPlan,
 } from '../../../src/host/context/compactionService';
 
 function message(id: string, role: Message['role'], content: string): Message {
@@ -950,7 +952,7 @@ describe('compactionService', () => {
     },
     {
       name: 'over-budget',
-      summary: 'oversized summary '.repeat(1200),
+      summary: 'oversized summary '.repeat(2200),
       metadata: compactionServiceMocks.summaryModel,
       field: 'overBudget' as const,
     },
@@ -1002,5 +1004,68 @@ describe('compactionService', () => {
     expect(prompt.split(TELEMETRY_RECOVERY_NOTICE)).toHaveLength(2);
     expect(recovered.content).toBe(originalContent);
     expect(result.plan.messages[0].content).toBe(originalContent);
+  });
+
+  it('admits a ~2500-token summary under COMPACTION_SUMMARY.MAX_TOKENS and rejects above the cap as overBudget', async () => {
+    const admittedSummary = '# Context Handoff\n\n' + 'oversized summary '.repeat(1250);
+    const overCapSummary = '# Context Handoff\n\n' + 'oversized summary '.repeat(2200);
+    expect(estimateTokens(admittedSummary)).toBeGreaterThan(2400);
+    expect(estimateTokens(admittedSummary)).toBeLessThan(2600);
+    expect(estimateTokens(overCapSummary)).toBeGreaterThan(COMPACTION_SUMMARY.MAX_TOKENS);
+
+    const messages = [
+      message('m1', 'assistant', 'Historical architecture analysis and verification notes. '.repeat(450)),
+      message('m2', 'assistant', 'Historical implementation steps and benchmark observations. '.repeat(450)),
+      message('m3', 'user', 'Continue with next step.'),
+      message('m4', 'assistant', 'Recent reply.'),
+    ];
+    const hookManager = {
+      triggerPreCompact: vi.fn().mockResolvedValue({}),
+      triggerPostCompact: vi.fn().mockResolvedValue({}),
+    };
+
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: admittedSummary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
+    const plan = createCompactionPlan({ sessionId: 'cap-plan', source: 'manual_current', messages, preserveRecentCount: 2 });
+    expect(plan).not.toBeNull();
+    const planSummary = await summarizeCompactionPlan(plan!);
+    expect(planSummary.validation.ok).toBe(true);
+    expect(planSummary.validation.overBudget).toBe(false);
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledWith(
+      expect.any(String),
+      COMPACTION_SUMMARY.MAX_TOKENS,
+    );
+
+    compactionServiceMocks.summarizeWithMetadata.mockClear();
+    const admitted = await compactMessagesWithSummary({
+      sessionId: 'cap-admitted',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 2,
+      hookManager,
+    });
+    expect(admitted.success).toBe(true);
+    expect(admitted.validation).toMatchObject({ ok: true, overBudget: false });
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(1);
+    const preservedTokens = estimateTokens(messages[2].content) + estimateTokens(messages[3].content) + 8;
+    expect(hookManager.triggerPreCompact.mock.calls[0][3]).toBeGreaterThanOrEqual(COMPACTION_SUMMARY.MAX_TOKENS);
+    expect(preservedTokens).toBeGreaterThan(0);
+
+    compactionServiceMocks.summarizeWithMetadata.mockReset();
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: overCapSummary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
+    const rejected = await compactMessagesWithSummary({
+      sessionId: 'cap-over-budget',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 2,
+    });
+    expect(rejected.success).toBe(false);
+    expect(rejected.reason).toBe('invalid_summary_projection');
+    expect(rejected.validation).toMatchObject({ ok: false, overBudget: true });
   });
 });

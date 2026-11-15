@@ -2,7 +2,7 @@
 // ProjectCollaborationDetailPane 时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1）：
 // topic 详情「更新于」行的裸 toLocaleString 改走 formatTime(ts, lang) →
 // utils/formatDateTime，lang 由 useI18n 注入；zh 24 小时制带年份、绝不跟机器
-// locale 出 AM/PM；en 同样固定 24 小时制。messagesByConversation 注入空表绕开 IPC
+// locale 出 AM/PM；en 维持 en-US 原样。messagesByConversation 注入空表绕开 IPC
 //（ADR-035 的 fixture 注入口）。
 // ============================================================================
 import React from 'react';
@@ -21,6 +21,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 
 import { ProjectCollaborationDetailPane } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane';
 import type { NeoWorkCardDetail } from '../../../src/shared/contract/tag';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const UPDATED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
@@ -62,10 +63,10 @@ describe('ProjectCollaborationDetailPane 时间口径（跟随 UI language）', 
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', () => {
+  it('en UI：更新于时间跟随 formatDateTime', () => {
     i18nState.language = 'en';
     const html = renderPane();
-    expect(html).toContain('2026/11/09 16:05');
-    expect(html).not.toMatch(/\b[AP]M\b/);
+    expect(html).toContain(formatDateTime(UPDATED_AT, 'en'));
+    expect(html).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

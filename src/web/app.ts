@@ -23,7 +23,7 @@ import type { BuildInfo, PermissionRequest, RendererServeDecision } from '../sha
 import type { ConversationEnvelope } from '../shared/contract/conversationEnvelope';
 
 import { formatError } from './helpers/utils';
-import { handleTempUpload, handleScreenshot } from './helpers/upload';
+import { handleTempUpload, handleTempBatchUpload, handleScreenshot } from './helpers/upload';
 import { dbAvailable, getPersistenceHealth } from './helpers/sessionCache';
 import { broadcastSSE } from './helpers/sse';
 
@@ -287,6 +287,19 @@ export function createApp(deps: CreateAppDeps): express.Express {
       const status = message.includes('50MB limit')
         ? 413
         : (message === 'Missing file field' || message === 'Upload aborted' ? 400 : 500);
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.post('/api/upload/temp/batch', async (req: Request, res: Response) => {
+    try {
+      await handleTempBatchUpload(req, res);
+    } catch (error) {
+      logger.error('Temporary batch upload failed', error);
+      const message = formatError(error);
+      const status = /\d+MB limit/.test(message)
+        ? 413
+        : (['Missing file field', 'Upload aborted', 'Invalid upload path'].includes(message) ? 400 : 500);
       res.status(status).json({ error: message });
     }
   });

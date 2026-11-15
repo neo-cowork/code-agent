@@ -125,10 +125,10 @@ const PATTERNS = {
   CJK: /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/g,
   /** Code indicators */
   CODE: /^(import|export|const|let|var|function|class|interface|type|def|async|await|return|if|else|for|while|switch|case|try|catch|throw|new|this|self|public|private|protected|static|readonly|abstract|extends|implements|=>|===|!==|&&|\|\|)\b|[{}[\]();:,.<>]/gm,
-  /** Markdown indicators */
-  MARKDOWN: /^#{1,6}\s|^\s*[-*+]\s|^\s*\d+\.\s|```|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|!\[.*\]\(.*\)|\[.*\]\(.*\)/gm,
-  /** JSON indicators */
-  JSON: /^\s*[{["]|":\s*[{["0-9tfn]|^\s*}|^\s*]/gm,
+  /** Markdown indicators — bounded single-line quantifiers avoid quadratic scans on long lines / blank-line runs */
+  MARKDOWN: /^#{1,6}\s|^[ \t]{0,32}[-*+]\s|^[ \t]{0,32}\d{1,6}\.\s|```|`[^`\r\n]{1,200}`|\*\*[^*\r\n]{1,200}\*\*|__[^_\r\n]{1,200}__|!?\[[^[\]\r\n]{0,200}\]\([^()\r\n]{0,200}\)/gm,
+  /** JSON indicators — bounded horizontal/field whitespace avoids quadratic scans on blank-line runs */
+  JSON: /^[ \t]{0,64}[{["]|":[ \t\r\n]{0,64}[{["0-9tfn]|^[ \t]{0,64}[}\]]/gm,
   /** Special characters that often become single tokens */
   SPECIAL_CHARS: /[{}[\]().,;:!?<>@#$%^&*+=|\\/"'`~]/g,
 };

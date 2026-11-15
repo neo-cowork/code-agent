@@ -47,6 +47,9 @@ export type TaskManagerEventType =
   | 'task_error'        // 任务出错
   | 'task_cancelled';   // 任务取消
 
+/** 用户 Stop 会话：先于任何 abort 同步广播，指挥台据此取消排队中的后台任务。 */
+export const SESSION_STOP_REQUESTED_EVENT = 'session_stop_requested';
+
 export interface TaskManagerEvent {
   type: TaskManagerEventType;
   sessionId: string;

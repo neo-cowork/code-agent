@@ -8,6 +8,9 @@ export const turnRailZh = {
   turnRail: {
     label: '轮次导航',
     allTurns: '全部 {count} 轮',
+    allTurnsWithMessages: '全部 {count} 轮 · 共 {messages} 条消息',
+    added: '追加',
+    includesAdded: '含 {n} 条追加消息',
     jumpTo: '回到第 {n} 轮',
     turnN: '第 {n} 轮',
     expand: '展开清单',
@@ -19,6 +22,9 @@ export const turnRailEn = {
   turnRail: {
     label: 'Turn rail',
     allTurns: 'All {count} turns',
+    allTurnsWithMessages: 'All {count} turns · {messages} messages',
+    added: 'Added',
+    includesAdded: 'Includes {n} added messages',
     jumpTo: 'Back to turn {n}',
     turnN: 'Turn {n}',
     expand: 'Expand list',

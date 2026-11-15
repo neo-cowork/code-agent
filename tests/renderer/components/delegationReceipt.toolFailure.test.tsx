@@ -69,7 +69,12 @@ function musicTask(status: Task['status'], withFailure: boolean): Task {
 function renderReceipt(task: Task): void {
   const presentation = deriveDelegationPresentation(delegateCall, [task], []);
   expect(presentation).not.toBeNull();
-  render(<DelegationReceipt presentation={presentation!} />);
+  render(
+    <>
+      <DelegationHeader presentation={presentation!} />
+      <DelegationReceipt presentation={presentation!} />
+    </>,
+  );
 }
 
 afterEach(() => { cleanup(); language = 'zh'; });
@@ -98,6 +103,14 @@ describe('DelegationReceipt — 终局工具失败出路', () => {
     renderReceipt(musicTask('failed', false));
     expect(screen.queryByTestId('delegation-tool-failure')).toBeNull();
     expect(screen.getByTestId('delegation-failure').textContent).toContain('音乐生成失败，视频先交付了');
+  });
+
+  it('用户取消的任务显示中性已取消回执，不冒充执行失败', () => {
+    renderReceipt(musicTask('cancelled', false));
+    expect(screen.getByTestId('delegation-headline').textContent).toBe('给视频配背景音乐已取消');
+    expect(screen.getByText('已取消')).toBeTruthy();
+    expect(screen.queryByTestId('delegation-failure')).toBeNull();
+    expect(screen.queryByTestId('delegation-tool-failure')).toBeNull();
   });
 });
 
@@ -131,7 +144,7 @@ describe.each(['en', 'zh'] as const)('background card display edge in %s', (loca
       expect(container.textContent).toContain("Background assistant didn't finish");
       expect(container.textContent).not.toContain('Not completed background');
     } else {
-      expect(container.firstChild?.textContent).toBe('执行失败助手');
+      expect(container.firstChild?.textContent).toBe('助手没有完成');
       expect(screen.getByTestId('delegation-failure').textContent).toBe(chineseReasons[Object.values(AgentFailureCode).indexOf(code)]);
     }
   });
@@ -147,13 +160,13 @@ describe.each(['en', 'zh'] as const)('background card display edge in %s', (loca
       : reason === '父任务已经结束' ? 'The parent task has already ended' : 'The cause of the failure is not yet known');
   });
 
-  it.each(['working', 'completed', 'failed'] as const)('uses a complete %s headline and preserves Chinese bytes', (state) => {
+  it.each(['working', 'completed', 'failed', 'cancelled'] as const)('uses a complete %s headline in both languages', (state) => {
     language = locale;
     const presentation = { state, title: locale === 'en' ? 'Background assistant' : '助手', outputs: [], activityIds: [] };
     const { container } = render(<DelegationHeader presentation={presentation} />);
     expect(container.textContent).toBe(locale === 'en'
-      ? { working: 'Background assistant is working', completed: 'Background assistant finished', failed: "Background assistant didn't finish" }[state]
-      : { working: '代理工作中助手', completed: '已完成助手', failed: '执行失败助手' }[state]);
+      ? { working: 'Background assistant is working', completed: 'Background assistant finished', failed: "Background assistant didn't finish", cancelled: 'Background assistant was cancelled' }[state]
+      : { working: '助手正在处理', completed: '助手已完成', failed: '助手没有完成', cancelled: '助手已取消' }[state]);
   });
 });
 

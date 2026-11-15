@@ -6,8 +6,14 @@ import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 // ============================================================================
 
 export const sidebarZh = {
+  modelSwitcherTooltip: {
+    engine: '运行引擎', service: '服务状态', effort: '推理强度', thinking: '思考',
+  },
+
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.zh,
+    scheduleSessionPrefix: '[定时]',
+    heartbeatSessionPrefix: '[心跳]',
     // 顶部 / 搜索
     newTask: '新任务',
     collapseSidebar: '收起侧栏',
@@ -89,6 +95,9 @@ export const sidebarZh = {
     menuSignOut: '退出登录',
     signIn: '登录',
     signedOutSettings: '设置',
+    accountUnreachable: '暂时无法连接，账号状态尚未确认',
+    connectionRetry: '重试',
+    modelLoading: '正在加载模型…',
     skipSignInSetup: '先不登录，去配置模型/通道',
     // 数据集标记 toast
     markedAsDataset: '已标记为 {role}',
@@ -388,8 +397,14 @@ export const sidebarZh = {
 };
 
 export const sidebarEn: typeof sidebarZh = {
+  modelSwitcherTooltip: {
+    engine: 'Engine', service: 'Provider', effort: 'Effort', thinking: 'Thinking',
+  },
+
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.en,
+    scheduleSessionPrefix: '[Schedule]',
+    heartbeatSessionPrefix: '[Heartbeat]',
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
     expandSidebar: 'Expand sidebar',
@@ -460,6 +475,9 @@ export const sidebarEn: typeof sidebarZh = {
     menuSignOut: 'Sign out',
     signIn: 'Sign in',
     signedOutSettings: 'Settings',
+    accountUnreachable: "Can’t reach the service right now. Account status is unconfirmed.",
+    connectionRetry: 'Retry',
+    modelLoading: 'Loading model…',
     skipSignInSetup: 'Skip sign-in and set up a model or channel',
     markedAsDataset: 'Marked as {role}',
     updateDatasetFailed: 'Failed to update dataset label: {message}',

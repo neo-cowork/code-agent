@@ -83,6 +83,7 @@ import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
 import {
   formatMcpConnectionError,
   formatMcpConnectorErrorExit,
+  mcpAuthorizationRequiredMetadata,
   mcpInsufficientScopeMetadata,
   isOAuthAuthorizationRequiredError,
   MCPToolDeliveryUnknownError,
@@ -1102,7 +1103,7 @@ export class MCPClient extends EventEmitter {
         error: formatMcpConnectorErrorExit(error) ?? errorMessage,
         duration: Date.now() - startTime,
         // 「重新授权」只对 OAuth 连接器走得通；API Key / Bearer / stdio 的 403 不发卡
-        ...(this.isOAuthServer(serverName) && mcpInsufficientScopeMetadata(error) ? { metadata: mcpInsufficientScopeMetadata(error) } : {}),
+        ...(this.isOAuthServer(serverName) ? { metadata: mcpInsufficientScopeMetadata(error) ?? mcpAuthorizationRequiredMetadata(error) } : {}),
       };
     }
   }

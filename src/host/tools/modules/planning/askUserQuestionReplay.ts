@@ -64,11 +64,43 @@ export function lookupAskUserQuestionReplay(
   return cached === undefined ? undefined : cached + ASK_USER_QUESTION_REPLAY_SUFFIX;
 }
 
+// 已作答（每题都有非空答案）的问句流水：给需要「用户真的点了选项」证据的调用方用
+// （delegate_session 澄清守卫）。跳过/无界面/残缺答案走不到 recordAskUserQuestionAnswer，
+// 所以不会出现在这里。seq 单调递增，调用方用 mark 比较先后，不依赖墙钟或账本状态。
+const answerLog = new Map<string, Array<{ seq: number; answers: string[] }>>();
+let answerSeq = 0;
+
+function answerScope(sessionId: string, scope: string): string {
+  return `${sessionId}\u0004${scope}`;
+}
+
+export function askUserQuestionAnswerMark(): number {
+  return answerSeq;
+}
+
+/** mark 之后该 (会话, run) 里真实作答的答案文本；没有 → 空数组。 */
+export function askUserQuestionAnswersSince(sessionId: string, scope: string, mark: number): string[] {
+  return (answerLog.get(answerScope(sessionId, scope)) ?? []).filter((entry) => entry.seq > mark).flatMap((entry) => entry.answers);
+}
+
 export function recordAskUserQuestionAnswer(
   ctx: ToolContext,
   questions: UserQuestion[],
   output: string,
+  answers: string[] = [],
 ): void {
+  const scope = ctx.runId ?? ctx.turnId;
+  if (scope) {
+    const logKey = answerScope(ctx.sessionId, scope);
+    const entries = answerLog.get(logKey) ?? [];
+    answerSeq += 1;
+    entries.push({ seq: answerSeq, answers });
+    answerLog.set(logKey, entries);
+    if (answerLog.size > REPLAY_CACHE_MAX) {
+      const oldestLog = answerLog.keys().next();
+      if (!oldestLog.done) answerLog.delete(oldestLog.value);
+    }
+  }
   const key = cacheKey(ctx, questions);
   if (!key) return;
   replayCache.set(key, output);
@@ -84,10 +116,14 @@ export function clearAskUserQuestionReplay(sessionId: string, runId?: string): v
     for (const key of replayCache.keys()) {
       if (key.startsWith(prefix)) replayCache.delete(key);
     }
+    answerLog.delete(answerScope(sessionId, runId));
     return;
   }
   const prefix = `${sessionId}\u0004`;
   for (const key of replayCache.keys()) {
     if (key.startsWith(prefix)) replayCache.delete(key);
+  }
+  for (const key of answerLog.keys()) {
+    if (key.startsWith(prefix)) answerLog.delete(key);
   }
 }

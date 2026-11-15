@@ -112,8 +112,9 @@ export function buildForegroundRunEndState(
 /**
  * 后台任务自己的 run 收线（subagent_run_end，status completed/cancelled/failed）：
  * 它名下还没被裁决的审批卡已成死卡——宿主侧这条 run 已不在，留着只会让人点进
- * unknown_request。按 runId（lane 身份）收掉该 lane 的 pending 与队列卡，别的 lane
- * 不受牵连；收卡不进已决存证（没人在这台机上点过）。
+ * unknown_request。同一父 run 的成员共享 runId，双方都有 agentId 时只按 agentId
+ * 收该成员的卡；任一方缺少 agentId 时才回退到 runId（delegate_task）。
+ * 收卡不进已决存证（没人在这台机上点过）。
  */
 export function buildBackgroundRunEndState(
   state: PermissionDecisionState,
@@ -121,9 +122,12 @@ export function buildBackgroundRunEndState(
 ): Pick<PermissionDecisionState, 'queuedPermissionRequests' | 'pendingPermissionRequest' | 'pendingPermissionSessionId'> {
   const runId = typeof identity.runId === 'string' && identity.runId ? identity.runId : null;
   const agentId = typeof identity.agentId === 'string' && identity.agentId ? identity.agentId : null;
-  const matchesLane = (request: PermissionRequest): boolean =>
-    (runId !== null && request.runId === runId)
-    || (agentId !== null && request.agentId === agentId);
+  const matchesLane = (request: PermissionRequest): boolean => {
+    if (agentId !== null && typeof request.agentId === 'string' && request.agentId.length > 0) {
+      return request.agentId === agentId;
+    }
+    return runId !== null && request.runId === runId;
+  };
 
   const queuedPermissionRequests: Record<string, PermissionRequest[]> = {};
   for (const [key, queue] of Object.entries(state.queuedPermissionRequests)) {

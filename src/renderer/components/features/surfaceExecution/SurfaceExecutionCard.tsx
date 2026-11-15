@@ -41,7 +41,7 @@ export function SurfaceExecutionCard({
 
       <div className={`grid gap-2 px-4 pt-3 ${takeover || recovery ? 'sm:grid-cols-2' : ''}`}>
         <SurfacePermissionCard session={session} copy={copy} language={language} />
-        {takeover && <SurfaceHumanTakeoverCard session={session} copy={copy} />}
+        {takeover && <SurfaceHumanTakeoverCard session={session} copy={copy} onControl={onControl} />}
         {recovery && <SurfaceRecoveryCard session={session} copy={copy} />}
       </div>
 

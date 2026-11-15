@@ -621,7 +621,12 @@
             "tmeetMeetingListUpcoming",
             "tmeetMeetingListEnded",
             "tmeetMeetingCreate",
-            "tmeetMeetingSearch"
+            "tmeetMeetingSearch",
+            "tmeetRecordList",
+            "tmeetRecordRead",
+            "feishuMinutesSearch",
+            "feishuMinutesRead",
+            "meetingRecords"
           ]
         },
         "targetContext": {
@@ -1132,6 +1137,55 @@
               "type": "string"
             },
             "toolName": {
+              "type": "string"
+            },
+            "connectorAccess": {
+              "type": "object",
+              "properties": {
+                "connectorId": {
+                  "type": "string"
+                },
+                "connectorName": {
+                  "type": "string"
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "write"
+                  ]
+                }
+              },
+              "required": [
+                "connectorId",
+                "connectorName",
+                "access"
+              ],
+              "additionalProperties": false
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "userRequest": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "text",
+                "truncated"
+              ],
+              "additionalProperties": false
+            },
+            "startedByAutomation": {
+              "type": "boolean"
+            },
+            "scheduledTaskName": {
               "type": "string"
             },
             "commandRiskLevel": {
@@ -2631,6 +2685,14 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "lostCode": {
+                "type": "string",
+                "enum": [
+                  "cli_not_logged_in",
+                  "cli_missing_configuration",
+                  "mcp_oauth_authorization_required"
+                ]
               },
               "requiredScope": {
                 "type": "string"

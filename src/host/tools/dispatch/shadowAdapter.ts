@@ -125,6 +125,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
 
   return {
     runId: input.runId,
+    spawnParentRunId: legacy?.spawnParentRunId as string | undefined,
     // FB-772：委托幂等键（submission_key）按发起轮 origin_turn_id 派生，漏搬 =
     // 协议工具恒看到 undefined，delegate_session 只能落跨轮共享的 'unknown-turn'
     // 常量，同目标第二个不同正文的委托被 G4 误拒。
@@ -242,6 +243,7 @@ export function buildCanUseToolFromLegacy(
         tool: requestedToolName,
         details,
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
+        ...(requestHint?.reasonCode ? { reasonCode: requestHint.reasonCode } : {}),
         dangerLevel: requestHint?.dangerLevel,
         decisionTrace: requestHint?.decisionTrace as never,
         ...(requestHint?.ledgerRecordedByChild ? { ledgerRecordedByChild: true } : {}),

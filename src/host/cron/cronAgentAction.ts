@@ -33,6 +33,7 @@ import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTermin
 import { parseStatedEventDecisions } from './cronEventDecisions';
 import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
+import { precheckLostCliConnectors, recordCronConnectorLost, scanLostMcpConnectors } from './cronConnectorLost';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
 
@@ -107,6 +108,8 @@ export async function executeCronAgentAction(
     }
   }
 
+  // 连接器登录丢失预检：无人值守没人看聊天卡，往待过目收件箱记一条（同连接器同日至多一条）
+  await recordCronConnectorLost(definition, precheckLostCliConnectors(action.roleId), () => Date.now());
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
@@ -236,6 +239,11 @@ export async function executeCronAgentAction(
       );
     } catch (deniedScanError) {
       console.warn('[CronService] Failed to scan permission-denied tool results after cron run', deniedScanError);
+    }
+    try {
+      await recordCronConnectorLost(definition, scanLostMcpConnectors(orchestrator.getMessages()), () => Date.now());
+    } catch (lostScanError) {
+      console.warn('[CronService] Failed to scan connector-lost tool results after cron run', lostScanError);
     }
   } finally {
     leaveObserveMode();

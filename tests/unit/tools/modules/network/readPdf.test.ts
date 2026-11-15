@@ -139,6 +139,22 @@ describe('readPdfModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('ENOENT');
     });
 
+    it('returns UploadExpired hostReason when a chat upload PDF is missing', async () => {
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const { HostReasonCode } = await import('../../../../../src/shared/contract/permission');
+      const enoent: NodeJS.ErrnoException = new Error('not found');
+      enoent.code = 'ENOENT';
+      accessMock.mockRejectedValue(enoent);
+      const uploadPdf = path.join(os.tmpdir(), 'code-agent-uploads', 'uuid-pdf', 'contract.pdf');
+      const result = await run({ file_path: uploadPdf });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.meta?.hostReason).toMatchObject({ code: HostReasonCode.UploadExpired });
+      }
+    });
+
     it('rejects non-pdf extension', async () => {
       const result = await run({ file_path: '/abs/foo.txt' });
       expect(result.ok).toBe(false);

@@ -1,4 +1,5 @@
 import {
+  resolveBackgroundTaskName,
   getBackgroundTask,
   getAllBackgroundTasks,
   killBackgroundTask,
@@ -15,6 +16,7 @@ import {
 } from '../../shell/ptyExecutor';
 
 export {
+  resolveBackgroundTaskName,
   getBackgroundTask,
   getAllBackgroundTasks,
   getAllPtySessions,

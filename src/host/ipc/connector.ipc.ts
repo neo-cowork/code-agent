@@ -397,6 +397,8 @@ interface ConnectorOAuthProviderStatus {
   blocked?: boolean;
   stale?: boolean;
   installState?: 'failed';
+  /** 仅 CONFIRMED 的失联探测原因（非 stale）；聊天连接卡据此区分「登录丢失」 */
+  lostReason?: 'cli_not_logged_in' | 'cli_missing_configuration';
   userName?: string;
   tenantName?: string;
 }
@@ -451,6 +453,7 @@ async function collectConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderSt
         ...(cliAdminBlocked.has(descriptor.id) ? { blocked: true } : {}),
         ...(cliStatus.stale ? { stale: true } : {}),
         ...(cliStatus.installState ? { installState: cliStatus.installState } : {}),
+        ...(!cliStatus.stale && !cliStatus.connected && cliStatus.lostReason ? { lostReason: cliStatus.lostReason } : {}),
         ...(cliStatus.user?.name ? { userName: cliStatus.user.name } : {}),
         ...(cliStatus.user?.tenantName ? { tenantName: cliStatus.user.tenantName } : {}),
       };

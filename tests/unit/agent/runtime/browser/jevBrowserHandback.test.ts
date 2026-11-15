@@ -274,23 +274,20 @@ describe('jev browser armed handback', () => {
       expect(loopClass, phrase).toBe(gated);
       if (gated) expect(systemOne).toHaveBeenCalledTimes(0);
 
-      const permission = vi.fn(async () => false);
       const blocked = await enforceBrowserCaptchaTakeoverGate({
         action: 'click',
         browserService: {
           getPageContent: async () => ({ url: 'http://127.0.0.1/captcha', title: phrase, text: '' }),
         },
-        context: { requestPermission: permission },
       });
       const gateClass = blocked ? String(blocked.metadata?.captchaClass ?? '') : null;
       expect(gateClass, phrase).toBe(gated);
       if (gated) {
         expect(blocked?.success).toBe(false);
         expect(blocked?.metadata?.code).toBe('MANUAL_TAKEOVER_REQUIRED');
-        expect(permission).toHaveBeenCalledWith(expect.objectContaining({ forceConfirm: true, dangerLevel: 'danger' }));
+        expect(blocked?.metadata?.takeoverAction).toBe('browser_action.wait_for_user');
       } else {
         expect(blocked).toBeNull();
-        expect(permission).not.toHaveBeenCalled();
       }
     }
   });
@@ -306,7 +303,6 @@ describe('jev browser armed handback', () => {
     const result = await runLoop(host, systemOne, { task: 'Read the newest stories' });
     expect(result.reason).not.toBe('captcha_or_risk_control');
 
-    const permission = vi.fn(async () => false);
     const gate = await enforceBrowserCaptchaTakeoverGate({
       action: 'click',
       browserService: {
@@ -320,10 +316,8 @@ describe('jev browser armed handback', () => {
           },
         }),
       },
-      context: { requestPermission: permission },
     });
     expect(gate).toBeNull();
-    expect(permission).not.toHaveBeenCalled();
   });
 
   it('mutate done1 断言未满足时不得 done_verified，且 false done 被记上', async () => {

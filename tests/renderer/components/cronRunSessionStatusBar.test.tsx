@@ -236,6 +236,20 @@ describe('CronRunSessionStatusBar（组件）', () => {
     expect(globalCss).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.cron-run-pulse-dot\s*\{\s*animation:\s*none/);
   });
 
+  it('等批准：cron 会话的状态行说明由哪个定时任务启动（无名字时用通用句）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    const row = { id: 'req-1', kind: 'tool_approval' as const, sessionId: 'session-1', tool: 'bash', requestedAt: Date.now(), status: 'pending' as const, argsPreview: 'echo hi', startedByAutomation: true };
+    listParkedApprovalsMock.mockResolvedValue([{ ...row, scheduledTaskName: '每日周会纪要汇总' }]);
+    const view = render(<CronRunSessionStatusBar sessionId="session-1" />);
+    expect((await screen.findByTestId('scheduled-task-origin')).textContent).toBe('由定时任务「每日周会纪要汇总」启动');
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+    listParkedApprovalsMock.mockResolvedValue([row]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    expect((await screen.findByTestId('scheduled-task-origin')).textContent).toBe('由定时任务启动');
+  });
+
   it('等批准：显示在干什么 + 批准走停车审批 IPC（first-responder-wins 同链路）', async () => {
     showSession(cronRunSession);
     getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
@@ -567,4 +581,18 @@ it('reveals the identical complete multi-line shell preview without trimming or 
   expect(screen.queryByTestId('cron-run-command')).toBeNull();
   fireEvent.click(toggle);
   expect(screen.getByTestId('cron-run-command').textContent).toBe(command);
+});
+
+it('renders file approval without a raw tool name or absolute path', async () => {
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: 'write-approval', kind: 'tool_approval', sessionId: 'session-1', tool: 'Write',
+    displayTool: 'Write', argsPreview: '/tmp/example/digest.md', requestedAt: 1, status: 'pending',
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const status = await screen.findByTestId('cron-run-status-text');
+  expect(status.textContent).not.toContain('Write');
+  expect(status.textContent).not.toContain('/tmp/example');
+  expect(status.textContent).toContain('digest.md');
 });

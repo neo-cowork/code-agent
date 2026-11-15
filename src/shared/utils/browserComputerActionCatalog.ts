@@ -261,6 +261,8 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
     consequence: "no_external_side_effect",
     evidenceKind: "workbench_state",
   },
+  // N-BROWSER-WAIT-FOR-USER-RESUME-W2: hands the page to the user and blocks; it neither reads nor writes the page.
+  wait_for_user: { ...READ_BROWSER_DEFAULTS, consequence: "no_external_side_effect" },
   list_profiles: {
     ...READ_BROWSER_DEFAULTS,
     consequence: "no_external_side_effect",

@@ -14,7 +14,7 @@ import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
-import { buildInsufficientScopeConnectorEvent } from '../../../src/host/agent/runtime/connectorScopeCard';
+import { buildConnectorToolFailureEvent } from '../../../src/host/agent/runtime/connectorScopeCard';
 
 const serviceMocks = vi.hoisted(() => ({
   langfuse: {
@@ -188,13 +188,43 @@ describe('insufficient_scope → connector_required card', () => {
   });
 });
 
-describe('buildInsufficientScopeConnectorEvent helpUrl', () => {
+describe('buildConnectorToolFailureEvent helpUrl', () => {
   it('no table entry → no helpUrl key; table entry → helpUrl; default table ships empty', () => {
-    const none = buildInsufficientScopeConnectorEvent(scopeFailure(), {});
+    const none = buildConnectorToolFailureEvent(scopeFailure(), {});
     expect(JSON.stringify(none)).not.toContain('helpUrl');
-    const withEntry = buildInsufficientScopeConnectorEvent(scopeFailure(), { notion: 'https://example.test/permissions' });
+    const withEntry = buildConnectorToolFailureEvent(scopeFailure(), { notion: 'https://example.test/permissions' });
     expect(withEntry).toMatchObject({ data: { connectors: [{ id: 'notion', helpUrl: 'https://example.test/permissions' }] } });
-    expect(JSON.stringify(buildInsufficientScopeConnectorEvent(scopeFailure()))).not.toContain('helpUrl');
-    expect(buildInsufficientScopeConnectorEvent(scopeFailure({ serverName: undefined, server: 'notion' }))).not.toBeNull();
+    expect(JSON.stringify(buildConnectorToolFailureEvent(scopeFailure()))).not.toContain('helpUrl');
+    expect(buildConnectorToolFailureEvent(scopeFailure({ serverName: undefined, server: 'notion' }))).not.toBeNull();
+  });
+});
+
+describe('MCP 401 → connector_required(lost_login)', () => {
+  const authFailure = (): ToolResult => ({
+    toolCallId: '',
+    success: false,
+    error: 'Unauthorized',
+    metadata: { mcpAuthorizationRequired: true, server: 'notion' },
+  });
+
+  it('emits exactly one lost_login card per failing 401 tool call, after tool_call_end', async () => {
+    const { ctx, engine } = makeEngine(vi.fn(async () => authFailure()));
+    await engine.executeToolsWithHooks([{ id: 'c4', name: 'mcp__notion__read_page', arguments: {} } as ToolCall]);
+    const types = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls.map(([event]) => (event as { type: string }).type);
+    expect(connectorEvents(ctx)).toEqual([{
+      type: 'connector_required',
+      data: { connectors: [{ id: 'notion', source: 'selected', reason: 'lost_login', lostCode: 'mcp_oauth_authorization_required' }] },
+    }]);
+    expect(types.indexOf('connector_required')).toBeGreaterThan(types.lastIndexOf('tool_call_end') - 1);
+  });
+
+  it('insufficient_scope keeps its own card and a success never emits one', async () => {
+    const scope = makeEngine(vi.fn(async () => scopeFailure()));
+    await scope.engine.executeToolsWithHooks([{ id: 'c5', name: 'mcp__notion__write_page', arguments: {} } as ToolCall]);
+    expect(connectorEvents(scope.ctx)).toHaveLength(1);
+    expect((connectorEvents(scope.ctx)[0].data as { connectors: Array<{ reason: string }> }).connectors[0].reason).toBe('insufficient_scope');
+    const ok = makeEngine(vi.fn(async (): Promise<ToolResult> => ({ toolCallId: '', success: true, output: 'ok', metadata: { mcpAuthorizationRequired: true, server: 'notion' } })));
+    await ok.engine.executeToolsWithHooks([{ id: 'c6', name: 'mcp__notion__read_page', arguments: {} } as ToolCall]);
+    expect(connectorEvents(ok.ctx)).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@
 // ============================================================================
 // PrivacySettings 出站掩码回执卡时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // metaLine 的裸 toLocaleTimeString 改走 utils/formatDateTime(ts, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // web 模式（isWebMode=true）短路桌面专属段，只走 SETTINGS 域 IPC。
 // ============================================================================
 import React from 'react';
@@ -24,11 +24,12 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import PrivacySettings from '../../../src/renderer/components/features/settings/tabs/PrivacySettings';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const RECORD_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(RECORD_AT, 'en');
 
 beforeEach(() => {
   invokeDomain.mockReset();
@@ -67,7 +68,7 @@ describe('PrivacySettings 出站掩码回执 metaLine（跟随 UI language）', 
     expect(rows.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', async () => {
+  it('en UI：回执 metaLine 时间跟随 formatDateTime', async () => {
     useAppStore.setState({ language: 'en' });
     render(<PrivacySettings />);
     await waitFor(() => {
@@ -76,6 +77,6 @@ describe('PrivacySettings 出站掩码回执 metaLine（跟随 UI language）', 
     fireEvent.click(screen.getByTestId('privacy-outbound-mask-receipt-toggle'));
     const rows = screen.getByTestId('privacy-outbound-mask-receipt-rows');
     expect(rows.textContent).toContain(EN);
-    expect(rows.textContent).not.toMatch(/\b[AP]M\b/);
+    expect(rows.textContent).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

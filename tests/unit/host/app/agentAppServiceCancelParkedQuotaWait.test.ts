@@ -36,6 +36,7 @@ function kernel(repository: DurableRunRepository, processInstanceId: string) {
 function idleTaskManager(legacyOrchestratorCancel: ReturnType<typeof vi.fn>) {
   return {
     getSessionState: () => ({ status: 'idle' as const }),
+    cancelSessionBackgroundWork: () => Promise.resolve(),
     getOrCreateCurrentOrchestrator: () => ({ cancel: legacyOrchestratorCancel }),
   };
 }

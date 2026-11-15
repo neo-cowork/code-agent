@@ -5,7 +5,7 @@ import type {
   SurfaceTargetRefV1,
 } from '@shared/contract/surfaceExecution';
 import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
-import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
+import { surfaceEventUserSummary, type RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
 import type { SurfaceExecutionTranslationsV1 } from '../../../i18n/surfaceExecution';
 import { formatSurfaceExecutionCopy } from '../../../i18n/surfaceExecution';
 
@@ -100,11 +100,52 @@ export function latestSurfaceEvent(
   return session.events[session.events.length - 1];
 }
 
+export function localizedSurfaceEventSummary(
+  event: SurfaceExecutionEventV1 | undefined,
+  copy: SurfaceExecutionTranslationsV1,
+  maxLength = 220,
+): string {
+  if (!event) return copy.fallback.stage;
+  if (event.userSummary.startsWith('Browser login state could not be saved')) {
+    return copy.resumeState.exportFailed;
+  }
+  if (event.userSummary.startsWith('Browser login state could not be restored')) {
+    return copy.resumeState.importFailed;
+  }
+  if (event.userSummary === 'Waiting for human control') {
+    return copy.takeover.description;
+  }
+  if (event.userSummary === 'Surface control takeover waiting') {
+    return copy.takeover.waitingTitle;
+  }
+  if (event.userSummary === 'Surface control pause waiting') {
+    return copy.controls.hint.pause;
+  }
+  if (
+    event.userSummary === 'Surface control resume succeeded'
+    || event.userSummary === 'Human takeover continue'
+    || event.userSummary === 'Human takeover navigated'
+  ) {
+    return copy.controls.hint.resume;
+  }
+  if (
+    event.userSummary === 'Surface control stop cancelled'
+    || event.userSummary === 'Human takeover cancel'
+    || event.userSummary === 'Human takeover timed_out'
+  ) {
+    return copy.controls.hint.stop;
+  }
+  if (event.userSummary === 'Surface control end_session succeeded') {
+    return copy.controls.hint.end_session;
+  }
+  return safeSurfaceText(surfaceEventUserSummary(event), copy.fallback.stage, maxLength);
+}
+
 export function surfaceStageLabel(
   session: RendererSurfaceSessionProjectionV1,
   copy: SurfaceExecutionTranslationsV1,
 ): string {
-  return safeSurfaceText(latestSurfaceEvent(session)?.userSummary, copy.fallback.stage, 180);
+  return localizedSurfaceEventSummary(latestSurfaceEvent(session), copy, 180);
 }
 
 export function surfaceControllerLabel(
@@ -154,7 +195,7 @@ export function surfaceNeedsInteraction(session: RendererSurfaceSessionProjectio
 
 /** 紧凑状态条的目标文案：浏览器会话取域名（脱敏后），取不到返回 null 由调用方兜底。 */
 export function surfaceTargetDomain(target: SurfaceTargetRefV1 | undefined): string | null {
-  if (!target || target.kind !== 'browser') return null;
+  if (target?.kind !== 'browser') return null;
   return safeSurfaceText(browserDomain(target.origin), '', 100) || null;
 }
 

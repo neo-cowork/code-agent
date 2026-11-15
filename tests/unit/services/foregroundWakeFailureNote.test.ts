@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import { findRegisteredSystemEvent } from '../../../src/shared/contract/systemEventRegistry';
-import { BACKGROUND_WAKE_DEFER_NOTICE_MS } from '../../../src/shared/constants/sessionCommandCenter';
+import {
+  BACKGROUND_WAKE_DEFER_NOTICE_MS,
+  BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS,
+  BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS,
+} from '../../../src/shared/constants/sessionCommandCenter';
 import type { SessionCommandTask } from '../../../src/host/services/commandCenter/sessionCommandCenter';
 import type { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
@@ -12,6 +16,7 @@ const h = vi.hoisted(() => ({
   added: [] as Array<{ sessionId: string; message: Message }>,
   emitted: [] as Array<{ sessionId: string; event: AgentEvent }>,
   busy: false,
+  accessible: true,
 }));
 
 const orchestrator = {
@@ -38,10 +43,10 @@ vi.mock('../../../src/host/task/TaskManager', () => ({
 }));
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    getSession: async () => ({
+    getSession: async () => (h.accessible ? {
       id: 'session-n', type: 'chat', workingDirectory: '/tmp/p',
       messages: [{ id: 'u1', role: 'user', content: 'hi', timestamp: 1 }],
-    }),
+    } : null),
     addMessageToSession: async (sessionId: string, message: Message) => { h.added.push({ sessionId, message }); },
   }),
 }));
@@ -55,7 +60,11 @@ vi.mock('../../../src/host/permissions/modes', () => ({
   getPermissionModeManager: () => ({ isLiveVoiceSession: () => false }),
 }));
 
-import { createForegroundWake } from '../../../src/host/services/commandCenter/foregroundWake';
+import {
+  createForegroundWake,
+  formatBackgroundWakeFailureNote,
+} from '../../../src/host/services/commandCenter/foregroundWake';
+import { recordBackgroundWakeFailureNoteWithOwnerRetry } from '../../../src/host/services/commandCenter/backgroundWakeNoteRetry';
 
 const task: SessionCommandTask = {
   id: 'task-n', sessionId: 'session-n', title: 't', shortName: '报告', laneKey: 'l', submissionKey: 's',
@@ -69,6 +78,7 @@ describe('foreground wake failure note (default dependencies)', () => {
     h.added.length = 0;
     h.emitted.length = 0;
     h.busy = false;
+    h.accessible = true;
     orchestrator.sendMessage.mockImplementation(async () => {
       throw new Error('Durable Run run-x has no live owner lease');
     });
@@ -83,7 +93,9 @@ describe('foreground wake failure note (default dependencies)', () => {
     expect(message.role).toBe('system');
     const registered = findRegisteredSystemEvent(message.metadata);
     expect(registered?.key).toBe('backgroundWakeFailed');
-    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'owner_missing' });
+    expect(message.content).toBe(formatBackgroundWakeFailureNote(task.shortName));
+    expect(message.content).toBe('后台任务「报告」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。');
+    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'owner_missing', title: '报告' });
     expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
   });
 
@@ -103,7 +115,7 @@ describe('foreground wake failure note (default dependencies)', () => {
     const registered = findRegisteredSystemEvent(message.metadata);
     expect(registered?.key).toBe('backgroundWakeDeferred');
     expect(message.content).toBe('后台任务「t」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。');
-    expect(message.metadata?.backgroundWakeDeferred).toEqual({ taskId: 'task-n', outcome: 'completed' });
+    expect(message.metadata?.backgroundWakeDeferred).toEqual({ taskId: 'task-n', outcome: 'completed', title: 't' });
     expect(h.emitted.at(-1)).toEqual({ sessionId: 'session-n', event: { type: 'message', data: message } });
   });
 
@@ -116,8 +128,43 @@ describe('foreground wake failure note (default dependencies)', () => {
 
     expect(h.added).toHaveLength(1);
     const { message } = h.added[0];
-    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'turn_error' });
+    expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'turn_error', title: '报告' });
     expect(h.emitted.filter((e) => e.event.type === 'error')).toEqual([]);
     expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
+  });
+
+  it('carries task.shortName in metadata.backgroundWakeFailed.title across owner-retry exhaustion and backgroundWakeNoteRetry', async () => {
+    vi.useFakeTimers();
+    h.accessible = false;
+    await createForegroundWake()(task, 'completed');
+    for (let i = 1; i < BACKGROUND_WAKE_OWNER_RETRY_MAX_ATTEMPTS; i += 1) {
+      await vi.advanceTimersByTimeAsync(BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS);
+    }
+
+    const failedNotes = h.added.filter((entry) => entry.message.metadata?.backgroundWakeFailed);
+    expect(failedNotes).toHaveLength(1);
+    expect(failedNotes[0].message.content).toBe(formatBackgroundWakeFailureNote(task.shortName));
+    expect(failedNotes[0].message.metadata?.backgroundWakeFailed).toEqual({
+      taskId: 'task-n',
+      reason: 'wake_failed',
+      title: '报告',
+    });
+
+    await recordBackgroundWakeFailureNoteWithOwnerRetry({
+      sessionId: 'session-n',
+      taskId: 'session-work-retry',
+      shortName: 'Compare three note-taking apps',
+      reason: 'wake_failed',
+    });
+
+    const retried = h.added.at(-1)!;
+    expect(retried.message.content).toBe(
+      '后台任务「Compare three note-taking apps」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。',
+    );
+    expect(retried.message.metadata?.backgroundWakeFailed).toEqual({
+      taskId: 'session-work-retry',
+      reason: 'wake_failed',
+      title: 'Compare three note-taking apps',
+    });
   });
 });

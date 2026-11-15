@@ -6,6 +6,7 @@ import { turnFeedbackWhyEn, turnFeedbackWhyZh } from './turnFeedbackWhy';
 import { evalBridgeEn, evalBridgeZh } from './evalBridge';
 import { wakeRationaleEn, wakeRationaleZh } from './wakeRationale';
 import { durableStoppedEn, durableStoppedZh } from './durableStopped';
+import { unsentDraftCopyEn, unsentDraftCopyZh } from './unsentDraft';
 // Chat 输入区词条（ChatInput index / InputArea / AttachmentBar / SendButton /
 // useFileUpload / ScheduleComposerCard / 长尾组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
@@ -28,6 +29,7 @@ export const chatInputZh = {
     sendAria: '发送消息',
     processingRuntimeInputAria: '正在处理运行中输入',
     stopAria: '停止',
+    stoppingAria: '正在停止',
     continueAria: '继续上次中断的任务',
     continueLabel: '继续',
     backgroundHandoffLabel: '转后台继续聊',
@@ -38,6 +40,7 @@ export const chatInputZh = {
     attachPages: '{count} 页',
     attachRemoveAria: '移除附件 {name}',
     attachmentAlreadyAdded: '{name} 已添加，无需重复添加',
+    attachmentLimitReached: '已添加 {added} 个，其余 {dropped} 个未添加（每条消息最多 {max} 个）。请先发送这一批，再继续添加。',
     connectorIconRemoveAria: '取消挂载 {name}',
     // 底栏图标 / 框内胶囊的「来源三态」小卡：回答「这是啥、谁放的、为什么在」。
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
@@ -100,9 +103,7 @@ export const chatInputZh = {
     importedNoticeNoAnchor: '这段导入的对话还没有可以续接的助手回复，暂时无法在这里继续。',
     importedSendBlocked: '暂时无法继续：这段导入的对话还没有可以续接的助手回复。',
     importedForkFailed: '没能开启续接会话：{reason}',
-    unsentDraftNotice: '上次输入框里还有一段内容：「{preview}」',
-    unsentDraftPutBack: '放回输入框',
-    unsentDraftDiscard: '丢弃',
+    ...unsentDraftCopyZh,
   },
   scheduleComposer: {
     title: '创建定时任务',
@@ -199,6 +200,25 @@ export const chatInputZh = {
     save: '保存',
     ignore: '忽略',
   },
+  meetingBar: {
+    recording: '记录中',
+    paused: '已暂停',
+    pause: '暂停',
+    resume: '继续',
+    stop: '结束',
+    silenceWarning: '已经 {minutes} 分钟没人说话，{remain} 分钟后自动结束',
+    ended: {
+      manual: '这场会已结束',
+      silence: '{minutes} 分钟没人说话，这场会已自动结束',
+      max_duration: '已录满 {hours} 小时，这场会已自动结束',
+      sleep: '电脑睡眠了，这场会已结束',
+      capture_stopped: '录音停了，这场会已结束',
+      interrupted: '上次 Neo 退出时这场会被中断',
+    },
+    startFailed: '录音没开起来',
+    openSettings: '去设置看看',
+    dismiss: '知道了',
+  },
   loopStatusBar: {
     runningPrefix: '循环中 · 第 ',
     runningSuffix: ' 轮',
@@ -239,6 +259,9 @@ export const chatInputZh = {
     memoryOffLabel: '本任务不用记忆',
     memoryOffHint: '不读取也不保存记忆；任务开始后不可更改',
     memoryOffLockedHint: '任务开始后不可更改，请新开一个任务',
+    meetingLabel: '记这场会',
+    meetingHint: '开始前先征得参会人同意',
+    meetingRecordingHint: '这场会正在记录',
   },
   mentionPanel: {
     searchEcho: '搜索：{query} · {count} 个结果',
@@ -506,6 +529,7 @@ export const chatInputEn: typeof chatInputZh = {
     sendAria: 'Send message',
     processingRuntimeInputAria: 'Processing runtime input',
     stopAria: 'Stop',
+    stoppingAria: 'Stopping',
     continueAria: 'Continue the interrupted task',
     continueLabel: 'Continue',
     backgroundHandoffLabel: 'Background & chat',
@@ -516,6 +540,7 @@ export const chatInputEn: typeof chatInputZh = {
     attachPages: '{count} pages',
     attachRemoveAria: 'Remove attachment {name}',
     attachmentAlreadyAdded: '{name} is already attached',
+    attachmentLimitReached: 'Added {added}; {dropped} more were not added (limit {max} per message). Send this batch, then add the rest.',
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',
@@ -575,9 +600,7 @@ export const chatInputEn: typeof chatInputZh = {
     importedNoticeNoAnchor: 'This imported chat has no assistant reply to continue from yet.',
     importedSendBlocked: 'Cannot continue yet: this imported chat has no assistant reply to continue from.',
     importedForkFailed: 'Could not open a continuation session: {reason}',
-    unsentDraftNotice: 'There is still text from the input box: "{preview}"',
-    unsentDraftPutBack: 'Put it back in the input',
-    unsentDraftDiscard: 'Discard',
+    ...unsentDraftCopyEn,
   },
   scheduleComposer: {
     title: 'Create scheduled task',
@@ -674,6 +697,25 @@ export const chatInputEn: typeof chatInputZh = {
     save: 'Save',
     ignore: 'Dismiss',
   },
+  meetingBar: {
+    recording: 'Recording',
+    paused: 'Paused',
+    pause: 'Pause',
+    resume: 'Resume',
+    stop: 'End',
+    silenceWarning: 'No one has spoken for {minutes} min — ending automatically in {remain} min',
+    ended: {
+      manual: 'This meeting has ended',
+      silence: 'No one spoke for {minutes} min, so the meeting was ended',
+      max_duration: 'Reached the {hours}-hour limit, so the meeting was ended',
+      sleep: 'Your computer went to sleep, so the meeting was ended',
+      capture_stopped: 'Recording stopped, so the meeting was ended',
+      interrupted: 'This meeting was interrupted when Neo last quit',
+    },
+    startFailed: "Recording didn't start",
+    openSettings: 'Check settings',
+    dismiss: 'Got it',
+  },
   loopStatusBar: {
     runningPrefix: 'Looping · turn ',
     runningSuffix: '',
@@ -714,6 +756,9 @@ export const chatInputEn: typeof chatInputZh = {
     memoryOffLabel: "Don't use memory for this task",
     memoryOffHint: "Won't read or save memory; can't change after the task starts",
     memoryOffLockedHint: "Can't change after the task starts — start a new task",
+    meetingLabel: 'Record this meeting',
+    meetingHint: 'Ask everyone for consent first',
+    meetingRecordingHint: 'This meeting is being recorded',
   },
   mentionPanel: {
     searchEcho: 'Search: {query} · {count} results',

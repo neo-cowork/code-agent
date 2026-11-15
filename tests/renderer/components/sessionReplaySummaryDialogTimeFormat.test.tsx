@@ -2,7 +2,7 @@
 // SessionReplaySummaryDialog 两处内联事件时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // 聚焦任务/历史列表里 event.timestamp 的裸 toLocaleTimeString 改走
 // utils/formatDateTime(ts, language)，zh 24 小时制带年份、绝不跟机器 locale 出
-// AM/PM；en 同样固定 24 小时制。（formatTaskEventDetail 等 helper 已由
+// AM/PM；en 维持 en-US 原样。（formatTaskEventDetail 等 helper 已由
 // sessionReplayFormattersTimeFormat.test.ts 钉档，这里补对话框本体。）
 // ============================================================================
 import React from 'react';
@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SessionReplaySummaryDialog } from '../../../src/renderer/components/features/sidebar/SessionReplaySummaryDialog';
 import type { Task } from '@shared/contract/backgroundTask';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // renderToStaticMarkup（服务端渲染路径）下 zustand 的 getServerSnapshot 返回初始
 // state，useAppStore.setState 影响不到静态渲染——改 mock useI18n 定桩 language
@@ -27,7 +28,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const EVENT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(EVENT_AT, 'en');
 
 const BACKGROUND_TASK: Task = {
   id: 'task-1',
@@ -111,10 +112,13 @@ describe('SessionReplaySummaryDialog 内联事件时间（跟随 UI language）'
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', () => {
+  it('en UI：维持 en-US 原样（英文 UI 行为不变）', () => {
     i18nState.language = 'en';
     const html = renderDialog();
     expect(html).toContain(EN);
-    expect(html).not.toMatch(/\b[AP]M\b/);
+    // 剥除所有合法 EN 后，不得残留某调用点漏传 language 打出的 zh 24h 时间或裸 16:05（MIXED 统一 EN === ZH 后仍成立）
+    const withoutEn = html.replaceAll(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

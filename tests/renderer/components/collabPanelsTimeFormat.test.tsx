@@ -3,7 +3,7 @@
 // 协作两屏时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // ProjectCollaborationPanel TopicRow 与 CloudCollabCardsSection CloudCardRow 的
 // 「请求人 + 更新时间」行，裸 toLocaleString 改走 utils/formatDateTime(ts, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // ============================================================================
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -34,11 +34,12 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 import { listCloudCards } from '../../../src/renderer/services/projectClient';
 import { CloudCollabCardsSection } from '../../../src/renderer/components/features/projectSpace/CloudCollabCardsSection';
 import { ProjectCollaborationPanel } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const UPDATED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(UPDATED_AT, 'en');
 
 const CARD: CloudCollabCard = {
   localCardId: 'card-a',
@@ -91,14 +92,14 @@ describe('CloudCollabCardsSection 云卡行更新时间（跟随 UI language）'
     expect(row.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', async () => {
+  it('en UI：更新时间跟随 formatDateTime', async () => {
     i18nState.language = 'en';
     render(<CloudCollabCardsSection projectId="proj-c1" />);
     const row = await screen.findByTestId('cloud-collab-card-card-a');
     await waitFor(() => {
       expect(row.textContent).toContain(EN);
     });
-    expect(row.textContent).not.toMatch(/\b[AP]M\b/);
+    expect(row.textContent).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });
 
@@ -113,12 +114,12 @@ describe('ProjectCollaborationPanel topic 行更新时间（跟随 UI language�
     expect(html).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', () => {
+  it('en UI：更新时间跟随 formatDateTime', () => {
     i18nState.language = 'en';
     const html = renderToStaticMarkup(
       <ProjectCollaborationPanel projectId="proj-1" details={[DETAIL]} />,
     );
     expect(html).toContain(EN);
-    expect(html).not.toMatch(/\b[AP]M\b/);
+    expect(html).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

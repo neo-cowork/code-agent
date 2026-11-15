@@ -43,6 +43,11 @@ export interface PermissionRequestDetails {
   changes?: string;
   server?: string;
   toolName?: string;
+  connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
+  purpose?: string;
+  userRequest?: { text: string; truncated: boolean };
+  startedByAutomation?: boolean;
+  scheduledTaskName?: string;
   commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
   commandSecurityFlags?: string[];
   affectedPath?: string;

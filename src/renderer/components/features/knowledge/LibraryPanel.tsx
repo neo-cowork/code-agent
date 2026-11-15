@@ -41,6 +41,7 @@ import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
+import { MeetingsView } from '../meetings/MeetingsView';
 import { DRAFT_SCOPE_KEY, useComposerStore } from '../../../stores/composerStore';
 import { DeliverablePublishBadge } from '../../DeliverablePublishBadge';
 import { ShareLinkPanel } from '../chat/MessageBubble/ShareLinkPanel';
@@ -52,7 +53,8 @@ const closeEmbeddedBrandManager = () => undefined;
 // 「记忆」tab 已撤（2026-07-27 审美关：记忆是个人设置不是资料库）——它的家在
 // 设置 → 记忆（SettingsModal 的 MemoryTab，深链 openSettingsTab('memory')），
 // 整窗页 KnowledgeMemoryPanel 2026-08-02 退役后，这是唯一的家。一个能力只留一个家。
-type LibraryView = 'items' | 'brands';
+// meetings = 会议列表与会议页（N-MEETING-PAGE），与品牌套件同一次级入口模式，不新造容器
+type LibraryView = 'items' | 'brands' | 'meetings';
 
 interface LibraryItemDraft {
   title: string;
@@ -100,7 +102,15 @@ export const LibraryPanel: React.FC = () => {
   const [search, setSearch] = useState('');
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<LibraryView>('items');
+  const meetingTarget = useAppStore((state) => state.libraryMeetingTarget);
+  const [view, setView] = useState<LibraryView>(meetingTarget ? 'meetings' : 'items');
+  const [meetingEntryId, setMeetingEntryId] = useState<string | null>(meetingTarget?.meetingId ?? null);
+  useEffect(() => {
+    if (!meetingTarget) return;
+    setView('meetings');
+    setMeetingEntryId(meetingTarget.meetingId);
+    useAppStore.getState().clearLibraryMeetingTarget();
+  }, [meetingTarget]);
   // 任务 16b：行勾选多选 → 底部浮条「带进新会话」
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bringing, setBringing] = useState(false);
@@ -459,7 +469,18 @@ export const LibraryPanel: React.FC = () => {
                 className="h-8 w-56 min-w-0 text-xs"
               />
             )}
-            {view === 'brands' ? (
+            {view === 'items' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 whitespace-nowrap"
+                data-testid="library-meetings-entry"
+                onClick={() => { setMeetingEntryId(null); setView('meetings'); }}
+              >
+                {t.library.meetingsTab}
+              </Button>
+            )}
+            {view !== 'items' ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -622,6 +643,10 @@ export const LibraryPanel: React.FC = () => {
               </table>
             </div>
           )}
+        </PageContent>
+      ) : view === 'meetings' ? (
+        <PageContent id="library-meetings-panel" role="tabpanel" scroll={false} padding={false}>
+          <MeetingsView key={meetingEntryId ?? 'list'} initialMeetingId={meetingEntryId} />
         </PageContent>
       ) : (
         <PageContent id="library-brands-panel" role="tabpanel">

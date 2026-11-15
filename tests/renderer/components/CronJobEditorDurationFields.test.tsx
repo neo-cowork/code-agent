@@ -157,6 +157,23 @@ describe('cron duration fields', () => {
     expect(screen.queryByText('重试间隔 (ms)')).toBeNull();
   });
 
+  it('sizes the unit dropdown column to its content instead of hard-coding an 88px track', () => {
+    cleanup();
+    useAppStore.setState({ language: 'en' });
+    openAdvanced(makeJob());
+
+    for (const testId of ['cron-retry-delay', 'cron-timeout']) {
+      const input = screen.getByTestId(`${testId}-input`);
+      const unitSelect = screen.getByTestId(`${testId}-unit`);
+      const grid = input.parentElement?.parentElement;
+      expect(grid).toBeTruthy();
+      expect(grid?.contains(unitSelect)).toBe(true);
+      expect(grid?.className).not.toContain('_88px]');
+      expect(grid?.className).toContain('grid-cols-[minmax(96px,1fr)_minmax(88px,auto)]');
+      expect(unitSelect.parentElement?.className).not.toContain('w-full');
+    }
+  });
+
   it('localizes the two schedule-type options in both languages from cronCenter', async () => {
     cleanup();
     useAppStore.setState({ language: 'en' });

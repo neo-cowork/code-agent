@@ -10,6 +10,6 @@ export function readUiLanguage(): SessionTitleLanguage {
   }
 }
 
-export function buildHostSessionTitlePrompt(message: string): string {
-  return buildSessionTitlePrompt(message, readUiLanguage());
+export function buildHostSessionTitlePrompt(message: string, strict = false): string {
+  return buildSessionTitlePrompt(message, readUiLanguage(), strict);
 }

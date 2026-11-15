@@ -7,6 +7,7 @@ import { en } from '../../../src/renderer/i18n/en';
 import { getAppshotErrorMessage } from '../../../src/renderer/utils/appshotError';
 
 const state = vi.hoisted(() => ({
+  startMeeting: vi.fn(async () => ({ current: null, silenceMs: 0, silenceWarning: false, lastEnded: null })),
   language: 'en',
   lastApp: { pid: 412, bundleId: 'com.apple.TextEdit', appName: 'TextEdit', alive: true } as {
     pid: number; bundleId: string; appName: string; alive: boolean;
@@ -39,6 +40,8 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
   getNativeDesktopPermissionStatus: state.permissions,
+  isNativeDesktopAvailable: () => true,
+  startMeeting: state.startMeeting,
 }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: state.language === 'en' ? en : zh }),
@@ -79,6 +82,18 @@ describe('composer attach last front app', () => {
     const attach = await screen.findByRole('button', { name: 'Attach TextEdit' });
     expect((attach as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByRole('button', { name: 'Upload images or files' }).nextElementSibling).toBe(attach);
+  });
+
+  it('「记这场会」排在附加应用之后，开始前提示先征得同意，点了就开始记录', async () => {
+    state.language = 'zh';
+    await openMenu('更多输入选项');
+    const attach = await screen.findByRole('button', { name: '附加 TextEdit' });
+    const meeting = screen.getByTestId('input-add-meeting');
+    expect(attach.nextElementSibling).toBe(meeting);
+    expect(meeting.textContent).toContain('记这场会');
+    expect(meeting.textContent).toContain('开始前先征得参会人同意');
+    fireEvent.click(meeting);
+    await waitFor(() => expect(state.startMeeting).toHaveBeenCalledTimes(1));
   });
 
   it('uses the Chinese attach label with the same real app name', async () => {

@@ -38,7 +38,7 @@ describe('workspace kept result page IPC', () => {
     const { registry, call } = setup(vi.fn());
     const unsubscribe = { current: undefined as ((reason: string) => void) | undefined };
     expect((await call('getKeptResultPage', { conversationId: 'c1' })).data)
-      .toEqual({ state: 'none', url: null, title: null });
+      .toEqual({ state: 'none', url: null, title: null, reason: null });
 
     registry.register({
       conversationId: 'c1',
@@ -48,11 +48,11 @@ describe('workspace kept result page IPC', () => {
       browserService: { onSessionChanged: (listener: (reason: string) => void) => { unsubscribe.current = listener; return () => undefined; } } as never,
     });
     expect((await call('getKeptResultPage', { conversationId: 'c1' })).data)
-      .toEqual({ state: 'kept', url: 'https://example.test/done', title: 'Done' });
+      .toEqual({ state: 'kept', url: 'https://example.test/done', title: 'Done', reason: 'keep_result_page' });
 
     unsubscribe.current?.('close');
     expect((await call('getKeptResultPage', { conversationId: 'c1' })).data)
-      .toEqual({ state: 'closed', url: 'https://example.test/done', title: 'Done' });
+      .toEqual({ state: 'closed', url: 'https://example.test/done', title: 'Done', reason: 'keep_result_page' });
   });
 
   it('adoptKeptResultPage forwards the conversation and workspace and returns the snapshot', async () => {

@@ -2,7 +2,7 @@
 // ============================================================================
 // ProviderDoctorDialog 诊断摘要行时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // 摘要里的裸 toLocaleTimeString 改走 utils/formatDateTime(ts, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // run_doctor 经按钮触发：开弹窗 → 点「开始诊断」→ 等摘要行上屏。
 // ============================================================================
 import React from 'react';
@@ -26,11 +26,12 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 
 import { ProviderDoctorDialog } from '../../../src/renderer/components/features/settings/ProviderDoctorDialog';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const REPORT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(REPORT_AT, 'en');
 
 const REPORT = {
   timestamp: REPORT_AT,
@@ -59,13 +60,16 @@ describe('ProviderDoctorDialog 诊断摘要时间（跟随 UI language）', () =
     expect(document.body.textContent ?? '').not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', async () => {
+  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
     useAppStore.setState({ language: 'en' });
     render(<ProviderDoctorDialog isOpen onClose={() => {}} />);
     fireEvent.click(screen.getByText('Start diagnostics'));
     await waitFor(() => {
       expect(document.body.textContent ?? '').toContain(`1.2s · ${EN}`);
     });
-    expect(document.body.textContent ?? '').not.toMatch(/\b[AP]M\b/);
+    // 剥除该摘要行合法 EN 后，屏上不得混入 zh 24h 时间或裸 16:05（MIXED 统一 EN === ZH 后仍成立）
+    const withoutEn = (document.body.textContent ?? '').replace(`1.2s · ${EN}`, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

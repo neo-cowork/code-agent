@@ -237,3 +237,20 @@ describe('「停止并退出」意图落地后的停止通道（FU1）', () => {
     expect(fnBlock![0]).not.toContain('get_webview_window("main")');
   });
 });
+
+// N-FIX-QUIT-DIALOG-SYSTEM-ALERT（2026-11-14 真机）：退出确认框没有父窗口时，rfd 的异步弹窗走
+// CFUserNotificationDisplayAlert，由系统 UserNotificationCenter 托管——脚本按 Neo 进程点不到按钮，
+// Neo 退出后弹窗还挂在屏幕上。必须挂到主窗口（Neo 自己的 NSAlert sheet），挂之前先把主窗口显示出来。
+describe('退出确认框挂在主窗口上', () => {
+  it('对话框在 show_with_result 之前 parent 到主窗口，且先 show 再 parent', () => {
+    const main = readTauri('src/main.rs');
+    const dialogBody = main.slice(main.indexOf('fn show_quit_confirm_dialog'));
+    const showAt = dialogBody.indexOf('window.show()');
+    const parentAt = dialogBody.indexOf('.parent(&window)');
+    const resultAt = dialogBody.indexOf('.show_with_result(');
+    expect(dialogBody).toContain('get_webview_window("main")');
+    expect(showAt, '挂之前必须先显示主窗口，否则 sheet 挂在隐藏窗口上看不见').toBeGreaterThan(-1);
+    expect(parentAt, '必须 parent 到主窗口，否则落成系统级弹窗').toBeGreaterThan(showAt);
+    expect(resultAt).toBeGreaterThan(parentAt);
+  });
+});

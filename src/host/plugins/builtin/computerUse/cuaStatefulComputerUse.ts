@@ -34,8 +34,23 @@ import {
   type SurfaceExecutionRuntime,
 } from '../../../services/surfaceExecution/SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from '../../../services/surfaceExecution/SurfaceExecutionRuntimeError';
+import {
+  COMPUTER_HUMAN_TOUCHED_NOTE,
+  consumeBrowserHumanTouched,
+} from '../../../services/surfaceExecution/browserHumanTakeoverWait';
 import { surfaceProofService } from '../../../services/surfaceExecution/SurfaceProofService';
 import { compactSurfaceExecutionMetadata } from '../../../../shared/utils/surfaceExecutionProjection';
+
+function applyComputerHumanTouchedNote(
+  result: ToolResult<string>,
+  surfaceSessionId: string | undefined,
+): ToolResult<string> {
+  if (!surfaceSessionId || !consumeBrowserHumanTouched(surfaceSessionId)) return result;
+  if (result.ok) {
+    return { ...result, output: `${COMPUTER_HUMAN_TOUCHED_NOTE}\n\n${result.output}`.trimEnd() };
+  }
+  return { ...result, error: `${COMPUTER_HUMAN_TOUCHED_NOTE}\n\n${result.error}`.trimEnd() };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -239,11 +254,12 @@ implements ToolHandler<Record<string, unknown>, string> {
       throw error;
     }
     if (request.operation === 'act' && !binding) {
-      return {
+      const ownedSessionId = identity ? this.surfaceRuntime.findOwnedComputerSessionId(identity) : undefined;
+      return applyComputerHumanTouchedNote({
         ok: false,
         error: 'Computer state is stale or owned by another Surface session.',
         code: 'SURFACE_STATE_STALE',
-      };
+      }, ownedSessionId);
     }
     if (request.operation === 'act' && typeof args.targetApp === 'string') {
       const app = this.stateApps.get(request.stateId);
@@ -297,6 +313,7 @@ implements ToolHandler<Record<string, unknown>, string> {
             identity,
             providerStateId: request.stateId,
             operationId,
+            ...(ctx.currentToolCallId ? { toolCallId: ctx.currentToolCallId } : {}),
             arguments: args,
             ...(request.expect ? { expectation: request.expect } : {}),
             parentSignal: ctx.abortSignal,
@@ -370,12 +387,21 @@ implements ToolHandler<Record<string, unknown>, string> {
           surfaceExecutionEventsV1: wrapped.events,
         });
       } else {
+        const readySession = identity
+          ? await this.surfaceRuntime.awaitComputerSessionReady({
+              identity,
+              operationId,
+              ...(ctx.currentToolCallId ? { toolCallId: ctx.currentToolCallId } : {}),
+              parentSignal: ctx.abortSignal,
+            })
+          : null;
         const prepared = identity && request.operation === 'observe'
           ? this.surfaceRuntime.prepareComputerSession({ identity })
           : null;
+        const ownedSessionId = prepared?.session.sessionId ?? readySession?.sessionId;
         const driverContext = {
           sessionId: ctx.sessionId,
-          ...(prepared ? { surfaceSessionId: prepared.session.sessionId } : {}),
+          ...(ownedSessionId ? { surfaceSessionId: ownedSessionId } : {}),
           ...(identity ? { runId: identity.runId, agentId: identity.agentId } : {}),
           toolCallId: operationId,
           abortSignal: ctx.abortSignal,
@@ -468,25 +494,32 @@ implements ToolHandler<Record<string, unknown>, string> {
           })
         : null;
       const proofMeta = proofed?.metadata || meta;
+      const touchedSessionId = typeof meta.surfaceSessionId === 'string'
+        ? meta.surfaceSessionId
+        : identity
+          ? this.surfaceRuntime.findOwnedComputerSessionId(identity)
+          : undefined;
       if (actionFailed) {
-        return {
+        return applyComputerHumanTouchedNote({
           ok: false,
           error: output,
           code: response.result.overall === 'ambiguous'
             ? 'CUA_ACTION_AMBIGUOUS'
             : 'CUA_ACTION_FAILED',
           meta: proofMeta,
-        };
+        }, touchedSessionId);
       }
-      return { ok: true, output, meta: proofMeta };
+      return applyComputerHumanTouchedNote({ ok: true, output, meta: proofMeta }, touchedSessionId);
     } catch (error) {
       if (error instanceof SurfaceExecutionRuntimeError) {
-        return {
+        const ownedSessionId = binding?.subject.sessionId
+          ?? (identity ? this.surfaceRuntime.findOwnedComputerSessionId(identity) : undefined);
+        return applyComputerHumanTouchedNote({
           ok: false,
           error: error.message,
           code: error.surfaceError.code,
           meta: { surfaceExecutionErrorV1: error.surfaceError },
-        };
+        }, ownedSessionId);
       }
       return {
         ok: false,

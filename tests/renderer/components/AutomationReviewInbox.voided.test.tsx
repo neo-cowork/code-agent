@@ -103,7 +103,7 @@ describe('non-voided task names through the production inbox', () => {
       const line = within(cards[index]).getByTestId('parked-session-title');
       expect(line.textContent).toBe(name);
       expect(line.className).toBe('truncate text-xs text-zinc-400');
-      expect(line.previousElementSibling?.textContent).toBe('Write');
+      expect(line.previousElementSibling?.textContent).toBe(language === 'zh' ? '写入文件' : 'Write a file');
     }
     expect(within(cards[3]).getByTestId('sensitive-step-parked-row')).toBeTruthy();
     expect(cards[2].className).toContain('opacity-50');

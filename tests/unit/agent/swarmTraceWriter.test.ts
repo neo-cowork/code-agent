@@ -251,6 +251,28 @@ describe('SwarmTraceWriter', () => {
     expect(detail.agents[0].failureCategory).toBe('rate_limit');
   });
 
+  it('worktree 创建失败归为 worktree_create_failed，不被 git rev-parse 误判为 parse_error', async () => {
+    const scope = makeScope();
+    emitter.started(scope, 2);
+    emitter.agentAdded(scope, { id: 'a1', name: 'A1', role: 'a' });
+    emitter.agentAdded(scope, { id: 'a2', name: 'A2', role: 'a' });
+    emitter.agentUpdated(scope, 'a1', { status: 'running', startTime: 0 });
+    emitter.agentUpdated(scope, 'a2', { status: 'running', startTime: 0 });
+    emitter.agentFailed(
+      scope,
+      'a1',
+      "Failed to create worktree for agent: Command failed: git rev-parse 'HEAD'\nfatal: not a git repository (or any of the parent directories): .git",
+    );
+    emitter.agentFailed(scope, 'a2', 'Failed to parse JSON response');
+    emitter.completed(scope, { total: 2, completed: 0, failed: 2, parallelPeak: 2, totalTime: 100 });
+
+    await writer.drain();
+
+    const detail = repo.getRunDetail(createSwarmTraceStorageId(scope))!;
+    expect(detail.agents.find((agent) => agent.agentId === 'a1')?.failureCategory).toBe('worktree_create_failed');
+    expect(detail.agents.find((agent) => agent.agentId === 'a2')?.failureCategory).toBe('parse_error');
+  });
+
   it('cancelled 只关闭显式目标 scope', async () => {
     const scope = makeScope();
     emitter.started(scope, 2);

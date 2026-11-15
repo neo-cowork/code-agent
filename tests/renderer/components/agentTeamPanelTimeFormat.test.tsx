@@ -2,7 +2,7 @@
 // ============================================================================
 // AgentTeamPanel 消息时间戳口径（N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1 返修）：
 // MessageItem 头部的裸 toLocaleTimeString 改走 utils/formatDateTime(ts, language)，
-// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 同样固定 24 小时制。
+// zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // 消息经 swarmStore.handleEvent 注入（同 agentTeamPanel.scope.test.tsx 的注入口）。
 // ============================================================================
 import React from 'react';
@@ -25,11 +25,12 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 import { AgentTeamPanel } from '../../../src/renderer/components/features/agentTeam/AgentTeamPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const MESSAGE_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '2026/11/09 16:05';
+const EN = formatDateTime(MESSAGE_AT, 'en');
 
 const AGENT_ID = 'reviewer';
 
@@ -94,13 +95,13 @@ describe('AgentTeamPanel 消息时间戳（跟随 UI language）', () => {
     expect(document.body.textContent ?? '').not.toMatch(/AM|PM/);
   });
 
-  it('en UI：与中文使用同一 24 小时格式', async () => {
+  it('en UI：消息时间跟随 formatDateTime', async () => {
     useAppStore.setState({ language: 'en' });
     render(<AgentTeamPanel sessionId="session-a" runId="run-a" />);
     await screen.findByText('同步一下进度');
     await waitFor(() => {
       expect(document.body.textContent ?? '').toContain(EN);
     });
-    expect(document.body.textContent ?? '').not.toMatch(/\b[AP]M\b/);
+    expect(document.body.textContent ?? '').toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

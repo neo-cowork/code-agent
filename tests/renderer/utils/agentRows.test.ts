@@ -1,10 +1,16 @@
 // ============================================================================
 // agentRows 单测（N-L6-AGENTVIEW）：九态→四态全表 + 三源合并去重
 // ============================================================================
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import type { LastToolStep, Task } from '../../../src/shared/contract/backgroundTask';
+import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { applyMemberHolds, buildAgentRows, type MemberRowSource } from '../../../src/renderer/utils/agentRows';
+
+afterEach(() => useAppStore.setState({ language: 'zh' }));
 
 const step: LastToolStep = { tool: 'Read', target: '/repo/a.ts', at: 1 };
 
@@ -201,4 +207,67 @@ it('uses the shared snapshot display name to distinguish same-role helpers', () 
   }));
   expect(buildAgentRows({ members: [], nodes: snapshotNodes, tasks: [] }).map((row) => row.name))
     .toEqual(['总结A', '总结B']);
+});
+
+describe('persisted member failureReason (no live node)', () => {
+  const rawWorktreeError = "Failed to create worktree for agent: Command failed: git rev-parse 'HEAD'\nfatal: not a git repository (or any of the parent directories): .git\n. Ensure you are in a git repository.";
+
+  it.each([
+    ['zh', 'worktree_create_failed'],
+    ['en', 'worktree_create_failed'],
+    ['zh', 'parse_error'],
+    ['en', 'parse_error'],
+  ] as const)('humanizes persisted worktree failure in %s (category=%s) without live node', (language, failureCategory) => {
+    useAppStore.setState({ language });
+    const persistedMember: MemberRowSource & { record: { error: string; failureCategory: string } } = {
+      ...member({ key: 'analyst', roleId: 'analyst', name: '数据分析师', status: 'failed' }),
+      record: { error: rawWorktreeError, failureCategory },
+    };
+    const rows = buildAgentRows({ members: [persistedMember], nodes: [], tasks: [] });
+    const expected = (language === 'zh' ? zh : en).toolStepHumanize.failureCodes[AgentFailureCode.WorktreeCreateFailed];
+    expect(rows[0]).toMatchObject({ status: 'failed', failureReason: expected });
+    expect(rows[0]?.failureReason).not.toContain('git rev-parse');
+  });
+
+  it.each(['zh', 'en'] as const)('maps persisted rate_limit category to localized model-error copy (%s)', (language) => {
+    useAppStore.setState({ language });
+    const persistedMember: MemberRowSource & { record: { error: string; failureCategory: string } } = {
+      ...member({ key: 'analyst', roleId: 'analyst', name: '数据分析师', status: 'failed' }),
+      record: { error: '您的账户已达到速率限制，请您控制请求频率', failureCategory: 'rate_limit' },
+    };
+    const rows = buildAgentRows({ members: [persistedMember], nodes: [], tasks: [] });
+    const expected = (language === 'zh' ? zh : en).toolStepHumanize.failureCodes[AgentFailureCode.ModelError];
+    expect(rows[0]?.failureReason).toBe(expected);
+  });
+
+  it('derives restart-interrupted cancelled reason and keeps unannotated cancelled member undefined', () => {
+    const restarted: MemberRowSource & { record: { error: string; failureCategory: string } } = {
+      ...member({ key: 'a1', status: 'cancelled' }),
+      record: { error: 'interrupted by app restart', failureCategory: 'interrupted_by_restart' },
+    };
+    const unannotated = member({ key: 'a2', status: 'cancelled' });
+    const rows = buildAgentRows({ members: [restarted, unannotated], nodes: [], tasks: [] });
+    expect(rows[0]?.failureReason).toBe(zh.toolStepHumanize.failureCodes[AgentFailureCode.ParentGone]);
+    expect(rows[1]?.failureReason).toBeUndefined();
+  });
+
+  it('preserves persisted member failureReason when live node has no reason, and lets live node reason win', () => {
+    const persistedMember: MemberRowSource & { record: { error: string; failureCategory: string } } = {
+      ...member({ key: 'researcher', status: 'failed' }),
+      record: { error: rawWorktreeError, failureCategory: 'worktree_create_failed' },
+    };
+    const withoutLiveReason = buildAgentRows({
+      members: [persistedMember],
+      nodes: [node({ id: 'researcher', status: 'failed' })],
+      tasks: [],
+    });
+    expect(withoutLiveReason[0]?.failureReason).toBe(zh.toolStepHumanize.failureCodes[AgentFailureCode.WorktreeCreateFailed]);
+
+    const withLiveReason = buildAgentRows({
+      members: [persistedMember],
+      nodes: [node({ id: 'researcher', status: 'failed', failureCode: AgentFailureCode.Timeout })],
+      tasks: [],
+    });
+    expect(withLiveReason[0]?.failureReason).toBe(zh.toolStepHumanize.agentFailureReasons[AgentFailureCode.Timeout]);
+  });
 });

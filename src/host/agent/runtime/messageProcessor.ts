@@ -71,6 +71,8 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
+import { isBashToolName } from '../../tools/toolNames';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -172,7 +174,8 @@ export class MessageProcessor {
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
-      metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
+      metadata: attachTurnQualityMetadata(this.ctx, response.backgroundTaskPreannounce
+        ? { backgroundTaskPreannounce: response.backgroundTaskPreannounce } : undefined, response),
       // 逐段就地映射，保住 provider 记录的 text/tool 交错顺序——渲染层拿它当权威顺序。
       // 拍平成「一段合并 text + 其余非 text」会把「先读 config」→Read→「再看 package.json」→Read
       // 渲染成两段旁白粘连并全部前置、两张卡在后，叙事顺序对不上实际发生顺序。
@@ -669,12 +672,13 @@ export class MessageProcessor {
           error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
       }
       this.guardState.toolCallRetryCount++;
-      const deniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name))).join(', ');
+      const otherDeniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name).filter((name) => !isBashToolName(name)))).join(', ');
       const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          `The previous tool call requested disabled tools for this run: ${deniedNames}.`,
+          getInabilityReplyGuidance(this.ctx.turn?.runUserPrompt ?? ''),
+          `The previous call was NOT run.${otherDeniedNames ? ` Internal call identifiers, not user-facing wording: ${otherDeniedNames}.` : ''}`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
@@ -686,7 +690,7 @@ export class MessageProcessor {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: shellDenial?.finalMessage ?? `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
+          content: shellDenial?.finalMessage ?? '这一步我现在做不了，先停在这里，没有继续操作。需要的话请告诉我怎么调整。',
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
