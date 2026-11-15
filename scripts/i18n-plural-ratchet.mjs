@@ -37,10 +37,39 @@ function pairProperty(node) {
   return keys.has('one') && keys.has('other') ? name : null;
 }
 
+function propertyName(node) {
+  if (!ts.isPropertyAssignment(node)) return null;
+  return ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : null;
+}
+
 const i18nRoot = path.join(repoRoot, 'src/renderer/i18n');
 const files = sourceFiles(i18nRoot);
 const findings = [];
-const hardPlural = /\{(?:count|n)\}\s+(?:agents|segments)\b/i;
+const pluralFindings = [];
+
+// English count nouns that must never follow a {count}/{n} placeholder in a bare
+// string: a hard plural ("{count} steps") breaks at count 1. Every hit has to be
+// the `other` branch of a { one, other } pair (interpolatePlural picks the branch),
+// so the singular branch exists and count 1 reads grammatically.
+// Up to two connector words may sit between placeholder and noun ("{count} more
+// files not shown", "About {count} sub-agent calls").
+const NOUNS = [
+  'agents', 'segments',
+  'steps', 'files', 'times', 'items', 'tasks', 'messages', 'commands', 'results',
+  'tools', 'matches', 'lines', 'pages', 'minutes', 'hours', 'days', 'errors',
+  'skills', 'memories', 'connectors', 'sessions', 'attachments', 'changes',
+  'events', 'runs', 'rows', 'tokens', 'seconds',
+  'approvals', 'artifacts', 'assets', 'attributions', 'calls', 'candidates',
+  'characters', 'checks', 'compactions', 'connections', 'conversations',
+  'deliveries', 'entries', 'findings', 'goals', 'hits', 'images', 'instructions',
+  'iterations', 'issues', 'lookups', 'members', 'models', 'numbers', 'ops',
+  'outputs', 'paths', 'pieces', 'recipients', 'recordings', 'regions', 'rules',
+  'scripts', 'sites', 'slides', 'sources', 'spots', 'subtasks', 'tabs', 'turns',
+].join('|');
+const hardPlural = new RegExp(`\\{(?:count|n)\\}(?:\\s+[A-Za-z][A-Za-z/-]*){0,2}\\s+(?:${NOUNS})\\b`, 'i');
+// zh copy has no plural grammar and intentionally embeds English loanwords
+// ("节省 {count} tokens"); the ratchet flags invalid English count phrases only.
+const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
 
 for (const file of files) {
   const sourceText = fs.readFileSync(file, 'utf8');
@@ -53,13 +82,48 @@ for (const file of files) {
         findings.push(`${point} contains forbidden literal "(s)": ${value}`);
       }
       const match = value.match(hardPlural);
-      if (match && pairProperty(node.parent) !== 'other') {
-        findings.push(`${point} uses hard plural after a count placeholder: ${value}`);
+      if (match && pairProperty(node.parent) !== 'other' && !CJK.test(value)) {
+        // `group` tables (toolStepVerbs.ts / chatTranscript.ts toolStepHumanize) are
+        // exempt: they only render for count !== 1 — the singular branch is the
+        // groupSingular table, pinned by tests/renderer/i18n/enCountPlural.test.ts.
+        // The table is two levels up: group: { explored: '...' }.
+        const groupOwner = ts.isObjectLiteralExpression(node.parent?.parent) ? node.parent.parent.parent : undefined;
+        if (propertyName(node.parent) !== 'group' && propertyName(groupOwner) !== 'group') {
+          pluralFindings.push(`${point} uses hard plural after a count placeholder: ${value}`);
+        }
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
+}
+
+// Baseline: strings the gate newly flags outside the converted files. May shrink,
+// may not grow — fix a string and delete (or lower) its entry; never raise one.
+const baselinePath = path.join(repoRoot, 'scripts', 'i18n-plural-baseline.json');
+const baseline = fs.existsSync(baselinePath)
+  ? JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
+  : {};
+const perFile = new Map();
+for (const finding of pluralFindings) {
+  const file = finding.split(':')[0];
+  perFile.set(file, (perFile.get(file) ?? 0) + 1);
+}
+let remaining = 0;
+for (const [file, count] of perFile) {
+  const allowed = baseline[file];
+  if (allowed === undefined) {
+    findings.push(`${file}: ${count} hard plural(s) not in baseline — convert to a { one, other } pair or add to scripts/i18n-plural-baseline.json (files outside the converted set only)`);
+    for (const finding of pluralFindings) {
+      if (finding.startsWith(`${file}:`)) findings.push(`[i18n-plural-ratchet] ${finding}`);
+    }
+  } else if (count > allowed) {
+    findings.push(`${file}: ${count} hard plural(s) exceed baseline ${allowed} — baseline may shrink, may not grow`);
+    for (const finding of pluralFindings) {
+      if (finding.startsWith(`${file}:`)) findings.push(`[i18n-plural-ratchet] ${finding}`);
+    }
+  }
+  remaining += count;
 }
 
 // Component copy must use the shared translations too. Match syntax nodes rather
@@ -116,4 +180,4 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log(`[i18n-plural-ratchet] ✓ scanned ${files.length} renderer i18n source files; no forbidden count phrases`);
+console.log(`[i18n-plural-ratchet] ✓ scanned ${files.length} renderer i18n source files; no unbaselined count phrases; baseline remaining=${remaining} across ${perFile.size} file(s) (may shrink, may not grow)`);
