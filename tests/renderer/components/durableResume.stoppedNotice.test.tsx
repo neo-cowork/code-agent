@@ -20,6 +20,7 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import {
   DurableParkedNotice,
   DurableResumeNotice,
+  isParkedForUser,
   shouldShowParkedNotice,
   useParkedNoticeYields,
   useAbandonParkedRun,
@@ -41,7 +42,7 @@ function ParkedRow({ resume, turnActive, statusBar = false }: { resume: Resume |
       {shouldShowParkedNotice(resume, turnActive, statusBar) && (
         <DurableParkedNotice interruptCause={resume?.interruptCause} envBlocked={resume?.envBlocked} />
       )}
-      <SendButton hasContinuation={show} isProcessing={turnActive} onContinue={() => undefined} onAbandon={abandon.onAbandon} onStop={() => undefined} />
+      <SendButton hasContinuation={show} canAbandon={isParkedForUser(resume, turnActive)} isProcessing={turnActive} onContinue={() => undefined} onAbandon={abandon.onAbandon} onStop={() => undefined} />
     </>
   );
 }
@@ -106,15 +107,18 @@ describe('durable stopped notice (user_stop)', () => {
     expect(screen.getByTestId('continue-run-button')).toBeTruthy();
   });
 
-  it('⑤ env_blocked park says what it waits for, never 中断/已停止, and offers no Continue or Abandon', () => {
+  it('⑤ env_blocked park says what it waits for, never 中断/已停止; no Continue, Abandon stays beside Send (not in the row)', () => {
     const env: Resume = { ...STOP, interruptCause: 'env_blocked', envBlocked: { class: 'perm_automation', target: 'calendar', toolCallId: 'c1' } };
     render(<ParkedRow resume={env} turnActive={false} />);
     const text = screen.getByTestId(NOTICE).textContent ?? '';
     expect(text).toBe('等你允许日历 · 允许后自动继续');
     expect(text).not.toMatch(/中断|已停止/);
     expect(screen.queryByTestId('continue-run-button')).toBeNull();
-    expect(screen.queryByTestId('continue-run-control')).toBeNull();
-    expect(screen.queryByRole('button', { name: /^(继续|放弃|Continue|Abandon)$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^(继续|Continue)$/ })).toBeNull();
+    expect(within(screen.getByTestId(NOTICE)).queryAllByRole('button')).toHaveLength(0);
+    // 不想授权的用户仍能放弃：自动续做的等待窗口有上限（envResumeWaiter），放弃入口不能跟着「继续」一起消失
+    expect(screen.getAllByRole('button', { name: /^(放弃|Abandon)$/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /^(放弃|Abandon)$/ }).closest('[data-testid="continue-run-control"]')).not.toBeNull();
   });
 
   it('⑥ env_blocked park with an open grant card in this turn: the card says it all, the parked row is not rendered; resolved card / no card brings the row back', () => {

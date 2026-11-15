@@ -12,7 +12,7 @@ import { selectComposerStatusBarActive, useComposerNoticeStore } from '../../../
 type ParkedResume = { mode: string; canContinue: boolean; interruptCause?: string; quotaWait?: unknown };
 
 /** 停靠待「继续」：投影可能滞后于运行态，本轮已在跑时一律让位给「停止」。 */
-function isParkedForUser(resume: ParkedResume | undefined, turnActive: boolean): boolean {
+export function isParkedForUser(resume: ParkedResume | undefined, turnActive: boolean): boolean {
   return resume?.mode === 'continue' && resume.canContinue && !turnActive;
 }
 

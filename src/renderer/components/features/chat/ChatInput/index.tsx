@@ -156,6 +156,8 @@ export interface ChatInputProps {
   onContinue?: () => void;
   /** 放弃停靠的 durable run（与「继续」同处，输入框上方不再另放一组） */
   onAbandonContinuation?: () => void;
+  /** 停着但不给「继续」的 run（等环境授权）：发送键旁留「放弃」 */
+  canAbandonParked?: boolean;
   /** 当前会话有可手动继续的 durable run */
   hasContinuation?: boolean;
   /** 是否有 Plan */
@@ -308,6 +310,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onStop,
   onContinue,
   onAbandonContinuation,
+  canAbandonParked,
   hasContinuation,
   hasPlan,
   onPlanClick,
@@ -1691,6 +1694,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onStop={onStop}
               onContinue={onContinue}
               onAbandon={onAbandonContinuation}
+              canAbandon={canAbandonParked}
             />
             </>
             )}

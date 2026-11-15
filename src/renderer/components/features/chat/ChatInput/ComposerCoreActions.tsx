@@ -25,6 +25,7 @@ interface ComposerCoreActionsProps {
   onStop?: () => void;
   onContinue?: () => void;
   onAbandon?: () => void;
+  canAbandon?: boolean;
 }
 
 /**
@@ -46,6 +47,7 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
   onStop,
   onContinue,
   onAbandon,
+  canAbandon,
 }) => {
   const stepLimitContinuation = useStepLimitContinue(sessionId);
   return (
@@ -82,6 +84,7 @@ export const ComposerCoreActions: React.FC<ComposerCoreActionsProps> = ({
             onStop={onStop}
             onContinue={onContinue}
             onAbandon={onAbandon}
+            canAbandon={canAbandon}
           />
         );
       })}

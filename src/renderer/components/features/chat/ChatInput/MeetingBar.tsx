@@ -66,6 +66,7 @@ export const MeetingBar: React.FC = () => {
 
   if (!current) {
     // 手动结束也提示：散会后从这里进会议页看纪要（N-MEETING-PAGE）
+    // endedVisible 已含这两项判断，这里重复写只为让 TS 收窄 ended / endReason 的类型
     if (!ended || !endedVisible || !ended.endReason) return null;
     const msg = text.ended[ended.endReason]
       .replace('{minutes}', String(MEETING_SESSION_LIMITS.SILENCE_END_MS / MIN))

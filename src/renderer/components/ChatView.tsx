@@ -119,7 +119,7 @@ import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
-import { DurableParkedNotice, DurableResumeNotice, shouldShowParkedNotice, useParkedNoticeYields, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
+import { DurableParkedNotice, DurableResumeNotice, isParkedForUser, shouldShowParkedNotice, useParkedNoticeYields, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
@@ -1087,7 +1087,7 @@ export const ChatView: React.FC = () => {
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} canAbandonParked={isParkedForUser(durableResume, effectiveIsProcessing)} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 
