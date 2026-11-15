@@ -14,15 +14,17 @@ const logger = createLogger('ApprovalUserRequest');
 const AUTOMATION_ORIGIN_KINDS: ReadonlySet<SessionOriginKind> = new Set(['cron', 'heartbeat', 'headless']);
 const MODEL_DRIVEN_ORIGIN_KINDS: ReadonlySet<SessionOriginKind> = new Set(['subagent', 'agent_session_manager']);
 
-/** Same lookup order as connectorApprovalDetails: automation title, else the origin's own name. */
+/**
+ * Automation title, else the origin's own name — but only for origins tied to a real job (`id`).
+ * Id-less cron origins (role cadence / first wake) carry an internal tag as `name`, never a task name.
+ */
 function scheduledTaskName(origin: { id?: string; name?: string }): string | undefined {
+  if (!origin.id) return undefined;
   let title: string | undefined;
-  if (origin.id) {
-    try {
-      title = getSessionAutomationService().getBySourceRefId(origin.id)?.title?.trim();
-    } catch {
-      logger.warn('Scheduled-task automation title unavailable; using origin name');
-    }
+  try {
+    title = getSessionAutomationService().getBySourceRefId(origin.id)?.title?.trim();
+  } catch {
+    logger.warn('Scheduled-task automation title unavailable; using origin name');
   }
   return title || origin.name?.trim() || undefined;
 }

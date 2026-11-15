@@ -109,6 +109,14 @@ describe('approval card quotes the user from the DB, not the model', () => {
     expect(event.details.userRequest).toBeUndefined();
   });
 
+  it('① id-less cron origin (role cadence tag) never leaks its internal name; flag stays, warn logged', async () => {
+    state.session = { title: 't', origin: { kind: 'cron', name: 'role-cadence', metadata: { roleId: 'r1' } } };
+    const event = await emitted();
+    expect(event.details.startedByAutomation).toBe(true);
+    expect(event.details.scheduledTaskName).toBeUndefined();
+    expect(state.warn).toHaveBeenCalledWith(expect.stringContaining('no usable task name'), { sessionId: 's1', originKind: 'cron' });
+  });
+
   it('① the automation title wins over the origin name', async () => {
     state.session = { title: 't', origin: { kind: 'cron', id: 'cron-1', name: 'old name' } };
     state.automationTitle = '  周会提醒  ';
