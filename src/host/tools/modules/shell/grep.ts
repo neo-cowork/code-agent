@@ -138,10 +138,14 @@ function isEagainError(error: unknown): boolean {
 /**
  * rg/grep 对缺失路径报 exit 2，stderr 文本带 No such file or directory / os error 2
  * —— 同样是「路径不存在」，归 ENOENT；FS_ERROR 只留给真正的读写失败。
+ * 「os error 2」必须按完整 errno 匹配：裸子串会命中 os error 20(ENOTDIR)/24(EMFILE)
+ * 等真实读写失败，把它们误报成「路径不存在」。
  */
 function isMissingPathErrorText(text: string): boolean {
   const lower = text.toLowerCase();
-  return lower.includes('no such file or directory') || lower.includes('os error 2');
+  return (
+    lower.includes('no such file or directory') || /\bos error 2\b/.test(lower)
+  );
 }
 
 interface RgResult {
@@ -812,11 +816,13 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
 
       // rg/grep exit 2 的 stderr 文本形态（No such file or directory / os error 2）
       // 也是「路径不存在」——上面的 code 分流接不住这种文本，归 ENOENT 让界面说
-      // 「找不到」；FS_ERROR 只留给真正的读写失败。
+      // 「找不到」；FS_ERROR 只留给真正的读写失败。预检已确认搜索根存在，这里命中
+      // 只可能是 stat 与引擎之间被删的竞态或引擎遍历的内部路径——不能断言缺失的就
+      // 是 searchPath，带上引擎的原始错误文本（内含真实缺失路径）供排查。
       if (isMissingPathErrorText(errMsg)) {
         return {
           ok: false,
-          error: `Path not found: ${searchPath}`,
+          error: `Path not found: ${errMsg}`,
           code: 'ENOENT',
         };
       }

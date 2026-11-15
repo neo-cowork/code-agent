@@ -521,10 +521,44 @@ describe('grepModule (native)', () => {
         if (!result.ok) {
           expect(result.code).toBe('ENOENT');
           expect(result.code).not.toBe('FS_ERROR');
+          // 归 ENOENT 但不能断言是 searchPath 缺失（预检已确认它存在）：真实缺失的
+          // 路径（rg 遍历的内部路径 / stat 后被删的竞态）与原始 stderr 必须保留在
+          // 错误文本里，否则模型误判目录不存在、真实原因无法排查（rework r1）。
           expect(result.error).toContain('Path not found');
+          expect(result.error).toContain('No such file or directory (os error 2)');
+          expect(result.error).not.toBe(`Path not found: ${tempDir}`);
         }
       } finally {
         __setRgBinaryPathForTest(undefined);
+      }
+    });
+
+    it('rg exit 2 with a non-ENOENT errno (os error 20/24) stays FS_ERROR and keeps the stderr', async () => {
+      // rework r1：'os error 2' 裸子串会命中 os error 20(ENOTDIR)/21/24(EMFILE)/28
+      // ——这些是真实读写失败，必须留在 FS_ERROR 并保留原始 stderr，不得误报
+      // 「路径不存在」（否则模型误判目录不存在，真实错误原因丢失）。
+      const cases: Array<[string, string]> = [
+        ['20', 'rg: /some/dir: Not a directory (os error 20)'],
+        ['24', 'rg: /some/dir: Too many open files (os error 24)'],
+      ];
+      for (const [errno, stderrLine] of cases) {
+        const fakeRg = path.join(tempDir, `fake-rg-err${errno}.sh`);
+        await fs.writeFile(
+          fakeRg,
+          `#!/bin/sh\necho "${stderrLine}" >&2\nexit 2\n`,
+          { mode: 0o755 },
+        );
+        __setRgBinaryPathForTest(fakeRg);
+        try {
+          const result = await run({ pattern: 'needle', path: tempDir });
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.code).toBe('FS_ERROR');
+            expect(result.error).toContain(stderrLine);
+          }
+        } finally {
+          __setRgBinaryPathForTest(undefined);
+        }
       }
     });
   });
