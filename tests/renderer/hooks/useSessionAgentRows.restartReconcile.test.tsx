@@ -119,6 +119,8 @@ describe('useSessionAgentRows restart reconciliation', () => {
 
     expect(rows.find((row) => row.key === 'live-agent')?.status).toBe('working');
     expect(rows.find((row) => row.key === 'fresh-unknown')?.status).toBe('working');
+    expect(rows.find((row) => row.key === 'fresh-unknown')?.stoppable).toBe(true);
+    expect(rows.filter((row) => row.status === 'working')).toHaveLength(2);
   });
   it('failed-parent member count stays while child is live, then drops to zero on its real terminal snapshot without remount', () => {
     runtime.members = [{ key: 'child', roleId: 'coder', name: 'Sales presentation', status: 'running', isLead: false }];

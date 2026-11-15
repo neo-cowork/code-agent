@@ -208,6 +208,12 @@ export const enSettingsCore = {
         openSettingsFailed: 'Unable to open System Settings. Open Notifications manually.',
       },
       permissions: {
+        readOnlyLookups: {
+          title: 'Look-ups without asking',
+          description: 'When on, checking whether a file exists or listing a folder needs no approval card; turn off to ask first on the next look-up.',
+          savedOn: 'Look-ups without asking are on.',
+          savedOff: 'Look-ups without asking are off. Neo will ask before the next look-up.',
+        },
         pageTitle: 'Permissions & security',
         pageDescription: 'Manage permission checks for sensitive Agent actions and the permission inheritance policy for sub-agents.',
         unknownError: 'Unknown error',
