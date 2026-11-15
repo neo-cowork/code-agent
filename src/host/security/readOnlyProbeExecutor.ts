@@ -262,7 +262,12 @@ class Runner {
         if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('loop directory unavailable');
         for (const file of cmd.files) {
           const target = this.need(file.path);
-          const stat = fs.statSync(target);
+          let stat: fs.Stats;
+          try { stat = fs.statSync(target); } catch (error) {
+            if (cmd.regularFilesOnly && ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
+            throw error;
+          }
+          if (cmd.regularFilesOnly && !stat.isFile()) continue;
           if (!stat.isFile() || stat.size > MAX_OUTPUT_CHARS) throw new ProbeAbort('loop file unavailable or too large');
           const content = fs.readFileSync(target);
           let bytes: string | undefined;

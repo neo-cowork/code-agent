@@ -466,9 +466,13 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
   if (ctx.platform === 'win32') return null;
   if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0') || command.includes('\u0001')) return null;
   const loop = compileReadOnlyFileLoop(command, ctx.homeDir);
-  if (loop) return { steps: [{ op: ';', cmd: loop, redirect: { out: 'out', err: 'err' }, program: 'file-loop', source: command,
+  if (loop) {
+    const prefix = loop.prefix ? compileReadOnlyProbePlan(loop.prefix, ctx) : undefined;
+    if (loop.prefix && !prefix) return null;
+    return { steps: [...prefix?.steps ?? [], { op: ';', cmd: loop, redirect: { out: 'out', err: 'err' }, program: 'file-loop', source: command,
     extraSources: [...loop.sources, ...(loop.body.some((statement) => statement.kind === 'echo' && statement.parts.some((part) => 'value' in part && part.value === 'bytes')) ? ['wc -c'] : []), ...loop.files.map((file) => `cat ${JSON.stringify(file.path)}`)],
-  }] };
+    }] };
+  }
   const tokens = tokenize(command, new Map(), ctx.homeDir);
   if (!tokens) return null;
 

@@ -183,6 +183,39 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
       });
     }
 
+    it('literal path assignment and file test after a read-only prefix -> no card', async () => {
+      const command = `ls -la "${elsewhere}" 2>&1; echo "---"; for f in doc.pdf missing secret.txt; do p="${elsewhere}/$f"; if [ -f "$p" ]; then echo "== $f =="; cat "$p"; fi; done`;
+      const result = await cronRun(command);
+      expect(result.success).toBe(true);
+      expect(result.metadata?.readonlyProbePlan).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    for (const outside of [true, false]) {
+      it(`conditional loop checks ${outside ? 'outside prefix' : 'credential file'} -> card`, async () => {
+        await fs.writeFile(path.join(elsewhere, '.env'), 'EXAMPLE=fixture');
+        const command = `ls -la "${outside ? fx : elsewhere}"; for f in ${outside ? 'doc.pdf' : '.env'}; do p="${elsewhere}/$f"; if [ -f "$p" ]; then cat "$p"; fi; done`;
+        await cronRun(command);
+        expect(permissionAsks).toHaveLength(1);
+      });
+    }
+
+    it('conditional loop preserves a deny on the original cat variable', async () => {
+      getPolicyEngine().loadUserRules({ deny: ['Bash(cat "$p")'] });
+      const result = await cronRun(`for f in doc.pdf; do p="${elsewhere}/$f"; if [ -f "$p" ]; then cat "$p"; fi; done`);
+      expect(result.success).toBe(false);
+      expect(permissionAsks).toEqual([]);
+    });
+
+    for (const prefix of ['rm -f x;', 'curl https://example.test;']) {
+      it(`conditional loop cannot hide a side-effecting prefix: ${prefix}`, async () => {
+        const result = await cronRun(`${prefix} for f in doc.pdf; do p="${elsewhere}/$f"; if [ -f "$p" ]; then cat "$p"; fi; done`);
+        expect(result.success).toBe(false);
+        expect(probeRows()).toHaveLength(0);
+      });
+    }
+
     for (const statement of ['rm -f "$f"', 'echo changed > "$f"', 'curl https://example.test', 'echo "$(id -un)"']) {
       it(`finite file loop cannot hide side effects: ${statement}`, async () => {
         const result = await cronRun(`cd "${elsewhere}" && for f in doc.pdf; do cat "$f"; ${statement}; done`);
