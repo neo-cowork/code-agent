@@ -91,8 +91,10 @@ export function resolveAgentNodeOutcomeKey(
     case 'blocked':
       return 'waiting-input';
     case 'unknown':
+      // The host uses unmarked unknown for a context updated in this process.
+      return failureCode === AgentFailureCode.ParentGone ? 'interrupted-restart' : 'working';
     default:
-      return failureCode === AgentFailureCode.ParentGone ? 'interrupted-restart' : 'interrupted-unknown';
+      return 'interrupted-unknown';
   }
 }
 

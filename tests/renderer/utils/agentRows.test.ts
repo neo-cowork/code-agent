@@ -53,7 +53,7 @@ describe('agentRowStatus 九态→四态全表（经 buildAgentRows）', () => {
     ['running', 'working'],
     ['running-recovered', 'working'],
     ['paused', 'working'],
-    ['unknown', 'failed'],
+    ['unknown', 'working'],
     ['waiting_input', 'waiting'],
     ['stalled', 'waiting'],
     ['blocked', 'waiting'],

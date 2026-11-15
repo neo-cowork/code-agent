@@ -11,6 +11,8 @@ import React, { useState, useEffect } from 'react';
 import { Brain, StopCircle } from 'lucide-react';
 import { resolveAgentNodeOutcomeKey } from '../../../i18n/outcomeWords';
 import type { TraceNode } from '@shared/contract/trace';
+import { reconcileAgentNodeLifecycle } from '../../../utils/agentNodeLifecycle';
+import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -123,7 +125,14 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const liveTurn = useSessionTurnActive(sessionId);
   const { snapshot } = useAgentTreeSnapshot(sessionId, waitingReason === 'subagent' && liveTurn, true);
-  const liveChildren = snapshot?.nodes.filter((node) => resolveAgentNodeOutcomeKey(node.status, node.failureCode) === 'working');
+  const memberDetail = useDurableSwarmRunDetail(
+    waitingReason === 'subagent' && liveTurn && snapshot?.nodes.some((node) => node.status === 'unknown') ? sessionId : null,
+  );
+  const members = sessionId && memberDetail?.run.sessionId === sessionId ? memberDetail.agents : [];
+  const liveChildren = snapshot?.nodes.filter((candidate) => {
+    const node = reconcileAgentNodeLifecycle(candidate, members.find((member) => member.agentId === candidate.id));
+    return resolveAgentNodeOutcomeKey(node.status, node.failureCode) === 'working';
+  });
   // Persisted trace calls are not proof that a child survived a restart.
   const effectiveWaitingReason = waitingReason === 'subagent' && sessionId && (!liveTurn || !liveChildren?.length)
     ? undefined : waitingReason;

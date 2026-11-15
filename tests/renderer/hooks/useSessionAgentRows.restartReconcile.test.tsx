@@ -2,7 +2,7 @@
 // ============================================================================
 // useSessionAgentRows 重启收口回归（N-STALE-AGENT-CHIP-AFTER-QUIT A）
 // 宿主在数据源头把「上一进程遗留、无活进程」的行收成 cancelled 后，行模型必须
-// 不再把它计为 working；真正活着的行维持 working；unknown 不再冒充活进程。
+// 不再把它计为 working；真正活着的行维持 working（unknown=宁可在干的口径不变）。
 // ============================================================================
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -99,7 +99,7 @@ describe('useSessionAgentRows restart reconciliation', () => {
     expect(rows.filter((row) => row.status === 'working')).toHaveLength(0);
   });
 
-  it('keeps a genuinely live node working and never counts an unknown node as live', () => {
+  it('keeps a genuinely live running node working, and keeps the unknown→working policy for fresh in-process rows', () => {
     const rows = rowsFor({
       generatedAt: 1,
       sessionId: 'session-1',
@@ -118,9 +118,9 @@ describe('useSessionAgentRows restart reconciliation', () => {
     });
 
     expect(rows.find((row) => row.key === 'live-agent')?.status).toBe('working');
-    expect(rows.find((row) => row.key === 'fresh-unknown')?.status).toBe('failed');
-    expect(rows.find((row) => row.key === 'fresh-unknown')?.stoppable).toBe(false);
-    expect(rows.filter((row) => row.status === 'working')).toHaveLength(1);
+    expect(rows.find((row) => row.key === 'fresh-unknown')?.status).toBe('working');
+    expect(rows.find((row) => row.key === 'fresh-unknown')?.stoppable).toBe(true);
+    expect(rows.filter((row) => row.status === 'working')).toHaveLength(2);
   });
   it('failed-parent member count stays while child is live, then drops to zero on its real terminal snapshot without remount', () => {
     runtime.members = [{ key: 'child', roleId: 'coder', name: 'Sales presentation', status: 'running', isLead: false }];

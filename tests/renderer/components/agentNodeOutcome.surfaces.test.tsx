@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentTreeNode, AgentTreeNodeStatus, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { ToolCall } from '../../../src/shared/contract';
@@ -8,6 +8,7 @@ import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { useAgentTreeSnapshot } from '../../../src/renderer/hooks/useAgentTreeSnapshot';
+import { useDurableSwarmRunDetail } from '../../../src/renderer/hooks/useDurableSwarmRunDetail';
 import { useSessionAgentRows } from '../../../src/renderer/hooks/useSessionAgentRows';
 import { deriveDelegationPresentation, toDelegationDisplayToolCall } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
@@ -59,7 +60,9 @@ function snapshot(child: AgentTreeNode): AgentTreeSnapshot {
 function ChatCard() {
   const { snapshot: tree } = useAgentTreeSnapshot('weekly-session');
   const { rows } = useSessionAgentRows('weekly-session');
-  const presentation = deriveDelegationPresentation(call, [], tree?.nodes ?? [], language === 'en' ? en : zh);
+  const detail = useDurableSwarmRunDetail('weekly-session');
+  const presentation = deriveDelegationPresentation(call, [], tree?.nodes ?? [], language === 'en' ? en : zh,
+    detail?.run.sessionId === 'weekly-session' ? detail.agents : []);
   return <div data-testid="snapshot-chat" data-node-status={rows[0]?.node?.status}>
     {presentation && <><DelegationHeader presentation={presentation} /><DelegationReceipt presentation={presentation} /></>}
   </div>;
@@ -74,7 +77,7 @@ const cases = [
   ['cancelled', 'Background assistant was cancelled', '助手已取消', 'Cancelled', '已取消'],
   ['killed', 'Background assistant was stopped', '助手已中止', 'Aborted', '已中止'],
   ['blocked', 'Background assistant is waiting for you', '助手正在等你回应', 'Waiting for you', '等你回应'],
-  ['unknown', 'Background assistant was interrupted', '助手已中断', 'Interrupted', '已中断'],
+  ['unknown', 'Background assistant is working', '助手正在处理', 'Working', '工作中'],
 ] as const;
 
 beforeEach(() => {
@@ -103,7 +106,7 @@ describe.each(['en', 'zh'] as const)('one tree snapshot across three surfaces (%
     expect(screen.getByTestId('snapshot-chat').dataset.nodeStatus).toBe(status);
     expect(headline.textContent).toBe(locale === 'en' ? enHeadline : zhHeadline);
     expect(panel.textContent).toContain(locale === 'en' ? enWord : zhWord);
-    const active = ['queued', 'running', 'running-recovered'].includes(status);
+    const active = ['queued', 'running', 'running-recovered', 'unknown'].includes(status);
     expect(bar.textContent).toContain(locale === 'en' ? enWord : zhWord);
     const presentation = deriveDelegationPresentation(call, [], tree.nodes, t)!;
     const receipt = toDelegationDisplayToolCall(call, t, presentation);
@@ -117,6 +120,59 @@ describe.each(['en', 'zh'] as const)('one tree snapshot across three surfaces (%
       expect(view.container.querySelector('[aria-label="Agent working"]')).toBeNull();
     }
     process.stdout.write(`SURFACE_ASSERT ${locale} node=${status} chat=${JSON.stringify(headline.textContent)} bar=${JSON.stringify(bar.textContent)} panel=${JSON.stringify(panel.textContent)} cjk=${cjk.test(view.container.textContent ?? '')}\n`);
+  });
+
+  it('an unmarked current-process context stays live, visible and stoppable', async () => {
+    language = locale;
+    const child = node('unknown');
+    invokeDomain.mockImplementation((_domain: unknown, action: unknown) => Promise.resolve(
+      action === 'closeAgent' ? { cancelled: true } : snapshot(child)));
+    render(<><ChatCard /><SessionMemberBar sessionId="weekly-session" /><SessionAgentsPanel /><StreamingIndicator startTime={1} waitingReason="subagent" /></>);
+    await screen.findByLabelText(locale === 'en' ? 'Agent working' : '代理工作中');
+    expect(screen.getByTestId('delegation-headline').textContent).toBe(locale === 'en' ? 'Background assistant is working' : '助手正在处理');
+    expect(screen.getByTestId('session-member-bar-collapsed').textContent).toContain(locale === 'en' ? 'Working' : '工作中');
+    expect(screen.getByTestId('agents-panel-status-weekly-assistant').textContent).toBe(locale === 'en' ? 'Working' : '工作中');
+    fireEvent.click(screen.getByTestId('agents-panel-stop-weekly-assistant'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith('domain:agent', 'closeAgent',
+      { agentId: child.id, sessionId: 'weekly-session' }));
+  });
+
+  it.each(['completed', 'failed', 'cancelled'] as const)('a weak unknown context cannot overwrite a %s member', async (status) => {
+    language = locale;
+    invoke.mockImplementation((channel: string) => Promise.resolve(channel === 'swarm:list-trace-runs'
+      ? [{ id: 'ledger', sessionId: 'weekly-session' }]
+      : channel === 'swarm:get-trace-run-detail' ? {
+        run: { id: 'ledger', sessionId: 'weekly-session', startedAt: 1, endedAt: 2, totalTokensIn: 0, totalTokensOut: 0 },
+        agents: [{ agentId: 'weekly-assistant', name: 'Report assistant', role: 'background', status, tokensIn: 0, tokensOut: 0, filesChanged: [] }], events: [],
+      } : []));
+    invokeDomain.mockResolvedValue(snapshot(node('unknown')));
+    render(<><ChatCard /><SessionMemberBar sessionId="weekly-session" /><SessionAgentsPanel /><StreamingIndicator startTime={1} waitingReason="subagent" /></>);
+    const expected = cases.find(([candidate]) => candidate === status)!;
+    await waitFor(() => expect(screen.getByTestId('delegation-headline').textContent).toBe(expected[locale === 'en' ? 1 : 2]));
+    const word = expected[locale === 'en' ? 3 : 4];
+    expect(screen.getByTestId('session-member-bar-collapsed').textContent).toContain(word);
+    expect(screen.getByTestId('agents-panel-status-weekly-assistant').textContent).toContain(word);
+    expect(screen.queryByTestId('agents-panel-stop-weekly-assistant')).toBeNull();
+    expect(screen.queryByLabelText(locale === 'en' ? 'Agent working' : '代理工作中')).toBeNull();
+  });
+
+  it('an authoritative unknown node can supersede an older cancelled member', async () => {
+    language = locale;
+    invoke.mockImplementation((channel: string) => Promise.resolve(channel === 'swarm:list-trace-runs'
+      ? [{ id: 'ledger', sessionId: 'weekly-session' }]
+      : channel === 'swarm:get-trace-run-detail' ? {
+        run: { id: 'ledger', sessionId: 'weekly-session', startedAt: 1, endedAt: 2, totalTokensIn: 0, totalTokensOut: 0 },
+        agents: [{ agentId: 'weekly-assistant', name: 'Report assistant', role: 'background', status: 'cancelled', tokensIn: 0, tokensOut: 0, filesChanged: [] }], events: [],
+      } : []));
+    invokeDomain.mockResolvedValue(snapshot({ ...node('unknown'), sources: ['spawnGuard', 'subagentContext'] }));
+    render(<><ChatCard /><SessionMemberBar sessionId="weekly-session" /><SessionAgentsPanel /><StreamingIndicator startTime={1} waitingReason="subagent" /></>);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('swarm:get-trace-run-detail', expect.anything()));
+    const expected = locale === 'en' ? 'Working' : '工作中';
+    expect(screen.getByTestId('session-member-bar-collapsed').textContent).toContain(expected);
+    expect(screen.getByTestId('agents-panel-status-weekly-assistant').textContent).toBe(expected);
+    expect(screen.getByTestId('delegation-headline').textContent).toBe(locale === 'en' ? 'Background assistant is working' : '助手正在处理');
+    expect(screen.getByTestId('agents-panel-stop-weekly-assistant')).toBeTruthy();
+    expect(screen.getByLabelText(locale === 'en' ? 'Agent working' : '代理工作中')).toBeTruthy();
   });
 
   it('parent-gone is failed everywhere and the reason is on a separate line', async () => {

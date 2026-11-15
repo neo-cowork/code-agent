@@ -1,3 +1,4 @@
+import { reconcileAgentNodeLifecycle } from '../../../../../utils/agentNodeLifecycle';
 import { agentNodeLabel, backgroundTaskLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
 import { AgentFailureCode } from '@shared/contract/agentFailure';
@@ -287,8 +288,11 @@ export function deriveDelegationPresentation(
   tasks: Task[],
   agentNodes: AgentTreeNode[],
   t: Translations = languages[useAppStore.getState().language] ?? languages.zh,
+  members: readonly { agentId: string; status: string }[] = [],
 ): DelegationPresentation | null {
-  const presentation = derivePresentation(toolCall, tasks, agentNodes, t);
+  const memberById = new Map(members.map((member) => [member.agentId, member]));
+  const nodes = agentNodes.map((node) => reconcileAgentNodeLifecycle(node, memberById.get(node.id)));
+  const presentation = derivePresentation(toolCall, tasks, nodes, t);
   if (presentation?.state !== 'failed') return presentation;
   return { ...presentation, retryTitle: retryTitleFrom(toolCall) ?? presentation.title };
 }

@@ -18,7 +18,6 @@ import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { resolveAgentNodeOutcomeKey } from '../../../i18n/outcomeWords';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
@@ -216,11 +215,10 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   // 「N 个代理工作中 · 名字」。名字说明谁在干活；工具步人话不进折叠条。
   const firstWorking = working[0];
   const outcomeRow = firstWorking ?? waiting[0] ?? failed[0] ?? cancelled[0] ?? rows.find((row) => row.status === 'done');
-  const outcome = outcomeRow?.node
-    ? resolveAgentNodeOutcomeKey(outcomeRow.node.status, outcomeRow.node.failureCode) : null;
+  const outcome = outcomeRow?.outcomeKey;
   const outcomeSummary = outcome
-    ? interpolatePlural(text.collapsedOutcome, rows.filter((row) => row.node
-      ? resolveAgentNodeOutcomeKey(row.node.status, row.node.failureCode) === outcome
+    ? interpolatePlural(text.collapsedOutcome, rows.filter((row) => row.outcomeKey
+      ? row.outcomeKey === outcome
       : text.panel.status[row.status] === t.outcomeWords[outcome].badge.label).length)
       .replace('{status}', t.outcomeWords[outcome].badge.label)
     : null;
