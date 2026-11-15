@@ -29,5 +29,6 @@ export async function getMeetingRecordStore(): Promise<MeetingRecordStore> {
       return '';
     }
   });
+  defaultStore.closeStaleMinutes(); // 进程内第一次用到会议库：上次退出时没出完的纪要收尾，不让会议页永远卡在「出纪要中」
   return defaultStore;
 }

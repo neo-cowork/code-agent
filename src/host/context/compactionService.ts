@@ -11,7 +11,7 @@ import type {
 import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 import { estimateTokens } from './tokenEstimator';
 import { withTelemetryRecoveryNoticeForModel } from '../../shared/telemetryRecovery';
-import { COMPACTION_ECONOMICS } from '../../shared/constants';
+import { COMPACTION_ECONOMICS, COMPACTION_SUMMARY } from '../../shared/constants';
 import {
   compactModelSummarizeWithMetadata,
   type CompactModelSummaryMetadata,
@@ -41,7 +41,6 @@ import {
 
 const SUMMARY_VERSION = 1;
 const DEFAULT_PRESERVE_RECENT_COUNT = 10;
-const SUMMARY_MAX_TOKENS = 1000;
 const TRANSCRIPT_MAX_TOKENS = 12000;
 const TRANSCRIPT_ITEM_MAX_CHARS = 1200;
 const TOOL_ARGS_MAX_CHARS = 700;
@@ -532,21 +531,21 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
   callCostTokens: number;
 }> {
   const prompt = buildSummaryPrompt(plan);
-  let summaryResult = await compactModelSummarizeWithMetadata(prompt, SUMMARY_MAX_TOKENS);
+  let summaryResult = await compactModelSummarizeWithMetadata(prompt, COMPACTION_SUMMARY.MAX_TOKENS);
   let summary = summaryResult.summary;
   let summaryModel = summaryResult.metadata;
   let callCostTokens = estimateTokens(prompt) + estimateTokens(summary);
   let validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
     truncated: summaryResult.metadata.truncated,
     tokenCount: estimateTokens(summary),
-    maxSummaryTokens: SUMMARY_MAX_TOKENS,
+    maxSummaryTokens: COMPACTION_SUMMARY.MAX_TOKENS,
   });
   const warnings = [...validation.warnings];
 
   if (!validation.ok) {
     const repairInstruction = buildSummaryRepairInstruction(validation);
     const repairPrompt = buildSummaryPrompt(plan, summary, repairInstruction);
-    summaryResult = await compactModelSummarizeWithMetadata(repairPrompt, SUMMARY_MAX_TOKENS);
+    summaryResult = await compactModelSummarizeWithMetadata(repairPrompt, COMPACTION_SUMMARY.MAX_TOKENS);
     summary = summaryResult.summary;
     summaryModel = metadataWithSummedUsage(
       summaryResult.metadata,
@@ -556,7 +555,7 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
     validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
       truncated: summaryResult.metadata.truncated,
       tokenCount: estimateTokens(summary),
-      maxSummaryTokens: SUMMARY_MAX_TOKENS,
+      maxSummaryTokens: COMPACTION_SUMMARY.MAX_TOKENS,
     });
     warnings.push(...validation.warnings);
   }
@@ -650,7 +649,7 @@ export async function compactMessagesWithSummary(
     sessionId: options.sessionId,
     messages: options.messages,
     tokenCount: beforeTokens,
-    targetTokenCount: countMessageTokens(plan.preservedMessages) + SUMMARY_MAX_TOKENS,
+    targetTokenCount: countMessageTokens(plan.preservedMessages) + COMPACTION_SUMMARY.MAX_TOKENS,
     logger,
   });
   const planWithHooks: CompactionPlan = hookResult.preservedContext

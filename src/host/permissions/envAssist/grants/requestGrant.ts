@@ -1,5 +1,11 @@
 import { ENV_ASSIST_CLICK_TTL_MS } from '../../../../shared/constants/envAssist';
 import type { PromptingBridge } from '../probes/types';
+import type { ShellBridgeClient } from '../shellBridge/client';
+import { createShellPromptingBridge } from './shellPromptingBridge';
+
+export function createDefaultGrantBridge(client: ShellBridgeClient): PromptingBridge {
+  return createShellPromptingBridge(client);
+}
 
 const clickBrand: unique symbol = Symbol('EnvAssistClick');
 interface ClickToken {

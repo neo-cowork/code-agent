@@ -43,6 +43,8 @@ export class MeetingSession {
     private readonly store: MeetingStore,
     private readonly capture: MeetingCapture,
     private readonly now: () => number = Date.now,
+    /** 会结束了（任何原因）：会议页据此自动出纪要（N-MEETING-PAGE） */
+    private readonly onEnded: (record: MeetingRecord) => void = () => {},
   ) {}
 
   private recover(): void {
@@ -105,6 +107,7 @@ export class MeetingSession {
     this.lastEnded = { ...this.current, state: 'ended', endedAtMs, endReason: reason };
     this.current = null;
     this.store.save(this.lastEnded, this.now());
+    this.onEnded(this.lastEnded);
     return this.status();
   }
 
