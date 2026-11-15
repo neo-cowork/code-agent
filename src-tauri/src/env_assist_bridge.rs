@@ -675,6 +675,10 @@ mod imp {
             (code, resp)
         }
 
+        mod node_chain {
+            include!("env_assist_bridge_chain_tests.rs");
+        }
+
         #[test]
         fn token_is_64_hex_chars_and_random_per_launch() {
             let first = make_bridge_token().expect("first token");
