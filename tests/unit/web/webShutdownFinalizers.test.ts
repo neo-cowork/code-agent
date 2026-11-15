@@ -374,6 +374,25 @@ describe.runIf(process.platform === 'darwin')('cua helper daemon reap', () => {
     console.log('AFTER ps -p', pid, psRows().filter((r) => r.trim().startsWith(`${pid} `)).length, 'rows');
   });
 
+  it('① 断连永不返回（cua-driver 不盯 stdin）时 reap 仍在 capMs 窗口内收掉 daemon 与子进程', async () => {
+    const pid = await launchDetached('serve');
+    await new Promise((r) => setTimeout(r, 150));
+    const child = Number(readFile(join(dir, 'Fake Helper.app/Contents/MacOS/child.serve.pid'), 'utf-8'));
+    disconnectAll.mockImplementation(() => new Promise<void>(() => {}));
+
+    const lines: string[] = [];
+    const t0 = Date.now();
+    await runShutdownFinalizers(1_000, (m) => lines.push(m));
+    const elapsed = Date.now() - t0;
+
+    const trace = lines.join('\n');
+    console.log('TRACE', trace);
+    expect(trace).toContain('cua.reap daemons=1 killed=1');
+    expect(alive(pid)).toBe(false);
+    expect(alive(child)).toBe(false);
+    expect(elapsed).toBeLessThan(1_500);
+  });
+
   it('② 另有 <fake> mcp --socket 同 socket 的代理活着 ⇒ 守护进程保留，日志 shared_by_1_proxy', async () => {
     const daemon = await launchDetached('serve');
     const proxy = await launchDetached('mcp');
@@ -463,17 +482,19 @@ describe('cua reap 受关库前总预算约束', () => {
     expect(elapsed).toBeLessThan(450);
   });
 
-  it('预算已被前面步骤烧光时直接跳过并留痕', async () => {
+  it('reap 与收尾步骤并行：断连挂死期间 reaper 已经被调用', async () => {
     vi.resetModules();
-    const reap = vi.fn(async () => {});
-    vi.doMock('../../../src/host/mcp/cuaHelperReaper', () => ({ reapCuaHelperDaemons: reap }));
+    let reapCalledWhileDisconnectPending = false;
+    let disconnectSettled = false;
+    vi.doMock('../../../src/host/mcp/cuaHelperReaper', () => ({
+      reapCuaHelperDaemons: async () => {
+        reapCalledWhileDisconnectPending = !disconnectSettled;
+      },
+    }));
     const { runShutdownFinalizers: run } = await import('../../../src/web/webShutdownFinalizers');
-    let clock = 0;
-    const lines: string[] = [];
-    disconnectAll.mockImplementation(async () => { clock += 500; });
-    await run(300, (m) => lines.push(m), () => clock);
-    expect(lines.join('\n')).toContain('cua.reap skipped(budget_exhausted)');
-    expect(reap).not.toHaveBeenCalled();
+    disconnectAll.mockImplementation(() => new Promise<void>((r) => setTimeout(() => { disconnectSettled = true; r(); }, 400)));
+    await run(1_000, () => {});
+    expect(reapCalledWhileDisconnectPending).toBe(true);
   });
 });
 

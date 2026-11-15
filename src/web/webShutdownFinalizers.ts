@@ -203,26 +203,34 @@ export async function runShutdownFinalizers(
   now: () => number = Date.now,
 ): Promise<void> {
   // 先记 pid 再断连——断连成功的 server 自己会退，记晚了就没得记了。
-  const startedAt = now();
   const mcpPids = await captureMcpStdioPids();
-  const results = await Promise.all(FINALIZERS.map((f) => runOne(f, capMs, now)));
+  // cua reap 与各收尾步骤并行、共用同一个 capMs 窗口：cua-driver 不盯 stdin，mcp.disconnect
+  // 必吃满 capMs，串在它后面就永远没有额度（Quit fully 后 daemon 残留）。日志缓冲到汇总行之后再吐。
+  const reapLines: string[] = [];
+  const reap = reapCuaWithinCap(capMs, mcpPids, (m) => reapLines.push(m));
+  const [results] = await Promise.all([Promise.all(FINALIZERS.map((f) => runOne(f, capMs, now))), reap]);
   const killed = killSurvivingMcpChildren(mcpPids);
   log(`[shutdown] ${results.join(' ')} mcp.killed=${killed}/${mcpPids.length}`);
-  // reaper 不得越过关库前总预算：只用本函数 capMs 的剩余额度（含动态 import、ps、收尸等待）
-  const remaining = capMs - (now() - startedAt);
-  if (remaining <= 0) {
-    log('[shutdown] cua.reap skipped(budget_exhausted)');
-    return;
-  }
-  const reaped = (await import('../host/mcp/cuaHelperReaper')).reapCuaHelperDaemons({ phase: 'shutdown', ownProxyPids: mcpPids, log });
+  for (const line of reapLines) log(line);
+}
+
+async function reapCuaWithinCap(capMs: number, mcpPids: number[], log: (msg: string) => void): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timedOut = await Promise.race([
-    reaped.then(() => false),
-    new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(true), remaining);
-      timer.unref?.();
-    }),
-  ]);
-  clearTimeout(timer);
-  if (timedOut) log(`[shutdown] cua.reap timeout(${remaining}ms)`);
+  try {
+    const reaped = import('../host/mcp/cuaHelperReaper').then((m) =>
+      m.reapCuaHelperDaemons({ phase: 'shutdown', ownProxyPids: mcpPids, log }),
+    );
+    const timedOut = await Promise.race([
+      reaped.then(() => false),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), capMs);
+        timer.unref?.();
+      }),
+    ]);
+    if (timedOut) log(`[shutdown] cua.reap timeout(${capMs}ms)`);
+  } catch (error) {
+    log(`[shutdown] cua.reap error(${(error as Error).message})`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
