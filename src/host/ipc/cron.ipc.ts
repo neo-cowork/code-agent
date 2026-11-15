@@ -208,6 +208,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - cron 的 timezone 默认使用当前时间锚点中的 IANA 时区；只有用户明确指定其他时区（如北京时间、纽约时间）时，才使用该时区对应的 IANA 名称。
 - 尽量从描述中推断合理的调度方式和参数
 - 用户指定具体钟点（如 9am、3pm、9:30、每天早上9点、今晚8点半）时，cron 的小时和分钟必须严格等于用户说的时间：9am → 0 9 * * *，3pm → 小时15分钟0，9:30 → 小时9分钟30，今晚8点半 → 20:30。命名钟点不需要再说「整点」，禁止错峰或改动分钟。
+- 只有晚间/夜间词、没有具体钟点（每晚、每天晚上、每夜、nightly）时，cron 固定用小时 22 分钟 0，不错峰、不要落到早上 9 点。
 - 错峰只适用于没有指定具体钟点的请求（如每小时、每天、每天早晨），cron 分钟位可用非 0 值（如 17）；"every" 间隔类型不受影响（会自动错峰）。
 - 事件监听：用户想「盯着/监听某个群或会话，来了新消息就做某事」（如「关注发布群，有人提到发布就总结给我」「群里有消息就提醒我」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "channel", "eventName": "message" }，并在返回 JSON 顶层加 "groupName": 用户原话提到的群名（字符串；用户没点名具体群就省略这个字段）。不要编造 accountId 或 chatId——账号和群由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。
 - 邮件监听：用户说「有新邮件时/来新邮件就做某事」（如「新邮件到了把它整理成待办」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "connector", "connector": "mail", "eventName": "message" }。不要编造 accountId 或 mailbox——邮件账号和邮箱由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。

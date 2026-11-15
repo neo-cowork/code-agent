@@ -14,6 +14,11 @@
 // - external 出站（邮件/IM）：extractStandingGrantTarget 的收件人集合规范化。
 // - 文件路径类：path.resolve(cwd, raw) 归一；cwd 不同的相对路径天然不同指纹
 //   （保守方向：漏匹配 > 误伤）。
+//
+// 用户拒绝 sticky 的作用域（refuseIfGoalDenied）：(sessionId, `message:<sourceMessageId>`, 工具族)。
+// 子代理（含后台/workflow/skill）沿 spawn 链继承父的 sourceMessageId，所以主聊天里的一次
+// 拒绝同样拦同一条用户消息派出的子代理；无用户消息起点的 run（cron/心跳/恢复）退回
+// `run:<runId>`，只在该 run 内生效。新用户消息即新作用域。
 // ============================================================================
 
 import { AsyncLocalStorage } from 'node:async_hooks';
