@@ -10,6 +10,7 @@ import { getSecureStorage } from '../core';
 import type { SyncStatus, SyncConflict, DeviceInfo, ModelProvider, Message } from '../../../shared/contract';
 import type { StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
+import { resolveCloudSessionTitle } from '../infra/sessionManagerNormalization';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../../shared/constants';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 
@@ -326,7 +327,8 @@ class SyncService implements Disposable {
           db.createSessionWithId(
             remote.id,
             {
-              title: remote.title,
+              // FB-1089：云端行只在新会话时写过自动档标题，本地已定档的标题不被顶回
+              title: resolveCloudSessionTitle(db, remote.id, remote.title),
               userId,
               modelConfig: {
                 provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
@@ -360,7 +362,7 @@ class SyncService implements Disposable {
               db.updateSession(
                 remote.id,
                 {
-                  title: remote.title,
+                  title: resolveCloudSessionTitle(db, remote.id, remote.title),
                   modelConfig: {
                     provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
                     model: remote.model_name || DEFAULT_MODEL

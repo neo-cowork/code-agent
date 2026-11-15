@@ -261,38 +261,8 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-const DELETE_FLAG_PREFIXES = ['recursive_delete', 'root_delete', 'home_delete', 'system_dir_delete', 'container_dir_delete', 'wildcard_delete', 'current_dir_delete', 'sudo_rm'];
-const COMMAND_FILE_COUNT_LIMIT = 10_000;
-
-function extractDeleteTarget(command: string, securityFlags: string[]): string | undefined {
-  if (!securityFlags.some((flag) => DELETE_FLAG_PREFIXES.some((prefix) => flag.startsWith(prefix)))) return undefined;
-  const match = command.match(/(?:^|[;&|]\s*)rm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
-  return match?.[1] ?? match?.[2] ?? match?.[3];
-}
-
-async function countAffectedFiles(targetPath: string): Promise<number | undefined> {
-  try {
-    const root = await nodeFs.lstat(targetPath);
-    if (!root.isDirectory()) return 1;
-    let count = 0;
-    const pending = [targetPath];
-    while (pending.length > 0 && count < COMMAND_FILE_COUNT_LIMIT) {
-      const directory = pending.pop();
-      if (!directory) break;
-      const entries = await nodeFs.readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push(nodePath.join(directory, entry.name));
-        else count += 1;
-        if (count >= COMMAND_FILE_COUNT_LIMIT) break;
-      }
-    }
-    return count;
-  } catch {
-    return undefined;
-  }
-}
-
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
+import { computeDeleteImpact } from './deleteImpact';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -2141,7 +2111,7 @@ export class ToolExecutor {
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
-        sessionId: effectiveSessionId,
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
@@ -2218,15 +2188,16 @@ export class ToolExecutor {
           ? [permissionRequest.reason, deterministicAskReason].filter(Boolean).join('；')
           : deterministicAskReason;
       }
-      const deleteTarget = commandValidation && typeof params.command === 'string'
-        ? extractDeleteTarget(params.command, commandValidation.securityFlags)
+      // 删除影响盘点抽到 deleteImpact.ts：与渲染层共用 shared/rmCommandTargets 的解析，
+      // 多目标确切命令求和、通配符/变量/管道一律缺省，绝不定格成 1。
+      const deleteImpact = commandValidation && typeof params.command === 'string'
+        ? await computeDeleteImpact(params.command, commandValidation.securityFlags, bashWorkingDirectory)
         : undefined;
-      if (deleteTarget) {
-        const affectedPath = nodePath.isAbsolute(deleteTarget)
-          ? nodePath.resolve(deleteTarget)
-          : nodePath.resolve(bashWorkingDirectory, deleteTarget);
-        permissionRequest.details.affectedPath = affectedPath;
-        permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
+      if (deleteImpact) {
+        permissionRequest.details.affectedPath = deleteImpact.affectedPath;
+        if (deleteImpact.affectedFileCount !== undefined) {
+          permissionRequest.details.affectedFileCount = deleteImpact.affectedFileCount;
+        }
       }
       if (isBashToolName(policyToolName) && typeof params.command === 'string') {
         const sandboxDecision = resolveOsSandboxDecision({
@@ -2494,7 +2465,7 @@ export class ToolExecutor {
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
         // 在该路径是误导——给模型可转述的真实原因与出路。
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
-        const defaultDenialReason = readOnlyForcesConfirmation
+        const defaultDenialReason = readOnlyForcesConfirmation && denialSource !== 'goal-sticky-host'
           ? readOnlyDenialError(executionToolName)
           : permissionDenialError(executionToolName, denialSource, computerApp);
         const hostReason = ask.message
@@ -2523,8 +2494,9 @@ export class ToolExecutor {
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
-        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）
-        if (actionFingerprint && effectiveSessionId) {
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）。
+        // goal-sticky-host 是本轮真人拒之后的宿主守卫拦截，不重写登记以免把早先的 byUser:true 降级。
+        if (actionFingerprint && effectiveSessionId && denialSource !== 'goal-sticky-host') {
           getDenialRegistry().record({
             sessionId: effectiveSessionId,
             fingerprint: actionFingerprint,

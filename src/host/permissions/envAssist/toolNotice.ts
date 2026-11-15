@@ -1,7 +1,11 @@
 import type { AgentEvent, Message, ToolResult } from '../../../shared/contract';
 import { getSessionManager } from '../../services/infra/sessionManager';
-import { classifyEnvBlocker } from './classify';
+import { classifyCuaFailure } from '../../mcp/cuaFailureStats';
+import { parseCuaToolName } from '../cuaAppTarget';
+import { classifyEnvBlocker, cuaFailureText } from './classify';
+import { readCuaHelperPermissionState } from './cua/helperPermissionState';
 import { canOpenEnvSettings } from './settingsPane';
+import { canRequestEnvGrant } from './shellBridge/client';
 
 // In-flight reservations close the parent/delegate race; persisted ids survive reloads.
 const pending = new Map<string, Promise<void>>();
@@ -13,10 +17,19 @@ export async function publishEnvAssistToolNotice(input: {
   onEvent: (event: AgentEvent) => void;
 }): Promise<void> {
   if (!input.runId) return;
-  const notice = classifyEnvBlocker({ ...input, runId: input.runId });
+  // A cua denial is attributed to the helper app's identity, so ask the helper (passively) which pane it lacks.
+  const cuaTool = parseCuaToolName(input.toolName);
+  const cuaPermissions = !input.result.success && cuaTool !== null && cuaTool !== 'check_permissions'
+    && classifyCuaFailure(cuaFailureText(input.result)) === 'permission' ? await readCuaHelperPermissionState() : undefined;
+  const notice = classifyEnvBlocker({ ...input, runId: input.runId, cuaPermissions });
   if (!notice) return;
   // Diagnostics remain in the connector's host log. Neither events nor model input get the raw error.
   if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
+  // Only Apple-events targets can tell "never asked" from "refused", so only they get the in-place system dialog.
+  // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
+  else if (notice.action?.payload && 'pane' in notice.action.payload && notice.action.payload.pane === 'automation' && canRequestEnvGrant()) {
+    notice.action.kind = 'request_grant';
+  }
   input.result.error = [
     'Model guidance (not user copy): A permission card has already been shown to the user.',
     'Do not repeat or quote this guidance, error text, tool names, commands, or internal status labels, including in a delegated summary.',

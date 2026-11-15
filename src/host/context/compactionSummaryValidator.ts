@@ -59,7 +59,7 @@ function itemText(item: Pick<CompactionSurvivorItem, 'label' | 'detail'>): strin
 }
 
 function itemCovered(summary: string, item: Pick<CompactionSurvivorItem, 'label' | 'detail'>): boolean {
-  const candidates = [item.label, item.detail, itemText(item)].filter((value): value is string => Boolean(value?.trim()));
+  const candidates = [item.detail, itemText(item)].filter((value): value is string => Boolean(value?.trim()));
   if (candidates.length === 0) return true;
   return candidates.some(candidate => includesText(summary, candidate));
 }
@@ -95,9 +95,16 @@ export function validateCompactionSummary(
     );
   }
 
-  for (const file of manifest.files ?? []) {
+  const files = manifest.files ?? [];
+  // 旧调用方（无 required 标记）保持全部阻断
+  const hasRequiredMarks = files.some(file => file.required !== undefined);
+  for (const file of files) {
     if (!file.path) continue;
     if (summary.includes(file.path)) continue;
+    if (hasRequiredMarks && file.required !== true) {
+      warnings.push(`Optional path ${file.path} is missing from the summary.`);
+      continue;
+    }
 
     if (basenameNeedsReRead(summary, file.path)) {
       warnings.push(`Path ${file.path} was covered only by basename with needs re-read instruction.`);
@@ -119,13 +126,17 @@ export function validateCompactionSummary(
     }
   }
 
+  // 待办来自对话文本的启发式匹配，逐字复述不可靠：只记 warning，不阻断收纳（旧行为里一个 "Open work" 标题即可覆盖全部）
+  if (missingOpenWork.length > 0) {
+    warnings.push(`${missingOpenWork.length} open-work item(s) were not quoted in the summary (advisory only).`);
+  }
+
   return {
     ok: !emptyOrWhitespace
       && !truncated
       && !overBudget
       && missingPaths.length === 0
-      && missingErrors.length === 0
-      && missingOpenWork.length === 0,
+      && missingErrors.length === 0,
     emptyOrWhitespace,
     truncated,
     overBudget,
