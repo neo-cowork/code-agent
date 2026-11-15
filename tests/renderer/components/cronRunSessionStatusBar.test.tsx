@@ -236,6 +236,20 @@ describe('CronRunSessionStatusBar（组件）', () => {
     expect(globalCss).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.cron-run-pulse-dot\s*\{\s*animation:\s*none/);
   });
 
+  it('等批准：cron 会话的状态行说明由哪个定时任务启动（无名字时用通用句）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    const row = { id: 'req-1', kind: 'tool_approval' as const, sessionId: 'session-1', tool: 'bash', requestedAt: Date.now(), status: 'pending' as const, argsPreview: 'echo hi', startedByAutomation: true };
+    listParkedApprovalsMock.mockResolvedValue([{ ...row, scheduledTaskName: '每日周会纪要汇总' }]);
+    const view = render(<CronRunSessionStatusBar sessionId="session-1" />);
+    expect((await screen.findByTestId('scheduled-task-origin')).textContent).toBe('由定时任务「每日周会纪要汇总」启动');
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+    listParkedApprovalsMock.mockResolvedValue([row]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    expect((await screen.findByTestId('scheduled-task-origin')).textContent).toBe('由定时任务启动');
+  });
+
   it('等批准：显示在干什么 + 批准走停车审批 IPC（first-responder-wins 同链路）', async () => {
     showSession(cronRunSession);
     getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);

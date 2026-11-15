@@ -11,6 +11,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // 只作刷新信号；标题与 tile 都读服务侧按任务折算的 countPendingReview。
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useState } from 'react';
 import { isEditableTool } from '@shared/contract';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
@@ -29,6 +30,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { UserRequestQuote } from '../../PermissionDialog/UserRequestQuote';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
@@ -377,6 +379,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           )}
                         </div>
                         {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
+                        {!isPairing && <UserRequestQuote details={item} labels={t.decisionCard.permission} />}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
                             {cc.pairingCode.replace('{code}', item.pairingCode)}
@@ -506,9 +509,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
                     {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
                     <div className="text-[11px] text-zinc-500">
-                      {cc.parkedVoided.startedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-                      }))}
+                      {cc.parkedVoided.startedAt.replace('{time}', formatDateTime(item.requestedAt, language))}
                     </div>
                     {item.argsPreview && (
                       <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">
@@ -626,7 +627,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                   )
                                   : cc.inboxMissedAt.replace(
                                     '{time}',
-                                    new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                    formatDateTime(record.config.missedNotice.scheduledAt, language),
                                   )}
                               </div>
                             ) : record.config?.loginWall ? (
@@ -638,9 +639,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                 {isCloud
                                   ? cc.inboxCloudCompleted.replace(
                                     '{time}',
-                                    new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                    formatDateTime(record.config.pendingReview.at, language),
                                   )
-                                  : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
+                                  : formatDateTime(record.config.pendingReview.at, language)}
                               </div>
                             )}
                           </div>

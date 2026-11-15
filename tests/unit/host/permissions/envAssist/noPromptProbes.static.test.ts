@@ -5,7 +5,11 @@ import { expect, it } from 'vitest';
 
 const forbidden = /osascript|runAppleScript|CGRequest|IOHIDRequestAccess|askUserIfNeeded\s*:\s*true|requestAccess|requestAccessibility/;
 const probes = 'src/host/permissions/envAssist/probes/';
-const grant = 'src/host/permissions/envAssist/grants/requestGrant.ts';
+const grantFiles = new Set([
+  'src/host/permissions/envAssist/grants/requestGrant.ts',
+  'src/host/permissions/envAssist/grants/shellPromptingBridge.ts',
+  'src/host/permissions/envAssist/grants/cuaHelperGrantBridge.ts',
+]);
 
 // Existing host exceptions are frozen by exact line, never blanket file exemptions.
 // Each listed file is justified below; additions within these files still fail.
@@ -67,11 +71,11 @@ const legacyLines: Record<string, string[]> = {
   // Photos connector executes user-requested Apple Events (S4).
   "src/host/connectors/native/photos.ts": ["import { escapeAppleScriptString, runAppleScript } from './osascript';", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(scriptLines);"],
   // Calendar connector execution/failure translation (S4).
-  "src/host/connectors/native/calendar.ts": ["runAppleScript,", "} from './osascript';", "const output = await runAppleScript([", "const output = await runAppleScript([", "const output = await runAppleScript(buildSingleCalendarEventsScript(calendarName, fromMs, toMs, eventLimit));", "const output = await runAppleScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));", "const output = await runAppleScript([", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(["],
+  "src/host/connectors/native/calendar.ts": ["runAppleScript,", "} from './osascript';", "const runCalendarScript = (lines: string[]) => runAppleScript(lines, { permissionTarget: 'com.apple.iCal' });"],
   // Reminders connector execution/failure translation (S4).
   "src/host/connectors/native/reminders.ts": ["runAppleScript,", "} from './osascript';", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(["],
   // Shared existing AppleScript subprocess executor (S4).
-  "src/host/connectors/native/osascript.ts": ["// TCC 拒绝 Apple Events 自动化时 osascript 以 errno -1743 退出（典型文案", "* 把 osascript 异常转成一句给用户/模型看的人话。execFile 的 error.message 以", "* \"Command failed: osascript -e <整段脚本>\" 开头，绝不能原样外露；这里只按错误码/信号分类，", "* 是否为 osascript/execFile 失败（而非连接器自己 throw 的参数/平台校验错误）。", "/** 写 host 日志用的排查详情：stderr 优先；否则去掉开头的 \"Command failed: osascript …\" 命令行，截断 300 字。 */", "// 脚本以多个 -e 参数内联，命令行之后的最后几行是 osascript 的 stderr（取末 3 行，避开脚本正文）", "export async function runAppleScript(lines: string[]): Promise<string> {", "const { stdout } = await execFileAsync('osascript', args, {"],
+  "src/host/connectors/native/osascript.ts": ["// TCC 拒绝 Apple Events 自动化时 osascript 以 errno -1743 退出（典型文案", "* 把 osascript 异常转成一句给用户/模型看的人话。execFile 的 error.message 以", "* \"Command failed: osascript -e <整段脚本>\" 开头，绝不能原样外露；这里只按错误码/信号分类，", "* 是否为 osascript/execFile 失败（而非连接器自己 throw 的参数/平台校验错误）。", "/** 写 host 日志用的排查详情：stderr 优先；否则去掉开头的 \"Command failed: osascript …\" 命令行，截断 300 字。 */", "// 脚本以多个 -e 参数内联，命令行之后的最后几行是 osascript 的 stderr（取末 3 行，避开脚本正文）", "export async function runAppleScript(lines: string[], options?: { permissionTarget?: string }): Promise<string> {", "const { stdout } = await execFileAsync('osascript', args, {"],
   // Mail connector execution/failure translation (S4).
   "src/host/connectors/native/mail.ts": ["runAppleScript,", "} from './osascript';", "return await runAppleScript(lines);", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "await runAppleScript(["],
 };
@@ -87,7 +91,7 @@ it('static-contract: diagnosis contains no prompting calls or grant imports', ()
   const violations: string[] = [];
   for (const file of files('src/host')) {
     const path = relative('.', file).replaceAll('\\', '/');
-    if (path === grant) continue;
+    if (grantFiles.has(path)) continue;
     const source = readFileSync(file, 'utf8');
     if (/AEDeterminePermissionToAutomateTarget\([^;]*,\s*true\s*\)/.test(source)) violations.push(path);
     if (path !== 'src/host/ipc/envAssist.ipc.ts' && /from\s*['"][^'"]*grants\//.test(source)) violations.push(path);
@@ -109,4 +113,34 @@ it('static-contract: diagnosis contains no prompting calls or grant imports', ()
     }
   }
   expect(violations, 'prompting symbols outside the grant boundary').toEqual([]);
+});
+
+it('static-contract: probes never contain /grant strings and grants never contain /passive strings', () => {
+  const violations: string[] = [];
+  const scanDirForRouteStrings = (dir: string, forbiddenRouteFragment: string) => {
+    for (const file of files(dir)) {
+      const path = relative('.', file).replaceAll('\\', '/');
+      const source = readFileSync(file, 'utf8');
+      const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+      const visit = (node: ts.Node): void => {
+        if (ts.isStringLiteralLike(node) && node.text.includes(forbiddenRouteFragment)) {
+          violations.push(`${path}: ${JSON.stringify(node.text)}`);
+        } else if (ts.isTemplateExpression(node)) {
+          if (node.head.text.includes(forbiddenRouteFragment)) {
+            violations.push(`${path}: ${JSON.stringify(node.head.text)}`);
+          }
+          for (const span of node.templateSpans) {
+            if (span.literal.text.includes(forbiddenRouteFragment)) {
+              violations.push(`${path}: ${JSON.stringify(span.literal.text)}`);
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(ast);
+    }
+  };
+  scanDirForRouteStrings('src/host/permissions/envAssist/probes', '/grant');
+  scanDirForRouteStrings('src/host/permissions/envAssist/grants', '/passive');
+  expect(violations, 'cross-boundary /grant or /passive route strings').toEqual([]);
 });

@@ -16,7 +16,7 @@ import { usePermissionStore, type PermissionRequestForMemory } from '../../store
 import { DecisionCard, isEditableTarget, type DecisionCardViewMode, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
 import { OutboundMaskNotice } from './OutboundMaskNotice';
-import { UserRequestQuote } from './UserRequestQuote';
+import { UserRequestQuote, scheduledTaskOriginName } from './UserRequestQuote';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
@@ -70,6 +70,7 @@ function normalizeRequest(
       purpose: request.details.purpose,
       userRequest: request.details.userRequest,
       startedByAutomation: request.details.startedByAutomation,
+      scheduledTaskName: request.details.scheduledTaskName,
       commandRiskLevel: request.details.commandRiskLevel,
       commandSecurityFlags: request.details.commandSecurityFlags,
       affectedPath: request.details.affectedPath,
@@ -627,7 +628,9 @@ export function PermissionCard({
               <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>
             </div>
           )}
-          {connector && request.details.purpose ? (
+          {connector
+          && request.details.purpose
+          && request.details.purpose.trim() !== scheduledTaskOriginName(request.details)?.trim() ? (
             <p data-testid="connector-purpose" className="text-sm text-zinc-300">
               {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
             </p>

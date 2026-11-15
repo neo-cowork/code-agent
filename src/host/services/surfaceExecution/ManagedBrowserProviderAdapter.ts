@@ -259,8 +259,8 @@ export class ManagedBrowserProviderAdapter {
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
   }
 
-  async clearConversationResumeState(conversationId: string): Promise<void> {
-    await Promise.all([this.resumeStateStore.clearConversation(conversationId), this.lastPageStore.clearConversation(conversationId)]);
+  async clearConversationResumeState(conversationId: string, opts: { keepLastPage?: boolean } = {}): Promise<void> {
+    await Promise.all([this.resumeStateStore.clearConversation(conversationId), opts.keepLastPage ? undefined : this.lastPageStore.clearConversation(conversationId)]);
   }
 
   activateConversationResumeState(conversationId: string): void {
@@ -714,6 +714,7 @@ export class ManagedBrowserProviderAdapter {
       && candidate.browserService === binding.browserService
     ));
     if (!stillShared) binding.browserService.setLeaseInUse(false);
+    await this.exportResumeStateOnNormalRelease(binding);
     await releaseManagedBrowserWindow({
       binding,
       stillShared,
@@ -847,6 +848,27 @@ export class ManagedBrowserProviderAdapter {
     } finally {
       signal.removeEventListener('abort', closeOnAbort);
       await binding.abortShutdown;
+    }
+  }
+
+  /**
+   * Normal run end saves login state through the same store as the abort path, so the
+   * next turn of this conversation is still signed in. Same exclusions as the last page
+   * record: personal-profile and user-browser runs never write conversation state. An
+   * aborted run already exported and closed its window (not running here), so it is skipped.
+   */
+  private async exportResumeStateOnNormalRelease(binding: ManagedBrowserBinding): Promise<void> {
+    const { identity, serviceKey, browserService } = binding;
+    if (identity.agentId === SURFACE_USER_BROWSER_AGENT_ID || serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) return;
+    if (!browserService.isRunning()) return;
+    try {
+      await this.resumeStateStore.exportForConversation(identity.conversationId, browserService);
+    } catch (error) {
+      this.resumeLogger.warn?.('Failed to save managed browser login state at run end; next turn starts signed out', {
+        reason: 'resume_state_export_on_release_failed',
+        conversationIdHash: hashIdentity([identity.conversationId]),
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

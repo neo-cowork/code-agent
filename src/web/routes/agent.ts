@@ -32,7 +32,7 @@ import {
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
 import { resolveForegroundMcpToolScope } from '../../host/mcp/foregroundMcpServers';
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
-import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
+import { resolveRoleChatToolFace } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
@@ -52,7 +52,7 @@ import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
 import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
-import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
+import { PROMPT_REQUIRED, REQUEST_INVALID } from '../../shared/contract/agentRunErrors';
 import {
   AgentRunBodySchema,
   isPromptRequiredFailure,
@@ -94,6 +94,7 @@ import {
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { registerAgentContinueRoute } from './registerAgentContinueRoute';
+import { envResumeProbeFactory } from '../../host/ipc/envAssist.ipc';
 import {
   admitDelegatedTurn,
   CloudRunRouteRuntime,
@@ -1342,7 +1343,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
-        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
+        config.allowedToolNames = resolveRoleChatToolFace(
           prompt,
           // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
           // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
@@ -1350,7 +1351,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             attachments: body.attachments,
             model: config.modelConfig,
           }),
-          config.agentOverride?.tools,
+          config.agentOverride?.tools, config.agentOverride?.id, true,
         );
         config.foregroundToolFace = true;
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，
@@ -1479,9 +1480,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
       // 回合级规则块（存草稿解析规则，FU1 rework r2）：必须并进模型面 turn 脚手架——
-      // 下面那份 config.systemPrompt 会在 contextAssembly 重建系统消息时被丢
-      // （ctx.systemPrompt 不进请求，真机抓包实证），写那里等于丢。与桌面 envelope 路
-      // （withSessionCommandCenterBrain → turnSystemContext）同源同形；基块不在此扩面。
+      // 基块由 config.systemPrompt 保留，回合规则与桌面 envelope 路
+      // （withSessionCommandCenterBrain → turnSystemContext）同源同形。
       capabilityContextLines.push(...getSessionCommandCenterTurnRulesForPrompt(prompt));
       const missingAttachmentContext = withMissingAttachmentTurnSystemContext(
         { turnSystemContext: capabilityContextLines },
@@ -1904,10 +1904,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
-      res.status(400).json({
-        error: 'Missing prompt',
-        ...(isPromptRequiredFailure(parsedBody.error, req.body) ? { code: PROMPT_REQUIRED } : {}),
-      });
+      res.status(400).json(isPromptRequiredFailure(parsedBody.error, req.body)
+        ? { error: 'Missing prompt', code: PROMPT_REQUIRED }
+        : { error: 'Invalid request', code: REQUEST_INVALID });
       return;
     }
     // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。
@@ -1946,7 +1945,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
   });
 
-  registerAgentContinueRoute(router, runRegistry);
+  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

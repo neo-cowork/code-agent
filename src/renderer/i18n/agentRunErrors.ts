@@ -1,12 +1,18 @@
 // /run 被宿主以 400/422 拒绝时的用户文案：宿主只回稳定码（PROMPT_REQUIRED）或裸状态，
 // 句子在这里按语言给；原始响应体由调用方 warn 留痕，不进气泡。同 executionEnvironment.ts 先例。
 
-import { PROMPT_REQUIRED } from '@shared/contract/agentRunErrors';
+import { PROMPT_REQUIRED, REQUEST_INVALID } from '@shared/contract/agentRunErrors';
 import type { Language } from './index';
 
 const promptRequiredCopy: Record<Language, string> = {
   zh: '请补一句话说明想让我做什么，然后再发送一次。',
   en: 'Add a sentence saying what you want done, then send again.',
+};
+
+// 请求体格式被拒（多为页面过期）：出口是「刷新页面」，zh 与 httpFailureMessage 的 accessDenied 同句。
+const requestRejectedCopy: Record<Language, string> = {
+  zh: '本地服务没有接受这次请求，请刷新页面后重试。',
+  en: 'Neo could not accept this request. Refresh the page and try again.',
 };
 
 /** PROJECT_SOURCE_TRUST（旧项目 Source 身份快照缺失，需就地确认）：导出供 transport 层映射复用。 */
@@ -25,6 +31,9 @@ export function rejectedRequestMessage(error: unknown, language: Language): stri
   const { status, code } = error as { status?: unknown; code?: unknown };
   if (code === 'PROJECT_SOURCE_TRUST') {
     return projectSourceTrustCopy[language] ?? projectSourceTrustCopy.zh;
+  }
+  if (code === REQUEST_INVALID) {
+    return requestRejectedCopy[language] ?? requestRejectedCopy.zh;
   }
   if (code !== PROMPT_REQUIRED && status !== 400 && status !== 422) return undefined;
   return promptRequiredCopy[language] ?? promptRequiredCopy.zh;

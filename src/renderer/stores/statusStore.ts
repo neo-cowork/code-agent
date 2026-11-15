@@ -13,6 +13,15 @@ import type { TodayCost } from '@shared/contract/turnCost';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 
+export interface SessionModelDecision {
+  sessionId: string;
+  requestedProvider: string;
+  requestedModel: string;
+  resolvedProvider: string;
+  resolvedModel: string;
+  reason: string;
+}
+
 export type NetworkStatus = 'online' | 'offline' | 'slow';
 
 /** 本轮费用估算（设计稿 §5.4；usd=null 表示该模型无刊例价，禁止显示假数字） */
@@ -32,6 +41,8 @@ interface StatusState {
   unknownCostTurns: number;
   /** model_decision 记录的本轮实际模型（stream_usage 事件不带模型，靠它归因） */
   currentTurnModel: { provider: string; model: string } | null;
+  /** 当前会话最近一次 model_decision：输入框模型名据此与 host 实际调用对齐（N-FIX-MODEL-PICKER-SHOWS-WRONG-MODEL） */
+  lastModelDecision: SessionModelDecision | null;
 
   // 上下文
   contextUsagePercent: number;
@@ -53,6 +64,7 @@ interface StatusState {
   // Actions
   addCost: (cost: number) => void;
   setCurrentTurnModel: (model: { provider: string; model: string } | null) => void;
+  setLastModelDecision: (decision: SessionModelDecision | null) => void;
   recordTurnUsage: (usage: { inputTokens: number; outputTokens: number }) => void;
   resetSession: () => void;
   setContextUsage: (percent: number) => void;
@@ -67,6 +79,7 @@ export const useStatusStore = create<StatusState>((set) => ({
   lastTurnCost: null,
   unknownCostTurns: 0,
   currentTurnModel: null,
+  lastModelDecision: null,
   contextUsagePercent: 0,
   sessionStartTime: Date.now(),
   networkStatus: 'online',
@@ -82,6 +95,9 @@ export const useStatusStore = create<StatusState>((set) => ({
 
   setCurrentTurnModel: (model) =>
     set({ currentTurnModel: model }),
+
+  setLastModelDecision: (decision) =>
+    set({ lastModelDecision: decision }),
 
   // stream_usage 事件 → 按刊例估算本轮费用。无刊例价（source=unknown）时不累计、
   // 不编造金额，只记未知轮数（设计稿 §6.3：今日合计标注「N 轮未知价未计入」）。

@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { getContentType, isWorkspaceFileAllowed } from '../../../src/web/helpers/upload';
+import { UPLOAD_ROOT_DIR, getContentType, isWorkspaceFileAllowed } from '../../../src/web/helpers/upload';
 
 describe('isWorkspaceFileAllowed', () => {
   it('allows files under process.cwd()', () => {
@@ -22,6 +22,10 @@ describe('isWorkspaceFileAllowed', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('allows chat upload copies (any type, e.g. video) under UPLOAD_ROOT_DIR', () => {
+    expect(isWorkspaceFileAllowed(path.join(UPLOAD_ROOT_DIR, '11111111-1111-1111-1111-111111111111', 'clip.mp4'))).toBe(true);
   });
 
   it('denies absolute paths outside cwd and tmp', () => {

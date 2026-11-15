@@ -101,7 +101,12 @@ describe('remindersUpdateModule (native)', () => {
       getMock.mockReturnValue(undefined);
       const result = await run(validArgs);
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
+      if (!result.ok) {
+        expect(result.code).toBe('NOT_INITIALIZED');
+        expect(result.error).toContain('Reminders is not connected on this computer, so reminders cannot be changed');
+        expect(result.error).toContain('Connectors page');
+        expect(result.error).not.toContain('connector is not available');
+      }
     });
 
     it('sanitizes osascript failures and preserves the raw detail only in the warning', async () => {

@@ -82,16 +82,28 @@ describe('FullScreenPage 外壳契约', () => {
     expect(screen.getByTestId('full-screen-page-back').className).toContain('h-9');
   });
 
-  // FB-210a：description 用 truncate 截断，title 兜底完整文案（bar 与默认 page 两种 variant）
-  it('description 截断时带 title 完整文案（bar 与 page 两种 variant）', () => {
+  // FB-210a：两种 variant 都保留 title，紧凑 bar 仍单行截断。
+  it('description 带 title 完整文案（bar 与 page 两种 variant）', () => {
     const description = '自动化中心：定时、循环、心跳与事件监听任务都收在这里统一巡检';
     const bar = render(
       <FullScreenPageHeader icon={null} title="自动化" description={description} variant="bar" />,
     );
     expect(screen.getByText(description).getAttribute('title')).toBe(description);
+    expect(screen.getByText(description).classList.contains('truncate')).toBe(true);
     bar.unmount();
 
     render(<FullScreenPageHeader icon={null} title="协作空间" description={description} />);
     expect(screen.getByText(description).getAttribute('title')).toBe(description);
+  });
+
+  it('page description wraps within three lines without single-line truncation', () => {
+    const description = 'Long-term expert - memory and work history stay yours';
+    render(<FullScreenPageHeader icon={null} title="Expert" description={description} />);
+    const paragraph = screen.getByText(description);
+    expect(paragraph.classList.contains('truncate')).toBe(false);
+    expect(paragraph.classList.contains('whitespace-nowrap')).toBe(false);
+    expect(paragraph.classList.contains('line-clamp-3')).toBe(true);
+    expect(paragraph.classList.contains('break-words')).toBe(true);
+    expect(paragraph.getAttribute('title')).toBe(description);
   });
 });

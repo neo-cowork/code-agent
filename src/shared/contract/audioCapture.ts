@@ -42,6 +42,64 @@ export interface MeetingRecord {
   endReason: MeetingEndReason | null;
 }
 
+/** 会议从哪来：本机「记这场会」录的，或导入的飞书妙记 / 腾讯会议转写（N-MEETING-PAGE） */
+export type MeetingSource = 'recorded' | 'feishu' | 'tmeet';
+/** 会后纪要进度：等待中 → 出纪要中 → 完成 / 失败 / 跳过（转写太短或开关关着） */
+export type MeetingMinutesState = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+
+/** 一条纪要内容，quote 是转写里的原话出处 */
+export interface MeetingMinutesItem {
+  text: string;
+  quote: string;
+}
+
+/** 行动项：原话没说负责人 / 截止时间的为 null，界面显示「待认领 / 待定」，只列不派 */
+export interface MeetingActionItem extends MeetingMinutesItem {
+  owner: string | null;
+  due: string | null;
+}
+
+export interface MeetingMinutes {
+  decisions: MeetingMinutesItem[];
+  actionItems: MeetingActionItem[];
+  openQuestions: MeetingMinutesItem[];
+}
+
+/** 一句转写。atMs 是绝对时刻（导入的转写没有时刻时为 null），speaker 为空表示不知道是谁 */
+export interface MeetingTranscriptLine {
+  atMs: number | null;
+  speaker: string;
+  text: string;
+}
+
+/** 会议页和 meeting_records 工具读到的一场会 */
+export interface MeetingSummaryRecord extends MeetingRecord {
+  source: MeetingSource;
+  /** 导入来源的外部编号：妙记 token / 腾讯会议录制文件 id */
+  externalRef: string | null;
+  minutesState: MeetingMinutesState | null;
+  minutes: MeetingMinutes | null;
+  /** 记言出纪要的那条会话（本场产物从这里看） */
+  minutesSessionId: string | null;
+}
+
+/** 会议页读一场会：概要 + 整场转写 */
+export interface MeetingDetail {
+  meeting: MeetingSummaryRecord;
+  transcript: MeetingTranscriptLine[];
+}
+
+/** 导入对话框里一条可导入的外部会议：妙记 token，或腾讯会议录制文件 id */
+export interface MeetingImportCandidate {
+  source: 'feishu' | 'tmeet';
+  ref: string;
+  /** 腾讯会议的会议 id（取转写要带） */
+  meetingId?: string;
+  title: string;
+  startedAtMs: number | null;
+  endedAtMs?: number | null;
+}
+
 export interface MeetingSessionStatus {
   /** 正在进行（记录中或暂停）的会；没有则 null */
   current: MeetingRecord | null;
@@ -51,4 +109,13 @@ export interface MeetingSessionStatus {
   silenceWarning: boolean;
   /** 最近一场已结束的会：界面据此提示「已因 X 自动结束」 */
   lastEnded: MeetingRecord | null;
+  /** 日历上快开始的会（会前提醒开着才有）：录制条显示「XX 快开始了 · 记这场会」 */
+  upcoming?: MeetingUpcoming | null;
+}
+
+export interface MeetingUpcoming {
+  /** EventKit 的 eventIdentifier：同一场只提醒一次 */
+  id: string;
+  title: string;
+  startAtMs: number;
 }

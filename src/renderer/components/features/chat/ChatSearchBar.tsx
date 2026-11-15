@@ -3,6 +3,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ChatSearchBar - In-session + Cross-session message search (Cmd/Ctrl+F)
 // ============================================================================
 
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { Search, X, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import type { TraceProjection } from '@shared/contract/trace';
@@ -15,6 +16,7 @@ import { createPendingSearchJumpFromCrossSessionResult } from '../../../utils/se
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
+import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
 
 export interface SearchMatch {
   turnIndex: number;
@@ -305,6 +307,7 @@ const CrossSessionResultRow: React.FC<{
   t: Translations;
 }> = ({ item, onJump, t }) => {
   const { language } = useI18n();
+  const roleLabels = useRoleLabels();
   const timeStr = formatRelativeTime(t, item.timestamp);
   const roleLabel = item.role === 'user' ? t.chatSearch.roleUser : item.role === 'assistant' ? t.chatSearch.roleAssistant : t.chatSearch.roleSystem;
   const turnLabel = typeof item.turnNumber === 'number' && item.turnNumber > 0
@@ -312,7 +315,10 @@ const CrossSessionResultRow: React.FC<{
     : null;
 
   // Strip markdown bold markers from snippet for display
-  const cleanSnippet = item.snippet.replace(/\*\*/g, '');
+  const strippedSnippet = item.snippet.replace(/\*\*/g, '');
+  const cleanSnippet = item.role === 'user'
+    ? formatEditRoleUserPrompt(strippedSnippet, t.roleEditReceipt.userPrompt, roleLabels)
+    : strippedSnippet;
 
   return (
     <button

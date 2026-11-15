@@ -7,6 +7,7 @@ import type { Message, MessageMetadata } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 import { TurnBasedTraceView, getFocusedTurnIndex, getOutputFollowTurnIndex } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
+import { useRoleLabelsStore } from '../../../src/renderer/stores/roleLabelsStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 // Static rendering reads Zustand's initial snapshot; supply the selected language explicitly.
@@ -44,7 +45,7 @@ vi.mock('react-virtuoso', async () => {
   }) };
 });
 
-afterEach(() => { cleanup(); useAppStore.setState({ language: 'zh', disclosureLevel: 'standard' }); });
+afterEach(() => { useRoleLabelsStore.getState().setRoles([]); cleanup(); useAppStore.setState({ language: 'zh', disclosureLevel: 'standard' }); });
 describe('role edit receipt projection and rendering', () => {
   it.each(['zh', 'en'] as const)('renders the receipt after the final answer in its own turn in %s', (language) => {
     useAppStore.setState({ language, disclosureLevel: 'simple' });
@@ -184,5 +185,137 @@ describe('ProjectTrustConfirmCard 确认并重发', () => {
     });
     expect(document.body.textContent).not.toContain('PROJECT_SOURCE_TRUST');
     expect(document.body.textContent).not.toContain('confirm unavailable');
+  });
+});
+
+describe('edit-role user bubble display projection and rewind/edit preservation', () => {
+  it.each([
+    ['zh', '修改专家：知微（数据分析师）'],
+    ['en', 'Edit expert: 知微 (数据分析师)'],
+  ] as const)('projects single-line /edit-role <roleId> in %s through TurnBasedTraceView and TraceNodeRenderer without showing /edit-role', async (language, expectedText) => {
+    const { fireEvent } = await import('@testing-library/react');
+    const { buildOverviewRunHeaderModel } = await import('../../../src/renderer/utils/overviewRunHeader');
+    const { buildRunUiState } = await import('../../../src/renderer/utils/runWorkbenchProjection');
+    useAppStore.setState({ language, disclosureLevel: 'standard' });
+
+    useRoleLabelsStore.getState().setRoles([{ roleId: '数据分析师', displayName: '知微', profession: '数据分析师', description: '', source: 'builtin', memoryCount: 0, lastWork: null }]);
+    const messages: Message[] = [
+      { id: 'u-seed', role: 'user', content: '/edit-role 数据分析师', timestamp: 1 },
+      { id: 'a-1', role: 'assistant', content: '你想调整「研究员」的哪些部分？', timestamp: 2 },
+      ...Array.from({ length: 7 }, (_, i) => ([
+        { id: `u-follow-${i}`, role: 'user' as const, content: `第 ${i + 2} 轮用户补充说明`, timestamp: 10 + i * 2 },
+        { id: `a-follow-${i}`, role: 'assistant' as const, content: `第 ${i + 2} 轮回复`, timestamp: 11 + i * 2 },
+      ])).flat(),
+    ];
+    const projection = projectTurns(messages, 'session-edit-role', false);
+    const { container } = render(<TurnBasedTraceView projection={projection} />);
+
+    expect(screen.getByText(expectedText)).toBeTruthy();
+    expect(container.textContent).not.toContain('/edit-role');
+
+    // Expand TurnRail (8 turns >= TURN_RAIL_MIN_TURNS) and verify turn 1 preview also projects
+    const expandRailBtn = container.querySelector('[data-testid="turn-rail-ticks"] > button');
+    expect(expandRailBtn).not.toBeNull();
+    fireEvent.click(expandRailBtn!);
+    const railList = screen.getByTestId('turn-rail-list');
+    expect(railList.textContent).toContain(expectedText);
+    console.log(`ASSERT turnRailItems: ${expectedText}`);
+    expect(railList.textContent).not.toContain('/edit-role');
+
+    // OverviewRunHeader projection for Turn 1
+    const singleTurnProjection = projectTurns(messages.slice(0, 2), 'session-edit-role', false);
+    const runState = buildRunUiState({
+      projection: singleTurnProjection,
+      sessionId: 'session-edit-role',
+      sessionStatus: 'running',
+    });
+    const headerModel = buildOverviewRunHeaderModel({
+      run: runState,
+      sessionTitle: '修改角色：研究员',
+      language,
+      roleLabels: useRoleLabelsStore.getState().labels[language],
+      now: 100,
+    });
+    expect(headerModel?.title).toBe(expectedText);
+    console.log(`ASSERT overviewRunHeader: ${headerModel?.title}`);
+    expect(headerModel?.title).not.toContain('/edit-role');
+
+    // Direct TraceNodeRenderer check with turnSystemContext scaffold wrapper
+    const wrappedProjection = projectTurns([
+      {
+        id: 'u-wrapped',
+        role: 'user',
+        content: '<system-reminder>context</system-reminder>\n\n<user_request>\n/edit-role 数据分析师\n</user_request>',
+        timestamp: 1,
+      },
+    ], 'session-wrapped', false);
+    const wrappedNode = wrappedProjection.turns[0]!.nodes.find((n) => n.type === 'user')!;
+    const { container: wrappedContainer } = render(<TraceNodeRenderer node={wrappedNode} />);
+    expect(wrappedContainer.textContent).toContain(expectedText);
+    expect(wrappedContainer.textContent).not.toContain('/edit-role');
+  });
+
+  it('leaves multi-line, mid-sentence, bare /edit-role, and /create-role user messages unchanged', () => {
+    useAppStore.setState({ language: 'zh' });
+    for (const raw of [
+      '/edit-role 研究员\n顺便加个日历工具',
+      '为什么会有 /edit-role 研究员 这条命令？',
+      '/edit-role',
+      '/create-role 研究员',
+    ]) {
+      const projection = projectTurns([{ id: 'u', role: 'user', content: raw, timestamp: 1 }], 's', false);
+      const userNode = projection.turns[0]!.nodes.find((n) => n.type === 'user')!;
+      const html = renderToStaticMarkup(<TraceNodeRenderer node={userNode} />);
+      expect(html).not.toContain('修改专家：');
+    }
+  });
+
+  it('returns the original /edit-role slash text on rewind and edit-and-resend while displaying plain language', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const { useMessageActionStore } = await import('../../../src/renderer/stores/messageActionStore');
+    useAppStore.setState({ language: 'zh' });
+
+    const onRewind = vi.fn();
+    const messages: Message[] = [
+      { id: 'u-seed-rewind', role: 'user', content: '/edit-role 研究员', timestamp: 1 },
+      { id: 'a-seed-reply', role: 'assistant', content: '请告诉我需要修改什么。', timestamp: 2 },
+    ];
+    const projection = projectTurns(messages, 'session-rewind', false);
+    const { container, unmount } = render(
+      <TurnBasedTraceView projection={projection} onRewindUserPrompt={onRewind} />,
+    );
+
+    expect(screen.getByText('修改专家：研究员')).toBeTruthy();
+    expect(container.textContent).not.toContain('/edit-role');
+    fireEvent.click(screen.getByRole('button', { name: '回到这条提示词' }));
+    expect(onRewind).toHaveBeenCalledExactlyOnceWith('u-seed-rewind', '/edit-role 研究员');
+    unmount();
+
+    // Failed send -> edit-and-resend restores raw slash text to composer
+    const restoreComposer = vi.fn();
+    const failedMessage: Message = {
+      id: 'u-seed-failed',
+      role: 'user',
+      content: '/edit-role 研究员',
+      timestamp: 3,
+      metadata: { sendFailed: true },
+    };
+    useMessageActionStore.setState({
+      _restoreComposer: restoreComposer,
+      _getMessages: () => [failedMessage],
+    });
+    const failedNode = projectTurns([failedMessage], 'session-failed', false)
+      .turns[0]!.nodes.find((n) => n.type === 'user')!;
+    const { container: failedContainer } = render(
+      <TraceNodeRenderer node={failedNode} sessionId="session-failed" />,
+    );
+    expect(screen.getByText('修改专家：研究员')).toBeTruthy();
+    expect(failedContainer.textContent).not.toContain('/edit-role');
+    fireEvent.click(screen.getByTestId('user-message-edit-resend'));
+    expect(restoreComposer).toHaveBeenCalledExactlyOnceWith({
+      content: '/edit-role 研究员',
+      clientMessageId: 'u-seed-failed',
+    });
+    useMessageActionStore.setState({ _restoreComposer: null, _getMessages: null });
   });
 });

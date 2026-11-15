@@ -29,7 +29,7 @@ for (const language of ['zh', 'en'] as const) {
     const heading = page.getByRole('heading', { name, exact: true });
     await expect(heading).toBeVisible();
     const geometry = await heading.evaluate((element) => {
-      const detail = element.closest('.contain-size');
+      const detail = element.closest('[data-testid="cron-job-detail"]');
       const featured = document.querySelector('[data-testid="cron-featured-templates"]');
       const header = element.parentElement?.parentElement?.parentElement;
       if (!detail || !featured || !header) throw new Error('Missing automation geometry targets');

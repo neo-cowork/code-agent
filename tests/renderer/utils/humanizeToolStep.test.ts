@@ -208,6 +208,11 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     ['tmeetMeetingList', { scope: 'ended' }, 'tmeetMeetingListEnded', '查了近 30 天已结束的会议'],
     ['tmeetMeetingCreate', {}, 'tmeetMeetingCreate', '创建了一场会议'],
     ['tmeetMeetingSearch', {}, 'tmeetMeetingSearch', '搜索了会议'],
+    ['tmeetRecordList', {}, 'tmeetRecordList', '查了腾讯会议录制'],
+    ['tmeetRecordRead', {}, 'tmeetRecordRead', '读了腾讯会议转写和纪要'],
+    ['feishuMinutesSearch', {}, 'feishuMinutesSearch', '搜了飞书妙记'],
+    ['feishuMinutesRead', {}, 'feishuMinutesRead', '读了一条飞书妙记'],
+    ['meeting_records', {}, 'meetingRecords', '查了会议记录'],
   ] as const)('schema stepLabel: %s 使用本地化人话句', (name, args, stepLabel, expected) => {
     expect(humanizeToolStep(name, args, zh, 'Use internal tool', 'completed', stepLabel)).toBe(expected);
   });

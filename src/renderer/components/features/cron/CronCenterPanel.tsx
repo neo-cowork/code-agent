@@ -11,12 +11,13 @@
 // 滚动契约（2026-07-26 打磨批 D D0）：header 以下整体是页级滚动区（overflow-y-auto）——
 // 顶区全是 shrink-0，工作台 grid 用 flex-[1_0_420px]：高屏 grow 占满剩余空间，
 // 矮屏不低于 420px、整页可滚到达。
+// 详情按内容撑高工作台，不能再以 containment/overflow 裁出第二层滚动区。
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { useCronStore } from '../../../stores/cronStore';
+import { filterVisibleCronJobs, useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
@@ -32,6 +33,7 @@ import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
@@ -93,6 +95,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     jobNamesLoaded,
     stats,
     selectedJobId,
+    locationFilter,
+    searchQuery,
     isEditorOpen,
     editingJobId,
     copyingJobId,
@@ -227,10 +231,32 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditorOpen, onClose]);
 
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) || null,
-    [jobs, selectedJobId]
+  const visibleJobs = useMemo(
+    () => filterVisibleCronJobs(jobs, searchQuery, locationFilter, language),
+    [jobs, searchQuery, locationFilter, language],
   );
+
+  const selectedJob = useMemo(() => {
+    if (selectedJobId) {
+      const matched = visibleJobs.find((job) => job.id === selectedJobId);
+      if (matched) return matched;
+    }
+    return visibleJobs[0] ?? null;
+  }, [visibleJobs, selectedJobId]);
+
+  useEffect(() => {
+    // 选中回写只在「可见列表可信」时执行。挂载首轮 render 闭包里的 isLoading 是 false，
+    // 但 refresh effect（声明在前）已同步把 store.isLoading 置 true、jobs 尚未返回——
+    // 此时可见列表不可信，不能把通知点击在面板挂载前 selectJob 预设好的 selectedJobId
+    // 覆写成 null（否则 loadJobs 完成后回落选中第一个任务，PR review r1）。
+    // 读 store 的实时 isLoading：加载期间不动 selectedJobId，交给 loadJobs 的
+    // resolveSelectedCronJobId 按新可见列表收敛；加载完成后本 effect 随依赖重跑再收敛。
+    if (isLoading || useCronStore.getState().isLoading) return;
+    const nextSelectedJobId = selectedJob?.id ?? null;
+    if (nextSelectedJobId !== selectedJobId) {
+      useCronStore.setState({ selectedJobId: nextSelectedJobId });
+    }
+  }, [isLoading, selectedJob, selectedJobId]);
 
   const editingJob = useMemo(
     () => jobs.find((job) => job.id === editingJobId) || null,
@@ -271,6 +297,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     { key: 'jobs', label: cc.tabJobs },
     { key: 'runs', label: cc.tabRuns },
   ];
+  const hasUsdCap = (unattendedBudgetStatus?.maxBudget ?? 0) > 0 || allJobs.some((job) => (job.maxRunBudget ?? 0) > 0);
   const unattendedBudgetSummary = unattendedBudgetStatus
     ? unattendedBudgetStatus.maxBudget > 0
       ? cc.budgetSummaryLimited
@@ -350,6 +377,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
               <div className="mt-0.5 truncate text-xs tabular-nums text-zinc-500" data-testid="automation-budget-usage">
                 {unattendedBudgetSummary}
               </div>
+              {hasUsdCap && <FlatFeeBudgetNote variant="center" />}
             </div>
           </div>
           <Button
@@ -388,7 +416,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           <>
             {/* 模板区独立成块（拍板）：与任务工作台分离，点一下即建 */}
             <CronFeaturedTemplates />
-            <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr] overflow-hidden">
+            <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr]">
               <CronJobList awaitingByJobId={awaitingByJobId} />
               <div className="min-w-0">
                 {isLoading && jobs.length === 0 ? (
@@ -427,6 +455,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                   jobName={selectedExecution ? jobNameById[selectedExecution.jobId] : undefined}
                   jobNamesLoaded={jobNamesLoaded}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
+                  hasRunBudget={selectedExecution ? (allJobs.find((job) => job.id === selectedExecution.jobId)?.maxRunBudget ?? 0) > 0 : false}
                   awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
                   onReviewAwaiting={() => setActiveTab('runs')}
                 />

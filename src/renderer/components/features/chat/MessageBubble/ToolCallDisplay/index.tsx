@@ -5,7 +5,7 @@ import { getToolPreflightKind } from '../../../../../utils/toolPreflightPresenta
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Hourglass } from 'lucide-react';
 import type { StreamInterruptionReason, ToolCall } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 import { useAppStore } from '../../../../../stores/appStore';
@@ -47,6 +47,7 @@ import {
 } from './delegationPresentation';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
+import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -57,7 +58,7 @@ const SPINNER_FRAME_INTERVAL_MS = 240;
 
 // quietError: 探索性失败（agent 试错，非用户需介入的错误）——用中性、非加粗样式，
 // 与成功行视觉权重接近，别让每一次试错都喊得像出了大事。
-function StatusIndicator({ status, quietError }: { status: ToolStatus; quietError?: boolean }) {
+function StatusIndicator({ status, quietError, envWaiting }: { status: ToolStatus; quietError?: boolean; envWaiting?: boolean }) {
   const [frame, setFrame] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -101,6 +102,14 @@ function StatusIndicator({ status, quietError }: { status: ToolStatus; quietErro
         </span>
       );
     case 'interrupted':
+      // 停车等授权不是中断：用等待的沙漏，不用禁止符号。
+      if (envWaiting) {
+        return (
+          <span className="w-4 flex-shrink-0 grid place-items-center self-center text-[var(--cc-muted)]" data-testid="env-waiting-icon">
+            <Hourglass className="h-3 w-3" aria-hidden="true" />
+          </span>
+        );
+      }
       return (
         <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
           ⊘
@@ -157,6 +166,7 @@ export function ToolCallDisplay({
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const sessionId = mediaContext?.sessionId || currentSessionId;
   const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, toolCall.result === undefined);
+  const envWaitingTarget = useEnvParkedTarget(sessionId, toolCall.id);
   const awaitingApproval = toolCall.result === undefined
     && isToolCallAwaitingApproval(toolCall.id, sessionId, {
       pendingPermissionRequest,
@@ -292,7 +302,7 @@ export function ToolCallDisplay({
           }
         }}
       >
-        <StatusIndicator status={status} quietError={quietError} />
+        <StatusIndicator status={status} quietError={quietError} envWaiting={Boolean(envWaitingTarget)} />
         {delegationPresentation
           ? <DelegationHeader presentation={delegationPresentation} />
           : <ToolHeader
@@ -300,13 +310,14 @@ export function ToolCallDisplay({
               status={status}
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
+              envWaitingTarget={envWaitingTarget}
               showDetailName={expanded}
               hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !(delegationTool && displayToolCall.result?.output === '') && toolCall.name !== 'list_session_candidates' && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={displayToolCall} inline />
           </span>

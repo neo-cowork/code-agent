@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, planVitest, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, scaleBudgetPolicy, commandDeadline, budgetFailure, changedInputs, isCi } from './lib/gates-fast-contract.mjs';
 import { runPrivateCheckCached } from './lib/casebank-private-cache.mjs';
 import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
@@ -87,7 +87,8 @@ async function command(argv, env = {}) {
   receipt.commands.push(record);
   const now = performance.now();
   const deadline = commandDeadline(policy, activeGate?.id, now - started, activeGate ? now - activeGate.began : 0);
-  if (deadline.remainingMs <= 0) throw new Error(budgetFailure(deadline, argv));
+  const overBudget = () => Object.assign(new Error(budgetFailure(deadline, argv)), { budgetTimeout: true, budgetLimit: deadline.limit });
+  if (deadline.remainingMs <= 0) throw overBudget();
   await new Promise((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), { cwd: root, detached: true, stdio: 'inherit', env: { ...process.env, npm_config_offline: 'true', ...env } });
     let timedOut = false;
@@ -105,7 +106,7 @@ async function command(argv, env = {}) {
     child.once('error', (error) => { cleanup(); reject(error); });
     child.once('close', (code, signal) => {
       cleanup(); record.exit = code; record.signal = signal;
-      if (timedOut) reject(new Error(budgetFailure(deadline, argv)));
+      if (timedOut) reject(overBudget());
       else if (signalled) reject(new Error(`FAIL: interrupted by signal in ${argv.join(' ')}`));
       else if (code !== 0) reject(new Error(`FAIL: exit ${code} in ${argv.join(' ')}`));
       else resolve();
@@ -116,10 +117,19 @@ async function gate(id, applicable, run) {
   const record = { id, budgetMs: policy.budgetsMs[id], status: applicable ? 'running' : 'not-applicable', reason: applicable ? 'required by policy/PR paths' : 'no matching PR paths', durationMs: 0 };
   receipt.gates.push(record);
   if (!applicable) return;
+  if (id === 'vitest' && receipt.vitestDeferred && !receipt.vitestDeferred.localFiles.length) {
+    record.status = 'deferred-to-ci';
+    record.reason = 'over-cap; full selected test set deferred to PR CI';
+    return;
+  }
   const began = performance.now();
   activeGate = { id, began };
   console.log(`▶ gates:fast ${id}`);
-  try { await run(); record.status = 'passed'; }
+  try {
+    const outcome = await run();
+    record.status = outcome === 'deferred-to-ci' ? 'deferred-to-ci' : 'passed';
+    if (outcome === 'deferred-to-ci') record.reason = 'local budget exceeded without an error count; deferred to PR CI';
+  }
   catch (error) { record.status = 'failed'; throw error; }
   finally { activeGate = null; record.durationMs = Math.round(performance.now() - began); record.overBudget = record.durationMs > record.budgetMs; }
 }
@@ -137,6 +147,7 @@ try {
     throw new Error('FAIL: receipt must be outside source or under .reports/gates-fast');
   }
   if (policy.maxFiles !== 16) throw new Error('FAIL: policy requires 16-file maximum');
+  if (policy.deferMaxFiles !== 200) throw new Error('FAIL: policy requires 200-file deferral ceiling');
   validateGateBudgetCoverage(policy, extractGateIds(fs.readFileSync(path.join(root, 'scripts/gates-fast.mjs'), 'utf8')), shipOuterMs);
   if (options.regressions) regressions = JSON.parse(fs.readFileSync(options.regressions, 'utf8'));
   await gate('inputs', true, async () => {
@@ -154,7 +165,10 @@ try {
     receipt.changedFiles = diff.filter((_value, index) => index % 2 === 1);
     receipt.deletedFiles = receipt.changedFiles.filter((_file, index) => diff[index * 2] === 'D');
     const selected = selectTests(policy, receipt.changedFiles, regressions, receipt.deletedFiles);
-    validateFiles(root, selected.files, policy.maxFiles);
+    const plan = planVitest(root, selected.files, policy);
+    if (plan.mode === 'deferred') {
+      receipt.vitestDeferred = { reason: 'over-cap', selected: plan.selected, maxFiles: plan.cap, files: plan.deferredFiles, localFiles: plan.localFiles };
+    }
     receipt.selectedFiles = selected.files;
     receipt.matchedRules = selected.matchedRules;
     receipt.manualRegressions = regressions;
@@ -193,8 +207,9 @@ try {
     if (lintFiles.length) await command([process.execPath, 'node_modules/eslint/bin/eslint.js', ...lintFiles]);
   });
   await gate('vitest', true, async () => {
+    const localFiles = receipt.vitestDeferred?.localFiles ?? receipt.selectedFiles;
     const manifest = path.join(temp, 'selection.json'); const report = path.join(temp, 'vitest.json');
-    fs.writeFileSync(manifest, JSON.stringify({ files: receipt.selectedFiles, maxFiles: policy.maxFiles }));
+    fs.writeFileSync(manifest, JSON.stringify({ files: localFiles, maxFiles: policy.maxFiles }));
     try {
       await command([process.execPath, 'node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.fast.config.ts'], { GATES_FAST_MANIFEST: manifest, GATES_FAST_REPORT: report });
     } catch (error) {
@@ -203,12 +218,21 @@ try {
       if (!failures.length) throw error;
       throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`, { cause: error });
     }
-    receipt.report = validateReport(receipt.selectedFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
+    receipt.report = validateReport(localFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
   });
   await gate('package-typechecks', receipt.packageChecks.length > 0, async () => {
     for (const pkg of receipt.packageChecks) await command(['npm', '--prefix', pkg, 'run', 'typecheck']);
   });
-  await gate('tests-typecheck', receipt.testsTypecheck, () => command([process.execPath, 'scripts/tsc-tests-ratchet.mjs']));
+  await gate('tests-typecheck', receipt.testsTypecheck, async () => {
+    try { await command([process.execPath, 'scripts/tsc-tests-ratchet.mjs']); }
+    catch (error) {
+      // 只有「本格预算截停、没拿到 error 计数」才交 CI；拿到计数超基线是普通非零退出，照常失败。CI 上不许 deferred。
+      if (!(error?.budgetTimeout && error.budgetLimit === 'gate') || isCi(process.env)) throw error;
+      receipt.testsTypecheckDeferred = { reason: 'local-over-budget', budgetMs: policy.budgetsMs['tests-typecheck'] };
+      console.log('gates:fast tests-typecheck 本机超预算，未拿到 error 计数，交 PR CI 全量验证');
+      return 'deferred-to-ci';
+    }
+  });
   const drift = changedInputs(initial, snapshot(receipt.baseSha));
   if (drift.length) throw new Error(`FAIL: inputs changed during gates:fast; receipt invalid (${drift.join(', ')})`);
   if (performance.now() - started > policy.budgetMs) throw new Error(`FAIL: total budget ${policy.budgetMs}ms exhausted`);

@@ -1,12 +1,15 @@
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { History, Loader2, X as XIcon } from 'lucide-react';
 
 import type { ConversationReplay } from '@shared/contract/conversationBranch';
 import type { TurnRedoResult } from '@shared/contract/turnCheckout';
+import { extractUserRequest } from '@shared/utils/turnScaffold';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import ipcService, { DomainInvokeError } from '../../../services/ipcService';
+import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
 
 interface ActiveConversationRewindBannerProps {
   sessionId: string | null;
@@ -28,6 +31,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
   onRestored,
 }) => {
   const { t } = useI18n();
+  const roleLabels = useRoleLabels();
   const currentSessionIdRef = useRef(sessionId);
   currentSessionIdRef.current = sessionId;
   const [activeRewindId, setActiveRewindId] = useState<string | null>(null);
@@ -63,10 +67,15 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
     if (!rewindId) return { rewindId: null, excerpt: null };
 
     const anchor = [...replay.messages].reverse().find((entry) => entry.message.role === 'user');
-    const raw = anchor?.message.content?.replace(/\s+/g, ' ').trim() ?? '';
+    const projected = formatEditRoleUserPrompt(
+      extractUserRequest(anchor?.message.content ?? ''),
+      t.roleEditReceipt.userPrompt,
+      roleLabels,
+    );
+    const raw = projected.replace(/\s+/g, ' ').trim();
     const excerpt = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || null;
     return { rewindId, excerpt };
-  }, []);
+  }, [t.roleEditReceipt.userPrompt, roleLabels]);
 
   const clearBanner = useCallback(() => {
     if (dismissTimerRef.current) {

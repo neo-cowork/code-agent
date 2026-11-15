@@ -204,7 +204,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
             error:
               `These tool names do not exist, so no draft was created:\n${lines.join('\n')}\n` +
               'Fix the names using real tool names and call propose_role again. ' +
-              'If no real tool provides the needed ability, tell the user in plain Chinese which ability is unavailable, ' +
+              'If no real tool provides the needed ability, tell the user in plain words and in the language the user writes in, which ability is unavailable, ' +
               'and submit the draft without that tool.',
           };
         }

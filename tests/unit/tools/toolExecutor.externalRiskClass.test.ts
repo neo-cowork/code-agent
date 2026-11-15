@@ -373,4 +373,78 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
       fs.rmSync(workspace, { recursive: true, force: true });
     }
   });
+
+  // N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED：多目标 rm 的 affectedFileCount 是
+  // 全部目标的盘点和，不是第一个目标的数。
+  it('危险删除审批对多目标 rm 求和盘点文件数（rm -rf ./d1 ./d2）', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-multi-delete-'));
+    const d1 = path.join(workspace, 'd1');
+    const d2 = path.join(workspace, 'd2');
+    fs.mkdirSync(d1, { recursive: true });
+    fs.mkdirSync(d2, { recursive: true });
+    fs.writeFileSync(path.join(d1, 'a.log'), 'a');
+    fs.writeFileSync(path.join(d1, 'b.log'), 'b');
+    fs.writeFileSync(path.join(d2, 'c.log'), 'c');
+    fs.writeFileSync(path.join(d2, 'd.log'), 'd');
+    fs.writeFileSync(path.join(d2, 'e.log'), 'e');
+    const requestPermission = vi.fn(async (_req: unknown) => false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: workspace, forcePermissionHandler: true });
+    executor.setAuditEnabled(false);
+
+    try {
+      await executor.execute('Bash', { command: 'rm -rf ./d1 ./d2' }, { sessionId: 's-multi' });
+
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      expect(requestPermission.mock.calls[0][0]).toMatchObject({
+        details: {
+          affectedPath: d1,
+          affectedFileCount: 5,
+        },
+      });
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('通配符删除命令不产出文件数（宁可缺省不可虚报 1）', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-wildcard-delete-'));
+    fs.writeFileSync(path.join(workspace, 'a.log'), 'a');
+    fs.writeFileSync(path.join(workspace, 'b.log'), 'b');
+    fs.writeFileSync(path.join(workspace, 'c.log'), 'c');
+    const requestPermission = vi.fn(async (_req: unknown) => false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: workspace, forcePermissionHandler: true });
+    executor.setAuditEnabled(false);
+
+    try {
+      // ./*.log 命中 recursive_delete_targeted（high，走审批）；目标含通配符时解析不确切。
+      await executor.execute('Bash', { command: 'rm -rf ./*.log' }, { sessionId: 's-wildcard' });
+
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      const request = requestPermission.mock.calls[0][0] as {
+        details?: { affectedPath?: string; affectedFileCount?: number };
+      };
+      expect(request.details?.affectedPath).toBe(path.join(workspace, './*.log'));
+      expect(request.details?.affectedFileCount).toBeUndefined();
+      expect(request.details?.affectedFileCount).not.toBe(1);
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('裸通配符 rm -rf *.log 是 critical 硬毙，不产生审批请求', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-wildcard-block-'));
+    fs.writeFileSync(path.join(workspace, 'a.log'), 'a');
+    const requestPermission = vi.fn(async (_req: unknown) => false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: workspace, forcePermissionHandler: true });
+    executor.setAuditEnabled(false);
+
+    try {
+      const result = await executor.execute('Bash', { command: 'rm -rf *.log' }, { sessionId: 's-block' });
+
+      expect(result.success).toBe(false);
+      expect(requestPermission).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
+    }
+  });
 });

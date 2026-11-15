@@ -3,6 +3,7 @@
 // Uses react-virtuoso for virtual scrolling to handle 100+ turn sessions
 // ============================================================================
 
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
@@ -314,7 +315,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const sessionEntrySettlingRef = useRef(false);
   // 轮次导航（N-TURNRAIL）：当前轮 = 视口顶部那一轮，由 Virtuoso 的可见范围回报驱动；
   // 宽/窄两态由容器查询（外层 @container）切换。历史整段加载，跳转直接 scrollToIndex。
-  const railItems = useMemo(() => buildTurnRailItems(projection.turns), [projection.turns]);
+  const roleLabels = useRoleLabels();
+  const railItems = useMemo(() => buildTurnRailItems(projection.turns, t.roleEditReceipt.userPrompt, roleLabels), [projection.turns, t.roleEditReceipt.userPrompt, roleLabels]);
   const [railActiveTurnId, setRailActiveTurnId] = useState<string | null>(null);
   // Virtuoso 的可见范围含预渲染余量（overscan / increaseViewportBy），顶部那项不等于视口里最上面那轮；
   // 有真实布局时以 DOM 位置为准（滚动监听里顺手算），范围回报只在 DOM 还没判过时兜底（jsdom）。

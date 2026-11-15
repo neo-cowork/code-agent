@@ -9,6 +9,7 @@ import { MEETING_SESSION_LIMITS, RENDERER_POLLING } from '@shared/constants';
 import { useMeetingSessionStore } from '../../../../stores/meetingSessionStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useRegisterComposerSlotOccupant } from '../../../../stores/composerNoticeStore';
 
 const MIN = 60_000;
 
@@ -25,8 +26,9 @@ const barButton = 'flex items-center gap-1 rounded-md px-2 py-0.5 hover:bg-white
 export const MeetingBar: React.FC = () => {
   const { t } = useI18n();
   const text = t.meetingBar;
-  const { status, busy, error, dismissedEndedId, refresh, pause, resume, stop, dismiss } = useMeetingSessionStore();
+  const { status, busy, error, dismissedEndedId, refresh, start, pause, resume, stop, dismiss, dismissUpcoming } = useMeetingSessionStore();
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  const openMeetingPage = useAppStore((s) => s.openMeetingPage);
   const current = status?.current ?? null;
   const [now, setNow] = useState(() => Date.now());
 
@@ -44,6 +46,11 @@ export const MeetingBar: React.FC = () => {
     return () => clearInterval(tick);
   }, [active]);
 
+  const ended = status?.lastEnded;
+  const endedVisible = Boolean(ended && ended.id !== dismissedEndedId && ended.endReason);
+  // 自闸占用者自报活跃态：停住任务的原因行据此让位，不与录制条叠成多行。
+  useRegisterComposerSlotOccupant('meeting-status', Boolean(error) || active || endedVisible);
+
   if (error) {
     return (
       <div className="px-3 pb-2">
@@ -57,9 +64,25 @@ export const MeetingBar: React.FC = () => {
     );
   }
 
+  if (!current && status?.upcoming) {
+    return (
+      <div className="px-3 pb-2" data-testid="meeting-upcoming">
+        <div className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-badge-info/30 bg-badge-info/10 px-3 py-1.5 text-xs text-badge-info">
+          <Mic size={13} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {text.upcoming.replace('{title}', status.upcoming.title)} · {text.upcomingConsent}
+          </span>
+          <button type="button" className={barButton} disabled={busy} onClick={() => void start()}>{text.upcomingStart}</button>
+          <button type="button" className={barButton} disabled={busy} onClick={() => void dismissUpcoming()}>{text.dismiss}</button>
+        </div>
+      </div>
+    );
+  }
+
   if (!current) {
-    const ended = status?.lastEnded;
-    if (!ended || ended.id === dismissedEndedId || ended.endReason === 'manual' || !ended.endReason) return null;
+    // 手动结束也提示：散会后从这里进会议页看纪要（N-MEETING-PAGE）
+    // endedVisible 已含这两项判断，这里重复写只为让 TS 收窄 ended / endReason 的类型
+    if (!ended || !endedVisible || !ended.endReason) return null;
     const msg = text.ended[ended.endReason]
       .replace('{minutes}', String(MEETING_SESSION_LIMITS.SILENCE_END_MS / MIN))
       .replace('{hours}', String(MEETING_SESSION_LIMITS.MAX_DURATION_MS / (60 * MIN)));
@@ -68,6 +91,7 @@ export const MeetingBar: React.FC = () => {
         <div className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-zinc-600/40 bg-zinc-800/60 px-3 py-1.5 text-xs text-zinc-300">
           <Mic size={13} className="shrink-0 text-zinc-400" />
           <span className="min-w-0 flex-1 truncate">{ended.title} · {msg}</span>
+          <button type="button" className={barButton} data-testid="meeting-bar-open-page" onClick={() => { dismiss(); openMeetingPage(ended.id); }}>{t.library.meetings.openPage}</button>
           <button type="button" className={barButton} onClick={dismiss}>{text.dismiss}</button>
         </div>
       </div>

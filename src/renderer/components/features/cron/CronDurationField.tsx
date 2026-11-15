@@ -94,7 +94,7 @@ export const CronDurationField: React.FC<CronDurationFieldProps> = ({
       <label className="mb-1 block text-sm text-zinc-400" htmlFor={`${testId}-input`}>
         {label}
       </label>
-      <div className="grid grid-cols-[minmax(96px,1fr)_88px] gap-2">
+      <div className="grid grid-cols-[minmax(96px,1fr)_minmax(88px,auto)] gap-2">
         <Input
           id={`${testId}-input`}
           data-testid={`${testId}-input`}
@@ -110,6 +110,8 @@ export const CronDurationField: React.FC<CronDurationFieldProps> = ({
         <Select
           id={`${testId}-unit`}
           data-testid={`${testId}-unit`}
+          fullWidth={false}
+          className="w-full"
           value={unit.value}
           aria-label={`${label} unit`}
           options={units}

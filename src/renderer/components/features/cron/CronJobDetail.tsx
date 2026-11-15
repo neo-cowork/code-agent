@@ -25,6 +25,7 @@ import {
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
@@ -142,7 +143,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-zinc-900/40 contain-size">
+    <div className="flex min-h-full flex-col bg-zinc-900/40" data-testid="cron-job-detail">
       <div className="border-b border-zinc-800 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -171,6 +172,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
                 />
               </div>
             )}
+            {(job.maxRunBudget ?? 0) > 0 && <div className="mt-2"><FlatFeeBudgetNote variant="center" /></div>}
             <div className="mt-2 max-w-3xl text-sm">
               {displayDescription ? (
                 <p className="text-zinc-400">{displayDescription}</p>
@@ -335,7 +337,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} hasRunBudget={(job.maxRunBudget ?? 0) > 0} />
             </section>
           </div>
         )}

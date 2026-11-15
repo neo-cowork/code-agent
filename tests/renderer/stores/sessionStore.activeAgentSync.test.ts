@@ -114,6 +114,17 @@ describe('sessionStore activeAgentId per-session sync', () => {
     expect(stored['session-b']).toBeUndefined();
   });
 
+  it('deleteSession 清掉该会话的未发送草稿（含附件），别的会话草稿保留', async () => {
+    localStorage.setItem('neo.composerDraft.v1:session-b', JSON.stringify({ v: 2, text: 'b', attachments: [] }));
+    localStorage.setItem('neo.composerDraft.v1:session-a', JSON.stringify({ v: 2, text: 'a' }));
+    await useSessionStore.getState().switchSession('session-a');
+
+    await useSessionStore.getState().deleteSession('session-b');
+
+    expect(localStorage.getItem('neo.composerDraft.v1:session-b')).toBeNull();
+    expect(localStorage.getItem('neo.composerDraft.v1:session-a')).not.toBeNull();
+  });
+
   it('删除最后一个会话（currentSessionId 归 null）→ 选择归零', async () => {
     useSessionStore.setState({
       sessions: [

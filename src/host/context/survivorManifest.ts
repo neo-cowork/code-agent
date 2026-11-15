@@ -5,6 +5,7 @@ import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type { CompressedMessage } from './tokenOptimizer';
 import { estimateTokens } from './tokenEstimator';
+import { recentTouchedPaths, structuredFailureLines } from './survivorManifestRequired';
 
 type SurvivorManifestSource =
   | 'manual_current'
@@ -87,6 +88,7 @@ interface SurvivorFileMetadata {
 
 interface SurvivorFileRecord {
   path: string;
+  required?: boolean;
   reason?: string;
   lastKnownReason?: string;
   needsReRead: boolean;
@@ -138,8 +140,6 @@ const ABSOLUTE_PATH_RE =
   /(?:^|[\s([{<"'`])((?:\/(?:[^/\s"'`<>|:*?()[\]{};,]+))+|[A-Za-z]:\\(?:[^\\\s"'`<>|:*?()[\]{};,]+\\?)+)/g;
 
 const TODO_RE = /\b(?:TODO|FIXME|HACK|task|todo|open work|follow[- ]?up)\b|^\s*[-*]\s+\[[ xX]\]/i;
-const ERROR_RE =
-  /\b(?:error|assertionerror|exception|traceback|failed|failure|fatal|panic|enoent|eacces|timeout|timed out|stderr|exit code|exit status|segmentation fault)\b/i;
 const READ_TOOL_RE = /^(?:read|read_file|file_read|Read)$/i;
 const TEXT_EXTENSIONS = new Set([
   '.c', '.cc', '.cfg', '.conf', '.cpp', '.css', '.csv', '.go', '.h', '.hpp', '.html',
@@ -633,8 +633,10 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
     && trimListToBudget(copy.archivedToolResults, copy, budget)
   ) {
     if (copy.filePaths.length > 0) {
-      const savedPaths = copy.filePaths.slice();
-      const savedFiles = copy.files.slice();
+      const requiredFirst = copy.files.map((file, i) => ({ file, p: copy.filePaths[i] }))
+        .sort((a, b) => Number(b.file.required === true) - Number(a.file.required === true));
+      const savedPaths = requiredFirst.map((entry) => entry.p);
+      const savedFiles = requiredFirst.map((entry) => entry.file);
       const applyPops = (pops: number) => {
         copy.filePaths = savedPaths.slice(0, Math.max(0, savedPaths.length - pops));
         copy.files = savedFiles.slice(0, Math.max(0, savedFiles.length - pops));
@@ -704,6 +706,7 @@ export function buildContextSurvivorManifest(
   const commands: SurvivorShellCommandSummary[] = [];
   const errors: SurvivorTextItem[] = [];
   const todos: SurvivorTextItem[] = [];
+  const seenErrors = new Set<string>();
   const artifacts: SurvivorArtifactSummary[] = [];
   const seenArtifacts = new Set<string>();
   const fileCandidates = new Map<string, FileCandidate>();
@@ -730,12 +733,9 @@ export function buildContextSurvivorManifest(
 
     commands.push(...extractShellCommands(message, messageId, content, maxChars));
 
-    for (const line of extractMatchingLines(content, ERROR_RE, maxChars)) {
-      errors.push({ messageId, text: line });
-    }
-    for (const result of getToolResults(message)) {
-      const errorText = [result.metadata?.output, result.error].filter(Boolean).map(asText).join('\n');
-      for (const line of extractMatchingLines(errorText, ERROR_RE, maxChars)) {
+    for (const line of structuredFailureLines(getToolResults(message))) {
+      if (!seenErrors.has(line)) {
+        seenErrors.add(line);
         errors.push({ messageId, text: line });
       }
     }
@@ -749,6 +749,8 @@ export function buildContextSurvivorManifest(
   for (const artifact of artifacts) {
     rememberFileCandidate(fileCandidates, artifact.path, `artifact_${artifact.source}`, artifact.messageId);
   }
+  const requiredPaths = new Set(recentTouchedPaths(messages));
+  for (const touched of requiredPaths) uniquePush(filePaths, seenPaths, touched);
 
   const manifest: ContextSurvivorManifest = {
     sessionId: options.sessionId,
@@ -758,7 +760,8 @@ export function buildContextSurvivorManifest(
     compactedMessageIds,
     preservedMessageIds,
     filePaths,
-    files: buildFileSurvivorRecords(filePaths, fileCandidates, options),
+    files: buildFileSurvivorRecords(filePaths, fileCandidates, options)
+      .map((file) => ({ ...file, required: requiredPaths.has(path.resolve(file.path)) })),
     commands,
     errors,
     todos,
@@ -906,7 +909,8 @@ export function renderSurvivorManifestForPrompt(manifest: ContextSurvivorManifes
         file.metadata?.truncated ? 'truncated=true' : undefined,
         file.metadata?.sensitive ? 'sensitive=true' : undefined,
       ].filter(Boolean).join(' ');
-      lines.push(`- ${file.path}${meta ? ` (${meta})` : ''}`);
+      const tag = file.required ? 'REQUIRED ' : 'optional ';
+      lines.push(`- ${tag}${file.path}${meta ? ` (${meta})` : ''}`);
       if (file.excerpt) lines.push(`  excerpt: ${file.excerpt}`);
     }
   }

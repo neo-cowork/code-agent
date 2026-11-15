@@ -582,6 +582,22 @@ describe('humanizeToolFailureReason — 裸工程错误码翻成人话 + 下一�
       .not.toBe(zh.toolStepHumanize.failureReasonMissing);
   });
 
+  it('ENOENT 失败卡说「找不到这个文件或目录」，不再说「被占用/没权限」（N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT）', () => {
+    const reasonZh = humanizeToolFailureReason(codeFailedCall('ENOENT'), zh);
+    expect(reasonZh).toBe(zh.toolStepHumanize.rawFailureCodes.ENOENT);
+    expect(reasonZh).toContain('找不到');
+    expect(reasonZh).toContain('路径');
+    // 不得落成 FS_ERROR 的「被占用 / 权限」口径
+    expect(reasonZh).not.toBe(zh.toolStepHumanize.rawFailureCodes.FS_ERROR);
+    expect(reasonZh).not.toContain('被占用');
+    expect(reasonZh).not.toContain('权限');
+    const reasonEn = humanizeToolFailureReason(codeFailedCall('ENOENT'), en);
+    expect(reasonEn).toBe(en.toolStepHumanize.rawFailureCodes.ENOENT);
+    expect(reasonEn).toContain('Could not find');
+    expect(reasonEn.toLowerCase()).not.toContain('in use');
+    expect(reasonEn.toLowerCase()).not.toContain('access');
+  });
+
 });
 
 
