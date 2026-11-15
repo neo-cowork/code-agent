@@ -78,7 +78,7 @@ describe('AttachmentDisplay en labels (N-FIX-ATTACHMENT-ONLY-SEND-MISSING-PROMPT
     // archive 卡：计数串走 en 文案（同一行内相邻文本节点，用子串断言）
     expect(screen.getByText('zip · 4 files')).toBeTruthy();
     expect(screen.getByText(/4 entries listed/)).toBeTruthy();
-    expect(screen.getByText(/1 suspicious paths/)).toBeTruthy();
+    expect(screen.getByText(/1 suspicious path\b/)).toBeTruthy();
     // code / data 卡：类型标签走 en 文案
     expect(screen.getByText('Code')).toBeTruthy();
     expect(screen.getByText('Data')).toBeTruthy();

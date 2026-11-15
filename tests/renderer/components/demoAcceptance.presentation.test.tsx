@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ToolCall, Message } from '../../../src/shared/contract';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { zh, en } from '../../../src/renderer/i18n';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../src/renderer/utils/toolPreflightPresentation';
 import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
@@ -127,7 +128,7 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(nodes.find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered).toBe(true);
     const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes.filter((node) => node.toolCall)} defaultExpanded={false} />);
     expect(html).not.toContain('未成功');
-    expect(html).not.toContain(zh.deliveryExperience.blockedSteps.replace('{count}', '1'));
+    expect(html).not.toContain(interpolatePlural(zh.deliveryExperience.blockedSteps, 1));
   });
 
   // ai-review #1741 Important：组内节点**全部**被判为 recovered 时，分桶不能把它们一个不剩地

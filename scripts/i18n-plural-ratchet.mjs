@@ -38,7 +38,7 @@ function pairProperty(node) {
 }
 
 function propertyName(node) {
-  if (!ts.isPropertyAssignment(node)) return null;
+  if (!node || !ts.isPropertyAssignment(node)) return null;
   return ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : null;
 }
 
@@ -115,12 +115,12 @@ for (const [file, count] of perFile) {
   if (allowed === undefined) {
     findings.push(`${file}: ${count} hard plural(s) not in baseline — convert to a { one, other } pair or add to scripts/i18n-plural-baseline.json (files outside the converted set only)`);
     for (const finding of pluralFindings) {
-      if (finding.startsWith(`${file}:`)) findings.push(`[i18n-plural-ratchet] ${finding}`);
+      if (finding.startsWith(`${file}:`)) findings.push(finding);
     }
   } else if (count > allowed) {
     findings.push(`${file}: ${count} hard plural(s) exceed baseline ${allowed} — baseline may shrink, may not grow`);
     for (const finding of pluralFindings) {
-      if (finding.startsWith(`${file}:`)) findings.push(`[i18n-plural-ratchet] ${finding}`);
+      if (finding.startsWith(`${file}:`)) findings.push(finding);
     }
   }
   remaining += count;
