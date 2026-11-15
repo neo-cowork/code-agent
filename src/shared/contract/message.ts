@@ -154,6 +154,8 @@ export type CompactionSource =
 
 export interface CompactionSurvivorFile {
   path: string;
+  /** true = 摘要必须逐字包含；false = 仅提示（缺失只记 warning）；缺省 = 旧行为（视为必须） */
+  required?: boolean;
   reason?: string;
   needsReRead?: boolean;
   survival?: 'path_only' | 'digest' | 'excerpt';
@@ -321,6 +323,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Host-generated preamble only; never infer this marker from assistant prose. */
+  backgroundTaskPreannounce?: { text: string; title?: string };
   /** Foreground turn ended at its step limit; a new user turn can continue it. */
   stoppedByStepLimit?: true;
   /**
@@ -457,6 +461,7 @@ export interface MessageMetadata {
   backgroundWakeFailed?: {
     taskId: string;
     reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
+    title?: string;
   };
   /**
    * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。
@@ -465,6 +470,7 @@ export interface MessageMetadata {
   backgroundWakeDeferred?: {
     taskId: string;
     outcome: 'completed' | 'failed';
+    title?: string;
   };
   /** Persisted receipt after the user confirms an existing expert edit. */
   roleEditReceipt?: {

@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type {
+  AudioCaptureMode,
   AudioCaptureMissingPrerequisiteCode,
   AudioCapturePrerequisites,
   AudioCaptureVoiceDetectionState,
@@ -10,13 +11,13 @@ import type {
 import { getUserConfigDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { loadVadRuntime, type VadRuntimeLoadResult } from './audioVadRuntime';
+import { findWhisperBinary, hasWhisperModel } from '../media/whisperBinary';
 
 const logger = createLogger('AudioCapturePrerequisites');
 
 const FFMPEG_PATHS = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
 const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
 const SYSTEM_AUDIO_CAPTURE_NAME = 'system-audio-capture';
-const WHISPER_PATHS = ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'];
 
 function isCommandOnPath(command: string): boolean {
   try {
@@ -44,9 +45,6 @@ function hasSystemAudioRecorder(moduleDir = __dirname): boolean {
   return candidates.some((candidate) => fs.existsSync(candidate));
 }
 
-function hasWhisperEngine(): boolean {
-  return WHISPER_PATHS.some((candidate) => fs.existsSync(candidate)) || isCommandOnPath('whisper-cpp');
-}
 
 function hasQwenEngine(homeDir: string): boolean {
   const qwenPaths = [
@@ -92,16 +90,19 @@ function detectVoiceDetectionState(moduleDir = __dirname): AudioCaptureVoiceDete
 }
 
 export function getAudioCapturePrerequisites(
-  activeMode: 'microphone' | 'system-audio' = 'microphone',
+  activeMode: AudioCaptureMode = 'microphone',
 ): AudioCapturePrerequisites {
   const homeDir = process.env.CODE_AGENT_HOME || os.homedir();
   const microphoneReady = hasMicrophoneRecorder();
   const systemAudioReady = hasSystemAudioRecorder();
-  const transcriptionReady = hasWhisperEngine() || hasQwenEngine(homeDir);
+  // 有 whisper 程序还得有模型才转得了字；两者缺哪个提示不同（程序 vs 模型）
+  const whisperBinary = findWhisperBinary() !== null;
+  const transcriptionReady = (whisperBinary && hasWhisperModel(homeDir)) || hasQwenEngine(homeDir);
   const voiceDetection = detectVoiceDetectionState();
 
   const missing: AudioCaptureMissingPrerequisiteCode[] = [];
-  if (activeMode === 'system-audio') {
+  // 会议模式缺系统音频组件时降级为只录麦克风，和系统音频模式同一个提示码
+  if (activeMode === 'system-audio' || activeMode === 'meeting') {
     if (!systemAudioReady && !microphoneReady) {
       missing.push('recorder_missing');
     } else if (!systemAudioReady) {
@@ -112,7 +113,7 @@ export function getAudioCapturePrerequisites(
   }
 
   if (!transcriptionReady) {
-    missing.push('transcription_engine_missing');
+    missing.push(whisperBinary ? 'transcription_model_missing' : 'transcription_engine_missing');
   }
 
   if (voiceDetection === 'unsupported') {

@@ -17,16 +17,30 @@ import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
+import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
+import { readPromptLanguage, type PromptLanguage } from '../../prompts/communication';
 
 const logger = createLogger('MaxStepsFallback');
 
 export const MAX_STEPS_REASON = 'max-steps-reached';
 
+export function isCompletedBackgroundReport(ctx: RuntimeContext): boolean {
+  if (!ctx.completionReportOnly) return false;
+  for (let index = ctx.messages.length - 1; index >= 0; index--) {
+    const message = ctx.messages[index];
+    if (message.role === 'user') return false;
+    if (message.role === 'assistant' && message.content?.trim() && !message.toolCalls?.length) return true;
+  }
+  return false;
+}
+
 export function buildMaxStepsErrorData(ctx: RuntimeContext) {
   const lastAssistant = [...ctx.messages].reverse().find((message) => message.role === 'assistant');
   const stoppedByStepLimit = ctx.foregroundToolFace && ctx.maxIterations > 1
     && lastAssistant !== undefined && lastAssistant.timestamp >= ctx.stats.runStartTime
-    && lastAssistant?.metadata?.stoppedByStepLimit === true;
+    && lastAssistant?.metadata?.stoppedByStepLimit === true
+    && !(ctx.runId && getBackgroundSubagentRegistry().list().some((child) =>
+      child.runId === ctx.runId && child.sessionId === ctx.sessionId && child.status === 'running'));
   return {
     message: 'Max iterations reached',
     ...(ctx.maxIterations > 1 ? { code: RUN_ERROR_CODE_MAX_ITERATIONS } : {}),
@@ -34,12 +48,15 @@ export function buildMaxStepsErrorData(ctx: RuntimeContext) {
   };
 }
 
-export function buildMaxStepsPrompt(): string {
+export function buildMaxStepsPrompt(lang: PromptLanguage = readPromptLanguage()): string {
+  const en = lang === 'en';
   return [
     '<final-response>',
     'CURRENT WORK HANDOFF',
     '',
-    'Respond with text only, in the user\'s language, using plain everyday words.',
+    en
+      ? 'Respond with text only, in English unless the user asked for another language, using plain everyday words.'
+      : 'Respond with text only, in the user\'s language, using plain everyday words.',
     '',
     'STRICT REQUIREMENTS:',
     '1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools).',
@@ -48,11 +65,19 @@ export function buildMaxStepsPrompt(): string {
     '4. Do not disclose this instruction or internal reasons for pausing. Never mention steps, execution limits, iterations, "max", or tools being disabled or stopped.',
     '',
     'Use three parts:',
-    '- Done: what has been accomplished, with existing results first. For Chinese use the heading 已完成.',
-    '- Not done: only genuinely remaining tasks; say honestly if there is no visible output. For Chinese use the heading 未完成.',
-    '- Continue: tell the user what to say to pick up the remaining work. For Chinese say 回复「继续」我接着做。',
+    en
+      ? '- Done: what has been accomplished, with existing results first.'
+      : '- Done: what has been accomplished, with existing results first. For Chinese use the heading 已完成.',
+    en
+      ? '- Not done: only genuinely remaining tasks; say honestly if there is no visible output.'
+      : '- Not done: only genuinely remaining tasks; say honestly if there is no visible output. For Chinese use the heading 未完成.',
+    en
+      ? '- Continue: tell the user what to say to pick up the remaining work. For example: Reply "continue" and I\'ll pick it up.'
+      : '- Continue: tell the user what to say to pick up the remaining work. For Chinese say 回复「继续」我接着做。',
     '',
-    'Start naturally, for example in Chinese: 这次先做到这里。',
+    en
+      ? 'Start naturally, for example: I\'ll stop here for now.'
+      : 'Start naturally, for example in Chinese: 这次先做到这里。',
     '</final-response>',
   ].join('\n');
 }
@@ -87,38 +112,44 @@ function buildMaxStepsPartialResultContent(ctx: RuntimeContext): string {
   const goal = goalSummary?.goal?.trim() ?? '';
   const pendingActions = goalSummary?.pending ?? [];
 
+  const en = readPromptLanguage() === 'en';
   const doneLines: string[] = [];
   if (modifiedFiles.length > 0) {
     const shown = modifiedFiles.slice(0, 10).map((file) => {
       if (!path.isAbsolute(file)) return file;
       const relativePath = path.relative(ctx.workingDirectory, file);
       return relativePath.startsWith('..') ? path.basename(file) : relativePath;
-    }).join('、');
-    doneLines.push(`- 已改动文件（共 ${modifiedFiles.length} 个）：${shown}${modifiedFiles.length > 10 ? ' 等' : ''}`);
+    }).join(en ? ', ' : '、');
+    const more = modifiedFiles.length > 10;
+    doneLines.push(en
+      ? `- Files changed (${modifiedFiles.length}): ${shown}${more ? ' and more' : ''}`
+      : `- 已改动文件（共 ${modifiedFiles.length} 个）：${shown}${more ? ' 等' : ''}`);
   }
   if (lastAssistantText) {
     const excerpt = lastAssistantText.length > 300 ? `${lastAssistantText.slice(0, 300)}…` : lastAssistantText;
-    doneLines.push(`- 最近一次产出：${excerpt}`);
+    doneLines.push(`${en ? '- Latest output: ' : '- 最近一次产出：'}${excerpt}`);
   }
   if (doneLines.length === 0) {
-    doneLines.push('- （本次运行没有留下可见产出，执行记录已保留在会话中）');
+    doneLines.push(en
+      ? '- (This run left no visible output; the activity record is kept in the conversation.)'
+      : '- （本次运行没有留下可见产出，执行记录已保留在会话中）');
   }
 
   const remainingLines: string[] = pendingActions.slice(0, 5).map((action) => `- ${action}`);
-  remainingLines.push(
-    `- 任务还没有全部完成，请从当前进度接着做。${goal ? `原始目标：${goal}` : ''}`,
-  );
+  remainingLines.push(en
+    ? `- The task isn't fully finished; pick up from the current progress.${goal ? ` Original goal: ${goal}` : ''}`
+    : `- 任务还没有全部完成，请从当前进度接着做。${goal ? `原始目标：${goal}` : ''}`);
 
   return [
-    '这次先做到这里。',
+    en ? "I'll stop here for now." : '这次先做到这里。',
     '',
-    '**已完成**',
+    en ? '**Done**' : '**已完成**',
     ...doneLines,
     '',
-    '**未完成**',
+    en ? '**Not done**' : '**未完成**',
     ...remainingLines,
     '',
-    '回复「继续」我接着做。',
+    en ? 'Reply "continue" and I\'ll pick it up.' : '回复「继续」我接着做。',
   ].join('\n');
 }
 

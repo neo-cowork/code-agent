@@ -11,6 +11,7 @@ import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '../../../utils/conversationTurns';
 import { TurnRail } from './TurnRail';
+import { useTurnRailJump } from './useTurnRailJump';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
 import { isScrollerNearBottom, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
 export { isScrollerNearBottom } from './useSessionEntryScroll';
@@ -18,7 +19,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
-import { useI18n } from '../../../hooks/useI18n';
+import { I18nKeyCacheProvider, useI18n } from '../../../hooks/useI18n';
 import { useScrollEdgeFade } from '../../../hooks/useScrollEdgeFade';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
@@ -313,7 +314,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const sessionEntrySettlingRef = useRef(false);
   // 轮次导航（N-TURNRAIL）：当前轮 = 视口顶部那一轮，由 Virtuoso 的可见范围回报驱动；
   // 宽/窄两态由容器查询（外层 @container）切换。历史整段加载，跳转直接 scrollToIndex。
-  const railItems = useMemo(() => buildTurnRailItems(projection.turns), [projection.turns]);
+  const railItems = useMemo(() => buildTurnRailItems(projection.turns, t.roleEditReceipt.userPrompt), [projection.turns, t.roleEditReceipt.userPrompt]);
   const [railActiveTurnId, setRailActiveTurnId] = useState<string | null>(null);
   // Virtuoso 的可见范围含预渲染余量（overscan / increaseViewportBy），顶部那项不等于视口里最上面那轮；
   // 有真实布局时以 DOM 位置为准（滚动监听里顺手算），范围回报只在 DOM 还没判过时兜底（jsdom）。
@@ -971,17 +972,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     });
   }, [projection.turns]);
 
-  // 导航格点击：与搜索跳转同一套——停止跟随，按数组下标顶对齐、无动画（长距离虚拟跳转带动画会丢）
-  const handleRailJump = useCallback((turnId: string) => {
-    const index = projectionTurnsRef.current.findIndex((turn) => turn.turnId === turnId);
-    if (index < 0) return;
-    keepActiveOutputVisibleRef.current = false;
-    activeDisplayScrollCancelRef.current?.();
-    activeDisplayScrollCancelRef.current = null;
-    virtuosoRef.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
-  }, []);
+  const { handleRailJump, handleRailNodeJump, expansionRequest } = useTurnRailJump({
+    sessionId: projection.sessionId, turnsRef: projectionTurnsRef, virtuosoRef,
+    scrollerRef: scrollerElementRef, followRef: keepActiveOutputVisibleRef,
+    cancelRef: activeDisplayScrollCancelRef, nodeSelector: getTraceNodeSelector,
+  });
 
-  // Render individual turn card
   const itemContent = useCallback(
     (virtuosoIndex: number, turn: TraceTurn) => {
       const index = virtuosoIndex - firstItemIndex;
@@ -1005,6 +1001,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               sessionId={projection.sessionId}
               defaultExpanded={isStreaming || (isLast && workDetailPolicy.keepLastTurnOpen)}
               forceExpanded={hasSearchMatch}
+              expandRequest={expansionRequest?.turnId === turn.turnId ? expansionRequest : undefined}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
               isLastTurn={isLast}
@@ -1028,7 +1025,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
+    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, expansionRequest, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator
@@ -1047,7 +1044,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   ), []);
 
   return (
-    <SessionModelsContext.Provider value={sessionModels}>
+    <I18nKeyCacheProvider enabled={projection.turns.length >= 40}><SessionModelsContext.Provider value={sessionModels}>
     <ConversationTurnTailSlotHost />
     <div className="relative h-full min-h-0 @container" data-virtuoso-first-item-index={firstItemIndex}>
       <Virtuoso
@@ -1105,8 +1102,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           <ArrowDown className="w-4 h-4" />
         </button>
       )}
-      <TurnRail items={railItems} activeTurnId={railActiveTurnId} onJump={handleRailJump} />
+      <TurnRail items={railItems} activeTurnId={railActiveTurnId} onJump={handleRailJump} onJumpToNode={handleRailNodeJump} />
     </div>
-    </SessionModelsContext.Provider>
+    </SessionModelsContext.Provider></I18nKeyCacheProvider>
   );
 };

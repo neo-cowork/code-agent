@@ -36,13 +36,14 @@ vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () =
 
 import { DataSettings } from '../../../src/renderer/components/features/settings/tabs/DataSettings';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // formatLastEventAt 对 <24h 的时间走「刚刚/N分钟前」相对分支，永远到不了 formatDateTime；
 // 这里取一个固定早于当下的本地时间戳（2025-01-09 16:05 本地，不做时区换算），稳定落进
 // formatDateTime 分支，时分字段在任何 TZ 下都是构造值本身。
 const LAST_EVENT_AT = new Date(2025, 0, 9, 16, 5, 0).getTime();
 const ZH = '2025/01/09 16:05';
-const EN = '1/9/2025, 4:05:00 PM';
+const EN = formatDateTime(LAST_EVENT_AT, 'en');
 
 beforeEach(() => {
   h.invoke.mockReset();
@@ -78,13 +79,13 @@ describe('DataSettings 遥测最近事件行（跟随 UI language）', () => {
     expect(container.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：最近事件与上传失败摘要跟随 formatDateTime', async () => {
     useAppStore.setState({ language: 'en' });
     const { container } = render(<DataSettings />);
     await waitFor(() => {
       expect(container.textContent).toContain(`Latest event: ${EN}`);
     });
     expect(container.textContent).toContain(`Upload failed 2 times · latest ${EN}`);
-    expect(container.textContent).not.toContain('16:05');
+    expect(container.textContent).toMatch(/Latest event: .*(?<!\d)2025(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });

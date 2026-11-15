@@ -34,6 +34,17 @@ describe('keytarAdapter', () => {
     expect(loader).not.toHaveBeenCalled();
   });
 
+  it('打包前的启动检查不碰钥匙串（开发机 node 读 code-agent 那项会弹框要密码）', () => {
+    vi.stubEnv('CODE_AGENT_CLI_MODE', 'true');
+    vi.stubEnv('CODE_AGENT_WEB_MODE', 'true');
+    vi.stubEnv('CODE_AGENT_BOOT_SMOKE', '1');
+    if (process.platform === 'darwin') tempDirs.push(stubKeychainHome(true));
+    const loader = vi.fn();
+
+    expect(loadKeytar(loader)).toBeNull();
+    expect(loader).not.toHaveBeenCalled();
+  });
+
   it('loads keytar in the desktop web backend', () => {
     vi.stubEnv('CODE_AGENT_CLI_MODE', 'true');
     vi.stubEnv('CODE_AGENT_WEB_MODE', 'true');

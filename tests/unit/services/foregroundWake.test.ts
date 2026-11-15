@@ -209,7 +209,7 @@ describe('foreground task-result wake', () => {
   it('emits deferred status immediately and one visible note at the cap', async () => {
     manager.hasActivePrimaryRun.mockReturnValue(true);
     const clock = fakeTimer();
-    const recordWakeDeferredNote = vi.fn(async (_sessionId: string, _content: string, _detail: { taskId: string; outcome: 'completed' | 'failed' }) => undefined);
+    const recordWakeDeferredNote = vi.fn(async (_sessionId: string, _content: string, _detail: { taskId: string; outcome: 'completed' | 'failed'; title?: string }) => undefined);
     const visibleTitle = '运行 sleep 40 并输出 X';
     const internalShortName = 'slee';
     const wake = createForegroundWake(dependencies({
@@ -252,7 +252,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeDeferredNote).toHaveBeenCalledWith(
       'session-a',
       `后台任务「${visibleTitle}」已完成，结果见上方的任务结果；当前步骤结束后，我会继续汇报。`,
-      { taskId: 'task-1', outcome: 'completed' },
+      { taskId: 'task-1', outcome: 'completed', title: visibleTitle },
     );
     expect(recordWakeDeferredNote.mock.calls[0]?.[1]).not.toContain(`「${internalShortName}」`);
     manager.hasActivePrimaryRun.mockReturnValue(false);
@@ -280,7 +280,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeDeferredNote).toHaveBeenCalledWith(
       'session-a',
       expect.stringContaining('「生成报告」已失败'),
-      { taskId: 'task-new', outcome: 'failed' },
+      { taskId: 'task-new', outcome: 'failed', title: '生成报告' },
     );
     expect(manager.emitAgentEventForSession).toHaveBeenLastCalledWith(
       'session-a',
@@ -332,7 +332,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeFailureNote).toHaveBeenCalledWith(
       'session-a',
       expect.stringContaining('任务结果'),
-      { taskId: 'task-1', reason: 'turn_error' },
+      { taskId: 'task-1', reason: 'turn_error', title: '报告' },
     );
   });
 
@@ -364,7 +364,7 @@ describe('foreground task-result wake', () => {
     expect(recordWakeFailureNote).toHaveBeenCalledWith(
       'session-a',
       expect.stringContaining('任务结果'),
-      { taskId: 'task-1', reason: 'turn_error' },
+      { taskId: 'task-1', reason: 'turn_error', title: '报告' },
     );
   });
 

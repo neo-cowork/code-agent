@@ -1,3 +1,4 @@
+import { formatDisplayPath } from '../../../utils/displayPath';
 // ============================================================================
 // SessionDiffSummary - 会话级 Diff 聚合卡，扫描所有 message.toolCalls 累加
 // 文件改动，挂在 ChatInput 上方，对照 Codex 顶部 "X files changed" 卡片
@@ -150,7 +151,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
                   <li
                     key={fc.filePath}
                     className="flex items-center gap-2 py-1 text-xs"
-                    title={fc.filePath}
+                    title={formatDisplayPath(fc.filePath)}
                   >
                     <span className="font-mono truncate flex-1 min-w-0">
                       {dirPath && <span className="text-zinc-600">{dirPath}/</span>}

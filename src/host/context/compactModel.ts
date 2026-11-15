@@ -12,7 +12,7 @@ import { getConfigService } from '../services';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import type { AppSettings } from '../../shared/contract/settings';
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { COMPACTION_SUMMARY, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 
 const logger = createLogger('CompactModel');
 
@@ -138,7 +138,7 @@ async function requestSummary(
     [],
     {
       ...config,
-      maxTokens: Math.min(maxTokens, config.maxTokens || 2048),
+      maxTokens: Math.min(maxTokens, config.maxTokens || COMPACTION_SUMMARY.MAX_TOKENS),
     },
     undefined,
     undefined,
@@ -199,7 +199,7 @@ function initializeCompactSummaryModel(): ResolvedSummaryModel | null {
       apiKey: '', // Will be retrieved from secure storage
       baseUrl: getProviderBaseUrl(settings, provider),
       temperature: 0.3, // Lower temperature for consistent summaries
-      maxTokens: 2048,
+      maxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
     };
 
     // Initialize router if needed
@@ -218,7 +218,7 @@ function initializeCompactSummaryModel(): ResolvedSummaryModel | null {
             apiKey,
             baseUrl: getProviderBaseUrl(settings, configuredCompact.provider),
             temperature: 0.3,
-            maxTokens: 2048,
+            maxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
           },
           useMainModel: false,
         };
@@ -247,7 +247,7 @@ function initializeCompactSummaryModel(): ResolvedSummaryModel | null {
             apiKey,
             baseUrl: getProviderBaseUrl(settings, fallbackProvider),
             temperature: 0.3,
-            maxTokens: 2048,
+            maxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
           },
           useMainModel: false,
         };
@@ -466,7 +466,7 @@ function initializeMainModel(): ModelConfig | null {
       apiKey,
       baseUrl: getProviderBaseUrl(settings, provider),
       temperature: 0.3,
-      maxTokens: 2048,
+      maxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
     };
   } catch (error) {
     logger.error('Failed to initialize main model for summarization', { error });

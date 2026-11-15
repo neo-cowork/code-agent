@@ -5,6 +5,7 @@ import type { ToolCall, ToolResult } from '../../shared/contract/tool';
 import type { ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type { CompressedMessage } from './tokenOptimizer';
 import { estimateTokens } from './tokenEstimator';
+import { recentTouchedPaths, structuredFailureLines } from './survivorManifestRequired';
 
 type SurvivorManifestSource =
   | 'manual_current'
@@ -87,6 +88,7 @@ interface SurvivorFileMetadata {
 
 interface SurvivorFileRecord {
   path: string;
+  required?: boolean;
   reason?: string;
   lastKnownReason?: string;
   needsReRead: boolean;
@@ -138,69 +140,16 @@ const ABSOLUTE_PATH_RE =
   /(?:^|[\s([{<"'`])((?:\/(?:[^/\s"'`<>|:*?()[\]{};,]+))+|[A-Za-z]:\\(?:[^\\\s"'`<>|:*?()[\]{};,]+\\?)+)/g;
 
 const TODO_RE = /\b(?:TODO|FIXME|HACK|task|todo|open work|follow[- ]?up)\b|^\s*[-*]\s+\[[ xX]\]/i;
-const ERROR_RE =
-  /\b(?:error|assertionerror|exception|traceback|failed|failure|fatal|panic|enoent|eacces|timeout|timed out|stderr|exit code|exit status|segmentation fault)\b/i;
 const READ_TOOL_RE = /^(?:read|read_file|file_read|Read)$/i;
 const TEXT_EXTENSIONS = new Set([
-  '.c',
-  '.cc',
-  '.cfg',
-  '.conf',
-  '.cpp',
-  '.css',
-  '.csv',
-  '.go',
-  '.h',
-  '.hpp',
-  '.html',
-  '.ini',
-  '.java',
-  '.js',
-  '.json',
-  '.jsx',
-  '.log',
-  '.lua',
-  '.md',
-  '.mjs',
-  '.py',
-  '.rb',
-  '.rs',
-  '.sql',
-  '.toml',
-  '.ts',
-  '.tsx',
-  '.txt',
-  '.xml',
-  '.yaml',
-  '.yml',
-  '.zsh',
+  '.c', '.cc', '.cfg', '.conf', '.cpp', '.css', '.csv', '.go', '.h', '.hpp', '.html',
+  '.ini', '.java', '.js', '.json', '.jsx', '.log', '.lua', '.md', '.mjs', '.py', '.rb',
+  '.rs', '.sql', '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml', '.zsh',
 ]);
 const BINARY_OR_RICH_EXTENSIONS = new Set([
-  '.7z',
-  '.avif',
-  '.bin',
-  '.bmp',
-  '.doc',
-  '.docx',
-  '.dmg',
-  '.gif',
-  '.gz',
-  '.heic',
-  '.ico',
-  '.jpeg',
-  '.jpg',
-  '.mov',
-  '.mp3',
-  '.mp4',
-  '.pdf',
-  '.png',
-  '.ppt',
-  '.pptx',
-  '.sqlite',
-  '.webp',
-  '.xls',
-  '.xlsx',
-  '.zip',
+  '.7z', '.avif', '.bin', '.bmp', '.doc', '.docx', '.dmg', '.gif', '.gz', '.heic',
+  '.ico', '.jpeg', '.jpg', '.mov', '.mp3', '.mp4', '.pdf', '.png', '.ppt', '.pptx',
+  '.sqlite', '.webp', '.xls', '.xlsx', '.zip',
 ]);
 const SENSITIVE_PATH_RE =
   /(?:^|\/)(?:\.env(?:[./-].*)?|id_rsa|id_dsa|id_ed25519|credentials?|secrets?|tokens?|private[-_]?key|api[-_]?key)(?:$|[./-])/i;
@@ -642,10 +591,26 @@ function compactIds(messages: SurvivorManifestMessage[], preserveRecentCount: nu
   return { compactedMessageIds, preservedMessageIds };
 }
 
+function trimListToBudget<T>(list: T[], copy: ContextSurvivorManifest, budget: ManifestBudget): boolean {
+  if (list.length === 0) return true;
+  const saved = list.slice();
+  list.length = 0;
+  if (manifestOverBudget(copy, budget)) return true;
+  let low = 0;
+  let high = saved.length - 1;
+  while (low < high) {
+    const mid = Math.floor((low + high + 1) / 2);
+    list.splice(0, list.length, ...saved.slice(0, mid));
+    if (manifestOverBudget(copy, budget)) high = mid - 1;
+    else low = mid;
+  }
+  list.splice(0, list.length, ...saved.slice(0, low));
+  return false;
+}
+
 function enforceManifestBudget(manifest: ContextSurvivorManifest, options: SurvivorManifestBuildOptions): ContextSurvivorManifest {
   const budget = manifestBudget(options);
   if (budget === undefined) return manifest;
-
   const copy: ContextSurvivorManifest = {
     ...manifest,
     commands: manifest.commands.map((command) => ({ ...command })),
@@ -657,30 +622,45 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
     filePaths: [...manifest.filePaths],
     files: manifest.files.map((file) => ({ ...file })),
   };
+  if (!manifestOverBudget(copy, budget)) return copy;
 
-  while (manifestOverBudget(copy, budget)) {
-    if (copy.commands.length > 0) {
-      copy.commands.pop();
-    } else if (copy.errors.length > 0) {
-      copy.errors.pop();
-    } else if (copy.todos.length > 0) {
-      copy.todos.pop();
-    } else if (copy.openWork.length > 0) {
-      copy.openWork.pop();
-    } else if (copy.artifacts.length > 0) {
-      copy.artifacts.pop();
-    } else if (copy.archivedToolResults.length > 0) {
-      copy.archivedToolResults.pop();
-    } else if (copy.filePaths.length > 0) {
-      copy.filePaths.pop();
-      copy.files.pop();
-    } else if (copy.dataFingerprintText) {
+  if (
+    trimListToBudget(copy.commands, copy, budget)
+    && trimListToBudget(copy.errors, copy, budget)
+    && trimListToBudget(copy.todos, copy, budget)
+    && trimListToBudget(copy.openWork, copy, budget)
+    && trimListToBudget(copy.artifacts, copy, budget)
+    && trimListToBudget(copy.archivedToolResults, copy, budget)
+  ) {
+    if (copy.filePaths.length > 0) {
+      const requiredFirst = copy.files.map((file, i) => ({ file, p: copy.filePaths[i] }))
+        .sort((a, b) => Number(b.file.required === true) - Number(a.file.required === true));
+      const savedPaths = requiredFirst.map((entry) => entry.p);
+      const savedFiles = requiredFirst.map((entry) => entry.file);
+      const applyPops = (pops: number) => {
+        copy.filePaths = savedPaths.slice(0, Math.max(0, savedPaths.length - pops));
+        copy.files = savedFiles.slice(0, Math.max(0, savedFiles.length - pops));
+      };
+      applyPops(savedPaths.length);
+      if (!manifestOverBudget(copy, budget)) {
+        let low = 1;
+        let high = savedPaths.length;
+        while (low < high) {
+          const mid = Math.floor((low + high) / 2);
+          applyPops(mid);
+          if (manifestOverBudget(copy, budget)) low = mid + 1;
+          else high = mid;
+        }
+        applyPops(low);
+        return copy;
+      }
+    }
+
+    while (copy.dataFingerprintText && manifestOverBudget(copy, budget)) {
       const nextLength = Math.max(0, Math.floor(copy.dataFingerprintText.length / 2));
       if (nextLength === copy.dataFingerprintText.length) break;
       copy.dataFingerprintText = clampText(copy.dataFingerprintText, nextLength);
       copy.dataFingerprint = copy.dataFingerprintText;
-    } else {
-      break;
     }
   }
   return copy;
@@ -726,6 +706,7 @@ export function buildContextSurvivorManifest(
   const commands: SurvivorShellCommandSummary[] = [];
   const errors: SurvivorTextItem[] = [];
   const todos: SurvivorTextItem[] = [];
+  const seenErrors = new Set<string>();
   const artifacts: SurvivorArtifactSummary[] = [];
   const seenArtifacts = new Set<string>();
   const fileCandidates = new Map<string, FileCandidate>();
@@ -752,12 +733,9 @@ export function buildContextSurvivorManifest(
 
     commands.push(...extractShellCommands(message, messageId, content, maxChars));
 
-    for (const line of extractMatchingLines(content, ERROR_RE, maxChars)) {
-      errors.push({ messageId, text: line });
-    }
-    for (const result of getToolResults(message)) {
-      const errorText = [result.metadata?.output, result.error].filter(Boolean).map(asText).join('\n');
-      for (const line of extractMatchingLines(errorText, ERROR_RE, maxChars)) {
+    for (const line of structuredFailureLines(getToolResults(message))) {
+      if (!seenErrors.has(line)) {
+        seenErrors.add(line);
         errors.push({ messageId, text: line });
       }
     }
@@ -771,6 +749,8 @@ export function buildContextSurvivorManifest(
   for (const artifact of artifacts) {
     rememberFileCandidate(fileCandidates, artifact.path, `artifact_${artifact.source}`, artifact.messageId);
   }
+  const requiredPaths = new Set(recentTouchedPaths(messages));
+  for (const touched of requiredPaths) uniquePush(filePaths, seenPaths, touched);
 
   const manifest: ContextSurvivorManifest = {
     sessionId: options.sessionId,
@@ -780,7 +760,8 @@ export function buildContextSurvivorManifest(
     compactedMessageIds,
     preservedMessageIds,
     filePaths,
-    files: buildFileSurvivorRecords(filePaths, fileCandidates, options),
+    files: buildFileSurvivorRecords(filePaths, fileCandidates, options)
+      .map((file) => ({ ...file, required: requiredPaths.has(path.resolve(file.path)) })),
     commands,
     errors,
     todos,
@@ -928,7 +909,8 @@ export function renderSurvivorManifestForPrompt(manifest: ContextSurvivorManifes
         file.metadata?.truncated ? 'truncated=true' : undefined,
         file.metadata?.sensitive ? 'sensitive=true' : undefined,
       ].filter(Boolean).join(' ');
-      lines.push(`- ${file.path}${meta ? ` (${meta})` : ''}`);
+      const tag = file.required ? 'REQUIRED ' : 'optional ';
+      lines.push(`- ${tag}${file.path}${meta ? ` (${meta})` : ''}`);
       if (file.excerpt) lines.push(`  excerpt: ${file.excerpt}`);
     }
   }

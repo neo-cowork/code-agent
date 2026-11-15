@@ -149,6 +149,34 @@ describe('runWorkbenchProjection', () => {
     expect(run.completionSignal).toBe('1 个产物');
   });
 
+  it('reports failed tool steps (success===false) so the terminal word cannot say plain Done', () => {
+    const failedProjection: TraceProjection = {
+      sessionId: 'session-fail',
+      activeTurnIndex: -1,
+      turns: [{
+        turnNumber: 1,
+        turnId: 'turn-fail',
+        status: 'completed',
+        startTime: 100,
+        endTime: 200,
+        nodes: [
+          { id: 'u', type: 'user', content: '复制文件', timestamp: 100 },
+          {
+            id: 't1',
+            type: 'tool_call',
+            content: '',
+            timestamp: 110,
+            toolCall: { id: 'c1', name: 'bash', arguments: {}, success: false, result: 'No such directory' },
+          },
+        ],
+      }],
+    } as never;
+
+    const run = buildRunUiState({ projection: failedProjection, sessionId: 'session-fail', sessionStatus: 'idle' });
+    expect(run.status).toBe('completed');
+    expect(run.toolStepOutcome).toEqual({ failed: 1, total: 1 });
+  });
+
   it('keeps cancelled run state after the runtime returns to idle', () => {
     const cancelledProjection: TraceProjection = {
       sessionId: 'session-cancel',

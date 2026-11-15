@@ -11,12 +11,13 @@
 // 滚动契约（2026-07-26 打磨批 D D0）：header 以下整体是页级滚动区（overflow-y-auto）——
 // 顶区全是 shrink-0，工作台 grid 用 flex-[1_0_420px]：高屏 grow 占满剩余空间，
 // 矮屏不低于 420px、整页可滚到达。
+// 详情按内容撑高工作台，不能再以 containment/overflow 裁出第二层滚动区。
 // ============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import { useCronStore } from '../../../stores/cronStore';
+import { filterVisibleCronJobs, useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
@@ -93,6 +94,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     jobNamesLoaded,
     stats,
     selectedJobId,
+    locationFilter,
+    searchQuery,
     isEditorOpen,
     editingJobId,
     copyingJobId,
@@ -135,6 +138,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         });
       });
   }, []);
+  const [parkedPendingCount, setParkedPendingCount] = useState(0);
   const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
   // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：仅在面板挂载且存在 running
   // 执行时每 2s 拉「等批准」运行（批准/拒绝后下一轮即消失，任务行回到运行中）。
@@ -226,10 +230,32 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditorOpen, onClose]);
 
-  const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) || null,
-    [jobs, selectedJobId]
+  const visibleJobs = useMemo(
+    () => filterVisibleCronJobs(jobs, searchQuery, locationFilter, language),
+    [jobs, searchQuery, locationFilter, language],
   );
+
+  const selectedJob = useMemo(() => {
+    if (selectedJobId) {
+      const matched = visibleJobs.find((job) => job.id === selectedJobId);
+      if (matched) return matched;
+    }
+    return visibleJobs[0] ?? null;
+  }, [visibleJobs, selectedJobId]);
+
+  useEffect(() => {
+    // 选中回写只在「可见列表可信」时执行。挂载首轮 render 闭包里的 isLoading 是 false，
+    // 但 refresh effect（声明在前）已同步把 store.isLoading 置 true、jobs 尚未返回——
+    // 此时可见列表不可信，不能把通知点击在面板挂载前 selectJob 预设好的 selectedJobId
+    // 覆写成 null（否则 loadJobs 完成后回落选中第一个任务，PR review r1）。
+    // 读 store 的实时 isLoading：加载期间不动 selectedJobId，交给 loadJobs 的
+    // resolveSelectedCronJobId 按新可见列表收敛；加载完成后本 effect 随依赖重跑再收敛。
+    if (isLoading || useCronStore.getState().isLoading) return;
+    const nextSelectedJobId = selectedJob?.id ?? null;
+    if (nextSelectedJobId !== selectedJobId) {
+      useCronStore.setState({ selectedJobId: nextSelectedJobId });
+    }
+  }, [isLoading, selectedJob, selectedJobId]);
 
   const editingJob = useMemo(
     () => jobs.find((job) => job.id === editingJobId) || null,
@@ -258,7 +284,13 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     [recentExecutions, selectedExecutionId]
   );
 
-  const runningCount = stats?.jobsByStatus?.running ?? 0;
+  // 「运行中」与「待过目」都从列表/卡片实际渲染的行推出，不再读 job 级 stats 或另一路请求
+  const runningCount = new Set([
+    ...recentExecutions.filter((execution) => execution.status === 'running').map((execution) => execution.id),
+    ...Object.values(latestExecutions).flatMap((execution) => (execution?.status === 'running' ? [execution.id] : [])),
+  ]).size;
+
+  const pendingTotal = pendingReviewCount === null ? null : pendingReviewCount + parkedPendingCount;
 
   const tabs: Array<{ key: CronCenterTab; label: string }> = [
     { key: 'jobs', label: cc.tabJobs },
@@ -299,7 +331,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                     data-testid="cron-center-runs-badge"
                     className="absolute -right-1 -top-1 rounded-full border border-badge-warning/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-badge-warning"
                   >
-                    {pendingReviewCount}
+                    {pendingTotal}
                   </span>
                 )}
               </button>
@@ -317,8 +349,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           />
           <StatusTile
             label={cc.statPendingReview}
-            value={pendingReviewCount === null ? '—' : String(pendingReviewCount)}
-            attention={(pendingReviewCount ?? 0) > 0}
+            value={pendingTotal === null ? '—' : String(pendingTotal)}
+            attention={(pendingTotal ?? 0) > 0}
             testId="cron-status-pending"
           />
           <StatusTile
@@ -372,6 +404,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             onPendingCountChange={refreshPendingReviewCount}
             onParkedResolved={handleApprovalResolved}
             onParkedChange={discoverParkedRun}
+            onParkedPendingChange={setParkedPendingCount}
             refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
           />
         </div>
@@ -380,7 +413,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           <>
             {/* 模板区独立成块（拍板）：与任务工作台分离，点一下即建 */}
             <CronFeaturedTemplates />
-            <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr] overflow-hidden">
+            <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr]">
               <CronJobList awaitingByJobId={awaitingByJobId} />
               <div className="min-w-0">
                 {isLoading && jobs.length === 0 ? (

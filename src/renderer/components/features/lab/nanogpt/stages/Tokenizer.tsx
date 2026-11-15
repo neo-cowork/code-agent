@@ -86,6 +86,7 @@ export const Tokenizer: React.FC<TokenizerProps> = ({ onComplete, onBack }) => {
           className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-badge-info/50"
           placeholder={tk.inputPlaceholder}
         />
+        {tk.inputNote && <p className="text-xs text-zinc-500">{tk.inputNote}</p>}
       </div>
 
       {/* Tokenization Comparison */}

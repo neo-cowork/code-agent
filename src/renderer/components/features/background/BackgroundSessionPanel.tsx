@@ -16,13 +16,15 @@ import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-r
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
-import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
+import { RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
+import { useTaskStore } from '../../../stores/taskStore';
+import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutcomes';
+import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
 import { IconButton } from '../../primitives';
 
 interface BackgroundTaskLineLabels {
-  completed: string;
-  failed: string;
-  cancelled: string;
+  /** 终态词：统一取 outcomeWords（与任务面板同一词表） */
+  words: { completed: string; failed: string; cancelled: string; failedTool: string; warnings: string };
   maxIterations: string;
 }
 
@@ -34,13 +36,21 @@ interface BackgroundTaskLineLabels {
 function resolveBackgroundTaskStatusLine(
   session: Pick<BackgroundSessionInfo, 'status' | 'completionMessage'>,
   labels: BackgroundTaskLineLabels,
+  opts: { taskCancelled: boolean; toolStepOutcome?: { failed: number; total: number } },
 ): { isRunning: boolean; line: string } {
-  if (session.status === 'running') return { isRunning: true, line: '' };
+  const terminal = resolveBackgroundTerminalKey(session, opts);
+  if (!terminal) return { isRunning: true, line: '' };
+  const isRunning = session.status === 'running' && terminal !== 'cancelled-by-user';
+  if (terminal === 'cancelled-by-user') return { isRunning, line: labels.words.cancelled };
   const message = session.completionMessage;
-  if (message === BACKGROUND_TASK_CANCELLED) return { isRunning: false, line: labels.cancelled };
   if (message === RUN_ERROR_CODE_MAX_ITERATIONS) return { isRunning: false, line: labels.maxIterations };
   if (message) return { isRunning: false, line: message };
-  return { isRunning: false, line: session.status === 'failed' ? labels.failed : labels.completed };
+  const words: Partial<Record<typeof terminal, string>> = {
+    'failed-unknown': labels.words.failed,
+    'failed-tool': labels.words.failedTool,
+    'completed-with-warnings': labels.words.warnings,
+  };
+  return { isRunning: false, line: words[terminal] ?? labels.words.completed };
 }
 
 interface DurationLabels {
@@ -143,6 +153,9 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
 export const BackgroundSessionPanel: React.FC = () => {
   const { backgroundSessions, moveToForeground, stopBackgroundSession, dismissBackgroundSession } = useSessionStore();
   const { t, language } = useI18n();
+  // 前台已判定停止、但后台条目还没被 host 收尾时，行里的词先跟终态走（只改词，不动 Stop/Clear 按钮）
+  const sessionStates = useTaskStore((state) => state.sessionStates);
+  const stepOutcomes = useBackgroundStepOutcomes(backgroundSessions);
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
 
@@ -164,9 +177,13 @@ export const BackgroundSessionPanel: React.FC = () => {
     hours: t.backgroundPanel.durationHours,
   };
   const lineLabels = {
-    completed: t.backgroundPanel.completedLine,
-    failed: t.backgroundPanel.failedLine,
-    cancelled: t.backgroundPanel.cancelledLine,
+    words: {
+      completed: t.outcomeWords.completed.timeline.label,
+      failed: t.outcomeWords['failed-unknown'].timeline.label,
+      cancelled: t.outcomeWords['cancelled-by-user'].timeline.label,
+      failedTool: t.outcomeWords['failed-tool'].timeline.label,
+      warnings: t.outcomeWords['completed-with-warnings'].timeline.label,
+    },
     maxIterations: t.backgroundPanel.maxIterationsLine,
   };
 
@@ -216,7 +233,14 @@ export const BackgroundSessionPanel: React.FC = () => {
 
           <div className="p-2 space-y-2 max-h-80 overflow-y-auto">
             {backgroundSessions.map((session) => {
-              const { isRunning, line } = resolveBackgroundTaskStatusLine(session, lineLabels);
+              const { isRunning, line } = resolveBackgroundTaskStatusLine(
+                session,
+                lineLabels,
+                {
+                  taskCancelled: sessionStates[session.sessionId]?.status === 'cancelled',
+                  toolStepOutcome: stepOutcomes[session.sessionId],
+                },
+              );
               return (
                 <BackgroundSessionItem
                   key={session.sessionId}

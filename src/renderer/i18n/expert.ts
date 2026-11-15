@@ -25,6 +25,8 @@ export const expertZh = {
     searchPlaceholder: '搜索专家',
     searchAria: '搜索专家',
     searchNoResults: '没有找到匹配「{query}」的专家。',
+    searchMineMatches: { one: '「我的」里有 {count} 位匹配「{query}」的专家', other: '「我的」里有 {count} 位匹配「{query}」的专家' },
+    searchViewMine: '去「我的」查看',
     clearSearch: '清除搜索',
     memoryCount: '{count} 条记忆',
     lastWorkPrefix: '最近：',
@@ -88,6 +90,7 @@ export const expertZh = {
         stopFailedHint: '这个任务已经结束或无法停止',
         conflictLine: '{left} 和 {right} 都改了 {file}',
         eventsToggle: '讨论流 · {count} 条',
+        duration: { seconds: '{seconds} 秒', minutes: '{minutes} 分 {seconds} 秒' },
         status: {
           working: '工作中',
           done: outcomeWordsZh.outcomeWords.completed.badge.label,
@@ -146,6 +149,8 @@ export const expertZh = {
     },
     roleDetail: {
       roleWakeLabel: '角色唤醒',
+      historyDecision: { advance: '已推进', report: '已汇报', suggest: '有建议' },
+      historyWake: { cadence: '定时巡检', event: '任务完成后巡检', fallback: '例行巡检记录' },
       roleWakeTooltip: '角色醒来时自己记下的（{time}）',
       maxIterations: '最大迭代次数',
       skills: '技能',
@@ -356,6 +361,8 @@ export const expertEn: typeof expertZh = {
     searchPlaceholder: 'Search experts',
     searchAria: 'Search experts',
     searchNoResults: 'No experts match "{query}".',
+    searchMineMatches: { one: '{count} matching expert in Mine for "{query}"', other: '{count} matching experts in Mine for "{query}"' },
+    searchViewMine: 'View in Mine',
     clearSearch: 'Clear search',
     memoryCount: '{count} memories',
     lastWorkPrefix: 'Latest: ',
@@ -418,6 +425,7 @@ export const expertEn: typeof expertZh = {
         stopFailedHint: 'This task already ended or cannot be stopped',
         conflictLine: '{left} and {right} both changed {file}',
         eventsToggle: 'Discussion · {count}',
+        duration: { seconds: '{seconds}s', minutes: '{minutes}m {seconds}s' },
         status: {
           working: 'Working',
           done: outcomeWordsEn.outcomeWords.completed.badge.label,
@@ -476,6 +484,8 @@ export const expertEn: typeof expertZh = {
     },
     roleDetail: {
       roleWakeLabel: 'Role wake',
+      historyDecision: { advance: 'Advanced', report: 'Reported', suggest: 'Suggestion' },
+      historyWake: { cadence: 'Scheduled check-in', event: 'Check-in after task', fallback: 'Check-in recorded' },
       roleWakeTooltip: 'Written by the role itself when it woke up ({time})',
       maxIterations: 'Maximum iterations',
       skills: 'Skills',

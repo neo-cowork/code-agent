@@ -68,6 +68,7 @@ vi.mock('../../../src/host/services/desktop/desktopAudioCapture', () => ({
   stopDesktopAudioCapture: () => svc.stopAudio(),
   getAudioCaptureStatus: () => svc.audioStatus,
   clearAudioRecordings: () => svc.clearAudio(),
+  getSqlitePath: () => null,
 }));
 vi.mock('../../../src/host/services/infra/browserService', () => ({ browserService: svc.browser, getManagedBrowserService: () => svc.browser }));
 vi.mock('../../../src/host/services/infra/browserRelayService', () => ({ browserRelayService: svc.relay }));
@@ -276,6 +277,46 @@ describe('音频采集状态机', () => {
     const res = await call('clearAudioRecordings');
     expect(res).toMatchObject({ success: true, data: { deleted: 2, freedBytes: 40, failed: 0 } });
     expect(svc.clearAudio).toHaveBeenCalledOnce();
+  });
+});
+
+describe('记这场会（N-MEETING-SESSION）', () => {
+  it('开始：以会议模式开录音，返回记录中的会', async () => {
+    const call = await setup();
+    const res = await call('startMeeting', { title: '周会' });
+    expect(svc.startAudio).toHaveBeenCalledWith(undefined, 'meeting');
+    expect(res).toMatchObject({ success: true, data: { current: { title: '周会', state: 'recording' } } });
+  });
+
+  it('设置页已开着只录麦克风：开会先停掉再按会议模式重开（否则录不到对方）', async () => {
+    const call = await setup();
+    svc.audioStatus = { capturing: true, captureMode: 'microphone', soxAvailable: true, asrEngine: 'whisper' };
+    await call('startAudioCapture', { mode: 'microphone' });
+    svc.startAudio.mockClear();
+    await call('startMeeting', {});
+    expect(svc.stopAudio).toHaveBeenCalledTimes(1);
+    expect(svc.startAudio).toHaveBeenCalledWith(undefined, 'meeting');
+  });
+
+  it('录音开不起来：原样带回 AUDIO_START_FAILED，不建会', async () => {
+    const call = await setup();
+    svc.audioStatus = { capturing: false, soxAvailable: true, asrEngine: 'none', missingPrerequisites: ['transcription_engine_missing'] };
+    const res = await call('startMeeting', {});
+    expect(res).toMatchObject({ success: false, error: { code: 'AUDIO_START_FAILED', message: 'transcription_engine_missing' } });
+    svc.audioStatus = { capturing: true, soxAvailable: true, asrEngine: 'whisper' };
+    expect((await call('getMeetingStatus')).data).toMatchObject({ current: null });
+  });
+
+  it('结束：停录音，记为手动结束；设置页关录音也会结束这场会', async () => {
+    const call = await setup();
+    await call('startMeeting', {});
+    const ended = await call('stopMeeting');
+    expect(svc.stopAudio).toHaveBeenCalled();
+    expect(ended.data).toMatchObject({ current: null, lastEnded: { endReason: 'manual' } });
+
+    await call('startMeeting', {});
+    await call('stopAudioCapture');
+    expect((await call('getMeetingStatus')).data).toMatchObject({ current: null, lastEnded: { endReason: 'manual' } });
   });
 });
 

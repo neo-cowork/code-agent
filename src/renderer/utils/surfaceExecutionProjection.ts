@@ -17,6 +17,8 @@ import {
   isSurfaceEvidenceCardV1,
   isSurfaceExecutionEventV1,
   SURFACE_USER_BROWSER_AGENT_ID,
+  WAIT_FOR_USER_EVENT_ACTION,
+  WAIT_FOR_USER_TIMEOUT_EVENT_ACTION,
 } from '@shared/contract/surfaceExecution';
 import { sanitizeSurfaceExecutionEventV1 } from '@shared/utils/surfaceExecutionRedaction';
 
@@ -712,4 +714,49 @@ export function isUserOpenedSurfaceV1(
   projection: Pick<RendererSurfaceSessionProjectionV1, 'scope'>,
 ): boolean {
   return projection.scope.agentId === SURFACE_USER_BROWSER_AGENT_ID;
+}
+
+/**
+ * Browser takeover that Neo asked for itself ("waiting for you" + reason), as opposed to the
+ * user's own takeover button. Reads the takeover request event: the newest human/waiting event
+ * that is not the control echo. `timedOut` = the wait ran out but the window is still parked.
+ */
+export function selectBrowserWaitForUserV1(
+  projection: Pick<RendererSurfaceSessionProjectionV1, 'events'>,
+): { reason: string; timedOut: boolean } | null {
+  for (let index = projection.events.length - 1; index >= 0; index -= 1) {
+    const event = projection.events[index];
+    if (event.phase !== 'human' || event.status !== 'waiting' || event.operation?.action === 'takeover') continue;
+    const action = event.operation?.action;
+    if (action !== WAIT_FOR_USER_EVENT_ACTION && action !== WAIT_FOR_USER_TIMEOUT_EVENT_ACTION) return null;
+    return { reason: stripButtonInstruction(event.userSummary), timedOut: action === WAIT_FOR_USER_TIMEOUT_EVENT_ACTION };
+  }
+  return null;
+}
+
+// The reason is model-written and the bar/card render their own Done button; a trailing "完成后点确认 /
+// click Done" would name a button that does not exist. Cut from the button instruction to the end.
+const BUTTON_INSTRUCTION_ZH = /(?:点击|点一下|点|按下|按)\s*(?:(?:下方|上方|右侧|左侧|旁边|下面|上面|这里|那个|这个|页面上|界面上)(?:的)?\s*)?[「『"“]?\s*(?:确认|完成(?!验证|人机|登录|操作|注册)|Done|done|好了|继续|确定|OK|Continue|Confirm|提交)/;
+const BUTTON_INSTRUCTION_EN = /\b(?:click|press|tap|hit)\s+(?:the\s+)?["'“]?(?:Done|Continue|OK|Confirm|Submit)\b/i;
+const TRAILING_CONNECTORS = /[，,、；;:：\s]*(?:(?:完成|做完|弄好|通过|验证|操作|好)+后|之后|然后|再|并且|并|请|when you(?:'re| are)? (?:done|finished)|then|and|once done|afterwards)[，,、；;\s]*$/i;
+
+function stripButtonInstruction(reason: string): string {
+  const matches = [BUTTON_INSTRUCTION_ZH.exec(reason), BUTTON_INSTRUCTION_EN.exec(reason)].filter((m): m is RegExpExecArray => m !== null);
+  if (matches.length === 0) return reason;
+  let cut = reason.slice(0, Math.min(...matches.map((m) => m.index)));
+  for (let guard = 0; guard < 4; guard += 1) {
+    const next = cut.replace(TRAILING_CONNECTORS, '');
+    if (next === cut) break;
+    cut = next;
+  }
+  cut = cut.replace(/[，,、；;:：\s]+$/, '');
+  return cut.length >= 4 ? cut : reason;
+}
+
+/** User-facing summary of a surface event: a model-written wait_for_user reason never names a button. */
+export function surfaceEventUserSummary(event: Pick<SurfaceExecutionEventV1, 'userSummary' | 'operation'>): string {
+  const action = event.operation?.action;
+  return action === WAIT_FOR_USER_EVENT_ACTION || action === WAIT_FOR_USER_TIMEOUT_EVENT_ACTION
+    ? stripButtonInstruction(event.userSummary)
+    : event.userSummary;
 }

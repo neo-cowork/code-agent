@@ -71,15 +71,14 @@ describe('isolated profile sweep', () => {
     expect(summary()).toBe('Isolated profile sweep removed=120 freedBytes=491520 skippedLive=1 skippedYoung=0 skippedOther=0 failed=0');
     expect(Number(after)).toBeLessThan(Number(before));
   });
-  it.each(['headless-shell', 'windows-lockfile'])('old live %s profile without SingletonLock is kept when ownership is unknown', async (shape) => {
+  it.each(['headless-shell', 'windows-lockfile'])('20-minute-old unmarked %s profile is kept by the legacy grace', async (shape) => {
     const dir = await profile('unmarked-live');
     await fs.unlink(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE));
     if (shape === 'windows-lockfile') await fs.writeFile(path.join(dir, 'lockfile'), '');
     await fs.utimes(dir, old, old);
     await sweep();
     expect(await fs.readdir(root)).toEqual(['unmarked-live']);
-    expect(logger.log).toHaveBeenCalledWith('DEBUG', expect.stringContaining('missing-owner'));
-    expect(summary()).toContain('skippedOther=1');
+    expect(summary()).toContain('skippedYoung=1');
   });
   it('old live owner without SingletonLock is kept across processes', async () => {
     const dir = await profile('owned-live');
@@ -223,5 +222,88 @@ describe('isolated profile sweep', () => {
     expect(logger.log).toHaveBeenCalledWith('WARN', expect.stringContaining('failed: Error: injected rm failure'));
     expect(summary()).toContain('failed=1');
     console.log(logger.log.mock.calls.map(([level, message]) => `${level} ${message}`).join('\n'));
+  });
+  describe('legacy profiles without owner marker', () => {
+    const DAY = 24 * 60 * 60_000;
+    const legacy = async (name: string, ageDays: number, lock?: string) => {
+      const dir = await profile(name, lock);
+      await fs.unlink(path.join(dir, MANAGED_BROWSER_ISOLATED_OWNER_FILE));
+      const when = new Date(Date.now() - ageDays * DAY);
+      if (lock) await fs.lutimes(path.join(dir, 'SingletonLock'), when, when);
+      await fs.utimes(dir, when, when);
+      return fs.realpath(dir); // sweep reports canonical paths (macOS /var -> /private/var)
+    };
+    const sweepWith = (listProcessCommands: () => Promise<string>) => sweepStaleIsolatedBrowserProfiles({ tmpDir, logger, listProcessCommands });
+
+    it('8 days old and no process: removed', async () => {
+      await legacy('l8', 8);
+      await sweepWith(async () => 'node server.js\n');
+      expect(await fs.readdir(root)).toEqual([]);
+      expect(summary()).toMatch(/^Isolated profile sweep removed=1 freedBytes=\d+ skippedLive=0 skippedYoung=0 skippedOther=0 failed=0$/);
+    });
+    it('6 days old: kept as young', async () => {
+      await legacy('l6', 6);
+      const probe = vi.fn(async () => '');
+      await sweepWith(probe);
+      expect(await fs.readdir(root)).toEqual(['l6']);
+      expect(summary()).toContain('skippedYoung=1');
+      expect(probe).not.toHaveBeenCalled();
+    });
+    it.each(['--user-data-dir=', '--user-data-dir="', "--user-data-dir='"])('8 days old but a process uses it (%s): kept live', async (flag) => {
+      const dir = await legacy('l8-live', 8);
+      await sweepWith(async () => `/x/chrome --headless ${flag}${dir}${flag.endsWith('=') ? '' : flag.slice(-1)} --foo\n`);
+      expect(await fs.readdir(root)).toEqual(['l8-live']);
+      expect(summary()).toContain('skippedLive=1');
+      expect(logger.log).toHaveBeenCalledWith('DEBUG', 'Isolated profile sweep kept l8-live: live');
+    });
+    it('probe failure keeps the directory and logs legacy-probe-unavailable', async () => {
+      await legacy('l8-noprobe', 8);
+      await sweepWith(async () => { throw new Error('ps failed'); });
+      expect(await fs.readdir(root)).toEqual(['l8-noprobe']);
+      expect(logger.log).toHaveBeenCalledWith('DEBUG', 'Isolated profile sweep kept l8-noprobe: legacy-probe-unavailable');
+    });
+    it('a process launched with the non-canonical (symlinked tmpDir) path keeps the dir', async () => {
+      const link = path.join(tmpDir, 'link');
+      await fs.symlink(tmpDir, link);
+      const viaLink = path.join(link, MANAGED_BROWSER_ISOLATED_PROFILE_PREFIX);
+      const dir = await legacy('l8-noncanon', 8);
+      expect(path.join(viaLink, 'l8-noncanon')).not.toBe(dir);
+      await sweepStaleIsolatedBrowserProfiles({
+        tmpDir: link, logger, listProcessCommands: async () => `chrome --user-data-dir=${path.join(viaLink, 'l8-noncanon')} --foo\n`,
+      });
+      expect(await fs.readdir(root)).toEqual(['l8-noncanon']);
+      expect(logger.log).toHaveBeenCalledWith('DEBUG', 'Isolated profile sweep kept l8-noncanon: live');
+    });
+    it('a prefix-sibling path is not confused with the directory', async () => {
+      const a = await legacy('profile-abc', 8);
+      const b = await legacy('profile-abc-2', 8);
+      await sweepWith(async () => `chrome --user-data-dir=${b}\n`);
+      expect(await fs.readdir(root)).toEqual(['profile-abc-2']);
+      expect(a).not.toBe(b);
+    });
+    it('live-pid SingletonLock keeps a legacy dir with no matching process', async () => {
+      await legacy('l8-lock', 8, `${os.hostname()}-${live.pid}`);
+      await sweepWith(async () => '');
+      expect(await fs.readdir(root)).toEqual(['l8-lock']);
+      expect(summary()).toContain('skippedLive=1');
+    });
+    it('probe runs once per sweep for kept dirs and is refreshed for the post-measure recheck', async () => {
+      await legacy('a', 8);
+      await legacy('b', 9);
+      const probe = vi.fn(async () => '');
+      await sweepWith(probe);
+      expect(probe).toHaveBeenCalledTimes(3);
+    });
+    it('a browser started during measure is caught by the recheck', async () => {
+      const dir = await legacy('late', 8);
+      let calls = 0;
+      await sweepWith(async () => (++calls === 1 ? '' : `chrome --user-data-dir=${dir}\n`));
+      expect(await fs.readdir(root)).toEqual(['late']);
+    });
+    it('marked dirs still ignore the legacy grace', async () => {
+      await profile('marked');
+      await sweepWith(async () => { throw new Error('must not probe'); });
+      expect(await fs.readdir(root)).toEqual([]);
+    });
   });
 });

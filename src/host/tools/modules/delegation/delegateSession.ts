@@ -19,7 +19,9 @@ import {
 } from '../../../services/delegation/delegationAdmission';
 import { deriveActionFingerprint, deriveSubmissionKey, delegationTargetIdentity } from '../../../services/delegation/delegationKeys';
 import { projectSessionCandidates, resolveCandidateRef } from '../../../services/delegation/delegationCandidates';
-import { getDelegationCandidateSecret, getDelegationToolRuntime, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
+import { evaluateClarifyAnswer, evaluateClarifyGuard, type ClarifyGuardRule } from '../../../services/delegation/delegationClarifyGuard';
+import { askUserQuestionAnswerMark, askUserQuestionAnswersSince } from '../planning/askUserQuestionReplay';
+import { getDelegationCandidateSecret, getDelegationToolRuntime, readOriginUserMessage, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
 import { createLogger } from '../../../services/infra/logger';
 import { trackNode } from '../../../observability/posthogNode';
@@ -191,6 +193,83 @@ async function buildSnapshot(
   };
 }
 
+// 守卫已在本轮拒绝过的发起轮：key = 发起会话 + 发起轮身份，value = 拒绝时刻的作答流水 mark + 规则名。
+// 用户通过 AskUserQuestion 作答后（答案是工具输出，不是 messages 行），同一轮的重试不能再被
+// 同一条原始消息拒绝，否则本轮永远委托不出去。放行证据只认「拒绝之后真的有一次完整作答」
+// （askUserQuestionAnswersSince，来自作答记录路径；跳过/无界面/残缺答案走不到），并且答案
+// 文本必须点到这次要发的会话（evaluateClarifyAnswer）。没作答、点了别家、答案无关都继续拒。
+const clarificationAsked = new Map<string, { mark: number; rule: ClarifyGuardRule; supersededMark?: number }>();
+const CLARIFICATION_TRACK_LIMIT = 256;
+
+// ADR-072 D2/D3 确定性守卫：模型只给建议，目标不清时不绑定，改回一个可点选的问题。
+// 返回 null = 放行进准入门；否则是 needs_clarification 拒绝（候选只给显示名，不含 id）。
+function clarifyGuardRejection(
+  call: DelegateSessionCall,
+  ctx: Parameters<ToolHandler['execute']>[1],
+  runtime: ReturnType<typeof getDelegationToolRuntime>,
+): ToolResult<string> | null {
+  if (call.action !== 'delegate_existing' && call.action !== 'create_new') return null;
+  const userMessage = readOriginUserMessage(runtime.getDb(), ctx.sessionId, ctx.sourceMessageId);
+  if (userMessage === null) {
+    logger.warn('[DelegateSession] clarify guard message-based rules skipped: the session has no readable origin user message');
+    return null;
+  }
+  const scope = ctx.runId ?? ctx.turnId ?? '';
+  const turnKey = `${ctx.sessionId}\0${originTurnIdOf(ctx)}`;
+  const asked = clarificationAsked.get(turnKey);
+  const secret = getDelegationCandidateSecret();
+  const projection = projectSessionCandidates(runtime.listSessions(), {
+    originSessionId: ctx.sessionId,
+    now: runtime.now(),
+    secret,
+    isRunning: (sessionId) => runtime.getRun(sessionId) !== undefined,
+  });
+  let chosenIndex: number | null = null;
+  if (call.action === 'delegate_existing') {
+    // 引用解不开 / 集合过期交给 G3 原样拒绝（码与 gate 不变）。
+    const resolved = resolveCandidateRef({ candidateSetId: call.candidateSetId, candidateRef: call.candidateRef }, projection, secret);
+    if (!resolved.ok) return null;
+    chosenIndex = projection.sessionIds.indexOf(resolved.sessionId);
+  }
+  const guardCandidates = projection.candidates.map((candidate) => ({ shortName: candidate.shortName, workspaceName: candidate.workspaceName }));
+  // 作答证据：拒绝之后的作答，或（模型自己先问了用户、还没被守卫拒过时）本轮任何一次完整作答。
+  // 若上一轮作答是「都发/多选并列」（supersededMark），在新一次作答到来前保持原 mark 让同批重试都收到单选重问提示；
+  // 新一次作答到来（currentMark > supersededMark）后切到 supersededMark，只评判重问后的新答案。
+  const currentMark = askUserQuestionAnswerMark();
+  const effectiveMark =
+    asked?.supersededMark !== undefined && currentMark > asked.supersededMark
+      ? asked.supersededMark
+      : (asked?.mark ?? 0);
+  const answers = askUserQuestionAnswersSince(ctx.sessionId, scope, effectiveMark);
+  let verdict = evaluateClarifyGuard({ action: call.action, candidates: guardCandidates, chosenIndex, userMessage });
+  if (verdict.kind === 'proceed') return null;
+  // 没任务内容（vague_task_text）只认「守卫拒绝之后」的作答，无关的早先作答不算。
+  const answerConsulted = answers.length > 0 && (asked !== undefined || verdict.rule !== 'vague_task_text');
+  if (answerConsulted) {
+    verdict = evaluateClarifyAnswer({ rule: asked?.rule ?? verdict.rule, action: call.action, candidates: guardCandidates, chosenIndex, answerText: answers.join('\n') });
+    if (verdict.kind === 'proceed') {
+      clarificationAsked.delete(turnKey);
+      logger.info('[DelegateSession] clarify guard passed: the user answered a clarification question in this turn and the answer matches the target');
+      return null;
+    }
+    if (verdict.reason === 'non_single_answer') {
+      if (!asked && clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
+      clarificationAsked.set(turnKey, { mark: effectiveMark, rule: asked?.rule ?? verdict.rule, supersededMark: currentMark });
+    }
+  }
+  // 作答后仍被拒（点了别家）不推进 mark：用户已经答过的那次作答，对之后改对的重试仍然有效。
+  if (!answerConsulted) {
+    if (!asked && clarificationAsked.size >= CLARIFICATION_TRACK_LIMIT) clarificationAsked.delete(clarificationAsked.keys().next().value as string);
+    clarificationAsked.set(turnKey, { mark: currentMark, rule: asked?.rule ?? verdict.rule });
+  }
+  return {
+    ok: false,
+    code: 'DELEGATION_REJECTED',
+    error: verdict.message,
+    meta: { code: 'needs_clarification', gate: 'none', rule: verdict.rule },
+  };
+}
+
 function parseArgs(args: Record<string, unknown>) {
   const normalized: Record<string, unknown> = { ...args };
   if (typeof args.text === 'string' && args.content === undefined) normalized.content = args.text;
@@ -314,6 +393,8 @@ async function runDelegateSession(
   const runtime = getDelegationToolRuntime(ctx);
   const call = parsed.call;
   try {
+    const guarded = clarifyGuardRejection(call, ctx, runtime);
+    if (guarded) return guarded;
     const admission = await admissionFor(call, ctx, runtime);
     if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail, admission.result.gate);
     if (admission.result.kind === 'reused') {

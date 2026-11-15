@@ -95,11 +95,11 @@ describe('TurnDiffSummary — file name opens preview, chevron expands diff', ()
     expect(openPreview).not.toHaveBeenCalled();
   });
 
-  it('path title exposes the full absolute path for hover', () => {
+  it('path title shortens the absolute path for hover', () => {
     render(<TurnDiffSummary turn={makeTurn()} />);
     const nameBtn = screen.getByRole('button', { name: /overview-batch2-note\.md/i });
     expect(nameBtn.getAttribute('title')).toBe(
-      '/Users/me/project/artifacts/overview-batch2-note.md',
+      '…/artifacts/overview-batch2-note.md',
     );
   });
 });

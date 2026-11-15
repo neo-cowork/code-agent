@@ -1,8 +1,10 @@
+import { BACKGROUND_TASK_PREANNOUNCE } from '@shared/constants/backgroundTaskPreannounce';
 import { extractUserRequest } from '../../turnScaffold';
 import type { ModelResponse } from '../../loopTypes';
 
 export interface CommandCenterToolStartInput {
   toolName?: string;
+  locale?: 'en' | 'zh';
   commandCenterEnabled: boolean;
   streamedContent: string;
   existingPreannounce: string;
@@ -20,13 +22,16 @@ export interface CommandCenterToolStartInput {
 // wrapWithTurnSystemContext 收在包装体里，其余块标签不在此列（不扩判定面）。
 const TURN_SCAFFOLD_TAG_PATTERN = /<\/?user_request>|<background_capability_stats>/;
 
-function buildCommandCenterPreannounce(userMessage: string): string {
+function preannounceTitle(userMessage: string): string | undefined {
   const request = extractUserRequest(userMessage).replace(/\s+/g, ' ').trim();
-  if (!request || TURN_SCAFFOLD_TAG_PATTERN.test(request)) {
-    return '我先把这项任务交给后台执行，完成后回到这里交付结果。';
-  }
-  const taskLabel = Array.from(request).slice(0, 28).join('');
-  return `我先把“${taskLabel}${Array.from(request).length > 28 ? '…' : ''}”交给后台执行，完成后回到这里交付结果。`;
+  if (!request || TURN_SCAFFOLD_TAG_PATTERN.test(request)) return undefined;
+  return Array.from(request).slice(0, 28).join('') + (Array.from(request).length > 28 ? '…' : '');
+}
+
+function buildCommandCenterPreannounce(userMessage: string, locale: 'en' | 'zh'): string {
+  const title = preannounceTitle(userMessage);
+  const copy = BACKGROUND_TASK_PREANNOUNCE[locale];
+  return title ? copy.named.replace('{title}', title) : copy.generic;
 }
 
 /** Emits the renderer-visible preview before the pending tool row. */
@@ -38,7 +43,7 @@ export function emitCommandCenterToolStart(input: CommandCenterToolStartInput): 
     && !input.streamedContent.trim()
     && !preannounce
   ) {
-    preannounce = buildCommandCenterPreannounce(input.userMessage);
+    preannounce = buildCommandCenterPreannounce(input.userMessage, input.locale ?? 'zh');
     input.emitPreview(preannounce);
   }
   input.emitToolStart();
@@ -48,8 +53,10 @@ export function emitCommandCenterToolStart(input: CommandCenterToolStartInput): 
 export function applyCommandCenterPreannounce(
   response: ModelResponse,
   preannounce: string,
+  userMessage = '',
 ): ModelResponse {
   if (!preannounce || response.type !== 'tool_use') return response;
+  response.backgroundTaskPreannounce = { text: preannounce, title: preannounceTitle(userMessage) };
   const modelContent = response.content?.trim();
   response.content = modelContent ? `${preannounce}\n${modelContent}` : preannounce;
   response.contentParts = [

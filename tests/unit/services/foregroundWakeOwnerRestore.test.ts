@@ -182,7 +182,7 @@ describe('foreground wake when the session is not accessible for the current own
     expect(harness.observers.size).toBe(0);
     if (reason) {
       expect(notes).toHaveLength(1);
-      expect(JSON.parse(notes[0].metadata!).backgroundWakeFailed).toEqual({ taskId: 'task-1', reason });
+      expect(JSON.parse(notes[0].metadata!).backgroundWakeFailed).toEqual({ taskId: 'task-1', reason, title: '周报' });
       expect(logsOf('warn').find((entry) => entry.message.startsWith('Foreground wake failed:'))?.details).toMatchObject({ reason, message: error });
     } else {
       expect(rows.some((row) => row.role === 'assistant' && row.content === '周报已汇总')).toBe(true);

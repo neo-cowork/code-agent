@@ -334,6 +334,30 @@ describe('runRoleWriteBack', () => {
     expect(history[0]).not.toContain('（无产物落盘）');
   });
 
+  it.each(['定时', '任务结束事件'])('uses a plain history fallback for a %s wake scaffold without a model summary', async (trigger) => {
+    await ensureRoleAssetDirs('研究员');
+    mockQuickTask.mockResolvedValue({ success: true, content: JSON.stringify({ memories: [] }) });
+    const result = await runRoleWriteBack({
+      roleId: '研究员',
+      taskPrompt: `你被${trigger}唤醒。这不是用户发来的消息，用户现在不在。\n\n你的任务：\n1. 读你的工作履历（上面角色资产注入块里），找出你经手过的产物`,
+      finalOutput: '已核对本周统计口径。',
+    });
+    expect(result.historyAppended).toBe(true);
+    const history = await loadRoleHistory('研究员');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatch(/^- \d{4}-\d{2}-\d{2} \| 例行巡检记录 \| 例行巡检记录$/);
+    expect(history[0]).not.toContain('你被');
+    expect(history[0]).not.toContain('你的任务');
+  });
+
+  it.each(['cadence', 'event'])('keeps the persisted %s wake label unchanged', async (trigger) => {
+    await ensureRoleAssetDirs('研究员');
+    mockQuickTask.mockResolvedValue({ success: true, content: JSON.stringify({ memories: [] }) });
+    const taskPrompt = `主动巡检（${trigger} 触发）`;
+    await runRoleWriteBack({ roleId: '研究员', taskPrompt, finalOutput: '已核对口径。' });
+    expect((await loadRoleHistory('研究员'))[0]).toMatch(new RegExp(`\\| ${taskPrompt} \\| ${taskPrompt}$`));
+  });
+
   it('首次醒来的内部指令绝不外显为履历摘要：quick model 失败回落固定短句', async () => {
     await ensureRoleAssetDirs('研究员');
     mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });

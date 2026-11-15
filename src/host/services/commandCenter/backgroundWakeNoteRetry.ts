@@ -22,7 +22,7 @@ export async function recordBackgroundWakeFailureNoteWithOwnerRetry(input: {
   const write = (): Promise<void> => recordBackgroundWakeFailureNote(
     input.sessionId,
     content,
-    { taskId: input.taskId, reason: input.reason },
+    { taskId: input.taskId, reason: input.reason, title: input.shortName },
   );
   const warnNotRecorded = (error: unknown): void => {
     logger.warn('Background wake failure note not recorded', {

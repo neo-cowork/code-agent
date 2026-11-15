@@ -23,6 +23,7 @@ import {
   revokeToolRunGrant,
   revokeToolSessionGrant,
 } from './toolGrantStore';
+import { connectorReadGrantName } from './connectorToolAccess';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 
@@ -111,6 +112,7 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
 
   // N-PERM-GRANT-TIERS 两档工具授权：source 'run'（本次任务）| '24h'（24 小时内）。
   for (const grant of listToolGrants(now)) {
+    const connectorName = connectorReadGrantName(grant.tool);
     entries.push({
       id: grant.tier === 'session'
         ? buildId(ID_VARIANT.toolTargetSession, grant.sessionId, grant.tool, grant.target ?? '')
@@ -118,7 +120,8 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
         ? buildId(ID_VARIANT.toolRun, grant.sessionId, grant.tool, ...(grant.target ? [grant.target] : []))
         : buildId(ID_VARIANT.tool24h, grant.tool, ...(grant.target ? [grant.target] : [])),
       kind: grant.tier === 'session' ? 'tool-target' : 'tool-timed',
-      label: grant.tool,
+      label: connectorName ?? grant.tool,
+      ...(connectorName ? { connectorAccess: 'read' as const } : {}),
       ...(grant.target ? { detail: grant.target } : {}),
       source: grant.tier === 'session' ? 'conversation' : grant.tier,
       grantedAt: grant.grantedAt,

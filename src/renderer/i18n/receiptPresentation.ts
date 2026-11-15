@@ -15,6 +15,7 @@ export const receiptPresentationZh = {
         calendar: '日历',
         reminders: '提醒事项',
         tmeet: '腾讯会议',
+        feishu: '飞书',
       },
       tools: {
         runCommand: '运行命令',
@@ -23,6 +24,7 @@ export const receiptPresentationZh = {
         webFetch: '网页抓取',
         webSearch: '联网搜索',
         readFile: '读取文件',
+        findFiles: '查找文件',
         memorySearch: '记忆检索',
       },
       unknownTool: '工具',
@@ -56,6 +58,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         calendar: 'Calendar',
         reminders: 'Reminders',
         tmeet: 'Tencent Meeting',
+        feishu: 'Feishu',
       },
       tools: {
         runCommand: 'Run command',
@@ -64,6 +67,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         webFetch: 'Web fetch',
         webSearch: 'Web search',
         readFile: 'Read file',
+        findFiles: 'Find files',
         memorySearch: 'Memory search',
       },
       unknownTool: 'Tool',

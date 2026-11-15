@@ -1,4 +1,5 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
+import { normalizeReminderCreateTime } from './reminderCreateTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -322,6 +323,8 @@ export interface ToolExecutorConfig {
   permissionModeOverrideIsInheritedCeiling?: boolean;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
+  /** Preserve child-agent Stop ancestry when this executor owns an auxiliary surface run. */
+  spawnParentRunId?: string;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
   dispatchTool?: ToolExecutionDelegate;
   /** 账本来源由所有构造入口显式声明。 */
@@ -477,6 +480,7 @@ export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
+  private readonly spawnParentRunId?: string;
   private readonly restrictWritesToWorkspace: boolean;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private executionTopology: ExecutionTopology;
@@ -496,6 +500,7 @@ export class ToolExecutor {
     this.permissionModeOverrideIsInheritedCeiling = config.permissionModeOverrideIsInheritedCeiling === true;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
+    this.spawnParentRunId = config.spawnParentRunId;
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
     this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
@@ -542,6 +547,7 @@ export class ToolExecutor {
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
       spawnMaxDepth: this.spawnMaxDepth,
+      spawnParentRunId: this.spawnParentRunId,
       // 写边界同样必须继承：子代理走 forRun 派生，漏传就等于子调用绕过边界
       // （#1686 ai-review 第三轮）。与上面的收缩档同理——边界只在主 executor 上生效不算边界。
       restrictWritesToWorkspace: this.restrictWritesToWorkspace,
@@ -691,6 +697,11 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const reminderTime = normalizeReminderCreateTime(executionToolName, params);
+    if (!reminderTime.ok) {
+      return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
+    }
+    params = reminderTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
@@ -1306,6 +1317,7 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      spawnParentRunId: this.spawnParentRunId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.writeWorkspaceRoot ?? this.runtimeWorkspace,
@@ -2129,7 +2141,7 @@ export class ToolExecutor {
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
-        sessionId: effectiveSessionId,
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
@@ -2364,10 +2376,14 @@ export class ToolExecutor {
         }
       }
 
-      const ask = await requestPermissionWithTelemetry({
-        request: permissionRequest,
-        toolCallId: options.currentToolCallId,
-        requestPermission: this.requestPermission,
+      const ask = await getDenialRegistry().observeApproval({
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        ask: () => requestPermissionWithTelemetry({
+          request: permissionRequest,
+          toolCallId: options.currentToolCallId,
+          requestPermission: this.requestPermission,
+        }),
       });
       if (commandAnalysisFailedReason) {
         ask.approved = false;
@@ -2478,7 +2494,7 @@ export class ToolExecutor {
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
         // 在该路径是误导——给模型可转述的真实原因与出路。
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
-        const defaultDenialReason = readOnlyForcesConfirmation
+        const defaultDenialReason = readOnlyForcesConfirmation && denialSource !== 'goal-sticky-host'
           ? readOnlyDenialError(executionToolName)
           : permissionDenialError(executionToolName, denialSource, computerApp);
         const hostReason = ask.message
@@ -2507,8 +2523,9 @@ export class ToolExecutor {
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
-        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）
-        if (actionFingerprint && effectiveSessionId) {
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）。
+        // goal-sticky-host 是本轮真人拒之后的宿主守卫拦截，不重写登记以免把早先的 byUser:true 降级。
+        if (actionFingerprint && effectiveSessionId && denialSource !== 'goal-sticky-host') {
           getDenialRegistry().record({
             sessionId: effectiveSessionId,
             fingerprint: actionFingerprint,

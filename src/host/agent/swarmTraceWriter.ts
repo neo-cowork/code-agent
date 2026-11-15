@@ -77,6 +77,7 @@ interface RunState {
   treeId: string;
   key: string;
   startedAt: number;
+  publisher: string;
   totalAgents: number;
   parallelPeak: number;
   agents: Map<string, AgentRollup>;
@@ -209,7 +210,10 @@ export class SwarmTraceWriter {
     const key = this.getRunKey(event);
     const existing = this.runs.get(key);
     if (existing) {
-      logger.warn(`Ignoring duplicate swarm:started for ${sessionId}/${runId}`);
+      logger.warn(`Ignoring duplicate swarm:started for ${sessionId}/${runId}`, {
+        existing: { startedAt: existing.startedAt, source: existing.publisher },
+        duplicate: { startedAt: event.timestamp, source: event.publisher ?? 'unknown' },
+      });
       return;
     }
 
@@ -220,6 +224,7 @@ export class SwarmTraceWriter {
       treeId: event.treeId,
       key,
       startedAt: event.timestamp,
+      publisher: event.publisher ?? 'unknown',
       totalAgents,
       parallelPeak: 0,
       agents: new Map(),
@@ -639,12 +644,13 @@ export class SwarmTraceWriter {
   /** 极简启发式失败归因，沿用 telemetry_tool_calls.error_category 的字符串风格 */
   private classifyFailure(message: string): string {
     const m = message.toLowerCase();
+    if (m.includes('worktree') && (m.includes('create') || m.includes('add'))) return 'worktree_create_failed';
     if (m.includes('timeout')) return 'timeout';
     if (m.includes('cancel')) return 'cancelled';
     if (m.includes('permission')) return 'permission';
     if (m.includes('rate limit') || m.includes('429') || isChineseRateLimitMessage(m)) return 'rate_limit';
     if (m.includes('network') || m.includes('econn')) return 'network';
-    if (m.includes('parse')) return 'parse_error';
+    if (/(?:^|[^a-z0-9-])parse/.test(m)) return 'parse_error';
     return 'unknown';
   }
 

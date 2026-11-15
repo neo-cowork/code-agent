@@ -375,8 +375,9 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('cron-artifact-row')).toBeNull();
     fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
     expect(screen.getByTestId('cron-artifact-open').textContent).toContain('report.md');
-    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('/work/run/report.md');
+    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('…/run/report.md');
     expect(screen.getByTestId('cron-artifact-text').textContent).toContain('notes.md');
+    expect(screen.getByTestId('cron-artifact-text').getAttribute('title')).toBe('notes.md');
     expect(screen.queryAllByTestId('cron-artifact-open')).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId('cron-artifact-open'));
@@ -397,6 +398,8 @@ describe('AutomationReviewInbox', () => {
     });
     expect(toastError).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
+    expect(screen.getAllByTestId('cron-artifact-text').map((node) => node.getAttribute('title')))
+      .toEqual(['…/run/report.md', 'notes.md']);
   });
 
   it('web 模式点击产物复制路径并提示，不调用打开 IPC', async () => {
@@ -449,6 +452,18 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('连接器未登录提示：有 summary 才显示（多条换行），只有去重记录没有 summary 不显示', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({ id: 'with-summary', title: '有提示', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' }, summary: '今天的定时运行没能读取「飞书」：它当前未登录。', summaryDay: '2032-01-05' } } } }),
+      makeRecord({ id: 'days-only', title: '仅去重', config: { pendingReview: { at: 1700000000000, connectorLost: { days: { feishu: '2032-01-05' } } } } }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('automation-review-connector-lost')).toHaveLength(1);
+    });
+    expect(screen.getByTestId('automation-review-connector-lost').textContent).toContain('「飞书」');
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);
@@ -486,16 +501,25 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
-  it('普通工具停车行显示 zh / en 两档按钮', async () => {
+  it('forceConfirm row hides tier buttons and keeps approve / deny', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, forceConfirm: true })]);
+    render(<AutomationReviewInbox />);
+    expect(await screen.findByTestId('parked-approve')).toBeTruthy();
+    expect(screen.getByTestId('parked-reject')).toBeTruthy();
+    expect(screen.queryByTestId('parked-allow-run')).toBeNull();
+    expect(screen.queryByTestId('parked-allow-24h')).toBeNull();
+  });
+
+  it('Write row without forceConfirm shows zh / en tier buttons', async () => {
     listParkedApprovals.mockResolvedValue([makeParked({ kind: 'tool_approval', tool: 'Write', riskClass: null })]);
     render(<AutomationReviewInbox />);
-    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('到这次做完为止');
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('本次任务内允许');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('24 小时内允许');
     cleanup();
 
     i18nState.language = 'en';
     render(<AutomationReviewInbox />);
-    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Until this run is done');
+    expect((await screen.findByTestId('parked-allow-run')).textContent).toBe('Allow for this task');
     expect(screen.getByTestId('parked-allow-24h').textContent).toBe('Allow for 24 hours');
   });
 
@@ -648,11 +672,10 @@ describe('AutomationReviewInbox', () => {
     const cards = screen.getAllByTestId('parked-approval-voided');
     expect(new Set(cards.map((card) => card.textContent)).size).toBe(6);
     cards.forEach((card, index) => {
-      const time = new Date(items[index].requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-      });
+      const prefix = language === 'en' ? 'Started' : '开始于';
+      const minute = String(32 + index).padStart(2, '0');
       expect(card.textContent).toContain(names[index % 3]);
-      expect(card.textContent).toContain(`${language === 'en' ? 'Started' : '开始于'} ${time}`);
+      expect(card.textContent).toMatch(new RegExp(`${prefix} (?:2026/)?11/0?7,? 00:${minute}(?!\\d)`));
       expect(card.textContent).not.toMatch(/session_|chat-|AM|PM/);
       expect(card.querySelector('button')).toBeNull();
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
@@ -768,6 +791,33 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
       'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
+  });
+
+  it.each(['zh', 'en'] as const)('presents shell approvals in user language while retaining command details (%s)', async (language) => {
+    i18nState.language = language;
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
+    render(<AutomationReviewInbox />);
+    const card = await screen.findByTestId('parked-approval-item');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).not.toContain('Bash');
+    const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
+    expect(summary.closest('details')?.open).toBe(false);
+    fireEvent.click(summary);
+    expect(screen.getByTestId('parked-shell-preview').textContent).toBe('ls -la /tmp/notes');
+  });
+
+  it('presents a single file write without exposing the internal tool or absolute path', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Write', riskClass: null, argsPreview: '/tmp/notes/today.md' })]);
+    render(<AutomationReviewInbox />);
+    const card = await screen.findByTestId('parked-approval-item');
+    expect(card.textContent).toContain('写入文件');
+    expect(card.textContent).toContain('today.md');
+    expect(screen.getByTestId('parked-args-preview').textContent).not.toContain('/tmp/notes');
+    expect(card.textContent).not.toContain('Write');
+    const details = screen.getByText('查看完整位置');
+    expect(details.closest('details')?.open).toBe(false);
+    fireEvent.click(details);
+    expect(screen.getByTestId('parked-file-location').textContent).toBe('/tmp/notes/today.md');
   });
 
   describe('一键授权此任务写文件夹（writeGrantFolder）', () => {
@@ -1206,5 +1256,27 @@ describe('localized parked approval copy', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('AutomationReviewInbox parked row origin (N-APPROVAL-CARD-USER-QUOTE-FU1-FIX ③④)', () => {
+  it.each([
+    ['zh', '由定时任务「每日飞书日历周会」启动', '由定时任务启动'],
+    ['en', 'Started by scheduled task “每日飞书日历周会”', 'Started by a scheduled task'],
+  ] as const)('%s: cron-origin row names the task, has no user quote; blank name falls back to generic', async (language, named, generic) => {
+    i18nState.language = language;
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'cron-row', tool: 'Bash', startedByAutomation: true, scheduledTaskName: '每日飞书日历周会' }),
+    ]);
+    const view = render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getByTestId('scheduled-task-origin')).toBeTruthy());
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(named);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+
+    listParkedApprovals.mockResolvedValue([makeParked({ id: 'cron-row-2', tool: 'Bash', startedByAutomation: true })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getByTestId('scheduled-task-origin')).toBeTruthy());
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
   });
 });

@@ -343,7 +343,6 @@ export const BrowserAgentWindow: React.FC = () => {
     maxHeight: stageFollow?.capture.maxHeight ?? null,
   });
 
-  // 三期 P1 / R4：画面交互透传（点击/滚轮/键盘/拖拽）；坐标 content 优先跟随视口 CSS。
   const stageInput = useBrowserStageUserInput({
     conversationId: currentSessionId,
     workspace: workingDirectory,
@@ -752,6 +751,7 @@ export const BrowserAgentWindow: React.FC = () => {
           }
           : stageInput.onStageKeyDown}
         onCompositionEnd={annotateMode ? undefined : stageInput.onStageCompositionEnd}
+        onPaste={stageInput.onStagePaste}
         onFocus={() => {
           if (!annotateMode && stageInput.interactive) stageInput.setStageFocused(true);
         }}

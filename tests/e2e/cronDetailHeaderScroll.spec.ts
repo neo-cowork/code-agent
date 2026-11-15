@@ -10,13 +10,11 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from './fixtures/axeTest';
 
 test.setTimeout(120_000);
 
 const require_ = createRequire(import.meta.url);
-const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SHOT_DIR = path.join(process.cwd(), 'test-results');
 const SCREENSHOT_DIR = process.env.CRON_DETAIL_SCREENSHOT_DIR || SHOT_DIR;
 const UNFIXED_CAPTURE = process.env.CRON_DETAIL_UNFIXED === '1';
@@ -40,6 +38,14 @@ interface GeometrySnapshot {
 }
 
 async function waitForAppReady(page: Page): Promise<void> {
+  const index = await page.request.get('/');
+  const match = /window\.__CODE_AGENT_TOKEN__=("(?:[^"\\]|\\.)*")/.exec(await index.text());
+  const headers: Record<string, string> = match ? { authorization: `Bearer ${JSON.parse(match[1]) as string}` } : {};
+  const current = await page.request.get('/api/settings', { headers });
+  const body = await current.json() as { data?: Record<string, unknown> };
+  const settings = body.data ?? body;
+  const updated = await page.request.put('/api/settings', { headers, data: { ...settings, ui: { language: 'zh' } } });
+  expect(updated.ok(), 'set fixture language before loading the page').toBe(true);
   const ssePromise = page.waitForResponse((response) => response.url().includes('/api/events'), { timeout: 20_000 });
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 15_000 });
@@ -57,15 +63,14 @@ async function waitForAppReady(page: Page): Promise<void> {
 
 async function cronDomain(page: Page, action: string, payload: unknown): Promise<unknown> {
   const { origin } = new URL(page.url());
-  const token = fs.readFileSync(path.join(REPO_ROOT, '.dev-token'), 'utf8').trim();
-  const response = await fetch(`${origin}/api/domain/cron/${action}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ payload }),
+  const token = await page.evaluate(() => (window as unknown as { __CODE_AGENT_TOKEN__?: string }).__CODE_AGENT_TOKEN__);
+  const response = await page.request.post(`${origin}/api/domain/cron/${action}`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    data: { payload },
   });
   const body = await response.json() as { success?: boolean; data?: unknown; error?: unknown };
-  if (!response.ok || body.success === false) {
-    throw new Error(`cron/${action}: ${response.status} ${JSON.stringify(body)}`);
+  if (!response.ok() || body.success === false) {
+    throw new Error(`cron/${action}: ${response.status()} ${JSON.stringify(body)}`);
   }
   return body.data;
 }
@@ -163,11 +168,11 @@ async function snapshot(detailRoot: Locator): Promise<GeometrySnapshot> {
     const mode = required(root.querySelector('[data-testid="cron-switch-to-auto"]'), 'execution-mode switch');
     const rows = root.querySelectorAll('[data-testid="cron-event-would-act-row"]');
     const lastDecision = required(rows.item(rows.length - 1), 'last would-act decision');
-    const clip = required(root.parentElement?.parentElement ?? null, 'detail workbench');
+    const clip = required(root.closest('[data-testid="cron-center-scroll"]'), 'page scroller');
     return {
-      scrollTop: root.scrollTop,
-      scrollHeight: root.scrollHeight,
-      clientHeight: root.clientHeight,
+      scrollTop: clip.scrollTop,
+      scrollHeight: clip.scrollHeight,
+      clientHeight: clip.clientHeight,
       overflowY: getComputedStyle(root).overflowY,
       root: box(root),
       clip: box(clip),
@@ -183,8 +188,7 @@ async function snapshot(detailRoot: Locator): Promise<GeometrySnapshot> {
 async function setDetailScroll(detailRoot: Locator, top: number): Promise<void> {
   await detailRoot.evaluate((element, nextTop) => {
     const pageScroll = element.closest('[data-testid="cron-center-scroll"]');
-    pageScroll?.scrollTo({ top: pageScroll.scrollHeight, behavior: 'instant' });
-    element.scrollTo({ top: nextTop, behavior: 'instant' });
+    pageScroll?.scrollTo({ top: nextTop, behavior: 'instant' });
   }, top);
   await detailRoot.evaluate(() => new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -227,15 +231,16 @@ async function assertDetailScrollable(
   console.log(`[${tag}] initial ${JSON.stringify(initial)}`);
   if (UNFIXED_CAPTURE) {
     const requestedScrollTop = await detailRoot.evaluate((element) => {
-      element.scrollTo({ top: element.scrollHeight, behavior: 'instant' });
-      return element.scrollHeight;
+      const scroller = element.closest('[data-testid="cron-center-scroll"]')!;
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'instant' });
+      return scroller.scrollHeight;
     });
     const attempted = await snapshot(detailRoot);
     console.log(`[${tag}] unfixed-scroll-attempt requestedScrollTop=${requestedScrollTop} ${JSON.stringify(attempted)}`);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, `cron-detail-header-${tag}-before-scroll-attempt.png`) });
   }
   expect(initial.scrollTop).toBe(0);
-  expect(initial.overflowY, 'the detail root must own the single vertical scrollbar').toBe('auto');
+  expect(initial.overflowY, 'detail content must flow into the page scroller').toBe('visible');
   expect(initial.scrollHeight).toBeGreaterThan(initial.clientHeight);
   expect(fullyInside(initial.mode, initial.clip), 'mode switch starts clipped below the detail viewport').toBe(false);
   expect(fullyInside(initial.lastDecision, initial.clip), 'last would-act row starts clipped below the detail viewport').toBe(false);
@@ -256,7 +261,7 @@ async function assertDetailScrollable(
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, `cron-detail-header-${tag}-after.png`) });
 
   await advanced.scrollIntoViewIfNeeded();
-  await setDetailScroll(detailRoot, await detailRoot.evaluate((element) => element.scrollTop));
+  await detailRoot.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   const bottom = await snapshot(detailRoot);
   console.log(`[${tag}] header-bottom ${JSON.stringify(bottom)}`);
   expect(fullyInside(bottom.advanced, bottom.clip), 'the expanded advanced fold is reachable').toBe(true);
@@ -265,7 +270,7 @@ async function assertDetailScrollable(
   expect(bottom.runs.y, 'runs block follows the header without overlap')
     .toBeGreaterThanOrEqual(bottom.header.y + bottom.header.height - 1);
   await runs.scrollIntoViewIfNeeded();
-  await setDetailScroll(detailRoot, await detailRoot.evaluate((element) => element.scrollTop));
+  await detailRoot.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   const runsVisible = await snapshot(detailRoot);
   console.log(`[${tag}] runs-visible ${JSON.stringify(runsVisible)}`);
   expect(fullyInside(runsVisible.runs, runsVisible.clip), 'runs block remains visible in the same scroll container').toBe(true);

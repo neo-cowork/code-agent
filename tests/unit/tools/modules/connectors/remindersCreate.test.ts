@@ -2,7 +2,8 @@
 // RemindersCreate (native ToolModule) Tests — P0-6.3 Batch 5
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ConfirmationGate } from '../../../../../src/host/agent/confirmationGate';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -355,7 +356,7 @@ describe('remindersCreateModule (native)', () => {
     it('formats remind_at with the connector time helper', async () => {
       const remindAtMs = Date.UTC(2026, 10, 9, 1, 0);
       execMock.mockResolvedValue({
-        data: { id: 'r-time', list: 'Work', title: 'Ship PR', completed: false },
+        data: { id: 'r-time', list: 'Work', title: 'Ship PR', completed: false, remindAtMs },
       });
       const result = await run({ ...validArgs, remind_at_ms: remindAtMs });
       expect(result.ok).toBe(true);
@@ -393,5 +394,133 @@ describe('remindersCreateModule (native)', () => {
       const stages = onProgress.mock.calls.map((c) => c[0].stage);
       expect(stages).toContain('starting');
     });
+  });
+});
+
+// Epoch-only sessions retain their original input contract and receipt behavior.
+describe('reminder time receipt contract', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ['Asia/Shanghai', '2026-11-08T23:30:00+08:00', '2026-11-09T09:00:00+08:00', '2026-11-09 09:00', '周一', 'UTC+8'],
+    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', '2026-11-11T14:00:00+08:00', '2026-11-11 14:00', '周三', 'UTC+8'],
+    ['America/Los_Angeles', '2026-03-07T23:30:00-08:00', '2026-03-08T09:00:00-07:00', '2026-03-08 09:00', '周日', 'UTC-7'],
+    ['America/Los_Angeles', '2026-10-31T23:30:00-07:00', '2026-11-02T14:00:00-08:00', '2026-11-02 14:00', '周一', 'UTC-8'],
+  ])('legacy ms without remind_at_local: %s fixed now %s gives approval and read-back receipt %s', async (zone, now, target, wallClock, weekday, offset) => {
+    vi.stubEnv('TZ', zone);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    const ms = Date.parse(target);
+    const args = { title: 'Send weekly report', remind_at_ms: ms };
+    execMock.mockResolvedValue({ data: {
+      id: 'r-time', list: '提醒事项', title: args.title, completed: false, remindAtMs: ms,
+    } });
+    const canUseTool = vi.fn<CanUseToolFn>(async (name, params) => {
+      const preview = new ConfirmationGate().buildPreview(name, params);
+      expect(preview?.summary).toBe('创建提醒');
+      expect(preview?.diff).toContain(new Date(ms).toLocaleString('zh-CN'));
+      expect(new Date(ms).getHours()).toBe(Number(wallClock.slice(11, 13)));
+      return { allow: true };
+    });
+    const result = await run(args, makeCtx(), canUseTool);
+    expect(canUseTool).toHaveBeenCalledWith('reminders_create', args);
+    expect(execMock).toHaveBeenCalledWith('create_reminder', args);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    const receipt = `提醒时间：${wallClock} (${offset})（${weekday}，${zone}）`;
+    expect(result.output).toContain(receipt);
+    expect(result.meta?.remindAtMs).toBe(ms);
+    expect(result.meta?.previewItem).toMatchObject({ content: { text: expect.stringContaining(receipt) } });
+    expect(result.output).toMatch(/提醒时间：\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(UTC[+-]\d+(?::\d{2})?\)（周.，[^）]+）/);
+  });
+
+  it('receipt quotes actual read-back rather than the requested instant', async () => {
+    vi.stubEnv('TZ', 'Asia/Shanghai');
+    execMock.mockResolvedValue({ data: {
+      id: 'r-real', list: '提醒事项', title: 'Dentist', completed: false,
+      remindAtMs: Date.parse('2026-11-11T14:00:00+08:00'),
+    } });
+    const result = await run({ title: 'Dentist', remind_at_ms: Date.parse('2026-11-10T22:00:00+08:00') });
+    expect(result).toMatchObject({ ok: true, output: expect.stringContaining('提醒时间：2026-11-11 14:00 (UTC+8)（周三，Asia/Shanghai）') });
+    expect(result).toMatchObject({ meta: { remindAtMs: Date.parse('2026-11-11T14:00:00+08:00') } });
+  });
+
+  it('does not invent a requested time when read-back is null or unavailable', async () => {
+    for (const [remindAtMs, text] of [[null, '未设置'], [undefined, '无法确认，请在提醒事项中查看']] as const) {
+      execMock.mockResolvedValue({ data: { id: 'r-none', list: '提醒事项', title: 'x', completed: false, remindAtMs } });
+      expect(await run({ title: 'x', remind_at_ms: 1_800_000_000_000 })).toMatchObject({
+        ok: true, output: expect.stringContaining(`提醒时间：${text}`), meta: { remindAtMs: null },
+      });
+    }
+  });
+
+  it('schema tells the model to quote the authoritative receipt time and use the env local date', () => {
+    expect(remindersCreateModule.schema.description).toContain('quote that receipt time verbatim');
+    expect(remindersCreateModule.schema.description).toContain("Today's date and Local timezone in <env>");
+  });
+});
+
+describe('remind_at_local through public execute', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
+
+  it.each([
+    ['Asia/Shanghai', '2026-11-08T23:30:00+08:00', 'tomorrow 9am', '2026-11-09 09:00', '2026-11-09T01:00:00Z', '周一', 'UTC+8'],
+    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', 'day after tomorrow 2 pm', '2026-11-11 14:00', '2026-11-11T06:00:00Z', '周三', 'UTC+8'],
+    ['America/Los_Angeles', '2026-03-07T23:30:00-08:00', 'tomorrow 9am over spring DST', '2026-03-08 09:00', '2026-03-08T16:00:00Z', '周日', 'UTC-7'],
+    ['America/Los_Angeles', '2026-10-31T23:30:00-07:00', 'day after tomorrow 2 pm over autumn DST', '2026-11-02 14:00', '2026-11-02T22:00:00Z', '周一', 'UTC-8'],
+    ['Asia/Shanghai', '2026-11-09T00:30:00+08:00', 'evening 8:30', '2026-11-09 20:30', '2026-11-09T12:30:00Z', '周一', 'UTC+8'],
+  ])('%s fixed now %s: %s → %s', async (zone, now, _request, local, instant, weekday, offset) => {
+    vi.stubEnv('TZ', zone);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+    const args = { title: 'Time contract', remind_at_local: local };
+    const ms = Date.parse(instant);
+    execMock.mockResolvedValue({ data: { id: 'r-local', list: '提醒事项', title: args.title, completed: false, remindAtMs: ms } });
+    const permission = vi.fn<CanUseToolFn>(async (tool, normalized) => {
+      expect(normalized).toEqual({ title: args.title, remind_at_ms: ms });
+      expect(new ConfirmationGate().buildPreview(tool, normalized)?.diff).toContain(new Date(ms).toLocaleString('zh-CN'));
+      return { allow: true };
+    });
+    const result = await run(args, makeCtx(), permission);
+    expect(permission).toHaveBeenCalledOnce();
+    expect(execMock).toHaveBeenCalledWith('create_reminder', { title: args.title, remind_at_ms: ms });
+    expect(args).toEqual({ title: 'Time contract', remind_at_local: local });
+    expect(result).toMatchObject({ ok: true, output: expect.stringContaining(`提醒时间：${local} (${offset})（${weekday}，${zone}）`), meta: { remindAtMs: ms } });
+  });
+
+  it.each([
+    '', 'tomorrow 09:00', '2026-02-30 09:00', '2026-11-09 24:00', '2026-11-09 09:60',
+    '2026-11-09T09:00', '2026-11-09 09:00Z', '2026-11-09 09:00+08:00', '2026-11-09 09:00:00',
+    '2026-11-09 9:00', ' 2026-11-09 09:00', null, 1794330000,
+  ])('rejects invalid local input %j before any approval or write', async (local) => {
+    const permission = vi.fn(allowAll);
+    expect(await run({ title: 'Invalid', remind_at_local: local }, makeCtx(), permission)).toMatchObject({ ok: false, code: 'INVALID_ARGS', error: expect.stringContaining('YYYY-MM-DD HH:mm') });
+    expect(permission).not.toHaveBeenCalled();
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a DST gap rather than silently moving it to 03:30', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    expect(await run({ title: 'Gap', remind_at_local: '2026-03-08 02:30' })).toMatchObject({ ok: false, code: 'INVALID_ARGS' });
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects conflicting time fields and never falls back to epoch for invalid local input', async () => {
+    vi.stubEnv('TZ', 'Asia/Shanghai');
+    for (const local of ['bad', '2026-11-09 09:00']) {
+      expect(await run({ title: 'Conflict', remind_at_local: local, remind_at_ms: Date.parse('2026-11-09T01:00:00Z') })).toMatchObject({ ok: false, code: 'INVALID_ARGS' });
+    }
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps valid leap dates and local midnight at 00:00', async () => {
+    vi.stubEnv('TZ', 'Asia/Shanghai');
+    const ms = Date.parse('2028-02-28T16:00:00Z');
+    execMock.mockResolvedValue({ data: { id: 'leap', list: '提醒事项', title: 'Leap', completed: false, remindAtMs: ms } });
+    expect(await run({ title: 'Leap', remind_at_local: '2028-02-29 00:00' })).toMatchObject({ ok: true, output: expect.stringContaining('2028-02-29 00:00') });
+    expect(execMock).toHaveBeenCalledWith('create_reminder', { title: 'Leap', remind_at_ms: ms });
   });
 });

@@ -40,7 +40,7 @@ describe('survivorManifest', () => {
     expect(extractAbsolutePaths('same alias /Users/linchen/c.ts')).toEqual(['/Users/linchen/c.ts']);
   });
 
-  it('extracts error lines conservatively', () => {
+  it('extracts only structured failure lines, ignoring prose that mentions errors', () => {
     const manifest = buildContextSurvivorManifest(
       [
         {
@@ -65,12 +65,7 @@ describe('survivorManifest', () => {
       { preserveRecentCount: 1 }
     );
 
-    expect(manifest.errors.map((item) => item.text)).toEqual([
-      'Traceback (most recent call last):',
-      'Error: Cannot find module /Users/linchen/missing.ts',
-      '[stderr]: fatal: bad revision',
-      'Command failed with exit code 1',
-    ]);
+    expect(manifest.errors.map((item) => item.text)).toEqual(['Command failed with exit code 1']);
   });
 
   it('summarizes shell commands with cwd, exit code, stdout, and stderr', () => {

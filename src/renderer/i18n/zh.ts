@@ -1,4 +1,4 @@
-import { agentRoleLabelsZh } from './agentRoleLabels';
+import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels';
 // ============================================================================
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
@@ -51,7 +51,7 @@ import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
 import { renderHumanPipeZh } from './renderHumanPipe';
-import { outcomeWordsZh } from './outcomeWords';
+import { outcomeWordsZh } from './outcomeWords'; import { delegationFailedActionsZh } from './delegationFailedActions';
 import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
@@ -62,7 +62,7 @@ import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
 
 export const zh = {
-  ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
+  ...authModalZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
   ...imageNarrationZh, ...mermaidZh,
   ...voiceAuditZh,
   ...capabilityHubZh,
@@ -76,7 +76,7 @@ export const zh = {
   ...workbenchTabsZh,
   ...receiptPresentationZh,
   ...renderHumanPipeZh,
-  ...outcomeWordsZh,
+  ...outcomeWordsZh, ...delegationFailedActionsZh,
   ...engineModelPanelZh,
   ...jevAdvisoryZh,
   ...workflowStallZh,

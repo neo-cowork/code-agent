@@ -62,6 +62,18 @@ afterEach(() => {
 });
 
 describe('RoleWakeLedger', () => {
+  it('does not infer no model call or a zero total from a missing cost', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w1', { result: { roleId: 'role-a', trigger: 'cadence', status: 'completed', sessionId: 'session-1' } }),
+      wakeExecution('w2', { cost: 0.03 }),
+    ]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent)).toContain('成本未记录'));
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).toContain('成本未完整记录');
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).not.toContain('$0.0000');
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).not.toContain('$0.0300');
+  });
   it('只聚合该角色 role-wake 任务的执行记录，行内显示成本与未运行原因', async () => {
     listJobs.mockResolvedValue([
       job('wake-a', { type: 'role-wake', roleId: 'role-a' }),

@@ -5,6 +5,8 @@ vi.unmock('better-sqlite3');
 // ADR-072 E6 打点：捕获 PostHog 与 host log 的结局记录（两处都 mock，测试不写真日志）。
 const loggerInfo = vi.hoisted(() => vi.fn());
 const loggerWarn = vi.hoisted(() => vi.fn());
+// 澄清守卫在会话里读不到用户消息时的留痕 warn（与本文件其余断言的 warn 无关）。
+const nonGuardWarnCalls = () => loggerWarn.mock.calls.filter((call) => !String(call[0] ?? '').includes('clarify guard'));
 const trackNodeCalls: Array<{ event: string; properties?: Record<string, unknown> }> = [];
 vi.mock('../../../../../src/host/observability/posthogNode', () => ({
   trackNode: vi.fn((event: string, properties?: Record<string, unknown>) => {
@@ -753,7 +755,7 @@ describe('delegate_session origin turn identity (FB-772)', () => {
       if (both.ok !== true || turnOnly.ok !== true) throw new Error('both contexts must be admitted');
       const rows = db.prepare('SELECT origin_turn_id FROM session_delegations ORDER BY created_at, origin_turn_id').all() as Array<{ origin_turn_id: string }>;
       expect(rows.map((row) => row.origin_turn_id)).toEqual(['run-7', 'turn-fallback-only']);
-      expect(loggerWarn).not.toHaveBeenCalled();
+      expect(nonGuardWarnCalls()).toHaveLength(0);
     } finally {
       db.close();
     }
@@ -769,8 +771,8 @@ describe('delegate_session origin turn identity (FB-772)', () => {
       expect(result.error.startsWith('invalid_call:')).toBe(true);
       expect(result.error).toContain('ctx.turnId and ctx.runId are empty');
       expect(result.error).toContain('Nothing was delegated');
-      expect(loggerWarn).toHaveBeenCalledTimes(1);
-      const warnText = String(loggerWarn.mock.calls[0]?.[0] ?? '');
+      expect(nonGuardWarnCalls()).toHaveLength(1);
+      const warnText = String(nonGuardWarnCalls()[0]?.[0] ?? '');
       expect(warnText).toContain('ctx.turnId is empty and ctx.runId is empty');
       expect(db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: 0 });
       expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 0 });

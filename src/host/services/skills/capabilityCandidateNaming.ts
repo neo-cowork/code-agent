@@ -166,7 +166,7 @@ export async function fillMissingNames(records: CapabilityCandidateRecord[]): Pr
       ...current,
       displayName: name.slice(0, 40),
       summary: typeof reply?.summary === 'string' && reply.summary.trim()
-        ? reply.summary.trim().slice(0, 80)
+        ? reply.summary.trim()
         : current.summary || fallbackSummary(name, language),
     });
     written += 1;

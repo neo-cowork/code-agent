@@ -7,11 +7,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { findWhisperBinary as findSharedWhisperBinary, whisperLanguageArgs } from './whisperBinary';
 
 const execFileAsync = promisify(execFile);
 
 export const LOCAL_SPEECH_CONFIG = {
-  WHISPER_PATHS: ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'],
   MODEL_DIR: path.join(os.homedir(), '.cache', 'whisper'),
   DEFAULT_MODEL: 'ggml-large-v3-turbo.bin',
   DEFAULT_LANGUAGE: 'zh',
@@ -97,17 +97,8 @@ export async function inspectWhisperCppReadiness(
 }
 
 async function findWhisperBinary(signal: AbortSignal): Promise<string | null> {
-  for (const p of LOCAL_SPEECH_CONFIG.WHISPER_PATHS) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    const { stdout } = await execFileAsync('which', ['whisper-cpp'], { signal });
-    const trimmed = stdout.trim();
-    if (trimmed && fs.existsSync(trimmed)) return trimmed;
-  } catch {
-    // not found
-  }
-  return null;
+  if (signal.aborted) return null;
+  return findSharedWhisperBinary();
 }
 
 export function normalizeWhisperModelFileName(modelName?: string): string {
@@ -225,7 +216,7 @@ export async function transcribeWithWhisperCpp(
     const whisperArgs: string[] = [
       '-m', modelPath,
       '-f', wavPath,
-      '-l', language,
+      ...whisperLanguageArgs(language),
       '-t', String(threads),
       '--no-prints',
     ];

@@ -17,6 +17,7 @@ export const cronRoutineRestateZh = {
   // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
   urgencyCriteriaLabel: '紧急判据（可选）',
   urgencyCriteriaPlaceholder: '例如：只有老板发来的邮件算今天必须处理',
+  simpleTimeAutoHint: '已按你写的「{word}」设为 {time}，不合适可以直接改',
   urgencyCriteriaHint: '设置后，非今日必办（可以稍后 / 仅供参考）的运行不再弹通知，安静等在待过目列表里。',
 };
 
@@ -34,5 +35,6 @@ export const cronRoutineRestateEn = {
   pendingRestateBack: 'Back to edit',
   urgencyCriteriaLabel: 'Urgency rule (optional)',
   urgencyCriteriaPlaceholder: 'e.g. only mail from my boss counts as must-do today',
+  simpleTimeAutoHint: 'Set to {time} because your task says “{word}” — change it if you like',
   urgencyCriteriaHint: 'With a rule set, non-urgent runs (can wait / FYI) skip notifications and wait quietly in the review list.',
 };

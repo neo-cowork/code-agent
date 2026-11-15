@@ -79,6 +79,35 @@ describe('listParkedApprovals toolCallId (real SQLite)', () => {
     expect(items[0]).toMatchObject({ sessionId: 'sess-real', status: 'pending', toolCallId: 'toolu_REAL1' });
   });
 
+  it.each([true, false, undefined])('production parkApproval -> SQLite -> listParkedApprovals round-trips forceConfirm=%s only when true', (forceConfirm) => {
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settingsWithPermissions({
+        autoApprove: { read: false, write: false, execute: false, network: false },
+        blockedCommands: [], devModeAutoApprove: false,
+      }),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main', hasApprovalUi: () => false,
+      onEvent: vi.fn(), injectedPendingApprovalRepo: approvals,
+    });
+    getPermissionModeManager().markUnattendedSession('sess-confirm');
+    void island.requestPermission({
+      type: 'command', tool: 'Bash', details: { command: 'npm test' },
+      sessionId: 'sess-confirm', forceConfirm,
+    });
+    const row = approvals.listByKindAndStatus('tool_approval', 'pending')[0];
+    const payload = JSON.parse(row.payloadJson);
+    const [item] = new SessionAutomationService().listParkedApprovals();
+    expect(item.id).toBe(row.id);
+    if (forceConfirm === true) {
+      expect(payload.forceConfirm).toBe(true);
+      expect(item.forceConfirm).toBe(true);
+    } else {
+      expect(payload).not.toHaveProperty('forceConfirm');
+      expect(item).not.toHaveProperty('forceConfirm');
+    }
+    island.resolveParkedApproval(row.id, 'deny');
+  });
+
   it('老行（payload 无 toolCallId / argsRef）→ 不带该字段', () => {
     approvals.insert({
       id: 'legacy', kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: 'sess-old',
