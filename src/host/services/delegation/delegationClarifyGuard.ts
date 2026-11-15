@@ -222,7 +222,7 @@ function clarifyNonSingleAnswer(rule: ClarifyGuardRule, candidates: ReadonlyArra
     rule,
     candidateNames,
     reason: 'non_single_answer',
-    message: `needs_clarification: 一次交接只能发给一个会话，用户的回答未能唯一确定单个目标会话，本次没有发送任何内容。${names}请用 AskUserQuestion 重新让用户单选，每个选项只能是一个会话的显示名（纯文字、不含 id，禁止提供「两个都发」「两条都发」「都发」「全部」等选项）；在用户重新单选之前不要重试 delegate_session。如果重问后用户仍未单选单个会话，请停止调用本工具，直接用中文告知用户本次没有发送。`,
+    message: `needs_clarification: 一次交接只能发给一个会话，用户的回答未能唯一确定单个目标会话，本次没有发送任何内容。${names}请用 AskUserQuestion 重新让用户单选，每个选项只能是一个会话的显示名（纯文字、不含 id，禁止提供「两个都发」「两条都发」「都发」「全部」等选项）；在用户重新单选之前不要重试 delegate_session。如果重问后用户仍未单选单个会话，请停止调用本工具，直接用用户的语言告知用户本次没有发送。`,
   };
 }
 
