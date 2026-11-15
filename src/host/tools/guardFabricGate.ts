@@ -15,6 +15,8 @@ import { isBashToolName } from './toolNames';
 import { matchUserAskRule } from './userAskRuleGate';
 import { isReadOnlyProbeEnabled } from './readOnlyProbeHook';
 import { scheduleReadOnlyProbeRoot } from './scheduleReadOnlyProbe';
+import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
+import { homedir } from 'os';
 
 const logger = createLogger('GuardFabricGate');
 
@@ -113,6 +115,16 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
 
   const builtinDeny = evaluateBuiltinHardDeny(input);
   if (builtinDeny) return { deny: builtinDeny };
+
+  // Closed compound plans expose their primitive commands too. An explicit deny
+  // on cat/head must remain a hard deny, never become an approvable topology ask.
+  const plan = isBashToolName(input.policyToolName) && typeof input.params.command === 'string'
+    ? compileReadOnlyProbePlan(input.params.command, { homeDir: homedir(), platform: process.platform }) : null;
+  for (const source of plan?.steps.flatMap((step) => step.extraSources ?? []) ?? []) {
+    const primitive = { ...input, params: { ...input.params, command: source } };
+    const denied = evaluateUserDeny(primitive) ?? evaluateBuiltinHardDeny(primitive);
+    if (denied) return { deny: denied };
+  }
 
   // 用户 ask 规则（Bash(rm *) → ask）命中：强制进审批，不被自动放行捷径越过。
   // deny 已在上面先行；非 main 拓扑的 topology 裁决（deny）仍优先于这里的 ask。

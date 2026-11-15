@@ -19,6 +19,8 @@ import { PROBE_EXIT_STATUS, type ProbeCommand, type ProbeRedirect, type PyExpr, 
 export interface ProbeAuthority {
   workingDirectory: string;
   workspaceRoot?: string;
+  /** Explicit cron grant: replaces ambient cwd/workspace read authority. */
+  readRoots?: string[];
   /** 本会话更早的用户消息原文（路径逐字出现即视为用户点名）。 */
   userTexts: string[];
   /** 本会话附件的本体路径。 */
@@ -109,7 +111,7 @@ export function authorizeProbePath(raw: string, auth: ProbeAuthority): string | 
   const real = realpathOfPrefix(abs);
   if (isSensitive(abs, auth) || isSensitive(real, auth)) return null;
 
-  const roots = [auth.workingDirectory, auth.workspaceRoot]
+  const roots = (auth.readRoots ?? [auth.workingDirectory, auth.workspaceRoot])
     .filter((r): r is string => Boolean(r) && path.resolve(r as string) !== path.parse(path.resolve(r as string)).root);
   if (roots.some((root) => isInside(abs, path.resolve(root)) && isInside(real, safeRealpath(path.resolve(root))))) return abs;
 
@@ -183,10 +185,10 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunResult> {
+function runFixed(bin: string, args: string[], cwd: string, input?: Buffer): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
     // argv0：GNU 工具用 argv[0] 作错误前缀（"ls: …"），与经 shell 以裸命令名执行时一致。execFile 不转发 argv0，必须直接 spawn。
-    const child = spawn(bin, args, { cwd, env: scrubbedEnv(), argv0: path.basename(bin), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, args, { cwd, env: scrubbedEnv(), argv0: path.basename(bin), stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -205,13 +207,17 @@ function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunRes
       if (kind === 'out') stdout += chunk.toString('utf8'); else stderr += chunk.toString('utf8');
       if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) abort(`exec ${path.basename(bin)} output too large`);
     };
-    child.stdout.on('data', collect('out'));
-    child.stderr.on('data', collect('err'));
+    child.stdout?.on('data', collect('out'));
+    child.stderr?.on('data', collect('err'));
     child.on('error', () => settle(() => reject(new ProbeAbort(`exec ${path.basename(bin)} failed`))));
     child.on('close', (code) => {
       if (code === null) { settle(() => reject(new ProbeAbort(`exec ${path.basename(bin)} killed by signal`))); return; }
       settle(() => resolve({ stdout, stderr, exitCode: code }));
     });
+    if (input) {
+      child.stdin?.on('error', () => abort('fixed program stdin failed'));
+      child.stdin?.end(input);
+    }
   });
 }
 
@@ -251,6 +257,35 @@ class Runner {
 
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
+      case 'file-loop': {
+        const directory = this.need(cmd.directory);
+        if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('loop directory unavailable');
+        for (const file of cmd.files) {
+          const target = this.need(file.path);
+          const stat = fs.statSync(target);
+          if (!stat.isFile() || stat.size > MAX_OUTPUT_CHARS) throw new ProbeAbort('loop file unavailable or too large');
+          const content = fs.readFileSync(target);
+          let bytes: string | undefined;
+          for (const statement of cmd.body) {
+            if (statement.kind === 'cat') { this.emit(redirect, content.toString('utf8'), ''); continue; }
+            let text = '';
+            for (const part of statement.parts) {
+              if ('text' in part) text += part.text;
+              else if (part.value === 'file') text += file.label;
+              else {
+                if (bytes === undefined) {
+                  const result = await runFixed('/usr/bin/wc', ['-c'], directory, content);
+                  if (result.exitCode !== 0 || result.stderr) throw new ProbeAbort('loop byte count failed');
+                  bytes = result.stdout.replace(/\n+$/, '');
+                }
+                text += bytes;
+              }
+            }
+            this.emit(redirect, `${text}\n`, '');
+          }
+        }
+        return 0;
+      }
       case 'noop': return 0;
       case 'test': {
         const abs = this.need(cmd.path);

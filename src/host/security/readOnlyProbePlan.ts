@@ -9,6 +9,8 @@
 // - 本文件只做「语法 → 计划」，不碰文件系统；路径授权与执行在 readOnlyProbeExecutor.ts。
 // ============================================================================
 
+import { compileReadOnlyFileLoop, type ProbeFileLoop } from './readOnlyProbeFileLoop';
+
 type ProbeStream = 'out' | 'err' | 'null';
 
 /** 一条简单命令的 fd1 / fd2 最终去向（按 shell 从左到右的重定向语义折叠）。 */
@@ -29,6 +31,7 @@ export type PyStmt =
   | { t: 'try'; body: PyStmt[]; excName: string | null; handler: PyStmt[] };
 
 export type ProbeCommand =
+  | ProbeFileLoop
   | { kind: 'noop' }
   | { kind: 'test'; flag: '-e' | '-f' | '-d'; path: string }
   | { kind: 'echo'; text: string; newline: boolean }
@@ -462,6 +465,10 @@ export interface ProbeCompileContext {
 export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileContext): ReadOnlyProbePlan | null {
   if (ctx.platform === 'win32') return null;
   if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0') || command.includes('\u0001')) return null;
+  const loop = compileReadOnlyFileLoop(command, ctx.homeDir);
+  if (loop) return { steps: [{ op: ';', cmd: loop, redirect: { out: 'out', err: 'err' }, program: 'file-loop', source: command,
+    extraSources: [...loop.sources, ...(loop.body.some((statement) => statement.kind === 'echo' && statement.parts.some((part) => 'value' in part && part.value === 'bytes')) ? ['wc -c'] : []), ...loop.files.map((file) => `cat ${JSON.stringify(file.path)}`)],
+  }] };
   const tokens = tokenize(command, new Map(), ctx.homeDir);
   if (!tokens) return null;
 

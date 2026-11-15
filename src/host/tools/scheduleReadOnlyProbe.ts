@@ -36,7 +36,8 @@ export function scheduleReadOnlyProbeRoot(sessionId: string | undefined, command
     }
     let hasPath = false;
     for (const { cmd } of plan.steps) {
-      const paths = cmd.kind === 'ls' ? cmd.paths : cmd.kind === 'test' ? [cmd.path] : undefined;
+      const paths = cmd.kind === 'ls' ? cmd.paths : cmd.kind === 'test' ? [cmd.path]
+        : cmd.kind === 'file-loop' ? [cmd.directory, ...cmd.files.map((file) => file.path)] : undefined;
       if (paths) {
         if (!paths.length) return undefined;
         for (const operand of paths) {

@@ -160,6 +160,56 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
       });
     }
 
+    for (const header of ['=== $f ===', '=== $f ($(wc -c < "$f") bytes) ===', '=== $f ($(wc -c < $f) bytes) ===']) {
+      it(`finite file loop inside grant -> in-process, no card: ${header}`, async () => {
+        const command = `cd "${elsewhere}" && for f in doc.pdf secret.txt; do echo "${header}"; cat "$f"; echo; done`;
+        spawnCalls.length = 0;
+        const result = await cronRun(command);
+        expect(result.success).toBe(true);
+        expect(result.metadata?.readonlyProbePlan).toBe(true);
+        expect(result.output).toBe(realBash(command));
+        expect(permissionAsks).toEqual([]);
+        expect(spawnCalls.every((call) => call.bin === '/usr/bin/wc')).toBe(true);
+      });
+    }
+
+    for (const target of ['outside', 'credential', 'symlink']) {
+      it(`finite file loop ${target} -> card`, async () => {
+        const file = target === 'outside' ? '../work/x' : target === 'credential' ? '.env' : 'escape/x';
+        await fs.writeFile(path.join(elsewhere, '.env'), 'EXAMPLE=fixture');
+        if (target === 'symlink') await fs.symlink(fx, path.join(elsewhere, 'escape'));
+        await cronRun(`cd "${elsewhere}" && for f in ${file}; do cat "$f"; done`);
+        expect(permissionAsks).toHaveLength(1);
+      });
+    }
+
+    for (const statement of ['rm -f "$f"', 'echo changed > "$f"', 'curl https://example.test', 'echo "$(id -un)"']) {
+      it(`finite file loop cannot hide side effects: ${statement}`, async () => {
+        const result = await cronRun(`cd "${elsewhere}" && for f in doc.pdf; do cat "$f"; ${statement}; done`);
+        expect(result.success).toBe(false);
+        expect(probeRows()).toHaveLength(0);
+      });
+    }
+
+    it('user ask on cat inside a file loop -> card', async () => {
+      getPolicyEngine().loadUserRules({ ask: ['Bash(cat *)'] });
+      await cronRun(`cd "${elsewhere}" && for f in doc.pdf; do cat "$f"; done`);
+      expect(permissionAsks).toHaveLength(1);
+    });
+
+    it('user deny on cat inside a file loop -> hard deny without a card', async () => {
+      getPolicyEngine().loadUserRules({ deny: ['Bash(cat *)'] });
+      const result = await cronRun(`cd "${elsewhere}" && for f in doc.pdf; do cat "$f"; done`);
+      expect(result.success).toBe(false);
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('disabled probe leaves a finite file loop asking', async () => {
+      process.env.CODE_AGENT_READONLY_PROBE = 'off';
+      await cronRun(`cd "${elsewhere}" && for f in doc.pdf; do cat "$f"; done`);
+      expect(permissionAsks).toHaveLength(1);
+    });
+
     for (const target of ['outside', 'credential']) {
       it(`ls pipe head with ${target} path -> card`, async () => {
         const file = target === 'outside' ? fx : path.join(elsewhere, '.env');
