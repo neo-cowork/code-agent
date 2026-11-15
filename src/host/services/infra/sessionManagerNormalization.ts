@@ -1,6 +1,8 @@
 import { homedir } from 'node:os';
 
 import type { ModelConfig } from '../../../shared/contract';
+import type { DatabaseService } from '../core/databaseService';
+import { shouldKeepLocalTitleOverCloud } from '../../../shared/sessionTitlePlaceholder';
 
 const TELEMETRY_PROMPT_CORRELATION_WINDOW_MS = 60_000;
 
@@ -101,4 +103,36 @@ function normalizePromptForBackfill(content: string): string {
         return rawUrl;
       }
     });
+}
+
+// ============================================================================
+// 云端 sessions 行标题回灌取值（FB-1089 / N-FIX-SESSION-TITLE-REVERTS-TO-RAW-MESSAGE）
+// 云端行的 title 只在新会话时由 web 首轮写入过自动档（syncSupabaseSessionRow 只在
+// isNewSession 写 title，此后每轮只顶 updated_at），本地智能标题/用户命名一旦定档，
+// 回灌时不能被时间戳更新的自动档顶回。判定细节在 shared 的
+// shouldKeepLocalTitleOverCloud；这里只负责从本地库取参（现标题 + 首条用户消息）。
+// ============================================================================
+
+/** 首条用户消息在消息表头部的扫描窗口；用户消息总在会话头部，超窗视为无源文本。 */
+const TITLE_SOURCE_SCAN_MESSAGES = 12;
+
+function firstVisibleUserMessage(db: DatabaseService, sessionId: string): string {
+  const first = db
+    .getMessages(sessionId, TITLE_SOURCE_SCAN_MESSAGES)
+    .find((message) => message.role === 'user' && !message.isMeta && message.content.trim().length > 0);
+  return first?.content ?? '';
+}
+
+/**
+ * 云端会话行回灌本地时 title 列的取值：本地已定档且云端是自动临时档时保留本地
+ * 标题，其余（本地无行、本地未定档、云端是真改名）照旧用云端值。
+ * 查询不按 owner 过滤——create 分支按 owner 过滤查不到的行（user_id NULL/异主）
+ * 同样可能有已定档标题。
+ */
+export function resolveCloudSessionTitle(db: DatabaseService, sessionId: string, cloudTitle: string): string {
+  const local = db.getSession(sessionId, { includeDeleted: true });
+  if (!local) return cloudTitle;
+  return shouldKeepLocalTitleOverCloud(local.title, cloudTitle, firstVisibleUserMessage(db, sessionId))
+    ? local.title
+    : cloudTitle;
 }
