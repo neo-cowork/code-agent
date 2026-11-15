@@ -14,37 +14,40 @@ import type { DoctorFixCode } from '../../../shared/constants/doctor';
 import { getMCPClient } from '../../mcp/mcpClient';
 import type { MCPServerStatus } from '../../mcp/types';
 import type { DoctorItem, DoctorStatus } from '../types';
+import { doctorCopy } from '../i18n/doctorCopy';
 
-const STATUS_MAP: Record<MCPServerStatus, {
+type McpDoctorCopy = ReturnType<typeof doctorCopy>['mcp'];
+
+const statusMapFor = (copy: McpDoctorCopy): Record<MCPServerStatus, {
   status: DoctorStatus;
   label: string;
   suggestion?: string;
   fixCode?: DoctorFixCode;
-}> = {
-  connected: { status: 'pass', label: '已连接' },
+}> => ({
+  connected: { status: 'pass', label: copy.connected },
   lazy: {
     status: 'skip',
-    label: '懒加载（尚未触发首次调用）',
+    label: copy.lazy,
   },
   connecting: {
     status: 'warn',
-    label: '连接中',
-    suggestion: '如果长时间停在此状态，检查 server 是否真的在启动',
+    label: copy.connecting,
+    suggestion: copy.connectingSuggestion,
     fixCode: DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS,
   },
   disconnected: {
     status: 'warn',
-    label: '未连接',
-    suggestion: '若希望立即可用，可在 MCP 面板手动连接',
+    label: copy.disconnected,
+    suggestion: copy.disconnectedSuggestion,
     fixCode: DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS,
   },
   error: {
     status: 'fail',
-    label: '连接错误',
-    suggestion: '检查 server 命令、网络、依赖；详细错误见 details',
+    label: copy.error,
+    suggestion: copy.errorSuggestion,
     fixCode: DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS,
   },
-};
+});
 
 export function checkMcpServers(): DoctorItem[] {
   const client = getMCPClient();
@@ -56,13 +59,14 @@ export function checkMcpServers(): DoctorItem[] {
         category: 'mcp',
         name: 'MCP servers',
         status: 'skip',
-        message: '尚未配置任何 MCP server',
+        message: doctorCopy().mcp.noServers,
       },
     ];
   }
 
+  const statusMap = statusMapFor(doctorCopy().mcp);
   return states.map((state): DoctorItem => {
-    const mapping = STATUS_MAP[state.status];
+    const mapping = statusMap[state.status];
     const detailParts: string[] = [];
     if (state.toolCount > 0) detailParts.push(`${state.toolCount} tools`);
     if (state.resourceCount > 0) detailParts.push(`${state.resourceCount} resources`);
