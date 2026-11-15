@@ -16,6 +16,7 @@ import type { HookManager } from '../hooks/hookManager';
 import { getPermissionModeManager } from '../permissions/modes';
 import { computePolicyHash } from '../permissions/policyHash';
 import { getAuditLogger } from '../security';
+import { getDenialRegistry } from '../security/denialRegistry';
 import {
   getDecisionHistory,
   isAutoDenyOutcome,
@@ -30,7 +31,7 @@ import { createTraceStep, type DecisionTraceBuilder } from '../security/decision
 import { createLogger } from '../services/infra/logger';
 import { sanitizeToolParams } from './toolExecutorHelpers';
 import { getToolLedgerSink } from './toolLedgerSink';
-import { commandAnalysisDenialError } from './toolPermissionClassification';
+import { commandAnalysisDenialError, userDeniedGoalStickyError } from './toolPermissionClassification';
 import type { PermissionRequestData, ToolExecutionResult } from './types';
 
 const logger = createLogger('ToolExecutor');
@@ -138,6 +139,8 @@ export interface UnanalyzableCommandDenialInput {
   permStartTime: number;
   traceBuilder: DecisionTraceBuilder;
   sessionId?: string;
+  sourceMessageId?: string;
+  runId?: string;
   ledgerOrigin: ToolLedgerOrigin;
   auditEnabled: boolean;
   hookManager?: HookManager;
@@ -147,13 +150,25 @@ export interface UnanalyzableCommandDenialInput {
  * Unanalyzable shell commands (e.g. `$(...)`, backticks, unclosed quotes) can never
  * be approved from the session: deny before building/raising a pointless approval card.
  */
-export function denyUnanalyzableCommand(input: UnanalyzableCommandDenialInput): ToolExecutionResult {
-  const hostReason = commandAnalysisDenialError(input.toolName);
+export async function denyUnanalyzableCommand(input: UnanalyzableCommandDenialInput): Promise<ToolExecutionResult> {
+  // Preserve the goal/effect sticky guard without invoking an approval handler.
+  // analysisFailed binds the distinct log reason and prevents user-denial registration.
+  const registry = getDenialRegistry();
+  const decision = await registry.observeApproval({
+    sessionId: input.sessionId, sourceMessageId: input.sourceMessageId, runId: input.runId,
+    toolName: input.toolName, enabled: true, analysisFailed: true,
+    ask: async () => registry.refuseIfGoalDenied({ tool: input.toolName, details: input.params })
+      ?? { approved: false, denialSource: 'fail-closed' },
+  });
+  const hostReason = decision.denialSource === 'goal-sticky-host'
+    ? userDeniedGoalStickyError(input.toolName)
+    : commandAnalysisDenialError(input.toolName);
   const denialError = hostReason.modelText;
   logger.warn('Unanalyzable command denied before permission request', {
     tool: input.toolName,
     sessionId: input.sessionId,
     reason: input.reason,
+    denialSource: decision.denialSource,
   });
   if (input.auditEnabled) {
     getAuditLogger().log({
@@ -186,7 +201,7 @@ export function denyUnanalyzableCommand(input: UnanalyzableCommandDenialInput): 
     input.toolName,
     input.params,
     'policy-deny',
-    'command_analysis_failed/fail-closed',
+    `command_analysis_failed/${decision.denialSource}`,
     input.permStartTime,
     input.traceBuilder.build('deny'),
     input.sessionId,
