@@ -6,6 +6,11 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../../services/infra/logger';
 import { getConfigService } from '../../services/core/configService';
+import { APPLE_EVENTS_PERMISSION_PROMPT_TIMEOUT_MS } from '../../../shared/constants/envAssist';
+import { resolveShellBridgeClientFromEnv } from '../../permissions/envAssist/shellBridge/client';
+import { createShellPassiveBridge } from '../../permissions/envAssist/probes/shellPassiveBridge';
+import { automationProbe } from '../../permissions/envAssist/probes/passiveProbes';
+import type { PassiveBridge } from '../../permissions/envAssist/probes/types';
 
 const logger = createLogger('AppleScriptDate', { lane: 'mcp' });
 
@@ -140,10 +145,31 @@ export function appleScriptFailureLogDetail(error: unknown): string {
   return message.slice(0, 300);
 }
 
-export async function runAppleScript(lines: string[]): Promise<string> {
+// The shell hands bridge credentials over once per process; build the passive bridge once (null = no desktop shell).
+let passiveBridge: PassiveBridge | null | undefined;
+
+/**
+ * Whether macOS may still ask the user before a script can control this app. Passive (never prompts):
+ * -1744 undecided, or -600 (app not running yet, so the answer is unknown until the script launches it).
+ * Without the desktop shell the answer is unknown and the ordinary budget applies.
+ */
+async function automationAnswerPending(targetBundleId: string): Promise<boolean> {
+  passiveBridge ??= ((client) => (client ? createShellPassiveBridge(client) : null))(resolveShellBridgeClientFromEnv());
+  const { status } = await automationProbe(passiveBridge, targetBundleId)();
+  return status === 'undecided' || status === 'not_running';
+}
+
+/**
+ * `permissionTarget` (the controlled app's bundle id) opts a connector into the permission-dialog budget: while the
+ * automation answer is still pending, the first script shows the system dialog and blocks until the user answers.
+ */
+export async function runAppleScript(lines: string[], options?: { permissionTarget?: string }): Promise<string> {
   const args = lines.flatMap((line) => ['-e', line]);
+  const timeout = options?.permissionTarget && await automationAnswerPending(options.permissionTarget)
+    ? APPLE_EVENTS_PERMISSION_PROMPT_TIMEOUT_MS
+    : DEFAULT_TIMEOUT;
   const { stdout } = await execFileAsync('osascript', args, {
-    timeout: DEFAULT_TIMEOUT,
+    timeout,
     maxBuffer: MAX_BUFFER,
   });
   return stdout.trim();

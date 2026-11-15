@@ -16,6 +16,7 @@ const DesktopDomainRequestSchema = z.object({
     'clearManagedBrowserCookies',
     'closeManagedBrowserSession',
     'detachBrowserRelayTab',
+    'dismissMeetingUpcoming',
     'ensureManagedBrowserSession',
     'getAudioCaptureStatus',
     'getAudioSegments',

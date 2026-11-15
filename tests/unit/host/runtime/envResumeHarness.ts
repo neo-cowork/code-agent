@@ -26,7 +26,7 @@ const out = (label: string, value: unknown) => process.stdout.write(`${label} ${
 
 export const databasePorts: { current: Record<string, unknown> } = { current: {} };
 
-export async function harness(workspace: string, file = ':memory:', sideEffect = false) {
+export async function harness(workspace: string, file = ':memory:', sideEffect = false, calendar = false) {
   const db = new Database(file);
   applySchema(db, createLogger('EnvResumeFixture'));
   const sessions = new SessionRepository(db);
@@ -35,13 +35,15 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   const registry = getApplicationRunRegistry(); registry.clear();
   registry.configureDurableKernel(new DurableRunKernel({ stores: repository, ownerId: 'env-host', processInstanceId: `env-process-${process.pid}`, leaseDurationMs: 120_000 }));
   const sessionId = 'env-session', runId = 'env-run', sourceId = 'env-source', toolCallId = 'env-call';
-  const name = sideEffect ? 'env_fixture_write' : 'env_fixture_read';
+  // calendar: the real tool name, failing the way the native connector does (not_authorized), so the resolver decides to park.
+  const name = calendar ? 'calendar' : sideEffect ? 'env_fixture_write' : 'env_fixture_read';
   const protocol = getProtocolRegistry();
   let blocked = true, executions = 0, resumes = 0;
   const seenCalls: string[] = [], seenRuns: string[] = [];
   const schema: ToolSchema = { name, description: 'Environment recovery fixture', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'string' }, category: 'network', permissionLevel: sideEffect ? 'write' : 'read', readOnly: !sideEffect, requiresPermission: false };
   protocol.register(schema, async () => ({ schema, createHandler: () => ({ schema, execute: async (_args, context) => {
     executions++; seenCalls.push(context.currentToolCallId!); seenRuns.push(context.runId!);
+    if (blocked && calendar) return { ok: false, error: 'Calendar not authorized', code: 'not_authorized' };
     if (blocked) throw new EnvBlockedError('perm_automation', 'mail', context.currentToolCallId!);
     return { ok: true, output: 'green tool result' };
   } }) }));

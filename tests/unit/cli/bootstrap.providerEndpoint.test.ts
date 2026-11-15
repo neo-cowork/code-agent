@@ -154,6 +154,18 @@ describe('buildCLIConfig provider transport settings', () => {
     expect(resolveProviderBaseUrl(config)).toBe(MODEL_API_ENDPOINTS.zhipu);
   });
 
+  it('默认 provider 没写 model：和渲染层/会话默认同走 fallbackModelForProvider，不掉到全局 LongCat（现场配置）', () => {
+    // 2026-11-15 Dev 现场：默认 = 云端下发的团队中转，model 为空，模型列表只有 gpt-5.5 / gpt-5.4-mini。
+    // 输入框显示 gpt-5.5，host 这里却直接取 DEFAULT_MODELS.chat 实跑 LongCat-2.0。
+    mocks.getSettings.mockReturnValue({ models: { default: 'custom-team-relay', providers: {
+      'custom-team-relay': {
+        enabled: true, managedByCloud: true, protocol: 'openai', baseUrl: 'https://relay.test/v1',
+        models: { 'gpt-5.5': { enabled: true }, 'gpt-5.4-mini': { enabled: true } },
+      },
+    } } });
+    expect(buildCLIConfig({}).modelConfig).toMatchObject({ provider: 'custom-team-relay', model: 'gpt-5.5' });
+  });
+
   it('normalizes explicit aliases before looking up provider settings and key', () => {
     mocks.getSettings.mockReturnValue({ models: { providers: {
       claude: { model: 'test-model', baseUrl: 'https://claude.test/v1', protocol: 'claude' },
