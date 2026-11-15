@@ -110,14 +110,14 @@ describe('diagnosis never prompts', () => {
       IOHIDRequestAccess: async () => { throw new Error('wrong_grant'); },
       AEDeterminePermissionToAutomateTarget: async (target, ask) => {
         expect(mint).toHaveReturnedWith(expect.objectContaining({ noticeId: 'current', issuedAt: 100 }));
-        expect(target).toBe('com.apple.Calendar');
+        expect(target).toBe('com.apple.iCal');
         expect(ask).toBe(true);
         calls++;
       },
     };
     const notice: EnvAssistNotice = {
       id: 'current', sessionId: 'session', runId: 'run', class: 'perm_automation', phase: 'needs_user',
-      sentenceKey: 'env.sentence.calendar', target: { id: 'com.apple.Calendar', labelKey: 'calendar' },
+      sentenceKey: 'env.sentence.calendar', target: { id: 'calendar', labelKey: 'calendar' },
       action: { kind: 'request_grant', labelKey: 'env.allow.calendar', payload: { pane: 'automation' } },
       resume: { mode: 'manual' }, updatedAt: 1,
     };

@@ -35,6 +35,12 @@ interface EnvAssistDependencies {
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
 }
 
+// Notice targets are Neo's own ids (i18n keys); TCC needs the target app's bundle id.
+const AUTOMATION_BUNDLE_IDS: Readonly<Record<string, string>> = {
+  calendar: 'com.apple.iCal', mail: 'com.apple.mail', reminders: 'com.apple.reminders',
+};
+const automationBundleId = (targetId: string | undefined) => (targetId ? AUTOMATION_BUNDLE_IDS[targetId] : undefined);
+
 function resolveGrantProbe(
   pane: string,
   bridge: EnvAssistDependencies['passiveBridge'],
@@ -79,10 +85,20 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       return { status: grant === 'requested' ? 'checked' : grant, outcome };
     }
     if (request.actionKind === 'request_grant') {
-      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, notice.target?.id);
+      const targetBundleId = automationBundleId(notice.target?.id);
+      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, targetBundleId);
       if (!probe) return { status: 'rejected' };
+      // Only "undecided" can show the system dialog. Refused (-1743) never prompts again and a target that isn't running (-600)
+      // can't be asked, so both go straight to Settings instead of a click that does nothing (ADR-090 §3 row 1).
+      // ponytail: not_running opens Settings rather than launching the target first; launch-then-ask when S4 owns Apple events.
+      if (request.payload.pane === 'automation') {
+        const before = await probe();
+        if ((before.status === 'denied' || before.status === 'not_running') && deps.available()) {
+          return { status: await deps.open('automation') ? 'opened' : 'not_available', outcome: before };
+        }
+      }
       const token = mintClickToken(notice.id, deps.now);
-      const grant = await requestGrant(token, { ...request.payload, targetBundleId: notice.target?.id }, deps.grantBridge ?? null, deps.now);
+      const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
       const outcome = await probe();
       return { status: grant === 'requested' ? 'checked' : grant, outcome };
     }
