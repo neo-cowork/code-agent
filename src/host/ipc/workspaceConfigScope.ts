@@ -27,6 +27,8 @@ import {
   getSkillsDir,
   getUserConfigDir,
 } from '../config/configPaths';
+import { readUiLanguage } from '../session/sessionTitleHostPrompt';
+import { toEnglishConfigScope } from './workspaceConfigScopeEn';
 
 interface BuildConfigScopeOptions {
   userConfigDir?: string;
@@ -730,5 +732,7 @@ export async function handleGetConfigScope(
   const workingDirectory = payload?.workingDirectory?.trim()
     || getAppService()?.getWorkingDirectory()
     || null;
-  return buildConfigScopeSummary(workingDirectory);
+  const summary = await buildConfigScopeSummary(workingDirectory);
+  // 摘要本身用中文拼；英文界面在这个唯一的 IPC 出口整体换成英文（FB-1290）
+  return readUiLanguage() === 'en' ? toEnglishConfigScope(summary) : summary;
 }
