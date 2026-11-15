@@ -166,14 +166,15 @@ export const SessionAgentsPanel: React.FC = () => {
   const statusLabel = (row: AgentRow): string => {
     const labels = text.panel.status;
     if (row.hold === 'approval') return labels.needsApproval;
+    const outcomeKey = row.outcomeKey;
+    const label = outcomeKey ? t.outcomeWords[outcomeKey].badge.label : labels[row.status];
     if (row.status === 'failed') {
       const reason = row.failureReason;
       return reason
-        ? t.chat.delegationReceipt.failureDetail.replace('{status}', labels.failed).replace('{reason}', reason)
-        : labels.failed;
+        ? t.chat.delegationReceipt.failureDetail.replace('{status}', label).replace('{reason}', reason)
+        : label;
     }
-    if (row.status === 'cancelled') return labels.stopped;
-    return labels[row.status];
+    return label;
   };
 
   const mergeLabel = mergeState === 'merged'

@@ -8,6 +8,7 @@
 //      （ADR-059 修订：连接器工具按轮进面，不做 schema 常驻声明，防前缀缓存打掉）。
 // ============================================================================
 
+import { isScheduleTaskChatIntent } from '../app/scheduleTaskChatIntent';
 import { CONNECTOR_TOOL_NAMES } from '../../shared/contract/workbenchTools';
 import { isCoreToolName } from '../services/toolSearch/deferredTools';
 import { createLogger } from '../services/infra/logger';
@@ -25,6 +26,10 @@ const NATIVE_CONNECTOR_INTENT_RES: ReadonlyArray<readonly [string, RegExp]> = [
   ['mail', /邮件|邮箱|草稿|\be-?mails?\b|\bmail\b|\bdraft\b/i],
   ['calendar', /日程|日历|\bcalendar\b|\bschedule\s+(?:a|an|the)\s+(?:meeting|event)\b/i],
 ];
+
+// Recurrence is only a loose scheduling exposure signal. Existing reminder reads
+// and edits must keep their connector tools; foreground cannot discover them later.
+const REMINDER_MANAGEMENT_INTENT_RE = /查看|查询|查找|列出|显示|修改|更改|调整|改到|改成|删除|取消|完成|推迟|提前|\b(?:show|list|view|read|find|search|get|update|edit|change|move|reschedule|delete|remove|cancel|complete|check)\b/i;
 
 export interface NativeConnectorIntentInput {
   /** 本轮用户输入（最新一条 user 消息或前台 prompt 原文）。 */
@@ -44,7 +49,9 @@ export interface NativeConnectorIntentInput {
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = NATIVE_CONNECTOR_INTENT_RES
-    .filter(([, re]) => re.test(input.userText))
+    .filter(([id, re]) => re.test(input.userText)
+      && !(id === 'reminders' && isScheduleTaskChatIntent(input.userText)
+        && !REMINDER_MANAGEMENT_INTENT_RE.test(input.userText)))
     .map(([id]) => id);
   if (matched.length === 0) return [];
 
