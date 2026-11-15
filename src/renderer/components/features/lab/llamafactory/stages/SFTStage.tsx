@@ -23,43 +23,21 @@ interface SFTStageProps {
   onBack: () => void;
 }
 
-// 数据格式示例
-// ponytail: example 字段是 SFT 训练数据格式的真实样本（指令/回答对本身），
-// 属于"喂给算法的输入数据"而非 UI 文案，故不进 i18n（见协调者判断标准）。
+// 数据格式示例（example / exampleGloss 来自词条，英文界面下 JSON 样本保持中文并附英文释义）
 function buildDataFormats(t: Translations) {
   const d = t.labLlamafactory.sft.dataFormats;
   return [
     {
       id: 'alpaca',
       ...d.alpaca,
-      example: `{
-  "instruction": "翻译成英文",
-  "input": "你好，世界",
-  "output": "Hello, World"
-}`,
     },
     {
       id: 'sharegpt',
       ...d.sharegpt,
-      example: `{
-  "conversations": [
-    {"from": "human", "value": "什么是 AI?"},
-    {"from": "gpt", "value": "AI 是人工智能…"},
-    {"from": "human", "value": "有什么应用?"},
-    {"from": "gpt", "value": "广泛用于…"}
-  ]
-}`,
     },
     {
       id: 'openai',
       ...d.openai,
-      example: `{
-  "messages": [
-    {"role": "system", "content": "你是助手"},
-    {"role": "user", "content": "你好"},
-    {"role": "assistant", "content": "你好！"}
-  ]
-}`,
     },
   ];
 }
@@ -248,6 +226,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
               <pre className="p-3 rounded-lg bg-zinc-950 text-sm text-zinc-400 overflow-x-auto">
                 <code>{dataFormats[selectedFormat].example}</code>
               </pre>
+              {dataFormats[selectedFormat].exampleGloss && (
+                <div className="mt-2 text-xs text-zinc-500">{dataFormats[selectedFormat].exampleGloss}</div>
+              )}
             </div>
             <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-800">
               <div className="text-sm font-medium text-zinc-400 mb-2">{s.qualityCheckLabel}</div>
@@ -439,8 +420,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                {term.zh && term.zh !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.zh}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
