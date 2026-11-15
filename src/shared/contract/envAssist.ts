@@ -50,6 +50,17 @@ export interface EnvAssistActResult {
   outcome?: { status: 'granted' | 'denied' | 'undecided' | 'not_running' } | { status: 'unavailable'; reason: string };
 }
 
+/** Settings switches that need a permission first (ADR-090 perm_calendars). The host writes the setting, never the renderer. */
+export type EnvAssistSettingGrant = 'meetingCalendarReminder';
+
+export interface CalendarSettingResult {
+  on: boolean;
+  /** Why it stayed off: write_only = 「隐私与安全性 → 日历」里只给了「仅添加事件」，要改成「完全访问」 */
+  reason?: 'denied' | 'restricted' | 'write_only' | 'undecided' | 'unavailable';
+  /** System Settings → Privacy & Security → Calendars was opened for the user */
+  opened?: boolean;
+}
+
 /** Runtime validation for durable environment checkpoints. */
 export function isEnvBlockerClass(value: unknown): value is EnvBlockerClass {
   return typeof value === 'string' && Object.hasOwn({

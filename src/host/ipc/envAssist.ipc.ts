@@ -1,4 +1,4 @@
-import type { EnvAssistNotice, EnvAssistActResult } from '../../shared/contract/envAssist';
+import type { CalendarSettingResult, EnvAssistNotice, EnvAssistActResult } from '../../shared/contract/envAssist';
 import { EnvAssistSchemas } from '../../shared/ipc/schemas/envAssist';
 import { ipcHost } from '../platform';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
@@ -8,7 +8,8 @@ import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/se
 
 import { createCuaHelperGrantBridge, type CuaHelperGrantBridge } from '../permissions/envAssist/grants/cuaHelperGrantBridge';
 import { createDefaultGrantBridge, mintClickToken, requestGrant, requestHelperGrant } from '../permissions/envAssist/grants/requestGrant';
-import { accessibilityProbe, automationProbe, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import { accessibilityProbe, automationProbe, calendarAccess, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import { enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps } from '../permissions/envAssist/calendarSetting';
 import { readCuaHelperPermissionState, type CuaHelperPermissionState } from '../permissions/envAssist/cua/helperPermissionState';
 import { cuaHelperProbe } from '../permissions/envAssist/probes/cuaHelperProbe';
 import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
@@ -41,6 +42,34 @@ interface EnvAssistDependencies {
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
   /** Persists + broadcasts the notice as resolved once a probe reads granted (default: resolveEnvAssistNotice). */
   resolve?: (notice: EnvAssistNotice) => Promise<void>;
+  /** Reads / writes the gated setting (default: configService). Only the host turns it on, after a granted probe. */
+  calendarReminderSetting?: { read: () => boolean; write: (on: boolean) => Promise<void> };
+  sleep?: CalendarSettingDeps['sleep'];
+}
+
+async function defaultCalendarReminderSetting(): Promise<NonNullable<EnvAssistDependencies['calendarReminderSetting']>> {
+  const { getConfigService } = await import('../services/core/configService');
+  const config = getConfigService();
+  return {
+    read: () => config.getSettings().meeting?.calendarReminder === true,
+    write: (on) => config.updateSettings({ meeting: { calendarReminder: on } }),
+  };
+}
+
+async function calendarSettingDeps(deps: EnvAssistDependencies): Promise<CalendarSettingDeps> {
+  const setting = deps.calendarReminderSetting ?? await defaultCalendarReminderSetting();
+  return {
+    access: () => calendarAccess(deps.passiveBridge ?? null),
+    // The IPC call is the user's click on the switch: one token, one dialog request.
+    prompt: () => requestGrant(mintClickToken('setting:meetingCalendarReminder', deps.now), { pane: 'calendars' }, deps.grantBridge ?? null, deps.now)
+      .catch(() => 'not_available' as const),
+    open: deps.open,
+    available: deps.available,
+    readSetting: setting.read,
+    writeSetting: setting.write,
+    sleep: deps.sleep,
+    now: deps.now,
+  };
 }
 
 // Notice targets are Neo's own ids (i18n keys); TCC needs the target app's bundle id.
@@ -99,6 +128,16 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const probe = noticeProbe(deps, notice, actionPayload.pane);
     if (!probe) return { status: 'rejected' };
     return settle(deps, notice, { status: 'checked', outcome: await probe() });
+  },
+  /** Settings switch off→on (the click): passive check → one-shot dialog → poll; the host writes the setting only when granted. */
+  enableSettingGrant: async (deps: EnvAssistDependencies, payload: unknown): Promise<CalendarSettingResult> => {
+    if (!EnvAssistSchemas.settingGrant.safeParse(payload).success) return { on: false, reason: 'unavailable' };
+    return enableCalendarReminder(await calendarSettingDeps(deps));
+  },
+  /** Settings page mount / window focus: passive only, never prompts. */
+  recheckSettingGrant: async (deps: EnvAssistDependencies, payload: unknown): Promise<CalendarSettingResult> => {
+    if (!EnvAssistSchemas.settingGrant.safeParse(payload).success) return { on: false, reason: 'unavailable' };
+    return recheckCalendarReminder(await calendarSettingDeps(deps));
   },
   act: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
     const parsed = EnvAssistSchemas.act.safeParse(payload);
