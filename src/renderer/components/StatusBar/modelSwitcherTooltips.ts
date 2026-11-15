@@ -15,14 +15,22 @@ export function formatNativeModelSwitcherTooltip(args: {
   effort?: Pick<EffortOption, 'label' | 'shortLabel'> | null;
   thinkingLabel?: string | null;
   thinkingEnabled?: boolean | null;
+  /** host 这一轮把模型换掉了（路由/回落）：显示真正在用的那个，并说清从哪个换来 */
+  switchedFrom?: { provider: string; model: string; reason: string } | null;
+  shownProvider?: string;
+  shownModel?: string;
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
-  const modelLine = args.adaptive
-    ? labels.adaptive.replace('{model}', args.currentModel)
-    : args.overridden
-      ? labels.overridden.replace('{model}', `${args.displayProvider}/${args.displayModel}`).replace('{original}', args.currentModel)
-      : labels.model.replace('{model}', `${args.displayProvider}/${args.displayModel}`);
+  const modelLine = args.switchedFrom
+    ? labels.switched
+        .replace('{shown}', `${args.shownProvider}/${args.shownModel}`)
+        .replace('{original}', `${args.switchedFrom.provider}/${args.switchedFrom.model}`)
+    : args.adaptive
+      ? labels.adaptive.replace('{model}', args.currentModel)
+      : args.overridden
+        ? labels.overridden.replace('{model}', `${args.displayProvider}/${args.displayModel}`).replace('{original}', args.currentModel)
+        : labels.model.replace('{model}', `${args.displayProvider}/${args.displayModel}`);
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,

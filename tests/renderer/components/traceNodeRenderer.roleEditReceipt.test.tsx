@@ -7,6 +7,7 @@ import type { Message, MessageMetadata } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
 import { TurnBasedTraceView, getFocusedTurnIndex, getOutputFollowTurnIndex } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
+import { useRoleLabelsStore } from '../../../src/renderer/stores/roleLabelsStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 // Static rendering reads Zustand's initial snapshot; supply the selected language explicitly.
@@ -44,7 +45,7 @@ vi.mock('react-virtuoso', async () => {
   }) };
 });
 
-afterEach(() => { cleanup(); useAppStore.setState({ language: 'zh', disclosureLevel: 'standard' }); });
+afterEach(() => { useRoleLabelsStore.getState().setRoles([]); cleanup(); useAppStore.setState({ language: 'zh', disclosureLevel: 'standard' }); });
 describe('role edit receipt projection and rendering', () => {
   it.each(['zh', 'en'] as const)('renders the receipt after the final answer in its own turn in %s', (language) => {
     useAppStore.setState({ language, disclosureLevel: 'simple' });
@@ -189,16 +190,17 @@ describe('ProjectTrustConfirmCard 确认并重发', () => {
 
 describe('edit-role user bubble display projection and rewind/edit preservation', () => {
   it.each([
-    ['zh', '修改专家：研究员'],
-    ['en', 'Edit expert: 研究员'],
+    ['zh', '修改专家：知微（数据分析师）'],
+    ['en', 'Edit expert: 知微 (数据分析师)'],
   ] as const)('projects single-line /edit-role <roleId> in %s through TurnBasedTraceView and TraceNodeRenderer without showing /edit-role', async (language, expectedText) => {
     const { fireEvent } = await import('@testing-library/react');
     const { buildOverviewRunHeaderModel } = await import('../../../src/renderer/utils/overviewRunHeader');
     const { buildRunUiState } = await import('../../../src/renderer/utils/runWorkbenchProjection');
     useAppStore.setState({ language, disclosureLevel: 'standard' });
 
+    useRoleLabelsStore.getState().setRoles([{ roleId: '数据分析师', displayName: '知微', profession: '数据分析师', description: '', source: 'builtin', memoryCount: 0, lastWork: null }]);
     const messages: Message[] = [
-      { id: 'u-seed', role: 'user', content: '/edit-role 研究员', timestamp: 1 },
+      { id: 'u-seed', role: 'user', content: '/edit-role 数据分析师', timestamp: 1 },
       { id: 'a-1', role: 'assistant', content: '你想调整「研究员」的哪些部分？', timestamp: 2 },
       ...Array.from({ length: 7 }, (_, i) => ([
         { id: `u-follow-${i}`, role: 'user' as const, content: `第 ${i + 2} 轮用户补充说明`, timestamp: 10 + i * 2 },
@@ -217,6 +219,7 @@ describe('edit-role user bubble display projection and rewind/edit preservation'
     fireEvent.click(expandRailBtn!);
     const railList = screen.getByTestId('turn-rail-list');
     expect(railList.textContent).toContain(expectedText);
+    console.log(`ASSERT turnRailItems: ${expectedText}`);
     expect(railList.textContent).not.toContain('/edit-role');
 
     // OverviewRunHeader projection for Turn 1
@@ -230,9 +233,11 @@ describe('edit-role user bubble display projection and rewind/edit preservation'
       run: runState,
       sessionTitle: '修改角色：研究员',
       language,
+      roleLabels: useRoleLabelsStore.getState().labels[language],
       now: 100,
     });
     expect(headerModel?.title).toBe(expectedText);
+    console.log(`ASSERT overviewRunHeader: ${headerModel?.title}`);
     expect(headerModel?.title).not.toContain('/edit-role');
 
     // Direct TraceNodeRenderer check with turnSystemContext scaffold wrapper
@@ -240,14 +245,14 @@ describe('edit-role user bubble display projection and rewind/edit preservation'
       {
         id: 'u-wrapped',
         role: 'user',
-        content: '<system-reminder>context</system-reminder>\n\n<user_request>\n/edit-role 研究员\n</user_request>',
+        content: '<system-reminder>context</system-reminder>\n\n<user_request>\n/edit-role 数据分析师\n</user_request>',
         timestamp: 1,
       },
     ], 'session-wrapped', false);
     const wrappedNode = wrappedProjection.turns[0]!.nodes.find((n) => n.type === 'user')!;
-    const wrappedHtml = renderToStaticMarkup(<TraceNodeRenderer node={wrappedNode} />);
-    expect(wrappedHtml).toContain(expectedText);
-    expect(wrappedHtml).not.toContain('/edit-role');
+    const { container: wrappedContainer } = render(<TraceNodeRenderer node={wrappedNode} />);
+    expect(wrappedContainer.textContent).toContain(expectedText);
+    expect(wrappedContainer.textContent).not.toContain('/edit-role');
   });
 
   it('leaves multi-line, mid-sentence, bare /edit-role, and /create-role user messages unchanged', () => {

@@ -102,7 +102,10 @@ describe('compactionService', () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts'),
       message('m2', 'assistant', 'TODO: wire service into IPC.'),
-      message('m3', 'tool', 'AssertionError: expected true'),
+      {
+        ...message('m3', 'tool', 'tool finished'),
+        toolResults: [{ toolCallId: 'c1', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -296,8 +299,11 @@ describe('compactionService', () => {
   it('keeps the no-focus prompt byte-for-byte identical for empty focus values', async () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -336,7 +342,11 @@ describe('compactionService', () => {
         metadata: compactionServiceMocks.summaryModel,
       });
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      {
+        ...message('m1', 'assistant', 'Reading the file carefully before the edit. '.repeat(200)),
+        toolCalls: [{ id: 'c1', name: 'Read', arguments: { file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts' } }],
+        toolResults: [{ toolCallId: 'c1', success: true, output: 'file body' }],
+      },
       message('m2', 'assistant', 'recent answer'),
       message('m3', 'assistant', 'recent tail'),
     ];
@@ -423,8 +433,11 @@ describe('compactionService', () => {
   it('compacts messages into one system handoff plus preserved tail', async () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -669,8 +682,11 @@ describe('compactionService', () => {
     };
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -689,7 +705,7 @@ describe('compactionService', () => {
     expect(hookManager.triggerPreCompact).toHaveBeenCalledWith(
       'session-hooks',
       expect.arrayContaining([
-        expect.objectContaining({ role: 'tool', content: expect.stringContaining('AssertionError') }),
+        expect.objectContaining({ role: 'tool', content: expect.stringContaining('tool output') }),
       ]),
       expect.any(Number),
       expect.any(Number),
@@ -725,8 +741,11 @@ describe('compactionService', () => {
       });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -772,8 +791,11 @@ describe('compactionService', () => {
       });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -805,8 +827,11 @@ describe('compactionService', () => {
       });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -830,8 +855,11 @@ describe('compactionService', () => {
   it('passes one summary call usage through and omits it when unreported', async () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
     const options = {
@@ -881,8 +909,11 @@ describe('compactionService', () => {
     });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -914,7 +945,11 @@ describe('compactionService', () => {
       metadata: compactionServiceMocks.summaryModel,
     });
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      {
+        ...message('m1', 'assistant', 'Reading the file carefully before the edit. '.repeat(200)),
+        toolCalls: [{ id: 'c1', name: 'Read', arguments: { file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts' } }],
+        toolResults: [{ toolCallId: 'c1', success: true, output: 'file body' }],
+      },
       message('m2', 'assistant', 'recent answer'),
       message('m3', 'assistant', 'recent tail'),
     ];

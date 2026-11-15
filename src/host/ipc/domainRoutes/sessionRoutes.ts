@@ -296,6 +296,18 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
     return ctx.modelOverride.getOverride(sessionId);
   },
 
+  // 这条会话下一轮**真正会用**的模型：与运行循环同一个解析函数（会话 override > 全局默认，
+  // 默认里 provider 没写 model 时的回落也在这里），输入框据此显示，不再自己从设置快照另算一份。
+  getEffectiveModel: async (_ctx, payload) => {
+    const sessionId = (payload as { sessionId?: string } | undefined)?.sessionId;
+    if (!sessionId) invalidPayload('sessionId is required');
+    const { getConfigService } = await import('../../services/core/configService');
+    const { resolveRunModelConfig } = await import('../../agent/orchestrator/modelConfigResolver');
+    const configService = getConfigService();
+    const { provider, model, adaptive } = resolveRunModelConfig(configService, configService.getSettings(), sessionId);
+    return { provider, model, adaptive: adaptive === true };
+  },
+
   getRecap: async (ctx, payload) => {
     // A6 回会话追赶：素材只来自产物快照 + 任务账本，不读消息流水。
     await ctx.ensureBackend();

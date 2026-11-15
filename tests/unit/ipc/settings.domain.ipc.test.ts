@@ -143,6 +143,18 @@ describe('admin 门控', () => {
   });
 });
 
+describe('会前提醒开关只能由宿主打开（ADR-090 perm_calendars）', () => {
+  it('渲染层 set calendarReminder=true 被丢掉，其余字段照存', async () => {
+    await callSettings('set', { settings: { meeting: { calendarReminder: true, autoMinutes: false } } });
+    expect(env.config.updateSettings).toHaveBeenCalledWith({ meeting: { autoMinutes: false } });
+  });
+
+  it('关掉照常保存', async () => {
+    await callSettings('set', { settings: { meeting: { calendarReminder: false } } });
+    expect(env.config.updateSettings).toHaveBeenCalledWith({ meeting: { calendarReminder: false } });
+  });
+});
+
 describe('语速热刷新', () => {
   it('patch 显式带 speechRate 时在持久化后刷新通话 instructions', async () => {
     await callSettings('set', { settings: { voice: { live: { speechRate: 'fast' } } } as never });

@@ -102,7 +102,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v122：整合合并——本单 sys-v121（会议读取工具面）叠上 main 的 sys-v120（沟通约定面），合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
 // sys-v123：N-MEETING-PAGE——meeting_records 进文字前台白名单（allowInTextForeground），前台分诊规则加「问过去的会用 meeting_records」。
 // sys-v124：N-FIX-EN-GENERATION-COST-CONFIRM-HOST-ZH-FU1——ui.language=en 时系统提示词追加回复语言指令（zh 字节不变）；叠加 main 的 sys-v123。
-export const PROMPT_VERSION = 'sys-v124' as const;
+// sys-v125: merge main's shared inability/language contract with ordered tool-face resolution and background handoff.
+export const PROMPT_VERSION = 'sys-v125' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

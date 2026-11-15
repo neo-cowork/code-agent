@@ -6,6 +6,7 @@ const SETTINGS_PANES = {
   accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
   screenCapture: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
   inputMonitoring: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
+  calendars: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars',
 } as const;
 
 /** Local macOS web builds can open settings too, provided there is a logged-in desktop. */

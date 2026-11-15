@@ -33,6 +33,7 @@ import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
 import { getJobDisplayName } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
@@ -296,6 +297,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     { key: 'jobs', label: cc.tabJobs },
     { key: 'runs', label: cc.tabRuns },
   ];
+  const hasUsdCap = (unattendedBudgetStatus?.maxBudget ?? 0) > 0 || allJobs.some((job) => (job.maxRunBudget ?? 0) > 0);
   const unattendedBudgetSummary = unattendedBudgetStatus
     ? unattendedBudgetStatus.maxBudget > 0
       ? cc.budgetSummaryLimited
@@ -375,6 +377,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
               <div className="mt-0.5 truncate text-xs tabular-nums text-zinc-500" data-testid="automation-budget-usage">
                 {unattendedBudgetSummary}
               </div>
+              {hasUsdCap && <FlatFeeBudgetNote variant="center" />}
             </div>
           </div>
           <Button
@@ -452,6 +455,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                   jobName={selectedExecution ? jobNameById[selectedExecution.jobId] : undefined}
                   jobNamesLoaded={jobNamesLoaded}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
+                  hasRunBudget={selectedExecution ? (allJobs.find((job) => job.id === selectedExecution.jobId)?.maxRunBudget ?? 0) > 0 : false}
                   awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
                   onReviewAwaiting={() => setActiveTab('runs')}
                 />

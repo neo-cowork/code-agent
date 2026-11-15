@@ -27,6 +27,7 @@ import { createLogger } from '../../../services/infra/logger';
 import { trackNode } from '../../../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { delegateSessionSchema as schema } from './delegateSession.schema';
+import { deriveDelegatedSessionTitle } from './delegatedSessionTitle';
 
 const logger = createLogger('DelegateSession');
 
@@ -420,7 +421,10 @@ async function executeNewDelegation(
   if (!db) return rejection('target_unavailable', 'database is unavailable');
   const targetId = admission.result.targetSessionId ?? runtime.randomId('session_');
   const target = runtime.getSessionRow(targetId);
-  const targetName = target?.title ?? (call.action === 'create_new' ? (call.content?.trim().slice(0, 40) || 'new session') : 'session');
+  // create_new 的会话名：任务文本压成的确定性短主题，侧栏标题（下方 createSession）
+  // 与回执 targetName 共用同一值，只算一次；delegate_existing 的回执名仍是目标会话标题。
+  const delegatedTitle = call.action === 'create_new' ? deriveDelegatedSessionTitle(call.content) : '';
+  const targetName = target?.title ?? (delegatedTitle || 'session');
   const envelope: ConversationEnvelope = {
     content: call.content ?? '',
     sessionId: targetId,
@@ -445,7 +449,7 @@ async function executeNewDelegation(
     if (!modelConfig) return rejection('invalid_call', 'create_new requires a host model configuration');
     await manager.createSession({
       id: targetId,
-      title: call.content?.slice(0, 80) || 'Delegated session',
+      title: delegatedTitle || 'Delegated session',
       modelConfig,
       workingDirectory: ctx.workspaceScope?.primaryRoot ?? ctx.workspace,
       commit: (write) => { committed = commitDelegation(db, input, write); },

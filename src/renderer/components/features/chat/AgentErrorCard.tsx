@@ -1,9 +1,7 @@
 import { HumanizedText } from '../../HumanizedText';
 import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
-// ============================================================================
-// AgentErrorCard - 会话区运行失败卡片
-// ============================================================================
-// 数据来自 message.metadata.agentError（classifyAgentError 在 error 事件时写入）。
+// =====================================================================// AgentErrorCard - 会话区运行失败卡片
+// =====================================================================// 数据来自 message.metadata.agentError（classifyAgentError 在 error 事件时写入）。
 // 视觉真源：role-wake-prototype-v2.html 屏三——中性面（bg-void + border-strong）、
 // 只有图标着 status-error、标题 14px / 正文 13px、安静描边按钮。
 // 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：run.latest=false 的失败轮
@@ -13,8 +11,8 @@ import { BackgroundChildrenNotice } from './BackgroundChildrenNotice';
 // 新开会话=context_length/image_payload/generic；复制报告与技术详情=仅开发者模式。
 // rate_limited 由 AgentErrorPresentation 降为时间线灰字行。
 // 文案不持久化（metadata 只存 category + 排障字段），这里按 category 查 i18n 表。
-// ============================================================================
-
+// =====================================================================
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { EnvAssistCard } from './EnvAssistCard';
 import React, { useCallback } from 'react';
 import { AlertTriangle, Copy, KeyRound, MessageSquarePlus, RotateCcw, SwitchCamera } from 'lucide-react';
@@ -102,7 +100,7 @@ function buildTechnicalItems(
 function formatResetTime(resetAt: string, locale: string): string | null {
   const date = new Date(resetAt);
   if (!Number.isFinite(date.getTime())) return null;
-  return date.toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatDateTime(date, locale.startsWith('en') ? 'en' : 'zh');
 }
 
 /** 按 category 查 i18n 文案；context_length 的建议带 token 数模板，usage_limit 带窗口词与恢复时间。 */
@@ -141,7 +139,7 @@ function resolveAgentErrorShortReason(
 
 /**
  * 整卡上的「连续 N 次」说明，runLength≥2 才有。不可重试类（NO_RETRY_CATEGORIES）
- * 明说「再发也不会好」；可重试类只陈述次数，不断言重试无效。
+ * 给出下一步（换模型 / 按提示处理）；可重试类只陈述次数。
  */
 function buildRepeatNotice(
   run: Pick<AgentErrorRunInfo, 'runLength'> | undefined,
