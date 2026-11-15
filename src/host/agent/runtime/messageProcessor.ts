@@ -71,7 +71,7 @@ import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTele
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
-import { isBashToolName } from '../../tools/toolNames';
+import { INABILITY_REPLY_CONTRACT } from '../../../shared/inabilityReplyContract';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -671,12 +671,11 @@ export class MessageProcessor {
           error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
       }
       this.guardState.toolCallRetryCount++;
-      const otherDeniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name).filter((name) => !isBashToolName(name)))).join(', ');
       const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          `The previous tool call asked for something that cannot be done here${otherDeniedNames ? ` (${otherDeniedNames})` : ''}; it was NOT run.`,
+          INABILITY_REPLY_CONTRACT.en.guidance,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',

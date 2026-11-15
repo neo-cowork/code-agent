@@ -7,6 +7,7 @@
 // 先落 assistant 消息，再落合成的失败 tool 消息。
 // ============================================================================
 
+import { INABILITY_REPLY_CONTRACT } from '../../../shared/inabilityReplyContract';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { sanitizeToolCallsForHistory } from '../messageHandling/converter';
@@ -16,7 +17,7 @@ import { attachTurnQualityMetadata } from './turnQuality';
 
 const BOUNCE_REASONS = {
   goal: '本批工具调用未执行：完成验证未通过，具体原因见随后的系统提示，请先按提示修复。',
-  denied: '这批工具调用没有执行：其中有一个动作我这边做不了，整批已暂停，具体见随后的系统提示。请换一种方式完成，并用一句大白话告诉用户哪件事没做成、改为怎么办，不要提工具名。',
+  denied: INABILITY_REPLY_CONTRACT.zh.guidance,
   repair: '本批工具调用未执行：目标产物已通过重新验证，修复模式已解除，请按需重新发起所需操作。',
 } as const;
 
@@ -50,7 +51,7 @@ export async function sealBouncedToolCalls(
     toolCallId: toolCall.id,
     success: false,
     error: deniedCallIds && !deniedCallIds.has(toolCall.id)
-      ? '这批工具调用没有执行：同批里有一个动作我这边做不了，整批已暂停。'
+      ? INABILITY_REPLY_CONTRACT.zh.guidance
       : reason,
     duration: 0,
     metadata: { skipped: true, bounced: true, ...(deniedCallIds ? { code: deniedCallIds.has(toolCall.id) ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED' } : {}) },

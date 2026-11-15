@@ -13,6 +13,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: uiState.language } }) }),
 }));
 
+import { INABILITY_REPLY_CONTRACT } from '../../../src/shared/inabilityReplyContract';
 import { describeDeniedShellCalls } from '../../../src/host/agent/runtime/foregroundShellDenial';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
@@ -23,7 +24,7 @@ import { buildRuleString } from '../../../src/shared/permissionRuleTranslate';
 const ctx = { sessionId: 'fg-shell' } as unknown as RuntimeContext;
 const CJK_OR_FULLWIDTH = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/;
 const EXPECTED_ZH_FINAL_MESSAGE =
-  '我这边没法直接帮你执行这条命令，命令没有运行。可以让我交给后台任务来做，届时会按你的权限规则询问你。';
+  '命令没有运行，相关内容没有改动。我可以先帮你查看要处理的内容，或交给后台任务，操作前会先问你。';
 
 function buildTurnCtx(runUserPrompt?: string): RuntimeContext {
   const turn = new TurnState();
@@ -124,7 +125,10 @@ describe('describeDeniedShellCalls', () => {
       expect(out?.guidance).not.toMatch(BANNED);
       expect(out?.finalMessage).not.toMatch(BANNED);
       expect(out?.guidance).toContain('NOT run');
-      expect(out?.guidance).toContain('spawn_agent');
+      expect(out?.guidance).toContain('background task');
+      expect(out?.guidance).not.toContain('spawn_agent');
+      expect(out?.guidance).toBe(INABILITY_REPLY_CONTRACT.en.guidance);
+      expect(out?.finalMessage).not.toMatch(/权限|拦下|不允许|终端|blocked|not allowed|permission|terminal/i);
     }
   });
 

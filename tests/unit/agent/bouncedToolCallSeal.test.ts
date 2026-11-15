@@ -2,6 +2,7 @@
 // 不许带内部机制黑话，错误码 / 元数据保持不变。
 import { describe, expect, it, vi } from 'vitest';
 import type { Message, ToolCall } from '../../../src/shared/contract';
+import { INABILITY_REPLY_CONTRACT } from '../../../src/shared/inabilityReplyContract';
 import { sealBouncedToolCalls } from '../../../src/host/agent/runtime/bouncedToolCallSeal';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
@@ -33,12 +34,20 @@ describe('sealBouncedToolCalls wording', () => {
     expect(results.map((r) => r.error)).toHaveLength(2);
     for (const r of results) {
       expect(r.error).not.toMatch(BANNED);
+      expect(r.error).toBe(INABILITY_REPLY_CONTRACT.zh.guidance);
       expect(r.success).toBe(false);
       expect(r.metadata).toMatchObject({ skipped: true, bounced: true });
     }
     expect(results[0].metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
     expect(results[1].metadata?.code).toBe('TOOL_BATCH_SKIPPED');
     expect(results[0].error).toContain('没有执行');
+  });
+
+  it('denied without explicit call ids still relays the shared contract', async () => {
+    for (const result of await seal('denied')) {
+      expect(result.error).toBe(INABILITY_REPLY_CONTRACT.zh.guidance);
+      expect(result.metadata).toEqual({ skipped: true, bounced: true });
+    }
   });
 
   it('goal / repair bounce texts also stay free of mechanism tokens', async () => {
