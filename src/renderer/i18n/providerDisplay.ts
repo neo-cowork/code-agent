@@ -23,7 +23,7 @@ const ZH_PROVIDER_TEXT: Record<string, ZhProviderText> = {
 const ZH_REGISTRY_LABEL_IDS = new Set(['xiaomi', 'volcengine']);
 
 /** 注册表来源的标签（缺 key 提示、切换器分组、任务策略分组）：仅当 label 就是内置默认名时才本地化，用户自命名不动。 */
-export function localizeProviderLabel(provider: string, label: string, language: Language): string {
+function localizeProviderLabel(provider: string, label: string, language: Language): string {
   if (language !== 'zh' || !ZH_REGISTRY_LABEL_IDS.has(provider)) return label;
   if (label !== getProviderDisplayName(provider)) return label;
   return ZH_PROVIDER_TEXT[provider]?.name ?? label;
