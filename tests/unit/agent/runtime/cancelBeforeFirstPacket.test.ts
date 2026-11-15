@@ -133,12 +133,17 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     expect(rows).toHaveLength(1);
     expect(JSON.parse(rows[0]?.envelope_json ?? '{}')).toMatchObject({ status: 'waiting', interruptCause: 'user_stop', pendingOperations: [expect.objectContaining({ status: 'abandoned' })] });
     expect(store.sessions?.getMessages('cancel-session').filter((m) => m.content.includes('[cancelled]'))).toHaveLength(1);
+    // 落库的停止标记必须同时广播给 renderer（message 事件）：否则 Stop 当场页面上一行
+    // 「你停止了这次执行」都没有，要等整页重载才出现。三次 Stop 只广播一次。
+    const markerBroadcasts = events.filter((event) => event.type === 'message' && typeof (event.data as { content?: unknown } | undefined)?.content === 'string' && ((event.data as { content: string }).content.includes('[cancelled]')));
+    expect(markerBroadcasts).toHaveLength(1);
     const eventCount = events.length;
     await onStream?.({ type: 'text', content: 'late model output' });
     expect(events).toHaveLength(eventCount);
     expect(runtime.turn.lastStreamedContent).toBe('');
     await orchestrator.cancel('user');
     expect(store.sessions?.getMessages('cancel-session').filter((m) => m.content.includes('[cancelled]'))).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'message' && typeof (event.data as { content?: unknown } | undefined)?.content === 'string' && ((event.data as { content: string }).content.includes('[cancelled]')))).toHaveLength(1);
   });
 
   it('Stop during request assembly aborts a controller attached later without dispatching the model', async () => {

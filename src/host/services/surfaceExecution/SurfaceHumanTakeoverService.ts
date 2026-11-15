@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { WAIT_FOR_USER_EVENT_ACTION, WAIT_FOR_USER_TIMEOUT_EVENT_ACTION } from '../../../shared/contract/surfaceExecution';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceEventHub } from './SurfaceEventHub';
 import { SurfaceInterruptService } from './SurfaceInterruptService';
@@ -28,6 +29,8 @@ export class SurfaceHumanTakeoverService {
     subject: SurfaceGrantSubjectV1;
     reason: string;
     timeoutMs: number;
+    /** Model-requested wait: tagged on events; a timeout leaves the session waiting instead of stopping it. */
+    waitForUser?: boolean;
   }): Promise<{
     requestId: string;
     wait: Promise<SurfaceTakeoverResolutionV1>;
@@ -51,6 +54,7 @@ export class SurfaceHumanTakeoverService {
       status: 'waiting',
       userSummary: input.reason,
       ...targetAt(),
+      ...(input.waitForUser ? { operation: { action: WAIT_FOR_USER_EVENT_ACTION, risk: 'control' } } : {}),
       evidenceRefs: [],
       artifactRefs: [],
       availableControls: ['resume', 'stop', 'end_session'],
@@ -63,20 +67,41 @@ export class SurfaceHumanTakeoverService {
       this.pending.set(requestId, { requestId, subject: input.subject, resolve, timer });
     });
     const wait = resolutionPromise.then(async (resolution) => {
-      if (resolution === 'continue' || resolution === 'navigated') this.interrupts.resume(input.subject);
-      else await this.interrupts.stop(input.subject);
-      this.events.publish(input.subject, {
-        phase: 'human',
-        status: resolution === 'continue' || resolution === 'navigated' ? 'succeeded' : 'cancelled',
-        userSummary: `Human takeover ${resolution}`,
-        ...targetAt(),
-        evidenceRefs: [],
-        artifactRefs: [],
-        availableControls: resolution === 'continue' || resolution === 'navigated'
-          ? ['pause', 'takeover', 'stop', 'end_session']
-          : ['end_session'],
-        completedAt: Date.now(),
-      });
+      if (resolution === 'timed_out' && input.waitForUser) {
+        // Recoverable: no stop, window stays. The bar flips to "stopped and waiting"; Done still resumes.
+        this.events.publish(input.subject, {
+          phase: 'human',
+          status: 'waiting',
+          userSummary: input.reason,
+          ...targetAt(),
+          operation: { action: WAIT_FOR_USER_TIMEOUT_EVENT_ACTION, risk: 'control' },
+          evidenceRefs: [],
+          artifactRefs: [],
+          availableControls: ['resume', 'stop', 'end_session'],
+        });
+        return resolution;
+      }
+      const resumed = resolution === 'continue' || resolution === 'navigated';
+      const finish = async (): Promise<void> => {
+        if (resumed) this.interrupts.resume(input.subject);
+        else await this.interrupts.stop(input.subject);
+        this.events.publish(input.subject, {
+          phase: 'human',
+          status: resumed ? 'succeeded' : 'cancelled',
+          userSummary: `Human takeover ${resolution}`,
+          ...targetAt(),
+          evidenceRefs: [],
+          artifactRefs: [],
+          availableControls: resumed
+            ? ['pause', 'takeover', 'stop', 'end_session']
+            : ['end_session'],
+          completedAt: Date.now(),
+        });
+      };
+      // 取消的 run 在 endRun 的 cleanup 作用域里 respond('cancel')；本 then 回调创建于作用域之外，
+      // 不显式进 cleanup 作用域会被 active 闸拒掉，会话就永远停在 waiting_human。
+      if (resumed) await finish();
+      else await this.sessions.withCancellingOwnerCleanup(input.subject.sessionId, input.subject, finish);
       return resolution;
     });
     return { requestId, wait };

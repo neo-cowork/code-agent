@@ -3,7 +3,7 @@ import { chatInputZh } from '../../../src/renderer/i18n/chatInput';
 
 import React from 'react';
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '@shared/contract';
 import type { CreateCronJobInput } from '../../../src/renderer/services/cronClient';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -389,14 +389,13 @@ describe('buildScheduleConfirmRows — when 行按 UI 语言说人话', () => {
     expect(whenRow(schedule as CreateCronJobInput['schedule'], lang as 'zh' | 'en')).toBe(expected);
   });
 
-  it('at 按语言本地化日期（zh/en 形状不同）；解析不了的 datetime 给一次性/Once', () => {
-    const ts = Date.UTC(2026, 11, 25, 1, 30);
+  it('at 按语言格式化本地日期时间；解析不了的 datetime 给一次性/Once', () => {
+    const ts = new Date(2026, 11, 25, 1, 30).getTime();
     const zhLabel = whenRow({ type: 'at', datetime: ts }, 'zh');
     const enLabel = whenRow({ type: 'at', datetime: ts }, 'en');
-    // 数字随运行机时区漂，只锁形状与「两种语言确实不同」
-    expect(zhLabel).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
-    expect(enLabel).toMatch(/^\d{2}\/\d{2}, \d{2}:\d{2} (AM|PM)$/);
-    expect(zhLabel).not.toBe(enLabel);
+    expect(zhLabel).toMatch(/^(?:2026\/)?12\/25 01:30$/);
+    expect(zhLabel).not.toMatch(/AM|PM/);
+    expect(enLabel).toMatch(/(?<!\d)12\/25(?!\d).*\s01:30(?!\d)/);
     expect(whenRow({ type: 'at', datetime: 'garbage' }, 'zh')).toBe('一次性');
     expect(whenRow({ type: 'at', datetime: 'garbage' }, 'en')).toBe('Once');
   });
@@ -812,5 +811,35 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
     render(<ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
     expect(screen.queryByRole('button', { name: '编辑 什么时候' })).toBeNull();
     expect(screen.queryByRole('button', { name: '编辑 什么变化值得通知' })).toBeNull();
+  });
+});
+
+
+describe('schedule confirmation recurring timezone labels', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['America/Los_Angeles', 'zh', '每天 09:00'],
+    ['America/Los_Angeles', 'en', 'Daily at 09:00'],
+    ['Asia/Shanghai', 'zh', '每天 09:00'],
+    ['Asia/Shanghai', 'en', 'Daily at 09:00'],
+  ] as const)('host %s local zone in %s has no suffix', (zone, lang, expected) => {
+    vi.stubEnv('TZ', zone);
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(zone);
+    const input = { ...rowInput, scheduleType: 'cron' as const, schedule: { type: 'cron' as const, expression: '0 9 * * *', timezone: zone } };
+    expect(buildScheduleConfirmRows({ input }, rowLabels, lang).find(row => row.key === 'when')?.value).toBe(expected);
+  });
+
+  it.each([
+    ['zh', '每天 21:00（中国标准时间）'],
+    ['en', 'Daily at 21:00 (China Standard Time)'],
+  ] as const)('foreign zone in %s names the zone', (lang, expected) => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const input = { ...rowInput, scheduleType: 'cron' as const, schedule: { type: 'cron' as const, expression: '0 21 * * *', timezone: 'Asia/Shanghai' } };
+    expect(buildScheduleConfirmRows({ input }, rowLabels, lang).find(row => row.key === 'when')?.value).toBe(expected);
+    if (lang === 'zh') {
+      render(<ScheduleConfirmCard draft={{ input, description: '备份照片', sourceSessionId: null }} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
+      expect(screen.getByText(expected)).toBeTruthy();
+    }
   });
 });

@@ -20,6 +20,7 @@ import { postOsNotification, registerNotificationClick, reportNotificationHandle
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
+import { deferRendererReadyUntil } from '../utils/rendererReady';
 
 const MISSED_ALERT_TOAST_MS = 10_000;
 const RECENT_EVENT_LIMIT = 50;
@@ -94,8 +95,9 @@ export function useCronOsNotification(
       if (handled.size > RECENT_EVENT_LIMIT * 2) handled.delete(handled.values().next().value as string);
       return true;
     };
-    const clickById = (id: string) => {
-      const event = recentEventsRef.current.get(id);
+    const clickById = (id: string, sessionId?: string) => {
+      const event = recentEventsRef.current.get(id)
+        ?? (sessionId ? { id, sessionId, title: '', body: '', urgent: true } : undefined);
       if (!event) {
         console.warn('[useCronOsNotification] notification-clicked: unknown notification id', id);
         return;
@@ -179,15 +181,16 @@ export function useCronOsNotification(
     });
     let unlistenClick: (() => void) | undefined;
     if (isTauriMode()) {
-      void listenTauriEvent<{ id: string }>('notification-clicked', (e) => {
+      const listenerReady = listenTauriEvent<{ id: string; sessionId?: string }>('notification-clicked', (e) => {
         const id = e?.payload?.id;
-        if (typeof id === 'string') clickById(id);
+        if (typeof id === 'string') clickById(id, typeof e.payload.sessionId === 'string' ? e.payload.sessionId : undefined);
       }).then((fn) => {
         if (disposed) fn();
         else unlistenClick = fn;
       }).catch((err) => {
         console.warn('[useCronOsNotification] notification-clicked listen failed', err);
       });
+      deferRendererReadyUntil(listenerReady);
     }
     return () => {
       disposed = true;

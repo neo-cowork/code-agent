@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentErrorMetadata } from '../../../src/shared/contract';
+import type { AgentErrorMetadata, Message } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
@@ -352,7 +352,7 @@ describe('usage_limit card', () => {
     process.env.TZ = 'Asia/Shanghai';
     renderCard(makeError({ category: 'usage_limit', httpStatus: 429, usageWindowText: '5 小时', resetAt: '2026-11-03T09:34:10.000Z' }));
     expect(screen.getByText('5 小时额度已用完')).toBeTruthy();
-    expect(screen.getByText(/预计 11\/3 17:34 恢复/)).toBeTruthy();
+    expect(screen.getByText(/预计 (?:2026\/)?11\/0?3 17:34 恢复/)).toBeTruthy();
     expect(screen.getByRole('button', { name: zh.agentError.actions.switchModel })).toBeTruthy();
     expect(screen.queryByRole('button', { name: zh.agentError.actions.retry })).toBeNull();
     expect(screen.queryByTestId('rate-limited-error-line')).toBeNull();
@@ -361,7 +361,7 @@ describe('usage_limit card', () => {
   it('② 同一时刻在洛杉矶时区显示本地时间；解析不出时间时给「向服务商确认」而不是空白', () => {
     process.env.TZ = 'America/Los_Angeles';
     expect(resolveAgentErrorCopy({ category: 'usage_limit', usageWindowText: '5 小时', resetAt: '2026-11-03T09:34:10.000Z' }, zh).suggestion)
-      .toContain('11/3 01:34');
+      .toMatch(/(?:2026\/)?11\/0?3 01:34(?!\d)/);
     const noTime = resolveAgentErrorCopy({ category: 'usage_limit' }, zh);
     expect(noTime.title).toBe('套餐额度已用完');
     expect(noTime.suggestion).toContain('向服务商确认');
@@ -629,6 +629,49 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(retryLines[0].textContent).toContain('重试');
     expect(retryLines[0].textContent).toContain('连续 5 次都是这个原因。');
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('后台状态轮重投影不会累积错误节点：3 次失败后只保留 1 条可重试限流提示', () => {
+    const error = classifyAgentError({ error: '您的账户已达到速率限制，请您控制请求频率' })!;
+    const messages: Message[] = [1, 2, 3].flatMap((i) => [
+      { id: `retry-${i}`, role: 'user', content: `第 ${i} 次尝试：请重试后台浏览器任务并告诉我页面标题`, timestamp: i * 100 },
+      {
+        id: `status-${i}`, role: 'assistant', content: '', timestamp: i * 100 + 1,
+        thinking: '查看后台任务状态',
+        toolCalls: [{ id: `call-${i}`, name: 'task_status', arguments: {} }],
+        contentParts: [{ type: 'tool_call', toolCallId: `call-${i}` }],
+        metadata: { agentError: error },
+      },
+    ]);
+    const renderProjection = () => (
+      <div>
+        {projectTurns(messages, 'session-1', false).turns.flatMap((turn) => turn.nodes)
+          .filter((node) => node.type === 'assistant_text').map((node) => (
+            <div key={node.id}>
+              {node.thinking}
+              {node.metadata?.agentError && (
+                <AgentErrorPresentation
+                  error={node.metadata.agentError}
+                  messageId={node.messageId!}
+                  sessionId="session-1"
+                  run={node.agentErrorRun}
+                />
+              )}
+            </div>
+          ))}
+      </div>
+    );
+    const send = vi.fn().mockResolvedValue(undefined);
+    useMessageActionStore.getState().register(send, () => messages);
+    const view = render(renderProjection());
+    for (let poll = 0; poll < 23; poll += 1) view.rerender(renderProjection());
+    expect(screen.getAllByTestId('agent-error-muted-line')).toHaveLength(2);
+    expect(screen.getAllByTestId('rate-limited-error-line')).toHaveLength(1);
+    expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('连续 3 次都是这个原因。');
+    expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('模型服务商限流，稍后重试');
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(send).toHaveBeenCalledWith('第 3 次尝试：请重试后台浏览器任务并告诉我页面标题');
   });
 
   it('generic 卡仅当 rawMessage 为脱敏后可读同语种短句时显示「服务商返回：「…」」，堆栈/JSON/URL/token/超长/异语种均不显示', () => {

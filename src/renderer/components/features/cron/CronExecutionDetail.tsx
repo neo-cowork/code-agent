@@ -1,4 +1,6 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
@@ -22,6 +24,7 @@ import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice'
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
+import { cronRunResultView } from './cronRunResultView';
 import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
@@ -60,7 +63,7 @@ interface CronExecutionDetailProps {
   jobNamesLoaded?: boolean;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
-  awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
+  awaitingRun?: Pick<AwaitingApprovalRun, 'executionId' | 'tool' | 'commandPreview'> | null;
   onReviewAwaiting?: () => void;
 }
 
@@ -109,6 +112,15 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     );
   }
 
+  const resultView = cronRunResultView(execution.result);
+  const fallbackResultText = resultView.isAgentResult
+    ? execution.sessionId ? cc.resultNoSummary : cc.resultNoSummaryNoSession
+    : cc.resultNoText;
+  const urgencyLabel = resultView.urgency && {
+    must_today: cc.inboxUrgencySectionMustToday,
+    can_wait: cc.inboxUrgencySectionCanWait,
+    fyi: cc.inboxUrgencySectionFyi,
+  }[resultView.urgency];
   const statusMeta = getLatestExecutionStatus(execution, cc);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
@@ -177,9 +189,10 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           {execution.sessionId && (
             <button
               type="button"
+              data-testid="cron-exec-detail-open-session"
               onClick={handleOpenSession}
               disabled={isOpeningSession}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
             >
               <MessageSquareText className="h-3.5 w-3.5" />
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
@@ -187,20 +200,20 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           )}
           {execution.status === 'running' && awaitingRun != null ? (
             <span
-              className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
+              className="shrink-0 whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
               data-testid="cron-exec-detail-awaiting-approval"
             >
               {cc.awaitingApprovalBadge}
             </span>
           ) : permissionDenied ? (
             <span
-              className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
+              className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
               data-testid="cron-exec-detail-permission-denied"
             >
               {statusMeta.label}
             </span>
           ) : (
-            <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+            <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
               {statusMeta.label}
             </span>
           )}
@@ -212,7 +225,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
           data-testid="cron-exec-detail-awaiting-approval-hint"
         >
-          <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingRun.commandPreview) ?? cc.awaitingApprovalHint}</span>
+          <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc, awaitingRun) ?? cc.awaitingApprovalHint}</span>
           <Button
             type="button"
             variant="primary"
@@ -226,7 +239,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ?? cc.linkedSession) : '—'} />
+        <Info label={cc.execSession} value={execution.sessionId ? (sessionTitle ? getDisplaySessionTitle(sessionTitle, language) : cc.linkedSession) : '—'} />
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
           <div className="text-xs text-zinc-500">{cc.execLocation}</div>
           <div className="mt-1">
@@ -305,7 +318,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
                 <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
                   type="button"
                   onClick={() => openCronLoginWallSite(loginWall.siteOrigin, execution.jobId)}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                  className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
                   data-testid="cron-execution-open-login-site"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
@@ -380,11 +393,37 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         </section>
       )}
 
-      <section className="mt-4">
+      <section className="mt-4" data-testid="cron-result">
         <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execResult}</h5>
-        <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300 whitespace-pre-wrap">
-          {prettyJson(execution.result)}
-        </pre>
+        {urgencyLabel && (
+          <span className="mb-2 inline-flex shrink-0 whitespace-nowrap rounded-full bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200" data-testid="cron-result-urgency">
+            {urgencyLabel}
+          </span>
+        )}
+        <p className="whitespace-pre-wrap break-words text-sm text-zinc-100" data-testid="cron-result-summary">
+          {resultView.summaryText ?? fallbackResultText}
+        </p>
+        {resultView.artifacts.length > 0 && (
+          <div className="mt-3" data-testid="cron-result-artifacts">
+            <h6 className="text-xs text-zinc-400">{cc.resultFiles}</h6>
+            <ul className="mt-1 list-inside list-disc text-sm text-zinc-200">
+              {resultView.artifacts.map((artifact) => (
+                <li className="break-words" key={artifact}>{artifact.split(/[\\/]/).pop() || artifact}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {resultView.alertReason && (
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm text-zinc-300" data-testid="cron-result-alert-reason">
+            {cc.resultAlertReason.replace('{reason}', resultView.alertReason)}
+          </p>
+        )}
+        <details className="mt-3" data-testid="cron-result-technical">
+          <summary className="cursor-pointer text-xs text-zinc-400">{cc.failureTechnical}</summary>
+          <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300 whitespace-pre-wrap">
+            {prettyJson(execution.result)}
+          </pre>
+        </details>
       </section>
     </div>
   );

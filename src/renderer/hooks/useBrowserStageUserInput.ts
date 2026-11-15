@@ -1,9 +1,11 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
+  type ClipboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent,
@@ -11,7 +13,8 @@ import {
 import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
 import type { SurfaceSessionStateV1 } from '@shared/contract/surfaceExecution';
 import { mapDisplayPointToViewport } from '@shared/utils/browserFrameCoordinateMap';
-import type { UserBrowserInputPayload } from '@shared/utils/userBrowserInputPayload';
+import { validateUserBrowserInputPayload, type UserBrowserInputPayload } from '@shared/utils/userBrowserInputPayload';
+import { createLogger } from '../utils/logger';
 import { dispatchUserBrowserInput } from '../services/userBrowserLink';
 import { requestBrowserHumanTakeover } from './requestBrowserHumanTakeover';
 import {
@@ -19,6 +22,8 @@ import {
   resolveBrowserStageInteractionGate,
   shouldDispatchBrowserStageInteraction,
 } from '../utils/browserStageInteractionGate';
+
+const logger = createLogger('BrowserStageUserInput');
 
 export interface BrowserStageUserInputOptions {
   conversationId: string | null;
@@ -51,6 +56,7 @@ export interface BrowserStageUserInputApi {
   onStagePointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
   onStageWheel: (event: WheelEvent<HTMLElement>) => void;
   onStageKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  onStagePaste: (event: ClipboardEvent<HTMLElement>) => void;
   onStageCompositionEnd: (event: React.CompositionEvent<HTMLElement>) => void;
 }
 
@@ -93,6 +99,17 @@ export function useBrowserStageUserInput(
   const gestureRef = useRef<ActivePointerGesture | null>(null);
   /** pointerup 已发过 click/drag 时吞掉随后合成的 click，避免双发 */
   const suppressNextClickRef = useRef(false);
+  const pendingInputsRef = useRef<UserBrowserInputPayload[]>([]);
+  // Keep the click that focuses the field ahead of its keys, too. A concurrent
+  // host operation can consume the same predecessor observation as another key.
+  const inputQueue = useMemo(() => ({ active: true, tail: Promise.resolve() }), [conversationId, workspace]);
+
+  useEffect(() => {
+    inputQueue.active = true;
+    pendingInputsRef.current = [];
+    setPendingPreemptInput(null);
+    return () => { inputQueue.active = false; };
+  }, [inputQueue]);
 
   // agent 空闲或 surface 切换时清抢占态
   useEffect(() => {
@@ -129,19 +146,24 @@ export function useBrowserStageUserInput(
   const interactive = shouldDispatchBrowserStageInteraction(gate)
     || gate === 'needs-preempt-confirm';
 
-  const send = useCallback(async (payload: UserBrowserInputPayload) => {
+  const send = useCallback((payload: UserBrowserInputPayload) => {
     // workspace 可空：host 与 openLinkInRail 同兜底（快速对话无 cwd 仍可透传）。
-    if (!conversationId) return;
-    try {
+    const dispatch = async () => {
+      if (!inputQueue.active || !conversationId) {
+        logger.warn('Browser stage input skipped', { reason: !inputQueue.active ? 'scope_changed' : 'missing_conversation', kind: payload.kind });
+        return;
+      }
       await dispatchUserBrowserInput({
         conversationId,
         workspace: workspace ?? '',
         input: payload,
       });
-    } catch {
-      // 透传失败不打断现场（与工具条失败策略一致）
-    }
-  }, [conversationId, workspace]);
+    };
+    inputQueue.tail = inputQueue.tail.then(dispatch).catch((error: unknown) => {
+      logger.error('Browser stage input dispatch failed', error, { reason: 'dispatch_failed', kind: payload.kind });
+    });
+    return inputQueue.tail;
+  }, [conversationId, inputQueue, workspace]);
 
   const route = useCallback((payload: UserBrowserInputPayload) => {
     const reason = resolveBrowserStageInteractionGate({
@@ -152,7 +174,8 @@ export function useBrowserStageUserInput(
       interactionPreempted,
     });
     if (reason === 'needs-preempt-confirm') {
-      setPendingPreemptInput(payload);
+      pendingInputsRef.current.push(payload);
+      setPendingPreemptInput(pendingInputsRef.current[0]);
       return;
     }
     if (!shouldDispatchBrowserStageInteraction(reason)) return;
@@ -387,6 +410,19 @@ export function useBrowserStageUserInput(
     });
   }, [annotateMode, interactive, route]);
 
+  const onStagePaste = useCallback((event: ClipboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget || annotateMode || !interactive) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const text = event.clipboardData.getData('text/plain');
+    const validated = validateUserBrowserInputPayload({ kind: 'insertText', text });
+    if (!validated.ok) {
+      logger.warn('Browser stage paste rejected', { reason: validated.error, textLength: text.length });
+      return;
+    }
+    route(validated.payload);
+  }, [annotateMode, interactive, route]);
+
   const onStageCompositionEnd = useCallback((event: React.CompositionEvent<HTMLElement>) => {
     if (annotateMode || !interactive) return;
     const text = event.data;
@@ -395,17 +431,21 @@ export function useBrowserStageUserInput(
   }, [annotateMode, interactive, route]);
 
   const confirmPreempt = useCallback(() => {
-    const pending = pendingPreemptInput;
+    const pending = pendingInputsRef.current.splice(0);
     setPendingPreemptInput(null);
     setInteractionPreempted(true);
     preemptSurfaceRef.current = surfaceSessionId;
-    void (async () => {
+    inputQueue.tail = inputQueue.tail.then(async () => {
+      if (!inputQueue.active) return;
       await requestBrowserHumanTakeover({ conversationId, surfaceSessionId });
-      if (pending) await send(pending);
-    })();
-  }, [conversationId, pendingPreemptInput, send, surfaceSessionId]);
+    }).catch((error: unknown) => {
+      logger.error('Browser stage takeover failed', error, { reason: 'takeover_failed' });
+    });
+    for (const payload of pending) void send(payload);
+  }, [conversationId, inputQueue, send, surfaceSessionId]);
 
   const cancelPreempt = useCallback(() => {
+    pendingInputsRef.current = [];
     setPendingPreemptInput(null);
   }, []);
 
@@ -423,6 +463,7 @@ export function useBrowserStageUserInput(
     onStagePointerCancel,
     onStageWheel,
     onStageKeyDown,
+    onStagePaste,
     onStageCompositionEnd,
   };
 }

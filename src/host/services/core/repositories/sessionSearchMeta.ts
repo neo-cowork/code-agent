@@ -1,3 +1,4 @@
+import { localizeCronSessionTitle } from '../../../../shared/cronSessionTitle';
 // ============================================================================
 // 会话搜索行元数据 —— 跨会话搜索按命中会话 id 取标题/时间/归档，以及标题子串匹配。
 // 从 SessionRepository 外拆成小文件（后者已超行数上限）。
@@ -54,6 +55,8 @@ export function getSessionSearchMeta(
   return rows.map(toRow);
 }
 
+const localizedSearchDatabases = new WeakSet<BetterSqlite3.Database>();
+
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
@@ -67,13 +70,22 @@ export function searchSessionTitles(
 ): SessionSearchMetaRow[] {
   const needle = query.trim();
   if (!needle) return [];
-  const params: unknown[] = [`%${escapeLike(needle)}%`];
+  if (!localizedSearchDatabases.has(db)) {
+    db.function('cron_title_display', { deterministic: true }, (title, locale) => (
+      typeof title === 'string' ? localizeCronSessionTitle(title, locale === 'en' ? 'en' : 'zh') : ''
+    ));
+    localizedSearchDatabases.add(db);
+  }
+  const pattern = `%${escapeLike(needle)}%`;
+  const params: unknown[] = [pattern, pattern, pattern];
   const owner = ownerClause(userId, params);
   params.push(limit);
   const rows = db
     .prepare(
       `SELECT s.id, s.title, s.updated_at, s.created_at, s.status FROM sessions s
-       WHERE s.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+       WHERE (s.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR cron_title_display(s.title, 'zh') LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR cron_title_display(s.title, 'en') LIKE ? ESCAPE '\\' COLLATE NOCASE)
          AND s.is_deleted = 0 AND s.status != 'archived'${owner}
        ORDER BY s.updated_at DESC LIMIT ?`,
     )

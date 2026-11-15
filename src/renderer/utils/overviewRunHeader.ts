@@ -1,3 +1,7 @@
+import type { Message } from '@shared/contract';
+import { getLocalizedSessionTitle, splitCronSessionTitleParts } from './sessionPresentation';
+import { formatEditRoleUserPrompt } from './formatEditRoleUserPrompt';
+import { languages, type Language } from '../i18n';
 // ============================================================================
 // Overview Run header 视图模型（T1 主路径收口）
 // ----------------------------------------------------------------------------
@@ -7,6 +11,8 @@
 // ============================================================================
 
 import type { RunUiState, RunUiStatus } from '../types/runWorkbench';
+import type { OutcomeKey } from '../i18n/outcomeWords';
+import { resolveRunTerminalKey } from './terminalWord';
 
 /**
  * run 处于这些状态说明有活跃回合在跑。此前 useTaskActivity / RunWorkbenchCards
@@ -47,8 +53,8 @@ export interface OverviewRunHeaderModel {
   tone: RunOverviewTone;
   /** 步骤计数（第 N 步 / 共 M 步）；无 TODO 为 null */
   steps: { current: number; total: number } | null;
-  /** 异常态的人话结局键；非异常态为 null */
-  outcome: 'cancelled' | 'idle-reaped' | 'error' | null;
+  /** 终态词键（resolveRunTerminalKey 唯一解析，徽章/步骤后缀/第二行都读它）；活跃/等确认为 null */
+  terminal: OutcomeKey | null;
   /** 用时；起点未知时为 null（不假造 0） */
   elapsedMs: number | null;
   /** 活跃回合：秒表在走、给中断按钮 */
@@ -57,7 +63,10 @@ export interface OverviewRunHeaderModel {
 
 export function buildOverviewRunHeaderModel(args: {
   run: RunUiState;
+  primaryFailed?: boolean;
+  backgroundChildren?: number;
   sessionTitle?: string | null;
+  language?: Language;
   now: number;
   /** TODO 进度（summarizeTodoProgress）；total=0 视为无 TODO，不出步骤段 */
   todoProgress?: { completed: number; total: number } | null;
@@ -66,28 +75,34 @@ export function buildOverviewRunHeaderModel(args: {
   // 拿状态判存在会给从没跑过的会话摆一条「已完成」表头。
   if (!args.run.identity.turnId) return null;
 
-  const live = isLiveRunStatus(args.run.status);
-  const tone = deriveRunOverviewTone(args.run.status);
-  const title = args.run.title?.trim() || args.sessionTitle?.trim() || args.run.phase;
+  const status = (args.backgroundChildren ?? 0) > 0 ? 'running'
+    : args.primaryFailed && args.run.status !== 'cancelled' ? 'blocked'
+      : args.run.status;
+  const live = isLiveRunStatus(status);
+  const tone = deriveRunOverviewTone(status);
+  const language = args.language ?? 'zh';
+  const sessionTitle = args.sessionTitle?.trim();
+  const automaticTitle = sessionTitle && splitCronSessionTitleParts(sessionTitle)
+    ? getLocalizedSessionTitle(sessionTitle, language) : null;
+  const runTitle = args.run.title?.trim()
+    ? formatEditRoleUserPrompt(args.run.title.trim(), languages[language].roleEditReceipt.userPrompt)
+    : undefined;
+  const title = automaticTitle || runTitle || sessionTitle || args.run.phase;
   const total = args.todoProgress?.total ?? 0;
   const completed = args.todoProgress?.completed ?? 0;
 
   return {
     title,
     // 完成/异常态不摆当前动作句（异常态由 outcome 人话结局顶替）
-    phase: tone === 'live' || tone === 'waiting'
+    phase: !args.primaryFailed && (tone === 'live' || tone === 'waiting')
       ? (args.run.phase && args.run.phase !== title ? args.run.phase : null)
       : null,
-    status: args.run.status,
+    status,
     tone,
     steps: total > 0
       ? { current: tone === 'done' ? total : Math.min(completed + 1, total), total }
       : null,
-    outcome: tone === 'error'
-      ? (args.run.status === 'cancelled'
-        ? (args.run.terminalReason === 'idle_reaped' ? 'idle-reaped' : 'cancelled')
-        : 'error')
-      : null,
+    terminal: resolveRunTerminalKey({ ...args.run, status }),
     elapsedMs: elapsedMs(args.run, live, args.now),
     live,
   };
@@ -109,4 +124,15 @@ export function formatElapsedClock(ms: number): string {
   return hours > 0
     ? `${hours}:${mm}:${String(seconds).padStart(2, '0')}`
     : `${mm}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Hidden completion wakes do not replace the outcome of the user's failed request. */
+export function hasFailedCurrentRequest(messages: readonly Message[] = []): boolean {
+  let failed = false;
+  for (const message of messages) {
+    if (message.isMeta || message.metadata?.automation || (message.visibility && message.visibility !== 'active')) continue;
+    if (message.role === 'user') failed = false;
+    else if (message.role === 'assistant' && message.metadata?.agentError) failed = true;
+  }
+  return failed;
 }

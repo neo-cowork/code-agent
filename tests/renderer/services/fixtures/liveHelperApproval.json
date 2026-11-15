@@ -1,0 +1,93 @@
+{
+  "complete": {
+    "type": "agent_complete",
+    "data": {
+      "streamEpoch": "http:6f58c1a1-c220-4348-a4f4-b25257b324ff",
+      "sessionId": "session_1794549897803_dd27ea72",
+      "seq": 169
+    },
+    "sessionId": "session_1794549897803_dd27ea72",
+    "streamEpoch": "http:6f58c1a1-c220-4348-a4f4-b25257b324ff",
+    "seq": 169
+  },
+  "overtaking": {
+    "type": "routing_resolved",
+    "data": {
+      "mode": "auto",
+      "agentId": "default",
+      "agentName": "default",
+      "reason": {
+        "code": "ROUTING_NO_MATCH_FALLBACK",
+        "metadata": {
+          "agentName": "default"
+        },
+        "modelText": "No specialized agent matched; continue with the default conversation loop."
+      },
+      "score": 0,
+      "fallbackToDefault": true,
+      "timestamp": 1794549912474
+    },
+    "sessionId": "session_1794549897803_dd27ea72",
+    "streamEpoch": "http:6f58c1a1-c220-4348-a4f4-b25257b324ff",
+    "seq": 171
+  },
+  "approval": {
+    "type": "permission_request",
+    "data": {
+      "sessionId": "session_1794549897803_dd27ea72",
+      "agentId": "subagent-bg-35c5206f-59b5-4273-9824-d660eacdc485",
+      "runId": "run-f6b8bbf1-7dda-4b24-85ed-8cdcdaaf5169",
+      "parentToolUseId": "call_65595738087c4b89a7a0b167",
+      "forceConfirm": true,
+      "type": "command",
+      "tool": "Bash",
+      "details": {
+        "command": "ls -la ~/work/out/N-PERM-GRANT-TIERS-P2-CARD-FU1-FU1/before/neo/workspace",
+        "commandRiskLevel": "safe",
+        "commandSecurityFlags": [],
+        "projectId": "proj_4dea3c76243c",
+        "sourceId": "psrc_025712eec37e",
+        "sourceRole": "primary",
+        "sourceAccess": "read_write",
+        "relativePathWithinSource": "",
+        "workspaceScopeVersion": "4bba676b4e5b0716784ba7ef39b503fc443bb38f3860afb58854bbcce324ff86",
+        "sandbox": {
+          "applied": true,
+          "degraded": false,
+          "code": "OS_SANDBOX_APPLIED"
+        },
+        "preview": {
+          "type": "command",
+          "summary": "ls -la ~/work/out/N-PERM-GRANT-TIERS-P2-CARD-FU1-FU1/before/neo/workspace"
+        }
+      },
+      "reason": "Execute shell command",
+      "decisionTrace": {
+        "toolName": "Bash",
+        "finalOutcome": "ask",
+        "steps": [
+          {
+            "layer": "guard_fabric",
+            "rule": "topology: bash/async_agent",
+            "result": "ask",
+            "reason": {
+              "code": "DECISION_GUARD",
+              "modelText": "topology rule: bash not allowed in async_agent context"
+            },
+            "durationMs": 0,
+            "timestamp": 1794549912351
+          }
+        ],
+        "totalDurationMs": 2
+      },
+      "ledgerRecordedByChild": true,
+      "id": "perm-8ef2da0a-71b4-4899-8480-1767bf18a252",
+      "timestamp": 1794549912357,
+      "streamEpoch": "http:6f58c1a1-c220-4348-a4f4-b25257b324ff",
+      "seq": 170
+    },
+    "sessionId": "session_1794549897803_dd27ea72",
+    "streamEpoch": "http:6f58c1a1-c220-4348-a4f4-b25257b324ff",
+    "seq": 170
+  }
+}

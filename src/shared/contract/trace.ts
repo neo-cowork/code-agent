@@ -59,6 +59,8 @@ export interface TraceNode {
    * 失败（runLength 1 / latest）处理。
    */
   agentErrorRun?: AgentErrorRunInfo;
+  /** 整段会话里最后一张失败卡；后台代理续跑提示只挂在这一个节点上。 */
+  agentErrorLast?: boolean;
 }
 
 /**

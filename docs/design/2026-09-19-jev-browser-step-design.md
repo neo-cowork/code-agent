@@ -506,11 +506,11 @@ buildJevState() → estimateJevCallUsd → systemOne   jevBrowserStep.ts
 
 | 开关 | 默认 | 作用 |
 |---|---|---|
-| `CODE_AGENT_BROWSER_JEV_STEP` | 关 | `=1` 才装配；缺 `TYPESAFE_API_KEY` 时 warn 一行且不装配 |
+| `CODE_AGENT_BROWSER_JEV_STEP` | 开（2026-11-03 起） | `=0` 关；未设/`=1` 开；另需 `resolveJevRoute()` 非空才暴露 `execute_goal`，无路由 warn 一次且不装配 |
 | `CODE_AGENT_BROWSER_JEV_USD_BUDGET` | `0.03` | 每任务 Jev 刊例上限（§7） |
 | `CODE_AGENT_BROWSER_JEV_SOFT_STEP_LIMIT` | `20` | 软步顶，正整数，封顶硬顶 60 |
 
-环境变量 **`CODE_AGENT_BROWSER_JEV_STEP=1`** 显式开，默认关。惯例对齐 `CODE_AGENT_PERMISSION_LLM_CLASSIFIER` / `CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN`。
+环境变量 **`CODE_AGENT_BROWSER_JEV_STEP`** 三态：`=0` 关，`=1` 或未设开（2026-11-03 起默认开；原设计为 `=1` 显式开、默认关）。惯例对齐 `CODE_AGENT_PERMISSION_LLM_CLASSIFIER` / `CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN`。
 
 装配形状抄 `resolveJudgePrescreen`（`postLaunchScorer.ts:188-206`）：
 
@@ -518,11 +518,11 @@ buildJevState() → estimateJevCallUsd → systemOne   jevBrowserStep.ts
 // src/host/agent/runtime/browser/jevBrowserStep.ts
 
 export function isBrowserJevStepEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_BROWSER_JEV_STEP === '1';
+  return env.CODE_AGENT_BROWSER_JEV_STEP !== '0';
 }
 
 const BROWSER_JEV_MISSING_KEY_WARN =
-  'CODE_AGENT_BROWSER_JEV_STEP 已开启但 TYPESAFE_API_KEY 缺失，Jev 步选不生效（走主模型逐步 Browser）';
+  '无可用 Jev 路由（未登录/缺 TYPESAFE_API_KEY），Jev 步选不生效（走主模型逐步 Browser）';
 
 export function resolveBrowserJevStep(deps?: {
   systemOne?: JevSystemOneCall;
@@ -552,7 +552,7 @@ export function resolveBrowserJevStep(deps?: {
 
 缺 key：warn 一行（同权限分类，只报一次可用模块级 `let warned`），回落主模型。`systemOne` 仍会在真调用时抛 `TYPESAFE_KEY_MISSING`；装配期先挡住，避免每步抛一次。
 
-数据出境：页面标题/控件文本会去 `api.typesafe.ai`。原型轮在 FolderTrust 对外披露清单补一句（权限线 shipnote 已有命令行出境；本单加「浏览器 DOM 文本」）。开关默认关，未开零出境。
+数据出境：页面标题/控件文本会去 `api.typesafe.ai`。原型轮在 FolderTrust 对外披露清单补一句（权限线 shipnote 已有命令行出境；本单加「浏览器 DOM 文本」）。开关默认开（2026-11-03 起），仅有可用 Jev 路由时生效；`=0` 或无路由则零出境。
 
 `guiAgent.ts`：文件清单禁止出现。
 

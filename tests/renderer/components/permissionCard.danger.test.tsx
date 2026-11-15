@@ -39,7 +39,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 const { PermissionCard } = await import('../../../src/renderer/components/PermissionDialog/PermissionCard');
 
 const DANGER_COPY = '危险';
-const STANDING_GRANTS = ['到这次做完为止', '24 小时内允许'];
+const STANDING_GRANTS = ['本次任务内允许', '24 小时内允许'];
 
 function render(request: ContractPermissionRequest): string {
   storeState.request = request;

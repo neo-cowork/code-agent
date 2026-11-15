@@ -107,6 +107,9 @@ export interface SurfaceExecutionTranslationsV1 {
   takeover: {
     title: string;
     description: string;
+    waitingTitle: string;
+    stoppedTitle: string;
+    done: string;
   };
   compact: {
     active: string;
@@ -300,8 +303,8 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     truncatedOutput: '内容较长，这里仅展示安全预览。',
     outputKind: { artifact: '产物', file: '文件', download: '下载', trace: '执行记录' },
   },
-  takeover: { title: '需要你接管', description: 'Neo 已释放输入控制。完成操作后可继续执行。' },
-  compact: { active: '正在操作 {target}', completed: '已完成', open: '在右栏查看浏览器现场' },
+  takeover: { title: '需要你接管', description: 'Neo 已释放输入控制。完成操作后可继续执行。', waitingTitle: 'Neo 在等你', stoppedTitle: 'Neo 已停下，在等你', done: '好了' },
+  compact: { active: '正在操作 {target}', completed: '已结束', open: '在右栏查看浏览器现场' },
   terminal: {
     badge: '已结束',
     frameAlt: 'Neo 结束操作前的最后一帧画面',
@@ -491,8 +494,8 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     truncatedOutput: 'This safe preview shows only part of the output.',
     outputKind: { artifact: 'Artifact', file: 'File', download: 'Download', trace: 'Execution record' },
   },
-  takeover: { title: 'Your action is needed', description: 'Neo released input control. Resume when you are done.' },
-  compact: { active: 'Working on {target}', completed: 'Completed', open: 'View the live browser scene in the sidebar' },
+  takeover: { title: 'Your action is needed', description: 'Neo released input control. Resume when you are done.', waitingTitle: 'Neo is waiting for you', stoppedTitle: 'Neo stopped and is waiting for you', done: 'Done' },
+  compact: { active: 'Working on {target}', completed: 'Ended', open: 'View the live browser scene in the sidebar' },
   terminal: {
     badge: 'Ended',
     frameAlt: 'The last frame before Neo finished',

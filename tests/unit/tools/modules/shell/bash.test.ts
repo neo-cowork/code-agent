@@ -1434,6 +1434,51 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(cleanupMock).toHaveBeenCalledOnce();
   });
 
+  it('bypassPermissions 档：PTY 无 description 时透传未包装 displayCommand，账本保留真实命令', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    wrapMock.mockImplementation((cmd: unknown) => ({
+      command: `sandbox-exec -f /tmp/profile.sb /bin/sh -c "${String(cmd)}"`,
+      cleanup: cleanupMock,
+    }));
+    const actualPty = await vi.importActual<typeof import('../../../../../src/host/tools/shell/ptyExecutor')>(
+      '../../../../../src/host/tools/shell/ptyExecutor',
+    );
+    const { BackgroundTaskLedger } = await import('../../../../../src/host/task/backgroundTaskLedger');
+    const { syncPtySessionSnapshotToLedger } = await import(
+      '../../../../../src/host/task/backgroundTaskSnapshotAdapters'
+    );
+    createPtySessionMock.mockImplementation((opts: Parameters<typeof actualPty.createPtySession>[0]) =>
+      actualPty.createPtySession(opts),
+    );
+    const handler = await bashModule.createHandler();
+    let sessionId = '';
+    try {
+      const result = await handler.execute(
+        { command: 'npm run dev', pty: true, run_in_background: true },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      sessionId = result.ok && typeof result.meta?.sessionId === 'string' ? result.meta.sessionId : '';
+      const session = actualPty.getAllPtySessions().find((item) => item.sessionId === sessionId);
+      expect(session).toMatchObject({
+        displayCommand: 'npm run dev',
+        displayName: 'npm',
+      });
+      const ledger = new BackgroundTaskLedger();
+      syncPtySessionSnapshotToLedger(session!, ledger);
+      expect(ledger.getTask(`pty:${sessionId}`)).toMatchObject({
+        title: 'npm',
+        command: 'npm run dev',
+      });
+    } finally {
+      const state = sessionId ? actualPty.getPtySession(sessionId) : undefined;
+      if (state?.timeout) clearTimeout(state.timeout);
+      state?.outputStream?.end();
+      actualPty.stopPtyCleanupTimer();
+    }
+  });
+
   it('bypassPermissions 档：PTY 等待失败会把沙盒拒绝路径追加到模型输出', async () => {
     modeMgr.setMode('bypassPermissions', true);
     createPtySessionMock.mockReturnValue({ success: true, sessionId: 'sandbox-pty' });

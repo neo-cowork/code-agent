@@ -2,7 +2,7 @@
 // useI18n Hook - 国际化 Hook（支持云端配置）
 // ============================================================================
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { languages, type Language, type Translations } from '../i18n';
 
@@ -21,6 +21,21 @@ function flattenTranslationKeys(node: unknown, prefix = ''): Set<string> {
   return keys;
 }
 
+const translationKeySetCache = new WeakMap<object, Set<string>>();
+const I18nKeyCacheContext = createContext(false);
+
+function getBuiltinKeySet(translations: Translations): Set<string> {
+  const cached = translationKeySetCache.get(translations);
+  if (cached) return cached;
+  const keySet = flattenTranslationKeys(translations);
+  translationKeySetCache.set(translations, keySet);
+  return keySet;
+}
+
+export function I18nKeyCacheProvider({ enabled, children }: { enabled: boolean; children: ReactNode }): ReactNode {
+  return createElement(I18nKeyCacheContext.Provider, { value: enabled }, children);
+}
+
 /**
  * 国际化 Hook
  * 提供当前语言的翻译文本和语言切换功能
@@ -28,6 +43,7 @@ function flattenTranslationKeys(node: unknown, prefix = ''): Set<string> {
  */
 export function useI18n() {
   const { language, setLanguage, cloudUIStrings } = useAppStore();
+  const useCachedKeySet = useContext(I18nKeyCacheContext);
 
   // 获取当前语言的翻译（内置）
   const builtinT: Translations = languages[language];
@@ -40,7 +56,10 @@ export function useI18n() {
 
   // 云端 kv 的 key 不在内置文案树里 = 配置错位/过期（永远没有消费方）。静默吞掉排查时
   // 看不见，这里 warn 一声留痕（降级留痕规则）；开发者日志，不弹窗、不拦渲染。
-  const builtinKeySet = useMemo(() => flattenTranslationKeys(builtinT), [builtinT]);
+  const builtinKeySet = useMemo(
+    () => useCachedKeySet ? getBuiltinKeySet(builtinT) : flattenTranslationKeys(builtinT),
+    [builtinT, useCachedKeySet],
+  );
   useEffect(() => {
     const unknownKeys = Object.keys(cloudStrings).filter((key) => !builtinKeySet.has(key));
     if (unknownKeys.length > 0) {

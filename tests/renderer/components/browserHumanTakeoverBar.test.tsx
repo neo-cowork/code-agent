@@ -7,7 +7,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../src/shared/contract/surfaceExecution';
-import type { SurfaceConversationSnapshotV1, SurfaceSessionStateV1 } from '../../../src/shared/contract/surfaceExecution';
+import type { SurfaceConversationSnapshotV1, SurfaceExecutionEventV1, SurfaceSessionStateV1 } from '../../../src/shared/contract/surfaceExecution';
 import type { useWorkbenchBrowserSession } from '../../../src/renderer/hooks/useWorkbenchBrowserSession';
 import type { LiveAgentPointerState } from '../../../src/renderer/hooks/useLiveAgentPointer';
 import type { SurfaceLiveFrameStreamState } from '../../../src/renderer/hooks/useSurfaceLiveFrames';
@@ -86,7 +86,7 @@ function buildBrowserSessionState(): BrowserSessionState {
   } as BrowserSessionState;
 }
 
-function seedSession(agentId: string, state: SurfaceSessionStateV1): void {
+function seedSession(agentId: string, state: SurfaceSessionStateV1, events: SurfaceExecutionEventV1[] = []): void {
   const snapshot: SurfaceConversationSnapshotV1 = {
     version: 1,
     conversationId: 'session-a',
@@ -129,7 +129,7 @@ function seedSession(agentId: string, state: SurfaceSessionStateV1): void {
         heartbeatAt: 2_000,
       },
       grant: { state: 'none', capabilities: [], actionClasses: [], dataScopes: [] },
-      events: [],
+      events,
       evidence: [],
       outputs: [],
       availableControls: state === 'waiting_human' ? ['resume', 'stop'] : ['takeover', 'stop'],
@@ -140,6 +140,26 @@ function seedSession(agentId: string, state: SurfaceSessionStateV1): void {
     updatedAt: 2_000,
   };
   useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', snapshot);
+}
+
+function humanEvent(sequence: number, userSummary: string, action?: string): SurfaceExecutionEventV1 {
+  return {
+    version: 1,
+    eventId: `event-${sequence}`,
+    sequence,
+    sessionId: 'surface-agent',
+    runId: 'run-agent',
+    agentId: 'agent-a',
+    surface: 'browser',
+    phase: 'human',
+    status: 'waiting',
+    userSummary,
+    ...(action ? { operation: { action, risk: 'control' } } : {}),
+    evidenceRefs: [],
+    artifactRefs: [],
+    availableControls: ['resume', 'stop'],
+    startedAt: 1_000 + sequence,
+  };
 }
 
 function stageRect(stage: HTMLElement): void {
@@ -217,6 +237,66 @@ describe('Browser live view human takeover', () => {
     seedSession('agent-a', 'running');
     view.rerender(<BrowserAgentWindow />);
     expect(screen.queryByTestId('browser-human-takeover-bar')).toBeNull();
+  });
+
+  it('shows "Neo is waiting for you" with the reason and Done when Neo asked for the takeover', async () => {
+    seedSession('agent-a', 'waiting_human', [humanEvent(1, '请完成页面上的人机验证', 'wait_for_user')]);
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('Neo 在等你：请完成页面上的人机验证')).toBeTruthy();
+    expect(screen.queryByText('你正在操作这个页面，Neo 已暂停')).toBeNull();
+    const done = screen.getByTestId('browser-human-takeover-continue');
+    expect(done.textContent).toBe('好了');
+    fireEvent.click(done);
+    await waitFor(() => expect(controlMock).toHaveBeenCalledWith(expect.objectContaining({ action: 'resume' })));
+  });
+
+  it('after the wait ran out the bar says Neo stopped and is waiting; Done is still there', () => {
+    seedSession('agent-a', 'waiting_human', [
+      humanEvent(1, '请登录你的账号', 'wait_for_user'),
+      humanEvent(2, '请登录你的账号', 'wait_for_user_timeout'),
+    ]);
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('Neo 已停下，在等你：请登录你的账号')).toBeTruthy();
+    expect(screen.getByTestId('browser-human-takeover-continue').textContent).toBe('好了');
+  });
+
+  it('English copy', () => {
+    useAppStore.setState({ language: 'en' });
+    seedSession('agent-a', 'waiting_human', [humanEvent(1, 'Please solve the verification on the page', 'wait_for_user')]);
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('Neo is waiting for you: Please solve the verification on the page')).toBeTruthy();
+    expect(screen.getByTestId('browser-human-takeover-continue').textContent).toBe('Done');
+  });
+
+  it('a user-initiated takeover after an earlier wait keeps the pause hint and Continue', () => {
+    seedSession('agent-a', 'waiting_human', [
+      humanEvent(1, '请完成验证', 'wait_for_user'),
+      humanEvent(2, 'Waiting for human control'),
+      humanEvent(3, 'Surface control takeover waiting', 'takeover'),
+    ]);
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('你正在操作这个页面，Neo 已暂停')).toBeTruthy();
+    expect(screen.getByTestId('browser-human-takeover-continue').textContent).toBe('继续');
+  });
+
+  it('a newer running page the user opened in the rail does not hide the agent bar that is waiting', () => {
+    seedSession('agent-a', 'waiting_human', [humanEvent(1, '请完成页面上的人机验证', 'wait_for_user')]);
+    const snapshot = useSurfaceExecutionStore.getState().nativeByConversation['session-a'];
+    const agent = snapshot.sessions[0];
+    useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+      ...snapshot,
+      sessions: [agent, {
+        ...agent,
+        session: { ...agent.session, sessionId: 'surface-user', runId: 'run-user', agentId: SURFACE_USER_BROWSER_AGENT_ID, state: 'running' },
+        availableControls: ['takeover', 'stop'],
+        events: [],
+        updatedAt: 9_000,
+      }],
+      updatedAt: 9_000,
+    });
+    render(<BrowserAgentWindow />);
+    expect(screen.getByText('Neo 在等你：请完成页面上的人机验证')).toBeTruthy();
+    expect(screen.getByTestId('browser-human-takeover-continue').textContent).toBe('好了');
   });
 
   it('does not show the bar for a page the user opened', () => {

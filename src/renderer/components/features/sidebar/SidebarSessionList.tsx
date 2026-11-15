@@ -17,7 +17,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore, type SessionStatusFilter } from '../../../stores/sessionUIStore';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { localeForLanguage } from '../../../utils/i18nTime';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
+import { getLocalizedSessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
 import { PlanetSphere } from '../../brand/PlanetSphere';
 import {
@@ -141,7 +141,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
 
         return {
           id: session.id,
-          title: getDisplaySessionTitle(session.title, language),
+          title: getLocalizedSessionTitle(session.title, language),
           statusLabel:
             status.kind === 'error'
               ? t.common.error
@@ -150,7 +150,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                 : status.label,
           statusToneClassName: status.toneClassName,
           showStatusBadge: status.showBadge,
-          typeLabel: getSessionTypeLabel(session.type),
+          typeLabel: getSessionTypeLabel(session.type, t),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
           lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
           workingDirectory: session.workingDirectory,

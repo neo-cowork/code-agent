@@ -221,10 +221,13 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
       : waiting.length > 0
         ? interpolatePlural(text.collapsedWaiting, waiting.length)
         : failed.length > 0
-          ? interpolatePlural(text.collapsedFailed, failed.length)
+          ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].name}`
           : cancelled.length > 0
-            ? interpolatePlural(text.collapsedCancelled, cancelled.length)
+            ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].name}`
             : interpolatePlural(text.collapsedDone, rows.length);
+  const failureTitle = [...failed, ...cancelled].map((row) => row.failureReason
+    ? t.chat.delegationReceipt.failureDetail.replace('{status}', row.name).replace('{reason}', row.failureReason)
+    : row.name).join('\n') || undefined;
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.chipMerged
     : mergeState === 'reported'
@@ -240,6 +243,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
       type="button"
       data-testid="session-member-bar-collapsed"
       onClick={openSessionAgentsPanel}
+      title={failureTitle}
       className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
     >
       <span className="flex -space-x-1.5">

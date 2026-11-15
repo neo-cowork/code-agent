@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildOverviewRunHeaderModel } from '../../../src/renderer/utils/overviewRunHeader';
 import type { TraceProjection } from '../../../src/shared/contract/trace';
 import {
   buildLoopDecisionViews,
@@ -107,6 +108,34 @@ const projection: TraceProjection = {
 };
 
 describe('runWorkbenchProjection', () => {
+  it.each([undefined, null, 'idle', 'queued', 'running'])(
+    'never completes a just-sent null turn with session status %s', (sessionStatus) => {
+      const run = buildRunUiState({
+        projection: { sessionId: 'session-new', turns: [], activeTurnIndex: -1 },
+        sessionId: 'session-new',
+        sessionStatus,
+      });
+      expect(run.identity.turnId).toBeNull();
+      expect(run.status).toBe(sessionStatus === 'running' ? 'running' : 'planning');
+      expect(run.completionSignal).toBeUndefined();
+      expect(buildOverviewRunHeaderModel({ run, now: 100 })).toBeNull();
+    },
+  );
+
+  it('requires positive completion evidence and preserves running precedence', () => {
+    const emptyProjection: TraceProjection = { sessionId: 'session-new', turns: [], activeTurnIndex: -1 };
+    expect(buildRunUiState({
+      projection: emptyProjection, sessionId: 'session-new',
+      taskProgress: { turnId: 'turn-new', phase: 'completed' },
+    }).status).toBe('completed');
+    const completedProjection: TraceProjection = {
+      ...emptyProjection,
+      turns: [{ turnId: 'turn-new', turnNumber: 1, startTime: 100, status: 'completed', nodes: [] }],
+    };
+    expect(buildRunUiState({ projection: completedProjection, sessionId: 'session-new' }).status).toBe('completed');
+    expect(buildRunUiState({ projection: completedProjection, sessionId: 'session-new', sessionStatus: 'running' }).status).toBe('running');
+  });
+
   it('derives blocked run state from current turn capability warnings', () => {
     const run = buildRunUiState({
       projection,
@@ -118,6 +147,34 @@ describe('runWorkbenchProjection', () => {
     expect(run.title).toBe('帮我继续这个任务');
     expect(run.blockedReason).toBe('Skill not mounted for this turn');
     expect(run.completionSignal).toBe('1 个产物');
+  });
+
+  it('reports failed tool steps (success===false) so the terminal word cannot say plain Done', () => {
+    const failedProjection: TraceProjection = {
+      sessionId: 'session-fail',
+      activeTurnIndex: -1,
+      turns: [{
+        turnNumber: 1,
+        turnId: 'turn-fail',
+        status: 'completed',
+        startTime: 100,
+        endTime: 200,
+        nodes: [
+          { id: 'u', type: 'user', content: '复制文件', timestamp: 100 },
+          {
+            id: 't1',
+            type: 'tool_call',
+            content: '',
+            timestamp: 110,
+            toolCall: { id: 'c1', name: 'bash', arguments: {}, success: false, result: 'No such directory' },
+          },
+        ],
+      }],
+    } as never;
+
+    const run = buildRunUiState({ projection: failedProjection, sessionId: 'session-fail', sessionStatus: 'idle' });
+    expect(run.status).toBe('completed');
+    expect(run.toolStepOutcome).toEqual({ failed: 1, total: 1 });
   });
 
   it('keeps cancelled run state after the runtime returns to idle', () => {

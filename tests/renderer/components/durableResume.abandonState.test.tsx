@@ -124,7 +124,8 @@ describe('abandon entry in the durable resume notice row', () => {
     fireEvent.click(dialogConfirmButton());
 
     await waitFor(() => expect(ipcInvoke).toHaveBeenCalledTimes(1));
-    expect(ipcInvoke).toHaveBeenCalledWith('agent:cancel', { sessionId: SESSION_ID, runId: 'run-parked-1' });
+    // abandonParked 显式区分「放弃」与重复 Stop（后者对 user_stop 停靠是 no-op）。
+    expect(ipcInvoke).toHaveBeenCalledWith('agent:cancel', { sessionId: SESSION_ID, runId: 'run-parked-1', abandonParked: true });
     await waitFor(() => expect(loadSessions).toHaveBeenCalledWith({ silent: true }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();

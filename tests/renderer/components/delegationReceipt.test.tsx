@@ -189,7 +189,8 @@ describe('delegation receipt', () => {
     const view = renderCall();
 
     expect(view.getByTestId('delegation-activity').textContent).toContain('读取了 /repo/release.md');
-    expect(view.getByText('代理工作中')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单正在处理');
+    expect(view.getByText('正在处理')).toBeTruthy();
   });
 
   it('keeps a completed receipt with title, step count and clickable output refs', () => {
@@ -225,7 +226,8 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByText('执行失败')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单没有完成');
+    expect(view.getByText('没有完成')).toBeTruthy();
     expect(view.getByTestId('delegation-failure').textContent).toBe('远端服务超时');
   });
 
@@ -290,7 +292,12 @@ describe('delegation receipt', () => {
     const view = renderCall(spawnCall);
     expect(view.getByTestId('delegation-activity').textContent).toBe('正在跟 研究代理 说话');
 
-    const completedNode = { ...runningNode, status: 'completed' as const, statusLabel: '已完成' };
+    const completedNode = {
+      ...runningNode,
+      status: 'completed' as const,
+      statusLabel: '已完成',
+      worktreeState: { status: 'preserved' as const, branch: 'agent/launch-polish', path: '/tmp/worktree/launch' },
+    };
     mocks.snapshot = {
       ...mocks.snapshot,
       roots: [completedNode, peerNode],
@@ -298,8 +305,11 @@ describe('delegation receipt', () => {
       summary: { ...mocks.snapshot.summary, running: 1, completed: 1 },
     };
     view.rerender(<ToolCallDisplay toolCall={spawnCall} index={0} total={1} />);
-    expect(view.getByTestId('delegation-receipt')).toBeTruthy();
+    const receipt = view.getByTestId('delegation-receipt');
     expect(view.getByText('已完成')).toBeTruthy();
+    expect(receipt.querySelectorAll('[data-testid="delegation-branch"]')).toHaveLength(1);
+    expect(view.getByTestId('delegation-branch').textContent).toBe('改动在分支 agent/launch-polish，合并后才会生效');
+    expect(receipt.textContent).not.toContain('/tmp/worktree/launch');
   });
 
   it('keeps spawn_agent bookkeeping model-facing but hides it in expanded details with or without the tree node', () => {
@@ -389,7 +399,7 @@ describe('delegation receipt — integrated display projection', () => {
 Use wait_agent to block until done, or close_agent to cancel.`;
 
   it.each([
-    ['background spawn', 'spawn_agent', backgroundOutput, '代理工作中', ['agent_explore_background_receipt', 'spawned in background:']],
+    ['background spawn', 'spawn_agent', backgroundOutput, '已派出', ['agent_explore_background_receipt', 'spawned in background:']],
     ['completed spawn', 'spawn_agent', REAL_SPAWN_AGENT_OUTPUT, '- Agent ID: customer-visible-reference', ['completed task:', '- Iterations: 1', '- Tools used: none']],
     ['completed Task', 'Task', REAL_TASK_OUTPUT, 'Notion: - Cost: $20/month; sync: database and page export.', ['completed (', '- Iterations: 2', '- Tools used: none']],
     ['wait result', 'wait_agent', `${REAL_WAIT_AGENT_OUTPUT}\n[agent_missing] NOT FOUND`, 'Notion and Obsidian comparison:', ['[agent_explore]', '[agent_missing]', 'NOT FOUND']],

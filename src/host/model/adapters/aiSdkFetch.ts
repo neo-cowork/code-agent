@@ -2,6 +2,7 @@ import { noteFirstModelRequestDispatched } from '../../agent/runtime/firstModelR
 import axios, { type AxiosResponse } from 'axios';
 import { Readable, Transform } from 'node:stream';
 import { createLogger } from '../../services/infra/logger';
+import { APICallError, JSONParseError } from 'ai';
 import { getHttpsAgent } from '../providers/shared';
 
 export const logger = createLogger('AiSdkAdapter');
@@ -157,6 +158,68 @@ export function makeAiSdkFetch(
   // 没有这条日志就无法定位 Base URL 配错（缺 /v1、末尾多斜杠等）
   if (response.status >= 400) {
     logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
+  }
+  // 流式请求收到的 2xx 却是 JSON/HTML/空体（非 SSE）：AI SDK 的 SSE 解析器会把它静默吞成「空回复」，
+  // 调用方既没报错也没内容。这类体不是流，整体读出来：不能解析就抛 2xx APICallError（与非流式
+  // generateText 同形态，交 classifyBadSuccessBody 分类），能解析的原样放行。
+  const contentType = String(response.headers['content-type'] ?? '').toLowerCase();
+  const wantsStream = typeof body === 'string' && /"stream"\s*:\s*true/.test(body);
+  const nonSseBody = /json|html|text\/plain/.test(contentType) || response.headers['content-length'] === '0';
+  if (wantsStream && nonSseBody && response.status >= 200 && response.status < 300 && isNodeReadable(response.data)) {
+    const chunks: Buffer[] = [];
+    const iterator = (response.data as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]();
+    try {
+      // content-type 不可信：中转站常把合法 SSE 标成 text/plain / application/json（SDK 的 SSE 解析不看它）。
+      // 先偷看首个非空块，以 SSE 字段（data:/event:/id:/retry:/注释行）开头就当流，把首块接回去原样放行。
+      for (;;) {
+        const first = await iterator.next();
+        if (first.done) break;
+        const buf = Buffer.from(first.value);
+        if (buf.length === 0) continue;
+        if (/^\s*(?:data|event|id|retry):|^\s*:/.test(buf.toString('utf8', 0, 64))) {
+          const rest = (async function* () { yield buf; for (;;) { const n = await iterator.next(); if (n.done) return; yield n.value; } })();
+          return new Response(responseBodyForFetch(Readable.from(rest), response.status), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders(response.headers),
+          });
+        }
+        chunks.push(buf);
+        break;
+      }
+      for (;;) {
+        const n = await iterator.next();
+        if (n.done) break;
+        chunks.push(Buffer.from(n.value));
+      }
+    } catch (readErr) {
+      if (signal?.aborted) throw readErr;
+      // 体读到一半被掐：与 generateText 的「Failed to process successful response」同形态。
+      throw new APICallError({
+        message: 'Response body ended before it was complete',
+        statusCode: response.status,
+        url,
+        requestBodyValues: undefined,
+        cause: readErr,
+      });
+    }
+    const text = Buffer.concat(chunks).toString('utf8');
+    try {
+      JSON.parse(text);
+    } catch (parseErr) {
+      throw new APICallError({
+        message: 'Non-SSE response to a streaming request',
+        statusCode: response.status,
+        url,
+        requestBodyValues: undefined,
+        cause: new JSONParseError({ text, cause: parseErr }),
+      });
+    }
+    return new Response(text, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders(response.headers),
+    });
   }
   return new Response(responseBodyForFetch(response.data, response.status), {
     status: response.status,

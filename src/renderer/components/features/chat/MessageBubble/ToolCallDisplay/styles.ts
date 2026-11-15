@@ -1,9 +1,7 @@
 // ============================================================================
-// ToolCallDisplay Styles - Status colors and status determination
+// ToolCallDisplay Styles - Status colors
 // Uses --cc-* CSS custom properties for Claude Code terminal consistency
 // ============================================================================
-
-import type { ToolCall } from '@shared/contract';
 
 // ============================================================================
 // Status Types
@@ -16,29 +14,6 @@ export interface StatusColors {
   text: string;
   border: string;
   bg: string;
-}
-
-// ============================================================================
-// Status Determination
-// ============================================================================
-
-/**
- * Determine tool status based on result and session state
- */
-export function getToolStatus(
-  toolCall: ToolCall,
-  currentSessionId: string | null,
-  processingSessionIds: Set<string>
-): ToolStatus {
-  if (toolCall.result) {
-    return toolCall.result.success ? 'success' : 'error';
-  }
-
-  const isProcessing = currentSessionId
-    ? processingSessionIds.has(currentSessionId)
-    : false;
-
-  return isProcessing ? 'pending' : 'interrupted';
 }
 
 // ============================================================================

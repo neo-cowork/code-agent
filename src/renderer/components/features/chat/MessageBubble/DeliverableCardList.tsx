@@ -467,7 +467,14 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
         };
       });
       setPublishTarget(null);
-      toast.success(deliverableLabels.publishSuccess.replace('{version}', String(response.publishedVersion.version)));
+      toast.success(
+        deliverableLabels.publishSuccess.replace('{version}', String(response.publishedVersion.version)),
+        undefined,
+        {
+          label: t.library.viewVersions,
+          onClick: () => openPreview(filePath, { deliverableStatus: publishTarget.card.status }),
+        },
+      );
     } catch (error) {
       toast.error(`${deliverableLabels.publishFailed}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {

@@ -124,9 +124,9 @@ const EN_TEMPLATE_TAGS: Record<string, string[]> = {
 };
 
 /**
- * i18n（cronCenter.templates）没登记词条的 3 个模板的 en 名称/描述。
+ * 监听类 3 个模板生成任务时的 en 名称/描述。
  * 描述带用户输入（url / calendarId / tableId），与 zh 草稿同构插值。
- * 有词条的模板 name/description 仍走 cronCenterEn（本文件不重复登记）。
+ * 这 3 个模板的卡片展示文案另在 cronCenter.templates，生成的任务名/描述以本表为准。
  */
 const EN_UNREGISTERED_COPY: Record<string, { name: string; description: (values: Record<string, string>) => string }> = {
   'web-change-watch': {

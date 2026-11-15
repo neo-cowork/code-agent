@@ -12,7 +12,10 @@ import type { TraceTurn } from '@shared/contract/trace';
 import type { Translations } from '../i18n';
 
 export function turnPhaseFallbackLabel(turn: TraceTurn, t: Translations): string | null {
-  if (turn.nodes.some((node) => node.type === 'user' && node.metadata?.sendFailed === true)) {
+  if (turn.status === 'error' || turn.nodes.some((node) => (
+    (node.type === 'user' && node.metadata?.sendFailed === true)
+    || node.turnTimeline?.tone === 'error'
+  ))) {
     return null;
   }
   const assistantText = [...turn.nodes]

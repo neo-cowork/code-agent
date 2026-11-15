@@ -242,6 +242,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           {/* 对话窗口 */}
           <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-badge-success/20 h-[500px] flex flex-col">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3">{it.chatTitle}</h3>
+            {it.chatSamplesNote && <p className="text-xs text-zinc-500 mb-3">{it.chatSamplesNote}</p>}
 
             {/* 消息列表 */}
             <div className="flex-1 overflow-y-auto space-y-3 mb-4">
@@ -341,8 +342,12 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                {term.zh && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.zh}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>

@@ -18,6 +18,7 @@ vi.mock('../../../src/host/services/roleAssets/rolePackInstallService', () => ({
 
 vi.mock('../../../src/host/services', () => ({
   getSessionManager: () => ({
+    getMessages: async () => [],
     getSession: async () => ({ id: SESSION, messages: [], workingDirectory: '/tmp' }),
     updateSession: async () => undefined,
   }),

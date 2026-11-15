@@ -63,6 +63,18 @@ afterEach(() => {
 });
 
 describe('resolveProviderBaseUrl', () => {
+  it('zhipu non-coding and free models honor settings, with config first', () => {
+    mockGetSettings.mockReturnValue({ models: { providers: {
+      zhipu: { baseUrl: 'http://127.0.0.1:9988/v4' },
+    } } });
+    for (const model of ['glm-5.3', 'glm-4-flash']) {
+      expect(resolveProviderBaseUrl(cfg('zhipu', model))).toBe('http://127.0.0.1:9988/v4');
+      expect(resolveProviderBaseUrl(cfg('zhipu', model, { baseUrl: 'https://explicit.test/v4' })))
+        .toBe('https://explicit.test/v4');
+    }
+    expect(resolveProviderBaseUrl(cfg('zhipu', 'glm-5'))).toBe(MODEL_API_ENDPOINTS.zhipuCoding);
+  });
+
   it('简单 OpenAI 兼容 provider 用 config.baseUrl || ENDPOINTS[provider]', () => {
     expect(resolveProviderBaseUrl(cfg('deepseek', 'deepseek-chat'))).toBe(MODEL_API_ENDPOINTS.deepseek);
     expect(resolveProviderBaseUrl(cfg('openai', 'gpt-4o'))).toBe(MODEL_API_ENDPOINTS.openai);

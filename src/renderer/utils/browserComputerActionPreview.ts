@@ -312,6 +312,10 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>): {
     }
     case 'get_logs':
       return { summary: '读取浏览器日志' };
+    case 'keep_result_page':
+      return { summary: '保留结果页给用户' };
+    case 'wait_for_user':
+      return { summary: '等你来处理', target: asString(args.reason) };
     default:
       return { summary: `浏览器动作: ${action}` };
   }

@@ -30,9 +30,10 @@ import {
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { withMissingAttachmentTurnSystemContext } from '../../host/app/missingAttachmentTurnContext';
-import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
+import { resolveForegroundMcpToolScope } from '../../host/mcp/foregroundMcpServers';
+import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { applyMorningBriefSaveDraftRoleTools } from '../../host/app/morningBriefSaveDraftTools';
-import { isSessionCommandCenterTurn, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
+import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
@@ -51,7 +52,7 @@ import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
 import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
 import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
-import { PROMPT_REQUIRED } from '../../shared/contract/agentRunErrors';
+import { PROMPT_REQUIRED, REQUEST_INVALID } from '../../shared/contract/agentRunErrors';
 import {
   AgentRunBodySchema,
   isPromptRequiredFailure,
@@ -1338,6 +1339,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
+        config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
         config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
@@ -1351,10 +1353,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           config.agentOverride?.tools,
         );
         config.foregroundToolFace = true;
-        config.maxIterations = Math.min(
-          config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-          SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-        );
         // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，
         // 不能只同步 getTextForegroundToolNamesForPrompt 一边（rework r1：存草稿曾只送
         // mail_draft 不送解析规则，模型即兴解析晨报草稿块）。
@@ -1445,6 +1443,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // tool result and make the provider reject the next user turn as malformed history.
       const inferenceHistory = cachedHistory.filter(
         (message) => !message.isMeta && message.visibility !== 'rewound',
+      );
+      if (commandCenterBrain) config.maxIterations = resolveForegroundBrainTurnBudget(
+        prompt, inferenceHistory.slice().reverse().find(message => message.role === 'assistant')?.metadata?.stoppedByStepLimit === true,
+        config.maxIterations, logger,
       );
       const history = inferenceHistory.map(({
         id,
@@ -1902,10 +1904,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
-      res.status(400).json({
-        error: 'Missing prompt',
-        ...(isPromptRequiredFailure(parsedBody.error, req.body) ? { code: PROMPT_REQUIRED } : {}),
-      });
+      res.status(400).json(isPromptRequiredFailure(parsedBody.error, req.body)
+        ? { error: 'Missing prompt', code: PROMPT_REQUIRED }
+        : { error: 'Invalid request', code: REQUEST_INVALID });
       return;
     }
     // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。

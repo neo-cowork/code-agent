@@ -14,7 +14,13 @@ const composerState = {
   setTurnCapabilityScopeMode: vi.fn(),
   setPendingCommand: vi.fn((command: { id: string; name: string } | null) => { composerState.pendingCommand = command; }),
 };
-
+const sessionState = {
+  createSession: vi.fn(),
+};
+const skillState = {
+  mountSkill: vi.fn(),
+  setCurrentSession: vi.fn(),
+};
 vi.mock('../../../src/renderer/stores/composerStore', () => ({
   useComposerStore: Object.assign(
     (selector: (state: typeof composerState) => unknown) => selector(composerState),
@@ -22,15 +28,34 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
   ),
 }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({ useAppStore: () => vi.fn() }));
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({ useSessionStore: () => vi.fn() }));
-vi.mock('../../../src/renderer/stores/skillStore', () => ({ useSkillStore: () => vi.fn() }));
+vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+  useSessionStore: Object.assign(
+    (selector: (state: typeof sessionState) => unknown) => selector(sessionState),
+    { getState: () => sessionState },
+  ),
+}));
+vi.mock('../../../src/renderer/stores/skillStore', () => ({
+  useSkillStore: Object.assign(
+    (selector: (state: typeof skillState) => unknown) => selector(skillState),
+    { getState: () => skillState },
+  ),
+}));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: vi.fn(), warning: vi.fn() } }));
 vi.mock('../../../src/renderer/utils/startCreateRoleChat', () => ({ startCreateRoleChat: vi.fn() }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: { sidebar: { newSessionTitle: '新会话' }, slashSelect: {} } }),
+  useI18n: () => ({
+    t: {
+      sidebar: { newSessionTitle: '新会话' },
+      slashSelect: {
+        mountSkillNoSession: '挂载 Skill 失败：无法创建会话',
+        mountSkillFailedPrefix: '挂载 Skill 失败：',
+      },
+    },
+  }),
 }));
 
 import { useChatInputSlashCommands } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSlashCommands';
+import { toast } from '../../../src/renderer/hooks/useToast';
 import {
   createCommandCandidate,
   removeTrailingSlashToken,
@@ -148,5 +173,107 @@ describe('useChatInputSlashCommands', () => {
 
     expect(composerState.pendingCommand).toBeNull();
     expect(newCommand.action).toHaveBeenCalledTimes(1);
+  });
+
+  // ---- deferMountUntilSend（sessionless 协作空间页）：选中未挂载 skill 不抢先建会话 ----
+  it('deferMountUntilSend：未挂载 skill 只记当轮选择（chip + selectedSkillIds），不建会话、不挂载、文本不动', async () => {
+    composerState.selectedSkillIds = [];
+    sessionState.createSession.mockReset();
+    skillState.setCurrentSession.mockReset();
+    skillState.mountSkill.mockReset();
+    vi.mocked(toast.error).mockClear();
+    let inputValue = '这是一段用户打好的长文本，选中技能后一个字都不能丢';
+    const setValue = vi.fn((next: string | ((previous: string) => string)) => {
+      inputValue = typeof next === 'function' ? next(inputValue) : next;
+    });
+    const insertInlineChip = vi.fn();
+    const { result } = renderHook(() => useChatInputSlashCommands({
+      ...makeParams(inputValue, setValue, insertInlineChip),
+      currentSessionId: null,
+      deferMountUntilSend: true,
+    }));
+
+    let selected = false;
+    await act(async () => {
+      selected = await result.current.selectSkillForCurrentTurn({
+        skillName: 'explain',
+        libraryId: 'official',
+        mounted: false,
+      });
+    });
+
+    expect(selected).toBe(true);
+    // 页面不变的关键：不建会话、不切 skillStore 会话、不挂载
+    expect(sessionState.createSession).not.toHaveBeenCalled();
+    expect(skillState.setCurrentSession).not.toHaveBeenCalled();
+    expect(skillState.mountSkill).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    // 选择保留：chip + selectedSkillIds
+    expect(insertInlineChip).toHaveBeenCalledWith({ key: 'skill:explain', kind: 'skill', id: 'explain' });
+    expect(composerState.selectedSkillIds).toEqual(['explain']);
+    // 文本原样（deferred 路径不触碰 value）
+    expect(setValue).not.toHaveBeenCalled();
+    expect(inputValue).toBe('这是一段用户打好的长文本，选中技能后一个字都不能丢');
+  });
+
+  it('非 sessionless（默认）：未挂载 skill 行为逐字节不变——无会话先建会话，再切 skillStore 会话并挂载', async () => {
+    composerState.selectedSkillIds = [];
+    sessionState.createSession.mockReset().mockResolvedValue({ id: 'sess-created' });
+    skillState.setCurrentSession.mockReset();
+    skillState.mountSkill.mockReset().mockResolvedValue(true);
+    vi.mocked(toast.error).mockClear();
+    let inputValue = '帮我解释这段代码';
+    const setValue = vi.fn((next: string | ((previous: string) => string)) => {
+      inputValue = typeof next === 'function' ? next(inputValue) : next;
+    });
+    const insertInlineChip = vi.fn();
+    const { result } = renderHook(() => useChatInputSlashCommands({
+      ...makeParams(inputValue, setValue, insertInlineChip),
+      currentSessionId: null,
+    }));
+
+    let selected = false;
+    await act(async () => {
+      selected = await result.current.selectSkillForCurrentTurn({
+        skillName: 'explain',
+        libraryId: 'official',
+        mounted: false,
+      });
+    });
+
+    expect(selected).toBe(true);
+    expect(sessionState.createSession).toHaveBeenCalledTimes(1);
+    expect(sessionState.createSession).toHaveBeenCalledWith('新会话');
+    expect(skillState.setCurrentSession).toHaveBeenCalledWith('sess-created');
+    expect(skillState.mountSkill).toHaveBeenCalledWith('explain', 'official');
+    expect(composerState.selectedSkillIds).toEqual(['explain']);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  it('非 sessionless：建会话失败报 mountSkillNoSession 且不选中（既有降级不变）', async () => {
+    composerState.selectedSkillIds = [];
+    sessionState.createSession.mockReset().mockResolvedValue(null);
+    vi.mocked(toast.error).mockClear();
+    let inputValue = '帮我解释这段代码';
+    const setValue = vi.fn((next: string | ((previous: string) => string)) => {
+      inputValue = typeof next === 'function' ? next(inputValue) : next;
+    });
+    const { result } = renderHook(() => useChatInputSlashCommands({
+      ...makeParams(inputValue, setValue),
+      currentSessionId: null,
+    }));
+
+    let selected = true;
+    await act(async () => {
+      selected = await result.current.selectSkillForCurrentTurn({
+        skillName: 'explain',
+        libraryId: 'official',
+        mounted: false,
+      });
+    });
+
+    expect(selected).toBe(false);
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('挂载 Skill 失败：无法创建会话');
+    expect(composerState.selectedSkillIds).toEqual([]);
   });
 });

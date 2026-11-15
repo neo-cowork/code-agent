@@ -96,6 +96,11 @@ const toolCallSchema: z.ZodType<ToolCall> = typed<ToolCall>(z.object({
     'tmeetMeetingListEnded',
     'tmeetMeetingCreate',
     'tmeetMeetingSearch',
+    'tmeetRecordList',
+    'tmeetRecordRead',
+    'feishuMinutesSearch',
+    'feishuMinutesRead',
+    'meetingRecords',
   ]).optional(),
   targetContext: z.object({
     kind: z.enum(['app', 'browser', 'mcp_server', 'file', 'memory']).optional(),
@@ -176,12 +181,18 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     newContent: z.string().optional(),
     server: z.string().optional(),
     toolName: z.string().optional(),
+    connectorAccess: z.object({ connectorId: z.string(), connectorName: z.string(), access: z.enum(['read', 'write']) }).optional(),
+    purpose: z.string().optional(),
+    userRequest: z.object({ text: z.string(), truncated: z.boolean() }).optional(),
+    startedByAutomation: z.boolean().optional(),
+    scheduledTaskName: z.string().optional(),
     commandRiskLevel: z.enum(['safe', 'unknown', 'low', 'medium', 'high', 'critical']).optional(),
     commandSecurityFlags: z.array(z.string()).optional(),
     affectedPath: z.string().optional(),
     affectedFileCount: z.number().int().nonnegative().optional(),
     targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
+    browserSessionGrant: z.object({ target: z.string().nullable(), previousOrigins: z.array(z.string()) }).optional(),
     targetApp: z.object({
       bundleId: z.string().optional(),
       name: z.string(),
@@ -614,7 +625,7 @@ const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({
 }));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.union([z.string(), hostReasonPayloadSchema]), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
 const EnvAssistNoticeEventSchema = event('env_assist_notice', typed<EnvAssistNotice>(EnvAssistNoticeSchema));
-const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string(), requiredScope: z.string().optional(), helpUrl: z.string().optional() })) })));
+const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string(), lostCode: z.enum(['cli_not_logged_in', 'cli_missing_configuration', 'mcp_oauth_authorization_required']).optional(), requiredScope: z.string().optional(), helpUrl: z.string().optional() })) })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
 const AgentCancelledEventSchema = event('agent_cancelled', z.object({ reason: z.enum(['idle_reaped', 'client_disconnect']) }).nullable());

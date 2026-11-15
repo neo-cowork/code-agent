@@ -1,9 +1,14 @@
 import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useSessionStore } from '../../../../../stores/sessionStore';
+import { useSessionListLoadStore } from '../../../../../stores/sessionListPagination';
+import { Button } from '../../../../primitives/Button';
 import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStepStatus } from '../../../../../utils/agentActivity';
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
+import { useMemberViewStore } from '../../../../../stores/memberViewStore';
+import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
@@ -20,6 +25,14 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
   );
 }
 
+/** 目标会话还在才给入口；列表已读完（无更早分页）却找不到它 = 已删除/归档。 */
+function useTargetSessionAvailable(targetSessionId: string | undefined): boolean {
+  const listed = useSessionStore((state) => Boolean(targetSessionId) && state.sessions.some((session) => session.id === targetSessionId));
+  const hasOlder = useSessionStore((state) => state.hasOlderSessions);
+  const settled = useSessionListLoadStore((state) => state.settled);
+  return Boolean(targetSessionId) && (listed || hasOlder || !settled);
+}
+
 export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
@@ -28,10 +41,11 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const targetAvailable = useTargetSessionAvailable(presentation.targetSessionId);
   const failure = presentation.state === 'failed'
     ? agentFailureCopy(presentation.failureCode, t, presentation.failure)
     : presentation.failure;
-  const toolFailure = presentation.state === 'working'
+  const toolFailure = presentation.state === 'working' || presentation.state === 'cancelled'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 
@@ -74,6 +88,16 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
           ))}
         </div>
       )}
+      {targetAvailable && presentation.targetSessionId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="delegation-view-target"
+          onClick={() => { void useSessionStore.getState().switchSession(presentation.targetSessionId as string); }}
+        >
+          {t.chat.delegationReceipt.viewTargetSession}
+        </Button>
+      )}
       {presentation.branch && (
         <div data-testid="delegation-branch">
           {t.chat.delegationReceipt.mergeBranch.replace('{branch}', presentation.branch)}
@@ -90,6 +114,36 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
           {toolFailure.detail && <span className="text-zinc-400"> · {toolFailure.detail}</span>}
         </div>
       )}
+      {presentation.state === 'failed' && <DelegationFailedActions presentation={presentation} />}
+    </div>
+  );
+}
+
+/** 失败回执的两个出口：看成员详情（同成员条 chip 的视图）、把重做句放进输入框（不自动发送）。 */
+function DelegationFailedActions({ presentation }: { presentation: DelegationPresentation }) {
+  const { t } = useI18n();
+  const text = t.delegationFailedActions;
+  const { memberId } = presentation;
+  return (
+    <div className="flex items-center gap-1.5" data-testid="delegation-failed-actions">
+      {memberId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="delegation-view-details"
+          onClick={() => useMemberViewStore.getState().setViewingMemberId(memberId)}
+        >
+          {text.viewDetails}
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        data-testid="delegation-retry"
+        onClick={() => neoUIActionRouter.fillComposer(text.retryDraft.replace('{task}', presentation.retryTitle ?? presentation.title))}
+      >
+        {text.retry}
+      </Button>
     </div>
   );
 }

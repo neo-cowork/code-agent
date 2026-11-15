@@ -1,5 +1,8 @@
 import * as path from 'path';
-import { describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import { MANAGED_BROWSER_ISOLATED_OWNER_FILE } from '../../../../src/host/services/infra/browser/managedBrowserHelpers';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   createManagedBrowserLease,
   isManagedBrowserLeaseExpired,
@@ -9,6 +12,9 @@ import {
   resolveManagedBrowserProxyConfig,
   shouldCleanupManagedBrowserProfile,
 } from '../../../../src/host/services/infra/browserService';
+
+const fixtures: string[] = [];
+afterEach(() => { for (const dir of fixtures.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('browser service profile resolver', () => {
   it('keeps the default persistent profile compatible with managed-browser-profile', () => {
@@ -35,21 +41,25 @@ describe('browser service profile resolver', () => {
 
   it('resolves isolated sessions into a temporary profile and exposes only safe state identifiers', () => {
     const userDataDir = path.join('/tmp', 'code-agent-user-data');
-    const tempProfileDir = path.join('/tmp', 'code-agent-managed-browser-', 'isolated-browser-session-test-abc123');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'isolated-profile-resolver-'));
+    fixtures.push(tmpDir);
+    const tempProfileDir = path.join(tmpDir, 'code-agent-managed-browser-', 'isolated-browser-session-test-abc123');
     const profile = resolveManagedBrowserProfile({
       userDataDir,
       profileMode: 'isolated',
       workspaceScope: '/Users/alice/private/project',
       sessionId: 'browser session test',
-      tmpDir: '/tmp',
-      makeTempDir: () => tempProfileDir,
+      tmpDir,
+      makeTempDir: () => { fs.mkdirSync(tempProfileDir); return tempProfileDir; },
     });
 
     expect(profile.profileMode).toBe('isolated');
     expect(profile.profileId).toBe('isolated-browser-session-test');
     expect(profile.profileDir).toBe(tempProfileDir);
     expect(profile.temporary).toBe(true);
-    expect(profile.isolatedRootDir).toBe(path.join('/tmp', 'code-agent-managed-browser-'));
+    expect(profile.isolatedRootDir).toBe(path.join(tmpDir, 'code-agent-managed-browser-'));
+    const owner = JSON.parse(fs.readFileSync(path.join(profile.profileDir, MANAGED_BROWSER_ISOLATED_OWNER_FILE), 'utf8'));
+    expect(owner).toMatchObject({ host: os.hostname(), pid: process.pid, processStartedAt: performance.timeOrigin });
     expect(profile.artifactDir).toBe('screenshots');
     expect(profile.workspaceScope).not.toContain('/');
     expect(profile.artifactDir).not.toContain('/');

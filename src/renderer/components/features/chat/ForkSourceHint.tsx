@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useCallback } from 'react';
 import { GitFork } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
@@ -15,7 +16,7 @@ interface ForkSourceHintProps {
  * 取代原顶部 ForkLineageBar——失败/隔离等底层状态不在此暴露（不占前台）。
  */
 export const ForkSourceHint: React.FC<ForkSourceHintProps> = ({ sessionId }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const forkLineage = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === sessionId);
     return (session?.metadata?.forkLineage as SessionForkLineageSummary | undefined) ?? null;
@@ -50,7 +51,7 @@ export const ForkSourceHint: React.FC<ForkSourceHintProps> = ({ sessionId }) => 
   const label = (importSource
     ? t.forkSourceHint.imported.replace('{source}', importSource)
     : t.forkSourceHint.source
-  ).replace('{parentTitle}', parentSession?.title ?? t.forkSourceHint.originalChat);
+  ).replace('{parentTitle}', parentSession ? getDisplaySessionTitle(parentSession.title, language) : t.forkSourceHint.originalChat);
 
   return (
     <button /* ds-allow:button: 整行可点的轻量来源提示条（图标+截断文本左对齐），Button primitive 的居中动作按钮形状不适配 */

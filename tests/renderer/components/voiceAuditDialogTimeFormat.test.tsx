@@ -10,11 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoiceAuditDialog } from '../../../src/renderer/components/features/voice/VoiceAuditDialog';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const STARTED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(STARTED_AT, 'en');
 
 const call = {
   voiceCallId: 'voice-a',
@@ -83,6 +84,8 @@ describe('VoiceAuditDialog 通话清单时间（跟随 UI language）', () => {
     await waitFor(() => {
       expect(screen.getByTestId('voice-audit-call-voice-a').textContent).toContain(EN);
     });
-    expect(screen.getByTestId('voice-audit-call-voice-a').textContent).not.toContain('16:05');
+    const withoutEn = (screen.getByTestId('voice-audit-call-voice-a').textContent ?? '').replace(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });

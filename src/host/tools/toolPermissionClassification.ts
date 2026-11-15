@@ -2,7 +2,7 @@
 // 工具权限分类解析（从 toolExecutor.execute 收拢，god-file debt 门：>1000 有效行）
 // ============================================================================
 
-import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { classifyPermission, type ClassificationContext, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
@@ -287,9 +287,12 @@ export function permissionDenialError(
       const name = app?.name?.trim();
       const modelText = name
         ? `Permission denied by user: access to ${name} was denied. Do not retry operating ${name} in this task unless the user asks.`
-        : 'Permission denied by user';
-      return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, metadata);
+        : 'Permission denied by user.';
+      const guidance = userDeniedGoalStickyError(toolName).modelText;
+      return createHostReason(HostReasonCode.PermissionDeniedByUser, `${modelText} ${guidance}`, metadata);
     }
+    case 'goal-sticky-host':
+      return userDeniedGoalStickyError(toolName);
     case 'no-approval-ui':
       return createHostReason(
         HostReasonCode.PermissionDeniedNoApprovalUi,
@@ -409,8 +412,20 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
   const prior = deniedSummary ? ` (${deniedSummary})` : '';
   const modelText = `${toolName} was not executed: the user already declined this exact action${prior} `
     + 'earlier in this conversation turn. It will not run and will not be asked again until the user '
-    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat.';
+    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat. '
+    + userDeniedGoalStickyError(toolName).modelText;
   return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, { toolName });
+}
+
+/** Model-facing guidance shared by live denials, parked recovery and the goal guard. */
+export function userDeniedGoalStickyError(toolName: string): HostReasonPayload {
+  return createHostReason(HostReasonCode.PermissionDeniedByUser,
+    'The user just declined this kind of action. Do not request approval for the same goal again '
+      + 'by rewording it or changing the command or arguments. First ask the user one short question '
+      + 'about how to proceed: use AskUserQuestion if available, otherwise your final message. '
+      + 'For unattended, scheduled or background runs, put that question in your final message. '
+      + 'Wait for a new user message before requesting approval for this kind of action again.',
+    { toolName });
 }
 
 /**
@@ -426,6 +441,8 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
  */
 export async function resolveToolPermissionClassification(input: {
   executionToolName: string;
+  sessionId?: string;
+  toolDefinition?: ClassificationContext['toolDefinition'];
   policyToolName: string;
   params: Parameters<typeof classifyPermission>[1];
   policyForcesConfirmation: boolean;
@@ -527,6 +544,9 @@ export async function resolveToolPermissionClassification(input: {
       input.permStartTime,
       input.browserSubmitProbe,
     ) ?? await classifyPermission(input.policyToolName, input.params, {
+      sessionId: input.sessionId,
+      permissionMode: input.sessionPermissionMode,
+      toolDefinition: input.toolDefinition,
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
       permissionLevel: input.permissionLevel,
@@ -552,6 +572,11 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
+    // Keep this task's outside-file gate scoped to full access; other boundary asks
+    // retain their existing permission-mode behavior (including acceptEdits).
+    && !(input.sessionPermissionMode === 'bypassPermissions'
+      && classification.hostReason?.code === HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired)
+    && !classification.scheduleWriteTargets
     && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
     // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，
     // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。

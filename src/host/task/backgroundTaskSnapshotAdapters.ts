@@ -1,4 +1,5 @@
 import { statSync } from 'fs';
+import { looksSandboxWrapped } from '../sandbox/wrapperMarkers';
 import type {
   Task,
   TaskFailure,
@@ -12,6 +13,7 @@ import {
 } from '../../shared/i18n/sessionTaskSlot';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
 import {
+  resolveBackgroundTaskName,
   getAllBackgroundTasks,
   getAllPtySessions,
   onBackgroundTaskLifecycleEvent,
@@ -85,26 +87,29 @@ function shouldQueueTerminalNotification(previous: Task | null, status: TaskStat
   return previous?.status !== status;
 }
 
+// Never surface a sandbox-wrapped command line as a task name.
+function safeLabel(label: string | undefined, fallback: string): string {
+  return label && !looksSandboxWrapped(label) ? label : fallback;
+}
+
 function buildTerminalMessage(args: {
   label: string;
   status: TaskStatus;
   durationMs?: number;
   exitCode?: number;
-  outputFile?: string;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
 }): string {
   const duration = args.durationMs != null ? `，耗时 ${formatDuration(args.durationMs)}` : '';
-  const log = args.outputFile ? `，日志 ${args.outputFile}` : '';
   if (args.status === 'completed') {
-    return `${args.label} 已完成${duration}${log}`;
+    return `${args.label} 已完成${duration}`;
   }
   if (args.status === 'cancelled') {
     return `${args.label} 已停止${duration}`;
   }
   const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
-    `${args.label} 失败${exitCode}${duration}${log}`,
+    `${args.label} 失败${exitCode}${duration}`,
     args.locale ?? 'zh',
     args.automationPromptLikely,
   );
@@ -150,7 +155,6 @@ function queueTerminalNotification(args: {
       status: args.status,
       durationMs: args.durationMs,
       exitCode: args.exitCode,
-      outputFile: args.outputFile,
       automationPromptLikely: args.automationPromptLikely,
       locale: args.locale,
     }),
@@ -197,7 +201,9 @@ export function syncShellTaskSnapshotToLedger(
 ): void {
   const status = mapShellStatus(task.status, task.stoppedByRequest);
   const taskId = `shell:${task.taskId}`;
-  const label = task.displayCommand?.trim() || task.command || `Shell ${task.taskId.slice(0, 8)}`;
+  const label = resolveBackgroundTaskName(
+    safeLabel(task.displayName, ''), task.displayCommand || task.command,
+  );
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   const automationPromptLikely = isLikelyUnansweredMacOsAutomationPrompt({
@@ -289,7 +295,9 @@ export function syncPtySessionSnapshotToLedger(
 ): void {
   const status = mapShellStatus(session.status, session.stoppedByRequest);
   const taskId = `pty:${session.sessionId}`;
-  const command = [session.command, ...session.args].filter(Boolean).join(' ');
+  const rawCommand = [session.command, ...session.args].filter(Boolean).join(' ');
+  const command = safeLabel(session.displayCommand?.trim() || rawCommand, `PTY ${session.sessionId.slice(0, 8)}`);
+  const label = resolveBackgroundTaskName(safeLabel(session.displayName, ''), session.displayCommand || rawCommand);
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
   ledger.upsertTask({
@@ -298,7 +306,7 @@ export function syncPtySessionSnapshotToLedger(
     sessionId: session.ownerSessionId,
     toolCallId: session.toolCallId,
     source: 'pty',
-    title: command || `PTY ${session.sessionId.slice(0, 8)}`,
+    title: label,
     summary: session.outputFile,
     command,
     cwd: session.cwd,
@@ -331,7 +339,7 @@ export function syncPtySessionSnapshotToLedger(
     taskId,
     sessionId: session.ownerSessionId,
     source: 'pty',
-    title: command || `PTY ${session.sessionId.slice(0, 8)}`,
+    title: label,
     status,
     durationMs: session.duration,
     exitCode: session.exitCode,

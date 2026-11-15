@@ -6,6 +6,12 @@ import { getDatabase } from '../services/core/databaseService';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
+import { createDefaultGrantBridge, mintClickToken, requestGrant } from '../permissions/envAssist/grants/requestGrant';
+import { accessibilityProbe, automationProbe, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
+import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
+import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
+
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;
   const row = getDatabase().getDb()?.prepare('SELECT session_id FROM messages WHERE id = ?').get(messageId) as { session_id: string } | undefined;
@@ -15,9 +21,27 @@ async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
 }
 
 interface EnvAssistDependencies {
+  passiveBridge?: Parameters<typeof accessibilityProbe>[0];
+  grantBridge?: Parameters<typeof requestGrant>[2];
+  now?: () => number;
   available: () => boolean;
   open: (pane: string) => Promise<boolean>;
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
+}
+
+function resolveGrantProbe(
+  pane: string,
+  bridge: EnvAssistDependencies['passiveBridge'],
+  targetBundleId: string | undefined,
+): ReadOnlyProbe | null {
+  const passive = bridge ?? null;
+  switch (pane) {
+    case 'accessibility': return accessibilityProbe(passive);
+    case 'screenCapture': return screenRecordingProbe(passive);
+    case 'inputMonitoring': return inputMonitoringProbe(passive);
+    case 'automation': return targetBundleId ? automationProbe(passive, targetBundleId) : null;
+    default: return null;
+  }
 }
 
 const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
@@ -33,13 +57,34 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
       return { status: 'rejected' };
     }
+    if (request.actionKind === 'request_grant') {
+      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, notice.target?.id);
+      if (!probe) return { status: 'rejected' };
+      const token = mintClickToken(notice.id, deps.now);
+      const grant = await requestGrant(token, { ...request.payload, targetBundleId: notice.target?.id }, deps.grantBridge ?? null, deps.now);
+      const outcome = await probe();
+      return { status: grant === 'requested' ? 'checked' : grant, outcome };
+    }
     if (!deps.available()) return { status: 'not_available' };
     return { status: await deps.open(request.payload.pane) ? 'opened' : 'not_available' };
   },
 });
 
+function buildDefaultDependencies(): EnvAssistDependencies {
+  const client = resolveShellBridgeClientFromEnv();
+  if (!client) {
+    return { ...defaults, passiveBridge: null, grantBridge: null };
+  }
+  return {
+    ...defaults,
+    passiveBridge: createShellPassiveBridge(client),
+    grantBridge: createDefaultGrantBridge(client),
+  };
+}
+
 /** Opener injection is also used by hosts without a desktop; it never grants permission. */
 export function registerEnvAssistHandlers(deps: EnvAssistDependencies = defaults): void {
-  installDomainRoutes(ipcHost, routes, deps);
+  const resolved = deps === defaults ? buildDefaultDependencies() : deps;
+  installDomainRoutes(ipcHost, routes, resolved);
 }
 registerEnvAssistHandlers.routes = routes;

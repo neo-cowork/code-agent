@@ -34,8 +34,70 @@ runs:
     - name: Install Playwright browsers
       shell: bash
       run: |
-        if [ "${{ inputs.with-deps }}" = "true" ]; then
-          npx playwright install --with-deps chromium
-        else
-          npx playwright install chromium
-        fi
+        base_delay="${PLAYWRIGHT_INSTALL_RETRY_BASE_DELAY:-15}"
+        log="$(mktemp)"
+        trap 'rm -f "$log"' EXIT
+        failures=()
+        apt_source="runner-configured"
+        for attempt in 1 2 3; do
+          echo "Installing Playwright browsers: attempt $attempt/3 (apt source: $apt_source)"
+          if [ "${{ inputs.with-deps }}" = "true" ]; then
+            for source_file in /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources /etc/apt/sources.list; do
+              if [ -f "$source_file" ]; then
+                echo "Current apt source file: $source_file"
+                cat "$source_file"
+              fi
+            done
+          fi
+          if {
+            if [ "${{ inputs.with-deps }}" = "true" ]; then
+              npx playwright install --with-deps chromium
+            else
+              npx playwright install chromium
+            fi
+          } 2>&1 | tee "$log"; then
+            for failure in "${failures[@]}"; do
+              echo "::warning::Playwright install $failure; recovered on attempt $attempt/3"
+            done
+            exit 0
+          else
+            exit_code=$?
+          fi
+          failure="attempt $attempt/3 failed (exit code $exit_code)"
+          echo "$failure"
+          tail -n 5 "$log"
+          failures+=("$failure")
+          if [ "$attempt" -eq 3 ]; then
+            echo "Playwright install: all 3 attempts failed"
+            exit "$exit_code"
+          fi
+          if [ "$attempt" -eq 1 ] && [ "${{ inputs.with-deps }}" = "true" ]; then
+            echo "Switching apt source to http://archive.ubuntu.com/ubuntu/ before attempt 2/3"
+            if {
+              sudo python3 - <<'PYTHON' && sudo apt-get update
+        import re
+        from pathlib import Path
+
+        apt = Path('/etc/apt')
+        sources = [apt / 'apt-mirrors.txt', apt / 'sources.list', *apt.glob('sources.list.d/*.sources')]
+        for source in sources:
+            if source.is_file():
+                original = source.read_text()
+                updated = re.sub(r'(?:https?://)?azure\.archive\.ubuntu\.com(?:/ubuntu/?)?',
+                                 'http://archive.ubuntu.com/ubuntu/', original)
+                if updated != original:
+                    source.write_text(updated)
+        PYTHON
+            } 2>&1 | tee "$log"; then
+              apt_source="http://archive.ubuntu.com/ubuntu/"
+            else
+              update_exit_code=$?
+              apt_source="fallback attempted: http://archive.ubuntu.com/ubuntu/"
+              echo "apt mirror refresh failed (exit code $update_exit_code); continuing install retries"
+              tail -n 5 "$log"
+            fi
+          fi
+          delay=$((base_delay * attempt))
+          echo "retrying in ${delay}s"
+          sleep "$delay"
+        done

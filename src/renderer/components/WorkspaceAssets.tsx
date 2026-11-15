@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../utils/sessionPresentation';
 import type { ReactNode } from 'react';
 import { LayoutGrid, Play, Sparkles, X } from 'lucide-react';
 import type {
@@ -273,7 +274,7 @@ export function PromptAppLibrary({
                       )}
                       {preset.source.kind === 'session' && preset.source.sessionTitle && (
                         <div className="mt-1 truncate text-[11px] text-zinc-600">
-                          {a.from.replace('{name}', preset.source.sessionTitle)}
+                          {a.from.replace('{name}', getDisplaySessionTitle(preset.source.sessionTitle, language))}
                         </div>
                       )}
                       <div className="mt-1 text-[11px] text-zinc-600">

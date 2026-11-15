@@ -93,4 +93,45 @@ describe('parent terminal settles member and background panel together', () => {
       db.close();
     }
   });
+
+  it.each([{ status: 'failed', keepsBackground: true }, { status: 'cancelled', keepsBackground: false }] as const)(
+    '$status parent: foreground helper cancelled, background helper still running = $keepsBackground (owner rule 11-10)',
+    async ({ status, keepsBackground }) => {
+      const db = new Database(':memory:');
+      const repository = new DurableRunRepository(db);
+      repository.migrate();
+      const registry = new RunRegistry();
+      registry.configureDurableKernel(new DurableRunKernel({ stores: repository, ownerId: 'host', processInstanceId: 'bg-rule-test', leaseDurationMs: 60_000 }));
+      const sessionId = 'bg-rule-session';
+      const runId = 'bg-rule-parent';
+      const guard = getSpawnGuard();
+      const releases: Array<() => void> = [];
+      const helper = (id: string, extra: Record<string, unknown>) => {
+        const controller = new AbortController();
+        const promise = new Promise<SubagentResult>(resolve => {
+          const finish = () => resolve({ success: false, output: '', error: 'cancelled', toolsUsed: [], iterations: 0 });
+          releases.push(finish);
+          controller.signal.addEventListener('abort', finish, { once: true });
+        });
+        guard.register(id, 'explore', `Work ${id}`, promise, controller, { treeId: sessionId, parentRunId: runId, ...extra });
+        return controller;
+      };
+      try {
+        await registry.startDurable({ runId, sessionId, workspace: '/tmp/project' });
+        const foreground = helper('fg-helper', {});
+        const background = helper('bg-helper', { background: true });
+        expect(getAgentTreeSnapshot({ sessionId }).summary.running).toBe(2);
+        await registry.terminalDurable(runId, { status, now: Date.now(), event: { type: `run_${status}`, payload: {}, recordedAt: Date.now() } });
+        expect(foreground.signal.aborted).toBe(true);
+        expect(background.signal.aborted).toBe(!keepsBackground);
+        const byId = new Map(getAgentTreeSnapshot({ sessionId }).nodes.map(node => [node.id, node.status]));
+        expect(byId.get('fg-helper')).toBe('cancelled');
+        expect(byId.get('bg-helper')).toBe(keepsBackground ? 'running' : 'cancelled');
+        expect(getAgentTreeSnapshot({ sessionId }).summary.running).toBe(keepsBackground ? 1 : 0);
+      } finally {
+        releases.forEach(release => release());
+        registry.clear();
+        db.close();
+      }
+    });
 });

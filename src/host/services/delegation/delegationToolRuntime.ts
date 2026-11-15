@@ -75,6 +75,22 @@ function workspaceRoots(): string[] {
   }
 }
 
+/** 用户发起本轮的消息正文（sourceMessageId 优先，缺省取会话最近一条 user 消息）；拿不到 → null。 */
+export function readOriginUserMessage(db: BetterSqlite3.Database | null, sessionId: string, sourceMessageId?: string): string | null {
+  if (!db) return null;
+  try {
+    const byId = sourceMessageId
+      ? db.prepare(`SELECT content FROM messages WHERE id = ? AND session_id = ? AND role = 'user'`).get(sourceMessageId, sessionId) as { content?: unknown } | undefined
+      : undefined;
+    const row = byId ?? db.prepare(
+      `SELECT content FROM messages WHERE session_id = ? AND role = 'user' AND is_meta = 0 AND visibility = 'active' ORDER BY timestamp DESC, rowid DESC LIMIT 1`,
+    ).get(sessionId) as { content?: unknown } | undefined;
+    return typeof row?.content === 'string' && row.content.trim() !== '' ? row.content : null;
+  } catch {
+    return null;
+  }
+}
+
 export function workspaceWithinRoots(workspace: string | null | undefined, roots: readonly string[]): boolean {
   if (!workspace) return false;
   const resolved = path.resolve(workspace);

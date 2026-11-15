@@ -283,9 +283,9 @@ describe('formatCronScheduleLabel', () => {
 
   it('formats cron expressions with optional timezone', () => {
     expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *' })).toBe('每天 09:00');
-    // 人话形态不带时区后缀
+    // 本地时区的人话形态不带时区后缀
     expect(
-      formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Shanghai' })
+      formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
     ).toBe('每天 09:00');
     // 复杂表达式回退「自定义时间 · 原文[ · 时区]」，不瞎猜
     expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 1,15 * *' })).toBe('自定义时间 · 0 9 1,15 * *');
@@ -320,7 +320,7 @@ describe('recordCronAutomationCreated', () => {
       def({
         metadata: { sourceSessionId: 'sess' },
         scheduleType: 'cron',
-        schedule: { type: 'cron', expression: '17 8 * * *', timezone: 'Asia/Shanghai' },
+        schedule: { type: 'cron', expression: '17 8 * * *', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
       }),
       identityRuntime
     );

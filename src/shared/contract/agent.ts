@@ -393,13 +393,25 @@ export interface RoutingResolvedEventData {
 }
 
 /**
+ * lost_login 卡允许展示的失联原因码——只收 docs/architecture/connector-lost-login-signals.md 里 CONFIRMED 的行。
+ * stale / 超时 / 未分类失败不在此列；MCP 401 不区分过期与撤销，只说「需要重新授权」。
+ */
+export type ConnectorLostCode =
+  | 'cli_not_logged_in'
+  | 'cli_missing_configuration'
+  | 'mcp_oauth_authorization_required';
+
+/**
  * connector_required 事件里的一个需要用户处理的连接器。
- * reason：'not_connected'（默认，未连接）| 'insufficient_scope'（已连接但授权范围不足，卡片给「重新授权」）。
+ * reason：'not_connected'（默认，未连接）| 'insufficient_scope'（已连接但授权范围不足，卡片给「重新授权」）
+ * | 'lost_login'（探测确认登录丢失，带 lostCode，卡片给「重新连接」）。
  */
 export interface ConnectorRequiredItem {
   id: string;
   source: 'selected' | 'expert';
   reason: string;
+  /** lost_login：已确认的失联原因码 */
+  lostCode?: ConnectorLostCode;
   /** insufficient_scope：服务端挑战里声明缺的 scope（可能缺省） */
   requiredScope?: string;
   /** insufficient_scope：仅来自「已核实官方权限页」表，缺省即不展示链接 */

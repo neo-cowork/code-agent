@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { ToolRegistry } from '../registry';
+import { installBrowserJevRouteProbe } from './network/browserJevAvailability';
 
 // ── Eager schema imports (P0-7 方案 A — single source of truth) ───────────
 // .schema.ts 文件只 type-import ToolSchema，无运行时副作用；可安全 eager 导入。
@@ -70,6 +71,10 @@ import { calendarDeleteEventSchema } from './connectors/calendarDeleteEvent.sche
 import { tmeetMeetingListSchema } from './connectors/tmeetMeetingList.schema';
 import { tmeetMeetingCreateSchema } from './connectors/tmeetMeetingCreate.schema';
 import { tmeetMeetingSearchSchema } from './connectors/tmeetMeetingSearch.schema';
+import { tmeetRecordListSchema } from './connectors/tmeetRecordList.schema';
+import { tmeetRecordReadSchema } from './connectors/tmeetRecordRead.schema';
+import { feishuMinutesSearchSchema } from './connectors/feishuMinutesSearch.schema';
+import { feishuMinutesReadSchema } from './connectors/feishuMinutesRead.schema';
 
 // document/
 import { docEditSchema } from './document/docEdit.schema';
@@ -141,6 +146,7 @@ import { visualEditSchema } from './vision/visualEdit.schema';
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
+import { meetingRecordsSchema } from './lightMemory/meetingRecords.schema';
 import { memorySearchSchema } from './lightMemory/memorySearch.schema';
 import { memoryAmendSchema } from './lightMemory/memoryAmend.schema';
 import { proposeProjectMemorySchema } from './lightMemory/proposeProjectMemory.schema';
@@ -192,6 +198,7 @@ import { registerCrossSessionDelegationTools } from './delegation/registration';
 
 export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.Platform = process.platform,
   crossSessionDelegationEnabled: boolean = isCrossSessionDelegationEnabled()): void {
+  installBrowserJevRouteProbe(); // Browser execute_goal 暴露面依赖 Jev 路由（shared 层不能直接 import host）
   registry.register(
     delegateTaskSchema,
     async () => (await import('./commandCenter/sessionCommandCenter')).delegateTaskModule,
@@ -370,6 +377,22 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     tmeetMeetingSearchSchema,
     async () => (await import('./connectors/tmeetMeetingSearch')).tmeetMeetingSearchModule,
+  );
+  registry.register(
+    tmeetRecordListSchema,
+    async () => (await import('./connectors/tmeetRecords')).tmeetRecordListModule,
+  );
+  registry.register(
+    tmeetRecordReadSchema,
+    async () => (await import('./connectors/tmeetRecords')).tmeetRecordReadModule,
+  );
+  registry.register(
+    feishuMinutesSearchSchema,
+    async () => (await import('./connectors/feishuMinutes')).feishuMinutesSearchModule,
+  );
+  registry.register(
+    feishuMinutesReadSchema,
+    async () => (await import('./connectors/feishuMinutes')).feishuMinutesReadModule,
   );
 
   // ── batch 6: multiagent/ — 9 工具全部 native（Wave 3 完成，wrappers.ts 已删除）─
@@ -766,6 +789,10 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     episodicRecallSchema,
     async () => (await import('./lightMemory/episodicRecall')).episodicRecallModule,
+  );
+  registry.register(
+    meetingRecordsSchema,
+    async () => (await import('./lightMemory/meetingRecords')).meetingRecordsModule,
   );
   registry.register(
     memorySearchSchema,

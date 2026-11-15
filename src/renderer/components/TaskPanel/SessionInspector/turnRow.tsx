@@ -97,7 +97,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="in_progress"
-        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-surface-faint px-1.5 py-0.5 text-[10px] text-zinc-400"
       >
         <CircleDot className="h-3 w-3" />
         {t.sessionInspector.turnInProgress}
@@ -113,7 +113,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="verified"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-badge-success/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success"
       >
         <CheckCircle2 className="h-3 w-3" />
         {terminalOutcome && (
@@ -134,7 +134,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="undelivered"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
       >
         <AlertTriangle className="h-3 w-3" />
         <span data-testid="inspector-stamp-qualifier">{stamp.undelivered}</span>
@@ -146,7 +146,7 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       <span
         data-testid="inspector-stamp"
         data-verdict="self_claimed"
-        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
       >
         <AlertTriangle className="h-3 w-3" />
         {terminalOutcome && (

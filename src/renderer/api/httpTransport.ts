@@ -16,6 +16,7 @@ import type {
 } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { RENDERER_POLLING } from '../../shared/constants';
+import { createFolderBatchUpload } from './folderBatchUpload';
 import { createPermissionSnapshotRetention } from './permissionSnapshotRetention';
 import { getLocalBridgeClient } from '../services/localBridge';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
@@ -683,7 +684,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           const authError = getRecoverableAuthTokenError(response.status, errorMessage);
           if (authError) {
             console.warn('[HttpTransport] local auth token expired:', authError.message);
-            throw new Error(authError.message);
+            throw Object.assign(
+              new Error(httpFailureMessage({ status: response.status, code: errorCode, language: useAppStore.getState().language })),
+              { status: response.status, code: errorCode ?? 'LOCAL_AUTH_TOKEN_EXPIRED', rawErrorBody: errorBody },
+            );
           }
           // 带上 status：调用方要能区分「这个 session 正忙」（409，可排队重发）
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
@@ -994,6 +998,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         if (set.size === 0) listeners.delete(channel);
       }
     }) as CommandBridgeAPI['off'],
+
+    uploadFolderBatch: createFolderBatchUpload(baseUrl, getAuthHeaders),
 
     getPathForFile: async (_file: File) => {
       const formData = new FormData();

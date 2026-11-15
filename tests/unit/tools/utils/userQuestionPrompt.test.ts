@@ -228,7 +228,7 @@ describe('promptUserInChat', () => {
     hasInteractiveRendererMock.mockReturnValue(true);
 
     const costPromise = confirmGenerationCost({
-      mediaLabel: '图片',
+      mediaLabel: 'image',
       estCny: 0.14,
       detail: '2 张',
       sessionId: 'cost-session',
@@ -267,7 +267,7 @@ describe('promptUserInChat', () => {
     const askRequest = sendMock.mock.calls[0][1];
 
     const costPromise = confirmGenerationCost({
-      mediaLabel: '图片',
+      mediaLabel: 'image',
       estCny: 0.14,
       detail: '2 张',
       sessionId: 'cost-session',

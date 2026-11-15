@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle } from '../../../src/renderer/utils/sessionPresentation';
+import { buildSessionSearchText, getSessionStatusPresentation, getDisplaySessionTitle, getLocalizedSessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
+import { buildOverviewRunHeaderModel } from '../../../src/renderer/utils/overviewRunHeader';
+import { stripCronPromptDecoration } from '../../../src/shared/cronRunMessage';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 describe('sessionPresentation', () => {
@@ -114,5 +116,71 @@ describe('placeholder display uses the current UI language', () => {
     expect(getDisplaySessionTitle('CLI Session notes', 'en')).toBe('CLI Session notes');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'en')).toBe('Appshot conversation');
     expect(getDisplaySessionTitle('<appshot>capture</appshot>', 'zh')).toBe('Appshot 会话');
+  });
+});
+
+
+describe('display-only automatic-session prefixes', () => {
+  it.each([
+    ['[Schedule]', '[定时]', '[Schedule] Morning notes'],
+    ['[Cron]', '[定时]', '[Schedule] Morning notes'],
+    ['[Heartbeat]', '[心跳]', '[Heartbeat] Morning notes'],
+  ])('localizes %s in zh and keeps en canonical prefixes', (stored, localized, enTitle) => {
+    const title = `${stored} Morning notes`;
+    expect(getLocalizedSessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
+    expect(getLocalizedSessionTitle(title, 'en')).toBe(enTitle);
+    expect(getDisplaySessionTitle(title, 'zh')).toBe(`${localized} Morning notes`);
+    expect(splitCronSessionTitleParts(title)).toEqual({ prefix: stored, name: 'Morning notes' });
+    expect(getLocalizedSessionTitle('Manual task', 'zh')).toBe('Manual task');
+  });
+});
+
+it('search indexes the visible cron prefix and the stored title', () => {
+  const session = { title: '[Cron] 周报' } as Parameters<typeof buildSessionSearchText>[0]['session'];
+  const status = getSessionStatusPresentation({});
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[定时] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'zh' })).toContain('[cron] 周报');
+  expect(buildSessionSearchText({ session, status, language: 'en' })).toContain('[schedule] 周报');
+});
+
+describe('automation titles stay localized at display time', () => {
+  it.each([
+    ['[Schedule] Weekly report', 'zh', '[定时] Weekly report'],
+    ['[Heartbeat] 巡检', 'zh', '[心跳] 巡检'],
+    ['[Cron] Old report', 'en', '[Schedule] Old report'],
+    ['[Schedule] Weekly report', 'en', '[Schedule] Weekly report'],
+    ['[Heartbeat] Check', 'en', '[Heartbeat] Check'],
+  ] as const)('localizes %s in %s', (stored, language, expected) => {
+    expect(getDisplaySessionTitle(stored, language)).toBe(expected);
+    expect(splitCronSessionTitleParts(expected)?.name).toBe(stored.replace(/^\[\w+\] /, ''));
+  });
+  it('removes a legacy channel UUID but preserves the account and real chat names', () => {
+    const legacy = '[Channel] Meeting notes channel · f3927c39-8924-43f1-86e4-8e5c9cc5086e';
+    expect(getDisplaySessionTitle(legacy, 'zh')).toBe('渠道 · Meeting notes channel');
+    expect(getDisplaySessionTitle(legacy, 'en')).toBe('Channel · Meeting notes channel');
+    for (const id of ['oc_1234abcd', 'ou_9876abcd', '1234567890', 'chat_abcdef123456']) {
+      expect(getDisplaySessionTitle(`[Channel] Work · ${id}`, 'zh')).toBe('渠道 · Work');
+    }
+    expect(getDisplaySessionTitle('[Channel] Work · Design team', 'en')).toBe('Channel · Work · Design team');
+    expect(getDisplaySessionTitle('[Channel] Work · EngineeringCommunicationChannel', 'en')).toBe('Channel · Work · EngineeringCommunicationChannel');
+    expect(getDisplaySessionTitle('Ordinary · title', 'zh')).toBe('Ordinary · title');
+  });
+});
+
+describe('automatic-session run titles', () => {
+  const decorated = '读取 notes.txt\n\n【当前时间】2026-11-13T13:01:36.399Z（UTC）。Unix 秒；IM 策略\n<cron_summary> artifact: urgency:';
+  it.each([['[Schedule]', '[定时]'], ['[Heartbeat]', '[心跳]']])('overview header shows the localized %s title instead of host instructions', (stored, shown) => {
+    const model = buildOverviewRunHeaderModel({
+      run: { identity: { sessionId: 's', turnId: 't', runId: 'r', streamRunId: null, status: 'completed' }, status: 'completed', title: decorated, phase: 'done' } as never,
+      sessionTitle: `${stored} 晨间笔记汇总`,
+      language: 'zh',
+      now: 0,
+    });
+    expect(model?.title).toBe(`${shown} 晨间笔记汇总`);
+    expect(model?.title).not.toMatch(/cron_summary|artifact:|urgency:|Unix 秒|当前时间|IM 策略/);
+  });
+
+  it('strips host decoration from the user instruction used as a run title', () => {
+    expect(stripCronPromptDecoration(decorated).trim()).toBe('读取 notes.txt');
   });
 });

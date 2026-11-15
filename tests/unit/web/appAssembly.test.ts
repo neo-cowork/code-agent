@@ -114,6 +114,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['post', '/quit-intent'],
   ['post', '/quit-guard/detach'],
   ['post', '/api/upload/temp'],
+  ['post', '/api/upload/temp/batch'],
   ['get', '/api/screenshot'],
   // dev router: devCancellableToolSmoke sub-router
   ['post', '/start'],
@@ -129,6 +130,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['post', '/'],
   // dev router: devSurfaceExecutionConversation sub-router
   ['post', '/seed'],
+  ['post', '/seed-computer'],
   // dev router: flat routes
   ['get', '/workspace/file'],
   ['post', '/dev/exec-tool'],

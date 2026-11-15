@@ -26,7 +26,7 @@ import {
   clearConversationTerminalFrames,
   forgetConversationFramesInMemory,
 } from './sessionTerminalFrames';
-import { executeCreateSession } from './sessionCreate';
+import { executeCreateSession, observeSessionDraftUsage } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions, resetSessionListLoadState, useSessionListLoadStore, withOpenedSessionOutsideWindow } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 import { clearFailedSend, mergeFailedSendOutbox } from './failedSendOutbox';
@@ -35,6 +35,7 @@ import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedCo
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
+import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
 const logger = createLogger('SessionStore');
@@ -284,7 +285,7 @@ interface SessionActions {
 
 type SessionStore = SessionState & SessionActions;
 
-export const useSessionStore = create<SessionStore>()((set, get) => ({
+export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((set, get) => ({
     sessions: [],
     currentSessionId: null,
     messages: [],
@@ -514,6 +515,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       try {
         await invokeSession('delete', { sessionId });
         clearFailedSend(sessionId);
+        removeComposerDraft(composerDraftStorageKey(sessionId, false));
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
@@ -1052,7 +1054,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     getSessionDesignBrief: (sessionId) => {
       return get().sessionDesignBriefs.get(sessionId);
     },
-  }));
+  })));
 
 let _initialized = false;
 let _settleInitialSessionState: (() => void) | null = null;

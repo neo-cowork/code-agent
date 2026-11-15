@@ -11,6 +11,7 @@ import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
+import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
@@ -29,8 +30,13 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
+import { recordBrowserSessionGrant } from '../permissions/browserSessionGrant';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
+import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
+import { withUserRequestQuote } from '../permissions/approvalUserRequest';
+import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
+import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
 import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
@@ -122,6 +128,26 @@ function recordHumanGrant(
     return;
   }
   if (updatedArgs && response !== 'allow') return;
+  // 与聊天卡 hideStandingGrants 等价的收口：可编辑写回工具 / forceConfirm / 无 target 的 external
+  // 只能一次性放行，两档工具授权（run/24h）一律不铸，避免收件箱点击放大成全局免审。
+  if (
+    (response === 'allow_run' || response === 'allow_24h')
+    && (
+      isEditableTool(request.tool)
+      || request.forceConfirm === true
+      || (isExternalSideEffectTool(request.tool) && !request.details?.standingGrantTarget)
+    )
+  ) {
+    logger.warn('Tier grant refused for editable/forceConfirm/untargeted-external request: treated as allow once', {
+      tool: request.tool,
+      requestId: request.id,
+      response,
+    });
+    return;
+  }
+  if (recordBrowserSessionGrant(response, request)) return;
+  const identity = connectorToolGrantIdentity(request.tool, request.details?.standingGrantTarget ?? null);
+  if (!identity) return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -137,10 +163,10 @@ function recordHumanGrant(
         requestId: request.id,
       });
     } else {
-      mintToolRunGrant(request.sessionId, request.tool, request.details?.standingGrantTarget ?? null);
+      mintToolRunGrant(request.sessionId, identity.tool, identity.target);
     }
   } else if (response === 'allow_24h' && !app?.name) {
-    mintTool24hGrant(request.tool, request.details?.standingGrantTarget ?? null);
+    mintTool24hGrant(identity.tool, identity.target);
   }
 }
 
@@ -484,8 +510,11 @@ export class OrchestratorPermissionIsland {
   async requestPermission(
     request: OrchestratorPermissionRequest,
   ): Promise<PermissionAskResult> {
+    const details = withUserRequestQuote(request.sessionId, connectorApprovalDetails(request));
     const fullRequest: PermissionRequest = {
       ...request,
+      type: details.connectorAccess ? 'mcp' : request.type,
+      details,
       id: generatePermissionRequestId(),
       timestamp: Date.now(),
     };
@@ -586,9 +615,13 @@ export class OrchestratorPermissionIsland {
       : undefined;
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
-    if (detached || unattended || voice) {
+    const backgroundExactFile = hasBackgroundRunIdentity(fullRequest)
+      && request.tool === 'browser_action.upload_file' && forceConfirm;
+    if (detached || unattended || voice || backgroundExactFile) {
       const parkRepo = this.getPendingApprovalRepo();
       if (parkRepo) {
+        const parkedGoalDenial = getDenialRegistry().refuseIfGoalDenied(fullRequest);
+        if (parkedGoalDenial) return parkedGoalDenial;
         return this.parkApproval(
           fullRequest,
           permissionLevel,
@@ -615,6 +648,9 @@ export class OrchestratorPermissionIsland {
         return { approved: true, approvalSource: 'auto-approve-level' };
       }
     }
+
+    const goalDenial = getDenialRegistry().refuseIfGoalDenied(fullRequest);
+    if (goalDenial) return goalDenial;
 
     // 有审批 UI 的交互会话一直等待真人裁决；无 UI 的 headless 路径仍按 60s/5min
     // fail-closed，和 createCLIPermissionHandler 的 no-approval-ui 判据保持同一环境边界。
@@ -820,6 +856,8 @@ export class OrchestratorPermissionIsland {
         tool: fullRequest.tool,
         type: fullRequest.type,
         permissionLevel,
+        ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),
@@ -846,6 +884,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {
         repo.insert({

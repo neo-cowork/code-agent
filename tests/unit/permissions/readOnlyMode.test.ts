@@ -138,14 +138,15 @@ describe('readOnly 只读探索档', () => {
     expect(permissionCalls.length).toBe(0);
   });
 
-  it('用户拒绝确认时写操作不执行，错误说明 readOnly 拦截与出路（审出 MED）', async () => {
+  it('用户拒绝确认时写操作不执行，必须先询问用户而非劝其改权限档', async () => {
     getPermissionModeManager().setMode('readOnly');
     permissionReturn = false;
     setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
     const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
     expect(result.success).toBe(false);
-    expect(result.error).toContain('只读探索模式');
-    expect(result.error).toContain('切换会话权限档');
+    expect(result.error).toContain('The user just declined this kind of action.');
+    expect(result.error).toContain('First ask the user one short question');
+    expect(result.error).not.toContain('切换会话权限档');
   });
 
   // 2026-07-29 拍板「通话态跟随用户选择」之后，这一条从「文案分化」翻成了

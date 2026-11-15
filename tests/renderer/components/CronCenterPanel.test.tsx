@@ -13,7 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const invokeDomain = vi.hoisted(() => vi.fn());
 const openBudgetSettings = vi.hoisted(() => vi.fn());
 const countPendingReview = vi.hoisted(() => vi.fn());
-const inboxProps = vi.hoisted(() => ({ notify: (() => undefined) as (n: number) => void }));
+const inboxProps = vi.hoisted(() => ({
+  notify: (() => undefined) as (n: number) => void,
+  notifyParked: (() => undefined) as (n: number) => void,
+}));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain },
@@ -39,8 +42,12 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   },
 }));
 vi.mock('../../../src/renderer/components/features/cron/AutomationReviewInbox', () => ({
-  AutomationReviewInbox: ({ onPendingCountChange }: { onPendingCountChange?: (n: number) => void }) => {
+  AutomationReviewInbox: ({ onPendingCountChange, onParkedPendingChange }: {
+    onPendingCountChange?: (n: number) => void;
+    onParkedPendingChange?: (n: number) => void;
+  }) => {
     inboxProps.notify = (n) => onPendingCountChange?.(n);
+    inboxProps.notifyParked = (n) => onParkedPendingChange?.(n);
     return <div data-testid="stub-inbox" />;
   },
 }));
@@ -326,5 +333,33 @@ describe('pending review tile (N-CRON-REVIEW-COUNT-LIVE)', () => {
     await act(async () => { inboxProps.notify(0); });
     expect(screen.getByTestId('cron-status-pending').textContent).toContain('3');
     expect(screen.getByTestId('cron-status-pending').textContent).not.toContain('0');
+  });
+});
+
+describe('状态条数字与列表/卡片同源（N-FIX-STATUS-WORD-CONTRADICTION）', () => {
+  it('「运行中」= 运行记录里 running 行数，不读 job 级 stats', async () => {
+    countPendingReview.mockReset();
+    countPendingReview.mockResolvedValue(0);
+    const exec = (id: string, status: string) => ({
+      id, jobId: `job-${id}`, status, scheduledAt: 1, startedAt: 1, completedAt: 2, duration: 1, retryAttempt: 0,
+    });
+    useCronStore.setState({
+      stats: { jobsByStatus: { running: 0 }, successRate: 100 } as never,
+      recentExecutions: [exec('a', 'running'), exec('b', 'completed'), exec('c', 'running')] as never,
+    });
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect(screen.getByTestId('cron-status-running').textContent).toContain('2');
+  });
+
+  it('「待过目」= 任务折算数 + 卡片里「N 个操作等你确认」的 N', async () => {
+    countPendingReview.mockReset();
+    countPendingReview.mockResolvedValue(1);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    await act(async () => { inboxProps.notify(1); });
+    await act(async () => { inboxProps.notifyParked(5); });
+    await waitFor(() => expect(screen.getByTestId('cron-status-pending').textContent).toContain('6'));
+    // 批准后卡片数下降，tile 随之变
+    await act(async () => { inboxProps.notifyParked(4); });
+    await waitFor(() => expect(screen.getByTestId('cron-status-pending').textContent).toContain('5'));
   });
 });

@@ -26,7 +26,8 @@ function makeTool(name: string): ToolDefinition {
 describe('workbenchToolScope', () => {
   it('derives CLI connector tool names from the canonical descriptor', () => {
     expect(CONNECTOR_TOOL_NAMES.tmeet).toBe(tmeetDescriptor.toolNames);
-    expect(CONNECTOR_TOOL_NAMES.tmeet).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch']);
+    expect(CONNECTOR_TOOL_NAMES.tmeet).toEqual(['tmeetMeetingList', 'tmeetMeetingCreate', 'tmeetMeetingSearch', 'tmeetRecordList', 'tmeetRecordRead']);
+    expect(CONNECTOR_TOOL_NAMES.feishu).toEqual(['feishuMinutesSearch', 'feishuMinutesRead']);
   });
 
   it('normalizes and deduplicates selected scope ids', () => {

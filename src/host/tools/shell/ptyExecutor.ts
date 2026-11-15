@@ -46,6 +46,8 @@ interface PtySessionState {
   rows: number;
   inputBuffer: string[];
   sandboxed?: boolean;
+  displayCommand?: string;
+  displayName?: string;
   onExit?: () => void;
   stoppedByRequest?: boolean;
   /** 被最长运行时间上限终止 */
@@ -76,6 +78,8 @@ export interface PtySessionInfo {
   cols: number;
   rows: number;
   sandboxed?: boolean;
+  displayCommand?: string;
+  displayName?: string;
 }
 
 export interface PtySessionOutput {
@@ -136,6 +140,8 @@ function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
     cols: session.cols,
     rows: session.rows,
     sandboxed: session.sandboxed,
+    ...(session.displayCommand ? { displayCommand: session.displayCommand } : {}),
+    ...(session.displayName ? { displayName: session.displayName } : {}),
   };
 }
 
@@ -183,6 +189,10 @@ export function createPtySession(options: {
   sessionId?: string;
   toolCallId?: string;
   sandboxed?: boolean;
+  /** Unwrapped command before sandbox wrapping, preserved for task details and recovery. */
+  displayCommand?: string;
+  /** Human-readable task name shown in panels/notifications (never the sandbox-wrapped command). */
+  displayName?: string;
   onExit?: () => void;
 }): { success: boolean; sessionId?: string; error?: string; outputFile?: string } {
   // Check session limit
@@ -257,6 +267,8 @@ export function createPtySession(options: {
       rows,
       inputBuffer: [],
       sandboxed: options.sandboxed,
+      displayCommand: options.displayCommand,
+      displayName: options.displayName,
       onExit: options.onExit,
     };
 

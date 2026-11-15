@@ -286,6 +286,72 @@ describe('cronAgentRunHasAlert — 值得打扰矩阵', () => {
 });
 
 
+describe('buildCronAgentActionResult — artifact provenance', () => {
+  const text = '<cron_summary>Read notes\nartifact: ./notes.md\nartifact: notes.md（仅读取）\nartifact: summary.md\nartifact: https://example.com/report\n</cron_summary>';
+  const read = { id: 'read', name: 'Read', arguments: { file_path: '/workspace/notes.md' } };
+  const edit = { id: 'edit', name: 'Edit', arguments: { file_path: './notes.md' } };
+  const make = (writeSuccess?: boolean) => buildCronAgentActionResult(
+    { agentType: 'default', prompt: 'weekly report' }, undefined, 'run', text, false, false, undefined,
+    {
+      workingDirectory: '/workspace',
+      messages: [
+        { role: 'assistant', toolCalls: [read, ...(writeSuccess === undefined ? [] : [edit])] },
+        { role: 'tool', toolResults: [
+          { toolCallId: 'read', success: true, output: 'notes' },
+          ...(writeSuccess === undefined ? [] : [{ toolCallId: 'edit', success: writeSuccess, output: '' }]),
+        ] },
+      ],
+    },
+  );
+  it('drops only-read notes, including annotations, while retaining outputs and URLs', () => {
+    expect(make().digest?.artifacts).toEqual(['summary.md', 'https://example.com/report']);
+    expect(make(false).digest?.artifacts).toEqual(['summary.md', 'https://example.com/report']);
+  });
+  it('keeps a file read then successfully changed, and leaves calls without a scan untouched', () => {
+    expect(make(true).digest?.artifacts).toContain('./notes.md');
+    expect(buildCronAgentActionResult({ agentType: 'default', prompt: 'p' }, undefined, 's', text, false).digest?.artifacts)
+      .toContain('./notes.md');
+  });
+  it.each(['Write', 'write_file', 'Append', 'append_file', 'edit_file'])('keeps successful %s outputs even when read first', (name) => {
+    const built = buildCronAgentActionResult({ agentType: 'default', prompt: 'p' }, undefined, 's', text, false, false, undefined, {
+      workingDirectory: '/workspace', messages: [
+        { role: 'assistant', toolCalls: [read, { ...edit, name }] },
+        { role: 'tool', toolResults: [{ toolCallId: 'read', success: true }, { toolCallId: 'edit', success: true }] },
+      ],
+    });
+    expect(built.digest?.artifacts).toContain('./notes.md');
+  });
+});
+
+
+it('preserves artifacts when a successful shell call could have changed a previously read input', () => {
+  const built = buildCronAgentActionResult({ agentType: 'default', prompt: 'update notes' }, undefined, 's',
+    '<cron_summary>Updated notes\nartifact: notes.md\n</cron_summary>', false, false, undefined, {
+      workingDirectory: '/workspace', messages: [
+        { role: 'assistant', toolCalls: [
+          { id: 'read', name: 'Read', arguments: { file_path: 'notes.md' } },
+          { id: 'shell', name: 'Bash', arguments: { command: 'python update_notes.py' } },
+        ] },
+        { role: 'tool', toolResults: [{ toolCallId: 'read', success: true }, { toolCallId: 'shell', success: true }] },
+      ],
+    });
+  expect(built.digest?.artifacts).toEqual(['notes.md']);
+});
+
+it.each(['Process', 'code_execute'])('preserves artifacts when a successful %s call could have rewritten a read input', (tool) => {
+  const built = buildCronAgentActionResult({ agentType: 'default', prompt: 'update notes' }, undefined, 's',
+    '<cron_summary>Updated report\nartifact: report.md\n</cron_summary>', false, false, undefined, {
+      workingDirectory: '/workspace', messages: [
+        { role: 'assistant', toolCalls: [
+          { id: 'read', name: 'Read', arguments: { file_path: 'report.md' } },
+          { id: 'exec', name: tool, arguments: { code: 'rewrite report.md' } },
+        ] },
+        { role: 'tool', toolResults: [{ toolCallId: 'read', success: true }, { toolCallId: 'exec', success: true }] },
+      ],
+    });
+  expect(built.digest?.artifacts).toEqual(['report.md']);
+});
+
 describe.each([['first line', ''], ['after the preview cap', `${'正文'.repeat(600)}\n`]])('long digest urgency %s', (_position, prefix) => {
   it.each(['can_wait', 'fyi', 'must_today', 'maybe'])('preserves %s and notification policy', (value) => {
     const text = `<cron_summary>${prefix}urgency: ${value}\n${'正文'.repeat(600)}</cron_summary>`;

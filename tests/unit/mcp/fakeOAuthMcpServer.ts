@@ -8,6 +8,8 @@ export interface FakeOAuthMcpServer {
   url: string;
   authorizeScopes: string[];
   toolCallStatuses: number[];
+  /** 服务端丢弃所有已签发 token：此后带旧 token 的请求回 401（过期与撤销在线上不可区分）。 */
+  revokeAllTokens(): void;
   close(): Promise<void>;
 }
 
@@ -102,6 +104,7 @@ export async function startFakeOAuthMcpServer(port = 0): Promise<FakeOAuthMcpSer
     url: `${base}/mcp`,
     authorizeScopes,
     toolCallStatuses,
+    revokeAllTokens: () => { tokens.clear(); },
     close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }),
   };
 }

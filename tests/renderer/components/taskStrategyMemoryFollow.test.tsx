@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TaskStrategySettingsPanel } from '../../../src/renderer/components/features/settings/tabs/TaskStrategySettingsPanel';
 import type { AppSettings, TaskModelStrategySettings } from '../../../src/shared/contract';
-import { DEFAULT_MODELS } from '../../../src/shared/constants';
+import { DEFAULT_MODELS, PROVIDER_MODELS } from '../../../src/shared/constants';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const strategy: TaskModelStrategySettings = {
@@ -65,6 +65,7 @@ describe('TaskStrategySettingsPanel 记忆整理模型跟随快速模型', () =>
       <TaskStrategySettingsPanel
         settings={settings}
         providerConfigs={settings.models.providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
@@ -84,6 +85,7 @@ describe('TaskStrategySettingsPanel 记忆整理模型跟随快速模型', () =>
       <TaskStrategySettingsPanel
         settings={settings}
         providerConfigs={settings.models.providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
@@ -105,6 +107,7 @@ describe('TaskStrategySettingsPanel 记忆整理模型跟随快速模型', () =>
       <TaskStrategySettingsPanel
         settings={settings}
         providerConfigs={settings.models.providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
@@ -125,6 +128,7 @@ describe('TaskStrategySettingsPanel 记忆整理模型跟随快速模型', () =>
       <TaskStrategySettingsPanel
         settings={settings}
         providerConfigs={settings.models.providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         strategy={strategy}
         onChange={vi.fn()}
@@ -145,6 +149,7 @@ describe('TaskStrategySettingsPanel 任务主模型', () => {
       <TaskStrategySettingsPanel
         settings={settings}
         providerConfigs={settings.models.providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'zhipu', model: DEFAULT_MODELS.quick }}
         strategy={brokenMain}
         onChange={onChange}
@@ -186,6 +191,7 @@ describe('TaskStrategySettingsPanel 任务主模型', () => {
       <TaskStrategySettingsPanel
         settings={{ ...settings, models: { ...settings.models, providers } }}
         providerConfigs={providers}
+        defaultModel={{ provider: 'xiaomi', model: DEFAULT_MODELS.chat }}
         config={{ provider: 'zhipu', model: DEFAULT_MODELS.quick }}
         strategy={glmStrategy}
         onChange={onChange}
@@ -197,5 +203,98 @@ describe('TaskStrategySettingsPanel 任务主模型', () => {
     expect(screen.queryByText('不可用')).toBeNull();
     const fastSelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement;
     expect([...fastSelect.options].map((option) => option.value)).toContain('custom-glm-coding:::glm-5.3-flash');
+  });
+});
+
+
+describe('TaskStrategySettingsPanel display exemptions do not authorize self-healing', () => {
+  const savedDefault = { provider: 'xiaomi' as const, model: PROVIDER_MODELS.find(p => p.id === 'xiaomi')!.models[0].id };
+  const relayDefault = { provider: 'xiaomi' as const, model: 'neohorse-1.5-flash-preview' };
+  const missing = { provider: 'openai' as const, model: 'gone-fast-model' };
+
+  it.each([
+    ['undiscovered Local', { provider: 'local' as const, model: 'undiscovered-local-model' }],
+    ['provider with every model disabled', savedDefault],
+    ['disabled last custom model', { provider: 'custom-last' as const, model: 'last-custom-model' }],
+  ])('does not persist an invalid fallback when browsing %s', (_label, browsed) => {
+    const settings = buildSettings(null);
+    const providers = {
+      ...settings.models.providers,
+      local: { enabled: true, available: true, models: {} },
+      ...(browsed.provider === 'xiaomi' ? { xiaomi: {
+        enabled: true, apiKeyConfigured: true,
+        models: Object.fromEntries(PROVIDER_MODELS.find(p => p.id === 'xiaomi')!.models.map(m => [m.id, { enabled: false }])),
+      } } : {}),
+      'custom-last': { enabled: true, apiKeyConfigured: true, protocol: 'openai' as const,
+        model: 'last-custom-model', models: { 'last-custom-model': { enabled: false } } },
+    };
+    const selectedSettings = { ...settings, models: { ...settings.models, providers, routing: { ...settings.models.routing, memory: browsed } } };
+    const selectedStrategy = { ...strategy, profiles: { ...strategy.profiles, main: { ...strategy.profiles.main, ...browsed }, fast: { ...strategy.profiles.fast, ...missing } } };
+    const onChange = vi.fn();
+    const props = { settings: selectedSettings, providerConfigs: providers, strategy: selectedStrategy,
+      defaultModel: savedDefault, onChange, onMemoryRouteChange: vi.fn() };
+    // Rerender models selecting a provider or disabling its final model.
+    const { rerender } = render(<TaskStrategySettingsPanel {...props} config={{ provider: 'local', model: 'not-discovered' }} />);
+    onChange.mockClear();
+    rerender(<TaskStrategySettingsPanel {...props} config={browsed} />);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('memory-route-unavailable')).toBeTruthy();
+    const main = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    expect(main.selectedOptions[0].textContent).toContain('（不可用）');
+    expect((screen.getAllByRole('combobox')[1] as HTMLSelectElement).value).toBe('openai:::gone-fast-model');
+  });
+
+  it('keeps the saved relay default visible while browsing a different unavailable provider', () => {
+    const settings = buildSettings(null);
+    const selectedSettings = { ...settings, models: { ...settings.models, routing: { ...settings.models.routing, memory: relayDefault } } };
+    const selectedStrategy = { ...strategy, profiles: Object.fromEntries(Object.entries(strategy.profiles).map(([id, slot]) => [id, { ...slot, ...relayDefault }])) as TaskModelStrategySettings['profiles'] };
+    const onChange = vi.fn();
+    render(<TaskStrategySettingsPanel settings={selectedSettings} providerConfigs={settings.models.providers}
+      defaultModel={relayDefault} config={{ provider: 'local', model: 'not-discovered' }}
+      strategy={selectedStrategy} onChange={onChange} onMemoryRouteChange={vi.fn()} />);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText('不可用')).toBeNull();
+    expect(screen.queryByTestId('memory-route-unavailable')).toBeNull();
+    expect((screen.getByLabelText('记忆整理模型') as HTMLSelectElement).selectedOptions[0].textContent).toBe('xiaomi/neohorse-1.5-flash-preview');
+  });
+
+  it('keeps an undiscovered saved Local default unavailable even when another local model was discovered', () => {
+    const settings = buildSettings(null);
+    const localDefault = { provider: 'local' as const, model: 'not-discovered' };
+    const providers = { ...settings.models.providers, local: { enabled: true, available: true,
+      models: { 'discovered-local-model': { enabled: true, discoveredAt: 1 } } } };
+    const selectedSettings = { ...settings, models: { ...settings.models, providers, routing: { ...settings.models.routing, memory: localDefault } } };
+    const selectedStrategy = { ...strategy, profiles: { ...strategy.profiles,
+      main: { ...strategy.profiles.main, ...localDefault }, fast: { ...strategy.profiles.fast, ...missing } } };
+    const onChange = vi.fn();
+    render(<TaskStrategySettingsPanel settings={selectedSettings} providerConfigs={providers}
+      defaultModel={localDefault} config={localDefault} strategy={selectedStrategy}
+      onChange={onChange} onMemoryRouteChange={vi.fn()} />);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('memory-route-unavailable')).toBeTruthy();
+    expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).selectedOptions[0].textContent).toContain('（不可用）');
+  });
+
+  it('does not use a display-only relay default as an automatic fallback', () => {
+    const settings = buildSettings(null);
+    const selectedStrategy = { ...strategy, profiles: { ...strategy.profiles, fast: { ...strategy.profiles.fast, ...missing } } };
+    const onChange = vi.fn();
+    render(<TaskStrategySettingsPanel settings={settings} providerConfigs={settings.models.providers}
+      defaultModel={relayDefault} config={relayDefault} strategy={selectedStrategy}
+      onChange={onChange} onMemoryRouteChange={vi.fn()} />);
+    expect(onChange).not.toHaveBeenCalled();
+    expect((screen.getAllByRole('combobox')[1] as HTMLSelectElement).selectedOptions[0].textContent).toContain('（不可用）');
+  });
+
+  it('still self-heals to a model in the unmodified runtime options', () => {
+    const settings = buildSettings(null);
+    const selectedStrategy = { ...strategy, profiles: { ...strategy.profiles, fast: { ...strategy.profiles.fast, ...missing } } };
+    const onChange = vi.fn();
+    render(<TaskStrategySettingsPanel settings={settings} providerConfigs={settings.models.providers}
+      defaultModel={savedDefault} config={savedDefault} strategy={selectedStrategy}
+      onChange={onChange} onMemoryRouteChange={vi.fn()} />);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ ...selectedStrategy, profiles: {
+      ...selectedStrategy.profiles, fast: { ...selectedStrategy.profiles.fast, ...savedDefault },
+    } });
   });
 });

@@ -445,4 +445,97 @@ describe('durable waiting-run cancellation after recovery', () => {
       fixture.db.close();
     }
   });
+
+  /**
+   * N-FIX-STOP-BEFORE-FIRST-RESPONSE-STUCK-RUNNING-FU1：用户停下的 run 停靠成
+   * waiting/user_stop（保留「继续」）。再按 Stop（重复取消）必须是对这个停靠的
+   * no-op——不能把 user_stop 覆写成 cancelled；只有显式「放弃」（abandonParked）
+   * 才走终态化。
+   */
+  it('repeated Stop keeps a user_stop park waiting; only explicit abandon terminalizes it', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'userstop-park-')));
+    const { db, repository } = createRepository();
+    const firstRegistry = new RunRegistry();
+    firstRegistry.configureDurableKernel(kernel(repository, 'userstop-before-crash'));
+    const runId = 'run-userstop-park';
+    const sessionId = 'session-userstop-park';
+    const recoveredRegistry = new RunRegistry();
+
+    try {
+      await firstRegistry.startDurable({ runId, sessionId, workspace, cwd: workspace }, 1_000);
+      await firstRegistry.checkpointNativeModelOperation({
+        runId,
+        sourceMessageId: 'message-userstop',
+        provider: 'provider',
+        model: 'model',
+        logicalOperationId: 'userstop-turn',
+        phase: 'after_model_dispatch',
+        status: 'dispatched',
+        now: 1_010,
+      });
+      firstRegistry.clear();
+
+      recoveredRegistry.configureDurableKernel(kernel(repository, 'userstop-after-crash'));
+      const [plan] = await recoveredRegistry.recoverDurable(2_000);
+      const handle = recoveredRegistry.adoptRecoveredRun({ runId: plan.envelope.runId, sessionId, workspace, cwd: workspace });
+      await recoveredRegistry.parkDurable(runId, { now: 2_010, reason: 'user_stop' }, handle);
+      // 停靠后 live handle 释放（unregister 只摘 handle，envelope/owner 留在册）。
+      recoveredRegistry.unregister(runId, handle);
+      expect(await repository.get(runId)).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+
+      // 重复 Stop（无 abandonParked）：不落终态、不清 owner，停靠与「继续」投影原样保留。
+      await expect(recoveredRegistry.terminalRecoveredWaitingRun({ sessionId }, 3_000)).resolves.toBeUndefined();
+      await expect(recoveredRegistry.terminalRecoveredWaitingRun({ runId, sessionId }, 3_010)).resolves.toBeUndefined();
+      expect(await repository.get(runId)).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+      expect((await repository.get(runId))?.terminal).toBeUndefined();
+      expect(recoveredRegistry.hasDurableOwner(runId)).toBe(true);
+      expect(recoveredRegistry.findRecoveredWaitingRun({ sessionId })).toEqual({ runId, sessionId });
+
+      // 显式放弃：终态化成 cancelled，会话可起新 run。
+      await expect(recoveredRegistry.terminalRecoveredWaitingRun({ sessionId }, 4_000, { abandonParked: true }))
+        .resolves.toEqual({ runId, sessionId });
+      expect(await repository.get(runId)).toMatchObject({
+        status: 'cancelled',
+        terminal: { status: 'cancelled', reason: 'recovered_waiting_run_cancelled' },
+      });
+      const next = await recoveredRegistry.startDurable({
+        runId: 'run-after-userstop-abandon',
+        sessionId,
+        workspace,
+        cwd: workspace,
+      }, 4_010);
+      expect(next.context.runId).toBe('run-after-userstop-abandon');
+    } finally {
+      recoveredRegistry.clear();
+      firstRegistry.clear();
+      rmSync(workspace, { recursive: true, force: true });
+      db.close();
+    }
+  });
+
+  it('new-message supersede still terminalizes a user_stop park so the session can start a new run', async () => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'userstop-supersede-')));
+    const { db, repository } = createRepository();
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(kernel(repository, 'userstop-supersede'));
+    const sessionId = 'session-userstop-supersede';
+    const runId = 'run-userstop-supersede';
+
+    try {
+      const handle = await registry.startDurable({ runId, sessionId, workspace, cwd: workspace }, 1_000);
+      await registry.parkDurable(runId, { now: 1_010, reason: 'user_stop' }, handle);
+      // 停靠后 live handle 释放（unregister 只摘 handle，envelope/owner 留在册）。
+      registry.unregister(runId, handle);
+      expect(await repository.get(runId)).toMatchObject({ status: 'waiting', interruptCause: 'user_stop' });
+
+      await registry.supersedeParkedSessionRoots(sessionId, 2_000);
+      expect(await repository.get(runId)).toMatchObject({ status: 'cancelled' });
+      const next = await registry.startDurable({ runId: 'run-userstop-next', sessionId, workspace, cwd: workspace }, 2_010);
+      expect(next.context.runId).toBe('run-userstop-next');
+    } finally {
+      registry.clear();
+      rmSync(workspace, { recursive: true, force: true });
+      db.close();
+    }
+  });
 });

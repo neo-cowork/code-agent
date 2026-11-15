@@ -1,14 +1,17 @@
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
-import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
+import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
+import { createLogger } from '../services/infra/logger';
 import { resolveModelInfo } from '../model/modelInfo';
 import { getConfigService } from '../services/core/configService';
 import { resolveRunModelConfig } from '../agent/orchestrator/modelConfigResolver';
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+
+const logger = createLogger('ForegroundBrainBudget');
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -18,6 +21,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '分诊规则：',
   '1. 闲聊、解释、基于现有上下文即可回答的问题，直接回答，不调用工具。',
   '2. 只要读几个文件、搜一下代码、看看目录就能回答的问题，自己用 Read/Grep/Glob/ListDirectory 读完直接答，不要派活——为一次文件读取开一个后台任务是浪费。',
+  '2a. 用户问过去的会（某场会定了什么、谁说要做什么、会议纪要），或消息里带会议编号，用 meeting_records 查本机会议记录（list / search / read），不要去文件里搜。',
   '3. 短小的本地文件修改，先 Read 再用 Edit 或 Write 直接完成；写报告/文档/表格时若本轮工具表已有对应生成工具（docx_generate、excel_generate），直接调用它把文件交付掉；运行命令、联网查证、多步骤执行、等待审批，以及做网页等其他生成级长任务，调用 delegate_task。读的量大到要翻遍整个仓库时也派活。',
   '3a. 本轮工具表里已有邮件、日历、提醒事项工具时，发邮件、建日程、设提醒这类请求直接调用对应工具完成，不派 delegate_task；发送或创建前聊天里会出现确认卡片，按用户在卡片上的选择如实回复，只在工具返回成功后才说已发送或已创建。',
   '3b. 用户明确点名 Bash、终端、命令行或脚本执行形式时，调用 delegate_task，把用户的命令意图完整写入 prompt；这条点名路由优先于 3a。调用后用一句话说明它正在作为后台任务运行。',
@@ -178,10 +182,26 @@ export function getTextForegroundToolNamesForPrompt(
   return Array.from(new Set([...base, ...extras]));
 }
 
+/** Shared logging and explicit-cap clamp for desktop and web assembly. */
+export function resolveForegroundBrainTurnBudget(
+  prompt: string,
+  lastAssistantStoppedByStepLimit: boolean,
+  requestedMaxIterations?: unknown,
+  log: Pick<typeof logger, 'info'> = logger,
+): number {
+  const cap = resolveForegroundBrainMaxIterations({ prompt, lastAssistantStoppedByStepLimit });
+  const rule = lastAssistantStoppedByStepLimit ? 'continuation'
+    : cap > SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS ? 'deliverable' : 'default';
+  const maxIterations = Math.min(typeof requestedMaxIterations === 'number' ? requestedMaxIterations : cap, cap);
+  log.info(`Foreground brain budget rule=${rule} cap=${cap} maxIterations=${maxIterations}`);
+  return maxIterations;
+}
+
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
   imageTurn?: ForegroundImageTurn,
+  lastAssistantStoppedByStepLimit = false,
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -191,12 +211,7 @@ export function withSessionCommandCenterBrain(
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
-    maxIterations: Math.min(
-      typeof options?.maxIterations === 'number'
-        ? options.maxIterations
-        : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-      SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
-    ),
+    maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
     allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
     foregroundToolFace: true,
     turnSystemContext,

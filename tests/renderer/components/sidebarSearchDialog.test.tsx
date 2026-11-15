@@ -125,6 +125,7 @@ describe('SidebarSearchDialog', () => {
     );
 
     const zhRows = screen.getAllByRole('option');
+    expect(zhRows.every((row) => row.textContent?.startsWith('[定时] 停车A-无目录'))).toBe(true);
     const zhTimes = zhRows.map((row) => row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent);
     expect(zhTimes).toEqual(timestamps.map((timestamp) => formatLocalDateTime(timestamp, 'zh')));
     expect(new Set(zhTimes).size).toBe(4);
@@ -148,6 +149,7 @@ describe('SidebarSearchDialog', () => {
       />,
     );
     const enRows = screen.getAllByRole('option');
+    expect(enRows.every((row) => row.textContent?.startsWith('[Schedule] 停车A-无目录'))).toBe(true);
     expect(enRows.map((row) => row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent)).toEqual(
       timestamps.map((timestamp) => formatLocalDateTime(timestamp, 'en')),
     );
@@ -305,4 +307,14 @@ describe('SidebarSearchDialog', () => {
     expect(screen.queryByText(copy.noMatchedSessions)).not.toBeNull();
     expect(screen.queryByText(copy.searchFailed)).toBeNull();
   });
+});
+
+
+it.each(['zh', 'en'] as const)('shows a stored cron title in %s', (language) => {
+  i18nState.language = language;
+  render(<SidebarSearchDialog isOpen query="" onQueryChange={vi.fn()} onClose={vi.fn()}
+    sessions={[{ ...sessions[0], title: '[Schedule] 每晨整理周会纪要' }]}
+    currentSessionId={null} messageSearchHitsBySessionId={{}} messageSearchLoading={false}
+    effectiveSearchScope="all" setSearchScope={vi.fn()} canSearchCurrentProject={false} onSelectSession={vi.fn()} />);
+  expect(screen.getByText(`${language === 'zh' ? '[定时]' : '[Schedule]'} 每晨整理周会纪要`)).toBeTruthy();
 });

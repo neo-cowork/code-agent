@@ -85,6 +85,7 @@ describe('AgentAppService lifecycle routing', () => {
     setWorkingDirectory: ReturnType<typeof vi.fn>;
   };
 	  let sessionManager: {
+      getMessages: ReturnType<typeof vi.fn>;
 	    getSession: ReturnType<typeof vi.fn>;
 	    listSessions: ReturnType<typeof vi.fn>;
 	    createSession: ReturnType<typeof vi.fn>;
@@ -118,6 +119,7 @@ describe('AgentAppService lifecycle routing', () => {
     interruptAndContinue: ReturnType<typeof vi.fn>;
     cleanup: ReturnType<typeof vi.fn>;
     cancelTask: ReturnType<typeof vi.fn>;
+    cancelSessionBackgroundWork: ReturnType<typeof vi.fn>;
     getOrCreateCurrentOrchestrator: ReturnType<typeof vi.fn>;
     setCurrentSessionId: ReturnType<typeof vi.fn>;
     setSessionContext: ReturnType<typeof vi.fn>;
@@ -130,6 +132,7 @@ describe('AgentAppService lifecycle routing', () => {
       setWorkingDirectory: vi.fn(),
     };
 	    sessionManager = {
+      getMessages: vi.fn().mockResolvedValue([]),
 	      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
 	      listSessions: vi.fn().mockResolvedValue([]),
 	      createSession: vi.fn(async (options) => ({
@@ -171,6 +174,7 @@ describe('AgentAppService lifecycle routing', () => {
       interruptAndContinue: vi.fn().mockResolvedValue({ outcome: 'steered' }),
       cleanup: vi.fn(),
       cancelTask: vi.fn().mockResolvedValue(undefined),
+      cancelSessionBackgroundWork: vi.fn().mockResolvedValue(undefined),
       getOrCreateCurrentOrchestrator: vi.fn(() => orchestrator),
       setCurrentSessionId: vi.fn(),
       setSessionContext: vi.fn(),
@@ -878,7 +882,7 @@ describe('AgentAppService lifecycle routing', () => {
 
       await service.cancel('session-1');
 
-      expect(taskManager.cancelTask).toHaveBeenCalledWith('session-1');
+      expect(taskManager.cancelTask).toHaveBeenCalledWith('session-1', { keepBackground: false });
       expect(taskManager.getOrCreateCurrentOrchestrator).not.toHaveBeenCalled();
       expect(orchestrator.cancel).not.toHaveBeenCalled();
     },
@@ -893,6 +897,35 @@ describe('AgentAppService lifecycle routing', () => {
     expect(taskManager.cancelTask).not.toHaveBeenCalled();
     expect(taskManager.getOrCreateCurrentOrchestrator).toHaveBeenCalledWith('session-1');
     expect(orchestrator.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  // N-FIX-COMPOSER-STOP-BG-BROWSER-SUBAGENT-REDESIGN：前台 idle 不进 cancelTask，后台级联必须在这条分支发出。
+  it('fires the background cascade for an idle foreground before the direct orchestrator cancel returns', async () => {
+    const order: string[] = [];
+    taskManager.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManager.cancelSessionBackgroundWork.mockImplementation(() => {
+      order.push('background-fired');
+      return Promise.resolve().then(() => { order.push('background-settled'); });
+    });
+    orchestrator.cancel.mockImplementation(async () => { order.push('foreground'); });
+    const service = createService(taskManager);
+
+    await service.cancel('session-1');
+
+    expect(taskManager.cancelSessionBackgroundWork).toHaveBeenCalledWith('session-1');
+    expect(order[0]).toBe('background-fired');
+    expect(order).toContain('background-settled');
+  });
+
+  it('leaves background work alone when cancel is only a session switch', async () => {
+    taskManager.getSessionState.mockReturnValue({ status: 'idle' });
+    const service = createService(taskManager);
+    await service.cancel('session-1', 'session-switch');
+    expect(taskManager.cancelSessionBackgroundWork).not.toHaveBeenCalled();
+
+    taskManager.getSessionState.mockReturnValue({ status: 'running' });
+    await service.cancel('session-1', 'session-switch');
+    expect(taskManager.cancelTask).toHaveBeenCalledWith('session-1', { keepBackground: true });
   });
 
   it('restores incomplete stream snapshots for the loaded session', async () => {

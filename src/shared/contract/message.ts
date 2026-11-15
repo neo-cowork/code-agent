@@ -113,7 +113,16 @@ export interface MessageAttachment {
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计
-  files?: Array<{ path: string; content: string; size: number }>;
+  files?: Array<{
+    /** Display path relative to the dropped folder's parent; never a tool path. */
+    path: string;
+    content?: string;
+    size: number;
+    type?: AttachmentCategory;
+    binary?: boolean;
+    /** Actual path returned for this individual file by getPathForFile. */
+    absolutePath?: string;
+  }>;
   folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
   // 媒体处理状态，用于展示下载、嵌入、转写、失败等生命周期
   mediaState?: AttachmentMediaState;
@@ -312,6 +321,8 @@ export interface InputRedirectReceiptMetadata {
 }
 
 export interface MessageMetadata {
+  /** Host-generated preamble only; never infer this marker from assistant prose. */
+  backgroundTaskPreannounce?: { text: string; title?: string };
   /** Foreground turn ended at its step limit; a new user turn can continue it. */
   stoppedByStepLimit?: true;
   /**
@@ -443,11 +454,12 @@ export interface MessageMetadata {
   };
   /**
    * 后台任务终态唤醒前台失败时的用户可见说明（`role:'system'`）：任务结果已在会话里，
-   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失与其它失败。
+   * 只是自动汇报这一步没成；reason 区分 owner lease 缺失、步数耗尽与其它失败。
    */
   backgroundWakeFailed?: {
     taskId: string;
-    reason: 'owner_missing' | 'wake_failed';
+    reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
+    title?: string;
   };
   /**
    * 后台任务终态唤醒被前台轮推迟超过上限时的用户可见说明。
@@ -456,6 +468,7 @@ export interface MessageMetadata {
   backgroundWakeDeferred?: {
     taskId: string;
     outcome: 'completed' | 'failed';
+    title?: string;
   };
   /** Persisted receipt after the user confirms an existing expert edit. */
   roleEditReceipt?: {

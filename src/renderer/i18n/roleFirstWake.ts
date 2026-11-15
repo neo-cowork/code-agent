@@ -5,6 +5,8 @@
 export const roleFirstWakeZh = {
   roleFirstWake: {
     running: '正在熟悉你已连接的数据…',
+    // 无已连接源时模型不做任何探查，只写一句开场：进行中不能说「熟悉已连接的数据」
+    runningNone: '正在准备开场…',
     skip: '先不用',
     connect: '去连接',
     connectHint: '连上数据源后我能帮你更多',
@@ -30,6 +32,7 @@ export const roleFirstWakeZh = {
 export const roleFirstWakeEn: typeof roleFirstWakeZh = {
   roleFirstWake: {
     running: 'Getting familiar with your connected data…',
+    runningNone: 'Getting ready…',
     skip: 'Not now',
     connect: 'Connect a source',
     connectHint: 'Connect a data source and there is more I can help with.',

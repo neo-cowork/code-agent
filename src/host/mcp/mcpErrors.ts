@@ -158,6 +158,14 @@ export function mcpInsufficientScopeMetadata(error: unknown): Record<string, unk
   return { [MCP_INSUFFICIENT_SCOPE_METADATA_KEY]: requiredScope ? { requiredScope } : {} };
 }
 
+/** ToolResult.metadata 里标记「服务端要求重新授权（401）」的键；引擎据此发 lost_login 连接卡。 */
+export const MCP_AUTHORIZATION_REQUIRED_METADATA_KEY = 'mcpAuthorizationRequired';
+
+/** 401 时给 ToolResult.metadata 用的标记；过期与撤销在 401 上不可区分，所以只记「需要重新授权」。 */
+export function mcpAuthorizationRequiredMetadata(error: unknown): Record<string, unknown> | undefined {
+  return isOAuthAuthorizationRequiredError(error) ? { [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true } : undefined;
+}
+
 /** 连接阶段（尚无会话）的 404 才表示端点不存在；会话期 404 是过期会话，走重连。 */
 function isConnectPhaseEndpointMissing(error: unknown): boolean {
   return httpStatusOf(error) === 404;

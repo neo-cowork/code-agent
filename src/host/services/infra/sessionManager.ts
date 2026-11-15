@@ -19,9 +19,7 @@ import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositor
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
 import {
-  deriveFallbackSessionTitle,
-  isProvisionalAutoTitle,
-  sessionTitleSource,
+  resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource,
 } from '../../../shared/sessionTitlePlaceholder';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
@@ -1278,8 +1276,7 @@ export class SessionManager implements Disposable {
     const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
-    let title = await this.generateSmartTitle(titleSource);
-    if (!title) title = deriveFallbackSessionTitle(titleSource);
+    const title = await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。
@@ -1292,17 +1289,17 @@ export class SessionManager implements Disposable {
 
   /**
    * 使用小模型生成智能会话标题
-   * 模型不可用时返回 null，由调用方降级处理
+   * 模型不可用 / 无产出由 resolveSessionTitle 降级并留痕
    */
-  private async generateSmartTitle(message: string): Promise<string | null> {
+  private async generateSmartTitle(message: string, strict = false): Promise<SessionTitleModelAnswer> {
     try {
       const { quickTask, isQuickModelAvailable } = await import('../../model/quickModel');
-      if (!isQuickModelAvailable()) return null;
+      if (!isQuickModelAvailable()) return { title: null, unavailable: true };
 
       // 截取前 500 字符避免 prompt 太长
       const truncated = message.length > 500 ? message.slice(0, 500) + '...' : message;
 
-      const result = await quickTask((await import('../../session/sessionTitleHostPrompt')).buildHostSessionTitlePrompt(truncated));
+      const result = await quickTask((await import('../../session/sessionTitleHostPrompt')).buildHostSessionTitlePrompt(truncated, strict));
 
       if (result.success && result.content) {
         // 清理：去引号、去标点、限长
@@ -1311,11 +1308,12 @@ export class SessionManager implements Disposable {
           .replace(/^["'「『]|["'」』]$/g, '')
           .replace(/[。！？.!?]$/g, '');
         if (title.length > 50) title = title.slice(0, 50) + '...';
-        if (title.length >= 2) return title;
+        if (title.length >= 2) return { title };
       }
-      return null;
-    } catch {
-      return null; // 静默降级
+      return { title: null };
+    } catch (error) {
+      logger.warn('smart title generation failed', { error: String(error) });
+      return { title: null };
     }
   }
 

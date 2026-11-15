@@ -115,3 +115,46 @@ describe('cold boot lands on the session that holds the unsent draft', () => {
     expect(switchSession).toHaveBeenCalledWith('b2');
   });
 });
+
+describe('cold boot keeps the chat the user was viewing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    localStorage.clear();
+    (globalThis as Record<string, unknown>).window = Object.assign(window, {
+      domainAPI: { invoke: mockDomainInvoke },
+    });
+  });
+
+  const sessions = [{ id: 'target' }, { id: 'origin' }];
+  const open = async () => {
+    const switchSession = vi.fn(async () => undefined);
+    await openInitialSession({ sessions, isBlank: () => false, switchSession, createSession: async () => null });
+    return switchSession;
+  };
+
+  it('opens the last viewed chat even when a delegation target was updated after it', async () => {
+    const { rememberLastViewedSession } = await import('../../../src/renderer/stores/sessionBootDraft');
+    rememberLastViewedSession('origin');
+    expect(await open()).toHaveBeenCalledWith('origin');
+  });
+
+  it('falls back to the most recent chat when nothing is remembered or it is gone', async () => {
+    expect(await open()).toHaveBeenCalledWith('target');
+    const { rememberLastViewedSession } = await import('../../../src/renderer/stores/sessionBootDraft');
+    rememberLastViewedSession('deleted');
+    expect(await open()).toHaveBeenCalledWith('target');
+  });
+
+  it('records the visible chat as soon as the user switches (real store + broadcasts wiring)', async () => {
+    mockDomainInvoke.mockImplementation(async (_d: string, action: string, payload?: { sessionId?: string }) => (
+      action === 'load'
+        ? { success: true, data: { ...wireSession(payload?.sessionId ?? 'x', 't', 1, 1), messages: [], todos: [] } }
+        : { success: true, data: [wireSession('target', 'T', 1, 20), wireSession('origin', 'O', 1, 10)] }
+    ));
+    const { initializeSessionStore, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    await initializeSessionStore();
+    await useSessionStore.getState().switchSession('origin');
+    expect(localStorage.getItem('neo:last-viewed-session')).toBe('origin');
+  });
+});

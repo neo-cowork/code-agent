@@ -13,6 +13,7 @@ import type {
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 import { QUEUED_INPUT_RETRY } from '../../../src/shared/constants/queuedInput';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 import { sendSSE, sseClients } from '../../../src/web/helpers/sse';
 import {
   createWebQueuedInputDrain,
@@ -157,6 +158,27 @@ describe('web queued input drain', () => {
       runId: 'run-activation',
       activatedAt: 7,
     }]));
+  });
+
+  // N-FIX-DELEGATE-SESSION-SECOND-DELEGATION-REJECTED-FU1-FU2：委托目标会话的排队输入被激活，
+  // 绝不能挪动用户正在看的当前会话（下一条输入必须仍落在发起会话）。
+  it('enqueue → drain → activation 不改宿主 currentSessionId', async () => {
+    const manager = getSessionManager();
+    manager.setCurrentSession('origin-session');
+    const repository = createRepository();
+    const activated: QueuedInputActivatedEvent[] = [];
+    repository.enqueue({ id: 'queued-delegated', sessionId: 'target-session', envelope: { content: '再加一瓶果酱', sessionId: 'target-session' }, now: 1 });
+    const drain = createDrain({
+      repository,
+      activated,
+      runEnvelope: async (_envelope, _response, onActivated) => { onActivated({ runId: 'run-target', activatedAt: 7 }); },
+    });
+    drain.handleEnqueued('target-session');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(activated).toHaveLength(1);
+    expect(repository.getById('queued-delegated')?.status).toBe('consumed');
+    expect(manager.getCurrentSessionId()).toBe('origin-session');
   });
 
   it('入队时还有 run 在跑就不抽——那才是「排到下一轮」的正常语义', async () => {

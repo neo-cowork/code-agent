@@ -28,7 +28,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getMCPClient } from '../../../mcp/mcpClient';
-import { MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../../mcp/mcpErrors';
+import { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY, MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../../mcp/mcpErrors';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpInvokeSchema as schema } from './mcpInvoke.schema';
 
@@ -225,6 +225,8 @@ export async function executeMcpInvoke(
         ...buildMcpInvokeMeta({ server, tool, duration: result.duration, errorCode }),
         // 权限范围不足标记透传，引擎据此发「重新授权」连接卡
         ...(result.metadata?.[MCP_INSUFFICIENT_SCOPE_METADATA_KEY] ? { [MCP_INSUFFICIENT_SCOPE_METADATA_KEY]: result.metadata[MCP_INSUFFICIENT_SCOPE_METADATA_KEY] } : {}),
+        // 401 标记透传，引擎据此发 lost_login 连接卡
+        ...(result.metadata?.[MCP_AUTHORIZATION_REQUIRED_METADATA_KEY] ? { [MCP_AUTHORIZATION_REQUIRED_METADATA_KEY]: true } : {}),
       },
     };
   } catch (error: unknown) {

@@ -3,7 +3,8 @@ export type ModelErrorDiagnosticCode =
   | 'fallback_not_configured'
   | 'upstream_unavailable'
   | 'auth_failed'
-  | 'quota_exhausted';
+  | 'quota_exhausted'
+  | 'incomplete_response';
 
 export interface ModelErrorDiagnostic {
   code: ModelErrorDiagnosticCode;
@@ -12,6 +13,14 @@ export interface ModelErrorDiagnostic {
   retryable: boolean;
   hasFallbackConfigurationIssue?: boolean;
 }
+
+/** 模型服务回了 HTTP 200 但内容不完整（截断/空/网页），已自动重试一次仍失败。 */
+export const INCOMPLETE_RESPONSE_DIAGNOSTIC: ModelErrorDiagnostic = {
+  code: 'incomplete_response',
+  message: '模型服务返回的内容不完整，已自动重试一次仍然失败。',
+  suggestion: '请稍后再试一次；持续失败就在输入框右下角换一个模型。',
+  retryable: true,
+};
 
 function normalizeMessage(message: string): string {
   return message.trim().replace(/\s+/g, ' ');
@@ -28,6 +37,8 @@ export function getModelErrorStatus(error: unknown): number | undefined {
 export function classifyModelErrorMessage(message: string, statusCode?: number): ModelErrorDiagnostic | null {
   const normalized = normalizeMessage(message);
   const lower = normalized.toLowerCase();
+
+  if (normalized.includes(INCOMPLETE_RESPONSE_DIAGNOSTIC.message)) return INCOMPLETE_RESPONSE_DIAGNOSTIC;
 
   // 鉴权失败：401/403 或 key/认证类文案（含中文）。不可重试，必须换 key 或换模型。
   const authFailed =

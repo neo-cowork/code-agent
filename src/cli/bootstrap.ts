@@ -40,6 +40,7 @@ import { SYSTEM_PROMPT } from '../host/prompts/builder';
 import { MEMORY_OFF_DENYLIST } from '../host/agent/routingToolPolicy';
 import { applyProviderVariant } from '../host/prompts/providerVariants';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
+import { resolveConfiguredProvider } from '../host/model/configuredProvider';
 import { resolveConfiguredDefaultProvider } from '../shared/modelDefaults';
 import { SWARM_TRACE } from '../shared/constants/storage';
 import { composeTelemetryAdapters } from '../host/agent/metricsCollector';
@@ -589,15 +590,14 @@ export function buildCLIConfig(options: {
     : process.cwd();
 
   // 模型配置：优先级 options > settings.models.* > 常量
-  const provider = (options.provider as ModelConfig['provider'] | undefined)
+  const providerId = options.provider
     ?? resolveConfiguredDefaultProvider(settings.models, DEFAULT_PROVIDER);
-  const providerCfg = settings.models?.providers?.[provider];
+  const { connection, providerConfig: providerCfg } = resolveConfiguredProvider(config, settings, providerId);
   const model = options.model || providerCfg?.model || DEFAULT_MODELS.chat;
 
   const modelConfig: ModelConfig = {
-    provider,
+    ...connection,
     model,
-    apiKey: config.getApiKey(provider) || '',
     temperature: providerCfg?.temperature ?? 0.7,
     maxTokens: providerCfg?.maxTokens ?? getModelMaxOutputTokens(model),
   };

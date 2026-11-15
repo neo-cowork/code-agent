@@ -33,6 +33,10 @@ export class ManagedBrowserLeaseController {
     this.inUse = inUse;
   }
 
+  isInUse(): boolean {
+    return this.inUse;
+  }
+
   heartbeat(nowMs = Date.now()): void {
     if (this.lease?.status !== 'active') {
       return;

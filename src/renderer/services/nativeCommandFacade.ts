@@ -153,6 +153,10 @@ export interface NativeCommandActionMap {
     payload: { bindings: GlobalHotkeyBinding[] };
     result: GlobalHotkeyRegistrationResult[];
   };
+  setShellLanguage: {
+    payload: { lang: 'zh' | 'en' };
+    result: void;
+  };
   postSystemNotification: {
     payload: { title: string; body: string; id?: string };
     result: NativeSystemNotificationResult;
@@ -187,6 +191,7 @@ const NATIVE_COMMANDS: {
   hideAgentHalo: 'agent_halo_hide',
   setGlobalHotkeys: 'keybindings_set_global_hotkeys',
   postSystemNotification: 'post_system_notification',
+  setShellLanguage: 'set_shell_language',
 };
 
 export function isNativeCommandRuntimeAvailable(): boolean {

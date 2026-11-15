@@ -1,3 +1,4 @@
+import { isSendFailureTurn } from './projectTrustTurn';
 import type { TraceTurn } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { Translations } from '../i18n';
@@ -125,6 +126,9 @@ export function buildStreamingUiState({
   if (sessionStatus === 'cancelled' || hasCancelledRunMarker(turn)) {
     return idleState;
   }
+
+  // 发送未进 host 运行期（含旧项目待确认与 4xx/5xx/断网拒收）：气泡已给下一步，不出「遇到问题 / 等待恢复」横幅。
+  if (isSendFailureTurn(turn)) return idleState;
 
   if (turn.status === 'error' || sessionStatus === 'error') {
     return {

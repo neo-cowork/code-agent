@@ -21,6 +21,14 @@ export const connectorRequiredZh = {
     reauthorizeFailed: '重新授权没有完成：{error}',
     permissionPage: '查看权限设置',
     dismiss: '知道了',
+    lostTitle: '{name} 当前未登录，请重新连接后继续',
+    lostReasonNotLoggedIn: '它的命令行工具当前没有报告已登录。',
+    lostReasonMissingConfig: '它的命令行工具报告配置缺失或尚未登录。',
+    lostReasonAuthorization: '它的服务端要求重新授权。',
+    reconnect: '重新连接',
+    reconnecting: '正在连接…',
+    reconnected: '{name} 已重新连接，请重新发送刚才的请求',
+    reconnectFailed: '重新连接没有完成，请稍后再试',
   },
 };
 
@@ -42,5 +50,13 @@ export const connectorRequiredEn: typeof connectorRequiredZh = {
     reauthorizeFailed: 'Reauthorization did not complete: {error}',
     permissionPage: 'Open permission settings',
     dismiss: 'Got it',
+    lostTitle: '{name} is not signed in. Reconnect to continue.',
+    lostReasonNotLoggedIn: 'Its command-line tool does not currently report a signed-in account.',
+    lostReasonMissingConfig: 'Its command-line tool reports missing configuration or no sign-in.',
+    lostReasonAuthorization: 'Its server requires authorization again.',
+    reconnect: 'Reconnect',
+    reconnecting: 'Connecting…',
+    reconnected: '{name} is reconnected, please resend your request',
+    reconnectFailed: 'Reconnecting did not complete, please try again later',
   },
 };

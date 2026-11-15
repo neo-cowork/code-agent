@@ -1,4 +1,5 @@
 import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
+import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cronRunArtifacts';
 // ============================================================================
 // CronAgentAction - executeAction 的 agent 分支执行体
 // ============================================================================
@@ -32,6 +33,7 @@ import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTermin
 import { parseStatedEventDecisions } from './cronEventDecisions';
 import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
+import { precheckLostCliConnectors, recordCronConnectorLost, scanLostMcpConnectors } from './cronConnectorLost';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import type { CronPermissionDeniedMarker } from '../../shared/contract/sessionAutomation';
 
@@ -106,6 +108,8 @@ export async function executeCronAgentAction(
     }
   }
 
+  // 连接器登录丢失预检：无人值守没人看聊天卡，往待过目收件箱记一条（同连接器同日至多一条）
+  await recordCronConnectorLost(definition, precheckLostCliConnectors(action.roleId), () => Date.now());
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
@@ -142,6 +146,7 @@ export async function executeCronAgentAction(
   let result: unknown; let finalAssistantText = '';
   let runError: unknown; let runFailed = false;
   let permissionDenied: CronPermissionDeniedMarker | undefined;
+  let artifactContext: CronRunArtifactContext | undefined;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
   const costMeter = createCronRunCostMeterForExecution(definition.maxRunBudget, executionId);
@@ -227,12 +232,18 @@ export async function executeCronAgentAction(
     // 必须在 tm.cleanup 前扫——getMessages() 随会话清理一起没；失败路径也照扫
     // （下面 runFailed 会 throw，标记随之丢弃，扫描零副作用）。
     try {
+      artifactContext = { messages: orchestrator.getMessages(), workingDirectory: cronSession.workingDirectory };
       permissionDenied = deriveCronPermissionDenied(
-        orchestrator.getMessages(),
-        parseCronRunDigest(finalAssistantText).artifacts.length > 0,
+        artifactContext.messages,
+        filterReadOnlyCronArtifacts(parseCronRunDigest(finalAssistantText), artifactContext).artifacts.length > 0,
       );
     } catch (deniedScanError) {
       console.warn('[CronService] Failed to scan permission-denied tool results after cron run', deniedScanError);
+    }
+    try {
+      await recordCronConnectorLost(definition, scanLostMcpConnectors(orchestrator.getMessages()), () => Date.now());
+    } catch (lostScanError) {
+      console.warn('[CronService] Failed to scan connector-lost tool results after cron run', lostScanError);
     }
   } finally {
     leaveObserveMode();
@@ -300,7 +311,7 @@ export async function executeCronAgentAction(
   // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
   // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
   // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
-  const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied);
+  const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied, artifactContext);
   // 事件 run：模型逐事件陈述的 act/ignore + 理由带出去，供决策台账结算（cronEventDecisions）。
   const eventDecisions = eventPayloadBlock === undefined ? [] : parseStatedEventDecisions(finalAssistantText);
   // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（scoped 计量器读数）；失败路径已挂在 error 上。

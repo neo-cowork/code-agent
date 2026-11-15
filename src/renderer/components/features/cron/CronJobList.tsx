@@ -5,12 +5,15 @@
 // 语义对齐 contract 的 SessionAutomationType，由 getCronTriggerKind 推导。
 // ============================================================================
 
-import React, { useMemo, useState } from 'react';
-import type { CronRunsOn } from '@shared/contract';
+import React, { useMemo } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
-import { useCronStore } from '../../../stores/cronStore';
+import {
+  filterVisibleCronJobs,
+  useCronStore,
+  type CronLocationFilter,
+} from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { getCronTriggerKind } from '../../../utils/cronHumanize';
 import {
@@ -21,8 +24,6 @@ import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../..
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
 import { getBuiltinJobDisplay } from './builtinJobDisplay';
-
-type LocationFilter = 'all' | CronRunsOn;
 
 interface CronJobListProps {
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：命中行的状态 chip 换成「等你批准」。 */
@@ -37,37 +38,32 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
     latestExecutions,
     selectedJobId,
     filterMode,
+    locationFilter,
     searchQuery,
     isLoading,
     setFilterMode,
+    setLocationFilter,
     setSearchQuery,
     selectJob,
     openCreateEditor,
     refresh,
   } = useCronStore();
-  const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
   // event 行的账号/群显示名（通道目录）；目录没有的回落 id（formatScheduleSummary 兜底）。
   const eventNamesFor = useEventScheduleNames();
 
-  const filteredJobs = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return jobs.filter((job) => {
-      if (locationFilter !== 'all' && job.runsOn !== locationFilter) return false;
-      if (!q) return true;
-      const builtinDisplay = getBuiltinJobDisplay(job, language);
-      const haystacks = [
-        job.name,
-        job.description || '',
-        builtinDisplay?.name || '',
-        builtinDisplay?.description || '',
-        job.tags?.join(' ') || '',
-      ];
-      return haystacks.some((value) => value.toLowerCase().includes(q));
-    });
-  }, [jobs, searchQuery, locationFilter, language]);
+  const filteredJobs = useMemo(
+    () => filterVisibleCronJobs(jobs, searchQuery, locationFilter, language),
+    [jobs, searchQuery, locationFilter, language],
+  );
+  const effectiveSelectedJobId = useMemo(
+    () => (selectedJobId && filteredJobs.some((job) => job.id === selectedJobId)
+      ? selectedJobId
+      : filteredJobs[0]?.id ?? null),
+    [filteredJobs, selectedJobId],
+  );
 
   return (
-    <div className="flex h-full flex-col border-r border-zinc-800 bg-zinc-950/80">
+    <div className="flex h-full flex-col border-r border-zinc-800 bg-zinc-950/80 contain-size">
       <div className="border-b border-zinc-800 p-4">
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -85,7 +81,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
             </button>
             <button /* ds-allow:button: 描边超小尺寸按钮（py-1.5 text-xs），primitive 最小 sm 仍更大 */
               onClick={openCreateEditor}
-              className="inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-100"
             >
               <Plus className="h-3.5 w-3.5" />
               {cc.create}
@@ -104,7 +100,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
               ['all', cc.locationFilterAll],
               ['local', cc.locationLocal],
               ['cloud', cc.locationCloud],
-            ] as Array<[LocationFilter, string]>).map(([value, label]) => (
+            ] as Array<[CronLocationFilter, string]>).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -138,7 +134,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
         ) : (
           <div className="space-y-2">
             {filteredJobs.map((job) => {
-              const isSelected = job.id === selectedJobId;
+              const isSelected = job.id === effectiveSelectedJobId;
               const latest = latestExecutions[job.id];
               const latestMeta = getLatestExecutionStatus(latest, cc);
               const latestLabel = latestMeta.label;
@@ -207,7 +203,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                     )}
                     {/* 触发源 chip：信息性标识统一中性 zinc，彩色只留给「要你处理的地方」 */}
                     <span
-                      className="rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
+                      className="shrink-0 whitespace-nowrap rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
                       data-testid="cron-job-trigger-kind"
                     >
                       {cc.triggerKind[triggerKind]}

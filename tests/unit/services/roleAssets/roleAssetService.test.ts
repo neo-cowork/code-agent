@@ -156,6 +156,61 @@ describe('roleAssetService', () => {
     });
   });
 
+  describe.each(['role', 'project'] as const)('memory headers (%s)', (scope) => {
+    const nested = '---\nname: model name\ntype: reference\n---\n\n';
+    const body = 'Weekly numbers use WAC and the new-signup rate.';
+    it.each([
+      ['double header', nested + nested + body, body],
+      ['single header', nested + body, body],
+      ['no header', body, body],
+      ['horizontal rules', '---\nKeep this paragraph.\n---\n' + body, '---\nKeep this paragraph.\n---\n' + body],
+      ['mixed block', '---\nname: example\nKeep this paragraph.\n---\n' + body, '---\nname: example\nKeep this paragraph.\n---\n' + body],
+      ['unclosed header', '---\nname: example\n' + body, '---\nname: example\n' + body],
+      ['CRLF headers', nested.replaceAll('\n', '\r\n') + body, body],
+    ])('writes %s with one host header', async (_label, content, expected) => {
+      const target = { scope, roleId: 'reporter', workspacePath: mockConfigDir.dir };
+      const file = await writeScopedMemory(target, { filename: 'reporting.md', name: 'Reporting', description: 'Weekly convention', content });
+      const raw = await fs.readFile(file, 'utf-8');
+      expect(raw.slice(raw.indexOf('\n---\n') + 5).trim()).toBe(expected);
+      expect(await listScopedMemories(target)).toEqual([expect.objectContaining({ name: 'Reporting', description: 'Weekly convention', content: expected })]);
+    });
+    it('reads existing nested headers using only first-header metadata', async () => {
+      const target = { scope, roleId: 'reporter', workspacePath: mockConfigDir.dir };
+      const file = await writeScopedMemory(target, { filename: 'reporting.md', name: 'Reporting', description: 'Weekly convention', content: body });
+      const raw = await fs.readFile(file, 'utf-8');
+      await fs.writeFile(file, raw.replace(body, nested + nested + body));
+      expect(await listScopedMemories(target)).toEqual([expect.objectContaining({ name: 'Reporting', description: 'Weekly convention', content: body })]);
+    });
+    it.each(['\n', '\r\n'])('reads writer metadata with multiline descriptions (%j)', async (newline) => {
+      const target = { scope, roleId: 'reporter', workspacePath: mockConfigDir.dir };
+      const description = `Weekly convention${newline}Use the same reporting window.`;
+      const file = await writeScopedMemory(target, { filename: 'reporting.md', name: 'Reporting', description, content: nested + body });
+      expect(await fs.readFile(file, 'utf-8')).toContain(`description: ${description}`);
+      expect(await listScopedMemories(target)).toEqual([expect.objectContaining({ name: 'Reporting', description: 'Weekly convention', content: body })]);
+    });
+    it('reads manually edited multiline metadata and strips further strict headers', async () => {
+      const target = { scope, roleId: 'reporter', workspacePath: mockConfigDir.dir };
+      const file = await writeScopedMemory(target, { filename: 'reporting.md', name: 'Reporting', description: 'Weekly convention', content: body });
+      await fs.writeFile(file, '---\nname: Reporting\nAdditional name line\ndescription: Weekly convention\n  Additional description line\n---\n\n' + nested + body);
+      expect(await listScopedMemories(target)).toEqual([expect.objectContaining({ name: 'Reporting', description: 'Weekly convention', content: body })]);
+    });
+    it('preserves a mixed first block without the scoped-memory metadata fields', async () => {
+      const target = { scope, roleId: 'reporter', workspacePath: mockConfigDir.dir };
+      const file = await writeScopedMemory(target, { filename: 'reporting.md', name: 'Reporting', description: '', content: body });
+      const content = '---\nname: example\nKeep this paragraph.\n---\n' + body;
+      await fs.writeFile(file, content);
+      expect(await listScopedMemories(target)).toEqual([expect.objectContaining({ name: 'reporting', description: '', content })]);
+    });
+    it('reads a headerless file and preserves a horizontal-rule block', async () => {
+      const target = { scope, roleId: 'reporter', workspacePath: mockConfigDir.dir };
+      const file = await writeScopedMemory(target, { filename: 'reporting.md', name: 'Reporting', description: '', content: body });
+      for (const content of [body, '---\nA paragraph, not metadata.\n---\n' + body]) {
+        await fs.writeFile(file, content);
+        expect(await listScopedMemories(target)).toEqual([expect.objectContaining({ name: 'reporting', description: '', content })]);
+      }
+    });
+  });
+
   describe('scoped memory write/read/delete (角色层)', () => {
     beforeEach(async () => {
       await ensureRoleAssetDirs('研究员');

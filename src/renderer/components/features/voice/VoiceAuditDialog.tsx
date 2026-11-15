@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -284,7 +285,7 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
       <div className="rounded-lg bg-violet-500/15 p-2 text-mark-accent"><Mic2 className="h-4 w-4" /></div>
       <div className="min-w-0">
         <h2 className="text-base font-semibold text-zinc-100">{labels.title}</h2>
-        {sessionTitle && <p className="truncate text-xs text-zinc-500">{sessionTitle}</p>}
+        {sessionTitle && <p className="truncate text-xs text-zinc-500">{getDisplaySessionTitle(sessionTitle, language)}</p>}
       </div>
       <button
         type="button"

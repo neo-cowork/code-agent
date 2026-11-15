@@ -1,0 +1,524 @@
+[
+  {
+    "file": "src/renderer/components/PermissionDialog/RequestDetails.tsx",
+    "rule": "uuid",
+    "sample": "{labels.triggeredByAgentMessage.replace('{sender}', details.triggeredByAgentMessage.senderAgentId ?? '?')}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/PermissionDialog/RequestDetails.tsx",
+    "rule": "uuid",
+    "sample": "{labels.pluginOrigin.replace('{plugin}', details.pluginName ?? details.pluginId ?? '')}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/SkillsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{mount.libraryId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/StatusBar/EngineScopedModelPanel.tsx",
+    "rule": "uuid",
+    "sample": "selectedExternalModel?.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/StatusBar/ModelSwitcher.tsx",
+    "rule": "uuid",
+    "sample": "modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
+    "rule": "session_id",
+    "sample": "{activity.sourceSessionId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/TaskPanel/orchestration/components.tsx",
+    "rule": "uuid",
+    "sample": "{review.agentId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/design/DesignLayerPanel.tsx",
+    "rule": "uuid",
+    "sample": "{selected.parentId || '—'}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-DESIGN-WORKBENCH-SWARM"
+  },
+  {
+    "file": "src/renderer/components/design/DiscardedNodesTray.tsx",
+    "rule": "uuid",
+    "sample": "{n.label?.trim() || n.prompt?.trim() || n.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-DESIGN-WORKBENCH-SWARM"
+  },
+  {
+    "file": "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx",
+    "rule": "uuid",
+    "sample": "result.roleId ?? ''",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx",
+    "rule": "uuid",
+    "sample": "draft.roleId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx",
+    "rule": "uuid",
+    "sample": "{draft.roleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/chat/ChatInput/useChatInputSubmit.ts",
+    "rule": "uuid",
+    "sample": "agentCommand.agent.name || agentCommand.agent.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "rule": "uuid",
+    "sample": "{target.windowTitle || target.bundleId || '没有窗口标题'}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "rule": "internal_tool_name",
+    "sample": "执行链路：现有 `computer_use` 工具、permission dialog、action preview 和 desktop IPC 继续负责动作。",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "rule": "uuid",
+    "sample": "{actionSummary.trace.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "rule": "internal_tool_name",
+    "sample": "还没有 Computer Surface action trace。执行过 `computer_use.get_state / observe / get_ax_elements` 后会在这里显示风险摘要。",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/renderer/components/features/expert/ExpertPanel.tsx",
+    "rule": "uuid",
+    "sample": "{entry.displayName || entry.roleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/MemberConversationView.tsx",
+    "rule": "uuid",
+    "sample": "{ref.label ?? ref.path ?? ref.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/MemberConversationView.tsx",
+    "rule": "uuid",
+    "sample": "{member.profession ? member.name : member.roleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/RolePackShelf.tsx",
+    "rule": "uuid",
+    "sample": "{entry.displayName || entry.roleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "draft.lead?.roleId ?? ''",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "entry.roleId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "{entry.displayName || entry.roleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "member.roleId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "{text.memberId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "text.memberId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/expert/TeamRecipeDetailPage.tsx",
+    "rule": "uuid",
+    "sample": "member.id ?? ''",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/knowledge/LibraryPanel.tsx",
+    "rule": "uuid",
+    "sample": "project.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/knowledge/LibraryPanel.tsx",
+    "rule": "uuid",
+    "sample": "{item.sourceRoleId || t.library.sourceUpload}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/lab/gpt1/stages/TokenizerStage.tsx",
+    "rule": "uuid",
+    "sample": "{token.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-LAB"
+  },
+  {
+    "file": "src/renderer/components/features/lab/nanogpt/stages/DataPreparation.tsx",
+    "rule": "uuid",
+    "sample": "{token.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-LAB"
+  },
+  {
+    "file": "src/renderer/components/features/lab/nanogpt/stages/Tokenizer.tsx",
+    "rule": "uuid",
+    "sample": "{token.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-LAB"
+  },
+  {
+    "file": "src/renderer/components/features/projectSpace/ProjectListView.tsx",
+    "rule": "uuid",
+    "sample": "candidate.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/prompts/PromptManagerModal.tsx",
+    "rule": "uuid",
+    "sample": "detail.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/prompts/PromptManagerModal.tsx",
+    "rule": "uuid",
+    "sample": "{detail.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/settings/sections/CustomOAuthConnectorForm.tsx",
+    "rule": "uuid",
+    "sample": "{text.customOAuth.clientId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/sections/CustomOAuthConnectorForm.tsx",
+    "rule": "uuid",
+    "sample": "draft.clientId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/AgentEngineModelCatalogSection.tsx",
+    "rule": "uuid",
+    "sample": "model.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/AgentEngineModelCatalogSection.tsx",
+    "rule": "uuid",
+    "sample": "model.disabledReason || model.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/ExternalImportSettings.tsx",
+    "rule": "uuid",
+    "sample": "{item.sourceId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MCPSettings.tsx",
+    "rule": "uuid",
+    "sample": "{settingsCapabilityFocus.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MCPSettings.tsx",
+    "rule": "uuid",
+    "sample": "{server.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "rule": "uuid",
+    "sample": "{row.summary || row.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "rule": "uuid",
+    "sample": "{selectedEntry.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "rule": "uuid",
+    "sample": "{item.filePath || item.memoryId || item.sessionId || item.candidateId || item.source || 'unknown'}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx",
+    "rule": "session_id",
+    "sample": "{item.filePath || item.memoryId || item.sessionId || item.candidateId || item.source || 'unknown'}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryTab.tsx",
+    "rule": "uuid",
+    "sample": "{item.incomingTitle || item.existingTitle || item.entryId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/MemoryTab.tsx",
+    "rule": "uuid",
+    "sample": "{item.entryId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/PluginInstallDisclosure.tsx",
+    "rule": "uuid",
+    "sample": "{preview.sourceTrust.keyId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/RoleBindingsSection.tsx",
+    "rule": "uuid",
+    "sample": "item.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/SearchSettings.tsx",
+    "rule": "uuid",
+    "sample": "{sourceText?.label ?? entry.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-MEMORY-CONNECTORS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/SkillCautionDisclosureModal.tsx",
+    "rule": "uuid",
+    "sample": "{hit.ruleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/SkillsSettings.tsx",
+    "rule": "uuid",
+    "sample": "{settingsCapabilityFocus.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-EXPERT-SKILLS"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceInputModelSettings.tsx",
+    "rule": "uuid",
+    "sample": "option.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection.tsx",
+    "rule": "uuid",
+    "sample": "provider.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection.tsx",
+    "rule": "uuid",
+    "sample": "model.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection.tsx",
+    "rule": "uuid",
+    "sample": "device.deviceId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceLiveSettingsSection.tsx",
+    "rule": "uuid",
+    "sample": "{device.label || device.deviceId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx",
+    "rule": "uuid",
+    "sample": "currentProvider?.id ?? ''",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx",
+    "rule": "uuid",
+    "sample": "provider.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx",
+    "rule": "uuid",
+    "sample": "currentModel?.id ?? ''",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx",
+    "rule": "uuid",
+    "sample": "model.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx",
+    "rule": "uuid",
+    "sample": "option.id",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "{focusedWorkflowRun ? focusedWorkflowRun.goal ? `Workflow: ${focusedWorkflowRun.goal}` : `Workflow ${focusedWorkflowRun.runId}` : focusedBackgroundTask?.title}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "{snapshot.goal ? `Workflow: ${snapshot.goal}` : `Workflow ${snapshot.runId}`}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "labels.dialog.focusWorkflowAria.replace('{id}', snapshot.runId)",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "labels.dialog.workflowEvidenceAria.replace('{id}', snapshot.runId)",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "labels.dialog.focusBackgroundTaskAria.replace('{id}', task.id)",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "labels.dialog.backgroundEvidenceAria.replace('{id}', task.id)",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SidebarProjectDetail.tsx",
+    "rule": "uuid",
+    "sample": "{role.roleId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+  },
+  {
+    "file": "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
+    "rule": "uuid",
+    "sample": "{agent.name || agent.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-DESIGN-WORKBENCH-SWARM"
+  },
+  {
+    "file": "src/renderer/components/features/swarm/SwarmTraceHistory.tsx",
+    "rule": "uuid",
+    "sample": "{a.name || a.agentId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-DESIGN-WORKBENCH-SWARM"
+  },
+  {
+    "file": "src/renderer/components/features/voice/VoiceAuditDialog.tsx",
+    "rule": "uuid",
+    "sample": "{event.workItemId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/onboarding/ModelOnboardingModal.tsx",
+    "rule": "uuid",
+    "sample": "{model.id}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SETTINGS-VOICE-MODEL"
+  },
+  {
+    "file": "src/renderer/components/workbench/BrowserAgentWindowOverflowMenu.tsx",
+    "rule": "uuid",
+    "sample": "item.profileId",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-DESIGN-WORKBENCH-SWARM"
+  },
+  {
+    "file": "src/renderer/components/workbench/WorkbenchCapabilitySheetLite.tsx",
+    "rule": "uuid",
+    "sample": "{capability.libraryId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-DESIGN-WORKBENCH-SWARM"
+  },
+  {
+    "file": "src/renderer/i18n/enSettingsCore.ts",
+    "rule": "sandbox_exec",
+    "sample": "On Linux, install bubblewrap (bwrap). macOS uses the built-in sandbox-exec.",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-I18N"
+  },
+  {
+    "file": "src/renderer/i18n/enSettingsWork.ts",
+    "rule": "ou_id",
+    "sample": "e.g. oc_abc123def",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-I18N"
+  },
+  {
+    "file": "src/renderer/i18n/zhSettingsCore.ts",
+    "rule": "sandbox_exec",
+    "sample": "Linux 请安装 bubblewrap（bwrap）。macOS 使用系统自带的 sandbox-exec。",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-I18N"
+  },
+  {
+    "file": "src/renderer/i18n/zhSettingsWork.ts",
+    "rule": "ou_id",
+    "sample": "例如 oc_abc123def",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-I18N"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{row.runId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-MISC"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{copyButton(row.runId, 'cron-event-decision-copy-run')}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-MISC"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{copy.detailEventId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-MISC"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{row.eventId}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-MISC"
+  },
+  {
+    "file": "src/renderer/components/features/cron/CronEventDecisionsPanel.tsx",
+    "rule": "uuid",
+    "sample": "{copyButton(row.eventId, 'cron-event-decision-copy-event')}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-MISC"
+  },
+  {
+    "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
+    "rule": "raw_json",
+    "sample": "{typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}",
+    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  }
+]

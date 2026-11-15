@@ -150,7 +150,7 @@ export class ConfirmationGate {
   buildPreview(
     toolName: string,
     params: Record<string, unknown>,
-    options: { workspaceRoot?: string } = {},
+    options: { workspaceRoot?: string; delegationTargetTitle?: string } = {},
   ): ConfirmationPreview | undefined {
     switch (toolName) {
       case 'edit_file':
@@ -281,6 +281,27 @@ export class ConfirmationGate {
           type: 'generic',
           summary,
           diff: details.join('\n'),
+        };
+      }
+
+      case 'delegate_session': {
+        const toUserText = (text: string) =>
+          redactCommandSecrets(relativizeWorkspacePaths(text, options.workspaceRoot)).slice(0, 200);
+        const title = toUserText(normalizeString(options.delegationTargetTitle));
+        const target = title ? `会话「${title}」` : '另一个会话';
+        let summary: string;
+        switch (params.action) {
+          case 'delegate_existing': summary = `把这句话转给${target}`; break;
+          case 'create_new': summary = '新建一个会话来处理这句话'; break;
+          case 'correct': summary = `更正转给${target}的任务`; break;
+          case 'stop': summary = `停止转给${target}的任务`; break;
+          case 'resume': summary = `继续转给${target}的任务`; break;
+          default: summary = `更新转给${target}的任务`;
+        }
+        const text = toUserText(normalizeString(params.text));
+        return {
+          type: 'generic', summary,
+          ...(text ? { diff: `内容：${text}` } : {}),
         };
       }
 

@@ -36,7 +36,7 @@ import { SubagentRunRows, TaskDashboardSummary } from './RunWorkbenchCards';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useSessionMembers } from '../features/expert/SessionMemberBar';
 import { ReceiptRows } from '../ReceiptRows';
-import { getHumanToolLabel } from '../../utils/toolHumanLabel';
+import { getBackgroundTaskToolLabel, getHumanToolLabel } from '../../utils/toolHumanLabel';
 import type { Translations } from '../../i18n';
 
 // 真读取失败（读取异常且确有任务在跑）在 Todo 模块位置内联一行错误 + 重试/取消
@@ -219,12 +219,13 @@ export function buildOverviewContextRows(args: {
     if (isInternalContextPath(item.path)) continue;
     const identity = item.path || item.label;
     const key = `file:${identity}`;
+    const detail = item.detail ? getBackgroundTaskToolLabel({ toolName: item.detail, labels: fallbacks.humanToolLabels }) : undefined;
     const existing = rows.get(key);
     if (existing) {
-      if (item.detail && existing.detail !== item.detail) {
+      if (detail && existing.detail !== detail) {
         existing.detail = existing.detail
-          ? `${item.detail} / ${existing.detail}`
-          : item.detail;
+          ? `${detail} / ${existing.detail}`
+          : detail;
       }
       continue;
     }
@@ -232,7 +233,7 @@ export function buildOverviewContextRows(args: {
       id: key,
       kind: 'file',
       label: humanContextLabel(item.label, fallbacks.unnamedOutput),
-      detail: item.detail,
+      detail,
     });
   }
 
@@ -316,9 +317,11 @@ const CONTEXT_KIND_ORDER: OverviewContextKind[] = [
 const CONTEXT_KIND_CAP = 5;
 
 function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const wt = t.workbenchTabs;
   const [expandedKinds, setExpandedKinds] = useState<ReadonlySet<string>>(new Set());
+  const kindLabelWidthClass = language === 'en' ? 'w-14' : 'w-9';
+  const moreButtonIndentClass = language === 'en' ? 'pl-16' : 'pl-11';
 
   const kindLabels: Record<OverviewContextKind, string> = {
     file: wt.overviewContextKindFile,
@@ -352,7 +355,7 @@ function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
                 className="flex min-w-0 items-baseline gap-2 px-0.5 py-0.5"
                 data-testid="overview-context-row"
               >
-                <span className="w-9 shrink-0 text-[10px] text-zinc-500">
+                <span className={`${kindLabelWidthClass} shrink-0 text-[10px] text-zinc-500`}>
                   {kindLabels[row.kind]}
                 </span>
                 <span
@@ -376,7 +379,7 @@ function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
               <button /* ds-allow:button: 「+N」展开尾行是超小文本按钮（text-[10px]），primitive 最小 sm 仍更大 */
                 type="button"
                 data-testid={`overview-context-more-${kind}`}
-                className="px-0.5 pl-11 text-[10px] text-zinc-500 hover:text-zinc-300"
+                className={`px-0.5 ${moreButtonIndentClass} text-[10px] text-zinc-500 hover:text-zinc-300`}
                 aria-label={wt.overviewContextShowMore.replace('{count}', String(overflow))}
                 onClick={() => setExpandedKinds((prev) => new Set(prev).add(kind))}
               >

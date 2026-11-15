@@ -170,7 +170,8 @@ describe('user stop parks a fresh resumable run', () => {
     await run.markSuccess({ finalStatus: 'interrupted' });
     await run.release();
 
-    await expect(registry.terminalRecoveredWaitingRun({ sessionId }))
+    // 「放弃」入口显式带 abandonParked：重复 Stop（不带）对这个停靠是 no-op。
+    await expect(registry.terminalRecoveredWaitingRun({ sessionId }, undefined, { abandonParked: true }))
       .resolves.toEqual({ runId, sessionId });
     expect(await repository.get(runId)).toMatchObject({ status: 'cancelled' });
     expect(registry.findRecoveredWaitingRun({ sessionId })).toBeUndefined();

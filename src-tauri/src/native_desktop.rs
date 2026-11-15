@@ -2231,6 +2231,9 @@ pub fn desktop_open_system_settings(request: OpenSystemSettingsRequest) -> Resul
             "inputMonitoring" => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
             }
+            "automation" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            }
             "notifications" => {
                 "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
             }

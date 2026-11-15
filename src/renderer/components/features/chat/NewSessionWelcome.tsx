@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, CalendarCheck, ClipboardList, FileSpreadsheet, Radar } from 'lucide-react';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -139,7 +140,7 @@ export const NewSessionWelcome: React.FC<{
   workbenchSnapshot,
   session,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
   const { pinnedItems } = usePinnedLibraryItems(session?.id ?? null);
   const resumedSession = session && !isBlankNewSession(session) ? session : null;
@@ -242,7 +243,7 @@ export const NewSessionWelcome: React.FC<{
               {expertRoleId
                 ? (expert?.name ?? expertRoleId)
                 : resumedSession
-                  ? t.chat.resumedEmptyTitle.replace('{title}', resumedSession.title)
+                  ? t.chat.resumedEmptyTitle.replace('{title}', getDisplaySessionTitle(resumedSession.title, language))
                   : t.chat.welcomeTitle}
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
