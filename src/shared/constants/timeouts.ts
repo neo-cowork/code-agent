@@ -19,6 +19,8 @@ export const INFERENCE_TIMEOUTS = {
 export const MCP_TIMEOUTS = {
   /** SSE 连接超时 */
   SSE_CONNECT: 30_000,
+  /** 文字前台开跑前等用户 MCP 预连接的上限（超时后连接继续，工具下一轮/首次调用时可用） */
+  FOREGROUND_PRECONNECT: 5_000,
   /** stdio 连接超时 */
   STDIO_CONNECT: 120_000,
   /** 首次运行超时（需要安装依赖等） */
@@ -231,6 +233,12 @@ export const LIBRARY_TIMEOUTS = {
 export const BROWSER_TIMEOUTS = {
   /** Minimum age before crash-leftover isolated profiles may be reclaimed. */
   ISOLATED_PROFILE_SWEEP_GRACE: 10 * 60_000,
+  /** Longer grace for pre-marker (no owner file) profiles, whose liveness can only be inferred. */
+  ISOLATED_PROFILE_SWEEP_LEGACY_GRACE: 7 * 24 * 60 * 60_000,
+  /** Bound the `ps` probe call. */
+  ISOLATED_PROFILE_SWEEP_PROBE_TIMEOUT: 5_000,
+  /** Cap on `ps` output accepted by the legacy-profile process probe. */
+  ISOLATED_PROFILE_SWEEP_PROBE_MAX_BYTES: 32 * 1024 * 1024,
   /** Bound size accounting across one sweep; incomplete profiles are kept. */
   ISOLATED_PROFILE_SWEEP_MAX_ENTRIES: 10_000,
   /** Reject oversized or malformed owner metadata without an unbounded read. */
@@ -423,6 +431,8 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
 export const BROWSER_HUMAN_TAKEOVER_WAIT = {
   POLL_INTERVAL_MS: 100,
   CAP_MS: 100_000,
+  /** Computer takeover wait is booked as human time (beginApprovalWait), so its per-call cap matches the 5-minute takeover timer. */
+  COMPUTER_CAP_MS: 5 * 60_000,
   /** Takeover control timer: how long the user may hold the view before the session stops. */
   TIMER_MS: 5 * 60_000,
 } as const;
@@ -518,8 +528,12 @@ export const SUBAGENT_COMPLETION_NOTIFICATIONS = {
  * 后端不可达时间隔从 BASE 翻倍到 MAX，避免空闲猛打 + 日志刷屏。
  */
 export const RENDERER_POLLING = {
+  /** Kept browser windows: reflect close/reclaim in chat and the workbench. */
+  KEPT_BROWSER_STATE: 30_000,
   /** loop:list 状态轮询基础间隔 */
   LOOP_BASE: 2_000,
+  /** 「记这场会」进行中时拉会议状态（静音提醒、自动结束要及时反映到录制条） */
+  MEETING_STATUS: 5_000,
   /** 后台任务（listTasks + drainNotifications）轮询基础间隔 */
   BACKGROUND_TASK_BASE: 3_000,
   /** native bridge 收到后台任务失效推送后的兜底轮询间隔 */

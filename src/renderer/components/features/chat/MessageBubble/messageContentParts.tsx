@@ -37,7 +37,17 @@ import {
 // react-markdown + katex/remark 插件家族(vendor-markdown/vendor-katex)与
 // Shiki core/主题/语法按需动态加载,只在真正渲染消息正文/代码块时才下载,
 // 移出首屏关键路径(同 mermaidLoader.ts 的设计动机)。
-const LazyMarkdownCore = lazy(() => import('./MarkdownCore'));
+// 冷启动首条消息撞上宿主已死时,chunk/CSS 拉取会拒绝;降级为与 Suspense fallback 同源的纯文本渲染,
+// 避免穿透到会话级 ErrorBoundary 把失败提示气泡替换成报错面板。
+const PlainTextMarkdownCoreFallback = ({ content }: { content: string }) => (
+  <div className="whitespace-pre-wrap break-words">{sanitizePlainTextFallback(content)}</div>
+);
+const LazyMarkdownCore = lazy(() => (
+  import('./MarkdownCore').catch((error: unknown) => {
+    console.warn('[MarkdownCore] chunk load failed, using plain text', error);
+    return { default: PlainTextMarkdownCoreFallback };
+  })
+));
 const LazyShikiCodeBlock = lazy(() => import('./ShikiCodeBlock'));
 
 // Language display names and colors

@@ -21,6 +21,7 @@ import type { PendingApprovalRepository } from '../services/core/repositories/Pe
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { ToolExecutor } from '../tools/toolExecutor';
+import { permissionDenialError } from '../tools/toolPermissionClassification';
 import {
   dispatchLedgerToolApproval,
   rejectLedgerToolApproval,
@@ -271,7 +272,7 @@ async function resumeWithPorts(
   // 放行判定单一真源（rework r2）：手写清单曾把 allow_run/allow_24h 当拒绝——
   // 用户在收件箱点的「到这次做完为止/24 小时内允许」经重启恢复反而落 rejected。
   if (!isApprovePermissionResponse(input.response)) {
-    return deny('rejected by user after restart', 'approval rejected by user after restart');
+    return deny('rejected by user after restart', permissionDenialError(payload.tool, 'user').modelText);
   }
 
   // 指纹复算（执行前置）：台账 args 重算 canonical 哈希，与停车时落盘的指纹比对——

@@ -17,6 +17,8 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { formatConnectorStatusOutput } from './connectorStatusText';
+import { formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
@@ -26,10 +28,14 @@ interface ReminderItem {
   list: string;
   title: string;
   completed: boolean;
+  remindAtMs?: number | null;
 }
 
 function formatReminder(reminder: ReminderItem): string {
-  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+  const remindAt = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs)
+    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs)}`
+    : '无提醒时间';
+  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}`;
 }
 
 function buildRemindersMeta(
@@ -93,7 +99,7 @@ async function executeReminders(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = `Reminders connector: unavailable\n${status.detail}\nCapabilities: none`;
+      const output = formatConnectorStatusOutput('reminders', status);
       return {
         ok: true,
         output,
@@ -109,7 +115,7 @@ async function executeReminders(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
-      const output = `Reminders connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`;
+      const output = formatConnectorStatusOutput('reminders', status);
       return {
         ok: true,
         output,

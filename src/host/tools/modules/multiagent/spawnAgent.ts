@@ -264,6 +264,7 @@ async function runSpawnAgent(
         publishBackgroundSubagentVisibility({
           promise, scope, agentId, agentName: backgroundRole ?? 'agent', role: backgroundRole ?? 'dynamic',
           task: backgroundTitle, startedAt: Date.now(), ownsRunLifecycle: !ctx.swarmRunScope,
+          publisher: 'spawnAgent.run_in_background',
         });
         return await promise;
       } finally {

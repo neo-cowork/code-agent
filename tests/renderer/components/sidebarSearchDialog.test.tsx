@@ -125,6 +125,7 @@ describe('SidebarSearchDialog', () => {
     );
 
     const zhRows = screen.getAllByRole('option');
+    expect(zhRows.every((row) => row.textContent?.startsWith('[定时] 停车A-无目录'))).toBe(true);
     const zhTimes = zhRows.map((row) => row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent);
     expect(zhTimes).toEqual(timestamps.map((timestamp) => formatLocalDateTime(timestamp, 'zh')));
     expect(new Set(zhTimes).size).toBe(4);
@@ -148,6 +149,7 @@ describe('SidebarSearchDialog', () => {
       />,
     );
     const enRows = screen.getAllByRole('option');
+    expect(enRows.every((row) => row.textContent?.startsWith('[Schedule] 停车A-无目录'))).toBe(true);
     expect(enRows.map((row) => row.querySelector('[data-testid="sidebar-search-session-time"]')?.textContent)).toEqual(
       timestamps.map((timestamp) => formatLocalDateTime(timestamp, 'en')),
     );

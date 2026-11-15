@@ -23,6 +23,12 @@ export function isSqliteBusyError(error: unknown): boolean {
     && (code === 'SQLITE_BUSY' || code.startsWith('SQLITE_BUSY_'));
 }
 
+/**
+ * teamRunId → 父 run 上的 agent-team:<调用> 操作 id。投影状态会被后续原生工具/模型检查点整体覆盖，
+ * 终态投影不能只靠它找操作，否则父 run 收尾时 child_run 仍停在 prepared，整轮报「运行失败」。
+ */
+export const agentTeamOperationIds = new Map<string, string>();
+
 interface NativeAgentTeamProjectionState {
   schemaVersion: 1;
   kind: 'native_with_agent_team_projection';
@@ -40,6 +46,7 @@ export function mergeAgentTeamProjectionState(
   current: unknown,
   team: NativeAgentTeamProjectionState['teams'][number],
 ): NativeAgentTeamProjectionState {
+  if (team.operationId) agentTeamOperationIds.set(team.teamRunId, team.operationId);
   const prior = current && typeof current === 'object'
     && (current as { kind?: unknown }).kind === 'native_with_agent_team_projection'
     ? current as NativeAgentTeamProjectionState

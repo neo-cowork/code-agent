@@ -175,7 +175,7 @@ posixOnly('后台任务停机收尸', () => {
       const ledgerTask = ledger.getTask(`shell:${started.taskId}`);
       expect(ledgerTask).toMatchObject({
         status: 'cancelled',
-        title: 'sleep 600 && echo done',
+        title: 'sleep',
         failure: undefined,
       });
 
@@ -185,7 +185,7 @@ posixOnly('后台任务停机收尸', () => {
         type: 'task_cancelled',
         title: '任务已停止',
       });
-      expect(notifications[0]?.message).toContain('sleep 600 && echo done 已停止');
+      expect(notifications[0]?.message).toContain('sleep 已停止');
       expect(notifications[0]?.message).not.toContain('sandbox-exec');
       expect(notifications[0]?.message).not.toContain('失败');
       expect(notifications.some((n) => n.type === 'task_failed')).toBe(false);
@@ -217,7 +217,7 @@ posixOnly('后台任务停机收尸', () => {
       const ledgerTask = ledger.getTask(`shell:${started.taskId}`);
       expect(ledgerTask).toMatchObject({
         status: 'failed',
-        title: 'echo boom && exit 7',
+        title: 'exit',
         failure: {
           message: 'Process exited with code 7',
           exitCode: 7,

@@ -2,24 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { takeHostDomSnapshot } from '../infra/browser/domSnapshotHandoff';
 import { withManagedBrowserActivity } from '../infra/browser/managedBrowserActivity';
 import type { ToolContext, ToolExecutionResult } from '../../tools/types';
+import { browserPool, getBrowserService } from '../infra/browserPool';
+import type { BrowserDomSnapshot, BrowserService } from '../infra/browserService';
+import type { ManagedBrowserProfileMode, ManagedBrowserSessionState } from '../../../shared/contract/desktop';
 import {
-  browserPool,
-  getBrowserService,
-} from '../infra/browserPool';
-import type {
-  BrowserDomSnapshot,
-  BrowserService,
-} from '../infra/browserService';
-import type {
-  ManagedBrowserProfileMode,
-  ManagedBrowserSessionState,
-} from '../../../shared/contract/desktop';
-import type {
-  SurfaceExecutionErrorV1,
-  SurfaceObservationV1,
-  SurfaceTargetRefV1,
+  SURFACE_USER_BROWSER_AGENT_ID,
+  type SurfaceExecutionErrorV1,
+  type SurfaceObservationV1,
+  type SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
-import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../shared/contract/surfaceExecution';
 import { createLogger } from '../infra/logger';
 
 const organicNavLogger = createLogger('ManagedBrowserOrganicNav');
@@ -30,23 +21,19 @@ import {
 } from './SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
-import {
-  SecureBrowserResumeStateStore,
-  type BrowserResumeStateStore,
-} from './BrowserResumeStateStore';
+import { SecureBrowserResumeStateStore, type BrowserResumeStateStore } from './BrowserResumeStateStore';
+import { restoreManagedBrowserLastPage, SecureBrowserLastPageStore, type BrowserLastPageStore } from './browserLastPageStore';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
-import {
-  getKeptBrowserRegistry,
-  type KeptBrowserRegistry,
-} from './keptBrowserRegistry';
+import { getKeptBrowserRegistry, type KeptBrowserRegistry } from './keptBrowserRegistry';
+import { releaseManagedBrowserWindow, withTakeoverHandoffNote } from './managedBrowserWindowLifecycle';
 import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
 const CRON_LOGIN_STATE_EXPORT_LEASE_OWNER = 'cron-login-state-export';
-
 interface BrowserResumeLogger {
+  info?(message: string, metadata?: unknown): void;
   warn?(message: string, metadata?: unknown): void;
   error(message: string, metadata?: unknown): void;
 }
@@ -72,6 +59,8 @@ interface ManagedBrowserBinding {
   predecessorStateId: string;
   target: Extract<SurfaceTargetRefV1, { kind: 'browser' }>;
   abortShutdown?: Promise<void>;
+  /** 本 binding 认领了 takeover 停靠窗：首个动作结果附 get_dom_snapshot 提示（一次性）。 */
+  claimedTakeoverPark?: boolean;
 }
 
 type BrowserResumeFailureCode =
@@ -244,9 +233,22 @@ export class ManagedBrowserProviderAdapter {
     private readonly resumeStateStore: BrowserResumeStateStore = new SecureBrowserResumeStateStore(),
     private readonly resumeLogger: BrowserResumeLogger = createLogger('ManagedBrowserResume'),
     private readonly keptRegistry: KeptBrowserRegistry = getKeptBrowserRegistry(),
+    private readonly lastPageStore: BrowserLastPageStore = new SecureBrowserLastPageStore({
+      ephemeral: !(resumeStateStore instanceof SecureBrowserResumeStateStore),
+    }),
   ) {}
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
+    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: when this run's action will run on a
+    // window whose pool key differs from the identity's own key (a takeover-park
+    // claim, in either direction), hand out THAT service — callers that probe or
+    // gate on "the browser for this run" must see the window the action will use.
+    const binding = this.bindings.get(this.ownerKey(identity));
+    if (binding?.browserService.isRunning()) return binding.browserService;
+    if (!isUserBrowserSurfaceIdentity(identity)) {
+      const kept = this.keptRegistry.getAlive(identity.conversationId);
+      if (kept?.reason === 'takeover') return this.acquireBrowser(kept.serviceKey);
+    }
     const key = managedBrowserServiceKey(identity);
     // Default pool key is acquired via null so BrowserService keeps unsuffixed personal profile.
     return this.acquireBrowser(key === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : key);
@@ -257,12 +259,13 @@ export class ManagedBrowserProviderAdapter {
     return binding ? { ...binding, identity: { ...binding.identity }, target: { ...binding.target } } : null;
   }
 
-  async clearConversationResumeState(conversationId: string): Promise<void> {
-    await this.resumeStateStore.clearConversation(conversationId);
+  async clearConversationResumeState(conversationId: string, opts: { keepLastPage?: boolean } = {}): Promise<void> {
+    await Promise.all([this.resumeStateStore.clearConversation(conversationId), opts.keepLastPage ? undefined : this.lastPageStore.clearConversation(conversationId)]);
   }
 
   activateConversationResumeState(conversationId: string): void {
     this.resumeStateStore.activateConversation(conversationId);
+    this.lastPageStore.activateConversation(conversationId);
   }
 
   /**
@@ -311,6 +314,10 @@ export class ManagedBrowserProviderAdapter {
   async execute(input: ManagedBrowserActionInput): Promise<ToolExecutionResult> {
     try {
       const binding = await this.ensureBinding(input.identity);
+      const takeoverHandoffNote = binding.claimedTakeoverPark === true;
+      if (takeoverHandoffNote && input.action !== 'get_dom_snapshot') {
+        return withTakeoverHandoffNote({ success: false }, true);
+      }
       const descriptor = this.runtime.capabilities.resolve(
         'browser_action',
         input.action,
@@ -342,11 +349,12 @@ export class ManagedBrowserProviderAdapter {
           userSummary: `Observed managed browser after ${input.action}`,
           ...(providerSnapshot ? { snapshot: providerSnapshot } : {}),
         });
-        return this.attachSurfaceMetadata(result, binding, {
+        if (result.success && providerSnapshot) binding.claimedTakeoverPark = false;
+        return withTakeoverHandoffNote(this.attachSurfaceMetadata(result, binding, {
           observation: observation.observation,
           events: observation.events,
           session: observation.session,
-        });
+        }), takeoverHandoffNote);
       }
 
       // 观测默认 30s TTL，而一扇窗的 binding 跟着整个 conversation 长活。对**不依赖上一帧
@@ -434,16 +442,17 @@ export class ManagedBrowserProviderAdapter {
           };
         }
       }
-      return this.attachSurfaceMetadata(providerResult, binding, {
+      return withTakeoverHandoffNote(this.attachSurfaceMetadata(providerResult, binding, {
         actionResult: wrapped.surfaceResult,
         events: wrapped.events,
         session,
-      });
+      }), takeoverHandoffNote);
     } catch (error) {
       return this.failure(error);
     }
   }
 
+  /** 认领停靠后的首个动作结果附 get_dom_snapshot 提示（成功挂 output、失败挂 error 尾部）。 */
   private async ensureBinding(identity: SurfaceRuntimeIdentityV1): Promise<ManagedBrowserBinding> {
     const key = this.ownerKey(identity);
     const existing = this.bindings.get(key);
@@ -467,17 +476,27 @@ export class ManagedBrowserProviderAdapter {
     // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
     // kept result window WITHOUT navigating. Stale entries (window died
     // without a close event) flip to closed and the user path continues.
+    // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: an agent run claims only a takeover
+    // park (secretRef handover) or the wait_for_user parked window; an explicit
+    // keep_result_page stays user-only.
     let keptService: BrowserService | null = null;
     let keptServiceKey: string | null = null;
+    let claimedTakeoverPark = false;
     if (!shared) {
-      const kept = isUserRun(identity) ? this.keptRegistry.getAlive(identity.conversationId)
-        : this.keptRegistry.getParkedAlive(identity.conversationId);
+      const kept = isUserRun(identity)
+        ? this.keptRegistry.getAlive(identity.conversationId)
+        : (this.keptRegistry.getTakeoverParkAlive(identity.conversationId)
+          ?? this.keptRegistry.getParkedAlive(identity.conversationId));
       if (kept) {
         const candidate = this.acquireBrowser(kept.serviceKey);
         if (candidate.isRunning() && candidate.getActiveTab()) {
           keptService = candidate;
           keptServiceKey = kept.serviceKey;
-          if (!isUserRun(identity)) this.keptRegistry.unpark(identity.conversationId);
+          if (!isUserRun(identity) && kept.reason === 'takeover') {
+            claimedTakeoverPark = true;
+          } else if (!isUserRun(identity)) {
+            this.keptRegistry.unpark(identity.conversationId);
+          }
         } else {
           this.keptRegistry.markClosed(identity.conversationId, kept.serviceKey);
         }
@@ -580,6 +599,9 @@ export class ManagedBrowserProviderAdapter {
           { cause: error },
         );
       }
+      if (!shared && !keptService && !isUserRun(identity) && serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+        await restoreManagedBrowserLastPage({ conversationId: identity.conversationId, conversationIdHash: hashIdentity([identity.conversationId]), browserService, store: this.lastPageStore, logger: this.resumeLogger });
+      }
       const state = browserService.getSessionState();
       const provider = state.provider || DEFAULT_PROVIDER;
       const prepared = this.runtime.prepareBrowserSession({ identity, provider });
@@ -604,7 +626,11 @@ export class ManagedBrowserProviderAdapter {
           documentRevision: 'unobserved',
         },
       };
+      const sharedPark = shared && this.keptRegistry.getAlive(identity.conversationId);
+      binding.claimedTakeoverPark = claimedTakeoverPark || Boolean(
+        !isUserRun(identity) && sharedPark?.reason === 'takeover' && sharedPark.serviceKey === serviceKey);
       this.bindings.set(key, binding);
+      if (binding.claimedTakeoverPark) this.keptRegistry.consumeTakeoverPark(identity.conversationId, serviceKey);
       if (binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
         browserPool.setInUse(binding.serviceKey, true);
       }
@@ -688,26 +714,19 @@ export class ManagedBrowserProviderAdapter {
       && candidate.browserService === binding.browserService
     ));
     if (!stillShared) binding.browserService.setLeaseInUse(false);
-    // N-BROWSER-KEEP-RESULT-PAGE: a kept result window survives its run's cleanup
-    // (agent keep or user claim release alike). It stays pooled-but-idle: lease
-    // un-pinned and pool entry not in use, so idle expiry / pool pressure can
-    // still reclaim it. Final URL/title refresh so reopen restores where the
-    // run actually ended, not where keep was called.
-    const keptAlive = this.keptRegistry.isKeptServiceAlive(binding.serviceKey);
-    if (!stillShared && keptAlive) {
-      const activeTab = binding.browserService.getActiveTab();
-      if (activeTab?.url) {
-        this.keptRegistry.refreshTarget(
-          binding.identity.conversationId,
-          activeTab.url, activeTab.title || '', binding.serviceKey,
-        );
-      }
-      browserPool.setInUse(binding.serviceKey, false);
-    } else if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
-      // Personal/default pool entry is never released here — login state must survive
-      // surface cleanup and app-visible session ends (BrowserPool no-ops default key).
-      await this.releaseBrowser(binding.serviceKey);
-    }
+    await this.exportResumeStateOnNormalRelease(binding);
+    await releaseManagedBrowserWindow({
+      binding,
+      stillShared,
+      parkForTakeover: this.runtime.interrupts.shouldParkAfterRunEnd(this.subject(binding)),
+      personalServiceKey: MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
+      keptRegistry: this.keptRegistry,
+      releaseBrowser: this.releaseBrowser,
+      lastPageStore: this.lastPageStore,
+      onLastPageRecordError: (error) => this.resumeLogger.warn?.('Failed to record managed browser last page', {
+        reason: 'last_page_record_failed', conversationIdHash: hashIdentity([binding.identity.conversationId]), error: error instanceof Error ? error.message : String(error),
+      }),
+    });
     if (abortShutdownError) throw abortShutdownError;
   }
 
@@ -829,6 +848,27 @@ export class ManagedBrowserProviderAdapter {
     } finally {
       signal.removeEventListener('abort', closeOnAbort);
       await binding.abortShutdown;
+    }
+  }
+
+  /**
+   * Normal run end saves login state through the same store as the abort path, so the
+   * next turn of this conversation is still signed in. Same exclusions as the last page
+   * record: personal-profile and user-browser runs never write conversation state. An
+   * aborted run already exported and closed its window (not running here), so it is skipped.
+   */
+  private async exportResumeStateOnNormalRelease(binding: ManagedBrowserBinding): Promise<void> {
+    const { identity, serviceKey, browserService } = binding;
+    if (identity.agentId === SURFACE_USER_BROWSER_AGENT_ID || serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) return;
+    if (!browserService.isRunning()) return;
+    try {
+      await this.resumeStateStore.exportForConversation(identity.conversationId, browserService);
+    } catch (error) {
+      this.resumeLogger.warn?.('Failed to save managed browser login state at run end; next turn starts signed out', {
+        reason: 'resume_state_export_on_release_failed',
+        conversationIdHash: hashIdentity([identity.conversationId]),
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

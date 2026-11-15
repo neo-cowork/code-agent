@@ -33,6 +33,8 @@ import { MemberConversationView } from './features/expert/MemberConversationView
 import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
+import { detectMessageLanguage } from '@shared/sessionTitlePrompt';
+import { BrowserTakeoverParkCard } from './features/surfaceExecution/BrowserTakeoverParkCard';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { BackgroundSessionPanel } from './features/background';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
@@ -912,6 +914,15 @@ export const ChatView: React.FC = () => {
         />
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
+        {/* N-FIX-FIX-BROWSER-SECRETREF-HARDEN（FB-578）：secretRef 接管停靠的聊天「继续」卡。
+            「继续」发送一条用户消息开启下一轮（下一段任务在 ensureBinding 认领停靠窗），
+            不 resume 已完结的会话。 */}
+        <BrowserTakeoverParkCard
+          conversationId={currentSessionId}
+          workspace={currentSessionWorkingDirectory}
+          messageLanguage={detectMessageLanguage(messages.findLast((message) => message.role === 'user' && !message.isMeta)?.content ?? '')}
+          onContinue={handleSendMessage}
+        />
 
         <RoleFirstWakeThreadBanner suppressWakeProposals={isEmptySessionWelcomeVisible} />
 

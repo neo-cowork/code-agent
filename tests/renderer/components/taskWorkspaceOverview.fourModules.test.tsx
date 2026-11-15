@@ -318,6 +318,81 @@ describe('上下文模块：每类上限与 +N 展开', () => {
     fireEvent.click(more);
     expect(contextModule.querySelectorAll('[data-testid="overview-context-row"]')).toHaveLength(7);
   });
+
+  it('英文 UI 下上下文类型列宽足够完整容纳六类标签且不加省略号，中文保持 w-9 不变', () => {
+    const seedAllSixKinds = () => {
+      statusRailState.context.items = [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          id: `f${index}`,
+          label: `notes-${index}.md`,
+          detail: 'Read',
+          bucket: 'files',
+          source: 'tool',
+          path: `/repo/app/notes-${index}.md`,
+        })),
+        {
+          id: 's1',
+          label: 'morning-triage',
+          bucket: 'rules',
+          source: 'tool',
+        },
+      ] as never;
+      runWorkbenchState.tools = [
+        { id: 'tool:mcp__github__list_issues', label: 'mcp__github__list_issues', source: 'mcp', callable: true },
+        { id: 'tool:screenshot', label: 'Screen capture', source: 'computer', callable: true },
+        { id: 'tool:mail', label: 'mail', source: 'connector', callable: true },
+      ] as never;
+      runWorkbenchState.memoryActivities = [
+        { memoryId: 'mem-1', title: 'Morning routine', action: 'used' },
+      ] as never;
+    };
+
+    locale.language = 'zh';
+    seedAllSixKinds();
+    const zhView = render(<TaskWorkspaceOverview />);
+    const zhKindSpans = Array.from(
+      zhView.getByTestId('overview-context-module').querySelectorAll('[data-testid="overview-context-row"] > span:first-child'),
+    );
+    expect(Array.from(new Set(zhKindSpans.map((el) => el.textContent)))).toEqual([
+      '文件',
+      '技能',
+      'MCP',
+      '记忆',
+      '本机',
+      '连接器',
+    ]);
+    for (const span of zhKindSpans) {
+      expect(span.classList.contains('w-9')).toBe(true);
+      expect(span.classList.contains('w-14')).toBe(false);
+      expect(span.classList.contains('truncate')).toBe(false);
+    }
+    expect(zhView.getByTestId('overview-context-more-file').classList.contains('pl-11')).toBe(true);
+    zhView.unmount();
+
+    locale.language = 'en';
+    seedAllSixKinds();
+    const enView = render(<TaskWorkspaceOverview />);
+    const enKindSpans = Array.from(
+      enView.getByTestId('overview-context-module').querySelectorAll('[data-testid="overview-context-row"] > span:first-child'),
+    );
+    expect(Array.from(new Set(enKindSpans.map((el) => el.textContent)))).toEqual([
+      'File',
+      'Skill',
+      'MCP',
+      'Memory',
+      'Computer',
+      'Connector',
+    ]);
+    for (const span of enKindSpans) {
+      expect(span.classList.contains('w-9')).toBe(false);
+      expect(span.classList.contains('w-14')).toBe(true);
+      expect(span.classList.contains('truncate')).toBe(false);
+      expect(span.classList.contains('text-ellipsis')).toBe(false);
+      expect(span.classList.contains('overflow-hidden')).toBe(false);
+    }
+    expect(enView.getByTestId('overview-context-more-file').classList.contains('pl-16')).toBe(true);
+    expect(enView.getByTestId('overview-context-more-file').classList.contains('pl-11')).toBe(false);
+  });
 });
 
 describe('产物模块：完成态收拢缩略行', () => {

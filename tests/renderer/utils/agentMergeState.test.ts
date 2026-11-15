@@ -26,9 +26,21 @@ describe('deriveAgentMergeState', () => {
     expect(deriveAgentMergeState(changed('done', 'done', 'done'), [])).toBe('merged');
   });
 
-  it('≥2 个非 standby 行且全部 done、没有 worktree 也没有改动记录时仍报 merged（完成事件经常不填 filesChanged）', () => {
-    expect(deriveAgentMergeState(rows('done', 'done'), [])).toBe('merged');
-    expect(deriveAgentMergeState(rows('done', 'done', 'done'), [])).toBe('merged');
+  it('≥2 个非 standby 行且全部 done、没有 worktree 也没有改动记录时报 reported（无改动证据 => reported，不谎称已合并）', () => {
+    expect(deriveAgentMergeState(rows('done', 'done'), [])).toBe('reported');
+    expect(deriveAgentMergeState(rows('done', 'done', 'done'), [])).toBe('reported');
+    // 普通角色（非只读）同样：无 filesChanged、无 worktree => reported
+    expect(deriveAgentMergeState([
+      { status: 'done', roleId: 'coder' },
+      { status: 'done', node: { role: 'developer', worktreeState: { status: 'none', changedFiles: [] } } },
+    ], [])).toBe('reported');
+  });
+
+  it('有一行带 filesChanged 即 merged；冲突与 waiting 仍优先', () => {
+    const mixed = [{ status: 'done' as const, roleId: 'coder', filesChanged: ['a.ts'] }, { status: 'done' as const, roleId: 'coder' }];
+    expect(deriveAgentMergeState(mixed, [])).toBe('merged');
+    expect(deriveAgentMergeState(mixed, [conflict])).toBe('conflict');
+    expect(deriveAgentMergeState([...mixed, { status: 'waiting' as const }], [])).toBe('waiting');
   });
 
   it('worktree.changedFiles 也算有真实改动', () => {
@@ -63,8 +75,8 @@ describe('deriveAgentMergeState', () => {
     expect(deriveAgentMergeState(rows('standby', 'standby'), [])).toBeNull();
     // standby 不挡 waiting
     expect(deriveAgentMergeState(rows('standby', 'waiting'), [])).toBe('waiting');
-    // 无 worktree、无改动记录的 done + standby → 仍 merged（缺记录不是零改动）
-    expect(deriveAgentMergeState(rows('done', 'done', 'standby'), [])).toBe('merged');
+    // 无 worktree、无改动记录的 done + standby → reported
+    expect(deriveAgentMergeState(rows('done', 'done', 'standby'), [])).toBe('reported');
   });
 
   it('其余情况不显示（null）', () => {

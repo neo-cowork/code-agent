@@ -352,7 +352,7 @@ describe('usage_limit card', () => {
     process.env.TZ = 'Asia/Shanghai';
     renderCard(makeError({ category: 'usage_limit', httpStatus: 429, usageWindowText: '5 小时', resetAt: '2026-11-03T09:34:10.000Z' }));
     expect(screen.getByText('5 小时额度已用完')).toBeTruthy();
-    expect(screen.getByText(/预计 11\/3 17:34 恢复/)).toBeTruthy();
+    expect(screen.getByText(/预计 (?:2026\/)?11\/0?3 17:34 恢复/)).toBeTruthy();
     expect(screen.getByRole('button', { name: zh.agentError.actions.switchModel })).toBeTruthy();
     expect(screen.queryByRole('button', { name: zh.agentError.actions.retry })).toBeNull();
     expect(screen.queryByTestId('rate-limited-error-line')).toBeNull();
@@ -361,7 +361,7 @@ describe('usage_limit card', () => {
   it('② 同一时刻在洛杉矶时区显示本地时间；解析不出时间时给「向服务商确认」而不是空白', () => {
     process.env.TZ = 'America/Los_Angeles';
     expect(resolveAgentErrorCopy({ category: 'usage_limit', usageWindowText: '5 小时', resetAt: '2026-11-03T09:34:10.000Z' }, zh).suggestion)
-      .toContain('11/3 01:34');
+      .toMatch(/(?:2026\/)?11\/0?3 01:34(?!\d)/);
     const noTime = resolveAgentErrorCopy({ category: 'usage_limit' }, zh);
     expect(noTime.title).toBe('套餐额度已用完');
     expect(noTime.suggestion).toContain('向服务商确认');
@@ -448,7 +448,7 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('段内最新且 runLength≥2：整卡说明连续次数，不可重试类（auth）明说再发也不会好，中文句间无空格', () => {
+  it('段内最新且 runLength≥2：整卡说明连续次数，不可重试类（auth）给下一步、不怪用户，中文句间无空格', () => {
     const { container } = render(
       <AgentErrorPresentation
         error={makeError({ category: 'auth', httpStatus: 401 })}
@@ -459,16 +459,17 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     );
 
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.getByText('连续 3 次都是这个原因，再发也不会好。')).toBeTruthy();
-    expect(container.textContent).toContain('密钥可能填错、过期，或者额度用完了。连续 3 次都是这个原因，再发也不会好。');
-    expect(container.textContent).not.toContain('。 连续');
+    expect(screen.getByText('同样的问题已连续出现 3 次。可以先换个模型继续，或按上面的提示处理好再发。')).toBeTruthy();
+    expect(container.textContent).toContain('密钥可能填错、过期，或者额度用完了。同样的问题已连续出现 3 次。可以先换个模型继续，或按上面的提示处理好再发。');
+    expect(container.textContent).not.toContain('。 同样');
+    expect(container.textContent).not.toMatch(/不会好|再发也/);
     // 动作可见性不因折叠改变：auth 仍是换个模型 + 检查账号、无重试
     expect(screen.getByRole('button', { name: '换个模型' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '检查账号' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /重试/ })).toBeNull();
   });
 
-  it('可重试类（network）用中性措辞，只说次数、不断言再发也不会好', () => {
+  it('可重试类（network）用中性措辞，只说次数、不给换模型以外的断言', () => {
     render(
       <AgentErrorPresentation
         error={makeError({ category: 'network' })}
@@ -478,8 +479,8 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
       />,
     );
 
-    expect(screen.getByText('连续 2 次都是这个原因。')).toBeTruthy();
-    expect(screen.queryByText(/再发也不会好/)).toBeNull();
+    expect(screen.getByText('同样的问题已连续出现 2 次。')).toBeTruthy();
+    expect(screen.queryByText(/处理好再发/)).toBeNull();
     expect(screen.getByRole('button', { name: /重试/ })).toBeTruthy();
   });
 
@@ -549,12 +550,12 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
 
     const latestLine = screen.getByTestId('rate-limited-error-line');
     expect(latestLine.textContent).toContain('模型服务商限流，稍后重试');
-    expect(latestLine.textContent).toContain('连续 2 次都是这个原因。');
+    expect(latestLine.textContent).toContain('同样的问题已连续出现 2 次。');
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('真实中文限流串经 classifyAgentError + projectTurns + AgentErrorPresentation：连续 5 次渲染 4 行灰字 + 1 行带「连续 5 次都是这个原因。」的重试灰字行，单次失败字节级不变', () => {
+  it('真实中文限流串经 classifyAgentError + projectTurns + AgentErrorPresentation：连续 5 次渲染 4 行灰字 + 1 行带「同样的问题已连续出现 5 次。」的重试灰字行，单次失败字节级不变', () => {
     const chinesePhrases = [
       '您的账户已达到速率限制，请您控制请求频率',
       '请求过于频繁',
@@ -627,7 +628,7 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(retryLines).toHaveLength(1);
     expect(retryLines[0].textContent).toContain('模型服务商限流，稍后重试');
     expect(retryLines[0].textContent).toContain('重试');
-    expect(retryLines[0].textContent).toContain('连续 5 次都是这个原因。');
+    expect(retryLines[0].textContent).toContain('同样的问题已连续出现 5 次。');
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -667,7 +668,7 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     for (let poll = 0; poll < 23; poll += 1) view.rerender(renderProjection());
     expect(screen.getAllByTestId('agent-error-muted-line')).toHaveLength(2);
     expect(screen.getAllByTestId('rate-limited-error-line')).toHaveLength(1);
-    expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('连续 3 次都是这个原因。');
+    expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('同样的问题已连续出现 3 次。');
     expect(screen.getByTestId('rate-limited-error-line').textContent).toContain('模型服务商限流，稍后重试');
     expect(screen.queryByRole('alert')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -718,6 +719,9 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
   it('灰字行与连续次数句的 en 词条齐全', () => {
     expect(en.agentError.mutedLine).toBe('No reply · {reason}');
     expect(en.agentError.repeat.noRetry).toContain('{n}');
+    // 给下一步、不怪用户（N-FIX-AGENT-ERROR-CARD-STICKS-TO-LATER-TURNS）
+    expect(en.agentError.repeat.noRetry).toContain('Switch to another model');
+    expect(en.agentError.repeat.noRetry).not.toMatch(/will not fix|won't fix/);
     expect(en.agentError.repeat.retryable).not.toContain('resending will not fix');
     expect(en.agentError.shortReasons.auth).toBe('account authorization failed');
     expect(en.agentError.categories.auth.suggestion).toBe('The key may be wrong or expired, or the quota may be used up.');

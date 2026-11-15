@@ -1,7 +1,7 @@
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
-import { forgetBrowserTakeoverCapExpired, noteBrowserHumanReleased, WAITING_HUMAN_MODEL_GUIDANCE } from './browserHumanTakeoverWait';
+import { forgetBrowserTakeoverCapExpired, noteBrowserHumanReleased, waitingHumanModelGuidance } from './browserHumanTakeoverWait';
 
 interface ActiveOperation {
   subject: SurfaceGrantSubjectV1;
@@ -15,6 +15,7 @@ interface ActiveOperation {
 interface SessionInterruptState {
   operations: Map<string, ActiveOperation>;
   cleanup: Set<() => void | Promise<void>>;
+  runEndedDuringTakeover?: boolean;
 }
 
 export interface SurfaceOperationInterruptHandle {
@@ -38,7 +39,7 @@ export class SurfaceInterruptService {
     if (session.state !== 'running') {
       throw new SurfaceExecutionRuntimeError({
         code: session.state === 'stopping' ? 'SURFACE_USER_ABORTED' : 'SURFACE_SESSION_BUSY',
-        message: `Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
+        message: `Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${waitingHumanModelGuidance(session.surface)}` : ''),
         phase: 'prepare',
         retryable: session.state === 'paused' || session.state === 'waiting_human',
         userActionRequired: session.state === 'waiting_human',
@@ -102,6 +103,18 @@ export class SurfaceInterruptService {
     const state = this.stateFor(subject.sessionId);
     state.cleanup.add(cleanup);
     return () => state.cleanup.delete(cleanup);
+  }
+
+  /** Capture run-end ownership before cancelling takeover changes the session state. */
+  prepareRunEnd(subject: SurfaceGrantSubjectV1): void {
+    const session = this.sessions.requireOwned(subject.sessionId, subject);
+    this.stateFor(subject.sessionId).runEndedDuringTakeover =
+      session.surface === 'browser' && session.state === 'waiting_human';
+  }
+
+  shouldParkAfterRunEnd(subject: SurfaceGrantSubjectV1): boolean {
+    this.sessions.requireOwned(subject.sessionId, subject);
+    return this.stateFor(subject.sessionId).runEndedDuringTakeover === true;
   }
 
   async pause(subject: SurfaceGrantSubjectV1): Promise<void> {

@@ -108,6 +108,23 @@ interface ToolStepVerbBundle {
   };
   /** 登记表外仍未翻译的全大写码（^[A-Z][A-Z0-9_]*$）的兜底句；数字退出码 / HTTP nnn 不走这里 */
   rawFailureCodeFallback: string;
+  /** delegate_session 被拒的小写码（metadata.code）→ 一句人话；不含码名，说明没有交接出去 */
+  delegationRejectionCodes: {
+    target_unavailable: string;
+    not_delegatable: string;
+    self_route: string;
+    candidate_set_stale: string;
+    idempotency_conflict: string;
+    workspace_boundary: string;
+    write_conflict: string;
+    unauthorized_workspace: string;
+    target_busy: string;
+    target_permission_mode: string;
+    untrusted_workspace: string;
+    ambiguous: string;
+    invalid_call: string;
+  };
+  delegationRejectionFallback: string;
   /**
    * 停车审批自动收口句（键 = PARKED_APPROVAL_CLOSURE_SENTENCES 的名字；zh 直接用原句，保证字节一致）。
    * 按 Record<共享键联合, string> 收口：host 新增收口原因而任一语言表漏配时，这里直接编译红。
@@ -139,9 +156,9 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     'pending-approval': {
       delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '请求把任务交给{target}', create_new: '请求新建对话并交给它', correct: '请求调整对{target}的委托', stop: '请求停止对{target}的委托', resume: '请求恢复对{target}的委托', unknown: '请求处理一项跨对话委托', reused: '已送达过，未重复发送' },
       listSessionCandidates: '请求查找可委托的对话',
-      declared: { tmeetMeetingListUpcoming: '请求查询待开始/进行中的会议', tmeetMeetingListEnded: '请求查询近 30 天已结束的会议', tmeetMeetingCreate: '请求创建会议', tmeetMeetingSearch: '请求搜索会议' },
+      declared: { tmeetMeetingListUpcoming: '请求查询待开始/进行中的会议', tmeetMeetingListEnded: '请求查询近 30 天已结束的会议', tmeetMeetingCreate: '请求创建会议', tmeetMeetingSearch: '请求搜索会议', tmeetRecordList: '请求查腾讯会议录制', tmeetRecordRead: '请求读腾讯会议转写和纪要', feishuMinutesSearch: '请求搜飞书妙记', feishuMinutesRead: '请求读一条飞书妙记', meetingRecords: '请求查会议记录' },
       read: '请求读取 {target}', readFallback: '请求读取一个文件', write: '请求写入 {target}', writeFallback: '请求写入一个文件',
-      edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行一条命令',
+      edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行命令',
       search: '请求搜索 {query}', searchFallback: '请求搜索内容', listDir: '请求查看 {target} 目录', listDirFallback: '请求查看目录',
       webSearch: '请求联网搜索 {query}', webSearchFallback: '请求联网搜索', webFetch: '请求打开 {target}', webFetchFallback: '请求打开网页',
       mcpTool: '请求调用 {server}', channelMessage: '请求在{channel}发消息', subagentSpawn: '请求启动代理 — {description}', subagentSpawnFallback: '请求启动代理',
@@ -154,7 +171,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     running: {
       delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '正在把任务交给{target}', create_new: '正在新建对话并交给它', correct: '正在调整对{target}的委托', stop: '正在停止对{target}的委托', resume: '正在恢复对{target}的委托', unknown: '正在处理一项跨对话委托', reused: '已送达过，未重复发送' },
       listSessionCandidates: '正在查找可委托的对话',
-      declared: { tmeetMeetingListUpcoming: '正在查询待开始/进行中的会议', tmeetMeetingListEnded: '正在查询近 30 天已结束的会议', tmeetMeetingCreate: '正在创建会议', tmeetMeetingSearch: '正在搜索会议' },
+      declared: { tmeetMeetingListUpcoming: '正在查询待开始/进行中的会议', tmeetMeetingListEnded: '正在查询近 30 天已结束的会议', tmeetMeetingCreate: '正在创建会议', tmeetMeetingSearch: '正在搜索会议', tmeetRecordList: '正在查腾讯会议录制', tmeetRecordRead: '正在读腾讯会议转写和纪要', feishuMinutesSearch: '正在搜飞书妙记', feishuMinutesRead: '正在读一条飞书妙记', meetingRecords: '正在查会议记录' },
       read: '正在读取 {target}', readFallback: '正在读取文件', write: '正在写入 {target}', writeFallback: '正在写入文件',
       edit: '正在编辑 {target}', editFallback: '正在编辑文件', bash: '正在运行命令 {command}', bashFallback: '正在运行命令',
       search: '正在搜索 {query}', searchFallback: '正在搜索内容', listDir: '正在查看 {target} 目录', listDirFallback: '正在查看目录',
@@ -169,7 +186,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     failed: {
       delegateSession: { target: '「{target}」', targetFallback: '另一个对话', delegate_existing: '把任务交给{target}未成功', create_new: '新建对话并委托未成功', correct: '调整对{target}的委托未成功', stop: '停止对{target}的委托未成功', resume: '恢复对{target}的委托未成功', unknown: '处理跨对话委托未成功', reused: '已送达过，未重复发送' },
       listSessionCandidates: '查找可委托的对话未成功',
-      declared: { tmeetMeetingListUpcoming: '查询待开始/进行中的会议未成功', tmeetMeetingListEnded: '查询近 30 天已结束的会议未成功', tmeetMeetingCreate: '创建会议未成功', tmeetMeetingSearch: '搜索会议未成功' },
+      declared: { tmeetMeetingListUpcoming: '查询待开始/进行中的会议未成功', tmeetMeetingListEnded: '查询近 30 天已结束的会议未成功', tmeetMeetingCreate: '创建会议未成功', tmeetMeetingSearch: '搜索会议未成功', tmeetRecordList: '查腾讯会议录制未成功', tmeetRecordRead: '读腾讯会议转写和纪要未成功', feishuMinutesSearch: '搜飞书妙记未成功', feishuMinutesRead: '读一条飞书妙记未成功', meetingRecords: '查会议记录未成功' },
       read: '读取 {target} 未成功', readFallback: '读取文件未成功', write: '写入 {target} 未成功', writeFallback: '写入文件未成功',
       edit: '编辑 {target} 未成功', editFallback: '编辑文件未成功', bash: '运行命令 {command} 未成功', bashFallback: '运行命令未成功',
       search: '搜索 {query} 未成功', searchFallback: '搜索内容未成功', listDir: '查看 {target} 目录未成功', listDirFallback: '查看目录未成功',
@@ -214,11 +231,27 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   notRunPrefix: '未执行',
   rawFailureCodes: {
-    ENOENT: '文件或目录不存在，请确认路径是否正确',
+    ENOENT: '找不到这个文件或目录，请确认路径是否正确',
     INVALID_ARGS: '参数不正确，请换个说法重新描述需求',
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
+  delegationRejectionCodes: {
+    target_unavailable: 'Neo 找不到要交接的那个对话，所以没有交接出去。请确认对话还在后重试。',
+    not_delegatable: '那个对话现在不能接收交接，所以没有交接出去。请换一个对话再试。',
+    self_route: '不能把任务交接给当前这个对话本身，所以没有交接出去。请指定另一个对话。',
+    candidate_set_stale: '可选的对话列表已经变化，所以没有交接出去。请重新说一次要交给哪个对话。',
+    idempotency_conflict: '同一次交接的内容前后不一致，所以没有交接出去。请重新发起一次。',
+    workspace_boundary: '那个对话在另一个工作目录，超出了这次允许的范围，所以没有交接出去。',
+    write_conflict: '那个对话正在改同一批文件，为避免冲突没有交接出去。请等它完成后再试。',
+    unauthorized_workspace: '你还没有授权访问那个对话所在的目录，所以没有交接出去。',
+    target_busy: '那个对话正在处理别的任务，所以没有交接出去。请等它忙完后再试。',
+    target_permission_mode: '那个对话的权限模式不允许接收交接，所以没有交接出去。',
+    untrusted_workspace: '那个对话所在的目录还没有被信任，所以没有交接出去。请先信任该目录。',
+    ambiguous: 'Neo 分不清你指的是哪个对话，所以没有交接出去。请说出对话名称后再试。',
+    invalid_call: 'Neo 这次没能发出交接，所以没有交接出去。请稍后再试一次。',
+  },
+  delegationRejectionFallback: '这次交接没有成功，没有交接出去。请稍后再试，或展开查看详情。',
   parkedClosure: { ...PARKED_APPROVAL_CLOSURE_SENTENCES },
   agentFailureReasons: {
     timeout: '处理时间超过了限制',
@@ -255,19 +288,19 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     'pending-approval': {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Request to send the task to {target}', create_new: 'Request to create a conversation and send it the task', correct: 'Request to adjust the delegation to {target}', stop: 'Request to stop the delegation to {target}', resume: 'Request to resume the delegation to {target}', unknown: 'Request to handle a cross-conversation delegation', reused: 'Already delivered; not sent again' },
       listSessionCandidates: 'Request to find conversations for delegation',
-      declared: { tmeetMeetingListUpcoming: 'Request to check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Request to check meetings ended in the last 30 days', tmeetMeetingCreate: 'Request to create a meeting', tmeetMeetingSearch: 'Request to search meetings' },
+      declared: { tmeetMeetingListUpcoming: 'Request to check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Request to check meetings ended in the last 30 days', tmeetMeetingCreate: 'Request to create a meeting', tmeetMeetingSearch: 'Request to search meetings', tmeetRecordList: 'Request to check Tencent Meeting recordings', tmeetRecordRead: 'Request to read a Tencent Meeting transcript', feishuMinutesSearch: 'Request to search Feishu Minutes', feishuMinutesRead: 'Request to read a Feishu Minutes record', meetingRecords: 'Request to check meeting records' },
       read: 'Request to read {target}', readFallback: 'Request to read a file', write: 'Request to write {target}', writeFallback: 'Request to write a file', edit: 'Request to edit {target}', editFallback: 'Request to edit a file', bash: 'Request to run command {command}', bashFallback: 'Request to run a command', search: 'Request to search for {query}', searchFallback: 'Request to search content', listDir: 'Request to view the {target} directory', listDirFallback: 'Request to view a directory', webSearch: 'Request to search the web for {query}', webSearchFallback: 'Request to search the web', webFetch: 'Request to open {target}', webFetchFallback: 'Request to open a web page', mcpTool: 'Request to call {server}', channelMessage: 'Request to send a message in {channel}', subagentSpawn: 'Request to start an agent — {description}', subagentSpawnFallback: 'Request to start an agent', subagentMessage: 'Request to message an agent', agentConversation: 'Request to contact {name}', agentConversationFallback: 'Request to contact an agent', delegateTask: 'Request to start background task: {description}', delegateTaskFallback: 'Request to start a background task', taskStatus: 'Request to check background task progress', steerTask: 'Request to adjust a background task', cancelTask: 'Request to cancel a background task', todo: 'Request to update the to-do list', planUpdate: 'Request to update the plan', planRead: 'Request to view the plan', taskManager: 'Request to update tasks', skill: 'Request to use the {skill} skill', skillFallback: 'Request to use a skill', screenshot: 'Request to take a screenshot', askUser: 'Request to ask you a question', memoryStore: 'Request to save a memory', memorySearch: 'Request to search memory', toolSearch: 'Request to look up available tools', fallbackNeutral: 'Request to run a tool operation', connectorFallbackAction: { queryStatus: 'Request to check connection status', queryCollections: 'Request to list available collections', queryItems: 'Request to query items', query: 'Request to query information', create: 'Request to create content', update: 'Request to update content', delete: 'Request to delete content' }, group: { explored: 'Request to inspect content {count} times', ran: 'Request to run {count} commands', searchedWeb: 'Request to search the web {count} times', mcp: 'Request to call tools {count} times', subagent: 'Request to dispatch {count} agent tasks', planned: 'Request to update tasks {count} times', skill: 'Request to use skills {count} times', used: 'Request to run {count} steps' },
     },
     running: {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Sending the task to {target}', create_new: 'Creating a conversation and sending it the task', correct: 'Adjusting the delegation to {target}', stop: 'Stopping the delegation to {target}', resume: 'Resuming the delegation to {target}', unknown: 'Handling a cross-conversation delegation', reused: 'Already delivered; not sent again' },
       listSessionCandidates: 'Finding conversations for delegation',
-      declared: { tmeetMeetingListUpcoming: 'Checking upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checking meetings ended in the last 30 days', tmeetMeetingCreate: 'Creating a meeting', tmeetMeetingSearch: 'Searching meetings' },
+      declared: { tmeetMeetingListUpcoming: 'Checking upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checking meetings ended in the last 30 days', tmeetMeetingCreate: 'Creating a meeting', tmeetMeetingSearch: 'Searching meetings', tmeetRecordList: 'Checking Tencent Meeting recordings', tmeetRecordRead: 'Reading a Tencent Meeting transcript', feishuMinutesSearch: 'Searching Feishu Minutes', feishuMinutesRead: 'Reading a Feishu Minutes record', meetingRecords: 'Checking meeting records' },
       read: 'Reading {target}', readFallback: 'Reading a file', write: 'Writing {target}', writeFallback: 'Writing a file', edit: 'Editing {target}', editFallback: 'Editing a file', bash: 'Running command {command}', bashFallback: 'Running a command', search: 'Searching for {query}', searchFallback: 'Searching content', listDir: 'Viewing the {target} directory', listDirFallback: 'Viewing a directory', webSearch: 'Searching the web for {query}', webSearchFallback: 'Searching the web', webFetch: 'Opening {target}', webFetchFallback: 'Opening a web page', mcpTool: 'Calling {server}', channelMessage: 'Sending a message in {channel}', subagentSpawn: 'Starting an agent — {description}', subagentSpawnFallback: 'Starting an agent', subagentMessage: 'Messaging an agent', agentConversation: 'Talking to {name}', agentConversationFallback: 'Talking to an agent', delegateTask: 'Starting background task: {description}', delegateTaskFallback: 'Starting a background task', taskStatus: 'Checking background task progress', steerTask: 'Adjusting a background task', cancelTask: 'Cancelling a background task', todo: 'Updating the to-do list', planUpdate: 'Updating the plan', planRead: 'Viewing the plan', taskManager: 'Updating tasks', skill: 'Using the {skill} skill', skillFallback: 'Using a skill', screenshot: 'Taking a screenshot', askUser: 'Waiting for your answer', memoryStore: 'Saving a memory', memorySearch: 'Searching memory', toolSearch: 'Looking up available tools', fallbackNeutral: 'Running a tool operation', connectorFallbackAction: { queryStatus: 'Checking connection status', queryCollections: 'Listing available collections', queryItems: 'Querying items', query: 'Querying information', create: 'Creating content', update: 'Updating content', delete: 'Deleting content' }, group: { explored: 'Inspecting content {count} times', ran: 'Running {count} commands', searchedWeb: 'Searching the web {count} times', mcp: 'Calling tools {count} times', subagent: 'Dispatching {count} agent tasks', planned: 'Updating tasks {count} times', skill: 'Using skills {count} times', used: 'Running {count} steps' },
     },
     failed: {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Could not send the task to {target}', create_new: 'Could not create a conversation and delegate the task', correct: 'Could not adjust the delegation to {target}', stop: 'Could not stop the delegation to {target}', resume: 'Could not resume the delegation to {target}', unknown: 'Could not handle the cross-conversation delegation', reused: 'Already delivered; not sent again' },
       listSessionCandidates: 'Could not find conversations for delegation',
-      declared: { tmeetMeetingListUpcoming: 'Could not check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Could not check meetings ended in the last 30 days', tmeetMeetingCreate: 'Could not create a meeting', tmeetMeetingSearch: 'Could not search meetings' },
+      declared: { tmeetMeetingListUpcoming: 'Could not check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Could not check meetings ended in the last 30 days', tmeetMeetingCreate: 'Could not create a meeting', tmeetMeetingSearch: 'Could not search meetings', tmeetRecordList: 'Could not check Tencent Meeting recordings', tmeetRecordRead: 'Could not read a Tencent Meeting transcript', feishuMinutesSearch: 'Could not search Feishu Minutes', feishuMinutesRead: 'Could not read a Feishu Minutes record', meetingRecords: 'Could not check meeting records' },
       read: 'Could not read {target}', readFallback: 'Could not read a file', write: 'Could not write {target}', writeFallback: 'Could not write a file', edit: 'Could not edit {target}', editFallback: 'Could not edit a file', bash: 'Could not run command {command}', bashFallback: 'Could not run a command', search: 'Could not search for {query}', searchFallback: 'Could not search content', listDir: 'Could not view the {target} directory', listDirFallback: 'Could not view a directory', webSearch: 'Could not search the web for {query}', webSearchFallback: 'Could not search the web', webFetch: 'Could not open {target}', webFetchFallback: 'Could not open a web page', mcpTool: 'Could not call {server}', channelMessage: 'Could not send a message in {channel}', subagentSpawn: 'Could not start an agent — {description}', subagentSpawnFallback: 'Could not start an agent', subagentMessage: 'Could not message an agent', agentConversation: 'Could not contact {name}', agentConversationFallback: 'Could not contact an agent', delegateTask: 'Could not start background task: {description}', delegateTaskFallback: 'Could not start a background task', taskStatus: 'Could not check background task progress', steerTask: 'Could not adjust a background task', cancelTask: 'Could not cancel a background task', todo: 'Could not update the to-do list', planUpdate: 'Could not update the plan', planRead: 'Could not view the plan', taskManager: 'Could not update tasks', skill: 'Could not use the {skill} skill', skillFallback: 'Could not use a skill', screenshot: 'Could not take a screenshot', askUser: 'Could not ask you a question', memoryStore: 'Could not save a memory', memorySearch: 'Could not search memory', toolSearch: 'Could not look up available tools', fallbackNeutral: 'Could not run the tool operation', connectorFallbackAction: { queryStatus: 'Could not check connection status', queryCollections: 'Could not list available collections', queryItems: 'Could not query items', query: 'Could not query information', create: 'Could not create content', update: 'Could not update content', delete: 'Could not delete content' }, group: { explored: 'Could not inspect content {count} times', ran: 'Could not run {count} commands', searchedWeb: 'Could not search the web {count} times', mcp: 'Could not call tools {count} times', subagent: 'Could not dispatch {count} agent tasks', planned: 'Could not update tasks {count} times', skill: 'Could not use skills {count} times', used: 'Could not run {count} steps' },
     },
   },
@@ -283,11 +316,27 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   notRunPrefix: 'Not run',
   rawFailureCodes: {
-    ENOENT: 'That file or folder does not exist; double-check the path',
+    ENOENT: 'Could not find that file or folder; check the path',
     INVALID_ARGS: 'The request was not understood; try rephrasing it',
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
+  delegationRejectionCodes: {
+    target_unavailable: 'Neo could not find the chat to hand this to, so nothing was handed over. Check that it still exists and try again.',
+    not_delegatable: 'That chat cannot take a hand-off right now, so nothing was handed over. Pick a different chat and try again.',
+    self_route: 'A task cannot be handed to the chat it came from, so nothing was handed over. Name a different chat.',
+    candidate_set_stale: 'The list of chats you could hand over to has changed, so nothing was handed over. Say which chat you mean again.',
+    idempotency_conflict: 'The same hand-off was sent twice with different content, so nothing was handed over. Start the hand-off again.',
+    workspace_boundary: 'That chat works in a folder outside what is allowed here, so nothing was handed over.',
+    write_conflict: 'That chat is already changing the same files, so nothing was handed over to avoid a clash. Try again once it finishes.',
+    unauthorized_workspace: 'You have not allowed access to the folder that chat works in, so nothing was handed over.',
+    target_busy: 'That chat is busy with another task, so nothing was handed over. Try again when it is free.',
+    target_permission_mode: 'That chat is in a permission mode that cannot take hand-offs, so nothing was handed over.',
+    untrusted_workspace: 'The folder that chat works in is not trusted yet, so nothing was handed over. Trust the folder first, then try again.',
+    ambiguous: 'Neo could not tell which chat you meant, so nothing was handed over. Name the chat and try again.',
+    invalid_call: 'Neo could not send this hand-off, so nothing was handed over. Try again in a moment.',
+  },
+  delegationRejectionFallback: 'This hand-off did not go through, so nothing was handed over. Try again in a moment, or expand for details.',
   parkedClosure: {
     expiredAfterRestart24h: 'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.',
     workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",

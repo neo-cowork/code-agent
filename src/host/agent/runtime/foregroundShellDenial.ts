@@ -7,8 +7,10 @@
 // ① warn 日志带可区分原因（工具不在本轮工具面 / 是否存在用户 Bash 规则）；
 // ② 给模型一句不再死路重试的指引；③ 超过重试上限时给用户一句人话终态。
 
+import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
 import type { ToolCall } from '../../../shared/contract';
 import { formatForegroundShellDenialFinalMessage } from '../../../shared/i18n/foregroundShellDenial';
+import { extractUserRequest } from '../../../shared/utils/turnScaffold';
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { resolveEffectivePolicyRules } from '../../permissions/runPolicySnapshot';
 import { createLogger } from '../../services/infra/logger';
@@ -35,12 +37,9 @@ export function describeDeniedShellCalls(
     sessionId: ctx.sessionId,
     userBashRules: userBashRules.map((rule) => rule.id),
   });
-  const locale = detectMessageLanguage(ctx.turn?.runUserPrompt ?? '') ?? readUiLanguage();
+  const locale = detectMessageLanguage(extractUserRequest(ctx.turn?.runUserPrompt ?? '')) ?? readUiLanguage();
   return {
-    guidance: 'Bash is not part of this turn\'s tool face, so no approval prompt can be raised for it here. '
-      + 'Do not retry Bash. Tell the user plainly that shell commands cannot run directly in this turn '
-      + '(the command was NOT run), and offer to hand it to a background agent with spawn_agent. '
-      + 'Reply in the same language the user is writing in this turn.',
+    guidance: getInabilityReplyGuidance(ctx.turn?.runUserPrompt ?? '', locale),
     finalMessage: formatForegroundShellDenialFinalMessage(locale),
   };
 }

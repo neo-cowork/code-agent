@@ -454,6 +454,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     });
 
     try {
+      // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: the adapter binds a run to the window its
+      // Surface session owns — for a takeover-park claim that window's pool key differs
+      // from this identity's own key, so executeProvider below must run on (and retarget
+      // browserService to) the service the adapter hands over, not the own-key one.
       const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
         const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
         if (loginWallStop) return loginWallStop;

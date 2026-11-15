@@ -57,6 +57,10 @@ function buildEvalSafeShellEnv(
   refill?: EvalSafeShellEnvRefill,
 ): EvalSafeShellEnvResult {
   const env = createSanitizedEnv(extra);
+  // Desktop shell bridge credentials belong exclusively to the host process;
+  // strip unconditionally so neither secureref backfill nor allowed_secret_vars can expose them.
+  delete env.CODE_AGENT_ENV_ASSIST_BRIDGE_URL;
+  delete env.CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN;
   if (process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined) {
     delete env.CODE_AGENT_EVAL_REAL_ROOT;
     delete env.AUTO_TEST_API_KEY;

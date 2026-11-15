@@ -427,15 +427,19 @@ class NotificationService implements Disposable {
     // 已知局限：意图声明后没有「壳重新接上」的复位事件，重开后 needs_input 会
     // renderer toast + 原生通知双弹（见证据档）；放着不修是刻意的——漏报比重复打扰贵。
     if (getDaemonQuitIntent() === 'background') {
-      try {
-        this.nativeNotificationSender({
-          id,
-          sessionId: data.sessionId,
-          title: '有事项需要你确认',
-          body: '后台任务在等你确认，打开 Agent Neo 处理。',
-        });
-      } catch (error) {
-        logger.warn('Native needs-input notification failed', { error });
+      if (this.isDryRun()) {
+        logger.info('Native needs-input notification skipped', { reason: 'dry-run' });
+      } else {
+        try {
+          this.nativeNotificationSender({
+            id,
+            sessionId: data.sessionId,
+            title: '有事项需要你确认',
+            body: '后台任务在等你确认，打开 Agent Neo 处理。',
+          });
+        } catch (error) {
+          logger.warn('Native needs-input notification failed', { error });
+        }
       }
     }
     logger.info('Needs-input notification sent', { title: data.title });

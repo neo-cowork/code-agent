@@ -380,7 +380,7 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
     }
   }, 30000);
 
-  it('没有 displayName 且命令是沙箱包装时，标题回落到 PTY <id8>，不外露包装命令', async () => {
+  it('没有 displayName 且命令是沙箱包装时，标题使用内部可执行名，不外露包装命令', async () => {
     const { BackgroundTaskLedger, installBackgroundTaskEventAdapters, shutdownEventBus } = ledgerModules!;
     const ledger = new BackgroundTaskLedger();
     const detach = installBackgroundTaskEventAdapters(ledger);
@@ -393,7 +393,7 @@ describe.skipIf(!canRunRealPty)('PTY 会话整树退出证明（真 node-pty）'
       openedPids.push(ptyExecutor!.getPtySession(created.sessionId!)!.pty.pid);
       const id = `pty:${created.sessionId}`;
       await waitFor(() => ledger.getTask(id)?.status === 'completed');
-      expect(ledger.getTask(id)?.title).toBe(`PTY ${created.sessionId!.slice(0, 8)}`);
+      expect(ledger.getTask(id)?.title).toBe('sh');
       expect(ledger.drainNotifications('session-pty-name-guard')[0]?.message).not.toContain('sandbox-exec');
     } finally {
       detach();

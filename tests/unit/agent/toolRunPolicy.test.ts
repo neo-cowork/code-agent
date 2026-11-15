@@ -417,7 +417,7 @@ describe('toolRunPolicy', () => {
     // ai-review PR#2009：无人值守时重试指引不许再把模型引回已移除的 AskUserQuestion。
     it('无人值守时 deniedToolRetryGuidance 不再声称 AskUserQuestion 可用', () => {
       expect(deniedToolRetryGuidance({ unattendedTurn: true } as any))
-        .toContain('state the blocker in your final text');
+        .toContain('state the missing input in your final text');
       expect(deniedToolRetryGuidance({ unattendedTurn: true } as any))
         .not.toContain('AskUserQuestion remains available');
       // 有人值守且无显式 deny：指引保持旧行为。

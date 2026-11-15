@@ -46,6 +46,7 @@ interface PtySessionState {
   rows: number;
   inputBuffer: string[];
   sandboxed?: boolean;
+  displayCommand?: string;
   displayName?: string;
   onExit?: () => void;
   stoppedByRequest?: boolean;
@@ -77,6 +78,7 @@ export interface PtySessionInfo {
   cols: number;
   rows: number;
   sandboxed?: boolean;
+  displayCommand?: string;
   displayName?: string;
 }
 
@@ -138,6 +140,7 @@ function toPtySessionInfo(session: PtySessionState): PtySessionInfo {
     cols: session.cols,
     rows: session.rows,
     sandboxed: session.sandboxed,
+    ...(session.displayCommand ? { displayCommand: session.displayCommand } : {}),
     ...(session.displayName ? { displayName: session.displayName } : {}),
   };
 }
@@ -186,6 +189,8 @@ export function createPtySession(options: {
   sessionId?: string;
   toolCallId?: string;
   sandboxed?: boolean;
+  /** Unwrapped command before sandbox wrapping, preserved for task details and recovery. */
+  displayCommand?: string;
   /** Human-readable task name shown in panels/notifications (never the sandbox-wrapped command). */
   displayName?: string;
   onExit?: () => void;
@@ -262,6 +267,7 @@ export function createPtySession(options: {
       rows,
       inputBuffer: [],
       sandboxed: options.sandboxed,
+      displayCommand: options.displayCommand,
       displayName: options.displayName,
       onExit: options.onExit,
     };

@@ -250,6 +250,8 @@ export interface AppState {
 
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
+  /** 资料库打开时直接进「会议」视图；meetingId 为 null 是会议列表（N-MEETING-PAGE） */
+  libraryMeetingTarget: { meetingId: string | null } | null;
 
   /** 当前全屏专家详情页；关闭后回到能力中心的专家 tab。 */
   expertDetailRoleId: string | null;
@@ -300,6 +302,7 @@ export interface AppState {
 
   // Model Config
   modelConfig: ModelConfig;
+  settingsLoaded: boolean;
 
   // Workspace State
   workingDirectory: string | null;
@@ -391,6 +394,8 @@ export interface AppState {
   setShowDAGPanel: (show: boolean) => void;
   setShowLab: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
+  openMeetingPage: (meetingId?: string | null) => void;
+  clearLibraryMeetingTarget: () => void;
   openExpertRoleDetail: (roleId: string) => void;
   openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
   openContentPreview: (input: ContentPreviewInput, options?: OpenWorkbenchTabOptions) => void;
