@@ -376,6 +376,17 @@ const CATALOG_TEXT_EN_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ['视觉', 'Visual'],
   ['海报', 'Posters'],
   ['界面', 'Interfaces'],
+  // ---- 模型目录（src/shared/model-catalog.json）里带中文后缀的模型名 ----
+  ['DeepSeek V4 Pro (推理)', 'DeepSeek V4 Pro (Reasoning)'],
+  ['DeepSeek V4 Flash（兼容名）', 'DeepSeek V4 Flash (compat alias)'],
+  ['DeepSeek Chat（旧版）', 'DeepSeek Chat (legacy)'],
+  ['DeepSeek Reasoner（旧版）', 'DeepSeek Reasoner (legacy)'],
+  ['GLM-4.7 Flash (免费)', 'GLM-4.7 Flash (Free)'],
+  ['GLM-4 Flash (免费)', 'GLM-4 Flash (Free)'],
+  ['GLM-4.6V (视觉)', 'GLM-4.6V (Vision)'],
+  ['Qwen VL Max (视觉)', 'Qwen VL Max (Vision)'],
+  ['Qwen3.5 9B 原版', 'Qwen3.5 9B Original'],
+  ['Qwen3.5 9B Qwopus (agent 调优)', 'Qwen3.5 9B Qwopus (agent-tuned)'],
 ];
 
 export const CATALOG_TEXT_EN: ReadonlyMap<string, string> = new Map(CATALOG_TEXT_EN_ENTRIES);

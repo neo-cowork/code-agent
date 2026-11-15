@@ -17,6 +17,7 @@ import {
   SKILL_ROLE_BUNDLES,
 } from '../../../src/shared/constants/skillCatalog';
 import { TEAM_RECIPES } from '../../../src/shared/constants/teamRecipeCatalog';
+import modelCatalog from '../../../src/shared/model-catalog.json';
 
 const HAN = /[㐀-䶿一-鿿豈-﫿]/u;
 
@@ -109,5 +110,24 @@ describe('能力中心目录数据跟随界面语言（FB-1301）', () => {
       }
     });
     expect(localizeCatalogObject(TEAM_RECIPES, 'zh')).toBe(TEAM_RECIPES);
+  });
+
+  it('模型目录里带中文后缀的模型名：英文界面不含中文和中文标点，中文界面一字不动', () => {
+    const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/u;
+    const labels = new Set<string>();
+    const collect = (value: unknown, key: string) => {
+      if (typeof value === 'string') {
+        if (key === 'label' && CJK.test(value)) labels.add(value);
+      } else if (value && typeof value === 'object') {
+        for (const [childKey, child] of Object.entries(value)) collect(child, childKey);
+      }
+    };
+    collect(modelCatalog, '');
+    expect(labels.has('DeepSeek V4 Pro (推理)')).toBe(true);
+    for (const label of labels) {
+      expect(CJK.test(translateCatalogText(label, 'en')), label).toBe(false);
+      expect(translateCatalogText(label, 'zh')).toBe(label);
+    }
+    expect(translateCatalogText('DeepSeek V4 Pro (推理)', 'en')).toBe('DeepSeek V4 Pro (Reasoning)');
   });
 });

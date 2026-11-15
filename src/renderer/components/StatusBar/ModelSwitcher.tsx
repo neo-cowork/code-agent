@@ -36,6 +36,7 @@ import { toast } from '../../hooks/useToast';
 import { BadgeCheck, Sparkles, Code2, Settings, Star } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { interpolate } from '../../i18n/interpolate';
+import { translateCatalogText } from '../../utils/catalogText';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
@@ -669,9 +670,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
   const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
   const switchedLabel = shown.switchedFrom
-    ? interpolate(msc.switchedSuffix, { label: getRuntimeModelLabel(shown.model, shown.provider, modelSettings) })
+    ? interpolate(msc.switchedSuffix, { label: translateCatalogText(getRuntimeModelLabel(shown.model, shown.provider, modelSettings), language) })
     : null;
-  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? msc.auto : getRuntimeModelLabel(displayModel, displayProvider, modelSettings));
+  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? msc.auto : translateCatalogText(getRuntimeModelLabel(displayModel, displayProvider, modelSettings), language));
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -973,7 +974,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-medium">{opt.label}</span>
+                                <span className="font-medium">{translateCatalogText(opt.label, language)}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
                                     className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"
