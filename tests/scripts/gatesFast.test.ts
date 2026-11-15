@@ -5,7 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import policy from '../../scripts/lib/gates-fast-policy.json';
 import {
-  assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
+  assertExactFiles, selectTests, validateFiles, planVitest, validateReport, renderReceipt, digest,
   validateBudgetPolicy, validateGateBudgetCoverage, scaleBudgetPolicy, extractGateIds, commandDeadline, budgetFailure,
   changedInputs, summarizeVitestFailures,
 } from '../../scripts/lib/gates-fast-contract.mjs';
@@ -35,11 +35,37 @@ describe('fast gate fail-closed contracts', () => {
     validateFiles(root, list16, policy.maxFiles);
     const list17 = [...list16, 'tests/services/cloudConfigService.test.ts'];
     expect(list17).toHaveLength(17);
-    expect(validateFiles(root, list17, policy.maxFiles, policy.deferMaxFiles)).toEqual({
-      reason: 'over-cap', selected: 17, maxFiles: 16, files: list17,
-    });
-    // The execution manifest still has the strict cap; only the input gate opts into deferral.
+    expect(planVitest(root, list16, policy)).toEqual({ mode: 'all-local', selected: 16, cap: 16, localFiles: list16, deferredFiles: [] });
+    // list17 = 3 CI-covered baseline files + 14 uncovered: 3 defer, 14 run locally.
+    expect(planVitest(root, list17, policy)).toMatchObject({ mode: 'deferred', selected: 17, deferredFiles: policy.baseline });
+    // The all-uncovered >16 rejection runs end to end in gatesFastRuntime.test.ts (17 tests/wrappers files).
+    // The execution manifest still has the strict cap.
     expect(() => validateFiles(root, list17, policy.maxFiles)).toThrow('never truncate');
+  });
+  it('plans over-cap selections: only PR-CI-covered files defer, the rest stay local', () => {
+    const covered = Array.from({ length: 15 }, (_, i) => `tests/unit/planned${i}.test.ts`);
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-plan-contract-')));
+    try {
+      const make = (file: string) => { fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true }); fs.writeFileSync(path.join(dir, file), ''); return file; };
+      const wrappers = ['tests/wrappers/a.test.ts', 'tests/wrappers/b.test.ts', 'tests/wrappers/c.test.ts'].map(make);
+      covered.forEach(make);
+      const notRun = make(policy.ciNotRunExact[0]);
+      const all = [...wrappers, ...covered, notRun];
+      expect(planVitest(dir, all, policy)).toEqual({ mode: 'deferred', selected: 19, cap: 16, localFiles: [...wrappers, notRun], deferredFiles: covered });
+      const onlyCovered = [...covered, make('tests/scripts/p.test.ts'), make('tests/security/p.test.ts')];
+      expect(planVitest(dir, onlyCovered, policy)).toMatchObject({ mode: 'deferred', selected: 17, localFiles: [], deferredFiles: onlyCovered });
+      const many = Array.from({ length: 201 }, (_, i) => make(`tests/unit/many${i}.test.ts`));
+      expect(() => planVitest(dir, many, policy)).toThrow('FAIL: selected 201 files; allowed 1..200; never truncate');
+      expect(planVitest(dir, many.slice(0, 200), policy).deferredFiles).toHaveLength(200);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('policy CI-coverage lists match what swarm-ci.yml really runs', () => {
+    const yml = fs.readFileSync(path.join(root, '.github/workflows/swarm-ci.yml'), 'utf8');
+    const runLines = yml.split('\n').filter((line) => line.includes('vitest run'));
+    for (const prefix of policy.ciCoveredPrefixes) {
+      expect(runLines.some((line) => line.includes(prefix.replace(/\/$/, ''))), prefix).toBe(true);
+    }
+    for (const file of policy.ciNotRunExact) expect(yml, file).toContain(`--exclude '${file}'`);
   });
   it('keeps zero, invalid, missing, excluded and escaping paths red even with deferral enabled', () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-path-contract-')));
@@ -48,7 +74,7 @@ describe('fast gate fail-closed contracts', () => {
       fs.writeFileSync(path.join(dir, 'tests/good.test.ts'), '');
       fs.symlinkSync(path.join(root, policy.baseline[0]), path.join(dir, 'tests/escape.test.ts'));
       const prefix = Array.from({ length: 16 }, () => 'tests/good.test.ts');
-      expect(() => validateFiles(dir, [], policy.maxFiles, policy.deferMaxFiles))
+      expect(() => validateFiles(dir, [], policy.deferMaxFiles))
         .toThrow('FAIL: selected 0 files; allowed 1..200; never truncate');
       for (const [file, error] of [
         ['tests/*.test.ts', 'not an exact repository test path'],
@@ -56,8 +82,8 @@ describe('fast gate fail-closed contracts', () => {
         ['tests/missing.test.ts', 'selected test missing or unreadable'],
         ['tests/smoke/excluded.test.ts', 'test path is excluded from fast execution'],
         ['tests/escape.test.ts', 'test outside repository'],
-      ]) expect(() => validateFiles(dir, [...prefix, file], policy.maxFiles, policy.deferMaxFiles)).toThrow(error);
-      expect(validateFiles(dir, Array(200).fill(prefix[0]), policy.maxFiles, policy.deferMaxFiles)?.selected).toBe(200);
+      ]) expect(() => validateFiles(dir, [...prefix, file], policy.deferMaxFiles)).toThrow(error);
+      validateFiles(dir, Array(200).fill(prefix[0]), policy.deferMaxFiles);
       expect(() => selectTests(policy, ['src/unregistered.ts'], [])).toThrow('unregistered PR paths');
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
@@ -245,7 +271,7 @@ describe('fast gate fail-closed contracts', () => {
     ]);
     expect(renderReceipt({ ...receipt, status: 'failed', error: 'budget exceeded' })[0]).toContain('FAILED: budget exceeded');
     const deferred = JSON.parse(JSON.stringify({ ...receipt, vitestDeferred: {
-      reason: 'over-cap', selected: 17, maxFiles: 16, files: ['tests/example.test.ts'],
+      reason: 'over-cap', selected: 17, maxFiles: 16, files: ['tests/example.test.ts'], localFiles: [],
     } }));
     expect(renderReceipt(deferred)).toContain('gates:fast vitest deferred to PR CI: selected 17 files > 16');
     expect(renderReceipt(deferred)).toContain('CI: pending (PR not created; authoritative CI evidence will be bound after creation).');

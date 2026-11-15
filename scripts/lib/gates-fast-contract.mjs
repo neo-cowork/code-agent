@@ -24,8 +24,8 @@ export function assertExactFiles(expected, actual, phase) {
   }
 }
 
-export function validateFiles(root, files, maxFiles, deferMaxFiles = maxFiles) {
-  if (!files.length || files.length > deferMaxFiles) throw new Error(`FAIL: selected ${files.length} files; allowed 1..${deferMaxFiles}; never truncate`);
+export function validateFiles(root, files, maxFiles) {
+  if (!files.length || files.length > maxFiles) throw new Error(`FAIL: selected ${files.length} files; allowed 1..${maxFiles}; never truncate`);
   for (const file of files) {
     if (typeof file !== 'string' || !/^(tests|src)\/.*\.test\.tsx?$/.test(file)
         || /[\\*?[\]{}!\n\r]/.test(file) || file.split('/').includes('..')) {
@@ -40,7 +40,24 @@ export function validateFiles(root, files, maxFiles, deferMaxFiles = maxFiles) {
     }
     assertFastExecutable(path.relative(fs.realpathSync(root), target).split(path.sep).join('/'));
   }
-  if (files.length > maxFiles) return { reason: 'over-cap', selected: files.length, maxFiles, files: [...files] };
+}
+
+// Plans the vitest gate. <= maxFiles: everything runs locally. Above that, only files PR CI
+// really runs (covered prefix, not in the exclude list) may be deferred; the rest stay local.
+export function planVitest(root, files, policy) {
+  const { maxFiles, deferMaxFiles } = policy;
+  if (files.length <= maxFiles) {
+    validateFiles(root, files, maxFiles);
+    return { mode: 'all-local', selected: files.length, cap: maxFiles, localFiles: [...files], deferredFiles: [] };
+  }
+  validateFiles(root, files, deferMaxFiles);
+  const deferred = (file) => policy.ciCoveredPrefixes.some((prefix) => file.startsWith(prefix)) && !policy.ciNotRunExact.includes(file);
+  const deferredFiles = files.filter(deferred);
+  const localFiles = files.filter((file) => !deferred(file));
+  if (localFiles.length > maxFiles) {
+    throw new Error(`FAIL: selected ${files.length} files; allowed 1..${maxFiles}/${deferMaxFiles}; ${localFiles.length} not covered by PR CI must run locally; never truncate`);
+  }
+  return { mode: 'deferred', selected: files.length, cap: maxFiles, localFiles, deferredFiles };
 }
 
 export function selectTests(policy, changed, regressions = [], deletedFiles = []) {

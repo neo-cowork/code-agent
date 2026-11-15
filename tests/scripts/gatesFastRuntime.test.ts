@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../..');
 // Run the unchanged production runner in a committed fixture repository. The
 // other gates are tiny passing commands; Git, selection, receipts and Vitest
 // (including its manifest/config/report checks) execute for real.
-function runFixture(count: number, failing = false) {
+function runFixture(count: number, failing = false, dirOf: (index: number) => string = () => 'tests/unit') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-runner-contract-')));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim();
   const write = (name: string, content: string) => {
@@ -39,7 +39,7 @@ function runFixture(count: number, failing = false) {
     }
     // commit-checks runs ESLint too, using a fixture config without repo rules.
     write('eslint.config.js', 'export default [{ files: ["tests/**/*.ts"] }];\n');
-    const files = Array.from({ length: count }, (_, index) => `tests/unit/selected${String(index).padStart(3, '0')}.test.ts`);
+    const files = Array.from({ length: count }, (_, index) => `${dirOf(index)}/selected${String(index).padStart(3, '0')}.test.ts`);
     for (const file of files) write(file, "import { test, expect } from 'vitest'; test('selected test', () => expect(1).toBe(1));\n");
     write('scripts/lib/gates-fast-policy.json', JSON.stringify({
       ...policy, baseline: files, rules: [], packages: ['packages/fixture'],
@@ -69,7 +69,7 @@ describe('fast gate runner deferral', () => {
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(receipt.status).toBe('passed');
     expect(receipt.selectedFiles).toEqual(files);
-    expect(receipt.vitestDeferred).toEqual({ reason: 'over-cap', selected: 17, maxFiles: 16, files });
+    expect(receipt.vitestDeferred).toEqual({ reason: 'over-cap', selected: 17, maxFiles: 16, files, localFiles: [] });
     expect(receipt.gates).toHaveLength(Object.keys(policy.budgetsMs).length);
     for (const gate of receipt.gates) expect(gate.status, gate.id).toBe(gate.id === 'vitest' ? 'deferred-to-ci' : 'passed');
     expect(receipt.gates.find((gate: { id: string }) => gate.id === 'vitest').durationMs).toBe(0);
@@ -77,6 +77,25 @@ describe('fast gate runner deferral', () => {
     expect(receipt.report).toBeNull();
     expect(result.stdout).toContain('gates:fast vitest deferred to PR CI: selected 17 files > 16');
     expect(receipt.ci.status).toBe('pending');
+  }, 30000);
+
+  it('18 mixed files: only the 3 tests/wrappers files run locally, the 15 CI-covered ones defer', () => {
+    const { result, receipt, files } = runFixture(18, false, (index) => (index < 3 ? 'tests/wrappers' : 'tests/unit'));
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(receipt.vitestDeferred).toEqual({ reason: 'over-cap', selected: 18, maxFiles: 16, files: files.slice(3), localFiles: files.slice(0, 3) });
+    expect(receipt.vitestDeferred.files.length + receipt.vitestDeferred.localFiles.length).toBe(receipt.vitestDeferred.selected);
+    expect(receipt.gates.find((gate: { id: string }) => gate.id === 'vitest').status).toBe('passed');
+    expect(receipt.report).toMatchObject({ files: 3, tests: 3, passed: 3 });
+    expect(result.stdout).toContain('gates:fast vitest deferred to PR CI: selected 18 files > 16');
+  }, 30000);
+
+  it('17 files that PR CI does not run (tests/wrappers): rejected, never deferred', () => {
+    const { result, receipt } = runFixture(17, false, () => 'tests/wrappers');
+    expect(result.status).toBe(1);
+    expect(receipt.error).toContain('FAIL: selected 17 files; allowed 1..16/200');
+    expect(receipt.gates[0]).toMatchObject({ id: 'inputs', status: 'failed' });
+    expect(receipt.vitestDeferred).toBeUndefined();
+    expect(receipt.commands).toEqual([]);
   }, 30000);
 
   it('16 files: executes the exact full selection through real Vitest', () => {

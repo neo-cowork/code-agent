@@ -27,8 +27,12 @@ interface VitestDeferred {
   selected: number;
   maxFiles: number;
   files: string[];
+  localFiles: string[];
 }
-export function validateFiles(root: string, files: string[], maxFiles: number, deferMaxFiles?: number): VitestDeferred | undefined;
+export function validateFiles(root: string, files: string[], maxFiles: number): void;
+export function planVitest(root: string, files: string[], policy: { maxFiles: number; deferMaxFiles: number; ciCoveredPrefixes: string[]; ciNotRunExact: string[] }): {
+  mode: 'all-local' | 'deferred'; selected: number; cap: number; localFiles: string[]; deferredFiles: string[];
+};
 export function selectTests(policy: FastPolicy, changed: string[], regressions?: Regression[], deletedFiles?: string[]): {
   files: string[]; matchedRules: string[]; packages: string[]; testsTypecheck: boolean;
 };
