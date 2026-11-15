@@ -179,7 +179,7 @@ function rawIdentifierRuleForPropertyAccess(expr, sourceFile) {
 function isKnownLabelLookupCall(expr, sourceFile) {
   if (!ts.isCallExpression(expr)) return false;
   const callee = expr.expression.getText(sourceFile);
-  return /(?:^|\.)(?:labelFor|descriptionFor|getRowIcon|getPermissionIcon|formatRequesterLabel|roleName|scopeIcon|getHumanToolLabel)$/.test(callee);
+  return /(?:^|\.)(?:labelFor|descriptionFor|getRowIcon|getPermissionIcon|formatRequesterLabel|roleName|scopeIcon|getHumanToolLabel|resolveSkillName)$/.test(callee);
 }
 
 function inspectRenderedExpression(expr, sourceFile, recordHit) {
@@ -538,8 +538,9 @@ export function evaluateGate({
 function runDynamicSurfaceScan() {
   const vitestBin = path.join(REPO_ROOT, 'node_modules/.bin/vitest');
   const testFile =
-    'tests/renderer/components/internalTextLeakDynamicScan.test.tsx';
-  const res = spawnSync(vitestBin, ['run', testFile], {
+    ['tests/renderer/components/internalTextLeakDynamicScan.test.tsx',
+      'tests/renderer/components/internalTextExitMatrix.test.tsx'];
+  const res = spawnSync(vitestBin, ['run', ...testFile], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     env: { ...process.env, CI: 'true' },
@@ -593,7 +594,7 @@ function main() {
   }
 
   console.log(
-    `[internal-text-leak-gate] ✓ scanned ${result.filesScanned} renderer files (${result.totalHits} allowlisted hit(s), 0 new leaks)${staticOnly ? ' [static-only]' : ' + 4 dynamic surfaces passed'}.`,
+    `[internal-text-leak-gate] ✓ scanned ${result.filesScanned} renderer files (${result.totalHits} allowlisted hit(s), 0 new leaks)${staticOnly ? ' [static-only]' : ' + 4 legacy dynamic surfaces + 7 exits × zh/en passed'}.`,
   );
 }
 

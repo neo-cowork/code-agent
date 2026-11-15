@@ -32,7 +32,7 @@ import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { CronJobApprovalHint } from './CronJobApprovalHint';
-import { getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
+import { getJobDisplayName, getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
 import { formatDetailDuration } from './formatDetailDuration';
@@ -109,7 +109,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const latestLabel = latestMeta.label;
   const awaitingApproval = awaitingRun != null;
   const builtinDisplay = getBuiltinJobDisplay(job, language);
-  const displayName = builtinDisplay?.name ?? job.name;
+  const displayName = getJobDisplayName(job, language);
   const displayDescription = builtinDisplay?.description ?? job.description;
   const displayTags = getVisibleJobTags(job);
   const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;

@@ -9,6 +9,9 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
+import { CronJobList } from '../../../src/renderer/components/features/cron/CronJobList';
+import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { ModelSwitcher } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { TurnTimelineNodeRenderer } from '../../../src/renderer/components/features/chat/TraceTimelineNodes';
@@ -54,7 +57,7 @@ function assertClean(exit: string, text: string, language: Language) {
 
 beforeEach(() => {
   useAppStore.setState({ developerMode: false, cloudUIStrings: {} });
-  useTaskStore.setState({ initialized: true, sessionStates: {}, stats: { running: 0, queued: 0, maxConcurrent: 3 } });
+  useTaskStore.setState({ initialized: true, sessionStates: {}, stats: { running: 0, queued: 0, available: 3, maxConcurrent: 3 } });
   useSessionStore.setState({ sessions: [], backgroundSessions: [], runningSessionIds: new Set() });
   useToastStore.setState({ toasts: [] });
 });
@@ -93,8 +96,8 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
     assertClean('notification', `${sanitizeNotificationText(body)} ${visibleChrome(container)}`, language);
   });
   it('4 active task status bar', () => {
-    useSessionStore.setState({ sessions: [{ id: 'weekly', title, createdAt: 1, updatedAt: 1 }] });
-    useTaskStore.setState({ sessionStates: { weekly: { status: 'running', startTime: Date.now() } }, stats: { running: 1, queued: 0, maxConcurrent: 3 } });
+    useSessionStore.setState({ sessions: [{ id: 'weekly', title, modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' }, createdAt: 1, updatedAt: 1 }] });
+    useTaskStore.setState({ sessionStates: { weekly: { status: 'running', startTime: Date.now() } }, stats: { running: 1, queued: 0, available: 3, maxConcurrent: 3 } });
     const { container } = render(<TaskStatusBar />);
     assertClean('status-bar', visibleChrome(container), language);
   });
@@ -126,6 +129,16 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
   });
   it('5 session and scheduled task names through the production presenter', () => {
     assertClean('session-task-names', [title, `[Schedule] ${title}`].map((raw) => getDisplaySessionTitle(raw, language)).join(' '), language);
+  });
+  it('5 scheduled list and background task names', () => {
+    useCronStore.setState({ jobs: [{ id: 'weekly-job', name: title, runsOn: 'local', scheduleType: 'cron',
+      schedule: { type: 'cron', expression: '0 9 * * 5' }, enabled: true,
+      action: { type: 'agent', agentType: 'default', prompt: 'Summarize the notes' }, createdAt: 1, updatedAt: 1 }],
+      latestExecutions: {}, searchQuery: '', locationFilter: 'all', isLoading: false });
+    const { container } = render(<><CronJobList /><TaskDashboardSummary tasks={[{
+      id: 'background-export', scope: 'global', title, status: 'in_progress', steps: [],
+    }]} /></>);
+    assertClean('task-lists', visibleChrome(container), language);
   });
   it('6 background panel completion row', () => {
     useSessionStore.setState({ backgroundSessions: [{ sessionId: 'export', title: 'Table export', status: 'completed', startedAt: 1, backgroundedAt: 2,

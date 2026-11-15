@@ -1,3 +1,4 @@
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 // ============================================================================
 // builtinJobDisplay —— 内置维护定时任务在 UI 层的本地化名称、描述与动作文案映射。
 //
@@ -90,4 +91,9 @@ export function getBuiltinJobDisplay(
   }
 
   return BUILTIN_ZH_COPY[tag];
+}
+
+/** Names are display projections; keep the original identity in storage and edit forms. */
+export function getJobDisplayName(job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>, language: Language = 'zh'): string {
+  return humanizeInternalText(getBuiltinJobDisplay(job, language)?.name ?? job.name, language, { omitIds: true }).text;
 }
