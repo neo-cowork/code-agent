@@ -42,6 +42,7 @@ import { useAppStore } from "../../../stores/appStore";
 import { Badge, Button, TimeInput24 } from "../../primitives";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
+import { RoleBasicSummary } from './RoleBasicSummary';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
 import { RoleModelTab } from './RoleModelTab';
 import { RoleSecurityTab } from './RoleSecurityTab';
@@ -895,7 +896,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
       {error ? <div className="text-sm text-badge-danger">{error}</div> : null}
       {detail ? (
         <>
-          {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{expertText.visual.builtinNotice}</p> : null} /> : null}
+          {tab === 'basic' ? <RoleBasicTab summary={<RoleBasicSummary detail={detail} />} action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{expertText.visual.builtinNotice}</p> : null} /> : null}
           {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /><RecommendedConnectors connectors={detail.recommendedConnectors} /></RoleEquipmentTab> : null}
           {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'security' && detail.equipment ? <SecurityEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
