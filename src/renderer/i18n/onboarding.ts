@@ -124,11 +124,11 @@ export const onboardingZh = {
       badgeRecommendedInstall: '推荐安装',
       recommendations: {
         qoder_work: {
-          label: '需要登录',
+          label: '需登录',
           reason: '请先登录 Qoder Work，再回来选择。',
         },
         comate_zulu: {
-          label: '即将支持',
+          label: '待开放',
           reason: '暂时还不能在 Neo 里使用。',
         },
         cursor_cli: {
