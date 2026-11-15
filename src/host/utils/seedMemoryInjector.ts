@@ -16,7 +16,7 @@ import {
   shouldSuppressMemoryByInboxDecision,
   type KnowledgeInboxDecisionRecord,
 } from '../memory/knowledgeInboxDecision';
-import { packMemoryEntries } from '../memory/memoryEntryRuntime';
+import { packMemoryEntries, storedMemoryToEntry } from '../memory/memoryEntryRuntime';
 import { memoryInjectionPauses } from '../memory/memoryUsageEviction';
 import type { MemoryPackResult } from '../../shared/contract/memory';
 import { estimateTokens } from '../context/tokenEstimator';
@@ -98,7 +98,7 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
       .map(parseKnowledgeInboxDecision)
       .filter((decision): decision is KnowledgeInboxDecisionRecord => Boolean(decision));
 
-    const memories = db.listMemories({
+    const candidates = db.listMemories({
       projectPath,
       limit: MAX_SEED_MEMORIES,
       orderBy: 'updated_at',
@@ -111,6 +111,15 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
         return !(entry && typeof entry === 'object' && 'kind' in entry && entry.kind === 'directive');
       })
       .filter((memory) => !shouldSuppressMemoryByInboxDecision(memory, decisions));
+
+    // 用量淘汰与 packed 注入同口径（N-MEM-EVICT-NEVER-READ-FU1）：stale_used / never_used
+    // 的记忆不再经 fallback 回流——否则 packed 路全排除返回 null 时，fallback 会把暂停的
+    // 记忆原样注入，暂停形同虚设。memoryInjectionPauses 自身 fail-open（扫描出错返回空
+    // 集合并 warn），故这里不重复包 try/catch。
+    const pausedEntryIds = memoryInjectionPauses(db);
+    const memories = candidates.filter(
+      (memory) => !pausedEntryIds.has(storedMemoryToEntry(memory).id),
+    );
 
     if (!memories || memories.length === 0) {
       logger.debug('[SeedMemory] No memories found, skipping injection');
