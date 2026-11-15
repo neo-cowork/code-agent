@@ -52,6 +52,11 @@ export const MODEL_MAX_TOKENS = {
   VISION: 2048,
 } as const;
 
+/** 上下文压缩摘要输出 token 上限（高于实测自然摘要单次峰值 3387，远低于 16K 默认输出上限） */
+export const COMPACTION_SUMMARY = {
+  MAX_TOKENS: 4096,
+} as const;
+
 /**
  * 过时模型 → 当前生产级替换的映射。
  * 用于 settings 持久化里存的旧 model ID 平滑迁移（不报错、静默升级），

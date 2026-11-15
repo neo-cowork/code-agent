@@ -18,6 +18,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
+import { formatConnectorStatusOutput } from './connectorStatusText';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
@@ -108,7 +109,7 @@ async function executeCalendar(
         capabilities: [] as string[],
         unavailable: true,
       };
-      const output = `Calendar connector: unavailable\n${status.detail}\nCapabilities: none`;
+      const output = formatConnectorStatusOutput('calendar', status);
       return {
         ok: true,
         output,
@@ -124,7 +125,7 @@ async function executeCalendar(
 
     if (action === 'get_status') {
       const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
-      const output = `Calendar connector: ${status.connected ? 'connected' : 'disconnected'}\n${status.detail || ''}\nCapabilities: ${status.capabilities.join(', ')}`;
+      const output = formatConnectorStatusOutput('calendar', status);
       return {
         ok: true,
         output,

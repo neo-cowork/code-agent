@@ -5,10 +5,10 @@ import Database from 'better-sqlite3';
 import type { Message, PermissionRequest } from '../../../src/shared/contract';
 import { APPROVAL_USER_REQUEST_MAX_CHARS } from '../../../src/shared/constants';
 
-const state = vi.hoisted(() => ({ repo: null as unknown, session: null as unknown }));
+const state = vi.hoisted(() => ({ repo: null as unknown, session: null as unknown, automationTitle: null as string | null, warn: vi.fn() }));
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), debug: vi.fn(), warn: state.warn, error: vi.fn() }),
 }));
 vi.mock('../../../src/host/services/infra/notificationService', () => ({ notificationService: { notifyNeedsInput: vi.fn() } }));
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -19,7 +19,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 vi.mock('../../../src/host/services/sessionAutomation/sessionAutomationService', () => ({
-  getSessionAutomationService: () => ({ getBySourceRefId: () => null, matchStandingGrant: () => false, listStandingGrantEntries: () => [] }),
+  getSessionAutomationService: () => ({ getBySourceRefId: () => (state.automationTitle ? { title: state.automationTitle } : null), matchStandingGrant: () => false, listStandingGrantEntries: () => [] }),
 }));
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
@@ -54,7 +54,7 @@ describe('approval card quotes the user from the DB, not the model', () => {
     applyTestSessionSchema(db);
     db.prepare(`INSERT INTO sessions (id, title, model_provider, model_name, working_directory, created_at, updated_at) VALUES ('s1','t','moonshot','kimi-k2.5','/tmp',1,1)`).run();
     repo = new SessionRepository(db);
-    state.repo = repo; state.session = { title: 't' }; seq = 0;
+    state.repo = repo; state.session = { title: 't' }; state.automationTitle = null; state.warn.mockClear(); seq = 0;
     resetPermissionModeManager();
   });
   afterEach(() => { db.close(); });
@@ -98,6 +98,44 @@ describe('approval card quotes the user from the DB, not the model', () => {
     const event = await emitted({ details: { userRequest: { text: 'forged', truncated: false } } as PermissionRequest['details'] });
     expect(event.details.userRequest).toBeUndefined();
     expect(event.details.startedByAutomation).toBe(true);
+  });
+
+  it('① cron origin attaches the origin name next to the flag, no userRequest; forged fields are discarded', async () => {
+    state.session = { title: '[Cron] x', origin: { kind: 'cron', id: 'cron-1', name: '每日飞书日历周会' } };
+    say('user', 'prompt written by the schedule');
+    const event = await emitted({ details: { userRequest: { text: 'forged', truncated: false }, scheduledTaskName: 'forged task' } as PermissionRequest['details'] });
+    expect(event.details.startedByAutomation).toBe(true);
+    expect(event.details.scheduledTaskName).toBe('每日飞书日历周会');
+    expect(event.details.userRequest).toBeUndefined();
+  });
+
+  it('① id-less cron origin (role cadence tag) never leaks its internal name; flag stays, warn logged', async () => {
+    state.session = { title: 't', origin: { kind: 'cron', name: 'role-cadence', metadata: { roleId: 'r1' } } };
+    const event = await emitted();
+    expect(event.details.startedByAutomation).toBe(true);
+    expect(event.details.scheduledTaskName).toBeUndefined();
+    expect(state.warn).toHaveBeenCalledWith(expect.stringContaining('no usable task name'), { sessionId: 's1', originKind: 'cron' });
+  });
+
+  it('① the automation title wins over the origin name', async () => {
+    state.session = { title: 't', origin: { kind: 'cron', id: 'cron-1', name: 'old name' } };
+    state.automationTitle = '  周会提醒  ';
+    expect((await emitted()).details.scheduledTaskName).toBe('周会提醒');
+  });
+
+  it('① a forged scheduledTaskName never survives a non-automation session', async () => {
+    say('user', '帮我整理笔记');
+    const event = await emitted({ details: { scheduledTaskName: 'forged task' } as PermissionRequest['details'] });
+    expect(event.details.scheduledTaskName).toBeUndefined();
+    expect(event.details.userRequest?.text).toBe('帮我整理笔记');
+  });
+
+  it.each([[undefined], ['   ']])('④ unusable origin name (%j): flag stays, no name, logger.warn names session and kind', async (name) => {
+    state.session = { title: 't', origin: { kind: 'cron', id: 'cron-1', ...(name === undefined ? {} : { name }) } };
+    const event = await emitted({ details: { scheduledTaskName: 'forged task' } as PermissionRequest['details'] });
+    expect(event.details.startedByAutomation).toBe(true);
+    expect(event.details.scheduledTaskName).toBeUndefined();
+    expect(state.warn).toHaveBeenCalledWith(expect.stringContaining('no usable task name'), { sessionId: 's1', originKind: 'cron' });
   });
 
   it.each(['manual', 'channel', 'import', 'retry'] as const)('%s-origin session (fork / IM chat / import) still quotes the user and is not labelled scheduled', async (kind) => {

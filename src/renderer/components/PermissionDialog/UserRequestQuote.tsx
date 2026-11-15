@@ -1,17 +1,19 @@
 import React from 'react';
 import type { PermissionRequest } from '../../../shared/contract/permission';
 
+type QuoteDetails = Pick<PermissionRequest['details'], 'userRequest' | 'startedByAutomation' | 'scheduledTaskName'>;
+
 interface UserRequestQuoteProps {
-  details: PermissionRequest['details'];
-  labels: { userRequestQuote: string; startedByScheduledTask: string };
+  details: QuoteDetails;
+  labels: { userRequestQuote: string; startedByScheduledTask: string; startedByScheduledTaskGeneric: string };
 }
 
 /** Scheduled-task name rendered in `scheduled-task-origin`, or `undefined` when that line is not shown. */
 export function scheduledTaskOriginName(
-  details: Pick<PermissionRequest['details'], 'userRequest' | 'startedByAutomation' | 'purpose'>,
+  details: QuoteDetails,
 ): string | undefined {
   if (details.userRequest?.text) return undefined;
-  if (details.startedByAutomation && details.purpose) return details.purpose;
+  if (details.startedByAutomation) return details.scheduledTaskName?.trim() || undefined;
   return undefined;
 }
 
@@ -25,11 +27,11 @@ export function UserRequestQuote({ details, labels }: UserRequestQuoteProps) {
       </p>
     );
   }
-  const originName = scheduledTaskOriginName(details);
-  if (originName) {
+  if (details.startedByAutomation) {
+    const name = details.scheduledTaskName?.trim();
     return (
       <p data-testid="scheduled-task-origin" className="break-words text-sm text-zinc-300">
-        {labels.startedByScheduledTask.replace('{name}', originName)}
+        {name ? labels.startedByScheduledTask.replace('{name}', name) : labels.startedByScheduledTaskGeneric}
       </p>
     );
   }

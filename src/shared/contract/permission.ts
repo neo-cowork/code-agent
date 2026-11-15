@@ -186,6 +186,8 @@ export interface PermissionRequest {
     userRequest?: { text: string; truncated: boolean };
     /** Host-owned: the session was started by a scheduled/background task, so there is no user quote. */
     startedByAutomation?: boolean;
+    /** Host-owned: display name of the scheduled task that started this session; never trusted from tool arguments. */
+    scheduledTaskName?: string;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
     commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
     commandSecurityFlags?: string[];

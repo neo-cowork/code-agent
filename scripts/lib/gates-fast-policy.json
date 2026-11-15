@@ -2,6 +2,20 @@
   "version": 1,
   "budgetMs": 170000,
   "maxFiles": 16,
+  "deferMaxFiles": 200,
+  "ciCoveredPrefixes": [
+    "tests/unit/",
+    "tests/renderer/",
+    "tests/scripts/",
+    "tests/security/"
+  ],
+  "ciNotRunExact": [
+    "tests/unit/tools/modules/network/webSearch.test.ts",
+    "tests/unit/agent/goalVerifyGate.test.ts",
+    "tests/unit/permissions/writebackEdit.test.ts",
+    "tests/unit/runtime/runtimeAssetStatus.test.ts",
+    "tests/unit/security/commandSafety.approvalDecisionGaps.test.ts"
+  ],
   "baseline": [
     "tests/unit/agentEventSchemas.test.ts",
     "tests/unit/security/commandSafety.relativeDelete.test.ts",

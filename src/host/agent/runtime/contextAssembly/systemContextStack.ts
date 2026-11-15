@@ -267,7 +267,9 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
 
   if (message.role === 'assistant' && !message.isMeta && typeof message.content === 'string') {
     try {
-      const leak = detectReplyEgressLeaks(message.content, ctx.runtime.turn?.runUserPrompt ?? '');
+      const leak = detectReplyEgressLeaks(message.content, ctx.runtime.turn?.runUserPrompt ?? '', {
+        hasToolCalls: (message.toolCalls?.length ?? 0) > 0,
+      });
       if (leak.categories.length > 0) {
         replyEgressLogger.warn('Reply egress leak detected', {
           reason: 'reply_egress_leak_detected',
