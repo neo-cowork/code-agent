@@ -1,6 +1,6 @@
 // 内置 provider 的展示名随界面语言：英文界面统一英文名，中文界面保持原样。
 // 英文名来自 shared（注册表 / 模型目录），这里只保存中文界面要保留的原中文名与描述。
-import { getProviderDisplayName } from '@shared/constants';
+import { PROVIDER_REGISTRY, getProviderDisplayName } from '@shared/constants';
 import type { Language } from './index';
 
 interface ZhProviderText {
@@ -56,4 +56,11 @@ export function resolveProviderText(
 /** 切换器 / 任务策略分组的 provider 标签：运行时选项自带的 label 优先，缺省取注册表名，再按界面语言本地化。 */
 export function resolveProviderLabel(provider: string, label: string | undefined, language: Language): string {
   return localizeProviderLabel(provider, label || getProviderDisplayName(provider) || provider, language);
+}
+
+/** Doctor 连通性项只带注册表默认名（host 不知界面语言）：network 类且名字等于某内置 provider 默认名时，按界面语言本地化。 */
+export function localizeDoctorItemName(item: { category: string; name: string }, language: Language): string {
+  if (item.category !== 'network') return item.name;
+  const id = Object.keys(PROVIDER_REGISTRY).find((key) => PROVIDER_REGISTRY[key as keyof typeof PROVIDER_REGISTRY].displayName === item.name);
+  return id ? localizeProviderLabel(id, item.name, language) : item.name;
 }
