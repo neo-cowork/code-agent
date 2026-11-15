@@ -41,6 +41,7 @@ export interface NativeConnectorIntentInput {
  * 无意图命中时零副作用（不触 configService/registry），无关轮次的前缀缓存不受影响。
  * 就绪口径与 cron.ipc / cronMailPoller 一致：unchecked（重启后未探测）仍算可用，
  * failed / unavailable 才排除——已授权用户不该被逼去再点一次。
+ * 未启用/未注册只放读工具（见循环内注释）；failed / unavailable 分支不动。
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = NATIVE_CONNECTOR_INTENT_RES
@@ -59,16 +60,24 @@ export function getNativeConnectorToolNamesForIntent(input: NativeConnectorInten
   const scoped = input.allowedConnectorIds ?? [];
   const registry = getConnectorRegistry();
   const tools: string[] = [];
+  // 未启用/未注册：只放读工具（各连接器清单首项），让模型调用后拿到「未连接，可在连接器页打开」
+  // 的工具结果并转述，而不是在零信号下拿别处数据答「今天没有日程」。写工具一律不放。
+  const exposeReadToolOnly = (connectorId: string): void => {
+    const readTool = CONNECTOR_TOOL_NAMES[connectorId]?.[0];
+    if (readTool && !isCoreToolName(readTool)) tools.push(readTool);
+  };
   for (const connectorId of matched) {
     if (!enabledNative.includes(connectorId)) {
-      logger.warn(`[ContextAssembly] Native connector not preloaded (reason: not-enabled): ${connectorId}`);
+      logger.warn(`[ContextAssembly] Native connector not enabled, exposing read tool only (reason: not-enabled): ${connectorId}`);
+      if (scoped.length === 0 || scoped.includes(connectorId)) exposeReadToolOnly(connectorId);
       continue;
     }
     // 用户本轮手选了别的连接器 = 显式收窄，不替他加。
     if (scoped.length > 0 && !scoped.includes(connectorId)) continue;
     const connector = registry.get(connectorId);
     if (!connector) {
-      logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: not-registered): ${connectorId}`);
+      logger.warn(`[ContextAssembly] Enabled native connector missing from registry, exposing read tool only (reason: not-registered): ${connectorId}`);
+      exposeReadToolOnly(connectorId);
       continue;
     }
     const readiness = connector.getCachedStatus?.().readiness;
