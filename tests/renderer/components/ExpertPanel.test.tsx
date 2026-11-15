@@ -639,7 +639,7 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateVisual', expect.objectContaining({ roleId: '自定义专家', visual: expect.objectContaining({ displayName: '小满', profession: '增长顾问' }) })));
     await waitFor(() => expect(screen.getAllByText('小满').length).toBeGreaterThan(0));
 
-    expect(screen.getByText('小满')).toBeTruthy();
+    expect(screen.getByTestId('role-basic-summary-name').textContent).toBe('小满');
   });
 
   it('装备和正文走独立 IPC 保存；自建角色没有还原出厂入口', async () => {
