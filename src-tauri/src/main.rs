@@ -2106,11 +2106,10 @@ fn spawn_web_server_recording(
     command
         .env_remove("CODE_AGENT_ENV_ASSIST_BRIDGE_URL")
         .env_remove("CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN");
-    #[cfg(target_os = "macos")]
-    if let Some((bridge_url, bridge_token)) = env_assist_bridge::ensure_started() {
-        command
-            .env("CODE_AGENT_ENV_ASSIST_BRIDGE_URL", bridge_url)
-            .env("CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN", bridge_token);
+    // 凭据只经 stdin 首行交给 webServer，绝不进 env/argv（ps eww 可读）；这里只放非密钥标志位。
+    let env_assist_handshake = env_assist_bridge::ensure_started();
+    if env_assist_handshake.is_some() {
+        command.env(env_assist_bridge::HANDSHAKE_FLAG_ENV, "1");
     }
 
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
@@ -2120,7 +2119,7 @@ fn spawn_web_server_recording(
         command.env(BOOT_DIAGNOSTICS_PATH_ENV, boot_path.as_os_str());
     }
 
-    let child = command.spawn().map_err(|error| {
+    let mut child = command.spawn().map_err(|error| {
         format!(
             "Failed to start web server at {} (node: {}): {}",
             script_path.display(),
@@ -2128,6 +2127,10 @@ fn spawn_web_server_recording(
             error
         )
     })?;
+    if let Some((bridge_url, bridge_token)) = env_assist_handshake {
+        // 先于任何其他写入；句柄保持打开，webServer 靠 stdin EOF 判断父进程死亡。
+        env_assist_bridge::write_handshake(child.stdin.as_mut(), bridge_url, bridge_token);
+    }
     diagnostics.web_server_pid = Some(child.id());
     write_shell_event(
         app,

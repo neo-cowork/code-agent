@@ -906,6 +906,47 @@ mod imp {
     }
 }
 
+pub const HANDSHAKE_FLAG_ENV: &str = "CODE_AGENT_ENV_ASSIST_BRIDGE_HANDSHAKE";
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn handshake_line(url: &str, token: &str) -> String {
+    format!("CODE_AGENT_ENV_ASSIST_BRIDGE {url} {token}\n")
+}
+
+/// Writes the single handshake line to the child's stdin and flushes; keeps the handle open.
+pub fn write_handshake(stdin: Option<&mut std::process::ChildStdin>, url: &str, token: &str) {
+    use std::io::Write;
+    if let Some(pipe) = stdin {
+        let _ = pipe
+            .write_all(handshake_line(url, token).as_bytes())
+            .and_then(|_| pipe.flush());
+    }
+}
+
+#[cfg(test)]
+mod handshake_tests {
+    use super::*;
+
+    #[test]
+    fn handshake_line_is_single_newline_terminated_line() {
+        let line = handshake_line("http://127.0.0.1:5555", "abc123");
+        assert_eq!(line, "CODE_AGENT_ENV_ASSIST_BRIDGE http://127.0.0.1:5555 abc123\n");
+        assert_eq!(line.matches('\n').count(), 1);
+    }
+
+    #[test]
+    fn spawn_path_never_puts_token_or_url_in_child_env() {
+        let main_rs = include_str!("main.rs");
+        for name in ["CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN", "CODE_AGENT_ENV_ASSIST_BRIDGE_URL"] {
+            assert!(
+                !main_rs.contains(&format!(".env(\"{name}\"")),
+                "main.rs must not set {name} on the child"
+            );
+        }
+        assert!(main_rs.contains("write_handshake("));
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub fn ensure_started() -> Option<(&'static str, &'static str)> {
     imp::ensure_started()
