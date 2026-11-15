@@ -26,6 +26,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeDoctorItemName } from '../../../i18n/providerDisplay';
 import { formatDateTime } from '../../../utils/formatDateTime';
 
 // ============================================================================
@@ -131,7 +132,7 @@ const DoctorItemRow: React.FC<{
   defaultExpanded: boolean;
   suggestionPrefix: string;
 }> = ({ item, defaultExpanded, suggestionPrefix }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const message = item.probeHttpStatus
     ? t.settings.providerDoctor.probeAuthMismatch.replace('{status}', String(item.probeHttpStatus))
     : item.message;
@@ -155,7 +156,7 @@ const DoctorItemRow: React.FC<{
 
         {/* Name + message */}
         <span className="flex-1 min-w-0">
-          <span className="text-sm text-zinc-200">{item.name}</span>
+          <span className="text-sm text-zinc-200">{localizeDoctorItemName(item, language)}</span>
           <span className="text-sm text-zinc-500 ml-2">{message}</span>
         </span>
 
