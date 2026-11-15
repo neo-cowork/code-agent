@@ -17,12 +17,10 @@ import { interpolate } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { Button } from '../../primitives/Button';
-import { clusterAudioTopics } from '../settings/sections/nativeDesktopActivityModel';
+import { clusterAudioTopics, speakerStyle } from '../settings/sections/nativeDesktopActivityModel';
 import { startMeetingActionTask } from '../../../utils/startMeetingActionTask';
 
 type Copy = ReturnType<typeof useI18n>['t']['library']['meetings'];
-
-const SPEAKER_COLORS = ['text-sky-300', 'text-amber-300', 'text-emerald-300', 'text-rose-300', 'text-violet-300', 'text-cyan-300'];
 
 export function formatClock(ms: number | null): string {
   if (ms === null) return '';
@@ -136,7 +134,8 @@ export const MeetingPage: React.FC<{ meetingId: string; onBack: () => void }> = 
     return clusterAudioTopics(segs, { fallback: copy.topics }).map((g) => ({ ...g, firstIndex: Number(g.segments[0]?.id ?? 0) }));
   }, [lines, copy.topics]);
   const speakers = useMemo(() => [...new Set(lines.map((l) => l.speaker).filter(Boolean))], [lines]);
-  const speakerColor = (name: string) => SPEAKER_COLORS[speakers.indexOf(name) % SPEAKER_COLORS.length];
+  // 沿用原会议面板跟随主题的说话人配色（亮色字在浅色主题下看不清）
+  const speakerColor = (name: string) => speakerStyle(speakers.indexOf(name) + 1).text;
   const topicStarts = useMemo(() => new Map(topics.map((tp) => [tp.firstIndex, tp.label])), [topics]);
 
   const openMinutesSession = async (sessionId: string) => {
