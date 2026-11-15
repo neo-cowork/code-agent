@@ -154,6 +154,35 @@ describe('deriveCronPermissionDenied ② 判据矩阵', () => {
     expect(deriveCronPermissionDenied(messages, false)).toBeUndefined();
   });
 
+  it.each(['ListDirectory', 'list_directory', 'Read', 'read_file', 'Glob', 'glob', 'Grep', 'grep', 'SearchFiles', 'search_files', 'ToolSearch'])(
+    'user deny followed by %s success retains the denied marker', (name) => {
+      const messages = [
+        assistantWithCalls([bashCall('denied', 'mv Downloads/notes.txt Documents/')]),
+        toolResultMessage([deniedResult('denied', permissionDenialError('bash', 'user'))]),
+        assistantWithCalls([{ id: 'read', name, arguments: { path: 'Downloads' } }]),
+        toolResultMessage([okResult('read', 'notes.txt')]),
+      ];
+      expect(deriveCronPermissionDenied(messages, false)).toEqual({
+        count: 1, steps: [{ tool: 'bash', summary: 'mv Downloads/notes.txt Documents/', reason: 'user' }],
+      });
+    },
+  );
+
+  it('user deny followed by Write success has no marker and keeps the successful result', () => {
+    const messages = [
+      assistantWithCalls([bashCall('denied', 'mv Downloads/notes.txt Documents/')]),
+      toolResultMessage([deniedResult('denied', permissionDenialError('bash', 'user'))]),
+      assistantWithCalls([{ id: 'write', name: 'Write', arguments: { file_path: 'sort-report.md', content: 'No files moved.' } }]),
+      toolResultMessage([okResult('write', 'Saved sort-report.md')]),
+    ];
+    const marker = deriveCronPermissionDenied(messages, false);
+    expect(marker).toBeUndefined();
+    expect(buildCronAgentActionResult(
+      { agentType: 'default', prompt: 'Sort Downloads' }, undefined, 'write-session',
+      '<cron_summary>Saved report\nartifact: sort-report.md</cron_summary>', false, false, marker,
+    ).permissionDenied).toBeUndefined();
+  });
+
   it('被拒 + digest 有产物 → 无标记（别的活干成了，仍是普通成功）', () => {
     const messages = [
       assistantWithCalls([bashCall('call-1', 'echo hi')]),

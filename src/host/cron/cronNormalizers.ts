@@ -133,6 +133,8 @@ export function buildCronAgentActionResult(
   const parsedDigest = parseCronRunDigest(finalAssistantText);
   const digest = artifactContext ? filterReadOnlyCronArtifacts(parsedDigest, artifactContext) : parsedDigest;
   const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
+  const userDeclined = permissionDenied && permissionDenied.steps.length > 0
+    && permissionDenied.steps.every((step) => step.reason === 'user');
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
     : '';
@@ -142,7 +144,7 @@ export function buildCronAgentActionResult(
     result,
     sessionId,
     digest,
-    urgency,
+    urgency: userDeclined ? 'fyi' : urgency,
     ...(urgencyRaw ? { urgencyRaw } : {}),
     ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
     ...(notifyQuietRound ? { notifySuppressed: true } : {}),
