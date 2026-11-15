@@ -184,6 +184,8 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
       expect(result.code).toBe('NOT_INITIALIZED');
       expect(result.error).toContain('Calendar is not connected');
       expect(result.error).toContain('never state that there are no events');
+      expect(result.error).toContain('能力中心 > 连接器');
+      expect(result.error).not.toContain('设置 > 连接器');
     }
   });
 

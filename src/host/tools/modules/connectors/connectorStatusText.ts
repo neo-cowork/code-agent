@@ -22,8 +22,8 @@ const UNAVAILABLE_ACTION_PHRASE: Record<ConnectorUnavailableAction, (copy: Conne
   change: (c) => `${c.dataNoun} cannot be changed`,
 };
 
-// The real UI entry: "Connectors" (English UI) / "连接器" (Chinese UI).
-const CONNECTORS_PAGE_HINT = 'the Connectors page (named "连接器" in the Chinese interface)';
+// The real UI entry: Connectors tab of the Capability Hub (renderer capabilityHub.ts).
+const CONNECTORS_PAGE_HINT = 'the Connectors page (the Connectors tab inside the Capability Hub; in the Chinese interface 能力中心 > 连接器)';
 
 const CONNECTOR_COPY: Record<StatusConnectorId, ConnectorCopy> = {
   mail: {
