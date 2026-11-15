@@ -102,7 +102,12 @@ describe('calendarModule (native)', () => {
       const result = await run({ action: 'get_status' });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toContain('Calendar connector: unavailable');
+        expect(result.output).toContain(
+          'Calendar is not connected on this computer, so calendar events cannot be read.',
+        );
+        expect(result.output).toContain('Connectors page');
+        expect(result.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
+        expect(result.output).not.toContain('Capabilities:');
         expect(result.meta).toMatchObject({
           status: {
             connected: false,
@@ -161,9 +166,10 @@ describe('calendarModule (native)', () => {
       const result = await run({ action: 'get_status' });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toContain('Calendar connector: connected');
-        expect(result.output).toContain('EventKit OK');
-        expect(result.output).toContain('Capabilities: read, write');
+        expect(result.output).toContain('Calendar is connected. EventKit OK.');
+        expect(result.output).toContain('It supports read and write.');
+        expect(result.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
+        expect(result.output).not.toContain('Capabilities:');
         expect(result.meta).toMatchObject({
           action: 'get_status',
           connector: 'calendar',
@@ -172,6 +178,34 @@ describe('calendarModule (native)', () => {
         const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
         expect(artifact.kind).toBe('text');
         expect(artifact.metadata?.action).toBe('get_status');
+      }
+    });
+
+    it('get_status formats disconnected status and humanizes snake_case capabilities when connected', async () => {
+      execMock.mockResolvedValueOnce({
+        data: { connected: false, detail: 'Automation permission needed', capabilities: ['get_status', 'list_events'] },
+      });
+      const disconnected = await run({ action: 'get_status' });
+      expect(disconnected.ok).toBe(true);
+      if (disconnected.ok) {
+        expect(disconnected.output).toContain(
+          'Calendar is not connected right now, so calendar events cannot be read.',
+        );
+        expect(disconnected.output).toContain('Automation permission needed.');
+        expect(disconnected.output).toContain('Connectors page');
+        expect(disconnected.output).not.toMatch(/connector:\s*(unavailable|connected|disconnected)/i);
+        expect(disconnected.output).not.toContain('Capabilities:');
+      }
+
+      execMock.mockResolvedValueOnce({
+        data: { connected: true, detail: 'EventKit OK', capabilities: ['get_status', 'list_calendars', 'list_events'] },
+      });
+      const connected = await run({ action: 'get_status' });
+      expect(connected.ok).toBe(true);
+      if (connected.ok) {
+        expect(connected.output).toContain('It supports list calendars and list events.');
+        expect(connected.output).not.toContain('list_events');
+        expect(connected.output).not.toContain('Capabilities:');
       }
     });
 
