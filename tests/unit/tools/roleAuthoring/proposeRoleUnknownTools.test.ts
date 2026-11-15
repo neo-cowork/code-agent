@@ -84,7 +84,7 @@ describe('propose_role 工具名校验', () => {
     expect(result.error).toContain('tmeetCalendarList');
     expect(result.error).toContain('tmeetMeetingList');
     expect(result.error).toContain('calendar');
-    expect(result.error).toContain('plain Chinese');
+    expect(result.error).toContain('the language the user writes in');
     expect(ctx.emit).not.toHaveBeenCalled();
     expect(await draftDirExists()).toBe(false);
   });
