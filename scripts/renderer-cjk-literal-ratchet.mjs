@@ -3,7 +3,8 @@
 // renderer-cjk-literal-ratchet — renderer 渲染文案与 shared/contract CJK 字面量棘轮
 // ============================================================================
 //
-// N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC 扫描口径（SCOPE_VERSION = 2，2026-11-15 扩围）：
+// N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC 扫描口径（SCOPE_VERSION = 3，2026-11-15 两次扩围）：
+//   - 「CJK」= 汉字或中文标点（：，。（）、；！？「」等，口径 3 新增标点）。
 //   - 任意 i18n/ 目录、__tests__/、*.test.*、*.spec.*、*.d.ts 一律不扫（语言包就该放在 i18n/ 里）。
 //   - 扫描根：
 //     1) src/renderer/**/*.{ts,tsx}
@@ -22,6 +23,8 @@
 //          · src/shared/constants/**            （口径 2 新增：技能/连接器/多模态模型等目录）
 //          · src/shared/externalEngineManifest.ts（口径 2 新增：执行引擎清单）
 //          · src/host/diagnostics/**            （口径 2 新增：诊断报告文案）
+//          · src/renderer/utils/**              （口径 3 新增：工具函数返回的文案，如日期兜底词、工具摘要；
+//            这个目录下的文件按本条计，不再按第 1 条的渲染位置口径计）
 //   - 基线文件：scripts/renderer-cjk-literal-baseline.json（按文件计数，只降不升）。
 //     · 已有文件计数不得超过基线；
 //     · 基线外文件命中 > 0 立即失败；
@@ -49,9 +52,11 @@ import { fileURLToPath } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '..');
 
-const SCOPE_VERSION = 2;
+const SCOPE_VERSION = 3;
 const RENDERER_ROOT = 'src/renderer';
 // 任意 CJK 字面量都计的根（目录或单个文件）
+// renderer 里按「任意 CJK 字面量都计」处理的子目录（口径 3）
+const RENDERER_LITERAL_PREFIX = 'src/renderer/utils/';
 const LITERAL_ROOTS = [
   'src/shared/contract',
   'src/shared/constants',
@@ -63,7 +68,9 @@ const BASE_REF_ENV = 'RENDERER_CJK_RATCHET_BASE_REF';
 const DEFAULT_BASE_REFS = ['origin/main', 'main'];
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
-const HAN_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u;
+// 汉字 + 中文标点（CJK 符号与标点区 \u3000-\u303f：、。「」等；全角形式区 \uff00-\uffef：：，（）；！？等）。
+// 只有标点没有汉字的字面量同样算数：`：${label}` 这种拼接就是这么漏到英文界面的（FB-1497）。
+const HAN_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/u;
 
 function toPosix(value) {
   return value.split(path.sep).join('/');
@@ -227,7 +234,11 @@ function scanAll(rootDir) {
     scannedByRoot.push({ root: subRoot, count: files.length });
   };
 
-  scanRoot(RENDERER_ROOT, scanRendererFile);
+  scanRoot(RENDERER_ROOT, (sourceFile, relPosix) => (
+    relPosix.startsWith(RENDERER_LITERAL_PREFIX)
+      ? scanLiteralFile(sourceFile, relPosix)
+      : scanRendererFile(sourceFile, relPosix)
+  ));
   for (const root of LITERAL_ROOTS) scanRoot(root, scanLiteralFile);
 
   const totalScanned = scannedByRoot.reduce((sum, entry) => sum + entry.count, 0);

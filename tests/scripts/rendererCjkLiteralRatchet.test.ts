@@ -56,7 +56,7 @@ describe('renderer-cjk-literal-ratchet', () => {
   function writeBaseline(files: Record<string, number | { count: number; reason?: string }>) {
     writeFileSync(
       baselinePath,
-      JSON.stringify({ schemaVersion: 1, scopeVersion: 2, files }, null, 2),
+      JSON.stringify({ schemaVersion: 1, scopeVersion: 3, files }, null, 2),
       'utf8',
     );
   }
@@ -367,9 +367,59 @@ describe('renderer-cjk-literal-ratchet', () => {
     });
     const ok = runCli();
     expect(ok.status, ok.stderr).toBe(0);
-    expect(ok.stdout).toContain('口径 2');
+    expect(ok.stdout).toContain('口径 3');
     expect(ok.stdout).toContain('src/shared/constants=2');
     expect(ok.stdout).toContain('src/host/diagnostics=2');
+  });
+
+  it('scope 3: Chinese punctuation counts like Han, and src/renderer/utils is an any-literal root', () => {
+    writeFileSync(
+      join(rendererRoot, 'Punct.tsx'),
+      [
+        'export function Punct({ label, n }: { label: string; n: number }) {',
+        '  return (',
+        '    <p title="Status：ready">',
+        '      {`Needs your approval：${label}`}',
+        '      <span>Done。</span>',
+        '      <span>{n} items · ok</span>',
+        '    </p>',
+        '  );',
+        '}',
+      ].join('\n'),
+      'utf8',
+    );
+    mkdirSync(join(repoRoot, 'src/renderer/utils'), { recursive: true });
+    writeFileSync(
+      join(repoRoot, 'src/renderer/utils/formatThing.ts'),
+      [
+        'export function formatThing(value?: string): string {',
+        "  if (value == null) return '未设置';",
+        "  const table = { empty: '（空）', ok: 'fine' };",
+        '  return value || table.empty;',
+        '}',
+      ].join('\n'),
+      'utf8',
+    );
+    writeFileSync(join(contractRoot, 'ok.ts'), 'export const OK = "契约存量";\n', 'utf8');
+
+    writeBaseline({ 'src/shared/contract/ok.ts': 1 });
+    const res = runCli();
+    expect(res.status).toBe(1);
+    // 只有中文标点、没有汉字的三处渲染位置
+    expect(res.stderr).toContain('src/renderer/components/Punct.tsx:3:14 [jsx-attribute]');
+    expect(res.stderr).toContain('src/renderer/components/Punct.tsx:4:8 [jsx-text]');
+    expect(res.stderr).toContain('src/renderer/components/Punct.tsx:5:13 [jsx-text]');
+    expect(res.stderr).not.toContain('src/renderer/components/Punct.tsx:6:');
+    // utils 下：return 的字面量和对象字段里的字面量都计（渲染位置口径数不到这两种）
+    expect(res.stderr).toContain("src/renderer/utils/formatThing.ts:2:29 [literal-string] '未设置'");
+    expect(res.stderr).toContain("src/renderer/utils/formatThing.ts:3:26 [literal-string] '（空）'");
+
+    writeBaseline({
+      'src/renderer/components/Punct.tsx': 3,
+      'src/renderer/utils/formatThing.ts': 2,
+      'src/shared/contract/ok.ts': 1,
+    });
+    expect(runCli().status).toBe(0);
   });
 
   it('scope version: a baseline recorded under the old scope is rejected and can be re-recorded only then', () => {
@@ -379,12 +429,12 @@ describe('renderer-cjk-literal-ratchet', () => {
 
     const stale = runCli();
     expect(stale.status).toBe(1);
-    expect(stale.stderr).toContain('基线按口径 1 录制，脚本当前口径 2');
+    expect(stale.stderr).toContain('基线按口径 1 录制，脚本当前口径 3');
 
     const rerecorded = runCli(['--init-baseline']);
     expect(rerecorded.status, rerecorded.stderr).toBe(0);
     const saved = JSON.parse(readFileSync(baselinePath, 'utf8')) as { scopeVersion: number; files: Record<string, number> };
-    expect(saved.scopeVersion).toBe(2);
+    expect(saved.scopeVersion).toBe(3);
     expect(saved.files).toEqual({ 'src/shared/contract/ok.ts': 1 });
     expect(runCli().status).toBe(0);
 
