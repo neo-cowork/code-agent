@@ -94,6 +94,7 @@ import {
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { registerAgentContinueRoute } from './registerAgentContinueRoute';
+import { envResumeProbeFactory } from '../../host/ipc/envAssist.ipc';
 import {
   admitDelegatedTurn,
   CloudRunRouteRuntime,
@@ -1944,7 +1945,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     deps.publishCompanionEvent?.(recovered.sessionId, 'agent_cancelled', { event: null, runId: recovered.runId });
   });
 
-  registerAgentContinueRoute(router, runRegistry);
+  registerAgentContinueRoute(router, runRegistry, undefined, undefined, envResumeProbeFactory);
 
   registerAgentLifecycleControlRoutes(router, runRegistry, deps.getDurableRunReadService?.());
 

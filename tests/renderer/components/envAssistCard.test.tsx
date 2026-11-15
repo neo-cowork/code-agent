@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
@@ -68,6 +68,26 @@ describe('EnvAssistCard', () => {
     fireEvent.click(await screen.findByRole('button'));
     await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
     expect(screen.getByTestId('env-assist-card').textContent).toBe('要看你的日程，需要你允许 Neo 控制「日历」。');
+  });
+  it.each([['zh', '已允许 Neo 控制「日历」。'], ['en', 'Neo can now control Calendar.']] as const)('a resolved notice shows the done sentence and no button, also after reload (%s)', async (language, done) => {
+    mocks.language = language;
+    const resolved: EnvAssistNotice = { ...notice, phase: 'resolved', doneKey: 'env.done.calendar', action: undefined, updatedAt: 2 };
+    render(<EnvAssistCard notice={resolved} />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'getAvailability'));
+    expect(screen.getByTestId('env-assist-card').textContent).toBe(done);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(mocks.invoke).not.toHaveBeenCalledWith('domain:envAssist', 'recheck', expect.anything());
+  });
+  it('rechecks on mount and on window focus, and the broadcast resolved notice replaces the button', async () => {
+    render(<EnvAssistCard notice={notice} />);
+    await screen.findByRole('button');
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: notice.id }));
+    mocks.invoke.mockClear();
+    window.dispatchEvent(new Event('focus'));
+    expect(mocks.invoke).toHaveBeenCalledWith('domain:envAssist', 'recheck', { noticeId: notice.id });
+    act(() => useEnvAssistStore.getState().report({ ...notice, phase: 'resolved', doneKey: 'env.done.calendar', action: undefined, updatedAt: 2 }));
+    await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
+    expect(screen.getByTestId('env-assist-card').textContent).toBe('已允许 Neo 控制「日历」。');
   });
   it('does not render host diagnostics or forged copy keys and parameters', async () => {
     render(<EnvAssistCard notice={{ ...notice, sentenceKey: 'osascript', sentenceParams: { raw: '-1743' }, devDiagnostic: { rawRef: 'TCC' } }} />);
