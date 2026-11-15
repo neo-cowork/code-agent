@@ -325,7 +325,7 @@ export const onboardingEn = {
       badgeAvailable: 'Ready',
       probeErrorDetail: 'Detected · Couldn\'t check, retry later',
       badgeRetryLater: 'Retry later',
-      cliNeedsLoginUnverifiedDetail: 'Detected · Not signed in · Not supported yet',
+      cliNeedsLoginUnverifiedDetail: 'Detected · No sign-in · Not supported yet',
       badgeNeedsLogin: 'Sign in required',
       localSpikeDetectedDetail: 'Detected · Not supported yet',
       unverifiedDetectedDetail: 'Detected · Not supported yet',

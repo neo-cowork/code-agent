@@ -118,7 +118,10 @@ describe('first-run wizard source status copy', () => {
     expect(dialog.textContent?.match(BANNED[language])?.[0]).toBeUndefined();
     // 未登录但本身还不支持的来源：登录白做，所以必须同时说明「暂未支持」
     const unsupported = language === 'zh' ? '暂未支持' : 'Not supported yet';
-    expect(cards.find((card) => card.id === 's03_detected_unverified_needs_login')!.detail).toContain(unsupported);
+    const s03 = cards.find((card) => card.id === 's03_detected_unverified_needs_login')!.detail;
+    expect(s03).toContain(unsupported);
+    // 卡片文字列约 250px：超过这个长度会被省略号截断（r2 实测 44 字符的英文版截断）
+    expect(s03).toBe(language === 'zh' ? '已检测到 · 还没登录 · 暂未支持' : 'Detected · No sign-in · Not supported yet');
     if (language === 'en') expect(dialog.textContent).not.toMatch(/[㐀-鿿]/u);
   });
 
