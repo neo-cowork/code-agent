@@ -16,6 +16,8 @@ import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
 import { createLogger } from '../services/infra/logger';
+import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
+import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 const logger = createLogger('EnvAssistIpc');
 
@@ -77,6 +79,8 @@ async function settle<T extends EnvAssistActResult>(deps: EnvAssistDependencies,
   try { await (deps.resolve ?? resolveEnvAssistNotice)(notice); } catch (error) {
     logger.warn('Env-assist notice resolve failed', { noticeId: notice.id, error: error instanceof Error ? error.message : String(error) });
   }
+  // Wake the run this card parked (no-op when nothing is parked or a waiter is already polling; never throws).
+  armEnvResumeOnSessionReturn(notice.sessionId, getApplicationRunRegistry(), 'env_assist_granted');
   return result;
 }
 
@@ -160,3 +164,19 @@ export function registerEnvAssistHandlers(deps: EnvAssistDependencies = defaults
   installDomainRoutes(ipcHost, routes, resolved);
 }
 registerEnvAssistHandlers.routes = routes;
+
+/**
+ * S3 resume probe for a parked run: the same passive (never-prompting) check the card uses.
+ * Distinguishable degrade reasons are logged; 'unavailable' stops the waiter (manual Continue still works).
+ */
+export const envResumeProbeFactory: EnvResumeProbeFactory = (block) => {
+  const bundleId = block.class === 'perm_automation' ? automationBundleId(block.target) : undefined;
+  if (!bundleId) logger.warn('Env resume probe unavailable', { reason: 'unsupported_target', class: block.class, target: block.target });
+  const client = bundleId ? resolveShellBridgeClientFromEnv() : null; // logs env_assist_bridge:no_shell itself
+  const probe = bundleId && client ? automationProbe(createShellPassiveBridge(client), bundleId) : null;
+  return async () => {
+    if (!probe) return 'unavailable';
+    const { status } = await probe();
+    return status === 'granted' ? 'green' : status === 'unavailable' ? 'unavailable' : 'red';
+  };
+};
