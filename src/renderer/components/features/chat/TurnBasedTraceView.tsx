@@ -14,7 +14,7 @@ import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '..
 import { TurnRail } from './TurnRail';
 import { useTurnRailJump } from './useTurnRailJump';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
-import { isScrollerNearBottom, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
+import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
 export { isScrollerNearBottom } from './useSessionEntryScroll';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -836,11 +836,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
 
     return scheduleAfterLayout(() => {
       if (isUserScrollSuppressed()) return;
-      virtuosoRef.current?.scrollToIndex({
-        index: outputFollowTurnIndex,
-        align: 'end',
-        behavior: 'auto',
-      });
+      revealTurnEnd(virtuosoRef.current, scrollerElementRef.current, outputFollowTurnIndex, projectionTurnsRef.current.length);
     });
   }, [isUserScrollSuppressed, outputFollowRevision, outputFollowTurn?.status, outputFollowTurnIndex]);
 
@@ -867,11 +863,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         if (turnIndex !== outputFollowTurnIndex) return;
         activeDisplayScrollLastAtRef.current = Date.now();
         recordStreamingPerformanceCounter('stream.active_display_scroll');
-        virtuosoRef.current?.scrollToIndex({
-          index: turnIndex,
-          align: 'end',
-          behavior: 'auto',
-        });
+        revealTurnEnd(virtuosoRef.current, scrollerElementRef.current, turnIndex, projectionTurnsRef.current.length);
       },
       delay,
     );
@@ -883,11 +875,13 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!scroller || !turnId || outputFollowTurnIndex < 0) return;
     if (typeof ResizeObserver !== 'function') return;
 
-    // 只观察跟随中的活动 turn：其他已挂载 turn 的 resize 不应触发吸底调度
-    const target = scroller.querySelector<HTMLElement>(getTraceTurnSelector(turnId));
-    if (!target) return;
-
-    let lastHeight = target.getBoundingClientRect().height;
+    // 只观察跟随中的活动 turn：其他已挂载 turn 的 resize 不应触发吸底调度。
+    // 新追加的 turn 在本 effect 运行时 Virtuoso 还没把它渲染出来（先测量后挂载），滚出再滚回
+    // 也会换成新元素——只查一次会让观察器整轮挂不上，停车后才长出来的授权卡按钮、错误卡、
+    // 停住行就没人跟，下半截落在输入框后面（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER）。
+    // 所以列表子项一变就重新对准当前那个元素。
+    let target: HTMLElement | null = null;
+    let lastHeight = 0;
     const observer = new ResizeObserver((entries) => {
       const nextHeight = entries[0]?.contentRect.height;
       if (nextHeight === undefined || nextHeight === lastHeight) return;
@@ -900,10 +894,42 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       }
       scheduleActiveDisplayScroll(outputFollowTurnIndex);
     });
-
-    observer.observe(target);
-    return () => observer.disconnect();
+    const attach = () => {
+      const next = scroller.querySelector<HTMLElement>(getTraceTurnSelector(turnId));
+      if (next === target) return;
+      if (target) observer.unobserve(target);
+      target = next;
+      if (!target) return;
+      lastHeight = target.getBoundingClientRect().height;
+      observer.observe(target);
+    };
+    attach();
+    const itemList = scroller.querySelector('[data-testid="virtuoso-item-list"]');
+    const remount = new MutationObserver(attach);
+    if (itemList) remount.observe(itemList, { childList: true });
+    return () => {
+      remount.disconnect();
+      observer.disconnect();
+    };
   }, [isFollowReengageSuppressed, outputFollowTurn?.turnId, outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
+
+  // 输入框变高（多行草稿、附件条、待决卡槽）会把消息区压矮：原本贴底的就重新落到底，
+  // 末张卡不被吃掉；用户已上滚阅读（离底超出阈值+压缩量）时不动。
+  useEffect(() => {
+    const scroller = scrollerElement;
+    if (!scroller || typeof ResizeObserver !== 'function') return;
+    let lastHeight = scroller.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const shrink = lastHeight - scroller.clientHeight;
+      lastHeight = scroller.clientHeight;
+      if (shrink <= 0 || !keepActiveOutputVisibleRef.current || isUserScrollSuppressed()) return;
+      if (sessionEntrySettlingRef.current || historyPrependInProgressRef.current) return;
+      if (!isScrollerNearBottom(scroller, 96 + shrink)) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    });
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [isUserScrollSuppressed, scrollerElement]);
 
   // F3：活动流式 turn 的只增 min-height 锁。流式 overlay 的 live 节点在工具边界
   // 换 id 重挂载，turn 内部高度瞬时塌陷 → virtuoso 重测量把列表总高压到视口高、

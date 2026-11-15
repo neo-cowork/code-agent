@@ -27,6 +27,24 @@ export function isScrollerNearBottom(
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
+/**
+ * 把跟随中的 turn 末尾露出来。它是列表最后一项时直接落到真实底部（含 Footer 呼吸间距）：
+ * scrollToIndex(align:'end') 按 Virtuoso 自己量的项高对齐，末张卡的外边距和 Footer 落在视口外，
+ * 停车后的授权卡按钮露半截又不到「回到底部」的阈值（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER）。
+ */
+export function revealTurnEnd(
+  virtuoso: Pick<VirtuosoHandle, 'scrollToIndex'> | null,
+  scroller: Pick<HTMLElement, 'scrollTop' | 'scrollHeight'> | null,
+  turnIndex: number,
+  turnCount: number,
+): void {
+  if (scroller && turnIndex === turnCount - 1) {
+    scroller.scrollTop = scroller.scrollHeight;
+    return;
+  }
+  virtuoso?.scrollToIndex({ index: turnIndex, align: 'end', behavior: 'auto' });
+}
+
 // scroller 还没量出尺寸时无从判断，返回 null 表示保持现状，不要硬猜。
 function computeScrollerAtBottom(
   scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'> | null,
