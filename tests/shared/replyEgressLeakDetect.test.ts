@@ -113,3 +113,31 @@ describe('detectReplyEgressLeaks', () => {
     });
   });
 });
+
+describe('detectReplyEgressLeaks: denial paraphrases (FU1)', () => {
+  const zhUser = '帮我把工作目录里的 .tmp 临时文件删掉';
+
+  it.each([
+    'shell 被禁用',
+    'Shell 命令这一轮跑不了',
+    'shell 命令不在本轮可用能力内',
+    '该能力在本次运行中被禁用',
+    '终端工具被禁用了',
+  ])('flags mechanism_talk on "%s"', (reply) => {
+    const result = detectReplyEgressLeaks(`抱歉，${reply}，我先帮你列出文件。`, zhUser);
+    expect(result.categories).toContain('mechanism_talk');
+  });
+
+  it('flags a short English opener only when the message carries toolCalls', () => {
+    const reply = "I'll first look at what's actually there before removing anything.";
+    expect(detectReplyEgressLeaks(reply, zhUser, { hasToolCalls: true }).categories).toEqual(['english_reply_to_zh']);
+    expect(detectReplyEgressLeaks(reply, zhUser).categories).toEqual([]);
+  });
+
+  it('does not fire on legitimate sentences or English requests', () => {
+    expect(detectReplyEgressLeaks('终端里的配色可以在设置中调整，也可以禁用闪烁光标。', '终端配色怎么改').categories).toEqual([]);
+    expect(detectReplyEgressLeaks('OK', zhUser, { hasToolCalls: true }).categories).toEqual([]);
+    expect(detectReplyEgressLeaks("I'll first look at what's actually there.", '请用英文回复我', { hasToolCalls: true }).categories).toEqual([]);
+    expect(detectReplyEgressLeaks("I'll first look at what's actually there.", 'clean my tmp files', { hasToolCalls: true }).categories).toEqual([]);
+  });
+});

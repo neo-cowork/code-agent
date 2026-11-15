@@ -51,6 +51,10 @@ export interface ToolApprovalPayload {
   standingGrantTarget?: string | null;
   /** Must-confirm requests offer only one-time approval. */
   forceConfirm?: boolean;
+  /** Host-owned origin of the request (copied from permission details): scheduled-task flag/name or the user's own quote. */
+  startedByAutomation?: boolean;
+  scheduledTaskName?: string;
+  userRequest?: { text: string; truncated: boolean };
   browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
   /**
    * 「一键授权此任务写这个文件夹」候选（realpath 后的绝对路径）。仅无人值守 cron/heartbeat 的
@@ -105,6 +109,10 @@ export interface ParkedApprovalInboxItem {
   standingGrantTarget?: string | null;
   /** Must-confirm requests offer only one-time approval. */
   forceConfirm?: boolean;
+  /** Host-owned origin: scheduled-task flag/name, or the user's own quote for manual turns. */
+  startedByAutomation?: boolean;
+  scheduledTaskName?: string;
+  userRequest?: { text: string; truncated: boolean };
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
   argsPreview?: string;
   /** Complete redacted shell command for one-click inspection; never truncated. */

@@ -86,6 +86,7 @@ vi.mock('../../../src/host/model/modelRouter', () => ({
   },
 }));
 
+import { COMPACTION_SUMMARY } from '../../../src/shared/constants';
 import {
   compactModelSummarize,
   compactModelSummarizeWithMetadata,
@@ -374,5 +375,29 @@ describe('compactModelSummarize', () => {
       expect(call[0]).toEqual([{ role: 'user', content: '请压缩这段超长上下文' }]);
       expect(call[5]).toEqual({ cacheRetention: 'none', cacheScopeId: 'compact-summary' });
     }
+  });
+
+  it('forwards COMPACTION_SUMMARY.MAX_TOKENS (4096) to router.inference without clamping at 2048', async () => {
+    compactModelMocks.fallbackConfig = {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      maxTokens: 2048,
+    };
+    compactModelMocks.apiKeys = { moonshot: 'moonshot-key' };
+
+    await compactModelSummarizeWithMetadata('请压缩这段上下文', COMPACTION_SUMMARY.MAX_TOKENS);
+
+    expect(compactModelMocks.inference).toHaveBeenCalledWith(
+      [{ role: 'user', content: '请压缩这段上下文' }],
+      [],
+      expect.objectContaining({
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        maxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
+      }),
+      undefined,
+      undefined,
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
+    );
   });
 });

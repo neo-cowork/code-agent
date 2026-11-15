@@ -8,6 +8,7 @@ import { localCronTimezone } from './localTimezone';
 import type { TemplateCopy } from '../../../i18n/cronWatchTemplateCopy';
 import { cronCenterEn } from '../../../i18n/cronCenter';
 import { enAgentPrompt, enTagsText, enUnregisteredCopy } from './cronTemplatesEn';
+import { parseSchedulePeriodWords } from './schedulePeriodWords';
 
 /** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条，agentPrompt 取 cronTemplatesEn。 */
 type CronTemplateLanguage = 'zh' | 'en';
@@ -435,6 +436,12 @@ function parseFriendlySchedule(input?: string): Partial<CronJobDraft> {
     const h = dailyAt[1] || '9';
     const m = dailyAt[2] || '0';
     return { scheduleType: 'cron', cronExpression: `${m} ${h} * * *`, cronTimezone: localCronTimezone() };
+  }
+  const periodWords = parseSchedulePeriodWords(s);
+  if (periodWords) {
+    const [h, m] = (periodWords.time ?? '09:00').split(':').map(Number);
+    const dow = periodWords.freq === 'weekly' ? periodWords.weekday : periodWords.freq === 'weekdays' ? '1-5' : '*';
+    return { scheduleType: 'cron', cronExpression: `${m} ${h} * * ${dow}`, cronTimezone: localCronTimezone() };
   }
   if (s.includes('每天')) {
     return { scheduleType: 'cron', cronExpression: '0 9 * * *', cronTimezone: localCronTimezone() };

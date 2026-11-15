@@ -29,6 +29,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { UserRequestQuote } from '../../PermissionDialog/UserRequestQuote';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
@@ -377,6 +378,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           )}
                         </div>
                         {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
+                        {!isPairing && <UserRequestQuote details={item} labels={t.decisionCard.permission} />}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
                             {cc.pairingCode.replace('{code}', item.pairingCode)}
