@@ -16,6 +16,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
+import { interpolate, interpolatePlural } from '../../i18n/interpolate';
 import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
@@ -289,7 +290,7 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
       >
         <span>{expanded ? '\u25BC' : '\u25B6'}</span>
         <span>{t.decisionCard.permission.traceToggle}</span>
-        <span className="text-zinc-600">({t.decisionCard.permission.traceSteps.replace('{count}', String(trace.steps.length))})</span>
+        <span className="text-zinc-600">({interpolatePlural(t.decisionCard.permission.traceSteps, trace.steps.length)})</span>
       </button>
       {expanded && (
         <div className="mt-1.5 space-y-1">
@@ -345,10 +346,10 @@ function MediaPriceNotice({ request }: { request: PermissionRequest }) {
   } else if (estimate.kind === 'music') {
     text = labels.mediaPriceMusic.replace('{price}', formatCny(estimate.totalCny));
   } else if (estimate.count > 1) {
-    text = labels.mediaPriceImageBatch
-      .replace('{count}', String(estimate.count))
-      .replace('{unitPrice}', formatCny(estimate.unitPriceCny))
-      .replace('{total}', formatCny(estimate.totalCny));
+    text = interpolate(
+      interpolatePlural(labels.mediaPriceImageBatch, estimate.count),
+      { unitPrice: formatCny(estimate.unitPriceCny), total: formatCny(estimate.totalCny) },
+    );
   } else {
     text = labels.mediaPriceImage.replace('{price}', formatCny(estimate.unitPriceCny));
   }

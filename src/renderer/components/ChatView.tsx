@@ -72,6 +72,7 @@ import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
 import { DEFAULT_PROVIDER } from '@shared/constants';
 import { getLocalizedProviderDisplayName } from '../i18n/providerDisplay';
+import { interpolatePlural } from '../i18n/interpolate';
 import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
@@ -903,10 +904,7 @@ export const ChatView: React.FC = () => {
               && result.done.length === 0
               && result.restoredMessageCount === 0
             ) return;
-            const restored = t.chat.rewindRestored.replace(
-              '{count}',
-              String(result.restoredMessageCount),
-            );
+            const restored = interpolatePlural(t.chat.rewindRestored, result.restoredMessageCount);
             const message = `${restored} ${t.chat.turnCheckoutExternalEffects}`;
             if (result.state === 'success') toast.success(message);
             else toast.warning(`${t.chat.turnCheckoutNoteRedoPartial} ${message}`);

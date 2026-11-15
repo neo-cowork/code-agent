@@ -17,6 +17,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { DecisionCard, DecisionCollapsedBar, type DecisionOption } from '../../DecisionCard';
 
 function DimensionRow({ icon, label, text, warn }: { icon: React.ReactNode; label: string; text: string; warn?: boolean }) {
@@ -125,8 +126,8 @@ export function WorkflowLaunchCard() {
               </div>
             )}
             <div className="text-zinc-500">
-              {w.estimatedCalls.replace('{count}', String(request.estimatedAgentCalls))}
-              {request.fanoutSites > 0 && <> · {w.fanoutSites.replace('{count}', String(request.fanoutSites))}</>}
+              {interpolatePlural(w.estimatedCalls, request.estimatedAgentCalls)}
+              {request.fanoutSites > 0 && <> · {interpolatePlural(w.fanoutSites, request.fanoutSites)}</>}
             </div>
           </div>
 

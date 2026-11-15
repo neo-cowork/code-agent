@@ -4,6 +4,7 @@
 
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../../i18n';
+import { interpolatePlural } from '../../../../../../i18n/interpolate';
 import { summarizeBash } from './bashSummarizer';
 import { summarizeGrep } from './grepSummarizer';
 import { summarizeGlob } from './globSummarizer';
@@ -238,7 +239,7 @@ function summarizeWebFetch(toolCall: ToolCall, t: Translations): string | null {
   if (chars > 5000) {
     return `~${Math.round(chars / 1024)}KB`;
   }
-  return t.toolResultSummary.lineCount.replace('{count}', String(lines));
+  return interpolatePlural(t.toolResultSummary.lineCount, lines);
 }
 
 function summarizeAskUser(toolCall: ToolCall): string | null {

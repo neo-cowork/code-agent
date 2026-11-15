@@ -22,6 +22,7 @@ import {
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useI18n } from '../hooks/useI18n';
+import { interpolatePlural } from '../i18n/interpolate';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
@@ -261,7 +262,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
         },
       );
       const restoredFileCount = result.restoredFileCount + result.deletedFileCount;
-      setRevisionActionMessage(wp.restoredFiles.replace('{count}', String(restoredFileCount)));
+      setRevisionActionMessage(interpolatePlural(wp.restoredFiles, restoredFileCount));
     } catch (error) {
       setRevisionActionError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -665,7 +666,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
       {activeDrawer === 'gallery' && (
         <AssetDrawerPanel
           title={wp.galleryTitle}
-          subtitle={wp.visualAssets.replace('{count}', String(galleryItems.length))}
+          subtitle={interpolatePlural(wp.visualAssets, galleryItems.length)}
           onClose={() => setActiveDrawer(null)}
         >
           {galleryItems.length === 0 ? (

@@ -59,6 +59,7 @@ import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnershi
 import { useI18n } from '../../../hooks/useI18n';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -1009,11 +1010,11 @@ function getTurnCompletionSignal(turn: TraceTurn, t: Translations): string | nul
   const artifacts = turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership')?.turnTimeline?.artifactOwnership;
   const deliverableArtifacts = artifacts?.filter((item) => !isReadOnlyArtifactOwnershipItem(item)) ?? [];
   if (deliverableArtifacts.length && turn.status !== 'completed') {
-    return t.turnRun.outputsSignal.replace('{count}', String(deliverableArtifacts.length));
+    return interpolatePlural(t.turnRun.outputsSignal, deliverableArtifacts.length);
   }
   const toolCount = turn.nodes.filter((node) => node.type === 'tool_call').length;
   if (toolCount > 0 && turn.status !== 'completed') {
-    return t.turnRun.toolsSignal.replace('{count}', String(toolCount));
+    return interpolatePlural(t.turnRun.toolsSignal, toolCount);
   }
   return null;
 }

@@ -16,6 +16,7 @@ import ipcService from '../../../services/ipcService';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { DecisionCard, DecisionCollapsedBar, type DecisionOption } from '../../DecisionCard';
 
 export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ request }) => {
@@ -103,7 +104,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
           <GitBranch className="w-4 h-4 text-badge-accent" />
           <div className="text-sm text-zinc-100 font-medium">
             {request.status === 'approved'
-              ? s.historyApproved.replace('{count}', String(request.agentCount))
+              ? interpolatePlural(s.historyApproved, request.agentCount)
               : s.historyRejected}
           </div>
           <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass}`}>
@@ -170,7 +171,7 @@ export const LaunchRequestCard: React.FC<{ request: SwarmLaunchRequest }> = ({ r
       viewMode="expanded"
       icon={<GitBranch className="w-4 h-4" />}
       title={s.title}
-      question={s.question.replace('{count}', String(request.agentCount))}
+      question={interpolatePlural(s.question, request.agentCount)}
       details={
         <div className="text-xs leading-5 text-zinc-400 line-clamp-2">
           {request.summary}

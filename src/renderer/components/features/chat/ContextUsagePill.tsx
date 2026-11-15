@@ -6,6 +6,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { ContextHealthDetailPopover, sessionHasSentMessage } from './ContextHealthDetailPopover';
 import {
@@ -184,7 +185,7 @@ export const ContextUsagePill: React.FC = () => {
             <div className="mt-2 text-[11px] text-badge-success">
               {compactResult.totalSavedTokens > 0
                 ? ch.freedTokens.replace('{tokens}', formatContextTokenNumber(compactResult.totalSavedTokens))
-                : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
+                : interpolatePlural(ch.compactedCount, compactResult.compressionCount)}
             </div>
           )}
           {compactError && (

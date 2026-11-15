@@ -18,6 +18,7 @@
 
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { stripAnsi } from '../../../../utils/stripAnsi';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import type { Translations } from '../../../../i18n';
 
 /** 四态里允许交接给 Neo 的三态；denied（用户自己拒的）不发 */
@@ -74,7 +75,7 @@ export function buildRunHandoffMessage(input: RunHandoffInput, locale: Translati
   const output = strippedOutput !== ''
     ? truncateOutput(
       redactCredentialText(strippedOutput, { redacted: REDACTED }),
-      (omitted) => locale.runHandoffTruncationNote.replace('{count}', String(omitted)),
+      (omitted) => interpolatePlural(locale.runHandoffTruncationNote, omitted),
     )
     : null;
 

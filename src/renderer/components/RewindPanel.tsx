@@ -11,6 +11,7 @@ import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { interpolatePlural } from '../i18n/interpolate';
 import { formatDateTime } from '../utils/formatDateTime';
 import { undeclaredToolDisplayName } from '../utils/humanizeToolStep';
 
@@ -248,7 +249,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onChe
                 </span>
               </div>
               <span className="text-xs text-zinc-500 mt-1 block">
-                {r.fileCount.replace('{count}', String(cp.fileCount))}
+                {interpolatePlural(r.fileCount, cp.fileCount)}
               </span>
             </button>
           ))}

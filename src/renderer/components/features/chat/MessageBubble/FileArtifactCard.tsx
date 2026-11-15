@@ -4,6 +4,7 @@ import { formatDisplayPath } from '../../../../utils/displayPath';
 // ============================================================================
 
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { useWorkbenchFocusStore } from '../../../../stores/workbenchFocusStore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -77,8 +78,8 @@ const DeliverableDiffDetail: React.FC<{ change: FileChange }> = ({ change }) => 
         <span>{copy.changes}</span>
         {hasLineChanges && (
           <span className="flex items-center gap-1">
-            {change.added > 0 && <span className="text-badge-success">{(change.isNewFile ? copy.generatedLines : copy.addedLines).replace('{count}', String(change.added))}</span>}
-            {change.removed > 0 && <span className="text-badge-danger">{copy.removedLines.replace('{count}', String(change.removed))}</span>}
+            {change.added > 0 && <span className="text-badge-success">{interpolatePlural(change.isNewFile ? copy.generatedLines : copy.addedLines, change.added)}</span>}
+            {change.removed > 0 && <span className="text-badge-danger">{interpolatePlural(copy.removedLines, change.removed)}</span>}
           </span>
         )}
       </button>

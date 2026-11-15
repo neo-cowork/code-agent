@@ -49,6 +49,7 @@ import {
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolate, interpolatePlural } from '../../../../i18n/interpolate';
 import type { Translations } from '../../../../i18n';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
@@ -135,8 +136,8 @@ function getAttachmentMediaState(attachment: MessageAttachment): {
   }
 }
 
-// 生命周期状态 → t.attachmentPreview 文案键
-const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, keyof AttachmentPreviewStrings> = {
+// 生命周期状态 → t.attachmentPreview 文案键（只指向无复数对的纯字符串键）
+const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, 'stateWaiting' | 'stateDownloading' | 'stateEmbedded' | 'stateTranscribing' | 'stateReady' | 'stateFailed'> = {
   pending: 'stateWaiting',
   downloading: 'stateDownloading',
   embedded: 'stateEmbedded',
@@ -537,20 +538,20 @@ const AttachmentItem: React.FC<{
           </div>
           <div className="text-xs text-zinc-500">
             {archiveManifest
-              ? `${archiveManifest.format} · ${t.attachmentPreview.archiveFilesCount.replace('{count}', String(archiveManifest.totalFiles))}`
+              ? `${archiveManifest.format} · ${interpolatePlural(t.attachmentPreview.archiveFilesCount, archiveManifest.totalFiles)}`
               : formatFileSize(displayAttachment.size)}
           </div>
           {stateBadge}
           {archiveManifest && (
             <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
-                ? t.attachmentPreview.archiveEntriesCount.replace(
-                  '{count}',
-                  `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}`,
+                ? interpolate(
+                  interpolatePlural(t.attachmentPreview.archiveEntriesCount, archiveManifest.entries.length),
+                  { count: `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}` },
                 )
                 : archiveManifest.note}
               {dangerCount > 0
-                ? ` · ${t.attachmentPreview.dangerousPathsCount.replace('{count}', String(dangerCount))}`
+                ? ` · ${interpolatePlural(t.attachmentPreview.dangerousPathsCount, dangerCount)}`
                 : ''}
             </div>
           )}
@@ -575,7 +576,7 @@ const AttachmentItem: React.FC<{
           <span className={`${color} text-2xs`}>{label}</span>
           <span>·</span>
           {category === 'pdf' && displayAttachment.pageCount
-            ? <span>{t.attachmentPreview.pageCount.replace('{count}', String(displayAttachment.pageCount))}</span>
+            ? <span>{interpolatePlural(t.attachmentPreview.pageCount, displayAttachment.pageCount)}</span>
             : category === 'excel' && displayAttachment.sheetCount
               ? <span>{t.attachmentPreview.sheetsRowsCount
                 .replace('{sheets}', String(displayAttachment.sheetCount))
@@ -591,8 +592,8 @@ const AttachmentItem: React.FC<{
   );
 };
 
-// 文件夹汇总卡的分类 → t.attachmentPreview 文案键
-const CATEGORY_LABEL_KEYS: Record<string, keyof AttachmentPreviewStrings> = {
+// 文件夹汇总卡的分类 → t.attachmentPreview 文案键（只指向无复数对的纯字符串键）
+const CATEGORY_LABEL_KEYS: Record<string, 'categoryImage' | 'categoryAudio' | 'categoryVideo' | 'categoryPdf' | 'categoryExcel' | 'categoryPresentation' | 'categoryArchive' | 'categoryCode' | 'categoryData' | 'categoryText' | 'categoryHtml' | 'categoryOther'> = {
   image: 'categoryImage',
   audio: 'categoryAudio',
   video: 'categoryVideo',
@@ -652,7 +653,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             <div className="text-sm font-medium text-zinc-200">
               {stats.folderName
                 ? `📁 ${stats.folderName}`
-                : t.attachmentPreview.folderFilesCount.replace('{count}', String(attachments.length))}
+                : interpolatePlural(t.attachmentPreview.folderFilesCount, attachments.length)}
             </div>
             <div className="text-xs text-zinc-500">
               {summaryParts} · {formatFileSize(stats.totalSize)}
@@ -673,7 +674,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
           >
             <ChevronDown className="h-3 w-3" />
-            {t.attachmentPreview.collapseFilesCount.replace('{count}', String(attachments.length))}
+            {interpolatePlural(t.attachmentPreview.collapseFilesCount, attachments.length)}
           </button>
         </div>
       )}
