@@ -108,7 +108,10 @@ describe('Excel action policy through production classification', () => {
     expect((await production(args)).decision).toBe('ask');
   });
   it('retains conservative read security targets; writes use the shared destinations', () => {
-    const definition = { ...excelAutomateSchema, requiresPermission: true };
+    const definition: Parameters<typeof resolveToolWriteTargets>[0]['definition'] = {
+      ...excelAutomateSchema, requiresPermission: true, permissionLevel: 'write',
+      aliases: excelAutomateSchema.aliases ? [...excelAutomateSchema.aliases] : undefined,
+    };
     expect(resolveToolWriteTargets({ definition, params: { action: 'read', file_path: path.join(outside, 'contract.xlsx') }, workingDirectory: workspace }).targets).toEqual([path.join(fs.realpathSync(outside), 'contract.xlsx')]);
     const params = { action: 'generate', output_path: 'summary.xlsx' };
     expect(resolveToolWriteTargets({ definition, params, workingDirectory: workspace }).targets).toEqual(resolveExcelWriteTargets(params, workspace).map(p => path.join(fs.realpathSync(path.dirname(p)), path.basename(p))));
