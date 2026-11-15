@@ -47,6 +47,7 @@ describe('host-user-copy-cjk-ratchet', () => {
     writeFileSync(join(hostRoot, 'sample.ts'), SAMPLE);
     writeFileSync(join(hostRoot, 'sample.test.ts'), "export const t = { message: '测试' };\n");
     writeFileSync(join(repoRoot, 'src/host/prompts/p.ts'), "export const p = { text: '提示词' };\n");
+    writeFileSync(join(hostRoot, 'tool.schema.ts'), "export const s = { description: '模型可见的工具说明' };\n");
     writeFileSync(join(repoRoot, 'src/host/prompts/q.ts'), "export const q = { description: '提示词' };\n");
     const init = runCli(['--init-baseline']);
     expect(init.status, init.stderr).toBe(0);

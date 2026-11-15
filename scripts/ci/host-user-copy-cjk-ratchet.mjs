@@ -5,7 +5,7 @@
 //
 // N-FIX-EN-HOST-ZH-COPY-SYSTEMIC 扫描口径（与 host-user-copy-cjk-ratchet 同构，基线独立）：
 //   - 扫描根：src/host/**/*.{ts,tsx}（排除 __tests__/、*.test.*、*.spec.*、*.d.ts、i18n/、
-//     src/host/prompts/**——后者是模型可见 prompt，不是用户文案）。注释不是字面量节点，天然不计。
+//     src/host/prompts/** 与 *.schema.ts 工具 schema——二者是模型可见文本，不是用户文案）。注释不是字面量节点，天然不计。
 //   - 计数目标（TypeScript AST）：含 CJK 的字符串 / 无替换模板 / 带替换模板，且是
 //       · 用户可见属性的初始值：error / message / summary / title / label / body / reason /
 //         description / text / hint（属性名为标识符或字符串键；初始值外层的括号、as、! 会剥掉）；
@@ -31,6 +31,9 @@ const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '..', '..');
 
 const HOST_ROOT = 'src/host';
 const PROMPTS_PREFIX = 'src/host/prompts/';
+// 工具 schema（*.schema.ts）的 description 是写给模型看的工具说明（含中文示例短语），不是用户文案，
+// 与 prompts/ 同属模型可见文本，整体排除；用户可见文案落在工具实现与 IPC 里，仍计数。
+const TOOL_SCHEMA_RE = /\.schema\.ts$/;
 const USER_COPY_KEYS = new Set([
   'error', 'message', 'summary', 'title', 'label', 'body', 'reason', 'description', 'text', 'hint',
 ]);
@@ -186,7 +189,7 @@ function scanHostFile(sourceFile, relPosix) {
 
 function scanAll(rootDir) {
   const hostFiles = collectFiles(rootDir, HOST_ROOT, { excludeI18n: true })
-    .filter((f) => !f.relPosix.startsWith(PROMPTS_PREFIX));
+    .filter((f) => !f.relPosix.startsWith(PROMPTS_PREFIX) && !TOOL_SCHEMA_RE.test(f.relPosix));
   if (hostFiles.length === 0) {
     throw new Error(`扫描 0 个源文件：${HOST_ROOT}`);
   }
