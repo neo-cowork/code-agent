@@ -185,6 +185,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     purpose: z.string().optional(),
     userRequest: z.object({ text: z.string(), truncated: z.boolean() }).optional(),
     startedByAutomation: z.boolean().optional(),
+    scheduledTaskName: z.string().optional(),
     commandRiskLevel: z.enum(['safe', 'unknown', 'low', 'medium', 'high', 'critical']).optional(),
     commandSecurityFlags: z.array(z.string()).optional(),
     affectedPath: z.string().optional(),
