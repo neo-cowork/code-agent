@@ -275,6 +275,7 @@ async function initializeWebMcpServices(configService: ConfigServiceForBootstrap
       workingDir,
     });
 
+    await (await import('../host/mcp/cuaHelperReaper')).reapCuaHelperDaemons({ phase: 'startup' });
     await initMCPClient(mcpConfigs, workingDir);
 
     const mcpClient = getMCPClient();

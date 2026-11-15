@@ -207,4 +207,5 @@ export async function runShutdownFinalizers(
   const results = await Promise.all(FINALIZERS.map((f) => runOne(f, capMs, now)));
   const killed = killSurvivingMcpChildren(mcpPids);
   log(`[shutdown] ${results.join(' ')} mcp.killed=${killed}/${mcpPids.length}`);
+  await (await import('../host/mcp/cuaHelperReaper')).reapCuaHelperDaemons({ phase: 'shutdown', ownProxyPids: mcpPids, log });
 }
