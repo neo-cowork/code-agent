@@ -118,8 +118,8 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
   it('automation targets are Neo ids on the notice and reach the native bridge as bundle ids', async () => {
     const fake = new NativeFake(-1744);
     const seen: string[] = [];
-    const passive = { ...fake.passive, AEDeterminePermissionToAutomateTarget: async (t: string, ask: boolean) => { seen.push(`passive:${t}`); return fake.passive.AEDeterminePermissionToAutomateTarget(t, ask); } };
-    const grant = { ...fake.grant, AEDeterminePermissionToAutomateTarget: async (t: string, ask: boolean) => { seen.push(`grant:${t}`); return fake.grant.AEDeterminePermissionToAutomateTarget(t, ask); } };
+    const passive = { ...fake.passive, AEDeterminePermissionToAutomateTarget: async (t: string, ask: false) => { seen.push(`passive:${t}`); return fake.passive.AEDeterminePermissionToAutomateTarget(t, ask); } };
+    const grant = { ...fake.grant, AEDeterminePermissionToAutomateTarget: async (t: string, ask: true) => { seen.push(`grant:${t}`); return fake.grant.AEDeterminePermissionToAutomateTarget(t, ask); } };
     registerEnvAssistHandlers({
       available: () => true, open: vi.fn(async () => true), passiveBridge: passive, grantBridge: grant,
       findNotice: async () => notice('automation', 'perm_automation', 'request_grant', { target: { id: 'calendar', labelKey: 'env.target.calendar' } }),
