@@ -31,7 +31,8 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { applyPartialToOutput } from '../shell/partialResults';
-import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
+import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
+import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { globSchema as schema } from './glob.schema';
 import {
   collectForeignSlotTraversalExcludes,
@@ -132,6 +133,52 @@ function appendArchiveHint(output: string, archiveRef: ToolResultArchiveRef | un
   return `${output}${buildSpillNotice(archiveRef)}${NEXT_READ_HINT}`;
 }
 
+/**
+ * 零匹配的统一返回形状。计划中的会话产出目录（懒创建、尚未落盘）走同一形状：
+ * 按空目录处理返回无匹配，不报错、也不为此建目录（与 ListDirectory 的
+ * planned-empty 分支同一策略）。unreadablePaths 供真实遍历路径保留 [partial] 标记；
+ * 计划目录分支没有遍历，传空数组。
+ */
+function buildNoMatchesResult(
+  pattern: string,
+  searchPath: string,
+  offset: number,
+  limit: number,
+  unreadablePaths: string[],
+  ctx: ToolContext,
+): ToolResult<string> {
+  const { output, partialMeta } = applyPartialToOutput(
+    'No files matched the pattern',
+    unreadablePaths,
+  );
+  return {
+    ok: true,
+    output,
+    meta: {
+      pattern,
+      searchPath,
+      matches: [],
+      totalMatches: 0,
+      returned: 0,
+      offset,
+      limit,
+      nextOffset: null,
+      truncated: false,
+      ...partialMeta,
+      artifact: createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'search',
+        sessionId: ctx.sessionId,
+        name: `Glob: ${pattern}`,
+        mimeType: 'text/plain',
+        contentLength: output.length,
+        preview: output,
+        metadata: { pattern, searchPath, totalMatches: 0, returned: 0, offset, limit, nextOffset: null, truncated: false, ...partialMeta },
+      }),
+    },
+  };
+}
+
 class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
 
@@ -180,6 +227,20 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
 
     onProgress?.({ stage: 'starting', detail: `glob ${pattern}` });
 
+    // 搜索路径不存在时在进 glob 前拦下（glob 库会吞掉缺失 cwd 的 readdir 错误、静默
+    // 返回空，两条路都没有诚实的「路径不存在」信号）：计划中的会话产出目录（任务_/Task_
+    // 形状，懒创建、尚未落盘）按空目录处理，返回与零匹配相同的形状，不建目录、不跑
+    // 引擎；其余缺失路径报 ENOENT，让界面说「找不到」，而不是落成「被占用/没权限」的
+    // FS_ERROR。
+    if (await isPathMissing(searchPath)) {
+      if (isPlannedSessionWorkDirectory(searchPath)) {
+        onProgress?.({ stage: 'completing', percent: 100 });
+        ctx.logger.info('Glob done (planned empty session work directory)', { pattern, searchPath });
+        return buildNoMatchesResult(pattern, searchPath, offset, limit, [], ctx);
+      }
+      return { ok: false, error: `Path not found: ${searchPath}`, code: 'ENOENT' };
+    }
+
     try {
       const ignore = [
         ...(respectGitignore
@@ -221,36 +282,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
 
       if (sortedMatches.length === 0) {
         onProgress?.({ stage: 'completing', percent: 100 });
-        const { output, partialMeta } = applyPartialToOutput(
-          'No files matched the pattern',
-          unreadablePaths,
-        );
-        return {
-          ok: true,
-          output,
-          meta: {
-            pattern,
-            searchPath,
-            matches: [],
-            totalMatches: 0,
-              returned: 0,
-              offset,
-              limit,
-              nextOffset: null,
-              truncated: false,
-              ...partialMeta,
-            artifact: createVirtualArtifact({
-              sourceTool: schema.name,
-              kind: 'search',
-              sessionId: ctx.sessionId,
-              name: `Glob: ${pattern}`,
-              mimeType: 'text/plain',
-              contentLength: output.length,
-              preview: output,
-              metadata: { pattern, searchPath, totalMatches: 0, returned: 0, offset, limit, nextOffset: null, truncated: false, ...partialMeta },
-            }),
-          },
-        };
+        return buildNoMatchesResult(pattern, searchPath, offset, limit, unreadablePaths, ctx);
       }
 
       const sliced = sortedMatches.slice(offset, offset + limit);
@@ -318,6 +350,11 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
         },
       };
     } catch (err) {
+      // ENOENT（stat 已过、遍历前目录被删等竞态）也是「路径不存在」，归 ENOENT 让界面
+      // 说「找不到」；FS_ERROR 只留给真正的读写失败。
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { ok: false, error: `Path not found: ${searchPath}`, code: 'ENOENT' };
+      }
       const message = err instanceof Error ? err.message : String(err);
       return {
         ok: false,
