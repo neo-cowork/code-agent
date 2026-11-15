@@ -19,7 +19,7 @@ const sessionState = {
   updateSessionEngine: vi.fn(),
 };
 
-// 渲染层设置快照：故意与 host 不一致（现场就是这样：快照 gpt-5.5，host 实跑 LongCat-2.0）。
+// 渲染层设置快照：故意与 host 不一致（快照是启动时拍的，云端下发等会在之后改 host 设置）。
 const appState = {
   modelConfig: { provider: 'custom-team-relay', model: 'gpt-5.5' },
   workingDirectory: null,
@@ -96,7 +96,7 @@ afterEach(() => {
 });
 
 describe('ModelSwitcher 显示 host 实际调用的模型', () => {
-  it('新会话、还没发消息：渲染层快照是 gpt-5.5，host 回落是 LongCat-2.0 → 输入框显示 LongCat', async () => {
+  it('新会话、还没发消息：渲染层设置快照与 host 不一致（快照 gpt-5.5，host 说 LongCat-2.0）→ 输入框按 host 显示', async () => {
     render(<Harness />);
     await waitFor(() => expect(trigger().textContent).toMatch(/longcat/i));
     expect(trigger().textContent).not.toMatch(/gpt-5\.5/i);
