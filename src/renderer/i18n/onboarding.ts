@@ -323,7 +323,7 @@ export const onboardingEn = {
       detectedFallbackVersion: 'Detected',
       selectableDetail: '{version} · Supported · Signed in',
       badgeAvailable: 'Ready',
-      probeErrorDetail: 'Detected · Couldn\'t check its status, try again later',
+      probeErrorDetail: 'Detected · Couldn\'t check, retry later',
       badgeRetryLater: 'Retry later',
       cliNeedsLoginUnverifiedDetail: 'Detected · Not signed in yet',
       badgeNeedsLogin: 'Sign in required',
