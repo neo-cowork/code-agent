@@ -354,7 +354,7 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
         id: 'n-ae',
         klass: 'perm_automation',
         pane: 'automation',
-        target: { id: 'com.apple.Calendar', labelKey: 'env.target.calendar' },
+        target: { id: 'calendar', labelKey: 'env.target.calendar' },
         grantPath: '/v1/grant/automation',
         passivePath: '/v1/passive/automation',
       },
@@ -385,10 +385,11 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
       });
       expect(stub.grantHits - beforeGrant).toBe(1);
       expect(stub.grantByPath[item.grantPath]).toBe(1);
-      expect(stub.passiveByPath[item.passivePath]).toBe(2);
+      // Automation reads once more before the click: a refused target goes to Settings instead of prompting.
+      expect(stub.passiveByPath[item.passivePath]).toBe(item.pane === 'automation' ? 3 : 2);
     }
     expect(stub.grantHits).toBe(4);
-    expect(stub.passiveHits).toBe(4);
+    expect(stub.passiveHits).toBe(5);
     process.stdout.write(
       `[production defaults] request_grant×4 status=checked grantHits=${stub.grantHits} passiveHits=${stub.passiveHits}\n`,
     );
@@ -587,7 +588,7 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
       class: 'perm_automation',
       phase: 'needs_user',
       sentenceKey: 'env.sentence.calendar',
-      target: { id: 'com.apple.Calendar', labelKey: 'env.target.calendar' },
+      target: { id: 'calendar', labelKey: 'env.target.calendar' },
       action: { kind: 'request_grant', labelKey: 'env.allow.calendar', payload: { pane: 'automation' } },
       resume: { mode: 'manual' },
       updatedAt: 1,
@@ -621,14 +622,15 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     const consumedToken = mintSpy.mock.results[1]?.value;
     expect(consumedToken).toBeDefined();
     stub.grantHits = 0;
-    stub.state.automationCode = -1743;
+    // Undecided so the click would prompt: only the token checks below can stop it.
+    stub.state.automationCode = -1744;
 
     // 2. Replayed click token through act -> /v1/grant/* counter stays 0.
     mintSpy.mockReturnValueOnce(consumedToken);
     const replayRes = await handler!({} as never, { action: 'act', payload: actPayload });
     expect(replayRes).toEqual({
       success: true,
-      data: { status: 'rejected', outcome: { status: 'denied' } },
+      data: { status: 'rejected', outcome: { status: 'undecided' } },
     });
     expect(stub.grantHits).toBe(0);
     process.stdout.write(`[fault replayed token] status=rejected grantHits=${stub.grantHits}\n`);
@@ -642,7 +644,7 @@ describe('shell loopback bridge & production registerEnvAssistHandlers defaults'
     const expiredRes = await handler!({} as never, { action: 'act', payload: actPayload });
     expect(expiredRes).toEqual({
       success: true,
-      data: { status: 'rejected', outcome: { status: 'denied' } },
+      data: { status: 'rejected', outcome: { status: 'undecided' } },
     });
     expect(stub.grantHits).toBe(0);
     process.stdout.write(
