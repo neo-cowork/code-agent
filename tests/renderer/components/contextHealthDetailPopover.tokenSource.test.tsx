@@ -134,7 +134,7 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
     openPopover();
 
     const deviation = screen.getByTestId('context-health-deviation');
-    expect(deviation.textContent).toBe('用量为估算值，可能有出入');
+    expect(deviation.textContent).toBe('Neo 的估算与实际用量有出入');
     expect(deviation.textContent).not.toMatch(/\d%/);
     expect(screen.queryByTestId('context-health-estimated-badge')).toBeNull();
   });
@@ -166,7 +166,7 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
       estimatedTokens: 10500,
     });
     openPopover();
-    expect(screen.getByTestId('context-health-deviation').textContent).toBe('用量为估算值，可能有出入');
+    expect(screen.getByTestId('context-health-deviation').textContent).toBe('Neo 的估算与实际用量有出入');
   });
 
   it.each(['zh', 'en'] as const)('plain language for a +280.6 percent estimate and no fee placeholder (%s)', (language) => {
@@ -182,16 +182,39 @@ describe('ContextHealthDetailPopover — 总量真源标注（N-CTXTRUTH）', ()
     openPopover();
     const deviation = screen.getByTestId('context-health-deviation');
     expect(deviation.textContent).toBe(language === 'zh'
-      ? '用量为估算值，可能有出入'
-      : 'Usage is an estimate and may be off');
+      ? 'Neo 的估算与实际用量有出入'
+      : "Neo's estimate differs from actual usage");
     expect(deviation.textContent).not.toMatch(/\d%/);
     expect(deviation.title).toBe(language === 'zh'
-      ? '这是 Neo 自己估的用量，和模型服务商实际统计的会有差距'
-      : "Neo's own estimate; the provider's real count may differ");
+      ? '此处显示模型服务商统计的实际用量，Neo 自己的估算与它有差距'
+      : "The usage shown is the model service's actual count; Neo's own estimate differs.");
     const ranking = screen.getByTestId('context-cost-ranking-status');
     expect(ranking.textContent).toBe(language === 'zh' ? '占用最多：对话' : 'Most space used: Conversation');
     expect(screen.getByTestId('context-health-detail').textContent)
       .not.toMatch(/费用最多|Highest fee|待确认|To be confirmed/);
+  });
+
+  it.each(['zh', 'en'] as const)('provider-reported total stays authoritative despite a differing Neo estimate (%s)', (language) => {
+    pillMocks.appState.language = language;
+    pillMocks.appState.contextHealth = makeHealth({
+      tokenSource: 'provider',
+      currentTokens: 10000,
+      estimatedTokens: 38060,
+    });
+    openPopover();
+
+    const panel = screen.getByTestId('context-health-detail');
+    expect(panel.textContent).toContain('10.0k / 100.0k Token');
+    expect(panel.textContent).not.toContain('38.1k');
+    expect(screen.queryByTestId('context-health-estimated-badge')).toBeNull();
+    const deviation = screen.getByTestId('context-health-deviation');
+    expect(deviation.textContent).toBe(language === 'zh'
+      ? 'Neo 的估算与实际用量有出入'
+      : "Neo's estimate differs from actual usage");
+    expect(deviation.title).toBe(language === 'zh'
+      ? '此处显示模型服务商统计的实际用量，Neo 自己的估算与它有差距'
+      : "The usage shown is the model service's actual count; Neo's own estimate differs.");
+    expect(deviation.textContent).not.toMatch(/\d%/);
   });
 
   it('clamps to composer space on open, window resize, container resize and reopen', () => {
