@@ -106,7 +106,7 @@ Routing contract:
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
 - keep_result_page: Keep the active page open for the user after the run ends (closes other tabs; not for relay/unattended runs or the shared personal profile)
-- wait_for_user: When a step in the page can only be done by the user (captcha, sign-in, payment confirmation), call this instead of asking in chat and ending the turn; it shows the user a Done button and blocks until they press it; needs reason (one plain sentence in the user's language, <=120 chars, no URLs/paths/tool names/button names). After Done call get_dom_snapshot before acting; on WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence
+- wait_for_user: When a step in the page can only be done by the user (captcha, sign-in, payment confirmation), call this instead of asking in chat and ending the turn; it shows the user a Done button and blocks until they press it; needs reason (one plain sentence in the user's language, <=120 chars, no URLs/paths/tool names/button names). After Done call get_dom_snapshot before acting; on WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence. If the user says they will fill in, log in to, or operate a page themselves, open it with browser_action (navigate, managed engine) and then wait_for_user; never probe the URL with Bash curl or open it with Bash open/the system browser.
 ${browserJevStepDescriptionSuffix()}
 
 ## Parameters:

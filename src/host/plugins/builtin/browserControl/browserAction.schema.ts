@@ -7,7 +7,7 @@ export const browserActionSchema: UntrustedContentToolSchema = {
   name: 'browser_action',
   get description() { return `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
 
-Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
+Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state. If the user says they will fill in, log in to, or operate a page themselves, open it with browser_action (navigate, managed engine) and then wait_for_user; never probe the URL with Bash curl or open it with Bash open/the system browser.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
 keep_result_page: call once the active page is the final result the user should take over — it closes every other tab and keeps this window open for the user after the run ends (not for relay/unattended runs or the shared personal profile).
