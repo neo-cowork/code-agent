@@ -81,7 +81,7 @@ const CATALOG_IDENTITY_KEYS = new Set(['id', 'roleId', 'packId', 'icon', 'catego
 export function localizeCatalogObject<T>(value: T, language: Language): T {
   if (language !== 'en') return value;
   if (typeof value === 'string') return translateCatalogText(value, language) as T;
-  if (Array.isArray(value)) return value.map((item) => localizeCatalogObject(item, language)) as T;
+  if (Array.isArray(value)) return (value as unknown[]).map((item) => localizeCatalogObject(item, language)) as T;
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, item]) => [

@@ -116,7 +116,7 @@ export function translateConfigScopeText(text: string): string {
 /** 把整份摘要里的字符串逐个过一遍 translateConfigScopeText，结构不变。 */
 export function toEnglishConfigScope<T>(value: T): T {
   if (typeof value === 'string') return translateConfigScopeText(value) as T;
-  if (Array.isArray(value)) return value.map((item) => toEnglishConfigScope(item)) as T;
+  if (Array.isArray(value)) return (value as unknown[]).map((item) => toEnglishConfigScope(item)) as T;
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, toEnglishConfigScope(item)]),
