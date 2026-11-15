@@ -8,6 +8,7 @@ import type {
 } from '@shared/contract/agentEngine';
 import { AGENT_ENGINE_LABELS } from '@shared/contract/agentEngine';
 import { useI18n } from '../../hooks/useI18n';
+import { getEngineRecommendation, getEngineSummary } from '../../utils/engineManifestCopy';
 import { Button } from '../primitives/Button';
 
 export type EngineMenuView = 'models' | 'engines';
@@ -82,12 +83,13 @@ function sourceForKind(
 export function filterEngineSources(
   sources: readonly AgentEngineSourceDescriptor[],
   query: string,
+  summaryOf: (source: AgentEngineSourceDescriptor) => string = (source) => source.summary,
 ): AgentEngineSourceDescriptor[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [...sources];
   return sources.filter((source) => (
     source.label.toLowerCase().includes(normalized)
-    || source.summary.toLowerCase().includes(normalized)
+    || summaryOf(source).toLowerCase().includes(normalized)
     || source.manifestId.toLowerCase().includes(normalized)
   ));
 }
@@ -114,7 +116,10 @@ export function EngineScopedModelPanel({
   const copy = t.engineModelPanel;
   const currentSource = sourceForKind(sources, currentEngine);
   const currentEngineLabel = AGENT_ENGINE_LABELS[currentEngine];
-  const filteredSources = useMemo(() => filterEngineSources(sources, query), [query, sources]);
+  const filteredSources = useMemo(
+    () => filterEngineSources(sources, query, (source) => getEngineSummary(source, t.engineManifest)),
+    [query, sources, t.engineManifest],
+  );
   const externalCatalog = currentEngine === 'native'
     ? undefined
     : catalog?.engines.find((entry) => entry.kind === currentEngine);
@@ -140,20 +145,20 @@ export function EngineScopedModelPanel({
             type="button"
             onClick={() => onViewChange('models')}
             className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
-            aria-label="返回模型"
+            aria-label={copy.backToModels}
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-zinc-100">选择执行引擎</div>
-            <div className="text-[10px] text-zinc-500">先选引擎，再选择它真实可用的模型</div>
+            <div className="text-xs font-medium text-zinc-100">{copy.engineListTitle}</div>
+            <div className="text-[10px] text-zinc-500">{copy.engineListSubtitle}</div>
           </div>
           <button
             type="button"
             onClick={() => onOpenSettings('agentEngine')}
             className="grid h-7 w-7 shrink-0 place-items-center rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
-            aria-label="打开执行引擎设置"
-            title="执行引擎设置"
+            aria-label={copy.openEngineSettingsAria}
+            title={copy.engineSettingsTitle}
             data-engine-settings-link
           >
             <Settings className="h-3.5 w-3.5" />
@@ -166,7 +171,7 @@ export function EngineScopedModelPanel({
               autoFocus
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="搜索执行引擎…"
+              placeholder={copy.engineSearchPlaceholder}
               data-engine-search-input
               className="w-full rounded border border-zinc-700 bg-zinc-900 py-1 pl-7 pr-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
             />
@@ -175,23 +180,23 @@ export function EngineScopedModelPanel({
         <div className="max-h-72 overflow-y-auto px-1 pb-1" data-engine-scroll-list>
           {engineSourcesLoading && filteredSources.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-zinc-500" data-engine-sources-loading>
-              正在检测本机可用的执行引擎…
+              {copy.detectingEngines}
             </div>
           ) : filteredSources.length === 0 ? (
-            <div className="px-3 py-4 text-center text-xs text-zinc-500">无匹配引擎</div>
+            <div className="px-3 py-4 text-center text-xs text-zinc-500">{copy.noMatchingEngine}</div>
           ) : filteredSources.map((source) => {
             const selected = source.kind === currentEngine;
             const disabled = !source.selectable || busyEngineId !== null;
             const state = source.selectable
-              ? source.detected ? '已检测，可用' : '未检测'
+              ? source.detected ? copy.stateReady : copy.stateNotDetected
               : source.detected
                 ? source.authState === 'needs_login'
-                  ? '已检测，需要登录'
+                  ? copy.stateNeedsLogin
                   : (source.authState === 'not_checked' || source.authState === 'unknown')
                     && source.evidence === 'production'
-                    ? '已检测，登录状态未验证'
-                    : '已检测，适配器未开放'
-                : source.recommendation?.label ?? '暂不可用';
+                    ? copy.stateAuthUnverified
+                    : copy.stateAdapterClosed
+                : getEngineRecommendation(source, t.engineManifest)?.label ?? copy.stateUnavailable;
             return (
               <button
                 key={source.manifestId}
@@ -240,7 +245,7 @@ export function EngineScopedModelPanel({
           }} />
           <span className="min-w-0 self-center">
             <strong className="block truncate text-xs font-medium text-zinc-100">Neo</strong>
-            <span className="block truncate text-[10px] text-zinc-500">Provider 模型</span>
+            <span className="block truncate text-[10px] text-zinc-500">{copy.providerModels}</span>
           </span>
           <ChevronRight className="h-4 w-4 text-zinc-500" />
         </button>
@@ -250,7 +255,7 @@ export function EngineScopedModelPanel({
           className="rounded px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
           data-neo-model-settings
         >
-          去设置
+          {copy.goToSettings}
         </button>
       </div>
     );
@@ -291,7 +296,7 @@ export function EngineScopedModelPanel({
           onClick={() => onViewChange('engines')}
           className="rounded px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
         >
-          切换引擎
+          {copy.switchEngine}
         </button>
       </div>
 

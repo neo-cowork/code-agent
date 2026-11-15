@@ -122,20 +122,6 @@ export const onboardingZh = {
       localSpikeNotInstalledDetail: '已有实机 Spike · 生产 Adapter 未开放',
       noEvidenceDetail: '尚无本机协议证据',
       badgeRecommendedInstall: '推荐安装',
-      recommendations: {
-        qoder_work: {
-          label: '需要登录',
-          reason: '请先在 Qoder Work CLI 完成官方登录，再验证模型目录和真实事件流。',
-        },
-        comate_zulu: {
-          label: '可探测',
-          reason: '适合后续通过通用 Manifest + Zulu codec 接入。',
-        },
-        cursor_cli: {
-          label: '推荐了解',
-          reason: '需要完成官方协议与实机验证后才能在 Neo 中选择。',
-        },
-      },
     },
     providerCards: {
       deepseek: {
@@ -338,20 +324,6 @@ export const onboardingEn = {
       localSpikeNotInstalledDetail: 'Tested locally · Support coming soon',
       noEvidenceDetail: 'Local support not yet verified',
       badgeRecommendedInstall: 'Recommended',
-      recommendations: {
-        qoder_work: {
-          label: 'Sign in required',
-          reason: 'Sign in with Qoder Work CLI first to verify its models and live events.',
-        },
-        comate_zulu: {
-          label: 'Detectable',
-          reason: 'Planned for future integration once local support is verified.',
-        },
-        cursor_cli: {
-          label: 'Recommended',
-          reason: 'Requires official protocol verification before it can be selected in Neo.',
-        },
-      },
     },
     providerCards: {
       deepseek: {

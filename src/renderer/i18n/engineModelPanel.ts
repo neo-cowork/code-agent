@@ -1,4 +1,8 @@
+import { engineManifestEn, engineManifestZh } from './engineManifest';
+
+// 引擎清单文案（engineManifest）随本包一起并入 zh/en 总表：两个总表文件已贴行数上限，不再各加一行。
 export const engineModelPanelZh = {
+  ...engineManifestZh,
   engineModelPanel: {
     loadingSubtitle: '正在读取模型列表…',
     searchPlaceholder: '搜索 {engine} 模型…',
@@ -12,10 +16,28 @@ export const engineModelPanelZh = {
     loadFailedDescription: '暂时连不上 {engine}，模型列表加载失败。请检查网络后点「重试」；若多次失败，可到「设置 → 引擎」重新连接。',
     retry: '重试',
     openEngineSettings: '设置 → 引擎',
+    backToModels: '返回模型',
+    engineListTitle: '选择执行引擎',
+    engineListSubtitle: '先选引擎，再选择它真实可用的模型',
+    openEngineSettingsAria: '打开执行引擎设置',
+    engineSettingsTitle: '执行引擎设置',
+    engineSearchPlaceholder: '搜索执行引擎…',
+    detectingEngines: '正在检测本机可用的执行引擎…',
+    noMatchingEngine: '无匹配引擎',
+    stateReady: '已检测，可用',
+    stateNotDetected: '未检测',
+    stateNeedsLogin: '已检测，需要登录',
+    stateAuthUnverified: '已检测，登录状态未验证',
+    stateAdapterClosed: '已检测，适配器未开放',
+    stateUnavailable: '暂不可用',
+    providerModels: 'Provider 模型',
+    goToSettings: '去设置',
+    switchEngine: '切换引擎',
   },
 };
 
 export const engineModelPanelEn: typeof engineModelPanelZh = {
+  ...engineManifestEn,
   engineModelPanel: {
     loadingSubtitle: 'Reading model list...',
     searchPlaceholder: 'Search {engine} models...',
@@ -29,5 +51,22 @@ export const engineModelPanelEn: typeof engineModelPanelZh = {
     loadFailedDescription: 'Neo cannot reach {engine} right now, so the model list failed to load. Check your network and select Retry. If it keeps failing, reconnect it under Settings → Engines.',
     retry: 'Retry',
     openEngineSettings: 'Settings → Engines',
+    backToModels: 'Back to models',
+    engineListTitle: 'Choose an engine',
+    engineListSubtitle: 'Pick an engine, then one of the models it actually offers',
+    openEngineSettingsAria: 'Open engine settings',
+    engineSettingsTitle: 'Engine settings',
+    engineSearchPlaceholder: 'Search engines…',
+    detectingEngines: 'Checking which engines are available on this computer…',
+    noMatchingEngine: 'No matching engine',
+    stateReady: 'Detected, ready',
+    stateNotDetected: 'Not detected',
+    stateNeedsLogin: 'Detected, sign-in required',
+    stateAuthUnverified: 'Detected, sign-in not verified',
+    stateAdapterClosed: 'Detected, not supported yet',
+    stateUnavailable: 'Unavailable',
+    providerModels: 'Provider models',
+    goToSettings: 'Settings',
+    switchEngine: 'Switch engine',
   },
 };
