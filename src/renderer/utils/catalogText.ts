@@ -84,7 +84,7 @@ export function localizeCatalogObject<T>(value: T, language: Language): T {
   if (Array.isArray(value)) return value.map((item) => localizeCatalogObject(item, language)) as T;
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
         key,
         CATALOG_IDENTITY_KEYS.has(key) ? item : localizeCatalogObject(item, language),
       ]),

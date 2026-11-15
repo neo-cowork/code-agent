@@ -119,7 +119,7 @@ export function toEnglishConfigScope<T>(value: T): T {
   if (Array.isArray(value)) return value.map((item) => toEnglishConfigScope(item)) as T;
   if (value && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, toEnglishConfigScope(item)]),
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, toEnglishConfigScope(item)]),
     ) as T;
   }
   return value;
