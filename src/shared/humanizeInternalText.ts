@@ -1,5 +1,6 @@
+import { resolveSkillName } from './resolveSkillName';
 import {
-  detectInternalTextLeaks,
+  detectInternalTextLeaks, CATALOG_SLUG_GLOBAL_RE,
   ENGLISH_STATE_REGEXES,
   type InternalTextFormat,
   CALL_ID_EXACT_RE, CALL_ID_GLOBAL_RE, INLINE_RAW_JSON_RE, INTERNAL_TOOL_GLOBAL_RE,
@@ -188,9 +189,23 @@ function summarizeParsedJson(
 export function humanizeInternalText(
   input: string,
   lang: InternalTextLanguage = 'zh',
+  options: { omitIds?: boolean } = {},
 ): HumanizedInternalTextResult {
   if (!input) {
     return { text: input, detectedFormats: [] };
+  }
+
+  if (input.trim() === 'Done' && lang === 'zh') {
+    return { text: '已完成', detectedFormats: ['english_state_word'] };
+  }
+
+  if (options.omitIds) {
+    const withoutIds = input.replace(UUID_GLOBAL_RE, '').replace(SESSION_ID_GLOBAL_RE, '')
+      .replace(CALL_ID_GLOBAL_RE, '').replace(OU_ID_GLOBAL_RE, '');
+    const cleanName = withoutIds === input ? input : withoutIds
+      .replace(/[（(]\s*(?:工单|ID|record|ticket|issue)?\s*[）)]/gi, '')
+      .replace(/(?:\s*[·:：,，;；|—-]\s*)+$/g, '').replace(/\s{2,}/g, ' ').trim();
+    return humanizeInternalText(cleanName, lang);
   }
 
   const leaks = detectInternalTextLeaks(input);
@@ -288,7 +303,7 @@ export function humanizeInternalText(
     }
   }
 
-  let next = input;
+  let next = input.replace(CATALOG_SLUG_GLOBAL_RE, (name) => resolveSkillName(name, lang, lang === 'en' ? 'skill' : '技能'));
   let shouldCollapseDetails = false;
 
   // 1. Replace English state phrases first (some include `id=...` or colons)

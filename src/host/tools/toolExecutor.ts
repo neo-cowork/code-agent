@@ -2123,7 +2123,7 @@ export class ToolExecutor {
         logger.debug('ConfirmationGate preview error:', error);
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
-        toolName: executionToolName,
+        toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
         browserSessionTarget: browserSessionGrant?.target,
@@ -2362,14 +2362,14 @@ export class ToolExecutor {
 
       const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
-        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, analysisFailed: Boolean(commandAnalysisFailedReason), request: permissionRequest,
         ask: () => requestPermissionWithTelemetry({
           request: permissionRequest,
           toolCallId: options.currentToolCallId,
           requestPermission: this.requestPermission,
         }),
       });
-      if (commandAnalysisFailedReason) {
+      if (commandAnalysisFailedReason && ask.denialSource !== 'goal-sticky-host') {
         ask.approved = false;
         ask.denialSource = 'fail-closed';
         ask.message = commandAnalysisDenialError(executionToolName).modelText;
