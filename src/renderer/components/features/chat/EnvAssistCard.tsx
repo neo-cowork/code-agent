@@ -5,6 +5,7 @@ import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { invokeDomain } from '../../../services/ipcService';
 import { useEnvAssistStore } from '../../../stores/envAssistStore';
+import { useEnvCardResumesAutomatically } from '../../../hooks/useEnvParkedTarget';
 
 export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice }): React.ReactElement {
   const { t } = useI18n();
@@ -35,6 +36,8 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
   const sentence = notice.phase === 'resolved'
     ? (known && notice.doneKey === `env.done.${target}` ? t.env.done[target] : '')
     : known && notice.sentenceKey === `env.sentence.${target}` ? t.env.sentence[target] : '';
+  // 停车等授权的那一轮：允许后同一任务自动续做，卡上一并说清（输入框上方不再另起一行重复）。
+  const autoResumes = useEnvCardResumesAutomatically(notice) && notice.phase !== 'resolved' && Boolean(sentence);
   const label = known && notice.action?.labelKey === `env.allow.${target}` ? t.env.allow[target] : '';
   const act = async () => {
     if (!notice.action || busy) return;
@@ -48,7 +51,7 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
   };
   return (
     <div data-testid="env-assist-card" data-notice-id={notice.id} className="my-2 rounded-lg border border-border-strong bg-void p-3 text-sm text-text-primary">
-      <p>{sentence}</p>
+      <p>{autoResumes ? `${sentence}${t.env.autoResume}` : sentence}</p>
       {notice.progress && <progress className="mt-2 w-full" max={100} value={notice.progress.percent} />}
       {waiting && label && (
         <Button className="mt-2" size="sm" variant="secondary" disabled={busy} onClick={() => void act()}>{label}</Button>

@@ -198,8 +198,9 @@ describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
   it('⑧b 全展开态也走 LiveToolOutput 全局尾截断（遗留刀1）：早期行不见，末尾行仍在', () => {
     const stdoutLines = Array.from({ length: 20 }, (_, i) => `line${i + 1}`);
     render(
+      // 前面垫一步已完成的：单步中断会直出一行、不进组展开档（N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT）。
       <ToolStepGroup
-        nodes={[runningNodeWithLiveOutput('Bash', stdoutLines)]}
+        nodes={[doneNode('Read'), runningNodeWithLiveOutput('Bash', stdoutLines)]}
         isStreamingTurn={false}
         defaultExpanded
       />,
