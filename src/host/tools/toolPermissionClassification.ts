@@ -291,6 +291,8 @@ export function permissionDenialError(
       const guidance = userDeniedGoalStickyError(toolName).modelText;
       return createHostReason(HostReasonCode.PermissionDeniedByUser, `${modelText} ${guidance}`, metadata);
     }
+    case 'goal-sticky-host':
+      return userDeniedGoalStickyError(toolName);
     case 'no-approval-ui':
       return createHostReason(
         HostReasonCode.PermissionDeniedNoApprovalUi,

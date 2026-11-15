@@ -1,9 +1,12 @@
 // 模型面向用户回复的出口泄漏观测（N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-REPLY-EGRESS）：
 // 复用 detectInternalTextLeaks，并补充机制黑话（mechanism_talk）与对中文用户整段回英文（english_reply_to_zh）。
+import { extractUserRequest } from './utils/turnScaffold';
 import { detectInternalTextLeaks, type InternalTextFormat } from './internalTextLeakDetect';
 
 type ReplyEgressLeakCategory =
   | InternalTextFormat
+  | 'invented_cause'
+  | 'command_handoff'
   | 'mechanism_talk'
   | 'english_reply_to_zh';
 
@@ -37,6 +40,33 @@ const MECHANISM_TALK_REGEXES: readonly RegExp[] = [
   /\b(?:Bash|ToolSearch|AskUserQuestion|spawn_agent|delegate_task|browser_action|computer_use)\s+is\s+(?:disabled|unavailable|not\s+(?:available|part\s+of))\b/gi,
 ];
 
+// Match a causal explanation about the assistant's attempted action, not permission documentation.
+const OWN_ACTION_RE = /我|这边|刚才|尝试|操作|动作|命令|执行|删除|清理|打包|查询|检查|读取|备份|运行|压缩|\b(?:I|we|my|our|action|command|attempt|deletion|execution)\b/i;
+const INVENTED_CAUSE_REGEXES: readonly RegExp[] = [
+  /被[^，。！？\n]{0,16}(?:拦下|拦住)/gi,
+  /系统不允许[^，。！？\n]{0,16}/gi,
+  /(?:权限[^，。！？\n]{0,16}(?:不允许|被拒)|没有[^，。！？\n]{0,16}权限|被拒)/gi,
+  /\b(?:blocked\s+by|not\s+allowed|permission\s+denied)\b/gi,
+];
+const COMMAND_HANDOFF_REGEXES: readonly RegExp[] = [
+  /(?:打开|启动)\s*[「“"'‘]?终端[」”"'’]?(?:\s*App)?/gi,
+  /(?:粘贴?|复制|贴)[^。！？\n]{0,32}(?:这|下面|下方)(?:[一二三四五六七八九十\d]+)?行/gi,
+  /(?:粘贴?|复制|贴到?)[^。！？\n]{0,24}终端/gi,
+  /(?:你可以|你自己|请你?)[^。！？\n]{0,24}(?:执行|运行)[^。！？\n]{0,12}(?:这|下面|下方)(?:[一二三四五六七八九十\d]+)?行/gi,
+  /(?:你(?:可以|自己|自行)?|请)[^。！？\n]{0,24}终端[^。！？\n]{0,24}(?:执行|运行|跑|粘|贴|复制)/gi,
+  /\bopen\s+(?:the\s+)?["“]?Terminal["”]?\s*(?:app)?[^.!?\n]{0,80}\bpaste\b/gi,
+];
+
+const PERMISSION_SETTINGS_QUESTION_RE = /(?:权限|授权)[^。！？\n]{0,12}(?:设置|配置)|(?:设置|配置)[^。！？\n]{0,12}(?:权限|授权)|\bpermission\s+settings\b/i;
+
+function userExplicitlyRequestsCommand(userText: string): boolean {
+  // A request to perform an action (or "do not give me a command") is not a request for its command.
+  const requests = userText.split(/[。！？.!?\n]/).filter((part) =>
+    !/(?:不要|不用|别|不需要|无需).{0,12}(?:命令|指令)|\b(?:do not|don't|no need to)\b.{0,30}\bcommand\b/i.test(part));
+  return requests.some((part) =>
+    /(?:给我|发我|提供|告诉我|只要|索要)[^，。！？\n]{0,40}(?:命令|指令)|(?:命令|指令)[^，。！？\n]{0,16}(?:给我|发我)|(?:什么|哪条|哪个)(?:命令|指令)|\b(?:give|show|send)\s+me\b.{0,80}\bcommand\b|\b(?:what|which)\s+(?:is\s+the\s+)?command\b/i.test(part));
+}
+
 const EXPLICIT_ENGLISH_REQUEST_REGEXES: readonly RegExp[] = [
   /(?:用|使用|改用|换成|切换(?:到|成)?|说|写|回|回复|回答|输出|生成)(?:纯|全)?英(?:文|语)/i,
   /(?:写|拟|起草|生成|回)[^，。！？\n]{0,8}英(?:文|语)/i,
@@ -68,6 +98,7 @@ export function detectReplyEgressLeaks(
     return { categories: [], matchedTokens: [] };
   }
 
+  const userText = extractUserRequest(turnUserText);
   const categories: ReplyEgressLeakCategory[] = [];
   const matchedTokens: string[] = [];
 
@@ -100,6 +131,27 @@ export function detectReplyEgressLeaks(
     regex.lastIndex = 0;
   }
 
+  // Keep causal shapes tied to an attempted action. Code examples have already been removed.
+  for (const sentence of outsideFences.split(/[。！？\n]|(?<=[.!?])\s+/)) {
+    if (PERMISSION_SETTINGS_QUESTION_RE.test(userText) && !/我|这边|刚才|\b(?:I|we|my|our)\b/i.test(sentence)) continue;
+    if (!OWN_ACTION_RE.test(sentence) && !/^\s*(?:被.{0,16}(?:拦下|拦住)|permission denied|not allowed|blocked by)/i.test(sentence)) continue;
+    for (const regex of INVENTED_CAUSE_REGEXES) {
+      for (const match of sentence.matchAll(regex)) {
+        addCategory('invented_cause');
+        addToken(match[0]);
+      }
+    }
+  }
+
+  if (!userExplicitlyRequestsCommand(userText)) {
+    for (const regex of COMMAND_HANDOFF_REGEXES) {
+      for (const match of outsideFences.matchAll(regex)) {
+        addCategory('command_handoff');
+        addToken(match[0]);
+      }
+    }
+  }
+
   // Cheap gates first: only inspect turnUserText when reply outside fences has >=30 chars,
   // does not start with `<`, and contains no CJK characters.
   const narration = opts.hasToolCalls === true;
@@ -109,9 +161,9 @@ export function detectReplyEgressLeaks(
     && !CJK_CHAR_RE.test(trimmedOutside)
   ) {
     if (
-      turnUserText
-      && CJK_CHAR_RE.test(turnUserText)
-      && !userExplicitlyRequestsEnglish(turnUserText)
+      userText
+      && CJK_CHAR_RE.test(userText)
+      && !userExplicitlyRequestsEnglish(userText)
       && trimmedOutside.split(/\s+/).length >= (narration ? MIN_ENGLISH_NARRATION_WORDS : MIN_ENGLISH_WHITESPACE_TOKENS)
     ) {
       const latinWords = trimmedOutside.match(LATIN_WORD_RE) ?? [];

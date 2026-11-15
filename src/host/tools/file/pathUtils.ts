@@ -5,6 +5,7 @@
 import path from 'path';
 import os from 'os';
 import { realpathSync } from 'fs';
+import { stat as statPath } from 'fs/promises';
 import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { getUserDataPath } from '../../platform/appPaths';
 import { createHostReason, HostReasonCode, type HostReasonPayload } from '../../../shared/contract/permission';
@@ -103,6 +104,21 @@ export function resolvePath(inputPath: string, workingDirectory: string): string
   }
 
   return confineEvalPath(resolvedPath, workingDirectory);
+}
+
+/**
+ * 路径是否不存在（stat ENOENT）。只读搜索工具（Grep/Glob）进引擎前用它拦下缺失的
+ * 搜索路径：计划中的会话产出目录（懒创建、尚未落盘）按空目录处理，其余报 ENOENT，
+ * 引擎不在缺失路径上空跑。stat 的其他错误（EACCES 等）不算「不存在」，返回 false
+ * 交给引擎与既有错误分流。
+ */
+export async function isPathMissing(target: string): Promise<boolean> {
+  try {
+    await statPath(target);
+    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT';
+  }
 }
 
 /**
