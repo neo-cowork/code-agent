@@ -166,6 +166,23 @@ async function classifyOtherScheduledWrite(
     traceStep: createTraceStep('permission_classifier', 'schedule_write_grant', 'ask', reason, startTime) };
 }
 
+/**
+ * ExcelAutomate edit/generate：每个会写的目标（edit→file_path，generate→output_path，
+ * 另一个若出现也一并判）都必须落在工作区内且非受保护路径（沿用 classifyTarget 的
+ * 规范化 + 受保护路径 + 符号链接逃逸判据）。目标缺失 / 非字符串 / 区外 / 受保护 → false。
+ */
+export function excelWriteTargetsInsideWorkspace(
+  args: Record<string, unknown>,
+  context: ClassificationContext,
+  startTime: number,
+): boolean {
+  const required = args.action === 'generate' ? args.output_path : args.file_path;
+  if (typeof required !== 'string' || !required.trim()) return false;
+  const targets = [args.file_path, args.output_path].filter((v) => v !== undefined);
+  return targets.every((target) => typeof target === 'string' && target.trim() !== ''
+    && classifyTarget('ExcelAutomate', target, context, startTime).workspaceWrite === true);
+}
+
 function classifyTarget(
   toolName: string,
   filePath: string,

@@ -45,7 +45,7 @@ import {
   ddCopiesWorkspaceFile, gitMutationReason, hasPositiveAllowCandidate, isNpmPublishDryRun, isSensitiveMemoryPath, readPathCandidates,
   recursivelyRemovesPath, resolveCandidatePath,
 } from './permissionClassifierShell';
-import { classifyFileWrite } from './fileWriteClassification';
+import { classifyFileWrite, excelWriteTargetsInsideWorkspace } from './fileWriteClassification';
 import type { ToolDefinition } from '../../shared/contract';
 
 export { bashCommandRequiresPermission };
@@ -353,8 +353,10 @@ export class PermissionClassifier {
       };
     }
 
-    // R2b: ExcelAutomate edit/generate 不逐次询问（automate 跑宏不在此，落到各档通用询问）
-    if (excelActionIsFileEdit(toolName, args)) {
+    // R2b: ExcelAutomate edit/generate 仅当所有写目标都在会话工作区内且非受保护路径时放行；
+    // 目标缺失 / 区外 / 受保护 / '..' 或符号链接逃逸一律不在此放行，落到与 main 相同的下游
+    // （LLM 分类器 / 默认 ask）。automate（跑宏）同样不在此。
+    if (excelActionIsFileEdit(toolName, args) && excelWriteTargetsInsideWorkspace(args, context, startTime)) {
       return {
         decision: 'approve',
         reason: `ExcelAutomate ${String(args.action)} 不逐次询问`,

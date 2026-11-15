@@ -1599,4 +1599,74 @@ describe('PermissionClassifier', () => {
       }
     });
   });
+
+  describe('ExcelAutomate 按 action 放行只认工作区内目标（N-FIX-EXCEL-READ-APPROVAL-PER-CALL）', () => {
+    const classifyExcel = async (root: string, args: Record<string, unknown>) => classifyPermission(
+      'ExcelAutomate',
+      args,
+      { workingDirectory: root, workspaceRoot: root, permissionLevel: args.action === 'read' ? 'read' : 'write' },
+    );
+
+    it('edit / generate 在工作区内 → approve', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-ws-'));
+      try {
+        expect((await classifyExcel(root, { action: 'edit', file_path: path.join(root, 'a.xlsx') })).decision).toBe('approve');
+        expect((await classifyExcel(root, { action: 'edit', file_path: 'sub/a.xlsx' })).decision).toBe('approve');
+        expect((await classifyExcel(root, { action: 'generate', output_path: path.join(root, 'out.xlsx') })).decision).toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); }
+    });
+
+    it('edit file_path 在工作区外 → 不放行', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-ws-'));
+      const outside = await fs.mkdtemp(path.join(os.homedir(), '.excel-outside-'));
+      try {
+        const result = await classifyExcel(root, { action: 'edit', file_path: path.join(outside, 'c.xlsx') });
+        expect(result.decision).not.toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); await fs.rm(outside, { recursive: true, force: true }); }
+    });
+
+    it('generate output_path 在工作区外 → 不放行；缺 output_path → 不放行', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-ws-'));
+      const outside = await fs.mkdtemp(path.join(os.homedir(), '.excel-outside-'));
+      try {
+        expect((await classifyExcel(root, { action: 'generate', output_path: path.join(outside, 'o.xlsx') })).decision).not.toBe('approve');
+        expect((await classifyExcel(root, { action: 'generate' })).decision).not.toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); await fs.rm(outside, { recursive: true, force: true }); }
+    });
+
+    it("edit 用 '..' 逃出工作区 → 不放行", async () => {
+      const root = await fs.mkdtemp(path.join(os.homedir(), '.excel-ws-'));
+      try {
+        const result = await classifyExcel(root, { action: 'edit', file_path: `${root}/sub/../../escape.xlsx` });
+        expect(result.decision).not.toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); }
+    });
+
+    it('edit 指向工作区内的受保护路径（.git/config、.npmrc）或区外 ~/.ssh → 不放行', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-ws-'));
+      try {
+        expect((await classifyExcel(root, { action: 'edit', file_path: path.join(root, '.git', 'config') })).decision).not.toBe('approve');
+        expect((await classifyExcel(root, { action: 'edit', file_path: path.join(root, '.npmrc') })).decision).not.toBe('approve');
+        expect((await classifyExcel(root, { action: 'edit', file_path: path.join(os.homedir(), '.ssh', 'x.xlsx') })).decision).not.toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); }
+    });
+
+    it('edit 经符号链接指向工作区外 → 不放行', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-ws-'));
+      const outside = await fs.mkdtemp(path.join(os.homedir(), '.excel-outside-'));
+      try {
+        await fs.symlink(outside, path.join(root, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+        const result = await classifyExcel(root, { action: 'edit', file_path: path.join(root, 'link', 'x.xlsx') });
+        expect(result.decision).not.toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); await fs.rm(outside, { recursive: true, force: true }); }
+    });
+
+    it('read 读工作区外文件 → 仍放行（rr85 行为不变）；automate → 不放行', async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-ws-'));
+      try {
+        expect((await classifyExcel(root, { action: 'read', file_path: '/tmp/outside-contracts/13.xlsx' })).decision).toBe('approve');
+        expect((await classifyExcel(root, { action: 'automate', file_path: path.join(root, 'a.xlsx') })).decision).not.toBe('approve');
+      } finally { await fs.rm(root, { recursive: true, force: true }); }
+    });
+  });
 });
