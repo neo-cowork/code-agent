@@ -91,7 +91,7 @@ function describeAppleScriptFailureText(
  * 返回文案不含命令行、脚本或 stderr。原始异常由调用方写 host 日志。
  */
 export function describeAppleScriptFailure(
-  connectorLabel: string,
+  connectorLabel: string | { zh: string; en: string },
   error: unknown,
   options?: { timeoutContext?: 'calendar_list_events' | 'list_reminders' | 'write' },
 ): { message: string; code: AppleScriptFailureCode } {
@@ -113,7 +113,12 @@ export function describeAppleScriptFailure(
     english = false;
   }
   return {
-    message: describeAppleScriptFailureText(english, connectorLabel, code, options?.timeoutContext),
+    message: describeAppleScriptFailureText(
+      english,
+      typeof connectorLabel === 'string' ? connectorLabel : connectorLabel[english ? 'en' : 'zh'],
+      code,
+      options?.timeoutContext,
+    ),
     code,
   };
 }

@@ -4,6 +4,7 @@
 
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
+import { NATIVE_APP_NAMES } from './appNames';
 import { createLogger } from '../../services/infra/logger';
 import {
   appleScriptFailureLogDetail,
@@ -83,7 +84,7 @@ function parseLine(line: string): string[] {
 
 function errorMessage(error: unknown): string {
   return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure('Mail', error).message
+    ? describeAppleScriptFailure(NATIVE_APP_NAMES.mail, error).message
     : error instanceof Error ? error.message : String(error);
 }
 

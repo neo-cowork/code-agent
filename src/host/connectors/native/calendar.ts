@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
+import { NATIVE_APP_NAMES } from './appNames';
 import {
   buildAppleScriptDateVar,
   describeAppleScriptFailure,
@@ -55,7 +56,7 @@ function parseLine(line: string): string[] {
 
 function errorMessage(error: unknown): string {
   return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure('Calendar', error).message
+    ? describeAppleScriptFailure(NATIVE_APP_NAMES.calendar, error).message
     : error instanceof Error ? error.message : String(error);
 }
 

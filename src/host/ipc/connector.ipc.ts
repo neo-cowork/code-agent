@@ -10,6 +10,7 @@ import {
   isAppleScriptFailure,
 } from '../connectors/native/osascript';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
+import { NATIVE_APP_NAMES } from '../connectors/native/appNames';
 import type { IpcMain, AppWindow } from '../platform';
 import { broadcastToRenderer } from '../platform';
 import {
@@ -249,7 +250,7 @@ async function executeConnectorAction(
     await connector.execute(action, {});
   } catch (error) {
     if (!isAppleScriptFailure(error)) throw error;
-    const described = describeAppleScriptFailure(connector.label, error);
+    const described = describeAppleScriptFailure(NATIVE_APP_NAMES[connector.id] ?? connector.label, error);
     logger.warn('Connector action failed', {
       connector: connector.id,
       action,

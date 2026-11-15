@@ -19,8 +19,12 @@ const env = vi.hoisted(() => ({
   warn: vi.fn(),
   canOpen: vi.fn(() => true),
   open: vi.fn(async (_pane: string) => true),
+  language: 'zh',
 }));
 
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: env.language } }) }),
+}));
 vi.mock('../../../src/host/connectors', () => ({ getConnectorRegistry: () => env.registry }));
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
 vi.mock('../../../src/host/permissions/envAssist/settingsPane', () => ({
@@ -62,14 +66,15 @@ let call: ReturnType<typeof register>;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  env.language = 'zh';
   env.config.getSettings.mockReturnValue({ connectors: { enabledNative: ['calendar'] } });
   call = register();
 });
 afterEach(() => vi.useRealTimers());
 
-function connector(execute: (a: string) => Promise<unknown>) {
+function connector(execute: (a: string) => Promise<unknown>, id = 'calendar', label = 'Calendar') {
   const c = {
-    id: 'calendar', label: 'Calendar', capabilities: [],
+    id, label, capabilities: [],
     getStatus: async () => ({ connected: false, readiness: 'failed', errorCode: 'not_authorized', capabilities: [] }),
     execute,
   };
@@ -86,7 +91,8 @@ describe.each([['probe', 'probe_access'], ['repairPermission', 'repair_permissio
     expect(res.success).toBe(false);
     const text = JSON.stringify(res);
     expect(text).not.toMatch(/osascript|Command failed|tell application|-e /);
-    expect(res.error?.message).toContain('Calendar 未获授权');
+    expect(res.error?.message).toContain('日历 未获授权');
+    expect(res.error?.message).not.toContain('控制 Calendar');
     expect(env.warn).toHaveBeenCalledWith('Connector action failed', expect.objectContaining({
       connector: 'calendar', code: 'not_authorized', detail: expect.stringContaining('-1743'),
     }));
@@ -106,8 +112,27 @@ describe('unrecognized osascript failure', () => {
     connector(async () => { throw err; });
     const res = await call('probe', { connectorId: 'calendar' });
     expect(JSON.stringify(res)).not.toMatch(/osascript|Command failed|tell application/);
-    expect(res.error?.message).toBe('Calendar：读取失败，请稍后重试');
+    expect(res.error?.message).toBe('日历：读取失败，请稍后重试');
     expect(env.warn).toHaveBeenCalledWith('Connector action failed', expect.objectContaining({ code: 'read_failed' }));
+  });
+});
+
+describe.each([
+  ['calendar', 'Calendar', '日历'],
+  ['mail', 'Mail', '邮件'],
+  ['reminders', 'Reminders', '提醒事项'],
+])('%s localized failure', (id, label, chineseLabel) => {
+  it.each(['zh', 'en'])('uses the app name matching %s UI for probe and repair', async (language) => {
+    env.language = language;
+    connector(async () => { throw execFileError(); }, id, label);
+    for (const action of ['probe', 'repairPermission']) {
+      const res = await call(action, { connectorId: id });
+      expect(res.success).toBe(false);
+      const message = res.error?.message;
+      expect(message).toContain(language === 'en' ? `${label} access was denied` : `${chineseLabel} 未获授权`);
+      expect(message).not.toMatch(/osascript|Command failed|tell application/);
+      if (language === 'zh') expect(message).not.toContain(label);
+    }
   });
 });
 

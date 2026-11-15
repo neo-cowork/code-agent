@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+const configState = vi.hoisted(() => ({ language: 'zh' }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
+}));
+
 const osascriptMocks = vi.hoisted(() => ({
   runAppleScript: vi.fn(async () => 'Work\nPersonal'),
 }));
@@ -185,6 +190,28 @@ describe('native office connector lazy status', () => {
       expect(text).not.toMatch(/osascript|Command failed|tell application|outputLines/);
       expect(status.detail).toContain('检查失败');
       expect(status.detail).toContain('自动化');
+    }
+  });
+
+  it.runIf(process.platform === 'darwin').each(['zh', 'en'])('localizes failed status.error app names for %s', async (language) => {
+    configState.language = language;
+    const raw = Object.assign(new Error('Command failed: osascript -e tell application "Calendar"\n(-1743)'), { stderr: '(-1743)' });
+    try {
+      for (const [connector, chineseName] of [
+        [calendarConnector, '日历'],
+        [mailConnector, '邮件'],
+        [remindersConnector, '提醒事项'],
+      ] as const) {
+        osascriptMocks.runAppleScript.mockRejectedValueOnce(raw);
+        await expect(connector.execute('probe_access', {})).rejects.toBe(raw);
+        const status = await connector.getStatus();
+        expect(status.errorCode).toBe('not_authorized');
+        expect(status.error).toContain(language === 'en' ? `${connector.label} access was denied` : `${chineseName} 未获授权`);
+        expect(status.error).not.toMatch(/osascript|Command failed|tell application/);
+        if (language === 'zh') expect(status.error).not.toContain(connector.label);
+      }
+    } finally {
+      configState.language = 'zh';
     }
   });
 });
