@@ -43,6 +43,8 @@ vi.mock('../../../src/renderer/components/features/sidebar/SidebarProjectGroup',
     React.createElement('div', { 'data-testid': `sidebar-project-group-${group.key}` }),
 }));
 
+import { zh } from '../../../src/renderer/i18n/zh';
+import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../../src/shared/i18n/chooseFolderEntry';
 import { SidebarSessionList } from '../../../src/renderer/components/features/sidebar/SidebarSessionList';
 
 // 三个分区各一组：协作空间（meta.spacePromotedAt 非空）/ 独立空间（有 projectId 未升级）/ 快速对话（无 projectId）。
@@ -152,11 +154,32 @@ describe('SidebarSessionList tier section headers', () => {
     expect(html).toContain('data-testid="sidebar-tier-new-project"');
     expect(html).toContain('data-testid="sidebar-tier-new-quick"');
     expect(html).toContain('新建协作空间');
-    expect(html).toContain('新建独立空间');
+    expect(html).toContain('选择文件夹');
     expect(html).toContain('新建快速对话');
   });
 
+  it('keeps the project tier and a visible choose-folder row when there are no project groups', () => {
+    const html = renderList({ groups: [groups[2]] });
+    const section = html.match(/data-testid="sidebar-tier-project"[\s\S]*?<\/section>/)?.[0] ?? '';
 
+    expect(section).toContain('data-testid="sidebar-tier-new-project"');
+    expect(section).toContain('data-testid="sidebar-choose-folder-entry"');
+    expect(section).toContain(CHOOSE_FOLDER_ENTRY_LABEL.zh);
+  });
+
+  it('renders the choose-folder entry for a user with zero sessions and the label is the shared constant', () => {
+    const html = renderList({ groups: [], hasAnySessions: false });
+    const section = html.match(/data-testid="sidebar-tier-project"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+    expect(section).toContain('data-testid="sidebar-choose-folder-entry"');
+    expect(section).toContain(`>${zh.sidebarProject.chooseFolderEntry}<`);
+    expect(zh.sidebarProject.chooseFolderEntry).toBe(CHOOSE_FOLDER_ENTRY_LABEL.zh);
+  });
+
+  it('does not add an empty project tier while search filters are active', () => {
+    const html = renderList({ groups: [groups[2]], hasSearchFilters: true });
+    expect(html).not.toContain('data-testid="sidebar-choose-folder-entry"');
+  });
 });
 
 // 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球，搜索/筛选无结果 = 水星。

@@ -19,13 +19,19 @@ const {
   execFileAsyncMock: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  unlinkSync: (...args: unknown[]) => unlinkSyncMock(...args),
-}));
+vi.mock('fs', () => {
+  // 真实 fs 同时有默认导出和命名导出，夹具保持同样形状
+  const mod = {
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    unlinkSync: (...args: unknown[]) => unlinkSyncMock(...args),
+  };
+  return { ...mod, default: mod };
+});
 
 vi.mock('child_process', () => ({
   execFile: vi.fn(),
+  // whisper 查找走 PATH 兜底时用；测试里一律视为 PATH 上没有
+  execFileSync: () => { throw new Error('not on PATH'); },
 }));
 
 vi.mock('util', () => ({

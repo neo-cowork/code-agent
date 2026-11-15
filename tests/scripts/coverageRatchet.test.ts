@@ -144,6 +144,12 @@ describe('coverage-ratchet', () => {
     expect(mainFullGate).toContain('node scripts/coverage-ratchet.mjs --compare-baseline');
     expect(mainFullGate).toContain('Changed-line execution report (non-blocking)');
     expect(mainFullGate).toContain('continue-on-error: true');
+    // 基线参照必须经 resolve-push-base 解析（fetch-depth: 2 + 多提交一推时
+    // event.before 不在浅历史里，直接赋值会让棘轮 `cat-file` 红，run 43212993532）；
+    // 两个基线步骤都不许再把 github.event.before 直塞进 BASELINE_REF / DIFF_BASE。
+    expect(mainFullGate).toContain('BASELINE_REF="$(node scripts/ci/resolve-push-base.mjs "${{ github.event.before }}")"');
+    expect(mainFullGate).toContain('DIFF_BASE="$(node scripts/ci/resolve-push-base.mjs "${{ github.event.before }}")"');
+    expect(mainFullGate).not.toMatch(/(?:BASELINE_REF|DIFF_BASE)="\$\{\{ github\.event\.before \}\}"/);
     expect(swarmCi).toContain("'scripts/coverage-ratchet-baseline.json'");
     expect(swarmCi).toContain('--baseline-only --compare-baseline origin/main');
     expect(swarmCi).not.toMatch(/vitest[^\n]*--coverage/);

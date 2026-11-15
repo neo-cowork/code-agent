@@ -7,30 +7,94 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
+import type BetterSqlite3 from 'better-sqlite3';
+import { createLogger } from '../../host/services/infra/logger';
 import { getUserDataPath } from '../../host/platform/appPaths';
 import { getDefaultWorkDirectory, getLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
 import { PREVIEW_FORMAT_CACHE_DIRNAME } from '../../host/ipc/previewFormatCacheName';
-import { CHAT_UPLOAD_DIR_NAME } from '../../shared/constants/chatUploads';
+import {
+  CHAT_UPLOAD_REAP_DELAY_MS,
+  CHAT_UPLOAD_RETENTION_DAYS,
+  CHAT_UPLOAD_SUBDIR_NAME,
+  MAX_FOLDER_BATCH_BODY_SIZE,
+} from '../../shared/constants/chatUploads';
+
+const logger = createLogger('UploadReaper');
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
-export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME);
+export const UPLOAD_ROOT_DIR = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME);
+const UPLOAD_RETENTION_MS = CHAT_UPLOAD_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export function ensureUploadRootDir(): void {
   fs.mkdirSync(UPLOAD_ROOT_DIR, { recursive: true });
 }
 
-export function cleanupUploadDirs(): void {
+const UPLOAD_DIR_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UPLOAD_DIR_NAME_GLOBAL_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** 一次流式扫描收集所有被消息/排队消息引用的上传 uuid（不按目录逐个全表扫描）。 */
+function collectReferencedUploadIds(db: BetterSqlite3.Database, candidates: ReadonlySet<string>): Set<string> {
+  const referenced = new Set<string>();
+  const collect = (row: Record<string, unknown>) => {
+    for (const value of Object.values(row)) {
+      if (typeof value !== 'string') continue;
+      for (const match of value.matchAll(UPLOAD_DIR_NAME_GLOBAL_RE)) {
+        const id = match[0].toLowerCase();
+        if (candidates.has(id)) referenced.add(id);
+      }
+    }
+  };
+  const marker = `%${CHAT_UPLOAD_SUBDIR_NAME}%`;
+  for (const row of db.prepare(
+    `SELECT content, tool_calls, tool_results, attachments, metadata FROM messages
+       WHERE content LIKE @m OR tool_calls LIKE @m OR tool_results LIKE @m OR attachments LIKE @m OR metadata LIKE @m`,
+  ).iterate({ m: marker })) collect(row as Record<string, unknown>);
+  for (const row of db.prepare('SELECT envelope_json FROM queued_inputs WHERE envelope_json LIKE ?')
+    .iterate(marker)) collect(row as Record<string, unknown>);
+  return referenced;
+}
+
+/** 启动回收：只删「超过保留期」且「未被任何会话消息/排队消息引用」的上传子目录。库不可用 → 一律不删。 */
+function reapExpiredUploadDirs(db: BetterSqlite3.Database | null): void {
   try {
     if (!fs.existsSync(UPLOAD_ROOT_DIR)) return;
+    const cutoffMs = Date.now() - UPLOAD_RETENTION_MS;
+    const expired = new Map<string, string>();
     for (const entry of fs.readdirSync(UPLOAD_ROOT_DIR)) {
-      fs.rmSync(path.join(UPLOAD_ROOT_DIR, entry), { recursive: true, force: true });
+      try {
+        if (!UPLOAD_DIR_NAME_RE.test(entry)) continue;
+        const entryPath = path.join(UPLOAD_ROOT_DIR, entry);
+        const stats = fs.lstatSync(entryPath);
+        if (stats.isDirectory() && stats.mtimeMs < cutoffMs) expired.set(entry.toLowerCase(), entryPath);
+      } catch (error) {
+        logger.warn('Upload reaper skipped entry', { entry, reason: error instanceof Error ? error.message : String(error) });
+      }
     }
-  } catch {
-    // Swallow — caller can log if needed
+    if (expired.size === 0) return;
+    if (!db) {
+      logger.warn('Upload reaper skipped: database unavailable, keeping all chat uploads');
+      return;
+    }
+    const referenced = collectReferencedUploadIds(db, new Set(expired.keys()));
+    for (const [id, entryPath] of expired) {
+      if (referenced.has(id)) continue;
+      try {
+        fs.rmSync(entryPath, { recursive: true, force: true });
+      } catch (error) {
+        logger.warn('Upload reaper failed to remove entry', { id, reason: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  } catch (error) {
+    logger.warn('Upload reaper failed', { reason: error instanceof Error ? error.message : String(error) });
   }
+}
+
+/** 延迟到 HTTP 就绪之后再回收，避免扫库拖慢启动。 */
+export function scheduleExpiredUploadReap(db: BetterSqlite3.Database | null): void {
+  setTimeout(() => reapExpiredUploadDirs(db), CHAT_UPLOAD_REAP_DELAY_MS).unref();
 }
 
 function sanitizePathSegment(segment: string): string {
@@ -51,7 +115,7 @@ function sanitizeRelativePath(relativePath?: string): string[] {
     .map(sanitizePathSegment);
 }
 
-async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer> {
+async function readRequestBuffer(req: Request, maxSize: number, destroyOnLimit = true): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -60,10 +124,11 @@ async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer>
       total += chunk.length;
       if (total > maxSize) {
         reject(new Error(`File exceeds ${Math.floor(maxSize / (1024 * 1024))}MB limit`));
-        req.destroy();
+        chunks.length = 0;
+        if (destroyOnLimit) req.destroy();
         return;
       }
-      chunks.push(chunk);
+      if (total <= maxSize) chunks.push(chunk);
     });
 
     req.on('end', () => resolve(Buffer.concat(chunks)));
@@ -72,15 +137,14 @@ async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer>
   });
 }
 
-function parseMultipartUpload(body: Buffer, boundary: string): {
-  filename: string;
-  data: Buffer;
+function parseMultipartParts(body: Buffer, boundary: string): {
+  files: Array<{ fieldName: string; filename: string; data: Buffer }>;
   fields: Record<string, string>;
 } {
   const delimiter = Buffer.from(`--${boundary}`);
   const headerSeparator = Buffer.from('\r\n\r\n');
   const fields: Record<string, string> = {};
-  let filePart: { filename: string; data: Buffer } | null = null;
+  const files: Array<{ fieldName: string; filename: string; data: Buffer }> = [];
   let cursor = body.indexOf(delimiter);
 
   while (cursor !== -1) {
@@ -118,7 +182,7 @@ function parseMultipartUpload(body: Buffer, boundary: string): {
     }
 
     if (filenameMatch) {
-      filePart = { filename: filenameMatch[1], data: content };
+      files.push({ fieldName, filename: filenameMatch[1], data: content });
     } else {
       fields[fieldName] = content.toString('utf8');
     }
@@ -126,6 +190,12 @@ function parseMultipartUpload(body: Buffer, boundary: string): {
     cursor = nextBoundary;
   }
 
+  return { files, fields };
+}
+
+function parseMultipartUpload(body: Buffer, boundary: string) {
+  const { files, fields } = parseMultipartParts(body, boundary);
+  const filePart = files.at(-1);
   if (!filePart) {
     throw new Error('Missing file field');
   }
@@ -162,6 +232,51 @@ export async function handleTempUpload(req: Request, res: Response): Promise<voi
   fs.mkdirSync(path.dirname(resolvedDestination), { recursive: true });
   fs.writeFileSync(resolvedDestination, data);
   res.json({ path: resolvedDestination });
+}
+
+/** Each fileN part is paired with relativePathN; validate everything before writing. */
+export async function handleTempBatchUpload(req: Request, res: Response): Promise<void> {
+  const contentType = req.header('content-type') || '';
+  const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+  if (!contentType.toLowerCase().startsWith('multipart/form-data') || !boundaryMatch) {
+    res.status(400).json({ error: 'Expected multipart/form-data' });
+    return;
+  }
+  if (Number(req.header('content-length')) > MAX_FOLDER_BATCH_BODY_SIZE) {
+    req.resume();
+    throw new Error('File exceeds 200MB limit');
+  }
+  const body = await readRequestBuffer(req, MAX_FOLDER_BATCH_BODY_SIZE, false);
+  const { files, fields } = parseMultipartParts(body, boundaryMatch[1].trim().replace(/^"|"$/g, ''));
+  if (!files.length) throw new Error('Missing file field');
+  const root = path.join(UPLOAD_ROOT_DIR, randomUUID());
+  const destinations = new Set<string>();
+  const uploads = files.map(({ fieldName, data }) => {
+    if (data.length > MAX_UPLOAD_SIZE) throw new Error('File exceeds 50MB limit');
+    const index = /^file(\d+)$/.exec(fieldName)?.[1];
+    const relativePath = index === undefined ? undefined : fields[`relativePath${index}`];
+    if (!relativePath || /^(?:[\\/]|[A-Za-z]:)/.test(relativePath)
+      || relativePath.split(/[\\/]+/).some((segment) => segment.trim() === '..')) {
+      throw new Error('Invalid upload path');
+    }
+    const segments = sanitizeRelativePath(relativePath);
+    const destination = path.resolve(root, ...segments);
+    if (!destination.startsWith(`${root}${path.sep}`) || destinations.has(destination)) {
+      throw new Error('Invalid upload path');
+    }
+    destinations.add(destination);
+    return { relativePath, path: destination, data };
+  });
+  try {
+    for (const upload of uploads) {
+      fs.mkdirSync(path.dirname(upload.path), { recursive: true });
+      fs.writeFileSync(upload.path, upload.data);
+    }
+  } catch (error) {
+    fs.rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+  res.json({ root, files: uploads.map(({ relativePath, path: filePath }) => ({ relativePath, path: filePath })) });
 }
 
 // ── Screenshot proxy (serves local screenshot files via HTTP) ──────────────
@@ -221,6 +336,7 @@ export function handleScreenshot(
   // 渲染为灰底问号裂图（2026-08-04 C.12：真实存在的 png 被 403）。
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
+    || isPathWithinBase(resolved, UPLOAD_ROOT_DIR)
     || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
     || isPathWithinBase(resolved, path.join(userData, 'cache', PREVIEW_FORMAT_CACHE_DIRNAME))
     || isPathWithinBase(resolved, getDefaultWorkDirectory())
@@ -292,6 +408,7 @@ function isWorkspaceFileAllowed(
   const allowedRoots = [
     path.resolve(process.cwd()),
     path.resolve(os.tmpdir()),
+    UPLOAD_ROOT_DIR,
   ];
   if (allowedRoots.some((root) => isPathWithinBase(targetPath, root))) return true;
   const workDirectories = [

@@ -54,6 +54,7 @@ import {
   claimSendInflight,
   type ChatSendDelivery,
 } from '../../utils/chatSendState';
+import { isProjectSourceTrustFailure } from '../../utils/httpFailureMessage';
 import {
   buildSendFailureRetryAnchor,
   markOptimisticUserSendFailed,
@@ -62,6 +63,7 @@ import {
 } from '../../utils/optimisticUserSend';
 
 const logger = createLogger('useAgent');
+const SEND_REJECTED_FAILURE_CODE = 'SEND_REJECTED';
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
 type SessionStoreState = ReturnType<typeof useSessionStore.getState>;
@@ -691,6 +693,11 @@ export function useAgentIPC({
         }
         markOptimisticUserSendFailed(userMessage.id);
         const retryAnchor = buildSendFailureRetryAnchor(userMessage, effectiveSessionId);
+        // 所有未进 host 运行期的被拒发送都打稳定标记供轮头/红色恢复条让位；
+        // PROJECT_SOURCE_TRUST 保留专属码供气泡挂「确认并重发」入口。
+        const sendFailureCode = isProjectSourceTrustFailure(sendFailure)
+          ? 'PROJECT_SOURCE_TRUST'
+          : SEND_REJECTED_FAILURE_CODE;
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
@@ -701,7 +708,7 @@ export function useAgentIPC({
           timestamp: Date.now(),
           // 失败用户气泡留在时间线上；错误卡「重试」仍锚到失败那条并带原
           // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
-          ...(retryAnchor ? { metadata: retryAnchor } : {}),
+          metadata: { ...retryAnchor, sendFailureCode },
         };
         if (effectiveSessionId) recordFailedSend(effectiveSessionId, userMessage, errorMessage);
         if (useSessionStore.getState().currentSessionId === effectiveSessionId) addMessage(errorMessage);

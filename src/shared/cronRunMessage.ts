@@ -54,15 +54,21 @@ export function splitCronRunMessage(source: string): CronRunMessageSegment[] {
   let cursor = 0;
   for (const match of source.matchAll(pattern)) {
     const index = match.index ?? 0;
-    if (index > cursor) pushText(segments, source.slice(cursor, index));
     const closedKind = match[1]?.toLowerCase();
     const kind = closedKind || match[3]?.toLowerCase() || '';
+    const summary = kind === 'summary' && closedKind ? summarySegment(match[2] ?? '') : null;
+    const hasSummary = summary && (summary.text || summary.artifacts.length > 0);
+    if (index > cursor) {
+      const prose = source.slice(cursor, index);
+      pushText(segments, hasSummary
+        ? prose.replace(/(?:^|\r?\n)[ \t]*cron_summary:[ \t]*(?:\r?\n[ \t]*)*$/i, '')
+        : prose);
+    }
     if (kind === 'alert') {
       const text = (closedKind ? match[2] : unclosedBody(match[0])).trim();
       if (text) segments.push({ kind: 'alert', text, artifacts: [] });
-    } else if (kind === 'summary' && closedKind) {
-      const summary = summarySegment(match[2] ?? '');
-      if (summary.text || summary.artifacts.length > 0) segments.push(summary);
+    } else if (summary && hasSummary) {
+      segments.push(summary);
     }
     cursor = index + match[0].length;
   }

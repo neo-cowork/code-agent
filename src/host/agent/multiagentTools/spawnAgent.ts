@@ -75,6 +75,8 @@ export async function executeSpawnAgent(
   params: Record<string, unknown>,
   context: SubagentExecutionContext,
 ): Promise<MultiagentExecutionResult> {
+  const { managedAgentId, ...childContext } = context;
+  context = childContext;
     const parallel = params.parallel as boolean | undefined;
     const agents = params.agents as Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }> | undefined;
 
@@ -128,10 +130,10 @@ export async function executeSpawnAgent(
         spawnParentTimeoutMs: context.spawnParentTimeoutMs,
         parentRemainingBudget: context.parentRemainingBudget,
         spawnParentAgentId: context.spawnParentAgentId,
-      });
+      }, Boolean(managedAgentId));
     }
 
-    return executeSingleSpawnAgent(params, context, childDepth, treeId);
+    return executeSingleSpawnAgent(params, context, childDepth, treeId, managedAgentId);
 }
 
 /**
@@ -149,6 +151,7 @@ export async function launchAgentTeam(agents: Array<{ role: string; task: string
 async function executeParallelAgents(
   agents: Array<{ role: string; task: string; name?: string; maxBudget?: number; dependsOn?: string[]; ownedPaths?: string[] }>,
   context: SubagentExecutionContext,
+  background = false,
 ): Promise<MultiagentExecutionResult> {
   if (!context.sessionId) {
     return {
@@ -352,6 +355,8 @@ async function executeParallelAgents(
   const coordinator = getParallelAgentCoordinator(runScope);
   try {
     coordinator.initialize({
+      background,
+      waiterAgentId: context.spawnParentAgentId,
       executionContext: {
         ...context,
         spawnTreeId: runScope.treeId,

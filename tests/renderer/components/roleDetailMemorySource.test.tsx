@@ -12,6 +12,7 @@ vi.mock('../../../src/renderer/services/libraryClient', () => ({ listLibraryItem
 import { RoleDetailPage } from '../../../src/renderer/components/features/expert/RoleDetailPage';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { expertZh, expertEn } from '../../../src/renderer/i18n/expert';
+import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
 
 function fixture(): RolePanelDetail {
   return {
@@ -37,7 +38,9 @@ describe('RoleDetailPage memory source', () => {
     fireEvent.click(await screen.findByTestId('role-detail-tab-records'));
     const copy = (language === 'zh' ? expertZh : expertEn).expert.roleDetail;
     const chip = await screen.findByText(copy.roleWakeLabel, { selector: 'span' });
-    expect(chip.title).toBe(copy.roleWakeTooltip);
+    // hover 文案带写入时间（N-ROLE-WAKE-OWN-MEMORY-NO-APPROVAL）：模板 {time} 用
+    // lastChange.timestamp 的本地化时间填充（夹具 timestamp=1234）。
+    expect(chip.title).toBe(copy.roleWakeTooltip.replace('{time}', formatLocalDateTime(1234, language)));
     expect(chip.parentElement?.textContent).toContain('Preference 1');
     for (const i of [0, 2, 3, 4]) {
       expect(screen.getByText(`Preference ${i}`).parentElement?.textContent).not.toContain(copy.roleWakeLabel);

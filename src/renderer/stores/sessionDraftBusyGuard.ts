@@ -4,9 +4,37 @@ import { useTaskStore } from './taskStore';
 
 /** 复用判定需要的最小会话视图（由 sessionStore 状态切片提供，避免循环依赖）。 */
 export interface DraftBusySignals {
+  todos?: unknown[];
+  isHydratingSession?: boolean;
   runningSessionIds?: Set<string>;
   sessionRuntimes?: Map<string, { activeAgentCount?: number }>;
   pendingUserQuestionsBySessionId?: Map<string, unknown[]>;
+}
+
+interface DraftUsageSlice {
+  sessions: { id: string }[];
+  currentSessionId: string | null;
+  messages: Message[];
+}
+
+const locallyUsedSessionIds = new Set<string>();
+
+function hasLoadedContent(messages: Message[]): boolean {
+  return messages.some((message) => !message.isMeta
+    || message.metadata?.automation || message.metadata?.memberInput);
+}
+
+/** Remember optimistic/loaded messages even if a later list snapshot still says zero. */
+export function observeSessionDraftUsage<T extends {
+  subscribe: (listener: (state: DraftUsageSlice) => void) => () => void;
+}>(store: T): T {
+  store.subscribe((state) => {
+    if (!state.currentSessionId && state.sessions.length === 0) locallyUsedSessionIds.clear();
+    if (state.currentSessionId && hasLoadedContent(state.messages)) {
+      locallyUsedSessionIds.add(state.currentSessionId);
+    }
+  });
+  return store;
 }
 
 /**
@@ -35,9 +63,10 @@ export function excludeBusySessions<T extends { id: string }>(
   messages: Message[],
   slice: DraftBusySignals,
 ): T[] {
-  const currentHasContent = messages.some((m) => !m.isMeta);
+  const currentHasContent = hasLoadedContent(messages) || (slice.todos?.length ?? 0) > 0
+    || slice.isHydratingSession === true;
   return sessions.filter((s) => {
-    if (isSessionBusyForDraftReuse(s.id, slice)) return false;
+    if (locallyUsedSessionIds.has(s.id) || isSessionBusyForDraftReuse(s.id, slice)) return false;
     return !(s.id === currentSessionId && currentHasContent);
   });
 }

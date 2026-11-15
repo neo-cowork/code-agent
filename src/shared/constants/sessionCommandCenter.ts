@@ -15,6 +15,24 @@ export const SESSION_COMMAND_CENTER_TOOL_NAMES = [
 /** Foreground brain should route or answer without growing into an execution run. */
 export const SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS = 8;
 
+/** File execution and resuming a step-limited turn need room beyond routing. */
+const SESSION_COMMAND_CENTER_DELIVERABLE_MAX_ITERATIONS = 30;
+
+// Deliverable nouns only: PPT(X)/PowerPoint/slides/幻灯片/演示稿, XLS(X)/Excel/
+// spreadsheet/表格, DOC(X)/Word/document/report/文档/报告, PDF, HTML/webpage/网页.
+// Latin boundaries avoid incidental substrings (e.g. “wordpress”, “excellent”).
+const FOREGROUND_DELIVERABLE_RE = /\b(?:pptx?|powerpoint|slides?|xlsx?|excel|spreadsheet|docx?|word|document|report|pdf|html|webpage)\b|幻灯片|演示稿|表格|文档|报告|网页/i;
+
+/** Pure per-turn budget policy; continuation is derived from persisted metadata. */
+export function resolveForegroundBrainMaxIterations(input: {
+  prompt: string;
+  lastAssistantStoppedByStepLimit: boolean;
+}): number {
+  return input.lastAssistantStoppedByStepLimit || FOREGROUND_DELIVERABLE_RE.test(input.prompt)
+    ? SESSION_COMMAND_CENTER_DELIVERABLE_MAX_ITERATIONS
+    : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS;
+}
+
 /** Hidden task-result wakes get a deliberately small reasoning budget. */
 export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 
@@ -111,6 +129,42 @@ export function composeSessionCommandTaskResultText(value: string | undefined): 
   if (chars.length <= SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS) return chars.join('');
   return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
 }
+
+/**
+ * [任务结果] 行的状态词（给人读的）：正文里不再露英文机读 token（failed/completed）。
+ * metadata.backgroundTaskResult.status 仍保持机器可读原值，渲染端/账本不受影响。
+ */
+const SESSION_TASK_RESULT_STATUS_WORDS = {
+  zh: { completed: '已完成', failed: '已失败', cancelled: '已取消' },
+  en: { completed: 'finished', failed: 'failed', cancelled: 'cancelled' },
+} as const;
+
+export type SessionTaskResultStatusWordLocale = keyof typeof SESSION_TASK_RESULT_STATUS_WORDS;
+
+export function formatSessionTaskResultStatusWord(
+  status: 'completed' | 'failed' | 'cancelled',
+  locale: SessionTaskResultStatusWordLocale,
+): string {
+  return SESSION_TASK_RESULT_STATUS_WORDS[locale][status];
+}
+
+/**
+ * task_status 同 turn 去重（N-FIX-BGTASK-STATUS-POLL-TRIPLE-CARDS-REST1）：
+ * 派活后模型常在几秒内连查 2-3 次 task_status，每次全量回答都重画一张「进行中」卡片。
+ * 按会话保存「上次回答签名 + 下发时的 turnId」，同 turn 且签名未变时改回一句短提示。
+ * 这里只放条目上限（超限按最旧淘汰）与短提示固定句；签名口径在
+ * src/host/tools/modules/commandCenter/taskStatusDedupe.ts。
+ */
+export const TASK_STATUS_DEDUPE_MAX_SESSIONS = 64;
+
+/** 签名未变时 task_status 回给模型的固定短提示；标识符行由 helper 按全量口径追加。 */
+export const TASK_STATUS_UNCHANGED_HINT = '任务状态与上次查询一致，没有新变化；任务完成时会自动通知你，无需再次调用 task_status，也不要估算剩余完成时间。';
+
+/**
+ * 去重提示里子代理行的标题宽度；与 backgroundSubagentTaskRows 全量行的截断宽度同值，
+ * 提示行与全量行不出现两个名字。该处常量未导出，这里只能同值另立，改动须同步。
+ */
+export const TASK_STATUS_HINT_TITLE_MAX_CHARS = 30;
 
 /**
  * 判据单一真源：本轮是否套用指挥台 brain。

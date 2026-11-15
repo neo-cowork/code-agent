@@ -41,6 +41,13 @@ pub(crate) fn dialog_copy(language: QuitDialogLanguage) -> QuitDialogCopy {
     }
 }
 
+pub(crate) fn background_hint(language: QuitDialogLanguage) -> &'static str {
+    match language {
+        QuitDialogLanguage::Zh => "Agent Neo 会在后台继续运行，以便执行定时任务。如需完全退出，请点击菜单栏图标 → 完全退出。",
+        QuitDialogLanguage::En => "Agent Neo keeps running in the background so your scheduled tasks run. To quit completely, use the menu bar icon → Quit Completely.",
+    }
+}
+
 pub(crate) fn prompt_text(
     prompt: QuitPrompt,
     offers_background_continue: bool,
@@ -48,22 +55,16 @@ pub(crate) fn prompt_text(
 ) -> &'static str {
     match (language, offers_background_continue, prompt) {
         (QuitDialogLanguage::Zh, true, QuitPrompt::RunningTasks) => {
-            "有任务正在运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
-        }
-        (QuitDialogLanguage::Zh, true, QuitPrompt::ScheduledTasks) => {
-            "当前只有定时任务。停止后这些任务将不再运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
+            "有任务正在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, true, QuitPrompt::Both) => {
-            "有任务正在运行，也有定时任务。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
+            "有任务正在运行，也有定时任务。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, true, QuitPrompt::Unverified) => {
-            "无法确认是否有任务在运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
+            "无法确认是否有任务在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, false, QuitPrompt::RunningTasks) => {
             "有任务正在运行。退出将停止这些任务。"
-        }
-        (QuitDialogLanguage::Zh, false, QuitPrompt::ScheduledTasks) => {
-            "当前只有定时任务。退出将停止这些定时任务，停止后不再运行。"
         }
         (QuitDialogLanguage::Zh, false, QuitPrompt::Both) => {
             "有任务正在运行，也有定时任务。退出将停止运行中的任务和定时任务。"
@@ -72,22 +73,16 @@ pub(crate) fn prompt_text(
             "无法确认是否有任务在运行。退出将停止运行中的任务和定时任务。"
         }
         (QuitDialogLanguage::En, true, QuitPrompt::RunningTasks) => {
-            "Tasks are currently running.\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
-        }
-        (QuitDialogLanguage::En, true, QuitPrompt::ScheduledTasks) => {
-            "There are only scheduled tasks. Stopping will prevent them from running.\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
+            "Tasks are currently running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
         (QuitDialogLanguage::En, true, QuitPrompt::Both) => {
-            "Tasks are currently running, and there are scheduled tasks.\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
+            "Tasks are currently running, and there are scheduled tasks.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
         (QuitDialogLanguage::En, true, QuitPrompt::Unverified) => {
-            "Unable to confirm whether tasks are running.\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
+            "Unable to confirm whether tasks are running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
         (QuitDialogLanguage::En, false, QuitPrompt::RunningTasks) => {
             "Tasks are currently running. Quitting will stop these tasks."
-        }
-        (QuitDialogLanguage::En, false, QuitPrompt::ScheduledTasks) => {
-            "There are only scheduled tasks. Quitting will stop these scheduled tasks, and they will not run again."
         }
         (QuitDialogLanguage::En, false, QuitPrompt::Both) => {
             "Tasks are currently running, and there are scheduled tasks. Quitting will stop the running tasks and scheduled tasks."
@@ -101,45 +96,28 @@ pub(crate) fn prompt_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quit_guard::{dialog_answer_action, quit_prompt_text, QuitAnswerAction, QuitPrompt};
+    use crate::quit_guard::{quit_prompt_text, QuitAnswerAction, QuitPrompt};
 
     #[test]
-    fn dialog_answer_action_maps_all_three_labels_for_both_languages() {
-        let zh = dialog_copy(QuitDialogLanguage::Zh);
+    fn three_button_body_separates_lead_with_one_blank_line() {
         for language in [QuitDialogLanguage::Zh, QuitDialogLanguage::En] {
             let copy = dialog_copy(language);
-            assert_eq!(
-                dialog_answer_action(Some(copy.cancel_button), language),
-                QuitAnswerAction::StayRunning
-            );
-            assert_eq!(
-                dialog_answer_action(Some(copy.background_button), language),
-                QuitAnswerAction::BackgroundContinue
-            );
-            assert_eq!(
-                dialog_answer_action(Some(copy.quit_button), language),
-                QuitAnswerAction::Quit
-            );
-            assert_eq!(
-                dialog_answer_action(None, language),
-                QuitAnswerAction::StayRunning
-            );
-            assert_eq!(
-                dialog_answer_action(Some("unknown label"), language),
-                QuitAnswerAction::StayRunning
-            );
-            assert_eq!(
-                dialog_answer_action(Some(copy.cancel_button), language),
-                dialog_answer_action(Some(zh.cancel_button), QuitDialogLanguage::Zh)
-            );
-            assert_eq!(
-                dialog_answer_action(Some(copy.background_button), language),
-                dialog_answer_action(Some(zh.background_button), QuitDialogLanguage::Zh)
-            );
-            assert_eq!(
-                dialog_answer_action(Some(copy.quit_button), language),
-                dialog_answer_action(Some(zh.quit_button), QuitDialogLanguage::Zh)
-            );
+            for prompt in [
+                QuitPrompt::RunningTasks,
+                QuitPrompt::Both,
+                QuitPrompt::Unverified,
+            ] {
+                let three = prompt_text(prompt, true, language);
+                let (lead, explanations) = three
+                    .split_once("\n\n")
+                    .expect("lead and explanations need a blank line");
+                assert!(!lead.is_empty() && !lead.contains('\n'));
+                let lines: Vec<_> = explanations.lines().collect();
+                assert_eq!(lines.len(), 2);
+                assert!(lines[0].starts_with(copy.background_button));
+                assert!(lines[1].starts_with(copy.quit_button));
+                assert!(!prompt_text(prompt, false, language).contains('\n'));
+            }
         }
     }
 
@@ -147,7 +125,6 @@ mod tests {
     fn localized_copy_covers_all_prompts_and_button_sets() {
         let prompts = [
             QuitPrompt::RunningTasks,
-            QuitPrompt::ScheduledTasks,
             QuitPrompt::Both,
             QuitPrompt::Unverified,
         ];
@@ -176,13 +153,20 @@ mod tests {
     }
 
     #[test]
+    fn background_hint_names_the_full_quit_menu_item_in_both_languages() {
+        assert!(background_hint(QuitDialogLanguage::Zh).contains("菜单栏图标 → 完全退出"));
+        assert!(background_hint(QuitDialogLanguage::En).contains("menu bar icon → Quit Completely"));
+    }
+
+    #[test]
     fn english_dialog_labels_are_pinned_and_cancel_is_safe() {
         let copy = dialog_copy(QuitDialogLanguage::En);
         assert_eq!(copy.cancel_button, "Cancel");
         assert_eq!(copy.background_button, "Keep Running in Background");
         assert_eq!(copy.quit_button, "Stop and Quit");
         assert_eq!(
-            dialog_answer_action(Some(copy.cancel_button), QuitDialogLanguage::En),
+            crate::resident_host::quit_dialog_button_set(true, QuitDialogLanguage::En)
+                .dialog_answer_action(Some(copy.cancel_button)),
             QuitAnswerAction::StayRunning
         );
     }

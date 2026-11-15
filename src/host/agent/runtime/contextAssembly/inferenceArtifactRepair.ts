@@ -70,9 +70,9 @@ export function startArtifactModelWaitProgress(
   const startedAt = Date.now();
   const baseStep = options.artifactRepairActive
     ? options.artifactRepairWritePriority
-      ? '正在写入 artifact 修复补丁...'
-      : '正在分析 artifact 修复方案...'
-    : '正在生成 artifact 内容...';
+      ? '正在写入修正内容…'
+      : '正在检查需要修正的内容…'
+    : '正在整理结果…';
 
   ctx.taskProgress.emitTaskProgress('generating', baseStep);
   const timer = setInterval(() => {

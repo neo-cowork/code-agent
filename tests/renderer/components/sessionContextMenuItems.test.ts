@@ -6,6 +6,7 @@ import {
 } from '../../../src/renderer/components/features/sidebar/sessionContextMenuItems';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { getDisplaySessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
 
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
   pickNativeFile: vi.fn(),
@@ -91,6 +92,20 @@ const VALID_FORK_ENVELOPE = {
 describe('buildSessionContextMenuItems', () => {
   beforeEach(() => {
     vi.mocked(pickNativeFile).mockReset();
+  });
+
+  it('prefills rename with the localized automatic-session display title (main #3198 round-trip口径)', () => {
+    const deps = makeDeps();
+    const title = '[Schedule] Morning notes summary';
+    const item = buildSessionContextMenuItems(makeSession({ title }), deps)
+      .find((entry) => entry.label === zh.sessionMenu.rename);
+    item?.onClick();
+    // zh 预填本地化显示标题；parseCronSessionTitle 同时识别 zh/en 前缀，保存后仍被识别
+    expect(deps.setRenameValue).toHaveBeenCalledWith('[定时] Morning notes summary');
+    const saved = '[定时] Morning notes summary';
+    expect(splitCronSessionTitleParts(saved)?.name).toBe('Morning notes summary');
+    expect(getDisplaySessionTitle(saved, 'zh')).toBe('[定时] Morning notes summary');
+    expect(getDisplaySessionTitle(saved, 'en')).toBe('[Schedule] Morning notes summary');
   });
 
   it('始终包含基础项：置顶/重命名/复制ID/归档/删除/导出', () => {

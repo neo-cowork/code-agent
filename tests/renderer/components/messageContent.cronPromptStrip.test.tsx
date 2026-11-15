@@ -21,7 +21,7 @@ const FULL_PROMPT = [
     + '今天本地 00:00 = 1792761600（Unix 秒），次日本地 00:00 = 1792848000（Unix 秒）。',
   '',
   '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；'
-    + '每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。',
+    + '只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。',
 ].join('\n');
 
 const ASSISTANT_WITH_CRON_BLOCKS = [

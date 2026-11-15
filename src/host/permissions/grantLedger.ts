@@ -21,7 +21,9 @@ import {
   listToolGrants,
   revokeTool24hGrant,
   revokeToolRunGrant,
+  revokeToolSessionGrant,
 } from './toolGrantStore';
+import { connectorReadGrantName } from './connectorToolAccess';
 import { getConfirmationGate } from '../agent/confirmationGate';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 
@@ -31,6 +33,7 @@ const ID_VARIANT = {
   standingGrant: 'standing-grant',
   toolSession: 'tool-session',
   toolRun: 'tool-run',
+  toolTargetSession: 'tool-target-session',
   tool24h: 'tool-24h',
 } as const;
 
@@ -109,14 +112,18 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
 
   // N-PERM-GRANT-TIERS 两档工具授权：source 'run'（本次任务）| '24h'（24 小时内）。
   for (const grant of listToolGrants(now)) {
+    const connectorName = connectorReadGrantName(grant.tool);
     entries.push({
-      id: grant.tier === 'run'
+      id: grant.tier === 'session'
+        ? buildId(ID_VARIANT.toolTargetSession, grant.sessionId, grant.tool, grant.target ?? '')
+        : grant.tier === 'run'
         ? buildId(ID_VARIANT.toolRun, grant.sessionId, grant.tool, ...(grant.target ? [grant.target] : []))
         : buildId(ID_VARIANT.tool24h, grant.tool, ...(grant.target ? [grant.target] : [])),
-      kind: 'tool-timed',
-      label: grant.tool,
+      kind: grant.tier === 'session' ? 'tool-target' : 'tool-timed',
+      label: connectorName ?? grant.tool,
+      ...(connectorName ? { connectorAccess: 'read' as const } : {}),
       ...(grant.target ? { detail: grant.target } : {}),
-      source: grant.tier,
+      source: grant.tier === 'session' ? 'conversation' : grant.tier,
       grantedAt: grant.grantedAt,
       expiresAt: grant.expiresAt,
     });
@@ -143,6 +150,8 @@ export function revokeGrant(id: string): boolean {
         && getSessionAutomationService().revokeStandingGrant(segments[0], segments[1], segments[2]);
     case ID_VARIANT.toolSession:
       return segments.length === 2 && getConfirmationGate().revokeSessionApproval(segments[0], segments[1]);
+    case ID_VARIANT.toolTargetSession:
+      return segments.length === 3 && revokeToolSessionGrant(segments[0], segments[1], segments[2]);
     case ID_VARIANT.toolRun:
       return (segments.length === 2 || segments.length === 3)
         && revokeToolRunGrant(segments[0], segments[1], segments[2] ?? null);

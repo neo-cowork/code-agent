@@ -23,7 +23,7 @@ import type { BuildInfo, PermissionRequest, RendererServeDecision } from '../sha
 import type { ConversationEnvelope } from '../shared/contract/conversationEnvelope';
 
 import { formatError } from './helpers/utils';
-import { handleTempUpload, handleScreenshot } from './helpers/upload';
+import { handleTempUpload, handleTempBatchUpload, handleScreenshot } from './helpers/upload';
 import { dbAvailable, getPersistenceHealth } from './helpers/sessionCache';
 import { broadcastSSE } from './helpers/sse';
 
@@ -35,6 +35,7 @@ import {
   isWebServiceMode,
   rateLimitMiddleware,
 } from './middleware/auth';
+import { handleServerError, observeServerErrors } from './middleware/serverErrors';
 
 // Route modules
 import { createHealthRouter } from './routes/health';
@@ -43,6 +44,7 @@ import { getCronService } from '../host/cron/cronService';
 import { getConfigService } from '../host/services/core/configService';
 import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
+import { createProjectTrustRouter } from './routes/projectTrust';
 import { createExtractRouter } from './routes/extract';
 import { createDomainRouter } from './routes/domain';
 import { createShellRouter } from './routes/shell';
@@ -250,6 +252,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // JSON body parser
   app.use(express.json({ limit: '50mb', strict: false }));
 
+  // 5xx 观察者：显式 status(5xx) 的响应也留一条统一口径的 error 日志
+  app.use(observeServerErrors(logger));
+
   // ── Health & SSE (extracted to routes/health.ts) ────────────────────
   app.use('/api', createHealthRouter({
     handlers,
@@ -282,6 +287,19 @@ export function createApp(deps: CreateAppDeps): express.Express {
       const status = message.includes('50MB limit')
         ? 413
         : (message === 'Missing file field' || message === 'Upload aborted' ? 400 : 500);
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.post('/api/upload/temp/batch', async (req: Request, res: Response) => {
+    try {
+      await handleTempBatchUpload(req, res);
+    } catch (error) {
+      logger.error('Temporary batch upload failed', error);
+      const message = formatError(error);
+      const status = /\d+MB limit/.test(message)
+        ? 413
+        : (['Missing file field', 'Upload aborted', 'Invalid upload path'].includes(message) ? 400 : 500);
       res.status(status).json({ error: message });
     }
   });
@@ -759,6 +777,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // ── Settings (extracted to routes/settings.ts) ─────────────────────
   app.use('/api', createSettingsRouter({ handlers }));
 
+  // ── Project trust confirm (chat 内「确认并重发」，见 routes/projectTrust.ts) ──
+  app.use('/api/project', createProjectTrustRouter({ logger, tryGetSessionManager }));
+
   // ── Extract & Speech (extracted to routes/extract.ts) ───────────────
   app.use('/api', createExtractRouter({ handlers }));
 
@@ -778,6 +799,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
     dataDir: resolveCodeAgentDataDir(),
     currentShellVersion: getAppVersion(),
   }));
+
+  // 终端错误处理（必须最后挂）：拒绝的 async handler 统一 JSON 应答，不出 HTML 错误页
+  app.use(handleServerError(logger));
 
   return app;
 }

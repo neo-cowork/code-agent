@@ -38,6 +38,8 @@ export interface DoctorItem {
   name: string;
   status: DoctorStatus;
   message: string;
+  /** Probe auth response contradicted by recent successful real calls. */
+  probeHttpStatus?: 401 | 403;
   details?: string;
   /** 失败时给的修复建议 */
   suggestion?: string;

@@ -236,6 +236,20 @@ describe('CronRunSessionStatusBar（组件）', () => {
     expect(globalCss).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.cron-run-pulse-dot\s*\{\s*animation:\s*none/);
   });
 
+  it('等批准：cron 会话的状态行说明由哪个定时任务启动（无名字时用通用句）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    const row = { id: 'req-1', kind: 'tool_approval' as const, sessionId: 'session-1', tool: 'bash', requestedAt: Date.now(), status: 'pending' as const, argsPreview: 'echo hi', startedByAutomation: true };
+    listParkedApprovalsMock.mockResolvedValue([{ ...row, scheduledTaskName: '每日周会纪要汇总' }]);
+    const view = render(<CronRunSessionStatusBar sessionId="session-1" />);
+    expect((await screen.findByTestId('scheduled-task-origin')).textContent).toBe('由定时任务「每日周会纪要汇总」启动');
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+    listParkedApprovalsMock.mockResolvedValue([row]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    expect((await screen.findByTestId('scheduled-task-origin')).textContent).toBe('由定时任务启动');
+  });
+
   it('等批准：显示在干什么 + 批准走停车审批 IPC（first-responder-wins 同链路）', async () => {
     showSession(cronRunSession);
     getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
@@ -253,7 +267,15 @@ describe('CronRunSessionStatusBar（组件）', () => {
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
     expect(screen.getByTestId('cron-run-status-text').textContent).toContain('等你批准');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('echo BG-PARKED-888');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行一条命令');
+    expect(screen.queryByTestId('cron-run-command')).toBeNull();
+    const toggle = screen.getByTestId('cron-run-command-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('cron-run-command').textContent).toBe('echo BG-PARKED-888');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId('cron-run-command')).toBeNull();
 
     fireEvent.click(screen.getByTestId('cron-run-status-approve'));
     await waitFor(() => {
@@ -520,6 +542,14 @@ describe('CronRunSessionStatusBar（组件）', () => {
 });
 
 describe('CronRunSessionIntro（来源小标）', () => {
+  it('first meeting renders neither a scheduled-run label nor a cron status bar', () => {
+    showSession({ ...cronRunSession, origin: { kind: 'cron', metadata: { roleId: '日程管家', trigger: 'first_wake' } } });
+    render(<><CronRunSessionIntro sessionId="session-1" /><CronRunSessionStatusBar sessionId="session-1" /></>);
+    expect(screen.queryByTestId('cron-run-intro-label')).toBeNull();
+    expect(screen.queryByTestId('cron-run-status')).toBeNull();
+    expect(getExecutionsMock).not.toHaveBeenCalled();
+  });
+
   it('cron/heartbeat 运行记录显示「定时任务自动运行」', () => {
     showSession(cronRunSession);
     render(<CronRunSessionIntro sessionId="session-1" />);
@@ -534,4 +564,35 @@ describe('CronRunSessionIntro（来源小标）', () => {
     rerender(<CronRunSessionIntro sessionId="session-1" />);
     expect(screen.queryByTestId('cron-run-intro-label')).toBeNull();
   });
+});
+
+
+it('reveals the identical complete multi-line shell preview without trimming or truncation', async () => {
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  const command = '  grep -n "行动项" $(find . -name "*.txt") | sort\n' + '# preserve bytes '.repeat(30) + '\n';
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: 'raw-command', sessionId: 'session-1', tool: 'Bash', requestedAt: 1,
+    status: 'pending', argsPreview: command.slice(0, 40) + '…', commandPreview: command,
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const toggle = await screen.findByTestId('cron-run-command-toggle');
+  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行一条命令');
+  expect(screen.queryByTestId('cron-run-command')).toBeNull();
+  fireEvent.click(toggle);
+  expect(screen.getByTestId('cron-run-command').textContent).toBe(command);
+});
+
+it('renders file approval without a raw tool name or absolute path', async () => {
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: 'write-approval', kind: 'tool_approval', sessionId: 'session-1', tool: 'Write',
+    displayTool: 'Write', argsPreview: '/tmp/example/digest.md', requestedAt: 1, status: 'pending',
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const status = await screen.findByTestId('cron-run-status-text');
+  expect(status.textContent).not.toContain('Write');
+  expect(status.textContent).not.toContain('/tmp/example');
+  expect(status.textContent).toContain('digest.md');
 });

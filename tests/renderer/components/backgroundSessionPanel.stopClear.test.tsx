@@ -67,7 +67,7 @@ describe('行级 Stop/Clear 接线', () => {
 
   it('终态行（stopped）：Clear 在场、Stop 不在；点击 Clear 调用 dismissBackgroundSession(sessionId)', () => {
     renderPanelWith([backgroundTask({ status: 'completed', completionMessage: BACKGROUND_TASK_CANCELLED })]);
-    expect(screen.getByTestId('background-session-item-line').textContent).toBe('已停止');
+    expect(screen.getByTestId('background-session-item-line').textContent).toBe('已取消');
 
     expect(screen.getByTestId('background-session-clear')).toBeTruthy();
     expect(screen.queryByTestId('background-session-stop')).toBeNull();

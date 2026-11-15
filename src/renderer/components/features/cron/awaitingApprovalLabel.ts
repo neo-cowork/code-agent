@@ -1,9 +1,24 @@
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
+
 const PREVIEW_MAX_CHARS = 28;
 
-/** 「等你批准：<预览>」文案；没有预览返回 null，由调用方回落到原文案。 */
-export function awaitingApprovalLabel(template: string, preview?: string): string | null {
-  const text = preview?.replace(/\s+/g, ' ').trim();
-  if (!text) return null;
-  const clipped = text.length > PREVIEW_MAX_CHARS ? `${text.slice(0, PREVIEW_MAX_CHARS - 1)}…` : text;
-  return template.replace('{preview}', clipped);
+type ApprovalCopy = {
+  awaitingApprovalWithPreview: string;
+  parkedVoided: { tools: { bash: string } };
+};
+
+/** Summary only: raw arguments remain in the approval card's deliberate disclosure. */
+export function awaitingApprovalLabel(
+  copy: ApprovalCopy,
+  run?: Pick<AwaitingApprovalRun, 'tool' | 'commandPreview'>,
+): string | null {
+  const tool = run?.tool?.toLowerCase();
+  if (tool === 'bash') {
+    return copy.awaitingApprovalWithPreview.replace('{preview}', copy.parkedVoided.tools.bash);
+  }
+  if (tool !== 'write' && tool !== 'edit' && tool !== 'append') return null;
+  const name = run?.commandPreview?.split(/[\\/]+/).filter(Boolean).pop()?.replace(/\s+/g, ' ').trim();
+  if (!name) return null;
+  const clipped = name.length > PREVIEW_MAX_CHARS ? `${name.slice(0, PREVIEW_MAX_CHARS - 1)}…` : name;
+  return copy.awaitingApprovalWithPreview.replace('{preview}', clipped);
 }

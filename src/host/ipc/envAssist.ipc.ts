@@ -6,6 +6,15 @@ import { getDatabase } from '../services/core/databaseService';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 
+import { createCuaHelperGrantBridge, type CuaHelperGrantBridge } from '../permissions/envAssist/grants/cuaHelperGrantBridge';
+import { createDefaultGrantBridge, mintClickToken, requestGrant, requestHelperGrant } from '../permissions/envAssist/grants/requestGrant';
+import { accessibilityProbe, automationProbe, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
+import { readCuaHelperPermissionState, type CuaHelperPermissionState } from '../permissions/envAssist/cua/helperPermissionState';
+import { cuaHelperProbe } from '../permissions/envAssist/probes/cuaHelperProbe';
+import { createShellPassiveBridge } from '../permissions/envAssist/probes/shellPassiveBridge';
+import type { ReadOnlyProbe } from '../permissions/envAssist/probes/types';
+import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
+
 async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
   const messageId = `env-assist:${id}`;
   const row = getDatabase().getDb()?.prepare('SELECT session_id FROM messages WHERE id = ?').get(messageId) as { session_id: string } | undefined;
@@ -15,12 +24,41 @@ async function findNotice(id: string): Promise<EnvAssistNotice | undefined> {
 }
 
 interface EnvAssistDependencies {
+  passiveBridge?: Parameters<typeof accessibilityProbe>[0];
+  grantBridge?: Parameters<typeof requestGrant>[2];
+  /** cua helper identity (separate from the shell bridges above). */
+  cuaHelperState?: () => Promise<CuaHelperPermissionState>;
+  cuaHelperGrantBridge?: CuaHelperGrantBridge | null;
+  now?: () => number;
   available: () => boolean;
   open: (pane: string) => Promise<boolean>;
   findNotice: (id: string) => Promise<EnvAssistNotice | undefined>;
 }
 
+// Notice targets are Neo's own ids (i18n keys); TCC needs the target app's bundle id.
+const AUTOMATION_BUNDLE_IDS: Readonly<Record<string, string>> = {
+  calendar: 'com.apple.iCal', mail: 'com.apple.mail', reminders: 'com.apple.reminders',
+};
+const automationBundleId = (targetId: string | undefined) => (targetId ? AUTOMATION_BUNDLE_IDS[targetId] : undefined);
+
+function resolveGrantProbe(
+  pane: string,
+  bridge: EnvAssistDependencies['passiveBridge'],
+  targetBundleId: string | undefined,
+): ReadOnlyProbe | null {
+  const passive = bridge ?? null;
+  switch (pane) {
+    case 'accessibility': return accessibilityProbe(passive);
+    case 'screenCapture': return screenRecordingProbe(passive);
+    case 'inputMonitoring': return inputMonitoringProbe(passive);
+    case 'automation': return targetBundleId ? automationProbe(passive, targetBundleId) : null;
+    default: return null;
+  }
+}
+
 const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
+/** A cua-helper grant notice is single-use: one click, one helper call. */
+const consumedHelperNotices = new Set<string>();
 const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
   getAvailability: (deps: EnvAssistDependencies) => ({ available: deps.available() }),
   act: async (deps: EnvAssistDependencies, payload: unknown): Promise<EnvAssistActResult> => {
@@ -33,13 +71,58 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       || !action?.payload || !('pane' in action.payload) || action.payload.pane !== request.payload.pane) {
       return { status: 'rejected' };
     }
+    if (request.actionKind === 'request_grant' && notice.target?.id.startsWith('helper')) {
+      const pane = request.payload.pane;
+      if ((pane !== 'accessibility' && pane !== 'screenCapture') || consumedHelperNotices.has(notice.id)) return { status: 'rejected' };
+      consumedHelperNotices.add(notice.id);
+      const grant = await requestHelperGrant(mintClickToken(notice.id, deps.now), deps.cuaHelperGrantBridge ?? null, deps.now);
+      const outcome = await cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane)();
+      if (grant !== 'requested' && grant !== 'rejected') consumedHelperNotices.delete(notice.id);
+      // Still denied after the one helper action: fall back to the settings pane.
+      if (outcome.status !== 'granted' && deps.available()) {
+        return { status: await deps.open(pane) ? 'opened' : 'not_available', outcome };
+      }
+      return { status: grant === 'requested' ? 'checked' : grant, outcome };
+    }
+    if (request.actionKind === 'request_grant') {
+      const targetBundleId = automationBundleId(notice.target?.id);
+      const probe = resolveGrantProbe(request.payload.pane, deps.passiveBridge, targetBundleId);
+      if (!probe) return { status: 'rejected' };
+      // Only "undecided" can show the system dialog. Refused (-1743) never prompts again and a target that isn't running (-600)
+      // can't be asked, so both go straight to Settings instead of a click that does nothing (ADR-090 §3 row 1).
+      // ponytail: not_running opens Settings rather than launching the target first; launch-then-ask when S4 owns Apple events.
+      if (request.payload.pane === 'automation') {
+        const before = await probe();
+        if ((before.status === 'denied' || before.status === 'not_running') && deps.available()) {
+          return { status: await deps.open('automation') ? 'opened' : 'not_available', outcome: before };
+        }
+      }
+      const token = mintClickToken(notice.id, deps.now);
+      const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
+      const outcome = await probe();
+      return { status: grant === 'requested' ? 'checked' : grant, outcome };
+    }
     if (!deps.available()) return { status: 'not_available' };
     return { status: await deps.open(request.payload.pane) ? 'opened' : 'not_available' };
   },
 });
 
+function buildDefaultDependencies(): EnvAssistDependencies {
+  const client = resolveShellBridgeClientFromEnv();
+  if (!client) {
+    return { ...defaults, passiveBridge: null, grantBridge: null, cuaHelperGrantBridge: createCuaHelperGrantBridge() };
+  }
+  return {
+    ...defaults,
+    cuaHelperGrantBridge: createCuaHelperGrantBridge(),
+    passiveBridge: createShellPassiveBridge(client),
+    grantBridge: createDefaultGrantBridge(client),
+  };
+}
+
 /** Opener injection is also used by hosts without a desktop; it never grants permission. */
 export function registerEnvAssistHandlers(deps: EnvAssistDependencies = defaults): void {
-  installDomainRoutes(ipcHost, routes, deps);
+  const resolved = deps === defaults ? buildDefaultDependencies() : deps;
+  installDomainRoutes(ipcHost, routes, resolved);
 }
 registerEnvAssistHandlers.routes = routes;

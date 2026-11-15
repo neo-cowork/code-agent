@@ -1,6 +1,6 @@
 import type { SubagentResult } from '../subagentExecutorTypes';
 import type { SubagentEventPort, SubagentExecutionContext } from '../subagentExecutorTypes';
-import type { ManagedAgent } from '../spawnGuard';
+import { getSpawnGuard, type ManagedAgent } from '../spawnGuard';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
 import type { SwarmRunScope } from '../../../shared/contract/swarm';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
@@ -80,6 +80,7 @@ export function publishBackgroundSubagentVisibility(options: {
   task: string;
   startedAt: number;
   ownsRunLifecycle: boolean;
+  publisher?: string;
 }): void {
   const { promise, scope, agentId, agentName, role, task, startedAt, ownsRunLifecycle } = options;
   if (!scope) return;
@@ -88,7 +89,7 @@ export function publishBackgroundSubagentVisibility(options: {
     ? registerSingleSpawnVisibility(scope, agentId)
     : undefined;
   const emitter = getSwarmEventEmitter();
-  if (ownsRunLifecycle) emitter.started(scope, 1);
+  if (ownsRunLifecycle) emitter.started(scope, 1, options.publisher);
   emitter.agentAdded(scope, { id: agentId, name: agentName, role, dispatchedTask: task });
   emitter.agentUpdated(scope, agentId, { status: 'running', startTime: startedAt });
 
@@ -142,6 +143,8 @@ export function adoptForegroundSubagent(options: {
 }): MultiagentExecutionResult {
   const { promise, agentId, agentName, role, context, treeId, task, agentStartedAt, foregroundBlockingBudgetMs, childEvents } = options;
   childEvents.detached = true;
+  const managed = getSpawnGuard().get(agentId);
+  if (managed) managed.background = true;
   const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
   getBackgroundSubagentRegistry().adopt(promise, {
     agentId,
@@ -165,6 +168,7 @@ export function adoptForegroundSubagent(options: {
     task,
     startedAt: agentStartedAt,
     ownsRunLifecycle: !context.swarmRunScope,
+    publisher: 'adoptForegroundSubagent',
   });
   return {
     success: true,

@@ -5,6 +5,7 @@ const SETTINGS_PANES = {
   automation: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
   accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
   screenCapture: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+  inputMonitoring: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
 } as const;
 
 /** Local macOS web builds can open settings too, provided there is a logged-in desktop. */

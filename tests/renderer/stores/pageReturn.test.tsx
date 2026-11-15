@@ -37,6 +37,7 @@ beforeEach(async () => {
   pagehideListeners = vi.spyOn(window, 'addEventListener');
   window.history.replaceState({}, '', '/');
   sessionStorage.clear();
+  localStorage.clear(); // last-viewed-session memory is per-boot state
   const invoke = vi.fn(async (_domain: string, action: string, args?: { sessionId?: string }) => {
     if (action === 'list') return { success: true, data: rows };
     if (action === 'load') return {

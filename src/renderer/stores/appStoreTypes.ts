@@ -161,6 +161,7 @@ export interface AppState {
   /** 非空 = 这次设置是带返回落点打开的；closeSettings 据此决定关了落哪儿。 */
   settingsReturnTo: SettingsReturnTo | null;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
+  settingsModelFocus: { provider: ModelConfig['provider']; nonce: number } | null;
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
   /**
@@ -249,6 +250,8 @@ export interface AppState {
 
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
+  /** 资料库打开时直接进「会议」视图；meetingId 为 null 是会议列表（N-MEETING-PAGE） */
+  libraryMeetingTarget: { meetingId: string | null } | null;
 
   /** 当前全屏专家详情页；关闭后回到能力中心的专家 tab。 */
   expertDetailRoleId: string | null;
@@ -299,6 +302,7 @@ export interface AppState {
 
   // Model Config
   modelConfig: ModelConfig;
+  settingsLoaded: boolean;
 
   // Workspace State
   workingDirectory: string | null;
@@ -315,6 +319,8 @@ export interface AppState {
   closeSettings: () => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
+  openModelSettings: (provider: ModelConfig['provider']) => void;
+  clearSettingsModelFocus: () => void;
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;
   openCapabilitySettingsTarget: (focus: Omit<SettingsCapabilityFocus, 'nonce'>) => void;
   clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
@@ -388,6 +394,8 @@ export interface AppState {
   setShowDAGPanel: (show: boolean) => void;
   setShowLab: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
+  openMeetingPage: (meetingId?: string | null) => void;
+  clearLibraryMeetingTarget: () => void;
   openExpertRoleDetail: (roleId: string) => void;
   openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
   openContentPreview: (input: ContentPreviewInput, options?: OpenWorkbenchTabOptions) => void;

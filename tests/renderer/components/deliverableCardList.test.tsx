@@ -392,6 +392,11 @@ describe('DeliverableCardList 主体点击与动作收敛', () => {
       filePath: '/workspace/report.md',
       note: '客户版',
     });
-    expect(mocks.toastSuccess).toHaveBeenCalledWith('已发布 v1 · 资料库里的版本列表已更新');
+    const [message, , action] = mocks.toastSuccess.mock.calls[0];
+    expect(message).toBe('已发布 v1 · 可在文件预览右上角「版本」里查看');
+    expect(message).not.toContain('资料库');
+    expect(action.label).toBe('查看版本');
+    action.onClick();
+    expect(mocks.openPreview).toHaveBeenCalledWith('/workspace/report.md', { deliverableStatus: 'unverified' });
   });
 });

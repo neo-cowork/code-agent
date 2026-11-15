@@ -7,7 +7,7 @@ import type { TraceNode } from '../../../src/shared/contract/trace';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { getToolStatus } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/styles';
+import { resolveToolCallTerminalState } from '../../../src/renderer/utils/toolCallTerminalState';
 import { getToolStatusLabel } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
 import { buildToolStatusLineCopy } from '../../../src/renderer/utils/toolStatusLinePresentation';
 import { languages } from '../../../src/renderer/i18n';
@@ -15,7 +15,7 @@ import { languages } from '../../../src/renderer/i18n';
 // FB-595：回合收尾（会话不在 processingSessionIds）后，无 result 的调用不能再用
 // 进行时渲染——折叠头曾与展开行各说各话（头「运行中 · 正在运行命令 ls …」，行「已中断」）。
 // 这里渲染真实 ToolStepGroup + 真实 app store，钉住两个状态源同一口径：
-// 折叠头文本 === 展开行（getToolStatus → statusLabels / buildToolStatusLineCopy）对同一
+// 折叠头文本 === 展开行（resolveToolCallTerminalState → statusLabels / buildToolStatusLineCopy）对同一
 // 调用装配出的那一行。普通失败（Read success:false + 错误结果）的头文案另行回归钉死，
 // 不随陈旧收口改动漂移。
 
@@ -67,7 +67,7 @@ function failedReadNode(id: string, timestamp: number): TraceNode {
 }
 
 // 与 ToolStepGroup 展开档（toolCalls memo）同构的 ToolCall 形状，喂给展开行同一批
-// 判定/装配函数（getToolStatus、getToolStatusLabel、buildToolStatusLineCopy）。
+// 判定/装配函数（resolveToolCallTerminalState、getToolStatusLabel、buildToolStatusLineCopy）。
 function toolCallOf(node: TraceNode): ToolCall {
   const tc = node.toolCall!;
   return {
@@ -102,11 +102,10 @@ describe('ToolStepGroup — stale running header (FB-595)', () => {
     const node = staleBashNode('tool-a', 1_000);
     render(<ToolStepGroup nodes={[node]} sessionId="sess-stale-a" defaultExpanded />);
 
-    // 展开行的状态判定（ToolCallDisplay/styles.ts getToolStatus）：同一输入必须落到
+    // 展开行的状态判定（共享 resolver，展开行经 useToolCallTerminalResolver 读它）：同一输入必须落到
     // 'interrupted'——这是两个状态源同判定的锚点。
     const tc = toolCallOf(node);
-    const idleSessionIds = new Set<string>();
-    const expandedStatus = getToolStatus(tc, 'sess-stale-a', idleSessionIds);
+    const expandedStatus = resolveToolCallTerminalState({ toolCall: tc, sessionId: 'sess-stale-a', sessionLive: false }).displayStatus;
     expect(expandedStatus).toBe('interrupted');
 
     // 展开行的两段文案（statusLabels.ts 的状态词 + ToolHeader 用的同一装配器）

@@ -1,3 +1,7 @@
+import { formatDateTime } from '../../../utils/formatDateTime';
+import { useSessionStore } from '../../../stores/sessionStore';
+import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
+import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
 import React from 'react';
 import { Archive, ArchiveRestore, AudioLines, CheckSquare, ChevronRight, GitFork, Loader2, Pin, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
@@ -6,8 +10,8 @@ import { GhostButton, IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
-import { getDisplaySessionTitle, getSessionStatusPresentation, splitCronSessionTitleParts } from '../../../utils/sessionPresentation';
-import { formatLocalDateTime, localeForLanguage } from '../../../utils/i18nTime';
+import { getDisplaySessionTitle, getLocalizedSessionTitle, getSessionStatusPresentation, splitCronSessionTitleParts } from '../../../utils/sessionPresentation';
+import { formatLocalDateTime } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
 import { getSidebarCronTaskId } from './sidebarCronRunFolding';
@@ -142,7 +146,10 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const backgroundSession = backgroundSessionMap.get(session.id);
   const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
   const sessionTurnActive = useSessionTurnActive(session.id);
-  const status = getSessionStatusPresentation({
+  const failedCurrentRequest = useSessionStore((state) => state.currentSessionId === session.id && hasFailedCurrentRequest(state.messages));
+  const liveBackgroundCount = useLiveBackgroundAgentCount(session.id, session.status === 'error' || session.status === 'running', session.status === 'running' && !failedCurrentRequest);
+  const terminalFailure = liveBackgroundCount === 0 && (failedCurrentRequest || session.status === 'error');
+  const status = getSessionStatusPresentation(terminalFailure ? { sessionStatus: 'error' } : {
     backgroundSession,
     runtime: sessionRuntime,
     taskState: sessionStates[session.id],
@@ -153,7 +160,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   });
   const localizedStatusLabel =
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
-  const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
+  const isRunning = liveBackgroundCount > 0 || (!failedCurrentRequest && session.status !== 'error' && sessionTurnActive && (status.kind === 'live' || status.kind === 'background'));
   const attentionDotClass = getAttentionDotClassName(status.kind);
   const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession?.(session.id) : undefined;
   const waitingAppName = waitingDetail?.kind === 'permission' ? waitingDetail.appName : undefined;
@@ -175,7 +182,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     backgroundSession?.backgroundedAt || 0,
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
-  const displayTitle = getDisplaySessionTitle(session.title, language);
+  const displayTitle = getLocalizedSessionTitle(session.title, language);
   // 这条会话用过实时语音（host 在建连时写进会话 metadata）。是身份不是状态，
   // 所以走行尾的身份轴（右槽），不进讲「此刻怎么了」的状态槽——详见下方渲染处。
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;
@@ -189,7 +196,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     : projectCopy.cronRunsExpandWithLatestTime.replace('{time}', latestRunTime);
   // 档位前缀（[Schedule] 等）不进截断段：前缀固定宽，名字才是截断的尾巴，
   // 行宽吃紧时先省略名字尾部，不让「[Schedule] …」把任务名整个吞掉。
-  const cronTitleParts = splitCronSessionTitleParts(displayTitle);
+  const cronTitleParts = splitCronSessionTitleParts(getDisplaySessionTitle(session.title, language));
 
   return (
     <div
@@ -208,7 +215,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       data-testid={`sidebar-session-${session.id}`}
-      title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
+      title={formatDateTime(latestActivityAt, language)}
       className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
@@ -242,7 +249,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             onDoubleClick={(e) => handleDoubleClick(e, session)}
             className="flex min-w-0 flex-1 items-baseline gap-1"
           >
-            <span data-testid="sidebar-cron-task-prefix" className="shrink-0 text-[11px] text-zinc-500">{cronTitleParts.prefix}</span>
+            <span data-testid="sidebar-cron-task-prefix" className="shrink-0 text-[11px] text-zinc-500">{displayTitle.slice(0, -cronTitleParts.name.length).trimEnd()}</span>
             <span
               data-testid="sidebar-cron-task-name"
               className={`min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
@@ -322,7 +329,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
+              <Loader2 data-testid="session-active-dot" className="w-3 h-3 text-badge-success/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (

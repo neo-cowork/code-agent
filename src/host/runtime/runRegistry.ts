@@ -56,7 +56,7 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import { createKeyedSerializer } from './keyedSerializer';
 import { findRecoveredWaitingRun as matchRecoveredWaitingRun, findSupersededSessionRoots, settleModelOpsForManualContinue, supersedeSessionRoots, terminalRecoveredWaitingRunOnce } from './recoveredWaitingRun';
 import { isDurableResumeQueued } from './durableRecoveryQueueState';
-import { asNativeAgentTeamProjectionState, isDurableActiveSessionConstraint, isHeartbeatFencingError, isSqliteBusyError, mergeAgentTeamProjectionState } from './runRegistrySupport';
+import { agentTeamOperationIds, asNativeAgentTeamProjectionState, isDurableActiveSessionConstraint, isHeartbeatFencingError, isSqliteBusyError, mergeAgentTeamProjectionState } from './runRegistrySupport';
 import { armQuotaWaitOnPark, clearQuotaWaitTimer } from './quotaWaitTimer';
 import { resolveAdoptedRecoveryWorkspace } from './adoptedRecoveryWorkspace';
 import { createLogger } from '../services/infra/logger';
@@ -608,7 +608,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     const previousProjection = asNativeAgentTeamProjectionState(previousState);
     const teamProjection = previousProjection?.teams.find((team) => team.teamRunId === input.teamRunId);
     const pendingOperations: PendingOperation[] = (projected.pendingOperations ?? []).map((operation) =>
-      operation.kind === 'child_run' && operation.operationId === teamProjection?.operationId
+      operation.kind === 'child_run' && operation.operationId === (teamProjection?.operationId ?? agentTeamOperationIds.get(input.teamRunId))
         ? {
             ...operation,
             status: input.status === 'completed' ? 'succeeded' : 'failed',
@@ -624,7 +624,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       state: mergeAgentTeamProjectionState(previousState, {
         teamRunId: input.teamRunId,
         treeId: teamProjection?.treeId ?? input.teamRunId,
-        operationId: teamProjection?.operationId ?? '',
+        operationId: teamProjection?.operationId ?? agentTeamOperationIds.get(input.teamRunId) ?? '',
         status: input.status,
         resultRef: input.resultRef,
       }),
@@ -754,21 +754,17 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return released;
   }
 
-  findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }): { runId: string; sessionId: string } | undefined {
-    return matchRecoveredWaitingRun(
-      this.durableEnvelopes.values(),
-      (runId) => this.handlesByRunId.has(runId),
-      (runId) => this.durableOwners.has(runId),
-      selector,
-    );
+  findRecoveredWaitingRun(selector: { runId?: string; sessionId?: string }, options?: { excludeUserStopParked?: boolean }): { runId: string; sessionId: string } | undefined {
+    return matchRecoveredWaitingRun(this.durableEnvelopes.values(), (runId) => this.handlesByRunId.has(runId), (runId) => this.durableOwners.has(runId), selector, options);
   }
 
-  /** 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。 */
+  /** 终态化 findRecoveredWaitingRun 命中的 run 为 cancelled；默认跳过 user_stop 停靠（Stop 幂等），abandonParked 显式放弃。 */
   async terminalRecoveredWaitingRun(
     selector: { runId?: string; sessionId?: string },
     now = Date.now(),
+    options?: { abandonParked?: boolean },
   ): Promise<{ runId: string; sessionId: string; joined?: true } | undefined> {
-    return terminalRecoveredWaitingRunOnce(this, this.recoveredWaitingCancels, selector, now);
+    return terminalRecoveredWaitingRunOnce(this, this.recoveredWaitingCancels, selector, now, options);
   }
 
   /**

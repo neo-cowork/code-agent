@@ -15,7 +15,8 @@ import { SurfaceHumanTakeoverService } from './SurfaceHumanTakeoverService';
 import { SurfaceInterruptService } from './SurfaceInterruptService';
 import type { SurfaceOutputRegistry } from './SurfaceOutputRegistry';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
-import type { SurfaceTakeoverControlV1 } from './surfaceBrowserRuntimeTypes';
+import type { SurfaceTakeoverControlV1, SurfaceTakeoverOptionsV1 } from './surfaceBrowserRuntimeTypes';
+import { BROWSER_HUMAN_TAKEOVER_WAIT, getBrowserWaitForUserLimitMs } from '../../../shared/constants/timeouts';
 
 function outputLabel(ref: string, index: number): string {
   if (!ref.startsWith('artifact://')) return `Output ${index + 1}`;
@@ -161,7 +162,7 @@ export class SurfaceConversationControlService {
   async control(
     subject: SurfaceGrantSubjectV1,
     action: SurfaceSessionControlActionV1,
-    options?: { reason?: string; timeoutMs?: number },
+    options?: SurfaceTakeoverOptionsV1,
   ): Promise<void | SurfaceTakeoverControlV1> {
     if (action === 'continue') {
       throw new SurfaceExecutionRuntimeError({
@@ -183,14 +184,16 @@ export class SurfaceConversationControlService {
       const pending = await this.takeover.request({
         subject,
         reason: options?.reason || 'Waiting for human control',
-        timeoutMs: options?.timeoutMs || 5 * 60_000,
+        timeoutMs: options?.timeoutMs || (options?.waitForUser ? getBrowserWaitForUserLimitMs() : BROWSER_HUMAN_TAKEOVER_WAIT.TIMER_MS),
+        ...(options?.waitForUser ? { waitForUser: true } : {}),
       });
       this.pendingTakeovers.set(subject.sessionId, pending);
       void pending.wait.then(
         () => this.deletePendingTakeover(subject.sessionId, pending.requestId),
         () => this.deletePendingTakeover(subject.sessionId, pending.requestId),
       );
-      this.publishControlEvent(subject, action);
+      // The request event already carries the user-facing reason; the generic echo would replace it as the stage label.
+      if (!options?.waitForUser) this.publishControlEvent(subject, action);
       return pending;
     }
     if (action === 'resume') {

@@ -69,6 +69,7 @@ describe('agentAppService missing-attachment turn context', () => {
       setSessionContext: vi.fn(),
     };
     vi.mocked(getSessionManager).mockReturnValue({
+      getMessages: vi.fn(async () => []),
       getSession: vi.fn(async () => ({
         id: 'session-miss-1',
         workingDirectory: tmpDir,
@@ -200,6 +201,7 @@ describe('agentAppService missing-attachment turn context', () => {
 
   it('skips injection when the session already has earlier turns or attachments in history', async () => {
     vi.mocked(getSessionManager).mockReturnValue({
+      getMessages: vi.fn(async () => []),
       getSession: vi.fn(async () => ({
         id: 'session-miss-1',
         workingDirectory: tmpDir,

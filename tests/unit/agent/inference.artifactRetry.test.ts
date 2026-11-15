@@ -229,7 +229,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '正在生成 artifact 内容...',
+      '正在整理结果…',
     );
   });
 
@@ -607,7 +607,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '正在写入 artifact 修复补丁...',
+      '正在写入修正内容…',
     );
   });
 
@@ -729,7 +729,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.runtime.messages).toContainEqual(
       expect.objectContaining({
         role: 'system',
-        content: '已用视觉模型 mimo-v2-omni 读取图片，继续由 mimo-v2.5-pro 回答。',
+        content: '已先读取图片内容，再继续回答。',
         metadata: expect.objectContaining({
           agentRecoveryNotice: { kind: 'vision_preflight_used' },
         }),
@@ -1002,7 +1002,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(options).toMatchObject({ artifactRepairActive: false });
     expect(ctx.taskProgress.emitTaskProgress).toHaveBeenCalledWith(
       'generating',
-      '正在生成 artifact 内容...',
+      '正在整理结果…',
     );
   });
 

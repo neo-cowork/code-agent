@@ -1,0 +1,30 @@
+[
+  {
+    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "value": "                  Apple Events 权限按目标 app 触发，当前 bridge 不提供全局状态；浏览器 URL/title 读取会按目标 app 降级。"
+  },
+  {
+    "file": "src/renderer/i18n/capabilityHub.ts",
+    "value": "执行本机命令：调用 rec 录音与 osascript 粘贴；全局快捷键为 Cmd/Ctrl+`。"
+  },
+  {
+    "file": "src/renderer/i18n/capabilityHub.ts",
+    "value": "Local commands: runs rec and osascript; the global shortcut is Cmd/Ctrl+`."
+  },
+  {
+    "file": "src/renderer/utils/computerUseWorkbench.ts",
+    "value": "当前页还没有拿到 macOS TCC 状态，Computer Use 只能展示降级原因，不能判断截图或 AX 读取是否可靠。"
+  },
+  {
+    "file": "src/renderer/utils/computerUseWorkbench.ts",
+    "value": "macOS 没有一个可复用的全局 Automation 状态。Apple Events / browser URL 读取会按目标 app 单独触发或失败，当前页只展示这个边界。"
+  },
+  {
+    "file": "src/shared/modelErrorDiagnostics.ts",
+    "value": "用 /login <provider> 重新配置 API Key，或用 /model 切换到其他可用模型。"
+  },
+  {
+    "file": "src/shared/modelErrorDiagnostics.ts",
+    "value": "请充值或更换账户；也可以用 /model 切换到其他可用模型。"
+  }
+]

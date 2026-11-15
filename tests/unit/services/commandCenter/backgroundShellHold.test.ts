@@ -180,6 +180,7 @@ describe('SessionCommandCenter holds settle while the child own background shell
       setWorkingDirectory: vi.fn(),
       on: vi.fn(),
       onRunIdle: vi.fn(),
+      observeAgentEvents: vi.fn(() => () => undefined),
     };
     const wake = createForegroundWake({
       getTaskManager: () => wakeManager as never,

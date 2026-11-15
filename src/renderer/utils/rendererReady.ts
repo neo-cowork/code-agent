@@ -6,12 +6,19 @@ import { isTauriMode } from './platform';
  *
  * 主通道是 invoke command(renderer_ready):emit 事件通道在打包态实测投递不到
  * 壳侧(Rust window.once/app.once 均收不到,窗口只能死等超时兜底),invoke 是
- * 直连调用不走事件路由。emit 保留为兜底副通道,壳侧 AtomicBool 去重,双发无害。
+ * 直连调用不走事件路由。点击监听注册后另向 App 定向投递同一就绪事件，
+ * 释放原生点击队列；不依赖过去不可靠的全局广播。
  *
  * 刻意不依赖 requestAnimationFrame:窗口 visible:false 时 WKWebView 的 rAF 被
  * 暂停,信号会永不发出。壳侧另有超时兜底,信号丢失也不会让窗口永久隐藏。
  */
 let signaled = false;
+const readinessBarriers: Promise<unknown>[] = [];
+
+/** Register startup listeners before releasing the existing renderer-ready signal. */
+export function deferRendererReadyUntil(ready: Promise<unknown>): void {
+  readinessBarriers.push(ready);
+}
 
 /**
  * 就绪信号在"首帧 commit"之外还要等初始会话数据落定(见 App.tsx 的
@@ -30,9 +37,14 @@ export async function signalRendererReady(): Promise<void> {
   void fetch('/api/health?rendererReady=1', { cache: 'no-store', keepalive: true }).catch(() => undefined);
   if (signaled || !isTauriMode()) return;
   signaled = true;
+  await Promise.allSettled(readinessBarriers);
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('renderer_ready');
+    if (readinessBarriers.length > 0) {
+      const { emitTo } = await import('@tauri-apps/api/event');
+      await emitTo({ kind: 'App' }, 'renderer-ready');
+    }
     return;
   } catch {
     // command 不可用(旧壳/桥异常):回退事件通道

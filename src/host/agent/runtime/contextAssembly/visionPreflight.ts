@@ -1,7 +1,9 @@
 import type { ToolDefinition } from '../../../../shared/contract';
 import type { ModelConfig } from '../../../../shared/contract/model';
+import { formatVisionPreflightNotice } from '../../../../shared/i18n/visionPreflight';
 import type { MessageContent, ModelMessage } from '../../../agent/loopTypes';
 import type { InferenceOptions, ModelResponse as RouterModelResponse, StreamCallback } from '../../../model/types';
+import { readPreviewHealthLocale } from '../browser/previewHealthLocale';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 import {
@@ -167,10 +169,11 @@ export async function runVisionPreflightCandidates(
       );
       if (!preflightMessages) continue;
       logger.info(`[Fallback] 使用 ${visionConfig.provider}/${visionConfig.model} 预处理图片，继续使用主模型 ${ctx.runtime.modelConfig.model}`);
+      // 用户可见的补注不掺内部模型 id，语言随 UI 设置（日志行保留 id 供诊断）。
       await writeAgentRecoveryNotice(
         ctx,
         'vision_preflight_used',
-        `已用视觉模型 ${visionConfig.model} 读取图片，继续由 ${ctx.runtime.modelConfig.model} 回答。`,
+        formatVisionPreflightNotice(readPreviewHealthLocale()),
       );
       return { modelMessages: preflightMessages, succeeded: true, hadCandidates, attempts };
     } catch (error) {

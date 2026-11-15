@@ -337,12 +337,8 @@ export function startWebCapabilityBootstrap(
 // ============================================================================
 
 import { broadcastSSE, sseClients } from './helpers/sse';
-import {
-  applyDbIntegrityOutcome,
-  dbAvailable,
-  setDbAvailable,
-} from './helpers/sessionCache';
-import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
+import { applyDbIntegrityOutcome, dbAvailable, setDbAvailable } from './helpers/sessionCache';
+import { ensureUploadRootDir, scheduleExpiredUploadReap } from './helpers/upload';
 
 // Middleware
 import {
@@ -376,6 +372,7 @@ import { backgroundContinueDetachArmed, createDaemonExitRechecker, shouldStayRes
 import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
 import { installExitCauseProbes, markShellPipeDetached, recordShutdownCause } from './shutdownCause';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
+import { closeIdleManagedBrowsers } from '../host/services/infra/browser/closeIdleManagedBrowsers';
 import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
@@ -503,7 +500,6 @@ async function initializeServices(): Promise<void> {
     logger.warn('Dev slot seeding skipped:', (e as Error).message);
   }
 
-  cleanupUploadDirs();
   ensureUploadRootDir();
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
@@ -595,6 +591,7 @@ async function initializeServices(): Promise<void> {
     }
   }
   bootMark('database');
+  scheduleExpiredUploadReap(databaseForDurableRun?.getDb() ?? null);
 
   // 4.6 模型级可用性标记回灌（N-MOBILE-CONN-POLISH-R3 ④）：停用/不存在的模型标记持久化
   // 在数据目录，重启后继续生效——否则手机默认模型的回落链会把「从未调用过」的已停用模型
@@ -1220,6 +1217,7 @@ async function main(): Promise<void> {
   // 'stdin-error'；无参调用 = daemon rechecker 触发。落盘在 shutdownCause.ts。
   const shutdown = async (source?: string) => {
     recordShutdownCause(source ?? 'daemon-rechecker');
+    closeIdleManagedBrowsers('shutdown');
     configService.stopWatchingConfigFile();
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
@@ -1233,7 +1231,10 @@ async function main(): Promise<void> {
     // 宽限。win32 例外：stdin EOF 就是 Rust 的「请退出」指令（3s 后 TerminateProcess），
     // 管道断开时也必须留在看门狗档，档位判据在 isDrainWatchdogActive。
     // 强停后的真取消由下面的 reap 步骤执行。
-    await drainPendingOpsForShutdown({
+    // stop 意图（「停止并退出」）：不再 60s 排空，改为先 cancel 所有 run（停止按钮同款路径）、等短宽限、
+    // 再补一次空闲浏览器清理（stopIntentShutdownCancel）；其余意图走原排空。
+    if (getDaemonQuitIntent() === 'stop') await (await import('../host/runtime/stopIntentShutdownCancel')).cancelRunsOnStopIntentShutdown(runRegistry, { watchdogActive: isDrainWatchdogActive(shellPipeAttached), withCap });
+    else await drainPendingOpsForShutdown({
       getPendingOps: () => runRegistry.size + (getBackgroundTaskLedger().hasActiveTasks() ? 1 : 0),
       watchdogActive: isDrainWatchdogActive(shellPipeAttached),
       withCap,
@@ -1249,7 +1250,6 @@ async function main(): Promise<void> {
     // .dev-token 保留不删 — dev 下 kill/restart webServer 时 auth.ts 会复用
     // 同一个 token，避免 Tauri WebView 里固化的旧 token 失效踩 "Invalid auth
     // token"。若要轮换 token，手动删 .dev-token 后重启 webServer。
-    cleanupUploadDirs();
     // 收尸：取消在跑 agent + 确认后台任务进程树死干净。排在关库之前——关库不设
     // 超时上限，排它后面的步骤真机上可能永远轮不到。
     await withCap(
@@ -1346,9 +1346,10 @@ async function main(): Promise<void> {
       return;
     }
     logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval/armed schedules)');
+    closeIdleManagedBrowsers('shell-exit-resident');
   };
   if (daemonExitRechecker) {
-    const onResidencySignal = () => { daemonExitRechecker.recheck(); daemonResidency?.report(); };
+    const onResidencySignal = () => { if (!shellPipeAttached) closeIdleManagedBrowsers('residency-idle'); daemonExitRechecker.recheck(); daemonResidency?.report(); };
     runRegistry.onIdleTransition(onResidencySignal);
     onForegroundPermissionStateChange(onResidencySignal);
     getTaskManager().on('event', onResidencySignal);

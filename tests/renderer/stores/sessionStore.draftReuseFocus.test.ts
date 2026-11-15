@@ -36,7 +36,7 @@ describe('executeCreateSession — 复用的草稿就是当前会话时给出回
     (globalThis as Record<string, unknown>).window = {
       domainAPI: { invoke: mockDomainInvoke },
     };
-    mockDomainInvoke.mockResolvedValue({ success: true, data: null });
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({ success: true, data: action === 'getMessages' ? [] : null }));
     useAppStore.setState({ composerFocusNonce: 0 });
     reusable = makeDraft('draft-1');
     state = {
@@ -55,7 +55,7 @@ describe('executeCreateSession — 复用的草稿就是当前会话时给出回
         state = { ...state, ...patch };
       },
       invalidatePendingSessionSwitches: () => {},
-      findReusableNewSessionDraft: () => reusable,
+      findReusableNewSessionDraft: ({ sessions }) => sessions.find((session) => session.id === reusable?.id) ?? null,
     };
   });
 

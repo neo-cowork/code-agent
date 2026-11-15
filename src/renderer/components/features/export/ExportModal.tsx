@@ -1,8 +1,11 @@
+import { useI18n } from '../../../hooks/useI18n';
+import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // ExportModal - 会话导出模态框
 // 支持导出为 Markdown 和 JSON 格式
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useState, useCallback } from 'react';
 import { X, Download, FileText, FileJson, Check, Copy } from 'lucide-react';
 import type { Message } from '@shared/contract';
@@ -37,7 +40,7 @@ interface ExportModalProps {
 
 function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlySet<string>): string {
   const role = message.role === 'user' ? '**用户**' : '**助手**';
-  const timestamp = new Date(message.timestamp).toLocaleString('zh-CN');
+  const timestamp = formatDateTime(message.timestamp);
   let content = message.content;
 
   // 处理工具调用
@@ -68,7 +71,7 @@ function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlyS
 }
 
 export function exportToMarkdown(title: string, messages: Message[]): string {
-  const header = `# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+  const header = `# ${title}\n\n导出时间：${formatDateTime(new Date())}\n\n---\n\n`;
   const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
   const surfaceToolCallIds = new Set<string>();
   for (const message of safeMessages) {
@@ -124,6 +127,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   sessionTitle,
   messages,
 }) => {
+  const { language } = useI18n();
+  const displayTitle = getDisplaySessionTitle(sessionTitle, language);
   const [format, setFormat] = useState<ExportFormat>('markdown');
   const [isExporting, setIsExporting] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -132,9 +137,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   // 生成导出内容
   const generateContent = useCallback(() => {
     return format === 'markdown'
-      ? exportToMarkdown(sessionTitle, messages)
+      ? exportToMarkdown(displayTitle, messages)
       : exportToJson(sessionTitle, messages);
-  }, [format, sessionTitle, messages]);
+  }, [format, sessionTitle, displayTitle, messages]);
 
   // 复制到剪贴板
   const handleCopyToClipboard = async () => {
@@ -155,7 +160,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       const content = generateContent();
       const extension = format === 'markdown' ? 'md' : 'json';
-      const filename = `${sessionTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_${new Date().toISOString().split('T')[0]}.${extension}`;
+      const filename = `${displayTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}_${new Date().toISOString().split('T')[0]}.${extension}`;
 
       // 创建 Blob 并下载
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -247,7 +252,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         {/* Session info */}
         <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
           <p className="text-sm text-zinc-400 font-medium truncate">
-            {sessionTitle}
+            {displayTitle}
           </p>
         </div>
 

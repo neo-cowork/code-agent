@@ -179,6 +179,15 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
+    /** Host catalog classification; never trusted from tool arguments or renderer input. */
+    connectorAccess?: { connectorId: string; connectorName: string; access: 'read' | 'write' };
+    purpose?: string;
+    /** Host-owned quote of the user's latest own message in this session; never trusted from tool arguments. */
+    userRequest?: { text: string; truncated: boolean };
+    /** Host-owned: the session was started by a scheduled/background task, so there is no user quote. */
+    startedByAutomation?: boolean;
+    /** Host-owned: display name of the scheduled task that started this session; never trusted from tool arguments. */
+    scheduledTaskName?: string;
     /** commandSafety 结果；未识别却需确认时由执行层覆写为 unknown，供审批卡生成人话后果。 */
     commandRiskLevel?: 'safe' | 'unknown' | 'low' | 'medium' | 'high' | 'critical';
     commandSecurityFlags?: string[];
@@ -195,6 +204,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** Host-only action + exact origin; null means one-time permission only. */
+    browserSessionGrant?: { target: string | null; previousOrigins: string[] };
     /**
      * computer_use 的目标应用。有此字段时审批卡按应用给「始终 / 本次对话 / 拒绝」，
      * 不走工具级会话记忆。bundleId 缺省时按应用名匹配。
@@ -342,6 +353,8 @@ export type PermissionDeliveryOutcome =
 export type PermissionDenialSource =
   /** 真人在审批界面上点了拒绝 */
   | 'user'
+  /** 同一条用户消息（或同一无人值守 run）内真人刚拒绝过同族工具，host 守卫自动拦截（不出卡） */
+  | 'goal-sticky-host'
   /** 运行环境没有审批界面（非交互 CLI / web headless），需确认的一律 fail-closed 自动拒 */
   | 'no-approval-ui'
   /** 审批请求已发出但无人应答，超时自动拒 */

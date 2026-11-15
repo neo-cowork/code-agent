@@ -602,12 +602,38 @@ const BROWSER_JEV_STEP_DESCRIPTION_SUFFIX = `
 - assertions: Optional frozen gold assertions for execute_goal
 - jevBudgetUsd: Optional per-task Jev USD budget`;
 
+/** 开关三态：`=0` 关，`=1` 或未设 = 开（2026-11-03 起默认开）。是否真暴露还要看 Jev 路由。 */
 export function isBrowserJevStepEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_BROWSER_JEV_STEP === '1';
+  return env.CODE_AGENT_BROWSER_JEV_STEP !== '0';
+}
+
+// shared 层不能 import host：路由探针由 host 启动时注入；未注入 = 不暴露。
+let browserJevRouteProbe: (() => boolean) | null = null;
+let warnedBrowserJevProbeFailure = false;
+
+export function registerBrowserJevRouteProbe(probe: (() => boolean) | null): void {
+  browserJevRouteProbe = probe;
+  warnedBrowserJevProbeFailure = false;
+}
+
+/** execute_goal 对模型可见 = 开关开 且 有可用 Jev 路由。探针抛错按不可用，只 warn 一次。 */
+function isBrowserJevStepExposed(env: NodeJS.ProcessEnv): boolean {
+  if (!isBrowserJevStepEnabled(env) || !browserJevRouteProbe) return false;
+  try {
+    return browserJevRouteProbe();
+  } catch (error) {
+    if (!warnedBrowserJevProbeFailure) {
+      warnedBrowserJevProbeFailure = true;
+      console.warn(
+        `[jev-browser-step] route probe threw; execute_goal not exposed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return false;
+  }
 }
 
 export function browserJevStepDescriptionSuffix(env: NodeJS.ProcessEnv = process.env): string {
-  return isBrowserJevStepEnabled(env) ? BROWSER_JEV_STEP_DESCRIPTION_SUFFIX : '';
+  return isBrowserJevStepExposed(env) ? BROWSER_JEV_STEP_DESCRIPTION_SUFFIX : '';
 }
 
 /** execute_goal 专属参数：与 action 枚举同步绑开关，关时从 schema 面一并裁掉。 */
@@ -619,7 +645,7 @@ export function withBrowserJevStepActionEnum(
 ): JSONSchema {
   const action = schema.properties?.action;
   if (!action || !Array.isArray(action.enum)) return schema;
-  const enabled = isBrowserJevStepEnabled(env);
+  const enabled = isBrowserJevStepExposed(env);
   const without = action.enum.filter((value) => value !== 'execute_goal');
   const properties = { ...schema.properties };
   if (!enabled) {

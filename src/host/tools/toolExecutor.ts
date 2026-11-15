@@ -1,4 +1,5 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
+import { normalizeReminderCreateTime } from './reminderCreateTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -30,14 +31,16 @@ import {
   sensitiveStepHandbackResolution,
   stripSensitiveStepParams,
 } from '../permissions/cuaSensitiveStep';
+import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
-import { requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { classifyFileWrite } from './fileWriteClassification';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import { resolveDelegationApprovalTarget } from '../services/delegation/delegationApprovalTarget';
 import type { ConfirmationPreview } from '../../shared/contract/confirmation';
 import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
@@ -91,6 +94,7 @@ import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { isUnattendedRoleOwnMemoryWrite, ROLE_OWN_MEMORY_UNATTENDED_REASON } from './roleOwnMemoryAllow';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
 import { getSandboxManager } from '../sandbox';
 import {
@@ -257,38 +261,8 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-const DELETE_FLAG_PREFIXES = ['recursive_delete', 'root_delete', 'home_delete', 'system_dir_delete', 'container_dir_delete', 'wildcard_delete', 'current_dir_delete', 'sudo_rm'];
-const COMMAND_FILE_COUNT_LIMIT = 10_000;
-
-function extractDeleteTarget(command: string, securityFlags: string[]): string | undefined {
-  if (!securityFlags.some((flag) => DELETE_FLAG_PREFIXES.some((prefix) => flag.startsWith(prefix)))) return undefined;
-  const match = command.match(/(?:^|[;&|]\s*)rm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
-  return match?.[1] ?? match?.[2] ?? match?.[3];
-}
-
-async function countAffectedFiles(targetPath: string): Promise<number | undefined> {
-  try {
-    const root = await nodeFs.lstat(targetPath);
-    if (!root.isDirectory()) return 1;
-    let count = 0;
-    const pending = [targetPath];
-    while (pending.length > 0 && count < COMMAND_FILE_COUNT_LIMIT) {
-      const directory = pending.pop();
-      if (!directory) break;
-      const entries = await nodeFs.readdir(directory, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push(nodePath.join(directory, entry.name));
-        else count += 1;
-        if (count >= COMMAND_FILE_COUNT_LIMIT) break;
-      }
-    }
-    return count;
-  } catch {
-    return undefined;
-  }
-}
-
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
+import { computeDeleteImpact } from './deleteImpact';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -319,6 +293,8 @@ export interface ToolExecutorConfig {
   permissionModeOverrideIsInheritedCeiling?: boolean;
   /** Present only for immutable per-run executors. */
   runContext?: RunContext;
+  /** Preserve child-agent Stop ancestry when this executor owns an auxiliary surface run. */
+  spawnParentRunId?: string;
   /** Optional final dispatch hop. Returning null falls back to the protocol resolver. */
   dispatchTool?: ToolExecutionDelegate;
   /** 账本来源由所有构造入口显式声明。 */
@@ -474,6 +450,7 @@ export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
+  private readonly spawnParentRunId?: string;
   private readonly restrictWritesToWorkspace: boolean;
   private readonly dispatchTool?: ToolExecutionDelegate;
   private executionTopology: ExecutionTopology;
@@ -493,6 +470,7 @@ export class ToolExecutor {
     this.permissionModeOverrideIsInheritedCeiling = config.permissionModeOverrideIsInheritedCeiling === true;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
     this.runContext = config.runContext;
+    this.spawnParentRunId = config.spawnParentRunId;
     this.dispatchTool = config.dispatchTool;
     this.executionTopology = config.executionTopology ?? 'main';
     this.ledgerOrigin = config.ledgerOrigin ?? 'desktop';
@@ -539,6 +517,7 @@ export class ToolExecutor {
       dispatchTool: dispatchTool ?? this.dispatchTool,
       ledgerOrigin: this.ledgerOrigin,
       spawnMaxDepth: this.spawnMaxDepth,
+      spawnParentRunId: this.spawnParentRunId,
       // 写边界同样必须继承：子代理走 forRun 派生，漏传就等于子调用绕过边界
       // （#1686 ai-review 第三轮）。与上面的收缩档同理——边界只在主 executor 上生效不算边界。
       restrictWritesToWorkspace: this.restrictWritesToWorkspace,
@@ -646,7 +625,7 @@ export class ToolExecutor {
         metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
       };
     }
-    let params = boundParams.params;
+    let params = stripBrowserGrantFields(boundParams.params);
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
@@ -688,6 +667,11 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const reminderTime = normalizeReminderCreateTime(executionToolName, params);
+    if (!reminderTime.ok) {
+      return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
+    }
+    params = reminderTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
@@ -1299,9 +1283,11 @@ export class ToolExecutor {
     const contextAgentId = options.agentId?.trim()
       || ((options.spawnDepth ?? 0) === 0 ? 'primary' : undefined);
 
+    let browserApprovedAction: string | undefined;
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       runId: effectiveRunId, turnId: options.turnId,
+      spawnParentRunId: this.spawnParentRunId,
       sourceMessageId: options.sourceMessageId,
       sessionId: effectiveSessionId,
       workspace: this.writeWorkspaceRoot ?? this.runtimeWorkspace,
@@ -1319,6 +1305,7 @@ export class ToolExecutor {
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
+        if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
@@ -1736,7 +1723,11 @@ export class ToolExecutor {
     }
 
     // Check permission if required
-    const scheduleWriteGrantRequired = await requiresScheduleWriteGrant(this.buildPermissionRequest(toolDef, params), effectiveSessionId, this.executionCwd, this.writeWorkspaceRoot);
+    const scheduledWrite = await classifyFileWrite(policyToolName, params, {
+      sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
+      workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel,
+    }, permStartTime);
+    const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
     const isPreApproved = !boundaryViolation
       && !scheduleWriteGrantRequired
@@ -1809,13 +1800,54 @@ export class ToolExecutor {
         }
       }
     }
-    if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
+    // N-ROLE-WAKE-OWN-MEMORY-NO-APPROVAL：无人值守醒来写「自己的」角色层记忆的窄
+    // 放行（owner 裁定 11-12：发起者就是角色本人，用户可在记忆面板看见并删除）。
+    // 判定集中在 roleOwnMemoryAllow.ts，这里只留一个调用点；放行 = 落一条
+    // 'role-own-memory-unattended' 账本行 + 跳过下方主分类分支（所有 ask 升档不再
+    // 拦它）。更早的硬拒路径（policy / exec-policy / 用户拒绝 sticky / peer-origin
+    // 无人值守拒 / 记忆目录 directive 门）不受影响，照常先出。
+    // 与 isPreApproved 同口径：用户显式配的确认（ask 规则 / always_confirm / readOnly）
+    // 和其余强制升档信号不能被绕过；只有 boundaryViolation / writeWithoutWorkspaceAuthority
+    // 这两个默认 ask 是本单有意放行的。
+    const roleOwnMemoryUnattendedAllow = !scheduleWriteGrantRequired
+      && !guardFabricForcesApproval
+      && !protectedWriteForcesConfirmation
+      && !peerOriginForcesConfirmation
+      && !launderRetryForcesAsk
+      && !commandAnalysisFailedReason
+      && !shellDesktopAutomation
+      && !consequenceForcesClassification
+      && !argumentForcesClassification
+      && !cuaAppGrantForcesClassification
+      && !this.forcePermissionHandler
+      && !unresolvedWriteTargetForcesAsk
+      && !policyForcesConfirmation
+      && !readOnlyForcesConfirmation
+      && isUnattendedRoleOwnMemoryWrite({
+      toolName: executionToolName,
+      params,
+      agentRole: options.agentRole,
+      sessionId: effectiveSessionId,
+    });
+    if (roleOwnMemoryUnattendedAllow) {
+      logger.info('Auto-approved unattended role own-memory write', {
+        tool: executionToolName,
+        agentRole: options.agentRole,
+        sessionId: effectiveSessionId,
+      });
+      recordDecision(
+        executionToolName, params, 'auto-approve', ROLE_OWN_MEMORY_UNATTENDED_REASON,
+        permStartTime, undefined, effectiveSessionId, this.ledgerOrigin,
+      );
+    }
+    if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
       let boundaryAskForcesConfirmation = false;
       // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
       // 供下面的长期授权消费判定，以及需人工审批时透传给停车审批卡（铸权入口）。
+      const browserSessionGrant = await resolveBrowserSessionGrant(executionToolName, params, context);
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
         : null;
@@ -1881,6 +1913,8 @@ export class ToolExecutor {
           const workspaceRoot = this.writeWorkspaceRoot;
           const classification: ClassificationResult = await resolveToolPermissionClassification({
             executionToolName,
+            sessionId: effectiveSessionId,
+            toolDefinition: toolDef,
             policyToolName,
             params,
             policyForcesConfirmation,
@@ -2054,7 +2088,11 @@ export class ToolExecutor {
       let shouldForceConfirm = false;
       try {
         const gate = getConfirmationGate();
-        confirmationPreview = gate.buildPreview(executionToolName, params, { workspaceRoot: this.runtimeWorkspace });
+        confirmationPreview = gate.buildPreview(executionToolName, params, {
+          workspaceRoot: this.runtimeWorkspace,
+          delegationTargetTitle: executionToolName === 'delegate_session'
+            ? resolveDelegationApprovalTarget(params, effectiveSessionId) : undefined,
+        });
         confirmationRiskLevel = gate.assessRiskLevel(executionToolName, params);
         shouldForceConfirm = gate.shouldConfirm(
           {
@@ -2073,8 +2111,9 @@ export class ToolExecutor {
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
-        sessionId: effectiveSessionId,
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
+        browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
@@ -2087,6 +2126,7 @@ export class ToolExecutor {
           || shouldForceConfirm,
       }) : null;
       if (preAsk) {
+        if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
         grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
@@ -2100,6 +2140,9 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // Never trust an identically named model argument in the default request branch.
+      delete permissionRequest.details.scheduleWriteTargets;
+      if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;
       if (pluginOrigin) {
         Object.assign(permissionRequest.details, pluginOrigin);
       } else if (pluginId) {
@@ -2145,15 +2188,16 @@ export class ToolExecutor {
           ? [permissionRequest.reason, deterministicAskReason].filter(Boolean).join('；')
           : deterministicAskReason;
       }
-      const deleteTarget = commandValidation && typeof params.command === 'string'
-        ? extractDeleteTarget(params.command, commandValidation.securityFlags)
+      // 删除影响盘点抽到 deleteImpact.ts：与渲染层共用 shared/rmCommandTargets 的解析，
+      // 多目标确切命令求和、通配符/变量/管道一律缺省，绝不定格成 1。
+      const deleteImpact = commandValidation && typeof params.command === 'string'
+        ? await computeDeleteImpact(params.command, commandValidation.securityFlags, bashWorkingDirectory)
         : undefined;
-      if (deleteTarget) {
-        const affectedPath = nodePath.isAbsolute(deleteTarget)
-          ? nodePath.resolve(deleteTarget)
-          : nodePath.resolve(bashWorkingDirectory, deleteTarget);
-        permissionRequest.details.affectedPath = affectedPath;
-        permissionRequest.details.affectedFileCount = await countAffectedFiles(affectedPath);
+      if (deleteImpact) {
+        permissionRequest.details.affectedPath = deleteImpact.affectedPath;
+        if (deleteImpact.affectedFileCount !== undefined) {
+          permissionRequest.details.affectedFileCount = deleteImpact.affectedFileCount;
+        }
       }
       if (isBashToolName(policyToolName) && typeof params.command === 'string') {
         const sandboxDecision = resolveOsSandboxDecision({
@@ -2190,6 +2234,12 @@ export class ToolExecutor {
       }
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      if (browserSessionGrant) {
+        delete permissionRequest.details.targetApp;
+        permissionRequest.details.browserSessionGrant = browserSessionGrant;
+        if (browserSessionGrant.previousOrigins.length) permissionRequest.reason =
+          `Earlier approval covered only ${browserSessionGrant.previousOrigins.join(', ')}. This action is on ${browserSessionGrant.target?.split('@')[1]}; please approve this site separately.`;
+      }
       // B1：external 工具（离开本机、发出去收不回）在交互审批卡上标作用域（N-APPROVAL-EXTERNAL-SCOPENOTE）。
       // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
       if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
@@ -2240,6 +2290,7 @@ export class ToolExecutor {
       // E2: 确认门控 - 为高风险写操作附加预览并强制确认
       if (confirmationPreview) {
         permissionRequest.details.preview = confirmationPreview;
+        if (executionToolName === 'delegate_session') permissionRequest.reason = confirmationPreview.summary;
       }
       if (shouldForceConfirm) {
         permissionRequest.forceConfirm = true;
@@ -2296,10 +2347,14 @@ export class ToolExecutor {
         }
       }
 
-      const ask = await requestPermissionWithTelemetry({
-        request: permissionRequest,
-        toolCallId: options.currentToolCallId,
-        requestPermission: this.requestPermission,
+      const ask = await getDenialRegistry().observeApproval({
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        ask: () => requestPermissionWithTelemetry({
+          request: permissionRequest,
+          toolCallId: options.currentToolCallId,
+          requestPermission: this.requestPermission,
+        }),
       });
       if (commandAnalysisFailedReason) {
         ask.approved = false;
@@ -2321,6 +2376,7 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+      if (approved && ask.approvalSource === 'user' && browserSessionGrant?.target) browserApprovedAction = `browser_action.${params.action}`;
 
       // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
       // 请求的应答通向原始工具调用）。应答只决定回话模板：allow=用户已亲手完成（done），
@@ -2409,7 +2465,7 @@ export class ToolExecutor {
         // forceConfirm 请求自动拒绝（fail-closed）。泛用的 "Permission denied by user"
         // 在该路径是误导——给模型可转述的真实原因与出路。
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
-        const defaultDenialReason = readOnlyForcesConfirmation
+        const defaultDenialReason = readOnlyForcesConfirmation && denialSource !== 'goal-sticky-host'
           ? readOnlyDenialError(executionToolName)
           : permissionDenialError(executionToolName, denialSource, computerApp);
         const hostReason = ask.message
@@ -2438,8 +2494,9 @@ export class ToolExecutor {
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
-        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）
-        if (actionFingerprint && effectiveSessionId) {
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）。
+        // goal-sticky-host 是本轮真人拒之后的宿主守卫拦截，不重写登记以免把早先的 byUser:true 降级。
+        if (actionFingerprint && effectiveSessionId && denialSource !== 'goal-sticky-host') {
           getDenialRegistry().record({
             sessionId: effectiveSessionId,
             fingerprint: actionFingerprint,

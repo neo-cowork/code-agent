@@ -35,6 +35,11 @@ function createScrollPhaseInstrument(startCommitCount: number): JourneyInstrumen
     get hotRenderCount() {
       return instrument.hotRenderCount;
     },
+    get commitTrace() {
+      return instrument.commitTrace
+        .slice(startCommitCount)
+        .map((entry, idx) => ({ ...entry, index: idx + 1 }));
+    },
     onRender: instrument.onRender,
     HotProbe: instrument.HotProbe,
   };

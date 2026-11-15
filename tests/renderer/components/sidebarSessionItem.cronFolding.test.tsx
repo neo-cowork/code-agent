@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
-import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React, { useRef, useState } from 'react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assembleSidebarCronRows } from '../../../src/renderer/components/features/sidebar/sidebarCronRunFolding';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
-import { splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
+import { useSidebarRowActions } from '../../../src/renderer/components/features/sidebar/useSidebarRowActions';
+import { NewSessionWelcome } from '../../../src/renderer/components/features/chat/NewSessionWelcome';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { languages } from '../../../src/renderer/i18n';
+import { getDisplaySessionTitle, splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
+import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
+import { SessionDiffSummary } from '../../../src/renderer/components/features/chat/SessionDiffSummary';
+import { ArtifactThumbStrip } from '../../../src/renderer/components/TaskPanel/OutputArtifactRows';
+import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { formatLocalDateTime } from '../../../src/renderer/utils/i18nTime';
@@ -396,7 +404,7 @@ describe('SidebarProjectGroup cron run folding', () => {
     expect(name.className).toContain('truncate');
     expect(name.className).toContain('min-w-0');
     const prefix = screen.getByTestId('sidebar-cron-task-prefix');
-    expect(prefix.textContent).toBe('[Schedule]');
+    expect(prefix.textContent).toBe('[定时]');
     expect(prefix.className).toContain('shrink-0');
     expect(prefix.contains(name)).toBe(false);
 
@@ -439,6 +447,9 @@ const cronRunBody = [
   '<cron_alert>',
   '新发现的冲突',
   '</cron_alert>',
+  '',
+  'cron_summary:',
+  '',
   '<cron_summary>',
   'urgency: fyi',
   '本周汇总完成',
@@ -482,10 +493,11 @@ describe('cron run session machine headers', () => {
       expect(screen.getByText('可见正文')).toBeTruthy();
       const open = screen.getByTestId('cron-artifact-open');
       expect(open.textContent).toContain('report.md');
-      expect(open.getAttribute('title')).toBe('/work/run/report.md');
+      expect(open.getAttribute('title')).toBe('…/run/report.md');
       expect(view.container.textContent).not.toContain('SECRET_SNAPSHOT');
       expect(view.container.textContent).not.toContain('urgency:');
       expect(view.container.textContent).not.toContain('<cron_');
+      expect(view.container.textContent).not.toContain('cron_summary');
       view.unmount();
     }
   });
@@ -498,5 +510,103 @@ describe('cron run session machine headers', () => {
     expect(screen.queryByTestId('cron-run-summary')).toBeNull();
     expect(view.container.textContent).toContain('SECRET_SNAPSHOT');
     expect(view.container.textContent).toContain('urgency: fyi');
+  });
+});
+
+it.each(['zh', 'en'] as const)('rename dialog round trip retains a recognized cron title in %s', (language) => {
+  useAppStore.setState({ language });
+  i18nState.language = language;
+  const renameSession = vi.fn();
+  const { result } = renderHook(() => {
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+    const actions = useSidebarRowActions({
+      showToast: vi.fn(), canOpenSessionReplay: false,
+      setReplayDialog: vi.fn(), setVoiceAuditDialog: vi.fn(), setContextMenu: vi.fn(),
+      renamingId, renameValue, setRenamingId, setRenameValue,
+      renameInputRef: useRef<HTMLInputElement>(null), renameSession, t: languages[language],
+    });
+    return { ...actions, renameValue };
+  });
+  const row = { id: 'cron', title: '[Schedule] 周报' } as any;
+  act(() => result.current.handleDoubleClick({ preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as React.MouseEvent, row));
+  expect(result.current.renameValue).toBe(language === 'zh' ? '[定时] 周报' : '[Schedule] 周报');
+  act(() => result.current.handleRenameSubmit());
+  const saved = renameSession.mock.calls[0][1] as string;
+  expect(splitCronSessionTitleParts(saved)?.name).toBe('周报');
+  expect(getDisplaySessionTitle(saved, 'zh')).toBe('[定时] 周报');
+  expect(getDisplaySessionTitle(saved, 'en')).toBe('[Schedule] 周报');
+  useAppStore.setState({ language: 'zh' });
+});
+
+it('empty cron heading follows UI language without changing the stored title', () => {
+  const stored = { id: 'session-1', title: '[Schedule] 每晨整理周会纪要', modelConfig: { provider: 'openai', model: 'gpt-5.4' }, createdAt: 1, updatedAt: Date.now() - 9 * 60 * 60 * 1000, messageCount: 0, turnCount: 0 } as any;
+  const view = render(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+  expect(screen.getByTestId('chat-welcome-title').textContent).toBe('继续上次的会话：[定时] 每晨整理周会纪要');
+  i18nState.language = 'en';
+  view.rerender(<NewSessionWelcome onSend={vi.fn()} session={stored} />);
+  expect(screen.getByTestId('chat-welcome-title').textContent).toBe('Picking up your last session: [Schedule] 每晨整理周会纪要');
+  expect(screen.getByTestId('chat-welcome-title').textContent).not.toContain('[定时]');
+  expect(stored.title).toBe('[Schedule] 每晨整理周会纪要');
+});
+
+describe('hover titles never expose absolute local paths', () => {
+  it('shortens every workspace path in the real project group header title', () => {
+    const view = renderGroup({
+      group: {
+        key: 'project:p1', name: 'code-agent', path: '/workspace/projects/project-one',
+        paths: ['/workspace/projects/project-one', '/workspace/projects/project-two'],
+        projectId: 'p1', isUncategorized: false, sessions: [], latestActivityAt: 3,
+      },
+    });
+    const header = view.container.querySelector('[data-sidebar-group-phase]')?.firstElementChild;
+    expect(header?.getAttribute('title')).toBe('code-agent · …/projects/project-one · …/projects/project-two');
+    expect(header?.textContent).toContain('code-agent');
+  });
+
+  it('shortens file-card hover titles while retaining the visible filename', () => {
+    const filePath = '/workspace/project/reports/summary.svg';
+    const view = render(<FileArtifactCard items={[{ label: 'summary.svg', path: filePath, kind: 'file', ownerKind: 'tool', ownerLabel: 'Write', role: 'deliverable' }]} />);
+    expect(view.getByTitle('…/reports/summary.svg').textContent).toContain('summary.svg');
+    expect(view.container.querySelector(`[title="${filePath}"]`)).toBeNull();
+  });
+
+  it('shortens hover paths in the expanded session diff file list', () => {
+    const filePath = '/workspace/project/reports/summary.md';
+    const view = render(<SessionDiffSummary messages={[{
+      id: 'm-w', role: 'assistant', content: '', timestamp: 0,
+      toolCalls: [{ id: 'tc-w', name: 'Write', arguments: { file_path: filePath, content: 'Summary' },
+        result: { toolCallId: 'tc-w', success: true, output: `Created file: ${filePath}` } }],
+    }] as never} />);
+    fireEvent.click(view.getByRole('button'));
+    expect(view.getByTitle('…/reports/summary.md').textContent).toContain('summary.md');
+    expect(view.container.querySelector(`[title="${filePath}"]`)).toBeNull();
+  });
+
+  it('shortens overview artifact thumb titles but still opens the full path', () => {
+    const onOpenFile = vi.fn();
+    render(<ArtifactThumbStrip
+      items={[{ kind: 'file', label: 'allow-me.txt', ownerKind: 'tool', ownerLabel: 'Write', path: '/Users/example/notes/allow-me.txt' }] as never}
+      previewItems={[]}
+      unnamedLabel="未命名输出"
+      onOpenFile={onOpenFile}
+      onOpenPreview={vi.fn()}
+    />);
+    const card = screen.getByTestId('overview-artifact-thumb');
+    expect(card.title).toBe('…/notes/allow-me.txt');
+    expect(card.title).not.toMatch(/\/(Users|home)\//);
+    fireEvent.click(card);
+    expect(onOpenFile).toHaveBeenCalledWith('/Users/example/notes/allow-me.txt');
+  });
+
+  it('shortens task output-ref hover titles', () => {
+    const view = render(<TaskDashboardSummary tasks={[{
+      id: 'background:task-log', scope: 'global', title: 'Log task', status: 'completed',
+      steps: [{ title: '已完成', status: 'completed' }],
+      outputRefs: [{ id: 'task-log:ref', taskId: 'task-log', type: 'log', label: 'Task log', pathOrUrl: '/Users/example/registered/task.log' }],
+    }]} />);
+    const row = view.getByTestId('task-output-refs').querySelector('[title]');
+    expect(row?.getAttribute('title')).toBe('…/registered/task.log');
+    expect(row?.getAttribute('title')).not.toMatch(/\/(Users|home)\//);
   });
 });

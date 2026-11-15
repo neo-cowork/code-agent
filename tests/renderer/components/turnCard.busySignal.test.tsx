@@ -20,6 +20,8 @@ vi.mock('../../../src/renderer/components/features/chat/ToolStepGroup', () => ({
   ToolStepGroup: () => React.createElement('div', { 'data-testid': 'tool-running' }, 'tool running'),
 }));
 
+import { turnPhaseFallbackLabel } from '../../../src/renderer/utils/turnPhaseFallback';
+import { languages } from '../../../src/renderer/i18n';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 
 afterEach(() => {
@@ -148,5 +150,108 @@ describe('TurnCard busy signal', () => {
     expect(screen.getByTestId('tool-running')).toBeTruthy();
     expect(screen.queryByText(/正在思考/)).toBeNull();
     expect(getStreamingCarets()).toHaveLength(0);
+  });
+});
+
+// N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：发送失败的轮（用户气泡 sendFailed）
+// 的轮头阶段不许再标「回复已生成」——失败句旁边挂“已生成”自相矛盾；文案改走
+// t.turnRun（zh/en），不再硬编码中文。
+describe('TurnCard 轮头阶段兜底（发送失败轮）', () => {
+  it('sendFailed 轮不显示「回复已生成」，未失败轮仍显示', () => {
+    const failedTurn: TraceTurn = {
+      turnNumber: 1,
+      turnId: 'turn-failed-send',
+      status: 'error',
+      startTime: baseTime - 1_000,
+      nodes: [
+        {
+          id: 'user-send',
+          type: 'user',
+          content: '帮我把下载文件夹里的照片按日期改名',
+          timestamp: baseTime - 1_000,
+          metadata: { sendFailed: true },
+        },
+        {
+          id: 'fail-sentence',
+          type: 'assistant_text',
+          content: '这个项目文件夹需要你确认后 Neo 才能使用。',
+          timestamp: baseTime,
+        },
+      ],
+    };
+    const { unmount } = render(<TurnCard turn={failedTurn} />);
+    const failedHeader = screen.getByTestId('turn-run-header');
+    expect(failedHeader.textContent).toContain('遇到问题');
+    expect(failedHeader.textContent).not.toContain('回复已生成');
+    expect(failedHeader.textContent).not.toContain('等待输出');
+    unmount();
+
+    const normalTurn: TraceTurn = {
+      ...failedTurn,
+      turnId: 'turn-normal',
+      status: 'completed',
+      nodes: [
+        { id: 'user-ok', type: 'user', content: '处理一下', timestamp: baseTime - 1_000 },
+        { id: 'answer-ok', type: 'assistant_text', content: '已经完成。', timestamp: baseTime },
+      ],
+    };
+    render(<TurnCard turn={normalTurn} />);
+    expect(screen.queryByTestId('turn-run-header')).toBeNull();
+    expect(turnPhaseFallbackLabel(normalTurn, languages.zh)).toBe('回复已生成');
+  });
+
+  it('en 语言下兜底显示 Reply generated，而不是硬编码中文', async () => {
+    const { useAppStore } = await import('../../../src/renderer/stores/appStore');
+    const original = useAppStore.getState().language;
+    useAppStore.setState({ language: 'en' });
+    try {
+      const normalTurn: TraceTurn = {
+        turnNumber: 1,
+        turnId: 'turn-normal-en',
+        status: 'completed',
+        startTime: baseTime - 1_000,
+        nodes: [
+          { id: 'user-ok', type: 'user', content: 'do it', timestamp: baseTime - 1_000 },
+          { id: 'answer-ok', type: 'assistant_text', content: 'Done.', timestamp: baseTime },
+        ],
+      };
+      render(<TurnCard turn={normalTurn} />);
+      expect(screen.queryByTestId('turn-run-header')).toBeNull();
+      expect(turnPhaseFallbackLabel(normalTurn, languages.en)).toBe('Reply generated');
+    } finally {
+      useAppStore.setState({ language: original });
+    }
+  });
+});
+
+describe('TurnCard failed phase fallback', () => {
+  it('suppresses the fallback for sendFailed even when the projected turn is completed', () => {
+    const turn: TraceTurn = { ...makeTurn([]), status: 'completed' };
+    turn.nodes[0].metadata = { sendFailed: true };
+    expect(turnPhaseFallbackLabel(turn, languages.zh)).toBeNull();
+    turn.nodes.push({ id: 'error-copy', type: 'assistant_text', content: 'The message could not be sent.', timestamp: baseTime });
+    expect(turnPhaseFallbackLabel(turn, languages.en)).toBeNull();
+  });
+  it.each(['status', 'timeline'] as const)('omits success wording for %s errors with assistant text', (failure) => {
+    const turn: TraceTurn = {
+      ...makeTurn([{ id: 'partial', type: 'assistant_text', content: 'I started summarizing the meeting.', timestamp: baseTime }]),
+      status: failure === 'status' ? 'error' : 'completed',
+    };
+    if (failure === 'timeline') turn.nodes.push({
+      id: 'failure', type: 'turn_timeline', content: '', timestamp: baseTime,
+      turnTimeline: { id: 'failure', kind: 'capability_scope', timestamp: baseTime, tone: 'error' },
+    });
+    expect(turnPhaseFallbackLabel(turn, languages.zh)).toBeNull();
+    expect(turnPhaseFallbackLabel(turn, languages.en)).toBeNull();
+    render(<TurnCard turn={turn} />);
+    const header = screen.getByTestId('turn-run-header');
+    expect(header.textContent).toContain('遇到问题');
+    expect(header.textContent).not.toMatch(/回复已生成|Reply generated|completed|等待输出/);
+  });
+
+  it('does not display a completed header while waiting for the first token', () => {
+    render(<TurnCard turn={makeTurn([])} />);
+    expect(screen.queryByTestId('turn-run-header')).toBeNull();
+    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
   });
 });

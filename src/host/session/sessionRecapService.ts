@@ -21,6 +21,8 @@
 import type { SessionTask } from '../../shared/contract';
 import type { CompletionSummaryRecord } from '../../shared/contract';
 import { statusRequiresWaitReason } from '../../shared/contract/planning';
+import type { SessionTitleLanguage } from '../../shared/sessionTitlePrompt';
+import { readUiLanguage } from './sessionTitleHostPrompt';
 import { readCompletionSummaryRecordsBySession } from './completionSummaryService';
 import { createLogger } from '../services/infra/logger';
 
@@ -28,6 +30,11 @@ const logger = createLogger('SessionRecap');
 
 /** 一句话追赶提示的展示上限，超了就不是"一眼扫完"了 */
 const MAX_RECAP_LENGTH = 120;
+/**
+ * 英文档的展示上限（字符数）：一句 ≤25 词的英文按均词长 ~6 字符留 160。
+ * 截断落在词边界上（见 truncateRecap），不在词中间砍。
+ */
+const MAX_RECAP_LENGTH_EN = 160;
 
 /** 喂给小模型的素材条数上限：再多也只是重复，白花 token */
 const MAX_ARTIFACTS_IN_PROMPT = 8;
@@ -126,7 +133,8 @@ function isUsableRecapText(text: string, knownTitles: string[] = []): boolean {
  * 降级形态：小模型不可用 / 出错时的纯规则拼接。只讲数字和产物名，不讲工具和报错。
  * 没有实质句子时返回 null，不拿「跑完了 N 轮」充数。
  */
-export function formatRecapFallback(material: SessionRecapMaterial): string | null {
+export function formatRecapFallback(material: SessionRecapMaterial, language: SessionTitleLanguage = 'zh'): string | null {
+  if (language === 'en') return formatRecapFallbackEn(material);
   const parts: string[] = [];
   if (material.artifactLabels.length > 0) {
     const shown = material.artifactLabels.slice(0, 3).join('、');
@@ -144,7 +152,31 @@ export function formatRecapFallback(material: SessionRecapMaterial): string | nu
   return parts.join('，');
 }
 
-function buildPrompt(material: SessionRecapMaterial): string {
+/** 英文档的规则拼接：数字按单复数变形（1 task / 2 tasks），与中文版同素材同结构。 */
+function formatRecapFallbackEn(material: SessionRecapMaterial): string | null {
+  const parts: string[] = [];
+  if (material.artifactLabels.length > 0) {
+    const shown = material.artifactLabels.slice(0, 3).join(', ');
+    const rest = material.artifactLabels.length - 3;
+    parts.push(rest > 0 ? `Updated ${material.artifactLabels.length} artifacts including ${shown}` : `Updated ${shown}`);
+  }
+  if (material.completedTasks.length > 0) {
+    parts.push(`${material.completedTasks.length} ${material.completedTasks.length === 1 ? 'task' : 'tasks'} completed`);
+  }
+  const stuckCount = material.blockedTasks.filter((task) => task.status === 'blocked').length;
+  const waitingCount = material.blockedTasks.length - stuckCount;
+  if (stuckCount > 0) {
+    parts.push(`${stuckCount} ${stuckCount === 1 ? 'task' : 'tasks'} blocked`);
+  }
+  if (waitingCount > 0) {
+    parts.push(`${waitingCount} ${waitingCount === 1 ? 'item' : 'items'} waiting on you`);
+  }
+  if (parts.length === 0) return null;
+  return parts.join('; ');
+}
+
+function buildPrompt(material: SessionRecapMaterial, language: SessionTitleLanguage = 'zh'): string {
+  if (language === 'en') return buildPromptEn(material);
   const lines = [
     '下面是一个 AI 助手在用户离开期间做出的产出变化。请用一句中文（40 字以内）说明这段时间产出发生了什么。',
     '要求：说产物和结果，不要提工具名、命令、报错原文、文件路径；有受阻事项要自然点出。不要使用“遇到了卡住”这类病句，不要加引号。',
@@ -168,15 +200,51 @@ function buildPrompt(material: SessionRecapMaterial): string {
   return lines.join('\n');
 }
 
+function buildPromptEn(material: SessionRecapMaterial): string {
+  const lines = [
+    'Below are the changes an AI assistant made to its deliverables while the user was away. Describe in one English sentence (25 words or fewer) what changed in the output during that time.',
+    'Requirements: talk about deliverables and outcomes; do not mention tool names, commands, raw error text, or file paths; mention any blocked work naturally. Do not use awkward phrasing like "encountered a blockage", and no quotation marks.',
+    '',
+  ];
+  if (material.artifactLabels.length > 0) {
+    lines.push(`Changed deliverables: ${material.artifactLabels.slice(0, MAX_ARTIFACTS_IN_PROMPT).join(', ')}`);
+  }
+  if (material.completedTasks.length > 0) {
+    lines.push(`Completed: ${material.completedTasks.slice(0, MAX_TASKS_IN_PROMPT).map((task) => task.subject).join('; ')}`);
+  }
+  for (const task of material.blockedTasks.slice(0, MAX_TASKS_IN_PROMPT)) {
+    const prefix = task.status === 'needs_decision'
+      ? 'Waiting on your decision'
+      : task.status === 'user_action'
+        ? 'Waiting on you'
+        : 'Blocked';
+    lines.push(`${prefix}: ${task.subject}${task.blockedReason ? ` (${task.blockedReason})` : ''}`);
+  }
+  return lines.join('\n');
+}
+
+/** 超长截断：zh 按字符砍（存量行为）；en 砍在词边界上，不留半个词。 */
+function truncateRecap(text: string, language: SessionTitleLanguage): string {
+  const cap = language === 'en' ? MAX_RECAP_LENGTH_EN : MAX_RECAP_LENGTH;
+  if (text.length <= cap) return text;
+  const cut = text.slice(0, cap);
+  if (language === 'en') {
+    const lastSpace = cut.lastIndexOf(' ');
+    if (lastSpace > 0) return `${cut.slice(0, lastSpace)}…`;
+  }
+  return `${cut}…`;
+}
+
 /**
  * 生成一句话追赶提示。素材为空、或模型输出不像一句总结时返回 null；
  * 小模型不可用时返回 degraded 的规则拼接（同样经过总结过滤）。
  */
 export async function buildSessionRecap(
   material: SessionRecapMaterial,
+  language: SessionTitleLanguage = 'zh',
 ): Promise<SessionRecap | null> {
   if (!hasRecapSubstance(material)) return null;
-  const fallbackText = formatRecapFallback(material);
+  const fallbackText = formatRecapFallback(material, language);
   if (!fallbackText) return null;
 
   const fallback: SessionRecap = {
@@ -190,14 +258,14 @@ export async function buildSessionRecap(
     const { quickTask, isQuickModelAvailable } = await import('../model/quickModel');
     if (!isQuickModelAvailable()) return fallback;
 
-    const result = await quickTask(buildPrompt(material));
+    const result = await quickTask(buildPrompt(material, language));
     if (!result.success) return fallback;
     const text = (result.content ?? '').trim().replace(/^["'「『]|["'」』]$/g, '');
     // 不像总结不上屏：反问/请求补充/空都不降级成规则拼接，避免把反问原样送进横幅。
     if (!isUsableRecapText(text, material.artifactLabels)) return null;
 
     return {
-      text: text.length > MAX_RECAP_LENGTH ? `${text.slice(0, MAX_RECAP_LENGTH)}…` : text,
+      text: truncateRecap(text, language),
       degraded: false,
       completedCount: material.completedTasks.length,
       blockedCount: material.blockedTasks.length,
@@ -211,7 +279,7 @@ export async function buildSessionRecap(
 }
 
 /**
- * IPC 入口用的一把梭：读两个素材源 → 有变化才生成。
+ * IPC 入口用的一把梭：读两个素材源 → 有变化才生成。语言跟 UI（en UI 出英文横幅）。
  */
 export async function getSessionRecap(
   sessionId: string,
@@ -224,5 +292,5 @@ export async function getSessionRecap(
   const { listTasks } = await import('../services/planning/taskStore');
   const material = collectRecapMaterial(records, listTasks(sessionId), sinceTimestamp);
   if (!material) return null;
-  return buildSessionRecap(material);
+  return buildSessionRecap(material, readUiLanguage());
 }

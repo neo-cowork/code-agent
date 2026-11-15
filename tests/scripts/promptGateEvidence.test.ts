@@ -163,12 +163,14 @@ describe('prompt gate evidence checker', () => {
   it('prompt inputs hash includes CODE_AGENT_BROWSER_JEV_STEP', () => {
     const { root } = createWorkspace();
     const previous = process.env.CODE_AGENT_BROWSER_JEV_STEP;
-    delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
+    process.env.CODE_AGENT_BROWSER_JEV_STEP = '0';
     const off = resolvePromptInputsHash(root, loadPromptChangePaths(root));
-    process.env.CODE_AGENT_BROWSER_JEV_STEP = '1';
+    delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
     try {
-      const on = resolvePromptInputsHash(root, loadPromptChangePaths(root));
-      expect(on).not.toBe(off);
+      const unset = resolvePromptInputsHash(root, loadPromptChangePaths(root));
+      expect(unset).not.toBe(off);
+      process.env.CODE_AGENT_BROWSER_JEV_STEP = '1';
+      expect(resolvePromptInputsHash(root, loadPromptChangePaths(root))).toBe(unset);
     } finally {
       if (previous === undefined) delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
       else process.env.CODE_AGENT_BROWSER_JEV_STEP = previous;

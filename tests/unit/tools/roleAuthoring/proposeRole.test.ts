@@ -324,6 +324,67 @@ describe('propose_role tool', () => {
     expect(event.data.drafts[0].editingRoleId).toBe('研究员');
   });
 
+  describe('改已有角色：本次相对当前定义的改动清单', () => {
+    const baseMd = (tools: string, body: string) =>
+      `---\nname: 研究员\ndescription: 盯行业动态\ntools:\n  - ${tools}\n---\n${body}\n`;
+    async function seed(md: string | null): Promise<void> {
+      await fs.mkdir(path.join(mockConfigDir.dir, 'roles', '研究员'), { recursive: true });
+      if (md !== null) {
+        await fs.mkdir(path.join(mockConfigDir.dir, 'agents'), { recursive: true });
+        await fs.writeFile(path.join(mockConfigDir.dir, 'agents', '研究员.md'), md, 'utf-8');
+      }
+    }
+    async function edit(tools: string[], prompt: string, ctx = makeCtx()) {
+      setLatestUser('改一下研究员');
+      const handler = await proposeRoleModule.createHandler();
+      const result = await handler.execute(
+        { roleId: '研究员', editingRoleId: '研究员', description: '盯行业动态', tools, systemPrompt: prompt },
+        ctx as never,
+        allow as never,
+      );
+      return { result, ctx };
+    }
+
+    it('只加一个工具：清单只列新增工具，提示词零增删', async () => {
+      await seed(baseMd('Read', '规则一\n规则二'));
+      const { result } = await edit(['Read', 'WebSearch'], '规则一\n规则二');
+      expect(result.ok).toBe(true);
+      const out = (result as { output: string }).output;
+      expect(out).toContain('本次相对当前定义的改动');
+      expect(out).toContain('- 新增能力：联网搜索（WebSearch）');
+      expect(out).not.toContain('移除能力');
+      expect(out).not.toContain('描述有改动');
+      expect(out).not.toContain('系统提示词');
+    });
+
+    it('加工具又多加一条规则：清单同时暴露多出来的提示词行', async () => {
+      await seed(baseMd('Read', '规则一\n规则二'));
+      const { result } = await edit(['Read', 'WebSearch'], '规则一\n规则二\n规则三');
+      const out = (result as { output: string }).output;
+      expect(out).toContain('- 新增能力：联网搜索（WebSearch）');
+      expect(out).toContain('- 系统提示词：新增 1 行、删除 0 行');
+    });
+
+    it('改动清单用中文能力名：新增连接器工具显示「日历」，移除核心工具 Write 显示「写入和编辑文件」', async () => {
+      await seed(baseMd('Read\n  - Write', '规则一'));
+      const { result } = await edit(['Read', 'calendar', 'calendar_create_event'], '规则一');
+      const out = (result as { output: string }).output;
+      expect(out).toContain('- 新增能力：日历（calendar、calendar_create_event）');
+      expect(out).toContain('- 移除能力：写入和编辑文件（Write）');
+    });
+
+    it('读不到当前定义：明说读不到并 warn 带原因，不静默', async () => {
+      await seed(null);
+      const { result, ctx } = await edit(['Read'], '规则一');
+      expect(result.ok).toBe(true);
+      expect((result as { output: string }).output).toContain('读不到当前定义');
+      expect(ctx.logger.warn).toHaveBeenCalledWith(
+        'propose_role could not read current definition for change list',
+        expect.objectContaining({ roleId: '研究员', reason: expect.stringContaining('ENOENT') }),
+      );
+    });
+  });
+
   it('缺 systemPrompt → INVALID_ARGS，不发事件', async () => {
     const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
@@ -388,9 +449,35 @@ describe('propose_role tool', () => {
       return result.error;
     }
 
-    it('同一会话：保持原文案', async () => {
+    it('same-session revision succeeds and emits the updated card', async () => {
       const handler = await draftIn('sess-1');
-      expect(await errorOf(handler, 'sess-1')).toBe('已有一个待确认的「晨报摘要员」草稿，请先确认或放弃它');
+      const ctx = makeCtx();
+      const result = await handler.execute({ ...args, description: '每天八点前提醒' }, ctx as never, allow as never);
+      expect(result.ok).toBe(true);
+      expect(ctx.emit).toHaveBeenCalledWith(expect.objectContaining({ type: 'role_draft_pending', data: expect.objectContaining({
+        drafts: [expect.objectContaining({ roleId: args.roleId, description: '每天八点前提醒' })],
+      }) }));
+      const drafts = await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'));
+      expect(drafts).toHaveLength(1);
+      expect(JSON.parse(await fs.readFile(path.join(mockConfigDir.dir, 'role-drafts', drafts[0], 'draft.json'), 'utf8')).description).toBe('每天八点前提醒');
+    });
+
+    it('successful direct install clears the superseded same-session draft', async () => {
+      const handler = await draftIn('sess-1');
+      setLatestUser('直接创建晨报摘要员，不用确认');
+      const result = await handler.execute(args, makeCtx() as never, allow as never);
+      expect(result.ok).toBe(true);
+      expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'))).toEqual([]);
+      expect(await exists(path.join(mockConfigDir.dir, 'agents', '晨报摘要员.md'))).toBe(true);
+    });
+
+    it('failed direct install preserves the superseded same-session draft', async () => {
+      const handler = await draftIn('sess-1');
+      const before = await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'));
+      setLatestUser('直接创建晨报摘要员，不用确认');
+      const result = await handler.execute({ ...args, systemPrompt: '执行 rm -rf / --no-preserve-root' }, makeCtx() as never, allow as never);
+      expect(result.ok).toBe(false);
+      expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts'))).toEqual(before);
     });
 
     it('另一会话仍在：点名会话标题，说明当前没有确认卡', async () => {

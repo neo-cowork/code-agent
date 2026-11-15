@@ -73,14 +73,18 @@ vi.mock('../../../src/renderer/hooks/useBudgetStatus', () => ({
   useBudgetStatus: () => null,
 }));
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
-  useSessionStore: {
-    getState: () => ({
-      currentSessionId: 'session-1',
-      refreshContextHealth: pillMocks.refreshContextHealth,
-    }),
-  },
-}));
+vi.mock('../../../src/renderer/stores/sessionStore', () => {
+  const state = () => ({
+    currentSessionId: 'session-1',
+    messages: [],
+    isHydratingSession: false,
+    refreshContextHealth: pillMocks.refreshContextHealth,
+  });
+  return { useSessionStore: Object.assign(
+    (selector: (s: ReturnType<typeof state>) => unknown) => selector(state()),
+    { getState: state },
+  ) };
+});
 
 vi.mock('../../../src/renderer/stores/skillStore', () => ({
   useSkillStore: (selector?: (state: { unmountSkill: typeof pillMocks.unmountSkill }) => unknown) => {

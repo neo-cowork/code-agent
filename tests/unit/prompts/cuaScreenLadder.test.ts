@@ -32,10 +32,10 @@ describe('cua screen ladder rule in system prompt (N-CUA-SCREEN-GUARDS-LADDER)',
 
     const prompt = buildPrompt();
     expect(prompt).toContain(
-      'Capability ladder: connectors/native tools first (mail, calendar, reminders, MCP, files, shell); `browser_action` for web pages; screen control (`mcp__cua-driver__*`, `computer_use`) only when nothing above works.',
+      'Capability ladder: connectors/native tools first; browser_action for web; screen last.',
     );
     expect(prompt).toContain(
-      "Before a task's first screen action, say ONE sentence in the user's language naming the app and why no connector/browser route works; if a connector is unavailable, say so and continue under normal per-app approval",
+      "Before a run's first GUI action (also Bash/osascript activation/clicks/keys/open-document edits), emit ONE sentence in content, not reasoning, in the user's language naming the app and why no connector/browser route works. Exclude pure connector/Apple Events data access. Unavailable connector: state it in content and call a tool under normal per-app approval",
     );
   });
 });

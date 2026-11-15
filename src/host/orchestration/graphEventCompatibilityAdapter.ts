@@ -157,6 +157,7 @@ function projectAgent(event: GraphEvent): AgentEvent[] {
 
 function projectSwarm(event: GraphEvent): SwarmEvent[] {
   const base = {
+    publisher: 'GraphEventCompatibilityAdapter',
     timestamp: event.timestamp,
     runId: event.runId,
     sessionId: event.sessionId,

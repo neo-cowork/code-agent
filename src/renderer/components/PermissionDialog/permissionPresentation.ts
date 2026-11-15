@@ -5,6 +5,9 @@ import type { PermissionRequest } from './types';
 import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { PermissionRequestReason } from '@shared/contract';
+import type { RmCommandTargets } from '@shared/rmCommandTargets';
+import { parseRmTargets } from '@shared/rmCommandTargets';
+import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
 function fileTarget(request: PermissionRequest): string | undefined {
@@ -84,6 +87,7 @@ export function isGenericCommandRequest(request: PermissionRequest): boolean {
 }
 
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
+  if (request.details.browserSessionGrant) return 'expanded';
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
   return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
     ? 'compact'
@@ -91,6 +95,12 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
 }
 
 export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
+  const browser = request.details.browserSessionGrant;
+  const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
+  const action = copy.actions[request.details.action ?? ''];
+  if (browser && action) return copy.question.replace('{action}', action)
+    .replace('{site}', browser.target?.slice(browser.target.indexOf('@') + 1) ?? copy.unknownSite);
+
   const p = t.decisionCard.permission;
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
@@ -142,6 +152,27 @@ function fileCountText(count: number | undefined, t: Translations): string {
   return t.decisionCard.permission.fileCount.replace('{count}', String(count));
 }
 
+/**
+ * 删除后果行的文件数口径（N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED）：
+ * 与宿主 details.affectedFileCount 共用 shared/rmCommandTargets 的同一套解析——
+ * 宿主盘点的真实计数优先；解析确切且非递归时目标数即文件数；file_delete 工具
+ * 请求单目标仍是 1。其余（通配符、变量展开、管道喂入、无宿主盘点的递归多目标）
+ * 一律不写数字：能判定不止一个就改说「多个文件」，解析不出目标就什么都不写，
+ * 绝不许退回误导性的「约 1 个文件」。
+ */
+function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets, t: Translations): string {
+  const hostCount = request.details.affectedFileCount;
+  if (hostCount !== undefined) return fileCountText(hostCount, t);
+  if (parsed.exact && !parsed.recursive && parsed.targets.length > 0) {
+    return fileCountText(parsed.targets.length, t);
+  }
+  if (request.type === 'file_delete' && request.details.affectedPath) return fileCountText(1, t);
+  if (parsed.targets.length > 1 || (!parsed.exact && parsed.targets.length > 0)) {
+    return t.decisionCard.permission.fileCountMany;
+  }
+  return '';
+}
+
 export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
@@ -153,20 +184,19 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   }
   const p = t.decisionCard.permission;
   if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
-  const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
+  const parsedRmTargets = parseRmTargets(request.details.command ?? '');
   const target = request.details.affectedPath
     || fileTarget(request)
-    || commandDeleteTarget?.[1]
-    || commandDeleteTarget?.[2]
-    || commandDeleteTarget?.[3];
+    || parsedRmTargets.targets[0];
   const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
-  const count = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
   const deletion = isDeletionRequest(request);
+  // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
+  const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
 
   if (deletion) {
     return p.consequenceDelete
       .replace('{target}', safeTarget ?? p.targetFallback)
-      .replace('{count}', fileCountText(count, t));
+      .replace('{count}', deletionCountText(request, parsedRmTargets, t));
   }
   if (
     request.details.targetKind === 'device'
@@ -185,10 +215,11 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside
       .replace('{target}', safeTarget ?? p.targetFallback)
-      .replace('{count}', fileCountText(count, t));
+      .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'network' || request.type === 'mcp') {
-    const endpoint = request.details.url
+    const endpoint = request.details.connectorAccess?.connectorName
+      || request.details.url
       || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
     return p.consequenceNetwork.replace('{target}', redactCredentialText(endpoint));
@@ -196,7 +227,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (request.type === 'file_write' || request.type === 'file_edit') {
     return p.consequenceWrite
       .replace('{target}', safeTarget ?? p.targetFallback)
-      .replace('{count}', fileCountText(count, t));
+      .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'command' || request.type === 'dangerous_command') {
     const risk = request.details.commandRiskLevel ?? (request.dangerLevel === 'danger' ? 'high' : 'medium');

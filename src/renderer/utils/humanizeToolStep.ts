@@ -122,7 +122,7 @@ const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'edit_file', 'NotebookEdit', 'n
 // （本批「注入对用户可见」红线在会话侧的那一半）。只读的 terminal_read/list/wait
 // 不并进来——它们不是「运行了命令」，混进 ran 桶会谎报动作。
 const BASH_TOOLS = new Set(['Bash', 'bash', 'Process', 'code_execute', 'terminal_write']);
-const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'academic_search', 'ocr_search']);
+const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'grep', 'glob', 'academic_search', 'ocr_search']);
 const LISTDIR_TOOLS = new Set(['LS', 'list_directory']);
 const WEBSEARCH_TOOLS = new Set(['WebSearch']);
 const WEBFETCH_TOOLS = new Set(['WebFetch', 'web_fetch', 'http_request', 'screenshot_page', 'twitter_fetch', 'youtube_transcript']);
@@ -450,9 +450,24 @@ export function humanizeToolStep(
       : t.toolStepHumanize.statusForms[status].declared[stepLabel];
   }
 
-  const schemaDescription = BASH_TOOLS.has(name)
-    ? firstString(args ?? {}, ['description'])
-    : '';
+  if (toolKind === 'search') {
+    const pattern = typeof args?.pattern === 'string' ? args.pattern.trim() : '';
+    // Recognize file selection syntax, not ordinary words or content regexes.
+    const fileGlob = /[*?]/.test(pattern) && /^[\w./{}[\],?*!-]+$/.test(pattern)
+      && !/[^/]\.\*[^/]/.test(pattern);
+    if (fileGlob || /^(?:\.\*|\^\.\*\$)$/.test(pattern)) {
+      const extension = /(?:^|\/)\*\.([a-z\d]+)$/i.exec(pattern)?.[1];
+      return extension
+        ? t.automationPresentation.findExtension.replace('{extension}', extension)
+        : t.automationPresentation.browseFiles;
+    }
+  }
+
+  if (toolKind === 'bash') {
+    return status === 'completed' ? t.toolStepHumanize.bashFallback : t.toolStepHumanize.statusForms[status].bashFallback;
+  }
+
+  const schemaDescription = '';
   const preferredDescription = typeof shortDescription === 'string' && shortDescription.trim()
     ? shortDescription.trim()
     : schemaDescription;
@@ -483,11 +498,6 @@ export function humanizeToolStep(
     case 'edit': {
       const target = firstPath(a, ['file_path', 'path']);
       return target ? h.edit.replace('{target}', target) : h.editFallback;
-    }
-    case 'bash': {
-      // terminal_write 把命令放在 input 里，不是 command
-      const command = takePreview(a.command ?? a.input);
-      return command ? h.bash.replace('{command}', command) : h.bashFallback;
     }
     case 'search': {
       const query = firstString(a, ['pattern', 'query']);
@@ -668,8 +678,12 @@ export function humanizeToolGroupLabel(
     ? t.toolStepHumanize.group
     : t.toolStepHumanize.statusForms[status].group;
   return order
-    .map((bucket) => g[bucket].replace('{count}', String(counts.get(bucket))))
-    .join('、');
+    .map((bucket) => {
+      const count = counts.get(bucket) ?? 0;
+      const singular = count === 1 ? t.toolStepHumanize.groupSingular[status][bucket] : undefined;
+      return (singular ?? g[bucket]).replace('{count}', String(count));
+    })
+    .join(t.toolStepHumanize.listSeparator);
 }
 
 // ============================================================================

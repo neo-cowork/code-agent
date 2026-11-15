@@ -259,4 +259,24 @@ describe('接线守护：收尾步骤必须排在干净关库之前', () => {
       readFileSync(join(process.cwd(), 'src/host/services/infra/gracefulShutdown.ts'), 'utf-8'),
     ).toThrow();
   });
+
+  it('browser.kill：停机步骤 SIGTERM 已登记的托管 Chrome，不碰无关进程', async () => {
+    const { startChromeParentWatchdog } = await import('../../../src/host/services/infra/browser/browserProcessWatchdog');
+    const chrome = spawn('sleep', ['300'], { stdio: 'ignore' });
+    const bystander = spawn('sleep', ['300'], { stdio: 'ignore' });
+    try {
+      startChromeParentWatchdog(chrome, { log: () => {} });
+      const exited = new Promise<void>((resolve) => chrome.once('exit', () => resolve()));
+      const lines: string[] = [];
+      await runShutdownFinalizers(1000, (m) => lines.push(m));
+      await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
+      expect(chrome.signalCode).toBe('SIGTERM');
+      expect(bystander.exitCode).toBeNull();
+      expect(bystander.signalCode).toBeNull();
+      expect(lines.join('\n')).toMatch(/browser\.kill=ok\(\d+ms\)/);
+    } finally {
+      chrome.kill('SIGKILL');
+      bystander.kill('SIGKILL');
+    }
+  });
 });

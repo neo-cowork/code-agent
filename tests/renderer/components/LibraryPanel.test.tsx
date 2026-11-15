@@ -114,6 +114,7 @@ describe('LibraryPanel', () => {
       expect(screen.getByText(/资料库还没有条目/)).toBeTruthy();
     });
     expect(listLibraryItems).toHaveBeenCalledWith({ projectId: null });
+    expect(screen.getByTestId('library-empty-published-hint').textContent).toMatch(/「版本」.*归档到资料库/);
   });
 
   it('渲染条目标题/标签，切换作用域按项目重新加载', async () => {

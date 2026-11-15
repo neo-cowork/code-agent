@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { formatTodayAnchor } from '../../../src/shared/todayAnchor';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -200,5 +201,31 @@ describe('context cache capacity cap (avoids unbounded growth)', () => {
     expect(injectWorkingDirectoryContext('BASE', extraDir, false)).toContain(
       'Is directory a git repo: No'
     );
+  });
+});
+
+describe('env local date agrees with the system today anchor', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    resetEnvironmentBlockCache();
+  });
+
+  it.each([
+    ['Asia/Shanghai', '2026-11-08T16:30:00Z', '2026-11-09', 'UTC+08:00'],
+    ['America/Los_Angeles', '2026-11-09T00:30:00Z', '2026-11-08', 'UTC-08:00'],
+    ['America/Los_Angeles', '2026-07-09T00:30:00Z', '2026-07-08', 'UTC-07:00'],
+  ])('env local date near UTC midnight: %s %s', (zone, instant, date, offset) => {
+    vi.stubEnv('TZ', zone);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(instant));
+    resetEnvironmentBlockCache();
+    const prompt = injectWorkingDirectoryContext('BASE', process.cwd(), false);
+    expect(formatTodayAnchor().isoDate).toBe(date);
+    expect(prompt).toContain(`Today's date: ${formatTodayAnchor().isoDate}`);
+    expect(prompt).toContain(`Local timezone: ${zone} (${offset})`);
+    expect(prompt).not.toContain(new Date().toISOString());
+    vi.advanceTimersByTime(60_000);
+    expect(injectWorkingDirectoryContext('BASE', process.cwd(), false)).toBe(prompt);
   });
 });

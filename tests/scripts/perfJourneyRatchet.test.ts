@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { minimatch } from 'minimatch';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseJourneyBrowserSmokeOptions } from '../../scripts/perf/journey-browser-smoke.ts';
+import { createJourneyInstrument } from '../../scripts/perf/journey-probe-instrument.tsx';
 import { selectTests } from '../../scripts/lib/gates-fast-contract.mjs';
 import policy from '../../scripts/lib/gates-fast-policy.json';
 
@@ -163,6 +164,120 @@ describe('perf-journey-ratchet', () => {
     const reportPath = join(root, 'report.json');
     writeFileSync(reportPath, JSON.stringify(report('first-token', 3)));
     expect(run(root, ['--journey', 'first-token', '--report', reportPath]).stderr).toContain('必须保留非空 reason');
+  });
+
+  it('回归报告带 commitTrace 与 environment 时退出 1、打印 trace 并写入 GITHUB_STEP_SUMMARY', () => {
+    const root = fixture(3);
+    const reportPath = join(root, 'report.json');
+    const summaryPath = join(root, 'step-summary.md');
+    writeFileSync(reportPath, JSON.stringify({
+      ...report('long-session', 4),
+      commitTrace: [
+        { index: 1, phase: 'mount', actualDurationMs: 0.8, startMs: 12.3 },
+        { index: 2, phase: 'update', actualDurationMs: 0.5, startMs: 20.0 },
+        { index: 3, phase: 'update', actualDurationMs: 0.6, startMs: 31.4 },
+        { index: 4, phase: 'update', actualDurationMs: 0.4, startMs: 45.6 },
+      ],
+      environment: {
+        userAgent: 'Mozilla/5.0 HeadlessChrome/130.0',
+        devicePixelRatio: 1,
+        fontsLoaded: 2,
+        bodyFontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        viewport: { width: 1024, height: 768 },
+      },
+    }));
+    const result = spawnSync(
+      process.execPath,
+      [script, '--repo-root', root, '--journey', 'long-session', '--report', reportPath],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryPath },
+      },
+    );
+    expect(result.status).toBe(1);
+    const expectedTrace = '#1 mount@12.3ms/0.8ms | #2 update@20.0ms/0.5ms | #3 update@31.4ms/0.6ms | #4 update@45.6ms/0.4ms';
+    expect(result.stdout).toContain(`[perf-journey-ratchet] long-session commit-trace: ${expectedTrace}`);
+    expect(result.stdout).toContain('[perf-journey-ratchet] long-session environment: viewport=1024x768 devicePixelRatio=1 fontsLoaded=2');
+    expect(result.stderr).toContain('long-session commitCount 上升：3 -> 4');
+    const summary = readFileSync(summaryPath, 'utf8');
+    expect(summary).toContain('**Regressions (blocking):** long-session 3 → 4');
+    expect(summary).toContain(`- \`long-session\` commit-trace: \`${expectedTrace}\``);
+    expect(summary).toContain('- `long-session` environment:');
+  });
+
+  it('无 commitTrace / environment 的报告在持平与上升时保持原有行为', () => {
+    const root = fixture(3);
+    const holdPath = join(root, 'hold.json');
+    const holdSummaryPath = join(root, 'hold-summary.md');
+    writeFileSync(holdPath, JSON.stringify(report('long-session', 3)));
+    const holdResult = spawnSync(
+      process.execPath,
+      [script, '--repo-root', root, '--journey', 'long-session', '--report', holdPath],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_STEP_SUMMARY: holdSummaryPath },
+      },
+    );
+    expect(holdResult.status, holdResult.stderr).toBe(0);
+    expect(holdResult.stdout).not.toContain('commit-trace:');
+    expect(holdResult.stdout).not.toContain('environment:');
+    expect(readFileSync(holdSummaryPath, 'utf8')).not.toContain('commit-trace:');
+
+    const risePath = join(root, 'rise.json');
+    const riseSummaryPath = join(root, 'rise-summary.md');
+    writeFileSync(risePath, JSON.stringify(report('long-session', 4)));
+    const riseResult = spawnSync(
+      process.execPath,
+      [script, '--repo-root', root, '--journey', 'long-session', '--report', risePath],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_STEP_SUMMARY: riseSummaryPath },
+      },
+    );
+    expect(riseResult.status).toBe(1);
+    expect(riseResult.stdout).not.toContain('commit-trace:');
+    expect(riseResult.stdout).not.toContain('environment:');
+    const riseSummary = readFileSync(riseSummaryPath, 'utf8');
+    expect(riseSummary).toContain('**Regressions (blocking):** long-session 3 → 4');
+    expect(riseSummary).not.toContain('commit-trace:');
+  });
+});
+
+describe('createJourneyInstrument commitTrace', () => {
+  it('records Profiler phase/timing relative to __PERF_JOURNEY_STARTED_AT__ and caps trace at 200 without capping commitCount', () => {
+    const globals = globalThis as { window?: { __PERF_JOURNEY_STARTED_AT__?: number } };
+    const previousWindow = globals.window;
+    globals.window = { __PERF_JOURNEY_STARTED_AT__: 50 };
+    try {
+      const instrument = createJourneyInstrument();
+      for (let idx = 0; idx < 205; idx += 1) {
+        instrument.onRender(
+          'long-session',
+          idx === 0 ? 'mount' : 'update',
+          0.75,
+          1.25,
+          62.345 + idx,
+          63.1 + idx,
+        );
+      }
+      expect(instrument.commitCount).toBe(205);
+      expect(instrument.commitTrace).toHaveLength(200);
+      expect(instrument.commitTrace[0]).toEqual({
+        index: 1,
+        phase: 'mount',
+        actualDurationMs: 0.75,
+        startMs: 12.345,
+      });
+      expect(instrument.commitTrace[199]).toEqual({
+        index: 200,
+        phase: 'update',
+        actualDurationMs: 0.75,
+        startMs: 211.345,
+      });
+    } finally {
+      if (previousWindow === undefined) delete globals.window;
+      else globals.window = previousWindow;
+    }
   });
 });
 

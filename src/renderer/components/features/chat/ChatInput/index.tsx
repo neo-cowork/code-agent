@@ -1,3 +1,4 @@
+import { getDisplaySessionTitle } from '../../../../utils/sessionPresentation';
 // ============================================================================
 // ChatInput - 消息输入组件主入口
 // 支持多模态输入：文本、图片、代码、PDF、文件夹
@@ -76,12 +77,12 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { ComposerChipsRow } from './ComposerChipsRow';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
-import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
+import { ModelSlot } from '../../../StatusBar/ModelSlot';
 import ipcService from '../../../../services/ipcService';
 import { invokeNativeCommandAction, isNativeCommandRuntimeAvailable } from '../../../../services/nativeCommandFacade';
-import { toast } from '../../../../hooks/useToast';
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
+import { MeetingBar } from './MeetingBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { ScheduleConfirmCard } from './ScheduleConfirmCard';
 import { GoalConfirmCard } from './GoalConfirmCard';
@@ -103,6 +104,7 @@ import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
 import { mergeAttachments } from './attachmentDedupe';
+import { notifyAttachmentMerge } from './attachmentMergeToast';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -146,6 +148,8 @@ export interface ChatInputProps {
   hasStoppableBackgroundWork?: boolean;
   /** 运行中输入正在接入 */
   isInterrupting?: boolean;
+  /** 用户已请求停止，等待前后台任务全部收线 */
+  isStopping?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
   /** parked durable run 的用户继续回调 */
@@ -298,6 +302,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   isProcessing,
   hasStoppableBackgroundWork,
   isInterrupting,
+  isStopping,
   onStop,
   onContinue,
   hasContinuation,
@@ -307,7 +312,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   sessionless = false,
   scopeProjectId = null,
 }, ref) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [value, setValue] = useState('');
   const inputMemoryTainted = useRef(false);
   useEffect(() => { if (!value) inputMemoryTainted.current = false; }, [value]);
@@ -344,8 +349,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const composerDraft = useComposerDraftPersistence({
     sessionId: currentSessionId,
     sessionless,
+    scopeProjectId,
     value,
     setValue,
+    attachments,
+    setAttachments,
     suspend: editingQueuedInputId !== null,
   });
 
@@ -588,13 +596,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       chips.push({ key: `library:${item.id}`, kind: 'library', id: item.id, label: item.title });
     }
     for (const reference of sessionReferences) {
-      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: reference.title });
+      chips.push({ key: `session:${reference.id}`, kind: 'session', id: reference.id, label: getDisplaySessionTitle(reference.title, language) });
     }
     for (const reference of artifactReferences) {
       chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
     }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language]);
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -707,9 +715,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   useImperativeHandle(ref, () => ({
     addAttachments: (items: MessageAttachment[]) => {
       if (items.length === 0) return;
-      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS_DROP);
+      const result = mergeAttachments(attachmentsRef.current, items, UI.MAX_ATTACHMENTS);
       setAttachments(result.attachments);
-      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', result.duplicates[0]?.incoming.name ?? ''));
+      notifyAttachmentMerge(result, t.chatInput);
     },
     setDraft: (draft) => {
       const mode = composerEditModeState(
@@ -719,7 +727,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       );
       inputMemoryTainted.current = true;
       setValue(draft.content);
-      setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS_DROP));
+      setAttachments((draft.attachments ?? []).slice(0, UI.MAX_ATTACHMENTS));
       pendingResendClientMessageIdRef.current = mode.pendingResendClientMessageId;
       setEditingQueuedInputId(mode.editingQueuedInputId);
       setVoiceInputContext(null);
@@ -743,7 +751,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       setValue((prev) => appendComposerPrompt(prev, prompt));
       inputAreaRef.current?.focus();
     },
-  }), [inlineChips, pendingAppshot, t.chatInput.attachmentAlreadyAdded]);
+  }), [inlineChips, pendingAppshot, t.chatInput]);
 
   useEffect(() => {
     setVoiceInputContext(null);
@@ -847,13 +855,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     void (async () => {
       const attachment = await buildMentionAttachment({ path: row.path, name: row.name, workingDirectory });
       // 读盘期间用户可能继续输入：以最新文本重定位触发词，找不到就交给对账把 chip 补到末尾
-      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS_DROP);
+      const result = mergeAttachments(attachmentsRef.current, [attachment], UI.MAX_ATTACHMENTS);
       const freshCaret = editor.getCaretOffset();
       const freshBefore = latestValueRef.current.slice(0, freshCaret);
       const freshMatch = freshBefore.match(/@([^\s@]*)$/);
       if (freshMatch) {
         const triggerStart = freshCaret - freshMatch[0].length;
-        if (result.skippedCount > 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
+        if (result.addedCount === 0) editor.replaceRangeWithText(triggerStart, freshCaret, '');
         else editor.replaceRangeWithChip(triggerStart, freshCaret, {
           key: `file:${attachment.id}`,
           kind: 'file',
@@ -861,10 +869,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         });
       }
       setAttachments(result.attachments);
-      if (result.skippedCount > 0) toast.show('warning', t.chatInput.attachmentAlreadyAdded.replace('{name}', attachment.name));
+      notifyAttachmentMerge(result, t.chatInput);
     })();
     editor.focus();
-  }, [currentSessionId, t.chatInput.attachmentAlreadyAdded]);
+  }, [currentSessionId, t.chatInput]);
   const replaceAtTriggerWithChip = useCallback((chip: InlineChipRef) => {
     const editor = inputAreaRef.current;
     if (!editor) return;
@@ -976,6 +984,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputSlashCommands({
     value,
     currentSessionId,
+    // 无会话语境（协作空间页）：未挂载 skill 只记选择，挂载推迟到发送时落进新会话
+    deferMountUntilSend: sessionless,
     skillRecommendations,
     mountRecommendedSkill,
     installRecommendedSkill,
@@ -1291,6 +1301,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             <LoopStatusBar sessionId={currentSessionId} />
           </SlotEntry>
 
+          {/* 「记这场会」录制条（L3 上下文层，组件自闸；入口在 + 菜单） */}
+          <SlotEntry id="meeting-status">
+            <MeetingBar />
+          </SlotEntry>
+
           {/* 定时任务对话式创建卡片（/schedule 不带参数时）（L1 阻塞决策层） */}
           <SlotEntry id="schedule-composer" active={scheduleComposerOpen}>
             {scheduleComposerOpen && (
@@ -1464,6 +1479,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
+            attachmentNames={composerDraft.notice.attachmentNames}
+            droppedNames={composerDraft.notice.droppedNames}
             onPutBack={composerDraft.putBack}
             onDiscard={composerDraft.discard}
           />
@@ -1641,7 +1658,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
             {/* 模型选择器（已合并 Agent Engine 选择到下拉框顶部 chip 行） */}
             <div className="text-xs">
-              <ModelSwitcher currentModel={modelConfig.model} />
+              <ModelSlot currentModel={modelConfig.model} />
             </div>
 
             {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}
@@ -1664,6 +1681,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               configured={liveVoiceAvailability.configured}
               isProcessing={Boolean(isProcessing)}
               isInterrupting={isInterrupting}
+              isStopping={isStopping}
               hasContent={hasContent}
               hasContinuation={Boolean(hasContinuation)}
               onStop={onStop}

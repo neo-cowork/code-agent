@@ -3,6 +3,7 @@ import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
+import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
 export const chatTranscriptZh = {
   ...turnRailZh,
@@ -18,14 +19,16 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '代理工作中{name}', completed: `${outcomeWordsZh.outcomeWords.completed.timeline.label}{name}`, failed: `${outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label}{name}` },
+    headlines: { working: '{name}正在处理', completed: '{name}已完成', failed: '{name}没有完成', cancelled: '{name}已取消' },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
+    cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].detail.label,
     dispatched: '已派出',
     steps: '做了 {count} 步',
     output: '产出',
     mergeBranch: '改动在分支 {branch}，合并后才会生效',
+    viewTargetSession: '查看目标会话',
   },
   taskNotificationWithLog: '{message}。可在任务面板查看日志。',
   taskTimeoutNotice: '后台任务运行超过 {minutes} 分钟，已被停止。',
@@ -49,7 +52,6 @@ chat: {
   compactionCountBadge: '已压缩 {count} 次',
   dropFilesHere: '拖放文件或文件夹到这里',
   configureModelKeyFirst: '当前主任务模型未配置 API Key，请切换到已配置的模型后再发送。',
-  configureModelFirst: '先配置一个模型后再发送。',
   rewindWhileRunning: '会话还在运行，先停止后再回退。',
   rewindSuccess: '已回到这一轮；可以反悔。',
   rewindSuccessWithPrompt: '已回到「{prompt}」；可以反悔。',
@@ -241,9 +243,9 @@ toolGroup: {
 toolStepHumanize: {
   ...toolStepVerbsZh,
   declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
-    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议' },
+    tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议', tmeetRecordList: '查了腾讯会议录制', tmeetRecordRead: '读了腾讯会议转写和纪要', feishuMinutesSearch: '搜了飞书妙记', feishuMinutesRead: '读了一条飞书妙记', meetingRecords: '查了会议记录' },
   intent: { tmeetMeetingListUpcoming: '查待开始/进行中的会议', tmeetMeetingListEnded: '查近 30 天已结束的会议',
-    tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议' },
+    tmeetMeetingCreate: '创建会议', tmeetMeetingSearch: '搜索会议', tmeetRecordList: '查腾讯会议录制', tmeetRecordRead: '读腾讯会议转写和纪要', feishuMinutesSearch: '搜飞书妙记', feishuMinutesRead: '读一条飞书妙记', meetingRecords: '查会议记录' },
   read: '读取了 {target}', readFallback: '读取了一个文件',
   write: '写入了 {target}',
   writeFallback: '写入了一个文件',
@@ -361,6 +363,7 @@ turnCard: {
   collapseTurn: '折叠本轮',
   expandTurn: '展开本轮',
   sendFailed: '没发出去',
+  ...projectTrustTurnCardZh,
   recoveredFromRecord: '这条消息由运行记录还原，可能和你的原话略有出入',
   editAndResend: '编辑重发',
   fork: '创建分支',
@@ -437,6 +440,7 @@ turnRun: {
   cleanupBadge: '清理中',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+  ...projectTrustTurnRunZh,
 },
 ...chatErrorCopyZh,
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
@@ -511,14 +515,16 @@ chat: {
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
     failureDetail: '{status}: {reason}',
-    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish" },
+    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish", cancelled: '{name} was cancelled' },
     working: 'Agent working',
     completed: 'Completed',
     failed: 'Not completed',
+    cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].detail.label,
     dispatched: 'Dispatched',
     steps: 'Completed {count} steps',
     output: 'Output',
     mergeBranch: 'Changes are on branch {branch}; merge it to apply them',
+    viewTargetSession: 'View target chat',
   },
   taskNotificationWithLog: '{message}. View logs in the task panel.',
   taskTimeoutNotice: 'Background task ran over {minutes} minutes and was stopped.',
@@ -542,7 +548,6 @@ chat: {
   compactionCountBadge: 'Compacted {count} times',
   dropFilesHere: 'Drop files or folders here',
   configureModelKeyFirst: 'The main task model has no API key configured. Switch to a configured model before sending.',
-  configureModelFirst: 'Configure a model before sending.',
   rewindWhileRunning: 'The session is still running. Stop it before rewinding.',
   rewindSuccess: 'Went back to this turn; you can undo it.',
   rewindSuccessWithPrompt: 'Went back to "{prompt}"; you can undo it.',
@@ -717,7 +722,7 @@ traceView: {
 // Tool step group (ToolStepGroup)
 toolGroup: {
   statusRunning: 'running',
-  statusPartial: 'partial',
+  statusPartial: 'Some steps need attention',
   statusFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
   statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
   recovered: 'Recovered',
@@ -737,9 +742,9 @@ toolGroup: {
 toolStepHumanize: {
   ...toolStepVerbsEn,
   declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
-    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings' },
+    tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings', tmeetRecordList: 'Checked Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Searched Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Checked meeting records' },
   intent: { tmeetMeetingListUpcoming: 'Check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Check meetings ended in the last 30 days',
-    tmeetMeetingCreate: 'Create a meeting', tmeetMeetingSearch: 'Search meetings' },
+    tmeetMeetingCreate: 'Create a meeting', tmeetMeetingSearch: 'Search meetings', tmeetRecordList: 'Check Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Search Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Check meeting records' },
   read: 'Read {target}',
   readFallback: 'Read a file',
   write: 'Wrote {target}',
@@ -860,6 +865,7 @@ turnCard: {
   collapseTurn: 'Collapse this turn',
   expandTurn: 'Expand this turn',
   sendFailed: 'Not sent',
+  ...projectTrustTurnCardEn,
   recoveredFromRecord: 'Restored from the run history; it may differ slightly from what you wrote',
   editAndResend: 'Edit and resend',
   fork: 'Fork',
@@ -938,6 +944,7 @@ turnRun: {
   cleanupBadge: 'cleanup',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+  ...projectTrustTurnRunEn,
 },
 
 ...chatErrorCopyEn,

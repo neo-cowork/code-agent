@@ -34,6 +34,7 @@ import {
   getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
+  resolveForegroundBrainTurnBudget,
 } from '../../../src/host/app/sessionCommandCenterBrain';
 // 常量已不导出（防止装配路绕过单一真源直接拼常量），这里从共用函数取基块：
 // 空白轮次不命中任何回合级规则，返回值唯一成员就是 brain 基块。
@@ -173,6 +174,38 @@ describe('ADR-059 声明式文字前台边界', () => {
 });
 
 describe('withSessionCommandCenterBrain', () => {
+  it.each([false, true])('no-file-noun budget uses only the previous stop marker: %s', stopped => {
+    const info = vi.fn();
+    const cap = stopped ? 30 : 8;
+    expect(resolveForegroundBrainTurnBudget('按这个大纲出三张样张', stopped, undefined, { info })).toBe(cap);
+    expect(info).toHaveBeenCalledExactlyOnceWith(
+      `Foreground brain budget rule=${stopped ? 'continuation' : 'default'} cap=${cap} maxIterations=${cap}`,
+    );
+  });
+
+  it.each([
+    ['做 PPTX', false, 30], ['做 PPT', false, 30], ['做 Excel 表格', false, 30],
+    ['写 Word 文档', false, 30], ['导出 PDF', false, 30], ['制作 HTML 网页', false, 30],
+    ['今天天气', false, 8], ['帮我查一下', false, 8], ['继续', false, 8],
+    ['继续', true, 30], ['use the second one', true, 30],
+  ])('foreground cap for %s (previous stop=%s) is %i', (prompt, stopped, cap) => {
+    expect(withSessionCommandCenterBrain(undefined, prompt, undefined, stopped).maxIterations).toBe(cap);
+  });
+
+  it.each([false, true])('preserves a smaller explicit cap (previous stop=%s)', stopped => {
+    expect(withSessionCommandCenterBrain({ maxIterations: 3 }, '生成 PPTX', undefined, stopped).maxIterations).toBe(3);
+  });
+
+  it('keeps the existing number guard for untyped run options', () => {
+    expect(withSessionCommandCenterBrain({ maxIterations: 'invalid' }, '制作 PPTX').maxIterations).toBe(30);
+  });
+
+  it('keeps the deliverable cap within the ordinary execution budget', async () => {
+    const { getBuiltinConfig } = await import('../../../src/host/services/cloud/builtinConfig');
+    expect(withSessionCommandCenterBrain(undefined, '制作 PPTX').maxIterations)
+      .toBeLessThanOrEqual(getBuiltinConfig().featureFlags.maxIterations);
+  });
+
   it('sets the brain allowlist and appends the brain context (which carries the design notice)', () => {
     const options = withSessionCommandCenterBrain(undefined);
 
@@ -275,6 +308,19 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     // 与桌面装配路的产物同形：withSessionCommandCenterBrain 的尾部即这份清单
     const options = withSessionCommandCenterBrain(undefined, '存草稿 2');
     expect(options.turnSystemContext?.slice(-2)).toEqual(blocks);
+  });
+
+  // FU1：英文晨报的标记链。en 档晨间分诊的草稿块头是 "Draft N (not sent)"，
+  // 规则块必须把中英两种块头与两种任务名都写明，英文回复才能在英文晨报里找到那封草稿。
+  it('规则块同时点名中英两种草稿块头与两种任务名；英文回复 save draft N 也命中', () => {
+    const blocks = getSessionCommandCenterBrainContextForPrompt('save draft 1');
+    expect(blocks).toHaveLength(2);
+    const block = blocks[1] ?? '';
+    expect(block).toContain('<morning_brief_save_draft>');
+    expect(block).toContain('「草稿 N（未发送）」');
+    expect(block).toContain('"Draft N (not sent)"');
+    expect(block).toContain('「晨间分诊」');
+    expect(block).toContain('"Morning triage"');
   });
 });
 

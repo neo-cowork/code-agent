@@ -186,7 +186,10 @@ export async function executeAskUserQuestion(
       ? answer.some((item) => item.trim().length > 0)
       : typeof answer === 'string' && answer.trim().length > 0;
   });
-  if (allAnswered) recordAskUserQuestionAnswer(ctx, questions, output);
+  if (allAnswered) {
+    const answerTexts = Object.values(response.answers).flatMap((answer) => (Array.isArray(answer) ? answer : [answer]));
+    recordAskUserQuestionAnswer(ctx, questions, output, answerTexts);
+  }
   return {
     ok: true,
     output,

@@ -30,6 +30,22 @@ vi.mock('../../../src/host/model/quickModel', () => ({
   quickTask: quickModel.quickTask,
 }));
 
+// getSessionRecap 走 IPC 一把梭：素材源与 UI 语言都从这里注入（N-FIX-TITLE-LANG-FOLLOWS-UI-FU1 ⑤）
+const recapEnv = vi.hoisted(() => ({
+  ui: 'zh' as 'zh' | 'en',
+  records: [] as CompletionSummaryRecord[],
+  tasks: [] as SessionTask[],
+}));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: recapEnv.ui } }) }),
+}));
+vi.mock('../../../src/host/session/completionSummaryService', () => ({
+  readCompletionSummaryRecordsBySession: async () => recapEnv.records,
+}));
+vi.mock('../../../src/host/services/planning/taskStore', () => ({
+  listTasks: () => recapEnv.tasks,
+}));
+
 beforeEach(() => {
   quickModel.isQuickModelAvailable.mockReset();
   quickModel.quickTask.mockReset();
@@ -37,6 +53,9 @@ beforeEach(() => {
   quickModel.quickTask.mockImplementation(async (): Promise<{ success: boolean; content?: string }> => {
     throw new Error('should not be called when unavailable');
   });
+  recapEnv.ui = 'zh';
+  recapEnv.records = [];
+  recapEnv.tasks = [];
 });
 
 function record(overrides: Partial<CompletionSummaryRecord> = {}): CompletionSummaryRecord {
@@ -226,5 +245,83 @@ describe('sessionRecapService 模型输出过滤', () => {
     expect(recap).not.toBeNull();
     expect(recap!.degraded).toBe(false);
     expect(recap!.text).toContain('销售图表');
+  });
+});
+
+// ============================================================================
+// 语言档（N-FIX-TITLE-LANG-FOLLOWS-UI-FU1 ⑤）：en UI 出英文横幅（经 getSessionRecap）
+// ============================================================================
+import { getSessionRecap } from '../../../src/host/session/sessionRecapService';
+
+const HOUR_AGO = () => Date.now() - 60 * 60 * 1000;
+/** quickTask 的 mock 未声明参数 → calls 元组是 []，取首参要经 unknown[] */
+const quickPromptAt = (index: number): string => (quickModel.quickTask.mock.calls[index] as unknown[])[0] as string;
+/** getSessionRecap 只看 sinceTimestamp 之后收口的轮次：默认夹具 endedAt=2000 全被滤掉，这里给「新鲜」版 */
+const RECENT = () => Date.now() - 60 * 1000;
+const freshRecord = () => record({ endedAt: RECENT() });
+const freshTask = (overrides: Partial<SessionTask> = {}) => task({ updatedAt: RECENT(), ...overrides });
+
+describe('sessionRecapService 语言档（getSessionRecap）', () => {
+  it('en UI + 小模型不可用：英文规则拼接，单复数正确', async () => {
+    recapEnv.ui = 'en';
+    recapEnv.records = [freshRecord()];
+    recapEnv.tasks = [freshTask()];
+    const recap = await getSessionRecap('session-1', HOUR_AGO());
+    expect(recap).not.toBeNull();
+    expect(recap!.degraded).toBe(true);
+    // 单数：1 task completed
+    expect(recap!.text).toBe('Updated 销售图表, 文章终稿.md; 1 task completed');
+    expect(recap!.text).not.toMatch(/1 tasks/);
+
+    // 复数：2 tasks completed；受阻 1 → 1 task blocked；等你 1 → 1 item waiting on you
+    recapEnv.tasks = [
+      freshTask({ id: 'task-1' }),
+      freshTask({ id: 'task-2' }),
+      freshTask({ id: 'task-3', status: 'blocked', subject: '拿到素材', blockedReason: '连不上目标网站或服务' }),
+      freshTask({ id: 'task-4', status: 'needs_decision', subject: '选配色' }),
+    ];
+    const plural = await getSessionRecap('session-1', HOUR_AGO());
+    expect(plural!.text).toContain('2 tasks completed');
+    expect(plural!.text).toContain('1 task blocked');
+    expect(plural!.text).toContain('1 item waiting on you');
+    expect(quickModel.quickTask).not.toHaveBeenCalled();
+  });
+
+  it('en UI + 小模型可用：提示词是英文；超长输出截断不落在词中间', async () => {
+    recapEnv.ui = 'en';
+    recapEnv.records = [freshRecord()];
+    recapEnv.tasks = [freshTask()];
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    const longEnglish = 'While you were away the assistant updated the quarterly sales chart artifact and also finished expanding the third section of the long-form article draft that you had left open on your desktop yesterday afternoon before you stepped out';
+    quickModel.quickTask.mockImplementation(async () => ({ success: true, content: longEnglish }));
+    const recap = await getSessionRecap('session-1', HOUR_AGO());
+    expect(recap!.degraded).toBe(false);
+    // 喂给小模型的提示词是英文档（one English sentence / 25 words or fewer）
+    const prompt = quickPromptAt(0);
+    expect(prompt).toContain('one English sentence (25 words or fewer)');
+    expect(prompt).not.toContain('请用一句中文');
+    // 160 字符上限：超长时截断在词边界——保留段是原文前缀，且截点在原文里是空格（没把词砍成两半）
+    expect(longEnglish.length).toBeGreaterThan(162);
+    expect(recap!.text.endsWith('…')).toBe(true);
+    const kept = recap!.text.slice(0, -1);
+    expect(kept.length).toBeGreaterThan(100);
+    expect(longEnglish.startsWith(kept)).toBe(true);
+    expect(/\s/.test(longEnglish.charAt(kept.length))).toBe(true);
+  });
+
+  it('zh UI：中文横幅原样（ getSessionRecap 也走中文提示词与规则拼接）', async () => {
+    recapEnv.ui = 'zh';
+    recapEnv.records = [freshRecord()];
+    recapEnv.tasks = [freshTask()];
+    const recap = await getSessionRecap('session-1', HOUR_AGO());
+    expect(recap!.degraded).toBe(true);
+    expect(recap!.text).toContain('更新了 销售图表');
+    expect(recap!.text).toContain('1 项任务完成');
+
+    quickModel.isQuickModelAvailable.mockReturnValue(true);
+    quickModel.quickTask.mockImplementation(async () => ({ success: true, content: '更新了销售图表，并完成扩写第三节' }));
+    const modeled = await getSessionRecap('session-1', HOUR_AGO());
+    expect(quickPromptAt(0)).toContain('请用一句中文');
+    expect(modeled!.text).toContain('销售图表');
   });
 });

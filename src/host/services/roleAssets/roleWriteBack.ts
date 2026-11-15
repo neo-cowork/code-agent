@@ -18,7 +18,7 @@ import * as path from 'path';
 import { quickTask } from '../../model/quickModel';
 import { withTimeout } from '../infra/timeoutController';
 import { createLogger } from '../infra/logger';
-import { ROLE_ASSETS } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
 import { ensureMemoryDir, getMemoryIndexPath } from '../../lightMemory/indexLoader';
 import {
   appendRoleHistory,
@@ -127,13 +127,20 @@ async function doWriteBack(input: WriteBackInput): Promise<WriteBackResult> {
   let historyAppended = false;
   try {
     const date = new Date().toISOString().slice(0, 10);
-    const summary = judgment?.historySummary || truncate(input.taskPrompt.replace(/\s+/g, ' '), 60);
+    // 履历摘要回落：用户原话可截断；内部合成指令（首次醒来 / 巡检醒来）绝不外显，回落固定短句
+    //（2026-11-12 owner 裁决：专家列表的最近工作行不得出现首次醒来的提示词文本）。
+    const summary = judgment?.historySummary
+      || (isFirstWakeTaskPrompt(input.taskPrompt)
+        ? ROLE_ASSETS.FIRST_WAKE_HISTORY_FALLBACK_SUMMARY
+        : ROLE_ASSETS.WAKE_TASK_PROMPT_PATTERN.test(input.taskPrompt)
+          ? ROLE_ASSETS.WAKE_HISTORY_FALLBACK_SUMMARY
+          : truncate(input.taskPrompt.replace(/\s+/g, ' '), 60));
     const primaryArtifact = input.artifacts?.[0];
     await appendRoleHistory(input.roleId, {
       date,
       artifactLabel: primaryArtifact?.label || summary,
       artifactRef: primaryArtifact?.ref || '-',
-      summary: primaryArtifact ? summary : '（无产物落盘）',
+      summary,
     });
     historyAppended = true;
   } catch (err) {
@@ -388,4 +395,29 @@ ${safeContent}
 function truncate(text: string, max: number): string {
   const trimmed = text.trim();
   return trimmed.length > max ? trimmed.slice(0, max).trim() + '...' : trimmed;
+}
+
+/** 判断一段文本是否首次醒来的内部合成指令。includes 而非 startsWith：会话脚手架可能包裹前缀。 */
+function isFirstWakeTaskPrompt(text: string): boolean {
+  return text.includes(ROLE_ASSETS.FIRST_WAKE_PROMPT_HEAD);
+}
+
+/**
+ * 判断一段文本是否巡检醒来（cadence / event）的内部合成指令或触发标签。
+ * 与 roleProactivity.buildWakePrompt 及 WAKE_SESSION_TITLE_PREFIX 共享唯一真源，
+ * 供写回层去重和 roles IPC 履历清洗共同调用。
+ */
+export function isSyntheticWakeTask(text: string): boolean {
+  const trimmed = text.trim();
+  if (
+    trimmed.includes(ROLE_ASSETS.WAKE_PROMPT_HEAD_CADENCE)
+    || trimmed.includes(ROLE_ASSETS.WAKE_PROMPT_HEAD_EVENT)
+  ) {
+    return true;
+  }
+  if (!trimmed.startsWith(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX)) {
+    return false;
+  }
+  const rest = trimmed.slice(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX.length);
+  return /^[（(](?:cadence|event)\b/.test(rest);
 }

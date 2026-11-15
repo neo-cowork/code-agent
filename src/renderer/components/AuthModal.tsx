@@ -153,8 +153,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const getModalTitle = () => {
-    if (mode === 'reset') return '找回密码';
-    return mode === 'signin' ? '登录' : '注册';
+    if (mode === 'reset') return t.authModal.resetTitle;
+    return mode === 'signin' ? t.authModal.signIn : t.authModal.signUp;
   };
 
   return (
@@ -180,7 +180,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            返回登录
+            {t.authModal.backToSignIn}
           </button>
 
           {resetEmailSent ? (
@@ -188,34 +188,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="py-6 text-center space-y-4">
               <CheckCircle className="w-12 h-12 text-badge-success mx-auto" />
               <div className="space-y-2">
-                <p className="text-zinc-200 font-medium">重置链接已发送</p>
+                <p className="text-zinc-200 font-medium">{t.authModal.resetSent}</p>
                 <p className="text-zinc-400 text-sm">
-                  请检查您的邮箱 <span className="text-zinc-400">{email}</span>
+                  {t.authModal.checkEmail} <span className="text-zinc-400">{email}</span>
                   <br />
-                  点击邮件中的链接重置密码
+                  {t.authModal.resetLinkHint}
                 </p>
               </div>
               <Button variant="secondary" size="sm" onClick={() => handleModeChange('signin')} className="mt-4">
-                返回登录
+                {t.authModal.backToSignIn}
               </Button>
             </div>
           ) : (
             /* Reset form */
             <form onSubmit={handleEmailSubmit} className="space-y-4">
               <p className="text-zinc-400 text-sm">
-                输入您的注册邮箱，我们将向您发送密码重置链接。
+                {t.authModal.resetInstructions}
               </p>
-              <FormField label="邮箱">
+              <FormField label={t.authModal.email}>
                 <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
+                  placeholder={t.authModal.emailPlaceholder}
                   required
                 />
               </FormField>
               <Button type="submit" fullWidth loading={isLoading} className="min-h-[42px]">
-                发送重置链接
+                {t.authModal.sendResetLink}
               </Button>
             </form>
           )}
@@ -234,7 +234,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               }`}
             >
               <LogIn className="w-4 h-4 inline mr-1" />
-              登录
+              {t.authModal.signIn}
             </button>
             <button
               onClick={() => handleModeChange('signup')}
@@ -245,27 +245,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               }`}
             >
               <UserPlus className="w-4 h-4 inline mr-1" />
-              注册
+              {t.authModal.signUp}
             </button>
           </div>
 
           {/* Email/Password form */}
           <form onSubmit={handleEmailSubmit} className="space-y-4">
-            <FormField label="邮箱">
+            <FormField label={t.authModal.email}>
               <Input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder={t.authModal.emailPlaceholder}
                 required
               />
             </FormField>
-            <FormField label="密码">
+            <FormField label={t.authModal.password}>
               <Input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少6位"
+                placeholder={t.authModal.passwordPlaceholder}
                 required
                 minLength={6}
               />
@@ -273,9 +273,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             {mode === 'signup' && (
               <FormField
-                label="邀请码"
+                label={t.authModal.inviteCode}
                 required
-                hint="需要邀请码才能注册，请联系管理员获取"
+                hint={t.authModal.inviteHint}
               >
                 <Input
                   type="text"
@@ -283,7 +283,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   onChange={(e) => {
                     setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''));
                   }}
-                  placeholder="输入邀请码"
+                  placeholder={t.authModal.invitePlaceholder}
                   required
                 />
               </FormField>
@@ -297,11 +297,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 onChange={(e) => setRememberPassword(e.target.checked)}
                 className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-deep"
               />
-              <span className="text-sm text-zinc-400">记住密码</span>
+              <span className="text-sm text-zinc-400">{t.authModal.rememberPassword}</span>
             </label>
 
             <Button type="submit" fullWidth loading={isLoading} className="min-h-[42px]">
-              {mode === 'signin' ? '登录' : '注册'}
+              {mode === 'signin' ? t.authModal.signIn : t.authModal.signUp}
             </Button>
 
             {/* Forgot password link - only show in signin mode */}
@@ -313,7 +313,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   className="text-sm text-zinc-400 hover:text-badge-info transition-colors"
                 >
                   <KeyRound className="w-3 h-3 inline mr-1" />
-                  忘记密码？
+                  {t.authModal.forgotPassword}
                 </button>
               </div>
             )}

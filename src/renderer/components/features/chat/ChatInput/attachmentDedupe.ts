@@ -1,9 +1,12 @@
 import type { MessageAttachment } from '@shared/contract';
 
-interface AttachmentMergeResult {
+export interface AttachmentMergeResult {
   attachments: MessageAttachment[];
+  addedCount: number;
+  overflowCount: number;
   skippedCount: number;
   duplicates: Array<{ incoming: MessageAttachment; existing: MessageAttachment }>;
+  cap: number;
 }
 
 function isSameAttachment(a: MessageAttachment, b: MessageAttachment): boolean {
@@ -27,5 +30,17 @@ export function mergeAttachments(
     if (match) duplicates.push({ incoming: candidate, existing: match });
     else merged.push(candidate);
   }
-  return { attachments: merged.slice(0, cap), skippedCount: duplicates.length, duplicates };
+  const attachments = merged.slice(0, cap);
+  const uniqueIncomingCount = merged.length - existing.length;
+  const existingKeptCount = Math.min(existing.length, attachments.length);
+  const addedCount = attachments.length - existingKeptCount;
+  const overflowCount = uniqueIncomingCount - addedCount;
+  return {
+    attachments,
+    addedCount,
+    overflowCount,
+    skippedCount: duplicates.length,
+    duplicates,
+    cap,
+  };
 }

@@ -12,7 +12,7 @@ const CARDS = [
   { key: 'competitor-brief', title: /搜一份竞品简报|Research a competitor brief/, promptHead: /写一份竞品简报|Write a competitor brief/ },
 ] as const;
 const DRAFT = 'draft XY77 keep test';
-const NO_MODEL_NOTICE = /Configure a model before sending|先配置一个模型后再发送/;
+const NO_MODEL_NOTICE = /No API Key for .+ yet|尚未配置 API Key/;
 
 async function openFreshWelcome(page: Page): Promise<void> {
   await page.goto('/');

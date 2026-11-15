@@ -36,6 +36,8 @@ Routing contract:
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
+- keep_result_page: Keep the active page open for the user after the run ends (closes other tabs; not for relay/unattended runs or the shared personal profile)
+- wait_for_user: When a step in the page can only be done by the user (captcha, sign-in, payment confirmation), call this instead of asking in chat and ending the turn; it shows the user a Done button and blocks until they press it; needs reason (one plain sentence in the user's language, <=120 chars, no URLs/paths/tool names/button names). After Done call get_dom_snapshot before acting; on WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence
 ${browserJevStepDescriptionSuffix()}
 
 ## Parameters:
@@ -71,6 +73,7 @@ ${browserJevStepDescriptionSuffix()}
           'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'keep_result_page', 'wait_for_user',
           'execute_goal',
         ],
         description: 'The browser action to perform',
@@ -196,6 +199,10 @@ ${browserJevStepDescriptionSuffix()}
       prompt: {
         type: 'string',
         description: '[Playwright] Custom prompt for AI analysis',
+      },
+      reason: {
+        type: 'string',
+        description: 'wait_for_user only (required): one plain sentence in the user\'s language, at most 120 characters, saying what the user should do in the browser. Shown to the user as-is; no URLs, file paths, tool names or button names (the user already has a Done button; do not tell them to press anything).',
       },
       task: {
         type: 'string',

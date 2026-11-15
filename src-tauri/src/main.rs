@@ -27,6 +27,12 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 mod agent_halo;
 mod appshots;
 mod appshots_hotkey_gate;
+mod background_resident;
+mod env_assist_bridge;
+mod env_assist_grant;
+mod env_assist_passive;
+mod menu_i18n;
+use menu_i18n::set_shell_language;
 mod native_app_icon;
 mod native_desktop;
 mod native_manifest;
@@ -2087,6 +2093,7 @@ fn spawn_web_server_recording(
         .current_dir(&working_dir)
         .envs(env::vars())
         .env("CODE_AGENT_TAURI_BOOT_TOKEN", &boot_token)
+        .env("CODE_AGENT_SHELL_EXE", native_notification::shell_executable_path())
         .env("NODE_ENV", web_server_node_env())
         // 测试包用 8181、生产 8180，保证两包同时运行不抢端口（webServer 读 WEB_PORT）
         .env("WEB_PORT", web_port().to_string())
@@ -2096,6 +2103,15 @@ fn spawn_web_server_recording(
         .stdout(stdout_stdio)
         .stderr(stderr_stdio);
 
+    command
+        .env_remove("CODE_AGENT_ENV_ASSIST_BRIDGE_URL")
+        .env_remove("CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN");
+    // 凭据只经 stdin 首行交给 webServer，绝不进 env/argv（ps eww 可读）；这里只放非密钥标志位。
+    let env_assist_handshake = env_assist_bridge::ensure_started();
+    if env_assist_handshake.is_some() {
+        command.env(env_assist_bridge::HANDSHAKE_FLAG_ENV, "1");
+    }
+
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
         command.env(key, value.as_os_str());
     }
@@ -2103,7 +2119,7 @@ fn spawn_web_server_recording(
         command.env(BOOT_DIAGNOSTICS_PATH_ENV, boot_path.as_os_str());
     }
 
-    let child = command.spawn().map_err(|error| {
+    let mut child = command.spawn().map_err(|error| {
         format!(
             "Failed to start web server at {} (node: {}): {}",
             script_path.display(),
@@ -2111,6 +2127,10 @@ fn spawn_web_server_recording(
             error
         )
     })?;
+    if let Some((bridge_url, bridge_token)) = env_assist_handshake {
+        // 先于任何其他写入；句柄保持打开，webServer 靠 stdin EOF 判断父进程死亡。
+        env_assist_bridge::write_handshake(child.stdin.as_mut(), bridge_url, bridge_token);
+    }
     diagnostics.web_server_pid = Some(child.id());
     write_shell_event(
         app,
@@ -2481,6 +2501,14 @@ fn spawn_quit_guard_flow(
                     }
                 }
             }
+            quit_guard::QuitDecision::HideToBackground { language } => {
+                background_resident::minimize_and_hint(&app, language);
+                coordinator.finish();
+                #[cfg(target_os = "macos")]
+                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+                    reply_to_mac_application_terminate(&app, false);
+                }
+            }
             quit_guard::QuitDecision::Confirm { prompt, language } => {
                 let offers_background_continue = matches!(
                     resident_host::quit_dialog_button_set_current(language),
@@ -2523,8 +2551,20 @@ fn show_quit_confirm_dialog(
 
     let app = app.clone();
     let coordinator = coordinator.clone();
-    app.dialog()
-        .message(message)
+    let mut dialog = app.dialog().message(message);
+    // 必须挂到主窗口（N-FIX-QUIT-DIALOG-SYSTEM-ALERT）：没有父窗口时 rfd 的异步弹窗走
+    // CFUserNotificationDisplayAlert（超时 0），由系统 UserNotificationCenter 托管——
+    // 脚本按 Neo 进程点不到按钮，Neo 进程退了弹窗还挂在屏幕上。挂上主窗口后是
+    // Neo 自己的 NSAlert sheet。托盘退出时主窗口可能藏着，先显示出来，否则 sheet 看不见。
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        dialog = dialog.parent(&window);
+    } else {
+        eprintln!("quit guard: main window missing; quit dialog falls back to a system alert");
+    }
+    dialog
         .title(dialog_copy.title)
         .kind(MessageDialogKind::Warning)
         .buttons(match button_set {
@@ -2554,11 +2594,7 @@ fn show_quit_confirm_dialog(
             };
             let plan = quit_guard::quit_exit_plan(
                 // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
-                resident_host::dialog_answer_action_gated(
-                    custom_label.as_deref(),
-                    button_set,
-                    language,
-                ),
+                button_set.dialog_answer_action(custom_label.as_deref()),
                 // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
                 cfg!(not(unix)),
             );
@@ -2584,47 +2620,7 @@ fn show_quit_confirm_dialog(
                         return;
                     }
                 }
-                // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
-                // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
-                // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
-                let mode = if plan.cleanup_server { "stop" } else { "background" };
-                let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
-                    quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
-                });
-                if token.is_none() {
-                    eprintln!("quit-intent: no token; continuing exit ({mode})");
-                } else if !quit_guard::post_quit_intent(
-                    &server_url(),
-                    token.as_deref(),
-                    mode,
-                    quit_guard::QUIT_GUARD_TIMEOUT,
-                ) {
-                    eprintln!("quit-intent: request failed; continuing exit ({mode})");
-                } else if plan.cleanup_server {
-                    // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
-                    // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
-                    coordinator.set_stop_intent_landed();
-                    hide_windows_for_stop_wait(&app);
-                }
-                // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
-                // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
-                if !plan.cleanup_server {
-                    coordinator.set_background_continue();
-                }
-                coordinator.allow_exit();
-                coordinator.finish();
-                match origin {
-                    QuitFlowOrigin::TauriExit => app.exit(0),
-                    #[cfg(target_os = "macos")]
-                    QuitFlowOrigin::MacApplicationTerminate => {
-                        if plan.cleanup_server {
-                            // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
-                            // 保持相同的优雅停止约定。
-                            cleanup_server(&app);
-                        }
-                        reply_to_mac_application_terminate(&app, true);
-                    }
-                }
+                execute_quit_exit_plan(app, coordinator, origin, plan);
             } else {
                 // 取消：什么都不清理（webServer 继续跑），app 继续运行
                 coordinator.finish();
@@ -2634,6 +2630,60 @@ fn show_quit_confirm_dialog(
                 }
             }
         });
+}
+
+// Shared stop-and-quit sequence: the dialog and explicit full_quit cannot drift.
+fn execute_quit_exit_plan(
+    app: AppHandle,
+    coordinator: Arc<quit_guard::QuitCoordinator>,
+    origin: QuitFlowOrigin,
+    plan: quit_guard::QuitExitPlan,
+) {
+    // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
+    // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
+    // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
+    let mode = if plan.cleanup_server {
+        "stop"
+    } else {
+        "background"
+    };
+    let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
+        quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
+    });
+    if token.is_none() {
+        eprintln!("quit-intent: no token; continuing exit ({mode})");
+    } else if !quit_guard::post_quit_intent(
+        &server_url(),
+        token.as_deref(),
+        mode,
+        quit_guard::QUIT_GUARD_TIMEOUT,
+    ) {
+        eprintln!("quit-intent: request failed; continuing exit ({mode})");
+    } else if plan.cleanup_server {
+        // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
+        // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
+        coordinator.set_stop_intent_landed();
+        hide_windows_for_stop_wait(&app);
+    }
+    // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
+    // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
+    if !plan.cleanup_server {
+        coordinator.set_background_continue();
+    }
+    coordinator.allow_exit();
+    coordinator.finish();
+    match origin {
+        QuitFlowOrigin::TauriExit => app.exit(0),
+        #[cfg(target_os = "macos")]
+        QuitFlowOrigin::MacApplicationTerminate => {
+            if plan.cleanup_server {
+                // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
+                // 保持相同的优雅停止约定。
+                cleanup_server(&app);
+            }
+            reply_to_mac_application_terminate(&app, true);
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -2763,6 +2813,7 @@ fn install_mac_application_terminate_guard(app: &tauri::App) {
 fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     install_mac_application_terminate_guard(app);
     let handle = app.handle();
+    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels();
     let pkg_info = handle.package_info();
     let about_metadata = AboutMetadata {
         name: Some(pkg_info.name.clone()),
@@ -2779,14 +2830,15 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &[
             &PredefinedMenuItem::about(handle, None, Some(about_metadata))?,
             &PredefinedMenuItem::separator(handle)?,
-            &MenuItem::with_id(handle, "open_settings", "设置…", true, Some("Cmd+,"))?,
+            &MenuItem::with_id(handle, "open_settings", labels.settings, true, Some("Cmd+,"))?,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::services(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::hide(handle, None)?,
             &PredefinedMenuItem::hide_others(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
-            &MenuItem::with_id(handle, "quit_app", "退出 Agent Neo", true, Some("Cmd+Q"))?,
+            &MenuItem::with_id(handle, "quit_app", labels.quit, true, Some("Cmd+Q"))?,
+            &MenuItem::with_id(handle, "full_quit", labels.full_quit, true, None::<&str>)?,
         ],
     )?;
 
@@ -4021,18 +4073,21 @@ mod update_url_tests {
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels();
     let menu = MenuBuilder::new(app)
-        .text("quick_ask", "快速提问")
-        .text("new_chat", "新建对话")
-        .text("paste_context", "粘贴为上下文")
+        .text("quick_ask", labels.quick_ask)
+        .text("new_chat", labels.new_chat)
+        .text("paste_context", labels.paste_context)
         .separator()
         // 不用预定义 .quit()：它走 muda 的 terminate:/PostQuitMessage，绕过
         // ExitRequested，守卫拦不到。自定义项与 ⌘Q 走同一受守卫入口。
-        .text("quit_app", "退出 Agent Neo")
+        .text("quit_app", labels.quit)
+        .text("full_quit", labels.full_quit)
         .build()?;
     const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/tray-template.png");
 
-    let _tray = TrayIconBuilder::new()
+    app.manage(menu_i18n::TrayMenu(menu.clone()));
+    let _tray = TrayIconBuilder::with_id(menu_i18n::TRAY_ID)
         .icon(TRAY_ICON)
         .icon_as_template(true)
         .tooltip("Agent Neo")
@@ -4488,6 +4543,7 @@ fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
 }
 
 fn main() {
+    native_notification::dispatch_notify_only();
     // T2 工单：必须在 Tauri 创建任何窗口（含 WebView2）/webServer 子进程之前
     // 完成，否则后创建的子孙进程赶不上加入 Job（见函数注释）。非 Windows 平台
     // 是空操作。
@@ -4545,6 +4601,7 @@ fn main() {
             desktop_stop_voice_aec,
             desktop_get_app_icon,
             post_system_notification,
+            set_shell_language,
             appshots_trigger,
             appshots_last_front_app,
             appshots_trigger_for_pid,
@@ -4822,6 +4879,16 @@ fn main() {
         RunEvent::MenuEvent(event) if event.id().as_ref() == "open_settings" => {
             let _ = request_main_window_focus(app_handle);
             app_handle.emit("menu:open-settings", ()).ok();
+        }
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "full_quit" => {
+            let app = app_handle.clone();
+            let coordinator = app_handle.state::<Arc<quit_guard::QuitCoordinator>>().inner().clone();
+            thread::spawn(move || {
+                execute_quit_exit_plan(
+                    app, coordinator, QuitFlowOrigin::TauriExit,
+                    quit_guard::quit_exit_plan(quit_guard::QuitAnswerAction::Quit, cfg!(not(unix))),
+                )
+            });
         }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "quit_app" => {
             app_handle.exit(0);
