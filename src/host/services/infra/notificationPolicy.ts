@@ -54,10 +54,10 @@ function stripMarkdownForBanner(text: string): string {
     .replace(/\*\*|`/g, '');
 }
 
-export function sanitizeNotificationText(value: unknown, maxLength = 240): string {
+export function sanitizeNotificationText(value: unknown, maxLength = 240, options: { omitIds?: boolean } = {}): string {
   const language = readUiLanguage();
   // Resolve internal names before Markdown can remove double underscores from tool ids.
-  const plain = stripMarkdownForBanner(humanizeInternalText(String(value ?? ''), language).text);
+  const plain = stripMarkdownForBanner(humanizeInternalText(String(value ?? ''), language, options).text);
   const full = scrubUserFacingText(plain, {
     surface: 'desktop_notification',
     maxLength: Math.max(maxLength * 4, 1000),

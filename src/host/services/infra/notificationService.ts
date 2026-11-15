@@ -208,7 +208,7 @@ class NotificationService implements Disposable {
   private record(notification: Omit<RecordedNotification, 'createdAt' | 'delivery'>): RecordedNotification {
     const entry: RecordedNotification = {
       ...notification,
-      title: sanitizeNotificationText(notification.title, 120),
+      title: sanitizeNotificationText(notification.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(notification.body, 320),
       createdAt: Date.now(),
       delivery: this.isDryRun() ? 'dry_run' : 'sent',
@@ -318,7 +318,7 @@ class NotificationService implements Disposable {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
       ...payload,
-      title: sanitizeNotificationText(payload.title, 120),
+      title: sanitizeNotificationText(payload.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(payload.body, 320),
     });
   }
@@ -556,7 +556,7 @@ class NotificationService implements Disposable {
       intent: 'task_complete',
       type: 'task_complete',
       sessionId: data.sessionId,
-      title: sanitizeNotificationText(data.title, 120),
+      title: sanitizeNotificationText(data.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(body, 320),
       delivery: {},
     });
