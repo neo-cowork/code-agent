@@ -5,18 +5,39 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
+import type { DurableResumeState } from '@shared/contract/session';
+import { useEnvParkedCardOpen, useEnvTargetLabel } from '../../../hooks/useEnvParkedTarget';
+import { selectComposerStatusBarActive, useComposerNoticeStore } from '../../../stores/composerNoticeStore';
 
-/** 投影可能滞后于运行态：本轮已在跑时，「继续」必须让位给「停止」。 */
-function shouldShowDurableContinue(
-  resume: { mode: string; canContinue: boolean } | undefined,
-  turnActive: boolean,
-): boolean {
+type ParkedResume = { mode: string; canContinue: boolean; interruptCause?: string; quotaWait?: unknown };
+
+/** 停靠待「继续」：投影可能滞后于运行态，本轮已在跑时一律让位给「停止」。 */
+export function isParkedForUser(resume: ParkedResume | undefined, turnActive: boolean): boolean {
   return resume?.mode === 'continue' && resume.canContinue && !turnActive;
 }
 
-/** quota_wait 停靠也投影成 continue；它有自己的 QuotaWaitNotice，不再叠「任务已停止」行。 */
-export function shouldShowParkedNotice(showContinue: boolean, resume: { quotaWait?: unknown } | undefined): boolean {
-  return showContinue && !resume?.quotaWait;
+/** 环境授权停车会在授权后自动续做，手动「继续」只会误导（N-FIX-STEP-HEADER-AND-STOPPED-ROW-REPEAT ⑤）。 */
+function shouldShowDurableContinue(resume: ParkedResume | undefined, turnActive: boolean): boolean {
+  return isParkedForUser(resume, turnActive) && resume?.interruptCause !== 'env_blocked';
+}
+
+/**
+ * 停靠原因行：只说原因，不带按钮（操作入口只在输入框里）。quota_wait 有自己的 QuotaWaitNotice；
+ * 输入框上方已有录制条/循环条等状态条时让位，不叠成多行（操作入口仍在输入框里）。
+ */
+export function shouldShowParkedNotice(
+  resume: ParkedResume | undefined,
+  turnActive: boolean,
+  composerStatusBarActive = false,
+): boolean {
+  return isParkedForUser(resume, turnActive) && !resume?.quotaWait && !composerStatusBarActive;
+}
+
+/** 停住行让位：输入框上方已有录制条/循环条，或这一轮还挂着没收起的授权卡（卡已把话说全）。 */
+export function useParkedNoticeYields(resume: Pick<DurableResumeState, 'interruptCause' | 'runId'> | undefined): boolean {
+  const statusBarActive = useComposerNoticeStore(selectComposerStatusBarActive);
+  const envCardOpen = useEnvParkedCardOpen(resume);
+  return statusBarActive || envCardOpen;
 }
 
 /** The durable resume notice is the single recovery action for these modes. */
@@ -35,7 +56,7 @@ export function suppressLegacyInterruptionDecision<T>(
  * 且运行中以 taskStore 为准，续跑期间主按钮必须是「停止」。
  */
 export function useDurableContinueVisible(
-  resume: { mode: string; canContinue: boolean } | undefined,
+  resume: ParkedResume | undefined,
   turnActive: boolean,
 ): boolean {
   const hasResume = Boolean(resume);
@@ -87,30 +108,31 @@ export function useGuardedDurableContinue(
   };
 }
 
-export const DurableResumeNotice: React.FC<{ text: string; actions?: React.ReactNode }> = ({ text, actions }) => (
+export const DurableResumeNotice: React.FC<{ text: string }> = ({ text }) => (
   <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 px-4 text-xs text-zinc-400" data-testid="durable-resume-notice">
     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" aria-hidden="true" />
     <span>{text}</span>
-    {actions}
   </div>
 );
 
-/** 用户主动停止（user_stop）的停靠行：一句灰字说明为什么没有回答，其余原因沿用通用停靠行。 */
-const DurableStoppedNotice: React.FC<{ actions?: React.ReactNode }> = ({ actions }) => {
+type EnvBlock = NonNullable<DurableResumeState['envBlocked']>;
+
+/** 停住的任务输入框上方那一句原因：谁/为什么停；环境授权停车说在等什么。 */
+export const DurableParkedNotice: React.FC<{ interruptCause?: string; envBlocked?: EnvBlock }> = ({ interruptCause, envBlocked }) => {
   const { t } = useI18n();
+  const target = useEnvTargetLabel(envBlocked);
+  const s = t.durableStopped;
+  const text = interruptCause === 'env_blocked'
+    ? s.envWaiting.replace('{target}', target ?? s.envTargetFallback)
+    : interruptCause === 'user_stop' ? s.userStop
+      : interruptCause === 'budget_exhausted' ? s.budgetExhausted
+        : interruptCause === 'guard_halt' ? s.guardHalt
+          : s.otherStop;
   return (
     <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 px-4 text-xs text-zinc-400" data-testid="durable-stopped-notice">
-      <span>{t.durableStopped.userStop}</span>
-      {actions}
+      <span className="min-w-0 truncate" title={text}>{text}</span>
     </div>
   );
-};
-
-export const DurableParkedNotice: React.FC<{ interruptCause?: string; actions?: React.ReactNode }> = ({ interruptCause, actions }) => {
-  const { t } = useI18n();
-  return interruptCause === 'user_stop'
-    ? <DurableStoppedNotice actions={actions} />
-    : <DurableResumeNotice text={t.chat.durableStoppedNotice} actions={actions} />;
 };
 
 /**

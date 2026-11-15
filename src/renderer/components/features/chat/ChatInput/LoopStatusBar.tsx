@@ -8,6 +8,7 @@ import { RefreshCw, Square } from 'lucide-react';
 import { RENDERER_POLLING } from '@shared/constants';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useRegisterComposerSlotOccupant } from '../../../../stores/composerNoticeStore';
 
 interface LoopStatusBarProps {
   sessionId: string | null;
@@ -33,6 +34,8 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
     const timer = setInterval(() => void refresh(sessionId), interval);
     return () => clearInterval(timer);
   }, [sessionId, refresh, hasRunningLoop]);
+  // 自闸占用者自报活跃态：停住任务的原因行据此让位，不与本条叠成多行。
+  useRegisterComposerSlotOccupant('loop-status', Boolean(sessionId) && hasRunningLoop);
 
   if (!sessionId) return null;
   const running = Object.values(loops).filter(

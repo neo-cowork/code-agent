@@ -9,6 +9,7 @@ import { MEETING_SESSION_LIMITS, RENDERER_POLLING } from '@shared/constants';
 import { useMeetingSessionStore } from '../../../../stores/meetingSessionStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useRegisterComposerSlotOccupant } from '../../../../stores/composerNoticeStore';
 
 const MIN = 60_000;
 
@@ -45,6 +46,11 @@ export const MeetingBar: React.FC = () => {
     return () => clearInterval(tick);
   }, [active]);
 
+  const ended = status?.lastEnded;
+  const endedVisible = Boolean(ended && ended.id !== dismissedEndedId && ended.endReason);
+  // 自闸占用者自报活跃态：停住任务的原因行据此让位，不与录制条叠成多行。
+  useRegisterComposerSlotOccupant('meeting-status', Boolean(error) || active || endedVisible);
+
   if (error) {
     return (
       <div className="px-3 pb-2">
@@ -74,9 +80,9 @@ export const MeetingBar: React.FC = () => {
   }
 
   if (!current) {
-    const ended = status?.lastEnded;
     // 手动结束也提示：散会后从这里进会议页看纪要（N-MEETING-PAGE）
-    if (!ended || ended.id === dismissedEndedId || !ended.endReason) return null;
+    // endedVisible 已含这两项判断，这里重复写只为让 TS 收窄 ended / endReason 的类型
+    if (!ended || !endedVisible || !ended.endReason) return null;
     const msg = text.ended[ended.endReason]
       .replace('{minutes}', String(MEETING_SESSION_LIMITS.SILENCE_END_MS / MIN))
       .replace('{hours}', String(MEETING_SESSION_LIMITS.MAX_DURATION_MS / (60 * MIN)));
