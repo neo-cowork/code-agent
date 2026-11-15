@@ -294,8 +294,9 @@ describe('N-FIX-CRON-EDITOR-USD-CAP-NO-FLATFEE-NOTE 编辑器高级选项的包�
 
   it('webhook 任务：编辑器里显示包月提示（基本设置与高级选项）', () => {
     setModel('xiaomi', FLAT_FEE_MODEL, 'zh');
+    // 落库态 scheduleType 只有 'event'（webhook 分型由 buildDraftFromJob 按 schedule.source 推导）。
     render(<CronJobEditor isOpen job={makeJob({
-      scheduleType: 'event-webhook',
+      scheduleType: 'event',
       schedule: { type: 'event', source: 'webhook', eventName: 'message' },
       action: { type: 'agent', agentType: 'default', prompt: '处理新消息' },
       maxRunBudget: 1,
