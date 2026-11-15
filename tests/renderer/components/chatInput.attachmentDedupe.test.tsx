@@ -77,6 +77,7 @@ function useComposerActionsHarness() {
     processFile,
     inputAreaRef: { current: null },
     setIsUploading: vi.fn(),
+    attachmentCount: attachments.length,
     setAttachments,
     setValue: vi.fn(),
     setVoiceInputContext: vi.fn(),
