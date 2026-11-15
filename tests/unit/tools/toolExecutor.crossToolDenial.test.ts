@@ -126,7 +126,7 @@ describe('cross-tool / analysis-failed goal denial at the ToolExecutor ask bound
   }
   const options = { sessionId: 'goal-session', sourceMessageId: 'user-1' };
   const rows = () => db.prepare('SELECT reason, wait_ms FROM permission_decisions ORDER BY id').all() as Array<{ reason: string; wait_ms: number | null }>;
-  const stickyLogs = () => warn.mock.calls.filter(([name]) => String(name).startsWith('user-denied-goal-sticky'));
+  const stickyLogs = () => warn.mock.calls.filter(([name]: unknown[]) => String(name).startsWith('user-denied-goal-sticky'));
   let warn: ReturnType<typeof vi.spyOn>;
   let outside: string;
   beforeEach(() => {

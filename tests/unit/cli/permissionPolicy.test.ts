@@ -133,7 +133,7 @@ describe('CLI 交互通道的同条消息拒绝 sticky（跨工具）', () => {
       expect(refused).toMatchObject({ approved: false, denialSource: 'goal-sticky-host' });
       expect(provider).not.toHaveBeenCalled();
       await expect(handler(makeRequest({ ...scope, details: { command: 'pwd' } }))).resolves.toEqual({ approved: true });
-      await expect(handler(makeRequest({ ...scope, sourceMessageId: 'm2', details: { command: 'echo plan > ~/Downloads/plan.md' } })))
+      await expect(handler(makeRequest({ ...{ ...scope, sourceMessageId: 'm2' }, details: { command: 'echo plan > ~/Downloads/plan.md' } })))
         .resolves.toEqual({ approved: true });
       expect(provider).toHaveBeenCalledTimes(2);
     } finally {
