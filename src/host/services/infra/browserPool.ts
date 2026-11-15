@@ -90,6 +90,11 @@ export class BrowserPool {
     entry.kept = kept;
   }
 
+  isServiceAlive(key: string): boolean {
+    const entry = this.entries.get(key);
+    return Boolean(entry?.service.isProcessAlive());
+  }
+
   async releaseAgent(agentId: string): Promise<void> {
     if (!agentId || agentId === DEFAULT_AGENT_KEY) return;
     const entry = this.entries.get(agentId);

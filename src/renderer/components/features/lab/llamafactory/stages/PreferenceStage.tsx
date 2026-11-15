@@ -32,26 +32,9 @@ function buildPreferenceMethods(t: Translations) {
   ];
 }
 
-// 偏好数据示例
-// ponytail: prompt/chosen/rejected 是 DPO 偏好训练数据本身（一对 chosen/rejected 回答），
-// 翻译会改变正在演示的训练数据语义，故不进 i18n。
-const preferenceExample = {
-  prompt: '请给我推荐一部电影',
-  chosen: '我推荐《肖申克的救赎》！这是一部关于希望和自由的经典电影，讲述了银行家安迪在监狱中的故事。影片节奏紧凑，结局令人感动，非常值得一看。',
-  rejected: '电影很多，你自己去网上搜吧。',
-};
-
-// SFT vs SFT+DPO 对比
-// ponytail: prompt/sftOnly/sftPlusDpo 是模拟的模型输入输出内容（同上原因不迁移）；
-// diff 是解释给用户看的对比说明，属 UI 文案，走 i18n（见组件内 buildComparisonExamples）。
-const comparisonExampleData = {
-  prompt: '如何看待加班文化？',
-  sftOnly: '加班文化是指员工在正常工作时间之外继续工作的现象。它在很多公司中存在，有时是因为工作量大，有时是因为公司文化。加班有利有弊，可以提高产出但也会影响健康。',
-  sftPlusDpo: '这是个值得深思的问题。首先我理解你可能正在经历加班困扰。\n\n从不同角度来看：\n1. 偶尔的项目冲刺可以理解\n2. 常态化加班往往意味着管理问题\n3. 身心健康应该是底线\n\n建议与上级坦诚沟通工作量，设定合理边界。你怎么看？',
-};
-
 function buildComparisonExamples(t: Translations) {
-  return [{ ...comparisonExampleData, diff: t.labLlamafactory.preference.comparisonDiff }];
+  const p = t.labLlamafactory.preference;
+  return [{ ...p.comparisonExample, diff: p.comparisonDiff }];
 }
 
 export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, onBack }) => {
@@ -99,7 +82,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           {/* Prompt */}
           <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-badge-info/20">
             <div className="text-xs text-badge-info mb-1">{p.userQuestionLabel}</div>
-            <p className="text-sm text-zinc-200">{preferenceExample.prompt}</p>
+            <p className="text-sm text-zinc-200">{p.chosenRejectedExample.prompt}</p>
           </div>
 
           {/* Choices */}
@@ -119,7 +102,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 <span className="text-lg">A</span>
                 {userChoice === 'chosen' && <ThumbsUp className="w-4 h-4 text-badge-success" />}
               </div>
-              <p className="text-sm text-zinc-400">{preferenceExample.chosen}</p>
+              <p className="text-sm text-zinc-400">{p.chosenRejectedExample.chosen}</p>
             </button>
 
             {/* Rejected */}
@@ -137,7 +120,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 <span className="text-lg">B</span>
                 {userChoice === 'rejected' && <ThumbsDown className="w-4 h-4 text-badge-danger" />}
               </div>
-              <p className="text-sm text-zinc-400">{preferenceExample.rejected}</p>
+              <p className="text-sm text-zinc-400">{p.chosenRejectedExample.rejected}</p>
             </button>
           </div>
 
@@ -348,8 +331,12 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                {term.zh && term.zh !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.zh}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>

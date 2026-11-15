@@ -44,11 +44,8 @@ function buildMethodComparison(t: Translations) {
   ];
 }
 
-// RFT 示例
-// ponytail: question/solution 是 RFT 演示中"模型生成的解法/推理轨迹"本身，
-// 属于喂给 Grader 验证的输入数据，翻译会改变演示内容，故不进 i18n。
+// RFT 示例（题目文案走词条 rftQuestion；算式解法为数字，与语言无关）
 const rftExample = {
-  question: '计算 23 × 17 = ?',
   attempts: [
     { solution: '23 × 17 = 23 × 10 + 23 × 7 = 230 + 161 = 391', correct: true, reward: 1 },
     { solution: '23 × 17 = 20 × 17 + 3 × 17 = 340 + 41 = 381', correct: false, reward: -1 },
@@ -325,7 +322,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-lg bg-zinc-800 border border-zinc-800">
             <div className="mb-3">
               <span className="text-xs text-zinc-500">{r.rftQuestionLabel}</span>
-              <span className="text-sm text-zinc-200 ml-2">{rftExample.question}</span>
+              <span className="text-sm text-zinc-200 ml-2">{r.rftQuestion}</span>
             </div>
 
             <div className="space-y-2">
@@ -428,8 +425,12 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                {term.zh && term.zh !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.zh}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
