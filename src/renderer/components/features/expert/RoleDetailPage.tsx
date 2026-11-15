@@ -30,6 +30,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
+import { translateCatalogText } from '../../../utils/catalogText';
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
@@ -834,7 +835,7 @@ function initialRoleDetailTab(): RoleDetailTab {
 }
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const roleText = t.settings.roles;
   const expertText = t.expert;
   const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
@@ -874,10 +875,10 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
         icon={detailAvatar
-          ? <img src={detailAvatar} alt={detail?.visual.displayName || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          ? <img src={detailAvatar} alt={translateCatalogText(detail?.visual.displayName, language) || roleId} className="h-7 w-7 rounded-lg object-cover" />
           : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
-        title={detail?.visual.displayName || roleId}
-        description={detail?.visual.profession || roleText.detail.subtitle}
+        title={translateCatalogText(detail?.visual.displayName, language) || roleId}
+        description={translateCatalogText(detail?.visual.profession, language) || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.capabilityHub.title}
         actions={<div className="flex items-center gap-2">
