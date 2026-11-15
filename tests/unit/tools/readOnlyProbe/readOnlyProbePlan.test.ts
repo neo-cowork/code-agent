@@ -210,6 +210,14 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
       expect(permissionAsks).toHaveLength(1);
     });
 
+    for (const target of ['~', '~someone/private.txt']) {
+      it(`file-loop tilde expansion cannot masquerade as a granted local path: ${target}`, async () => {
+        await cronRun(`cd "${elsewhere}" && for f in ${target}; do cat "$f"; done`);
+        expect(permissionAsks).toHaveLength(1);
+        expect(probeRows()).toHaveLength(0);
+      });
+    }
+
     for (const target of ['outside', 'credential']) {
       it(`ls pipe head with ${target} path -> card`, async () => {
         const file = target === 'outside' ? fx : path.join(elsewhere, '.env');

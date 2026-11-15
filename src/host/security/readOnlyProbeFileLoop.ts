@@ -17,7 +17,12 @@ function literalWords(input: string, home: string): string[] | null {
     if (!match) return null;
     const value = match[1] ?? match[2] ?? match[3];
     if (!value) return null;
-    words.push(match[3]?.startsWith('~/') ? path.join(home, value.slice(2)) : value);
+    const bare = match[3];
+    if (bare?.startsWith('~')) {
+      if (bare === '~') words.push(home);
+      else if (bare.startsWith('~/')) words.push(path.join(home, value.slice(2)));
+      else return null; // ~other-user needs shell account lookup; never treat it as a local literal.
+    } else words.push(value);
     rest = rest.slice(match[0].length).trim();
   }
   return words;
