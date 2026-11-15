@@ -67,6 +67,30 @@ impl Drop for TokenGuard {
     }
 }
 
+/// 进入放有 dist/web/webServer.cjs 桩的临时目录作 cwd，Drop 时还原 cwd 并删除目录。
+struct CwdGuard {
+    previous: PathBuf,
+    dir: PathBuf,
+}
+
+impl CwdGuard {
+    fn enter_with_server_stub() -> (Self, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("neo-quit-flow-cwd-{}", std::process::id()));
+        fs::create_dir_all(dir.join("dist/web")).expect("stub dir");
+        fs::write(dir.join("dist/web/webServer.cjs"), "").expect("stub script");
+        let previous = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&dir).expect("enter stub cwd");
+        (Self { previous, dir: dir.clone() }, dir)
+    }
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.previous);
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
 #[test]
 fn scheduled_only_tauri_exit_stays_resident_without_dialog() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -79,8 +103,11 @@ fn scheduled_only_tauri_exit_stays_resident_without_dialog() {
     let app = tauri::test::mock_app();
     let handle = app.handle().clone();
     // 与壳一样先解析 webServer 根目录，再读该根目录下的 .dev-token
+    // dist/web 是 gitignored 构建产物，CI 的 cargo test 不会有：在临时 cwd 里放一个桩，
+    // 让 candidate_roots 的 cwd 候选一定能解析（本机若已有真产物则取先到的候选）。
+    let (_cwd_guard, _script_dir) = CwdGuard::enter_with_server_stub();
     let (_script, root) = crate::resolve_server_script(&handle)
-        .expect("server root resolves (dist/web/webServer.cjs must exist for the tauri build)");
+        .expect("server root resolves via the stub in the temp cwd");
     let (_token_guard, token) = TokenGuard::ensure(root);
 
     let coordinator = Arc::new(QuitCoordinator::new());
