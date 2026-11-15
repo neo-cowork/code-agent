@@ -220,14 +220,15 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
     const persisted = JSON.parse(readFileSync(persistedConfigPath, 'utf-8')) as AppSettings;
     expect(persisted.models?.providers?.deepseek?.enabled).toBe(true);
     expect(persisted.models?.providers?.deepseek?.apiKeyConfigured).toBe(true);
-    expect((persisted.models?.providers?.deepseek as Record<string, unknown> | undefined)?.apiKey).toBeUndefined();
+    // ModelProviderSettings 自带 apiKey?: string 声明（src/shared/contract/settings.ts），直接断言 config.json 无明文 key
+    expect(persisted.models?.providers?.deepseek?.apiKey).toBeUndefined();
     expect(configService.getSettings().models.providers.deepseek.apiKeyConfigured).toBe(true);
 
     // (c) 组件不动：下一次 send 前的真实 get（脱敏结果）让 hasConfiguredDefaultRuntimeModel 为 true
     const nextSendSettings = await freshSettingsGet();
     expect(hasConfiguredDefaultRuntimeModel(nextSendSettings)).toBe(true);
     // 没有重载 / 重挂载：同一 input DOM 节点还在原位且保留表单值
-    const inputAfterSave = view.container.querySelector('input[data-model-api-key]');
+    const inputAfterSave = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
     expect(inputAfterSave).toBe(inputBeforeSave);
     expect(inputAfterSave?.value).toBe(DEEPSEEK_KEY);
   });
