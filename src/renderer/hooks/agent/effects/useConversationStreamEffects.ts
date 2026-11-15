@@ -614,6 +614,9 @@ export function applyConversationStreamEvent(
             // commit 落到 recovery 回填消息上 = 这一轮在宿主侧真实跑完了，重启中断
             // 标记必须随 commit 撤掉（快照重灌留下的标记会让成功工具步报「应用重启时中断」）。
             ...stripStreamRecoveryMarker(targetMessage),
+            // turn_start 建草稿时打的是开轮时间；不随 commit 推进，整轮（含工具）
+            // 都落在同一条草稿上时轮次用时恒为 0s（N-FIX-TURN-DURATION-ZERO-AND-SENDING-OVERLAP）。
+            timestamp: Math.max(targetMessage.timestamp, now()),
             content: mergeCommittedAssistantContent(existingContent, newContent),
             toolCalls: mergedToolCalls,
             ...(messageData.reasoning !== undefined ? { reasoning: messageData.reasoning } : {}),
