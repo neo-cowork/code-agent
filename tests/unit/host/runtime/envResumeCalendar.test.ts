@@ -63,6 +63,16 @@ afterEach(() => {
   if (workspace) rmSync(workspace, { recursive: true, force: true });
 });
 
+/**
+ * Wait for the continuation to either reach the live loop or stop. Only the waiter's own stop counts:
+ * other warns (e.g. the connector reconnect warn on not_authorized, #3342) fire at park time and would end the wait early.
+ */
+async function settled(f: NonNullable<typeof fixture>) {
+  const stopped = () => warn.mock.calls.some(([message, data]) => message === 'Environment auto-continue stopped'
+    && (data as { reason?: string } | undefined)?.reason !== 'timeout');
+  await vi.waitFor(() => expect(f.counts().resumes > 0 || stopped()).toBe(true), { timeout: 5000 });
+}
+
 async function parkedCalendar(plannedFolder?: string) {
   vi.useFakeTimers();
   workspace = plannedFolder ?? realpathSync(mkdtempSync(path.join(tmpdir(), 'env-resume-cal-')));
@@ -96,7 +106,7 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     f.green(); granted = true;
     await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
     // mkdir/realpath are real filesystem I/O: let the event loop run instead of only fake-timer ticks.
-    await vi.waitFor(() => expect(f.counts().resumes + warn.mock.calls.length).toBeGreaterThan(0), { timeout: 5000 });
+    await settled(f);
     expect(warn).not.toHaveBeenCalledWith('Environment auto-continue stopped', expect.anything());
     expect(existsSync(planned)).toBe(true);
     expect(f.counts()).toMatchObject({ executions: 2, resumes: 1, seenCalls: ['env-call', 'env-call'] });
@@ -122,7 +132,7 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     f.green(); granted = true;
     await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
     await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
-    await vi.waitFor(() => expect(f.counts().resumes + warn.mock.calls.length).toBeGreaterThan(1), { timeout: 5000 });
+    await settled(f);
     expect(f.counts()).toEqual({ executions: 2, resumes: 1, seenCalls: ['env-call', 'env-call'], seenRuns: ['env-run', 'env-run'] });
     expect(f.messages().filter((m) => m.role === 'user')).toHaveLength(1);
     expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist).toMatchObject({ phase: 'resolved' });
