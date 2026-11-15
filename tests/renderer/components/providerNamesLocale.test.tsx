@@ -52,7 +52,7 @@ describe.each(['en', 'zh'] as const)('provider display names (%s)', (language: L
     const providerTexts = TABLES[language].settings.model.providers as Record<string, { name?: string; description?: string }>;
     for (const p of PROVIDER_MODELS) {
       const text = resolveProviderText(p.id, providerTexts[p.id === 'claude' ? 'anthropic' : p.id], language, p);
-      const picker = localizeCatalogProviderName(p.id, p.name, language);
+      const picker = localizeCatalogProviderName(p, language);
       const group = resolveProviderLabel(p.id, undefined, language);
       if (language === 'en') {
         for (const value of [text.name, text.description, picker, group]) expect(value, p.id).not.toMatch(CJK);

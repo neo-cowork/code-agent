@@ -443,7 +443,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           >
             <option value="">{text.executionModelFollowSession}</option>
             {PROVIDER_MODELS.map((provider) => (
-              <option key={provider.id} value={provider.id}>{localizeCatalogProviderName(provider.id, provider.name, uiLanguage)}</option>
+              <option key={provider.id} value={provider.id}>{localizeCatalogProviderName(provider, uiLanguage)}</option>
             ))}
           </select>
           <select

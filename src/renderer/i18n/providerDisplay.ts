@@ -35,8 +35,8 @@ export function getLocalizedProviderDisplayName(provider: string, language: Lang
 }
 
 /** 模型目录来源的名称（语音等选择器）：中文界面保留原中文名。 */
-export function localizeCatalogProviderName(provider: string, name: string, language: Language): string {
-  return (language === 'zh' && ZH_PROVIDER_TEXT[provider]?.name) || name;
+export function localizeCatalogProviderName(provider: { id: string; name: string }, language: Language): string {
+  return (language === 'zh' && ZH_PROVIDER_TEXT[provider.id]?.name) || provider.name;
 }
 
 /** 设置页 provider 列表的名称与描述：i18n 词条优先，中文界面再补原中文，最后回落目录（英文）。 */
