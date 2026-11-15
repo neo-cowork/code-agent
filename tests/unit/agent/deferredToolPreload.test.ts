@@ -303,6 +303,23 @@ describe('deferred tool preload', () => {
     }))).not.toContain('spawn_agent');
   });
 
+  it('问过去的会 / 会议页「交给 Neo」首句：预载 meeting_records（否则模型拿会议名去 Grep 文件）', () => {
+    for (const content of [
+      '10 月 30 号礼品中心那场会，最后定了哪些事？',
+      '会议「转写_林晨的快速会议」（10月30日 15:06）上的一条行动项，请帮我推进：修改原型\n可用 meeting_records 查这场会（meeting_id: meeting-tmeet-2116064201123786753）。',
+    ]) {
+      expect(getDeferredToolsToPreloadForTurn(runtime({
+        messages: [{ id: 'm1', role: 'user', content, timestamp: 1 }],
+      }))).toContain('meeting_records');
+    }
+  });
+
+  it('和会议无关的请求不预载 meeting_records', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: '帮我改下这个函数', timestamp: 1 }],
+    }))).not.toContain('meeting_records');
+  });
+
   it('普通请求不预载 spawn_agent', () => {
     expect(getDeferredToolsToPreloadForTurn(runtime({
       messages: [{ id: 'm1', role: 'user', content: '帮我改下这个函数', timestamp: 1 }],

@@ -192,3 +192,24 @@ describe('DecisionSlot persisted decisions after restart', () => {
     await waitFor(() => expect(screen.queryByTestId('parked-approval-card')).toBeNull());
   });
 });
+
+describe('ParkedApprovalCards origin line (N-APPROVAL-CARD-USER-QUOTE-FU1-FIX ③④)', () => {
+  it.each([
+    ['zh', '由定时任务「每日飞书日历周会」启动', '由定时任务启动'],
+    ['en', 'Started by scheduled task “每日飞书日历周会”', 'Started by a scheduled task'],
+  ] as const)('%s: cron-origin card names the task, has no user quote; blank name falls back to generic', async (language, named, generic) => {
+    useAppStore.setState({ language });
+    await open([row({ startedByAutomation: true, scheduledTaskName: '每日飞书日历周会' })]);
+    expect(within(screen.getByTestId('parked-approval-card')).getByTestId('scheduled-task-origin').textContent).toBe(named);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    cleanup();
+    await open([row({ startedByAutomation: true })]);
+    expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
+  });
+
+  it('manual turn card shows the user quote and no scheduled-task line', async () => {
+    await open([row({ userRequest: { text: '整理笔记', truncated: false } })]);
+    expect(screen.getByTestId('user-request-quote').textContent).toBe('你让我做的：「整理笔记」');
+    expect(screen.queryByTestId('scheduled-task-origin')).toBeNull();
+  });
+});

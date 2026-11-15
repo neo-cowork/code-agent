@@ -170,7 +170,7 @@ export async function runFeishuMinutesRead(exec: LarkExec, args: Record<string, 
 }
 
 let driver: ReturnType<typeof createLarkCliDriver> | null = null;
-const larkExec: LarkExec = async (args, label, cwd) => {
+export const larkExec: LarkExec = async (args, label, cwd) => {
   driver ??= createLarkCliDriver();
   const result = await driver.execute([...args, ...(feishuCliDescriptor.profileArguments ?? [])], label, { cwd });
   return result.stdout;

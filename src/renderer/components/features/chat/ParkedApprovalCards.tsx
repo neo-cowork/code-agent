@@ -10,6 +10,7 @@ import { refreshParkedApprovals, useParkedApprovals } from '../../../stores/park
 import { claimApprovalResponse, releaseApprovalResponse } from '../../../utils/approvalResponseGuard';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
+import { UserRequestQuote } from '../../PermissionDialog/UserRequestQuote';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { Button } from '../../primitives';
 
@@ -57,6 +58,7 @@ function ParkedApprovalCard({ item }: { item: ParkedApprovalInboxItem }) {
       <div className="mb-2 font-medium text-zinc-200">
         {humanizeToolStep(item.tool, undefined, t, undefined, 'pending-approval')}
       </div>
+      <div className="mb-2 empty:hidden"><UserRequestQuote details={item} labels={t.decisionCard.permission} /></div>
       {item.argsPreview && (
         <p className="mb-2 whitespace-pre-wrap break-words text-xs text-zinc-400">{item.argsPreview}</p>
       )}

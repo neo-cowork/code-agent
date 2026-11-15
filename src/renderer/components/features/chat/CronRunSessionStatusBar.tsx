@@ -27,6 +27,7 @@ import type { Translations } from '../../../i18n';
 import { classifyToolName, humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { toast } from '../../../hooks/useToast';
 import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
+import { UserRequestQuote } from '../../PermissionDialog/UserRequestQuote';
 import {
   clearObservedCronRunStatusForSession,
   composeElapsed,
@@ -60,6 +61,7 @@ function findParkedApprovalForSession(
     requestedAt: pending.requestedAt,
     label: category === 'bash' ? t.automationPresentation.runCommand : humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval'),
     command: category === 'bash' ? pending.commandPreview ?? pending.argsPreview : undefined,
+    origin: pending,
   };
 }
 
@@ -230,6 +232,9 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
             {copy.reject}
           </button>
         </span>
+        {status.approval.origin && (
+          <div className="basis-full empty:hidden"><UserRequestQuote details={status.approval.origin} labels={t.decisionCard.permission} /></div>
+        )}
         {status.approval.command !== undefined && expandedApprovalId === status.approval.id && (
           <pre
             id={`cron-command-${status.approval.id}`}
