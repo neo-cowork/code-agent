@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives';
+import { useSurfaceExecutionStore } from '../../stores/surfaceExecutionStore';
+import { browserStageOverlayMarker } from '../../utils/browserStageInteractionGate';
 import {
   adoptKeptResultPage,
   getKeptResultPage,
   type KeptResultPage,
-} from '../../services/userBrowserLink';
+} from '../../services/keptResultPage';
 import { openHttpLinkInRailAsync } from '../../services/userBrowserLink';
 
 // N-BROWSER-KEEP-RESULT-PAGE：agent run 终态时叠加在留影/摘要卡底部的结果页条。
@@ -27,18 +29,28 @@ function formatTemplate(template: string, vars: Record<string, string>): string 
 export interface BrowserKeptResultBarProps {
   conversationId: string | null | undefined;
   workspace: string | null | undefined;
+  turnActive?: boolean;
+  pageRunning?: boolean;
 }
 
 export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   conversationId,
   workspace,
+  turnActive = false,
+  pageRunning = false,
 }) => {
   const { t } = useI18n();
+  const openedState = useSurfaceExecutionStore((state) => (
+    conversationId ? state.openedKeptResultsByConversation[conversationId]?.state : undefined
+  ));
   const copy: KeptCopy = t.workbenchTabs.agentWindow.keptResult;
   const [kept, setKept] = useState<KeptResultPage>({ state: 'none', url: null, title: null, reason: null });
   const [busy, setBusy] = useState<'adopt' | 'reopen' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const turnActiveRef = useRef(turnActive);
+  turnActiveRef.current = turnActive;
+  const wasTurnActiveRef = useRef(turnActive);
 
   const refresh = useCallback(async () => {
     const next = await getKeptResultPage(conversationId);
@@ -47,6 +59,7 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   useEffect(() => {
     mountedRef.current = true;
+    wasTurnActiveRef.current = turnActiveRef.current;
     void refresh();
     const timer = setInterval(() => void refresh(), KEPT_STATE_POLL_MS);
     return () => {
@@ -55,13 +68,23 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
     };
   }, [refresh]);
 
+  useEffect(() => {
+    const wasActive = wasTurnActiveRef.current;
+    wasTurnActiveRef.current = turnActive;
+    if (wasActive && !turnActive) {
+      void refresh();
+    }
+  }, [turnActive, refresh]);
+
   const onAdopt = useCallback(async () => {
-    if (!conversationId) return;
+    if (!conversationId || turnActiveRef.current) return;
     setBusy('adopt');
     setError(null);
     try {
-      await adoptKeptResultPage({ conversationId, workspace });
-      // 认领成功后活跃 browser surface 会话接管画面，本条随终态消失。
+      const opened = await adoptKeptResultPage({ conversationId, workspace });
+      useSurfaceExecutionStore.getState().noteKeptResultOpened(conversationId, {
+        surfaceSessionId: opened.surfaceSessionId, state: 'kept',
+      });
     } catch (caught) {
       setError(formatTemplate(copy.adoptFailed, {
         error: caught instanceof Error ? caught.message : String(caught),
@@ -73,11 +96,14 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
   }, [conversationId, workspace, copy.adoptFailed, refresh]);
 
   const onReopen = useCallback(async () => {
-    if (!kept.url || !conversationId) return;
+    if (!kept.url || !conversationId || turnActiveRef.current) return;
     setBusy('reopen');
     setError(null);
     try {
-      await openHttpLinkInRailAsync({ href: kept.url, conversationId, workspace });
+      const opened = await openHttpLinkInRailAsync({ href: kept.url, conversationId, workspace });
+      useSurfaceExecutionStore.getState().noteKeptResultOpened(conversationId, {
+        surfaceSessionId: opened.surfaceSessionId, state: 'closed',
+      });
     } catch (caught) {
       setError(formatTemplate(copy.reopenFailed, {
         error: caught instanceof Error ? caught.message : String(caught),
@@ -89,10 +115,12 @@ export const BrowserKeptResultBar: React.FC<BrowserKeptResultBarProps> = ({
 
   // N-FIX-FIX-BROWSER-SECRETREF-HARDEN：takeover 停靠不经过本条（聊天里的「继续」卡
   // 负责），避免同一扇窗出现两个不同口径的入口。
-  if (kept.state === 'none' || kept.reason === 'takeover') return null;
+  const openedLivePage = kept.state === openedState && (kept.state === 'kept' || pageRunning);
+  if (turnActive || openedLivePage || kept.state === 'none' || kept.reason === 'takeover') return null;
 
   return (
     <div
+      {...browserStageOverlayMarker}
       data-testid={`browser-kept-result-bar-${kept.state}`}
       className="absolute bottom-3 left-1/2 z-10 flex w-[min(420px,calc(100%-24px))] -translate-x-1/2 flex-col items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-900/90 px-3 py-2.5 text-center shadow-lg"
     >

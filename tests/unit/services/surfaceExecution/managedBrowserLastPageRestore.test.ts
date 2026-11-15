@@ -72,6 +72,7 @@ function createFakeWindow(initialUrl = 'about:blank') {
       return {};
     }),
     isRunning: () => running,
+    isProcessAlive: () => running,
     getActiveTab: () => (running ? { ...tab } : null),
     listTabs: () => (running ? [{ ...tab }] : []),
     navigate,
