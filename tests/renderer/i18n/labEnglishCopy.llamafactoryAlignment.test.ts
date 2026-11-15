@@ -24,17 +24,19 @@ function strings(root: unknown, name: string): Array<[string, string]> {
 
 // LLaMA-Factory dataset-format JSON samples stay Chinese (they are data); each carries an English gloss in `exampleGloss`.
 const ALLOW: Record<string, string> = {
-  'labLlamafactoryEn.labLlamafactory.sft.dataFormats.alpaca.example': 'Alpaca JSON sample, glossed in exampleGloss',
-  'labLlamafactoryEn.labLlamafactory.sft.dataFormats.sharegpt.example': 'ShareGPT JSON sample, glossed in exampleGloss',
-  'labLlamafactoryEn.labLlamafactory.sft.dataFormats.openai.example': 'OpenAI-format JSON sample, glossed in exampleGloss',
+  'labLlamafactoryEn.labLlamafactory.sft.dataFormats.alpaca.exampleLines': 'Alpaca JSON sample, glossed in exampleGloss',
+  'labLlamafactoryEn.labLlamafactory.sft.dataFormats.sharegpt.exampleLines': 'ShareGPT JSON sample, glossed in exampleGloss',
+  'labLlamafactoryEn.labLlamafactory.sft.dataFormats.openai.exampleLines': 'OpenAI-format JSON sample, glossed in exampleGloss',
 };
 
 describe('English lab teaching copy (LLaMA-Factory / Alignment)', () => {
   const all = [...strings(labLlamafactoryEn, 'labLlamafactoryEn'), ...strings(labAlignmentEn, 'labAlignmentEn')];
-  const cjk = all.filter(([, v]) => CJK.test(v));
+  const cjk = all
+    .filter(([, v]) => CJK.test(v))
+    .map(([p, v]) => [p.replace(/\[\d+\]$/, ''), v] as [string, string]);
 
   it('every CJK string is allow-listed and keeps an English gloss', () => {
-    const paths = cjk.map(([p]) => p);
+    const paths = [...new Set(cjk.map(([p]) => p))];
     expect(paths.filter((p) => !(p in ALLOW))).toEqual([]);
     expect(Object.keys(ALLOW).filter((p) => !paths.includes(p))).toEqual([]);
     const f = labLlamafactoryEn.labLlamafactory.sft.dataFormats;
@@ -64,9 +66,9 @@ describe('Chinese UI unchanged: zh dictionary samples equal the old TSX literals
     expect(l.preference.chosenRejectedExample).toEqual(oldZh.preferenceExample);
     expect(l.preference.comparisonExample).toEqual(oldZh.comparisonExampleData);
     expect(l.rlhf.rftQuestion).toBe(oldZh.rftQuestion);
-    expect(l.sft.dataFormats.alpaca.example).toBe(oldZh.dataFormatExamples.alpaca);
-    expect(l.sft.dataFormats.sharegpt.example).toBe(oldZh.dataFormatExamples.sharegpt);
-    expect(l.sft.dataFormats.openai.example).toBe(oldZh.dataFormatExamples.openai);
+    expect(l.sft.dataFormats.alpaca.exampleLines.join('\n')).toBe(oldZh.dataFormatExamples.alpaca);
+    expect(l.sft.dataFormats.sharegpt.exampleLines.join('\n')).toBe(oldZh.dataFormatExamples.sharegpt);
+    expect(l.sft.dataFormats.openai.exampleLines.join('\n')).toBe(oldZh.dataFormatExamples.openai);
   });
 });
 

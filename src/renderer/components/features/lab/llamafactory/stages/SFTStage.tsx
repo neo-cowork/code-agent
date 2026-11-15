@@ -26,20 +26,11 @@ interface SFTStageProps {
 // 数据格式示例（example / exampleGloss 来自词条，英文界面下 JSON 样本保持中文并附英文释义）
 function buildDataFormats(t: Translations) {
   const d = t.labLlamafactory.sft.dataFormats;
-  return [
-    {
-      id: 'alpaca',
-      ...d.alpaca,
-    },
-    {
-      id: 'sharegpt',
-      ...d.sharegpt,
-    },
-    {
-      id: 'openai',
-      ...d.openai,
-    },
-  ];
+  return (['alpaca', 'sharegpt', 'openai'] as const).map((id) => ({
+    id,
+    ...d[id],
+    example: d[id].exampleLines.join('\n'),
+  }));
 }
 
 // 超参数配置

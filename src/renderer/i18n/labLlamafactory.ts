@@ -180,9 +180,9 @@ export const labLlamafactoryZh = {
       introDescEnd: '。',
       dataFormatSectionTitle: '数据格式',
       dataFormats: {
-        alpaca: { name: 'Alpaca', description: '最简单的格式，适合单轮对话', example: '{\n  "instruction": "翻译成英文",\n  "input": "你好，世界",\n  "output": "Hello, World"\n}', exampleGloss: '' },
-        sharegpt: { name: 'ShareGPT', description: '多轮对话格式', example: '{\n  "conversations": [\n    {"from": "human", "value": "什么是 AI?"},\n    {"from": "gpt", "value": "AI 是人工智能…"},\n    {"from": "human", "value": "有什么应用?"},\n    {"from": "gpt", "value": "广泛用于…"}\n  ]\n}', exampleGloss: '' },
-        openai: { name: 'OpenAI Chat', description: 'OpenAI 标准格式', example: '{\n  "messages": [\n    {"role": "system", "content": "你是助手"},\n    {"role": "user", "content": "你好"},\n    {"role": "assistant", "content": "你好！"}\n  ]\n}', exampleGloss: '' },
+        alpaca: { name: 'Alpaca', description: '最简单的格式，适合单轮对话', exampleLines: ['{', '  "instruction": "翻译成英文",', '  "input": "你好，世界",', '  "output": "Hello, World"', '}'], exampleGloss: '' },
+        sharegpt: { name: 'ShareGPT', description: '多轮对话格式', exampleLines: ['{', '  "conversations": [', '    {"from": "human", "value": "什么是 AI?"},', '    {"from": "gpt", "value": "AI 是人工智能…"},', '    {"from": "human", "value": "有什么应用?"},', '    {"from": "gpt", "value": "广泛用于…"}\n  ]', '}'], exampleGloss: '' },
+        openai: { name: 'OpenAI Chat', description: 'OpenAI 标准格式', exampleLines: ['{', '  "messages": [', '    {"role": "system", "content": "你是助手"},', '    {"role": "user", "content": "你好"},', '    {"role": "assistant", "content": "你好！"}\n  ]', '}'], exampleGloss: '' },
       },
       qualityCheckLabel: '数据质量检查',
       qualityChecks: [
@@ -626,9 +626,9 @@ export const labLlamafactoryEn = {
       introDescEnd: '.',
       dataFormatSectionTitle: 'Data format',
       dataFormats: {
-        alpaca: { name: 'Alpaca', description: 'The simplest format, good for single-turn conversations', example: '{\n  "instruction": "翻译成英文",\n  "input": "你好，世界",\n  "output": "Hello, World"\n}', exampleGloss: 'Value glosses (the sample values above are in Chinese): instruction = "Translate into English"; input = "Hello, world".' },
-        sharegpt: { name: 'ShareGPT', description: 'Multi-turn conversation format', example: '{\n  "conversations": [\n    {"from": "human", "value": "什么是 AI?"},\n    {"from": "gpt", "value": "AI 是人工智能…"},\n    {"from": "human", "value": "有什么应用?"},\n    {"from": "gpt", "value": "广泛用于…"}\n  ]\n}', exampleGloss: 'Value glosses, in order: "What is AI?" / "AI is artificial intelligence…" / "What are its uses?" / "Widely used in…".' },
-        openai: { name: 'OpenAI Chat', description: 'OpenAI\'s standard format', example: '{\n  "messages": [\n    {"role": "system", "content": "你是助手"},\n    {"role": "user", "content": "你好"},\n    {"role": "assistant", "content": "你好！"}\n  ]\n}', exampleGloss: 'Value glosses: system = "You are an assistant"; user = "Hello"; assistant = "Hello!".' },
+        alpaca: { name: 'Alpaca', description: 'The simplest format, good for single-turn conversations', exampleLines: ['{', '  "instruction": "翻译成英文",', '  "input": "你好，世界",', '  "output": "Hello, World"', '}'], exampleGloss: 'Value glosses (the sample values above are in Chinese): instruction = "Translate into English"; input = "Hello, world".' },
+        sharegpt: { name: 'ShareGPT', description: 'Multi-turn conversation format', exampleLines: ['{', '  "conversations": [', '    {"from": "human", "value": "什么是 AI?"},', '    {"from": "gpt", "value": "AI 是人工智能…"},', '    {"from": "human", "value": "有什么应用?"},', '    {"from": "gpt", "value": "广泛用于…"}\n  ]', '}'], exampleGloss: 'Value glosses, in order: "What is AI?" / "AI is artificial intelligence…" / "What are its uses?" / "Widely used in…".' },
+        openai: { name: 'OpenAI Chat', description: 'OpenAI\'s standard format', exampleLines: ['{', '  "messages": [', '    {"role": "system", "content": "你是助手"},', '    {"role": "user", "content": "你好"},', '    {"role": "assistant", "content": "你好！"}\n  ]', '}'], exampleGloss: 'Value glosses: system = "You are an assistant"; user = "Hello"; assistant = "Hello!".' },
       },
       qualityCheckLabel: 'Data quality checks',
       qualityChecks: [
