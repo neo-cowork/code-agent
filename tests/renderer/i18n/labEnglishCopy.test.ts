@@ -38,6 +38,7 @@ const ALLOW: Record<string, string> = {
   'labGpt1En.labGpt1.inferenceTest.howStep3': 'Chinese candidate character, glossed inline',
   'labGpt1En.labGpt1.inferenceTest.processYouSay': 'Chinese demo greeting, glossed inline',
   'labGpt1En.labGpt1.inferenceTest.processCandidates': 'Chinese candidate characters, glossed inline',
+  'labGpt1En.labGpt1.inferenceTest.chatSamplesNote': 'Chinese quick-reply samples, translated inline with reply gist',
   'labGpt1En.labGpt1.inferenceTest.processResult': 'Chinese demo reply, glossed inline',
   'labNanogptEn.labNanogpt.tokenizer.inputNote': 'Chinese sample sentence, translated inline',
 };
