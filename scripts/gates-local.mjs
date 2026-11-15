@@ -186,7 +186,7 @@ const gates = [
   {
     ci: 'swarm-ci / smoke / Host user-copy CJK ratchet',
     command: 'node',
-    args: ['scripts/host-user-copy-cjk-ratchet.mjs'],
+    args: ['scripts/ci/host-user-copy-cjk-ratchet.mjs'],
   },
   {
     ci: 'swarm-ci / smoke / Renderer CJK literal ratchet',

@@ -69,8 +69,8 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
-      - 'scripts/host-user-copy-cjk-ratchet.mjs'
-      - 'scripts/host-user-copy-cjk-baseline.json'
+      - 'scripts/ci/host-user-copy-cjk-ratchet.mjs'
+      - 'scripts/ci/host-user-copy-cjk-baseline.json'
       - 'scripts/renderer-cjk-literal-ratchet.mjs'
       - 'scripts/renderer-cjk-literal-baseline.json'
       - 'scripts/ci/internal-text-leak-gate.mjs'
@@ -294,7 +294,7 @@ jobs:
         # N-FIX-EN-HOST-ZH-COPY-SYSTEMIC：src/host（不含 prompts/）用户可见属性
         # （error/message/summary/title/label/body/reason/description/text/hint）与
         # throw new XxxError(...) 实参里的中文字面量按文件棘轮，只降不升。
-        run: node scripts/host-user-copy-cjk-ratchet.mjs
+        run: node scripts/ci/host-user-copy-cjk-ratchet.mjs
 
       - name: Renderer CJK literal ratchet
         # N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC：按文件棘轮拦截 renderer（JSX 文本 + JSX 属性字符串，

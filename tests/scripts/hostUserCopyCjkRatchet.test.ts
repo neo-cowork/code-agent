@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-const scriptPath = resolve('scripts/host-user-copy-cjk-ratchet.mjs');
+const scriptPath = resolve('scripts/ci/host-user-copy-cjk-ratchet.mjs');
 
 describe('host-user-copy-cjk-ratchet', () => {
   let repoRoot: string;
@@ -14,10 +14,10 @@ describe('host-user-copy-cjk-ratchet', () => {
   beforeEach(() => {
     repoRoot = mkdtempSync(join(tmpdir(), 'host-user-copy-cjk-ratchet-'));
     hostRoot = join(repoRoot, 'src/host/services');
-    baselinePath = join(repoRoot, 'scripts/host-user-copy-cjk-baseline.json');
+    baselinePath = join(repoRoot, 'scripts/ci/host-user-copy-cjk-baseline.json');
     mkdirSync(hostRoot, { recursive: true });
     mkdirSync(join(repoRoot, 'src/host/prompts'), { recursive: true });
-    mkdirSync(join(repoRoot, 'scripts'), { recursive: true });
+    mkdirSync(join(repoRoot, 'scripts/ci'), { recursive: true });
   });
 
   afterEach(() => {

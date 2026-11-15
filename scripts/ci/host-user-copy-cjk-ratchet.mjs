@@ -11,7 +11,7 @@
 //         description / text / hint（属性名为标识符或字符串键；初始值外层的括号、as、! 会剥掉）；
 //       · 或 `throw new XxxError(...)` 的实参（构造器名以 Error 结尾，含 Error 本身）。
 //     三元/|| 兜底的分支、变量、函数入参里的字符串不计。
-//   - 基线：scripts/host-user-copy-cjk-baseline.json（按文件计数，只降不升；例外写成
+//   - 基线：scripts/ci/host-user-copy-cjk-baseline.json（按文件计数，只降不升；例外写成
 //     { count, reason }；不支持行内豁免注释）。迁移方式：zh/en 目录放 src/shared/i18n/，
 //     host 侧用 getHostUiLocale()（src/host/config/hostUiLocale.ts）取当前语言。
 //   - 其余语义同 renderer 棘轮：基线外文件命中即红；计数低于基线（基线过期）也红，须
@@ -27,14 +27,14 @@ import ts from 'typescript';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
-const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '..');
+const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '..', '..');
 
 const HOST_ROOT = 'src/host';
 const PROMPTS_PREFIX = 'src/host/prompts/';
 const USER_COPY_KEYS = new Set([
   'error', 'message', 'summary', 'title', 'label', 'body', 'reason', 'description', 'text', 'hint',
 ]);
-const DEFAULT_BASELINE_REL = 'scripts/host-user-copy-cjk-baseline.json';
+const DEFAULT_BASELINE_REL = 'scripts/ci/host-user-copy-cjk-baseline.json';
 const BASE_REF_ENV = 'HOST_USER_COPY_RATCHET_BASE_REF';
 const DEFAULT_BASE_REFS = ['origin/main', 'main'];
 
@@ -512,7 +512,7 @@ function runCli() {
         .join('\n');
       throw new Error(
         `基线过期：${lowered.length} 个文件的实际计数低于基线（共 ${baseline.baselineTotal - report.totalTargets} 处）：\n${summary}\n` +
-        '运行 node scripts/host-user-copy-cjk-ratchet.mjs --update-baseline 把基线收紧到实际值并一并提交；' +
+        '运行 node scripts/ci/host-user-copy-cjk-ratchet.mjs --update-baseline 把基线收紧到实际值并一并提交；' +
         '基线不允许比现状高（手工改大数字同样会落到这里）。',
       );
     }
