@@ -35,7 +35,7 @@ import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { getJobDisplayName } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -270,7 +270,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
 
   const jobNameById = useMemo(
     () => Object.fromEntries(
-      [...allJobs, ...jobs].map((job) => [job.id, getBuiltinJobDisplay(job, language)?.name ?? job.name]),
+      [...allJobs, ...jobs].map((job) => [job.id, getJobDisplayName(job, language)]),
     ),
     [allJobs, jobs, language]
   );
