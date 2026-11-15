@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { TraceTurn } from '@shared/contract/trace';
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
@@ -78,7 +79,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   hasNonThinkingContentAfterThinking,
   turnEndTime,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
   const [now, setNow] = useState(Date.now);
@@ -177,7 +178,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
             <p key={segment.id} className="whitespace-pre-line font-mono">
               {segments.length > 1 ? `${index + 1}. ` : ''}
               {/* 思考是高速流式日志：连续空行压成单换行，否则 pre-line 保留的段落断让阅读割裂（爸 08-17 点名） */}
-              {segment.text.replace(/\n{2,}/g, '\n')}
+              {humanizeInternalText(segment.text, language === 'en' ? 'en' : 'zh').text.replace(/\n{2,}/g, '\n')}
             </p>
           ))}
         </div>

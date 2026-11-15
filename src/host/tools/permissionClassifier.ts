@@ -117,6 +117,7 @@ export interface ClassifierConfig {
 }
 
 export interface ClassificationContext {
+  permissionMode?: import('../permissions/modes').PermissionMode;
   sessionId?: string;
   toolDefinition?: ToolDefinition;
   /** Base directory for resolving relative tool paths. */

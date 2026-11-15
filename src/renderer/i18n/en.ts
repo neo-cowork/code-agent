@@ -51,7 +51,7 @@ import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
 import { renderHumanPipeEn } from './renderHumanPipe';
-import { outcomeWordsEn } from './outcomeWords';
+import { outcomeWordsEn } from './outcomeWords'; import { delegationFailedActionsEn } from './delegationFailedActions';
 import { engineModelPanelEn } from './engineModelPanel';
 import { jevAdvisoryEn } from './jevAdvisory';
 import { workflowStallEn } from './workflowStall';
@@ -78,7 +78,7 @@ export const en = {
   ...workbenchTabsEn,
   ...receiptPresentationEn,
   ...renderHumanPipeEn,
-  ...outcomeWordsEn, ...engineModelPanelEn,
+  ...outcomeWordsEn, ...delegationFailedActionsEn, ...engineModelPanelEn,
   ...jevAdvisoryEn,
   ...workflowStallEn,
   ...connectorRequiredEn,
@@ -832,7 +832,7 @@ export const en = {
     skip: 'Generate now',
     skipHint: 'Don’t want to fill this in? Skip clarification and let the AI decide.',
     sampleSerif: 'Design system sample',
-    sampleSans: 'Aa Bb Cc 字体样例',
+    sampleSans: 'Aa Bb Cc Font sample',
     continueMessage: 'Design brief locked—generate the deliverable directly from it.',
     skipMessage: 'Skip design clarification—generate the deliverable using your best judgment, and do not emit another question-form.',
   },

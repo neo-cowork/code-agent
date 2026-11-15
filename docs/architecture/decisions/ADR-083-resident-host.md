@@ -78,7 +78,7 @@ sequenceDiagram
 | 情形 | 今天：正在跑的任务 | 落地后：正在跑的任务 | 用户看到什么 |
 |---|---|---|---|
 | 关窗（点关闭按钮） | 不中断。`CloseRequested` 被 `prevent_close()` 拦下并最小化（锚点 1），壳与 webServer 都活着 | 不中断，且壳从此可有可无：run 由 daemon 持有，重开窗口即续看 | 与今天一致：窗口收起、任务继续、托盘还在；差别在重开窗口不再依赖原壳进程活着 |
-| Quit（Cmd+Q / 托盘退出） | 直接杀：`ExitRequested → cleanup_server` 停 webServer（锚点 2），run 被终止，无任何确认 | **有任务在跑必须先弹确认对话框**（对齐 N-QUIT-RUNNING-CONFIRM）。方案 A 下确认框给两个出口：「后台继续」（只关壳，run 转 daemon 继续跑）与「停止并退出」（优雅排空后真停）；无任务在跑时 Quit 直接退、不弹框 | 今天：有任务也被无声杀掉。落地后：先见确认框，说清「还有 N 个任务在跑」及两个出口的后果，不会无声丢活 |
+| Quit（Cmd+Q / 托盘退出） | 直接杀：`ExitRequested → cleanup_server` 停 webServer（锚点 2），run 被终止，无任何确认 | **有任务在跑必须先弹确认对话框**（对齐 N-QUIT-RUNNING-CONFIRM）。方案 A 下确认框给两个出口：「后台继续」（只关壳，run 转 daemon 继续跑）与「停止并退出」（先取消在跑 run、数秒内真停；不再 60s 排空）；无任务在跑时 Quit 直接退、不弹框 | 今天：有任务也被无声杀掉。落地后：先见确认框，说清「还有 N 个任务在跑」及两个出口的后果，不会无声丢活 |
 | 合盖 | OS-owned：宿主只防闲睡不防合盖（锚点 4），合盖睡眠由操作系统决定，本机执行体全部暂停 | 不变，仍 OS-owned——常驻宿主**不**试图阻止合盖睡眠，本机环境随睡眠离线 | 本机离线；已升到云端的轮继续由云端工人跑完（ADR-081 §断线、心跳、会话保留）。合盖后的本机续跑属 N-CLOUD-HANDOFF，本 ADR 不做 |
 | 升级（自动更新） | 计划内中断：安装前显式优雅停 webServer（锚点 3）；Windows 上 updater 内部 `exit(0)`，优雅停只能靠渲染器先行调用那条命令 | 仍计划内中断，但停机窗口收窄：daemon 优雅排空（未决 op 收口，语义同 ADR-075）后停，新壳首启拉起新 daemon，run 按既有 sweep 语义接回 | 「更新装完会接着跑」而不是「更新杀了我的任务」；等待期间 run 显示暂停/续跑信号，不显示失败 |
 
@@ -143,7 +143,7 @@ sequenceDiagram
 
 上一节的拍板（2026-10-06）不动；本节只追加三条，均由本单落地：
 
-1. **退出意图通道**：壳在退进程之前 `POST /api/quit-intent` 声明本次退出意图——`background`（后台继续）或 `stop`（停止并退出）；旧 `POST /api/quit-guard/detach` 保留为 background 的别名（Rust 壳仍在调用，切换见 N-RESIDENT-QUIT-THREE-BUTTONS）。`stop` 把下一次 stdin EOF 变成**全平台**停机指令：先照常排空在跑 run，再走既有优雅停机（shutdown），即使还有 run 在忙——留守只会把优雅窗耗在被硬杀上。
+1. **退出意图通道**：壳在退进程之前 `POST /api/quit-intent` 声明本次退出意图——`background`（后台继续）或 `stop`（停止并退出）；旧 `POST /api/quit-guard/detach` 保留为 background 的别名（Rust 壳仍在调用，切换见 N-RESIDENT-QUIT-THREE-BUTTONS）。`stop` 把下一次 stdin EOF 变成**全平台**停机指令：**不再排空在跑 run**（N-FIX-STOP-AND-QUIT-TASKS-KEEP-RUNNING-60S 修订：原先照常 60s 排空，实测任务在等待期继续调工具写文件）：shutdown 开头按停止按钮同款路径对每个 run `cancel('user')`，最多等 `WEB_DAEMON.STOP_INTENT_CANCEL_GRACE_MS`（3s）收口，再补一次空闲浏览器清理，随后走既有 reap → park（`user_stop`，重开可「继续」）→ 关库。60s 排空只留给无 stop 意图的 SIGTERM / `neo daemon stop`。
 2. **armed-schedule 留守规则**：空闲去留快照（daemonIdle）新增第四信号 `armedSchedules`（已启用定时任务数），与退出确认弹窗的 quit-guard 计数**同源同口径**。留守判据 = 老三信号（在跑 run / 配对伴侣 / 等审批）任一在忙，**或**（意图=background 且 armedSchedules>0）。无声明（壳崩了/被杀）时 armed 单独**永不**留守——不留隐形 daemon，拍板记录 2 的「空闲随壳退出」不被推翻。任务增/删/改/启停会触发去留重查（CronService.onJobsChanged → recheck）：删掉最后一个已启用任务，纯为任务留守的 daemon 随之退出。用户预期锚点：竞品的定时任务跑在云端、不依赖桌面 app 存活（Claude Cowork help center）；Neo 只能靠本机常驻兑现同一预期。
 3. **`neo daemon status` 留守原因**：daemon 在 pid 文件旁原子维护 `daemon-state.json`（退出意图 + 留守原因清单，快照/意图/任务变化时重写，写失败仅 warn 不挡运行）。status 在 pid 状态为 owned 时于 pid 行下多打一行：`Staying alive because: <running runs | N armed schedule(s) | paired companion | pending approval>`；无留守原因时明说 `No reason to stay alive: exits once the shell is gone`。陈旧文件（pid 不吻合 / 解析失败）忽略，按无留守原因口径打印。
 

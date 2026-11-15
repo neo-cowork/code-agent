@@ -14,6 +14,7 @@ import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { getToolCache } from '../../../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../../../src/host/tools/protocolRegistry';
 import * as approvedRmGrantModule from '../../../../../src/host/tools/shell/approvedRmGrant';
+import { getTaskOutput } from '../../../../../src/host/tools/shell/backgroundTasks';
 import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '../../../../../src/shared/constants';
 import { bashModule } from '../../../../../src/host/tools/modules/shell/bash';
 import { ToolExecutor } from '../../../../../src/host/tools/toolExecutor';
@@ -199,6 +200,138 @@ suite('approved rm uses a real seatbelt literal grant', () => {
       return grant;
     });
   }
+
+  it.each(['main-agent', 'sub-agent'] as const)(
+    'approved two-file rm deletes both files with real seatbelt via %s', async (shape) => {
+      const targets = [join(slashTmpRoot, `${shape}-two-cache.tmp`), join(outsideRoot, `${shape}-two-cache.tmp`)];
+      const neighbors = [join(slashTmpRoot, `${shape}-keep.tmp`), join(outsideRoot, `${shape}-keep.tmp`)];
+      [...targets, ...neighbors].forEach(file => writeFileSync(file, 'cache'));
+      const requests: PermissionRequestData[] = [];
+      const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+      const result = await executorFor(shape, requests, true).execute(
+        'Bash', { command: `rm -f -- ${targets.map(shellQuote).join(' ')}; echo "rm_exit=$?"` },
+        { sessionId: `real-seatbelt-two-${shape}` },
+      );
+      console.log(`TWO_FILE_SEATBELT ${shape} output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+      expect(grant).toHaveBeenCalledOnce();
+      expect(grant.mock.results[0].value).toHaveLength(2);
+      expect(requests).toHaveLength(1);
+      expect(result.success, result.error).toBe(true);
+      expect(result.result).toContain('rm_exit=0');
+      expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+      expect(targets.map(existsSync)).toEqual([false, false]);
+      expect(neighbors.map(existsSync)).toEqual([true, true]);
+    },
+  );
+
+  it('approved static assignment and probe script deletes both files with real seatbelt', async () => {
+    const targets = [join(slashTmpRoot, 'assigned cache.tmp'), join(outsideRoot, 'assigned cache.tmp')];
+    const neighbor = join(outsideRoot, 'assigned-keep.tmp');
+    [...targets, neighbor].forEach(file => writeFileSync(file, 'cache'));
+    const command = `F1=${shellQuote(targets[0])}; F2=${shellQuote(targets[1])}
+      test -f "$F1" && echo "before $F1"; [ -f "$F2" ] && ls -l "$F2"
+      stat "$F1"; rm -f -- "$F1" "$F2"; printf "rm_exit=%s" "$?"
+      test ! -e "$F1" && test ! -e "$F2" && echo removed`;
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute(
+      'Bash', { command }, { sessionId: 'real-seatbelt-assigned-probes' },
+    );
+    console.log(`ASSIGNMENT_PROBE_SEATBELT output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+    expect(result.success, result.error).toBe(true);
+    expect(grant).toHaveBeenCalledOnce();
+    expect(grant.mock.results[0].value).toHaveLength(2);
+    expect(requests).toHaveLength(1);
+    expect(result.result).toContain('rm_exit=0');
+    expect(result.result).toContain('removed');
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+    expect(targets.map(existsSync)).toEqual([false, false]);
+    expect(existsSync(neighbor)).toBe(true);
+  });
+
+  it('approved natural-1 descriptor duplication deletes its absolute file under real seatbelt', async () => {
+    const target = join(slashTmpRoot, 'natural-one.tmp'); writeFileSync(target, 'cache');
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute(
+      'Bash', { command: `rm -- "${target}" 2>&1; echo "---exit:$?---"` }, { sessionId: 'real-seatbelt-natural-one' },
+    );
+    console.log(`NATURAL_ONE_SEATBELT output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${rawLs(target)}`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.result).toContain('---exit:0---');
+    expect(grant).toHaveBeenCalledOnce(); expect(grant.mock.results[0].value).toBeTruthy();
+    expect(requests).toHaveLength(1); expect(existsSync(target)).toBe(false);
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+  });
+
+  it('approved natural-2 multi-rm with echo and ls probes deletes both files under real seatbelt', async () => {
+    const targets = [join(slashTmpRoot, 'natural-two.tmp'), join(outsideRoot, 'natural-two.tmp')];
+    const neighbor = join(outsideRoot, 'natural-two-keep.tmp');
+    [...targets, neighbor].forEach(file => writeFileSync(file, 'cache'));
+    const command = `rm -f -- "${targets[0]}"; echo "rm1_exit:$?"; rm -f -- "${targets[1]}"; echo "rm2_exit:$?"; echo "=== verify ==="; ls -ld -- "${targets[0]}"; echo "ls1_exit:$?"; ls -ld -- "${targets[1]}"; echo "ls2_exit:$?"`;
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute('Bash', { command }, { sessionId: 'real-seatbelt-natural-two' });
+    console.log(`NATURAL_TWO_SEATBELT output=${JSON.stringify(result.result)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.result).toContain('rm1_exit:0'); expect(result.result).toContain('rm2_exit:0');
+    expect(grant).toHaveBeenCalledOnce(); expect(grant.mock.results[0].value).toHaveLength(2);
+    expect(requests).toHaveLength(1); expect(targets.map(existsSync)).toEqual([false, false]);
+    expect(existsSync(neighbor)).toBe(true);
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+  });
+
+  it('policy denial in the second rm mints no grant and leaves the first file after one approval', async () => {
+    const targets = [join(slashTmpRoot, 'multi-deny-first.tmp'), join(outsideRoot, 'multi-deny-second.tmp')];
+    targets.forEach(file => writeFileSync(file, 'keep'));
+    getPolicyEngine().loadUserRules({ ask: [ASK_RULE], deny: [`Edit(${targets[1]})`] }, 'user-ui');
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const executor = new ToolExecutor({
+      workingDirectory: workspace, ledgerOrigin: 'eval',
+      requestPermission: async request => {
+        requests.push(request);
+        // Approve the original card only; a separate escalation card is separate consent.
+        return requests.length === 1
+          ? { approved: true, approvalSource: 'user' as const }
+          : { approved: false, denialSource: 'user' as const };
+      },
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute(
+      'Bash', { command: `rm -f -- "${targets[0]}"; rm -f -- "${targets[1]}"` }, { sessionId: 'real-seatbelt-multi-policy-denied' },
+    );
+    expect(result.success).toBe(false);
+    expect(grant).toHaveBeenCalledOnce(); expect(grant.mock.results[0].value).toBeUndefined();
+    expect(targets.map(existsSync)).toEqual([true, true]);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].details.action).toBe('sandbox_escalate_once');
+  });
+
+  it('approved two-file background rm deletes both files with real seatbelt in an attended session', async () => {
+    const targets = [join(slashTmpRoot, 'background-cache.tmp'), join(outsideRoot, 'background-cache.tmp')];
+    const neighbors = [join(slashTmpRoot, 'background-keep.tmp'), join(outsideRoot, 'background-keep.tmp')];
+    [...targets, ...neighbors].forEach(file => writeFileSync(file, 'cache'));
+    const requests: PermissionRequestData[] = [];
+    const grant = vi.spyOn(approvedRmGrantModule, 'approvedSingleFileRmGrantForToolApproval');
+    const result = await executorFor('main-agent', requests, true).execute(
+      'Bash', { command: `rm -f -- ${targets.map(shellQuote).join(' ')}; echo "rm_exit=$?"`, run_in_background: true },
+      { sessionId: 'real-seatbelt-approved-background-two' },
+    );
+    expect(result.success, result.error).toBe(true);
+    const taskId = result.metadata?.taskId;
+    expect(typeof taskId).toBe('string');
+    const output = await getTaskOutput(String(taskId), true, 5000);
+    console.log(`TWO_FILE_BACKGROUND_SEATBELT output=${JSON.stringify(output)} sandbox=${JSON.stringify(result.metadata?.sandbox)} ls=${targets.map(rawLs).join('; ')}`);
+    expect(output?.exitCode).toBe(0);
+    expect(output?.output).toContain('rm_exit=0');
+    expect(grant).toHaveBeenCalledOnce();
+    expect(grant.mock.results[0].value).toHaveLength(2);
+    expect(requests).toHaveLength(1);
+    expect(result.metadata?.sandbox).toMatchObject({ applied: true, code: 'OS_SANDBOX_APPLIED' });
+    expect(targets.map(existsSync)).toEqual([false, false]);
+    expect(neighbors.map(existsSync)).toEqual([true, true]);
+  });
 
   it.each(['; echo "exit=$?"', ' && echo done'])(
     'public Bash entry after user approval deletes an outside file with suffix %s', async (suffix) => {

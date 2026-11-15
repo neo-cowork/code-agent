@@ -62,9 +62,11 @@ vi.mock('../../../src/host/context/compactionAuditRecorder', () => ({
   recordCompactionAuditSnapshot: compactionServiceMocks.recordAudit,
 }));
 
+import { COMPACTION_SUMMARY } from '../../../src/shared/constants';
 import {
   compactMessagesWithSummary,
   createCompactionPlan,
+  summarizeCompactionPlan,
 } from '../../../src/host/context/compactionService';
 
 function message(id: string, role: Message['role'], content: string): Message {
@@ -100,7 +102,10 @@ describe('compactionService', () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts'),
       message('m2', 'assistant', 'TODO: wire service into IPC.'),
-      message('m3', 'tool', 'AssertionError: expected true'),
+      {
+        ...message('m3', 'tool', 'tool finished'),
+        toolResults: [{ toolCallId: 'c1', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -294,8 +299,11 @@ describe('compactionService', () => {
   it('keeps the no-focus prompt byte-for-byte identical for empty focus values', async () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -334,7 +342,11 @@ describe('compactionService', () => {
         metadata: compactionServiceMocks.summaryModel,
       });
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      {
+        ...message('m1', 'assistant', 'Reading the file carefully before the edit. '.repeat(200)),
+        toolCalls: [{ id: 'c1', name: 'Read', arguments: { file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts' } }],
+        toolResults: [{ toolCallId: 'c1', success: true, output: 'file body' }],
+      },
       message('m2', 'assistant', 'recent answer'),
       message('m3', 'assistant', 'recent tail'),
     ];
@@ -421,8 +433,11 @@ describe('compactionService', () => {
   it('compacts messages into one system handoff plus preserved tail', async () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -667,8 +682,11 @@ describe('compactionService', () => {
     };
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -687,7 +705,7 @@ describe('compactionService', () => {
     expect(hookManager.triggerPreCompact).toHaveBeenCalledWith(
       'session-hooks',
       expect.arrayContaining([
-        expect.objectContaining({ role: 'tool', content: expect.stringContaining('AssertionError') }),
+        expect.objectContaining({ role: 'tool', content: expect.stringContaining('tool output') }),
       ]),
       expect.any(Number),
       expect.any(Number),
@@ -723,8 +741,11 @@ describe('compactionService', () => {
       });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -770,8 +791,11 @@ describe('compactionService', () => {
       });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -803,8 +827,11 @@ describe('compactionService', () => {
       });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -828,8 +855,11 @@ describe('compactionService', () => {
   it('passes one summary call usage through and omits it when unreported', async () => {
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
     const options = {
@@ -879,8 +909,11 @@ describe('compactionService', () => {
     });
     const messages = [
       message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
-      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
-      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC.\n' + 'Historical analysis. '.repeat(80)),
+      {
+        ...message('m3', 'tool', 'tool output '.repeat(80)),
+        toolResults: [{ toolCallId: 'c-fail', success: false, error: 'AssertionError: expected true' }],
+      },
       message('m4', 'assistant', 'recent answer'),
     ];
 
@@ -912,7 +945,11 @@ describe('compactionService', () => {
       metadata: compactionServiceMocks.summaryModel,
     });
     const messages = [
-      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      {
+        ...message('m1', 'assistant', 'Reading the file carefully before the edit. '.repeat(200)),
+        toolCalls: [{ id: 'c1', name: 'Read', arguments: { file_path: '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts' } }],
+        toolResults: [{ toolCallId: 'c1', success: true, output: 'file body' }],
+      },
       message('m2', 'assistant', 'recent answer'),
       message('m3', 'assistant', 'recent tail'),
     ];
@@ -950,7 +987,7 @@ describe('compactionService', () => {
     },
     {
       name: 'over-budget',
-      summary: 'oversized summary '.repeat(1200),
+      summary: 'oversized summary '.repeat(2200),
       metadata: compactionServiceMocks.summaryModel,
       field: 'overBudget' as const,
     },
@@ -1002,5 +1039,68 @@ describe('compactionService', () => {
     expect(prompt.split(TELEMETRY_RECOVERY_NOTICE)).toHaveLength(2);
     expect(recovered.content).toBe(originalContent);
     expect(result.plan.messages[0].content).toBe(originalContent);
+  });
+
+  it('admits a ~2500-token summary under COMPACTION_SUMMARY.MAX_TOKENS and rejects above the cap as overBudget', async () => {
+    const admittedSummary = '# Context Handoff\n\n' + 'oversized summary '.repeat(1250);
+    const overCapSummary = '# Context Handoff\n\n' + 'oversized summary '.repeat(2200);
+    expect(estimateTokens(admittedSummary)).toBeGreaterThan(2400);
+    expect(estimateTokens(admittedSummary)).toBeLessThan(2600);
+    expect(estimateTokens(overCapSummary)).toBeGreaterThan(COMPACTION_SUMMARY.MAX_TOKENS);
+
+    const messages = [
+      message('m1', 'assistant', 'Historical architecture analysis and verification notes. '.repeat(450)),
+      message('m2', 'assistant', 'Historical implementation steps and benchmark observations. '.repeat(450)),
+      message('m3', 'user', 'Continue with next step.'),
+      message('m4', 'assistant', 'Recent reply.'),
+    ];
+    const hookManager = {
+      triggerPreCompact: vi.fn().mockResolvedValue({}),
+      triggerPostCompact: vi.fn().mockResolvedValue({}),
+    };
+
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: admittedSummary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
+    const plan = createCompactionPlan({ sessionId: 'cap-plan', source: 'manual_current', messages, preserveRecentCount: 2 });
+    expect(plan).not.toBeNull();
+    const planSummary = await summarizeCompactionPlan(plan!);
+    expect(planSummary.validation.ok).toBe(true);
+    expect(planSummary.validation.overBudget).toBe(false);
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledWith(
+      expect.any(String),
+      COMPACTION_SUMMARY.MAX_TOKENS,
+    );
+
+    compactionServiceMocks.summarizeWithMetadata.mockClear();
+    const admitted = await compactMessagesWithSummary({
+      sessionId: 'cap-admitted',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 2,
+      hookManager,
+    });
+    expect(admitted.success).toBe(true);
+    expect(admitted.validation).toMatchObject({ ok: true, overBudget: false });
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(1);
+    const preservedTokens = estimateTokens(messages[2].content) + estimateTokens(messages[3].content) + 8;
+    expect(hookManager.triggerPreCompact.mock.calls[0][3]).toBeGreaterThanOrEqual(COMPACTION_SUMMARY.MAX_TOKENS);
+    expect(preservedTokens).toBeGreaterThan(0);
+
+    compactionServiceMocks.summarizeWithMetadata.mockReset();
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: overCapSummary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
+    const rejected = await compactMessagesWithSummary({
+      sessionId: 'cap-over-budget',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 2,
+    });
+    expect(rejected.success).toBe(false);
+    expect(rejected.reason).toBe('invalid_summary_projection');
+    expect(rejected.validation).toMatchObject({ ok: false, overBudget: true });
   });
 });

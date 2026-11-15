@@ -4,6 +4,7 @@
 // props 全量透传现有 state/回调，行为零变化；三分区逻辑后续只加在本组件，不回填主文件。
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback } from 'react';
 import { ChevronRight, Cloud, Loader2, Plus } from 'lucide-react';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
@@ -16,13 +17,14 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore, type SessionStatusFilter } from '../../../stores/sessionUIStore';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
-import { localeForLanguage } from '../../../utils/i18nTime';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
+import { getLocalizedSessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
 import { PlanetSphere } from '../../brand/PlanetSphere';
 import {
   buildSidebarSessionTierSections,
+  SIDEBAR_SESSION_TIER_ORDER,
   type SidebarSessionTier,
+  type SidebarSessionTierSection,
 } from '../../../utils/sidebarSessionTiers';
 import type { SidebarProjectDrawerSession } from './SidebarProjectDrawer';
 import { getSessionTypeLabel } from './SessionTypeFilterBar';
@@ -141,7 +143,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
 
         return {
           id: session.id,
-          title: getDisplaySessionTitle(session.title, language),
+          title: getLocalizedSessionTitle(session.title, language),
           statusLabel:
             status.kind === 'error'
               ? t.common.error
@@ -152,7 +154,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type, t),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
+          lastActiveTitle: formatDateTime(latestActivityAt, language),
           workingDirectory: session.workingDirectory,
           gitBranch: session.gitBranch,
           prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
@@ -186,7 +188,29 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   ) : null;
   // 三分区归位（ADR-053）：判据与排序规则全部在 sidebarSessionTiers，
   // 组内/组间排序不动，空分区整节不出现在返回里（含节头）。
-  const tierSections = buildSidebarSessionTierSections(groups, projectMetaById);
+  const builtTierSections = buildSidebarSessionTierSections(groups, projectMetaById);
+  // 项目分区恒显（无搜索筛选时）：零项目用户也要有「选择文件夹」入口，节头不随空分区省略。
+  const tierSections: SidebarSessionTierSection[] = hasSearchFilters || builtTierSections.some((section) => section.tier === 'project')
+    ? builtTierSections
+    : SIDEBAR_SESSION_TIER_ORDER.flatMap((tier) =>
+        tier === 'project'
+          ? [{ tier, groups: [], sessionCount: 0 }]
+          : builtTierSections.filter((section) => section.tier === tier),
+      );
+  const chooseFolderDisabled = isCreatingSession || creatingWorkspaceKey !== null;
+  const chooseFolderRow = (
+    <Button
+      variant="ghost"
+      size="sm"
+      leftIcon={<Plus className="h-full w-full" />}
+      data-testid="sidebar-choose-folder-entry"
+      disabled={chooseFolderDisabled}
+      onClick={() => void handleNewIndependentSpace()}
+      className="mx-1 w-[calc(100%-0.5rem)] justify-start"
+    >
+      {p.chooseFolderEntry}
+    </Button>
+  );
   const tierLabels: Record<SidebarSessionTier, string> = {
     space: p.tierSpace,
     project: p.tierProject,
@@ -221,6 +245,10 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
           </div>
           <p className="text-sm text-zinc-400 mb-1">{sb.noSessions}</p>
           <p className="text-xs text-zinc-500">{sb.startNewTask}</p>
+          <section aria-label={p.tierProject} data-testid="sidebar-tier-project" className="mt-4 w-full">
+            <div className="pb-1 text-left text-sm text-zinc-500 pl-1.5">{p.tierProject}</div>
+            {chooseFolderRow}
+          </section>
         </div>
       ) : filteredSessionsEmpty && hasSearchFilters ? (
         /* 搜索/筛选无结果 = 水星（最近太阳的孤星，"这片星域没有信号"），替代原 Search 图标。 */
@@ -297,7 +325,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                     aria-label={p.tierNewProject}
                     title={p.tierNewProject}
                     data-testid="sidebar-tier-new-project"
-                    disabled={isCreatingSession || creatingWorkspaceKey !== null}
+                    disabled={chooseFolderDisabled}
                     onClick={(e) => {
                       e.stopPropagation();
                       void handleNewIndependentSpace();
@@ -327,6 +355,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
               {/* 组列：组间距 10px 由本列 gap-2.5 统一给（批P 第五波①：原靠组根 mb-2.5，
                   末组的外边距会混进分区间距，三段节奏量出来 16/10 不一致；移进列内后
                   分区间距由外层 gap-2 独占，永远 8px）。 */}
+              {!isCollapsed && section.tier === 'project' && section.groups.length === 0 && chooseFolderRow}
               {!isCollapsed && (
                 <div className="flex flex-col gap-2.5">
                   {section.groups.map((group) => (

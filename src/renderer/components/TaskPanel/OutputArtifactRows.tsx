@@ -1,3 +1,4 @@
+import { formatDisplayPath } from '../../utils/displayPath';
 // ============================================================================
 // OutputArtifactRows —— 概览模块四「产物」：完成态收拢的一排缩略行
 // ----------------------------------------------------------------------------
@@ -150,7 +151,7 @@ const ArtifactThumb = ({
       type="button"
       data-testid="overview-artifact-thumb"
       onClick={handleClick}
-      title={filePath || name}
+      title={formatDisplayPath(filePath || name)}
       className="flex min-w-0 items-center gap-2 rounded-lg bg-surface-subtle py-1.5 pl-1.5 pr-2.5 text-left transition-colors hover:bg-surface-hover"
     >
       {content}

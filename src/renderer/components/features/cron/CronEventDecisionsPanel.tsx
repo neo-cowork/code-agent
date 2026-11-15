@@ -218,7 +218,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
           {otherRows.length > 0 && (
             <>
               <div className="mt-3 text-xs font-medium text-zinc-400">{copy.otherDecisionsTitle}</div>
-              <ul className="mt-1.5 max-h-64 space-y-1.5 overflow-y-auto" data-testid="cron-event-decision-list">
+              <ul className="mt-1.5 space-y-1.5" data-testid="cron-event-decision-list">
                 {otherRows.map((row) => renderRow(row, 'cron-event-decision-row'))}
               </ul>
             </>

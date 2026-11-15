@@ -18,7 +18,6 @@ import { useI18n } from '../../hooks/useI18n';
 import { useRunWorkbenchModel } from '../../hooks/useRunWorkbenchModel';
 import { useRunControlStore } from '../../stores/runControlStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { getDisplaySessionTitle } from '../../utils/sessionPresentation';
 import {
   buildOverviewRunHeaderModel,
   hasFailedCurrentRequest,
@@ -68,7 +67,8 @@ export const OverviewRunHeader: React.FC = () => {
   const interrupt = useRunControlStore((state) => state.actions?.interrupt);
   const sessionTitle = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
-    return session ? getDisplaySessionTitle(session.title, language) : null;
+    // 原始存储标题原样传入；本地化（[Schedule]→[定时]）在 buildOverviewRunHeaderModel 内做
+    return session?.title ?? null;
   });
 
   // 秒表只在活跃回合里装 interval；无 run 时 hook 照样要调用（hooks 规则），
@@ -79,6 +79,7 @@ export const OverviewRunHeader: React.FC = () => {
     primaryFailed: primaryFailed || sessionStatus === 'error',
     backgroundChildren,
     sessionTitle,
+    language,
     now,
     todoProgress: summarizeTodoProgress(runWorkbench.tasks),
   });

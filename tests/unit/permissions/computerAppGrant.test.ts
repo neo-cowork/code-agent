@@ -205,8 +205,8 @@ describe('pre-ask grant does not beat a hard gate', () => {
 });
 
 describe('permission denial names the app only for a user denial', () => {
-  it('keeps every other denial text byte-identical', () => {
-    expect(permissionDenialError('Write', 'user').modelText).toBe('Permission denied by user');
+  it('adds stop-and-ask guidance for user denials and keeps machine denial text byte-identical', () => {
+    expect(permissionDenialError('Write', 'user').modelText).toBe('Permission denied by user. The user just declined this kind of action. Do not request approval for the same goal again by rewording it or changing the command or arguments. First ask the user one short question about how to proceed: use AskUserQuestion if available, otherwise your final message. For unattended, scheduled or background runs, put that question in your final message. Wait for a new user message before requesting approval for this kind of action again.');
     expect(permissionDenialError('computer_use', 'timeout', { name: 'Notes' }).modelText)
       .toBe(permissionDenialError('computer_use', 'timeout').modelText);
     expect(permissionDenialError('computer_use', 'fail-closed', { name: 'Notes' }).modelText)

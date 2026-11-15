@@ -164,12 +164,25 @@ describe('Sidebar restart restore through initializeAuthStore', () => {
     mount();
     await act(async () => { await initializeAuthStore(); });
     await loadList();
-    expect(within(screen.getByTestId('sidebar-signed-out-footer')).getByRole('button', { name: zh.sidebar.signIn })).toBeTruthy();
+    const account = screen.getByTestId('sidebar-account-unreachable');
+    expect(within(account).getByText(zh.sidebar.accountUnreachable)).toBeTruthy();
+    expect(within(account).getByRole('button', { name: zh.sidebar.signedOutSettings })).toBeTruthy();
+    expect(screen.queryByTestId('sidebar-signed-out-footer')).toBeNull();
+    expect(screen.queryByRole('button', { name: zh.sidebar.signIn })).toBeNull();
     expect(boundary.error.mock.calls.filter(([message]) => message === 'Failed to load auth status')).toHaveLength(1);
+    await act(async () => { fireEvent.click(within(account).getByRole('button', { name: zh.sidebar.connectionRetry })); });
+    expect(screen.getByTestId('sidebar-account-unreachable')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: zh.sidebar.signIn })).toBeNull();
     expect(within(screen.getByTestId('sidebar-list-error')).getByText(zh.sidebar.loadSessionsFailed)).toBeTruthy();
     listResult = async () => sessions;
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.sidebar.retryLoadSessions })); });
+    await act(async () => { fireEvent.click(within(screen.getByTestId('sidebar-list-error')).getByRole('button', { name: zh.sidebar.retryLoadSessions })); });
     expect(screen.queryByTestId('sidebar-list-error')).toBeNull();
+    expectGroups();
+    // A confirmed signed-out response still restores the existing sign-in footer.
+    authResult = async () => ({ isAuthenticated: false, user: null, isLoading: false });
+    await act(async () => { await initializeAuthStore(); });
+    expect(screen.queryByTestId('sidebar-account-unreachable')).toBeNull();
+    expect(within(screen.getByTestId('sidebar-signed-out-footer')).getByRole('button', { name: zh.sidebar.signIn })).toBeTruthy();
     expectGroups();
   });
 

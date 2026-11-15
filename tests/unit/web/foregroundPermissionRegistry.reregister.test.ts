@@ -141,4 +141,49 @@ describe('reregisterForegroundPermissionIsland（迟到的后台审批把岛挂�
       unregisterForegroundPermissionIsland(sessionId, oldIsland);
     }
   });
+
+  // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO-FU2-BROWSER：Browser upload_file 形状（file_read +
+  // forceConfirm + browser_action.upload_file）的迟到后台审批，同样要靠挂回注册表才点得到。
+  it.each([
+    ['allow', { approved: true, approvalSource: 'user' }],
+    ['deny', { approved: false, denialSource: 'user' }],
+  ] as const)('Browser upload_file 迟到审批：挂回注册表后 %s 可送达', async (decision, expected) => {
+    const island = new OrchestratorPermissionIsland({
+      getSettings: configServiceStub.getSettings as never,
+      isDevModeAutoApproveEnabled: configServiceStub.isDevModeAutoApproveEnabled,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: () => {},
+    });
+    try {
+      // Preserve Browser-specific metadata across the structurally typed island boundary.
+      const uploadDetails = {
+        file: '.../invoice.pdf', action: 'upload_file', engine: 'managed', approvalMode: 'host_one_time_exact_file',
+      };
+      const approval = island.requestPermission({
+        type: 'file_read',
+        tool: 'browser_action.upload_file',
+        forceConfirm: true,
+        dangerLevel: 'warning',
+        sessionId,
+        agentId: 'bg-agent-1',
+        runId: 'bg-run-1',
+        details: uploadDetails,
+      });
+      await Promise.resolve();
+      unregisterForegroundPermissionIsland(sessionId, island);
+      expect(listForegroundPermissionRequests()).toHaveLength(0);
+
+      reregisterForegroundPermissionIsland(sessionId, island);
+      const listed = listForegroundPermissionRequests().find((request) => request.sessionId === sessionId);
+      expect(listed?.tool).toBe('browser_action.upload_file');
+      expect(listed?.details).toEqual(uploadDetails);
+
+      expect(deliverForegroundPermissionResponse(sessionId, listed!.id, decision)).toBe('delivered');
+      await expect(approval).resolves.toEqual(expected);
+    } finally {
+      island.drainPendingPermissions();
+      unregisterForegroundPermissionIsland(sessionId, island);
+    }
+  });
 });

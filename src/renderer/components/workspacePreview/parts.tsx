@@ -1,3 +1,4 @@
+import { formatDisplayPath } from '../../utils/displayPath';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -149,7 +150,7 @@ export function PreviewListItem({
           ? 'border-badge-info/35 bg-cyan-500/[0.07]'
           : 'border-white/[0.06] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.045]'
       }`}
-      title={item.file?.path || item.title}
+      title={formatDisplayPath(item.file?.path || item.title)}
     >
       <div className="flex items-start gap-2">
         <KindIcon kind={item.kind} />

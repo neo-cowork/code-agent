@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { memo, useMemo } from 'react';
+import { humanizeInternalText, type InternalTextLanguage } from '@shared/humanizeInternalText';
 import type { TaskNodeData } from '../../../../shared/contract/dagVisualization';
 import {
   TASK_STATUS_COLORS,
@@ -69,7 +70,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* 基本信息 */}
         <Section title="Basic Info">
-          <InfoRow label="Task ID" value={task.taskId} mono />
+          <InfoRow label="Task ID" value={<InternalValue input={task.taskId} language={language} />} mono />
           <InfoRow label="Type" value={task.type} />
           <InfoRow label="Status" value={task.status} />
           <InfoRow label="Priority" value={task.priority} />
@@ -160,9 +161,7 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
             {task.output.data && Object.keys(task.output.data).length > 0 && (
               <div className="mt-2">
                 <p className="text-xs text-gray-500 mb-1">Data:</p>
-                <pre className="text-xs bg-gray-800 p-2 rounded overflow-x-auto">
-                  {JSON.stringify(task.output.data, null, 2)}
-                </pre>
+                <InternalValue input={JSON.stringify(task.output.data, null, 2)} language={language} />
               </div>
             )}
           </Section>
@@ -198,6 +197,22 @@ export const TaskDetailPanel = memo(({ task, onClose }: TaskDetailPanelProps) =>
 });
 
 TaskDetailPanel.displayName = 'TaskDetailPanel';
+
+function InternalValue({ input, language }: { input: string; language: InternalTextLanguage }) {
+  const presentation = humanizeInternalText(input, language);
+  const details = presentation.collapseIntoDetails;
+  return (
+    <div>
+      <span>{presentation.text}</span>
+      {details && (
+        <details key={input} className="mt-2">
+          <summary className="text-xs cursor-pointer">{details.label}</summary>
+          <pre className="text-xs bg-gray-800 p-2 rounded overflow-x-auto">{details.details}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
 
 /**
  * 区块组件
@@ -238,14 +253,14 @@ const InfoRow = memo(({
   mono = false,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   mono?: boolean;
 }) => (
   <div className="flex justify-between items-center py-1">
     <span className="text-xs text-gray-500">{label}</span>
-    <span className={`text-sm text-gray-300 ${mono ? 'font-mono text-xs' : ''}`} /* ds-allow:color: InfoRow 只在 TaskDetailPanel 根容器固定 bg-gray-900 内渲染 */>
+    <div className={`text-sm text-gray-300 ${mono ? 'font-mono text-xs' : ''}`} /* ds-allow:color: InfoRow 只在 TaskDetailPanel 根容器固定 bg-gray-900 内渲染 */>
       {value}
-    </span>
+    </div>
   </div>
 ));
 

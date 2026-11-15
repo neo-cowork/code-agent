@@ -1,3 +1,4 @@
+import { formatDateTime as formatFullDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -69,12 +70,7 @@ function formatDateTime(value?: string | number | null): string {
   if (value == null) return '未返回';
   const date = typeof value === 'number' ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return '无效时间';
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatFullDateTime(date);
 }
 
 function formatNextRun(job: CronJobDefinition, language: 'zh' | 'en'): string {

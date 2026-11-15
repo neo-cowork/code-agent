@@ -77,6 +77,7 @@ interface RunState {
   treeId: string;
   key: string;
   startedAt: number;
+  publisher: string;
   totalAgents: number;
   parallelPeak: number;
   agents: Map<string, AgentRollup>;
@@ -209,7 +210,10 @@ export class SwarmTraceWriter {
     const key = this.getRunKey(event);
     const existing = this.runs.get(key);
     if (existing) {
-      logger.warn(`Ignoring duplicate swarm:started for ${sessionId}/${runId}`);
+      logger.warn(`Ignoring duplicate swarm:started for ${sessionId}/${runId}`, {
+        existing: { startedAt: existing.startedAt, source: existing.publisher },
+        duplicate: { startedAt: event.timestamp, source: event.publisher ?? 'unknown' },
+      });
       return;
     }
 
@@ -220,6 +224,7 @@ export class SwarmTraceWriter {
       treeId: event.treeId,
       key,
       startedAt: event.timestamp,
+      publisher: event.publisher ?? 'unknown',
       totalAgents,
       parallelPeak: 0,
       agents: new Map(),

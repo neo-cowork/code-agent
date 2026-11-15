@@ -208,7 +208,7 @@ export class SessionCommandCenter {
     }
   }
 
-  async spawn(input: SpawnSessionTaskInput): Promise<SpawnSessionTaskResult> {
+  async spawn(input: SpawnSessionTaskInput, priority = false): Promise<SpawnSessionTaskResult> {
     const ledger = this.ledger(input.sessionId);
     const id = taskId();
     const admission = ledger.admit({
@@ -216,7 +216,7 @@ export class SessionCommandCenter {
       sessionId: input.sessionId,
       laneKey: input.laneKey,
       submissionKey: input.submissionKey,
-    }, { queueWhenFull: input.queueWhenFull });
+    }, { queueWhenFull: input.queueWhenFull, priority });
 
     if (admission.outcome === 'requires_choice') {
       return { outcome: 'requires_choice', active: this.active(input.sessionId) };
@@ -397,6 +397,25 @@ export class SessionCommandCenter {
     task.status = 'cancelling';
     task.updatedAt = Date.now();
     return { outcome: 'resolved', task: { ...task } };
+  }
+
+  async replace(input: SpawnSessionTaskInput, target: string): Promise<{
+    cancellation: SessionTaskReferenceResult;
+    replacement?: SpawnSessionTaskResult;
+  }> {
+    const ledger = this.ledger(input.sessionId);
+    ledger.holdDrain();
+    try {
+      const cancellation = await this.cancel(input.sessionId, target);
+      if (cancellation.outcome !== 'resolved') return { cancellation };
+      const replacement = await this.spawn({ ...input, queueWhenFull: true }, true);
+      return { cancellation, replacement };
+    } finally {
+      for (const slot of ledger.releaseDrain()) {
+        const task = this.tasks(input.sessionId).get(slot.workItemId);
+        if (task) this.launch(task);
+      }
+    }
   }
 
   dispose(): void {

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // N-MEETING-DUALTRACK-FU1：一路音频的数据包必须逐个过 VAD。并发进 session.run 会共用旧的
 // 隐藏状态，真机上段落被错合/错切、时间偏出好几秒。
-const vad = vi.hoisted(() => ({ inflight: 0, maxInflight: 0, runs: 0, inputs: [] as Float32Array[] }));
+const vad = vi.hoisted(() => ({ inflight: 0, maxInflight: 0, runs: 0, inputs: [] as Float32Array[], prob: 0, configDir: '/tmp/code-agent-test-config' }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -26,7 +26,7 @@ vi.mock('../../../../src/host/services/desktop/audioVadRuntime', () => ({
             await new Promise((r) => setTimeout(r, 2));
             vad.inflight--;
             vad.runs++;
-            return { output: { data: new Float32Array([0]) }, stateN: {} };
+            return { output: { data: new Float32Array([vad.prob]) }, stateN: {} };
           },
         }),
       },
@@ -37,7 +37,7 @@ vi.mock('../../../../src/host/services/desktop/nativeDesktopService', () => ({
   getNativeDesktopService: () => ({ getStatus: () => ({}) }),
 }));
 vi.mock('../../../../src/host/config/configPaths', () => ({
-  getUserConfigDir: () => '/tmp/code-agent-test-config',
+  getUserConfigDir: () => vad.configDir,
 }));
 
 describe('音频采集：一路数据包逐个过 VAD', () => {
@@ -75,6 +75,43 @@ describe('音频采集：一路数据包逐个过 VAD', () => {
     expect(Array.from(vad.inputs[0].slice(0, 64))).toEqual(new Array(64).fill(0)); // 首块前补零
     expect(Math.round(vad.inputs[1][0] * 32768)).toBe(512 - 64); // 第二块开头 = 第一块倒数第 64 个样本
     expect(Math.round(vad.inputs[1][64] * 32768)).toBe(512);
+  });
+});
+
+describe('停止录音时收尾正在说的那段（N-MEETING-SESSION）', () => {
+  it('说到一半就停：这段照样存成录音交去转写，不随停止丢掉', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-flush-'));
+    vad.configDir = dir;
+    vad.prob = 0.9; // 一直在说话，没有 2 秒静音收段
+    vad.runs = 0;
+    const pcm = path.join(dir, 'in.pcm');
+    fs.writeFileSync(pcm, Buffer.alloc(1024 * 40)); // 40 块 ≈ 1.3 秒
+    const { startDesktopAudioCapture, stopDesktopAudioCapture } = await import('../../../../src/host/services/desktop/desktopAudioCapture');
+
+    await startDesktopAudioCapture(pcm, 'microphone');
+    await vi.waitFor(() => expect(vad.runs).toBe(40), { timeout: 3000 });
+    stopDesktopAudioCapture();
+
+    const audioDir = path.join(dir, 'native-desktop', 'audio');
+    await vi.waitFor(() => {
+      const wavs = fs.readdirSync(audioDir, { recursive: true }).filter((f) => String(f).endsWith('.wav'));
+      expect(wavs).toHaveLength(1);
+    }, { timeout: 3000 });
+    vad.prob = 0;
+    vad.configDir = '/tmp/code-agent-test-config';
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('收尾只交够最短时长的段，太短的（误触）不交', async () => {
+    const { VadStateMachine } = await import('../../../../src/host/services/desktop/desktopAudioCapture');
+    const long = new VadStateMachine();
+    for (let i = 0; i < 20; i++) long.processChunk(new Int16Array(512).fill(1), 0.9); // 640ms
+    expect(long.flush()).toHaveLength(1);
+    expect(long.flush()).toHaveLength(0); // 交过就清空
+
+    const short = new VadStateMachine();
+    for (let i = 0; i < 5; i++) short.processChunk(new Int16Array(512).fill(1), 0.9); // 160ms < 500ms
+    expect(short.flush()).toHaveLength(0);
   });
 });
 

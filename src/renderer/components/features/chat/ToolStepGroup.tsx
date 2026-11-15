@@ -41,6 +41,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { Button } from '../../primitives/Button';
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { foldSessionTaskStatus } from '../../../utils/foldSessionTaskStatus';
 import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalResolver';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 
@@ -221,6 +222,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       })
       .filter((x): x is ToolCall => !!x);
   }, [nodes, terminalById]);
+  const toolCallGroups = useMemo(() => {
+    const groups: ReturnType<typeof foldSessionTaskStatus> = [];
+    let visible: ToolCall[] = [];
+    for (const { toolCall } of terminalCalls) {
+      if (terminalById.get(toolCall.id)?.state === 'hidden') {
+        groups.push(...foldSessionTaskStatus(visible));
+        visible = [];
+      } else {
+        visible.push(toolCall);
+      }
+    }
+    groups.push(...foldSessionTaskStatus(visible));
+    return groups;
+  }, [terminalCalls, terminalById]);
   const receiptCacheRef = useRef(new Map<string, ToolReceiptPresentation>());
   const receiptByToolCallId = (() => {
     const liveToolCallIds = new Set(toolCalls.map((toolCall) => toolCall.id));
@@ -420,7 +435,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     );
   }
 
-  if (nodes.length === 1 && toolCalls.length === 1 && isDelegationTool(toolCalls[0].name)) {
+  if ((nodes.length === 1 && toolCalls.length === 1 && isDelegationTool(toolCalls[0].name))
+    || (nodes.length === toolCalls.length && toolCallGroups.length === 1 && toolCallGroups[0].count > 1)) {
     const toolCall = toolCalls[0];
     return (
       <div
@@ -432,6 +448,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           sessionLive={isStreamingTurn || undefined}
           agentId={nodes.find(node => node.toolCall?.id === toolCall.id)?.metadata?.agentTeam?.agentId}
           toolCall={toolCall}
+          statusCheckCount={toolCallGroups[0].count}
           index={0}
           total={1}
           compact
@@ -552,7 +569,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         <div className="ml-4 mt-1 space-y-1 pl-3">
           {truncatedRunningToolCall && (
             <ToolCallDisplay
-              sessionLive={isStreamingTurn || undefined}
+                sessionLive={isStreamingTurn || undefined}
               toolCall={truncatedRunningToolCall}
               index={0}
               total={1}
@@ -575,7 +592,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
       {tier === 'expanded' && (
         <div className="ml-4 mt-1 space-y-1 border-l border-zinc-800 pl-3">
-          {toolCalls.map((tc, i) => (
+          {toolCallGroups.map(({ toolCall: tc, count }, i) => (
             <div
               key={tc.id}
               data-trace-id={typeof tc.result?.metadata?.traceId === 'string' ? tc.result.metadata.traceId : undefined}
@@ -584,8 +601,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               sessionLive={isStreamingTurn || undefined}
                 agentId={nodes.find(node => node.toolCall?.id === tc.id)?.metadata?.agentTeam?.agentId}
                 toolCall={tc}
+                statusCheckCount={count}
                 index={i}
-                total={toolCalls.length}
+                total={toolCallGroups.length}
                 compact
                 mediaContext={{
                   sessionId,
