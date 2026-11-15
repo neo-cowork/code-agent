@@ -8,10 +8,26 @@ import { isTelemetryRecoveredMessage } from '../../shared/telemetryRecovery';
 import { stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 
 const logger = createLogger('ApprovalUserRequest');
 const AUTOMATION_ORIGIN_KINDS: ReadonlySet<SessionOriginKind> = new Set(['cron', 'heartbeat', 'headless']);
 const MODEL_DRIVEN_ORIGIN_KINDS: ReadonlySet<SessionOriginKind> = new Set(['subagent', 'agent_session_manager']);
+
+/**
+ * Automation title, else the origin's own name — but only for origins tied to a real job (`id`).
+ * Id-less cron origins (role cadence / first wake) carry an internal tag as `name`, never a task name.
+ */
+function scheduledTaskName(origin: { id?: string; name?: string }): string | undefined {
+  if (!origin.id) return undefined;
+  let title: string | undefined;
+  try {
+    title = getSessionAutomationService().getBySourceRefId(origin.id)?.title?.trim();
+  } catch {
+    logger.warn('Scheduled-task automation title unavailable; using origin name');
+  }
+  return title || origin.name?.trim() || undefined;
+}
 
 /**
  * Host-owned quote of what the user actually typed. Any incoming
@@ -25,14 +41,19 @@ export function withUserRequestQuote(
   const details = { ...incoming };
   delete details.userRequest;
   delete details.startedByAutomation;
+  delete details.scheduledTaskName;
   if (!sessionId) return details;
   try {
     const db = getDatabase();
     // Only non-human origins skip the quote. manual/channel/import/retry sessions are the
     // user's own conversations (fork, IM group chat, import) and keep the quote.
-    const originKind = db.getSession(sessionId)?.origin?.kind;
-    if (originKind && AUTOMATION_ORIGIN_KINDS.has(originKind)) {
+    const origin = db.getSession(sessionId)?.origin;
+    const originKind = origin?.kind;
+    if (origin && originKind && AUTOMATION_ORIGIN_KINDS.has(originKind)) {
       details.startedByAutomation = true;
+      const name = scheduledTaskName(origin);
+      if (name) details.scheduledTaskName = name;
+      else logger.warn('Scheduled-task approval has no usable task name; card falls back to generic wording', { sessionId, originKind });
       return details;
     }
     // Child-agent sessions: their user rows are briefs written by a model, never the human's words.

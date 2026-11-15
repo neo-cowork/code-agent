@@ -1,7 +1,7 @@
 // ============================================================================
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
-import { isProjectTrustPendingTurn } from '../../../utils/projectTrustTurn';
+import { isProjectTrustPendingTurn, isSendFailureTurn } from '../../../utils/projectTrustTurn';
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
@@ -1101,7 +1101,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());
 
-  if (shouldHideTurnRunHeader(status.key, status.tone) || isProjectTrustPendingTurn(turn)) {
+  if (shouldHideTurnRunHeader(status.key, status.tone) || isSendFailureTurn(turn)) {
     return null;
   }
 

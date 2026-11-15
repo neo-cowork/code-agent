@@ -16,7 +16,8 @@ import { executeTmeetCommand } from './tmeetToolCli';
 import { tmeetRecordListSchema } from './tmeetRecordList.schema';
 import { tmeetRecordReadSchema } from './tmeetRecordRead.schema';
 
-type Exec = (args: string[], label: string) => Promise<string>;
+export type TmeetExec = (args: string[], label: string) => Promise<string>;
+type Exec = TmeetExec;
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {});
@@ -160,7 +161,7 @@ export async function runTmeetRecordRead(exec: Exec, args: Record<string, unknow
   return { ok: true, output: parts.join('\n\n') };
 }
 
-const tmeetExec: Exec = (args, label) => executeTmeetCommand(args, label);
+export const tmeetExec: Exec = (args, label) => executeTmeetCommand(args, label);
 
 class TmeetRecordListHandler implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = tmeetRecordListSchema;
