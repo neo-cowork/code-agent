@@ -16,9 +16,21 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   // The production continuer wiring (registerAgentContinueRoute) passes no recovery
   // ports, so the continuation falls back to default ports reading the session manager.
   getSessionManager: () => ({
+    getSession: smMocks.restoreSession,
     restoreSession: smMocks.restoreSession,
     getMessages: smMocks.getMessages,
     updateMessage: smMocks.updateMessage,
+  }),
+}));
+vi.mock('../../../src/host/services', async (importActual) => ({
+  ...await importActual<typeof import('../../../src/host/services')>(),
+  getSessionManager: () => ({ restoreSession: smMocks.restoreSession }),
+}));
+vi.mock('../../../src/host/task', () => ({
+  getTaskManager: () => ({
+    setCurrentSessionId: vi.fn(),
+    setSessionContext: vi.fn(),
+    getOrCreateCurrentOrchestrator: () => null,
   }),
 }));
 const logs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));

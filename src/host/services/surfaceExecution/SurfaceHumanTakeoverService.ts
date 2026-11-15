@@ -81,20 +81,27 @@ export class SurfaceHumanTakeoverService {
         });
         return resolution;
       }
-      if (resolution === 'continue' || resolution === 'navigated') this.interrupts.resume(input.subject);
-      else await this.interrupts.stop(input.subject);
-      this.events.publish(input.subject, {
-        phase: 'human',
-        status: resolution === 'continue' || resolution === 'navigated' ? 'succeeded' : 'cancelled',
-        userSummary: `Human takeover ${resolution}`,
-        ...targetAt(),
-        evidenceRefs: [],
-        artifactRefs: [],
-        availableControls: resolution === 'continue' || resolution === 'navigated'
-          ? ['pause', 'takeover', 'stop', 'end_session']
-          : ['end_session'],
-        completedAt: Date.now(),
-      });
+      const resumed = resolution === 'continue' || resolution === 'navigated';
+      const finish = async (): Promise<void> => {
+        if (resumed) this.interrupts.resume(input.subject);
+        else await this.interrupts.stop(input.subject);
+        this.events.publish(input.subject, {
+          phase: 'human',
+          status: resumed ? 'succeeded' : 'cancelled',
+          userSummary: `Human takeover ${resolution}`,
+          ...targetAt(),
+          evidenceRefs: [],
+          artifactRefs: [],
+          availableControls: resumed
+            ? ['pause', 'takeover', 'stop', 'end_session']
+            : ['end_session'],
+          completedAt: Date.now(),
+        });
+      };
+      // 取消的 run 在 endRun 的 cleanup 作用域里 respond('cancel')；本 then 回调创建于作用域之外，
+      // 不显式进 cleanup 作用域会被 active 闸拒掉，会话就永远停在 waiting_human。
+      if (resumed) await finish();
+      else await this.sessions.withCancellingOwnerCleanup(input.subject.sessionId, input.subject, finish);
       return resolution;
     });
     return { requestId, wait };
