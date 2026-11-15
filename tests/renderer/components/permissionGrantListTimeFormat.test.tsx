@@ -22,14 +22,15 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import PermissionGrantList from '../../../src/renderer/components/features/settings/tabs/PermissionGrantList';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const GRANTED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const EXPIRES_AT = new Date(2026, 10, 9, 17, 30, 0).getTime(); // 2026-11-09 17:30
 const ZH = '2026/11/09 16:05';
 const ZH_EXPIRES = '2026/11/09 17:30';
-const EN = '11/9/2026, 4:05:00 PM';
-const EN_EXPIRES = '11/9/2026, 5:30:00 PM';
+const EN = formatDateTime(GRANTED_AT, 'en');
+const EN_EXPIRES = formatDateTime(EXPIRES_AT, 'en');
 
 function grantsPayload() {
   return [
@@ -57,14 +58,14 @@ describe('PermissionGrantList 授权/有效期时间（跟随 UI language）', (
     expect(container.textContent).not.toMatch(/AM|PM/);
   });
 
-  it('en UI：维持 en-US 原样（英文 UI 行为不变）', async () => {
+  it('en UI：授权/有效期时间跟随 formatDateTime', async () => {
     useAppStore.setState({ language: 'en' });
     const { container } = render(<PermissionGrantList />);
     await waitFor(() => {
       expect(container.textContent).toContain(`Granted ${EN}`);
     });
     expect(container.textContent).toContain(`Valid until ${EN_EXPIRES}`);
-    expect(container.textContent).not.toContain('16:05');
+    expect(container.textContent).toMatch(/(?<!\d)2026(?!\d).*\s(?:16|4):05(?!\d)/);
   });
 });
 

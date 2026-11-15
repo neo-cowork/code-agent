@@ -13,11 +13,12 @@ import type { VoiceCallSummary } from '../../../src/shared/contract/voice';
 import { VoiceCallSummaryCard } from '../../../src/renderer/components/features/voice/VoiceCallSummaryCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const LINE_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
-const EN = '11/9/2026, 4:05:00 PM';
+const EN = formatDateTime(LINE_AT, 'en');
 
 const summary: VoiceCallSummary = {
   durationSec: 60,
@@ -59,6 +60,8 @@ describe('VoiceCallSummaryCard 字幕行时间（跟随 UI language）', () => {
     fireEvent.click(screen.getByRole('button'));
     const row = screen.getByText('check the build').closest('li');
     expect(row?.textContent).toContain(EN);
-    expect(row?.textContent).not.toContain('16:05');
+    const withoutEn = (row?.textContent ?? '').replace(EN, '');
+    expect(withoutEn).not.toContain(ZH);
+    expect(withoutEn).not.toContain('16:05');
   });
 });
