@@ -431,6 +431,8 @@ export const enSettingsSystem = {
       loading: 'Loading…',
       otherConnectors: 'Other connectors',
       operationFailedPrefix: 'Connector operation failed: ',
+      checkDidNotSucceed: 'The check did not succeed, please try again later',
+      openAutomationSettings: 'Open System Settings',
       connected: 'Connected',
       enabled: 'Enabled',
       disabled: 'Disabled',

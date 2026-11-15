@@ -30,6 +30,7 @@ function initialRemindersReadiness(): NativeReadiness {
 
 let remindersReadiness: NativeReadiness = initialRemindersReadiness();
 let remindersProbeError: string | undefined;
+let remindersProbeErrorCode: ConnectorStatus['errorCode'];
 let remindersProbeCheckedAt: number | undefined;
 // 最近一次探测拿到的提醒列表是否为空（授权通过但无列表）——getStatus 的
 // ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
@@ -38,6 +39,7 @@ let remindersProbeListEmpty = false;
 export function resetRemindersConnectorReadiness(): void {
   remindersReadiness = initialRemindersReadiness();
   remindersProbeError = undefined;
+  remindersProbeErrorCode = undefined;
   remindersProbeCheckedAt = undefined;
   remindersProbeListEmpty = false;
 }
@@ -46,6 +48,7 @@ function markRemindersReadReady(noAccessibleLists = false): void {
   remindersReadiness = 'ready';
   remindersProbeCheckedAt = Date.now();
   remindersProbeError = undefined;
+  remindersProbeErrorCode = undefined;
   remindersProbeListEmpty = noAccessibleLists;
 }
 
@@ -87,6 +90,7 @@ function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
       connected: false,
       readiness: 'failed',
       error: remindersProbeError,
+      errorCode: remindersProbeErrorCode,
       checkedAt: remindersProbeCheckedAt,
       detail: `Reminders 授权/可用性检查失败：${remindersProbeError || '未知错误'}`,
       actions: ['repair_permissions', 'disconnect', 'remove'],
@@ -152,6 +156,8 @@ async function probeRemindersAccess(): Promise<string[]> {
     remindersReadiness = 'failed';
     remindersProbeCheckedAt = Date.now();
     remindersProbeError = errorMessage(error);
+    remindersProbeErrorCode = isAppleScriptFailure(error)
+      && describeAppleScriptFailure('Reminders', error).code === 'not_authorized' ? 'not_authorized' : undefined;
     throw error;
   }
 }

@@ -433,6 +433,8 @@ export const zhSettingsSystem = {
       loading: '加载中…',
       otherConnectors: '其他连接器',
       operationFailedPrefix: '连接器操作失败: ',
+      checkDidNotSucceed: '检查没成功，请稍后再试',
+      openAutomationSettings: '打开系统设置',
       connected: '已连接',
       enabled: '启用',
       disabled: '停用',

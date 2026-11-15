@@ -3,6 +3,13 @@
 // ============================================================================
 
 import { exec } from 'child_process';
+import { createLogger } from '../services/infra/logger';
+import {
+  appleScriptFailureLogDetail,
+  describeAppleScriptFailure,
+  isAppleScriptFailure,
+} from '../connectors/native/osascript';
+import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/settingsPane';
 import type { IpcMain, AppWindow } from '../platform';
 import { broadcastToRenderer } from '../platform';
 import {
@@ -134,6 +141,7 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       error: status.error,
       checkedAt: status.checkedAt,
       noAccessibleItems: status.noAccessibleItems,
+      errorCode: status.errorCode,
       actions: status.actions,
       capabilities: status.capabilities,
     } satisfies ConnectorStatusSummary;
@@ -226,6 +234,37 @@ async function handleRetryConnector(
   return handleListStatuses();
 }
 
+const logger = createLogger('ConnectorIPC');
+
+/**
+ * 连接器执行（探测/修复）抛出 osascript 失败时，execFile 的 message 带整段脚本，绝不能到 UI。
+ * 原始详情只进 host warn 日志；抛给渲染层的是 describeAppleScriptFailure 的人话。
+ * 非 osascript 错误（参数/平台校验）原样放行。
+ */
+async function executeConnectorAction(
+  connector: { id: string; label: string; execute: (action: string, payload: Record<string, unknown>) => Promise<unknown> },
+  action: 'probe_access' | 'repair_permissions',
+): Promise<void> {
+  try {
+    await connector.execute(action, {});
+  } catch (error) {
+    if (!isAppleScriptFailure(error)) throw error;
+    const described = describeAppleScriptFailure(connector.label, error);
+    logger.warn('Connector action failed', {
+      connector: connector.id,
+      action,
+      code: described.code,
+      detail: appleScriptFailureLogDetail(error),
+    });
+    throw new Error(described.message, { cause: error });
+  }
+}
+
+async function handleOpenAutomationSettings(): Promise<{ opened: boolean }> {
+  if (!canOpenEnvSettings()) return { opened: false };
+  return { opened: await openEnvSettings('automation') };
+}
+
 async function handleProbeConnector(
   connectorId: string | undefined,
   broadcast: () => Promise<void>,
@@ -240,7 +279,7 @@ async function handleProbeConnector(
   }
 
   try {
-    await connector.execute('probe_access', {});
+    await executeConnectorAction(connector, 'probe_access');
   } finally {
     lastConnectorStatusSnapshot = '';
     await broadcast();
@@ -324,7 +363,7 @@ async function handleRepairConnectorPermission(
   }
 
   try {
-    await connector.execute('repair_permissions', {});
+    await executeConnectorAction(connector, 'repair_permissions');
   } finally {
     lastConnectorStatusSnapshot = '';
     await broadcast();
@@ -825,6 +864,9 @@ const connectorHandlers: DomainRouteHandlers<ConnectorDomainRequest, ConnectorRo
     return await handleConnectorOAuthDisconnect(
       payload as { providerId?: string } | undefined,
     );
+  },
+  openAutomationSettings: async () => {
+    return await handleOpenAutomationSettings();
   },
   openApp: async (_ctx, payload) => {
     return await handleOpenConnectorApp(

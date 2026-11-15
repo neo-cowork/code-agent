@@ -35,6 +35,7 @@ function initialCalendarReadiness(): NativeReadiness {
 
 let calendarReadiness: NativeReadiness = initialCalendarReadiness();
 let calendarProbeError: string | undefined;
+let calendarProbeErrorCode: ConnectorStatus['errorCode'];
 let calendarProbeCheckedAt: number | undefined;
 // 最近一次探测拿到的日历列表是否为空（授权通过但无日历）——getStatus 的
 // ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
@@ -43,6 +44,7 @@ let calendarProbeListEmpty = false;
 export function resetCalendarConnectorReadiness(): void {
   calendarReadiness = initialCalendarReadiness();
   calendarProbeError = undefined;
+  calendarProbeErrorCode = undefined;
   calendarProbeCheckedAt = undefined;
   calendarProbeListEmpty = false;
 }
@@ -85,6 +87,7 @@ function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
       connected: false,
       readiness: 'failed',
       error: calendarProbeError,
+      errorCode: calendarProbeErrorCode,
       checkedAt: calendarProbeCheckedAt,
       detail: `Calendar 授权/可用性检查失败：${calendarProbeError || '未知错误'}`,
       actions: ['repair_permissions', 'disconnect', 'remove'],
@@ -165,12 +168,15 @@ async function probeCalendarAccess(): Promise<string[]> {
     calendarReadiness = 'ready';
     calendarProbeCheckedAt = Date.now();
     calendarProbeError = undefined;
+  calendarProbeErrorCode = undefined;
     calendarProbeListEmpty = calendars.length === 0;
     return calendars;
   } catch (error) {
     calendarReadiness = 'failed';
     calendarProbeCheckedAt = Date.now();
     calendarProbeError = errorMessage(error);
+    calendarProbeErrorCode = isAppleScriptFailure(error)
+      && describeAppleScriptFailure('Calendar', error).code === 'not_authorized' ? 'not_authorized' : undefined;
     throw error;
   }
 }
