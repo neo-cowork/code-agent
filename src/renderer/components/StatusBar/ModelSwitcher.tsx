@@ -70,6 +70,7 @@ import { loadEnginePanelData } from './enginePanelLoader';
 import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
 import { modelOverrideFailureToast } from './modelOverrideErrorCopy';
+import { resolveDisplayedModel, useResyncModelFromHost } from './sessionModelTruth';
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -177,6 +178,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
   const [overrideProvider, setOverrideProvider] = useState<ModelProvider | null>(null);
   const [overrideAdaptive, setOverrideAdaptive] = useState<boolean>(false);
+  const [hostModel, setHostModel] = useState<{ provider: ModelProvider; model: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
@@ -416,36 +418,52 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     setOverrideModel(null);
     setOverrideProvider(null);
     setOverrideAdaptive(false);
+    setHostModel(null);
   }, [sessionId]);
 
-  useEffect(() => {
-    if (!sessionId) return;
-    let cancelled = false;
-    window.domainAPI
-      ?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
-        IPC_DOMAINS.SESSION,
-        'getModelOverride',
-        { sessionId }
-      )
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+  // 会话 override 与下一轮实际模型都以 host 为准：首次进入会话、host 每轮模型决策后、窗口重新聚焦都重拉
+  // （外部接口能改 override，默认模型的回落只有 host 算得准）。
+  const refreshOverride = useCallback(async (silent: boolean) => {
+    const requestedFor = sessionIdRef.current;
+    if (!requestedFor) return;
+    window.domainAPI?.invoke<{ provider: string; model: string }>(IPC_DOMAINS.SESSION, 'getEffectiveModel', { sessionId: requestedFor })
       .then((res) => {
-        if (cancelled) return;
-        if (res?.success) {
-          setOverrideModel(res.data?.model ?? null);
-          setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
-          setOverrideAdaptive(!!res.data?.adaptive);
-        } else {
-          toast.error(modelOverrideFailureToast('load', res?.error?.message));
+        if (sessionIdRef.current === requestedFor && res?.success && res.data?.model) {
+          setHostModel({ provider: res.data.provider as ModelProvider, model: res.data.model });
         }
       })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          toast.error(modelOverrideFailureToast('load', err));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
+      .catch(() => { /* 拿不到就沿用设置快照，不打扰用户 */ });
+    try {
+      const res = await window.domainAPI?.invoke<{ provider: string; model: string; adaptive?: boolean } | null>(
+        IPC_DOMAINS.SESSION,
+        'getModelOverride',
+        { sessionId: requestedFor }
+      );
+      if (sessionIdRef.current !== requestedFor) return;
+      if (res?.success) {
+        setOverrideModel(res.data?.model ?? null);
+        setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
+        setOverrideAdaptive(!!res.data?.adaptive);
+      } else if (!silent) {
+        toast.error(modelOverrideFailureToast('load', res?.error?.message));
+      }
+    } catch (err: unknown) {
+      if (!silent && sessionIdRef.current === requestedFor) toast.error(modelOverrideFailureToast('load', err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOverride(false);
+  }, [sessionId, refreshOverride]);
+
+  const lastDecision = useResyncModelFromHost(sessionId, () => { void refreshOverride(true); });
+
+  // 渲染层默认被别的路径改了（首启引导、团队中转下发、设置重试）：host 那份也跟着重拉，别让旧缓存盖住。
+  useEffect(() => {
+    void refreshOverride(true);
+  }, [currentModel, defaultProvider, refreshOverride]);
 
   const handleSelect = useCallback(
     async (option: RuntimeModelOption) => {
@@ -537,6 +555,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setOverrideModel(null);
       setOverrideProvider(null);
       setOverrideAdaptive(false);
+      void refreshOverride(true);
       emitModelOverrideChange({ sessionId, override: null });
       trackModelSelected({
         sessionId,
@@ -549,7 +568,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     } catch (err) {
       toast.error(modelOverrideFailureToast('clear', err));
     }
-  }, [sessionId, defaultProvider, currentModel]);
+  }, [sessionId, defaultProvider, currentModel, refreshOverride]);
 
   const selectableOptionCount = showModelSettingsPrompt ? 0 : 1 + filteredOptions.length;
 
@@ -607,9 +626,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     selectableOptionCount,
   ]);
 
-  const displayModel = overrideModel || currentModel;
+  // 没有会话 override 时显示 host 算出的下一轮模型；host 还没回话的首帧才用渲染层设置快照。
+  const displayModel = overrideModel || hostModel?.model || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
-  const displayProvider = overrideProvider || defaultProvider;
+  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
 
   // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
   // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
@@ -643,7 +663,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     }
   }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
 
-  const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
+  // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
+  const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
+  const switchedLabel = shown.switchedFrom
+    ? `${getRuntimeModelLabel(shown.model, shown.provider, modelSettings)}（已换）`
+    : null;
+  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings));
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -700,6 +725,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         healthSummary: selectedNativeHealthSummary,
         effort: selectedEffort,
         thinkingLabel: thinkingShortLabel,
+        switchedFrom: shown.switchedFrom,
+        shownProvider: shown.provider,
+        shownModel: shown.model,
       });
 
   const handleTriggerClick = useCallback(() => {

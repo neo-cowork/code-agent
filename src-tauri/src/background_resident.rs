@@ -1,7 +1,7 @@
 //! Scheduled-only quit keeps the desktop shell resident and explains the real exit once.
 
 use std::{fs, path::Path};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 
 use crate::quit_dialog_i18n::{background_hint, QuitDialogLanguage};
 
@@ -21,7 +21,7 @@ fn post_hint_once(
     Ok(true)
 }
 
-pub(crate) fn minimize_and_hint(app: &AppHandle, language: QuitDialogLanguage) {
+pub(crate) fn minimize_and_hint<R: Runtime>(app: &AppHandle<R>, language: QuitDialogLanguage) {
     // Match CloseRequested: minimize rather than exit, keeping the tray and host alive.
     for window in app.webview_windows().values() {
         if let Err(error) = window.minimize() {

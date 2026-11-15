@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersDeleteSchema as schema } from './remindersDelete.schema';
@@ -41,7 +42,7 @@ async function executeRemindersDelete(
 
   const connector = getConnectorRegistry().get('reminders');
   if (!connector) {
-    return { ok: false, error: 'Reminders connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'change'), code: 'NOT_INITIALIZED' };
   }
 
   try {

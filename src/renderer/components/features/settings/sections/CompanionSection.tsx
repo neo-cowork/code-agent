@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '@shared/constants/companion';
@@ -175,7 +176,7 @@ function DeviceRow({ device, index, projects, text, locale, busy, onRevoke }: {
   return <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
     <div className="space-y-1">
       <p>{device.name?.trim() || `${text.phone} ${index + 1}`}</p>
-      {device.pairedAt != null && <p className="text-xs text-zinc-500">{text.pairedAt} {new Date(device.pairedAt).toLocaleString(locale)}</p>}
+      {device.pairedAt != null && <p className="text-xs text-zinc-500">{text.pairedAt} {formatDateTime(device.pairedAt, locale.startsWith('en') ? 'en' : 'zh')}</p>}
       <p className="text-xs text-zinc-400">{full ? text.scopeAll : text.scopeLimited}</p>
       {!full && <p className="text-xs text-zinc-500">{text.legacyScope}</p>}
     </div>
