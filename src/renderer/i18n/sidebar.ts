@@ -9,6 +9,9 @@ export const sidebarZh = {
   skillTimeline: { selected: '本轮使用', triggered: '已使用', written: '已加载' },
   modelSwitcherTooltip: {
     engine: '运行引擎', service: '服务状态', effort: '推理强度', thinking: '思考',
+    model: '主任务模型: {model}', billing: '计费: {billing}',
+    adaptive: '自动路由（按任务、成本和能力切换，当前主任务 {model}）',
+    overridden: '已覆盖: {model} (原主任务: {original})',
   },
 
   sidebar: {
@@ -401,6 +404,9 @@ export const sidebarEn: typeof sidebarZh = {
   skillTimeline: { selected: 'Selected', triggered: 'Used', written: 'Loaded' },
   modelSwitcherTooltip: {
     engine: 'Engine', service: 'Provider', effort: 'Effort', thinking: 'Thinking',
+    model: 'Task model: {model}', billing: 'Billing: {billing}',
+    adaptive: 'Automatic selection (current task model: {model})',
+    overridden: 'Selected: {model} (original task model: {original})',
   },
 
   sidebar: {

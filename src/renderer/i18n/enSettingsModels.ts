@@ -1,17 +1,11 @@
-// ============================================================================
-// Settings namespace translations (en/Models) — 纯平移拆分（债务门）
-// ============================================================================
-
+import { modelSwitcherCopyEn } from './modelSwitcherCopy';
 import { enSkillCaution } from './enSkillCaution';
 import { enSkillCautionRules } from './enSkillCautionRules';
-
 export const enSettingsModels = {
     model: {
       title: 'Model configuration',
       description: 'Optionally enable task-based switching first, then connect Providers and configure models below.',
       unknownError: 'Unknown error',
-      // Unattended half-price tier note (N-MODELCAT-SERVICE-TIER-COST): the multiplier
-      // value is injected from the SERVICE_TIER_COST_MULTIPLIER constant, never a literal.
       serviceTierCostNote: 'Unattended tasks automatically use the half-price tier (about {multiplier}x); if it is declined, they fall back to the standard price.',
       providers: {
         deepseek: {
@@ -161,15 +155,14 @@ export const enSettingsModels = {
         unverifiedHint: 'Tool calling is unverified for these models. Picking one means Neo may stall or do nothing mid-task — at your own risk.',
         contextLabel: 'Context',
         effortSectionLabel: 'Thinking depth',
-        // Merged thinking segment (Thinking + Effort): Off/Low/Med/High quarters
         thinkingSectionLabel: 'Thinking',
         thinkingExternalHint: 'This engine decides its own reasoning level',
+        ...modelSwitcherCopyEn,
         thinkingOptionAuto: 'Auto',
         thinkingOptionOff: 'Off',
         thinkingOptionLow: 'Low',
         thinkingOptionMedium: 'Med',
         thinkingOptionHigh: 'High',
-        // Per-turn web search toggle: enabled when the model searches natively or an external source is configured
         searchSectionLabel: 'Web search',
         searchOptionOn: 'On',
         searchOptionOff: 'Off',

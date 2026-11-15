@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { detectInternalTextLeaks } from '../../../src/shared/internalTextLeakDetect';
@@ -9,6 +9,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { ModelSwitcher } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { TurnTimelineNodeRenderer } from '../../../src/renderer/components/features/chat/TraceTimelineNodes';
 import { TraceNodeRenderer } from '../../../src/renderer/components/features/chat/TraceNodeRenderer';
@@ -102,6 +103,26 @@ describe.each(['zh', 'en'] as const)('seven user-visible exits (%s)', (language)
     const copy = [false, true].flatMap((adaptive) => [false, true].map((overridden) => formatNativeModelSwitcherTooltip({ ...base, adaptive, overridden })));
     copy.push(formatExternalModelSwitcherTooltip({ language, engineLabel: 'External', model: 'Example' }));
     assertClean('model-status-tooltip', copy.join(' '), language);
+  });
+  it('4 opened model status control', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const invoke = vi.fn(async (_domain: string, action: string) => {
+      if (action === 'get') return { success: true, data: { models: { default: 'xiaomi', providers: {
+        xiaomi: { enabled: true, apiKeyConfigured: true, models: { 'mimo-v2.6-flash': { enabled: true } } },
+      }, routing: {} } } };
+      if (action === 'getModelOverride') return { success: true, data: null };
+      if (action === 'listSources') return { success: true, data: [] };
+      return { success: false, data: null };
+    });
+    Object.defineProperty(window, 'domainAPI', { configurable: true, value: { invoke } });
+    try {
+      const { container } = render(<ModelSwitcher currentModel="mimo-v2.6-flash" />);
+      fireEvent.click(container.querySelector('button')!);
+      await waitFor(() => expect(document.querySelector('[data-model-search-input]')).toBeTruthy());
+      assertClean('model-status-control', visibleChrome(document.body), language);
+    } finally {
+      delete (window as unknown as Record<string, unknown>).domainAPI;
+    }
   });
   it('5 session and scheduled task names through the production presenter', () => {
     assertClean('session-task-names', [title, `[Schedule] ${title}`].map((raw) => getDisplaySessionTitle(raw, language)).join(' '), language);

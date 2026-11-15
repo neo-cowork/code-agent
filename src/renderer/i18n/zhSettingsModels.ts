@@ -1,17 +1,11 @@
-// ============================================================================
-// Settings namespace translations (zh/Models) — 纯平移拆分（债务门）
-// ============================================================================
-
+import { modelSwitcherCopyZh } from './modelSwitcherCopy';
 import { zhSkillCaution } from './zhSkillCaution';
 import { zhSkillCautionRules } from './zhSkillCautionRules';
-
 export const zhSettingsModels = {
     model: {
       title: '模型配置',
       description: '先（可选）开启「按任务自动切换」，再到下方接入 Provider、配置模型。',
       unknownError: '未知错误',
-      // 无人值守半价档说明行（N-MODELCAT-SERVICE-TIER-COST）：倍率数字由组件从
-      // SERVICE_TIER_COST_MULTIPLIER 常量注入 {multiplier}，文案里不落字面量。
       serviceTierCostNote: '无人值守任务自动用半价档（约 {multiplier}×，被拒自动回标准价）',
       providers: {
         deepseek: {
@@ -160,17 +154,15 @@ export const zhSettingsModels = {
         unverifiedGroup: '高级：未验证的模型',
         unverifiedHint: '这些模型没验证过工具调用。选了之后，让 Neo 干活可能中途失败或什么都不做——自担风险。',
         contextLabel: '上下文',
-        // 这一档从底栏收进面板里了，标题不能继续是英文 Effort
         effortSectionLabel: '思考深度',
-        // 思考段（Thinking/Effort 合并）：关/低/中/高 4 等分
         thinkingSectionLabel: '思考',
         thinkingExternalHint: '此引擎自行决定推理档位',
+        ...modelSwitcherCopyZh,
         thinkingOptionAuto: '自动',
         thinkingOptionOff: '关',
         thinkingOptionLow: '低',
         thinkingOptionMedium: '中',
         thinkingOptionHigh: '高',
-        // 逐轮联网搜索开关：模型自带搜索或已配外部搜索源时才可用
         searchSectionLabel: '联网搜索',
         searchOptionOn: '开',
         searchOptionOff: '关',
@@ -283,7 +275,6 @@ export const zhSettingsModels = {
       pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
       exportBundle: '导出诊断包',
-      // 录音进包必须是导出时的显式勾选，默认不勾（N-L7-REC 工单 §4）。
       includeRecordings: '包含通话录音（{count} 段，{size}）',
       includeRecordingsHint: '录音是原始音频，无法脱敏。不勾选则诊断包里没有音频。',
       rerun: '重新诊断',

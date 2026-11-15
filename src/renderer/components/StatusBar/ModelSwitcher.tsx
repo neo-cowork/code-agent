@@ -1,9 +1,5 @@
 import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from './modelSwitcherTooltips';
-// ============================================================================
-// ModelSwitcher - 运行时模型切换下拉框
-// ============================================================================
-// 嵌入 StatusBar，支持对话中途切换模型
-
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -39,9 +35,6 @@ import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
 import { Z_LAYERS } from '../../styles/zLayers';
-
-// 引擎探测结果的会话级缓存：探测要真跑本机 CLI（数秒），重开面板先展示上次结果再后台刷新，
-// 首次打开显示「检测中」而不是空白（真机 2026-08-05：空白太久被误读为没有引擎）。
 let engineSourcesCache: AgentEngineSourceDescriptor[] = [];
 import {
   buildProviderBillingSummary,
@@ -70,25 +63,19 @@ import { loadEnginePanelData } from './enginePanelLoader';
 import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
 import { modelOverrideFailureToast } from './modelOverrideErrorCopy';
-
+import { interpolate } from '../../i18n/interpolate';
 interface ModelSwitcherProps {
   currentModel: string;
 }
-
 export const MODEL_OVERRIDE_CHANGE_EVENT = 'code-agent:model-override-change';
-
 /** 会话内（如 AgentErrorCard「切换模型」按钮）请求打开模型选择器的事件。 */
 export const OPEN_MODEL_SWITCHER_EVENT = 'code-agent:open-model-switcher';
-
-// 相对倍率价签（设计稿 §8.1）：基准恒定，逐 option 纯函数求值即可，无需状态。
 const PRICE_BASELINE = resolveModelPrice(PRICING_BASELINE_DEFAULT.provider, PRICING_BASELINE_DEFAULT.modelId);
-
 export function getModelPriceBadge(provider: string, model: string): { label: string; known: boolean } {
   const price = resolveModelPrice(provider, model);
   const label = formatCoefLabel(computeCoef(price, PRICE_BASELINE));
   return label ? { label, known: true } : { label: '—', known: false };
 }
-
 export interface ModelOverrideChangeDetail {
   sessionId: string;
   override: {
@@ -97,22 +84,18 @@ export interface ModelOverrideChangeDetail {
     adaptive?: boolean;
   } | null;
 }
-
 export interface ModelSwitcherMenuPosition {
   left: number;
   bottom: number;
   width: number;
   maxHeight: number;
 }
-
 const MODEL_SWITCHER_MENU_WIDTH = 352;
 const MODEL_SWITCHER_MENU_ESTIMATED_HEIGHT = 520;
 const MODEL_SWITCHER_VIEWPORT_MARGIN = 12;
-
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
-
 export function computeModelSwitcherMenuPosition(args: {
   triggerRect: Pick<DOMRect, 'left' | 'top'>;
   viewportWidth: number;
@@ -129,7 +112,6 @@ export function computeModelSwitcherMenuPosition(args: {
   const maxLeft = Math.max(margin, args.viewportWidth - width - margin);
   const preferredBottom = args.viewportHeight - args.triggerRect.top + 4;
   const maxBottom = Math.max(margin, args.viewportHeight - effectiveHeight - margin);
-
   return {
     left: clampNumber(args.triggerRect.left, margin, maxLeft),
     bottom: clampNumber(preferredBottom, margin, maxBottom),
@@ -137,7 +119,6 @@ export function computeModelSwitcherMenuPosition(args: {
     maxHeight,
   };
 }
-
 export function shouldShowModelSettingsPrompt(
   engineKind: AgentEngineKind,
   modelSettings: AppSettings | null,
@@ -147,7 +128,6 @@ export function shouldShowModelSettingsPrompt(
     && modelSettings !== null
     && !nativeHasConfiguredModels;
 }
-
 export function shouldShowNativeReasoningSegment(args: {
   engineKind: AgentEngineKind;
   showModelSettingsPrompt: boolean;
@@ -155,7 +135,6 @@ export function shouldShowNativeReasoningSegment(args: {
 }): boolean {
   return getReasoningSegmentMode(args) === 'active';
 }
-
 export function shouldDismissModelSwitcher(
   target: Node,
   trigger: Pick<Node, 'contains'> | null,
@@ -163,15 +142,12 @@ export function shouldDismissModelSwitcher(
 ): boolean {
   return !trigger?.contains(target) && !menu?.contains(target);
 }
-
 function emitModelOverrideChange(detail: ModelOverrideChangeDetail): void {
   window.dispatchEvent(new CustomEvent<ModelOverrideChangeDetail>(MODEL_OVERRIDE_CHANGE_EVENT, { detail }));
 }
-
 function trackModelSelected(properties: Record<string, unknown>): void {
   trackRenderer(POSTHOG_EVENTS.MODEL_SELECTED, properties);
 }
-
 export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [overrideModel, setOverrideModel] = useState<string | null>(null);
@@ -181,23 +157,20 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
-  // modelSettings IPC 是否已返回（用于打开面板时的锚定时机）
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const { t, language } = useI18n();
   const modelText = t.settings.model.models;
+  const panelText = modelText.switcherPanel;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // 内层模型列表滚动容器（max-h-64 overflow-y-auto），锚定滚动只动它，避免误滚外层页面
   const listScrollRef = useRef<HTMLDivElement>(null);
-  // 打开面板后是否还需要执行一次"锚定到选中模型"（搜索过滤不重复锚定）
   const anchorPendingRef = useRef(false);
   const [menuPos, setMenuPos] = useState<ModelSwitcherMenuPosition | null>(null);
   const [engineMenuView, setEngineMenuView] = useState<EngineMenuView>('models');
   const [engineSources, setEngineSources] = useState<AgentEngineSourceDescriptor[]>(() => engineSourcesCache);
   const [engineSourcesLoading, setEngineSourcesLoading] = useState(engineSourcesCache.length === 0);
   const [engineCatalog, setEngineCatalog] = useState<AgentEngineModelCatalog | null>(null);
-  // 首次打开外部引擎面板时，effect 尚未起请求的首帧也必须是加载态，不能闪失败态。
   const [engineCatalogLoading, setEngineCatalogLoading] = useState(true);
   const [engineCatalogFailed, setEngineCatalogFailed] = useState(false);
   const [enginePanelReloadKey, setEnginePanelReloadKey] = useState(0);
@@ -212,14 +185,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const defaultProvider = useAppStore((s) => s.modelConfig.provider);
-  // effort 切换内嵌到模型菜单顶部，对照 Codex 的"模型 + Intelligence"两层选择
   const effortLevel = useModeStore((s) => s.effortLevel);
   const effortLevelExplicit = useModeStore((s) => s.effortLevelExplicit);
   const setEffortLevel = useModeStore((s) => s.setEffortLevel);
   const setAutomaticEffortLevel = useModeStore((s) => s.setAutomaticEffortLevel);
   const thinkingEnabled = useModeStore((s) => s.thinkingEnabled);
   const setThinkingEnabled = useModeStore((s) => s.setThinkingEnabled);
-  // 状态栏仍展示当前执行引擎；弹窗本身只负责 Neo provider 模型，不再承载外部引擎模型配置。
   const engine = normalizeAgentEngineSession(session?.engine);
   const modelProviderInclusions = useMemo(
     () => Array.from(new Set([
@@ -228,7 +199,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     ].filter(Boolean))) as ModelProvider[],
     [defaultProvider, overrideProvider],
   );
-
   const modelOptions = useMemo(
     () => buildRuntimeModelOptions(modelSettings, QUICK_SWITCH_PROVIDERS, {
       includeDisabledProviders: modelProviderInclusions,
@@ -245,8 +215,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     nativeHasConfiguredModels,
   );
   const visibleModelOptions = showModelSettingsPrompt ? [] : modelOptions;
-
-  // 搜索过滤
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
@@ -259,7 +227,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       );
     });
   }, [searchQuery, visibleModelOptions]);
-
   const groupedFilteredOptions = useMemo(() => {
     let nextIndex = 1;
     const groupProviderHealth = (group: ReturnType<typeof groupRuntimeModelOptionsByProvider>[number]) => {
@@ -271,34 +238,27 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       healthMap,
     ).map((group) => ({
       ...group,
-      billingSummary: buildProviderBillingSummary(group.providerBillingMode),
-      healthSummary: buildProviderHealthSummary(healthSnapshotForProviderSort(groupProviderHealth(group))),
+      billingSummary: buildProviderBillingSummary(group.providerBillingMode, panelText),
+      healthSummary: buildProviderHealthSummary(healthSnapshotForProviderSort(groupProviderHealth(group)), panelText),
       options: group.options.map((option) => ({
         option,
         index: nextIndex++,
       })),
     }));
   }, [filteredOptions, healthMap]);
-
-  // 打开时自动聚焦搜索框 + 重置搜索
   useEffect(() => {
     if (open) {
       setSearchQuery('');
-      // 延迟聚焦，等待 DOM 渲染
       requestAnimationFrame(() => {
         searchInputRef.current?.focus();
       });
     }
   }, [open]);
-
-  // 会话内入口（AgentErrorCard「切换模型」）请求打开菜单
   useEffect(() => {
     const handleOpenRequest = () => setOpen(true);
     window.addEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
     return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
   }, []);
-
-  // 打开时读取模型设置，保证输入框模型列表和 Settings 的启用状态一致
   useEffect(() => {
     if (!open) {
       setSettingsLoaded(false);
@@ -318,8 +278,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
       .finally(() => setSettingsLoaded(true));
   }, [open]);
-
-  // 引擎来源与模型目录独立返回：来源通常只要几毫秒，不陪冷目录一起等待。
   useEffect(() => {
     const domainAPI = window.domainAPI;
     if (!open || !domainAPI) return;
@@ -350,13 +308,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       onCatalogFailed: () => setEngineCatalogFailed(true),
     });
   }, [enginePanelReloadKey, open]);
-
   useEffect(() => {
     setEngineMenuView('models');
     setSearchQuery('');
   }, [engine.kind]);
-
-  // 打开时拉取 provider 健康状态
   useEffect(() => {
     if (open) {
       window.domainAPI?.invoke<Record<string, ProviderHealthSnapshot>>(
@@ -368,8 +323,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         .catch(() => { /* 静默失败，健康点不显示即可 */ });
     }
   }, [open]);
-
-  // 点击外部关闭（portal 让菜单脱离 ref，需要同时检查 triggerRef + menuRef）
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -382,8 +335,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       return () => document.removeEventListener('mousedown', handler);
     }
   }, [open]);
-
-  // 打开时 / 视口变化时，计算菜单 fixed 定位（portal 到 body，脱离父容器 overflow 限制）
   useLayoutEffect(() => {
     if (!open) {
       setMenuPos(null);
@@ -409,15 +360,11 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       window.removeEventListener('scroll', updatePos, true);
     };
   }, [open]);
-
-  // 加载当前 override
   useLayoutEffect(() => {
-    // 会话切换的首帧先回落到 config 默认；上一会话的 override 不能在 IPC 返回前残留。
     setOverrideModel(null);
     setOverrideProvider(null);
     setOverrideAdaptive(false);
   }, [sessionId]);
-
   useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
@@ -434,19 +381,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           setOverrideProvider((res.data?.provider as ModelProvider | undefined) ?? null);
           setOverrideAdaptive(!!res.data?.adaptive);
         } else {
-          toast.error(modelOverrideFailureToast('load', res?.error?.message));
+          toast.error(modelOverrideFailureToast('load', res?.error?.message, panelText));
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          toast.error(modelOverrideFailureToast('load', err));
+          toast.error(modelOverrideFailureToast('load', err, panelText));
         }
       });
     return () => {
       cancelled = true;
     };
   }, [sessionId]);
-
   const handleSelect = useCallback(
     async (option: RuntimeModelOption) => {
       if (!sessionId) return;
@@ -458,7 +404,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           adaptive: false,
         });
         if (!res?.success) {
-          toast.error('模型切换失败: ' + (res?.error?.message ?? '未知错误') + '。请检查 API Key 或网络连接');
+          toast.error(interpolate(panelText.switchFailed, { reason: res?.error?.message ?? panelText.unknownError }));
           return;
         }
         setOverrideModel(option.model);
@@ -477,21 +423,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         });
         setOpen(false);
       } catch (err) {
-        toast.error('模型切换失败: ' + (err instanceof Error ? err.message : '未知错误') + '。请检查 API Key 或网络连接');
+        toast.error(interpolate(panelText.switchFailed, { reason: err instanceof Error ? err.message : panelText.unknownError }));
       }
     },
     [sessionId]
   );
-
   const handleOpenModelSettings = useCallback(() => {
     setOpen(false);
     openSettingsTab('model');
   }, [openSettingsTab]);
-
   const handleSelectAuto = useCallback(async () => {
     if (!sessionId) return;
     try {
-      // 自动模式：provider/model 传当前默认作占位，后端靠 adaptive=true 判断
       const res = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'switchModel', {
         sessionId,
         provider: defaultProvider,
@@ -499,7 +442,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         adaptive: true,
       });
       if (!res?.success) {
-        toast.error('切换到自动模式失败: ' + (res?.error?.message ?? '未知错误'));
+        toast.error(interpolate(panelText.autoSwitchFailed, { reason: res?.error?.message ?? panelText.unknownError }));
         return;
       }
       setOverrideModel(currentModel);
@@ -518,10 +461,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
       setOpen(false);
     } catch (err) {
-      toast.error('切换到自动模式失败: ' + (err instanceof Error ? err.message : '未知错误'));
+      toast.error(interpolate(panelText.autoSwitchFailed, { reason: err instanceof Error ? err.message : panelText.unknownError }));
     }
   }, [sessionId, defaultProvider, currentModel]);
-
   const handleClear = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -531,7 +473,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         { sessionId }
       );
       if (!res?.success) {
-        toast.error(modelOverrideFailureToast('clear', res?.error?.message));
+        toast.error(modelOverrideFailureToast('clear', res?.error?.message, panelText));
         return;
       }
       setOverrideModel(null);
@@ -547,31 +489,24 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
       setOpen(false);
     } catch (err) {
-      toast.error(modelOverrideFailureToast('clear', err));
+      toast.error(modelOverrideFailureToast('clear', err, panelText));
     }
   }, [sessionId, defaultProvider, currentModel]);
-
   const selectableOptionCount = showModelSettingsPrompt ? 0 : 1 + filteredOptions.length;
-
   useEffect(() => {
     if (!open) return;
     setActiveOptionIndex(0);
   }, [open, searchQuery]);
-
   useEffect(() => {
     if (!open || selectableOptionCount <= 0) return;
     setActiveOptionIndex((index) => Math.min(index, selectableOptionCount - 1));
   }, [open, selectableOptionCount]);
-
   useEffect(() => {
     if (!open || selectableOptionCount <= 0) return;
     const active = menuRef.current?.querySelector<HTMLElement>(`[data-model-option-index="${activeOptionIndex}"]`);
     active?.scrollIntoView({ block: 'nearest' });
   }, [activeOptionIndex, open, selectableOptionCount]);
-
   const handleMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
-    // 输入法合成期（中文/日文等选候选词）的回车/方向键交给输入法，不当弹窗快捷键，
-    // 否则按回车选词会被误当"选中模型+关弹窗"。
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       if (selectableOptionCount <= 0) return;
@@ -582,7 +517,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       });
       return;
     }
-
     if (event.key === 'Enter') {
       if (selectableOptionCount <= 0) return;
       event.preventDefault();
@@ -594,7 +528,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       if (option) void handleSelect(option);
       return;
     }
-
     if (event.key === 'Escape') {
       event.preventDefault();
       setOpen(false);
@@ -606,13 +539,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     handleSelectAuto,
     selectableOptionCount,
   ]);
-
   const displayModel = overrideModel || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
   const displayProvider = overrideProvider || defaultProvider;
-
-  // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
-  // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
   useEffect(() => {
     if (!open) return;
     if (!settingsLoaded) {
@@ -632,26 +561,22 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         break;
       }
     }
-    // 键盘导航从当前选中项开始；无选中项时保持 0（「自动」）
     setActiveOptionIndex(selectedIndex);
     if (selectedIndex <= 0) return;
-    // 直接设置内层滚动容器的 scrollTop 让选中行居中可见，避免 scrollIntoView 误滚外层页面
     const container = listScrollRef.current;
     const row = container?.querySelector<HTMLElement>(`[data-model-option-index="${selectedIndex}"]`);
     if (container && row) {
       container.scrollTop = row.offsetTop - (container.clientHeight - row.clientHeight) / 2;
     }
   }, [open, settingsLoaded, showModelSettingsPrompt, groupedFilteredOptions, displayModel, displayProvider]);
-
-  const nativeDisplayLabel = overrideAdaptive ? '自动' : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
+  const nativeDisplayLabel = overrideAdaptive ? panelText.auto : getRuntimeModelLabel(displayModel, displayProvider, modelSettings);
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
   );
-  const displayLabel = engine.kind === 'native'
-    ? showModelSettingsPrompt ? '配置模型' : nativeDisplayLabel
-    : engine.model ?? '默认模型';
-
+  const displayLabel = humanizeInternalText(engine.kind === 'native'
+    ? showModelSettingsPrompt ? panelText.configureModel : nativeDisplayLabel
+    : engine.model ?? modelText.switcherTooltip.defaultModel, language).text;
   const effortOptions = useMemo(
     () => engine.kind === 'native'
       ? getProviderEffortOptions(displayProvider, displayModel, selectedNativeOption?.features)
@@ -673,24 +598,23 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     showModelSettingsPrompt,
     effortOptionCount: effortOptions.length,
   });
-  const thinkingShortLabel = supportsThinkingControls
-    ? thinkingEnabled ? '思考' : '不思考'
-    : null;
   const selectedNativeBillingSummary = engine.kind === 'native'
-    ? buildProviderBillingSummary(selectedNativeOption?.providerBillingMode)
+    ? buildProviderBillingSummary(selectedNativeOption?.providerBillingMode, panelText)
     : null;
   const selectedNativeHealthSummary = engine.kind === 'native'
-    ? buildProviderHealthSummary(healthMap[displayProvider])
+    ? buildProviderHealthSummary(healthMap[displayProvider], panelText)
     : null;
   const triggerTitle = engine.kind !== 'native'
     ? formatExternalModelSwitcherTooltip({
-      language, engineLabel: ENGINE_SHORT_LABEL[engine.kind],
-      model: engine.model ?? '默认模型',
+      language,
+      engineLabel: ENGINE_SHORT_LABEL[engine.kind],
+      model: engine.model,
     })
     : showModelSettingsPrompt
-      ? '还没有可用模型'
+      ? modelText.switcherTooltip.noModel
       : formatNativeModelSwitcherTooltip({
-        language, engineLabel: ENGINE_SHORT_LABEL[engine.kind],
+        language,
+        engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
         displayProvider,
         displayModel,
@@ -699,18 +623,15 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         billingSummary: selectedNativeBillingSummary,
         healthSummary: selectedNativeHealthSummary,
         effort: selectedEffort,
-        thinkingLabel: thinkingShortLabel,
+        thinkingEnabled: supportsThinkingControls ? thinkingEnabled : null,
       });
-
   const handleTriggerClick = useCallback(() => {
     setOpen((value) => !value);
   }, []);
-
   const handleEngineMenuViewChange = useCallback((view: EngineMenuView) => {
     setEngineMenuView(view);
     setSearchQuery('');
   }, []);
-
   const handleSelectEngine = useCallback(async (source: AgentEngineSourceDescriptor) => {
     if (!sessionId || !source.kind || !source.selectable) return;
     const descriptorResponse = await window.domainAPI?.invoke(
@@ -719,14 +640,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       { kind: source.kind },
     );
     if (!descriptorResponse?.success || !descriptorResponse.data) {
-      toast.error(descriptorResponse?.error?.message || '执行引擎探测结果不可用');
+      toast.error(descriptorResponse?.error?.message || panelText.engineProbeUnavailable);
       return;
     }
     setBusyEngineId(source.manifestId);
     try {
       const descriptor = descriptorResponse.data as Parameters<typeof buildModelSwitcherEngineSelection>[0];
-      // 会话与 app 级都没有目录时不在这里拦：host 侧会兜到默认工作目录
-      // <dataDir>/work（产品负责人 2026-08-05 拍板：不弹目录选择器）。
       const workingDirectory = session?.workingDirectory ?? appWorkingDirectory ?? undefined;
       await updateSessionEngine(
         sessionId,
@@ -741,7 +660,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setEngineMenuView('models');
       setSearchQuery('');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '执行引擎切换失败');
+      toast.error(error instanceof Error ? error.message : panelText.engineSwitchFailed);
     } finally {
       setBusyEngineId(null);
     }
@@ -752,7 +671,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     sessionId,
     updateSessionEngine,
   ]);
-
   const handleSelectExternalModel = useCallback(async (
     kind: ExternalAgentEngineKind,
     model: string,
@@ -769,18 +687,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setSearchQuery('');
       setOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '外部引擎模型切换失败');
+      toast.error(error instanceof Error ? error.message : panelText.externalModelSwitchFailed);
     } finally {
       setBusyEngineId(null);
     }
   }, [appWorkingDirectory, session?.workingDirectory, sessionId, updateSessionEngine]);
-
   useEffect(() => {
     if (!effortLevelExplicit) return;
     if (effortOptions.some((option) => option.value === effortLevel)) return;
     setEffortLevel(selectedEffort.value);
   }, [effortLevel, effortLevelExplicit, effortOptions, selectedEffort.value, setEffortLevel]);
-
   const menu = open && menuPos && (
     <div
       ref={menuRef}
@@ -840,7 +756,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             <div className="border-b border-zinc-700/50">
               <div className="flex items-center gap-1 px-3 pt-1.5 pb-1 text-[10px] text-zinc-500">
               <Code2 className="w-3 h-3" />
-              <span>主任务模型</span>
+              <span>{panelText.header}</span>
             </div>
             <div className="px-2 pb-1.5">
               <input
@@ -849,7 +765,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleMenuKeyDown}
-                placeholder="搜索主任务模型…"
+                placeholder={panelText.searchPlaceholder}
                 data-model-search-input
                 className="
                   w-full px-2 py-1 text-xs
@@ -865,16 +781,16 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                     <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded bg-zinc-700/60 text-zinc-300">
                       <Settings className="h-4 w-4" />
                     </div>
-                    <div className="text-xs font-medium text-zinc-200">还没有可用模型</div>
+                    <div className="text-xs font-medium text-zinc-200">{panelText.noModelTitle}</div>
                     <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                      配好 Provider 和 API Key 后再选择主任务模型。
+                      {panelText.noModelBody}
                     </div>
                     <button
                       type="button"
                       onClick={handleOpenModelSettings}
                       className="mt-3 inline-flex h-7 items-center justify-center rounded bg-zinc-700 px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-zinc-600"
                     >
-                      去模型设置
+                      {panelText.openModelSettings}
                     </button>
                   </div>
                 ) : (
@@ -893,18 +809,20 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                   >
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-3 h-3 text-badge-accent" />
-                      <span className="font-medium">自动</span>
-                      <span className="text-gray-500 text-[10px] ml-auto">按任务、成本和能力切换</span>
+                      <span className="font-medium">{panelText.auto}</span>
+                      <span className="text-gray-500 text-[10px] ml-auto">{panelText.autoHint}</span>
                     </div>
                   </button>
                   {filteredOptions.length === 0 ? (
                     <div className="px-3 py-2 text-xs text-gray-500 text-center">
-                      无匹配模型
+                      {panelText.noMatch}
                     </div>
                   ) : (
                     groupedFilteredOptions.map((group) => {
-                      // C-7: 检测/计费/来源/协议/endpoint 收进 hover 详情，头部只留一个健康色点。
-                      const providerMetaTitle = buildProviderMetaTitle(group);
+                      const providerMetaTitle = buildProviderMetaTitle(group, panelText);
+                      const builtinName = getProviderDisplayName(group.provider);
+                      const storedName = group.providerLabel || builtinName || group.provider;
+                      const providerName = storedName === builtinName ? (language === 'en' && /[\u3400-\u9fff]/.test(storedName) ? group.provider : builtinName) ?? storedName : storedName;
                       return (
                       <div key={group.provider}>
                         <div
@@ -913,21 +831,21 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                         >
                           <ProviderLogo
                             provider={group.provider}
-                            label={group.providerLabel || getProviderDisplayName(group.provider) || group.provider}
+                            label={providerName}
                             icon={group.providerIcon}
                           />
-                          <span>{group.providerLabel || getProviderDisplayName(group.provider) || group.provider}</span>
+                          <span>{providerName}</span>
                           {group.providerFavorite && (
                             <Star className="h-3 w-3 fill-badge-warning text-badge-warning" />
                           )}
                           <span
                             className={`ml-auto h-1.5 w-1.5 rounded-full ${group.healthSummary.dotClass}`}
-                            aria-label={`Provider 状态: ${group.healthSummary.label}`}
+                            aria-label={interpolate(panelText.providerStatusAria, { label: group.healthSummary.label })}
                           />
                         </div>
                         {group.options.map(({ option: opt, index }) => {
                           const selected = displayModel === opt.model && displayProvider === opt.provider;
-                          const rowHealthSummary = buildModelRowHealthSummary(healthMap[opt.provider], opt.model);
+                          const rowHealthSummary = buildModelRowHealthSummary(healthMap[opt.provider], opt.model, panelText);
                           return (
                             <button
                               key={`${opt.provider}/${opt.model}`}
@@ -965,7 +883,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                     <span
                                       key={cap}
                                       className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded ${cfg.color}`}
-                                      title={cap}
+                                      title={panelText.capabilities[cap as keyof typeof panelText.capabilities] ?? cap}
                                     >
                                       {cfg.icon}
                                     </span>
@@ -1006,14 +924,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             </div>
           </div>
           )}
-
           <ReasoningSegment
             mode={reasoningSegmentMode}
             sectionLabel={modelText.thinkingSectionLabel}
             note={modelText.thinkingExternalHint}
             options={thinkingSegmentOptions}
           />
-
           <SearchToggleSection
             visible={engine.kind === 'native' && !showModelSettingsPrompt}
             open={open}
@@ -1028,7 +944,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             onClick={handleClear}
             className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-zinc-300 hover:bg-zinc-700"
           >
-            恢复主任务模型
+            {panelText.restoreMain}
           </button>
         </>
       )}
@@ -1036,25 +952,20 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       )}
     </div>
   );
-
   return (
     <>
       <button
         ref={triggerRef}
         type="button"
         onClick={handleTriggerClick}
-        aria-label="切换模型"
+        aria-label={panelText.triggerAria}
         aria-expanded={open}
-        // 弱一档（zinc-400/xs）：这行的主位是专家。「Neo」也从这里去掉——产品名跟模型名
-        // 并排会让用户以为 Neo 是个模型；外部引擎名（Codex/Claude Code）是真信息，留着。
-        // 思考档 / effort 收进点开后的面板：reasoning effort 对非程序员是纯噪音，
-        // 「低」在外面既看不懂也改不出所以然（hover title 里仍带着，需要时能查）。
         className={`
           group cursor-pointer truncate max-w-[200px] text-xs
           hover:text-zinc-100 transition-colors
           ${isOverridden ? 'text-badge-warning' : 'text-zinc-400'}
         `}
-        title={triggerTitle}
+        title={humanizeInternalText(triggerTitle, language).text}
       >
         {engine.kind !== 'native' && (
           <>
