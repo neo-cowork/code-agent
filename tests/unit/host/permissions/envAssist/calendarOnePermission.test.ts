@@ -114,6 +114,18 @@ describe('one calendar permission', () => {
     expect(h.armed).toEqual([{ sessionId: 's-chat', entry: 'meeting_reminder_setting' }]);
   });
 
+  it('switch and card clicked while one dialog is up: one dialog, both get the same answer (11-15 real run: second click re-prompted and hung)', async () => {
+    const chat = card('s-chat', 'run-chat');
+    const [switched, clicked] = await Promise.all([
+      call('enableSettingGrant', { setting: 'meetingCalendarReminder' }),
+      call('act', { noticeId: chat.id, actionKind: 'request_grant', payload: { pane: 'calendars' } }),
+    ]);
+    expect(ek.prompts).toBe(1);
+    expect(switched).toEqual({ on: true });
+    expect(clicked).toMatchObject({ status: 'checked', outcome: { status: 'granted' } });
+    expect(phaseOf(chat)).toBe('resolved');
+  });
+
   it('granted in System Settings: the settings page recheck also closes the chat cards (no prompt)', async () => {
     const chat = card('s-chat', 'run-chat');
     h.setting = true;

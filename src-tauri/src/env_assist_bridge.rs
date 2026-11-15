@@ -39,6 +39,9 @@ mod imp {
         fn grant_calendar(&self) -> Result<(), String> {
             crate::env_assist_calendar::request_full_access()
         }
+        fn calendar_request_answer(&self) -> Option<bool> {
+            crate::env_assist_calendar::last_request_answer()
+        }
         fn read_calendar_events(&self, from_ms: i64, to_ms: i64) -> Result<Vec<crate::env_assist_calendar::CalendarEvent>, String> {
             crate::env_assist_calendar::list_events(from_ms, to_ms)
         }

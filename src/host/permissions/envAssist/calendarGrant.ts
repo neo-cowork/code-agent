@@ -42,6 +42,8 @@ export async function settleCalendarGranted(entry: string): Promise<void> {
       ?.prepare("SELECT id, session_id FROM messages WHERE id LIKE 'env-assist:%|calendar'")
       .all() as Array<{ id: string; session_id: string }> | undefined;
     const bySession = new Map<string, Set<string>>();
+    let resolved = 0;
+    let sessions = 0;
     for (const row of rows ?? []) {
       const ids = bySession.get(row.session_id) ?? new Set<string>();
       bySession.set(row.session_id, ids.add(row.id));
@@ -54,7 +56,10 @@ export async function settleCalendarGranted(entry: string): Promise<void> {
         .filter((n): n is EnvAssistNotice => n?.phase === 'needs_user' && isCalendarNotice(n));
       for (const notice of notices) await resolveEnvAssistNotice(notice);
       if (notices.length > 0) armEnvResumeOnSessionReturn(sessionId, getApplicationRunRegistry(), entry);
+      resolved += notices.length;
+      if (notices.length > 0) sessions += 1;
     }
+    logger.info('Calendar granted: settled waiting cards', { entry, cards: rows?.length ?? 0, resolved, sessions });
   } catch (error) {
     logger.warn('Calendar grant settle failed', { entry, error: error instanceof Error ? error.message : String(error) });
   }

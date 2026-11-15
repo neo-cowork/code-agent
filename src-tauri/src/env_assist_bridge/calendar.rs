@@ -13,7 +13,7 @@
 //! full access with 403, so a caller can't skip the grant by claiming it was given. None of them prompts.
 
 use super::imp::{bad_body, native_err, parse_empty_or_empty_object, BridgeHandlers};
-use crate::env_assist_calendar::{FULL_ACCESS, MAX_WINDOW_MS};
+use crate::env_assist_calendar::{effective_status, FULL_ACCESS, MAX_WINDOW_MS};
 use crate::env_assist_calendar_items::{EventFields, WriteOp, WriteOutcome, MAX_ITEMS, MAX_ITEMS_WINDOW_MS};
 use serde::Deserialize;
 
@@ -125,8 +125,17 @@ fn item_err(detail: String) -> (u16, &'static str, serde_json::Value) {
     }
 }
 
-fn require_full_access(handlers: &dyn BridgeHandlers) -> Result<(), (u16, &'static str, serde_json::Value)> {
-    let status = handlers.passive_calendar().map_err(native_err)?;
+type RouteErr = (u16, &'static str, serde_json::Value);
+
+/// Raw class status plus our own request's answer → the one status every route trusts.
+fn calendar_status(handlers: &dyn BridgeHandlers) -> Result<(i64, i64, Option<bool>), RouteErr> {
+    let raw = handlers.passive_calendar().map_err(native_err)?;
+    let answer = handlers.calendar_request_answer();
+    Ok((effective_status(raw, answer), raw, answer))
+}
+
+fn require_full_access(handlers: &dyn BridgeHandlers) -> Result<(), RouteErr> {
+    let (status, _, _) = calendar_status(handlers)?;
     if status != FULL_ACCESS {
         return Err((403, "Forbidden", serde_json::json!({ "error": "calendar_not_authorized", "status": status })));
     }
@@ -138,10 +147,9 @@ pub(super) fn route(path: &str, body: &[u8], handlers: &dyn BridgeHandlers) -> O
         "/v1/passive/calendar" => parse_empty_or_empty_object(body)
             .map_err(|_| bad_body())
             .and_then(|()| {
-                handlers
-                    .passive_calendar()
-                    .map(|status| serde_json::json!({ "status": status }))
-                    .map_err(native_err)
+                // raw / answer ride along so the host can log when they disagree (diagnosis only; status is the truth)
+                calendar_status(handlers)
+                    .map(|(status, raw, answer)| serde_json::json!({ "status": status, "raw": raw, "answer": answer }))
             }),
         "/v1/grant/calendar" => parse_empty_or_empty_object(body)
             .map_err(|_| bad_body())
@@ -220,6 +228,7 @@ mod tests {
         reads: AtomicUsize,
         writes: AtomicUsize,
         items: Mutex<Vec<CalendarItem>>,
+        answer: Mutex<Option<bool>>,
     }
 
     const WEEK: i64 = 7 * 24 * 3_600_000;
@@ -291,6 +300,9 @@ mod tests {
             self.grants.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
+        fn calendar_request_answer(&self) -> Option<bool> {
+            *self.answer.lock().unwrap()
+        }
         fn read_calendar_events(&self, from_ms: i64, _to_ms: i64) -> Result<Vec<CalendarEvent>, String> {
             self.reads.fetch_add(1, Ordering::SeqCst);
             Ok(vec![CalendarEvent { id: "e1".into(), title: "周会".into(), start_ms: from_ms + 60_000, end_ms: from_ms + 3_600_000 }])
@@ -323,7 +335,22 @@ mod tests {
         let (fake, server) = start(4);
         let (code, raw) = post(server.port, &server.token, "/v1/passive/calendar", "{}");
         assert_eq!(code, 200);
-        assert!(raw.ends_with(r#"{"status":4}"#), "{raw}");
+        assert!(raw.ends_with(r#"{"answer":null,"raw":4,"status":4}"#), "{raw}");
+        assert_eq!(fake.grants.load(Ordering::SeqCst), 0);
+    }
+
+    /// 11-15 real run: Allow in our own dialog, class status still notDetermined in-process; the completion's granted wins.
+    #[test]
+    fn a_granted_completion_lifts_a_stale_not_determined_status_for_passive_and_reads() {
+        let (fake, server) = start(0);
+        *fake.answer.lock().unwrap() = Some(true);
+        let (code, raw) = post(server.port, &server.token, "/v1/passive/calendar", "{}");
+        assert_eq!(code, 200);
+        assert!(raw.ends_with(r#"{"answer":true,"raw":0,"status":3}"#), "{raw}");
+        assert_eq!(post(server.port, &server.token, "/v1/read/calendars", "{}").0, 200);
+        // A refusal read after an old granted answer stays a refusal.
+        fake.status.store(2, Ordering::SeqCst);
+        assert_eq!(post(server.port, &server.token, "/v1/read/calendars", "{}").0, 403);
         assert_eq!(fake.grants.load(Ordering::SeqCst), 0);
     }
 

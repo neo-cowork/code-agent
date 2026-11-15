@@ -3,6 +3,9 @@
 import { ENV_ASSIST_CALENDAR_CONFIRM_MS, ENV_ASSIST_CALENDAR_POLL_MS } from '../../../shared/constants/envAssist';
 import type { CalendarSettingResult } from '../../../shared/contract/envAssist';
 import type { CalendarAccess } from './probes/passiveProbes';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('CalendarGrant');
 
 export interface CalendarSettingDeps {
   access: () => Promise<CalendarAccess>;
@@ -24,20 +27,42 @@ export type CalendarAskDeps = Pick<CalendarSettingDeps, 'access' | 'prompt' | 's
  * 一次点击里的日历授权（卡片按钮 / 会前提醒开关 / 连接器页修复权限共用）：被动看一眼，只有「未决定」才凭点击凭证弹一次系统框，
  * 再每秒被动轮询到有答复（≤ ENV_ASSIST_CALENDAR_CONFIRM_MS）。null = 没能发起系统框。
  */
+// 同一时刻只有一次「弹框 + 等答复」：卡片、开关、连接器页谁先点谁发起，后点的直接等同一个答复，不再弹第二个框
+let waiting: Promise<{ access: CalendarAccess; prompted: boolean } | null> | null = null;
+
 export async function askCalendarOnce(deps: CalendarAskDeps, onPrompt?: () => void): Promise<{ access: CalendarAccess; prompted: boolean } | null> {
   const before = await deps.access();
-  if (before !== 'undecided') return { access: before, prompted: false };
-  onPrompt?.();
-  if (await deps.prompt() !== 'requested') return null;
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const now = deps.now ?? Date.now;
-  const deadline = now() + ENV_ASSIST_CALENDAR_CONFIRM_MS;
-  while (now() < deadline) {
-    await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
-    const access = await deps.access();
-    if (settled(access)) return { access, prompted: true };
+  if (before !== 'undecided') {
+    logger.info('Calendar ask: already decided, no dialog', { access: before });
+    return { access: before, prompted: false };
   }
-  return { access: 'undecided', prompted: true }; // 还在系统框里没作答
+  onPrompt?.();
+  if (waiting) {
+    logger.info('Calendar ask: joining the dialog already waiting for an answer');
+    return waiting;
+  }
+  waiting = (async () => {
+    const prompt = await deps.prompt();
+    logger.info('Calendar ask: dialog requested', { prompt });
+    if (prompt !== 'requested') return null;
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const now = deps.now ?? Date.now;
+    const started = now();
+    const deadline = started + ENV_ASSIST_CALENDAR_CONFIRM_MS;
+    let polls = 0;
+    while (now() < deadline) {
+      await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
+      polls += 1;
+      const access = await deps.access();
+      if (settled(access)) {
+        logger.info('Calendar ask: answered', { access, polls, waitedMs: now() - started });
+        return { access, prompted: true };
+      }
+    }
+    logger.warn('Calendar ask: no answer within the confirm window', { polls });
+    return { access: 'undecided' as const, prompted: true }; // 还在系统框里没作答
+  })();
+  try { return await waiting; } finally { waiting = null; }
 }
 
 /**
