@@ -1,3 +1,4 @@
+import { HumanizedText } from './HumanizedText';
 // ============================================================================
 // Toast - Global toast notification component
 // ============================================================================
@@ -37,7 +38,7 @@ export const ToastContainer: React.FC = () => {
           <span className="text-sm font-bold shrink-0 mt-0.5">{ICON_MAP[t.type]}</span>
           {/* 高度上限（现象 11）：超长错误原文（如几十条 lineage findings）超出滚动，
               不许一条 toast 占满半个屏幕。 */}
-          <span className="text-sm text-zinc-200 break-words max-h-40 overflow-y-auto">{t.message}</span>
+          <span className="text-sm text-zinc-200 break-words max-h-40 overflow-y-auto"><HumanizedText text={t.message} /></span>
           {t.action && (
             <button /* ds-allow:button: toast 内的描边小动作钮（不再提示），Button primitive 的主按钮语义不符 */
               onClick={() => {
@@ -46,7 +47,7 @@ export const ToastContainer: React.FC = () => {
               }}
               className="shrink-0 rounded border border-zinc-600 px-2 py-0.5 text-xs text-zinc-300 hover:border-zinc-400 hover:text-zinc-100"
             >
-              {t.action.label}
+              <HumanizedText text={t.action.label} />
             </button>
           )}
           <button
