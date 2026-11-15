@@ -367,7 +367,7 @@ describe('CronSimpleCreate', () => {
     } as CronJobDefinition));
     const onDone = vi.fn();
     render(<CronSimpleCreate onDone={onDone} />);
-    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '周五提醒发周报' } });
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '提醒我发周报' } });
     fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
     fireEvent.change(screen.getByTestId('cron-simple-once-date'), { target: { value: '2026-11-10' } });
     fireEvent.change(screen.getByTestId('cron-simple-once-time-hour'), { target: { value: '15' } });
@@ -385,7 +385,7 @@ describe('CronSimpleCreate', () => {
 
   it('只跑一次：没选日期提交 → 日期框仍为空且显示“请选择执行时间”，不调 createJob', async () => {
     render(<CronSimpleCreate onDone={() => undefined} />);
-    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '周五提醒发周报' } });
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '提醒我发周报' } });
     fireEvent.change(screen.getByDisplayValue('每天'), { target: { value: 'once' } });
     fireEvent.click(screen.getByText('创建自动化'));
     expect(await screen.findByText('请选择执行时间')).toBeTruthy();
@@ -456,5 +456,74 @@ describe('CronSimpleCreate', () => {
     expect(submitted.action).toHaveProperty('urgencyCriteria', undefined);
     // 线上序列化后键不存在
     expect(Object.keys(JSON.parse(JSON.stringify(submitted.action)))).not.toContain('urgencyCriteria');
+  });
+  describe('goal 里的时段词驱动未动过的控件', () => {
+    const goalBox = () => screen.getByPlaceholderText(/竞品动态/);
+    const hour = () => (screen.getByTestId('cron-simple-time-hour') as HTMLSelectElement).value;
+
+    it('每晚 → 22:00 且出现提示行', () => {
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: '每晚把下载文件夹里的文件按类型整理好' } });
+      expect(hour()).toBe('22');
+      expect(screen.getByTestId('cron-simple-time-hint').textContent).toContain('22:00');
+    });
+
+    it('用户改过时间后，再改目标也不覆盖，提示消失', () => {
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: '每晚整理下载' } });
+      fireEvent.change(screen.getByTestId('cron-simple-time-hour'), { target: { value: '21' } });
+      expect(screen.queryByTestId('cron-simple-time-hint')).toBeNull();
+      fireEvent.change(goalBox(), { target: { value: '每晚整理下载文件' } });
+      expect(hour()).toBe('21');
+    });
+
+    it('没有时段词 → 09:00 无提示；早上词 → 09:00 无提示', () => {
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: '整理下载' } });
+      expect(hour()).toBe('09');
+      fireEvent.change(goalBox(), { target: { value: '每天早上整理下载' } });
+      expect(hour()).toBe('09');
+      expect(screen.queryByTestId('cron-simple-time-hint')).toBeNull();
+    });
+
+    it('每周五晚上 → 每周 + 周五 + 22:00；工作日 → 工作日', () => {
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: '每周五晚上写周报' } });
+      expect(hour()).toBe('22');
+      expect(screen.getByText('周五')).toBeTruthy();
+      fireEvent.change(goalBox(), { target: { value: '工作日检查邮件' } });
+      expect(screen.queryByText('周五')).toBeNull();
+    });
+
+    it('英文 nightly → 22:00；提交后 cron 小时为 22', async () => {
+      createJob.mockImplementation(async (input) => ({ ...(input as object), id: 'j', createdAt: 1, updatedAt: 1 } as CronJobDefinition));
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: 'nightly tidy downloads' } });
+      expect(hour()).toBe('22');
+      fireEvent.click(screen.getByText('创建自动化'));
+      fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+      await waitFor(() => expect(createJob).toHaveBeenCalled());
+      expect((createJob.mock.calls[0][0] as CronJobDefinition).schedule).toMatchObject({ type: 'cron', expression: '0 22 * * *' });
+    });
+
+    it.each([['每天下午3点汇总', '15'], ['每天傍晚6点', '18'], ['每晚12点', '00'], ['每天早上8点整理昨天下午的会议纪要', '08'], ['每天上午5点前，中午汇总', '05']])('%s → 小时 %s', (goal, h) => {
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: goal } });
+      expect(hour()).toBe(h);
+    });
+
+    it('English UI copy for the hint', () => {
+      useAppStore.setState({ language: 'en' });
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(screen.getByPlaceholderText(/competitor/i), { target: { value: 'nightly tidy downloads' } });
+      expect(screen.getByTestId('cron-simple-time-hint').textContent)
+        .toBe('Set to 22:00 because your task says “nightly” — change it if you like');
+    });
+
+    it('晚上8点 → 20:00（显式钟点胜出）', () => {
+      render(<CronSimpleCreate onDone={vi.fn()} />);
+      fireEvent.change(goalBox(), { target: { value: '每天晚上8点备份' } });
+      expect(hour()).toBe('20');
+    });
   });
 });

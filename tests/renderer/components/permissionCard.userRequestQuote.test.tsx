@@ -15,7 +15,7 @@ describe('UserRequestQuote', () => {
     expect(screen.getByTestId('user-request-quote').textContent).toBe(labels.userRequestQuote.replace('{text}', '加日程'));
     view.rerender(<UserRequestQuote labels={labels} details={{ userRequest: { text: '很长', truncated: true } } as Details} />);
     expect(screen.getByTestId('user-request-quote').textContent).toContain('很长…');
-    view.rerender(<UserRequestQuote labels={labels} details={{ startedByAutomation: true, purpose: '每日简报' } as Details} />);
+    view.rerender(<UserRequestQuote labels={labels} details={{ startedByAutomation: true, scheduledTaskName: '每日简报' } as Details} />);
     expect(screen.queryByTestId('user-request-quote')).toBeNull();
     expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(labels.startedByScheduledTask.replace('{name}', '每日简报'));
     view.rerender(<UserRequestQuote labels={labels} details={{} as Details} />);

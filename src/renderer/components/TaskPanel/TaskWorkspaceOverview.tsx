@@ -317,9 +317,11 @@ const CONTEXT_KIND_ORDER: OverviewContextKind[] = [
 const CONTEXT_KIND_CAP = 5;
 
 function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const wt = t.workbenchTabs;
   const [expandedKinds, setExpandedKinds] = useState<ReadonlySet<string>>(new Set());
+  const kindLabelWidthClass = language === 'en' ? 'w-14' : 'w-9';
+  const moreButtonIndentClass = language === 'en' ? 'pl-16' : 'pl-11';
 
   const kindLabels: Record<OverviewContextKind, string> = {
     file: wt.overviewContextKindFile,
@@ -353,7 +355,7 @@ function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
                 className="flex min-w-0 items-baseline gap-2 px-0.5 py-0.5"
                 data-testid="overview-context-row"
               >
-                <span className="w-9 shrink-0 text-[10px] text-zinc-500">
+                <span className={`${kindLabelWidthClass} shrink-0 text-[10px] text-zinc-500`}>
                   {kindLabels[row.kind]}
                 </span>
                 <span
@@ -377,7 +379,7 @@ function ContextRows({ rows }: { rows: OverviewContextRow[] }) {
               <button /* ds-allow:button: 「+N」展开尾行是超小文本按钮（text-[10px]），primitive 最小 sm 仍更大 */
                 type="button"
                 data-testid={`overview-context-more-${kind}`}
-                className="px-0.5 pl-11 text-[10px] text-zinc-500 hover:text-zinc-300"
+                className={`px-0.5 ${moreButtonIndentClass} text-[10px] text-zinc-500 hover:text-zinc-300`}
                 aria-label={wt.overviewContextShowMore.replace('{count}', String(overflow))}
                 onClick={() => setExpandedKinds((prev) => new Set(prev).add(kind))}
               >

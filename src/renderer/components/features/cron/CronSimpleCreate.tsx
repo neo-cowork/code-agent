@@ -4,7 +4,7 @@
 // 不走 LLM；聊天侧 /schedule 的 LLM 解析入口保持不变。
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
@@ -34,6 +34,7 @@ import { stashCronEditorDraft } from './cronEditorDraftStash';
 import { openCloudCronSettings } from '../../../utils/cronCloudSettingsNavigation';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { PendingRoutineRestate } from './PendingRoutineRestate';
+import { parseSchedulePeriodWords } from './schedulePeriodWords';
 import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
@@ -108,9 +109,10 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
   const createJob = useCronStore((state) => state.createJob);
   const [goal, setGoal] = useState('');
   const [name, setName] = useState('');
-  const [freq, setFreq] = useState<SimpleFrequency>('daily');
-  const [time, setTime] = useState('09:00');
-  const [weekday, setWeekday] = useState('1');
+  // 频率/星期/时间三个控件：用户没动过就跟着目标里的时段词走（每晚 → 22:00），动过就再也不覆盖。
+  const [freqPick, setFreqPick] = useState<SimpleFrequency | null>(null);
+  const [timePick, setTimePick] = useState<string | null>(null);
+  const [weekdayPick, setWeekdayPick] = useState<string | null>(null);
   const [intervalHours, setIntervalHours] = useState('1');
   const [onceAt, setOnceAt] = useState('');
   const [roleId, setRoleId] = useState('');
@@ -124,6 +126,13 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
   const [submitting, setSubmitting] = useState(false);
   const [cloudUnconfigured, setCloudUnconfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const periodWords = useMemo(() => parseSchedulePeriodWords(goal), [goal]);
+  const freq: SimpleFrequency = freqPick ?? periodWords?.freq ?? 'daily';
+  const time = timePick ?? periodWords?.time ?? '09:00';
+  const weekday = weekdayPick ?? periodWords?.weekday ?? '1';
+  const autoTimeHint = timePick === null && periodWords?.time && periodWords.time !== '09:00'
+    ? interpolate(cc.simpleTimeAutoHint, { time: periodWords.time, word: periodWords.matchedWord })
+    : null;
   // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
   const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
   // 无角色任务（缺省档，新手最常见的路）保存前先出复述卡，确认后才真正 createJob
@@ -313,7 +322,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
         <FormField label={cc.simpleFreqLabel}>
           <Select
             value={freq}
-            onChange={(e) => setFreq(e.target.value as SimpleFrequency)}
+            onChange={(e) => setFreqPick(e.target.value as SimpleFrequency)}
             options={[
               { value: 'daily', label: cc.freqDaily },
               { value: 'weekdays', label: cc.freqWeekdays },
@@ -329,11 +338,14 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
             <TimeInput24
               testId="cron-simple-time"
               value={time}
-              onChange={setTime}
+              onChange={setTimePick}
               hourLabel={cc.simpleHourLabel}
               minuteLabel={cc.simpleMinuteLabel}
             />
           </FormField>
+        )}
+        {needTime && autoTimeHint && (
+          <p className="text-xs text-zinc-400 sm:col-span-2" data-testid="cron-simple-time-hint">{autoTimeHint}</p>
         )}
         {needTime && time.endsWith(':00') && (
           <p className="text-xs text-badge-warning sm:col-span-2" data-testid="cron-stagger-hint">
@@ -368,7 +380,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
         <FormField label={cc.simpleWeekdayLabel}>
           <Select
             value={weekday}
-            onChange={(e) => setWeekday(e.target.value)}
+            onChange={(e) => setWeekdayPick(e.target.value)}
             options={cc.weekdays.map((label, index) => ({ value: String(index), label }))}
           />
         </FormField>

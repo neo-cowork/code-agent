@@ -116,6 +116,7 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
       retryPrompt: '一段很长的需求说明，失败后必须还能看见',
       retryClientMessageId: 'client-msg-keep',
       retrySessionId: 'session-failed-bubble',
+      sendFailureCode: 'SEND_REJECTED',
     });
   });
 
