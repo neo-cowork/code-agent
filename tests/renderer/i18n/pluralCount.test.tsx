@@ -4,10 +4,10 @@ import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
-import { interpolate, interpolatePlural } from '../../../src/renderer/i18n/interpolate';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 function rendered(template: { one: string; other: string }, count: number, extra: Record<string, string | number> = {}): string {
-  return render(<span>{interpolate(interpolatePlural(template, count), extra)}</span>).container.textContent ?? '';
+  return render(<span>{interpolatePlural(template, count, extra)}</span>).container.textContent ?? '';
 }
 
 describe('English count copy', () => {
@@ -40,5 +40,19 @@ describe('English count copy', () => {
     expect(rendered(zh.chat.thinkingDigestWithDuration, 2, { duration: '1s' })).toBe('思考 1s · 2 段');
     expect(rendered(zh.cronCenter.parkedTitle, 1)).toBe('1 个操作等你确认');
     expect(rendered(zh.cronCenter.parkedTitle, 5)).toBe('5 个操作等你确认');
+  });
+});
+
+describe('interpolatePlural params', () => {
+  const entries = { one: '{count} entry listed', other: '{count} entries listed' };
+
+  it('picks the form from the numeric count and shows a non-numeric display override', () => {
+    expect(interpolatePlural(entries, 50, { count: '50+' })).toBe('50+ entries listed');
+    expect(interpolatePlural(entries, 1, { count: '1' })).toBe('1 entry listed');
+    expect(interpolatePlural(entries, 1, { count: '1+' })).toBe('1+ entry listed');
+  });
+
+  it('applies other params after the form is chosen', () => {
+    expect(interpolatePlural({ one: '{count} file in {folder}', other: '{count} files in {folder}' }, 2, { folder: 'src' })).toBe('2 files in src');
   });
 });
