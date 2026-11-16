@@ -427,5 +427,76 @@ describe('globModule (native)', () => {
         expect(result.error).toBe(`Path not found: ${missing}`);
       }
     });
+
+    // N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT-FU1：默认工作根本身也是懒创建的，
+    // 新数据目录上首轮之前不存在；缺失的根与缺失的计划目录一样按空目录处理。
+    it('missing default work root itself: ok + zero-match shape, root still absent', async () => {
+      const dataDir = path.join(tmpDir, '.code-agent');
+      const workRoot = path.join(tmpDir, 'Neo');
+      setWorkRootEnv(dataDir);
+      try {
+        const handler = await globModule.createHandler();
+        const result = await handler.execute(
+          { pattern: '**/*', path: workRoot },
+          makeCtx({ workingDir: workRoot }),
+          allowAll,
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toBe('No files matched the pattern');
+          expect(result.meta).toMatchObject({
+            pattern: '**/*',
+            searchPath: workRoot,
+            totalMatches: 0,
+            returned: 0,
+            matches: [],
+            nextOffset: null,
+          });
+        }
+        // 只读探查不为懒工作根落盘
+        await expect(fs.stat(workRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        restoreWorkRootEnv();
+      }
+    });
+
+    it('missing non-planned sibling of the default work root: structured ENOENT naming the path', async () => {
+      const dataDir = path.join(tmpDir, '.code-agent');
+      const sibling = path.join(tmpDir, 'Neo-missing-sibling');
+      setWorkRootEnv(dataDir);
+      try {
+        const handler = await globModule.createHandler();
+        const result = await handler.execute(
+          { pattern: '**/*.ts', path: sibling },
+          makeCtx({ workingDir: tmpDir }),
+          allowAll,
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('ENOENT');
+          expect(result.error).toBe(`Path not found: ${sibling}`);
+        }
+      } finally {
+        restoreWorkRootEnv();
+      }
+    });
+
+    it('existing but empty default work root: unchanged normal zero-match path', async () => {
+      const workRoot = path.join(tmpDir, 'Neo-existing-empty');
+      await fs.mkdir(workRoot, { recursive: true });
+      const handler = await globModule.createHandler();
+      const result = await handler.execute(
+        { pattern: '**/*', path: workRoot },
+        makeCtx({ workingDir: workRoot }),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe('No files matched the pattern');
+        expect(result.meta).toMatchObject({ searchPath: workRoot, totalMatches: 0 });
+      }
+      await expect(fs.access(workRoot)).resolves.toBeUndefined();
+    });
   });
 });

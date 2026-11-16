@@ -207,7 +207,9 @@ export async function runShutdownFinalizers(
   // cua reap 与各收尾步骤并行、共用同一个 capMs 窗口：cua-driver 不盯 stdin，mcp.disconnect
   // 必吃满 capMs，串在它后面就永远没有额度（Quit fully 后 daemon 残留）。日志缓冲到汇总行之后再吐。
   const reapLines: string[] = [];
-  const reap = reapCuaWithinCap(capMs, mcpPids, (m) => reapLines.push(m));
+  // reap 的窗口有保底：capMs 可能已被前序步骤（stop 意图的 run 取消等待）耗成 0，
+  // 不给保底就是 0ms 超时 + 随后 process.exit 半截杀掉 reap，helper 守护进程成孤儿。
+  const reap = reapCuaWithinCap(Math.max(capMs, WEB_SERVER_SHUTDOWN_TIMEOUTS.CUA_REAP_MIN_WINDOW_MS), mcpPids, (m) => reapLines.push(m));
   const [results] = await Promise.all([Promise.all(FINALIZERS.map((f) => runOne(f, capMs, now))), reap]);
   const killed = killSurvivingMcpChildren(mcpPids);
   log(`[shutdown] ${results.join(' ')} mcp.killed=${killed}/${mcpPids.length}`);
