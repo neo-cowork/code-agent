@@ -21,7 +21,11 @@ fn post_hint_once(
     Ok(true)
 }
 
-pub(crate) fn minimize_and_hint<R: Runtime>(app: &AppHandle<R>, language: QuitDialogLanguage) {
+pub(crate) fn minimize_and_hint<R: Runtime>(
+    app: &AppHandle<R>,
+    language: QuitDialogLanguage,
+    poster: impl FnOnce(QuitDialogLanguage) -> Result<(), String>,
+) {
     // Match CloseRequested: minimize rather than exit, keeping the tray and host alive.
     for window in app.webview_windows().values() {
         if let Err(error) = window.minimize() {
@@ -33,14 +37,14 @@ pub(crate) fn minimize_and_hint<R: Runtime>(app: &AppHandle<R>, language: QuitDi
         eprintln!("background-resident: hint skipped; data directory unavailable");
         return;
     };
-    match post_hint_once(&data_dir, || post_native_hint(language)) {
+    match post_hint_once(&data_dir, || poster(language)) {
         Ok(true) => eprintln!("background-resident: first-time hint posted"),
         Ok(false) => eprintln!("background-resident: hint already shown"),
         Err(error) => eprintln!("background-resident: hint not recorded: {error}"),
     }
 }
 
-fn post_native_hint(language: QuitDialogLanguage) -> Result<(), String> {
+pub(crate) fn post_native_hint(language: QuitDialogLanguage) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         crate::native_notification::post_unc("Agent Neo", background_hint(language), None)

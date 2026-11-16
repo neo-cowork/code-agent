@@ -663,6 +663,13 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
    * `min(STEP_MS, 总预算剩余)`，给关库留下至少 1s（N-DSH-STOP2，2026-08-14）。
    */
   PRE_DB_BUDGET_MS: 2_000,
+  /**
+   * computer-use helper 守护进程回收（cua reap）的保底窗口 (ms)。stop 意图下取消在跑 run 的
+   * 等待会先吃掉 PRE_DB_BUDGET_MS，runShutdownFinalizers 拿到 capMs=0，reap 被 0ms 定时器
+   * 抢先、随后 process.exit 把它半截杀掉，helper 成孤儿（2026-11-15 真机）。reap 因此不再
+   * 依赖关库前剩余预算，至少有这么长；远小于关库预留的 1s（实测真实耗时见 webShutdownFinalizers 测试）。
+   */
+  CUA_REAP_MIN_WINDOW_MS: 400,
 } as const;
 
 /**

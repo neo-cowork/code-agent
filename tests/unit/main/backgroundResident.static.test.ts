@@ -65,7 +65,7 @@ describe('scheduled-only shell residency and explicit complete quit', () => {
   it('HideToBackground in spawn_quit_guard_flow keeps the shell alive and cancels macOS terminate', () => {
     const flow = between('fn spawn_quit_guard_flow<', 'fn show_quit_confirm_dialog<');
     const arm = flow.slice(flow.indexOf('quit_guard::QuitDecision::HideToBackground'), flow.indexOf('quit_guard::QuitDecision::Confirm'));
-    expect(arm).toContain('background_resident::minimize_and_hint(&app, language)');
+    expect(arm).toContain('background_resident::minimize_and_hint(&app, language, hint_poster)');
     expect(arm).toContain('coordinator.finish()');
     expect(arm).toContain('reply_to_mac_application_terminate(&app, false)');
     for (const forbidden of ['allow_exit', 'app.exit', 'cleanup_server', 'set_background_continue', 'show_quit_confirm_dialog']) {
