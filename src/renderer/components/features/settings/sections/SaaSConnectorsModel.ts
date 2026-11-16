@@ -218,7 +218,7 @@ function getStatePresentation(
         badge: text.badges.unavailable,
         badgeClassName: 'border border-red-500/25 bg-red-500/15 text-badge-danger',
         detail: text.details.missingClientId,
-        actionLabel: text.actions.none,
+        actionLabel: '',
       };
     case 'needs_secret':
       return {
@@ -282,7 +282,7 @@ function getStatePresentation(
         badge: text.badges.unavailable,
         badgeClassName: 'bg-zinc-700 text-zinc-300',
         detail: text.details.statusUnavailable,
-        actionLabel: text.actions.none,
+        actionLabel: '',
       };
   }
 }
