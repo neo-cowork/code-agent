@@ -8,6 +8,7 @@
 //      （ADR-059 修订：连接器工具按轮进面，不做 schema 常驻声明，防前缀缓存打掉）。
 // ============================================================================
 
+import type { Message } from '../../shared/contract/message';
 import { isScheduleTaskChatIntent } from '../app/scheduleTaskChatIntent';
 import { CONNECTOR_TOOL_NAMES } from '../../shared/contract/workbenchTools';
 import { isCoreToolName } from '../services/toolSearch/deferredTools';
@@ -34,11 +35,51 @@ const REMINDER_MANAGEMENT_INTENT_RE = /查看|查询|查找|列出|显示|修改
 export interface NativeConnectorIntentInput {
   /** 本轮用户输入（最新一条 user 消息或前台 prompt 原文）。 */
   userText: string;
+  /** Attended session history before this user message; never an authorization grant. */
+  priorMessages?: readonly Pick<Message, 'role' | 'content' | 'isMeta' | 'visibility' | 'source'>[];
   /**
    * 用户本轮手选的连接器（web 工作台 toolScope.allowedConnectorIds）。
    * 非空 = 显式收窄：不在其中的连接器不追加。文字前台无手选时传 undefined。
    */
   allowedConnectorIds?: readonly string[];
+}
+
+// Carry the previous connector intent only for a short, attended correction/continuation that names
+// no other target: a correction cue or a date/time token. Topic changes stop the carry; a unique
+// prior connector is required, so ambiguous multi-connector turns do not guess a target.
+const FOLLOWUP_MAX_CHARS = 80;
+const FOLLOWUP_CUE_RE = /\b(?:make|move|change|reschedule|set|create|add|send|save|try|do|delete|cancel|instead|again|retry|please|okay|ok)\b|改|换|设|建|创|发|存|删|取消|再|重新|吧|帮我/iu;
+const FOLLOWUP_TIME_RE = /\d\s*(?:[:：]\d|点|時|时|号|日|月|am\b|pm\b|st\b|nd\b|rd\b|th\b)|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d|\bnoon\b|上午|下午|晚上|中午|今晚/iu;
+const OTHER_TARGET_RE = /\b(?:file|folder|report|spreadsheet|document|code|function|website|image|video)\b|文件|文件夹|报告|表格|代码|函数|网页|图片|视频/iu;
+
+function isConnectorFollowup(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= FOLLOWUP_MAX_CHARS
+    && !OTHER_TARGET_RE.test(trimmed) && !isScheduleTaskChatIntent(trimmed)
+    && (FOLLOWUP_CUE_RE.test(trimmed) || FOLLOWUP_TIME_RE.test(trimmed));
+}
+
+function explicitConnectorIntent(userText: string): string[] {
+  return NATIVE_CONNECTOR_INTENT_RES
+    .filter(([id, re]) => re.test(userText)
+      && !(id === 'reminders' && isScheduleTaskChatIntent(userText)
+        && !REMINDER_MANAGEMENT_INTENT_RE.test(userText)))
+    .map(([id]) => id);
+}
+
+function connectorIntent(input: NativeConnectorIntentInput): string[] {
+  const current = explicitConnectorIntent(input.userText);
+  if (current.length || !isConnectorFollowup(input.userText)) return current;
+  const history = input.priorMessages ?? [];
+  for (let index = history.length - 1; index >= 0; index--) {
+    const message = history[index];
+    if (message.role !== 'user' || message.isMeta || message.visibility === 'rewound'
+      || (message.source && message.source !== 'user')) continue;
+    const prior = explicitConnectorIntent(message.content);
+    if (prior.length) return prior.length === 1 ? prior : [];
+    if (!isConnectorFollowup(message.content)) break;
+  }
+  return [];
 }
 
 /**
@@ -49,11 +90,7 @@ export interface NativeConnectorIntentInput {
  * 未启用/未注册只放读工具（见循环内注释）；failed / unavailable 分支不动。
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
-  const matched = NATIVE_CONNECTOR_INTENT_RES
-    .filter(([id, re]) => re.test(input.userText)
-      && !(id === 'reminders' && isScheduleTaskChatIntent(input.userText)
-        && !REMINDER_MANAGEMENT_INTENT_RE.test(input.userText)))
-    .map(([id]) => id);
+  const matched = connectorIntent(input);
   if (matched.length === 0) return [];
 
   let enabledNative: readonly string[] = [];

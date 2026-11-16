@@ -9,7 +9,7 @@
 // 合法 TS/TSX 中非字符串非注释位置出现中文只可能是 JSX 文本——CJK 标识符本仓不用）：
 //   1. pressure-word : 营销压力词禁用（轻松/一键/只需/立即体验）。棘轮基线，只拦新增。
 //   2. ellipsis      : 中文串里的 "..." 必须写省略号 "…"。棘轮基线，只拦新增。
-//   3. jargon        : 工程黑话裸露给用户 —— 棘轮基线 0，只拦新增（存量已清；确有合法技术语境的行用 copy-allow 豁免）。
+//   3. jargon        : 工程黑话裸露给用户 —— 逐词棘轮上限（默认 0；新增候选词的存量按 JARGON_WORD_CEILINGS 封顶，只拦新增）。
 //
 // 豁免：违规所在行带 `// copy-allow: <理由>` 注释。
 // 扫描面：src/renderer/**/*.{ts,tsx}（i18n locale 文件 + 组件内联中文串 + JSX 文本都在内），
@@ -33,7 +33,9 @@ const repoRoot = path.resolve(scriptDir, '..');
 // 补扫出的存量（压力词 6 / 省略号 39）已一并清零，基线仍为 0。
 export const PRESSURE_BASELINE_MAX = 0;
 export const ELLIPSIS_BASELINE_MAX = 0;
-export const JARGON_BASELINE_MAX = 0;
+// 2026-11-16 扩词重数：存量只降不升；未列出的词上限为 0。
+export const JARGON_WORD_CEILINGS = { axPath: 3, 'Tool Call': 1 };
+export const JARGON_BASELINE_MAX = Object.values(JARGON_WORD_CEILINGS).reduce((sum, count) => sum + count, 0);
 
 export const ALLOW_COMMENT = 'copy-allow:';
 
@@ -42,7 +44,7 @@ export const ALLOW_COMMENT = 'copy-allow:';
 export const PRESSURE_WORDS = ['轻松', '一键', '只需', '立即体验'];
 
 // 工程黑话（裸露给用户时体验差）。N-FIX-UI-RAW-TOOL-NAMES-EXPOSED 起升级为棘轮：后四个是 copy-audit E 类里已清掉的英文内部词。
-export const JARGON_WORDS = ['幂等', '序列化', '反序列化', '单一真源', '落库', '死锁', '脏数据', 'AX candidates', 'cookie value', 'provider-reported', '参数预览'];
+export const JARGON_WORDS = ['幂等', '序列化', '反序列化', '单一真源', '落库', '死锁', '脏数据', 'AX candidates', 'cookie value', 'provider-reported', '参数预览', 'axPath', 'Tool Call', 'tool call'];
 
 const CJK_RE = /[一-鿿]/;
 const ELLIPSIS_RE = /\.{3}/;
@@ -244,6 +246,7 @@ export function scanCopy(rootDir) {
 
   const violations = { 'pressure-word': [], ellipsis: [], jargon: [] };
   const warnings = {};
+  const jargonCounts = Object.fromEntries(JARGON_WORDS.map(word => [word, 0]));
 
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf-8');
@@ -262,23 +265,25 @@ export function scanCopy(rootDir) {
         }
         if (ELLIPSIS_RE.test(segment)) violations.ellipsis.push(`${loc}\t${segment.trim().slice(0, 60)}`);
         for (const word of JARGON_WORDS) {
-          if (segment.includes(word)) violations.jargon.push(`${loc}\t「${word}」\t${segment.trim().slice(0, 60)}`);
+          if (segment.includes(word)) {
+            jargonCounts[word]++;
+            violations.jargon.push(`${loc}\t「${word}」\t${segment.trim().slice(0, 60)}`);
+          }
         }
       });
     }
   }
-  return { violations, warnings, fileCount: files.length };
+  return { violations, warnings, jargonCounts, fileCount: files.length };
 }
 
 // ---------------------------------------------------------------------------
 // CLI（被 import 时不执行）
 // ---------------------------------------------------------------------------
 if (process.argv[1] && process.argv[1].endsWith('check-copy.mjs')) {
-  const { violations, warnings, fileCount } = scanCopy(process.argv[2]);
+  const { violations, jargonCounts, fileCount } = scanCopy(process.argv[2]);
   const gates = [
     { rule: 'pressure-word', hits: violations['pressure-word'], max: PRESSURE_BASELINE_MAX, hint: '换成陈述式措辞（如「一键安装」→「安装全部」），或加 // copy-allow: 理由' },
     { rule: 'ellipsis', hits: violations.ellipsis, max: ELLIPSIS_BASELINE_MAX, hint: '中文串用省略号 …（U+2026），不用三个点' },
-    { rule: 'jargon', hits: violations.jargon, max: JARGON_BASELINE_MAX, hint: '换成用户语义的词（内部词/英文术语不露给用户），确有合法语境加 // copy-allow: 理由' },
   ];
 
   let failed = false;
@@ -295,6 +300,16 @@ if (process.argv[1] && process.argv[1].endsWith('check-copy.mjs')) {
     } else {
       console.log(`[check-copy] = [${g.rule}] 守住基线 ${g.max}，通过（未新增）`);
     }
+  }
+
+  const exceeded = Object.entries(jargonCounts).some(([word, count]) => count > (JARGON_WORD_CEILINGS[word] ?? 0));
+  const counts = Object.entries(jargonCounts).map(([word, count]) => `${word}=${count}/${JARGON_WORD_CEILINGS[word] ?? 0}`).join(', ');
+  if (exceeded) {
+    failed = true;
+    console.error(`[check-copy] ✗ [jargon] 命中 ${violations.jargon.length} 处，超出逐词上限：${counts}。换成用户语义的词。`);
+    for (const v of violations.jargon.slice(0, 30)) console.error(`  ${v}`);
+  } else {
+    console.log(`[check-copy] = [jargon] ${violations.jargon.length}/${JARGON_BASELINE_MAX} 处，逐词上限通过：${counts}`);
   }
 
   if (failed) {

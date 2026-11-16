@@ -69,7 +69,6 @@
     "src/host/ipc/capture.ipc.ts": 2,
     "src/host/ipc/connector.ipc.ts": 3,
     "src/host/ipc/cron.ipc.ts": 3,
-    "src/host/ipc/desktopMeeting.ts": 2,
     "src/host/ipc/domainRoutes/registry.ts": 3,
     "src/host/ipc/hook.ipc.ts": 3,
     "src/host/ipc/livePreview.ipc.ts": 3,

@@ -392,6 +392,18 @@ describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {
     });
   });
 
+  it('request_feature_rejected: classified from the relay 400 text, readable copy in zh/en, never claims no web search', () => {
+    const meta = classifyAgentError({ message: 'Responses API (400): {"error":{"code":"RESPONSES_FEATURE_NOT_SUPPORTED"}}' });
+    expect(meta?.category).toBe('request_feature_rejected');
+    for (const [t, needle] of [[zh, '切换'], [en, 'Switch']] as const) {
+      const copy = resolveAgentErrorCopy({ category: 'request_feature_rejected' }, t);
+      expect(copy.suggestion).toContain(needle);
+      const text = `${copy.title}${copy.suggestion}`;
+      expect(text).not.toContain('不支持联网');
+      expect(text.toLowerCase()).not.toContain('does not support web search');
+    }
+  });
+
   it('falls back to generic copy for unknown categories', () => {
     expect(
       resolveAgentErrorCopy({ category: 'nope' as AgentErrorMetadata['category'] }, zh).title,

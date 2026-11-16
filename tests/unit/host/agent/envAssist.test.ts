@@ -216,7 +216,7 @@ describe('environment notices through the production tool_call_end path', () => 
     expect(new Set(notices.map((e) => e.data.id)).size).toBe(1);
     expect(serviceMocks.messages).toHaveLength(1);
     expect(serviceMocks.messages[0].metadata!.envAssist!.updatedAt).toBeGreaterThanOrEqual(first.updatedAt);
-    expect(serviceMocks.messages[0].metadata!.envAssist).toMatchObject({ class: 'perm_automation', target: { id: 'calendar' } });
+    expect(serviceMocks.messages[0].metadata!.envAssist).toMatchObject({ class: 'perm_calendars', target: { id: 'calendar' } });
     const ends = events(ctx).filter((e) => e.type === 'tool_call_end');
     expect(ends).toHaveLength(2);
     expect(JSON.stringify(ends)).not.toMatch(/-1743|osascript|Apple events|TCC/i);
@@ -229,7 +229,7 @@ describe('environment notices through the production tool_call_end path', () => 
   // 不再手搓 metadata.code：真工具模块 + 真原生连接器 + 假 runAppleScript（-1743），
   // code 必须由被测的 osascript 失败分支真实产出，缺 code 的回归在这里直接红。
   it.each(['calendar', 'mail', 'reminders', 'reminders_create'] as const)('covers %s through the real connector failure path', async (tool) => {
-    const { args, app, target } = AUTOMATION_FAILURE_CASES[tool];
+    const { args, app, target, blocker } = AUTOMATION_FAILURE_CASES[tool];
     osascriptRunner.runAppleScript.mockReset();
     osascriptRunner.runAppleScript.mockRejectedValue(appleEventsDeniedError(app));
     const moduleResult = await runConnectorToolFailure(tool, 'env-assist-session');
@@ -244,8 +244,8 @@ describe('environment notices through the production tool_call_end path', () => 
     const notices = events(ctx).filter((e) => e.type === 'env_assist_notice');
     expect(notices).toHaveLength(1);
     expect(new Set(notices.map((e) => e.data.id)).size).toBe(1);
-    expect(notices[0].data).toMatchObject({ class: 'perm_automation', target: { id: target } });
-    expect(notices[0].data.id).toBe(`env-assist-run|perm_automation|${target}`);
+    expect(notices[0].data).toMatchObject({ class: blocker, target: { id: target } });
+    expect(notices[0].data.id).toBe(`env-assist-run|${blocker}|${target}`);
     expect(serviceMocks.messages).toHaveLength(1);
   });
 
@@ -304,7 +304,7 @@ describe('environment notices through the production tool_call_end path', () => 
     const invoke = (payload: unknown) => handlers.get(IPC_DOMAINS.ENV_ASSIST)!({} as never, { action: 'act', payload });
     const request = { noticeId: notice.id, actionKind: notice.action!.kind, payload: notice.action!.payload };
     expect(await invoke(request)).toMatchObject({ success: true, data: { status: 'opened' } });
-    expect(opener).toHaveBeenCalledExactlyOnceWith('automation');
+    expect(opener).toHaveBeenCalledExactlyOnceWith('calendars');
     for (const forged of [{ ...request, noticeId: 'forged' }, { ...request, actionKind: 'request_grant' }, { ...request, payload: { pane: 'accessibility' } }, { ...request, payload: { pane: 'automation', url: 'https://invalid.test' } }]) {
       expect(await invoke(forged)).toMatchObject({ success: true, data: { status: 'rejected' } });
     }

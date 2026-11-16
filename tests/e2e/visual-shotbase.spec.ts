@@ -6,6 +6,7 @@ import {
   type Page,
 } from './fixtures/axeTest';
 import type { AgentEvent } from '../../src/shared/contract';
+import type { SwarmEvent } from '../../src/shared/contract/swarm';
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };
@@ -41,6 +42,40 @@ async function emitAgentEvents(
     response.ok(),
     `emit-agent-events failed: ${response.status()} ${await response.text()}`,
   ).toBe(true);
+}
+
+async function emitSwarmEvent(request: APIRequestContext, token: string, event: SwarmEvent): Promise<void> {
+  const response = await request.post('/api/dev/emit-swarm-event', {
+    data: event,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok(), `emit-swarm-event failed: ${response.status()} ${await response.text()}`).toBe(true);
+}
+
+/**
+ * 基线里的成员条「1 个代理 · 完成」原来靠 swarm-chain 留在同一服务里的会话账本：
+ * 新任务复用了那个空会话才有它；CI 上一旦新建了干净会话（侧栏多出一条「新对话」），成员条就没了。
+ * 这里给本会话自己写一次已收尾的单成员运行，成员条不再依赖前序用例。会话被复用时这次运行是最新的，
+ * 成员条读的仍是这一个成员，画面与基线一致。
+ */
+async function seedCompletedMemberRun(request: APIRequestContext, token: string, sessionId: string): Promise<void> {
+  const base = Date.now();
+  const runId = `visual-member-run-${base}`;
+  const treeId = `visual-member-tree-${base}`;
+  const agentState = (status: 'running' | 'completed') => ({
+    id: `visual-member-${base}`, name: 'visual-scout', role: 'scout', status, iterations: status === 'completed' ? 1 : 0, startTime: base,
+  });
+  const statistics = (done: boolean) => ({
+    total: 1, completed: done ? 1 : 0, failed: 0, running: 0, pending: done ? 0 : 1,
+    parallelPeak: done ? 1 : 0, totalTokens: 0, totalToolCalls: 0,
+  });
+  await emitSwarmEvent(request, token, { type: 'swarm:started', sessionId, runId, treeId, timestamp: base, data: { statistics: statistics(false) } } as SwarmEvent);
+  await emitSwarmEvent(request, token, { type: 'swarm:agent:added', sessionId, runId, treeId, timestamp: base + 1, data: { agentState: agentState('running') } } as SwarmEvent);
+  await emitSwarmEvent(request, token, { type: 'swarm:agent:completed', sessionId, runId, treeId, timestamp: base + 2, data: { agentState: agentState('completed') } } as SwarmEvent);
+  await emitSwarmEvent(request, token, {
+    type: 'swarm:completed', sessionId, runId, treeId, timestamp: base + 3,
+    data: { statistics: statistics(true), result: { success: true, totalTime: 1 } },
+  } as SwarmEvent);
 }
 
 async function createCleanSession(page: Page): Promise<string> {
@@ -131,6 +166,14 @@ for (const theme of ['light', 'dark'] as const) {
     await openAppWithTheme(page, theme);
     const token = await getAuthToken(page);
     const sessionId = await createCleanSession(page);
+    await seedCompletedMemberRun(request, token, sessionId);
+    // swarm:started 会顺手打开右侧任务面板；重新打开应用回到默认收起的右栏，再回到这个会话
+    await openAppWithTheme(page, theme);
+    await page.locator(`[data-session-id=${JSON.stringify(sessionId)}]`).first().click();
+    await expect(page.locator(`[data-session-id=${JSON.stringify(sessionId)}][aria-current="true"]`).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
+    // 点完侧栏把指针移开，侧栏条目不留悬停态（归档按钮）
+    await page.mouse.move(720, 300);
     const turnId = `visual-approval-${theme}-${Date.now()}`;
     const requestId = `visual-dangerous-command-${theme}-${Date.now()}`;
 
