@@ -105,8 +105,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v125: merge main's shared inability/language contract with ordered tool-face resolution and background handoff.
 // sys-v126：整合合并——自然语言定时任务按轮暴露 schedule_task 与精简后的延迟工具 JSON 用法措辞，叠上 main 的 sys-v125。
 // sys-v127–128：N-FIX-EN-REPLY-LANG-SOUL-TEMPLATE-ZH——SOUL.md 旧句「用中文沟通」在 ui.language=en 时取用期换成语言中立句（zh 字节不变）；init-soul 模板不再钉语言。
-// sys-v129：N-FIX-CALENDAR-TOOL-MODEL-EPOCH-MATH——calendar_create/update_event 增加 start_local/end_local（本机本地时间由 host 换算，模型不再算 epoch）与 create 的可选 notes，叠上 main 的 sys-v128。
-export const PROMPT_VERSION = 'sys-v129' as const;
+// sys-v130：N-FIX-CALENDAR-TOOL-MODEL-EPOCH-MATH——calendar_create/update_event 增加 start_local/end_local（本机本地时间由 host 换算，模型不再算 epoch）与 create 的可选 notes，叠上 main 的 sys-v129。
+export const PROMPT_VERSION = 'sys-v130' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
