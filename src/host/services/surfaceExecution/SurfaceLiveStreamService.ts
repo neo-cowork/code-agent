@@ -137,6 +137,7 @@ export class SurfaceLiveStreamService {
       return this.refused(request.surfaceSessionId, 'unsupported');
     }
 
+    initial.frame = handle.initialFrame ?? initial.frame;
     if (this.overflowSample?.page !== page
       || this.overflowSample.surfaceSessionId !== request.surfaceSessionId) {
       this.overflowSample = { page, surfaceSessionId: request.surfaceSessionId, atMs: -Infinity };

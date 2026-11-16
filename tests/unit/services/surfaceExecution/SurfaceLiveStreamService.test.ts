@@ -122,6 +122,20 @@ describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', (
     expect(detach).toHaveBeenCalledOnce();
   });
 
+  it('publishes the actual startup capture when Chrome emits no screencast frame after resizing', async () => {
+    startPageScreencast.mockImplementationOnce(async (_page: unknown, _options: unknown, emit: FrameEmitter) => {
+      emit({ base64: 'OLD_CDP_IMAGE', width: 320, height: 683, capturedAtMs: 40 });
+      return { stop, initialFrame: {
+        base64: 'WIDE_CAPTURE', width: 960, height: 716, capturedAtMs: 42,
+      } };
+    });
+    const service = build();
+    await service.start({ ...REQUEST, maxWidth: 960, maxHeight: 716 });
+    expect(published).toHaveLength(1);
+    expect(published[0]).toMatchObject({ width: 960, height: 716,
+      dataUrl: 'data:image/jpeg;base64,WIDE_CAPTURE', pageOverflowX: false });
+  });
+
   it('retains sampled metadata across capture-size restarts without another read or an absent first frame', async () => {
     vi.useFakeTimers();
     const send = vi.fn().mockResolvedValue({ cssContentSize: { width: 420 }, cssLayoutViewport: { clientWidth: 320 } });
