@@ -67,7 +67,9 @@ const ItemList: React.FC<{ title: string; items: MeetingMinutesItem[]; copy: Cop
   </section>
 );
 
-const ActionItems: React.FC<{ meeting: MeetingSummaryRecord; items: MeetingActionItem[]; copy: Copy }> = ({ meeting, items, copy }) => (
+const ActionItems: React.FC<{ meeting: MeetingSummaryRecord; items: MeetingActionItem[]; copy: Copy }> = ({ meeting, items, copy }) => {
+  const { t } = useI18n();
+  return (
   <section data-testid="meeting-action-items">
     <h3 className="mb-1.5 text-xs font-medium text-zinc-400">{copy.actionItems}</h3>
     {items.length === 0 ? <p className="text-xs text-zinc-600">{copy.none}</p> : (
@@ -77,9 +79,9 @@ const ActionItems: React.FC<{ meeting: MeetingSummaryRecord; items: MeetingActio
             <div className="min-w-0 flex-1">
               <div className="text-[13px] leading-relaxed text-zinc-200">{item.text}</div>
               <div className="mt-0.5 text-[11px] text-zinc-500">
-                {copy.owner}：<span className={item.owner ? 'text-zinc-300' : 'text-zinc-500'}>{item.owner ?? copy.unassigned}</span>
+                {copy.owner}{t.punctuation.colon}<span className={item.owner ? 'text-zinc-300' : 'text-zinc-500'}>{item.owner ?? copy.unassigned}</span>
                 <span className="mx-2 text-zinc-700">·</span>
-                {copy.due}：<span className={item.due ? 'text-zinc-300' : 'text-zinc-500'}>{item.due ?? copy.undecided}</span>
+                {copy.due}{t.punctuation.colon}<span className={item.due ? 'text-zinc-300' : 'text-zinc-500'}>{item.due ?? copy.undecided}</span>
               </div>
               <Quote text={item.quote} copy={copy} />
             </div>
@@ -99,7 +101,8 @@ const ActionItems: React.FC<{ meeting: MeetingSummaryRecord; items: MeetingActio
       </ul>
     )}
   </section>
-);
+  );
+};
 
 export const MeetingPage: React.FC<{ meetingId: string; onBack: () => void }> = ({ meetingId, onBack }) => {
   const { t, language } = useI18n();

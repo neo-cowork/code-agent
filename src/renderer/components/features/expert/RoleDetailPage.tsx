@@ -30,6 +30,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
+import { translateCatalogText } from '../../../utils/catalogText';
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
@@ -245,7 +246,7 @@ const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; re
   const [error, setError] = useState<string | null>(null);
   const save = async () => { setBusy(true); setError(null); try { await updateRoleDefinitionBody(roleId, body); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
   const restoreFactory = async () => { setBusy(true); setError(null); try { await restoreRoleFactory(roleId); setConfirmingRestore(false); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
-  return <SettingsSection title="人设正文" description="直接编辑专家的人设；保存只会替换正文，不会改动 frontmatter。">
+  return <SettingsSection title={text.definitionTitle} description={text.definitionDescription}>
     <div data-testid="role-definition-editor" className="space-y-3">
       <textarea data-testid="role-definition-body" value={body} onChange={(event) => setBody(event.target.value)} rows={14} disabled={!definition} className="w-full rounded border border-zinc-700 bg-zinc-950/70 p-2 font-mono text-xs text-zinc-200 focus:outline-none" />
       <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-badge-success disabled:opacity-50">{text.saveDefinition}</button>
@@ -765,12 +766,12 @@ const TopicsEditor: React.FC<{
       <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
         {includeActive ? (
           <div data-testid="role-topics-include-active">
-            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join("、"))}
+            {text.topicsIncludeActive.replace("{topics}", (current.topicsInclude ?? []).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {excludeActive ? (
           <div data-testid="role-topics-exclude-active">
-            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join("、"))}
+            {text.topicsExcludeActive.replace("{topics}", (current.topicsExclude ?? []).join(t.punctuation.listSeparator))}
           </div>
         ) : null}
         {!includeActive && !excludeActive ? <div>{text.topicsInactive}</div> : null}
@@ -834,7 +835,7 @@ function initialRoleDetailTab(): RoleDetailTab {
 }
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const roleText = t.settings.roles;
   const expertText = t.expert;
   const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
@@ -874,10 +875,10 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
         icon={detailAvatar
-          ? <img src={detailAvatar} alt={detail?.visual.displayName || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          ? <img src={detailAvatar} alt={translateCatalogText(detail?.visual.displayName, language) || roleId} className="h-7 w-7 rounded-lg object-cover" />
           : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
-        title={detail?.visual.displayName || roleId}
-        description={detail?.visual.profession || roleText.detail.subtitle}
+        title={translateCatalogText(detail?.visual.displayName, language) || roleId}
+        description={translateCatalogText(detail?.visual.profession, language) || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.capabilityHub.title}
         actions={<div className="flex items-center gap-2">

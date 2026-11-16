@@ -7,6 +7,7 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { AGENT_ENGINE_LABELS } from '@shared/contract/agentEngine';
+import { getEngineSummary } from '../../utils/engineManifestCopy';
 import { useI18n } from '../../hooks/useI18n';
 import { Button } from '../primitives/Button';
 
@@ -82,12 +83,13 @@ function sourceForKind(
 export function filterEngineSources(
   sources: readonly AgentEngineSourceDescriptor[],
   query: string,
+  summaryOf: (source: AgentEngineSourceDescriptor) => string = (source) => source.summary,
 ): AgentEngineSourceDescriptor[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [...sources];
   return sources.filter((source) => (
     source.label.toLowerCase().includes(normalized)
-    || source.summary.toLowerCase().includes(normalized)
+    || summaryOf(source).toLowerCase().includes(normalized)
     || source.manifestId.toLowerCase().includes(normalized)
   ));
 }
@@ -114,7 +116,10 @@ export function EngineScopedModelPanel({
   const copy = t.engineModelPanel;
   const currentSource = sourceForKind(sources, currentEngine);
   const currentEngineLabel = AGENT_ENGINE_LABELS[currentEngine];
-  const filteredSources = useMemo(() => filterEngineSources(sources, query), [query, sources]);
+  const filteredSources = useMemo(
+    () => filterEngineSources(sources, query, (source) => getEngineSummary(source, t.engineManifest)),
+    [query, sources, t.engineManifest],
+  );
   const externalCatalog = currentEngine === 'native'
     ? undefined
     : catalog?.engines.find((entry) => entry.kind === currentEngine);

@@ -26,6 +26,7 @@ import type {
   DoctorReport,
   RunDoctorOptions,
 } from './types';
+import { doctorCopy } from './i18n/doctorCopy';
 
 /** 包一层 Promise.race 加超时，超时时返回兜底 warn 项 */
 async function withTimeout<T>(
@@ -60,9 +61,9 @@ function timeoutItem(
     name,
     status: 'warn',
     message: scope === 'overall'
-      ? `整体检查超时（${(timeoutMs / 1000).toFixed(0)}s）`
-      : `检查超时（${(timeoutMs / 1000).toFixed(0)}s）`,
-    suggestion: '可能是网络或外部进程响应慢；可重试',
+      ? doctorCopy().runner.overallTimeout((timeoutMs / 1000).toFixed(0))
+      : doctorCopy().runner.checkTimeout((timeoutMs / 1000).toFixed(0)),
+    suggestion: doctorCopy().runner.timeoutSuggestion,
     fix: { code: fixCodeForCategory(category) },
   };
 }
@@ -142,7 +143,7 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
     },
     {
       category: 'provider_health',
-      name: '快模型鉴权',
+      name: doctorCopy().names.quickModelAuth,
       run: async () => checkQuickModelAuth(),
     },
     {
@@ -157,12 +158,12 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
     },
     {
       category: 'hooks',
-      name: 'Hooks 配置',
+      name: doctorCopy().names.hooksConfig,
       run: async () => checkHooksConfig(process.cwd()),
     },
     {
       category: 'version',
-      name: '应用版本',
+      name: doctorCopy().names.appVersion,
       network: true,
       run: async () => [await checkAppVersion()],
     },
@@ -190,7 +191,7 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
         category: job.category,
         name: job.name,
         status: 'skip',
-        message: '已跳过（skipNetwork=true）',
+        message: doctorCopy().runner.skippedNetwork,
       });
       continue;
     }
@@ -223,9 +224,9 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
         category: job.category,
         name: job.name,
         status: 'fail',
-        message: '检查抛错',
+        message: doctorCopy().runner.checkThrew,
         details: err instanceof Error ? err.message : String(err),
-        suggestion: '查看 details 排查；如非可恢复错误，提 issue',
+        suggestion: doctorCopy().runner.checkThrewSuggestion,
         durationMs: Date.now() - jobStart,
         fix: { code: fixCodeForCategory(job.category) },
       });

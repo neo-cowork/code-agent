@@ -15,6 +15,31 @@ const requestRejectedCopy: Record<Language, string> = {
   en: 'Neo could not accept this request. Refresh the page and try again.',
 };
 
+/** HTTP transport failure copy, keyed by the stable status/code mapping. */
+export const httpFailureCopy = {
+  genericFailure: {
+    zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
+    en: 'Neo could not complete the request; please try again in a moment.',
+  },
+  accessDenied: {
+    zh: '本地服务没有接受这次请求，请刷新页面后重试。',
+    en: 'The local session could not be verified. Refresh the page and try again.',
+  },
+  busy: {
+    zh: '上一轮还没结束，请稍候再发送。',
+    en: 'The previous turn is still finishing. Try again in a moment.',
+  },
+  // A parked old run needs an explicit action before the next message can be sent.
+  sessionHeldByOldRun: {
+    zh: '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。',
+    en: 'This message was not sent: an earlier task in this conversation is still open. Abandon that task first, then retry.',
+  },
+  tooManyRequests: {
+    zh: '发送太频繁了，请稍等片刻再重试。',
+    en: 'Too many requests in a short time. Wait a moment and try again.',
+  },
+} satisfies Record<string, Record<Language, string>>;
+
 /** PROJECT_SOURCE_TRUST（旧项目 Source 身份快照缺失，需就地确认）：导出供 transport 层映射复用。 */
 export const projectSourceTrustCopy: Record<Language, string> = {
   zh: '这个项目文件夹需要你确认后 Neo 才能使用。',

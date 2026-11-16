@@ -289,8 +289,9 @@ jobs:
         run: node scripts/host-chinese-error-ratchet.mjs
 
       - name: Renderer CJK literal ratchet
-        # N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC：按文件棘轮拦截 renderer（JSX 文本 + JSX 属性字符串，
-        # 排除 i18n/ 与测试）和 shared/contract（任意字符串/模板）中的新增中文硬编码；只降不升。
+        # N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC：按文件棘轮拦截新增中文硬编码（汉字或中文标点），只降不升。口径 3：
+        # renderer（JSX 文本 + JSX 属性字符串 + 函数入参），以及 renderer/utils、shared/contract、
+        # shared/constants、执行引擎清单、host/diagnostics 里的任意字符串/模板；i18n/ 目录与测试不扫。
         run: node scripts/renderer-cjk-literal-ratchet.mjs
 
       - name: Internal text leak gate

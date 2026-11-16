@@ -10,33 +10,7 @@
 // ============================================================================
 
 import type { Language } from '../i18n';
-import { projectSourceTrustCopy } from '../i18n/agentRunErrors';
-
-const genericFailure: Record<Language, string> = {
-  zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
-  en: 'Neo could not complete the request; please try again in a moment.',
-};
-
-const accessDenied: Record<Language, string> = {
-  zh: '本地服务没有接受这次请求，请刷新页面后重试。',
-  en: 'The local session could not be verified. Refresh the page and try again.',
-};
-
-const busy: Record<Language, string> = {
-  zh: '上一轮还没结束，请稍候再发送。',
-  en: 'The previous turn is still finishing. Try again in a moment.',
-};
-
-// 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
-const sessionHeldByOldRun: Record<Language, string> = {
-  zh: '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。',
-  en: 'This message was not sent: an earlier task in this conversation is still open. Abandon that task first, then retry.',
-};
-
-const tooManyRequests: Record<Language, string> = {
-  zh: '发送太频繁了，请稍等片刻再重试。',
-  en: 'Too many requests in a short time. Wait a moment and try again.',
-};
+import { httpFailureCopy, projectSourceTrustCopy } from '../i18n/agentRunErrors';
 
 export interface HttpFailureMessageInput {
   status: number;
@@ -49,11 +23,11 @@ export function httpFailureMessage(input: HttpFailureMessageInput): string {
   const { status, code, language } = input;
   const pick = (copy: Record<Language, string>): string => copy[language] ?? copy.zh;
   if (code === 'PROJECT_SOURCE_TRUST') return pick(projectSourceTrustCopy);
-  if (code === 'RUN_SESSION_CONFLICT') return pick(sessionHeldByOldRun);
-  if (status === 401 || status === 403) return pick(accessDenied);
-  if (status === 409) return pick(busy);
-  if (status === 429) return pick(tooManyRequests);
-  return pick(genericFailure);
+  if (code === 'RUN_SESSION_CONFLICT') return pick(httpFailureCopy.sessionHeldByOldRun);
+  if (status === 401 || status === 403) return pick(httpFailureCopy.accessDenied);
+  if (status === 409) return pick(httpFailureCopy.busy);
+  if (status === 429) return pick(httpFailureCopy.tooManyRequests);
+  return pick(httpFailureCopy.genericFailure);
 }
 
 // 域路由（src/web/routes/domain.ts）与终端错误处理（serverErrors.ts）自己的故障位：

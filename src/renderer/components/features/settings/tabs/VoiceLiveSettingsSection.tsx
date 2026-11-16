@@ -806,7 +806,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
                     recording.lastCleanup.byRule.age > 0 ? text.recordCallsRuleAge : null,
                     recording.lastCleanup.byRule.count > 0 ? text.recordCallsRuleCount : null,
                     recording.lastCleanup.byRule.bytes > 0 ? text.recordCallsRuleBytes : null,
-                  ].filter((rule): rule is string => rule !== null).join('、'))}
+                  ].filter((rule): rule is string => rule !== null).join(t.punctuation.listSeparator))}
             </p>
             <button
               type="button"

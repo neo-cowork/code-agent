@@ -12,7 +12,7 @@ export const MemberInputNote: React.FC<{ node: TraceNode }> = ({ node }) => {
     .replace('{name}', record.memberName);
   return (
     <p data-testid="member-input-note" className="truncate text-xs text-zinc-500" title={node.content}>
-      {label}：{node.content}
+      {label}{t.punctuation.colon}{node.content}
     </p>
   );
 };

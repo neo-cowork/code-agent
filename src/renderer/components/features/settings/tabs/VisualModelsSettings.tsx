@@ -10,6 +10,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { getVisualModelLabel } from '../../../../utils/visualModelLabel';
 import { Check } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -84,7 +85,10 @@ export const BuiltinModelList: React.FC<{
   onConfigure: (provider: string) => void;
   // 只读模式（如生音乐段）：仅展示，不渲染默认选择 radio。
   readOnly?: boolean;
-}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => (
+}> = ({ title, hint, rows, availableBadge, unconfiguredBadge, defaultBadge, bridgedFromBadge, manageButton, configureButton, selectedId, groupName, onSelect, onConfigure, readOnly = false }) => {
+  // 内置模型名按 id 走语言包（FB-1292）；用户自定义的模型名原样显示
+  const modelLabels = useI18n().t.visualModelLabels;
+  return (
   <div className="flex flex-col gap-2">
     <div className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-zinc-300">{title}</span>
@@ -108,7 +112,7 @@ export const BuiltinModelList: React.FC<{
                     checked={isSelected}
                     onChange={() => onSelect?.(m.id)}
                     className="sr-only peer"
-                    aria-label={m.label}
+                    aria-label={getVisualModelLabel(m, modelLabels)}
                   />
                   <span
                     aria-hidden="true"
@@ -120,7 +124,7 @@ export const BuiltinModelList: React.FC<{
                   </span>
                 </>
               )}
-              <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{m.label}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-zinc-200">{getVisualModelLabel(m, modelLabels)}</span>
               {m.source === 'bridged' && m.sourceLabel && (
                 <span className="inline-flex shrink-0 items-center rounded-full bg-zinc-700/40 px-2 py-0.5 text-[11px] font-medium text-zinc-400">
                   {bridgedFromBadge.replace('{name}', m.sourceLabel)}
@@ -154,7 +158,8 @@ export const BuiltinModelList: React.FC<{
       })}
     </ul>
   </div>
-);
+  );
+};
 
 // 通用自定义端点管理器（列表 + 新增表单），复用 CustomImageModelManagerView。
 // 通过注入的 list/save/delete 适配 image / video 两套 IPC；save 的 cost 字段名差异在适配层抹平。

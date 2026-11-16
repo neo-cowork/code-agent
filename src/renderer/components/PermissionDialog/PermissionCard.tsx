@@ -487,10 +487,10 @@ export function PermissionCard({
             : editable
               ? w.mailSendTitle
               : isDangerous
-                ? getPermissionConfig('command').title
+                ? p.typeTitles.command
                 : isGenericCommandCard
                   ? p.genericApprovalTitle
-                  : config.title);
+                  : (p.typeTitles[request.type] ?? p.typeTitles.command));
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite

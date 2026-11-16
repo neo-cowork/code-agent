@@ -16,6 +16,7 @@ const quickActionRunnerState = {
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({
     t: {
+      capabilityDetail: { viewDetailsOf: '查看 {name} 详情' },
       taskPanel: {
         skills: '技能',
         noSkills: '没有技能',

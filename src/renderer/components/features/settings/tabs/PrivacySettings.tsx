@@ -16,7 +16,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ShieldCheck, Loader2, AlertTriangle, RefreshCw, XCircle, Activity, ArrowRight, KeyRound, Mic } from 'lucide-react';
 import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
 import {
-  getPrivacyBoundaryActionShortLabel,
   listAuthInventoryItems,
   listPrivacyBoundaryIndexEntries,
   listVoiceTranscriptionPaths,
@@ -38,6 +37,11 @@ import { Button } from '../../../primitives';
 import PermissionGrantList from './PermissionGrantList';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
 import { useI18n } from '../../../../hooks/useI18n';
+import {
+  getAuthInventoryItemCopy,
+  getPrivacyBoundaryEntryCopy,
+  getVoiceTranscriptionPathCopy,
+} from '../../../../utils/privacyBoundaryCopy';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { zh } from '../../../../i18n/zh';
 import { useAuthStore } from '../../../../stores/authStore';
@@ -232,7 +236,7 @@ function OutboundMaskReceiptCard(props: {
 }
 
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const privacyText = t.settings.privacy;
   const isAdmin = useAuthStore((authState) => authState.user?.isAdmin === true);
   const [state, setState] = useState<SetupState>('idle');
@@ -558,12 +562,14 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
           </a>
         </p>
         <div className="grid gap-3 md:grid-cols-2">
-          {listPrivacyBoundaryIndexEntries().map((entry) => (
+          {listPrivacyBoundaryIndexEntries().map((entry) => {
+            const copy = getPrivacyBoundaryEntryCopy(entry, language);
+            return (
             <div key={entry.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-medium text-zinc-200">{entry.title}</div>
-                  <p className="mt-1 text-xs leading-relaxed text-zinc-400">{entry.summary}</p>
+                  <div className="text-sm font-medium text-zinc-200">{copy.title}</div>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-400">{copy.summary}</p>
                 </div>
                 <button
                   type="button"
@@ -572,17 +578,18 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                   className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
                 >
                   <ArrowRight className="h-3 w-3" />
-                  {getPrivacyBoundaryActionShortLabel(entry)}
+                  {copy.actionShortLabel}
                 </button>
               </div>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{entry.data.join('、')}</div>
-                <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{entry.storage}</div>
-                <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{entry.cloud}</div>
-                <div><span className="text-zinc-400">{privacyText.boundary.revokeLabel}</span>{entry.revoke}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{copy.data.join(t.punctuation.listSeparator)}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{copy.storage}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{copy.cloud}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.revokeLabel}</span>{copy.revoke}</div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </SettingsSection>
 
@@ -591,21 +598,24 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         description={privacyText.voice.description}
       >
         <div className="grid gap-3 md:grid-cols-2">
-          {listVoiceTranscriptionPaths().map((path) => (
+          {listVoiceTranscriptionPaths().map((path) => {
+            const copy = getVoiceTranscriptionPathCopy(path, language);
+            return (
             <div key={path.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                 <Mic className="h-4 w-4 text-zinc-400" />
-                {path.title}
+                {copy.title}
               </div>
-              <p className="mt-1 text-xs text-zinc-400">{path.trigger}</p>
+              <p className="mt-1 text-xs text-zinc-400">{copy.trigger}</p>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">Provider: </span>{path.providers.join('、')}</div>
-                <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{path.cloud}</div>
-                <div><span className="text-zinc-400">{privacyText.voice.temporaryFileLabel}</span>{path.temporaryStorage}</div>
-                <div><span className="text-zinc-400">{privacyText.voice.logLabel}</span>{path.logPolicy}</div>
+                <div><span className="text-zinc-400">Provider: </span>{copy.providers.join(t.punctuation.listSeparator)}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{copy.cloud}</div>
+                <div><span className="text-zinc-400">{privacyText.voice.temporaryFileLabel}</span>{copy.temporaryStorage}</div>
+                <div><span className="text-zinc-400">{privacyText.voice.logLabel}</span>{copy.logPolicy}</div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </SettingsSection>
 
@@ -614,20 +624,23 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         description={privacyText.auth.description}
       >
         <div className="grid gap-3 md:grid-cols-2">
-          {listAuthInventoryItems().map((item) => (
+          {listAuthInventoryItems().map((item) => {
+            const copy = getAuthInventoryItemCopy(item, language);
+            return (
             <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                 <KeyRound className="h-4 w-4 text-zinc-400" />
-                {item.title}
+                {copy.title}
               </div>
               <div className="mt-2 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{item.examples.join('、')}</div>
-                <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{item.storage}</div>
-                <div><span className="text-zinc-400">{privacyText.auth.displayLabel}</span>{item.display}</div>
-                <div><span className="text-zinc-400">{privacyText.auth.diagnosticsLabel}</span>{item.diagnosticPolicy}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{copy.examples.join(t.punctuation.listSeparator)}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{copy.storage}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.displayLabel}</span>{copy.display}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.diagnosticsLabel}</span>{copy.diagnosticPolicy}</div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </SettingsSection>
 

@@ -721,7 +721,7 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
-            const injectedContentLabel = (item.names || []).join('、') || item.toolName || item.matcher || undefined;
+            const injectedContentLabel = (item.names || []).join(t.punctuation.listSeparator) || item.toolName || item.matcher || undefined;
             const title = injectedContentLabel;
             const itemStatus = getHookItemStatusText(item, t);
             return (

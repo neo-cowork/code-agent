@@ -39,6 +39,8 @@ import { NeoBrandMark } from '../features/sidebar/NeoBrandMark';
 import ipcService from '../../services/ipcService';
 import { useI18n } from '../../hooks/useI18n';
 import { interpolate } from '../../i18n/interpolate';
+import type { Translations } from '../../i18n/zh';
+import { getEngineRecommendation } from '../../utils/engineManifestCopy';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBundledCapabilityStore } from '../../stores/bundledCapabilityStore';
@@ -107,6 +109,7 @@ function EngineIcon({ source }: { source: AgentEngineSourceDescriptor }) {
 function getOnboardingEngineStatus(
   source: AgentEngineSourceDescriptor,
   text: OnboardingTranslations,
+  engineCopy: Translations['engineManifest'],
 ): {
   detail: string;
   badge: string;
@@ -151,9 +154,8 @@ function getOnboardingEngineStatus(
   if (source.evidence === 'local_spike') {
     return { detail: s.localSpikeNotInstalledDetail, badge: s.badgeComingSoon };
   }
-  // 推荐语按 manifestId 走语言包；manifest 里的中文原文只在语言包没收录时兜底
   const recommendations: Record<string, { label: string; reason: string } | undefined> = s.recommendations;
-  const recommendation = recommendations[source.manifestId] ?? source.recommendation;
+  const recommendation = recommendations[source.manifestId] ?? getEngineRecommendation(source, engineCopy);
   return {
     detail: recommendation?.reason || s.noEvidenceDetail,
     badge: recommendation?.label || s.badgeRecommendedInstall,
@@ -169,7 +171,8 @@ function OnboardingEngineCard({
   text: OnboardingTranslations;
   onSelect: (source: AgentEngineSourceDescriptor) => void;
 }) {
-  const status = getOnboardingEngineStatus(source, text);
+  const { t } = useI18n();
+  const status = getOnboardingEngineStatus(source, text, t.engineManifest);
   const content = (
     <>
       <EngineIcon source={source} />

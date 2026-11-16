@@ -28,6 +28,7 @@ import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { isPreviewable } from '../../../utils/previewable';
@@ -386,7 +387,7 @@ export const LibraryPanel: React.FC = () => {
             >
               <option value={GLOBAL_SCOPE}>{t.library.scopeGlobal}</option>
               {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
+                <option key={project.id} value={project.id}>{getProjectDisplayName(project, t.sidebarProject)}</option>
               ))}
             </select>
             <Button

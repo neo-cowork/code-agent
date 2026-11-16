@@ -113,6 +113,7 @@ export const sidebarZh = {
     newSessionTitle: '新对话',
     unnamedSessionTitle: '未命名会话',
     appshotSessionTitle: 'Appshot 会话',
+    editRoleSessionTitlePrefix: '修改角色：',
     goalSessionTitle: '目标：{title}',
     // 能力区（会话列表上方：自动化 / 专家 / 资料库）
     capabilityZone: {
@@ -220,6 +221,8 @@ export const sidebarZh = {
     plainChatTitle: '纯对话，不继承项目上下文',
     // 未分类组（无工作区的纯对话归宿）的组名
     uncategorizedGroupName: '快速对话',
+    // 保留项目 proj_unsorted 作为「项目」出现时的名字（归档目标、资料库筛选、协作空间列表）
+    unsortedProjectName: '未分类',
     // 历史会话三分区节头（ADR-053 词表，2026-07-29 晚拍板：协作空间/独立空间/快速对话，
     // UI 不对用户暴露「项目」一词）。顺序固定：协作空间 → 独立空间 → 快速对话。
     tierSpace: '协作空间',
@@ -498,6 +501,7 @@ export const sidebarEn: typeof sidebarZh = {
     newSessionTitle: 'New conversation',
     unnamedSessionTitle: 'Untitled conversation',
     appshotSessionTitle: 'Appshot conversation',
+    editRoleSessionTitlePrefix: 'Edit role: ',
     goalSessionTitle: 'Goal: {title}',
     capabilityZone: {
       automation: 'Automations',
@@ -603,6 +607,7 @@ export const sidebarEn: typeof sidebarZh = {
   sidebarProject: {
     plainChatTitle: 'Plain conversation, no project context',
     uncategorizedGroupName: 'Quick chats',
+    unsortedProjectName: 'Uncategorized',
     tierSpace: 'Spaces',
     tierProject: 'Local spaces',
     tierQuick: 'Quick chats',

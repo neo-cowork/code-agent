@@ -122,7 +122,6 @@ export interface PermissionRequest {
 // 权限配置
 export interface PermissionConfig {
   icon: ReactNode;
-  title: string;
   color: string;
   bgColor: string;
   borderColor: string;

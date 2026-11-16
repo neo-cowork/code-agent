@@ -15,61 +15,53 @@ import {
 } from 'lucide-react';
 import type { PermissionType, PermissionConfig } from './types';
 
-// 权限配置映射
+// 权限配置映射（图标与配色；标题走语言包 decisionCard.permission.typeTitles）
 export function getPermissionConfig(type: PermissionType): PermissionConfig {
   const configs: Record<PermissionType, PermissionConfig> = {
     file_read: {
       icon: React.createElement(FileText, { size: 20 }),
-      title: '读取文件',
       color: 'text-badge-info',
       bgColor: 'bg-blue-500/10',
       borderColor: 'border-badge-info/30',
     },
     file_write: {
       icon: React.createElement(FilePlus, { size: 20 }),
-      title: '创建文件',
       color: 'text-badge-success',
       bgColor: 'bg-green-500/10',
       borderColor: 'border-badge-success/30',
     },
     file_edit: {
       icon: React.createElement(FileEdit, { size: 20 }),
-      title: '编辑文件',
       color: 'text-badge-warning',
       bgColor: 'bg-yellow-500/10',
       borderColor: 'border-badge-warning/30',
     },
     file_delete: {
       icon: React.createElement(Trash2, { size: 20 }),
-      title: '删除文件',
       color: 'text-badge-danger',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/30',
     },
     command: {
       icon: React.createElement(Terminal, { size: 20 }),
-      title: '执行命令',
       color: 'text-badge-accent',
       bgColor: 'bg-purple-500/10',
       borderColor: 'border-badge-accent/30',
     },
     dangerous_command: {
       icon: React.createElement(AlertTriangle, { size: 20 }),
-      title: '危险命令',
       color: 'text-badge-danger',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/30',
     },
     network: {
       icon: React.createElement(Globe, { size: 20 }),
-      title: '网络请求',
       color: 'text-badge-info',
       bgColor: 'bg-badge-info',
       borderColor: 'border-badge-info/30',
     },
     mcp: {
       icon: React.createElement(MessageSquare, { size: 20 }),
-      title: 'MCP 工具',
       color: 'text-badge-accent',
       bgColor: 'bg-indigo-500/10',
       borderColor: 'border-badge-accent/30',

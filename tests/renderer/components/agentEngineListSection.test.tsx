@@ -18,9 +18,12 @@ import { zh } from '../../../src/renderer/i18n/zh';
 const invokeDomainMock = vi.hoisted(() => vi.fn());
 const updateSessionEngine = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: zh, language: 'zh' }),
-}));
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { languages } = await import('../../../src/renderer/i18n');
+  return { useI18n: () => ({ t: languages[i18nState.language], language: i18nState.language }) };
+});
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() },
@@ -172,7 +175,10 @@ describe('AgentEngineListSection', () => {
     mockIpc();
     sessionState.sessions[0].engine = { kind: 'native' };
   });
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    i18nState.language = 'zh';
+  });
 
   it('初始加载并行调用 listSources 与 list，渲染完整探测来源', async () => {
     render(<AgentEngineListSection />);
@@ -247,5 +253,25 @@ describe('AgentEngineListSection', () => {
 
     // 不展示 auditNotes / 秘密
     expect(screen.queryByText('never show secrets')).toBeNull();
+  });
+
+  it('提示行的冒号跟随界面语言：英文半角「Login hint: 」，中文仍是「登录提示：」', async () => {
+    const hintLabels = () => Array.from(document.querySelectorAll('[data-engine-manifest] span.font-medium'))
+      .map((node) => node.textContent ?? '')
+      .filter((text) => /[:：]\s*$/.test(text));
+
+    render(<AgentEngineListSection />);
+    await waitFor(() => expect(screen.getByText('Cursor CLI')).toBeTruthy());
+    const zhLabels = hintLabels();
+    expect(zhLabels).toContain('登录提示：');
+    cleanup();
+
+    i18nState.language = 'en';
+    render(<AgentEngineListSection />);
+    await waitFor(() => expect(screen.getByText('Cursor CLI')).toBeTruthy());
+    const enLabels = hintLabels();
+    expect(enLabels).toContain('Login hint: ');
+    expect(enLabels).toHaveLength(zhLabels.length);
+    expect(enLabels.filter((text) => /[\u3000-\u303f\uff00-\uffef]/u.test(text))).toEqual([]);
   });
 });

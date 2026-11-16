@@ -13,7 +13,7 @@
 // 分类 chips 口径：RolePanelEntry.category 是现成分类字段（SkillCategory 子集，
 // 与技能包同套体系），直接按 SKILL_CATEGORIES 顺序推导；无 category 的自建角色归「其他」。
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Quote, RefreshCw, Search, UserRound, Users } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import type { TeamRecipe } from '@shared/contract/teamRecipe';
@@ -37,6 +37,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeCatalogObject } from '../../../utils/catalogText';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { Badge } from '../../primitives/Badge';
@@ -156,13 +157,15 @@ const ExpertCard: React.FC<{
 );
 
 export const ExpertPanel: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.expert;
   const openExpertRoleDetail = useAppStore((s) => s.openExpertRoleDetail);
   const tab = useAppStore((s) => s.expertPanelTab);
   const setTab = useAppStore((s) => s.setExpertPanelTab);
 
-  const [entries, setEntries] = useState<RolePanelEntry[]>([]);
+  const [rawEntries, setEntries] = useState<RolePanelEntry[]>([]);
+  // 内置专家的花名/职业/说明/标签/开场白按界面语言显示（FB-1301）；roleId 等身份字段不动
+  const entries = useMemo(() => localizeCatalogObject(rawEntries, language), [rawEntries, language]);
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [rolePacksLoading, setRolePacksLoading] = useState(true);
@@ -311,7 +314,8 @@ export const ExpertPanel: React.FC = () => {
     : categoryGroups.find((group) => group.key === activeCategory)?.entries ?? [];
   const filteredShown = categoryFiltered.filter((entry) => matchesRoleSearch(entry, searchQuery, categoryLabels));
   const searchActive = searchQuery.trim().length > 0;
-  const filteredBuiltinRecipes = TEAM_RECIPES.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
+  const filteredBuiltinRecipes = localizeCatalogObject(TEAM_RECIPES, language)
+    .filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
   const filteredUserRecipes = userRecipes.filter((recipe) => matchesTeamRecipeSearch(recipe, searchQuery));
   const filteredRolePacks = rolePacks.filter((item) => matchesRolePackSearch(item, searchQuery, categoryLabels));
   const discoverHasSearchMatch = filteredShown.length > 0
@@ -644,20 +648,20 @@ export const ExpertPanel: React.FC = () => {
                     : (pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)}</li>
                   {consentToolSummary.groups.map(({ group, effects }) => (
                     <li key={group} className="ml-3 text-zinc-400">
-                      {t.expert.rolePackConsent.toolGroups[group]}：
-                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join('、')}
+                      {t.expert.rolePackConsent.toolGroups[group]}{t.punctuation.colon}
+                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join(t.punctuation.listSeparator)}
                     </li>
                   ))}
                   {/* 映射表没收录的工具原样露出：漏显示一项能力等于骗用户，看不懂也好过看不见 */}
                   {consentToolSummary.unmapped.length > 0 ? (
                     <li className="ml-3 text-zinc-400">
-                      {t.expert.rolePackConsent.toolsOther}：{consentToolSummary.unmapped.join('、')}
+                      {t.expert.rolePackConsent.toolsOther}{t.punctuation.colon}{consentToolSummary.unmapped.join(t.punctuation.listSeparator)}
                     </li>
                   ) : null}
                   {pendingConsent.connectors.length > 0 ? (
                     <li>· {t.expert.rolePackConsent.connectors.replace(
                       '{connectors}',
-                      pendingConsent.connectors.map(describeConnector).join('、'),
+                      pendingConsent.connectors.map(describeConnector).join(t.punctuation.listSeparator),
                     )}</li>
                   ) : null}
                   {pendingConsent.permissionPreset ? (

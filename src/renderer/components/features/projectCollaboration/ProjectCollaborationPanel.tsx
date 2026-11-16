@@ -61,14 +61,7 @@ export interface ProjectCollaborationPanelProps {
 
 type PhaseFilter = 'all' | NeoWorkCardPhase;
 
-const PHASE_FILTERS: Array<{ id: PhaseFilter; label: string }> = [
-  { id: 'all', label: '全部' },
-  { id: 'running', label: '运行中' },
-  { id: 'needs_input', label: '待确认' },
-  { id: 'done', label: '已完成' },
-  { id: 'failed', label: '失败' },
-  { id: 'closed', label: '已结束' },
-];
+const PHASE_FILTERS: PhaseFilter[] = ['all', 'running', 'needs_input', 'done', 'failed', 'closed'];
 
 function topicSearchText(detail: NeoWorkCardDetail): string {
   const revision = detail.currentRevision ?? detail.approvedRevision;
@@ -399,7 +392,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       ? () => loadForProject(projectId, { includeArchived: true })
       : () => loadAll({ includeArchived: true });
     void load().catch((error) => {
-      toast.error(error instanceof Error ? error.message : '加载 Neo topic 失败');
+      toast.error(error instanceof Error ? error.message : t.neoTopics.loadFailed);
     });
   }, [details, loadAll, loadForProject, projectId]);
   const hasActiveTopic = storeDetails.some((detail) => isNeoWorkCardAwaitingRuntimeTerminal(detail.workCard.status));
@@ -410,7 +403,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       : () => loadAll({ includeArchived: true });
     const interval = window.setInterval(() => {
       void load().catch((error) => {
-        toast.error(error instanceof Error ? error.message : '刷新 Neo topic 失败');
+        toast.error(error instanceof Error ? error.message : t.neoTopics.refreshFailed);
       });
     }, NEO_WORK_CARD_LIVE_REFRESH_MS);
     return () => window.clearInterval(interval);
@@ -448,9 +441,9 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
   const handleCancel = useCallback(async (workCardId: string) => {
     try {
       if (onCancel) await onCancel(workCardId);
-      else await cancel({ workCardId, actorUserId, feedback: '用户取消' });
+      else await cancel({ workCardId, actorUserId, feedback: t.neoTopics.cancelFeedback });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '取消 topic 失败');
+      toast.error(error instanceof Error ? error.message : t.neoTopics.cancelFailed);
     }
   }, [actorUserId, cancel, onCancel]);
   const handleArchive = useCallback(async (workCardId: string) => {
@@ -458,7 +451,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       if (onArchive) await onArchive(workCardId);
       else await archive({ workCardId, actorUserId });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '归档 topic 失败');
+      toast.error(error instanceof Error ? error.message : t.neoTopics.archiveFailed);
     }
   }, [actorUserId, archive, onArchive]);
   const handleApproveMemory = useCallback(async (candidateId: string) => {
@@ -466,7 +459,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       if (onApproveMemory) await onApproveMemory(candidateId);
       else await approveMemoryCandidate({ candidateId, actorUserId });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '写入记忆失败');
+      toast.error(error instanceof Error ? error.message : t.neoTopics.memoryWriteFailed);
     }
   }, [actorUserId, approveMemoryCandidate, onApproveMemory]);
   const handleOpenConversation = useCallback((sessionId: string) => {
@@ -475,7 +468,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
       return;
     }
     void useSessionStore.getState().switchSession(sessionId).catch((error) => {
-      toast.error(error instanceof Error ? error.message : '打开会话失败');
+      toast.error(error instanceof Error ? error.message : t.neoTopics.openSessionFailed);
     });
   }, [onOpenConversation]);
 
@@ -487,7 +480,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
         <div className={embedded ? 'shrink-0 px-4' : 'shrink-0 border-b border-zinc-800 px-4 py-3'}>
           {loading && (
             <div className="inline-flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-950/50 px-2 py-1 text-[11px] text-zinc-400">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />正在加载 topic
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />{t.neoTopics.loadingTopics}
             </div>
           )}
           {loadError && (
@@ -506,7 +499,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="搜索 topic / 步骤 / 文件"
+                placeholder={t.neoTopics.searchPlaceholder}
                 className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 pl-8 pr-2 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-badge-success/60"
                 data-testid="neo-topic-search"
               />
@@ -514,17 +507,17 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
             <div className="flex flex-wrap gap-1.5">
               {PHASE_FILTERS.map((filter) => (
                 <button
-                  key={filter.id}
+                  key={filter}
                   type="button"
-                  onClick={() => setPhaseFilter(filter.id)}
+                  onClick={() => setPhaseFilter(filter)}
                   className={`h-7 rounded-md border px-2 text-[11px] transition-colors ${
-                    phaseFilter === filter.id
+                    phaseFilter === filter
                       ? 'border-badge-success/40 bg-emerald-500/10 text-badge-success'
                       : 'border-zinc-800 bg-zinc-900 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
                   }`}
-                  data-testid={`neo-topic-filter-${filter.id}`}
+                  data-testid={`neo-topic-filter-${filter}`}
                 >
-                  {filter.label}
+                  {t.neoTopics.phaseFilters[filter]}
                 </button>
               ))}
               <label className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-400">
@@ -535,7 +528,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
                   className="h-3.5 w-3.5 accent-emerald-500"
                   data-testid="neo-topic-mine-filter"
                 />
-                只看我的
+                {t.neoTopics.onlyMine}
               </label>
               <select
                 value={sortMode}
@@ -605,13 +598,13 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
           className="fixed inset-y-0 right-0 z-50 flex w-[min(560px,100vw)] flex-col border-l border-zinc-800 bg-zinc-950 shadow-[-24px_0_48px_-24px_rgba(0,0,0,0.8)]"
           data-testid="neo-topic-drawer"
           role="complementary"
-          aria-label="topic 详情"
+          aria-label={t.neoTopics.detailAria}
         >
           <div className="flex shrink-0 items-center justify-end border-b border-zinc-800/70 px-2 py-1.5">
             <button
               type="button"
               onClick={() => setSelectedId(null)}
-              aria-label="关闭详情"
+              aria-label={t.neoTopics.closeDetailAria}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-800/70 hover:text-zinc-200"
               data-testid="neo-topic-drawer-close"
             >

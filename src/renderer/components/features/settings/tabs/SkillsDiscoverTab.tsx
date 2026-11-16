@@ -17,6 +17,7 @@ import { findRecommendedRepository, groupRecommendedSkillsByCategory, normalizeS
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeSkillCatalog, translateCatalogText } from '../../../../utils/catalogText';
 import { zh } from '../../../../i18n/zh';
 import {
   RecommendedRepoCard,
@@ -87,6 +88,8 @@ const RegistryEntryCard: React.FC<{
   isInstalling: boolean;
 }> = ({ item, labels, onInstall, isInstalling }) => {
   const { entry, installed, hasUpdate } = item;
+  // 技能库条目的名称/说明是下发的数据，按界面语言显示（FB-1301）
+  const { language } = useI18n();
   const showAction = !installed || hasUpdate;
   return (
     <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
@@ -94,7 +97,7 @@ const RegistryEntryCard: React.FC<{
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h5 className="truncate text-sm font-medium text-zinc-200">
-              {entry.displayName || entry.name}
+              {translateCatalogText(entry.displayName, language) || entry.name}
             </h5>
             <span className="shrink-0 rounded border border-badge-success/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-badge-success">
               <ShieldCheck className="mr-0.5 inline h-3 w-3 align-[-2px]" />
@@ -112,7 +115,7 @@ const RegistryEntryCard: React.FC<{
             )}
           </div>
           {entry.description && (
-            <p className="mt-1 text-xs leading-relaxed text-zinc-400">{entry.description}</p>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-400">{translateCatalogText(entry.description, language)}</p>
           )}
           <div className="mt-1 text-[11px] text-zinc-500">
             {labels.registryReviewedPrefix}
@@ -166,10 +169,11 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   onClearSearch,
   onInstallFromSearch,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const discoverText = t.settings.skills.discover;
   // 云端 catalog 可能半截返回；发现页是默认落地 tab，缺字段不能让整页崩
-  const catalog = normalizeSkillCatalogPayload(rawCatalog);
+  // 目录里的名称/说明/角标按界面语言显示（FB-1301）
+  const catalog = localizeSkillCatalog(normalizeSkillCatalogPayload(rawCatalog), language);
   const categoryGroups = groupRecommendedSkillsByCategory(catalog);
 
   // 推荐 skill 的安装动作 = 安装其来源仓库

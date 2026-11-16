@@ -11,6 +11,7 @@ import React from 'react';
 import { AlertTriangle, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { RolePackListItem } from '../../../services/rolesClient';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeCatalogObject } from '../../../utils/catalogText';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
@@ -39,7 +40,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
             <span>{text.degraded.replace('{count}', String(missingSkills.length))}</span>
           </div>
           <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
-            {text.missingSkills.replace('{skills}', missingSkills.join('、'))}
+            {text.missingSkills.replace('{skills}', missingSkills.join(t.punctuation.listSeparator))}
           </p>
           <Button
             variant="secondary"
@@ -91,7 +92,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
   onRetryMissingSkills,
   hideWhenEmpty = false,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.rolePack;
 
   if (hideWhenEmpty && !loading && !error && items.length === 0) return null;
@@ -117,7 +118,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
       {!loading && !error && items.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => {
-            const { entry } = item;
+            const entry = localizeCatalogObject(item.entry, language);
             const busy = busyRoleId === entry.roleId;
             return (
               <article key={entry.roleId} data-testid={`role-pack-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
@@ -144,8 +145,8 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                   </div>
                 ) : null}
                 <div className="space-y-1 text-[11px] text-zinc-500">
-                  <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join('、')}</p>
-                  <p><span className="text-zinc-400">{text.tools}</span>{': '}{item.tools.join('、')}</p>
+                  <p><span className="text-zinc-400">{text.skills}</span>{': '}{entry.skills.map((skill) => skill.registryName).join(t.punctuation.listSeparator)}</p>
+                  <p><span className="text-zinc-400">{text.tools}</span>{': '}{item.tools.join(t.punctuation.listSeparator)}</p>
                   <p><span className="text-zinc-400">{text.publisher}</span>{': '}{entry.publisher}</p>
                   <p><span className="text-zinc-400">{text.version}</span>{': '}{entry.packVersion}</p>
                 </div>

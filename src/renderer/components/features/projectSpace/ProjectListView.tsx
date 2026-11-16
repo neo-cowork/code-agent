@@ -26,6 +26,7 @@ import { pickNativeDirectory } from '../../../services/tauriPluginFacade';
 import { toast } from '../../../hooks/useToast';
 import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
 import { useI18n } from '../../../hooks/useI18n';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { Badge } from '../../primitives/Badge';
 import { SecondaryButton } from '../../primitives/Button';
@@ -246,7 +247,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
               <FolderKanban className="h-4 w-4 flex-shrink-0 text-zinc-500" />
               <span className="min-w-0 flex-1">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm text-zinc-200 group-hover:text-zinc-100">{project.name}</span>
+                  <span className="truncate text-sm text-zinc-200 group-hover:text-zinc-100">{getProjectDisplayName(project, t.sidebarProject)}</span>
                   {project.cloudProjectId ? (
                     <Badge className="border-badge-accent/30 bg-violet-500/10 text-[11px] text-badge-accent" data-testid={`project-space-cloud-badge-${project.id}`}>
                       {ps.cloudBadge}
