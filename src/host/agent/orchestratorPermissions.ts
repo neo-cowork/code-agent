@@ -906,7 +906,7 @@ export class OrchestratorPermissionIsland {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
-            body: `无人值守任务需要确认「${toolUserLabel(fullRequest.tool)}」，已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+            body: `无人值守任务需要确认「${toolUserLabel(fullRequest.tool, this.getSettings().ui?.language === 'en' ? 'en' : 'zh')}」，已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,

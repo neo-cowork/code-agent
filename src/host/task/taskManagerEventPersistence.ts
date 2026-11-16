@@ -5,6 +5,7 @@
 import type { AgentEvent, Message, MessageSnapshotData, ToolCall } from '../../shared/contract';
 import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import { createLogger } from '../services/infra/logger';
+import { readUiLanguage } from '../session/sessionTitleHostPrompt';
 import { permissionNoticeBody } from '../../shared/utils/toolUserLabel';
 import {
   closeBackgroundRunAtTerminal,
@@ -153,7 +154,7 @@ export async function persistTaskManagerEvent(
         notificationService.notifyNeedsInput({
           sessionId,
           title: '需要授权',
-          body: permissionNoticeBody(req.tool),
+          body: permissionNoticeBody(req.tool, readUiLanguage()),
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
       } else if (typeof event.data.id === 'string') {

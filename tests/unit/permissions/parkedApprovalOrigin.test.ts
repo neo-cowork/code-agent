@@ -22,6 +22,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     getDb: () => null,
   }),
 }));
+import { notificationService } from '../../../src/host/services/infra/notificationService';
+import { toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
@@ -81,4 +83,32 @@ describe('parked tool_approval keeps who started the run', () => {
     expect(item.startedByAutomation).toBeUndefined();
     expect(item.scheduledTaskName).toBeUndefined();
   });
+  it.each([
+    ['Bash', 'command'], ['Write', 'file_write'], ['Edit', 'file_edit'], ['Read', 'file_read'],
+  ] as const)('%s parked notification uses the configured UI action language', async (tool, type) => {
+    for (const language of ['zh', 'en'] as const) {
+      vi.mocked(notificationService.notifyNeedsInput).mockClear();
+      state.session = { title: 'Downloads notes', origin: { kind: 'cron', id: 'downloads', name: 'Downloads notes' } };
+      const island = new OrchestratorPermissionIsland({
+        getSettings: () => ({ ...DEFAULT_SETTINGS, ui: { ...DEFAULT_SETTINGS.ui, language }, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false } } }),
+        isDevModeAutoApproveEnabled: () => false,
+        getExecutionTopology: () => 'async_agent',
+        hasApprovalUi: () => false,
+        onEvent: vi.fn(),
+        injectedPendingApprovalRepo: pending,
+      });
+      getPermissionModeManager().markUnattendedSession('s1');
+      const outcome = island.requestPermission({ type, tool, details: type === 'command' ? { command: 'ls Downloads' } : { path: '/tmp/notes.md' }, sessionId: 's1' });
+      try {
+        await vi.waitFor(() => expect(notificationService.notifyNeedsInput).toHaveBeenCalled());
+        const notice = vi.mocked(notificationService.notifyNeedsInput).mock.calls.at(-1)![0];
+        expect(notice.body).toContain(`「${toolUserLabel(tool, language)}」`);
+        expect(pending.listByKindAndStatus('tool_approval', 'pending')).toHaveLength(1);
+      } finally {
+        for (const request of island.listPendingRequests()) island.resolveParkedApproval(request.id, 'deny');
+        await outcome;
+      }
+    }
+  });
+
 });

@@ -21,6 +21,13 @@ describe('toolUserLabel', () => {
     expect(permissionNoticeBody('mail_send')).not.toContain('mail_send');
     expect(permissionNoticeBody(undefined)).toBe('请求执行权限');
   });
+  it('通知动作名跟随界面语言，保留原有通知模板', () => {
+    expect(permissionNoticeBody('Bash', 'en')).toContain('Run command');
+    expect(permissionNoticeBody('Write', 'en')).toContain('Write file');
+    expect(permissionNoticeBody('Edit', 'en')).toContain('Edit file');
+    expect(permissionNoticeBody('Read', 'en')).toContain('Read file');
+    expect(permissionNoticeBody('Bash')).toBe('需要授权：运行命令');
+  });
   it('英文界面给英文动作名', () => {
     expect(toolUserLabel('Bash', 'en')).toBe('Run command');
     expect(toolUserLabel('mcp__x__y', 'en')).toBe('External tool');

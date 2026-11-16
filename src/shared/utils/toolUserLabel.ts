@@ -66,7 +66,7 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
 }
 
 /** 「需要授权」类通知正文：只说动作，不带原始命令 / 工具名。 */
-export function permissionNoticeBody(toolName?: string): string {
+export function permissionNoticeBody(toolName?: string, language: 'zh' | 'en' = 'zh'): string {
   const name = (toolName ?? '').trim();
-  return name ? `需要授权：${toolUserLabel(name)}` : '请求执行权限';
+  return name ? `需要授权：${toolUserLabel(name, language)}` : '请求执行权限';
 }
