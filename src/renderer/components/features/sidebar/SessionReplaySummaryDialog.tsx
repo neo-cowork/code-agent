@@ -17,7 +17,6 @@ import type { Task } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
-import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import type { SessionReplayEvidence } from '../../../utils/sessionReplayEvidence';
 import {
