@@ -110,7 +110,7 @@ function beyondBaseline(list, baseline) {
   });
 }
 
-export function createIdleTracker({ baselineCards = [], baselineErrors = [], seenRunning = false, quietMs = 800, startGraceMs = 3_000 } = {}) {
+export function createIdleTracker({ baselineCards = [], baselineErrors = [], seenRunning = false, requireRunning = false, quietMs = 800, startGraceMs = 3_000 } = {}) {
   // 按「同文案出现次数」做基线：同会话里第二张同文案的失败卡/审批卡也要算新出现的。
   const baseline = countBy(baselineCards);
   const baselineErr = countBy(baselineErrors);
@@ -129,10 +129,57 @@ export function createIdleTracker({ baselineCards = [], baselineErrors = [], see
       return { done: false };
     }
     if (!sawRunning && sample.t - first < startGraceMs) return { done: false };
+    // 没人证明过这一轮真跑过（前面没有验过的 send、也没给 --grace）：一直没见到运行中 = 根本没发出去，不能当 idle。
+    if (!sawRunning && requireRunning) return { done: true, state: 'never-ran' };
     quietSince ??= sample.t;
     if (sample.t - quietSince >= quietMs) return { done: true, state: 'idle', sawRunning };
     return { done: false };
   };
+}
+
+/**
+ * send 受理判定。sample = { t, matches, running, composer, sendFailed(发送失败标记个数), toasts: string[] }。
+ * matches = 消息列表里含这段文字的用户气泡数；baselineMatches 是回车前的数。
+ * 只有「新用户气泡出现在列表里」且「见过运行中」才算发出去了（输入框清空不算：发送被拦、页面被切到设置页时输入框也会没）。
+ * 输入框消失满 goneMs 且列表里没出现这条消息 → 立即判失败（如模型未配置被切到设置页），原因带上新出现的提示条。
+ */
+export function createSendTracker({ baselineMatches = 0, baselineFailed = 0, baselineToasts = [], goneMs = 1_000 } = {}) {
+  const baseToasts = countBy(baselineToasts);
+  let sawMessage = false;
+  let sawRunning = false;
+  let goneSince;
+  let toasts = [];
+  const why = (head) => `${head}${toasts.length ? `；提示：${toasts.join(' / ')}` : ''}`;
+  const track = (sample) => {
+    const fresh = beyondBaseline(sample.toasts ?? [], baseToasts);
+    if (fresh.length) toasts = fresh;
+    if (sample.matches > baselineMatches) sawMessage = true;
+    if (sample.running) sawRunning = true;
+    // 旧气泡上的「发送失败」标记会一直留在会话里，只认回车后多出来的。
+    if ((sample.sendFailed ?? 0) > baselineFailed) return { done: true, ok: false, reason: why('用户气泡标了「发送失败」') };
+    if (sawMessage && sawRunning) return { done: true, ok: true };
+    if (sample.composer || sawMessage) goneSince = undefined;
+    else {
+      goneSince ??= sample.t;
+      if (sample.t - goneSince >= goneMs) return { done: true, ok: false, reason: why('输入框不见了，消息也没进列表（页面被切走了，比如跳到了设置页）') };
+    }
+    return { done: false };
+  };
+  track.timeoutReason = () => why(sawMessage ? '消息进了列表，但一直没进入运行中' : '消息一直没出现在消息列表里');
+  return track;
+}
+
+/**
+ * 模型选择器行匹配：rows = [{ label, modelId, provider(分组标题) }]。显示名或模型 id 与 name 精确相等；
+ * 一个都没有且 name 带「/」时，按「服务商/模型名」再找一次（模型 id 自身可能带 /，所以先整串匹配）。
+ */
+export function pickModelOptions(rows, name) {
+  const exact = (want) => (r) => r.label === want || r.modelId === want;
+  const whole = rows.filter(exact(name));
+  const i = name.indexOf('/');
+  if (whole.length || i <= 0) return whole;
+  const provider = name.slice(0, i).trim();
+  return rows.filter(exact(name.slice(i + 1).trim())).filter((r) => r.provider.includes(provider));
 }
 
 /**
@@ -489,6 +536,24 @@ async function sampleRun(page) {
   }, [RUNNING_SELECTORS, NEEDS_USER_SELECTORS, ERROR_SELECTORS]);
 }
 
+async function sampleSend(page, text) {
+  return page.evaluate(([needle, running]) => {
+    const vis = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+    };
+    return {
+      t: Date.now(),
+      matches: [...document.querySelectorAll('[data-testid="user-message-content"]')].filter((el) => (el.textContent || '').includes(needle)).length,
+      running: running.some((sel) => [...document.querySelectorAll(sel)].some(vis)),
+      composer: [...document.querySelectorAll('[data-chat-input]')].some(vis),
+      sendFailed: document.querySelectorAll('[data-testid="user-message-send-failed"]').length,
+      // Toast 是 role=alert 且没有 aria-label；运行失败卡有 aria-label，归 wait-idle 管。
+      toasts: [...document.querySelectorAll('[role="alert"]:not([aria-label])')].filter(vis).map((el) => (el.textContent || '').trim().slice(0, 200)).filter(Boolean),
+    };
+  }, [text.slice(0, 20), RUNNING_SELECTORS]);
+}
+
 async function scrollerMetrics(page, delta = 0) {
   return page.evaluate((dy) => {
     const pick = () => {
@@ -538,7 +603,7 @@ async function probeVisibility(page, loc) {
 
 const ACTIONS = {
   async 'new-session'({ page }) {
-    await page.getByRole('button', { name: '新任务' }).first().click();
+    await page.getByRole('button', { name: /^(新任务|New task)$/ }).first().click();
     const active = page.locator('[data-session-id][aria-current="true"]').first();
     await active.waitFor({ timeout: 15_000 });
     await page.locator('[data-chat-input]').waitFor({ timeout: 15_000 });
@@ -546,22 +611,43 @@ const ACTIONS = {
   },
   async 'select-model'({ page }, step) {
     const name = step.model ?? step.arg;
-    if (!name) throw new Error('select-model 需要模型名（如「MiMo v2.6 Flash」）');
+    if (!name) throw new Error('select-model 需要模型名（如「MiMo v2.6 Flash」，同名跨服务商时写「TokenRhythm/mimo-v2.5-pro」）');
     const trigger = page.getByRole('button', { name: /^(切换模型|Switch model)$/ }).filter({ visible: true }).last();
-    if ((await trigger.textContent())?.includes(name)) return { model: name, already: true };
     await trigger.click();
     const search = page.locator('[data-model-search-input]');
     await search.waitFor({ timeout: 10_000 });
-    await search.fill(name);
-    const option = page.locator('[data-model-option-index]').filter({ hasText: name }).first();
-    await option.click({ timeout: 10_000 }).catch(async () => {
-      await search.fill('');
-      const seen = await page.locator('[data-model-option-index]').allInnerTexts();
+    await search.fill('');
+    // 行文字 = 显示名 + 徽标 + 末尾的模型 id；分组标题 = 服务商名。按显示名或模型 id 精确匹配，命中多个就报错，不静默挑第一个
+    // （11-16 真机：「mimo-v2.5-pro」同时命中 TokenRhythm 和小米，点到的是小米、key 无效）。
+    const readRows = () => page.locator('[data-model-option-index]').evaluateAll((els) => els
+      .filter((el) => el.getAttribute('data-model-option-index') !== '0')
+      .map((el) => ({
+        index: el.getAttribute('data-model-option-index'),
+        label: el.querySelector('.font-medium')?.textContent?.trim() ?? '',
+        modelId: (el.innerText || '').trim().split('\n').pop().trim(),
+        // 分组标题里依次是服务商 logo、服务商名、（收藏星）、状态点；取最后一个有字、不是状态点的直接子 span。
+        provider: [...(el.parentElement?.firstElementChild?.children ?? [])]
+          .filter((c) => c.tagName === 'SPAN' && !c.hasAttribute('aria-label') && c.textContent.trim()).pop()?.textContent.trim() ?? '',
+      })));
+    // 菜单刚打开时先渲染内置目录、已配置的服务商随后才到（11-16 真机读到过没有 TokenRhythm 分组的列表），连续两次读到同一份才用。
+    let prev = '';
+    const rows = await pollUntil(async () => {
+      const cur = await readRows();
+      const key = JSON.stringify(cur);
+      const stable = key === prev ? cur : null;
+      prev = key;
+      return stable;
+    }, { timeoutMs: 5_000, intervalMs: 300, what: '模型列表稳定' });
+    const hits = pickModelOptions(rows, name);
+    if (hits.length !== 1) {
       await page.keyboard.press('Escape');
-      throw new Error(`模型列表里没有「${name}」；可选：${seen.map((t) => t.split('\n')[0]).join(' / ') || '（空）'}`);
-    });
-    await pollUntil(async () => (await trigger.textContent())?.includes(name), { timeoutMs: 10_000, what: `模型切到「${name}」` });
-    return { model: name };
+      const list = (hits.length ? hits : rows).map((r) => `${r.provider}/${r.label}`).join(' / ') || '（空）';
+      throw new Error(hits.length ? `「${name}」命中多个，写成「服务商/模型名」：${list}` : `模型列表里没有「${name}」；可选：${list}`);
+    }
+    await page.locator(`[data-model-option-index="${hits[0].index}"]`).click({ timeout: 10_000 });
+    // 状态栏触发钮的 title 带「服务商id/模型id」，以它为准确认切过去了（显示名会被规范化，不可靠）。
+    await pollUntil(async () => (await trigger.getAttribute('title'))?.includes(`/${hits[0].modelId}`), { timeoutMs: 10_000, what: `模型切到「${name}」` });
+    return { model: name, provider: hits[0].provider, modelId: hits[0].modelId, title: await trigger.getAttribute('title') };
   },
   async reload(ctx) {
     // 真机 quit/launch 之后后端换了进程，页面要重新打开才会连上新服务。
@@ -594,31 +680,42 @@ const ACTIONS = {
     const text = step.text ?? step.arg;
     if (!text) throw new Error('send 需要文本');
     if (ctx.target.logDir) ctx.logMarks = logSizes(ctx.target.logDir);
-    const input = page.locator('[data-chat-input]');
-    await input.click();
+    const input = page.locator('[data-chat-input]').filter({ visible: true }).last();
+    await input.click({ timeout: 10_000 });
     await page.keyboard.insertText(text);
-    // 文字真进了输入框才回车；否则「输入框为空」会被误当成已受理。
-    await pollUntil(async () => (await input.innerText().catch(() => '')).includes(text.slice(0, 20)), { timeoutMs: 5_000, what: '文字进入输入框' });
+    // 文字真进了输入框才回车。innerText 给短超时：输入框没了时 locator 默认会干等 30 秒。
+    await pollUntil(async () => (await input.innerText({ timeout: 500 }).catch(() => '')).includes(text.slice(0, 20)), { timeoutMs: 5_000, what: '文字进入输入框' });
+    const before = await sampleSend(page, text);
+    const track = createSendTracker({ baselineMatches: before.matches, baselineFailed: before.sendFailed, baselineToasts: before.toasts });
+    ctx.sendVerified = false;
     await page.keyboard.press('Enter');
-    // 受理信号：输入框清空，或出现运行中。不等 run 结束。
+    let verdict;
     await pollUntil(async () => {
-      const s = await sampleRun(page);
-      const plain = await input.innerText().catch(() => '');
-      return s.running || !plain.trim();
-    }, { timeoutMs: 15_000, what: '发送受理' });
+      verdict = track(await sampleSend(page, text));
+      return verdict.done;
+    }, { timeoutMs: step.timeout ?? 30_000, what: '发送受理' }).catch(() => {
+      throw new Error(`发送没受理：${track.timeoutReason()}`);
+    });
+    if (!verdict.ok) throw new Error(`发送没受理：${verdict.reason}`);
+    // 交给下一条 wait-idle：这一轮已经确认跑起来过，回得快没采到运行中也不算没发出去。
+    ctx.sendVerified = true;
     ctx.sentAt = Date.now();
     return { chars: text.length };
   },
   async 'wait-idle'(ctx, step) {
     const { page } = ctx;
     const base = await sampleRun(page);
-    const track = createIdleTracker({ baselineCards: base.cards, baselineErrors: base.errors, seenRunning: base.running, ...(step.grace ? { startGraceMs: Number(step.grace) } : {}) });
+    // 没有验过的 send、也没给 grace（授权后自动续做那种）时，必须亲眼见到运行中才算跑完。
+    const requireRunning = !step.grace && !ctx.sendVerified;
+    ctx.sendVerified = false;
+    const track = createIdleTracker({ baselineCards: base.cards, baselineErrors: base.errors, seenRunning: base.running, requireRunning, ...(step.grace ? { startGraceMs: Number(step.grace) } : {}) });
     let verdict;
     await pollUntil(async () => {
       verdict = track(await sampleRun(page));
       return verdict.done;
     }, { timeoutMs: step.timeout ?? ctx.timeoutMs, what: '运行结束或需人卡片' });
     if (verdict.state === 'error' && step.expect !== 'error') throw new Error(`运行失败：${verdict.errors.join(' / ')}`);
+    if (verdict.state === 'never-ran') throw new Error('一直没进入运行中：这一轮根本没跑起来（前面没有确认过的 send；授权后自动续做的请给 grace）');
     if (step.expect && step.expect !== verdict.state) throw new Error(`期望 ${step.expect}，实际 ${verdict.state}${verdict.cards ? `：${verdict.cards.join(' / ')}` : ''}`);
     return verdict;
   },
@@ -935,10 +1032,14 @@ async function main(argv = process.argv.slice(2)) {
       const state = liveState();
       assertNoConflict(state, opts);
       if (!state) throw new Error('没有常驻浏览器：先 node scripts/neo-drive/neo-drive.mjs browser start --slotless|--dev|--url <地址>');
-      const ctx = { opts, target: state, timeoutMs, logMarks: state.logMarks };
-      const detail = await withPage(state, (page) => ACTIONS[cmd](Object.assign(ctx, { page }), step));
-      // send 在 ctx 上记下发送前的日志偏移，留给下一条 wait-log。
-      touch(state, { logMarks: ctx.logMarks });
+      const ctx = { opts, target: state, timeoutMs, logMarks: state.logMarks, sendVerified: state.sendVerified };
+      let detail;
+      try {
+        detail = await withPage(state, (page) => ACTIONS[cmd](Object.assign(ctx, { page }), step));
+      } finally {
+        // send 记下发送前的日志偏移（给下一条 wait-log）和「已确认跑起来」（给下一条 wait-idle）；失败的 send 也要把后者清掉。
+        touch(state, { logMarks: ctx.logMarks, sendVerified: ctx.sendVerified });
+      }
       result = { ok: true, ms: Date.now() - t0, ...(detail === undefined ? {} : { detail }) };
     }
   } else {

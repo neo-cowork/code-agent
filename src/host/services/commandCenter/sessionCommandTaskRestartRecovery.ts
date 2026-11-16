@@ -20,6 +20,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
+import { stripToolCallProtocolMarkup } from '../../agent/runtime/contextAssembly/transcriptProjection';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
@@ -147,6 +148,15 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
   }
 }
 
+/** 结果卡专用：先剥 longcat 协议标记，再剥 Hermes/Qwen 式 <tool_call>（未闭合到串尾）。只作用于卡片，不改主链路正文。 */
+function stripCardToolCallMarkup(text: string): string {
+  const cleaned = stripToolCallProtocolMarkup(text)
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<tool_call>[\s\S]*$/g, '')
+    .replace(/<\/tool_call>/g, '');
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** 正常终态与重启中断共用的「[任务结果]」系统消息形状（正文用人话状态词，metadata 保持机器可读）。 */
 export function buildSessionTaskResultMessage(
   task: { id: string; shortName: string },
@@ -155,10 +165,11 @@ export function buildSessionTaskResultMessage(
   id: string = `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   locale: SessionTaskResultStatusWordLocale = 'zh',
 ): Message {
+  const cleanResultText = resultText === undefined ? undefined : stripCardToolCallMarkup(resultText);
   return {
     id,
     role: 'system',
-    content: `[任务结果] ${task.shortName}｜${formatSessionTaskResultStatusWord(status, locale)}｜${resultText}`,
+    content: `[任务结果] ${task.shortName}｜${formatSessionTaskResultStatusWord(status, locale)}｜${cleanResultText}`,
     timestamp: Date.now(),
     metadata: {
       backgroundTaskResult: {
@@ -166,7 +177,7 @@ export function buildSessionTaskResultMessage(
         taskId: task.id,
         shortName: task.shortName,
         status,
-        summary: resultText ?? '',
+        summary: cleanResultText ?? '',
       },
     },
   };

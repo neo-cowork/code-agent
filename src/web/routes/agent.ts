@@ -1339,6 +1339,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       config.thinkingEnabled = body.thinkingEnabled ?? true;
       if (body.effortLevel !== undefined) config.effortLevel = body.effortLevel;
 
+      const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
         config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
@@ -1351,7 +1352,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds, {
             attachments: body.attachments,
             model: config.modelConfig,
-          }),
+          }, config.originKind === 'headless' ? undefined : cachedHistory),
           config.agentOverride?.tools, config.agentOverride?.id, true,
         );
         config.foregroundToolFace = true;
@@ -1438,7 +1439,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       };
 
       // 加载历史消息 + 当前用户消息
-      const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
       // The web-native route hydrates the shared session projection directly. Background
       // child prompts are persisted there as meta messages, but they must never enter the
       // foreground model transcript: doing so can split an assistant tool call from its
