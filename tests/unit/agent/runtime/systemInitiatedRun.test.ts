@@ -11,8 +11,8 @@ describe('consumeSystemRunTerminalError', () => {
     expect(terminalErrorSink).toHaveBeenCalledWith(terminal.data);
   });
 
-  it('withholds a meta input run even without a sink; the thrown error stays with the caller', () => {
-    expect(consumeSystemRunTerminalError({ inputHistoryVisibility: 'meta' }, terminal)).toBe(true);
+  it('does not withhold a meta input run without a sink: nothing else would report its failure', () => {
+    expect(consumeSystemRunTerminalError({ inputHistoryVisibility: 'meta' }, terminal)).toBe(false);
   });
 
   it('keeps ordinary user runs and non-terminal warnings flowing to the chat stream', () => {
