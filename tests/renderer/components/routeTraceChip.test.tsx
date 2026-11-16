@@ -38,7 +38,7 @@ describe('RouteTraceChip', () => {
             tokenSavings: {
               status: 'estimated',
               savedTokens: 128,
-              detail: '估算值：工具规格若写入普通消息上下文，约占 128 tokens；真实账单以 provider usage 为准。',
+              detail: '估算值：工具规格若写入普通消息上下文，约占 128 tokens；真实账单以 服务商用量 为准。',
               measurement: {
                 savingsSource: 'tool-spec-local-estimate',
                 usageSource: 'model-response-usage',
@@ -69,24 +69,24 @@ describe('RouteTraceChip', () => {
 	    expect(html).toContain('按量付费');
     expect(html).toContain('0.12 · 规则估计');
     expect(html).toContain('不代表模型质量评分');
-	    expect(html).toContain('MCP');
+	    expect(html).toContain('外部工具');
     expect(html).toContain('github');
     expect(html).toContain('本地估算少占 128 tokens 上下文');
     expect(html).toContain('本地工具规格估算');
     expect(html).toContain('字段 name/description/inputSchema');
     expect(html).toContain('预览 3 个');
-    expect(html).toContain('provider usage');
+    expect(html).toContain('服务商用量');
     expect(html).toContain('输入 1200 / 输出 80 tokens');
     expect(html).toContain('合计 1280');
     expect(html).toContain('上下文少占=本地估算');
-    expect(html).toContain('用量=provider usage');
-    expect(html).toContain('无 provider-reported saved tokens');
-    expect(html).toContain('saved tokens 是工具规格少占上下文的本地估算');
-    expect(html).toContain('不等同 provider 账单节省');
-    expect(html).toContain('真实账单以 provider usage 为准');
+    expect(html).toContain('用量=服务商用量');
+    expect(html).toContain('无 服务商回传的节省量');
+    expect(html).toContain('节省量是工具规格少占上下文的本地估算');
+    expect(html).toContain('不等同服务商账单节省');
+    expect(html).toContain('真实账单以 服务商用量 为准');
 	  });
 
-	  it('shows provider-reported saved tokens without the local-estimate boundary', () => {
+	  it('shows 服务商回传的节省量 without the local-estimate boundary', () => {
 	    const html = renderToStaticMarkup(
 	      React.createElement(RouteTraceChip, {
 	        defaultExpanded: true,
@@ -113,7 +113,7 @@ describe('RouteTraceChip', () => {
 	            tokenSavings: {
 	              status: 'provider-reported',
 	              savedTokens: 42,
-	              detail: 'provider 已回传 programmatic tool saved tokens：42 tokens；本轮 provider usage 已回传：输入 500 / 输出 50 tokens。',
+	              detail: '服务商已回传 programmatic tool 节省量：42 tokens；本轮 服务商用量 已回传：输入 500 / 输出 50 tokens。',
 	              measurement: {
 	                savingsSource: 'provider-reported',
 	                usageSource: 'model-response-usage',
@@ -135,12 +135,12 @@ describe('RouteTraceChip', () => {
 	      }),
 	    );
 
-	    expect(html).toContain('provider 回传节省 42 tokens');
-	    expect(html).toContain('provider-reported saved tokens');
-	    expect(html).toContain('节省=provider 回传');
-	    expect(html).toContain('provider 已回传 saved tokens');
+	    expect(html).toContain('服务商回传节省 42 tokens');
+	    expect(html).toContain('服务商回传的节省量');
+	    expect(html).toContain('节省=服务商回传');
+	    expect(html).toContain('服务商已回传 节省量');
 	    expect(html).toContain('输入 500 / 输出 50 tokens');
-	    expect(html).not.toContain('不等同 provider 账单节省');
+	    expect(html).not.toContain('不等同服务商账单节省');
 	  });
 
 	  it('shows provider identity for custom relay decisions in expanded details', () => {
@@ -175,7 +175,7 @@ describe('RouteTraceChip', () => {
 	    expect(html).toContain('custom-commonstack/anthropic/claude-opus-4-8');
 	    expect(html).toContain('来源 CommonStack');
 	    expect(html).toContain('协议 OpenAI-compatible');
-	    expect(html).toContain('endpoint https://commonstack.example/v1');
+	    expect(html).toContain('地址 https://commonstack.example/v1');
 	  });
 
 	  it('shows conservative billing gate decisions for plan and unknown billing', () => {
@@ -328,7 +328,7 @@ describe('RouteTraceChip', () => {
       }),
     );
 
-    expect(html).toContain('provider 状态风险');
+    expect(html).toContain('服务商状态异常');
     expect(html).toContain('moonshot · 最近窗口 不稳定');
     expect(html).toContain('采样 2 分钟前');
     expect(html).toContain('p50 1900ms');
@@ -378,9 +378,9 @@ describe('RouteTraceChip', () => {
     expect(html).toContain('模型不支持');
     expect(html).toContain('当前执行模型不支持工具调用');
     expect(html).toContain('本轮按纯文本执行');
-    expect(html).toContain('MCP / 程序化工具不会下发');
+    expect(html).toContain('外部工具和程序化工具不会启用');
     expect(html).toContain('不可用 · 0 个程序化工具');
-    expect(html).toContain('token saved 未计量');
+    expect(html).toContain('节省量未计量');
     expect(html).toContain('节省=未计量');
   });
 });
