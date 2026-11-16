@@ -258,7 +258,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
 
   it('默认值可改提示有中英文卡面文案', () => {
     expect(decisionCardEn.decisionCard.permission.writeback.tmeetWriteWarning)
-      .toContain('default subject or times filled by the model');
+      .toContain('“Edit, then create”');
   });
 
   it('腾讯会议改主题和本地时间后把 ISO updatedArgs 直达一次性 allow 通道', async () => {
