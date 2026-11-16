@@ -95,17 +95,33 @@ export function parseTarget(spec) {
  * - 见过运行中之后，「运行中」连续 quietMs 不再出现 → idle（防工具间隙闪断误判）
  * - 一直没见到运行中：超过 startGraceMs 才按 idle 收（run 快到没采到的情况）
  */
+function countBy(list) {
+  const m = new Map();
+  for (const x of list) m.set(x, (m.get(x) ?? 0) + 1);
+  return m;
+}
+
+function beyondBaseline(list, baseline) {
+  const seen = new Map();
+  return list.filter((x) => {
+    const n = (seen.get(x) ?? 0) + 1;
+    seen.set(x, n);
+    return n > (baseline.get(x) ?? 0);
+  });
+}
+
 export function createIdleTracker({ baselineCards = [], baselineErrors = [], seenRunning = false, quietMs = 800, startGraceMs = 3_000 } = {}) {
-  const baseline = new Set(baselineCards);
-  const baselineErr = new Set(baselineErrors);
+  // 按「同文案出现次数」做基线：同会话里第二张同文案的失败卡/审批卡也要算新出现的。
+  const baseline = countBy(baselineCards);
+  const baselineErr = countBy(baselineErrors);
   let sawRunning = seenRunning;
   let first;
   let quietSince;
   return (sample) => {
     first ??= sample.t;
-    const errors = (sample.errors ?? []).filter((e) => !baselineErr.has(e));
+    const errors = beyondBaseline(sample.errors ?? [], baselineErr);
     if (errors.length > 0) return { done: true, state: 'error', errors };
-    const fresh = sample.cards.filter((c) => !baseline.has(c));
+    const fresh = beyondBaseline(sample.cards, baseline);
     if (fresh.length > 0) return { done: true, state: 'needs-user', cards: fresh };
     if (sample.running) {
       sawRunning = true;
@@ -195,7 +211,8 @@ export function readLogsSince(logDir, marks = {}) {
     if (!name.endsWith('.log')) continue;
     const file = path.join(logDir, name);
     const size = statSync(file).size;
-    const from = Math.min(marks[name] ?? 0, size);
+    // 文件比上次记的还短 = 被截断/轮转过，从头读，不然会漏掉轮转后写的行。
+    const from = size < (marks[name] ?? 0) ? 0 : (marks[name] ?? 0);
     next[name] = size;
     if (size > from) {
       const fd = openSync(file, 'r');
@@ -302,6 +319,21 @@ async function resolveTarget(opts) {
     return { url, logDir: path.join(dataDir, 'logs'), dataDir, slotlessDataDir: dataDir };
   }
   throw new Error('需要 --slotless / --dev [槽] / --url <地址> 之一');
+}
+
+/** 已有常驻浏览器时，命令行显式给的目标必须和它一致；不一致就报错，绝不静默沿用旧目标去 quit/reset 别的槽。 */
+export function targetConflict(state, opts) {
+  if (!state) return null;
+  if (opts.url !== undefined && new URL(opts.url).origin !== new URL(state.url).origin) return `--url ${opts.url}`;
+  if (opts.dev !== undefined && state.devSlot !== devSlotInfo(opts.dev).slot) return `--dev=${opts.dev || 1}`;
+  if (opts.slotless !== undefined && !state.slotlessDataDir) return '--slotless';
+  if (opts.slot !== undefined && state.devSlot !== undefined && state.devSlot !== devSlotInfo(opts.slot).slot) return `--slot ${opts.slot}`;
+  return null;
+}
+
+function assertNoConflict(state, opts) {
+  const conflict = targetConflict(state, opts);
+  if (conflict) throw new Error(`已有常驻浏览器连着 ${state.url}${state.devSlot ? `（Dev 槽 ${state.devSlot}）` : ''}，与 ${conflict} 不一致；先 browser stop`);
 }
 
 async function browserStart(opts) {
@@ -565,6 +597,8 @@ const ACTIONS = {
     const input = page.locator('[data-chat-input]');
     await input.click();
     await page.keyboard.insertText(text);
+    // 文字真进了输入框才回车；否则「输入框为空」会被误当成已受理。
+    await pollUntil(async () => (await input.innerText().catch(() => '')).includes(text.slice(0, 20)), { timeoutMs: 5_000, what: '文字进入输入框' });
     await page.keyboard.press('Enter');
     // 受理信号：输入框清空，或出现运行中。不等 run 结束。
     await pollUntil(async () => {
@@ -767,7 +801,8 @@ async function scrollBy(page, screens) {
 }
 
 function devApp(ctx) {
-  return devSlotInfo(ctx.target?.devSlot ?? ctx.opts.slot);
+  // 显式 --slot 优先；与常驻浏览器的槽冲突在入口已经拦掉。
+  return devSlotInfo(ctx.opts.slot ?? ctx.target?.devSlot);
 }
 
 async function healthy(port) {
@@ -827,6 +862,7 @@ export function preflightScenario(model) {
 async function runScenario(source, opts) {
   const scenario = parseScenario(typeof source === 'string' ? readFileSync(source, 'utf8') : source);
   let state = liveState();
+  assertNoConflict(state, opts);
   let startedHere = false;
   if (!state && (opts.url || opts.dev !== undefined || opts.slotless !== undefined)) {
     await browserStart(opts);
@@ -885,17 +921,19 @@ async function main(argv = process.argv.slice(2)) {
     result = await runScenario(rest[0], opts);
     process.exitCode = result.ok ? 0 : 1;
   } else if (ACTIONS[cmd]) {
-    const step = { do: cmd, arg: rest.join(' ') || undefined, expect: opts.expect, within: opts.within ? Number(opts.within) : undefined, dir: opts.dir, process: opts.process, role: opts.role, deep: opts.deep, grace: opts.grace, tolerance: opts.tolerance ? Number(opts.tolerance) : undefined };
+    const step = { do: cmd, arg: rest.join(' ') || undefined, expect: opts.expect, within: opts.within ? Number(opts.within) : undefined, dir: opts.dir, process: opts.process, role: opts.role, deep: opts.deep, grace: opts.grace, model: opts.model, tolerance: opts.tolerance ? Number(opts.tolerance) : undefined };
     const timeoutMs = Number(opts.timeout) || DEFAULT_TIMEOUT_MS;
     const t0 = Date.now();
     if (NO_PAGE.has(cmd)) {
       const state = liveState();
+      assertNoConflict(state, opts);
       const target = state ?? (opts.dev !== undefined ? await resolveTarget(opts) : { logDir: opts.logDir ?? null, dataDir: null });
       const ctx = { opts, target, timeoutMs, logMarks: state?.logMarks };
       result = { ok: true, ms: 0, detail: await ACTIONS[cmd](ctx, step) };
       if (state) touch(state, { logMarks: ctx.logMarks });
     } else {
       const state = liveState();
+      assertNoConflict(state, opts);
       if (!state) throw new Error('没有常驻浏览器：先 node scripts/neo-drive.mjs browser start --slotless|--dev|--url <地址>');
       const ctx = { opts, target: state, timeoutMs, logMarks: state.logMarks };
       const detail = await withPage(state, (page) => ACTIONS[cmd](Object.assign(ctx, { page }), step));

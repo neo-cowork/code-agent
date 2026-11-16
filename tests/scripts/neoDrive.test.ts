@@ -13,6 +13,7 @@ import {
   preflightScenario,
   readLogsSince,
   runSteps,
+  targetConflict,
   visibilityVerdict,
   // @ts-expect-error —— 纯 JS 测试工具入口，无类型声明
 } from '../../scripts/neo-drive.mjs';
@@ -88,6 +89,25 @@ describe('neo-drive 纯逻辑', () => {
     expect(track({ t: 0, running: true, cards: [], errors: ['旧失败'] }).done).toBe(false);
     expect(track({ t: 100, running: false, cards: ['new-card'], errors: ['旧失败', '这个模型用不了：账号没通过授权'] }))
       .toEqual({ done: true, state: 'error', errors: ['这个模型用不了：账号没通过授权'] });
+  });
+
+  it('wait-idle：同会话第二张同文案失败卡也算新出现（按出现次数做基线）', () => {
+    const track = createIdleTracker({ baselineErrors: ['这个模型用不了'], seenRunning: true, quietMs: 0 });
+    expect(track({ t: 0, running: false, cards: [], errors: ['这个模型用不了', '这个模型用不了'] }))
+      .toEqual({ done: true, state: 'error', errors: ['这个模型用不了'] });
+  });
+
+  it('常驻浏览器与命令行显式目标不一致时报冲突，不静默沿用旧目标', () => {
+    const dev1 = { url: 'http://127.0.0.1:8181', devSlot: 1 };
+    const slotless = { url: 'http://127.0.0.1:52866', slotlessDataDir: '/tmp/x' };
+    expect(targetConflict(dev1, { dev: '2' })).toBe('--dev=2');
+    expect(targetConflict(dev1, { slot: '2' })).toBe('--slot 2');
+    expect(targetConflict(slotless, { dev: '' })).toBe('--dev=1');
+    expect(targetConflict(dev1, { slotless: '' })).toBe('--slotless');
+    expect(targetConflict(slotless, { url: 'http://127.0.0.1:9999' })).toBe('--url http://127.0.0.1:9999');
+    expect(targetConflict(dev1, { dev: '' })).toBeNull();
+    expect(targetConflict(dev1, {})).toBeNull();
+    expect(targetConflict(null, { dev: '2' })).toBeNull();
   });
 
   it('assert-visible：完全在视口与滚动容器内且未被遮挡才过', () => {
@@ -166,6 +186,9 @@ describe('neo-drive 纯逻辑', () => {
     expect(next.text).toContain('new file line');
     expect(next.text).not.toContain('old line');
     expect(next.text).not.toContain('x\n');
+    // 轮转/截断：文件变短后再写，要从头读到新行
+    writeFileSync(path.join(dir, 'code-agent-2026-11-16.log'), 'rotated\n');
+    expect(readLogsSince(dir, next.marks).text).toContain('rotated');
   });
 
   it('参数解析：--dev=2 / 裸 --slotless / 带值选项；未知选项报错', () => {
