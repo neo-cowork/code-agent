@@ -14,7 +14,7 @@ const taskManagerMocks = vi.hoisted(() => ({
   observeAgentEvents: vi.fn(),
 }));
 const wakeNoteMocks = vi.hoisted(() => ({
-  format: vi.fn((shortName: string) => `wake failed: ${shortName}`),
+  format: vi.fn((shortName: string, _reason: string) => `wake failed: ${shortName}`),
   record: vi.fn(),
 }));
 
@@ -237,7 +237,7 @@ describe('background subagent idle wake', () => {
     scheduleBackgroundSubagentIdleWake(trigger('agent-failed', 'failed-session'));
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(wakeNoteMocks.format).toHaveBeenCalledWith('后台任务');
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith('后台任务', 'owner_missing');
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       'failed-session',
       'wake failed: 后台任务',
@@ -272,7 +272,7 @@ describe('background subagent idle wake', () => {
     scheduleBackgroundSubagentIdleWake(trigger('agent-silent', 'silent-session'));
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'wake_failed', title: '后台任务' });
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'max_iterations', title: '后台任务' });
   });
 
   it.each([
@@ -288,7 +288,7 @@ describe('background subagent idle wake', () => {
     scheduleBackgroundSubagentIdleWake(trigger(agentId, sessionId));
     await vi.advanceTimersByTimeAsync(50);
 
-    expect(wakeNoteMocks.format).toHaveBeenCalledWith(shortName);
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith(shortName, 'wake_failed');
     expect(wakeNoteMocks.record).toHaveBeenCalledWith(
       sessionId,
       `wake failed: ${shortName}`,
@@ -364,4 +364,36 @@ describe('background subagent idle wake', () => {
       { taskId: 'agent-restore', reason: 'wake_failed', title: '后台任务' },
     );
   });
+  it.each([
+    ['text', new Error('Rate limit exceeded'), 'rate_limited'],
+    ['429', Object.assign(new Error('Request rejected'), { status: 429 }), 'rate_limited'],
+    ['owner', new Error('Session idle-owner not found'), 'owner_missing'],
+  ] as const)('classifies %s failure through the idle wake entry and retry wrapper', async (kind, error, reason) => {
+    const sessionId = `classified-${kind}`;
+    const agentId = `agent-${kind}`;
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockRejectedValue(error);
+    await seedCompletion(agentId, sessionId);
+    scheduleBackgroundSubagentIdleWake(trigger(agentId, sessionId));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(wakeNoteMocks.format).toHaveBeenCalledWith('后台任务', reason);
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith(sessionId, 'wake failed: 后台任务', { taskId: agentId, reason, title: '后台任务' });
+    expect(loggerMocks.warn.mock.calls.some(([message]) => message.includes('wake failure note not recorded'))).toBe(false);
+  });
+
+  it.each(['event', 'sink'])('keeps a structured 429 from the idle wake %s', async (source) => {
+    const sessionId = `structured-${source}`;
+    const agentId = `agent-${source}`;
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async (...args: unknown[]) => {
+      const payload = { statusCode: 429, message: 'Request rejected' };
+      if (source === 'event') taskManagerMocks.observeAgentEvents.mock.calls[0][0](sessionId, { type: 'error', data: payload });
+      else (args[3] as { terminalErrorSink(data: unknown): void }).terminalErrorSink(payload);
+    });
+    await seedCompletion(agentId, sessionId);
+    scheduleBackgroundSubagentIdleWake(trigger(agentId, sessionId));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(wakeNoteMocks.record).toHaveBeenCalledWith(sessionId, expect.any(String), { taskId: agentId, reason: 'rate_limited', title: '后台任务' });
+  });
+
 });
