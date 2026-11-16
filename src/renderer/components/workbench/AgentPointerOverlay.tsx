@@ -160,7 +160,7 @@ export function AgentPointerOverlay({
 
 export function AgentPointerPreviewCard({
   event,
-  title = 'Agent pointer',
+  title,
   detail,
   live = true,
 }: {
@@ -169,14 +169,16 @@ export function AgentPointerPreviewCard({
   detail?: string;
   live?: boolean;
 }) {
+  const { t } = useI18n();
+  const pointerCopy = t.localOps.pointer;
   return (
     <div className="relative min-h-[152px] overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950/70">
       <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.015)_42%,rgba(20,184,166,0.06)_100%)]" />
       <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="relative z-10 flex items-center justify-between px-3 pt-3 text-[11px]">
-        <span className="font-medium text-zinc-300">{title}</span>
+        <span className="font-medium text-zinc-300">{title ?? pointerCopy.title}</span>
         <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-zinc-500">
-          {event.surface}
+          {pointerCopy.surfaces[event.surface] ?? event.surface}
         </span>
       </div>
       {detail && (

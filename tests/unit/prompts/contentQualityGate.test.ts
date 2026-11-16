@@ -269,6 +269,39 @@ describe('单轮 Office 文件交付 — 意图与提醒', () => {
     expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(false);
   });
 
+  it.each([
+    ['en background + notify', 'Start a background task: export signups.csv as an Excel file (.xlsx) and notify me with a system notification when done'],
+    ['en in the background', 'Export the signup list to an Excel workbook (.xlsx) in the background and notify me when done'],
+    ['zh 后台任务', '开一个后台任务，把 signups.csv 导出成 Excel 文件 .xlsx，完成后用系统通知提醒我'],
+    ['zh 在后台', '在后台把报名名单生成一份 Word 文档 .docx，做完通知我'],
+  ])('明确要求后台任务时不判单轮文件交付：%s', (_label, prompt) => {
+    const features = detectTaskFeatures(prompt);
+    expect(features.isOfficeFileDeliverable).toBe(true);
+    expect(features.isOneTurnFileDeliverable).toBe(false);
+    expect(getSystemReminders(prompt).some((r) => r.includes('不要派发后台任务'))).toBe(false);
+  });
+
+  it.each([
+    ['zh 否定', '不要在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['en 否定', "Don't run it in the background, just export signups.csv as an Excel file (.xlsx)"],
+    ['en not as', 'Export signups.csv as an Excel file (.xlsx), not as a background task'],
+    ['zh 商家后台名词', '把商家后台导出的 orders.csv 整理成 Excel 文件 .xlsx 导出'],
+    ['zh 用后台导出的数据', '用后台导出的数据生成一个 Excel 文件 .xlsx'],
+    ['zh 在后台管理系统', '在后台管理系统里导出报名名单，保存成 Excel 文件 .xlsx'],
+  ])('否定或「后台」作名词时仍判单轮交付：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
+  it('同一句里否定在别的分句不影响：「不要问我，在后台导出」仍算要后台', () => {
+    expect(detectTaskFeatures('不要问我，在后台把名单导出成 Excel 文件 .xlsx').isOneTurnFileDeliverable).toBe(false);
+  });
+
+  it('无后台字样的导出仍判单轮交付，并带「不要派发后台」提醒', () => {
+    const prompt = 'Export signups.csv as an Excel file (.xlsx)';
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+    expect(getSystemReminders(prompt).some((r) => r.includes('不要派发后台任务'))).toBe(true);
+  });
+
   it('复杂大型文件交付不豁免（仍走既有后台/派发路径）', () => {
     const prompt = '全面深入地研究这个行业，给我生成一份完整报告 .docx';
     const features = detectTaskFeatures(prompt);
