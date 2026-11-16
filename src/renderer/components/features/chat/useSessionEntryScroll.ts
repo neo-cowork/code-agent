@@ -158,6 +158,8 @@ interface SessionEntryScrollOptions {
   sessionEntrySettlingRef: RefObject<boolean>;
   userScrollLastInteractionAtRef: RefObject<number>;
   setIsAtBottom: Dispatch<SetStateAction<boolean>>;
+  /** 入场落底结算成功收尾：调用方据此把最新一轮登记为跟随目标，之后晚到的增高才有人跟。 */
+  onEntrySettled?: () => void;
 }
 
 export function useSessionEntryScroll({
@@ -172,6 +174,7 @@ export function useSessionEntryScroll({
   sessionEntrySettlingRef,
   userScrollLastInteractionAtRef,
   setIsAtBottom,
+  onEntrySettled,
 }: SessionEntryScrollOptions): SessionEntryScroll {
   // 长会话首帧由 Virtuoso 按预估高度（defaultItemHeight）定位，真实行高测出后才收敛到底部，
   // 期间用户会看到中段内容再滑到底。入场结算收敛前把列表隐藏（仍参与布局与测量），收敛/取消后揭示。
@@ -304,6 +307,7 @@ export function useSessionEntryScroll({
         onSettled: () => {
           sessionEntrySettlingRef.current = false;
           setIsAtBottom(true);
+          onEntrySettled?.();
           reveal();
         },
         onCancel: () => {
@@ -313,6 +317,6 @@ export function useSessionEntryScroll({
         },
       });
     });
-  }, [reveal, projectionTurnsRef, sessionId, setIsAtBottom, setIsAtBottomFromScroller, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef]);
+  }, [reveal, projectionTurnsRef, sessionId, setIsAtBottom, setIsAtBottomFromScroller, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef, onEntrySettled]);
   return { noteRange, entryHidden };
 }

@@ -942,6 +942,66 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     expect(scroller.scrollTop).toBe(2400);
   });
 
+  describe('会话首开落底后的晚到高度变化', () => {
+    function setupEntry() {
+      const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
+      vi.stubGlobal('ResizeObserver', class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+        constructor(readonly callback: ResizeObserverCallback) {
+          observers.push(this);
+        }
+      });
+      const view = render(React.createElement(TurnBasedTraceView, {
+        projection: { sessionId: 'session-1', turns: [makeTurn(0), makeTurn(1), makeTurn(2)], activeTurnIndex: -1 },
+      }));
+      const scroller = view.getByTestId('virtuoso-scroller');
+      const itemList = view.getByTestId('virtuoso-item-list');
+      let listHeight = 2400;
+      itemList.getBoundingClientRect = () => rect(0, listHeight);
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => listHeight });
+      act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 }));
+      for (let frame = 0; frame < 70; frame += 1) flushView();
+      const observing = (match: (el: Element) => boolean) => observers.filter((observer) => (
+        observer.observe.mock.calls.some((call) => match(call[0] as Element))
+      ));
+      const resizeList = (height: number) => {
+        listHeight = height;
+        act(() => {
+          // 只调最新挂上的那个：桩里的 disconnect 不会真的摘掉旧观察器
+          observing((el) => el === itemList).at(-1)?.callback([], {} as ResizeObserver);
+        });
+        for (let step = 0; step < 3; step += 1) {
+          act(() => {
+            vi.advanceTimersByTime(ACTIVE_DISPLAY_SCROLL_INTERVAL_MS + 20);
+            flushAnimationFrames();
+            vi.runOnlyPendingTimers();
+          });
+        }
+      };
+      return { scroller, observing, resizeList };
+    }
+
+    it('入场结算收尾后把最新一轮登记为跟随目标，它的晚到增高有观察器在跟', () => {
+      const { observing } = setupEntry();
+      expect(observing((el) => (el as HTMLElement).dataset?.traceTurnId === 'turn-3').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('列表变矮/变高把视口留在离底一两百像素处时重新落底；按着指针时不动', () => {
+      const { scroller, resizeList } = setupEntry();
+      scroller.scrollTop = 1800 - 600 - 176; // 列表变矮后 Virtuoso 补偿把视口留在离底 176px
+      resizeList(1800);
+      expect(scroller.scrollTop).toBe(1800);
+
+      fireEvent.pointerDown(scroller);
+      scroller.scrollTop = 1000;
+      resizeList(1700); // 用户按着指针（展开/拖滚动条）期间：不追底
+      expect(scroller.scrollTop).toBe(1000);
+    });
+  });
+
   it('用户点发送：已上滚阅读也立刻落到底（用户消息还没进投影时）', () => {
     const projection: TraceProjection = { sessionId: 'session-1', turns: [makeTurn(0), makeTurn(1)], activeTurnIndex: -1 };
     const view = render(React.createElement(TurnBasedTraceView, { projection, userSendAt: null }));

@@ -60,6 +60,8 @@ export const USER_SCROLL_PROGRAMMATIC_PAUSE_MS = 280;
 // 与沉降尾巴对抢形成抖动。拉长到 800ms，沉降干净后再钉；流式期间用户上翻后
 // 回底的跟随恢复最多晚半秒，可接受。
 export const USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS = 800;
+// 用户在列表里按过指针（展开/折叠、拖滚动条）后这段时间内，列表变高变矮都不追底，免得点开的内容被顶走。
+const LIST_GROWTH_AFTER_POINTER_PAUSE_MS = 1000;
 
 export function getFocusedTurnIndex(projection: TraceProjection): number {
   if (projection.turns.length === 0) return -1;
@@ -357,6 +359,15 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   // 两路 scrollToIndex 在该窗口内禁用，避免多驱动交替抢滚动造成上移-回弹抖动。
   const outputFollowStreamingRef = useRef(false);
   outputFollowStreamingRef.current = outputFollowTurn?.status === 'streaming';
+  // 入场落底后把最新一轮登记为跟随目标：入场结算期间 atBottomStateChange 被屏蔽，结算完
+  // 若贴底状态没再翻转就永远不登记，跟随轮观察器挂不上，授权卡按钮、停住行等晚到的增高
+  // 把会话首开停在中间（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER 真机返修）。
+  const followLatestTurnAfterEntry = useCallback(() => {
+    const turns = projectionTurnsRef.current;
+    const turnId = turns[getLastConversationTurnIndex(turns)]?.turnId ?? null;
+    followedOutputTurnIdRef.current = turnId;
+    setFollowedOutputTurnId(turnId);
+  }, []);
   const { noteRange: noteSessionEntryRange, entryHidden } = useSessionEntryScroll({
     sessionId: projection.sessionId,
     turns: projection.turns,
@@ -369,6 +380,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     sessionEntrySettlingRef,
     userScrollLastInteractionAtRef,
     setIsAtBottom,
+    onEntrySettled: followLatestTurnAfterEntry,
   });
   const outputFollowRevision = useMemo(
     () => getTurnOutputRevision(outputFollowTurn, {
@@ -915,6 +927,38 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       observer.disconnect();
     };
   }, [isFollowReengageSuppressed, outputFollowTurn?.turnId, outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
+
+  // 非流式贴底跟随时，列表里任何一轮晚到的高度变化（会话首开后授权卡按钮、content-visibility
+  // 落定的真实排版、图片/代码块）都要重新落底：只盯跟随轮会让会话首开停在中间，列表变矮时
+  // Virtuoso 的补偿也可能把视口留在离底一两百像素处。流式期间不参与（仍只盯活动轮，防抖动）；
+  // 用户按着/刚松开指针（展开折叠、拖滚动条）或本来就离底很远时不动。
+  useEffect(() => {
+    const scroller = scrollerElement;
+    const itemList = scroller?.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]');
+    if (!scroller || !itemList || outputFollowTurnIndex < 0 || typeof ResizeObserver !== 'function') return;
+    let lastHeight = itemList.getBoundingClientRect().height;
+    let pointerDown = false;
+    let pointerUpAt = 0;
+    const onPointerDown = () => { pointerDown = true; };
+    const onPointerUp = () => { pointerDown = false; pointerUpAt = Date.now(); };
+    const observer = new ResizeObserver(() => {
+      const height = itemList.getBoundingClientRect().height;
+      const delta = Math.abs(height - lastHeight);
+      lastHeight = height;
+      if (delta === 0 || outputFollowStreamingRef.current) return;
+      if (pointerDown || Date.now() - pointerUpAt < LIST_GROWTH_AFTER_POINTER_PAUSE_MS) return;
+      if (!isScrollerNearBottom(scroller, 96 + delta)) return;
+      scheduleActiveDisplayScroll(outputFollowTurnIndex);
+    });
+    observer.observe(itemList);
+    scroller.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+    };
+  }, [outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
 
   // 输入框变高（多行草稿、附件条、待决卡槽）会把消息区压矮：原本贴底的就重新落到底，
   // 末张卡不被吃掉；用户已上滚阅读（离底超出阈值+压缩量）时不动。
