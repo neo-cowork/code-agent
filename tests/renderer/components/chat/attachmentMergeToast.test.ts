@@ -20,9 +20,24 @@ function overflow(added: number, dropped: number): AttachmentMergeResult {
   } as unknown as AttachmentMergeResult;
 }
 
+function duplicateResult(count: number, overflowCount = 0): AttachmentMergeResult {
+  const duplicates = Array.from({ length: count }, (_, index) => {
+    const attachment = { name: `读书笔记${String(index + 1).padStart(2, '0')}.txt` };
+    return { incoming: attachment, existing: attachment };
+  });
+  return {
+    attachments: [],
+    addedCount: 0,
+    overflowCount,
+    skippedCount: count,
+    duplicates,
+    cap: 10,
+  } as unknown as AttachmentMergeResult;
+}
+
 const toasts = () => useToastStore.getState().toasts;
 
-describe('notifyAttachmentMerge limit toast', () => {
+describe('notifyAttachmentMerge', () => {
   beforeEach(() => {
     dismissAttachmentLimitToast();
     useToastStore.setState({ toasts: [] });
@@ -68,5 +83,27 @@ describe('notifyAttachmentMerge limit toast', () => {
     expect(toasts()).toHaveLength(2);
     dismissAttachmentLimitToast();
     expect(toasts().map((t) => t.message)).toEqual(['other']);
+  });
+
+  it.each([
+    [1, 'zh', zh.chatInput, '读书笔记01.txt 已添加，无需重复添加'],
+    [2, 'zh', zh.chatInput, '读书笔记01.txt 等 2 个文件已添加，无需重复添加'],
+    [10, 'zh', zh.chatInput, '读书笔记01.txt 等 10 个文件已添加，无需重复添加'],
+    [1, 'en', en.chatInput, '读书笔记01.txt is already attached'],
+    [2, 'en', en.chatInput, '2 files are already attached (including 读书笔记01.txt)'],
+    [10, 'en', en.chatInput, '10 files are already attached (including 读书笔记01.txt)'],
+  ] as const)('shows the right text for %s duplicate(s) (%s)', (count, _language, copy, expected) => {
+    notifyAttachmentMerge(duplicateResult(count), copy);
+    expect(toasts().map((toast) => toast.message)).toEqual([expected]);
+    expect(toasts()[0].message).not.toMatch(/\{(?:name|count)\}/);
+  });
+
+  it('keeps both toasts when 10 duplicates and overflow occur in the same merge', () => {
+    notifyAttachmentMerge(duplicateResult(10, 2), zh.chatInput);
+    console.info('10 duplicates + overflow toasts:', toasts());
+    expect(toasts().map((toast) => toast.message)).toEqual([
+      '读书笔记01.txt 等 10 个文件已添加，无需重复添加',
+      '附件已满（10 个）：这次没有加进任何文件，2 个都没加进来。发送这条消息后，就能继续添加。',
+    ]);
   });
 });
