@@ -284,3 +284,55 @@ describe('calendar_update_event start_local/end_local', () => {
     expect(mocks.connectorExecute).toHaveBeenCalledWith('update_event', { calendar: 'Work', event_uid: 'e', start_ms: ms });
   });
 });
+
+describe('calendar_create_event notes', () => {
+  const notes = '带上季度报表\n第二行：Q3 summary';
+  const startMs = Date.parse('2026-11-16T15:00:00-08:00');
+
+  it('notes reach the connector payload unchanged (CJK + newline) and the approval card shows Notes', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    let diff = '';
+    const requestPermission = vi.fn(async (request: PermissionRequestData) => {
+      expect(request.details).toMatchObject({ notes });
+      diff = String((request.details as { preview?: { diff?: string } }).preview?.diff);
+      return true;
+    });
+    mocks.connectorExecute.mockResolvedValue(eventData('周会', startMs, startMs + 1_800_000));
+    const result = await executor(requestPermission).execute(
+      'calendar_create_event',
+      { title: '周会', start_local: '2026-11-16 15:00', notes },
+      { sessionId: `cal-${++session}` },
+    );
+    expect(result).toMatchObject({ success: true });
+    expect(diff).toContain(`Notes: ${notes}`);
+    expect(diff).toContain('Start: 2026/11/16 15:00:00');
+    expect(mocks.connectorExecute).toHaveBeenCalledWith('create_event', { title: '周会', start_ms: startMs, notes });
+  });
+
+  it('module entry passes notes through unchanged', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    mocks.connectorExecute.mockResolvedValue(eventData('周会', startMs, startMs + 1_800_000));
+    const result = await (await calendarCreateEventModule.createHandler()).execute({ title: '周会', start_local: '2026-11-16 15:00', notes }, ctx(), async () => ({ allow: true }));
+    expect(result.ok).toBe(true);
+    expect(mocks.connectorExecute).toHaveBeenCalledWith('create_event', { title: '周会', start_ms: startMs, notes });
+  });
+
+  it('without notes there is no Notes line and the payload is unchanged', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    let diff = '';
+    const requestPermission = vi.fn(async (request: PermissionRequestData) => {
+      diff = String((request.details as { preview?: { diff?: string } }).preview?.diff);
+      return true;
+    });
+    mocks.connectorExecute.mockResolvedValue(eventData('周会', startMs, startMs + 1_800_000));
+    await executor(requestPermission).execute('calendar_create_event', { title: '周会', start_local: '2026-11-16 15:00' }, { sessionId: `cal-${++session}` });
+    expect(diff).not.toContain('Notes');
+    expect(mocks.connectorExecute).toHaveBeenCalledWith('create_event', { title: '周会', start_ms: startMs });
+  });
+
+  it('schema exposes an optional notes string', () => {
+    const schema = calendarCreateEventModule.schema.inputSchema as { properties: Record<string, { type: string }>; required: string[] };
+    expect(schema.properties.notes.type).toBe('string');
+    expect(schema.required).not.toContain('notes');
+  });
+});

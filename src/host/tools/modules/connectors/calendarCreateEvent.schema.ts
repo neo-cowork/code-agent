@@ -13,6 +13,7 @@ Optional parameters:
 - calendar
 - end_local (preferred) or end_ms
 - location
+- notes
 
 Use this only when the user wants to create a real local calendar event.
 Resolve relative dates using Today's date and Local timezone in <env> (the host-local zone used by Calendar.app). Do not use the UTC date as the local date. Give times as start_local / end_local in YYYY-MM-DD HH:mm (24-hour) form in that local timezone. The host converts them to the actual instant, including daylight saving; never do epoch arithmetic for these fields. Supply only one time form per field (start_local or start_ms, end_local or end_ms).`,
@@ -47,6 +48,10 @@ Resolve relative dates using Today's date and Local timezone in <env> (the host-
       location: {
         type: 'string',
         description: 'Optional event location.',
+      },
+      notes: {
+        type: 'string',
+        description: 'Optional event notes / description shown in Calendar.app. Pass the user wording as-is, in the user language.',
       },
     },
     required: ['title'],
