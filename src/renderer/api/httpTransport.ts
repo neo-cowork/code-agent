@@ -1185,7 +1185,9 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
         // invokeDomain 把它包成 DomainInvokeError.message，各处 toast / 气泡会原样显示。
         logTransportErrorThrottled(`domain:${cleanDomain}:${action}:${res.status}`, `[HttpTransport] domain ${cleanDomain}:${action} failed:`, res.status, errorBody);
         const message = domainFailureMessage({ status: res.status, body: errorBody, language: useAppStore.getState().language });
-        return { success: false, error: { code: `HTTP_${res.status}`, message } };
+        // 会话被旧任务占着的 409 保留业务码：失败说明下要挂「放弃 / 重试」，靠 code 认。
+        const envelopeCode = parseHttpErrorCode(errorBody);
+        return { success: false, error: { code: envelopeCode === 'RUN_SESSION_CONFLICT' ? envelopeCode : `HTTP_${res.status}`, message } };
       } catch (err) {
         return {
           success: false,

@@ -90,8 +90,8 @@ vi.mock('../../../src/host/services/roleAssets/roleProactivityWrite', () => ({ w
 
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
 import { describeApproval } from '../../../src/renderer/components/PermissionDialog/describeApproval';
-import { getPermissionConfig } from '../../../src/renderer/components/PermissionDialog/utils';
 import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { requestDirectoryModule } from '../../../src/host/tools/modules/file/requestDirectory';
@@ -468,7 +468,49 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
         expect(stripUserValues(text, c.request)).not.toMatch(/命令|command|创建文件|Create file|Read file|读取文件|写入|write/iu);
       }
     }
-    // The type table itself must not fall back to the command template either.
-    expect(getPermissionConfig('future_type' as never).title).not.toBe(getPermissionConfig('command').title);
+  });
+
+  describe('English UI: every card type title is English (no CJK), zh titles unchanged', () => {
+    const CJK = /[㐀-鿿]/u;
+    // Source of truth: the PermissionType union in types.ts (a new type shows up here automatically).
+    const typesSource = fs.readFileSync(path.resolve(__dirname, '../../../src/renderer/components/PermissionDialog/types.ts'), 'utf8');
+    const unionBody = /export type PermissionType\s*=([^;]+);/u.exec(typesSource)?.[1] ?? '';
+    const TYPES = [...unionBody.replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/'([a-z_]+)'/gu)].map((m) => m[1]);
+
+    const detailsFor = (type: string): Record<string, unknown> => {
+      if (type.startsWith('file_')) return { filePath: '/tmp/notes/a.txt' };
+      if (type === 'network') return { url: 'https://example.com/' };
+      if (type === 'directory_access') return { path: '/tmp/notes', requestedAccess: 'read' };
+      return { command: 'ls /tmp/notes' };
+    };
+    const toolFor = (type: string): string => (type === 'mcp' ? 'mcp__demo__lookup' : type === 'network' ? 'WebFetch' : type.startsWith('file_') ? 'Read' : 'Bash');
+    const build = (type: string): PermissionRequest => toRequest({ type, tool: toolFor(type), details: detailsFor(type) }, `gate-${type}`);
+
+    it('derives the type list from the union', () => {
+      expect(TYPES).toEqual(expect.arrayContaining(['command', 'dangerous_command', 'network', 'mcp', 'directory_access', 'file_read']));
+      expect(TYPES.length).toBeGreaterThanOrEqual(9);
+    });
+
+    it('renders every PermissionType plus an unregistered one with no CJK in English', () => {
+      const lines: string[] = [];
+      for (const type of [...TYPES, 'future_type']) {
+        const request = build(type);
+        const described = describeApproval(request as never, en, 'en');
+        const { text } = renderCard(request, 'en');
+        lines.push(`${type}: title="${described.title}" question="${described.question}" | card: ${text}`);
+        expect(described.title, `${type}: header title`).not.toMatch(CJK);
+        expect(described.question, `${type}: question/fallback summary`).not.toMatch(CJK);
+        expect(text, `${type}: whole card`).not.toMatch(CJK);
+      }
+      process.stdout.write(`English cards per PermissionType:\n${lines.join('\n')}\n`);
+    });
+
+    it('zh cards keep the same Chinese titles', () => {
+      for (const [type, title] of [['command', '执行命令'], ['dangerous_command', '危险命令'], ['network', '网络请求'], ['mcp', 'MCP 工具'], ['future_type', '需要你确认']] as const) {
+        const request = build(type);
+        expect(describeApproval(request as never, zh, 'zh').title, `${type} zh title`).toBe(title);
+        if (type !== 'dangerous_command') expect(renderCard(request, 'zh').text, `${type} zh card`).toContain(title);
+      }
+    });
   });
 });
