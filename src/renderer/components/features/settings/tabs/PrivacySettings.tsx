@@ -44,6 +44,7 @@ import {
 } from '../../../../utils/privacyBoundaryCopy';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { zh } from '../../../../i18n/zh';
+import { localizeSettingsTerms } from '../../../../i18n/settingsVocabulary';
 import { useAuthStore } from '../../../../stores/authStore';
 import {
   applyPluginUiActivationSettings,
@@ -582,7 +583,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 </button>
               </div>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{copy.data.join(t.punctuation.listSeparator)}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{copy.data.map((item) => localizeSettingsTerms(item, language)).join(t.punctuation.listSeparator)}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{copy.storage}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{copy.cloud}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.revokeLabel}</span>{copy.revoke}</div>
@@ -608,7 +609,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               </div>
               <p className="mt-1 text-xs text-zinc-400">{copy.trigger}</p>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">Provider: </span>{copy.providers.join(t.punctuation.listSeparator)}</div>
+                <div><span className="text-zinc-400">{t.settings.privacyLabels.transcriptionService}</span>{copy.providers.join(t.punctuation.listSeparator)}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{copy.cloud}</div>
                 <div><span className="text-zinc-400">{privacyText.voice.temporaryFileLabel}</span>{copy.temporaryStorage}</div>
                 <div><span className="text-zinc-400">{privacyText.voice.logLabel}</span>{copy.logPolicy}</div>
@@ -633,7 +634,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 {copy.title}
               </div>
               <div className="mt-2 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{copy.examples.join(t.punctuation.listSeparator)}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{copy.examples.map((example) => localizeSettingsTerms(example, language)).join(t.punctuation.listSeparator)}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{copy.storage}</div>
                 <div><span className="text-zinc-400">{privacyText.auth.displayLabel}</span>{copy.display}</div>
                 <div><span className="text-zinc-400">{privacyText.auth.diagnosticsLabel}</span>{copy.diagnosticPolicy}</div>

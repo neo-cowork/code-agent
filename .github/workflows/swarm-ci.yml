@@ -69,6 +69,8 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
+      - 'scripts/ci/host-user-copy-cjk-ratchet.mjs'
+      - 'scripts/ci/host-user-copy-cjk-baseline.json'
       - 'scripts/renderer-cjk-literal-ratchet.mjs'
       - 'scripts/renderer-cjk-literal-baseline.json'
       - 'scripts/ci/internal-text-leak-gate.mjs'
@@ -282,11 +284,19 @@ jobs:
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
           node scripts/check-copy.mjs
+          node scripts/ci/check-settings-jargon.mjs
+          npx vitest run tests/renderer/components/settingsRenderedJargon.test.tsx
 
       - name: Host Chinese error literal ratchet
         # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，
         # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
         run: node scripts/host-chinese-error-ratchet.mjs
+
+      - name: Host user-copy CJK ratchet
+        # N-FIX-EN-HOST-ZH-COPY-SYSTEMIC：src/host（不含 prompts/）用户可见属性
+        # （error/message/summary/title/label/body/reason/description/text/hint）与
+        # throw new XxxError(...) 实参里的中文字面量按文件棘轮，只降不升。
+        run: node scripts/ci/host-user-copy-cjk-ratchet.mjs
 
       - name: Renderer CJK literal ratchet
         # N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC：按文件棘轮拦截新增中文硬编码（汉字或中文标点），只降不升。口径 3：

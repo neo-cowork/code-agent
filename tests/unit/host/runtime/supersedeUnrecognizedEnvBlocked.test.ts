@@ -23,7 +23,8 @@ import { DurableRunRepository } from '../../../../src/host/services/core/reposit
  */
 describe('new message supersedes a parked run whose envBlocked metadata this build does not recognize', () => {
   it.each([
-    ['unknown class from another build', { class: 'perm_calendars', target: 'calendar', toolCallId: 'call-1' }],
+    // perm_calendars 在本版本已是正式类别（N-CALENDAR-ONE-PERMISSION-EVENTKIT），换一个本版本确实不认识的类别
+    ['unknown class from another build', { class: 'perm_from_a_future_build', target: 'calendar', toolCallId: 'call-1' }],
     ['missing target', { class: 'perm_files', target: '', toolCallId: 'call-1' }],
     ['null metadata', null],
   ])('%s: supersede cancels it and the session can start a new run', async (_label, envBlocked) => {

@@ -186,7 +186,7 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
     : [];
 
   // 紧凑「标签｜值」行：决策选项在 DecisionCard 的 50vh 滚动区里，字段区每高一行，
-  // 「发送 / 改一改再发 / 不发」就更可能被顶出首屏。
+  // 「发送 / 修改后发送 / 取消」就更可能被顶出首屏。
   const row = (key: string, label: string, value: React.ReactNode) => (
     <div key={key} className="flex items-start gap-2 text-sm">
       <span className="w-14 shrink-0 text-xs text-zinc-500 pt-0.5">{label}</span>

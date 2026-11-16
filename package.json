@@ -24,6 +24,7 @@
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
     "lint:i18n-plural-ratchet": "node scripts/i18n-plural-ratchet.mjs",
     "lint:host-chinese-error-ratchet": "node scripts/host-chinese-error-ratchet.mjs",
+    "lint:host-user-copy-cjk-ratchet": "node scripts/ci/host-user-copy-cjk-ratchet.mjs",
     "lint:renderer-cjk-literal-ratchet": "node scripts/renderer-cjk-literal-ratchet.mjs",
     "lint:renderer-zh-default-ratchet": "node scripts/ci/renderer-zh-default-ratchet.mjs",
     "verify:en-cjk-sweep": "node scripts/verification/en-ui-cjk-sweep.mjs",

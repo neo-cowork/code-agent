@@ -240,7 +240,7 @@ describe('PlanApprovalCard', () => {
     expect(banner.textContent).toContain('Session s1 is already running');
     // 按钮仍然在：失败卡可再次批准/取消。
     expect(screen.getByTestId('plan-approve-button')).toBeTruthy();
-    expect(screen.getByText('计划 · 拒绝')).toBeTruthy();
+    expect(screen.getByText('取消')).toBeTruthy();
   });
 
   it('存证行区分 starting 与 failed 摘要', () => {
@@ -304,7 +304,7 @@ describe('PlanApprovalCard', () => {
     mocks.invokeDomain.mockResolvedValue({ approval: { ...approval, status: 'cancelled', version: 1 } });
     renderCard();
     expect(screen.queryByTestId('plan-approval-version')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '计划 · 拒绝' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
     await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledWith(
       'domain:planning',
       'respondApproval',

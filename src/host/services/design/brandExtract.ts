@@ -22,6 +22,7 @@ import {
   ZHIPU_VISION_MODEL,
   MODEL_MAX_TOKENS,
 } from '../../../shared/constants';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import { ModelRouter } from '../../model/modelRouter';
 import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import type { ModelMessage } from '../../model/types';
@@ -96,6 +97,35 @@ export const BRAND_EXTRACT_PROMPT = [
   '',
   '颜色尽量贴近图中真实取值。keep/change/doNotCopy 用中文短句，描述这张参考图的设计语言。',
 ].join('\n');
+
+const BRAND_EXTRACT_PROMPT_EN = [
+  'You are a senior brand designer. Analyze the visual language of this reference design image and extract a draft "brand contract".',
+  '',
+  'Return only one JSON object, with no explanation and no markdown fences, in exactly this structure:',
+  '{',
+  '  "palette": {',
+  '    "primary":  "main color (hex or oklch)",',
+  '    "surface":  "background / base color",',
+  '    "accent":   "accent color",',
+  '    "muted":    "secondary / muted color",',
+  '    "contrast": "body text / high-contrast color"',
+  '  },',
+  '  "fonts": {',
+  '    "serif": "a plausible serif font stack guess, e.g. Tiempos, Georgia, serif",',
+  '    "sans":  "a plausible sans-serif font stack guess, e.g. Inter, system-ui, sans-serif"',
+  '  },',
+  '  "posture": "one short English sentence describing the temperament / tone of this design",',
+  '  "keep":      ["key points of the design language that must be reproduced, 2-4 short sentences"],',
+  '  "change":    ["parts that may be adjusted or varied, 0-3 short sentences"],',
+  '  "doNotCopy": ["anti-patterns to avoid, 1-3 short sentences"]',
+  '}',
+  '',
+  'Keep colors as close to the real values in the image as possible. All text values (the keep/change/doNotCopy bullets and posture) must be short English sentences describing the design language of this reference image.',
+].join('\n');
+
+function pickBrandExtractPrompt(): string {
+  return getHostUiLocale() === 'en' ? BRAND_EXTRACT_PROMPT_EN : BRAND_EXTRACT_PROMPT;
+}
 
 // ----------------------------------------------------------------------------
 // JSON 抽取：容忍 ```json 围栏 / 前后散文 / 裸 JSON。返回第一个能解析成对象的片段。
@@ -348,6 +378,6 @@ export async function extractBrandFromImage(
   const { base64, mimeType } = await resolveImage(input);
   const call: VisionCallFn = options.visionCall
     ?? ((b, m, p) => defaultVisionCall(b, m, p, options.signal));
-  const raw = await call(base64, mimeType, BRAND_EXTRACT_PROMPT);
+  const raw = await call(base64, mimeType, pickBrandExtractPrompt());
   return parseBrandDraftJson(raw);
 }

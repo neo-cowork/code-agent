@@ -38,7 +38,7 @@ vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ meeting: { calendarReminder: true } }) }),
 }));
 vi.mock('../../../../src/host/services/infra/notificationService', () => ({
-  notificationService: { notifyMeetingStarting: (d: { title: string }) => { h.notified.push(d.title); } },
+  notificationService: { notifyMeetingStarting: (d: { meetingTitle: string }) => { h.notified.push(d.meetingTitle); } },
 }));
 
 import { createMeetingIpc } from '../../../../src/host/ipc/desktopMeeting';
@@ -57,7 +57,7 @@ describe('desktopMeeting 会前提醒', () => {
     const ipc = createMeetingIpc({ startMeetingCapture, stopManualAudio: vi.fn() });
     h.events = [{ id: 'ek-1', title: '产品评审', startMs: Date.now() + 60_000 }];
     await vi.advanceTimersByTimeAsync(MEETING_SESSION_LIMITS.CALENDAR_POLL_MS);
-    expect(h.notified).toEqual(['「产品评审」快开始了']);
+    expect(h.notified).toEqual(['产品评审']); // 原始标题，文案由通知服务按 ui.language 拼（meetingReminderNotification）
     expect(((await ipc.handlers.getMeetingStatus()).data as { upcoming: { title: string } }).upcoming.title).toBe('产品评审');
     expect(startMeetingCapture).not.toHaveBeenCalled(); // 只提醒，绝不自动开录
     expect(h.posts.every((p) => p === '/v1/passive/calendar' || p === '/v1/read/calendar-events')).toBe(true);
