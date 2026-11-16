@@ -874,6 +874,15 @@ const connectorHandlers: DomainRouteHandlers<ConnectorDomainRequest, ConnectorRo
       (payload as { connectorId?: string } | undefined)?.connectorId,
     );
   },
+  /** 结果卡上的「撤销」：按会话 + 工具调用 id 用宿主自存的删除前快照重建那条日程 */
+  undoCalendarDelete: async (_ctx, payload) => {
+    const { sessionId, toolCallId } = (payload ?? {}) as { sessionId?: unknown; toolCallId?: unknown };
+    if (typeof sessionId !== 'string' || !sessionId || typeof toolCallId !== 'string' || !toolCallId) {
+      return { ok: false, reason: 'not_found' };
+    }
+    const { undoCalendarDelete } = await import('../tools/modules/connectors/calendarUndo');
+    return undoCalendarDelete(sessionId, toolCallId);
+  },
 };
 
 const connectorRoutes = defineDomainRoutes<ConnectorDomainRequest, ConnectorRouteCtx>(ConnectorSchemas.REQUEST, connectorHandlers, {
