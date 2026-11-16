@@ -1,6 +1,6 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
 import type { ToolCall } from '@shared/contract';
-import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
+import { AgentFailureCode, HostReasonCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
@@ -362,7 +362,9 @@ export function humanizeToolError(
         : null;
     return {
       summary: hostReasonCopy.summary,
-      detail: outcome?.reason ?? hostReasonCopy.detail,
+      detail: typeof hostReason !== 'string' && hostReason?.code === HostReasonCode.PermissionDeniedByUser
+        ? hostReasonCopy.detail ?? outcome?.reason
+        : outcome?.reason ?? hostReasonCopy.detail,
     };
   }
   const failureCode = inferAgentFailureCode({

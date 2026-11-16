@@ -340,3 +340,30 @@ describe('ask 拒绝（真人点拒审批卡）的人话卡片（真实 executor
     expect(markup).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
+
+
+describe('denial recovery sentence in the real chat detail row', () => {
+  it.each([
+    ['zh', '你刚才拒绝了这类操作。请在新消息里再告诉 Neo 要做什么，确认卡片就会重新出现。'],
+    ['en', 'You declined this kind of action. Tell Neo what you want in a new message to bring the approval card back.'],
+  ] as const)('%s explains the new-message exit even when the model stays silent', async (language, sentence) => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+    const { getDenialRegistry } = await import('../../../src/host/security/denialRegistry');
+    getDenialRegistry().clearAll();
+    const executor = new ToolExecutor({ workingDirectory: os.tmpdir(), requestPermission: async () => ({ approved: false, denialSource: 'user' }) });
+    executor.setAuditEnabled(false);
+    const options = { sessionId: 'sticky-row-copy', sourceMessageId: 'same-user-message' };
+    await executor.execute('Bash', { command: 'find . -name draft -delete' }, options);
+    const result = await executor.execute('Bash', { command: 'find . -name draft -delete' }, options);
+    expect(result.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedByUser });
+    i18nState.lang = language;
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('sticky-refusal', 'Bash', {}, result),
+    }));
+    expect(markup).toContain(sentence);
+    expect(markup).not.toContain('The user just declined');
+    process.stdout.write(`sticky-row-${language}: ${markup}\n`);
+    getDenialRegistry().clearAll();
+  });
+});
