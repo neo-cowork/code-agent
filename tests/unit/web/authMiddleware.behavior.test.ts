@@ -229,4 +229,22 @@ describe('rateLimitMiddleware', () => {
     expect(hit429).toBe(true);
     expect(lastStatus).toBe(429);
   });
+
+  it('/api/upload/temp: the 21st request in a minute is 429 and Retry-After equals body retryAfterSeconds', async () => {
+    const app = express();
+    app.use(rateLimitMiddleware);
+    app.post('/api/upload/temp', (_req, res) => res.json({ ok: true }));
+    await start(app);
+
+    for (let i = 0; i < 20; i += 1) {
+      const ok = await fetch(`${baseUrl}/api/upload/temp`, { method: 'POST' });
+      expect(ok.status).toBe(200);
+    }
+    const limited = await fetch(`${baseUrl}/api/upload/temp`, { method: 'POST' });
+    expect(limited.status).toBe(429);
+    const header = Number(limited.headers.get('retry-after'));
+    const body = await limited.json() as { retryAfterSeconds?: number };
+    expect(header).toBeGreaterThan(0);
+    expect(body.retryAfterSeconds).toBe(header);
+  });
 });

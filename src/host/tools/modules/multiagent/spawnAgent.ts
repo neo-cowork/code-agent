@@ -132,6 +132,9 @@ async function runBackgroundSubagent(
   const tokensUsed = typeof bgResult.metadata?.tokensUsed === 'number'
     ? bgResult.metadata.tokensUsed
     : undefined;
+  const filesChanged = Array.isArray(bgResult.metadata?.filesChanged)
+    ? bgResult.metadata.filesChanged.filter((file): file is string => typeof file === 'string')
+    : undefined;
   return {
     success: bgResult.success,
     output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
@@ -142,6 +145,7 @@ async function runBackgroundSubagent(
     ...(tokensUsed !== undefined ? { tokensUsed } : {}),
     ...(failureCode ? { failureCode } : {}),
     ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
+    ...(filesChanged && filesChanged.length > 0 ? { filesChanged } : {}),
   };
 }
 
