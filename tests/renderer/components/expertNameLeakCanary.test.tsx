@@ -113,11 +113,11 @@ describe('leak canary · member follow-up', () => {
 
     const sent = invokeDomainMock.mock.calls.find((call) => call[1] === 'sendMemberInput');
     expect(sent?.[0]).toBe(IPC_DOMAINS.AGENT);
-    expect(sent?.[2]).toMatchObject({ memberName: '牧之', memberId: 'muzhi-1' });
+    expect(sent?.[2]).toMatchObject({ memberName: '资深产品经理', memberId: 'muzhi-1' });
     expect(JSON.stringify(invokeDomainMock.mock.calls)).not.toMatch(PINYIN);
 
     const stored = useSessionStore.getState().messages.find((message) => message.content === 'add page numbers');
-    expect(stored?.metadata?.memberInput).toEqual({ memberId: 'muzhi-1', memberName: '牧之', mode: 'supplement' });
+    expect(stored?.metadata?.memberInput).toEqual({ memberId: 'muzhi-1', memberName: '资深产品经理', mode: 'supplement' });
     expect(JSON.stringify(useSessionStore.getState().messages)).not.toMatch(PINYIN);
 
     const node: TraceNode = {
@@ -125,11 +125,11 @@ describe('leak canary · member follow-up', () => {
       metadata: { memberInput: stored?.metadata?.memberInput as never },
     };
     const note = render(<MemberInputNote node={node} />);
-    expect(note.getByTestId('member-input-note').textContent).toContain('Muzhi');
-    expect(note.getByTestId('member-input-note').textContent).not.toContain('牧之');
+    expect(note.getByTestId('member-input-note').textContent).toContain('Senior Product Manager');
+    expect(note.getByTestId('member-input-note').textContent).not.toContain('资深产品经理');
     act(() => useAppStore.setState({ language: 'zh' }));
     note.rerender(<MemberInputNote node={node} />);
-    expect(note.getByTestId('member-input-note').textContent).toContain('牧之');
+    expect(note.getByTestId('member-input-note').textContent).toContain('资深产品经理');
     expect(note.getByTestId('member-input-note').textContent).not.toMatch(PINYIN);
   });
 });

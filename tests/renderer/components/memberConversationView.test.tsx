@@ -446,7 +446,7 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-input-receipt').textContent).toContain(zh.expert.memberBar.receiptDelivered);
     expect(input.value).toBe('');
     const recorded = useSessionStore.getState().messages.find((message) => message.content === '顺便把页码加上');
-    expect(recorded?.metadata?.memberInput).toEqual({ memberId: 'researcher', memberName: '调研员', mode: 'supplement' });
+    expect(recorded?.metadata?.memberInput).toEqual({ memberId: 'researcher', memberName: '行业研究员', mode: 'supplement' });
   });
 
   it('⌘Enter 改道：mode=redirect，回执说明手头这步做完才改', async () => {

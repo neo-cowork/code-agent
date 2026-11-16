@@ -145,6 +145,16 @@ describe.each(['en', 'zh'] as const)('expert name surfaces in %s', (language) =>
     });
   });
 
+  it.each(EXPERTS.filter(([id, , profession]) => profession !== id))('main-chat member note · %s (stored profession raw)', (_roleId, _n, zhProfession, _en) => {
+    const node: TraceNode = {
+      id: 'n', messageId: 'm', type: 'assistant_text', content: 'x', timestamp: 1,
+      metadata: { memberInput: { memberId: 'k', memberName: zhProfession, mode: 'supplement' } },
+    };
+    const text = render(<MemberInputNote node={node} />).getByTestId('member-input-note').textContent ?? '';
+    if (language === 'en') expect(text.split('：')[0].split(':')[0]).not.toMatch(HAN);
+    else expect(text).toContain(zhProfession);
+  });
+
   it.each(EXPERTS)('main-chat member note · %s (stored name raw)', (roleId, _zhName, _p, en) => {
     const node: TraceNode = {
       id: 'n', messageId: 'm', type: 'assistant_text', content: 'x', timestamp: 1,

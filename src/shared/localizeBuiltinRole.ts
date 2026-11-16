@@ -29,3 +29,24 @@ export function localizeBuiltinRole(roleId: string, parts: RoleNameParts, lang: 
   const en = BUILTIN_ROLE_EN[key];
   return { name: en.name, profession: parts.profession ? en.profession : parts.profession };
 }
+
+const BUILTIN_PROFESSION_ZH: Readonly<Record<string, string>> = {
+  资深产品经理: '牧之',
+  竞品与市场情报分析师: '溯真',
+  内容主理人: '青禾',
+  项目复盘顾问: '明镜',
+  合同审查顾问: '持衡',
+  会议纪要与行政助理: '记言',
+  文献综述研究员: '万卷',
+  增长分析师: '岚析',
+  视觉设计师: '映川',
+};
+
+/** For a stored memberName, which is the raw name or the raw profession of the member (render-time only). */
+export function localizeStoredMemberName(stored: string, lang: string): string {
+  if (lang !== 'en') return stored;
+  if (Object.hasOwn(BUILTIN_PROFESSION_ZH, stored)) {
+    return BUILTIN_ROLE_EN[BUILTIN_PROFESSION_ZH[stored]].profession;
+  }
+  return localizeBuiltinRole(stored, { name: stored }, lang).name;
+}

@@ -292,7 +292,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   const memberTarget: MemberInputTarget = {
     key: member.key,
     kind: 'expert',
-    name: member.name,
+    // Raw value sent over IPC and persisted as memberName (unchanged from main).
+    name: member.profession || member.name,
     displayName: member.displayProfession || member.displayName,
     live: member.status === 'running',
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localizeBuiltinRole } from '../../src/shared/localizeBuiltinRole';
+import { localizeBuiltinRole, localizeStoredMemberName } from '../../src/shared/localizeBuiltinRole';
 
 describe('localizeBuiltinRole', () => {
   it('shows pinyin name and English profession for built-in experts in en', () => {
@@ -40,5 +40,12 @@ describe('localizeBuiltinRole', () => {
       const r = localizeBuiltinRole(id, { name: id, profession: id }, 'en');
       expect(`${r.name}${r.profession}`).not.toMatch(/\p{Script=Han}/u);
     }
+  });
+
+  it('localizes a stored memberName that is a name or a profession (en only)', () => {
+    expect(localizeStoredMemberName('资深产品经理', 'en')).toBe('Senior Product Manager');
+    expect(localizeStoredMemberName('牧之', 'en')).toBe('Muzhi');
+    expect(localizeStoredMemberName('资深产品经理', 'zh')).toBe('资深产品经理');
+    expect(localizeStoredMemberName('我的助手', 'en')).toBe('我的助手');
   });
 });
