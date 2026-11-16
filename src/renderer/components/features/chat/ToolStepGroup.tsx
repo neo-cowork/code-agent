@@ -1,3 +1,4 @@
+import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
@@ -570,6 +571,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               {t.decisionCard.permission.retry}
             </Button>
           )}
+        </div>
+      ))}
+
+      {/* 删一条日程后的「撤销」挂在组这一层：步骤组默认收起，挂在展开后的步骤里用户找不到（真机第四轮） */}
+      {toolCalls.filter(canUndoCalendarDelete).map((toolCall) => (
+        <div key={`undo-${toolCall.id}`} className="ml-4 pl-3">
+          <CalendarDeleteUndo toolCall={toolCall} sessionId={sessionId ?? undefined} />
         </div>
       ))}
 

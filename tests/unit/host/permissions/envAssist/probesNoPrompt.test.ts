@@ -111,7 +111,7 @@ describe('diagnosis never prompts', () => {
       IOHIDRequestAccess: async () => { throw new Error('wrong_grant'); },
       AEDeterminePermissionToAutomateTarget: async (target, ask) => {
         expect(mint).toHaveReturnedWith(expect.objectContaining({ noticeId: 'current', issuedAt: 100 }));
-        expect(target).toBe('com.apple.iCal');
+        expect(target).toBe('com.apple.mail');
         expect(ask).toBe(true);
         calls++;
       },
@@ -119,8 +119,8 @@ describe('diagnosis never prompts', () => {
     };
     const notice: EnvAssistNotice = {
       id: 'current', sessionId: 'session', runId: 'run', class: 'perm_automation', phase: 'needs_user',
-      sentenceKey: 'env.sentence.calendar', target: { id: 'calendar', labelKey: 'calendar' },
-      action: { kind: 'request_grant', labelKey: 'env.allow.calendar', payload: { pane: 'automation' } },
+      sentenceKey: 'env.sentence.mail', target: { id: 'mail', labelKey: 'mail' },
+      action: { kind: 'request_grant', labelKey: 'env.allow.mail', payload: { pane: 'automation' } },
       resume: { mode: 'manual' }, updatedAt: 1,
     };
     const deps = { available: () => false, open: vi.fn(), findNotice: async () => notice,

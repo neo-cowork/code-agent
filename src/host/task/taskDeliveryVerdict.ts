@@ -1,10 +1,29 @@
-import type { Message } from '../../shared/contract';
+import type { Message, ToolResult } from '../../shared/contract';
+import { HostReasonCode } from '../../shared/contract/permission';
+import type { SessionTaskDeliveryFailure } from '../../shared/constants/sessionCommandCenter';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 
-export function isTaskDeliveryFailed(
+export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed';
+
+function terminalDeliveryFailure(messages: readonly Message[]): SessionTaskDeliveryFailure | undefined {
+  let lastResult: ToolResult | undefined;
+  for (const message of messages) {
+    for (const result of message.toolResults ?? []) lastResult = result;
+  }
+  if (!lastResult || lastResult.success) return undefined;
+  if (lastResult.metadata?.repairExhausted === true) return 'repair_exhausted';
+  const hostReason = lastResult.metadata?.hostReason as { code?: unknown } | undefined;
+  if (hostReason?.code === HostReasonCode.PermissionDeniedTimeout) return 'approval_timeout';
+  return undefined;
+}
+
+export function getTaskDeliveryFailure(
   messages: readonly Message[],
   deliverableArtifactCount: number,
-): boolean {
+): TaskDeliveryFailure | undefined {
+  const terminalFailure = terminalDeliveryFailure(messages);
+  if (terminalFailure && deliverableArtifactCount === 0) return terminalFailure;
+
   const toolNamesByCallId = new Map<string, string>();
   for (const message of messages) {
     if (message.role !== 'assistant') continue;
@@ -23,5 +42,5 @@ export function isTaskDeliveryFailed(
     }
   }
 
-  return outputFailed && !outputSucceeded && deliverableArtifactCount === 0;
+  return outputFailed && !outputSucceeded && deliverableArtifactCount === 0 ? 'write_failed' : undefined;
 }
