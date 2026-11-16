@@ -8,7 +8,6 @@ vi.mock('../../../../src/host/services/infra/logger', async (original) => {
   return { ...actual, createLogger: (name: string) => name === 'SurfaceLiveStream'
     ? { info: vi.fn(), warn } : actual.createLogger(name) };
 });
-import { pageOverflowsHorizontally } from '../../../../src/host/services/surfaceExecution/pageOverflowProbe';
 
 vi.mock('../../../../src/host/services/infra/browser/pageScreencast', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -90,10 +89,17 @@ describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', (
 
 
   it.each([[420, true], [320, false], [324, false], [323.9, false], [324.1, true]])(
-    'CSS content width %s maps to overflow %s', (width, expected) => {
-      expect(pageOverflowsHorizontally({
+    'CSS content width %s maps to overflow %s', async (width, expected) => {
+      const send = vi.fn().mockResolvedValue({
         cssContentSize: { width }, cssLayoutViewport: { clientWidth: 320 },
-      })).toBe(expected);
+      });
+      const service = build({ adapter: buildAdapter({ page: {
+        context: () => ({ newCDPSession: async () => ({ send, detach: async () => undefined }) }),
+      } }) });
+      await service.start(REQUEST);
+      emitFrame({ base64: 'AAAA', width: 320, height: 600, capturedAtMs: 42 });
+      expect(published.at(-1)?.pageOverflowX).toBe(expected);
+      expect(send).toHaveBeenCalledWith('Page.getLayoutMetrics');
     },
   );
 

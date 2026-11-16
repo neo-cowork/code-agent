@@ -7,7 +7,7 @@ type LayoutMetrics = {
 };
 
 /** Match the browser health probes' four CSS pixel rounding tolerance. */
-export function pageOverflowsHorizontally(metrics: LayoutMetrics): boolean {
+function pageOverflowsHorizontally(metrics: LayoutMetrics): boolean {
   const contentWidth = metrics.cssContentSize?.width;
   const viewportWidth = metrics.cssLayoutViewport?.clientWidth;
   if (!Number.isFinite(contentWidth) || !Number.isFinite(viewportWidth) || viewportWidth <= 0) {
