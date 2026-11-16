@@ -147,5 +147,38 @@ describe('native connector create target resolution', () => {
       expect(result.data).toMatchObject({ calendar: 'Work' });
       expect(scriptAt(1)).toContain('tell calendar "Work"');
     });
+
+    it('writes notes to the Calendar description property (CJK + newline) and reads them back', async () => {
+      osascriptMocks.runAppleScript
+        .mockResolvedValueOnce('Work')
+        .mockResolvedValueOnce('evt-notes|Work|周会||||带上季度报表 第二行');
+
+      const result = await calendarConnector.execute('create_event', {
+        calendar: 'Work',
+        title: '周会',
+        start_ms: 1_700_000_000_000,
+        notes: '带上季度报表\n第二行',
+      });
+
+      const script = scriptAt(1);
+      expect(script).toContain('description:"带上季度报表" & linefeed & "第二行"');
+      expect(script).toContain('description of newEvent');
+      expect(result.data).toMatchObject({ uid: 'evt-notes', notes: '带上季度报表 第二行' });
+    });
+
+    it('does not set a description when notes are absent or blank', async () => {
+      osascriptMocks.runAppleScript
+        .mockResolvedValueOnce('Work')
+        .mockResolvedValueOnce('evt-plain|Work|Plain||||');
+
+      await calendarConnector.execute('create_event', {
+        calendar: 'Work',
+        title: 'Plain',
+        start_ms: 1_700_000_000_000,
+        notes: '   ',
+      });
+
+      expect(scriptAt(1)).not.toContain('description:');
+    });
   });
 });

@@ -380,12 +380,21 @@ async function getEvent(payload: Record<string, unknown>): Promise<CalendarEvent
   };
 }
 
+/** AppleScript string expression that keeps real line breaks (a raw newline cannot sit inside a one-line -e literal). */
+function appleScriptMultilineText(value: string): string {
+  return value
+    .split(/\r\n|\r|\n/)
+    .map((line) => `"${escapeAppleScriptString(line)}"`)
+    .join(' & linefeed & ');
+}
+
 async function createEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
   const requestedCalendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
   const title = typeof payload.title === 'string' ? payload.title.trim() : '';
   const startMs = typeof payload.start_ms === 'number' ? payload.start_ms : NaN;
   const endMs = typeof payload.end_ms === 'number' ? payload.end_ms : startMs + 30 * 60 * 1000;
   const location = typeof payload.location === 'string' ? payload.location.trim() : '';
+  const notes = typeof payload.notes === 'string' ? payload.notes.trim() : '';
 
   if (!title) {
     throw new Error('title is required for create_event');
@@ -413,6 +422,9 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   if (location) {
     propertyParts.push(`location:"${escapeAppleScriptString(location)}"`);
   }
+  if (notes) {
+    propertyParts.push(`description:${appleScriptMultilineText(notes)}`);
+  }
 
   const output = await runCalendarScript([
     ...sharedAppleScriptHandlers(),
@@ -421,12 +433,16 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     'tell application "Calendar"',
     `tell calendar "${escapeAppleScriptString(calendarName)}"`,
     `set newEvent to make new event at end with properties {${propertyParts.join(', ')}}`,
-    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my isoDateText(start date of newEvent)) & "|" & (my isoDateText(end date of newEvent)) & "|" & (my sanitizeText(location of newEvent))`,
+    'set rawNotes to ""',
+    'try',
+    'set rawNotes to description of newEvent',
+    'end try',
+    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my isoDateText(start date of newEvent)) & "|" & (my isoDateText(end date of newEvent)) & "|" & (my sanitizeText(location of newEvent)) & "|" & (my sanitizeText(rawNotes))`,
     'end tell',
     'end tell',
   ]);
 
-  const [uid, calendar, parsedTitle, startRaw, endRaw, parsedLocation] = parseLine(output);
+  const [uid, calendar, parsedTitle, startRaw, endRaw, parsedLocation, parsedNotes] = parseLine(output);
   return {
     uid,
     calendar,
@@ -434,6 +450,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     startAtMs: parseAppleScriptDate(startRaw),
     endAtMs: parseAppleScriptDate(endRaw),
     location: parsedLocation || undefined,
+    notes: parsedNotes || undefined,
   };
 }
 

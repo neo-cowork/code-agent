@@ -336,3 +336,17 @@ describe('calendar_create_event notes', () => {
     expect(schema.required).not.toContain('notes');
   });
 });
+
+describe('calendar_create_event notes read-back receipt', () => {
+  it('echoes the notes the connector actually read back, and omits the line when none', async () => {
+    const ms = Date.parse('2026-11-16T15:00:00-08:00');
+    const handler = await calendarCreateEventModule.createHandler();
+    mocks.connectorExecute.mockResolvedValueOnce({ data: { uid: 'e', calendar: 'Work', title: '周会', startAtMs: ms, endAtMs: ms + 1_800_000, notes: '带上季度报表' } });
+    const withNotes = await handler.execute({ title: '周会', start_ms: ms, notes: '带上季度报表' }, ctx(), async () => ({ allow: true }));
+    expect(withNotes).toMatchObject({ ok: true, output: expect.stringContaining('- 备注：带上季度报表') });
+    mocks.connectorExecute.mockResolvedValueOnce(eventData('周会', ms, ms + 1_800_000));
+    const without = await handler.execute({ title: '周会', start_ms: ms, notes: '带上季度报表' }, ctx(), async () => ({ allow: true }));
+    expect(without).toMatchObject({ ok: true });
+    if (without.ok) expect(without.output).not.toContain('备注');
+  });
+});
