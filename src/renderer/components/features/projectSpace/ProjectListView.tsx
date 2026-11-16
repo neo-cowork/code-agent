@@ -7,7 +7,7 @@
 // 编辑：rename / setDescription（均已有 IPC）；删除：deleteProject（后果见确认文案，照实写）。
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FolderKanban, Pencil, Trash2 } from 'lucide-react';
 import { FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX, UNSORTED_PROJECT_ID, type ProjectWithActivity } from '@shared/contract/project';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -73,10 +73,17 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
   // 创建即信任：目录含危险项时存评估结果，同一 Modal 切确认步（非 null 即确认步）
   const [trustConfirm, setTrustConfirm] = useState<FolderTrustEvaluationView | null>(null);
 
+  const listRequest = useRef(0);
   const loadList = useCallback(() => {
+    const request = ++listRequest.current;
     listProjectsWithActivity(false, true)
-      .then((list) => setProjects(list))
+      .then((list) => {
+        if (request !== listRequest.current) return;
+        setProjects(list);
+        setLoadFailed(false);
+      })
       .catch(() => {
+        if (request !== listRequest.current) return;
         setProjects([]);
         setLoadFailed(true);
       });
@@ -84,6 +91,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
 
   useEffect(() => {
     loadList();
+    return () => { listRequest.current += 1; };
   }, [loadList]);
 
   const openEdit = (project: ProjectWithActivity) => {
