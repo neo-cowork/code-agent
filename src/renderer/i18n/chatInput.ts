@@ -156,7 +156,7 @@ export const chatInputZh = {
   },
   roleDraft: {
     createdLabel: '已创建',
-    editCreated: '改一改',
+    editCreated: '修改',
     canDoLabel: '能做',
     willNotDoLabel: '不会',
     pendingEditBanner: '专家改动待确认：确认后才会更新这位专家（已有记忆和工作记录会保留）',

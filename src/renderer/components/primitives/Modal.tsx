@@ -14,6 +14,9 @@ const focusableSelector =
 
 type EscapeHandlerRef = { current: (event: KeyboardEvent) => void };
 
+const PAGE_SCROLL_RATIO = 0.9;
+const ARROW_SCROLL_STEP_PX = 40;
+
 const modalStack: string[] = [];
 const modalEscapeHandlers = new Map<string, EscapeHandlerRef>();
 
@@ -93,6 +96,7 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const { t } = useI18n();
   const modalRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const modalId = useId();
   const headerId = useId();
   const escapeHandlerRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
@@ -158,7 +162,27 @@ export const Modal: React.FC<ModalProps> = ({
     e.stopPropagation();
   };
 
+  // 焦点停在弹层容器上时，滚动发生在其后代内容层，浏览器不会替我们滚，这里手动转发
+  const handleScrollKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const content = contentRef.current;
+    if (!content || e.target !== modalRef.current) return;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    const page = content.clientHeight * PAGE_SCROLL_RATIO;
+    switch (e.key) {
+      case 'PageDown': content.scrollBy({ top: page }); break;
+      case 'PageUp': content.scrollBy({ top: -page }); break;
+      case ' ': content.scrollBy({ top: e.shiftKey ? -page : page }); break;
+      case 'ArrowDown': content.scrollBy({ top: ARROW_SCROLL_STEP_PX }); break;
+      case 'ArrowUp': content.scrollBy({ top: -ARROW_SCROLL_STEP_PX }); break;
+      case 'Home': content.scrollTo({ top: 0 }); break;
+      case 'End': content.scrollTo({ top: content.scrollHeight }); break;
+      default: return;
+    }
+    e.preventDefault();
+  };
+
   const handleModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    handleScrollKey(e);
     if (e.key !== 'Tab' || !modalRef.current) return;
 
     const focusableElements = Array.from(
@@ -236,7 +260,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {/* Content */}
-        <div className="px-6 py-4 overflow-y-auto min-h-0 flex-1">{children}</div>
+        <div ref={contentRef} className="px-6 py-4 overflow-y-auto min-h-0 flex-1">{children}</div>
 
         {/* Footer */}
         {footer && (

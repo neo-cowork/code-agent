@@ -34,14 +34,12 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 import { describeAppleScriptFailure, runAppleScript } from '../../../src/host/connectors/native/osascript';
-import { calendarConnector, resetCalendarConnectorReadiness } from '../../../src/host/connectors/native/calendar';
 import { APPLE_EVENTS_PERMISSION_PROMPT_TIMEOUT_MS } from '../../../src/shared/constants/envAssist';
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 beforeEach(() => {
   Object.defineProperty(process, 'platform', { value: 'darwin' });
   Object.assign(mocks, { timeouts: [], probeCode: -1744, probedTargets: [], shell: true, outcome: { stdout: 'Home|Work\n' } });
-  resetCalendarConnectorReadiness();
 });
 afterEach(() => { Object.defineProperty(process, 'platform', platform); });
 
@@ -68,16 +66,11 @@ describe('AppleScript budget while the automation dialog may be showing', () => 
     expect(mocks.timeouts).toEqual([15_000, 15_000]);
   });
 
-  it('① the calendar connector asks for Calendar\'s answer and gives the dialog its budget', async () => {
-    await calendarConnector.execute('list_calendars', {});
-    expect(mocks.probedTargets).toEqual(['com.apple.iCal']);
-    expect(mocks.timeouts).toEqual([APPLE_EVENTS_PERMISSION_PROMPT_TIMEOUT_MS]);
-  });
-
   it('② "Don\'t Allow" on the dialog (-1743) is reported as not_authorized, not timeout', async () => {
     mocks.outcome = { error: Object.assign(new Error('Command failed: osascript\nexecution error: Not authorized to send Apple events to Calendar. (-1743)'), { code: 1, stderr: 'Not authorized to send Apple events to Calendar. (-1743)' }) };
-    const thrown = await calendarConnector.execute('list_calendars', {}).then(() => undefined, (error: unknown) => error);
-    expect(describeAppleScriptFailure('Calendar', thrown).code).toBe('not_authorized');
+    // 日历已改走 EventKit（N-CALENDAR-ONE-PERMISSION-EVENTKIT）；预算机制本身对任何 Apple-events 目标仍成立
+    const thrown = await runAppleScript(['return 1'], { permissionTarget: 'com.apple.reminders' }).then(() => undefined, (error: unknown) => error);
+    expect(describeAppleScriptFailure('Reminders', thrown).code).toBe('not_authorized');
     expect(mocks.timeouts).toEqual([APPLE_EVENTS_PERMISSION_PROMPT_TIMEOUT_MS]);
   });
 });

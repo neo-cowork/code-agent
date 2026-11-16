@@ -153,6 +153,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         {pluginOriginNotice}
         {externalScopeNotice}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
+        {request.tool === 'calendar_delete_event' && (
+          <p className="text-xs leading-5 text-zinc-400" data-testid="calendar-delete-note">{labels.writeback.calendarDeleteNote}</p>
+        )}
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
             boundary={getPermissionBoundary(request.boundary.id, {

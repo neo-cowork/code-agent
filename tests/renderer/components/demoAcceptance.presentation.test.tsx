@@ -12,10 +12,43 @@ import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/rende
 import { runHref } from './encodeRunCommand';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
+const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({
+  useI18n: () => ({ t: locale.language === 'en' ? en : zh, language: locale.language }),
+}));
 const failed = (name: string, error: string, metadata = {}): ToolCall => ({ id: 'x', name, arguments: { file_path: '/workspace/report.md' }, result: { toolCallId: 'x', success: false, error, metadata } });
 
 describe('demo acceptance: truthful historical presentation', () => {
+  it('explains automatic file repair consistently in both languages and every presentation', () => {
+    const reasons = [zh.deliveryExperience.repairReason, en.deliveryExperience.repairReason];
+    expect(reasons[0]).not.toBe(reasons[1]);
+    try {
+      for (const language of ['zh', 'en'] as const) {
+        locale.language = language;
+        const t = language === 'en' ? en : zh;
+        const reason = t.deliveryExperience.repairReason;
+        expect(reason.trim()).not.toBe('');
+        expect(reason).not.toMatch(/deliverable|repair scope|成品|修复范围/i);
+        for (const name of ['Read', 'Bash']) {
+          const tool = failed(name, 'blocked', { artifactRepairGuard: { blocked: true } });
+          const headerReason = toolPreflightCopy(tool, t)?.reason;
+          const detailReason = humanizeToolFailureReason(tool, t);
+          expect(getToolPreflightKind(tool)).toBe('repair');
+          expect(headerReason).toBe(reason);
+          expect(detailReason).toBe(headerReason);
+          const nodes: TraceNode[] = [{ id: tool.id, type: 'tool_call', content: '', timestamp: 1,
+            toolCall: { id: tool.id, name, args: tool.arguments, success: false,
+              result: tool.result!.error, metadata: tool.result!.metadata } }];
+          const group = renderToStaticMarkup(<ToolStepGroup nodes={nodes} defaultExpanded={false} />);
+          const reasonMarkup = renderToStaticMarkup(<span>{detailReason}</span>).slice(6, -7);
+          expect(group).toContain('aria-expanded="false"');
+          expect(group.slice(0, group.indexOf('</button>'))).toContain(reasonMarkup);
+        }
+      }
+    } finally {
+      locale.language = 'zh';
+    }
+  });
   it('explains repair scope without exposing paths or claiming an absent error', () => {
     const tool = failed('Read', 'Artifact repair mode is active for /workspace/report.html. Read is limited to the target artifact file during repair.', { artifactRepairGuard: { blocked: true } });
     expect(humanizeToolFailureReason(tool, zh)).toBe(zh.deliveryExperience.repairReason);

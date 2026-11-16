@@ -92,9 +92,9 @@ export const capabilityHubZh = {
   // 不许出现 plugin / manifest / cordis / 意图簇这类实现概念。
   capabilityCandidates: {
     title: '候选能力',
-    intro: '这里记的是你反复让我拼着做的事。只记账，不打扰——想看才看。',
+    intro: '多次分步完成的同类任务会记录在这里，可以固定成流程或做成新能力。',
     emptyTitle: '还没有攒够',
-    emptyText: '等你反复让我做同一类事，这里会自己出现。不用管它。',
+    emptyText: '同类任务出现多次后会显示在这里。',
     evidence: '{count} 次 · 近 {days} 天 · 均 {steps} 步 {tokens}',
     evidenceNoTokens: '{count} 次 · 近 {days} 天 · 均 {steps} 步',
     tokensSuffix: '{tokens} token',
@@ -105,7 +105,7 @@ export const capabilityHubZh = {
     tierSkill: '记成做法',
     tierWorkflow: '固定成流程',
     tierPlugin: '做成新能力',
-    tierSkillHint: '步骤会变，适合写成一份给我自己看的做法说明',
+    tierSkillHint: '步骤会变，适合写成做法说明',
     tierWorkflowHint: '步骤很稳定，可以固定下来自动跑',
     tierPluginHint: '需要现在还没有的外部能力，得单独做一个',
     actionBuild: '做成能力',

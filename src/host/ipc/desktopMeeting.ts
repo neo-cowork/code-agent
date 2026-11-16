@@ -45,10 +45,7 @@ function createReminder(isMeetingActive: () => boolean): MeetingCalendarReminder
     // 只提醒，绝不自动开录（会被标成屏幕共享）
     notify: (event) => {
       void import('../services/infra/notificationService')
-        .then(({ notificationService }) => notificationService.notifyMeetingStarting({
-          title: `「${event.title || '日历上的会'}」快开始了`,
-          body: '要记这场会吗？打开 Neo，在输入框上方点「记这场会」。记得先征得参会人同意。',
-        }))
+        .then(({ notificationService }) => notificationService.notifyMeetingStarting({ meetingTitle: event.title }))
         .catch(() => undefined);
     },
   });
@@ -80,8 +77,8 @@ export function createMeetingIpc(audio: MeetingAudioControl) {
   const reminder = createReminder(() => Boolean(session.status().current));
   reminder?.start();
 
-  /** 会议状态 + 会前提醒（开关关着时 upcoming 恒为空） */
-  const status = (): MeetingSessionStatus => ({ ...session.status(), upcoming: reminder?.upcoming() ?? null });
+  /** 会议状态 + 会前提醒（开关关着时 upcoming 恒为空：upcoming() 每次现读开关） */
+  const status = async (): Promise<MeetingSessionStatus> => ({ ...session.status(), upcoming: (await reminder?.upcoming()) ?? null });
   const ok = (data: unknown): IPCResponse<unknown> => ({ success: true, data });
   const idOf = (raw: unknown) => (typeof (raw as { id?: unknown } | undefined)?.id === 'string' ? (raw as { id: string }).id : '');
 
@@ -93,7 +90,7 @@ export function createMeetingIpc(audio: MeetingAudioControl) {
       }
       const payload = raw as { title?: unknown } | undefined;
       // 没给标题时用日历上快开始的那场会的名字
-      const title = typeof payload?.title === 'string' ? payload.title : reminder?.upcoming()?.title;
+      const title = typeof payload?.title === 'string' ? payload.title : (await reminder?.upcoming())?.title;
       reminder?.dismiss();
       return ok(await session.start(title));
     },
@@ -106,10 +103,10 @@ export function createMeetingIpc(audio: MeetingAudioControl) {
       return ok(await session.resume());
     },
     stopMeeting: async () => ok(session.end('manual')),
-    getMeetingStatus: async () => ok(status()),
+    getMeetingStatus: async () => ok(await status()),
     dismissMeetingUpcoming: async () => {
       reminder?.dismiss();
-      return ok(status());
+      return ok(await status());
     },
     // 会议页（N-MEETING-PAGE）：列表带纪要状态，详情带整场转写；导入后与本机录的会一样按设置自动出纪要
     listMeetings: async () => {
