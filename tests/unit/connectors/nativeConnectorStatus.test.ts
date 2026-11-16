@@ -183,8 +183,8 @@ describe('native office connector lazy status', () => {
     configState.language = language;
     const raw = Object.assign(new Error('Command failed: osascript -e tell application "Calendar"\n(-1743)'), { stderr: '(-1743)' });
     try {
+      // 日历已改走 EventKit（N-CALENDAR-ONE-PERMISSION-EVENTKIT），不再有 AppleScript 授权失败
       for (const [connector, chineseName] of [
-        [calendarConnector, '日历'],
         [mailConnector, '邮件'],
         [remindersConnector, '提醒事项'],
       ] as const) {
