@@ -17,6 +17,8 @@ export interface ShellBridgeClient {
 interface CapturedBridgeEnv {
   rawUrl: string | undefined;
   token: string | undefined;
+  /** Why the capture produced no credentials (flag missing / stdin EOF / bad line ...); only set on failure. */
+  failure?: string;
 }
 
 let capturedBridgeEnv: CapturedBridgeEnv | null = null;
@@ -31,10 +33,9 @@ export function captureShellBridgeEnv(): void {
     if (process.env[HANDSHAKE_FLAG_ENV] === '1') {
       capturedBridgeEnv = readHandshakeFromStdin();
     } else {
-      capturedBridgeEnv = {
-        rawUrl: process.env[BRIDGE_URL_ENV],
-        token: process.env[BRIDGE_TOKEN_ENV],
-      };
+      const rawUrl = process.env[BRIDGE_URL_ENV];
+      const token = process.env[BRIDGE_TOKEN_ENV];
+      capturedBridgeEnv = { rawUrl, token, ...(rawUrl || token ? {} : { failure: 'handshake_flag_missing' }) };
     }
   }
   delete process.env[HANDSHAKE_FLAG_ENV];
@@ -48,15 +49,15 @@ export function captureShellBridgeEnv(): void {
  * newline so the later stdin EOF watcher is unaffected.
  */
 function readHandshakeFromStdin(): CapturedBridgeEnv {
-  const invalid = (): CapturedBridgeEnv => {
-    logger.warn('env_assist_bridge:handshake_invalid');
-    return { rawUrl: undefined, token: undefined };
+  const invalid = (failure: string): CapturedBridgeEnv => {
+    logger.warn('env_assist_bridge:handshake_invalid', { reason: failure });
+    return { rawUrl: undefined, token: undefined, failure };
   };
   const byte = Buffer.alloc(1);
   const bytes: number[] = [];
   try {
     for (;;) {
-      if (bytes.length >= HANDSHAKE_MAX_BYTES) return invalid();
+      if (bytes.length >= HANDSHAKE_MAX_BYTES) return invalid('line_too_long');
       let n: number;
       try {
         n = fs.readSync(0, byte, 0, 1, null);
@@ -64,16 +65,17 @@ function readHandshakeFromStdin(): CapturedBridgeEnv {
         if ((error as NodeJS.ErrnoException).code === 'EAGAIN') continue;
         throw error;
       }
-      if (n === 0) return invalid();
+      if (n === 0) return invalid(bytes.length ? 'stdin_eof_mid_line' : 'stdin_eof');
       if (byte[0] === 0x0a) break;
       bytes.push(byte[0]);
     }
-  } catch {
-    return invalid();
+  } catch (error) {
+    return invalid(`stdin_read_error:${(error as NodeJS.ErrnoException).code ?? 'unknown'}`);
   }
   const line = Buffer.from(bytes).toString('utf8').replace(/\r$/, '');
-  const parts = line.startsWith(HANDSHAKE_PREFIX) ? line.slice(HANDSHAKE_PREFIX.length).split(' ') : [];
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return invalid();
+  if (!line.startsWith(HANDSHAKE_PREFIX)) return invalid('bad_prefix');
+  const parts = line.slice(HANDSHAKE_PREFIX.length).split(' ');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return invalid('bad_field_count');
   return { rawUrl: parts[0], token: parts[1] };
 }
 
@@ -106,13 +108,14 @@ export function resolveShellBridgeClientFromEnv(
     rawUrl = env[BRIDGE_URL_ENV]?.trim();
     token = env[BRIDGE_TOKEN_ENV]?.trim();
   }
-  if (platform !== 'darwin') {
-    logger.warn('env_assist_bridge:no_shell');
-    return null;
-  }
   const baseUrl = rawUrl ? parseLoopbackOrigin(rawUrl) : null;
-  if (!baseUrl || !token) {
+  if (platform !== 'darwin' || !baseUrl || !token) {
+    // Distinguishable degrade trace: which prerequisite is missing (the bare no_shell line alone cannot tell).
+    const reason = platform !== 'darwin' ? 'non_darwin'
+      : capturedBridgeEnv?.failure && (env === undefined || env === process.env) ? capturedBridgeEnv.failure
+      : !rawUrl ? 'url_missing' : !baseUrl ? 'url_invalid' : 'token_missing';
     logger.warn('env_assist_bridge:no_shell');
+    logger.warn('env_assist_bridge:no_shell_reason', { reason });
     return null;
   }
 
