@@ -113,7 +113,8 @@ function collectCjk(page, surface) {
 }
 
 async function hoverTitles(page) {
-  const titles = page.locator('[title]');
+  // CSV 单元格的 title 是用户数据，属性仍全量扫描；其余 UI hover 源逐个打开，不抽样。
+  const titles = page.locator('[title]:not(td)');
   const count = await titles.count();
   let hovered = 0;
   for (let i = 0; i < count; i += 1) {
@@ -279,6 +280,40 @@ async function sweepProjectTasks(page, visit) {
   await visit('space-tasks', page.getByTestId('project-space-tab-tasks'));
 }
 
+// CSV 预览（FB-1284）：用户把一个销售 CSV 放进工作目录，在文件面板里点开看表格预览。
+// 工作目录经 ?e2e=1 暴露的 __modelStrategyE2E.setWorkingDirectory 设置（Web 版没有原生选文件夹对话框）。
+async function sweepCsvPreview(page, visit, out, baseUrl, lang) {
+  const dir = path.join(out, 'csv-workspace');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'sales-q1-q2.csv'), 'Region,Quarter,Revenue,Units\nEast,Q1,12500,310\nWest,Q1,9800,254\nNorth,Q2,14200,367\nSouth,Q2,8700,201\n');
+  fs.writeFileSync(path.join(dir, 'malformed-orders.csv'), 'Name,Amount,Note\nAcme,100,ok\nBeta,200\nGamma,300,fine,extra\n');
+  fs.writeFileSync(path.join(dir, 'big-ledger.csv'), `Id,Amount\n${Array.from({ length: 5001 }, (_, i) => `${i + 1},${(i * 7) % 1000}`).join('\n')}\n`);
+  await page.goto(`${baseUrl}/?e2e=1`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-chat-input]').waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForTimeout(3000);
+  await closeOnboarding(page, lang);
+  const webClose = page.getByRole('button', { name: /^(关闭|Close)$/ });
+  if (await visible(webClose)) await webClose.first().click();
+  await page.evaluate((d) => window.__modelStrategyE2E.setWorkingDirectory(d), dir);
+  await page.waitForTimeout(1000);
+  await clickRequired(page.getByTestId('titlebar-expand-workbench'), 'open workbench');
+  for (const [name, surface] of [['sales-q1-q2.csv', 'csv-preview'], ['malformed-orders.csv', 'csv-preview-parse-warning'], ['big-ledger.csv', 'csv-preview-truncated']]) {
+    await page.keyboard.press('Meta+Shift+F');
+    await clickRequired(page.getByText(name, { exact: true }), `open ${name} preview`);
+    let assertion = page.locator('table').first();
+    if (surface === 'csv-preview-parse-warning') {
+      assertion = page.getByText(lang === 'en' ? /^Parse warning: / : /^解析告警：/);
+    } else if (surface === 'csv-preview-truncated') {
+      assertion = page.getByText(lang === 'en' ? /^Showing first 5000 of 5001 rows/ : /^显示前 5000 \/ 5001 行/);
+    }
+    await visit(surface, assertion);
+    if (surface === 'csv-preview') {
+      const titles = await page.locator('table th [title]').evaluateAll((elements) => elements.map((element) => element.getAttribute('title') || ''));
+      titles.forEach((title, index) => console.log(`CSV_TITLE_${index + 1}=${JSON.stringify(title)}`));
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   fs.mkdirSync(args.out, { recursive: true });
@@ -311,6 +346,7 @@ async function main() {
     await sweepAutomations(page, visit, args.lang);
     await sweepCapabilityHub(page, visit);
     await sweepProjectTasks(page, visit);
+    await sweepCsvPreview(page, visit, args.out, args.baseUrl, args.lang);
     report.totalHits = report.surfaces.reduce((sum, surface) => sum + surface.hits.length, 0);
     report.totalAllowlisted = report.surfaces.reduce((sum, surface) => sum + surface.allowlisted.length, 0);
     fs.writeFileSync(path.join(args.out, `report-${args.lang}.json`), `${JSON.stringify(report, null, 2)}\n`);

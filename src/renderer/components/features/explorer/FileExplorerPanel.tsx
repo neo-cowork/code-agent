@@ -15,6 +15,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { FileInfo } from '@shared/contract';
 import { isPreviewable } from '../../../utils/previewable';
 import { useI18n } from '../../../hooks/useI18n';
+import { fileExplorerEn, fileExplorerZh } from '../../../i18n/fileExplorer';
 import { pickWorkingDirectory } from '../../../services/workingDirectoryPicker';
 
 // ── Helpers ──
@@ -47,7 +48,8 @@ function isInvalidName(name: string): boolean {
 async function createFsEntry(
   parentPath: string,
   name: string,
-  kind: 'file' | 'folder'
+  kind: 'file' | 'folder',
+  createFailed: string,
 ): Promise<{ ok: true; info: FileInfo } | { ok: false; message: string }> {
   const fullPath = joinPath(parentPath, name.trim());
   const action = kind === 'file' ? 'createFile' : 'createFolder';
@@ -56,7 +58,7 @@ async function createFsEntry(
     IPC_DOMAINS.WORKSPACE, action, payload
   );
   if (!response?.success || !response.data) {
-    return { ok: false, message: response?.error?.message ?? '创建失败' };
+    return { ok: false, message: response?.error?.message ?? createFailed };
   }
   return { ok: true, info: response.data };
 }
@@ -105,6 +107,8 @@ const CreateInputRow: React.FC<{
   depth: number;
   onDone: (created: FileInfo | null) => void;
 }> = ({ parentPath, kind, depth, onDone }) => {
+  const { language } = useI18n();
+  const copy = language === 'en' ? fileExplorerEn : fileExplorerZh;
   const [name, setName] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
@@ -118,18 +122,18 @@ const CreateInputRow: React.FC<{
   const submit = useCallback(async () => {
     if (submitting) return;
     if (isInvalidName(name)) {
-      setError('名称不能为空、"."、".."，或包含 / \\');
+      setError(copy.invalidName);
       return;
     }
     setSubmitting(true);
-    const result = await createFsEntry(parentPath, name, kind);
+    const result = await createFsEntry(parentPath, name, kind, copy.createFailed);
     if (!result.ok) {
       setError(result.message);
       setSubmitting(false);
       return;
     }
     onDone(result.info);
-  }, [submitting, name, parentPath, kind, onDone]);
+  }, [submitting, name, parentPath, kind, onDone, copy]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -166,7 +170,7 @@ const CreateInputRow: React.FC<{
           // so they can fix the name after an error.
           if (!name.trim() && !error) onDone(null);
         }}
-        placeholder={kind === 'file' ? '文件名' : '文件夹名'}
+        placeholder={kind === 'file' ? copy.fileName : copy.folderName}
         disabled={submitting}
       />
       {error && (
@@ -187,6 +191,8 @@ const FileTreeNode: React.FC<{
   file: FileInfo;
   depth: number;
 }> = ({ file, depth }) => {
+  const { language } = useI18n();
+  const copy = language === 'en' ? fileExplorerEn : fileExplorerZh;
   const {
     expandedPaths, loadingPaths, dirContents, selectedPaths, pendingCreate,
     toggleExpanded, setDirContents, setLoading, setExpanded, startCreate, cancelCreate,
@@ -250,11 +256,11 @@ const FileTreeNode: React.FC<{
   // Send file to chat as context via IACT
   const handleSendToChat = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    const prefix = file.isDirectory ? '分析这个目录' : '查看这个文件';
+    const prefix = file.isDirectory ? copy.analyzeDirectory : copy.viewFile;
     window.dispatchEvent(new CustomEvent('iact:send', {
       detail: `${prefix}: ${file.path}`
     }));
-  }, [file.path, file.isDirectory]);
+  }, [file.path, file.isDirectory, copy]);
 
   const handleCreateClick = useCallback(async (
     e: React.MouseEvent, kind: 'file' | 'folder'
@@ -335,14 +341,14 @@ const FileTreeNode: React.FC<{
             <button
               onClick={(e) => handleCreateClick(e, 'file')}
               className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded hover:bg-zinc-600 flex-shrink-0"
-              title="新建文件"
+              title={copy.newFile}
             >
               <FilePlus className="w-2.5 h-2.5 text-zinc-400" />
             </button>
             <button
               onClick={(e) => handleCreateClick(e, 'folder')}
               className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded hover:bg-zinc-600 flex-shrink-0"
-              title="新建文件夹"
+              title={copy.newFolder}
             >
               <FolderPlus className="w-2.5 h-2.5 text-zinc-400" />
             </button>
@@ -353,7 +359,7 @@ const FileTreeNode: React.FC<{
         <button
           onClick={handleSendToChat}
           className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded hover:bg-zinc-600 flex-shrink-0"
-          title="发送到对话"
+          title={copy.sendToChat}
         >
           <Send className="w-2.5 h-2.5 text-zinc-400" />
         </button>
@@ -385,7 +391,8 @@ const FileTreeNode: React.FC<{
 // ── TabBar ──
 
 const TabBar: React.FC<{ actions: React.ReactNode }> = ({ actions }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const copy = language === 'en' ? fileExplorerEn : fileExplorerZh;
   const { tabs, activeTabId, setActiveTab, closeTab, openOrFocusTab } = useExplorerStore();
   const workingDirectory = useAppStore((s) => s.workingDirectory);
 
@@ -423,7 +430,7 @@ const TabBar: React.FC<{ actions: React.ReactNode }> = ({ actions }) => {
             <span className="truncate">{tab.label}</span>
             <button
               type="button"
-              aria-label={`关闭 ${tab.label}`}
+              aria-label={copy.closeTab(tab.label)}
               onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
               className="flex-shrink-0 p-0.5 rounded hover:bg-zinc-700 opacity-0 group-hover:opacity-100"
             >
@@ -433,10 +440,10 @@ const TabBar: React.FC<{ actions: React.ReactNode }> = ({ actions }) => {
         ))}
         <button
           type="button"
-          aria-label="打开目录"
+          aria-label={copy.openDirectory}
           onClick={handleAddTab}
           className="p-1 text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800 rounded transition-colors"
-          title="打开目录"
+          title={copy.openDirectory}
         >
           <Plus className="w-3 h-3" />
         </button>
@@ -453,6 +460,8 @@ interface FileExplorerPanelProps {
 }
 
 export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose }) => {
+  const { language } = useI18n();
+  const copy = language === 'en' ? fileExplorerEn : fileExplorerZh;
   const {
     tabs, activeTabId, dirContents, pendingCreate,
     openOrFocusTab, setDirContents, setLoading, startCreate, cancelCreate,
@@ -504,30 +513,30 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
             <>
               <button
                 type="button"
-                aria-label="新建文件"
+                aria-label={copy.newFile}
                 onClick={() => activeTab && startCreate(activeTab.rootPath, 'file')}
                 disabled={!activeTab}
                 className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
-                title="新建文件"
+                title={copy.newFile}
               >
                 <FilePlus className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
-                aria-label="新建文件夹"
+                aria-label={copy.newFolder}
                 onClick={() => activeTab && startCreate(activeTab.rootPath, 'folder')}
                 disabled={!activeTab}
                 className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
-                title="新建文件夹"
+                title={copy.newFolder}
               >
                 <FolderPlus className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
-                aria-label="刷新"
+                aria-label={copy.refresh}
                 onClick={handleRefresh}
                 className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
-                title="刷新"
+                title={copy.refresh}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
@@ -541,7 +550,7 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
         {!activeTab ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-zinc-600">
             <FolderOpen className="w-8 h-8" />
-            <span className="text-xs">暂无打开的目录</span>
+            <span className="text-xs">{copy.noOpenDirectory}</span>
             <button
               onClick={() => {
                 if (workingDirectory) {
@@ -551,17 +560,17 @@ export const FileExplorerPanel: React.FC<FileExplorerPanelProps> = ({ onClose })
               }}
               className="text-xs text-accent-accessible hover:text-accent-accessible"
             >
-              打开项目目录
+              {copy.openProjectDirectory}
             </button>
           </div>
         ) : rootFiles === undefined ? (
           <div className="flex items-center justify-center h-20 text-zinc-600">
             <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-            <span className="text-xs">加载中…</span>
+            <span className="text-xs">{copy.loading}</span>
           </div>
         ) : rootFiles.length === 0 ? (
           <div className="flex items-center justify-center h-20 text-zinc-600 text-xs">
-            空目录
+            {copy.emptyDirectory}
           </div>
         ) : (
           <>
