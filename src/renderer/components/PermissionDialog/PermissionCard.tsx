@@ -606,7 +606,7 @@ export function PermissionCard({
         selectedId={invalid.length === 0 ? 'edit' : null}
         onSelect={() => {}}
         onConfirm={() => {
-          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
+          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft, request.rawArgs));
         }}
         onCollapse={onCollapse}
         enterDisabled
