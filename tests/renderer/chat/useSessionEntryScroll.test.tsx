@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
-import { revealTurnEnd, useContentHiddenBelow, useSessionEntryScroll } from '../../../src/renderer/components/features/chat/useSessionEntryScroll';
+import { isContentHiddenBelow, revealTurnEnd, useSessionEntryScroll } from '../../../src/renderer/components/features/chat/useSessionEntryScroll';
 
 const turns = (n: number) => Array.from({ length: n }, (_, i) => ({ turnId: `t${i}` })) as unknown as TraceTurn[];
 
@@ -104,36 +104,9 @@ describe('revealTurnEnd', () => {
   });
 });
 
-describe('useContentHiddenBelow', () => {
-  function geometry(scroller: HTMLElement, gap: number) {
-    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 2000 });
-    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 600 });
-    scroller.scrollTop = 2000 - 600 - gap;
-  }
-
-  it('阈值内也要报「下面还有」：离底 60px（卡底和按钮被裁）出箭头，Footer 呼吸带内不出，暂停时不判', () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
-    vi.stubGlobal('cancelAnimationFrame', () => undefined);
-    const flush = () => act(() => { while (frames.length) frames.shift()!(0); });
-    const scroller = document.createElement('div');
-    const paused = { current: false };
-
-    geometry(scroller, 60);
-    const { result, rerender } = renderHook(({ key }) => useContentHiddenBelow(scroller, paused, key), { initialProps: { key: 'a' } });
-    flush();
-    expect(result.current).toBe(true);
-
-    geometry(scroller, 20);
-    act(() => { scroller.dispatchEvent(new Event('scroll')); });
-    flush();
-    expect(result.current).toBe(false);
-
-    paused.current = true;
-    geometry(scroller, 300);
-    rerender({ key: 'b' });
-    flush();
-    expect(result.current).toBe(false);
-    vi.unstubAllGlobals();
+describe('isContentHiddenBelow', () => {
+  it('阈值内也要报「下面还有」：离底 60px（卡底和按钮被裁）算被挡，Footer 呼吸带内不算', () => {
+    expect(isContentHiddenBelow({ scrollHeight: 2000, clientHeight: 600, scrollTop: 2000 - 600 - 60 })).toBe(true);
+    expect(isContentHiddenBelow({ scrollHeight: 2000, clientHeight: 600, scrollTop: 2000 - 600 - 20 })).toBe(false);
   });
 });

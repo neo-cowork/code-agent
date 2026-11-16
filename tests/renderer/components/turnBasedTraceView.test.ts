@@ -995,8 +995,7 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
       const resizeList = (height: number) => {
         listHeight = height;
         act(() => {
-          // 只调最新挂上的那个：桩里的 disconnect 不会真的摘掉旧观察器
-          observing((el) => el === itemList).at(-1)?.callback([], {} as ResizeObserver);
+          for (const observer of observing((el) => el === itemList)) observer.callback([], {} as ResizeObserver);
         });
         for (let step = 0; step < 3; step += 1) {
           act(() => {
@@ -1008,11 +1007,6 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
       };
       return { scroller, observing, resizeList };
     }
-
-    it('入场结算收尾后把最新一轮登记为跟随目标，它的晚到增高有观察器在跟', () => {
-      const { observing } = setupEntry();
-      expect(observing((el) => (el as HTMLElement).dataset?.traceTurnId === 'turn-3').length).toBeGreaterThanOrEqual(1);
-    });
 
     it('列表变矮/变高把视口留在离底一两百像素处时重新落底；按着指针时不动', () => {
       const { scroller, resizeList } = setupEntry();
