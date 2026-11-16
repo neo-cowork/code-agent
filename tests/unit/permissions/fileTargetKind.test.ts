@@ -72,7 +72,7 @@ describe('resolveFileTargetKind', () => {
 
   // Windows-side expectations (/dev/null → C:\dev\null → absent, NUL → device) are not
   // asserted here: this repo's fleet and CI are POSIX, and skipIf-gated tests fail the
-  // fast gate. Both cases fail closed to the overwrite warning.
+  // fast gate. Missing targets are absent; path spelling never replaces an inode check.
   //
   // #1692 round 1: `/dev/` prefix is not a device predicate.
   it('/dev/shm-shaped ordinary file is not a device', () => {
