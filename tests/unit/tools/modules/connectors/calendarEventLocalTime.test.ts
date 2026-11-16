@@ -218,7 +218,7 @@ describe('calendar_create_event module entry (direct calls, no ToolExecutor)', (
     const ms = Date.parse(iso);
     mocks.connectorExecute.mockResolvedValue(eventData('Weekly sync', ms, ms + 1_800_000));
     const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
-    const result = await calendarCreateEventModule.createHandler().execute({ title: 'Weekly sync', start_local: local }, ctx(), canUseTool);
+    const result = await (await calendarCreateEventModule.createHandler()).execute({ title: 'Weekly sync', start_local: local }, ctx(), canUseTool);
     expect(result.ok).toBe(true);
     expect(canUseTool).toHaveBeenCalledWith('calendar_create_event', { title: 'Weekly sync', start_ms: ms });
     expect(mocks.connectorExecute).toHaveBeenCalledWith('create_event', { title: 'Weekly sync', start_ms: ms });
@@ -226,7 +226,7 @@ describe('calendar_create_event module entry (direct calls, no ToolExecutor)', (
 
   it('rejects the DST gap, both forms, and a missing start with the exact expected format', async () => {
     vi.stubEnv('TZ', 'America/Los_Angeles');
-    const handler = calendarCreateEventModule.createHandler();
+    const handler = await calendarCreateEventModule.createHandler();
     const allow: CanUseToolFn = async () => ({ allow: true });
     expect(await handler.execute({ title: 'x', start_local: '2026-03-08 02:30' }, ctx(), allow))
       .toMatchObject({ ok: false, code: 'INVALID_ARGS', error: expect.stringContaining('YYYY-MM-DD HH:mm') });
@@ -239,7 +239,7 @@ describe('calendar_create_event module entry (direct calls, no ToolExecutor)', (
 
   it('legacy start_ms still works at module entry', async () => {
     mocks.connectorExecute.mockResolvedValue(eventData('x', 1700000000000, 1700001800000));
-    const result = await calendarCreateEventModule.createHandler().execute({ title: 'x', start_ms: 1700000000000 }, ctx(), async () => ({ allow: true }));
+    const result = await (await calendarCreateEventModule.createHandler()).execute({ title: 'x', start_ms: 1700000000000 }, ctx(), async () => ({ allow: true }));
     expect(result.ok).toBe(true);
     expect(mocks.connectorExecute).toHaveBeenCalledWith('create_event', { title: 'x', start_ms: 1700000000000 });
   });
@@ -268,7 +268,7 @@ describe('calendar_update_event start_local/end_local', () => {
 
   it('module entry converts, and rejects gap / both forms; legacy ms still works', async () => {
     vi.stubEnv('TZ', 'Asia/Shanghai');
-    const handler = calendarUpdateEventModule.createHandler();
+    const handler = await calendarUpdateEventModule.createHandler();
     const allow: CanUseToolFn = async () => ({ allow: true });
     const ms = Date.parse('2026-12-31T23:30:00+08:00');
     mocks.connectorExecute.mockResolvedValue(eventData('x', ms, ms + 3_600_000));
