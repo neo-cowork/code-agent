@@ -21,7 +21,7 @@ function respond(status: number, body: unknown, headers: Record<string, string> 
 async function upload(): Promise<Error> {
   const api = createHttpCodeAgentAPI('http://localhost:8180');
   const file = new File(['# notes'], 'weekly.md', { type: 'text/markdown' });
-  return api.getPathForFile(file).then(
+  return Promise.resolve(api.getPathForFile(file)).then(
     () => { throw new Error('expected rejection'); },
     (e: Error) => e,
   );
