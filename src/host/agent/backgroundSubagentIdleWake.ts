@@ -1,5 +1,7 @@
 import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import type { MessageMetadata } from '../../shared/contract';
+import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
+import { classifyError } from '../model/errorClassifier';
 import { createLogger } from '../services/infra/logger';
 import { formatSystemReminderForCompletions, type SubagentCompletionRecord } from './subagentCompletionNotification';
 import { isSessionNotAccessibleError } from '../services/commandCenter/sessionAccessRetry';
@@ -70,7 +72,7 @@ async function flushWake(sessionId: string): Promise<void> {
       const firstLine = task.title.trim().split(/\r?\n/, 1)[0].trim();
       const characters = Array.from(firstLine);
       const shortName = characters.length > 24 ? `${characters.slice(0, 24).join('').trimEnd()}…` : firstLine;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getAgentErrorMessage(error) ?? (error instanceof Error ? error.message : String(error));
       try {
         // 写不进（登录恢复窗口里会话对当前 owner 不可读）时，这个包装会等登录态
         // 恢复再补写一次——失败句不能跟着唤醒轮一起消失。
@@ -79,7 +81,9 @@ async function flushWake(sessionId: string): Promise<void> {
           sessionId,
           taskId: task.agentId,
           shortName,
-          reason: message.includes('no live owner lease') ? 'owner_missing' : 'wake_failed',
+          reason: message.includes('no live owner lease') || isSessionNotAccessibleError(error) ? 'owner_missing'
+            : classifyError(error) === 'rate_limit' ? 'rate_limited'
+              : message === 'Max iterations reached' ? 'max_iterations' : 'wake_failed',
         });
       } catch (noteError) {
         logger.warn('Background subagent wake failure note not recorded', {
@@ -90,6 +94,7 @@ async function flushWake(sessionId: string): Promise<void> {
       }
     };
     let failureMessage: string | undefined;
+    let failureError: unknown;
     let reportedToUser = false;
     const stopObserving = taskManager.observeAgentEvents((eventSessionId, event, taskId) => {
       if (eventSessionId !== sessionId || taskId) return;
@@ -110,6 +115,7 @@ async function flushWake(sessionId: string): Promise<void> {
         return;
       }
       failureMessage = text;
+      failureError = event.data;
     });
     try {
       await taskManager.startTask(
@@ -124,7 +130,10 @@ async function flushWake(sessionId: string): Promise<void> {
           disableAutoAgent: true,
           terminalErrorSink: (data: unknown) => {
             const payload = data as { message?: unknown };
-            failureMessage ??= String(payload?.message ?? 'wake turn failed');
+            if (!failureMessage) {
+              failureMessage = String(payload?.message ?? 'wake turn failed');
+              failureError = data;
+            }
           },
         },
         messageMetadata,
@@ -133,7 +142,7 @@ async function flushWake(sessionId: string): Promise<void> {
     } finally {
       stopObserving();
     }
-    if (failureMessage) await recordFailure(failureMessage);
+    if (failureMessage) await recordFailure(failureError ?? failureMessage);
   } catch (error) {
     logger.warn('Failed to wake idle parent session for background subagent completion', {
       sessionId,

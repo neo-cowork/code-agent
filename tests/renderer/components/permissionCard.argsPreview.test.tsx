@@ -73,7 +73,7 @@ describe('PermissionCard argsPreview 呈现', () => {
     });
     const html = render();
     expect(html).toContain('data-testid="permission-args-preview"');
-    expect(html).toContain('参数预览');
+    expect(html).toContain('操作内容');
     expect(html).toContain('Bearer ***REDACTED***');
   });
 
@@ -84,7 +84,7 @@ describe('PermissionCard argsPreview 呈现', () => {
     });
     const html = render();
     expect(html).toContain('data-testid="permission-args-preview"');
-    expect(html).toContain('Arguments preview');
+    expect(html).toContain('Action details');
     expect(html).toContain('Bearer ***REDACTED***');
   });
 
@@ -112,7 +112,7 @@ describe('PermissionCard argsPreview 呈现', () => {
     storeState.request = baseRequest({});
     const html = render();
     expect(html).not.toContain('permission-args-preview');
-    expect(html).not.toContain('参数预览');
+    expect(html).not.toContain('操作内容');
   });
 
   it('set_role_proactivity 默认展开旧->新复述，不允许藏进文件写入紧凑卡', () => {
