@@ -29,7 +29,7 @@ if (mode === 'bash') {
   const notices: EnvAssistNotice[] = cases.map(({ pane, klass }) => ({
     id: `production-${pane}`, sessionId: 'bridge-session', runId: 'bridge-run',
     class: klass, phase: 'needs_user', sentenceKey: 'env.sentence',
-    ...(pane === 'automation' ? { target: { id: 'calendar', labelKey: 'env.target.calendar' } } : {}),
+    ...(pane === 'automation' ? { target: { id: 'mail', labelKey: 'env.target.mail' } } : {}),
     action: { kind: 'request_grant', labelKey: 'env.allow', payload: { pane } },
     resume: { mode: 'manual' }, updatedAt: 1,
   }));
@@ -57,7 +57,7 @@ if (mode === 'bash') {
     const bridge = client ? createShellPassiveBridge(client) : null;
     const outcomes = await Promise.all([
       probes.accessibilityProbe(bridge)(), probes.screenRecordingProbe(bridge)(),
-      probes.inputMonitoringProbe(bridge)(), probes.automationProbe(bridge, 'com.apple.iCal')(),
+      probes.inputMonitoringProbe(bridge)(), probes.automationProbe(bridge, 'com.apple.mail')(),
     ]);
     const availability = await route({} as never, { action: 'getAvailability' });
     process.stdout.write(`DIAGNOSTIC ${JSON.stringify({ hasClient: client !== null, outcomes, availability })}\n`);

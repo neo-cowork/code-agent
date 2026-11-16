@@ -361,6 +361,17 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(capturedReason).toBe('dangerous:Sensitive Computer Use action requires explicit confirmation.');
   });
 
+  it('an in-handler approval without a hint still belongs to the calling session and run (11-16 real run: sessionId was null)', async () => {
+    const requests: Array<{ sessionId?: string; runId?: string }> = [];
+    const legacy = {
+      workingDirectory: '/tmp', sessionId: 'session-1', runId: 'run-1',
+      requestPermission: async (request: { sessionId?: string; runId?: string }) => { requests.push(request); return true; },
+    } as unknown as LegacyToolContext;
+    await buildCanUseToolFromLegacy(legacy, 'calendar_delete_event')('calendar_delete_event', { event_uid: 'x' });
+    await buildCanUseToolFromLegacy(legacy, 'calendar_delete_event')('calendar_delete_event', { event_uid: 'x' }, undefined, { sessionId: 'hinted', runId: 'hinted-run' } as never);
+    expect(requests.map((r) => [r.sessionId, r.runId])).toEqual([['session-1', 'run-1'], ['hinted', 'hinted-run']]);
+  });
+
   it('reuses ToolExecutor top-level grant only for the same unhinted handler call', async () => {
     const topLevelArgs = { command: 'git status' };
     const requestPermissionCalls: unknown[] = [];
