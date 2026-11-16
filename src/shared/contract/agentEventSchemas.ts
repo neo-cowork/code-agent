@@ -172,6 +172,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
   type: z.enum(['file_read', 'file_write', 'file_edit', 'file_delete', 'command', 'dangerous_command', 'network', 'mcp', 'directory_access']),
   tool: z.string(),
   details: z.object({
+    calendarApprovalSnapshotFields: z.array(z.string()).optional(),
     path: z.string().optional(),
     filePath: z.string().optional(),
     command: z.string().optional(),
