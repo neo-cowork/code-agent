@@ -2132,7 +2132,26 @@ fn spawn_web_server_recording(
     })?;
     if let Some((bridge_url, bridge_token)) = env_assist_handshake {
         // 先于任何其他写入；句柄保持打开，webServer 靠 stdin EOF 判断父进程死亡。
-        env_assist_bridge::write_handshake(child.stdin.as_mut(), bridge_url, bridge_token);
+        if let Err(error) = env_assist_bridge::write_handshake(child.stdin.as_mut(), bridge_url, bridge_token) {
+            // 写失败 = webServer 日志里会出现 handshake_invalid(stdin_eof)；这里留下壳侧原因，两边对得上。
+            write_shell_event(
+                app,
+                diagnostics,
+                "warning",
+                "desktop-shell-env-assist-handshake-failed",
+                &format!("env assist bridge handshake not delivered to webServer: {error}"),
+                None,
+            );
+        }
+    } else if cfg!(target_os = "macos") {
+        write_shell_event(
+            app,
+            diagnostics,
+            "warning",
+            "desktop-shell-env-assist-bridge-unavailable",
+            "env assist loopback bridge failed to start; webServer spawned without handshake (host will log no_shell_reason handshake_flag_missing)",
+            None,
+        );
     }
     diagnostics.web_server_pid = Some(child.id());
     write_shell_event(
