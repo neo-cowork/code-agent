@@ -46,7 +46,7 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
         {label}
       </Button>
       {open && (
-        <div className="max-w-full rounded-md border border-border-muted bg-surface-subtle px-2 py-1.5 text-[11px] text-zinc-400">
+        <div className="max-w-full shrink-0 rounded-md border border-border-muted bg-surface-subtle px-2 py-1.5 text-[11px] text-zinc-400">
           {items.length > 0 && (
             <ul className="mb-1 space-y-1">
               {items.map((item) => (
