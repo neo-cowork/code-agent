@@ -434,7 +434,6 @@ export const enSettingsSystem = {
       connected: 'Connected',
       enabled: 'Enabled',
       disabled: 'Disabled',
-      empty: 'None',
       separator: ', ',
       availableActionsPrefix: 'Available actions: ',
       capabilitiesPrefix: 'Capabilities: ',
@@ -510,7 +509,6 @@ export const enSettingsSystem = {
         customAppHint: 'For users who already have a custom Feishu app. Password field, never shown after saving; stored only in this device’s secure storage, never in config files.',
       },
       actions: {
-        none: 'None',
         startUsing: 'Use in chat',
         saveAndConnect: 'Save & Connect',
         saving: 'Saving…',
