@@ -9,7 +9,6 @@ import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
-import { PARKED_APPROVAL_ENTRY_PATH } from '../../shared/parkedApprovalLocation';
 import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { getDenialRegistry } from '../security/denialRegistry';
 import { redactCommandSecrets } from '../security/secretRedaction';
@@ -42,7 +41,7 @@ import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
 import { holdStallClock } from './stallObserver';
-import { toolUserLabel } from '../../shared/utils/toolUserLabel';
+import { buildApprovalNotification } from '../services/infra/approvalNotification';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -905,8 +904,8 @@ export class OrchestratorPermissionIsland {
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            title: '有操作等你确认',
-            body: `无人值守任务需要确认「${toolUserLabel(fullRequest.tool)}」，已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+            ...buildApprovalNotification(fullRequest.tool, 'parked'),
+            tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
             dedupeKey: fullRequest.id,

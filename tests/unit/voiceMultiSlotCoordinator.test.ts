@@ -313,7 +313,7 @@ describe('voice multi-slot coordinator', () => {
 
     expect(latest(firstId)).toMatchObject({
       status: 'failed',
-      detail: expect.stringContaining('lane「report」占用 2 小时后仍未收到终态事件'),
+      detail: '「短名1」已经 2 小时没有进展，可能中途异常退出，我已把它标记为失败。',
       failure: {
         code: 'TASK_SLOT_TIMEOUT',
         laneKey: 'report',

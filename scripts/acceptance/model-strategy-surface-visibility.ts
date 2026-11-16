@@ -37,6 +37,7 @@ function includesAll(text: string, values: string[]): boolean {
 function renderDecision(decision: React.ComponentProps<typeof RouteTraceChip>['decision']): string {
   return renderToStaticMarkup(React.createElement(RouteTraceChip, {
     defaultExpanded: true,
+    defaultDiagnosticsExpanded: true,
     decision,
   }));
 }

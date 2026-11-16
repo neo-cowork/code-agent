@@ -12,6 +12,7 @@ import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { modelKeyOptionLabel } from './modelKeyOptionLabel';
 import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
 import { translateCatalogText } from '../../../../utils/catalogText';
 
@@ -81,6 +82,9 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     };
   }, [providerConfigs, settings, strategy]);
 
+  const optionLabel = (provider: ModelProvider, label: string) => modelKeyOptionLabel(
+    label, provider, providerConfigs[provider], t.settings.model.header.keyNeededSuffix,
+  );
   const memoryRoute = settings?.models.routing.memory;
   const effectiveMemoryRoute = memoryRoute ?? settings?.models.routing.fast;
   const profileProviders = useMemo(
@@ -94,8 +98,11 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   const runtimeModelOptions = useMemo(() => buildRuntimeModelOptions(
     effectiveSettings,
     PROVIDER_MODELS.map((provider) => provider.id),
-    { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])), dedupeProviderGroups: false },
-  ), [config.provider, effectiveSettings, profileProviders]);
+    { includeDisabledProviders: Array.from(new Set([
+      ...profileProviders, config.provider,
+      ...Object.keys(providerConfigs).filter((id) => providerConfigs[id]?.enabled !== false) as ModelProvider[],
+    ])), dedupeProviderGroups: false },
+  ), [config.provider, effectiveSettings, profileProviders, providerConfigs]);
 
   const modelOptions = useMemo(() => {
     const options = [...runtimeModelOptions];
@@ -220,12 +227,12 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                   disabled={disabled}
                   className="w-full"
                 >
-                  {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}{strategyText.unavailableSuffix}</option> : null}
+                  {unavailable ? <option value={value}>{optionLabel(slot.provider, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
                   {groupedOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (
                         <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                          {translateCatalogText(option.label, language)}
+                          {optionLabel(option.provider, translateCatalogText(option.label, language))}
                         </option>
                       ))}
                     </optgroup>
@@ -261,14 +268,14 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
             <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
             {memoryRoute && memoryRouteUnavailable ? (
               <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
-                {modelLabel(memoryRoute.provider, memoryRoute.model)}{strategyText.unavailableSuffix}
+                {optionLabel(memoryRoute.provider, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
               </option>
             ) : null}
             {groupedOptions.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.options.map((option) => (
                   <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                    {translateCatalogText(option.label, language)}
+                    {optionLabel(option.provider, translateCatalogText(option.label, language))}
                   </option>
                 ))}
               </optgroup>

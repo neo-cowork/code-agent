@@ -35,7 +35,7 @@ function useTargetSessionAvailable(targetSessionId: string | undefined): boolean
   return Boolean(targetSessionId) && (listed || hasOlder || !settled);
 }
 
-export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
+export function DelegationReceipt({ presentation, superseded = false }: { presentation: DelegationPresentation; superseded?: boolean }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   // 审批未决时活动行不得谎报完成态（N-APPROVAL-PENDING-STATUS-COPY）：连接器写
@@ -50,6 +50,14 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const toolFailure = presentation.state === 'working' || presentation.state === 'cancelled'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
+
+  if (superseded && presentation.state === 'failed') {
+    return (
+      <div className="ml-6 mt-0.5 text-xs text-zinc-500" data-testid="delegation-failure-superseded">
+        {t.delegationFailedActions.superseded}
+      </div>
+    );
+  }
 
   if (presentation.state === 'working') {
     const status = resolveAgentActivityStepStatus({

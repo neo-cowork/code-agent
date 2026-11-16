@@ -11,7 +11,7 @@ chat: {
   thinking: '正在思考…',
   // 回响信号（等模型）
   waitingModel: '信号传输中，正在等待模型回响…',
-  waitingApproval: '任务在等你确认，请处理审批卡…',
+  waitingApproval: '等你批准，请处理审批卡…',
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
@@ -512,7 +512,7 @@ chat: {
   thinking: 'Thinking…',
   // Echo signal (waiting on the model)
   waitingModel: 'Signal sent, awaiting model echo…',
-  waitingApproval: 'This task is waiting for you to confirm. Please review the approval card…',
+  waitingApproval: 'Waiting for your approval — please review the approval card…',
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls

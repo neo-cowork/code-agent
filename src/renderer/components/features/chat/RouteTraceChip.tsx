@@ -12,6 +12,7 @@ import type {
   ModelTaskClass,
   ModelToolPolicy,
 } from '@shared/contract';
+import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { routeTraceDiagnosticsEn, routeTraceDiagnosticsZh } from '../../../i18n/routeTraceDiagnostics';
 
@@ -406,10 +407,17 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
-export const RouteTraceChip: React.FC<{ decision: ModelDecisionEventData; defaultExpanded?: boolean }> = ({ decision, defaultExpanded = false }) => {
-  const { language } = useI18n();
+export const RouteTraceChip: React.FC<{
+  decision: ModelDecisionEventData;
+  defaultExpanded?: boolean;
+  /** 诊断区默认收起；仅验收脚本/静态渲染需要直接看到工程细节时传 true。 */
+  defaultDiagnosticsExpanded?: boolean;
+}> = ({ decision, defaultExpanded = false, defaultDiagnosticsExpanded = false }) => {
+  const { t, language } = useI18n();
   const diagnosticCopy = language === 'en' ? routeTraceDiagnosticsEn : routeTraceDiagnosticsZh;
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(defaultDiagnosticsExpanded);
+  const diagnosticsLabel = t.rendererHumanPipe.routeTrace.diagnostics;
   const requested = formatModel(decision.requestedProvider, decision.requestedModel);
   const resolved = formatModel(decision.resolvedProvider, decision.resolvedModel);
   const changed = requested !== resolved;
@@ -461,35 +469,54 @@ export const RouteTraceChip: React.FC<{ decision: ModelDecisionEventData; defaul
           data-testid="route-trace-details"
         >
           <div className="mb-1 text-zinc-200">{summary}</div>
-          <div className="grid gap-1 sm:grid-cols-2">
-	            <DetailRow label="请求" value={<span className="font-mono text-[10px]">{requested}</span>} />
-	            <DetailRow label="实际" value={<span className="font-mono text-[10px]">{resolved}</span>} />
-	            {providerIdentity && <DetailRow label="Provider" value={providerIdentity} />}
-	            {decision.taskClass && <DetailRow label="任务" value={TASK_LABELS[decision.taskClass]} />}
-            {complexityScore && <DetailRow label="复杂度" value={complexityScore} />}
-            <DetailRow label="计费" value={BILLING_LABELS[decision.billingMode]} />
-            {decision.costPolicy && <DetailRow label="成本" value={COST_LABELS[decision.costPolicy]} />}
-            {decision.speedPolicy && <DetailRow label="速度" value={SPEED_LABELS[decision.speedPolicy]} />}
-            {decision.toolPolicy && <DetailRow label="工具" value={TOOL_LABELS[decision.toolPolicy]} />}
-            {toolPolicyDetail && <DetailRow label="工具策略" value={toolPolicyDetail} />}
-            {visibleTools && <DetailRow label="工具数" value={<span className="font-mono text-[10px]">{visibleTools}</span>} />}
-            {mcpTools && <DetailRow label="MCP" value={<span className="font-mono text-[10px]">{mcpTools}</span>} />}
-            {programmaticTools && <DetailRow label="程序化" value={programmaticTools} />}
-            {toolTokenSavingsBasis && <DetailRow label="估算" value={toolTokenSavingsBasis} />}
-            {toolProviderUsage && <DetailRow label="用量" value={toolProviderUsage} />}
-            {toolProviderReport && <DetailRow label="回传" value={toolProviderReport} />}
-            {toolTokenMeasurement && <DetailRow label="计量" value={toolTokenMeasurement} />}
-            {toolTokenBoundary && <DetailRow label="边界" value={toolTokenBoundary} />}
-            {toolTokenSavingsDetail && <DetailRow label="口径" value={toolTokenSavingsDetail} />}
-            {capabilityLabels && <DetailRow label="能力" value={capabilityLabels} />}
-            {providerHealth && <DetailRow label="状态" value={providerHealth} />}
-            {externalEngineRuntime && <DetailRow label="引擎" value={externalEngineRuntime} />}
-            {externalEngineReliability && <DetailRow label="链路" value={externalEngineReliability} />}
-            {externalEngineTranscript && <DetailRow label="转写" value={externalEngineTranscript} />}
-            {externalEngineFailure && <DetailRow label="失败" value={externalEngineFailure} />}
-            {decision.externalEngine?.failure?.suggestion && <DetailRow label="建议" value={decision.externalEngine.failure.suggestion} />}
-            {decision.externalEngine?.version && <DetailRow label="版本" value={decision.externalEngine.version} />}
-          </div>
+          {decision.externalEngine?.failure?.suggestion && (
+            <div className="mb-1 text-zinc-300" data-testid="route-trace-suggestion">{decision.externalEngine.failure.suggestion}</div>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={diagnosticsExpanded}
+            onClick={() => setDiagnosticsExpanded((value) => !value)}
+            data-testid="route-trace-diagnostics-toggle"
+          >
+            {diagnosticsExpanded
+              ? <ChevronDown className="h-3 w-3 shrink-0 opacity-70" />
+              : <ChevronRight className="h-3 w-3 shrink-0 opacity-70" />}
+            {diagnosticsLabel}
+          </Button>
+          {diagnosticsExpanded && (
+            <div className="mt-1" data-testid="route-trace-diagnostics">
+              <div className="grid gap-1 sm:grid-cols-2">
+                <DetailRow label="请求" value={<span className="font-mono text-[10px]">{requested}</span>} />
+                <DetailRow label="实际" value={<span className="font-mono text-[10px]">{resolved}</span>} />
+                {providerIdentity && <DetailRow label="Provider" value={providerIdentity} />}
+                {decision.taskClass && <DetailRow label="任务" value={TASK_LABELS[decision.taskClass]} />}
+                {complexityScore && <DetailRow label="复杂度" value={complexityScore} />}
+                <DetailRow label="计费" value={BILLING_LABELS[decision.billingMode]} />
+                {decision.costPolicy && <DetailRow label="成本" value={COST_LABELS[decision.costPolicy]} />}
+                {decision.speedPolicy && <DetailRow label="速度" value={SPEED_LABELS[decision.speedPolicy]} />}
+                {decision.toolPolicy && <DetailRow label="工具" value={TOOL_LABELS[decision.toolPolicy]} />}
+                {toolPolicyDetail && <DetailRow label="工具策略" value={toolPolicyDetail} />}
+                {visibleTools && <DetailRow label="工具数" value={<span className="font-mono text-[10px]">{visibleTools}</span>} />}
+                {mcpTools && <DetailRow label="MCP" value={<span className="font-mono text-[10px]">{mcpTools}</span>} />}
+                {programmaticTools && <DetailRow label="程序化" value={programmaticTools} />}
+                {toolTokenSavingsBasis && <DetailRow label="估算" value={toolTokenSavingsBasis} />}
+                {toolProviderUsage && <DetailRow label="用量" value={toolProviderUsage} />}
+                {toolProviderReport && <DetailRow label="回传" value={toolProviderReport} />}
+                {toolTokenMeasurement && <DetailRow label="计量" value={toolTokenMeasurement} />}
+                {toolTokenBoundary && <DetailRow label="边界" value={toolTokenBoundary} />}
+                {toolTokenSavingsDetail && <DetailRow label="口径" value={toolTokenSavingsDetail} />}
+                {capabilityLabels && <DetailRow label="能力" value={capabilityLabels} />}
+                {providerHealth && <DetailRow label="状态" value={providerHealth} />}
+                {externalEngineRuntime && <DetailRow label="引擎" value={externalEngineRuntime} />}
+                {externalEngineReliability && <DetailRow label="链路" value={externalEngineReliability} />}
+                {externalEngineTranscript && <DetailRow label="转写" value={externalEngineTranscript} />}
+                {externalEngineFailure && <DetailRow label="失败" value={externalEngineFailure} />}
+                {decision.externalEngine?.version && <DetailRow label="版本" value={decision.externalEngine.version} />}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
