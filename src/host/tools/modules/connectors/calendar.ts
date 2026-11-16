@@ -11,25 +11,13 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import {
-  appleScriptFailureLogDetail,
-  describeAppleScriptFailure,
-  isAppleScriptFailure,
-} from '../../../connectors/native/osascript';
+import { isCalendarFailure } from '../../../connectors/native/calendar';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
 import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
-
-const MAX_CONSECUTIVE_LIST_EVENTS_TIMEOUTS = 3;
-const LIST_EVENTS_RETRY_CAP_MESSAGE = [
-  'Calendar list_events timed out 3 consecutive times in this session (retry cap reached).',
-  'Stop retrying list_events automatically; ask the user for a narrower date range or a specific calendar name.',
-  '（当前会话日历查询已连续超时 3 次，达到重试上限：请停止自动重试，向用户确认更窄的时间范围或具体的日历名称。）',
-].join(' ');
-const sessionListEventsTimeouts = new Map<string, number>();
 
 interface CalendarEvent {
   calendar: string;
@@ -146,56 +134,29 @@ async function executeCalendar(
     }
 
     // list_events
-    if (ctx.sessionId) {
-      sessionListEventsTimeouts.delete(ctx.sessionId);
-    }
     const events = result.data as CalendarEvent[];
-    const unreadNote = typeof result.summary === 'string' && result.summary.includes('未包含：')
-      ? `\n注意：${result.summary}`
-      : '';
     const baseOutput = events.length > 0
       ? `日历事件 (${events.length})：\n${events.map(formatEvent).join('\n')}`
       : '没有找到匹配的日历事件。';
-    const output = `${formatConnectorNow()}\n${baseOutput}${unreadNote}`;
+    const output = `${formatConnectorNow()}\n${baseOutput}`;
     return {
       ok: true,
       output,
       meta: buildCalendarMeta(ctx, action, output, { count: events.length, events }),
     };
   } catch (error) {
-    const osascriptFailure = isAppleScriptFailure(error);
-    const failure = describeAppleScriptFailure(
-      'Calendar',
-      error,
-      action === 'list_events' ? { timeoutContext: 'calendar_list_events' } : undefined,
-    );
-    const failureCode = osascriptFailure ? failure.code : 'connector_error';
+    // EventKit 失败带机器码（not_authorized 走授权卡 / 停车续做）；文案不含原生细节
+    const calendarFailure = isCalendarFailure(error);
     ctx.logger.warn('calendar connector failed', {
       connector: 'calendar',
-      code: failureCode,
-      detail: appleScriptFailureLogDetail(error),
+      code: calendarFailure ? error.code : 'connector_error',
     });
-    if (action === 'list_events' && ctx.sessionId) {
-      if (failureCode === 'timeout') {
-        const nextCount = (sessionListEventsTimeouts.get(ctx.sessionId) ?? 0) + 1;
-        sessionListEventsTimeouts.set(ctx.sessionId, nextCount);
-        if (nextCount >= MAX_CONSECUTIVE_LIST_EVENTS_TIMEOUTS) {
-          return {
-            ok: false,
-            error: LIST_EVENTS_RETRY_CAP_MESSAGE,
-            code: 'timeout',
-          };
-        }
-      } else {
-        sessionListEventsTimeouts.delete(ctx.sessionId);
-      }
-    }
     return {
       ok: false,
-      error: osascriptFailure
-        ? failure.message
+      error: calendarFailure
+        ? error.message
         : `Calendar connector failed: ${error instanceof Error ? error.message : String(error)}`,
-      ...(osascriptFailure ? { code: failure.code } : {}),
+      ...(calendarFailure ? { code: error.code } : {}),
     };
   }
 }

@@ -7,7 +7,7 @@
   "reason": "user-selected",
   "billingMode": "payg",
   "fallbackFrom": null,
-  "strategySummary": "按用户指定主任务模型执行；provider 明确回传 programmatic tool saved tokens。",
+  "strategySummary": "按用户指定主任务模型执行；服务商明确回传工具节省量。",
   "taskClass": "multi-tool",
   "costPolicy": "user-locked",
   "speedPolicy": "normal",
@@ -21,7 +21,7 @@
     "tokenSavings": {
       "status": "provider-reported",
       "savedTokens": 42,
-      "detail": "provider 已回传 programmatic tool saved tokens：42 tokens；本轮 provider usage 已回传：输入 500 / 输出 50 tokens。",
+      "detail": "服务商已回传工具节省量：42 tokens；本轮服务商用量已回传：输入 500 / 输出 50 tokens。",
       "measurement": {
         "savingsSource": "provider-reported",
         "usageSource": "model-response-usage",
