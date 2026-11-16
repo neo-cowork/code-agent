@@ -75,8 +75,8 @@ const BILLING_LABELS: Record<BillingMode, string> = {
 const SPEED_LABELS: Record<ModelSpeedPolicy, string> = {
   'fast-path': '快模型优先',
   normal: '常规',
-  'provider-degraded': 'provider 状态风险',
-  'fallback-recovery': 'fallback 恢复',
+  'provider-degraded': '服务商状态异常',
+  'fallback-recovery': '回退后恢复',
 };
 
 const TOOL_LABELS: Record<ModelToolPolicy, string> = {
@@ -161,7 +161,7 @@ const ENGINE_TOOL_LABELS: Record<NonNullable<ModelExternalEngineSnapshot['reliab
   none: '无工具',
   read_only_cli_tools: '只读 CLI 工具',
   workspace_tools: '工作区工具',
-  mcp_bridge: 'MCP bridge',
+  mcp_bridge: '外部工具桥接',
   unknown: '工具未知',
 };
 
@@ -239,7 +239,7 @@ function formatProviderIdentity(decision: ModelDecisionEventData): string | null
       : identity.protocol
         ? `协议 ${identity.protocol}`
         : null,
-    identity.endpoint ? `endpoint ${identity.endpoint}` : null,
+    identity.endpoint ? `地址 ${identity.endpoint}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
 }
@@ -254,9 +254,9 @@ function formatVisibleTools(decision: ModelDecisionEventData): string | null {
 function formatMcpTools(decision: ModelDecisionEventData): string | null {
   const strategy = decision.toolStrategy;
   if (!strategy) return null;
-  if (strategy.mcpToolCount <= 0) return '未选择 MCP';
+  if (strategy.mcpToolCount <= 0) return '未使用外部工具';
   const servers = strategy.mcpServerIds?.length ? ` · ${strategy.mcpServerIds.join(', ')}` : '';
-  return `${strategy.mcpToolCount} 个 MCP 工具${servers}`;
+  return `${strategy.mcpToolCount} 个外部工具${servers}`;
 }
 
 function formatProgrammaticTools(decision: ModelDecisionEventData): string | null {
@@ -265,13 +265,13 @@ function formatProgrammaticTools(decision: ModelDecisionEventData): string | nul
   const status = strategy.programmaticToolCalling === 'available' ? '可用' : '不可用';
   const savings = (() => {
     if (strategy.tokenSavings?.status === 'provider-reported' && strategy.tokenSavings.savedTokens !== undefined) {
-      return ` · provider 回传节省 ${strategy.tokenSavings.savedTokens} tokens`;
+      return ` · 服务商回传节省 ${strategy.tokenSavings.savedTokens} tokens`;
     }
     if (strategy.tokenSavings?.status === 'estimated' && strategy.tokenSavings.savedTokens !== undefined) {
       return ` · 本地估算少占 ${strategy.tokenSavings.savedTokens} tokens 上下文`;
     }
     if (strategy.tokenSavings?.status === 'not-measured') {
-      return ' · token saved 未计量';
+      return ' · 节省量未计量';
     }
     return '';
   })();
@@ -280,7 +280,7 @@ function formatProgrammaticTools(decision: ModelDecisionEventData): string | nul
 
 function formatToolPolicyDetail(decision: ModelDecisionEventData): string | null {
   if (decision.toolPolicy === 'disabled-by-model') {
-    return '当前执行模型不支持工具调用；本轮按纯文本执行，MCP / 程序化工具不会下发。';
+    return '当前执行模型不支持工具调用；本轮按纯文本执行，外部工具和程序化工具不会启用。';
   }
   if (decision.toolPolicy === 'unknown') {
     return '工具能力未知；以运行时实际下发工具为准。';
@@ -288,8 +288,17 @@ function formatToolPolicyDetail(decision: ModelDecisionEventData): string | null
   return null;
 }
 
+// host 生成的诊断句仍带英文内部词（改 host 串要重录 request-replay 快照，只能在 mini 录），展示时在这里映射成用户语义。
+function localizeDiagnosticDetail(text: string): string {
+  return text
+    .replace(/\s*provider usage\s*/g, '服务商用量')
+    .replace(/provider 已回传/g, '服务商已回传')
+    .replace(/\s*(?:saved tokens|token saved)\s*/g, '节省量');
+}
+
 function formatToolTokenSavingsDetail(decision: ModelDecisionEventData): string | null {
-  return decision.toolStrategy?.tokenSavings?.detail ?? null;
+  const detail = decision.toolStrategy?.tokenSavings?.detail;
+  return detail ? localizeDiagnosticDetail(detail) : null;
 }
 
 function formatToolTokenSavingsBasis(decision: ModelDecisionEventData): string | null {
@@ -307,13 +316,13 @@ function formatToolProviderUsage(decision: ModelDecisionEventData): string | nul
   const usage = decision.toolStrategy?.tokenSavings?.providerUsage;
   if (!usage) return null;
   const total = usage.totalTokens ?? (usage.inputTokens + usage.outputTokens);
-  return `provider usage · 输入 ${usage.inputTokens} / 输出 ${usage.outputTokens} tokens · 合计 ${total}`;
+  return `服务商用量 · 输入 ${usage.inputTokens} / 输出 ${usage.outputTokens} tokens · 合计 ${total}`;
 }
 
 function formatToolProviderReport(decision: ModelDecisionEventData): string | null {
   const report = decision.toolStrategy?.tokenSavings?.providerReport;
   if (!report) return null;
-  return `provider-reported saved tokens · ${report.savedTokens} tokens`;
+  return `服务商回传的节省量 · ${report.savedTokens} tokens`;
 }
 
 function formatToolTokenSavingsMeasurement(decision: ModelDecisionEventData): string | null {
@@ -321,15 +330,15 @@ function formatToolTokenSavingsMeasurement(decision: ModelDecisionEventData): st
   if (!measurement) return null;
   const savingsSource = (() => {
     if (measurement.savingsSource === 'tool-spec-local-estimate') return '上下文少占=本地估算';
-    if (measurement.savingsSource === 'provider-reported') return '节省=provider 回传';
+    if (measurement.savingsSource === 'provider-reported') return '节省=服务商回传';
     return '节省=未计量';
   })();
   const usageSource = measurement.usageSource === 'model-response-usage'
-    ? '用量=provider usage'
+    ? '用量=服务商用量'
     : '用量=未回传';
   const reported = measurement.providerReportedSavings
-    ? 'provider 已回传 saved tokens'
-    : '无 provider-reported saved tokens';
+    ? '服务商已回传节省量'
+    : '无服务商回传的节省量';
   return `${savingsSource} · ${usageSource} · ${reported}`;
 }
 
@@ -338,7 +347,7 @@ function formatToolTokenSavingsBoundary(decision: ModelDecisionEventData): strin
   if (!savings?.measurement) return null;
   if (savings.measurement.providerReportedSavings) return null;
   if (savings.status === 'estimated' || savings.measurement.savingsSource === 'tool-spec-local-estimate') {
-    return 'saved tokens 是工具规格少占上下文的本地估算，不等同 provider 账单节省；真实成本看 provider usage。';
+    return '节省量是工具规格少占上下文的本地估算，不等同服务商账单节省；真实成本看服务商用量。';
   }
   return null;
 }
@@ -361,9 +370,9 @@ function formatExternalEngineReliability(engine?: ModelExternalEngineSnapshot): 
     ENGINE_AUTH_LABELS[reliability.authState],
     ENGINE_QUOTA_LABELS[reliability.quotaState],
     ENGINE_STREAM_LABELS[reliability.streamingMode],
-    reliability.partialMessages ? 'partial messages' : null,
+    reliability.partialMessages ? '分段输出' : null,
     ENGINE_TOOL_LABELS[reliability.toolSupport],
-    reliability.mcpBridge ? 'MCP bridge' : null,
+    reliability.mcpBridge ? '外部工具桥接' : null,
   ].filter(Boolean).join(' · ');
 }
 

@@ -184,8 +184,10 @@ export function rateLimitMiddleware(req: Request, res: Response, next: NextFunct
     ? publicPath : req.path;
   const result = checkRateLimit(ip, routePath);
   if (!result.allowed) {
-    res.setHeader('Retry-After', String(Math.ceil((result.retryAfterMs || 60_000) / 1000)));
-    res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    const retryAfterSeconds = Math.ceil((result.retryAfterMs || 60_000) / 1000);
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    // body 同值：跨域 renderer 读不到 Retry-After 头（无 Expose-Headers）
+    res.status(429).json({ error: 'Too many requests. Please try again later.', retryAfterSeconds });
     return;
   }
   next();

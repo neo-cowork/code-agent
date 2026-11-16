@@ -16,6 +16,7 @@ import {
   type SubagentEventIdentity,
   type SubagentRunEndStatus,
 } from './subagentLifecycleEvents';
+import { SUBAGENT_FILES_CHANGED_MAX } from '../../shared/constants';
 import { noteStreamProgress } from './stallObserver';
 import type { SubagentEventPort } from './subagentExecutorTypes';
 import { extractWorkbenchReferenceFromToolCall } from '../../shared/contract/workbenchTools';
@@ -123,8 +124,11 @@ export function createSubagentTurnObservability(input: {
     if (!input.events.detached && !input.events.backgroundDurableAgentId) noteStreamProgress(input.sessionId);
   };
   let mutationPaths = createSubagentMutationPathSlot();
+  // 整个 run 的去重累计（跨 turn 不重置），用于完成账本 filesChanged。
+  const runChangedPaths = new Set<string>();
   return {
     identity: eventScope.identity,
+    getFilesChanged: (): string[] => [...runChangedPaths].slice(0, SUBAGENT_FILES_CHANGED_MAX),
     getToolCallCount: () => recorder.getEvents().filter((event) => event.type === 'tool_dispatch').length,
     startTurn(iteration: number): string {
       mutationPaths = createSubagentMutationPathSlot();
@@ -172,6 +176,7 @@ export function createSubagentTurnObservability(input: {
         modifiedPaths: mutationPaths,
         workspaceMutationSnapshot,
       });
+      mutationPaths.forEach((filePath) => runChangedPaths.add(filePath));
       noteForegroundProgress();
       eventScope.emitToolCallEnd(toolCall.id, result, durationMs);
     },
