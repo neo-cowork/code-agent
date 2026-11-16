@@ -1,7 +1,8 @@
 import { reconcileAgentNodeLifecycle } from '../../../../../utils/agentNodeLifecycle';
 import { agentNodeLabel, backgroundTaskLabel } from '../../../../../utils/agentRoleLabel';
 import { humanizeToolStep, parseDelegateSessionReceipt } from '../../../../../utils/humanizeToolStep';
-import { AgentFailureCode } from '@shared/contract/agentFailure';
+import { AgentFailureCode, isAgentFailureCode } from '@shared/contract/agentFailure';
+import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
@@ -48,6 +49,10 @@ export interface DelegationPresentation {
   memberId?: string;
   /** 失败回执「重试」草稿里的任务标题（来自派发时的任务描述，不是角色名）。 */
   retryTitle?: string;
+  /** 失败原因的归类键（failureCode，缺省时按失败文本分类）；连续同因失败的任务卡据此折叠。 */
+  failureCause?: string;
+  /** 终态时间戳：判断「其后是否出现过成功回复」。 */
+  endedAt?: number;
 }
 
 const TASK_STATS_MARKER = '\nStats:\n';
@@ -195,6 +200,13 @@ function completedStepCount(step: LastToolStep | undefined, current: number | un
   return count > 0 ? count : undefined;
 }
 
+function taskFailureCause(task: Task): string | undefined {
+  const reason = task.failure?.reason;
+  if (isAgentFailureCode(reason)) return `code:${reason}`;
+  const category = classifyAgentError({ message: task.failure?.message || task.summary })?.category;
+  return category ? `category:${category}` : undefined;
+}
+
 function fromTask(task: Task, t: Translations): DelegationPresentation {
   const terminal = isTaskTerminalStatus(task.status);
   const state: DelegationReceiptState = !terminal
@@ -219,6 +231,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     }),
     failure: state === 'failed' ? backgroundTaskFailureCopy(task, t) ?? undefined : undefined,
     memberId: task.id,
+    ...(state === 'failed' ? { failureCause: taskFailureCause(task), endedAt: task.completedAt ?? task.updatedAt } : {}),
     toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
