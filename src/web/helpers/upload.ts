@@ -97,13 +97,30 @@ export function scheduleExpiredUploadReap(db: BetterSqlite3.Database | null): vo
   setTimeout(() => reapExpiredUploadDirs(db), CHAT_UPLOAD_REAP_DELAY_MS).unref();
 }
 
+const MAX_UPLOAD_SEGMENT_BYTES = 200;
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  let result = '';
+  let bytes = 0;
+  for (const character of value) {
+    bytes += Buffer.byteLength(character, 'utf8');
+    if (bytes > maxBytes) break;
+    result += character;
+  }
+  return result;
+}
+
 function sanitizePathSegment(segment: string): string {
   const cleaned = segment
-    .replace(/[/\\]/g, '')
     .replace(/\.\.+/g, '.')
-    .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return cleaned || 'file';
+    .replace(/[^\p{L}\p{M}\p{N}._-]/gu, '_')
+    .replace(/^_+|_+$/g, '') || 'file';
+  if (Buffer.byteLength(cleaned, 'utf8') <= MAX_UPLOAD_SEGMENT_BYTES) return cleaned;
+
+  // Reserve the extension, but bound even an unusually long extension itself.
+  const extension = truncateUtf8(path.extname(cleaned), MAX_UPLOAD_SEGMENT_BYTES - 4);
+  const stem = cleaned.slice(0, cleaned.length - path.extname(cleaned).length);
+  return truncateUtf8(stem, MAX_UPLOAD_SEGMENT_BYTES - Buffer.byteLength(extension, 'utf8')) + extension;
 }
 
 function sanitizeRelativePath(relativePath?: string): string[] {
