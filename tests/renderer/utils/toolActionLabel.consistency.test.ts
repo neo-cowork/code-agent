@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { permissionNoticeBody, toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
+import { permissionNotice, toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
 import { getBackgroundTaskToolLabel, getHumanToolLabel } from '../../../src/renderer/utils/toolHumanLabel';
 import { describeApproval } from '../../../src/renderer/components/PermissionDialog/describeApproval';
 import { getPermissionConfig } from '../../../src/renderer/components/PermissionDialog/utils';
@@ -39,7 +39,7 @@ for (const language of ['zh', 'en'] as const) {
         expect(getHumanToolLabel({ toolName: tool, labels: t.receiptPresentation.humanToolLabels })).toBe(expected);
         expect(getBackgroundTaskToolLabel({ toolName: tool, labels: t.receiptPresentation.humanToolLabels })).toBe(expected);
         expect(describeApproval(request, t, language).title).toBe(expected);
-        if (language === 'zh') expect(permissionNoticeBody(tool)).toBe(`需要授权：${expected}`);
+        if (language === 'zh') expect(permissionNotice(tool).body).toBe(`需要授权：${expected}`);
       });
     }
     it('file and command translation/configuration consumers share the canonical names', () => {

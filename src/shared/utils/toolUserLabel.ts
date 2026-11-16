@@ -90,8 +90,3 @@ export function permissionNotice(
     ? '. The task is paused. Open Agent Neo to review the unattended task.'
     : `。任务已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`}` };
 }
-
-/** Compatibility entry for callers needing only the approval body. */
-export function permissionNoticeBody(toolName?: string, language: 'zh' | 'en' = 'zh'): string {
-  return permissionNotice(toolName, language).body;
-}

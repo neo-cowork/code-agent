@@ -1,6 +1,6 @@
 // N-FIX-UI-RAW-TOOL-NAMES-EXPOSED：host 通知/收件箱不得把内部工具名、原始命令露给用户
 import { describe, expect, it } from 'vitest';
-import { permissionNotice, permissionNoticeBody, toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
+import { permissionNotice, toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
 
 describe('toolUserLabel', () => {
   it.each([
@@ -40,11 +40,11 @@ describe('toolUserLabel', () => {
     expect(permissionNotice(undefined, 'zh').body).toBe('请求执行权限');
   });
   it('通知动作名跟随界面语言，保留原有通知模板', () => {
-    expect(permissionNoticeBody('Bash', 'en')).toContain('Run command');
-    expect(permissionNoticeBody('Write', 'en')).toContain('Write file');
-    expect(permissionNoticeBody('Edit', 'en')).toContain('Edit file');
-    expect(permissionNoticeBody('Read', 'en')).toContain('Read file');
-    expect(permissionNoticeBody('Bash')).toBe('需要授权：运行命令');
+    expect(permissionNotice('Bash', 'en').body).toContain('Run command');
+    expect(permissionNotice('Write', 'en').body).toContain('Write file');
+    expect(permissionNotice('Edit', 'en').body).toContain('Edit file');
+    expect(permissionNotice('Read', 'en').body).toContain('Read file');
+    expect(permissionNotice('Bash').body).toBe('需要授权：运行命令');
   });
   it('英文界面给英文动作名', () => {
     expect(toolUserLabel('Bash', 'en')).toBe('Run command');
