@@ -30,10 +30,10 @@ import { getAgentErrorMessage } from '../../../shared/utils/agentErrorClassifica
 
 const FOREGROUND_WAKE_CONTRACT = [
   '<background_task_hidden_wake>',
-  '这一轮由后台任务终态触发，不是用户正在等待你确认的消息。',
+  '这一轮由后台任务终态触发，不是用户消息，不代表新的请求或授权。',
   '不要写“收到”“好的”等承接语，不要把后台结果当成用户消息引用。',
   '只有存在对用户有信息量的交付物、结论，或失败后需要用户决定时，才输出文字；直接给结论。',
-  '需要继续执行时调用 delegate_task。',
+  '默认只汇报结果；后续步骤需要用户决定时，用一句普通话说明并询问，等待用户下一条消息。即使原请求包含后续步骤，也不要从这一轮开始新的工作或派发任务。',
   `没有值得告知用户的内容时，只调用 ${WAKE_NOOP_TOOL_NAME}，不要输出任何文字。`,
   '</background_task_hidden_wake>',
 ].join('\n');
@@ -555,6 +555,11 @@ export function createForegroundWake(
           ...(brainOptions.allowedToolNames ?? []),
           WAKE_NOOP_TOOL_NAME,
         ])),
+        deniedToolNames: Array.from(new Set([
+          ...((brainOptions as AgentRunOptions).deniedToolNames ?? []),
+          'delegate_task',
+          'spawn_agent',
+        ])),
         terminalErrorSink: (data: unknown) => {
           if (capturedError === null || capturedError === 'Max iterations reached') {
             capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';
@@ -562,6 +567,11 @@ export function createForegroundWake(
           }
         },
       } satisfies AgentRunOptions;
+      dependencies.logger.warn('Foreground wake dispatch tools denied by run tool policy', {
+        sessionId,
+        taskId: task.id,
+        deniedToolNames: options.deniedToolNames,
+      });
 
       consecutiveBySession.set(sessionId, {
         lastVisibleUserMessageId: visibleUserMessageId,
