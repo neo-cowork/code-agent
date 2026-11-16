@@ -232,7 +232,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   notRunPrefix: '未执行',
   rawFailureCodes: {
     ENOENT: '找不到这个文件或目录，请确认路径是否正确',
-    INVALID_ARGS: '参数不正确，请换个说法重新描述需求',
+    INVALID_ARGS: '这一步准备的内容不完整，Neo 会调整后再试',
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
@@ -317,7 +317,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   notRunPrefix: 'Not run',
   rawFailureCodes: {
     ENOENT: 'Could not find that file or folder; check the path',
-    INVALID_ARGS: 'The request was not understood; try rephrasing it',
+    INVALID_ARGS: 'This step was set up incompletely; Neo will adjust and try again',
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
