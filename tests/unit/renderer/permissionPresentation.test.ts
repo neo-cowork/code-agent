@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
-import { permissionConsequence, permissionSummary, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { permissionConsequence, permissionSummary, isSafeDefaultDeny, defaultPermissionViewMode } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
 import { decisionCardEn, decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
@@ -121,7 +121,7 @@ describe('isSafeDefaultDeny', () => {
   });
 });
 
-it('describes unknown command risk without calling it safe', () => {
+it('keeps unknown command risk off the face', () => {
   const request: PermissionRequest = {
     ...baseRequest,
     tool: 'Bash',
@@ -129,7 +129,7 @@ it('describes unknown command risk without calling it safe', () => {
     details: { command: './bin/kill -9 12345', commandRiskLevel: 'unknown' },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
+  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
 });
 
 describe('per-app grant card consequence suppression', () => {
@@ -160,10 +160,10 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' }, command: 'chmod 777 ~/.ssh/id_rsa' },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh)).toBeUndefined();
   });
 
-  it('forceConfirm 的按应用请求（appGrantCard=false）仍保留命令后果行', () => {
+  it('forceConfirm 的按应用请求也不叠普通命令后果行', () => {
     const request: PermissionRequest = {
       ...baseRequest,
       tool: 'computer_use',
@@ -172,11 +172,11 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' } },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh)).toBeUndefined();
   });
 });
 
-it('shows the deterministic command guard reason instead of generic local-risk copy', () => {
+it('keeps the deterministic command guard reason in details', () => {
   const request: PermissionRequest = {
     ...baseRequest,
     tool: 'Bash',
@@ -198,7 +198,7 @@ it('shows the deterministic command guard reason instead of generic local-risk c
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
+  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
 });
 
 it.each([
@@ -226,7 +226,7 @@ it.each([
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('将执行高风险命令，可能覆盖本机系统或项目状态。');
+  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
   expect(request.reason).toContain('deterministic supplement');
 });
 
@@ -256,8 +256,8 @@ describe('device / special path copy', () => {
     };
 
     const summary = permissionSummary(request, zh);
-    expect(summary).toBe('允许编辑 /dev/null（工作区外）？');
-    expect(summary).not.toBe('允许编辑 null（工作区外）？');
+    expect(summary).toBe('允许编辑 /dev/null？');
+    expect(summary).not.toBe('允许编辑 null？');
   });
 
   it('host-marked device uses the device copy and skips overwrite wording', () => {
@@ -311,7 +311,7 @@ describe('device / special path copy', () => {
 
   it('titles /dev/stdout with the full path and does not infer a device from the path', () => {
     const request = writeRequest('/dev/stdout');
-    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
+    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout？');
     expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
     expect(permissionConsequence(request, zh)).not.toContain('设备文件');
   });
@@ -325,7 +325,7 @@ describe('device / special path copy', () => {
       boundary: { id: 'file.project_write' },
     };
     expect(permissionSummary(inside, zh)).toBe('允许编辑 report.md？');
-    expect(permissionConsequence(inside, zh)).toBe('将写入 /workspace/src/report.md（约 1 个文件），可能覆盖现有内容。');
+    expect(permissionConsequence(inside, zh)).toBe('将写入 report.md（约 1 个文件），可能覆盖现有内容。');
 
     const outside: PermissionRequest = {
       ...baseRequest,
@@ -334,7 +334,7 @@ describe('device / special path copy', () => {
       details: { path: '/tmp/notes.txt' },
       boundary: { id: 'file.external_write' },
     };
-    expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt（工作区外）？');
+    expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt？');
     expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
   });
 
@@ -374,7 +374,7 @@ describe('device / special path copy', () => {
         affectedFileCount: 3,
       },
     };
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 /tmp/projects/foo（约 3 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 foo（约 3 个文件），不进回收站。');
   });
 });
 
@@ -396,14 +396,14 @@ describe('deletion consequence file count for multi-target rm', () => {
     const request = deletionRequest('sudo rm ./旧日志-1.log ./旧日志-2.log', {
       commandSecurityFlags: ['sudo_rm'],
     });
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./旧日志-1.log（约 2 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 旧日志-1.log（约 2 个文件），不进回收站。');
   });
 
   it('3 个确切目标（带 -- 与引号）按解析目标数显示约 3 个文件', () => {
     const request = deletionRequest('sudo rm -- "./旧日志-1.log" "./旧日志-2.log" "./旧日志-3.log"', {
       commandSecurityFlags: ['sudo_rm'],
     });
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./旧日志-1.log（约 3 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 旧日志-1.log（约 3 个文件），不进回收站。');
   });
 
   it('宿主盘点的计数优先于解析目标数（3 目标求和=3）', () => {
@@ -412,12 +412,12 @@ describe('deletion consequence file count for multi-target rm', () => {
       affectedPath: '/workspace/旧日志-1.log',
       affectedFileCount: 3,
     });
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 /workspace/旧日志-1.log（约 3 个文件），不进回收站。');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 旧日志-1.log（约 3 个文件），不进回收站。');
   });
 
   it('递归多目标且宿主未盘点：不写数字，改说「多个文件」', () => {
     const request = deletionRequest('rm -rf ./d1 ./d2');
-    expect(permissionConsequence(request, zh)).toBe('将永久删除 ./d1（多个文件），不进回收站。');
+    expect(permissionConsequence(request, zh)).toBe('将永久删除 d1（多个文件），不进回收站。');
   });
 
   it('通配符命令说「多个文件」，绝不退回「约 1 个文件」', () => {
@@ -427,7 +427,7 @@ describe('deletion consequence file count for multi-target rm', () => {
       affectedPath: '/workspace/./*.log',
     });
     const consequence = permissionConsequence(request, zh);
-    expect(consequence).toBe('将永久删除 /workspace/./*.log（多个文件），不进回收站。');
+    expect(consequence).toBe('将永久删除 *.log（多个文件），不进回收站。');
     expect(consequence).toContain('多个文件');
     expect(consequence).not.toContain('约 1 个文件');
   });
@@ -460,15 +460,59 @@ describe('deletion consequence file count for multi-target rm', () => {
     const twoTargets = deletionRequest('sudo rm ./old-log-1.log ./old-log-2.log', {
       commandSecurityFlags: ['sudo_rm'],
     });
-    expect(permissionConsequence(twoTargets, en)).toBe('Permanently deletes ./old-log-1.log (2 files) without using Trash.');
+    expect(permissionConsequence(twoTargets, en)).toBe('Permanently deletes old-log-1.log (2 files) without using Trash.');
 
     const wildcard = deletionRequest('rm -rf ./*.log', {
       commandSecurityFlags: ['recursive_delete_targeted'],
       affectedPath: '/workspace/./*.log',
     });
     const consequence = permissionConsequence(wildcard, en);
-    expect(consequence).toBe('Permanently deletes /workspace/./*.log (multiple files) without using Trash.');
+    expect(consequence).toBe('Permanently deletes *.log (multiple files) without using Trash.');
     expect(consequence).toContain('(multiple files)');
     expect(consequence).not.toMatch(/\(1 files?\)/);
+  });
+});
+
+describe('defaultPermissionViewMode keeps only decision-critical special surfaces expanded', () => {
+  it.each([
+    { ...baseRequest, details: { browserSessionGrant: { target: 'open@example.com', previousOrigins: [] } } },
+    { ...baseRequest, rawArgs: { to: ['team@example.com'], content: 'Contract notes' } },
+    { ...baseRequest, details: { action: 'sandbox_escalate_once', deniedPath: '/shared/notes.md' } },
+    { ...baseRequest, reasonCode: PermissionRequestReason.SensitiveStepHandback },
+    { ...baseRequest, details: { sensitiveStep: { kind: 'password' as const } } },
+    { ...baseRequest, details: { targetApp: { name: 'Notes' } } },
+  ])('keeps the specialized consent surface expanded: %j', (request) => {
+    expect(defaultPermissionViewMode(request)).toBe('expanded');
+  });
+});
+
+
+describe('new files, target display and file-count grammar', () => {
+  const zh = decisionCardZh as never;
+  const en = decisionCardEn as never;
+  const write: PermissionRequest = { ...baseRequest, tool: 'Write', type: 'file_write', boundary: { id: 'file.project_write' }, details: { path: '/workspace/contract-notes.md', targetKind: 'absent' } };
+  it('only suppresses a known absent target inside the workspace', () => {
+    expect(permissionConsequence(write, zh)).toBeUndefined();
+    expect(permissionConsequence({ ...write, type: 'file_edit' }, en)).toBeUndefined();
+    for (const targetKind of ['regular', 'unknown', undefined] as const) {
+      expect(permissionConsequence({ ...write, details: { ...write.details, targetKind } }, zh)).toContain('可能覆盖现有内容');
+    }
+    expect(permissionConsequence({ ...write, boundary: { id: 'file.external_write' } }, zh)).toContain('工作区外');
+    expect(permissionConsequence({ ...write, reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny }, zh)).toBe(decisionCardZh.decisionCard.permission.consequenceUncertainWriteTarget);
+    expect(permissionConsequence({ ...write, details: { path: '/dev/null', targetKind: 'device' } }, zh)).toContain('设备文件 /dev/null');
+  });
+  it.each([
+    ['/Users/example/Documents/contract-notes.md', '~/Documents/contract-notes.md'],
+    ['/home/example/Documents/contract-notes.md', '~/Documents/contract-notes.md'],
+    ['C:\\Users\\example\\Documents\\contract-notes.md', '~/Documents/contract-notes.md'],
+    ['/shared/contract-notes.md', '/shared/contract-notes.md'],
+  ])('outside target %s is displayed as %s', (target, display) => {
+    const result = permissionConsequence({ ...write, boundary: { id: 'file.external_write' }, details: { path: target, targetKind: 'absent' } }, en);
+    expect(result).toBe(`Writes ${display} outside the workspace (1 file) and may overwrite existing content.`);
+    expect(result).not.toContain('/Users/');
+  });
+  it.each([0, 1, 2, 312])('English deletion count %i uses singular only for one', (count) => {
+    const result = permissionConsequence({ ...write, type: 'file_delete', details: { path: '/workspace/old-notes.txt', affectedFileCount: count } }, en);
+    expect(result).toBe(`Permanently deletes old-notes.txt (${count} ${count === 1 ? 'file' : 'files'}) without using Trash.`);
   });
 });

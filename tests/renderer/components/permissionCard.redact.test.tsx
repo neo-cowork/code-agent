@@ -59,6 +59,7 @@ describe('PermissionCard credential redaction', () => {
     state.request = request({ command, path: filePath, url });
 
     const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
 
     expect(container.textContent).not.toContain('sk-abc12345');
     expect(container.textContent).not.toContain('sk-path12345');
@@ -86,6 +87,7 @@ describe('PermissionCard credential redaction', () => {
   it('does not add redaction controls to commands without credentials', () => {
     state.request = request({ command: 'git status --short' });
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
 
     expect(screen.queryByText('已脱敏')).toBeNull();
     expect(screen.queryByRole('button', { name: '查看原始命令' })).toBeNull();

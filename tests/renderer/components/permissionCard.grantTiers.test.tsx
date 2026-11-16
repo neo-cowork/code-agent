@@ -59,6 +59,7 @@ describe('PermissionCard grant tiers', () => {
   ] as const)('shows both expiring tiers and removes generic legacy labels (%s)', (language, run, day, session, always) => {
     state.language = language;
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByRole('button', { name: new RegExp(run) })).toBeTruthy();
     expect(screen.getByRole('button', { name: new RegExp(day) })).toBeTruthy();
     expect(screen.queryByRole('button', { name: new RegExp(session) })).toBeNull();
@@ -77,6 +78,7 @@ describe('PermissionCard grant tiers', () => {
       grantedAt: Date.now(), expiresAt: source === 'run' ? null : Date.now() + 86_400_000,
     }]);
     render(<><PermissionCard /><PermissionGrantList /></>);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     const cardButton = screen.getByRole('button', { name: new RegExp(button) });
     const row = await screen.findByTestId('permission-grant-row');
     const metadata = row.querySelector('.text-zinc-500')?.textContent;
@@ -97,6 +99,7 @@ describe('PermissionCard grant tiers', () => {
     ['s', 'allow_run'], ['a', 'allow_24h'],
   ] as const)('shortcut %s sends exactly %s without renderer memory', async (key, response) => {
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     const storage = vi.spyOn(Storage.prototype, 'setItem');
     fireEvent.keyDown(window, { key });
     await waitFor(() => expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, response, request.sessionId));
@@ -109,6 +112,7 @@ describe('PermissionCard grant tiers', () => {
     ['allow_run', '本次任务内允许'], ['allow_24h', '24 小时内允许'],
   ] as const)('click sends %s directly without renderer memory', async (response, label) => {
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     fireEvent.click(screen.getByRole('button', { name: new RegExp(label) }));
     await waitFor(() => expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, response, request.sessionId));
     expect(saveMemory).not.toHaveBeenCalled();
@@ -122,6 +126,7 @@ describe('PermissionCard grant tiers', () => {
   ] as const)('hides both tiers and ignores their shortcuts for %s', (_name, overrides) => {
     state.request = { ...request, ...overrides } as PermissionRequest;
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.queryByRole('button', { name: /本次任务内允许|24 小时内允许/ })).toBeNull();
     fireEvent.keyDown(window, { key: 's' });
     fireEvent.keyDown(window, { key: 'a' });
@@ -137,6 +142,7 @@ describe('PermissionCard grant tiers', () => {
       await usePermissionStore.persist.rehydrate();
     }
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     await waitFor(() => expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, level === 'session' ? 'allow_session' : 'allow', request.sessionId));
   });
 
@@ -152,7 +158,9 @@ describe('PermissionCard grant tiers', () => {
       preview: { type: 'generic', summary: '执行工具 mcp__lark__calendar_v4_calendar_primary' },
     } };
     render(<PermissionCard />);
-    expect(screen.getAllByText(title)).toHaveLength(2);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
+    expect(screen.getAllByText(title)).toHaveLength(1);
+    expect(screen.getByText(language === 'zh' ? '连接外部服务' : 'Connect to an external service')).toBeTruthy();
     expect(screen.getAllByText(new RegExp(scope))).toHaveLength(2);
     expect(screen.getByTestId('connector-purpose').textContent).toBe(purpose);
     expect(screen.queryByText('执行工具 mcp__lark__calendar_v4_calendar_primary')).toBeNull();
@@ -165,6 +173,7 @@ describe('PermissionCard grant tiers', () => {
     } };
     usePermissionStore.setState({ memory: { session: new Map([['mcp:lark/calendar_v4_calendar_primary', 'allow']]), persistent: {} } });
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.queryByTestId('connector-purpose')).toBeNull();
     expect(invoke).not.toHaveBeenCalled();
   });

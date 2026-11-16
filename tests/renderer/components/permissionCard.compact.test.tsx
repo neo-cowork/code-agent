@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { resolveFileTargetKind } from '../../../src/host/permissions/fileTargetKind';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 
 const invoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -95,112 +99,121 @@ function renderRequest(request: PermissionRequest) {
   );
 }
 
-describe('PermissionCard 紧凑/展开判据', () => {
+describe('PermissionCard quiet face', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
     for (const request of [internalWrite, externalWrite, dangerousCommand, mcpRequest, deviceNullEdit]) releaseApprovalResponse(request.id);
   });
 
-  it('工作区内 Write 默认紧凑，摘要含 basename，DOM 不泄工具原名与审批说明块', () => {
-    renderRequest(internalWrite);
-
-    const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
-    expect(card.dataset.viewMode).toBe('compact');
-    expect(screen.getByText('允许写入 report.md？')).toBeTruthy();
-    expect(document.body.textContent).not.toContain('/workspace/reports/report.md');
-    expect(document.body.textContent).not.toContain('Write');
-    expect(document.body.textContent).not.toContain('为什么需要审批');
-    expect(document.body.textContent).not.toContain('审批决策链');
-    expect(document.body.textContent).not.toContain('会访问');
-    expect(screen.getByRole('button', { name: /允许一次/ })).toBeTruthy();
+  it.each([
+    { ...internalWrite, tool: 'Bash', type: 'command' as const, details: { command: 'cat contract.txt > contract-notes.md' } },
+    internalWrite,
+    { ...internalWrite, type: 'file_delete' as const, tool: 'Delete' },
+  ])('face has one question, quote and exactly two actions: $type', (request) => {
+    const command = 'cat contract.txt > contract-notes.md';
+    renderRequest({ ...request, details: { ...request.details, command, userRequest: { text: 'Save the contract key points', truncated: false }, sandbox: { applied: true, code: 'OS_SANDBOX_APPLIED' } } });
+    const card = screen.getByTestId('permission-card');
+    expect(card.firstElementChild?.getAttribute('data-view-mode')).toBe('compact');
+    const face = screen.getByTestId('permission-card-face');
+    expect(within(face).getByText(/允许.*？/)).toBeTruthy();
+    expect(within(face).getByTestId('user-request-quote').textContent).toContain('Save the contract key points');
+    expect(within(face).getAllByRole('button').map((button) => button.textContent)).toEqual(['允许', '暂不']);
+    expect(card.textContent).not.toMatch(/cat contract|危险|沙箱|sandbox|工作区外|y\/n/);
+    expect(card.querySelector('kbd')).toBeNull();
+    const toggle = screen.getByRole('button', { name: '更多选项与详情' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(screen.getByText(command)).toBeTruthy();
     expect(screen.getByRole('button', { name: /本次任务内允许/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /24 小时内允许/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /拒绝/ })).toBeTruthy();
-  });
-
-  it('MCP server / tool 只在默认展开的详情区出现，卡头不露协议工具原名', () => {
-    renderRequest(mcpRequest);
-
-    const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
-    expect(card.dataset.viewMode).toBe('expanded');
-    expect(screen.getByText('允许调用这个外部工具？')).toBeTruthy();
-    expect(screen.getByText('lark-prod / docs.search')).toBeTruthy();
-    const header = card.firstElementChild as HTMLElement;
-    expect(header.textContent).not.toContain('MCPUnified');
-    expect(header.textContent).not.toContain('lark-prod');
-    expect(header.textContent).not.toContain('docs.search');
+    expect(screen.getByTestId('permission-sandbox-status')).toBeTruthy();
+    expect(screen.getByText(command).getAttribute('title')).toBeNull();
+    expect(screen.getByText(command).className).toContain('max-h-48');
+    expect(screen.getByText(command).className).toContain('overflow-y-auto');
+    expect(screen.getByRole('button', { name: '收起▴' }).getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: '收起▴' }));
-    expect(document.body.textContent).not.toContain('lark-prod');
-    expect(document.body.textContent).not.toContain('docs.search');
+    expect(screen.queryByText(command)).toBeNull();
+    expect(screen.getByTestId('user-request-quote')).toBeTruthy();
   });
 
-  it('工作区外 Write 默认展开，拒绝是主按钮且 Enter 执行安全侧', async () => {
+  it('host stat proves new workspace file has no consequence; existing/outside keep one without internal paths', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'quiet-new-file-'));
+    const target = path.join(dir, 'contract-notes.md');
+    const quoted = { text: 'Save the contract key points', truncated: false };
+    try {
+      const fresh = renderRequest({ ...internalWrite, details: { path: target, targetKind: resolveFileTargetKind(target), userRequest: quoted } });
+      expect(screen.queryAllByTestId('permission-consequence')).toHaveLength(0);
+      expect(screen.getByTestId('permission-card-face').textContent).not.toContain('/Users/');
+      expect(screen.getByTestId('permission-card-face').textContent).toContain('允许写入 contract-notes.md？');
+      expect(screen.getByTestId('user-request-quote').textContent).toContain(quoted.text);
+      expect(within(screen.getByTestId('permission-card-face')).getAllByRole('button')).toHaveLength(2);
+      fresh.unmount();
+      writeFileSync(target, 'Existing notes');
+      const existing = renderRequest({ ...internalWrite, details: { path: target, targetKind: resolveFileTargetKind(target) } });
+      expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
+      expect(screen.getByTestId('permission-consequence').textContent).toContain('contract-notes.md');
+      expect(screen.getByTestId('permission-card-face').textContent).not.toContain(dir);
+      existing.unmount();
+      renderRequest({ ...externalWrite, details: { path: '/Users/example/Documents/contract-notes.md', targetKind: 'absent' } });
+      expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
+      expect(screen.getByTestId('permission-consequence').textContent).toContain('~/Documents/contract-notes.md');
+      expect(screen.getByTestId('permission-card-face').textContent).not.toContain('/Users/');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    [internalWrite, 1],
+    [externalWrite, 1],
+    [dangerousCommand, 1],
+    [{ ...internalWrite, tool: 'Read', type: 'file_read' as const }, 0],
+    [{ ...internalWrite, tool: 'Read', type: 'file_read' as const, boundary: { id: 'file.external_read' as const } }, 0],
+    [{ ...internalWrite, tool: 'Bash', type: 'command' as const, details: { command: 'ls reports', commandRiskLevel: 'medium' as const } }, 0],
+    [{ ...mcpRequest, details: { connectorAccess: { connectorId: 'lark', connectorName: '飞书', access: 'write' as const } } }, 1],
+    [{ ...mcpRequest, details: { method: 'POST', url: 'https://example.com' } }, 1],
+    [{ ...mcpRequest, details: { method: 'GET', url: 'https://example.com' } }, 0],
+  ])('face consequence count: %j => %i', (request, count) => {
+    renderRequest(request);
+    expect(screen.queryAllByTestId('permission-consequence')).toHaveLength(count);
+    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    expect(screen.queryAllByTestId('permission-consequence')).toHaveLength(count);
+  });
+
+  it('external write keeps safe primary response and moves the qualifier out of the question', async () => {
     renderRequest(externalWrite);
-
-    const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
-    expect(card.dataset.viewMode).toBe('expanded');
-    expect(screen.getByText('允许写入 report.md（工作区外）？')).toBeTruthy();
+    expect(screen.getByText('允许写入 report.md？')).toBeTruthy();
     expect(screen.getByTestId('permission-consequence').textContent).toContain('工作区外');
-    expect(screen.getByTestId('permission-consequence').textContent).toContain('/Users/me/Documents/report.md');
-    expect(document.body.textContent).not.toContain('Write');
-    expect(document.body.textContent).not.toContain('会访问');
-
-    const reject = screen.getByRole('button', { name: /拒绝/ });
-    const allow = screen.getByRole('button', { name: /允许一次/ });
+    const reject = screen.getByRole('button', { name: '暂不' });
     expect(reject.className).toContain('from-primary-800');
-    expect(reject.className).toContain('ml-auto');
-    expect(allow.className).toContain('border-red-500/50');
+    expect(screen.getByRole('button', { name: '允许' }).className).toContain('border-red-500/50');
     expect(document.activeElement).toBe(reject);
-
     fireEvent.keyDown(window, { key: 'Enter' });
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        'agent:permission-response',
-        externalWrite.id,
-        'deny',
-        externalWrite.sessionId,
-      );
-    });
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('agent:permission-response', externalWrite.id, 'deny', externalWrite.sessionId));
   });
 
-  it('/dev/null 标题用完整路径；无 targetKind 时不从路径推断设备', () => {
-    renderRequest(deviceNullEdit);
-
-    expect(screen.getByText('允许编辑 /dev/null（工作区外）？')).toBeTruthy();
-    expect(screen.queryByText('允许编辑 null（工作区外）？')).toBeNull();
-    expect(screen.getByTestId('permission-consequence').textContent).toContain('可能覆盖现有内容');
-    expect(screen.getByTestId('permission-consequence').textContent).not.toContain('设备文件');
+  it.each([undefined, 'device'] as const)('device warning trusts host targetKind: %s', (targetKind) => {
+    renderRequest({ ...deviceNullEdit, details: { ...deviceNullEdit.details, targetKind } });
+    expect(screen.getByText('允许编辑 /dev/null？')).toBeTruthy();
+    const text = screen.getByTestId('permission-consequence').textContent;
+    if (targetKind === 'device') expect(text).toBe('将向工作区外的设备文件 /dev/null 写入；原子写入会替换该设备节点本身。');
+    else { expect(text).toContain('可能覆盖现有内容'); expect(text).not.toContain('设备文件'); }
   });
 
-  it('host-marked device 显示设备文案、不提覆盖', () => {
-    renderRequest({
-      ...deviceNullEdit,
-      details: { ...deviceNullEdit.details, targetKind: 'device' },
-    });
-
-    expect(screen.getByText('允许编辑 /dev/null（工作区外）？')).toBeTruthy();
-    expect(screen.getByTestId('permission-consequence').textContent).toBe('将向工作区外的设备文件 /dev/null 写入；原子写入会替换该设备节点本身。');
-    expect(screen.getByTestId('permission-consequence').textContent).not.toContain('可能覆盖现有内容');
-  });
-
-  it('danger 默认展开：规则后果含路径和文件数，Enter 无效，拒绝是右侧蓝色主按钮', () => {
+  it('deletion has one consequence and safe primary, but hides the raw command', () => {
     renderRequest(dangerousCommand);
-
-    const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
-    expect(card.dataset.viewMode).toBe('expanded');
-    expect(screen.getByTestId('permission-consequence').textContent)
-      .toBe('将永久删除 /workspace/dist（约 312 个文件），不进回收站。');
-    expect(screen.getByText('rm -rf ./dist')).toBeTruthy();
-    expect(screen.getAllByText('危险')).toHaveLength(1);
-    expect(document.body.textContent).not.toContain('Bash');
-
-    const reject = screen.getByRole('button', { name: /拒绝/ });
-    const execute = screen.getByRole('button', { name: /仍然执行/ });
-    expect(reject.className).toContain('from-primary-800');
-    expect(reject.className).toContain('ml-auto');
-    expect(execute.className).toContain('border-red-500/50');
+    expect(screen.getByTestId('permission-consequence').textContent).toBe('将永久删除 dist（约 312 个文件），不进回收站。');
+    expect(screen.queryByText('rm -rf ./dist')).toBeNull();
+    expect(screen.getByRole('button', { name: '暂不' }).className).toContain('from-primary-800');
+    expect(screen.getByRole('button', { name: '允许' }).className).toContain('border-red-500/50');
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('border-red-500');
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(['medium', 'unknown'] as const)('routine %s risk has a normal card', (commandRiskLevel) => {
+    renderRequest({ ...internalWrite, type: 'command', tool: 'Bash', details: { command: 'mv draft.md notes.md', commandRiskLevel } });
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).not.toContain('border-red-500');
+    expect(screen.getByRole('button', { name: '允许' }).className).not.toContain('border-red-500');
+    expect(screen.queryByTestId('permission-consequence')).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -77,6 +77,7 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
     state.language = language;
     state.request = connectorRequest();
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('user-request-quote').textContent)
       .toBe(messages.decisionCard.permission.userRequestQuote.replace('{text}', 'add Weekly sync tomorrow…'));
   });
@@ -88,11 +89,13 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
     state.language = language;
     state.request = { ...connectorRequest(), details: { startedByAutomation: true, scheduledTaskName: '每日飞书日历周会' } as PermissionRequest['details'] };
     const view = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(named);
     expect(screen.queryByTestId('user-request-quote')).toBeNull();
     view.unmount();
     state.request = { ...connectorRequest(), details: { startedByAutomation: true } as PermissionRequest['details'] };
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
   });
 
@@ -111,6 +114,7 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
       } as PermissionRequest['details'],
     };
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('scheduled-task-origin').textContent)
       .toBe(messages.decisionCard.permission.startedByScheduledTask.replace('{name}', taskName));
     expect(screen.queryByTestId('connector-purpose')).toBeNull();
@@ -127,6 +131,7 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
       } as PermissionRequest['details'],
     };
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('connector-purpose').textContent)
       .toBe(messages.decisionCard.permission.connectorPurpose.replace('{purpose}', '每周日程汇总'));
     expect(screen.getByTestId('user-request-quote').textContent)
@@ -146,6 +151,7 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
       } as PermissionRequest['details'],
     };
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('connector-purpose').textContent)
       .toBe(messages.decisionCard.permission.connectorPurpose.replace('{purpose}', '每日简报'));
     expect(screen.getByTestId('user-request-quote').textContent)
@@ -165,6 +171,7 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
       } as PermissionRequest['details'],
     };
     render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getByTestId('scheduled-task-origin').textContent)
       .toBe(messages.decisionCard.permission.startedByScheduledTask.replace('{name}', '每日简报'));
     expect(screen.getByTestId('connector-purpose').textContent)

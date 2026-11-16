@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract/permission';
 import {
@@ -58,7 +59,7 @@ const { PermissionCard } = await import('../../../src/renderer/components/Permis
 
 function render(request: ContractPermissionRequest): string {
   storeState.request = request;
-  return renderToStaticMarkup(React.createElement(PermissionCard));
+  return renderDetails();
 }
 
 function renderInLanguage(request: ContractPermissionRequest, language: 'zh' | 'en'): string {
@@ -184,3 +185,11 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
     expect(render(request)).not.toContain('permission-media-price');
   });
 });
+
+function renderDetails(): string {
+  cleanup();
+  const { container } = mount(React.createElement(PermissionCard));
+  const toggle = screen.queryByRole('button', { name: /更多选项与详情|More options & details/ });
+  if (toggle) fireEvent.click(toggle);
+  return container.innerHTML;
+}

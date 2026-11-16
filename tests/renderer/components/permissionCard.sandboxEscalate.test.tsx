@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract/permission';
 import type { ToolCall } from '../../../src/shared/contract/tool';
@@ -248,73 +250,17 @@ describe('sandbox escalation approval card', () => {
   });
 });
 
-describe('other approval cards stay word-for-word', () => {
-  afterEach(() => {
-    storeState.language = 'zh';
-    storeState.request = null;
-  });
-
-  it('renders a normal command card with the generic risky-command copy', () => {
-    const html = render(baseRequest({
-      id: 'req-command',
-      type: 'command',
-      details: { command: 'echo hi' },
-    }));
-    expect(html).toContain('data-view-mode="expanded"');
-    expect(html).toContain('执行命令');
-    expect(html).toContain('允许执行这条命令？');
-    expect(html).toContain(GENERIC_CONSEQUENCE);
-    expect(html).toContain('>echo hi<');
-    expect(buttonLabel(html, '允许一次', 'y')).toBe(true);
-    expect(buttonLabel(html, '本次任务内允许', 's')).toBe(true);
-    expect(buttonLabel(html, '24 小时内允许', 'a')).toBe(true);
-    expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
-    expect(html).not.toContain('沙盒拦截了这一步');
-    expect(html).not.toContain('允许仅这一次');
-    expect(html).not.toContain('data-testid="sandbox-escalation-path"');
-  });
-
-  it('renders a dangerous_command card with the danger actions', () => {
-    const html = render(baseRequest({
-      id: 'req-danger',
-      type: 'dangerous_command',
-      dangerLevel: 'danger',
-      forceConfirm: true,
-      details: { command: 'rm -rf /tmp/x' },
-    }));
-    expect(html).toContain('data-view-mode="expanded"');
-    expect(html).toContain('执行命令');
-    expect(html).toContain('危险');
-    expect(html).toContain('允许执行这条命令？');
-    // N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED：无宿主盘点的递归目标数不出确切
-    // 文件数（可能是文件也可能是目录），不再回退「约 1 个文件」，直接不写数字。
-    expect(html).toContain('将永久删除 /tmp/x，不进回收站。');
-    expect(html).not.toContain('约 1 个文件');
-    expect(buttonLabel(html, '仍然执行', 'y')).toBe(true);
-    expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
-    expect(html).not.toContain('允许一次');
-    expect(html).not.toContain('本会话允许');
-    expect(html).not.toContain('沙盒拦截了这一步');
-    expect(html).not.toContain(GENERIC_CONSEQUENCE);
-  });
-
-  it('renders a file_write card in the compact form', () => {
-    const html = render(baseRequest({
-      id: 'req-write',
-      tool: 'Write',
-      type: 'file_write',
-      details: { path: 'notes.md' },
-    }));
+describe('ordinary cards use a quiet face beside dedicated sandbox escalation', () => {
+  afterEach(() => { storeState.language = 'zh'; storeState.request = null; });
+  it.each(['command', 'dangerous_command', 'file_write'] as const)('ordinary %s hides command and shortcuts', (type) => {
+    const html = render(baseRequest({ type, tool: type === 'file_write' ? 'Write' : 'Bash', details: { command: 'cat contract.txt', ...(type === 'file_write' ? { path: 'notes.md' } : {}) } }));
     expect(html).toContain('data-view-mode="compact"');
-    expect(html).toContain('允许写入 notes.md？');
-    expect(buttonLabel(html, '允许一次', 'y')).toBe(true);
-    expect(buttonLabel(html, '本次任务内允许', 's')).toBe(true);
-    expect(buttonLabel(html, '24 小时内允许', 'a')).toBe(true);
-    expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
-    expect(html).not.toContain('将写入 notes.md');
-    expect(html).not.toContain('沙盒拦截了这一步');
-    expect(html).not.toContain('允许仅这一次');
+    expect(html).toContain('更多选项与详情');
+    expect(html).not.toContain('cat contract.txt');
+    expect(html).not.toContain('<kbd');
     expect(html).not.toContain(GENERIC_CONSEQUENCE);
+    expect(html).toContain('>允许<');
+    expect(html).toContain('>暂不<');
   });
 });
 
@@ -335,30 +281,37 @@ describe('sandbox-degraded-unsandboxable card shows a plain-language exception l
   }
 
   it('macos_launch_services 显示「macOS 应用启动」，原始 id 不上卡（zh）', () => {
-    const html = render(unsandboxableRequest('macos_launch_services'));
+    const html = renderExpanded(unsandboxableRequest('macos_launch_services'));
     expect(html).toContain('macOS 应用启动');
     expect(html).not.toContain('macos_launch_services');
   });
 
   it('docker_engine 显示「容器引擎」，原始 id 不上卡（zh）', () => {
-    const html = render(unsandboxableRequest('docker_engine'));
+    const html = renderExpanded(unsandboxableRequest('docker_engine'));
     expect(html).toContain('容器引擎');
     expect(html).not.toContain('docker_engine');
   });
 
   it('未知 / 缺失 exception 不带括号注释，也不漏原始 code', () => {
-    const unknownHtml = render(unsandboxableRequest('weird_engine'));
+    const unknownHtml = renderExpanded(unsandboxableRequest('weird_engine'));
     expect(unknownHtml).toContain(zh.decisionCard.permission.sandboxDegradedUnsandboxableNoLabel);
     expect(unknownHtml).not.toContain('weird_engine');
-    const missingHtml = render(unsandboxableRequest());
+    const missingHtml = renderExpanded(unsandboxableRequest());
     expect(missingHtml).toContain(zh.decisionCard.permission.sandboxDegradedUnsandboxableNoLabel);
     expect(missingHtml).not.toContain('OS_SANDBOX_DEGRADED_UNSANDBOXABLE');
   });
 
   it('en 同样给映射过的人话', () => {
     storeState.language = 'en';
-    const html = render(unsandboxableRequest('docker_engine'));
+    const html = renderExpanded(unsandboxableRequest('docker_engine'));
     expect(html).toContain(en.decisionCard.permission.sandboxExceptionLabels.docker_engine);
     expect(html).not.toContain('docker_engine');
   });
 });
+
+function renderExpanded(request: ContractPermissionRequest): string {
+  cleanup(); storeState.request = request;
+  const { container } = mount(React.createElement(PermissionCard));
+  fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
+  return container.innerHTML;
+}

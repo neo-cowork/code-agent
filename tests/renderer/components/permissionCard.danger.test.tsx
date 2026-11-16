@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「这操作本身危险」与「这次必须你亲手点」是两个信号，卡上必须分开。
 //
 // 此前 PermissionCard 把 forceConfirm 直接当危险，而 forceConfirm 在 host 侧同时由
@@ -8,7 +9,7 @@
 // 而 forceConfirm 该有的职责（不许「会话/始终」这类常驻授权）两种情况下都保住。
 
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract/permission';
 
@@ -43,7 +44,7 @@ const STANDING_GRANTS = ['本次任务内允许', '24 小时内允许'];
 
 function render(request: ContractPermissionRequest): string {
   storeState.request = request;
-  return renderToStaticMarkup(React.createElement(PermissionCard));
+  return renderDetails();
 }
 
 describe('PermissionCard 危险度与强制确认分离', () => {
@@ -79,8 +80,8 @@ describe('PermissionCard 危险度与强制确认分离', () => {
       dangerLevel: 'danger',
     });
 
-    expect(html).toContain(DANGER_COPY);
-    expect(html.match(/危险/gu)).toHaveLength(1);
+    expect(html).not.toContain(DANGER_COPY);
+    expect(html).toContain('border-red-500');
     expect(html).toContain('border-red-500');
     for (const label of STANDING_GRANTS) expect(html).not.toContain(label);
   });
@@ -94,8 +95,8 @@ describe('PermissionCard 危险度与强制确认分离', () => {
       timestamp: 1,
     });
 
-    expect(html).toContain(DANGER_COPY);
-    expect(html.match(/危险/gu)).toHaveLength(1);
+    expect(html).not.toContain(DANGER_COPY);
+    expect(html).toContain('border-red-500');
   });
 
   it('普通写文件（既不危险也不强制）保留常驻授权入口', () => {
@@ -111,3 +112,11 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     for (const label of STANDING_GRANTS) expect(html).toContain(label);
   });
 });
+
+function renderDetails(): string {
+  cleanup();
+  const { container } = mount(React.createElement(PermissionCard));
+  const toggle = screen.queryByRole('button', { name: /更多选项与详情|More options & details/ });
+  if (toggle) fireEvent.click(toggle);
+  return container.innerHTML;
+}

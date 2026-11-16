@@ -46,6 +46,9 @@ export interface DecisionCardProps {
   question: string;
   /** 结构化详情区（mono 路径/命令块、边界徽章、任务列表等），由各适配层提供 */
   details?: React.ReactNode;
+  /** Keep the question, context and two actions visible while only details fold. */
+  quietFace?: boolean;
+  faceContent?: React.ReactNode;
   options: DecisionOption[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -118,6 +121,8 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
   question,
   details,
   options,
+  quietFace = false,
+  faceContent,
   selectedId,
   onSelect,
   onConfirm,
@@ -274,7 +279,31 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         } ${compact ? 'overflow-hidden' : pinActions ? 'flex max-h-[40vh] flex-col overflow-hidden' : ''}`}
         data-view-mode={viewMode}
       >
-        {compact ? (
+        {quietFace ? (
+          <>
+            <div className="flex items-center gap-2 px-3.5 py-2">
+              <span className={`shrink-0 ${danger ? 'text-badge-danger' : 'text-badge-warning'}`}>{icon}</span>
+              <span className="min-w-0 flex-1 break-words text-xs font-semibold text-zinc-200">{title}</span>
+              {headerEnd}
+            </div>
+            <div className="space-y-2 px-4 pb-2" data-testid={`${testId}-face`}>
+              <p className="break-words text-[13px] font-semibold leading-[1.5] text-zinc-100">{question}</p>
+              {faceContent}
+              <div className={`flex flex-wrap items-center gap-2 ${dangerActionId ? '' : 'justify-end'}`}>
+                {actionButtons}
+              </div>
+            </div>
+            {onViewModeChange && (
+              <Button size="sm" variant="ghost" className="mx-3 mb-2 h-auto self-start whitespace-normal text-left"
+                aria-expanded={!compact}
+                aria-controls={`${testId}-details`}
+                onClick={() => onViewModeChange(compact ? 'expanded' : 'compact')}>
+                {compact ? expandLabel : collapseLabel}
+              </Button>
+            )}
+            {!compact && <div id={`${testId}-details`} className="min-h-0 space-y-3 overflow-y-auto px-4 pb-3" data-testid={`${testId}-details-scroll`}>{details}</div>}
+          </>
+        ) : compact ? (
           <div className="flex h-10 items-center gap-2 px-3" data-testid={`${testId}-compact-row`}>
             <span className={`shrink-0 ${danger ? 'text-badge-danger' : amber ? 'text-badge-warning' : 'text-badge-info'}`}>
               {icon}
@@ -326,6 +355,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
               data-testid={`${testId}-details-scroll`}
             >
               <p className="text-[13px] font-semibold leading-[1.5] text-zinc-100">{question}</p>
+              {faceContent}
               {details}
             </div>
             {options.length > 0 && (
@@ -341,6 +371,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         ) : (
           <div className="space-y-3 max-h-[50vh] overflow-y-auto px-4 py-3">
             <p className="text-[13px] font-semibold leading-[1.5] text-zinc-100">{question}</p>
+            {faceContent}
             {details}
             <div className="space-y-2">
               {directActions ? actionButtons : optionRows}

@@ -108,9 +108,9 @@ function start(cron: boolean, parked = false, sameTitle = true) {
   return { payload, completion };
 }
 
-async function deny(completion: ReturnType<typeof start>['completion']) {
+async function deny(completion: ReturnType<typeof start>['completion'], parked = false) {
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${zh.decisionCard.permission.optionDeny}`) }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${(parked ? zh.decisionCard.permission.optionDeny : zh.decisionCard.permission.notNow)}`) }));
     expect(await completion).toMatchObject({ approved: false, denialSource: 'user' });
   });
   await waitFor(() => expect(state.respond).toHaveBeenCalled());
@@ -153,6 +153,7 @@ describe('Feishu connector approval host -> renderer chain', () => {
     expect(payload.details.scheduledTaskName).toBe(taskName);
     expect(payload.details.purpose).toBe(sameTitle ? taskName : '同步下周会议');
     render(<PermissionCard requestOverride={payload} sessionIdOverride="s1" />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(screen.getAllByTestId('scheduled-task-origin')).toHaveLength(1);
     expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(`由定时任务「${taskName}」启动`);
     expect(screen.queryAllByTestId('user-request-quote')).toHaveLength(0);
@@ -171,7 +172,7 @@ describe('Feishu connector approval host -> renderer chain', () => {
     expect(screen.getAllByTestId('scheduled-task-origin')).toHaveLength(1);
     expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(`由定时任务「${taskName}」启动`);
     expect(screen.queryAllByTestId('user-request-quote')).toHaveLength(0);
-    await deny(completion);
+    await deny(completion, true);
     expect((db.prepare('SELECT status FROM pending_approvals').get() as { status: string }).status).toBe('rejected');
   });
 });

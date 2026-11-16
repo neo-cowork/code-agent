@@ -1221,6 +1221,7 @@
               "enum": [
                 "device",
                 "regular",
+                "absent",
                 "unknown"
               ]
             },
