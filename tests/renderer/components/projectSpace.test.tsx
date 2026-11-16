@@ -101,7 +101,7 @@ import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { toast } from '../../../src/renderer/hooks/useToast';
-import { projectSpaceZh } from '../../../src/renderer/i18n/projectSpace';
+import { projectSpaceEn, projectSpaceZh } from '../../../src/renderer/i18n/projectSpace';
 
 const ps = projectSpaceZh.projectSpace;
 const PROJECT_ID = 'proj_test1';
@@ -293,6 +293,48 @@ describe('ProjectSpacePage 列表视图', () => {
 
     fireEvent.click(screen.getByText(ps.deleteSpace));
     await waitFor(() => expect(projectClient.deleteProject).toHaveBeenCalledWith(PROJECT_ID));
+    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['zh', ps],
+    ['en', projectSpaceEn.projectSpace],
+  ] as const)('delete rejection keeps the modal open with a retryable plain sentence (%s)', async (language, copy) => {
+    useAppStore.setState({ language });
+    vi.mocked(projectClient.deleteProject).mockRejectedValueOnce(new Error('PROJECT_BOUNDARY_IMMUTABLE: /private/workspace'));
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
+
+    const error = await screen.findByTestId('project-space-delete-error');
+    expect(error.textContent).toBe(copy.deleteFailed);
+    expect(screen.getByTestId('project-space-delete-modal')).toBeTruthy();
+    expect((within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }) as HTMLButtonElement).disabled).toBe(false);
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(1);
+
+    // Retrying uses the same modal and the successful response closes it.
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
+    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
+    expect(projectClient.deleteProject).toHaveBeenCalledTimes(2);
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it('deleted:false keeps the modal open and clears the sentence when cancelled and reopened', async () => {
+    vi.mocked(projectClient.deleteProject).mockResolvedValueOnce({ deleted: false });
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: ps.deleteSpace }));
+
+    expect((await screen.findByTestId('project-space-delete-error')).textContent).toBe(ps.deleteFailed);
+    expect(screen.getByTestId('project-space-delete-modal')).toBeTruthy();
+    expect((within(screen.getByRole('dialog')).getByRole('button', { name: ps.deleteSpace }) as HTMLButtonElement).disabled).toBe(false);
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
+    fireEvent.click(screen.getByTestId(`project-space-delete-${PROJECT_ID}`));
+    expect(screen.queryByTestId('project-space-delete-error')).toBeNull();
   });
 
   it('proj_unsorted 保留桶：不显示编辑/删除，也不显示描述占位', async () => {

@@ -74,6 +74,7 @@ export const projectSpaceZh = {
     // 照实写 deleteProject 的真实后果（projectService.deleteProject：软删项目，
     // 会话整体改挂「未分类」桶、topic 随会话走，来源记录删除）
     deleteConfirm: '删除后，「{name}」将从列表移除。空间内的会话与 topic 不会被删除，会归入「未分类」；空间的来源记录会被清除。',
+    deleteFailed: '未能删除这个协作空间，请稍后重试。',
     cloudBadge: '云',
     invite: '邀请',
     promoteToCloud: '升级为协同空间',
@@ -178,6 +179,7 @@ export const projectSpaceEn = {
     save: 'Save',
     deleteTitle: 'Delete space',
     deleteConfirm: 'Deleting removes "{name}" from the list. Its sessions and topics are not deleted — they move to "Unsorted"; the space\'s source records are removed.',
+    deleteFailed: 'This space could not be deleted; please try again later.',
     cloudBadge: 'Cloud',
     invite: 'Invite',
     promoteToCloud: 'Upgrade to cloud space',
