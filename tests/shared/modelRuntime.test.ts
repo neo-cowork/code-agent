@@ -506,18 +506,12 @@ describe('modelRuntime', () => {
 
     expect(options.map((option) => option.provider)).toEqual([
       'custom-commonstack-claude',
-      'custom-commonstack-claude',
     ]);
     expect(options).toEqual([
       expect.objectContaining({
         providerGroup: 'claude',
         providerSourceLabel: 'CommonStack',
         model: 'anthropic/claude-opus-4-8',
-      }),
-      expect.objectContaining({
-        providerGroup: 'claude',
-        providerSourceLabel: 'CommonStack',
-        model: 'anthropic/claude-sonnet-4-6',
       }),
     ]);
   });
