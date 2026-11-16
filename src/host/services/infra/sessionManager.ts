@@ -1084,6 +1084,10 @@ export class SessionManager implements Disposable {
     return this.getAccessibleStoredSession(sessionId)?.metadata;
   }
 
+  getSessionTitle(sessionId: string): string | undefined {
+    return this.getAccessibleStoredSession(sessionId)?.title;
+  }
+
   /**
    * 只读存在性探测（记忆面板来源会话跳转）：不 restore、不切 currentSessionId、
    * 不动 toolCache、不写审计——探测方（如设置面板选中一条记忆）不该付 load 的副作用。

@@ -21,7 +21,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionConfig } from './utils';
+import { getPermissionTitle } from './utils';
 import { describeApproval } from './describeApproval';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
@@ -504,7 +504,7 @@ export function PermissionCard({
             : editable
               ? w.mailSendTitle
               : isDangerous && described.kind === 'shell'
-                ? getPermissionConfig('command').title
+                ? getPermissionTitle('command', p)
                 : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
