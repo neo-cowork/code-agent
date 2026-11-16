@@ -295,6 +295,7 @@ describe('skillInvocationResolver', () => {
     expect(resolveSkillInvocationFromSkills('删除日程「neo-drive 测试 123」', [neo])).toBeNull();
     expect(resolveSkillInvocationFromSkills('看一下 agent-neo 的进度', [neo])).toBeNull();
     expect(resolveSkillInvocationFromSkills('切到 neo 项目', [neo])?.skill.name).toBe('neo');
+    expect(resolveSkillInvocationFromSkills('切到 neo-项目', [neo])?.skill.name).toBe('neo');
   });
 
   // 常设刷新真跑：prompt 里的目标路径 status.docx 被当成名为 docx 的 skill 别名。

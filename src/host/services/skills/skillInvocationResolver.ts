@@ -105,8 +105,8 @@ function aliasAppearsInMessage(normalizedMessage: string, normalizedAlias: strin
   }
   let pattern = LATIN_ALIAS_PATTERN_CACHE.get(normalizedAlias);
   if (!pattern) {
-    // 连字符算词内：「neo-drive」里的 neo 不是在叫 neo 技能（11-17 真机误注入）
-    pattern = new RegExp(`(?<![a-z0-9_.-])${escapeRegExp(normalizedAlias)}(?![a-z0-9_-])`);
+    // 连字符连着拉丁字符算词内：「neo-drive」里的 neo 不是在叫 neo 技能（11-17 真机误注入）；「neo-项目」仍算
+    pattern = new RegExp(`(?<![a-z0-9_.]-?)${escapeRegExp(normalizedAlias)}(?!-?[a-z0-9_])`);
     LATIN_ALIAS_PATTERN_CACHE.set(normalizedAlias, pattern);
   }
   return pattern.test(normalizedMessage);
