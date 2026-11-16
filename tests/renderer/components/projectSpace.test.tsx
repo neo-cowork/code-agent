@@ -302,7 +302,7 @@ describe('ProjectSpacePage 列表视图', () => {
     ['en', projectSpaceEn.projectSpace],
   ] as const)('delete rejection keeps the modal open with a retryable plain sentence (%s)', async (language, copy) => {
     useAppStore.setState({ language });
-    vi.mocked(projectClient.deleteProject).mockRejectedValueOnce(new Error('PROJECT_BOUNDARY_IMMUTABLE: /private/workspace'));
+    vi.mocked(projectClient.deleteProject).mockRejectedValueOnce(new Error('DISK_WRITE_FAILED: /private/workspace'));
     render(<ProjectSpacePage onClose={() => undefined} />);
     fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
@@ -318,6 +318,34 @@ describe('ProjectSpacePage 列表视图', () => {
     await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
     expect(projectClient.deleteProject).toHaveBeenCalledTimes(2);
     expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['zh', ps],
+    ['en', projectSpaceEn.projectSpace],
+  ] as const)('immutable history explains why deletion is blocked without exposing internal details (%s)', async (language, copy) => {
+    useAppStore.setState({ language });
+    vi.mocked(projectClient.deleteProject).mockRejectedValueOnce(
+      new Error('PROJECT_BOUNDARY_IMMUTABLE: session session-private already has immutable conversation history at /private/workspace'),
+    );
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
+
+    const error = await screen.findByTestId('project-space-delete-error');
+    expect(error.textContent).toBe(copy.deleteHistoryBlocked);
+    expect(error.textContent).not.toContain(copy.deleteFailed);
+    expect(error.textContent).not.toContain('PROJECT_BOUNDARY_IMMUTABLE');
+    expect(error.textContent).not.toContain('session-private');
+    expect(error.textContent).not.toContain('/private/workspace');
+    expect(screen.getByTestId('project-space-delete-modal')).toBeTruthy();
+    expect((within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }) as HTMLButtonElement).disabled).toBe(false);
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: language === 'zh' ? '取消' : 'Cancel' }));
+    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
+    fireEvent.click(screen.getByTestId(`project-space-delete-${PROJECT_ID}`));
+    expect(screen.queryByTestId('project-space-delete-error')).toBeNull();
   });
 
   it('deleted:false keeps the modal open and clears the sentence when cancelled and reopened', async () => {
