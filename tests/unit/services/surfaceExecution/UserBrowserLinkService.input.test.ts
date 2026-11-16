@@ -233,6 +233,7 @@ describe('UserBrowserLinkService.dispatchUserInput', () => {
 
 describe('SurfaceLiveStreamService.start first-frame buffer', () => {
   it('delivers a frame emitted before startup finishes once streaming becomes active', async () => {
+    const page = { id: 'page-1' };
     const published: SurfaceLiveFrameV1[] = [];
     const stop = vi.fn(async () => undefined);
     startPageScreencast.mockImplementationOnce(async (
@@ -259,7 +260,7 @@ describe('SurfaceLiveStreamService.start first-frame buffer', () => {
         findBindingBySurfaceSessionId: () => ({
           browserService: {
             isRunning: () => true,
-            getActiveTab: () => ({ id: 'tab-1', page: { id: 'page-1' } }),
+            getActiveTab: () => ({ id: 'tab-1', page }),
           },
         }),
       } as never,
