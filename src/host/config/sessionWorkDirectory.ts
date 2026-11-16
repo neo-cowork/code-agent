@@ -372,6 +372,19 @@ export function isPlannedSessionWorkDirectory(dir: string, env?: NodeJS.ProcessE
 }
 
 /**
+ * 路径是否就是默认工作根本身（N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT-FU1）。
+ * 默认工作根懒创建，新数据目录首轮落盘前它并不存在；只读搜索工具（Glob/Grep/
+ * ListDirectory）把缺失的根与缺失的计划任务目录一样按空目录处理（planned-empty），
+ * 不为探查建目录。只认精确的根：缺失的兄弟目录、根下非计划形状的子目录、用户自选
+ * 的项目路径都不算，仍报结构化 ENOENT。
+ */
+export function isDefaultWorkDirectory(dir: string, env?: NodeJS.ProcessEnv): boolean {
+  const trimmed = dir.trim();
+  if (!trimmed) return false;
+  return path.resolve(trimmed) === path.resolve(getDefaultWorkDirectory(env));
+}
+
+/**
  * 撞名改道（rework r2）：会话行记下的规划路径同时被其它会话行记下（规划期竞态的
  * 残留——旧判定只看磁盘，纯问答会话的路径永不落盘），且盘上还没有任何内容
  * （目录不存在或为空）时，趁零数据损失改道到同基础名的下一个空闲后缀，由调用方

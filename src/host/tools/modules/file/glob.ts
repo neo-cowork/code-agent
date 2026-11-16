@@ -18,7 +18,6 @@ import { glob as globLib } from 'glob';
 import * as fs from 'fs/promises';
 import { readdir as readdirCb } from 'fs';
 import type { Dirent } from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import type {
   ToolHandler,
@@ -30,9 +29,10 @@ import type {
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { applyPartialToOutput } from '../shell/partialResults';
 import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
-import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
+import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { globSchema as schema } from './glob.schema';
 import {
   collectForeignSlotTraversalExcludes,
@@ -53,19 +53,6 @@ const DEFAULT_IGNORE = [
   '**/coverage/**',
 ];
 type GlobSort = 'path' | 'name' | 'mtime' | 'size';
-
-function expandTilde(filePath: string): string {
-  if (!filePath) return filePath;
-  if (filePath === '~') return os.homedir();
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2));
-  return filePath;
-}
-
-function resolveInputPath(inputPath: string, workingDir: string): string {
-  const expanded = expandTilde(inputPath);
-  if (path.isAbsolute(expanded)) return expanded;
-  return path.join(workingDir, expanded);
-}
 
 function parsePositiveInteger(value: unknown, fallback: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
@@ -229,13 +216,14 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
 
     // 搜索路径不存在时在进 glob 前拦下（glob 库会吞掉缺失 cwd 的 readdir 错误、静默
     // 返回空，两条路都没有诚实的「路径不存在」信号）：计划中的会话产出目录（任务_/Task_
-    // 形状，懒创建、尚未落盘）按空目录处理，返回与零匹配相同的形状，不建目录、不跑
-    // 引擎；其余缺失路径报 ENOENT，让界面说「找不到」，而不是落成「被占用/没权限」的
-    // FS_ERROR。
+    // 形状，懒创建、尚未落盘）与尚未落盘的默认工作根本身（懒创建，新数据目录上首轮
+    // 之前不存在）都按空目录处理，返回与零匹配相同的形状，不建目录、不跑引擎；其余
+    // 缺失路径报 ENOENT，让界面说「找不到」，而不是落成「被占用/没权限」的 FS_ERROR。
     if (await isPathMissing(searchPath)) {
-      if (isPlannedSessionWorkDirectory(searchPath)) {
+      const isWorkRoot = isDefaultWorkDirectory(searchPath);
+      if (isWorkRoot || isPlannedSessionWorkDirectory(searchPath)) {
         onProgress?.({ stage: 'completing', percent: 100 });
-        ctx.logger.info('Glob done (planned empty session work directory)', { pattern, searchPath });
+        ctx.logger.info(`Glob done (planned empty ${isWorkRoot ? 'default work root' : 'session work directory'})`, { pattern, searchPath });
         return buildNoMatchesResult(pattern, searchPath, offset, limit, [], ctx);
       }
       return { ok: false, error: `Path not found: ${searchPath}`, code: 'ENOENT' };

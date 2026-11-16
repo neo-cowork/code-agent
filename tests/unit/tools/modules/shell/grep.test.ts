@@ -506,6 +506,65 @@ describe('grepModule (native)', () => {
       }
     });
 
+    // N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT-FU1：默认工作根本身也是懒创建的，
+    // 新数据目录上首轮之前不存在；缺失的根与缺失的计划目录一样按空目录处理。
+    it('missing default work root itself: ok + "No matches found", root still absent, engines never run', async () => {
+      const dataDir = path.join(tempDir, '.code-agent');
+      const workRoot = path.join(tempDir, 'Neo');
+      setWorkRootEnv(dataDir);
+      try {
+        // 不桩 rg：真 rg/grep 对缺失目录只能报 exit 2 的 IO error，绝不会返回零匹配。
+        // 因此 ok + "No matches found" 本身就证明引擎从未被拉起（分支在进引擎前拦下）。
+        const result = await run(
+          { pattern: 'anything', path: workRoot },
+          makeCtx({ workingDir: workRoot }),
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('No matches found');
+          expect(result.meta).toMatchObject({
+            pattern: 'anything',
+            searchPath: workRoot,
+            totalMatches: 0,
+            matches: [],
+          });
+        }
+        // 只读探查不为懒工作根落盘
+        await expect(fs.stat(workRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        restoreWorkRootEnv();
+      }
+    });
+
+    it('missing non-planned sibling of the default work root: structured ENOENT naming the path', async () => {
+      const dataDir = path.join(tempDir, '.code-agent');
+      const sibling = path.join(tempDir, 'Neo-missing-sibling');
+      setWorkRootEnv(dataDir);
+      try {
+        const result = await run({ pattern: 'hello', path: sibling }, makeCtx({ workingDir: tempDir }));
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('ENOENT');
+          expect(result.error).toBe(`Path not found: ${sibling}`);
+        }
+      } finally {
+        restoreWorkRootEnv();
+      }
+    });
+
+    it('existing but empty default work root: unchanged normal zero-match path', async () => {
+      const workRoot = path.join(tempDir, 'Neo-existing-empty');
+      await fs.mkdir(workRoot, { recursive: true });
+      const result = await run({ pattern: 'hello', path: workRoot }, makeCtx({ workingDir: workRoot }));
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('No matches found');
+        expect(result.meta).toMatchObject({ searchPath: workRoot, totalMatches: 0 });
+      }
+      await expect(fs.access(workRoot)).resolves.toBeUndefined();
+    });
+
     it('rg exit 2 with "No such file or directory (os error 2)" stderr classifies as ENOENT, not FS_ERROR', async () => {
       const fakeRg = path.join(tempDir, 'fake-rg.sh');
       await fs.writeFile(

@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
   autoscrollToBottom: vi.fn(),
   virtuosoProps: {} as Record<string, any>,
+  // 模拟真实 Virtuoso「先测量后挂载」：新数据项晚一拍才出现在 DOM 里。
+  deferItemMount: false,
 }));
 
 vi.mock('react-virtuoso', async () => {
@@ -52,14 +54,23 @@ vi.mock('react-virtuoso', async () => {
       const setScrollerRef = ReactModule.useCallback((element: HTMLDivElement | null) => {
         props.scrollerRef?.(element);
       }, [props.scrollerRef]);
+      const [mountedCount, setMountedCount] = ReactModule.useState<number>(props.data.length);
+      ReactModule.useEffect(() => {
+        if (mountedCount !== props.data.length) setMountedCount(props.data.length);
+      });
+      const visible = mocks.deferItemMount ? props.data.slice(0, mountedCount) : props.data;
       return ReactModule.createElement(
         'div',
         { ref: setScrollerRef, 'data-testid': 'virtuoso-scroller' },
-        props.data.map((turn: TraceTurn, index: number) => ReactModule.createElement(
-          ReactModule.Fragment,
-          { key: turn.turnId },
-          props.itemContent(props.firstItemIndex + index, turn),
-        )),
+        ReactModule.createElement(
+          'div',
+          { 'data-testid': 'virtuoso-item-list' },
+          visible.map((turn: TraceTurn, index: number) => ReactModule.createElement(
+            ReactModule.Fragment,
+            { key: turn.turnId },
+            props.itemContent(props.firstItemIndex + index, turn),
+          )),
+        ),
       );
     }),
   };
@@ -100,6 +111,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.scrollToIndex.mockReset();
   mocks.autoscrollToBottom.mockReset();
+  mocks.deferItemMount = false;
   animationFrames = new Map();
   nextAnimationFrameId = 1;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -418,6 +430,31 @@ describe('TurnBasedTraceView session-entry settle cancel', () => {
     }
 
     expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+});
+
+describe('TurnBasedTraceView 离底不远但末尾被挡', () => {
+  it('Virtuoso 仍报在底部（阈值 96 内）而末尾差 60px 时也出「回到底部」', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 }));
+    for (let frame = 0; frame < 70; frame += 1) {
+      act(() => {
+        flushAnimationFrames();
+        vi.runOnlyPendingTimers();
+      });
+    }
+    act(() => mocks.virtuosoProps.atBottomStateChange(true));
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 2000, configurable: true },
+      clientHeight: { value: 600, configurable: true },
+    });
+    scroller.scrollTop = 2000 - 600 - 60;
+    act(() => {
+      scroller.dispatchEvent(new Event('scroll'));
+      flushAnimationFrames();
+    });
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).not.toBeNull();
   });
 });
 
@@ -855,9 +892,11 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it('流式结束后跟随窗口内 revision 变化仍会 settle 到底部', () => {
+  it('流式结束后跟随窗口内 revision 变化 settle 到真实底部（末轮含 Footer 整段露出）', () => {
     const turn = makeStreamingTurn();
     const view = render(React.createElement(TurnBasedTraceView, { projection: makeStreamingProjection(turn) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1800 });
     flushView();
     mocks.scrollToIndex.mockClear();
 
@@ -867,11 +906,189 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     }));
     flushView();
 
-    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
-      index: 0,
-      align: 'end',
-      behavior: 'auto',
+    // 不再用 scrollToIndex(align:'end')：它按 Virtuoso 量的项高对齐，末张卡外边距和 Footer 落在视口外
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBe(1800);
+  });
+
+  it('停车后新轮晚挂载、末尾授权卡异步长高：仍落到真实底部（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER）', async () => {
+    const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      constructor(readonly callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
     });
+    mocks.deferItemMount = true;
+
+    const history = makeTurn(0);
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [history], activeTurnIndex: -1 },
+    }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    flushView();
+    act(() => mocks.virtuosoProps.atBottomStateChange(true));
+
+    // 用户发新消息：新轮在跟随 effect 跑完之后才被列表挂出来
+    const running = makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 });
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [history, running], activeTurnIndex: 1 },
+    }));
+    await act(async () => { await Promise.resolve(); });
+    flushView();
+
+    // 停车等授权：轮结束，授权卡按钮等可用性回来后才出现
+    const parked: TraceTurn = { ...running, status: 'completed', endTime: 300 };
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [history, parked], activeTurnIndex: -1 },
+    }));
+    await act(async () => { await Promise.resolve(); });
+    flushView();
+
+    const turnObservers = observers.filter((observer) => observer.observe.mock.calls
+      .some((call) => (call[0] as HTMLElement).dataset?.traceTurnId === 'turn-2'));
+    expect(turnObservers.length).toBeGreaterThanOrEqual(1);
+
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 2400 });
+    scroller.scrollTop = 2300;
+    act(() => {
+      for (const observer of turnObservers) {
+        observer.callback([{ contentRect: rect(0, 640) } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+      }
+    });
+    act(() => {
+      vi.advanceTimersByTime(ACTIVE_DISPLAY_SCROLL_INTERVAL_MS + 20);
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(scroller.scrollTop).toBe(2400);
+  });
+
+  describe('会话首开落底后的晚到高度变化', () => {
+    function setupEntry() {
+      const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
+      vi.stubGlobal('ResizeObserver', class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+        constructor(readonly callback: ResizeObserverCallback) {
+          observers.push(this);
+        }
+      });
+      const view = render(React.createElement(TurnBasedTraceView, {
+        projection: { sessionId: 'session-1', turns: [makeTurn(0), makeTurn(1), makeTurn(2)], activeTurnIndex: -1 },
+      }));
+      const scroller = view.getByTestId('virtuoso-scroller');
+      const itemList = view.getByTestId('virtuoso-item-list');
+      let listHeight = 2400;
+      itemList.getBoundingClientRect = () => rect(0, listHeight);
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 600 });
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => listHeight });
+      act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 }));
+      for (let frame = 0; frame < 70; frame += 1) flushView();
+      const observing = (match: (el: Element) => boolean) => observers.filter((observer) => (
+        observer.observe.mock.calls.some((call) => match(call[0] as Element))
+      ));
+      const resizeList = (height: number) => {
+        listHeight = height;
+        act(() => {
+          for (const observer of observing((el) => el === itemList)) observer.callback([], {} as ResizeObserver);
+        });
+        for (let step = 0; step < 3; step += 1) {
+          act(() => {
+            vi.advanceTimersByTime(ACTIVE_DISPLAY_SCROLL_INTERVAL_MS + 20);
+            flushAnimationFrames();
+            vi.runOnlyPendingTimers();
+          });
+        }
+      };
+      return { scroller, observing, resizeList };
+    }
+
+    it('列表变矮/变高把视口留在离底一两百像素处时重新落底；按着指针时不动', () => {
+      const { scroller, resizeList } = setupEntry();
+      scroller.scrollTop = 1800 - 600 - 176; // 列表变矮后 Virtuoso 补偿把视口留在离底 176px
+      resizeList(1800);
+      expect(scroller.scrollTop).toBe(1800);
+
+      fireEvent.pointerDown(scroller);
+      scroller.scrollTop = 1000;
+      resizeList(1700); // 用户按着指针（展开/拖滚动条）期间：不追底
+      expect(scroller.scrollTop).toBe(1000);
+    });
+  });
+
+  it('用户点发送：已上滚阅读也立刻落到底（用户消息还没进投影时）', () => {
+    const projection: TraceProjection = { sessionId: 'session-1', turns: [makeTurn(0), makeTurn(1)], activeTurnIndex: -1 };
+    const view = render(React.createElement(TurnBasedTraceView, { projection, userSendAt: null }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 3000 });
+    act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_001 }));
+    for (let frame = 0; frame < 70; frame += 1) flushView();
+    act(() => {
+      fireEvent.wheel(scroller, { deltaY: -600 });
+      vi.advanceTimersByTime(USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS + 50);
+    });
+    scroller.scrollTop = 900;
+    mocks.scrollToIndex.mockClear();
+
+    // 同一份投影重渲染（只换发送时刻）：不该动
+    view.rerender(React.createElement(TurnBasedTraceView, { projection, userSendAt: null }));
+    flushView();
+    expect(scroller.scrollTop).toBe(900);
+
+    view.rerender(React.createElement(TurnBasedTraceView, { projection, userSendAt: 12345 }));
+    for (let frame = 0; frame < 10; frame += 1) flushView();
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 1, align: 'end', behavior: 'auto' });
+    expect(scroller.scrollTop).toBe(3000);
+  });
+
+  it('输入框变高压矮消息区：贴底时重新落底，已上滚阅读时不动', () => {
+    const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      constructor(readonly callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
+    });
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [makeTurn(0), makeTurn(1)], activeTurnIndex: -1 },
+    }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    let clientHeight = 600;
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => clientHeight });
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 2000 });
+    act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_001 }));
+    for (let frame = 0; frame < 70; frame += 1) flushView(); // 进入落底结算最多跨 60 帧才收尾
+    act(() => mocks.virtuosoProps.atBottomStateChange(true));
+    // 观察器在 clientHeight 定义前就记下了初始高度，这里按 600 重新对齐一次
+    const scrollerObservers = observers.filter((observer) => observer.observe.mock.calls
+      .some((call) => call[0] === scroller));
+    const resize = () => act(() => {
+      for (const observer of scrollerObservers) observer.callback([], {} as ResizeObserver);
+    });
+    resize();
+
+    scroller.scrollTop = 1400; // 贴底：2000 - 1400 - 600 = 0
+    clientHeight = 480;
+    resize();
+    expect(scroller.scrollTop).toBe(2000);
+
+    clientHeight = 600;
+    resize();
+    act(() => {
+      fireEvent.wheel(scroller, { deltaY: -400 });
+      vi.advanceTimersByTime(USER_SCROLL_FOLLOW_REENGAGE_PAUSE_MS + 50);
+    });
+    scroller.scrollTop = 600; // 上滚阅读：离底 800
+    clientHeight = 480;
+    resize();
+    expect(scroller.scrollTop).toBe(600);
   });
 
   it('非 streaming 的历史会话进入：初始落点钉在底部，不再把末轮顶置到视口顶部', () => {
@@ -915,15 +1132,13 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     });
     mocks.scrollToIndex.mockClear();
     const completed: TraceTurn = { ...makeStreamingTurn(), status: 'completed', endTime: 300 };
+    const scroller = view.getByTestId('virtuoso-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1500 });
     view.rerender(React.createElement(TurnBasedTraceView, {
       projection: { sessionId: 'session-1', turns: [completed], activeTurnIndex: -1 },
     }));
     flushView();
-    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
-      index: 0,
-      align: 'end',
-      behavior: 'auto',
-    });
+    expect(scroller.scrollTop).toBe(1500);
   });
 
   it('切换会话时 Virtuoso 以 sessionId 为 key 重挂载，每个会话都重新应用底部初始落点', () => {

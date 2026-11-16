@@ -37,7 +37,7 @@ import type {
 import { grepSchema as schema } from './grep.schema';
 import { applyPartialToOutput, parseSearchErrorStderr } from './partialResults';
 import { isPathMissing } from '../../file/pathUtils';
-import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
+import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { GREP, BASH } from '../../../../shared/constants';
 import {
   collectForeignSlotTraversalExcludes,
@@ -46,6 +46,7 @@ import {
 } from '../../../security/slotDataDirGuard';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 
 const execFileAsync = promisify(execFile);
 const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
@@ -585,7 +586,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
 
     // 参数解析
     const rawPath = (args.path as string | undefined) ?? ctx.workingDir;
-    const searchPath = path.isAbsolute(rawPath) ? rawPath : path.join(ctx.workingDir, rawPath);
+    const searchPath = resolveInputPath(rawPath, ctx.workingDir);
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
     const include = args.include as string | undefined;
     const fileType = args.type as string | undefined;
@@ -601,13 +602,15 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     const ctxAfter = contextLines ?? afterContext;
 
     // 搜索路径不存在时在进引擎前拦下（rg 对缺失目录报 exit 2 的 IO error，不该走到那一步）：
-    // 计划中的会话产出目录（任务_/Task_ 形状，懒创建、尚未落盘）按空目录处理，返回与
-    // 零匹配相同的形状，不建目录、不跑引擎（与 ListDirectory 的 planned-empty 分支同一策略）；
-    // 其余缺失路径报 ENOENT，让界面说「找不到」，而不是落成「被占用/没权限」的 FS_ERROR。
+    // 计划中的会话产出目录（任务_/Task_ 形状，懒创建、尚未落盘）与尚未落盘的默认工作根
+    // 本身（懒创建，新数据目录上首轮之前不存在）都按空目录处理，返回与零匹配相同的形状，
+    // 不建目录、不跑引擎（与 ListDirectory 的 planned-empty 分支同一策略）；其余缺失路径
+    // 报 ENOENT，让界面说「找不到」，而不是落成「被占用/没权限」的 FS_ERROR。
     if (await isPathMissing(searchPath)) {
-      if (isPlannedSessionWorkDirectory(searchPath)) {
+      const isWorkRoot = isDefaultWorkDirectory(searchPath);
+      if (isWorkRoot || isPlannedSessionWorkDirectory(searchPath)) {
         onProgress?.({ stage: 'completing', percent: 100 });
-        ctx.logger.info('Grep done (planned empty session work directory)', {
+        ctx.logger.info(`Grep done (planned empty ${isWorkRoot ? 'default work root' : 'session work directory'})`, {
           pattern: pattern.slice(0, 80),
           searchPath,
         });
