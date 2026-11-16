@@ -39,7 +39,7 @@ for (const language of ['zh', 'en'] as const) {
         expect(getHumanToolLabel({ toolName: tool, labels: t.receiptPresentation.humanToolLabels })).toBe(expected);
         expect(getBackgroundTaskToolLabel({ toolName: tool, labels: t.receiptPresentation.humanToolLabels })).toBe(expected);
         expect(describeApproval(request, t, language).title).toBe(expected);
-        if (language === 'zh') expect(permissionNotice(tool).body).toBe(`需要授权：${expected}`);
+        if (language === 'zh') expect(permissionNotice(tool, 'zh').body).toBe(`需要授权：${expected}`);
       });
     }
     it('file and command translation/configuration consumers share the canonical names', () => {

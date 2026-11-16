@@ -44,7 +44,7 @@ describe('toolUserLabel', () => {
     expect(permissionNotice('Write', 'en').body).toContain('Write file');
     expect(permissionNotice('Edit', 'en').body).toContain('Edit file');
     expect(permissionNotice('Read', 'en').body).toContain('Read file');
-    expect(permissionNotice('Bash').body).toBe('需要授权：运行命令');
+    expect(permissionNotice('Bash', 'zh').body).toBe('需要授权：运行命令');
   });
   it('英文界面给英文动作名', () => {
     expect(toolUserLabel('Bash', 'en')).toBe('Run command');
