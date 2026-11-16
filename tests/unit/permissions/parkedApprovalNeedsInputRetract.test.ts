@@ -133,11 +133,11 @@ describe('停车审批 needs-input 通知撤回（真服务链路）', () => {
     getPermissionModeManager().markUnattendedSession(sessionId);
     const { result, requestId } = await parkInIsland(sessionId);
 
-    // 投递了停车口的「有操作等你确认」（第二个落库口同键被去重）。
+    // 投递了停车口的「需要授权」（第二个落库口同键被去重）。
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
     expect(platformMocks.broadcast).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
-      expect.objectContaining({ title: '有操作等你确认', urgent: true, dedupeKey: requestId }),
+      expect.objectContaining({ title: '需要授权', urgent: true, dedupeKey: requestId }),
     );
 
     expect(island.resolveParkedApproval(requestId, 'allow')).toBe(true);
