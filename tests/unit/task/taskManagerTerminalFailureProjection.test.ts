@@ -283,4 +283,11 @@ describe('background terminal failure projection', () => {
     expect(card.content).toBe('[任务结果] titles｜finished｜Recovered.');
     expect(card.metadata?.backgroundTaskResult?.summary).toBe('Recovered.');
   });
+
+  it.each([APPROVAL_ZH, APPROVAL_EN, REPAIR_ZH])('keeps the terminal failure notice to one sentence without a URL suffix', async (detail) => {
+    const { resolveStoppedTaskOutcome } = await import('../../../src/host/services/commandCenter/sessionTaskStopConclusion');
+    expect(resolveStoppedTaskOutcome({ status: 'failed', detail, lastUrl: 'https://example.com' })).toEqual({
+      status: 'failed', detail, notice: detail, kind: 'error',
+    });
+  });
 });
