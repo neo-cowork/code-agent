@@ -24,7 +24,6 @@ export {
   describeAppleScriptFailure,
   isAppleEventsDenied,
   isAppleScriptFailure,
-  type AppleScriptFailureCode,
 } from './appleScriptFailure';
 
 // The shell hands bridge credentials over once per process; build the passive bridge once (null = no desktop shell).
