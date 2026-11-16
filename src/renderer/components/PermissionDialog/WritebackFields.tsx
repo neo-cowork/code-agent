@@ -105,8 +105,12 @@ export function draftFromArgs(tool: string, args: Record<string, unknown>, inclu
   return draft;
 }
 
-/** 草稿 → 送回 host 的 updatedArgs（列表按逗号/分号/换行切开并去空）。 */
-export function draftToArgs(tool: string, draft: WritebackDraft): Record<string, unknown> {
+/**
+ * 草稿 → 送回 host 的 updatedArgs（列表按逗号/分号/换行切开并去空）。
+ * 传入 original 时，原参数里本来没有、且草稿仍为空的字符串字段不回传（可选字段如日程备注不凭空多出 `""`）；
+ * 原参数里有值而被用户清空的字段照常回传空串。
+ */
+export function draftToArgs(tool: string, draft: WritebackDraft, original?: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
     if (field.readonly) continue;
@@ -123,6 +127,7 @@ export function draftToArgs(tool: string, draft: WritebackDraft): Record<string,
       }
       out[field.key] = field.key.endsWith('_ms') ? millis : localDatetimeToIso(value, millis);
     } else {
+      if (value === '' && original && original[field.key] === undefined) continue;
       out[field.key] = value;
     }
   }

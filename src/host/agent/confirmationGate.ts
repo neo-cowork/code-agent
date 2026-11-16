@@ -255,6 +255,7 @@ export class ConfirmationGate {
         pushDetail(details, 'Start', formatTimestamp(params.start_ms));
         pushDetail(details, 'End', formatTimestamp(params.end_ms));
         pushDetail(details, 'Location', normalizeString(params.location));
+        pushDetail(details, 'Notes', normalizeString(params.notes));
         return {
           type: 'generic',
           summary,

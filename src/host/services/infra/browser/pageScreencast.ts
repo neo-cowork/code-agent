@@ -30,6 +30,8 @@ interface PageScreencastFrame {
 }
 
 export interface PageScreencastHandle {
+  /** The startup capture is also usable when Chrome emits no screencast event. */
+  initialFrame?: PageScreencastFrame;
   stop(): Promise<void>;
 }
 
@@ -103,10 +105,17 @@ export async function startPageScreencast(
     everyNthFrame: Math.max(1, options.everyNthFrame),
   });
   // 首帧踢一下——静态页不重绘就永远不发帧，用户会看到空白面板。
-  await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: options.quality })
+  const initialCapture = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: options.quality })
     .catch(() => undefined);
+  const viewport = page.viewportSize();
 
   return {
+    ...(initialCapture && viewport ? { initialFrame: {
+      base64: initialCapture.data,
+      width: viewport.width,
+      height: viewport.height,
+      capturedAtMs: Date.now(),
+    } } : {}),
     async stop() {
       stopped = true;
       await cdp.send('Page.stopScreencast').catch(() => undefined);

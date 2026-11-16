@@ -36,6 +36,7 @@ const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
     { key: 'start_ms', kind: 'datetime', required: true },
     { key: 'end_ms', kind: 'datetime' },
     { key: 'location', kind: 'string' },
+    { key: 'notes', kind: 'string', multiline: true },
   ],
   calendar_update_event: [
     { key: 'calendar', kind: 'string', required: true, readonly: true },

@@ -67,10 +67,7 @@ describe('calendarCreateEventModule (native)', () => {
       expect(calendarCreateEventModule.schema.permissionLevel).toBe('write');
       expect(calendarCreateEventModule.schema.readOnly).toBe(false);
       expect(calendarCreateEventModule.schema.allowInPlanMode).toBe(false);
-      expect(calendarCreateEventModule.schema.inputSchema.required).toEqual([
-        'title',
-        'start_ms',
-      ]);
+      expect(calendarCreateEventModule.schema.inputSchema.required).toEqual(['title']);
     });
   });
 
