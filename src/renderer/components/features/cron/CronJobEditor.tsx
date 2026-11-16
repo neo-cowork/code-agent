@@ -40,6 +40,7 @@ import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { CronRunBudgetField } from './CronRunBudgetField';
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
@@ -952,19 +953,22 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           </div>
           {draft.runsOn !== 'cloud' && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label={cc.editorChrome.runBudgetLabel} hint={cc.editorChrome.runBudgetHint}>
-                <Input
-                  type="number"
-                  value={draft.maxRunBudget}
-                  onChange={(e) => {
-                    // event 任务的预算也在这里改（与事件字段同一 draft 字段），同步开闸。
-                    if (isEventScheduleKind(draft.scheduleType)) setEventField('maxRunBudget', e.target.value);
-                    else setField('maxRunBudget', e.target.value);
-                  }}
-                  placeholder={cc.editorChrome.unlimitedPlaceholder}
-                  data-testid="cron-budget-limit-input"
-                />
-              </FormField>
+              <div className="space-y-1.5">
+                <FormField label={cc.editorChrome.runBudgetLabel} hint={cc.editorChrome.runBudgetHint}>
+                  <Input
+                    type="number"
+                    value={draft.maxRunBudget}
+                    onChange={(e) => {
+                      // event 任务的预算也在这里改（与事件字段同一 draft 字段），同步开闸。
+                      if (isEventScheduleKind(draft.scheduleType)) setEventField('maxRunBudget', e.target.value);
+                      else setField('maxRunBudget', e.target.value);
+                    }}
+                    placeholder={cc.editorChrome.unlimitedPlaceholder}
+                    data-testid="cron-budget-limit-input"
+                  />
+                </FormField>
+                <FlatFeeBudgetNote variant="cron" />
+              </div>
               <FormField
                 label={cc.editorChrome.maxRunsLabel}
                 hint={job?.maxRuns != null && job.runCount != null

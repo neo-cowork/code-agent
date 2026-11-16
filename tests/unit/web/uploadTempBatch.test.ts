@@ -76,6 +76,36 @@ describe('POST /api/upload/temp/batch through the Express app', () => {
     process.stdout.write('POST /api/upload/temp/batch 200: 30/30 existing paths; nested paths preserved; one root\n');
   });
 
+  it('preserves Chinese folder and filenames including formerly colliding names', async () => {
+    const paths = ['rr82-合同资料/服务合同-晨光云帆.pdf', 'rr82-合同资料/报价单.pdf', 'rr82-合同资料/合同.pdf', 'rr82-合同资料/报告.pdf'];
+    const response = await post('/api/upload/temp/batch', batch(paths));
+    expect(response.status).toBe(200);
+    const result = await remember(response);
+    expect(result.files).toHaveLength(paths.length);
+    result.files.forEach((file: { path: string; relativePath: string }, index: number) => {
+      expect(file.relativePath).toBe(paths[index]);
+      expect(file.path).toBe(path.join(result.root, paths[index]));
+      expect(fs.readFileSync(file.path, 'utf8')).toBe('contract body');
+    });
+  });
+
+  it('bounds long Chinese folder and file segments to 200 UTF-8 bytes and keeps extensions', async () => {
+    const relativePath = `${'资'.repeat(100)}/${'合'.repeat(100)}.pdf`;
+    const response = await post('/api/upload/temp/batch', batch([relativePath]));
+    expect(response.status).toBe(200);
+    const result = await remember(response);
+    const expected = path.join(result.root, '资'.repeat(66), '合'.repeat(65) + '.pdf');
+    expect(result.files[0]).toEqual({ relativePath, path: expected });
+    expect(fs.readFileSync(expected, 'utf8')).toBe('contract body');
+  });
+
+  it('rejects truncation collisions rather than overwriting files', async () => {
+    const prefix = '合'.repeat(100);
+    const response = await post('/api/upload/temp/batch', batch([prefix + '甲.pdf', prefix + '乙.pdf']));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid upload path' });
+  });
+
   it.each(['../escape.pdf', 'contracts/../escape.pdf', 'contracts\\..\\escape.pdf', '/absolute.pdf', 'C:\\escape.pdf'])('rejects unsafe relativePath %s before any write', async (relativePath) => {
     const response = await post('/api/upload/temp/batch', batch(['valid.pdf', relativePath]));
     expect(response.status).toBe(400);

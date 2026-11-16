@@ -98,6 +98,8 @@ export const INTERACTION_TIMEOUTS = {
   USER_QUESTION: 300_000,
   /** 确认操作超时 */
   CONFIRM_ACTION: 60_000,
+  /** 空闲会话补发消息（/interrupt 无活跃轮）等新一轮登记起跑的上限；超了按发送失败回给界面 */
+  FOREGROUND_TURN_START: 30_000,
   /** 权限请求超时 */
   PERMISSION: 60_000,
   /** SaaS 连接器知情确认等待超时 */
