@@ -85,3 +85,10 @@ describe('stripToolCallProtocolMarkup', () => {
     expect(stripToolCallProtocolMarkup(text)).toBe(text);
   });
 });
+
+describe('stripToolCallProtocolMarkup 不越界处理 <tool_call>', () => {
+  it('主链路正文里讲解性的未闭合 <tool_call> 原样保留', () => {
+    const text = '千问的工具调用格式是 <tool_call> 后面跟 JSON，请参考文档。';
+    expect(stripToolCallProtocolMarkup(text)).toBe(text);
+  });
+});
