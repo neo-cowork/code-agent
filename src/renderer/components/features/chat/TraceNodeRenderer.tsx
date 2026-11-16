@@ -36,6 +36,7 @@ import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
 import { UI } from '@shared/constants';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
@@ -89,7 +90,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   let content: React.ReactNode;
 
   switch (node.type) {
@@ -688,7 +689,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
     const unchanged = !receipt.addedTools.length && !receipt.removedTools.length
       && !receipt.descriptionChanged && !receipt.promptChanged;
     const title = (receipt.diffAvailable === false ? copy.unavailable : unchanged ? copy.unchanged : copy.updated)
-      .replace('{role}', receipt.roleId);
+      .replace('{role}', localizeBuiltinRole(receipt.roleId, { name: receipt.roleId }, language).name);
     const capabilities = (toolNames: string[]) => getRoleToolCapabilities({
       toolNames,
       capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
