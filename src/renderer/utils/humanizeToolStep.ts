@@ -1,4 +1,5 @@
 import { resolveSkillName } from '@shared/resolveSkillName';
+import { catalogConnectorToolPhrase } from '@shared/utils/catalogConnectorToolLabel';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
@@ -278,6 +279,16 @@ function buildDomainActionSentence(
 
 const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿]/;
 
+/** 目录连接器（飞书等）的步骤句：「正在飞书创建日程」而不是「通过 lark 创建内容」。 */
+function catalogConnectorStepPhrase(name: string, status: ToolStepStatus, language: 'zh' | 'en'): string | undefined {
+  const tense = status === 'running' ? 'progressive' : status === 'completed' ? 'past' : 'imperative';
+  const phrase = catalogConnectorToolPhrase(name, language, tense);
+  if (!phrase) return undefined;
+  const lowered = `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`;
+  if (language === 'en') return status === 'pending-approval' ? `Request to ${lowered}` : status === 'failed' ? `Could not ${lowered}` : phrase;
+  return status === 'pending-approval' ? `请求${phrase}` : status === 'failed' ? `${phrase}未成功` : phrase;
+}
+
 // 失败/中断行统一改成「准备做什么」的意图式。中文不能裸删任意一个「了」：
 // 参数或目标名里也可能带这个字，只允许改写词表里审过的句首动词；英文同理只改
 // 已登记的过去式首词。新增模板若不命中，保持原文，测试会要求为反例补 intent 键。
@@ -531,6 +542,8 @@ function buildToolStep(
     case 'mcp': {
       const mcp = parseMcpName(name);
       if (!mcp) return h.fallbackNeutral;
+      const catalogPhrase = catalogConnectorStepPhrase(name, status, CJK_PATTERN.test(h.writeFallback) ? 'zh' : 'en');
+      if (catalogPhrase) return catalogPhrase;
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {

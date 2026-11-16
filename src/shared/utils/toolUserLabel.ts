@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { findConnectorToolMetadata, isMcpToolName } from '../contract/workbenchTools';
+import { catalogConnectorToolPhrase } from './catalogConnectorToolLabel';
 
 const TOOL_USER_LABELS: Record<string, string> = {
   bash: '运行命令',
@@ -45,6 +46,8 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
     if (en) return connector.action?.en ? `${connector.connectorNameEn}: ${connector.action.en}` : connector.connectorNameEn;
     return connector.action?.zh ? `${connector.connectorName}：${connector.action.zh}` : connector.connectorName;
   }
+  const catalog = catalogConnectorToolPhrase(name, language);
+  if (catalog) return catalog;
   if (isMcpToolName(name)) return en ? 'External tool' : '外部工具';
   const key = name.toLowerCase().replace(/[-_\s]/g, '');
   return (en ? TOOL_USER_LABELS_EN[key] : TOOL_USER_LABELS[key]) ?? (en ? 'Action' : UNKNOWN_LABEL);

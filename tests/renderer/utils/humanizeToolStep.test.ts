@@ -82,9 +82,9 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
       .toBe('在飞书发了一条消息');
   });
 
-  it('mcp channel: non-messaging lark tool stays generic', () => {
+  it('mcp channel: non-messaging lark tool names the catalog connector, never the raw id', () => {
     expect(humanizeToolStep('mcp__lark__calendar_v4_event_list', {}, zh))
-      .toBe('通过 lark 查询了信息');
+      .toBe('已读取飞书');
   });
 
   it('subagent spawn: with description', () => {

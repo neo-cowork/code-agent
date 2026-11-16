@@ -15,6 +15,7 @@ import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
 import { formatFilePath, getPermissionConfig } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
 type ApprovalKind =
@@ -185,11 +186,15 @@ function describeKind(
       const title = kind === 'shell' || kind === 'network'
         ? getPermissionConfig(request.type).title
         : p[FILE_TITLE_KEY[kind]];
+      const connector = request.details.connectorAccess;
+      const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';
       return {
         kind,
         title,
-        question: permissionSummary(request, t, language),
-        consequence: permissionConsequence(request, t),
+        question: connector
+          ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
+          : permissionSummary(request, t, language),
+        consequence: permissionConsequence(request, t, language),
         icon,
       };
     }
