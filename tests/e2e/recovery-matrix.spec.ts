@@ -219,7 +219,7 @@ test('C-allow parked AskUserQuestion', async ({ page }) => {
     injection: 'E2E_BACKGROUND_APPROVAL via delegate_task',
     statusText: before.statusText,
     actions: before.actions,
-    actionTaken: clicked ?? '回答 · 允许 not visible',
+    actionTaken: clicked ?? '提交回答 not visible',
     result: completed ? 'E2E background approval completed' : (await captureSurface(page)).statusText,
     screenshot: 'test-results/recovery-matrix/C-allow.png',
     notes: `session ${parked.sessionId}`,
@@ -238,7 +238,7 @@ test('C-deny parked AskUserQuestion', async ({ page }) => {
     injection: 'E2E_BACKGROUND_APPROVAL via delegate_task',
     statusText: before.statusText,
     actions: before.actions,
-    actionTaken: clicked ?? '回答 · 拒绝 not visible',
+    actionTaken: clicked ?? '跳过 not visible',
     result: hidden ? `question hidden; ${after.statusText}` : after.statusText,
     screenshot: 'test-results/recovery-matrix/C-deny.png',
     notes: `session ${parked.sessionId}`,
@@ -941,12 +941,12 @@ async function clickMatching(page: Page, pattern: RegExp): Promise<string | null
 async function answerApproval(page: Page, decision: 'allow' | 'deny'): Promise<string | null> {
   const card = page.getByTestId('user-question-card').first();
   if (decision === 'deny') {
-    const deny = card.getByRole('button', { name: '回答 · 拒绝', exact: true });
+    const deny = card.getByRole('button', { name: '跳过', exact: true });
     if (await deny.isVisible().catch(() => false)) {
       await deny.click();
-      return '回答 · 拒绝';
+      return '跳过';
     }
-    return (await clickNamed(page, '回答 · 拒绝')) ? '回答 · 拒绝' : null;
+    return (await clickNamed(page, '跳过')) ? '跳过' : null;
   }
   const choices = card.getByRole('button', { name: /允许/ });
   const count = await choices.count();
@@ -958,10 +958,10 @@ async function answerApproval(page: Page, decision: 'allow' | 'deny'): Promise<s
     await candidate.click();
     break;
   }
-  const allow = card.getByRole('button', { name: '回答 · 允许', exact: true });
+  const allow = card.getByRole('button', { name: '提交回答', exact: true });
   if (await allow.isVisible().catch(() => false)) {
     await allow.click();
-    return '回答 · 允许';
+    return '提交回答';
   }
   return null;
 }

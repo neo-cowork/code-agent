@@ -15,7 +15,7 @@ const hostReasonZh = {
   [HostReasonCode.PermissionReadOnlyConfirmationRequired]: { summary: '只读探索模式下，{toolName}需要确认' },
   [HostReasonCode.PermissionCommandAnalysisFailed]: { summary: '这条命令无法可靠检查，已按安全规则拦截' },
   [HostReasonCode.PermissionClassifierFailed]: { summary: '安全检查暂时不可用，这次操作需要人工确认' },
-  [HostReasonCode.PermissionDeniedByUser]: { summary: '你拒绝了{toolName}' },
+  [HostReasonCode.PermissionDeniedByUser]: { summary: '你拒绝了{toolName}', detail: '审批被拒绝，没有执行。你刚才拒绝了这类操作。请在新消息里再告诉 Neo 要做什么，确认卡片就会重新出现。' },
   [HostReasonCode.PermissionDeniedNoApprovalUi]: { summary: '当前运行环境无法显示审批，{toolName}已按安全规则拒绝' },
   [HostReasonCode.PermissionDeniedPeerOriginUnattended]: { summary: '{toolName}由 agent {senderAgentId} 的消息触发，无人值守下已按安全规则拒绝', detail: '其他 agent 转述的写入或执行，必须有你当场确认；请你在交互会话里直接发起这个操作。' },
   [HostReasonCode.PermissionPeerOriginConfirmationRequired]: { summary: '{toolName}由其他 agent 的消息触发，需要你确认' },
@@ -63,7 +63,7 @@ const hostReasonEn: typeof hostReasonZh = {
   [HostReasonCode.PermissionReadOnlyConfirmationRequired]: { summary: '{toolName} needs confirmation in read-only exploration mode' },
   [HostReasonCode.PermissionCommandAnalysisFailed]: { summary: 'This command could not be checked reliably and was blocked by the safety policy' },
   [HostReasonCode.PermissionClassifierFailed]: { summary: 'The safety check is temporarily unavailable, so this action needs manual confirmation' },
-  [HostReasonCode.PermissionDeniedByUser]: { summary: 'You declined {toolName}' },
+  [HostReasonCode.PermissionDeniedByUser]: { summary: 'You declined {toolName}', detail: 'The approval was denied, so nothing ran. You declined this kind of action. Tell Neo what you want in a new message to bring the approval card back.' },
   [HostReasonCode.PermissionDeniedNoApprovalUi]: { summary: 'This environment cannot show approvals, so {toolName} was denied by the safety policy' },
   [HostReasonCode.PermissionDeniedPeerOriginUnattended]: { summary: '{toolName} was triggered by a message from agent {senderAgentId} and was denied by the safety policy while unattended', detail: 'Writes or executions relayed by another agent need your explicit confirmation. Start this action yourself in an interactive session.' },
   [HostReasonCode.PermissionPeerOriginConfirmationRequired]: { summary: '{toolName} was triggered by a message from another agent and needs your confirmation' },
@@ -123,6 +123,7 @@ export const agentErrorZh = {
       network: '连不上模型服务',
       context_length: '对话超出了模型上限',
       image_payload: '图片太多或太大',
+      request_feature_rejected: '服务商拒绝了请求里的某项功能',
       interrupted: '运行被中断',
       generic: '运行失败',
     },
@@ -175,6 +176,10 @@ export const agentErrorZh = {
       image_payload: {
         title: '图片太多或文件太大，模型无法接收',
         suggestion: '请新开会话，只带这次需要的图片；图片较多时分批发送，单张过大时先压缩后再发。',
+      },
+      request_feature_rejected: {
+        title: '服务商拒绝了这次请求里的某项功能',
+        suggestion: '当前模型所在的中转服务没有接受请求中的一项附加能力，这不是你的操作问题。建议切换到其他模型后重试。',
       },
       interrupted: {
         title: '已中断',
@@ -238,6 +243,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       network: 'could not reach the model service',
       context_length: 'conversation too long for the model',
       image_payload: 'too many or oversized images',
+      request_feature_rejected: 'the provider rejected a request feature',
       interrupted: 'run interrupted',
       generic: 'run failed',
     },
@@ -288,6 +294,10 @@ export const agentErrorEn: typeof agentErrorZh = {
       image_payload: {
         title: 'There are too many images or the image files are too large',
         suggestion: 'Start a new session with only the images needed for this request. Send large sets in smaller batches, and compress oversized images before sending them.',
+      },
+      request_feature_rejected: {
+        title: 'The provider rejected a feature in this request',
+        suggestion: 'The relay serving this model did not accept an extra capability in the request. This is not something you did wrong. Switch to another model and try again.',
       },
       interrupted: {
         title: 'Interrupted',
