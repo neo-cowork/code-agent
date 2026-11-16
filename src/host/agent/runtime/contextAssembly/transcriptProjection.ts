@@ -173,20 +173,16 @@ export async function summarizeCollapsedContext(
  * 未闭合的 <longcat_tool_call> 按 <think> 同款兜底剥到串尾。
  */
 const TOOL_CALL_PROTOCOL_MARKUP_PATTERNS = [
-  /<tool_call>[\s\S]*?<\/tool_call>/g,
-  /<tool_call>[\s\S]*$/g,
   /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
   /<longcat_tool_call>[\s\S]*$/gi,
   /<longcat_arg_key>[\s\S]*?<\/longcat_arg_key>/gi,
   /<longcat_arg_value>[\s\S]*?<\/longcat_arg_value>/gi,
   /<\/?longcat_(?:arg_key|arg_value|tool_call|tool_result)\s*\/?>/gi,
-  /<\/tool_call>/g,
-  /<tool_call>/g,
 ];
 
 /** 剥离正文里的工具调用协议裸标记；无标记时原样返回。 */
 export function stripToolCallProtocolMarkup(content: string): string {
-  if (!content?.includes('longcat_') && !content?.includes('<tool_call>')) return content;
+  if (!content?.includes('longcat_')) return content;
   let cleaned = content;
   for (const pattern of TOOL_CALL_PROTOCOL_MARKUP_PATTERNS) {
     cleaned = cleaned.replace(pattern, '');

@@ -270,6 +270,16 @@ describe('background terminal failure projection', () => {
     expect(card.metadata?.backgroundTaskResult?.summary).not.toMatch(/<\/?(?:tool_call|longcat_tool_call)>|targetRef/);
   });
 
+  it('card strips an unclosed <tool_call> tail (card-only scope)', async () => {
+    const { buildSessionTaskResultMessage } = await import('../../../src/host/services/commandCenter/sessionCommandTaskRestartRecovery');
+    const card = buildSessionTaskResultMessage(
+      { id: 'task-open', shortName: 'titles' }, 'completed',
+      'Done.\n<tool_call>{"targetRef":"e6"', 'result-open', 'en',
+    );
+    expect(card.metadata?.backgroundTaskResult?.summary).toBe('Done.');
+    expect(card.content).not.toMatch(/<tool_call>|targetRef/);
+  });
+
   it('cleans the shared builder used by deferred restart recovery', async () => {
     const { buildSessionTaskResultMessage } = await import('../../../src/host/services/commandCenter/sessionCommandTaskRestartRecovery');
     const card = buildSessionTaskResultMessage(
