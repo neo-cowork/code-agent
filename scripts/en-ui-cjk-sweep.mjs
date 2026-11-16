@@ -64,10 +64,15 @@ function collectCjk(page, surface) {
         matches: (element) => Boolean(element.closest('[data-session-id], [data-user-content], [contenteditable="true"]')),
       },
       {
-        reason: 'built-in expert display names are owned by N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU4',
+        reason: 'built-in expert content (name, profession, intro, keywords, example prompts) is owned by N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU4',
         matches: (element, text) => {
           const name = element.closest('[data-testid^="expert-card-"]')?.querySelector('.text-sm.font-medium.text-zinc-100');
-          return element === name || element.closest('[data-testid="role-basic-summary-name"]') !== null
+          const summary = element.closest('[data-testid="role-basic-summary"]');
+          const profession = summary !== null && element.tagName === 'SPAN' && element.parentElement === summary.firstElementChild;
+          const intro = element.closest('[data-testid="role-basic-summary-intro"]') !== null;
+          const placeholder = (element.getAttribute('placeholder') || '').replace(/\s+/g, ' ').trim();
+          const expertField = element.tagName === 'TEXTAREA' && text !== placeholder && document.querySelector('[data-testid="role-basic-summary"]') !== null;
+          return element === name || profession || intro || expertField || element.closest('[data-testid="role-basic-summary-name"]') !== null
             || (element.matches('img[alt]') && element.closest('[data-testid="role-detail-page"]') !== null && element.getAttribute('alt') === text);
         },
       },
@@ -136,7 +141,9 @@ function createVisitor(page, out, report) {
     const allowed = findings.filter((finding) => finding.allowlisted);
     const screenshot = path.join(out, `${String(report.surfaces.length + 1).padStart(2, '0')}-${slug(surface)}.png`);
     await page.screenshot({ path: screenshot, fullPage: false });
-    const record = { surface, hits, allowlisted: allowed, titleHovers: hovered, screenshot };
+    const visibleText = await page.locator('body').innerText();
+    fs.writeFileSync(screenshot.replace(/\.png$/, '.txt'), `${visibleText}\n`);
+    const record = { surface, hits, allowlisted: allowed, titleHovers: hovered, screenshot, visibleText };
     report.surfaces.push(record);
     for (const finding of findings) {
       console.log(`${finding.allowlisted ? 'ALLOWLIST' : 'HIT'} surface=${surface} node=${finding.node} text=${JSON.stringify(finding.text)}${finding.reason ? ` reason=${finding.reason}` : ''}`);
