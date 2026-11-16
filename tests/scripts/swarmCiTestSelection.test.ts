@@ -34,6 +34,19 @@ const intentionalExclusions: Record<string, string> = {
   smoke: 'Desktop-mutating smoke tests are excluded in vitest.config.ts.',
 };
 
+const platformRoutes = [
+  {
+    file: 'tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts',
+    job: 'darwin',
+    reason: 'reminders_create is registered only on Darwin; #3526 Ubuntu shard 3 failed before the injected tool call.',
+  },
+  {
+    file: 'tests/integration/sandbox/bubblewrapWrap.test.ts',
+    job: 'linux-sandbox',
+    reason: 'Real Linux user/network namespaces need a host with bubblewrap, absent in the Playwright container (#3526 shard 1).',
+  },
+];
+
 const preMergeRunCommands = readdirSync(workflowsRoot, { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
   .flatMap((entry) => {
@@ -45,6 +58,26 @@ const preMergeRunCommands = readdirSync(workflowsRoot, { withFileTypes: true })
   .filter((run) => run.includes('vitest'));
 
 describe('pre-merge Vitest selection', () => {
+  it('keeps platform-routed files selected by required jobs after excluding them from Ubuntu shards', () => {
+    const swarm = readWorkflow('swarm-ci.yml');
+    const unitRun = swarm.jobs?.unit?.steps?.find((step) => step.run?.includes('npx vitest run'))?.run ?? '';
+    const gate = swarm.jobs?.['merge-queue-gate'];
+    const gateRun = gate?.steps?.[0]?.run ?? '';
+    for (const { file, job, reason } of platformRoutes) {
+      expect(reason).not.toBe('');
+      expect(unitRun, file).toContain(`--exclude '${file}'`);
+      const platformRun = swarm.jobs?.[job]?.steps?.find((step) => step.run?.includes('npx vitest run'))?.run ?? '';
+      expect(platformRun, file).toContain(file);
+      expect(platformRun, file).not.toContain(`--exclude '${file}'`);
+      expect(gate?.needs, file).toContain(job);
+      expect(gateRun, file).toContain(`test "\${{ needs.${job}.result }}" = success`);
+    }
+    const linux = swarm.jobs?.['linux-sandbox'];
+    expect(linux?.['runs-on']).toBe('ubuntu-22.04');
+    expect(linux?.if).toBeUndefined();
+    expect(linux?.steps?.some((step) => step.run?.includes('apt-get install -y bubblewrap'))).toBe(true);
+  });
+
   it('covers every top-level test directory or records why it is excluded', () => {
     const directories = readdirSync(testsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && containsVitestFile(resolve(testsRoot, entry.name)))

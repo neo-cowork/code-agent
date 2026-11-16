@@ -308,8 +308,18 @@ const gates = [
       'tests/unit/runtime/runtimeAssetStatus.test.ts',
       '--exclude',
       'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts',
+      // Routed to their required platform jobs in CI (#3526).
+      '--exclude',
+      'tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts',
+      '--exclude',
+      'tests/integration/sandbox/bubblewrapWrap.test.ts',
       // 真 bug 欠条；修复后与 CI 同时摘除。当前无。
     ],
+  },
+  {
+    ci: 'swarm-ci / linux-sandbox / Linux bubblewrap integration',
+    command: 'node',
+    args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Linux bubblewrap integration', '--', 'npx', 'vitest', 'run', 'tests/integration/sandbox/bubblewrapWrap.test.ts', '--retry=1'],
   },
   {
     ci: 'swarm-ci / darwin / Darwin-gated vitest (merge group)',
@@ -323,6 +333,7 @@ const gates = [
       'vitest',
       'run',
       'tests/agent/agentOrchestrator.test.ts',
+      'tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts',
       'tests/scripts/tauriInstallSignAnchor.test.ts',
       'tests/unit/connectors/nativeConnectorStatus.test.ts',
       'tests/unit/connectors/appleScriptFailure.test.ts',

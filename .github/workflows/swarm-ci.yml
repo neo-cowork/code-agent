@@ -494,6 +494,9 @@ jobs:
         #   （:58）；夹具把 os.tmpdir() 下的根当作系统目录。darwin 的 /var/folders 命中
         #   system_dir_delete，Linux 的 /tmp 只评为 high；同路径只读判定探针已复现差异。
         #
+        # #3526：delegateRemindersCreateFaultInjection 依赖仅 Darwin 注册的 reminders_create，
+        # 移至 darwin；bubblewrapWrap 需真实 Linux user namespaces，移至 linux-sandbox 宿主。
+        # 两文件均仍是合并前必需门，不是欠条或静默跳过。
         # 真 bug 欠条（同一 Ubuntu run，修复后必须摘除；不算平台豁免）：当前无。
         #   已偿还：folderTrustService（#1657）、runtimeAssetInstaller（N-RUNTIME-ASSET-RETENTION-ORDER-0905）。
         #
@@ -508,7 +511,9 @@ jobs:
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts' \
             --exclude 'tests/unit/permissions/writebackEdit.test.ts' \
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
-            --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts'
+            --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts' \
+            --exclude 'tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts' \
+            --exclude 'tests/integration/sandbox/bubblewrapWrap.test.ts'
 
   # Playwright 镜像没有 lsof / ps 等且容器内不许 apt：在宿主 runner（自带这些工具）上连库打包，容器 job 下载。
   container-tools:
@@ -754,6 +759,33 @@ jobs:
         # node scripts/perf-journey-ratchet.mjs --tighten
         run: node scripts/perf-journey-ratchet.mjs
 
+  linux-sandbox:
+    name: Linux bubblewrap integration
+    # Ubuntu 22.04 permits unprivileged user namespaces; the Playwright container
+    # lacks bwrap and cannot exercise nested network namespaces. Keep the real jail.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Put Node.js in the sandbox-visible system prefix
+        # setup-node uses /opt/hostedtoolcache; the jail only mounts system paths.
+        run: |
+          runtime_root="$(dirname "$(dirname "$(command -v node)")")"
+          sudo cp -a "$runtime_root"/{bin,lib} /usr/local/
+          echo /usr/local/bin >> "$GITHUB_PATH"
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Linux bubblewrap integration
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Linux bubblewrap integration" -- npx vitest run tests/integration/sandbox/bubblewrapWrap.test.ts --retry=1
+
   darwin:
     name: Darwin-gated vitest (merge group)
     if: github.event_name == 'merge_group'
@@ -776,6 +808,7 @@ jobs:
         run: |
           node scripts/ci/vitest-with-flake-ledger.mjs --job "Darwin-gated vitest" -- npx vitest run \
             tests/agent/agentOrchestrator.test.ts \
+            tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts \
             tests/scripts/tauriInstallSignAnchor.test.ts \
             tests/unit/connectors/nativeConnectorStatus.test.ts \
             tests/unit/connectors/appleScriptFailure.test.ts \
@@ -799,19 +832,20 @@ jobs:
   # ---------------------------------------------------------------------------
   # 合并队列总闸（11-07 仓库迁到 neo-cowork 组织开 merge queue）：
   # 分支规则的必需检查只有 ai-review。PR 上它是 ship 写的人审判决状态；
-  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full/darwin 全部 success。
+  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full/darwin/linux-sandbox 全部 success。
   # always()：上游失败时本任务照跑并失败——若被跳过，GitHub 会把跳过的必需检查当通过。
   # ---------------------------------------------------------------------------
   merge-queue-gate:
     name: ai-review
     if: ${{ always() && github.event_name == 'merge_group' }}
-    needs: [smoke, unit, full, darwin]
+    needs: [smoke, unit, full, darwin, linux-sandbox]
     runs-on: ubuntu-24.04
     steps:
-      - name: Swarm smoke/unit/full/darwin 全部通过
+      - name: Swarm smoke/unit/full/darwin/linux-sandbox 全部通过
         run: |
-          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }} darwin=${{ needs.darwin.result }}"
+          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }} darwin=${{ needs.darwin.result }} linux-sandbox=${{ needs.linux-sandbox.result }}"
           test "${{ needs.smoke.result }}" = success
           test "${{ needs.unit.result }}" = success
           test "${{ needs.full.result }}" = success
           test "${{ needs.darwin.result }}" = success
+          test "${{ needs.linux-sandbox.result }}" = success

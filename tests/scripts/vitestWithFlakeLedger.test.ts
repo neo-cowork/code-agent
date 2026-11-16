@@ -180,6 +180,7 @@ describe('vitest flake ledger wrapper', () => {
       'Security guards (vitest tests/security)',
       'Unit + renderer vitest (shard ${{ matrix.shard }}/4)',
       'Darwin-gated vitest (merge group)',
+      'Linux bubblewrap integration',
       'MCP protocol compatibility (unit + integration)',
       'Run swarm smoke suite',
       'Run smoke suite',
@@ -220,10 +221,10 @@ describe('vitest flake ledger wrapper', () => {
     expect(swarm).toContain(`Unit + renderer vitest (shard \${{ matrix.shard }}/${count})`);
   });
 
-  it('keeps all five local retry mirrors behind the wrapper', () => {
+  it('keeps all six local retry mirrors behind the wrapper', () => {
     const local = readFileSync('scripts/gates-local.mjs', 'utf8');
     const retryOffsets = [...local.matchAll(/'--retry=1'/g)].map((match) => match.index ?? -1);
-    expect(retryOffsets).toHaveLength(5);
+    expect(retryOffsets).toHaveLength(6);
     for (const offset of retryOffsets) {
       const objectStart = local.lastIndexOf('\n  {', offset);
       expect(local.slice(objectStart, offset)).toContain('scripts/ci/vitest-with-flake-ledger.mjs');
