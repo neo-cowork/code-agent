@@ -11,6 +11,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 
 import { createHttpCodeAgentAPI } from '../../../src/renderer/api/httpTransport';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { UploadFailureError } from '../../../src/renderer/utils/httpFailureMessage';
 
 const originalFetch = globalThis.fetch;
 
@@ -73,5 +74,28 @@ describe('httpTransport getPathForFile non-2xx', () => {
     const generic = await upload();
     expect(generic.message).toContain('没能上传');
     for (const e of [tooLarge, generic]) expect(e.message).not.toMatch(/413|500|Upload failed|boom/);
+  });
+});
+
+describe('httpTransport getPathForFile carries a plain userMessage on every failure', () => {
+  beforeEach(() => { window.sessionStorage.clear(); useAppStore.setState({ language: 'zh' }); });
+  afterEach(() => { globalThis.fetch = originalFetch; useAppStore.setState({ language: 'zh' }); });
+
+  const userMessageOf = (e: Error) => {
+    expect(e).toBeInstanceOf(UploadFailureError);
+    return (e as UploadFailureError).userMessage;
+  };
+
+  it.each([
+    ['429 + Retry-After', () => respond(429, { error: 'x' }, { 'Retry-After': '45' }), '45 秒'],
+    ['413', () => respond(413, { error: 'x' }), '文件太大'],
+    ['500', () => respond(500, { error: 'boom' }), '没能上传'],
+    ['missing path', () => respond(200, {}), '没能上传'],
+    ['network error', () => { globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch; }, '没能上传'],
+  ])('%s', async (_name, arrange, expected) => {
+    arrange();
+    const msg = userMessageOf(await upload());
+    expect(msg).toContain(expected);
+    expect(msg).not.toMatch(/429|413|500|Upload failed|Failed to fetch|missing path/i);
   });
 });
