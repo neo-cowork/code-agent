@@ -73,12 +73,6 @@ import { openExternalLink } from '../../utils/platform';
 // 二期：导航 pending（N1）+ 工具条（N2）+ 批注发 Agent（N3）。
 // P1 账号态：⋯ 菜单 Cookie 导入见 BrowserAgentWindowOverflowMenu。
 
-function formatTemplate(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => (
-    vars[key] !== undefined ? String(vars[key]) : match
-  ));
-}
-
 /** 摘要卡用时：startedAt → projection updatedAt（裁定用 updatedAt，cleanup completedAt 依赖事件到达） */
 function formatTerminalDuration(
   startedAt: number,
@@ -539,7 +533,7 @@ export const BrowserAgentWindow: React.FC = () => {
 
   const isNavPending = navigationPending?.status === 'pending';
   const navFailedMessage = navigationPending?.status === 'failed'
-    ? formatTemplate(copy.navigationFailed, {
+    ? formatSurfaceExecutionCopy(copy.navigationFailed, {
       error: navigationPending.error || copy.navigationFailedGeneric,
     })
     : null;
@@ -563,7 +557,7 @@ export const BrowserAgentWindow: React.FC = () => {
           className="flex shrink-0 items-center gap-2 border-b border-badge-info/20 bg-sky-500/10 px-2.5 py-1.5"
         >
           <span className="min-w-0 flex-1 truncate text-xs text-badge-info">
-            {formatTemplate(copy.annotateBanner, { host: annotateHostLabel })}
+            {formatSurfaceExecutionCopy(copy.annotateBanner, { host: annotateHostLabel })}
           </span>
           <Button
             variant="primary"
@@ -573,7 +567,7 @@ export const BrowserAgentWindow: React.FC = () => {
             onClick={() => void handleSendAnnotations()}
             data-testid="browser-agent-window-annotate-send"
           >
-            {formatTemplate(copy.annotateSend, { count: pins.length })}
+            {formatSurfaceExecutionCopy(copy.annotateSend, { count: pins.length })}
           </Button>
           <GhostButton
             size="sm"
@@ -875,7 +869,12 @@ export const BrowserAgentWindow: React.FC = () => {
           </div>
         )}
 
-        {terminalSurfaceSession && <BrowserKeptResultBar conversationId={currentSessionId} workspace={workingDirectory} />}
+        <BrowserKeptResultBar
+          conversationId={currentSessionId}
+          workspace={workingDirectory}
+          turnActive={agentSurfaceBusy}
+          pageRunning={managedSession.running}
+        />
         {annotateMode && pins.map((pin) => (
           <button
             key={pin.id}

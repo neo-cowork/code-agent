@@ -30,6 +30,7 @@ import { evaluateMemoryRecalledExpectation, evaluateMemoryWrittenExpectation } f
 import { evaluateSkillTriggerExpectation } from './skillTriggerEval';
 import { evaluateProcessAssertion } from './processAssertionEval';
 import { toolMatches } from './toolNameAliases';
+import { readExpectedTextFromJson } from './responseTextSource';
 
 /**
  * Assertion failure details
@@ -842,10 +843,15 @@ async function evaluateExpectation(
       }
 
       case 'response_contains': {
-        const texts = Array.isArray(params.text) ? params.text as string[] : [params.text as string];
+        const fromJson = params.text_from_json !== undefined;
+        const texts = fromJson
+          ? [await readExpectedTextFromJson(params.text_from_json, context.workingDirectory)]
+          : Array.isArray(params.text) ? params.text as string[] : [params.text as string];
         const rawResponses = context.responses.join('\n');
         const allResponses = normalizeText(rawResponses);
-        passed = texts.every(t => matchesAnyAlternative(allResponses, t));
+        passed = texts.every(t => fromJson
+          ? allResponses.includes(normalizeText(t))
+          : matchesAnyAlternative(allResponses, t));
         actual = passed ? 'found in response' : rawResponses.substring(0, 200);
         expected = `response contains ${JSON.stringify(texts)}`;
         break;

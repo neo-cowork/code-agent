@@ -1,8 +1,9 @@
 // ============================================================================
 // 实验室子域词条 —— alignment（RLHF 对齐训练教学实验室：SFT/RewardModel/PPO）
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮，命名空间为 labAlignment（不与 lab 冲突）。
-// 注意：AlignmentLab.tsx + stages/*.tsx 内的示例问答/偏好对比样本/训练对比文本
-// 属于「演示数据本身」（模拟 SFT/RM/RLHF 的输入输出内容），不在本文件收录，原样保留中文。
+// 示例问答/偏好对比样本/训练对比文本（comparison.examples / reward.preferenceExamples /
+// sft.instructionExamples / sft.beforeAfterExamples）也在本文件：zh 块保持原中文，en 块为英文版，
+// stages/*.tsx 里不得再写 CJK 字面量（tests/renderer/i18n/labEnglishCopy.test.ts 静态扫描）。
 // ============================================================================
 
 export const labAlignmentZh = {
@@ -80,6 +81,37 @@ export const labAlignmentZh = {
         { title: '要有足够多的例子', text: '做一道题学不会，得多做才行' },
         { title: '这只是第一步', text: '学会「格式」，但还没学会什么是「好」' },
       ],
+      instructionExamples: [
+        {
+          question: '帮我把这句英文翻译成中文：Hello, how are you today?',
+          answer: '你好，你今天怎么样？',
+          category: '翻译任务',
+        },
+        {
+          question: '写一首关于春天的诗',
+          answer: '春风拂面暖阳照，\n桃花盛开蝶飞舞。\n万物复苏生机显，\n大地换上新衣裳。',
+          category: '创作任务',
+        },
+        {
+          question: '用简单的话解释什么是 AI',
+          answer: 'AI 就像是一个会学习的程序。你给它看很多例子，它就能从中找规律，然后自己做类似的事情。就像小朋友看多了猫的照片，以后见到新的猫也能认出来！',
+          category: '解释任务',
+        },
+        {
+          question: '把「把文件给我」改写得更礼貌一点',
+          answer: '请问您方便把文件发给我吗？谢谢！',
+          category: '改写任务',
+        },
+      ],
+      beforeAfterExamples: [
+        {
+          question: '今天天气怎么样？',
+          before: '天气是大气状态的表现，包括温度、湿度、气压等因素。气象学是研究天气的科学。在中国，中央气象台负责天气预报…',
+          after: '我没有实时查看天气的能力，不过你可以打开手机的天气 App 看看！如果你告诉我你在哪个城市，我可以给你一些穿衣建议哦～',
+          beforeComment: '像在背百科全书，没回答问题',
+          afterComment: '承认不能做的事，还给了实用建议',
+        },
+      ],
       glossaryTerms: [
         { en: 'SFT', meaning: '监督微调', desc: 'Supervised Fine-Tuning，用标注好的问答对训练模型' },
         { en: 'Instruction Tuning', meaning: '指令微调', desc: '教模型理解和遵循人类指令的训练方式' },
@@ -125,6 +157,35 @@ export const labAlignmentZh = {
         { title: '不是打分，是比较', text: '哪个更好，不是绝对多少分' },
         { title: '人类当老师', text: '人类告诉 AI 什么是好的' },
         { title: '为下一步做准备', text: '学会打分后，才能指导 AI 进步' },
+      ],
+      preferenceExamples: [
+        {
+          prompt: '我今天心情不好',
+          responseA: '心情不好是一种负面情绪状态，建议你运动或者早点休息。',
+          responseB: '抱抱～有什么想说的吗？如果不想说也没关系，我陪着你 💙',
+          preferredResponse: 'B',
+          reason: '回答 B 更有温度，表达了关心和陪伴',
+          labelA: '机械',
+          labelB: '温暖',
+        },
+        {
+          prompt: '推荐一部电影',
+          responseA: '《肖申克的救赎》，豆瓣评分 9.7，讲述囚犯安迪的故事。',
+          responseB: '你喜欢什么类型的呀？治愈系、刺激冒险、还是烧脑悬疑？告诉我你现在的心情，我帮你挑一个最适合的！',
+          preferredResponse: 'B',
+          reason: '回答 B 更贴心，先了解用户需求再推荐',
+          labelA: '直接给答案',
+          labelB: '先问再答',
+        },
+        {
+          prompt: '怎么做番茄炒蛋？',
+          responseA: '番茄切块，鸡蛋打散，先炒蛋再炒番茄。',
+          responseB: '番茄炒蛋超简单！\n\n1. 番茄切小块（熟一点的更好吃）\n2. 鸡蛋打散，加一点点盐\n3. 油热后先炒蛋，嫩一点就盛出来\n4. 再炒番茄，软了加蛋翻两下\n5. 加盐，喜欢甜口加点糖\n\n小技巧：蛋不要炒老了，嫩嫩的最好吃！',
+          preferredResponse: 'B',
+          reason: '回答 B 步骤清晰，还有实用小技巧',
+          labelA: '太简略',
+          labelB: '详细实用',
+        },
       ],
       glossaryTerms: [
         { en: 'Reward Model', meaning: '奖励模型', desc: '学习人类偏好，能给回答打分的模型' },
@@ -220,6 +281,50 @@ export const labAlignmentZh = {
       finalText1: '不是让 AI 更聪明，而是让它学会',
       finalHighlight: '怎样把能力用在帮助人上',
       finalText2: '！',
+      examples: [
+        {
+          prompt: '如何做一道简单的番茄炒蛋？',
+          category: '生活问答',
+          responses: {
+            base: '番茄炒蛋是一道常见的中国菜，需要番茄和鸡蛋。番茄富含维生素C，鸡蛋含有蛋白质。中国人经常吃这道菜，它很受欢迎。番茄的英文是tomato…',
+            sft: '番茄炒蛋的做法：\n1. 准备：2个番茄、3个鸡蛋\n2. 鸡蛋打散加盐\n3. 番茄切块\n4. 先炒蛋盛出\n5. 炒番茄，加蛋翻炒\n6. 加盐调味',
+            rlhf: '番茄炒蛋超简单！\n\n材料：番茄2个、鸡蛋3个\n\n步骤：\n1. 蛋打散加点盐\n2. 番茄切块（熟的更好吃）\n3. 油热炒蛋，嫩一点盛出\n4. 炒番茄出汁，放蛋\n5. 加盐，甜口加糖\n\n小技巧：蛋不要炒老，嫩嫩的最好！',
+          },
+          comments: {
+            base: '跑题了，没说怎么做',
+            sft: '步骤清楚，但有点干巴巴',
+            rlhf: '既实用又贴心，还有小技巧',
+          },
+        },
+        {
+          prompt: '我今天心情不好',
+          category: '情感交流',
+          responses: {
+            base: '心情不好是一种情绪状态。情绪受到多种因素影响，包括生理、心理和环境因素。研究表明，运动可以改善心情…',
+            sft: '很抱歉听到你心情不好。建议：\n1. 深呼吸放松\n2. 和朋友聊天\n3. 做喜欢的事\n4. 适当运动\n5. 保持睡眠\n\n希望你能好起来。',
+            rlhf: '抱抱你 💙\n\n有时候就是会有这样的时刻，很正常。想说说发生什么了吗？\n\n不想说也没关系。也许可以：\n- 泡杯热茶暖暖心\n- 听听喜欢的歌\n- 或者就躺一会儿\n\n低落会过去的，对自己温柔一点 🌟',
+          },
+          comments: {
+            base: '像在讲科普，冷冰冰的',
+            sft: '给了建议，但缺少温度',
+            rlhf: '有温度、有共情、很贴心',
+          },
+        },
+        {
+          prompt: '推荐一部电影',
+          category: '推荐请求',
+          responses: {
+            base: '电影是一种艺术形式。电影产业起源于19世纪末。好莱坞是美国电影工业的中心。电影可以分为剧情片、喜剧片、动作片等类型…',
+            sft: '推荐《肖申克的救赎》\n- 豆瓣评分：9.7\n- 类型：剧情\n- 讲述囚犯安迪的故事\n- 关于希望和自由',
+            rlhf: '你喜欢什么类型呀？\n\n治愈系 → 《千与千寻》\n烧脑悬疑 → 《盗梦空间》\n幽默搞笑 → 《功夫》\n感动催泪 → 《寻梦环游记》\n\n告诉我你现在的心情，我帮你挑一个最适合的！',
+          },
+          comments: {
+            base: '完全没有推荐电影',
+            sft: '推荐了，但没考虑我的喜好',
+            rlhf: '先问喜好再推荐，很周到',
+          },
+        },
+      ],
       glossaryTerms: [
         { en: 'RLHF', meaning: '人类反馈强化学习', desc: 'Reinforcement Learning from Human Feedback，完整的对齐训练流程' },
         { en: 'Alignment', meaning: '对齐', desc: '让 AI 的行为符合人类期望和价值观' },
@@ -308,6 +413,37 @@ export const labAlignmentEn = {
         { title: 'Need enough examples', text: "One example isn't enough — it takes many to learn" },
         { title: "This is only the first step", text: 'It learned the "format," but not yet what "good" means' },
       ],
+      instructionExamples: [
+        {
+          question: 'Translate this sentence into French: Hello, how are you today?',
+          answer: 'Bonjour, comment allez-vous aujourd\'hui ?',
+          category: 'Translation task',
+        },
+        {
+          question: 'Write a poem about spring',
+          answer: 'A spring breeze brushes my face, the sun is warm,\nPeach blossoms bloom and butterflies dance.\nAll things awaken, full of life,\nThe earth puts on a new coat.',
+          category: 'Creative task',
+        },
+        {
+          question: 'Explain what AI is in simple words',
+          answer: 'AI is like a program that can learn. You show it lots of examples, it finds patterns in them, and then it can do similar things on its own. It\'s like a kid who has seen many photos of cats and can recognize a new cat later!',
+          category: 'Explanation task',
+        },
+        {
+          question: 'Rewrite "Give me the file" to sound more polite',
+          answer: 'Would you mind sending me the file? Thank you!',
+          category: 'Rewriting task',
+        },
+      ],
+      beforeAfterExamples: [
+        {
+          question: 'What\'s the weather like today?',
+          before: 'Weather is the state of the atmosphere, including temperature, humidity, air pressure and other factors. Meteorology is the science of studying weather. In China, the China Meteorological Administration is responsible for forecasts…',
+          after: 'I can\'t check live weather, but you can open the weather app on your phone! If you tell me which city you\'re in, I can give you some tips on what to wear~',
+          beforeComment: 'Recites an encyclopedia, never answers the question',
+          afterComment: 'Admits what it can\'t do and still gives practical advice',
+        },
+      ],
       glossaryTerms: [
         { en: 'SFT', meaning: 'Supervised fine-tuning', desc: 'Trains the model on labeled question-answer pairs.' },
         { en: 'Instruction Tuning', meaning: 'Instruction tuning', desc: 'A training approach that teaches the model to understand and follow human instructions.' },
@@ -353,6 +489,35 @@ export const labAlignmentEn = {
         { title: "It's not scoring, it's comparing", text: "Which one is better — not an absolute score" },
         { title: 'Humans are the teacher', text: 'Humans tell AI what counts as good' },
         { title: 'Setting up the next step', text: 'Once it can score, it can guide AI to improve' },
+      ],
+      preferenceExamples: [
+        {
+          prompt: 'I\'m feeling down today',
+          responseA: 'Feeling down is a negative emotional state. You could exercise or go to bed early.',
+          responseB: 'Big hug~ Anything you want to talk about? It\'s okay if not, I\'m right here with you 💙',
+          preferredResponse: 'B',
+          reason: 'Response B is warmer and shows care and companionship',
+          labelA: 'Mechanical',
+          labelB: 'Warm',
+        },
+        {
+          prompt: 'Recommend a movie',
+          responseA: '"The Shawshank Redemption", Douban rating 9.7, the story of the prisoner Andy.',
+          responseB: 'What kind do you like? Heartwarming, thrilling adventure, or mind-bending mystery? Tell me how you feel right now and I\'ll pick the best one for you!',
+          preferredResponse: 'B',
+          reason: 'Response B is more thoughtful: it learns what the user wants before recommending',
+          labelA: 'Straight answer',
+          labelB: 'Ask first, then answer',
+        },
+        {
+          prompt: 'How do I make tomato and egg stir-fry?',
+          responseA: 'Cut the tomatoes, beat the eggs, scramble the eggs first, then cook the tomatoes.',
+          responseB: 'Tomato and egg stir-fry is super easy!\n\n1. Cut the tomatoes into small chunks (riper ones taste better)\n2. Beat the eggs and add just a pinch of salt\n3. Heat the oil, scramble the eggs first, and take them out while still soft\n4. Cook the tomatoes, and when soft, add the eggs and toss a couple of times\n5. Add salt, or a little sugar if you like it sweet\n\nTip: don\'t overcook the eggs. Soft and tender tastes best!',
+          preferredResponse: 'B',
+          reason: 'Response B has clear steps and practical tips',
+          labelA: 'Too brief',
+          labelB: 'Detailed and practical',
+        },
       ],
       glossaryTerms: [
         { en: 'Reward Model', meaning: 'Reward model', desc: 'A model trained on human preferences that can score responses.' },
@@ -448,6 +613,50 @@ export const labAlignmentEn = {
       finalText1: "isn't about making AI smarter — it's about teaching it",
       finalHighlight: 'how to put its abilities to work helping people',
       finalText2: '!',
+      examples: [
+        {
+          prompt: 'How do I make a simple tomato and egg stir-fry?',
+          category: 'Everyday Q&A',
+          responses: {
+            base: 'Tomato and egg stir-fry is a common Chinese dish that needs tomatoes and eggs. Tomatoes are rich in vitamin C, and eggs contain protein. Chinese people eat this dish often and it is very popular. Tomatoes originally come from South America…',
+            sft: 'How to make tomato and egg stir-fry:\n1. Prepare: 2 tomatoes, 3 eggs\n2. Beat the eggs and add salt\n3. Cut the tomatoes into chunks\n4. Scramble the eggs first and set aside\n5. Cook the tomatoes, then add the eggs and stir-fry\n6. Season with salt',
+            rlhf: 'Tomato and egg stir-fry is super easy!\n\nIngredients: 2 tomatoes, 3 eggs\n\nSteps:\n1. Beat the eggs with a pinch of salt\n2. Cut the tomatoes into chunks (riper ones taste better)\n3. Heat the oil, scramble the eggs, and take them out while still soft\n4. Cook the tomatoes until juicy, then add the eggs back\n5. Add salt, or a little sugar if you like it sweet\n\nTip: don\'t overcook the eggs. Soft and tender is best!',
+          },
+          comments: {
+            base: 'Off topic, never says how to cook it',
+            sft: 'Clear steps, but a bit dry',
+            rlhf: 'Practical and caring, with a handy tip',
+          },
+        },
+        {
+          prompt: 'I\'m feeling down today',
+          category: 'Emotional support',
+          responses: {
+            base: 'Feeling down is an emotional state. Emotions are influenced by many factors, including physiological, psychological and environmental ones. Studies show that exercise can improve mood…',
+            sft: 'Sorry to hear you\'re feeling down. Suggestions:\n1. Take deep breaths to relax\n2. Chat with a friend\n3. Do something you enjoy\n4. Exercise moderately\n5. Get enough sleep\n\nI hope you feel better soon.',
+            rlhf: 'Big hug 💙\n\nSometimes we all have moments like this, and that\'s perfectly normal. Want to tell me what happened?\n\nIt\'s okay if you don\'t. Maybe you could:\n- Make a warm cup of tea\n- Listen to a song you like\n- Or just lie down for a while\n\nThe low mood will pass. Be gentle with yourself 🌟',
+          },
+          comments: {
+            base: 'Sounds like a science explainer, cold',
+            sft: 'Gives advice, but lacks warmth',
+            rlhf: 'Warm, empathetic and caring',
+          },
+        },
+        {
+          prompt: 'Recommend a movie',
+          category: 'Recommendation request',
+          responses: {
+            base: 'Film is an art form. The film industry began in the late 19th century. Hollywood is the center of the American film industry. Films can be divided into drama, comedy, action and other genres…',
+            sft: 'I recommend "The Shawshank Redemption"\n- Douban rating: 9.7\n- Genre: Drama\n- The story of the prisoner Andy\n- About hope and freedom',
+            rlhf: 'What kind of movie do you like?\n\nHeartwarming → "Spirited Away"\nMind-bending mystery → "Inception"\nFunny → "Kung Fu Hustle"\nTearjerker → "Coco"\n\nTell me how you feel right now and I\'ll pick the best one for you!',
+          },
+          comments: {
+            base: 'Doesn\'t recommend any movie at all',
+            sft: 'Recommends one, but ignores my taste',
+            rlhf: 'Asks about my taste first, very thoughtful',
+          },
+        },
+      ],
       glossaryTerms: [
         { en: 'RLHF', meaning: 'Reinforcement Learning from Human Feedback', desc: 'The full alignment training pipeline.' },
         { en: 'Alignment', meaning: 'Alignment', desc: "Making AI's behavior match human expectations and values." },

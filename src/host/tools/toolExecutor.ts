@@ -106,6 +106,7 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { skillBoundaryAllowsTool } from './skillBoundaryScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
+import { observeInToolApproval } from './inToolApprovalObserve';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
@@ -1311,7 +1312,10 @@ export class ToolExecutor {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
-          const ask = normalizePermissionAskResult(await this.requestPermission(request));
+          const ask = await observeInToolApproval({
+            sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, request,
+            ask: async () => normalizePermissionAskResult(await this.requestPermission(request)),
+          });
           context.permissionAskResults?.set(request, ask);
           if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
@@ -2123,7 +2127,7 @@ export class ToolExecutor {
         logger.debug('ConfirmationGate preview error:', error);
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
-        toolName: executionToolName,
+        toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
         browserSessionTarget: browserSessionGrant?.target,
@@ -2362,14 +2366,14 @@ export class ToolExecutor {
 
       const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
-        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, analysisFailed: Boolean(commandAnalysisFailedReason), request: permissionRequest,
         ask: () => requestPermissionWithTelemetry({
           request: permissionRequest,
           toolCallId: options.currentToolCallId,
           requestPermission: this.requestPermission,
         }),
       });
-      if (commandAnalysisFailedReason) {
+      if (commandAnalysisFailedReason && ask.denialSource !== 'goal-sticky-host') {
         ask.approved = false;
         ask.denialSource = 'fail-closed';
         ask.message = commandAnalysisDenialError(executionToolName).modelText;

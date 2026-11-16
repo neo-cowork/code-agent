@@ -26,6 +26,9 @@ on:
       # tests/scripts tsc 棘轮门真读的配置 + 脚本自身。#452 教训：path 触发盲区会让删除类 PR
       # （改窄 include / 删测试目录）溜过门。
       - 'tsconfig.tests.json'
+      # gates:fast 的 tests-typecheck 本机超预算会交 PR CI，触发范围必须不窄于本机 testsTypecheckInputs（tests/** scripts/** tsconfig*.json），否则两边都不跑。
+      - 'scripts/**'
+      - 'tsconfig*.json'
       - 'scripts/tsc-tests-ratchet.mjs'
       - 'scripts/internal-sdk-hash.ts'
       - 'scripts/ci/agent-event-schema-gate.mjs'

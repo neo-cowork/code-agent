@@ -79,6 +79,7 @@ describe('GeneralSettings permission rule editor', () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   async function renderEditor(): Promise<HTMLTextAreaElement> {
@@ -86,6 +87,40 @@ describe('GeneralSettings permission rule editor', () => {
     const allow = await screen.findByDisplayValue('Read');
     return allow as HTMLTextAreaElement;
   }
+
+  it('renders look-ups ON by default for a non-admin and sends exactly the OFF patch', async () => {
+    useAuthStore.setState({ user: { id: 'local-owner', email: 'owner@test.dev', isAdmin: false } });
+    await renderEditor();
+    const toggle = screen.getByRole('switch', { name: zh.settings.general.permissions.readOnlyLookups.title });
+    const success = vi.spyOn(toast, 'success');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(success).toHaveBeenCalledWith(zh.settings.general.permissions.readOnlyLookups.savedOff));
+    expect(setCalls()).toEqual([[IPC_DOMAINS.SETTINGS, 'set', { permissions: { readOnlyProbePlan: false } }]]);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(success).toHaveBeenCalledWith(zh.settings.general.permissions.readOnlyLookups.savedOn));
+    expect(setCalls()[1]).toEqual([IPC_DOMAINS.SETTINGS, 'set', { permissions: { readOnlyProbePlan: true } }]);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('reverts the look-ups toggle and shows the existing error toast when saving fails', async () => {
+    await renderEditor();
+    const toggle = screen.getByRole('switch', { name: zh.settings.general.permissions.readOnlyLookups.title });
+    const error = vi.spyOn(toast, 'error');
+    const success = vi.spyOn(toast, 'success');
+    invokeDomain.mockRejectedValueOnce(new Error('save unavailable'));
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith(zh.settings.general.permissions.saveFailedPrefix + 'save unavailable'));
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    expect(success).not.toHaveBeenCalled();
+  });
 
   it('keeps an invalid line on screen and does not persist it, then persists a valid set', async () => {
     const allow = await renderEditor();

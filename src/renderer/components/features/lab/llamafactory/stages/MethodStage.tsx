@@ -398,8 +398,12 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                {term.zh && term.zh !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.zh}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>

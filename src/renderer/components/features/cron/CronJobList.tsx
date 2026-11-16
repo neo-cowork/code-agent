@@ -23,7 +23,7 @@ import {
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { getJobDisplayName, getBuiltinJobDisplay } from './builtinJobDisplay';
 
 interface CronJobListProps {
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：命中行的状态 chip 换成「等你批准」。 */
@@ -141,7 +141,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
               const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
               const builtinDisplay = getBuiltinJobDisplay(job, language);
-              const displayName = builtinDisplay?.name ?? job.name;
+              const displayName = getJobDisplayName(job, language);
               const displayDescription = builtinDisplay?.description ?? job.description;
               const scheduleSummary = job.schedule.type === 'cron'
                 ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)

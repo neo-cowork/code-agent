@@ -142,6 +142,36 @@ describe('handleTempUpload', () => {
     expect(fs.readFileSync(savedPath, 'utf8')).toBe('payload');
   });
 
+  it.each([undefined, '合同资料/服务合同-晨光云帆.pdf'])('preserves Chinese single-upload names with relativePath %s', async (relativePath) => {
+    const parts: Parameters<typeof buildMultipart>[0] = [{ name: 'file', filename: '服务合同-晨光云帆.pdf', value: 'contract bytes' }];
+    if (relativePath) parts.push({ name: 'relativePath', value: relativePath });
+    const { body, contentType } = buildMultipart(parts);
+    const res = makeRes();
+    await handleTempUpload(makeReq(body, contentType), res);
+    const saved = (res.body as { path: string }).path;
+    expect(res.statusCode).toBe(200);
+    expect(saved.endsWith(path.join(...(relativePath || '服务合同-晨光云帆.pdf').split('/')))).toBe(true);
+    expect(fs.readFileSync(saved, 'utf8')).toBe('contract bytes');
+  });
+
+  it.each([
+    ['العقد-हिन्दी-e\u0301-１２٣.txt', 'العقد-हिन्दी-e\u0301-１２٣.txt'],
+    ['__a <>:"|?*\u0001\u200b b__..txt', 'a___________b__.txt'],
+    [' <>?* ', 'file'],
+    ['合'.repeat(100) + '.pdf', '合'.repeat(65) + '.pdf'],
+    ['a'.repeat(200) + '.pdf', 'a'.repeat(196) + '.pdf'],
+    ['合'.repeat(66) + '𐐀.pdf', '合'.repeat(65) + '.pdf'],
+    ['合.' + '同'.repeat(100), '合.' + '同'.repeat(65)],
+  ])('single upload sanitizes and bounds UTF-8 name %s', async (filename, expected) => {
+    const { body, contentType } = buildMultipart([{ name: 'file', filename: 'input.bin', value: 'bytes' }, { name: 'relativePath', value: filename }]);
+    const res = makeRes();
+    await handleTempUpload(makeReq(body, contentType), res);
+    const saved = (res.body as { path: string }).path;
+    expect(path.basename(saved)).toBe(expected);
+    expect(Buffer.byteLength(path.basename(saved), 'utf8')).toBeLessThanOrEqual(200);
+    expect(fs.readFileSync(saved, 'utf8')).toBe('bytes');
+  });
+
   it('rejects uploads that exceed MAX_UPLOAD_SIZE', async () => {
     // Don't allocate 50MB+; stream more than the limit via a synthetic Readable.
     const boundary = '----OversizeBoundary';
@@ -212,6 +242,32 @@ describe('handleTempUpload missing file field (error path)', () => {
     await expect(handleTempUpload(makeReq(body, contentType), res)).rejects.toThrow(
       /Missing file field/,
     );
+  });
+});
+
+describe('handleTempBatchUpload Unicode paths', () => {
+  it('keeps different Chinese file and folder names distinct and byte-exact', async () => {
+    const names = ['rr82-合同资料/服务合同-晨光云帆.pdf', 'rr82-合同资料/报价单.pdf', 'rr82-合同资料/合同.pdf', 'rr82-合同资料/报告.pdf'];
+    const { body, contentType } = buildMultipart(names.flatMap((name, index) => [
+      { name: `file${index}`, filename: path.basename(name), value: `bytes-${index}` },
+      { name: `relativePath${index}`, value: name },
+    ]));
+    const res = makeRes();
+    await handleTempBatchUpload(makeReq(body, contentType), res);
+    const result = res.body as { root: string; files: Array<{ path: string }> };
+    expect(res.statusCode).toBe(200);
+    expect(result.files).toHaveLength(4);
+    result.files.forEach((file, index) => {
+      expect(file.path).toBe(path.join(result.root, names[index]));
+      expect(fs.readFileSync(file.path, 'utf8')).toBe(`bytes-${index}`);
+    });
+  });
+
+  it.each(['../x.pdf', 'contracts/../x.pdf', '/x.pdf', 'C:\\x.pdf', 'contracts\\..\\x.pdf'])('rejects traversal %s', async (relativePath) => {
+    const { body, contentType } = buildMultipart([
+      { name: 'file0', filename: 'x.pdf', value: 'bytes' }, { name: 'relativePath0', value: relativePath },
+    ]);
+    await expect(handleTempBatchUpload(makeReq(body, contentType), makeRes())).rejects.toThrow('Invalid upload path');
   });
 });
 
@@ -290,6 +346,27 @@ describe('chat upload persistence and retention reaper', () => {
     if (batchRead.ok) {
       expect(batchRead.output).toContain('Master Service Agreement — Fee $12,000');
     }
+  });
+
+  it('reads a Chinese-named batch path through readModule after restart reaping', async () => {
+    const content = '服务内容：云端备份；服务费三万六千元。';
+    const relativePath = '合同资料/服务合同-晨光云帆.md';
+    const { body, contentType } = buildMultipart([
+      { name: 'file0', filename: '服务合同-晨光云帆.md', value: content },
+      { name: 'relativePath0', value: relativePath },
+    ]);
+    const res = makeRes();
+    await handleTempBatchUpload(makeReq(body, contentType), res);
+    const payload = res.body as { root: string; files: Array<{ path: string }> };
+    expect(payload.files[0].path).toBe(path.join(payload.root, relativePath));
+    const db = makeDb();
+    reapExpiredUploadDirs(db);
+    db.close();
+    ensureUploadRootDir();
+    const handler = await readModule.createHandler();
+    const result = await handler.execute({ file_path: payload.files[0].path }, makeReadCtx(), async () => ({ allow: true }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toContain(content);
   });
 
   it('removes upload subdirs older than CHAT_UPLOAD_RETENTION_DAYS and keeps younger subdirs', async () => {

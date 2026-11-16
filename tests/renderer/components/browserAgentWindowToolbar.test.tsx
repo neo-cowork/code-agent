@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserAgentWindow } from '../../../src/renderer/components/workbench/BrowserAgentWindow';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
+import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract/surfaceExecution';
 import type { useWorkbenchBrowserSession } from '../../../src/renderer/hooks/useWorkbenchBrowserSession';
 import type { LiveAgentPointerState } from '../../../src/renderer/hooks/useLiveAgentPointer';
 import type { SurfaceLiveFrameStreamState } from '../../../src/renderer/hooks/useSurfaceLiveFrames';
@@ -21,6 +22,13 @@ const openHttpLinkInRailAsync = vi.fn(async (_input: unknown) => ({
 const closeUserBrowserLinkRun = vi.fn(async (..._args: unknown[]) => undefined);
 const controlUserBrowserHistory = vi.fn(async (..._args: unknown[]) => null);
 const openExternalLink = vi.fn((_href?: string) => true);
+const getKeptResultPage = vi.fn(async (_conversationId?: string): Promise<unknown> => ({
+  state: 'none',
+  url: null,
+  title: null,
+  reason: null,
+}));
+const adoptKeptResultPage = vi.fn(async (_input?: unknown): Promise<unknown> => undefined);
 
 let browserSessionState: BrowserSessionState;
 let pointerState: LiveAgentPointerState;
@@ -34,6 +42,10 @@ vi.mock('../../../src/renderer/hooks/useLiveAgentPointer', () => ({
 }));
 vi.mock('../../../src/renderer/hooks/useSurfaceLiveFrames', () => ({
   useSurfaceLiveFrames: () => liveFrameState,
+}));
+vi.mock('../../../src/renderer/services/keptResultPage', () => ({
+  getKeptResultPage: (conversationId: string) => getKeptResultPage(conversationId),
+  adoptKeptResultPage: (input: unknown) => adoptKeptResultPage(input),
 }));
 vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
   openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
@@ -170,5 +182,289 @@ describe('BrowserAgentWindow 工具条可用态（N2）', () => {
 
     fireEvent.click(screen.getByTestId('browser-agent-window-open-external'));
     expect(openExternalLink).toHaveBeenCalledWith('https://example.com/page');
+  });
+});
+
+function seedActiveUserLinkSession(): void {
+  const capabilities = {
+    version: 1 as const,
+    surface: 'browser' as const,
+    provider: 'managed',
+    protocolVersion: '2',
+    operations: ['observe' as const],
+    observationKinds: ['screenshot' as const],
+    supports: { cancel: true, pause: false, takeover: true, cleanup: true, successorObservation: false },
+  };
+  const activeTarget = {
+    kind: 'browser' as const,
+    browserInstanceId: 'browser-1',
+    windowRef: 'win-1',
+    tabRef: 'tab-1',
+    documentRevision: 'rev-1',
+    origin: 'http://127.0.0.1:8898',
+    title: '报名成功',
+  };
+  const snapshot: SurfaceConversationSnapshotV1 = {
+    version: 1,
+    conversationId: 'session-a',
+    sessions: [
+      {
+        version: 1,
+        session: {
+          version: 1,
+          sessionId: 'surface-agent-done',
+          conversationId: 'session-a',
+          runId: 'run-agent',
+          agentId: 'agent-a',
+          surface: 'browser',
+          provider: 'managed',
+          capabilities,
+          state: 'completed',
+          activeTarget,
+          startedAt: 1_000,
+          heartbeatAt: 61_000,
+        },
+        grant: { state: 'none', capabilities: [], actionClasses: [], dataScopes: [] },
+        events: [],
+        evidence: [],
+        outputs: [],
+        availableControls: [],
+        source: 'persisted',
+        writable: false,
+        updatedAt: 61_000,
+      },
+      {
+        version: 1,
+        session: {
+          version: 1,
+          sessionId: 'surface-user-link',
+          conversationId: 'session-a',
+          runId: 'user-browser-link:run-1',
+          agentId: 'user-browser-link',
+          surface: 'browser',
+          provider: 'managed',
+          capabilities,
+          state: 'running',
+          activeTarget,
+          startedAt: 2_000,
+          heartbeatAt: 62_000,
+        },
+        grant: { state: 'none', capabilities: [], actionClasses: [], dataScopes: [] },
+        events: [],
+        evidence: [],
+        outputs: [],
+        availableControls: [],
+        source: 'persisted',
+        writable: false,
+        updatedAt: 62_000,
+      },
+    ],
+    updatedAt: 62_000,
+  };
+  useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', snapshot);
+}
+
+function setAgentSurfaceState(state: 'running' | 'completed'): void {
+  const current = useSurfaceExecutionStore.getState().nativeByConversation['session-a'];
+  useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+    ...current,
+    sessions: current.sessions.map((entry) => entry.session.sessionId === 'surface-agent-done'
+      ? { ...entry, session: { ...entry.session, state }, updatedAt: 70_000 }
+      : entry),
+    updatedAt: 70_000,
+  });
+}
+
+describe('BrowserAgentWindow kept result bar under active user-browser-link session', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useAppStore.setState({
+      language: 'zh',
+      showLocalOpsPanel: false,
+      workingDirectory: null,
+      localOpsTab: 'desktop',
+      activeWorkbenchTab: 'browser',
+      workbenchCollapsed: false,
+      processingSessionIds: new Set(),
+      isProcessing: false,
+    });
+    useSessionStore.setState({ currentSessionId: 'session-a', runningSessionIds: new Set() });
+    useSurfaceExecutionStore.getState().reset();
+    pointerState = { event: null, lastEvent: null, isLive: false, timeline: [] };
+    liveFrameState = { frame: null, streaming: false, unavailableReason: null };
+    browserSessionState = buildBrowserSessionState({ browserSurfaceSessionId: 'surface-user-link' });
+    getKeptResultPage.mockReset().mockResolvedValue({ state: 'none', url: null, title: null, reason: null });
+    adoptKeptResultPage.mockReset().mockResolvedValue({ surfaceSessionId: 'surface-user-link' });
+    openHttpLinkInRailAsync.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    useAppStore.setState({ processingSessionIds: new Set(), isProcessing: false });
+    useSessionStore.setState({ runningSessionIds: new Set() });
+    vi.useRealTimers();
+  });
+
+  it('renders kept bar and overlay marker when user-browser-link session stays active', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept',
+      url: 'http://127.0.0.1:8898/submit',
+      title: '报名成功',
+      reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+
+    expect(screen.queryByTestId('browser-agent-window-terminal-frame')).toBeNull();
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+
+    const bar = await screen.findByTestId('browser-kept-result-bar-kept');
+    expect(bar.textContent).toContain('结果页已保留');
+    expect(bar.textContent).toContain('报名成功');
+
+    const adoptButton = screen.getByTestId('browser-kept-result-adopt');
+    expect(adoptButton.closest('[data-browser-stage-overlay]')).not.toBeNull();
+    fireEvent.click(adoptButton);
+    await waitFor(() => expect(adoptKeptResultPage).toHaveBeenCalledWith({
+      conversationId: 'session-a',
+      workspace: null,
+    }));
+    await waitFor(() => expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull());
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+    cleanup();
+    render(<BrowserAgentWindow />);
+    await waitFor(() => expect(getKeptResultPage).toHaveBeenCalledTimes(3));
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+
+    getKeptResultPage.mockResolvedValue({
+      state: 'closed', url: 'http://127.0.0.1:8898/submit', title: '报名成功', reason: 'keep_result_page',
+    });
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(await screen.findByTestId('browser-kept-result-bar-closed')).toBeDefined();
+  });
+
+  it('suppresses the old result action throughout an active conversation turn', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/submit', title: '旧结果', reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+    await screen.findByTestId('browser-kept-result-bar-kept');
+    await act(async () => setAgentSurfaceState('running'));
+    expect(screen.queryByTestId('browser-kept-result-adopt')).toBeNull();
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+    expect(adoptKeptResultPage).not.toHaveBeenCalled();
+
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/next', title: '新结果', reason: 'keep_result_page',
+    });
+    await act(async () => setAgentSurfaceState('completed'));
+    expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('新结果');
+  });
+
+  it('offers a new kept result after a browser agent replaces the adopted result', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/submit', title: '旧结果', reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+    fireEvent.click(await screen.findByTestId('browser-kept-result-adopt'));
+    await waitFor(() => expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull());
+    cleanup();
+
+    // Native snapshots also arrive when the browser pane is unmounted.
+    const current = useSurfaceExecutionStore.getState().nativeByConversation['session-a'];
+    const running = {
+      ...current,
+      sessions: current.sessions.map((entry) => entry.session.sessionId === 'surface-agent-done' ? {
+        ...entry,
+        session: { ...entry.session, sessionId: 'surface-agent-next', runId: 'run-agent-next', state: 'running' },
+        updatedAt: 63_000,
+      } : entry),
+      updatedAt: 63_000,
+    };
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', running);
+    });
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/next', title: '新结果', reason: 'keep_result_page',
+    });
+    const completed = {
+      ...running,
+      sessions: running.sessions.map((entry) => entry.session.sessionId === 'surface-agent-next' ? {
+        ...entry, session: { ...entry.session, state: 'completed' }, updatedAt: 64_000,
+      } : entry),
+      updatedAt: 64_000,
+    };
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', completed);
+    });
+    render(<BrowserAgentWindow />);
+    expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('新结果');
+  });
+
+  it('shows the kept bar while only the parent turn is still active after the browser task ended', async () => {
+    seedActiveUserLinkSession();
+    useAppStore.getState().setSessionProcessing('session-a', true);
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept', url: 'http://127.0.0.1:8898/submit', title: '报名成功', reason: 'keep_result_page',
+    });
+    render(<BrowserAgentWindow />);
+    expect((await screen.findByTestId('browser-kept-result-bar-kept')).textContent).toContain('报名成功');
+    expect(screen.getByTestId('browser-kept-result-adopt')).toBeDefined();
+  });
+
+  it('refreshes immediately on conversation run end without waiting for the 30s poll', async () => {
+    seedActiveUserLinkSession();
+    setAgentSurfaceState('running');
+    getKeptResultPage.mockResolvedValue({ state: 'none', url: null, title: null, reason: null });
+
+    render(<BrowserAgentWindow />);
+    await waitFor(() => expect(getKeptResultPage).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('browser-kept-result-bar-kept')).toBeNull();
+
+    getKeptResultPage.mockResolvedValue({
+      state: 'kept',
+      url: 'http://127.0.0.1:8898/submit',
+      title: '报名成功',
+      reason: 'keep_result_page',
+    });
+    await act(async () => {
+      setAgentSurfaceState('completed');
+    });
+
+    const bar = await screen.findByTestId('browser-kept-result-bar-kept');
+    expect(bar.textContent).toContain('报名成功');
+    expect(getKeptResultPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders closed state and URL-only reopen under active user-browser-link session', async () => {
+    seedActiveUserLinkSession();
+    getKeptResultPage.mockResolvedValue({
+      state: 'closed',
+      url: 'http://127.0.0.1:8898/submit',
+      title: '报名成功',
+      reason: 'keep_result_page',
+    });
+    browserSessionState.managedSession = { running: true, tabCount: 1, activeTab: null };
+    const { rerender } = render(<BrowserAgentWindow />);
+
+    const bar = await screen.findByTestId('browser-kept-result-bar-closed');
+    expect(bar.textContent).toContain('结果页已关闭');
+    fireEvent.click(screen.getByTestId('browser-kept-result-reopen'));
+    await waitFor(() => expect(openHttpLinkInRailAsync).toHaveBeenCalledWith({
+      href: 'http://127.0.0.1:8898/submit',
+      conversationId: 'session-a',
+      workspace: null,
+    }));
+    await waitFor(() => expect(screen.queryByTestId('browser-kept-result-bar-closed')).toBeNull());
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(screen.queryByTestId('browser-kept-result-bar-closed')).toBeNull();
+    browserSessionState.managedSession = { running: false, tabCount: 0, activeTab: null };
+    rerender(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-kept-result-bar-closed')).toBeDefined();
   });
 });
