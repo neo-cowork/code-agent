@@ -1,5 +1,5 @@
 /** A reminder time may be at most this far in the past before it is rejected. */
-export const REMINDER_PAST_GRACE_MS = 60_000;
+const REMINDER_PAST_GRACE_MS = 60_000;
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
