@@ -216,7 +216,7 @@ function buildEventMessage(record: SessionAutomationRecord, input: RecordAutomat
   const lines = [heading];
   if (input.summary?.trim()) lines.push(input.summary.trim());
   if (input.error?.trim()) lines.push(`错误：${input.error.trim()}`);
-  if (input.resultSessionId) lines.push(`结果会话：${input.resultSessionId}`);
+  if (input.resultSessionId) lines.push('结果在单独的会话里。');
   if (handoffPrompt) {
     lines.push(`下一步：已发送交接提示词${nextStage?.title ? `「${nextStage.title}」` : ''}`);
   }

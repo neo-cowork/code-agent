@@ -212,9 +212,9 @@ export const capabilityHubEn = {
   },
   capabilityCandidates: {
     title: 'Candidate capabilities',
-    intro: 'Things you keep asking me to piece together. Logged only — never nagged.',
+    intro: 'Similar tasks done step by step several times are listed here. You can lock them into a workflow or turn them into a new capability.',
     emptyTitle: 'Nothing yet',
-    emptyText: 'Once you ask for the same kind of thing repeatedly, it shows up here on its own.',
+    emptyText: 'Similar tasks show up here once they have happened several times.',
     evidence: '{count}× · last {days}d · avg {steps} steps {tokens}',
     evidenceNoTokens: '{count}× · last {days}d · avg {steps} steps',
     tokensSuffix: '{tokens} tokens',

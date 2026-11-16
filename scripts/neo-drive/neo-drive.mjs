@@ -603,7 +603,7 @@ async function probeVisibility(page, loc) {
 
 const ACTIONS = {
   async 'new-session'({ page }) {
-    await page.getByRole('button', { name: '新任务' }).first().click();
+    await page.getByRole('button', { name: /^(新任务|New task)$/ }).first().click();
     const active = page.locator('[data-session-id][aria-current="true"]').first();
     await active.waitFor({ timeout: 15_000 });
     await page.locator('[data-chat-input]').waitFor({ timeout: 15_000 });
