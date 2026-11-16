@@ -9,6 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryItem } from '../../../src/shared/contract/library';
 import type { ProjectArtifact } from '../../../src/shared/contract/project';
 import type { Session } from '../../../src/shared/contract/session';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import {
   buildArtifactRows,
   buildFileRows,
@@ -157,6 +160,8 @@ describe('useAtMentionPanel', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    // FB-1531 后 @ 面板文件列表以工作目录为基目录；旧夹具靠「无目录也返回数据」撑起文件组
+    useAppStore.setState({ workingDirectory: '/tmp/at-mention-proj' });
     mocks.listLibraryItems.mockResolvedValue([
       libraryItem('p1', 'proj-1', '发布 checklist'),
       libraryItem('g1', null, '全局品牌套件'),
@@ -182,6 +187,8 @@ describe('useAtMentionPanel', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
   });
 
   function setup(onFileSelect = vi.fn(), onSessionSelect = vi.fn(), onArtifactSelect = vi.fn()) {
@@ -361,5 +368,194 @@ describe('useAtMentionPanel', () => {
     await act(async () => { await Promise.resolve(); });
     expect(result.current.libraryRows[0]?.pinned).toBe(false);
     expect(mocks.toast.error).toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// FB-1531 回归：@ 面板的「工作区文件」来自会话/项目工作目录，绝不落到 host 进程 cwd。
+// 真实 host 的 handleListFiles 对任何非工作目录路径返回宿主进程 cwd 的内容，
+// 这里用 mock 复刻该语义：没命中工作目录前缀的一律吐 build-info.json / dist（宿主泄漏源）。
+// ============================================================================
+describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
+  const HOST_CWD_LEAK = [
+    { name: 'build-info.json', path: 'build-info.json', isDirectory: false },
+    { name: 'dist', path: 'dist', isDirectory: true },
+  ];
+
+  interface DirHandler {
+    prefix: string;
+    data: Array<{ name: string; path: string; isDirectory?: boolean }>;
+  }
+
+  function mockWorkspaceHost(dirHandlers: DirHandler[]) {
+    const invoke = vi.fn().mockImplementation((_domain: string, action: string, payload?: { dirPath?: string }) => {
+      if (action === 'listFiles') {
+        const dirPath = payload?.dirPath ?? '';
+        const handler = dirHandlers.find((candidate) => dirPath.startsWith(candidate.prefix));
+        return Promise.resolve({ success: true, data: handler ? handler.data : HOST_CWD_LEAK });
+      }
+      return Promise.resolve({ success: true, data: [] });
+    });
+    (window as { domainAPI?: unknown }).domainAPI = { invoke };
+    return invoke;
+  }
+
+  function listFilesCalls(invoke: ReturnType<typeof mockWorkspaceHost>): Array<{ dirPath: string }> {
+    return invoke.mock.calls
+      .filter((call) => call[1] === 'listFiles')
+      .map((call) => (call[2] ?? {}) as { dirPath: string });
+  }
+
+  function sessionWithDir(id: string, workingDirectory: string | null): SessionWithMeta {
+    return {
+      id,
+      title: id,
+      modelConfig: {} as SessionWithMeta['modelConfig'],
+      createdAt: 1,
+      updatedAt: 1,
+      messageCount: 0,
+      workingDirectory,
+    } as SessionWithMeta;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mocks.listLibraryItems.mockResolvedValue([]);
+    mocks.getSessionPin.mockResolvedValue({ sessionId: 'session-1', itemIds: [] });
+    mocks.listProjects.mockResolvedValue([]);
+    mocks.getProjectArtifacts.mockResolvedValue([]);
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
+  });
+
+  function setup() {
+    return renderHook(() => useAtMentionPanel({
+      sessionId: 'session-1',
+      projectId: null,
+      onFileSelect: vi.fn(),
+      onSessionSelect: vi.fn(),
+      onArtifactSelect: vi.fn(),
+    }));
+  }
+
+  async function openPanel(result: { current: ReturnType<typeof useAtMentionPanel> }, text: string) {
+    await act(async () => {
+      result.current.search(text, text.length);
+      await vi.advanceTimersByTimeAsync(250);
+    });
+  }
+
+  it('(a) 工作目录 /tmp/proj-a：文件行只有 notes.md，listFiles 的 dirPath 指向 /tmp/proj-a 而非宿主 cwd', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/proj-a' });
+    const invoke = mockWorkspaceHost([
+      { prefix: '/tmp/proj-a', data: [{ name: 'notes.md', path: '/tmp/proj-a/notes.md', isDirectory: false }] },
+    ]);
+    const { result } = setup();
+    await openPanel(result, '@');
+
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.fileRows.map((row) => row.name)).toEqual(['notes.md']);
+    const calls = listFilesCalls(invoke);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.dirPath).toBe('/tmp/proj-a');
+    expect(calls[0]?.dirPath.startsWith('/tmp/proj-a')).toBe(true);
+    // 旧实现把 '.' 传给 host → 宿主 cwd 的 build-info.json / dist 会混进来
+    expect(result.current.fileRows.some((row) => row.name === 'build-info.json' || row.name === 'dist')).toBe(false);
+  });
+
+  it('(b) 工作目录为空目录：0 文件行，面板仍打开（不吐宿主 cwd 的文件）', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/empty-proj' });
+    const invoke = mockWorkspaceHost([{ prefix: '/tmp/empty-proj', data: [] }]);
+    const { result } = setup();
+    await openPanel(result, '@');
+
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.fileRows).toHaveLength(0);
+    expect(listFilesCalls(invoke)[0]?.dirPath).toBe('/tmp/empty-proj');
+  });
+
+  it('(c) 无工作目录（appStore 与会话都为 null）：不发 listFiles，面板仍打开', async () => {
+    useSessionStore.setState({ sessions: [sessionWithDir('session-1', null)] });
+    const invoke = mockWorkspaceHost([]);
+    const { result } = setup();
+    await openPanel(result, '@');
+
+    expect(result.current.isOpen).toBe(true);
+    expect(listFilesCalls(invoke)).toHaveLength(0);
+  });
+
+  it('(c2) appStore 无目录但当前会话有：回退用会话的 workingDirectory', async () => {
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({
+      sessions: [sessionWithDir('session-1', '/tmp/session-dir')],
+      currentSessionId: 'session-1',
+    });
+    const invoke = mockWorkspaceHost([
+      { prefix: '/tmp/session-dir', data: [{ name: 'draft.md', path: '/tmp/session-dir/draft.md', isDirectory: false }] },
+    ]);
+    const { result } = setup();
+    await openPanel(result, '@');
+
+    expect(result.current.fileRows.map((row) => row.name)).toEqual(['draft.md']);
+    expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', { dirPath: '/tmp/session-dir' });
+  });
+
+  it('(d) query 含 "/"：列 <base>/src（@src/ 浏览 src）', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/proj-a' });
+    const invoke = mockWorkspaceHost([
+      { prefix: '/tmp/proj-a/src/', data: [{ name: 'foo.ts', path: '/tmp/proj-a/src/foo.ts', isDirectory: false }] },
+    ]);
+    const { result } = setup();
+    await openPanel(result, '@src/');
+
+    expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', { dirPath: '/tmp/proj-a/src/' });
+    expect(result.current.fileRows.map((row) => row.name)).toEqual(['foo.ts']);
+  });
+
+  it('(e) query 是绝对路径 @/abs/dir/：直接列该目录，不拼成 <base>//abs（Rework r1）', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/proj-a' });
+    const invoke = mockWorkspaceHost([
+      { prefix: '/Users/me/Documents/', data: [{ name: 'a.md', path: '/Users/me/Documents/a.md', isDirectory: false }] },
+    ]);
+    const { result } = setup();
+    await openPanel(result, '@/Users/me/Documents/');
+
+    expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', { dirPath: '/Users/me/Documents/' });
+    expect(result.current.fileRows.map((row) => row.name)).toEqual(['a.md']);
+  });
+
+  it('(f) 灰色目录行相对工作目录：/tmp/proj-a/src/foo.ts 显示 src，根下文件无目录；选中仍是绝对路径（Rework r2）', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/proj-a' });
+    mockWorkspaceHost([
+      {
+        prefix: '/tmp/proj-a',
+        data: [
+          { name: 'foo.ts', path: '/tmp/proj-a/src/foo.ts', isDirectory: false },
+          { name: 'notes.md', path: '/tmp/proj-a/notes.md', isDirectory: false },
+        ],
+      },
+    ]);
+    const onFileSelect = vi.fn();
+    const { result } = renderHook(() => useAtMentionPanel({
+      sessionId: 'session-1',
+      projectId: null,
+      onFileSelect,
+      onSessionSelect: vi.fn(),
+      onArtifactSelect: vi.fn(),
+    }));
+    await openPanel(result, '@');
+
+    expect(result.current.fileRows.map((row) => [row.name, row.dir])).toEqual([
+      ['foo.ts', 'src'],
+      ['notes.md', ''],
+    ]);
+    expect(result.current.fileRows.map((row) => row.path)).toEqual(['/tmp/proj-a/src/foo.ts', '/tmp/proj-a/notes.md']);
   });
 });

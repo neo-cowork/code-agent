@@ -470,7 +470,7 @@ export function registerSwarmHandlers(
       void coordinator.retryTask(payload.agentId)
         .then((result) => {
           if (result.success) {
-            getSwarmEventEmitter().agentCompleted(scope, payload.agentId, result.output);
+            getSwarmEventEmitter().agentCompleted(scope, payload.agentId, result.output, result.filesChanged);
             return;
           }
 

@@ -12,6 +12,7 @@
 | `observability/` | 监控、dashboard 和 telemetry 运维脚本 |
 | `lib/` | 多个脚本复用的无副作用模块 |
 | `claude-e2e/` | Claude Code 专属兼容验收 |
+| `neo-drive/` | 按元素操作、按状态等待地驱动 Neo（无头/真机）的验收工具与基准场景，用法见 `docs/testing/neo-drive.md` |
 
 ## 根层文件保留条件
 

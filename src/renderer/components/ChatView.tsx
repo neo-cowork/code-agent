@@ -957,6 +957,7 @@ export const ChatView: React.FC = () => {
                 afterFirstUserMessage={cronRunStatusBar}
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
                 suppressActiveBusySignal={pendingAssistantFeedback !== null}
+                userSendAt={pendingAssistantFeedback?.startedAt ?? null}
               />
             </ErrorBoundary>
           )}

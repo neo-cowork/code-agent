@@ -21,7 +21,7 @@ fn run_host_child(root: &std::path::Path, server: &BridgeServer) -> serde_json::
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn real Node host child");
-    crate::env_assist_bridge::write_handshake(child.stdin.as_mut(), &server.url, &server.token);
+    crate::env_assist_bridge::write_handshake(child.stdin.as_mut(), &server.url, &server.token).expect("handshake write");
     drop(child.stdin.take());
     let deadline = Instant::now() + Duration::from_secs(40);
     while child.try_wait().expect("poll host child").is_none() {
