@@ -23,7 +23,7 @@ interface CalendarEventItem {
   url?: string;
 }
 
-interface NativeCalendar { id: string; title: string; writable: boolean }
+interface NativeCalendar { id: string; title: string; writable: boolean; isDefault?: boolean }
 interface NativeItem {
   id: string; calendar: string; title: string; startMs: number; endMs: number;
   recurring: boolean; location: string; notes: string; url: string;
@@ -311,6 +311,11 @@ export const calendarConnector: Connector = {
           data: buildCalendarStatus(this.capabilities),
           summary: action === 'disconnect' ? 'Calendar connector 已断开。' : 'Calendar connector 已移除。',
         };
+      case 'default_calendar': {
+        // 不指定日历时会写进哪个日历（系统「新事件默认日历」），给批准卡显示；拿不到就是 null，卡上不显示这一行
+        const title = (await listCalendarInfos()).find((c) => c.isDefault && c.writable)?.title ?? null;
+        return { data: title };
+      }
       case 'list_calendars': {
         const calendars = (await listCalendarInfos()).map((c) => c.title);
         return { data: calendars, summary: calendars.length > 0 ? `找到 ${calendars.length} 个日历` : '没有找到可访问的日历' };

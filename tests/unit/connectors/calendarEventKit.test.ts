@@ -109,6 +109,16 @@ describe('calendar connector over EventKit', () => {
     expect((error as Error).message).toBe('No writable calendar is available. Omit calendar to use the first writable calendar.');
   });
 
+  it('default_calendar names the system default for new events, or null when it is not writable / not known', async () => {
+    fake.state.calendars = [
+      { id: 'c-work', title: 'Work', writable: true },
+      { id: 'c-home', title: '家庭', writable: true, isDefault: true },
+    ];
+    expect((await calendarConnector.execute('default_calendar', {})).data).toBe('家庭');
+    fake.state.calendars = [{ id: 'c-work', title: 'Work', writable: true }];
+    expect((await calendarConnector.execute('default_calendar', {})).data).toBeNull();
+  });
+
   it('keeps the old argument validation messages', async () => {
     await expect(calendarConnector.execute('create_event', { start_ms: 1 })).rejects.toThrow('title is required for create_event');
     await expect(calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e' })).rejects.toThrow('at least one field must be provided for update_event');

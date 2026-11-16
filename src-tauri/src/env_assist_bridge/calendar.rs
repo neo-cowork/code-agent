@@ -244,7 +244,7 @@ mod tests {
     impl BridgeHandlers for FakeCalendar {
         fn list_calendars(&self) -> Result<Vec<CalendarInfo>, String> {
             self.reads.fetch_add(1, Ordering::SeqCst);
-            Ok(vec![CalendarInfo { id: "c1".into(), title: "工作".into(), writable: true }])
+            Ok(vec![CalendarInfo { id: "c1".into(), title: "工作".into(), writable: true, is_default: true }])
         }
         fn read_calendar_items(&self, _: i64, _: i64, calendar_id: Option<&str>, limit: usize) -> Result<Vec<CalendarItem>, String> {
             self.reads.fetch_add(1, Ordering::SeqCst);
@@ -433,7 +433,7 @@ mod tests {
         fake.items.lock().unwrap().push(occurrence(1_000));
         let (code, raw) = post(server.port, &server.token, "/v1/read/calendars", "{}");
         assert_eq!(code, 200, "{raw}");
-        assert!(raw.ends_with(r#"{"calendars":[{"id":"c1","title":"工作","writable":true}]}"#), "{raw}");
+        assert!(raw.ends_with(r#"{"calendars":[{"id":"c1","isDefault":true,"title":"工作","writable":true}]}"#), "{raw}");
         let (code, raw) = post(server.port, &server.token, "/v1/read/calendar-items", r#"{"fromMs":0,"toMs":86400000,"calendarId":"c1","limit":5}"#);
         assert_eq!(code, 200, "{raw}");
         assert!(raw.contains(r#""calendarId":"c1""#) && raw.contains(r#""startMs":1000"#) && raw.contains(r#""recurring":true"#), "{raw}");

@@ -18,6 +18,9 @@ pub struct CalendarInfo {
     pub id: String,
     pub title: String,
     pub writable: bool,
+    /// `defaultCalendarForNewEvents`: where a create without a calendar is written.
+    #[serde(rename = "isDefault")]
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -158,12 +161,19 @@ mod imp {
         autoreleasepool(|_| {
             let store = store()?;
             let cals = array_items(unsafe { msg_send![&*store, calendarsForEntityType: ENTITY_EVENT] });
+            // Where a create without a calendar lands (shown on the approval card instead of "none").
+            let default: Option<Retained<AnyObject>> = unsafe { msg_send![&*store, defaultCalendarForNewEvents] };
+            let default_id = default.map(|d| text(unsafe { msg_send![&*d, calendarIdentifier] }));
             Ok(cals
                 .iter()
-                .map(|c| CalendarInfo {
-                    id: text(unsafe { msg_send![&**c, calendarIdentifier] }),
-                    title: text(unsafe { msg_send![&**c, title] }),
-                    writable: unsafe { msg_send![&**c, allowsContentModifications] },
+                .map(|c| {
+                    let id = text(unsafe { msg_send![&**c, calendarIdentifier] });
+                    CalendarInfo {
+                        is_default: default_id.as_deref() == Some(id.as_str()),
+                        title: text(unsafe { msg_send![&**c, title] }),
+                        writable: unsafe { msg_send![&**c, allowsContentModifications] },
+                        id,
+                    }
                 })
                 .collect())
         })

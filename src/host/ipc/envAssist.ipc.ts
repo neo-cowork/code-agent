@@ -134,7 +134,16 @@ async function settle<T extends EnvAssistActResult>(deps: EnvAssistDependencies,
   armEnvResumeOnSessionReturn(notice.sessionId, getApplicationRunRegistry(), 'env_assist_granted');
   // One calendar permission: the same grant also closes calendar cards in every other session and wakes their runs.
   if (isCalendarNotice(notice)) await (deps.calendarGranted ?? settleCalendarGranted)('env_assist_granted');
-  return result;
+  return withResolvedNotice(deps, notice.id, result);
+}
+
+/**
+ * Hand the card its persisted resolved copy. 11-15 real run: a grant made from the settings page resolved the card in
+ * the database, but the chat view wasn't listening for the broadcast, so the card kept its button until a reload.
+ */
+async function withResolvedNotice<T extends EnvAssistActResult>(deps: EnvAssistDependencies, id: string, result: T): Promise<T> {
+  const stored = await deps.findNotice(id).catch(() => undefined);
+  return stored?.phase === 'resolved' ? { ...result, notice: stored } : result;
 }
 
 const defaults: EnvAssistDependencies = { available: canOpenEnvSettings, open: openEnvSettings, findNotice };
@@ -147,6 +156,8 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
     const parsed = EnvAssistSchemas.recheck.safeParse(payload);
     if (!parsed.success) return { status: 'rejected' };
     const notice = await deps.findNotice(parsed.data.noticeId);
+    // Already resolved elsewhere (another card, the reminder switch, System Settings): give the card its done copy.
+    if (notice?.phase === 'resolved') return { status: 'checked', outcome: { status: 'granted' }, notice };
     const actionPayload = notice?.action?.payload;
     if (notice?.phase !== 'needs_user' || !actionPayload || !('pane' in actionPayload)) return { status: 'rejected' };
     const probe = noticeProbe(deps, notice, actionPayload.pane);

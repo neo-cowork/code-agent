@@ -90,6 +90,17 @@ describe('calendarCreateEventModule (native)', () => {
       expect(execMock).toHaveBeenCalledWith('create_event', { title: 'x', start_ms: 1 });
     });
 
+    it('without a calendar, the approval card is asked with the real default calendar name (not「无」) and the write lands there', async () => {
+      execMock.mockImplementation(async (action: string) => (action === 'default_calendar'
+        ? { data: '家庭' }
+        : { data: { uid: 'e', calendar: '家庭', title: 'x', startAtMs: 1, endAtMs: 2 } }));
+      const seen: Array<Record<string, unknown>> = [];
+      const result = await run({ title: 'x', start_ms: 1 }, makeCtx(), async (_tool, args) => { seen.push(args as Record<string, unknown>); return { allow: true }; });
+      expect(result.ok).toBe(true);
+      expect(seen).toEqual([{ title: 'x', start_ms: 1, calendar: '家庭' }]);
+      expect(execMock).toHaveBeenCalledWith('create_event', { title: 'x', start_ms: 1, calendar: '家庭' });
+    });
+
     it('rejects missing title', async () => {
       const result = await run({ calendar: 'Work', start_ms: 1 });
       expect(result.ok).toBe(false);

@@ -15,7 +15,7 @@ const bridgeError = (message: string, code: string) => Object.assign(new Error(m
 export function createFakeCalendarBridge() {
   const state = {
     status: 3 as 0 | 1 | 2 | 3 | 4,
-    calendars: [{ id: 'c-work', title: 'Work', writable: true }] as Array<{ id: string; title: string; writable: boolean }>,
+    calendars: [{ id: 'c-work', title: 'Work', writable: true }] as Array<{ id: string; title: string; writable: boolean; isDefault?: boolean }>,
     items: [] as FakeItem[],
     calls: [] as Array<{ path: string; body: Record<string, unknown> }>,
     /** 点了授权框后的答复（undefined = 一直不答） */

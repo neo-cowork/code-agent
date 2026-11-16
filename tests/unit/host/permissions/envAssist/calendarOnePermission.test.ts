@@ -126,6 +126,18 @@ describe('one calendar permission', () => {
     expect(phaseOf(chat)).toBe('resolved');
   });
 
+  it('a card resolved from another entry hands its done copy back on recheck (chat missed the broadcast while on the settings page)', async () => {
+    const first = card('s-1', 'run-1');
+    const replaced = card('s-1', 'run-0'); // the superseded parked run's card in the same session
+    ek.status = 3;
+    expect(await call('enableSettingGrant', { setting: 'meetingCalendarReminder' })).toEqual({ on: true });
+    for (const n of [first, replaced]) {
+      expect(await call('recheck', { noticeId: n.id })).toMatchObject({
+        status: 'checked', outcome: { status: 'granted' }, notice: { id: n.id, phase: 'resolved', doneKey: 'env.done.calendar' },
+      });
+    }
+  });
+
   it('granted in System Settings: the settings page recheck also closes the chat cards (no prompt)', async () => {
     const chat = card('s-chat', 'run-chat');
     h.setting = true;

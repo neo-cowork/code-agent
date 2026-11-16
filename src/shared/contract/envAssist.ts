@@ -48,6 +48,8 @@ export interface EnvAssistActRequest {
 export interface EnvAssistActResult {
   status: 'opened' | 'not_available' | 'rejected' | 'checked';
   outcome?: { status: 'granted' | 'denied' | 'undecided' | 'not_running' } | { status: 'unavailable'; reason: string };
+  /** The card's persisted copy once it is resolved: the card applies it itself, so a missed broadcast can't leave it stale. */
+  notice?: EnvAssistNotice;
 }
 
 /** Result of a permission-gated settings switch (ADR-090 perm_calendars). The host writes the setting, never the renderer. */

@@ -104,7 +104,9 @@ describe('env-assist card closes once the permission is granted', () => {
     expect(stored().action).toBeUndefined();
     expect(mocks.events).toHaveLength(1);
     expect(tcc.prompts).toBe(0);
-    expect(await call('recheck', { noticeId: card.id })).toMatchObject({ status: 'rejected' });
+    // A resolved card no longer probes; it gets its persisted done copy back (covers a broadcast missed by the chat view).
+    expect(await call('recheck', { noticeId: card.id })).toMatchObject({ status: 'checked', notice: { id: card.id, phase: 'resolved' } });
+    expect(tcc.prompts).toBe(0);
     expect(await call('recheck', { noticeId: 'missing' })).toMatchObject({ status: 'rejected' });
   });
 

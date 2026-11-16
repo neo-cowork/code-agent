@@ -58,6 +58,14 @@ describe('EnvAssistCard', () => {
     expect(report).not.toContain(rawMessage);
     expect(report).toBe('');
   });
+  it('a card resolved elsewhere while the chat missed the broadcast (settings page open) turns done on remount, no button', async () => {
+    const resolved: EnvAssistNotice = { ...notice, phase: 'resolved', doneKey: 'env.done.calendar', updatedAt: 2, action: undefined };
+    mocks.invoke.mockImplementation(async (_domain, action) => action === 'getAvailability' ? { available: true }
+      : action === 'recheck' ? { status: 'checked', outcome: { status: 'granted' }, notice: resolved } : { status: 'opened' });
+    render(<EnvAssistCard notice={notice} />); // stale snapshot from the renderer's message cache
+    await waitFor(() => expect(screen.getByTestId('env-assist-card').textContent).toBe('已允许 Neo 访问「日历」。'));
+    expect(screen.queryByRole('button')).toBeNull();
+  });
   it('hides the button without a desktop and after an unavailable action', async () => {
     mocks.invoke.mockResolvedValue({ available: false });
     const view = render(<EnvAssistCard notice={notice} />);
