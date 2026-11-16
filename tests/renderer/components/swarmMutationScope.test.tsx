@@ -54,7 +54,7 @@ describe('scoped swarm mutations', () => {
     const view = render(<LaunchRequestCard request={request} />);
 
     // 轻量 DecisionCard：先选「批准」选项，再点 primary 确认
-    fireEvent.click(view.getByRole('button', { name: /^团队启动 · 允许/ }));
+    fireEvent.click(view.getByRole('button', { name: /^启动/ }));
     fireEvent.click(view.getByRole('button', { name: '允许' }));
 
     await waitFor(() => {
@@ -87,7 +87,7 @@ describe('scoped swarm mutations', () => {
     };
     const view = render(<LaunchRequestCard request={request} />);
 
-    fireEvent.click(view.getByRole('button', { name: /^团队启动 · 允许/ }));
+    fireEvent.click(view.getByRole('button', { name: /^启动/ }));
     fireEvent.click(view.getByRole('button', { name: '允许' }));
     useSessionStore.setState({ currentSessionId: 'session-next' });
     useSwarmStore.getState().activateScope('session-next', 'run-next');
@@ -119,7 +119,7 @@ describe('scoped swarm mutations', () => {
     const view = render(<LaunchRequestCard request={request} />);
 
     // 轻量卡无反馈框；选中批准后确认在途时 Esc/重复确认必须被吞
-    fireEvent.click(view.getByRole('button', { name: /^团队启动 · 允许/ }));
+    fireEvent.click(view.getByRole('button', { name: /^启动/ }));
     fireEvent.click(view.getByRole('button', { name: '允许' }));
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(view.getByRole('button', { name: '允许' }));

@@ -235,9 +235,10 @@ export function buildCanUseToolFromLegacy(
 
     try {
       const permissionRequest: PermissionRequestData = {
-        sessionId: requestHint?.sessionId,
+        // 工具体内的审批也要归到本会话（真机第四轮：没传 hint 时 sessionId 为空，停车 / 无人值守 / 收件箱都认不出是谁的）
+        sessionId: requestHint?.sessionId ?? legacyCtx.sessionId,
         agentId: requestHint?.agentId,
-        runId: requestHint?.runId,
+        runId: requestHint?.runId ?? legacyCtx.runId,
         parentToolUseId: requestHint?.parentToolUseId,
         forceConfirm: requestHint?.forceConfirm,
         type,

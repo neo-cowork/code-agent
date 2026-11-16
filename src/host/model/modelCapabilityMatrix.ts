@@ -100,9 +100,10 @@ const MATRIX: ModelCapabilityMatrix = {
   },
   'custom-tokenrhythm': {
     models: {
-      // 2026-08-13 实测：仅 0731 支持 Responses + web_search；
-      // 同名的 deepseek-v4-flash / -pro 均被上游拒绝，不可想当然继承官方。
-      'deepseek-v4-flash-0731': { protocol: 'responses', search: { mode: 'deepseek-responses' } },
+      // 2026-08-13 实测：仅 0731 支持 Responses；同名的 deepseek-v4-flash / -pro 均被上游拒绝，
+      // 不可想当然继承官方。2026-11-15 复测：中继对该模型带 web_search 返回 400
+      // RESPONSES_FEATURE_NOT_SUPPORTED（去掉即 200），故不挂内置搜索，联网走 Neo 自带搜索工具。
+      'deepseek-v4-flash-0731': { protocol: 'responses', search: { mode: 'none' } },
     },
   },
   claude: {

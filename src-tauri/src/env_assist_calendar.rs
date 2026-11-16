@@ -14,6 +14,25 @@
 
 /// EKAuthorizationStatus: 0 notDetermined, 1 restricted, 2 denied, 3 fullAccess (authorized before 14), 4 writeOnly.
 pub const FULL_ACCESS: i64 = 3;
+/// The answer EventKit handed to our own request's completion: -1 none yet, 0 refused, 1 granted.
+static REQUEST_ANSWER: std::sync::atomic::AtomicI8 = std::sync::atomic::AtomicI8::new(-1);
+
+/// What the last in-process `request_full_access` completion said, if it has run.
+pub fn last_request_answer() -> Option<bool> {
+    match REQUEST_ANSWER.load(std::sync::atomic::Ordering::SeqCst) {
+        1 => Some(true),
+        0 => Some(false),
+        _ => None,
+    }
+}
+
+/// The status every route trusts. 11-15 real run: after "Allow Full Access" in our own dialog the class method
+/// kept answering notDetermined (0) in this process. The completion is EventKit's own answer to this process,
+/// so a notDetermined class read after a granted completion counts as full access; nothing else is upgraded.
+pub fn effective_status(raw: i64, answer: Option<bool>) -> i64 {
+    if raw == 0 && answer == Some(true) { FULL_ACCESS } else { raw }
+}
+
 /// Window and count caps for one read; the reminder asks for 2 minutes.
 pub const MAX_WINDOW_MS: i64 = 60 * 60 * 1000;
 pub const MAX_EVENTS: usize = 20;
@@ -70,7 +89,11 @@ mod imp {
             Retained::into_raw(store) as usize
         });
         let store = unsafe { &*(ptr as *const AnyObject) };
-        let completion = block2::RcBlock::new(|_granted: Bool, _error: *mut AnyObject| {});
+        let completion = block2::RcBlock::new(|granted: Bool, _error: *mut AnyObject| {
+            let granted = granted.as_bool();
+            super::REQUEST_ANSWER.store(i8::from(granted), std::sync::atomic::Ordering::SeqCst);
+            eprintln!("[env_assist_calendar] request completion granted={granted}");
+        });
         let full: bool = unsafe { msg_send![store, respondsToSelector: sel!(requestFullAccessToEventsWithCompletion:)] };
         if full {
             let _: () = unsafe { msg_send![store, requestFullAccessToEventsWithCompletion: &*completion] };
@@ -179,6 +202,17 @@ mod tests {
             200,
         );
         assert_eq!(got.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["early", "late"]);
+    }
+
+    #[test]
+    fn effective_status_trusts_a_granted_completion_only_over_not_determined() {
+        assert_eq!(effective_status(0, Some(true)), FULL_ACCESS);
+        assert_eq!(effective_status(0, None), 0);
+        assert_eq!(effective_status(0, Some(false)), 0);
+        // A real refusal / write-only / restriction is never upgraded by an old completion.
+        for raw in [1, 2, 4] {
+            assert_eq!(effective_status(raw, Some(true)), raw);
+        }
     }
 
     #[test]

@@ -31,7 +31,9 @@ export async function publishEnvAssistToolNotice(input: {
   if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
   // Only Apple-events targets can tell "never asked" from "refused", so only they get the in-place system dialog.
   // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
-  else if (notice.action?.payload && 'pane' in notice.action.payload && notice.action.payload.pane === 'automation' && canRequestEnvGrant()) {
+  // Calendar (EventKit) can tell too: undecided shows the dialog, refused opens Settings (calendarGrant.askCalendarFromClick).
+  else if (notice.action?.payload && 'pane' in notice.action.payload
+    && (notice.action.payload.pane === 'automation' || notice.action.payload.pane === 'calendars') && await canRequestEnvGrant()) {
     notice.action.kind = 'request_grant';
   }
   input.result.error = [

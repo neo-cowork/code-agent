@@ -27,7 +27,7 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../../../src/host/services/agentEngine/agentEngineEventSink', () => ({ emitExternalAgentEvent: () => undefined }));
 vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn(async () => true) }));
 vi.mock('../../../../src/host/permissions/envAssist/shellBridge/client', () => ({
-  canRequestEnvGrant: () => true,
+  canRequestEnvGrant: async () => true,
   resolveShellBridgeClientFromEnv: () => (store.bridge ? {} : null),
 }));
 vi.mock('../../../../src/host/permissions/envAssist/probes/shellPassiveBridge', () => ({ createShellPassiveBridge: () => store.bridge }));
@@ -44,24 +44,25 @@ import { envResumeProbeFactory, registerEnvAssistHandlers } from '../../../../sr
 import { ipcHost, type HandlerFn } from '../../../../src/host/platform';
 import { getDefaultWorkDirectory } from '../../../../src/host/config/configPaths';
 
-/** -1744 undecided → the one dialog → 0 granted. */
-const tcc = { code: -1744 as 0 | -1743 | -1744 };
+/** Calendar is EventKit (perm_calendars): 0 undecided → the one dialog → 3 full access; 2 refused. Never Apple events. */
+const tcc = { status: 0 as 0 | 2 | 3 };
+const noAppleEvents = async (): Promise<never> => { throw new Error('calendar must not touch Apple events'); };
 const passive: PassiveBridge = {
   AXIsProcessTrusted: async () => false, CGPreflightScreenCaptureAccess: async () => false, IOHIDCheckAccess: async () => 1,
-  AEDeterminePermissionToAutomateTarget: async () => tcc.code,
-  EKAuthorizationStatusForEvents: async () => 0,
+  AEDeterminePermissionToAutomateTarget: noAppleEvents,
+  EKAuthorizationStatusForEvents: async () => tcc.status,
 };
 const grant: PromptingBridge = {
   requestAccessibility: async () => undefined, CGRequestScreenCaptureAccess: async () => undefined, IOHIDRequestAccess: async () => undefined,
-  AEDeterminePermissionToAutomateTarget: async () => { tcc.code = 0; },
-  requestFullAccessToEvents: async () => undefined,
+  AEDeterminePermissionToAutomateTarget: noAppleEvents,
+  requestFullAccessToEvents: async () => { tcc.status = 3; },
 };
 
 let fixture: Awaited<ReturnType<typeof harness>> | undefined;
 let workspace = '';
 afterEach(() => {
   fixture?.close(); fixture = undefined; registerEnvResumeContinuer(null); vi.useRealTimers(); vi.restoreAllMocks();
-  warn.mockClear(); store.messages.length = 0; store.bridge = null; tcc.code = -1744;
+  warn.mockClear(); store.messages.length = 0; store.bridge = null; tcc.status = 0;
   if (workspace) rmSync(workspace, { recursive: true, force: true });
 });
 
@@ -89,11 +90,11 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     f.wire(async () => 'red');
     const { emitted } = await f.park();
     expect(await f.repository.get('env-run')).toMatchObject({
-      status: 'waiting', interruptCause: 'env_blocked', envBlocked: { class: 'perm_automation', target: 'calendar', toolCallId: 'env-call' },
+      status: 'waiting', interruptCause: 'env_blocked', envBlocked: { class: 'perm_calendars', target: 'calendar', toolCallId: 'env-call' },
     });
     expect(f.db.prepare("SELECT * FROM tool_execution_events WHERE phase='complete'").all()).toHaveLength(0);
     const card = emitted.find((e) => e.type === 'env_assist_notice')?.data as { id: string; phase: string; action: { kind: string } };
-    expect(card).toMatchObject({ phase: 'needs_user', parkedToolCallId: 'env-call', target: { id: 'calendar' }, action: { kind: 'request_grant', payload: { pane: 'automation' } } });
+    expect(card).toMatchObject({ class: 'perm_calendars', phase: 'needs_user', parkedToolCallId: 'env-call', target: { id: 'calendar' }, action: { kind: 'request_grant', payload: { pane: 'calendars' } } });
     expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist).toMatchObject({ phase: 'needs_user', parkedToolCallId: 'env-call' });
   });
 
@@ -127,9 +128,10 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     vi.spyOn(ipcHost, 'handle').mockImplementation((_c, fn) => { handler = fn; });
     registerEnvAssistHandlers({
       available: () => true, open: vi.fn(async () => true), passiveBridge: passive, grantBridge: grant,
+      calendarGranted: async () => undefined, sleep: async () => undefined,
       findNotice: async (id) => store.messages.find((m) => m.id === `env-assist:${id}`)?.metadata?.envAssist,
     });
-    const res = await handler!({} as never, { action: 'act', payload: { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'automation' } } });
+    const res = await handler!({} as never, { action: 'act', payload: { noticeId: card.id, actionKind: 'request_grant', payload: { pane: 'calendars' } } });
     expect(res).toMatchObject({ data: { status: 'checked', outcome: { status: 'granted' } } });
     f.green(); granted = true;
     await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
@@ -140,18 +142,20 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist).toMatchObject({ phase: 'resolved' });
   });
 
-  it('the production resume probe reads the card target passively: granted → green, refused → red, no shell → unavailable', async () => {
-    const block = { class: 'perm_automation' as const, target: 'calendar', toolCallId: 'c' };
-    const seen: string[] = [];
-    store.bridge = { ...passive, AEDeterminePermissionToAutomateTarget: async (t, ask) => { seen.push(`${t}:${String(ask)}`); return tcc.code; } };
-    tcc.code = -1743;
-    expect(await envResumeProbeFactory(block)()).toBe('red');
-    tcc.code = 0;
-    expect(await envResumeProbeFactory(block)()).toBe('green');
-    expect(seen).toEqual(['com.apple.iCal:false', 'com.apple.iCal:false']);
+  it('the production resume probe reads the EventKit truth passively (also for runs parked as perm_automation before the switch)', async () => {
+    store.bridge = passive;
+    for (const klass of ['perm_calendars', 'perm_automation'] as const) {
+      const block = { class: klass, target: 'calendar', toolCallId: 'c' };
+      tcc.status = 2;
+      expect(await envResumeProbeFactory(block)()).toBe('red');
+      tcc.status = 0;
+      expect(await envResumeProbeFactory(block)()).toBe('red');
+      tcc.status = 3;
+      expect(await envResumeProbeFactory(block)()).toBe('green');
+    }
     store.bridge = null;
-    expect(await envResumeProbeFactory(block)()).toBe('unavailable');
-    expect(await envResumeProbeFactory({ ...block, target: 'photos' })()).toBe('unavailable');
+    expect(await envResumeProbeFactory({ class: 'perm_calendars', target: 'calendar', toolCallId: 'c' })()).toBe('unavailable');
+    expect(await envResumeProbeFactory({ class: 'perm_automation', target: 'photos', toolCallId: 'c' })()).toBe('unavailable');
     expect(warn).toHaveBeenCalledWith('Env resume probe unavailable', expect.objectContaining({ reason: 'unsupported_target' }));
   });
 
