@@ -366,3 +366,15 @@ describe('slash picker model', () => {
   });
 
 });
+
+describe('createAgentCandidates localization', () => {
+  const roles = [{ id: '牧之', name: '牧之', description: 'd', profession: '资深产品经理', isRole: true }] as never;
+  it('en shows pinyin + English profession but keeps the Chinese /agent token', () => {
+    const [c] = createAgentCandidates(roles, undefined, 'en');
+    expect([c.label, c.sublabel, c.slashText, c.agentToken]).toEqual(['Muzhi', 'Senior Product Manager', '/agent 牧之', '牧之']);
+  });
+  it('zh unchanged', () => {
+    const [c] = createAgentCandidates(roles);
+    expect([c.label, c.sublabel]).toEqual(['牧之', '资深产品经理']);
+  });
+});

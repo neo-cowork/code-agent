@@ -5,6 +5,7 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { localizeAppshotSessionTitle } from '@shared/sessionTitlePlaceholder';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionStatusFilter } from '../stores/sessionUIStore';
@@ -77,7 +78,9 @@ export function matchesSessionStatusFilter(
 
 export function getDisplaySessionTitle(title?: string | null, language: Language = 'zh'): string {
   const cleanTitle = humanizeInternalText(title ?? '', language, { omitIds: true }).text;
-  return localizeDisplaySessionTitle(cleanTitle, language);
+  // Expert threads are titled with the roleId; show the localized nickname (display only).
+  const roleTitle = cleanTitle.trim();
+  return localizeDisplaySessionTitle(localizeBuiltinRole(roleTitle, { name: roleTitle }, language).name, language);
 }
 
 function localizeDisplaySessionTitle(title: string, language: Language): string {

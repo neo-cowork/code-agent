@@ -10,6 +10,11 @@ describe('localizeBuiltinRole', () => {
     expect(localizeBuiltinRole('研究员', { name: '研究员', profession: '研究员' }, 'en').name).toBe('Researcher');
   });
 
+  it('names the cloud-shelf packs by their real profession', () => {
+    expect(localizeBuiltinRole('岚析', { name: '岚析', profession: '增长分析师' }, 'en')).toEqual({ name: 'Lanxi', profession: 'Growth Analyst' });
+    expect(localizeBuiltinRole('映川', { name: '映川', profession: '视觉设计师' }, 'en')).toEqual({ name: 'Yingchuan', profession: 'Visual Designer' });
+  });
+
   it('returns inputs unchanged in zh', () => {
     const parts = { name: '牧之', profession: '资深产品经理' };
     expect(localizeBuiltinRole('牧之', parts, 'zh')).toBe(parts);

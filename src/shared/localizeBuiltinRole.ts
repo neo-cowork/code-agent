@@ -9,8 +9,8 @@ const BUILTIN_ROLE_EN: Readonly<Record<string, { name: string; profession: strin
   持衡: { name: 'Chiheng', profession: 'Contract Review Advisor' },
   记言: { name: 'Jiyan', profession: 'Meeting Notes & Admin Assistant' },
   万卷: { name: 'Wanjuan', profession: 'Literature Review Researcher' },
-  岚析: { name: 'Lanxi', profession: 'Researcher' },
-  映川: { name: 'Yingchuan', profession: 'Researcher' },
+  岚析: { name: 'Lanxi', profession: 'Growth Analyst' },
+  映川: { name: 'Yingchuan', profession: 'Visual Designer' },
   研究员: { name: 'Researcher', profession: 'Researcher' },
 };
 
