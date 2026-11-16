@@ -13,7 +13,7 @@ export const EnvAssistSchemas = {
   act: z.object({
     noticeId: z.string().min(1),
     actionKind: z.enum(['open_settings_pane', 'request_grant']),
-    payload: z.object({ pane: z.enum(['automation', 'accessibility', 'screenCapture', 'inputMonitoring']) }).strict(),
+    payload: z.object({ pane: z.enum(['automation', 'calendars', 'accessibility', 'screenCapture', 'inputMonitoring']) }).strict(),
   }).strict(),
   recheck: z.object({ noticeId: z.string().min(1) }).strict(),
   /** Whitelist: only settings that are gated by a permission grant. */

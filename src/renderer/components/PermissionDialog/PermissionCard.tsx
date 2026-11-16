@@ -168,7 +168,9 @@ export function PermissionCard({
     && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
       || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
-  const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
+  // 删一条日程可撤销（删前留快照），和建 / 改同配色：主按钮「删除」，不默认突出「取消」、不给红框
+  // （爸 11-16：删一条日程不至于红色警示；红色只留给删整个系列 / 一次删多条这类收不回的操作）。
+  const safeDefaultDeny = request !== null && request.tool !== 'calendar_delete_event' && isSafeDefaultDeny(request);
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
@@ -181,7 +183,10 @@ export function PermissionCard({
   // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
-  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event';
+  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'
+    || request?.tool === 'calendar_delete_event';
+  // 单条日程删除：中性写回卡 +「删除 / 取消」，没有「改一改」（见 permissionEdit 里 calendar_delete_event 的说明）
+  const isNativeDelete = request?.tool === 'calendar_delete_event';
   const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update';
   const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
   const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
@@ -424,7 +429,10 @@ export function PermissionCard({
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
     : undefined;
   const browserCopy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
-  const options: DecisionOption[] = editable ? [
+  const options: DecisionOption[] = editable && isNativeDelete ? [
+    { id: 'once', label: w.optionDelete, description: w.optionDeleteDesc, shortcut: 'y' },
+    { id: 'deny', label: w.optionDenyDelete, description: w.optionDenyDeleteDesc, shortcut: 'n' },
+  ] : editable ? [
     {
       id: 'once',
       label: isMeetingCreate ? w.optionCreate : isNativeCreate ? w.optionCreateItem : isNativeUpdate ? w.optionUpdate : w.optionSend,
@@ -487,6 +495,8 @@ export function PermissionCard({
       ? w.calendarCreateTitle
       : request.tool === 'calendar_update_event'
         ? w.calendarUpdateTitle
+        : isNativeDelete
+        ? w.calendarDeleteTitle
         : request.tool === 'reminders_create'
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
@@ -511,6 +521,8 @@ export function PermissionCard({
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)
       : request.tool === 'calendar_update_event'
         ? (contentTitle ? w.calendarUpdateQuestion.replace('{title}', contentTitle) : w.calendarUpdateQuestionFallback)
+        : isNativeDelete
+        ? (contentTitle ? w.calendarDeleteQuestion.replace('{title}', contentTitle) : w.calendarDeleteQuestionFallback)
         : request.tool === 'reminders_create'
           ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
           : request.tool === 'reminders_update'
