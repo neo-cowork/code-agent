@@ -135,7 +135,7 @@ describe('leak canary · member follow-up', () => {
 });
 
 describe('leak canary · sidebar rename blur', () => {
-  const mountActions = (renameSession: ReturnType<typeof vi.fn>) => renderHook(() => {
+  const mountActions = (renameSession: (sessionId: string, title: string) => void) => renderHook(() => {
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
     const actions = useSidebarRowActions({
@@ -151,7 +151,7 @@ describe('leak canary · sidebar rename blur', () => {
 
   it('pre-fills the display title, and submitting it untouched never writes pinyin back', () => {
     useSessionStore.setState({ sessions: [session] });
-    const renameSession = vi.fn();
+    const renameSession = vi.fn<(sessionId: string, title: string) => void>();
     const { result } = mountActions(renameSession);
     act(() => result.current.handleDoubleClick(dblClick, session));
     expect(result.current.renameValue).toBe('Muzhi');
@@ -161,7 +161,7 @@ describe('leak canary · sidebar rename blur', () => {
 
   it('a real edit is still saved verbatim', () => {
     useSessionStore.setState({ sessions: [session] });
-    const renameSession = vi.fn();
+    const renameSession = vi.fn<(sessionId: string, title: string) => void>();
     const { result } = mountActions(renameSession);
     act(() => result.current.handleDoubleClick(dblClick, session));
     act(() => result.current.setRenameValue('产品简报'));
