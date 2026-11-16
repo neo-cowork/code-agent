@@ -21,6 +21,7 @@ import { getConfigService } from '../core/configService';
 import { getDaemonQuitIntent } from '../daemon/quitIntent';
 import { desktopPresence } from '../companion/desktopPresence';
 import { getDurableResumeNotificationText } from '../../../shared/i18n/durableResumeNotification';
+import { getMeetingReminderNotificationText } from '../../../shared/i18n/meetingReminderNotification';
 import {
   getNotificationDigestText,
   type NotificationDigestLocale,
@@ -569,15 +570,17 @@ class NotificationService implements Disposable {
    * 会前提醒（N-MEETING-SESSION）：日历上的会快开始了，问用户要不要记这场会。
    * 要用户决定，按 needs_input 放行、绕过焦点门；没有目标会话，点击只唤起应用（录制条上点开始）。
    */
-  notifyMeetingStarting(data: { title: string; body: string }): void {
+  notifyMeetingStarting(data: { meetingTitle: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify(true)) return;
+    // 文案跟随 ui.language；没标题的会用同语言兜底（调用方传原始标题）
+    const text = getMeetingReminderNotificationText(readNotificationLocale(), data.meetingTitle);
     this.enqueueBudgeted({
       intent: 'needs_input',
       type: 'plugin',
       sessionId: '',
-      title: data.title,
-      body: data.body,
+      title: text.title,
+      body: text.body,
       delivery: { urgent: true },
     });
   }
