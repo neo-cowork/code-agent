@@ -76,9 +76,10 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
       timestamp: 1,
     };
     const { container, unmount } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(countOccurrences(container.textContent || '', command)).toBe(1);
     const markupWithoutTitle = renderToStaticMarkup(<PermissionCard />).replace(/title="[^"]*"/g, '');
-    expect(countOccurrences(markupWithoutTitle, command)).toBe(1);
+    expect(countOccurrences(markupWithoutTitle, command)).toBe(0);
     unmount();
 
     // Parked variant with argsPreview
@@ -95,6 +96,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
       timestamp: 2,
     };
     const parkedRender = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(countOccurrences(parkedRender.container.textContent || '', command)).toBe(1);
     expect(parkedRender.container.querySelector('[data-testid="permission-args-preview"]')).toBeNull();
   });
@@ -116,6 +118,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     };
 
     const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     const textBefore = container.textContent || '';
     expect(textBefore).toContain('step-1-output');
     expect(textBefore).toContain('step-8-output');
@@ -147,6 +150,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     };
 
     const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(container.textContent).not.toContain(command);
     fireEvent.click(screen.getByRole('button', { name: '展开全部' }));
     expect(container.textContent).toContain(command);
@@ -167,6 +171,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     };
 
     const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     const text = container.textContent || '';
     expect(text).toContain('build-step-1');
     expect(text).toContain('build-step-42');
@@ -184,6 +189,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
       details: { command }, timestamp: 1,
     };
     const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(container.textContent).toContain(command);
     expect(container.querySelector('[data-testid="permission-command-fold"]')).toBeNull();
     expect(screen.queryByRole('button', { name: '展开全部' })).toBeNull();
@@ -209,6 +215,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
         details: { command, commandRiskLevel: risk }, timestamp: 1,
       };
       const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
       expectFullNoFold(container, command);
     });
 
@@ -219,6 +226,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
         details: { command, commandSecurityFlags: ['recursive-delete'] }, timestamp: 1,
       };
       const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
       expectFullNoFold(container, command);
     });
 
@@ -229,6 +237,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
         details: { command, commandRiskLevel: 'low' }, timestamp: 1,
       };
       const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
       expect(container.querySelector('[data-testid="permission-command-fold"]')).not.toBeNull();
       expect(container.textContent).not.toContain('step-40');
     });
@@ -254,6 +263,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     };
 
     const { container, unmount } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     const textZh = container.textContent || '';
     expect(textZh).toContain('启动子任务');
     expect(textZh).not.toContain('执行命令');
@@ -271,6 +281,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     // Also verify English title
     state.language = 'en';
     const enRender = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     const textEn = enRender.container.textContent || '';
     expect(textEn).toContain('Start a sub-task');
     expect(textEn).toContain('Allow starting this sub-task?');
@@ -292,6 +303,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     };
     expect(state.request.argsPreview).toBeUndefined();
     const { container } = render(<PermissionCard />);
+    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
     expect(container.textContent).toContain('派出子代理：整理文档');
     expect(container.textContent).toContain(`任务：${params.task}`);
     expect(container.textContent).toContain('权限：可修改文件、运行命令');

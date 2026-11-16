@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render as mount, screen } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
 
@@ -254,7 +254,7 @@ beforeAll(async () => {
 function renderCard(request: PermissionRequest, language: Languages): { html: string; text: string } {
   state.request = request;
   state.language = language;
-  const html = renderToStaticMarkup(React.createElement(PermissionCard));
+  const html = renderDetails();
   const root = document.createElement('div');
   root.innerHTML = html;
   return { html, text: root.textContent ?? '' };
@@ -371,7 +371,8 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     const read = captured.find((c) => c.origin === 'executor:Read outside')!;
     for (const language of LANGUAGES) {
       const { text } = renderCard(read.request, language);
-      expect(text).toContain(language === 'zh' ? '不会修改' : 'will not modify');
+      expect(text).toContain(language === 'zh' ? '允许读取' : 'Allow reading');
+      expect(screen.queryByTestId('permission-consequence')).toBeNull();
       expect(stripUserValues(text, read.request)).not.toMatch(/写入|覆盖|write|overwrite/iu);
     }
   });
@@ -472,3 +473,11 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     expect(getPermissionConfig('future_type' as never).title).not.toBe(getPermissionConfig('command').title);
   });
 });
+
+function renderDetails(): string {
+  cleanup();
+  const { container } = mount(React.createElement(PermissionCard));
+  const toggle = screen.queryByRole('button', { name: /更多选项与详情|More options & details/ });
+  if (toggle) fireEvent.click(toggle);
+  return container.innerHTML;
+}

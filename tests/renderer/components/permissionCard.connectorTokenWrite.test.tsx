@@ -75,6 +75,7 @@ const connectorTokenWriteRequest = (overrides?: Partial<ContractPermissionReques
 function renderCard(request: ContractPermissionRequest): HTMLElement {
   storeState.request = request;
   const { container } = render(React.createElement(PermissionCard));
+  fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
   return container;
 }
 

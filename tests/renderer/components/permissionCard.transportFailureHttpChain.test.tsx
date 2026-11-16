@@ -108,7 +108,7 @@ async function deliveredWireJson() {
 }
 
 function confirmAllowOnce() {
-  fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^允许$/ }));
 }
 
 /**

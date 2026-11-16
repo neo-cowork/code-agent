@@ -98,10 +98,10 @@ describe('DecisionSlot persisted decisions after restart', () => {
   });
 
   it.each([
-    ['pending', 'allow', 'once', /允许一次|仍然执行/u],
-    ['pending', 'deny', 'deny', /拒绝/u],
-    ['queued', 'allow', 'once', /允许一次|仍然执行/u],
-    ['queued', 'deny', 'deny', /拒绝/u],
+    ['pending', 'allow', 'once', /^允许$/u],
+    ['pending', 'deny', 'deny', /^暂不$/u],
+    ['queued', 'allow', 'once', /^允许$/u],
+    ['queued', 'deny', 'deny', /^暂不$/u],
   ] as const)('does not resurrect an answered live card while its parked row is stale: %s / %s', async (source, response, decision, action) => {
     const request: PermissionRequest = {
       id: 'persisted-request', sessionId: SESSION, parentToolUseId: 'delete-call',
@@ -125,6 +125,7 @@ describe('DecisionSlot persisted decisions after restart', () => {
     expect(api.invoke).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, request.id, response, SESSION);
     // The host mirror has not polled yet: answering moves the live request into history atomically.
     expect(screen.queryByTestId('parked-approval-card')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
     expect(screen.getByTestId('permission-card').textContent).toContain('second-export.csv');
     await act(async () => { await refreshParkedApprovals(); });
     expect(screen.queryByTestId('parked-approval-card')).toBeNull();

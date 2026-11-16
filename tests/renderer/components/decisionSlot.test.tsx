@@ -188,12 +188,14 @@ describe('DecisionSlot', () => {
     expect(slot.getAttribute('aria-label')).toBe('待你决定');
     expect(slot.className).toContain('chat-col-pad');
     expect(slot.className).not.toContain('overflow-y-auto');
-    expect(screen.getByText('执行命令')).toBeTruthy();
-    expect(screen.getAllByText('危险')).toHaveLength(1);
+    expect(screen.getByText('执行操作')).toBeTruthy();
+    expect(screen.queryByText('危险')).toBeNull();
+    expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('border-red-500');
     expect(screen.getByText('还有 2 项')).toBeTruthy();
     expect(screen.queryByText('创建文件')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
     expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
-    expect(screen.getByTestId('permission-card-pinned-options').className).toContain('shrink-0');
+    expect(screen.getByTestId('permission-card-face').textContent).toContain('暂不');
     expect(screen.queryByTestId('permission-card-actions')).toBeNull();
     expect(screen.getByTestId('permission-card').className).not.toContain('px-4');
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain(
@@ -202,7 +204,7 @@ describe('DecisionSlot', () => {
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('shadow-md');
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('dark:shadow-2xl');
 
-    fireEvent.click(screen.getByRole('button', { name: /仍然执行/u }));
+    fireEvent.click(screen.getByRole('button', { name: /^允许$/u }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -238,7 +240,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /允许一次/ }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^允许$/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() => {
@@ -256,7 +258,7 @@ describe('DecisionSlot', () => {
     storeState.pendingPermissionSessionId = 'session-current';
     const view = render(<DecisionSlot />);
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /拒绝/ }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^暂不$/ }));
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(invoke).not.toHaveBeenCalled();
 

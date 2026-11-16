@@ -69,7 +69,7 @@ const request: PermissionRequest = {
 };
 
 function confirmAllowOnce() {
-  fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^允许$/ }));
 }
 
 describe('PermissionCard click that was already answered elsewhere', () => {
