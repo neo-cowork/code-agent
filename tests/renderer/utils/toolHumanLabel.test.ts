@@ -62,12 +62,12 @@ describe('getHumanToolLabel', () => {
     expect(missing, `连接器工具缺少人话标签：${missing.join(', ')}`).toEqual([]);
   });
 
-  it('Bash/Write/Edit 不进共享映射：审批记录靠 connectorLabel !== request.tool 去重前缀', () => {
-    for (const toolName of ['Bash', 'Write', 'Edit']) {
+  it('Bash/Write/Edit 使用统一动作名', () => {
+    for (const [toolName, label] of [['Bash', '运行命令'], ['Write', '写入文件'], ['Edit', '编辑文件']]) {
       expect(getHumanToolLabel({
         toolName,
         labels: zh.receiptPresentation.humanToolLabels,
-      })).toBe(toolName);
+      })).toBe(label);
     }
   });
 });
