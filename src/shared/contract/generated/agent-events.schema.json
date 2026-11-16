@@ -1115,6 +1115,12 @@
         "details": {
           "type": "object",
           "properties": {
+            "calendarApprovalSnapshotFields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "path": {
               "type": "string"
             },
