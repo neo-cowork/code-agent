@@ -1,0 +1,16 @@
+{
+  "name": "a 重置日历授权 → 问日程 → 出卡 → 允许 → 卡收口 + 续做出结果（真机，--dev）",
+  "steps": [
+    { "do": "reset-tcc", "service": "Calendar" },
+    { "do": "new-session" },
+    { "do": "send", "text": "我今天有哪些日程？" },
+    { "do": "wait-idle", "expect": "needs-user" },
+    { "do": "click", "target": "role=button:允许访问日历" },
+    { "do": "ax-click", "name": "Allow Full Access", "process": "UserNotificationCenter", "timeout": 30000 },
+    { "do": "wait-text", "text": "已允许 Neo 控制「日历」。", "timeout": 30000 },
+    { "do": "wait-idle", "expect": "idle", "grace": 15000 },
+    { "do": "wait-log", "pattern": "Agent run completed" },
+    { "do": "assert-visible", "target": "testid=turn-reply-actions", "within": 3000 },
+    { "do": "shot", "name": "a-final" }
+  ]
+}
