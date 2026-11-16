@@ -235,12 +235,11 @@ function buildCapabilityRows(args: {
       key: 'activity-context',
       label: 'ActivityContext',
       value: availableSourceCount > 0
-        ? copy.capability.sourcesAvailable.replace('{count}', String(availableSourceCount))
+        ? interpolatePlural(copy.capability.sourcesAvailable, availableSourceCount)
         : copy.capability.noContext,
       detail: args.context
-        ? copy.capability.tokenBudget
+        ? interpolatePlural(copy.capability.tokenBudget, args.context.evidenceRefs.length)
           .replace('{tokens}', String(args.context.tokenBudgetHint.targetTokens))
-          .replace('{count}', String(args.context.evidenceRefs.length))
         : copy.capability.contextNotReturned,
       tone: availableSourceCount > 0 ? 'ready' : 'idle',
     },
@@ -333,8 +332,8 @@ function buildLocalEvidenceItems(args: {
       label: copy.localEvidence.evidenceLabel,
       detail: [
         evidenceCount > 0 ? copy.localEvidence.evidenceRefs.replace('{count}', String(evidenceCount)) : '',
-        screenshotCount > 0 ? copy.localEvidence.screenshotsLocal.replace('{count}', String(screenshotCount)) : '',
-        audioPathCount > 0 ? copy.localEvidence.audioPaths.replace('{count}', String(audioPathCount)) : '',
+        screenshotCount > 0 ? interpolatePlural(copy.localEvidence.screenshotsLocal, screenshotCount) : '',
+        audioPathCount > 0 ? interpolatePlural(copy.localEvidence.audioPaths, audioPathCount) : '',
       ].filter(Boolean).join(' · '),
       tone: 'ready',
     });

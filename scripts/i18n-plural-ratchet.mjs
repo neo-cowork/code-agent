@@ -64,7 +64,7 @@ const NOUNS = [
   'deliveries', 'entries', 'findings', 'goals', 'hits', 'images', 'instructions',
   'iterations', 'issues', 'lookups', 'members', 'models', 'numbers', 'ops',
   'outputs', 'paths', 'pieces', 'recipients', 'recordings', 'regions', 'rules',
-  'scripts', 'sites', 'slides', 'sources', 'spots', 'subtasks', 'tabs', 'turns',
+  'scripts', 'sites', 'slides', 'sources', 'spots', 'subtasks', 'tabs', 'turns', 'classes', 'scopes', 'orderings',
 ].join('|');
 const hardPlural = new RegExp(`\\{(?:count|n)\\}(?:\\s+[A-Za-z][A-Za-z/-]*){0,2}\\s+(?:${NOUNS})\\b`, 'i');
 // zh copy has no plural grammar and intentionally embeds English loanwords

@@ -8,6 +8,7 @@
 // 后两者都给空态 + 重试，不再让「正在加载更多专家…」常驻。
 
 import React from 'react';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { AlertTriangle, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { RolePackListItem } from '../../../services/rolesClient';
 import { useI18n } from '../../../hooks/useI18n';
@@ -36,7 +37,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
         <div data-testid={`role-pack-degraded-${item.entry.roleId}`} className="rounded-md border border-badge-warning/30 bg-amber-500/10 p-2">
           <div className="flex items-center gap-1.5 text-xs text-badge-warning">
             <AlertTriangle className="h-3.5 w-3.5" />
-            <span>{text.degraded.replace('{count}', String(missingSkills.length))}</span>
+            <span>{interpolatePlural(text.degraded, missingSkills.length)}</span>
           </div>
           <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
             {text.missingSkills.replace('{skills}', missingSkills.join('、'))}

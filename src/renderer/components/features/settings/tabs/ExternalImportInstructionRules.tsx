@@ -12,6 +12,7 @@
 // 上限数字取自 shared/constants 的 SEED_INJECTION（与 host 注入预算同一真源）。
 
 import React, { useState } from 'react';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { MemoryImportDryRunResult } from '@shared/contract/memory';
 import { SEED_INJECTION } from '@shared/constants';
@@ -142,7 +143,7 @@ function RuleGroupSection({
           aria-expanded={expanded}
           rightIcon={expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         >
-          {copyRules.rulesFound.replace('{count}', String(group.rules.length))}
+          {interpolatePlural(copyRules.rulesFound, group.rules.length)}
         </Button>
       </div>
       {expanded && (

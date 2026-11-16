@@ -57,7 +57,7 @@ export const activityPanelZh = {
       recentContext: '最近上下文',
       agentInjection: '将提供给助手的文本预览',
       sourceMissing: '未返回',
-      sourceItems: '{count} 条信息，可信度 {confidence}',
+      sourceItems: { one: '{count} 条信息，可信度 {confidence}', other: '{count} 条信息，可信度 {confidence}' },
       sourceNotReturned: '后端没有返回该来源。',
     },
     provider: {
@@ -96,9 +96,9 @@ export const activityPanelZh = {
       error: '异常',
     },
     capability: {
-      sourcesAvailable: '{count} 个来源可用',
+      sourcesAvailable: { one: '{count} 个来源可用', other: '{count} 个来源可用' },
       noContext: '暂无上下文',
-      tokenBudget: '约可提供 {tokens} 个文字单位，共 {count} 条信息。',
+      tokenBudget: { one: '约可提供 {tokens} 个文字单位，共 {count} 条信息。', other: '约可提供 {tokens} 个文字单位，共 {count} 条信息。' },
       contextNotReturned: '后端还没有返回统一上下文。',
       openchronicleFallback: '可由自动屏幕记忆提供近期摘要。',
       nativeRecords: '{count} 条本机记录',
@@ -124,8 +124,8 @@ export const activityPanelZh = {
     localEvidence: {
       evidenceLabel: '本地证据',
       evidenceRefs: '{count} 条本地参考记录',
-      screenshotsLocal: '{count} 张截图文件只作本地证据',
-      audioPaths: '{count} 个音频文件路径不直接展开',
+      screenshotsLocal: { one: '{count} 张截图文件只作本地证据', other: '{count} 张截图文件只作本地证据' },
+      audioPaths: { one: '{count} 个音频文件路径不直接展开', other: '{count} 个音频文件路径不直接展开' },
       sourceUnavailableFallback: '该来源当前没有可注入内容，只保留状态说明。',
       emptyLabel: '暂无本地证据',
       emptyDetail: '当前没有截图、音频或其他本地参考记录。',
@@ -185,7 +185,7 @@ export const activityPanelEn: typeof activityPanelZh = {
       recentContext: 'Recent context',
       agentInjection: 'Text that will be provided to the assistant',
       sourceMissing: 'not returned',
-      sourceItems: '{count} items, confidence {confidence}',
+      sourceItems: { one: '{count} item, confidence {confidence}', other: '{count} items, confidence {confidence}' },
       sourceNotReturned: 'The backend did not return this source.',
     },
     provider: {
@@ -224,9 +224,9 @@ export const activityPanelEn: typeof activityPanelZh = {
       error: 'Error',
     },
     capability: {
-      sourcesAvailable: '{count} sources available',
+      sourcesAvailable: { one: '{count} source available', other: '{count} sources available' },
       noContext: 'No context yet',
-      tokenBudget: 'About {tokens} text units available across {count} items.',
+      tokenBudget: { one: 'About {tokens} text units available across {count} item.', other: 'About {tokens} text units available across {count} items.' },
       contextNotReturned: 'The backend has not returned unified context yet.',
       openchronicleFallback: 'Automatic screen memory can provide a recent summary.',
       nativeRecords: '{count} local records',
@@ -252,8 +252,8 @@ export const activityPanelEn: typeof activityPanelZh = {
     localEvidence: {
       evidenceLabel: 'Local evidence',
       evidenceRefs: '{count} local reference records',
-      screenshotsLocal: '{count} screenshot files kept as local evidence only',
-      audioPaths: '{count} audio file paths not expanded directly',
+      screenshotsLocal: { one: '{count} screenshot file kept as local evidence only', other: '{count} screenshot files kept as local evidence only' },
+      audioPaths: { one: '{count} audio file path not expanded directly', other: '{count} audio file paths not expanded directly' },
       sourceUnavailableFallback: 'This source currently has nothing to inject; only its status is kept.',
       emptyLabel: 'No local evidence yet',
       emptyDetail: 'There are no screenshots, audio files, or other local reference records right now.',

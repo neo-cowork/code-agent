@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React, { useState, lazy, Suspense } from 'react';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 import { Play, Copy, Check, RotateCcw } from 'lucide-react';
 import { isHostReasonPayload, type ToolCall } from '@shared/contract';
 import {
@@ -147,7 +148,7 @@ function CappedResultBody({
         >
           {showAll
             ? copy.collapse
-            : copy.expandRemaining.replace('{count}', String(overflow))}
+            : interpolatePlural(copy.expandRemaining, overflow)}
         </button>
       )}
     </>

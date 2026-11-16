@@ -51,8 +51,8 @@ export interface SurfaceExecutionTranslationsV1 {
     grantExpired: string;
     grantNone: string;
     capabilities: string;
-    actionScope: string;
-    dataScope: string;
+    actionScope: { one: string; other: string };
+    dataScope: { one: string; other: string };
     expires: string;
     readonly: string;
     capability: Record<'observe' | 'input' | 'navigate' | 'file' | 'secret' | 'destructive', string>;
@@ -197,8 +197,8 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     grantExpired: '授权已过期',
     grantNone: '未授予操作权限',
     capabilities: '能力',
-    actionScope: '{count} 类允许动作',
-    dataScope: '{count} 个数据范围',
+    actionScope: { one: '{count} 类允许动作', other: '{count} 类允许动作' },
+    dataScope: { one: '{count} 个数据范围', other: '{count} 个数据范围' },
     expires: '到期 {time}',
     readonly: '历史记录不会恢复旧授权；续跑会创建新的受控执行',
     capability: {
@@ -388,8 +388,8 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     grantExpired: 'Permission expired',
     grantNone: 'No operation permission',
     capabilities: 'Capabilities',
-    actionScope: '{count} allowed action classes',
-    dataScope: '{count} data scopes',
+    actionScope: { one: '{count} allowed action class', other: '{count} allowed action classes' },
+    dataScope: { one: '{count} data scope', other: '{count} data scopes' },
     expires: 'Expires {time}',
     readonly: 'History never restores old authority; continuation creates a new controlled run',
     capability: {

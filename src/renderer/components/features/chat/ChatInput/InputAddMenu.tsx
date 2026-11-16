@@ -3,6 +3,7 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { Plus, Image as ImageIcon, MonitorUp, Bot, ChevronRight, Plug, Sparkles, UsersRound, BookX, Mic } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -235,7 +236,7 @@ export const InputAddMenu: React.FC<Props> = ({
       : item.kind === 'connector'
         ? item.detail || item.capabilities.join(' · ')
         // MCP server：优先展示与能力中心「连接器」页同源的目录描述，没有才回退工具数
-        : item.description || item.error || (item.toolCount > 0 ? t.inputAddMenu.submenuMcpTools.replace('{count}', String(item.toolCount)) : undefined),
+        : item.description || item.error || (item.toolCount > 0 ? interpolatePlural(t.inputAddMenu.submenuMcpTools, item.toolCount) : undefined),
     selected: item.selected,
   }));
   const teamItems: InputAddSubmenuItem[] = recipes.map((recipe) => ({

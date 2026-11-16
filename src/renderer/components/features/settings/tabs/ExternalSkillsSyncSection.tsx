@@ -6,6 +6,7 @@
 // setSkillsSync）。页面只出大白话状态，不渲染原因码或路径。
 
 import React, { useEffect, useState } from 'react';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -73,7 +74,7 @@ export const ExternalSkillsSyncSection: React.FC = () => {
           <div className="mt-1 text-xs text-zinc-400" data-testid="external-skills-sync-status">{status}</div>
           {keptNeo > 0 && (
             <div className="mt-1 text-xs text-zinc-500" data-testid="external-skills-sync-kept-neo">
-              {copy.keptNeoLine.replace('{count}', String(keptNeo))}
+              {interpolatePlural(copy.keptNeoLine, keptNeo)}
             </div>
           )}
         </div>

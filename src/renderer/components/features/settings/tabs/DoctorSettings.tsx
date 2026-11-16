@@ -9,6 +9,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import {
   Monitor,
   Wifi,
@@ -273,8 +274,7 @@ export const DoctorSettings: React.FC = () => {
                 onChange={(event) => setIncludeRecordings(event.target.checked)}
                 className="h-3.5 w-3.5 accent-zinc-400"
               />
-              {doctorText.includeRecordings
-                .replace('{count}', String(recordingSummary.count))
+              {interpolatePlural(doctorText.includeRecordings, recordingSummary.count)
                 .replace('{size}', `${(recordingSummary.totalBytes / 1024 / 1024).toFixed(1)} MB`)}
             </label>
           )}

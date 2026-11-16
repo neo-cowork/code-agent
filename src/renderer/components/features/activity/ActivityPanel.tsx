@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import {
   Activity,
   AlertTriangle,
@@ -203,8 +204,7 @@ export const ActivityPanel: React.FC = () => {
         label: getActivitySourceLabel(kind, ap),
         status: source?.status ?? 'missing',
         detail: source?.status === 'available'
-          ? ap.preview.sourceItems
-            .replace('{count}', String(getActivitySourceItemCount(source)))
+          ? interpolatePlural(ap.preview.sourceItems, getActivitySourceItemCount(source))
             .replace('{confidence}', source.confidence.toFixed(2))
           : source?.unavailableReason || ap.preview.sourceNotReturned,
         tone: sourceTone(source?.status),

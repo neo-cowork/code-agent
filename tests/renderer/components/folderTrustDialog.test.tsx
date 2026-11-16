@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -204,8 +205,8 @@ describe('FolderTrustDialog', () => {
       />,
     );
 
-    expect(html).toContain(zh.folderTrust.items['project-hooks'].replace('{count}', '3'));
-    expect(html).toContain(zh.folderTrust.items['project-mcp'].replace('{count}', '1'));
+    expect(html).toContain(interpolatePlural(zh.folderTrust.items['project-hooks'], 3));
+    expect(html).toContain(interpolatePlural(zh.folderTrust.items['project-mcp'], 1));
     expect(html).toContain(zh.folderTrust.costNote);
     expect(html).toContain(zh.folderTrust.contentChanged);
     // 不拦的项不进清单（它们本来就会加载，问了也没有可决定的东西）

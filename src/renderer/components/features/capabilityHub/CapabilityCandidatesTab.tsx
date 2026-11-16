@@ -12,6 +12,7 @@
 // 排序完全来自 host 的机械分；模型只出名字和一句说明，不参与排序。
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { RefreshCw } from 'lucide-react';
 import type {
   CapabilityCandidateList,
@@ -98,8 +99,7 @@ const CandidateRow: React.FC<CandidateRowProps> = ({ candidate, text, busy, onIg
         <p className="mt-1 text-xs text-zinc-500">{evidenceLine(candidate, text)}</p>
         {/* 「凭什么把这几次归成一条」——聚类必须能解释，不能只给个分数 */}
         <p className="mt-0.5 text-[11px] text-zinc-600">
-          {text.whyGrouped
-            .replace('{count}', String(candidate.occurrences))
+          {interpolatePlural(text.whyGrouped, candidate.occurrences)
             .replace('{variants}', String(candidate.variants.length))}
         </p>
         {(candidate.signals.degraded || candidate.signals.missingDependency) ? (

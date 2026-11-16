@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { ChevronRight } from 'lucide-react';
 import type { SessionAutomationConfig } from '@shared/contract';
 import type { CronStoredArtifact } from '@shared/cronArtifactPath';
@@ -43,7 +44,7 @@ export const CronReviewDigest: React.FC<{
   const summary = visibleSummary(digest.summaryText ?? digest.summaryLine);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [open, setOpen] = useState(false);
-  const label = cc.inboxDigestArtifacts.replace('{count}', String(digest.artifactCount));
+  const label = interpolatePlural(cc.inboxDigestArtifacts, digest.artifactCount);
 
   return (
     <div data-testid="automation-review-digest">

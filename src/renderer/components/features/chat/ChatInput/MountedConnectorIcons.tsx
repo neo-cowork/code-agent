@@ -14,6 +14,7 @@
 // ============================================================================
 
 import React, { useCallback, useMemo, useState } from 'react';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { AlertCircle, Plug, Server, X } from 'lucide-react';
 import { CLI_CONNECTOR_DESCRIPTORS } from '@shared/constants/cliConnectorDescriptors';
 import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
@@ -311,9 +312,8 @@ export const MountedConnectorIcons: React.FC = () => {
           {/* 专家带的那颗：灰一档、无移除键——要关去能力中心，会话里只选不配 */}
           <div
             data-testid="expert-connector-badge"
-            aria-label={text.expertGroupAria
-              .replace('{expert}', expertName)
-              .replace('{count}', String(expertSource.items.length))}
+            aria-label={interpolatePlural(text.expertGroupAria, expertSource.items.length)
+              .replace('{expert}', expertName)}
             className={`relative inline-flex h-[24px] shrink-0 items-center gap-1 rounded-full border border-zinc-700/70 bg-zinc-800/40 px-1.5 text-xs text-zinc-400 ${
               expertSource.sessionOverridden ? 'opacity-60' : ''
             }`}

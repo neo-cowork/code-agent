@@ -74,7 +74,7 @@ function AssemblyPanel({ model }: { model: AssemblyModel }) {
             <span className="w-20 shrink-0 text-zinc-600">{assembly.tools}</span>
             <span className="min-w-0 break-all text-zinc-300" title={model.toolNames.join(', ')}>
               {model.hasManifest
-                ? `${fill(assembly.toolsSummary, { count: String(model.toolNames.length) })}${model.toolNames.length > 0 ? `：${model.toolNames.join(', ')}` : ''}`
+                ? `${interpolatePlural(assembly.toolsSummary, model.toolNames.length)}${model.toolNames.length > 0 ? `：${model.toolNames.join(', ')}` : ''}`
                 : assembly.notRecorded}
             </span>
           </div>

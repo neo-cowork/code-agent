@@ -602,7 +602,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
       {showSummary && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className={failed > 0 ? 'text-badge-warning' : 'text-zinc-400'}>
-            {copy.agents.replace('{count}', String(total))}
+            {interpolatePlural(copy.agents, total)}
           </span>
           <span>{copy.completed.replace('{completed}', String(completed)).replace('{total}', String(total))}</span>
           {failed > 0 && (

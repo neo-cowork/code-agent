@@ -9,7 +9,7 @@ import { ipcService } from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentNoticeEvent } from '@shared/ipc/handlers';
 import { useI18n } from '../hooks/useI18n';
-import { interpolate } from '../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../i18n/interpolate';
 import type { Translations } from '../i18n';
 
 const WARNING_REASON_CODES = new Set<AgentNoticeEvent['reasonCode']>([
@@ -40,7 +40,7 @@ export function formatAgentNoticeToast(event: AgentNoticeEvent, t: Translations)
     case 'agent_routed':
       return interpolate(an.agentRouted, { agentName: params.agentName ?? '' });
     case 'historical_images_omitted':
-      return interpolate(an.historicalImagesOmitted, { count: params.count ?? 0 });
+      return interpolatePlural(an.historicalImagesOmitted, params.count ?? 0);
     case 'interaction_response_expired':
       return interpolate(an.interactionResponseExpired, { kind: params.kind ?? '请求' });
     default: {

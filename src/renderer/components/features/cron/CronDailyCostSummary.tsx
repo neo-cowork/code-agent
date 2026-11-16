@@ -4,6 +4,7 @@
 // 无成本/跳过条目计数不加钱）；这里只做呈现，自动化中心与角色页共用。
 // ============================================================================
 import React from 'react';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import type { CronJobExecution } from '@shared/contract';
 import { cronDailyCostTotals, cronTodayYesterdayKeys, readWakeSkipFromResult } from '@shared/cronRunLedger';
 import { useI18n } from '../../../hooks/useI18n';
@@ -58,7 +59,7 @@ export const CronDailyCostSummary: React.FC<CronDailyCostSummaryProps> = ({
           : bucket.dayKey === yesterday ? cc.dailyCostYesterday : bucket.dayKey.slice(5);
         const runsNote = bucket.skippedCount > 0
           ? cc.dailyCostSkippedSuffix.replace('{count}', String(bucket.skippedCount))
-          : cc.dailyCostRunsSuffix.replace('{count}', String(bucket.runCount));
+          : interpolatePlural(cc.dailyCostRunsSuffix, bucket.runCount);
         return (
           <span key={bucket.dayKey} data-testid={`${testId}-day`} className="text-zinc-400">
             {label}{' '}

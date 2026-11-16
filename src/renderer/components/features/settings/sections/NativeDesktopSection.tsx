@@ -64,7 +64,7 @@ import { MeetingAutoMinutesToggle } from './MeetingAutoMinutesToggle';
 import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
-import { interpolate } from '../../../../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../../../../i18n/interpolate';
 import { resolveScreenshotUrl } from '../../../../utils/resolveFileUrl';
 
 const AUDIO_RETENTION_HOURS = Math.round(FAILED_AUDIO_RETENTION_MS / (60 * 60 * 1000));
@@ -631,8 +631,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
     setError(null);
     try {
       const result = await clearAudioRecordings();
-      setClearResult(interpolate(nativeDesktopText.audioRetention.cleared, {
-        count: result.deleted,
+      setClearResult(interpolate(interpolatePlural(nativeDesktopText.audioRetention.cleared, result.deleted), {
         bytes: result.freedBytes,
       }));
       setClearConfirmOpen(false);
@@ -910,8 +909,7 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         isOpen={clearConfirmOpen}
         variant="danger"
         title={nativeDesktopText.audioRetention.confirmTitle}
-        message={interpolate(nativeDesktopText.audioRetention.confirmMessage, {
-          count: audioStatus?.retention?.fileCount ?? 0,
+        message={interpolate(interpolatePlural(nativeDesktopText.audioRetention.confirmMessage, audioStatus?.retention?.fileCount ?? 0), {
           bytes: audioStatus?.retention?.bytes ?? 0,
         })}
         confirmText={nativeDesktopText.audioRetention.confirm}

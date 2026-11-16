@@ -79,6 +79,15 @@ describe('i18n-plural-ratchet', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it('flags scope/class nouns and accepts them as a one/other pair', () => {
+    const bad = fixture("export const en = { a: '{count} data scopes', b: '{count} allowed action classes' };\n");
+    baseline(bad, {});
+    expect(run(bad).status).toBe(1);
+    const ok = fixture("export const en = { a: { one: '{count} data scope', other: '{count} data scopes' } };\n");
+    baseline(ok, {});
+    expect(run(ok).status).toBe(0);
+  });
+
   it('fails on a hard plural in a file with no baseline entry', () => {
     const root = fixture("export const en = { bad: '{count} steps' };\n");
     baseline(root, {});
