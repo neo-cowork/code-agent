@@ -139,6 +139,23 @@ describe('toolRunPolicy', () => {
       expect(names('Export signups.csv as an Excel file (.xlsx)')).not.toContain('delegate_task');
     });
 
+    // 后台通道的「通知能力」：Neo 没有独立的 notify 工具——后台任务用 Bash（osascript）发系统通知，
+    // 完成横幅由宿主在任务结束时发出。所以「通知没被收窄」= 委派 + 任务生命周期工具 + Bash 都留在工具面。
+    it('用户明确要后台任务 + 系统通知：委派、任务生命周期与通知所用的 Bash 都不被运行策略收窄', () => {
+      const all = ['delegate_task', 'task_status', 'steer_task', 'cancel_task', 'Bash', 'excel_generate', 'Read'];
+      const kept = (prompt: string) => filterToolsByRunPolicy(
+        all.map(tool), { messages: [{ role: 'user', content: prompt }] } as any,
+      ).map((item) => item.name);
+
+      for (const prompt of [
+        'Start a background task: export signups.csv as an Excel file (.xlsx) and notify me with a system notification when done',
+        '开一个后台任务：把 signups.csv 导出成 Excel 文件（.xlsx），做完后用系统通知提醒我',
+      ]) {
+        expect(kept(prompt)).toEqual(all);
+      }
+      expect(kept('Export signups.csv as an Excel file (.xlsx)')).not.toContain('delegate_task');
+    });
+
     it('前台白名单 + 文件交付：生成工具进面，委派工具出局（组装末端形状）', () => {
       const ctx = {
         allowedToolNames: [
