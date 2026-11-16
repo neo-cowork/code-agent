@@ -11,6 +11,7 @@ import type { IReadConfigService, ServiceApiKey } from '../../../shared/contract
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
+import { resolveProviderKey } from './configProviderKey';
 import { createLogger } from '../infra/logger';
 import { getPolicyEngine } from '../../permissions/policyEngine';
 import { hydratePersistedPermissionMode } from '../../permissions/modes';
@@ -36,7 +37,6 @@ import { assertValidUserPermissionRules } from '../../../shared/permissionRuleSy
 import {
   CONFIG_SELF_WRITE_WINDOW_MS,
   CONFIG_WATCH_DEBOUNCE_MS,
-  PROVIDER_ENV_KEY_MAP,
   SERVICE_ENV_KEY_MAP,
   SHARED_MODEL_PROVIDER_KEYS,
   SHARED_SEARCH_SERVICE_KEYS,
@@ -614,8 +614,11 @@ export class ConfigService implements IReadConfigService {
     if (settings.models?.providers) {
       for (const provider of Object.keys(settings.models.providers)) {
         const apiKey = storage.getApiKey(provider);
-        const apiKeyConfigured = Boolean(apiKey || this.getApiKey(provider as ModelProvider));
-        settings.models.providers[provider as keyof typeof settings.models.providers].apiKeyConfigured = apiKeyConfigured;
+        const resolved = resolveProviderKey(provider as ModelProvider, this.settings, storage);
+        const providerConfig = settings.models.providers[provider as ModelProvider];
+        providerConfig.apiKeyConfigured = Boolean(apiKey || resolved.key);
+        delete providerConfig.apiKeySource;
+        if (resolved.source) providerConfig.apiKeySource = resolved.source;
       }
     }
 
@@ -896,38 +899,7 @@ export class ConfigService implements IReadConfigService {
   }
 
   getApiKey(provider: ModelProvider): string | undefined {
-    // Priority: secure storage > environment variable
-    const storage = getSecureStorage();
-    const secureKey = normalizeApiKey(storage.getApiKey(provider));
-    if (secureKey) return secureKey;
-
-    // Legacy: check config.json (for migration)
-    const configKey = normalizeApiKey(this.settings.models.providers[provider]?.apiKey);
-    if (configKey) {
-      // Migrate to secure storage
-      storage.setApiKey(provider, configKey);
-      // Remove from config (will be saved on next settings update)
-      delete this.settings.models.providers[provider]?.apiKey;
-      return configKey;
-    }
-
-    // 控制面托管 key 兜底（登录后下发，用户自配 key 优先；与 getServiceApiKey 的
-    // 「user > cloud managed > env」次序一致）
-    const managedCloudKey = normalizeApiKey(storage.getApiKey(getCloudManagedProviderKeyId(provider)));
-    if (managedCloudKey) return managedCloudKey;
-
-    // Fallback to environment variable
-    const envKeyMap = PROVIDER_ENV_KEY_MAP;
-
-    const envKey = envKeyMap[provider];
-    const primaryEnvKey = normalizeApiKey(envKey ? process.env[envKey] : undefined);
-    if (primaryEnvKey) return primaryEnvKey;
-
-    if (provider === 'moonshot') {
-      return normalizeApiKey(process.env.KIMI_K25_API_KEY);
-    }
-
-    return undefined;
+    return resolveProviderKey(provider, this.settings, getSecureStorage()).key;
   }
 
   hasConfiguredKey(provider: string): boolean {

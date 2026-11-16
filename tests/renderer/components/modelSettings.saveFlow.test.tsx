@@ -200,10 +200,14 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
       return input!;
     });
     expect(queryBadge(view.container)).toBeNull();
+    await waitFor(() => expect(view.container.querySelector('[data-model-key-guide]')).not.toBeNull());
+    expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('Waiting for API Key');
 
     // type key → 徽标出现（staged-dirty 契约）
     fireEvent.change(keyInput, { target: { value: DEEPSEEK_KEY } });
     await waitFor(() => expect(queryBadge(view.container)).not.toBeNull());
+    expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('API Key not saved yet');
+    expect(view.container.querySelector('[data-model-key-guide]')).not.toBeNull();
     expect(useToastStore.getState().toasts.some((t) => t.type === 'success')).toBe(false);
 
     const inputBeforeSave = view.container.querySelector('input[data-model-api-key]');
@@ -227,6 +231,14 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
     // (c) 组件不动：下一次 send 前的真实 get（脱敏结果）让 hasConfiguredDefaultRuntimeModel 为 true
     const nextSendSettings = await freshSettingsGet();
     expect(hasConfiguredDefaultRuntimeModel(nextSendSettings)).toBe(true);
+    expect(nextSendSettings.models.providers.deepseek).toMatchObject({ apiKeyConfigured: true, apiKeySource: 'saved' });
+    expect(nextSendSettings.models.providers.deepseek.apiKey).toBeUndefined();
+    expect(nextSendSettings.models.providers.longcat).toMatchObject({ apiKeyConfigured: false });
+    await waitFor(() => expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('API Key saved'));
+    expect(view.container.querySelector('[data-model-key-guide]')).toBeNull();
+    const options = Array.from(view.container.querySelectorAll<HTMLOptionElement>('option'));
+    expect(options.some((option) => option.value.startsWith('longcat:::') && option.textContent?.includes('Key needed'))).toBe(true);
+    expect(options.filter((option) => option.value.startsWith('deepseek:::')).every((option) => !option.textContent?.includes('Key needed'))).toBe(true);
     // 没有重载 / 重挂载：同一 input DOM 节点还在原位且保留表单值
     const inputAfterSave = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
     expect(inputAfterSave).toBe(inputBeforeSave);
