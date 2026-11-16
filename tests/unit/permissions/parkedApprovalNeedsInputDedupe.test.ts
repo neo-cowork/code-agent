@@ -161,7 +161,7 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
     expect(platformMocks.broadcast).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
-      expect.objectContaining({ title: '需要授权', sessionId, urgent: true }),
+      expect.objectContaining({ title: '需要授权', body: '需要授权：写入文件', sessionId, urgent: true }),
     );
 
     await persistTaskManagerEvent(deps, sessionId, {
