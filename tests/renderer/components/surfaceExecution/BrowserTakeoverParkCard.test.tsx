@@ -12,7 +12,7 @@ const { getKeptResultPage, adoptKeptResultPage } = vi.hoisted(() => ({
   adoptKeptResultPage: vi.fn(),
 }));
 
-vi.mock('../../../../src/renderer/services/userBrowserLink', () => ({
+vi.mock('../../../../src/renderer/services/keptResultPage', () => ({
   adoptKeptResultPage: (input: unknown) => adoptKeptResultPage(input),
   getKeptResultPage: (conversationId: string) => getKeptResultPage(conversationId),
 }));
