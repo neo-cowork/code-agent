@@ -16,7 +16,8 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
-import { isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence } from './permissionPresentation';
+import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
+import { describeApproval } from './describeApproval';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -24,6 +25,49 @@ import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
+}
+
+/** host 默认的通用预览是「执行工具 <工具名>」+「参数名: 值」逐行；工具名与下划线参数名都是内部标识，不上卡。 */
+function humanizeParamLabels(diff: string): string {
+  return diff.split('\n').map((line) => line.replace(/^([a-z0-9]+(?:_[a-z0-9]+)+)(?=:)/u, (key) => key.replaceAll('_', ' '))).join('\n');
+}
+
+/**
+ * 网页操作卡（web_action）：host 预览是「参数名: 值」逐行（action/text/selector…）。action 已由标题
+ * 「操作网页」表达，其余每一行都上卡（只去掉 action），认识的参数用本地化标签，不认识的用人话化的参数名兜底。
+ * 不用白名单：handle_dialog 要填的文字、execute_goal 要做的任务丢了，用户就是在不知道提交什么时点批准（PR#3355 审查）。
+ */
+type WebActionField = 'text' | 'target' | 'dialogText' | 'dialogAction' | 'task' | 'key' | 'url' | 'destination';
+const WEB_ACTION_FIELDS: Record<string, WebActionField> = {
+  text: 'text', value: 'text',
+  selector: 'target', targetRef: 'target', ref: 'target',
+  dialogPromptText: 'dialogText', dialogAction: 'dialogAction',
+  task: 'task', key: 'key', url: 'url', destinationTargetRef: 'destination',
+};
+function webActionRows(diff: string | undefined): Array<{ field: WebActionField | null; key: string; value: string }> {
+  const rows: Array<{ field: WebActionField | null; key: string; value: string }> = [];
+  const seen = new Set<string>();
+  for (const line of (diff ?? '').split('\n')) {
+    const at = line.indexOf(':');
+    if (at < 0) continue;
+    const key = line.slice(0, at).trim();
+    const value = line.slice(at + 1).trim();
+    if (!value || key === 'action') continue;
+    const field = WEB_ACTION_FIELDS[key] ?? null;
+    const dedupe = `${field ?? key}\u0000${value}`;
+    if (seen.has(dedupe)) continue;   // ref 与 targetRef 同值时只上一行
+    seen.add(dedupe);
+    rows.push({ field, key, value });
+  }
+  return rows;
+}
+
+function webActionLabel(field: WebActionField, labels: Record<`detailWeb${string}`, string>): string {
+  return {
+    text: labels.detailWebText, target: labels.detailWebTarget, dialogText: labels.detailWebDialogText,
+    dialogAction: labels.detailWebDialogAction, task: labels.detailWebTask, key: labels.detailWebKey,
+    url: labels.detailWebUrl, destination: labels.detailWebDestination,
+  }[field];
 }
 
 function sandboxStatusCopy(
@@ -58,9 +102,10 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   const { type, details } = request;
   const labels = t.decisionCard.permission;
   const cc = t.cronCenter;
+  const { kind, consequence, dedicatedBrowserCard } = describeApproval(request, t, language);
 
   const browser = details.browserSessionGrant;
-  if (browser) {
+  if (browser && dedicatedBrowserCard) {
     const copy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
     const site = browser.target?.slice(browser.target.indexOf('@') + 1);
     return <p className="break-all text-xs leading-5 text-zinc-300" data-testid="browser-session-reason">
@@ -134,9 +179,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {peerOriginNotice}
       {pluginOriginNotice}
       {externalScopeNotice}
-      {permissionConsequence(request, t) && (
+      {consequence && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
-          {permissionConsequence(request, t)}
+          {consequence}
         </p>
       )}
 
@@ -144,7 +189,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath />}
 
       {/* 命令 */}
       {details.command && (
@@ -205,12 +250,22 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
       {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
-          {!(details.connectorAccess && details.preview.type === 'generic') && (
-            <div className="text-xs text-zinc-400 mb-2">{details.preview.summary}</div>
+          {!(details.connectorAccess && details.preview.type === 'generic')
+            && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
+            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
           )}
-          {details.preview.diff && (
+          {kind === 'web_action' && webActionRows(details.preview.diff).map((row, index) => (
+            <DetailItem
+              key={`${index}-${row.key}`}
+              label={row.field ? webActionLabel(row.field, labels) : humanizeParamLabels(`${row.key}:`).slice(0, -1)}
+              value={row.field === 'dialogAction' && (row.value === 'accept' || row.value === 'dismiss')
+                ? (row.value === 'accept' ? labels.detailWebDialogAccept : labels.detailWebDialogDismiss)
+                : row.value}
+            />
+          ))}
+          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action' && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
-              {details.preview.diff}
+              {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>
           )}
         </div>

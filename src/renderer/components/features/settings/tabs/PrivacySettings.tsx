@@ -40,6 +40,7 @@ import type { SettingsTab } from '../../../../utils/settingsTabs';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { zh } from '../../../../i18n/zh';
+import { localizeSettingsTerms } from '../../../../i18n/settingsVocabulary';
 import { useAuthStore } from '../../../../stores/authStore';
 import {
   applyPluginUiActivationSettings,
@@ -232,7 +233,7 @@ function OutboundMaskReceiptCard(props: {
 }
 
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const privacyText = t.settings.privacy;
   const isAdmin = useAuthStore((authState) => authState.user?.isAdmin === true);
   const [state, setState] = useState<SetupState>('idle');
@@ -576,7 +577,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 </button>
               </div>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{entry.data.join('、')}</div>
+                <div><span className="text-zinc-400">{privacyText.boundary.dataLabel}</span>{entry.data.map((item) => localizeSettingsTerms(item, language)).join('、')}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{entry.storage}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{entry.cloud}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.revokeLabel}</span>{entry.revoke}</div>
@@ -599,7 +600,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
               </div>
               <p className="mt-1 text-xs text-zinc-400">{path.trigger}</p>
               <div className="mt-3 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">Provider: </span>{path.providers.join('、')}</div>
+                <div><span className="text-zinc-400">{t.settings.privacyLabels.transcriptionService}</span>{path.providers.join('、')}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.cloudLabel}</span>{path.cloud}</div>
                 <div><span className="text-zinc-400">{privacyText.voice.temporaryFileLabel}</span>{path.temporaryStorage}</div>
                 <div><span className="text-zinc-400">{privacyText.voice.logLabel}</span>{path.logPolicy}</div>
@@ -621,7 +622,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
                 {item.title}
               </div>
               <div className="mt-2 space-y-1.5 text-[11px] text-zinc-500">
-                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{item.examples.join('、')}</div>
+                <div><span className="text-zinc-400">{privacyText.auth.examplesLabel}</span>{item.examples.map((example) => localizeSettingsTerms(example, language)).join('、')}</div>
                 <div><span className="text-zinc-400">{privacyText.boundary.storageLabel}</span>{item.storage}</div>
                 <div><span className="text-zinc-400">{privacyText.auth.displayLabel}</span>{item.display}</div>
                 <div><span className="text-zinc-400">{privacyText.auth.diagnosticsLabel}</span>{item.diagnosticPolicy}</div>
