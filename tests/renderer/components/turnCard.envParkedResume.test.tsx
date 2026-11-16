@@ -113,6 +113,24 @@ describe('environment continuation ownership and time boundaries', () => {
     expect(screen.queryByTestId('interrupt-timeline-step')?.textContent).not.toContain('已中断');
   });
 
+  it.each([undefined, 'user_stop', 'quota_wait', 'crash_or_quit'] as const)(
+    'a loaded session with durable cause %s keeps the interrupted outcome despite the unresolved permission card', cause => {
+      const messages = history().slice(0, 3);
+      store(messages);
+      useSessionStore.setState({ sessions: [{
+        id: SESSION, title: '明日日程', createdAt: 1_000, updatedAt: 5_000,
+        messageCount: 3, turnCount: 1, status: 'interrupted', modelConfig: useAppStore.getState().modelConfig,
+        durableResume: cause ? { runId: 'env-run', mode: 'continue', interruptCause: cause,
+          autoResumeCount: 0, maxAutoResumeCount: 3, canContinue: true } : undefined,
+      }] });
+      render(<ToolStepGroup nodes={project(messages).nodes.filter(n => n.toolCall)} sessionId={SESSION} />);
+      const text = screen.getByTestId('tool-call-row-calendar').textContent;
+      console.log(`loaded durable cause=${cause ?? 'absent'} row:`, text);
+      expect(text).toContain('已中断');
+      expect(text).not.toContain('等你允许');
+    },
+  );
+
   it('a parallel result draining after the card does not turn waiting into interrupted', () => {
     const messages = history().slice(0, 3);
     messages.push({ id: 'parallel-result', role: 'tool', content: '', timestamp: 5_005,

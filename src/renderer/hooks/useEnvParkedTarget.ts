@@ -20,11 +20,12 @@ export function useEnvTargetLabel(block: Pick<EnvBlock, 'target'> | undefined): 
  */
 export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string } | undefined {
   const block = useSessionStore(useShallow((state) => {
-    const resume = sessionId ? state.sessions?.find((session) => session.id === sessionId)?.durableResume : undefined;
+    const session = sessionId ? state.sessions?.find((candidate) => candidate.id === sessionId) : undefined;
+    const resume = session?.durableResume;
     if (resume?.interruptCause === 'env_blocked') return resume.envBlocked;
     // History can arrive before the session's durable projection. Only a host-marked park qualifies;
-    // ordinary permission-error cards must never turn an interrupted call into a waiting call.
-    if (state.currentSessionId !== sessionId) return undefined;
+    // An already loaded session's durable state outranks a leftover permission card.
+    if (session || state.currentSessionId !== sessionId) return undefined;
     const message = state.messages?.findLast(candidate => candidate.metadata?.envAssist?.parkedToolCallId);
     const notice = message?.metadata?.envAssist;
     if (!message || !notice?.parkedToolCallId || !notice.target || notice.phase !== 'needs_user') return undefined;
