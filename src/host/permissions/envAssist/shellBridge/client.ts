@@ -10,6 +10,12 @@ const HANDSHAKE_MAX_BYTES = 4096;
 
 const logger = createLogger('EnvAssistShellBridge');
 
+/** A non-2xx bridge answer carries the route's machine code when it sent one. */
+export function bridgeErrorCode(error: unknown): string | undefined {
+  const code = (error as { bridgeError?: unknown } | null)?.bridgeError;
+  return typeof code === 'string' ? code : undefined;
+}
+
 export interface ShellBridgeClient {
   post<TResponse>(path: string, body?: Record<string, unknown>): Promise<TResponse>;
 }
@@ -142,16 +148,14 @@ export function resolveShellBridgeClientFromEnv(
         clearTimeout(timer);
       }
 
-      if (response.status === 401 || response.status === 403) {
-        const reason = 'env_assist_bridge:bridge_auth_rejected';
-        logger.warn(reason);
-        throw new Error(reason);
-      }
-
       if (!response.ok) {
-        const reason = `env_assist_bridge:bridge_http_${response.status}`;
+        const reason = response.status === 401 || response.status === 403
+          ? 'env_assist_bridge:bridge_auth_rejected'
+          : `env_assist_bridge:bridge_http_${response.status}`;
         logger.warn(reason);
-        throw new Error(reason);
+        // The bridge's own machine code (e.g. calendar_not_authorized, event_not_found), never its detail text.
+        const code = await response.json().then((json: { error?: unknown }) => json?.error, () => undefined);
+        throw Object.assign(new Error(reason), typeof code === 'string' ? { bridgeError: code } : {});
       }
 
       try {
