@@ -122,6 +122,31 @@ describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', (
     expect(detach).toHaveBeenCalledOnce();
   });
 
+  it('retains sampled metadata across capture-size restarts without another read or an absent first frame', async () => {
+    vi.useFakeTimers();
+    const send = vi.fn().mockResolvedValue({ cssContentSize: { width: 420 }, cssLayoutViewport: { clientWidth: 320 } });
+    const service = build({ adapter: buildAdapter({ page: {
+      context: () => ({ newCDPSession: async () => ({ send, detach: async () => undefined }) }),
+    } }) });
+    startPageScreencast.mockImplementation(async (_page: unknown, _options: unknown, emit: FrameEmitter) => {
+      emitFrame = emit;
+      emit({ base64: 'INITIAL', width: 320, height: 600, capturedAtMs: Date.now() });
+      return { stop };
+    });
+    await service.start(REQUEST);
+    expect(published).toHaveLength(1);
+    expect(published[0]).toHaveProperty('pageOverflowX', true);
+    await vi.advanceTimersByTimeAsync(300);
+    await service.start({ ...REQUEST, maxHeight: 563 });
+    expect(published).toHaveLength(2);
+    expect(published[1]).toHaveProperty('pageOverflowX', true);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(699);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   it('omits pageOverflowX and warns with the reason after metrics fail, then recovers', async () => {
     vi.useFakeTimers();
     const send = vi.fn().mockResolvedValue({ cssContentSize: { width: 420 }, cssLayoutViewport: { clientWidth: 320 } });

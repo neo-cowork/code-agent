@@ -27,6 +27,7 @@ export class PageOverflowProbe {
     private readonly update: (overflow: boolean | undefined) => void,
     private readonly warn: (error: unknown) => void,
     private readonly isCurrent: () => boolean,
+    private readonly sample: { atMs: number; value?: boolean },
   ) {}
 
   async start(): Promise<void> {
@@ -34,13 +35,24 @@ export class PageOverflowProbe {
       await this.stop();
       return;
     }
+    const remaining = BROWSER_STAGE_VIEWPORT.OVERFLOW_SAMPLE_INTERVAL_MS - (Date.now() - this.sample.atMs);
+    if (remaining > 0) {
+      this.update(this.sample.value);
+      this.schedule(remaining);
+      return;
+    }
+    this.sample.atMs = Date.now();
     try {
       this.cdp ??= await this.page.context().newCDPSession(this.page);
       if (this.stopped) return;
       const metrics = await this.cdp.send('Page.getLayoutMetrics');
-      if (!this.stopped) this.update(pageOverflowsHorizontally(metrics));
+      if (!this.stopped) {
+        this.sample.value = pageOverflowsHorizontally(metrics);
+        this.update(this.sample.value);
+      }
     } catch (error) {
       if (!this.stopped) {
+        this.sample.value = undefined;
         this.warn(error);
         this.update(undefined);
       }
@@ -48,10 +60,14 @@ export class PageOverflowProbe {
       if (this.stopped) {
         await this.cdp?.detach().catch(() => undefined);
       } else {
-        this.timer = setTimeout(() => void this.start(), BROWSER_STAGE_VIEWPORT.OVERFLOW_SAMPLE_INTERVAL_MS);
-        this.timer.unref?.();
+        this.schedule(BROWSER_STAGE_VIEWPORT.OVERFLOW_SAMPLE_INTERVAL_MS);
       }
     }
+  }
+
+  private schedule(delayMs: number): void {
+    this.timer = setTimeout(() => void this.start(), delayMs);
+    this.timer.unref?.();
   }
 
   async stop(): Promise<void> {

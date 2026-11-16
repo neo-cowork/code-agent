@@ -59,6 +59,9 @@ interface ActiveStream {
 
 export class SurfaceLiveStreamService {
   private active: ActiveStream | null = null;
+  private overflowSample: {
+    page: unknown; surfaceSessionId: string; atMs: number; value?: boolean;
+  } | null = null;
 
   constructor(
     private readonly runtime: SurfaceExecutionRuntime = getSurfaceExecutionRuntime(),
@@ -101,10 +104,11 @@ export class SurfaceLiveStreamService {
     type Frame = Parameters<Parameters<typeof startPageScreencast>[2]>[0];
     const initial: { frame?: Frame } = {};
     let started = false;
+    let overflowReady = false;
     let pageOverflowX: boolean | undefined;
     let latestFrame: Frame | undefined;
     const deliverFrame = (frame: Frame) => {
-      if (!started) {
+      if (!started || !overflowReady) {
         initial.frame = frame;
         return;
       }
@@ -133,6 +137,10 @@ export class SurfaceLiveStreamService {
       return this.refused(request.surfaceSessionId, 'unsupported');
     }
 
+    if (this.overflowSample?.page !== page
+      || this.overflowSample.surfaceSessionId !== request.surfaceSessionId) {
+      this.overflowSample = { page, surfaceSessionId: request.surfaceSessionId, atMs: -Infinity };
+    }
     const overflowProbe = new PageOverflowProbe(page, (overflow) => {
       if (this.active?.handle !== handle || pageOverflowX === overflow) return;
       pageOverflowX = overflow;
@@ -142,7 +150,7 @@ export class SurfaceLiveStreamService {
         surfaceSessionId: request.surfaceSessionId,
         message: error instanceof Error ? error.message : String(error),
       });
-    }, () => this.active?.handle === handle && this.currentPage(request.surfaceSessionId) === page);
+    }, () => this.active?.handle === handle && this.currentPage(request.surfaceSessionId) === page, this.overflowSample);
     const expiryTimer = setTimeout(() => {
       void this.stopActive('watchdog_expiry');
     }, MAX_STREAM_MS);
@@ -163,9 +171,10 @@ export class SurfaceLiveStreamService {
       surfaceSessionId: request.surfaceSessionId,
       hasInitialFrame: Boolean(initial.frame),
     });
+    await overflowProbe.start();
+    overflowReady = true;
     if (initial.frame) deliverFrame(initial.frame);
     initial.frame = undefined;
-    await overflowProbe.start();
     return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
   }
 
