@@ -106,7 +106,7 @@ describe('leak canary · member follow-up', () => {
   it('en UI shows Muzhi but sends and stores the raw name; the note re-localizes after a language switch', async () => {
     await act(async () => { render(<MemberConversationView sessionId="session-1" />); });
     const input = await screen.findByTestId('member-input') as HTMLTextAreaElement;
-    expect(input.placeholder).toContain('Muzhi');
+    expect(input.placeholder).toContain('Senior Product Manager'); // zh shows the profession here too
     fireEvent.change(input, { target: { value: 'add page numbers' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('delivered'));

@@ -293,6 +293,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     key: member.key,
     kind: 'expert',
     name: member.name,
+    displayName: member.displayProfession || member.displayName,
     live: member.status === 'running',
   };
 

@@ -23,7 +23,10 @@ import { useSessionStore } from '../../../stores/sessionStore';
 export interface MemberInputTarget {
   key: string;
   kind: MemberInputKind;
+  /** Raw name: this is what is sent and stored (memberName). */
   name: string;
+  /** Render-time label for placeholders/hints; falls back to a localized `name`. Never sent. */
+  displayName?: string;
   /** 还在干活（能收话）；收工/失败/取消 = false */
   live: boolean;
 }
@@ -61,7 +64,8 @@ export const MemberInputBar: React.FC<{
   const { t } = useI18n();
   const text = t.expert.memberBar;
   // Display only: member.name (raw) is what goes to IPC / the session store.
-  const shownName = useLocalizeRole()(member.name, { name: member.name }).name;
+  const localizedName = useLocalizeRole()(member.name, { name: member.name }).name;
+  const shownName = member.displayName ?? localizedName;
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
   const [receipts, setReceipts] = useState<LocalReceipt[]>([]);
