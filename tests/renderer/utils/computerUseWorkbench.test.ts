@@ -169,5 +169,10 @@ describe('computerUseWorkbench', () => {
     ]));
     expect(explanations.find((item) => item.id === 'failure:ax_tree_poor')?.detail)
       .toContain('Electron');
+    // 默认视图的文案不得带工程词；原始报错只放进「诊断」区
+    const visible = explanations.map((item) => `${item.title} ${item.detail}`).join('\n');
+    expect(visible).not.toMatch(/provider|axPath|AX candidates|AX tree/i);
+    expect(visible).not.toContain('AX unavailable');
+    expect(visible).not.toContain('Computer Surface state unavailable');
   });
 });

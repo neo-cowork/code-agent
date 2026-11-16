@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelProvider } from '../../../src/shared/contract';
 
 const settings = vi.hoisted(() => ({ models: { routing: {}, providers: {
-  deepseek: { enabled: true, apiKeyConfigured: true, model: 'deepseek-chat' },
-  custom: { enabled: true, apiKeyConfigured: true, displayName: 'Custom Provider', model: 'custom-model' },
-  claude: { enabled: true, apiKeyConfigured: true, protocol: 'claude', model: 'claude-sonnet-4-6' },
+  deepseek: { enabled: true, apiKeyConfigured: true, apiKeySource: 'saved', model: 'deepseek-chat' },
+  custom: { enabled: true, apiKeyConfigured: true, apiKeySource: 'saved', displayName: 'Custom Provider', model: 'custom-model' },
+  claude: { enabled: true, apiKeyConfigured: true, apiKeySource: 'saved', protocol: 'claude', model: 'claude-sonnet-4-6' },
 } } }));
 vi.mock('../../../src/renderer/services/ipcService', () => {
   const invokeDomain = vi.fn(async (domain: string, action: string) => {

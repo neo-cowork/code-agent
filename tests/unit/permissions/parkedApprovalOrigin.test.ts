@@ -7,7 +7,10 @@ import Database from 'better-sqlite3';
 import type { AppSettings, Message } from '../../../src/shared/contract';
 import { DEFAULT_SETTINGS } from '../../../src/host/services/core/configDefaults';
 
-const state = vi.hoisted(() => ({ repo: null as unknown, pending: null as unknown, session: null as unknown }));
+const state = vi.hoisted(() => ({ repo: null as unknown, pending: null as unknown, session: null as unknown, language: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: state.language } }) }),
+}));
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
 vi.mock('../../../src/host/services/infra/logger', () => {
   const fake = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -87,6 +90,7 @@ describe('parked tool_approval keeps who started the run', () => {
     ['Bash', 'command'], ['Write', 'file_write'], ['Edit', 'file_edit'], ['Read', 'file_read'],
   ] as const)('%s parked notification uses the configured UI action language', async (tool, type) => {
     for (const language of ['zh', 'en'] as const) {
+      state.language = language;
       vi.mocked(notificationService.notifyNeedsInput).mockClear();
       state.session = { title: 'Downloads notes', origin: { kind: 'cron', id: 'downloads', name: 'Downloads notes' } };
       const island = new OrchestratorPermissionIsland({
@@ -102,7 +106,8 @@ describe('parked tool_approval keeps who started the run', () => {
       try {
         await vi.waitFor(() => expect(notificationService.notifyNeedsInput).toHaveBeenCalled());
         const notice = vi.mocked(notificationService.notifyNeedsInput).mock.calls.at(-1)![0];
-        expect(notice.body).toContain(`「${toolUserLabel(tool, language)}」`);
+        expect(notice.body).toContain(toolUserLabel(tool, language));
+        if (language === 'en') expect(notice.body).not.toMatch(/[\u3400-\u9fff]/);
         expect(pending.listByKindAndStatus('tool_approval', 'pending')).toHaveLength(1);
       } finally {
         for (const request of island.listPendingRequests()) island.resolveParkedApproval(request.id, 'deny');
