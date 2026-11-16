@@ -422,7 +422,8 @@ export function userDeniedGoalStickyError(toolName: string): HostReasonPayload {
   return createHostReason(HostReasonCode.PermissionDeniedByUser,
     'The user just declined this kind of action. Do not request approval for the same goal again '
       + 'by rewording it or changing the command or arguments. End this turn now with one short final '
-      + 'sentence saying that nothing was changed. Do not ask a question or call a question tool. '
+      + 'sentence saying that the declined action was not performed (and briefly what was already done '
+      + 'earlier in this turn, if anything). Do not claim that nothing was changed. Do not ask a question or call a question tool. '
       + 'For unattended, scheduled or background runs, state in one final sentence that the action '
       + 'was declined and skipped. '
       + 'Wait for a new user message before requesting approval for this kind of action again.',

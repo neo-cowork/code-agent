@@ -20,7 +20,7 @@ vi.mock('../../../src/host/security/execPolicy', async (original) => ({
   getExecPolicyStore: () => ({ match: () => null, getRules: () => [], learnFromApproval: () => false }),
 }));
 
-const stickyText = 'End this turn now with one short final sentence saying that nothing was changed.';
+const stickyText = 'End this turn now with one short final sentence saying that the declined action was not performed (and briefly what was already done earlier in this turn, if anything). Do not claim that nothing was changed.';
 
 describe('same-goal denial propagates to sub-agents (createSubagentToolRuntime lane)', () => {
   let cwd: string;
