@@ -47,6 +47,8 @@ interface ActiveStream {
   conversationId: string;
   surfaceSessionId: string;
   handle: PageScreencastHandle;
+  /** 开流时绑定的页面：用来识别「同会话但页面已被换掉/关掉」 */
+  page: unknown;
   expiryTimer: NodeJS.Timeout;
   /** 当前流采集上限，用于 R4 视口跟随换分辨率时判断是否要重开 */
   maxWidth: number;
@@ -66,11 +68,14 @@ export class SurfaceLiveStreamService {
 
   async start(request: SurfaceLiveStreamRequestV1): Promise<SurfaceLiveStreamStateV1> {
     const bounds = clampScreencastBounds(request.maxWidth, request.maxHeight);
-    // 同会话且采集尺寸未变：保持现流；尺寸变了（视口跟随）则重开。
+    // 同会话、采集尺寸未变、且流绑定的还是该会话当前活动页：保持现流。
+    // 页面被换掉（结果页关闭后「重新打开」会起新浏览器）时旧流挂在死页面上，
+    // 照旧回 streaming:true 会让 renderer 永远等不到第一帧，必须重开。
     if (
       this.active?.surfaceSessionId === request.surfaceSessionId
       && this.active.maxWidth === bounds.maxWidth
       && this.active.maxHeight === bounds.maxHeight
+      && this.active.page === this.currentPage(request.surfaceSessionId)
     ) {
       return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
     }
@@ -130,14 +135,26 @@ export class SurfaceLiveStreamService {
       conversationId: request.conversationId,
       surfaceSessionId: request.surfaceSessionId,
       handle,
+      page,
       expiryTimer,
       maxWidth: bounds.maxWidth,
       maxHeight: bounds.maxHeight,
     };
     started = true;
+    logger.info('Surface live stream started', {
+      conversationId: request.conversationId,
+      surfaceSessionId: request.surfaceSessionId,
+      hasInitialFrame: Boolean(initial.frame),
+    });
     if (initial.frame) deliverFrame(initial.frame);
     initial.frame = undefined;
     return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
+  }
+
+  private currentPage(surfaceSessionId: string): unknown {
+    const binding = this.adapter.findBindingBySurfaceSessionId(surfaceSessionId);
+    if (!binding?.browserService.isRunning()) return undefined;
+    return binding.browserService.getActiveTab()?.page;
   }
 
   async stop(surfaceSessionId: string): Promise<SurfaceLiveStreamStateV1> {

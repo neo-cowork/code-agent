@@ -120,6 +120,9 @@ function nativeRequest(
   };
 }
 
+/** Button primitive 的 primary 变体标记（主按钮渐变底） */
+const PRIMARY_MARK = 'from-primary-800';
+
 const calendarCreateRequest = nativeRequest('permission-calendar-create', 'calendar_create_event', {
   calendar: '工作',
   title: '季度评审会',
@@ -438,6 +441,44 @@ describe('PermissionCard · mail_send 改一改再发', () => {
       expect.objectContaining({ [field]: millis }),
     ));
     vi.restoreAllMocks();
+  });
+
+  it('删除单条日程：同一套中性写回卡（不是红色危险卡），写清标题/时间/日历，只有「删除 / 取消」，提示可撤销', async () => {
+    // 真机第五轮：host 给删除请求带 dangerLevel=warning，卡片曾因此走「默认突出取消 + 删除红框」的安全默认样式
+    state.request = { ...nativeRequest('permission-calendar-delete', 'calendar_delete_event', {
+      calendar: '日历', event_uid: 'cal:EV1', title: 'F 真机测试', start_ms: localMs(9), end_ms: localMs(10), location: '三楼',
+    }, '日历'), dangerLevel: 'warning' };
+    render(<PermissionCard />);
+    const deleteButton = screen.getByRole('button', { name: /^删除/ });
+    const cancelButton = screen.getByRole('button', { name: /^取消/ });
+    expect(deleteButton.className).not.toContain('border-red-500');
+    expect(deleteButton.className).toContain(PRIMARY_MARK);
+    expect(cancelButton.className).not.toContain(PRIMARY_MARK);
+    expect(screen.getByText('删除日历事件')).toBeTruthy();
+    expect(screen.getByText('删除日历事件「F 真机测试」？')).toBeTruthy();
+    expect(screen.queryByText('危险操作')).toBeNull();
+    expect(screen.queryByText(/仍然执行/)).toBeNull();
+    expect(screen.getByTestId('writeback-view-calendar').textContent).toBe('日历');
+    expect(screen.getByTestId('writeback-view-title').textContent).toBe('F 真机测试');
+    expect(screen.getByTestId('writeback-view-start_ms').textContent).not.toBe('');
+    expect(screen.getByTestId('calendar-delete-note')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /改一改/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^删除/ }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'permission-calendar-delete', 'allow', 'request-session',
+    ));
+    releaseApprovalResponse('permission-calendar-delete');
+  });
+
+  it('改日程只改地点：没改的标题 / 开始 / 结束整行不显示，不写「无」', () => {
+    state.request = nativeRequest('permission-calendar-update-location', 'calendar_update_event', {
+      calendar: '日历', event_uid: 'cal:EV1', location: '五楼会议室',
+    }, '日历');
+    render(<PermissionCard />);
+    expect(screen.getByTestId('writeback-view-location').textContent).toBe('五楼会议室');
+    for (const key of ['title', 'start_ms', 'end_ms']) expect(screen.queryByTestId(`writeback-view-${key}`)).toBeNull();
+    expect(screen.getByTestId('writeback-fields-view').textContent).not.toContain('无');
+    releaseApprovalResponse('permission-calendar-update-location');
   });
 
   it('日期时间格式无效时保留独立原因码', () => {

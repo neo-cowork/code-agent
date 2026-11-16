@@ -1,0 +1,15 @@
+{
+  "name": "c 长会话上翻两屏后发送：立即落底、回答完整显示",
+  "steps": [
+    { "do": "new-session" },
+    { "do": "send", "text": "请直接回答、不要调用任何工具：写一篇约 5000 字的科普文章，介绍中国古代四大发明，分 12 个小节，每节都有小标题和至少三段正文。" },
+    { "do": "wait-idle", "expect": "idle", "timeout": 240000 },
+    { "do": "scroll-up", "screens": 2 },
+    { "do": "send", "text": "用一句话总结上面这篇文章。" },
+    { "do": "assert-bottom", "within": 1000 },
+    { "do": "wait-idle", "expect": "idle" },
+    { "do": "assert-bottom", "within": 2000, "tolerance": 96 },
+    { "do": "assert-visible", "target": "testid=turn-reply-actions", "within": 3000 },
+    { "do": "shot", "name": "c-final" }
+  ]
+}

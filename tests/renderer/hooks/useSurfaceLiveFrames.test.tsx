@@ -219,6 +219,22 @@ describe('useSurfaceLiveFrames', () => {
     await waitFor(() => expect(stopSurfaceLiveStream).toHaveBeenCalledTimes(1));
   });
 
+  it('开流被拒后入参不变也会继续复述 start：结果页重新打开起了新浏览器，画面要自己恢复', async () => {
+    startSurfaceLiveStream.mockClear();
+    startSurfaceLiveStream.mockResolvedValueOnce({
+      version: 1,
+      surfaceSessionId: 'surface-1',
+      streaming: false,
+      reason: 'not_running',
+    } as never);
+    const { result } = renderHook(() => useSurfaceLiveFrames(READY));
+
+    await waitFor(() => expect(result.current.unavailableReason).toBe('not_running'));
+    await waitFor(() => expect(result.current.streaming).toBe(true), { timeout: 5000 });
+    expect(result.current.unavailableReason).toBeNull();
+    expect(startSurfaceLiveStream.mock.calls.length).toBeGreaterThanOrEqual(2);
+  }, 10_000);
+
   it('host 拒绝开流时给出原因，供 UI 落降级文案', async () => {
     startSurfaceLiveStream.mockResolvedValueOnce({
       version: 1,
