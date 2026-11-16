@@ -19,6 +19,7 @@ import {
   ProviderSourceBadge,
   ProviderTransportBadge,
 } from '../../src/renderer/components/StatusBar/modelSwitcherHelpers.tsx';
+import { zh } from '../../src/renderer/i18n/zh.ts';
 import { formatNativeModelSwitcherTooltip } from '../../src/renderer/components/StatusBar/modelSwitcherTooltips.ts';
 
 export interface ModelStrategySurfaceVisibilityResult {
@@ -113,14 +114,14 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
   });
 
   const billingBadgeHtml = renderToStaticMarkup(React.createElement(ProviderBillingBadge, {
-    summary: buildProviderBillingSummary('unknown'),
+    summary: buildProviderBillingSummary('unknown', zh.settings.model.models.switcherPanel),
   }));
   const healthBadgeHtml = renderToStaticMarkup(React.createElement(ProviderHealthBadge, {
     summary: buildProviderHealthSummary({
       status: 'unavailable',
       latencyP50: 4200,
       errorRate: 0.91,
-    }),
+    }, zh.settings.model.models.switcherPanel),
   }));
   const sourceBadgeHtml = renderToStaticMarkup(React.createElement(ProviderSourceBadge, {
     sourceLabel: 'CommonStack',
@@ -137,8 +138,8 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
     displayModel: 'mimo-v2.5-pro',
     adaptive: true,
     overridden: false,
-    billingSummary: buildProviderBillingSummary('payg'),
-    healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
+    billingSummary: buildProviderBillingSummary('payg', zh.settings.model.models.switcherPanel),
+    healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }, zh.settings.model.models.switcherPanel),
     effort: { label: 'High', shortLabel: '高' },
     thinkingLabel: 'Think',
   });

@@ -37,6 +37,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
+    language: 'zh',
     openWorkbenchTab: mocks.openWorkbenchTab,
     setTaskPanelTab: mocks.setTaskPanelTab,
   }),

@@ -8,8 +8,8 @@ import ts from 'typescript';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
-const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '..');
-const DEFAULT_BASELINE = 'scripts/renderer-zh-default-baseline.json';
+const defaultRepoRoot = path.resolve(path.dirname(scriptPath), '../..');
+const DEFAULT_BASELINE = 'scripts/ci/renderer-zh-default-baseline.json';
 
 function toPosix(value) {
   return value.split(path.sep).join('/');

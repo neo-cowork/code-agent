@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-const scriptPath = resolve('scripts/renderer-zh-default-ratchet.mjs');
+const scriptPath = resolve('scripts/ci/renderer-zh-default-ratchet.mjs');
 
 describe('renderer-zh-default-ratchet', () => {
   let repoRoot: string;
@@ -14,8 +14,8 @@ describe('renderer-zh-default-ratchet', () => {
     repoRoot = mkdtempSync(join(tmpdir(), 'renderer-zh-default-ratchet-'));
     mkdirSync(join(repoRoot, 'src/renderer/components'), { recursive: true });
     mkdirSync(join(repoRoot, 'src/renderer/i18n'), { recursive: true });
-    mkdirSync(join(repoRoot, 'scripts'), { recursive: true });
-    baselinePath = join(repoRoot, 'scripts/renderer-zh-default-baseline.json');
+    mkdirSync(join(repoRoot, 'scripts/ci'), { recursive: true });
+    baselinePath = join(repoRoot, 'scripts/ci/renderer-zh-default-baseline.json');
     writeFileSync(baselinePath, '{"schemaVersion":1,"files":{}}\n');
   });
 

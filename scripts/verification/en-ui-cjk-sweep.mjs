@@ -20,7 +20,7 @@ function parseArgs(argv) {
     args[key.slice(2)] = value;
     i += 1;
   }
-  if (!args['base-url'] || !args.out) throw new Error('Usage: node scripts/en-ui-cjk-sweep.mjs --base-url URL --lang en|zh --out DIRECTORY');
+  if (!args['base-url'] || !args.out) throw new Error('Usage: node scripts/verification/en-ui-cjk-sweep.mjs --base-url URL --lang en|zh --out DIRECTORY');
   if (!['en', 'zh'].includes(args.lang)) throw new Error('--lang must be en or zh');
   return { baseUrl: args['base-url'].replace(/\/$/, ''), lang: args.lang, out: path.resolve(args.out) };
 }

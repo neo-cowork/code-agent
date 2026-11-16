@@ -112,7 +112,7 @@ describe('cowork cron templates', () => {
     expect(template).toBeDefined();
     expect(template?.fields.some((field) => field.required === true)).toBe(false);
 
-    const draft = template!.generate({});
+    const draft = template!.generate({}, 'zh');
     expect(draft.actionType).toBe('agent');
     expect(draft.agentType).toBe('default');
 
@@ -133,7 +133,7 @@ describe('cowork cron templates', () => {
     const draft = template!.generate({
       url: 'https://example.com/notice',
       schedule: '每天 10:30',
-    });
+    }, 'zh');
     expect(draft.actionType).toBe('agent');
     expect(draft.shellCommand).toBe('');
     expect(buildCronJobInput(draft)).toMatchObject({
@@ -154,7 +154,7 @@ describe('任务列表摘要不漏开发者字串', () => {
   it('agent 型任务显示提示词本身，而不是 agentType 标签', () => {
     const template = FEATURED_CRON_TEMPLATES.find((item) => item.id === 'daily-lookahead');
     if (!template) throw new Error('daily-lookahead template missing');
-    const input = buildCronJobInput(template.generate({}));
+    const input = buildCronJobInput(template.generate({}, 'zh'));
     const job = { ...input, id: 'j1', createdAt: 1, updatedAt: 1 } as CronJobDefinition;
 
     const summary = formatActionSummary(job, 'zh');
