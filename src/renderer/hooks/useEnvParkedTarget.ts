@@ -3,6 +3,7 @@ import type { EnvAssistNotice } from '@shared/contract/envAssist';
 import { useEnvAssistStore } from '../stores/envAssistStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from './useI18n';
+import { useShallow } from 'zustand/react/shallow';
 
 type EnvBlock = NonNullable<DurableResumeState['envBlocked']>;
 
@@ -18,10 +19,20 @@ export function useEnvTargetLabel(block: Pick<EnvBlock, 'target'> | undefined): 
  * 只有这一步的工具行改说「等你允许…」，其余行不受影响。
  */
 export function useEnvParkedStep(sessionId: string | null | undefined): { toolCallId: string; target: string } | undefined {
-  const block = useSessionStore((state) => {
+  const block = useSessionStore(useShallow((state) => {
     const resume = sessionId ? state.sessions?.find((session) => session.id === sessionId)?.durableResume : undefined;
-    return resume?.interruptCause === 'env_blocked' ? resume.envBlocked : undefined;
-  });
+    if (resume?.interruptCause === 'env_blocked') return resume.envBlocked;
+    // History can arrive before the session's durable projection. Only a host-marked park qualifies;
+    // ordinary permission-error cards must never turn an interrupted call into a waiting call.
+    if (state.currentSessionId !== sessionId) return undefined;
+    const message = state.messages?.findLast(candidate => candidate.metadata?.envAssist?.parkedToolCallId);
+    const notice = message?.metadata?.envAssist;
+    if (!message || !notice?.parkedToolCallId || !notice.target || notice.phase !== 'needs_user') return undefined;
+    if (state.messages.some(candidate => candidate.timestamp > message.timestamp && !candidate.metadata?.envAssist
+      && (candidate.role === 'user' || candidate.role === 'assistant'
+        || candidate.toolResults?.some(result => result.toolCallId === notice.parkedToolCallId)))) return undefined;
+    return { class: notice.class, target: notice.target.id, toolCallId: notice.parkedToolCallId };
+  }));
   const target = useEnvTargetLabel(block);
   return block && target ? { toolCallId: block.toolCallId, target } : undefined;
 }
