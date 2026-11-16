@@ -6,7 +6,8 @@ import type { ConversationVoiceInputMetadata } from '@shared/contract/conversati
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 import { mergeAttachments } from './attachmentDedupe';
-import { dismissAttachmentLimitToast, notifyAttachmentMerge } from './attachmentMergeToast';
+import { dismissAttachmentLimitToast } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import type { InputAreaRef } from './InputArea';
 
 type VoiceInputContextValue = {
