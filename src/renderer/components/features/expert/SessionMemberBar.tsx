@@ -18,6 +18,7 @@ import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
@@ -90,6 +91,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
   const standbyExcludedMemberKeys = useComposerStore((state) => state.standbyExcludedMemberKeys);
   const recipes = useTeamRecipeStore((state) => state.recipes);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
+  const localizeRole = useLocalizeRole();
   const teamLeadRoleId = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === sessionId);
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
@@ -123,11 +125,12 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
   const pills = useMemo<MemberPill[]>(() => {
     const fromAgents = (list: SwarmAgentState[], records?: SwarmRunAgentRecord[]) => list.map((agent, index) => {
       const roleId = agent.role || agent.id;
+      const shown = localizeRole(roleId, { name: agent.name || roleId, profession: professionOf(roleId) });
       return {
         key: agent.id,
         roleId,
-        name: agent.name || roleId,
-        profession: professionOf(roleId),
+        name: shown.name,
+        profession: shown.profession,
         icon: iconOf(roleId),
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
@@ -150,17 +153,20 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     ];
     return standbyEntries
       .filter((entry) => !standbyExcludedMemberKeys.includes(entry.standbyKey))
-      .map((entry, index) => ({
+      .map((entry, index) => {
+        const shown = localizeRole(entry.roleId, { name: entry.roleId, profession: professionOf(entry.roleId) });
+        return {
         key: `${entry.roleId}-${index}`,
         roleId: entry.roleId,
-        name: entry.roleId,
-        profession: professionOf(entry.roleId),
+        name: shown.name,
+        profession: shown.profession,
         icon: iconOf(entry.roleId),
         status: 'standby' as const,
         isLead: entry.roleId === teamLeadRoleId,
         standbyKey: entry.standbyKey,
-      }));
-  }, [persistedAgents, liveAgentById, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
+        };
+      });
+  }, [persistedAgents, liveAgentById, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId, localizeRole]);
 
   return pills;
 }
