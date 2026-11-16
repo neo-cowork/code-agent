@@ -137,4 +137,29 @@ describe('calendar write round trip (EventKit)', () => {
     expect(body.notes.endsWith('（备注过长，撤销时已截断）')).toBe(true);
     expect(body.notes.startsWith('拨入号码与多语言说明。')).toBe(true);
   });
+
+  it('⑤ the cut never splits an emoji (a lone surrogate would make the native JSON parser reject the restore)', async () => {
+    const notes = `${'a'.repeat(15_999)}😀${'b'.repeat(100)}`; // the emoji straddles the 16000-unit cut
+    fake.state.items.push({ id: 'cal-id-8012:EV3', calendarId: 'cal-id-8012', calendar: '日历', title: '表情', startMs: HOUR, endMs: 2 * HOUR, notes });
+    const result = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: 'cal-id-8012:EV3' });
+    store.messages.push(
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, toolCalls: [{ id: 'tc-emoji', name: 'calendar_delete_event', arguments: {} }] } as Message,
+      { id: 'm2', role: 'tool', content: '', timestamp: 2, toolResults: [{ toolCallId: 'tc-emoji', success: true, output: result.output, metadata: result.meta }] } as Message,
+    );
+    expect(await undoCalendarDelete('s', 'tc-emoji')).toMatchObject({ ok: true });
+    const restored = (fake.state.calls.at(-1)?.body as { notes: string }).notes;
+    expect(restored.isWellFormed()).toBe(true);
+  });
+
+  it('⑥ notes full of control characters (6-byte JSON escapes) still fit the bridge body limit', async () => {
+    const notes = '\u0001'.repeat(15_000);
+    fake.state.items.push({ id: 'cal-id-8012:EV4', calendarId: 'cal-id-8012', calendar: '日历', title: '控制字符', startMs: HOUR, endMs: 2 * HOUR, notes });
+    const result = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: 'cal-id-8012:EV4' });
+    store.messages.push(
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, toolCalls: [{ id: 'tc-ctl', name: 'calendar_delete_event', arguments: {} }] } as Message,
+      { id: 'm2', role: 'tool', content: '', timestamp: 2, toolResults: [{ toolCallId: 'tc-ctl', success: true, output: result.output, metadata: result.meta }] } as Message,
+    );
+    expect(await undoCalendarDelete('s', 'tc-ctl')).toMatchObject({ ok: true });
+    expect(Buffer.byteLength(JSON.stringify(fake.state.calls.at(-1)?.body), 'utf8')).toBeLessThan(64 * 1024);
+  });
 });

@@ -24,8 +24,16 @@ const isSnapshot = (v: unknown): v is Snapshot => {
  */
 const MAX_RESTORED_NOTES_CHARS = 16_000;
 const NOTES_TRUNCATED_MARK = '\n…（备注过长，撤销时已截断）';
+const NOTES_JSON_BYTE_BUDGET = 48_000;
 function capNotes(notes: string): string {
-  return notes.length <= MAX_RESTORED_NOTES_CHARS ? notes : notes.slice(0, MAX_RESTORED_NOTES_CHARS) + NOTES_TRUNCATED_MARK;
+  const fits = (text: string) => Buffer.byteLength(JSON.stringify(text), 'utf8') <= NOTES_JSON_BYTE_BUDGET;
+  if (notes.length <= MAX_RESTORED_NOTES_CHARS && fits(notes)) return notes;
+  // 按 JSON 编码后的字节数收（控制字符转义成 \uXXXX 占 6 字节），再保证不在代理对中间截
+  // （孤立代理项会让原生侧 JSON 解析拒收，这次撤销就失败）
+  let cut = Math.min(notes.length, MAX_RESTORED_NOTES_CHARS);
+  while (cut > 0 && !fits(notes.slice(0, cut))) cut = Math.floor(cut * 0.8);
+  if (cut > 0 && /[\uD800-\uDBFF]/.test(notes[cut - 1])) cut -= 1;
+  return notes.slice(0, cut) + NOTES_TRUNCATED_MARK;
 }
 
 // 同一条撤销正在进行时，第二次点击直接当已撤销（防并发建出两条）
