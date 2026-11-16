@@ -112,7 +112,7 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
     const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
     createController().emitAgentEvent(permissionRequest({ tool: 'excel_generate' }));
     expect(notify).toHaveBeenCalledExactlyOnceWith({
-      sessionId: 'session-fg-1', title, body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'perm-req-1',
+      sessionId: 'session-fg-1', title, body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'perm-req-1', tool: 'excel_generate',
     });
     const payload = notify.mock.calls[0][0];
     expect(payload.body).not.toContain('excel_generate');

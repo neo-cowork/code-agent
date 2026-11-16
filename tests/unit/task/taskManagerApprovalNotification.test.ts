@@ -43,7 +43,7 @@ describe('desktop approval banner through taskManagerEventPersistence', () => {
     });
     expect(notify).toHaveBeenCalledExactlyOnceWith({
       sessionId: 'desktop-session', title,
-      body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'desktop-request',
+      body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'desktop-request', tool: 'excel_generate',
     });
     expect(state.broadcast).toHaveBeenCalledOnce();
     const payload = notify.mock.calls[0][0];
