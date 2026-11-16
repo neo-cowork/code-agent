@@ -933,6 +933,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       logger,
       tryGetSessionManager,
       mirrorToBroadcast: !transport.connectedClient,
+      turnUserMessageId: clientMessageId,
       eventFilter,
     });
 

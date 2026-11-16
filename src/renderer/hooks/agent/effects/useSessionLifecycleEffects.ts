@@ -1,6 +1,6 @@
 // useAgentSessionLifecycleEffects - agent_complete, error, stream_end, message completion, research_detected, research_mode_started, interrupt_start, interrupt_acknowledged, interrupt_complete, stale processing cleanup
 import { useEffect } from 'react';
-import type { AgentErrorMetadata, AgentEventEnvelope, ResearchDetectedData } from '@shared/contract';
+import type { AgentErrorMetadata, AgentEventEnvelope, Message, ResearchDetectedData } from '@shared/contract';
 import {
   classifyAgentError,
   getAgentErrorMessage,
@@ -30,27 +30,61 @@ type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; session
 export { isTerminalAgentError };
 
 /**
- * 把结构化错误挂到最后一条 assistant 消息的 metadata 上（AgentErrorCard 渲染源）。
+ * 把结构化错误挂到产生它的那一轮的最后一条 assistant 消息 metadata 上（AgentErrorCard 渲染源）。
  * 错误若发生在任何 assistant 草稿之前（如首轮请求直接 404），补一条空 assistant
  * 消息承载卡片——否则这次失败在会话区完全不可见。
+ *
+ * `turnUserMessageId` 是 host 盖在终态 error 上的「这一轮的用户消息」。它不是当前最新一轮时
+ * （上一轮另一个出口的 error 晚到，用户已换模型发了下一轮），卡必须落回那一轮，
+ * 不能挂到最后一条消息上——否则成功的新一轮下面会出现旧失败卡。
  */
-export function attachAgentErrorToLatestAssistant(agentError: AgentErrorMetadata): void {
+export function attachAgentErrorToLatestAssistant(
+  agentError: AgentErrorMetadata,
+  turnUserMessageId?: string,
+): void {
   const store = useSessionStore.getState();
   const messages = store.messages;
-  const lastMessage = messages[messages.length - 1];
-  if (lastMessage?.role === 'assistant') {
+  const merge = (target: Message) => {
     // 一次失败会从多个出口各发一条 error，后到的会覆盖先到的。谁带了这一轮真跑的
     // 模型谁更有信息量——别让一条「只有 message」的把带了 provider/model 的盖掉。
-    const existing = lastMessage.metadata?.agentError;
+    const existing = target.metadata?.agentError;
     const merged: AgentErrorMetadata = {
       ...(existing?.provider && !agentError.provider
         ? { ...agentError, provider: existing.provider, modelId: existing.modelId ?? agentError.modelId }
         : agentError),
       ...(existing?.goalAbort || agentError.goalAbort ? { goalAbort: true } : {}),
     };
-    store.updateMessage(lastMessage.id, {
-      metadata: { ...lastMessage.metadata, agentError: merged },
-    });
+    store.updateMessage(target.id, { metadata: { ...target.metadata, agentError: merged } });
+  };
+
+  const turnStart = turnUserMessageId
+    ? messages.findIndex((message) => message.role === 'user' && message.id === turnUserMessageId)
+    : -1;
+  const nextUser = turnStart >= 0
+    ? messages.findIndex((message, index) => index > turnStart && message.role === 'user')
+    : -1;
+  if (nextUser >= 0) {
+    // 失败轮之后已经开了新一轮：只在失败轮自己的区间里找/建承载消息。
+    const turnMessages = messages.slice(turnStart + 1, nextUser);
+    const carrier = turnMessages.findLast((message) => message.role === 'assistant');
+    if (carrier) {
+      merge(carrier);
+      return;
+    }
+    const inserted: Message = {
+      id: `agent-error-${agentError.timestamp}`,
+      role: 'assistant',
+      content: '',
+      timestamp: agentError.timestamp,
+      metadata: { agentError },
+    };
+    store.setMessages([...messages.slice(0, nextUser), inserted, ...messages.slice(nextUser)]);
+    return;
+  }
+
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role === 'assistant') {
+    merge(lastMessage);
     return;
   }
   store.addMessage({
@@ -201,7 +235,14 @@ export const useSessionLifecycleEffects = ({
               modelId: useAppStore.getState().modelConfig.model,
             });
             if (agentError) {
-              attachAgentErrorToLatestAssistant(agentError);
+              const details = normalizeAgentErrorPayload(event.data).details;
+              const turnUserMessageId = details && typeof details === 'object'
+                ? (details as { turnUserMessageId?: unknown }).turnUserMessageId
+                : undefined;
+              attachAgentErrorToLatestAssistant(
+                agentError,
+                typeof turnUserMessageId === 'string' ? turnUserMessageId : undefined,
+              );
             }
           }
           // ADR-068 刀 4：预算耗尽转 error——断流续接信号让位给错误呈现（AgentErrorCard

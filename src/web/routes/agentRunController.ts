@@ -29,6 +29,12 @@ interface AgentRunControllerDeps {
    * 直连轮不能开：客户端已经从自己的响应流拿到了，再广播就是重复投递。
    */
   mirrorToBroadcast?: boolean;
+  /**
+   * 这一轮用户消息的 id（= 请求带来的 clientMessageId）。终态 error 会被盖上它：失败卡
+   * 只认「哪一轮产生了我」，晚到/重复的上一轮 error 才不会挂到已经开始的下一轮下面
+   * （N-FIX-STALE-FAILURE-CARD-SHOWN-ON-NEW-TURN）。
+   */
+  turnUserMessageId?: string;
   eventFilter?: AgentEventFilter;
 }
 
@@ -187,7 +193,8 @@ export class AgentRunController {
     }
   }
 
-  emitAgentEvent(event: AgentEvent): boolean {
+  emitAgentEvent(rawEvent: AgentEvent): boolean {
+    const event = this.stampTurnOnError(rawEvent);
     this.maybeNotifyNeedsInput(event);
     if (isTerminalErrorEvent(event)) {
       this.runHadTerminalError = true;
@@ -238,6 +245,14 @@ export class AgentRunController {
       this.messageAccumulator.clear(this.deps.sessionId);
     }
     return true;
+  }
+
+  private stampTurnOnError(event: AgentEvent): AgentEvent {
+    const turnUserMessageId = this.deps.turnUserMessageId;
+    if (event.type !== 'error' || !turnUserMessageId || !event.data || typeof event.data !== 'object') return event;
+    const details = (event.data as { details?: Record<string, unknown> }).details;
+    if (details?.turnUserMessageId) return event;
+    return { ...event, data: { ...event.data, details: { ...details, turnUserMessageId } } } as AgentEvent;
   }
 
   flush(): void {
