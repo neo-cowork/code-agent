@@ -153,6 +153,7 @@ export async function persistTaskManagerEvent(
         notificationService.notifyNeedsInput({
           sessionId,
           ...buildApprovalNotification(req.tool),
+          tool: req.tool,
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
       } else if (typeof event.data.id === 'string') {

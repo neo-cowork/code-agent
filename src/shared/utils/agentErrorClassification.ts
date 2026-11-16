@@ -11,7 +11,7 @@
 // ============================================================================
 
 import type { AgentErrorMetadata } from '../contract';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../constants';
+import { RESPONSES_FEATURE_REJECTION, RUN_ERROR_CODE_MAX_ITERATIONS } from '../constants';
 import { hasInsufficientBalanceSignal } from './providerError';
 
 type AgentErrorPayload = Record<string, unknown>;
@@ -171,6 +171,10 @@ export function classifyAgentError(
     // 小米 mimo 额度用尽返回的就是 401 "Invalid API Key"（真机 2026-08-01）。
     if (hasAuthSignal) {
       return { ...base, category: 'auth', httpStatus: explicitStatus ?? 401 };
+    }
+
+    if (message.includes(RESPONSES_FEATURE_REJECTION.code)) {
+      return { ...base, category: 'request_feature_rejected', httpStatus: explicitStatus ?? RESPONSES_FEATURE_REJECTION.status };
     }
 
     if (normalized.includes('concurrency limit exceeded')) {

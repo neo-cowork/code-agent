@@ -179,6 +179,7 @@ export class AgentRunController {
       notificationService.notifyNeedsInput({
         sessionId: this.deps.sessionId,
         ...notice,
+        tool: typeof data.tool === 'string' ? data.tool : undefined,
         dedupeKey: data.id,
       });
       this.deps.logger.info('Needs-input notification sent', notice);

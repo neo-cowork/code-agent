@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { buildApprovalNotification } from './approvalNotification';
+import { NeedsInputNativeFallback } from './needsInputNativeFallback';
 import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 // Notification Service
@@ -58,6 +58,14 @@ function sendNativeNotification(payload: NativeNotificationPayload): void {
   } catch {
     logger.warn('Native needs-input notification failed', { reason: 'notify-only-spawn-threw' });
   }
+}
+
+async function resolveNotificationSessionTitle(sessionId: string): Promise<string | undefined> {
+  const { getDatabase } = await import('../core/databaseService');
+  const { getAuthService } = await import('../auth/authService');
+  // Read only the local session row; loading a conversation can restore cloud history.
+  const userId = getAuthService().getCurrentUser()?.id ?? null;
+  return getDatabase().getSession(sessionId, { userId })?.title;
 }
 
 /**
@@ -197,6 +205,23 @@ class NotificationService implements Disposable {
   }
 
   private nativeNotificationSender = sendNativeNotification;
+  private sessionTitleResolver = resolveNotificationSessionTitle;
+  private readonly nativeNeedsInput = new NeedsInputNativeFallback({
+    locale: readNotificationLocale,
+    sessionTitle: (sessionId) => this.sessionTitleResolver(sessionId),
+    canDeliver: () => this.enabled && getDaemonQuitIntent() === 'background',
+    folded: (sessionId) => logger.info('Native needs-input notification skipped', { reason: 'native-folded', sessionId }),
+    failed: () => logger.warn('Native needs-input notification failed', { reason: 'native-sender-threw' }),
+    deliver: (payload) => {
+      if (this.isDryRun()) logger.info('Native needs-input notification skipped', { reason: 'dry-run', ...payload });
+      else this.nativeNotificationSender(payload);
+    },
+  });
+
+  /** Inject a title lookup; null restores the lazy session-manager lookup. */
+  setNotificationSessionTitleResolver(resolver: ((sessionId: string) => Promise<string | undefined>) | null): void {
+    this.sessionTitleResolver = resolver ?? resolveNotificationSessionTitle;
+  }
 
   /** Inject a native sender; null restores the bundled shell launch path. */
   setNativeNotificationSender(sender: ((payload: NativeNotificationPayload) => void) | null): void {
@@ -229,6 +254,7 @@ class NotificationService implements Disposable {
   clearRecentNotifications(): void {
     this.recentNotifications = [];
     this.deliveredNeedsInputKeys.clear();
+    this.nativeNeedsInput.clear();
     this.carriedOver = [];
     this.carriedOverLoaded = true;
     this.logDropped(this.budget.clear(), 'budget-cleared');
@@ -394,7 +420,7 @@ class NotificationService implements Disposable {
    * dedupeKey：同一条逻辑请求可能从两个发送口到达（停车通知 + 事件落库通知），
    * 携带同一键的第二次调用在门后、投递前被丢弃；无键 = 行为不变。
    */
-  notifyNeedsInput(data: { sessionId: string; title: string; body: string; dedupeKey?: string }): void {
+  notifyNeedsInput(data: { sessionId: string; title: string; body: string; dedupeKey?: string; tool?: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify(true)) return;
 
@@ -423,26 +449,9 @@ class NotificationService implements Disposable {
         ...(data.dedupeKey ? { dedupeKey: data.dedupeKey } : {}),
       },
     }, id);
-    // Fallback B（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：deliver 只广播给 renderer，
-    // 渲染端没了（壳声明「后台继续」退出，ADR-083）时 toast 没有落点——再弹一条 host 侧
-    // 原生通知兜底。文案不复制调用方的 title/body（那可能带工具名），用固定人话。
-    // 已知局限：意图声明后没有「壳重新接上」的复位事件，重开后 needs_input 会
-    // renderer toast + 原生通知双弹（见证据档）；放着不修是刻意的——漏报比重复打扰贵。
-    if (getDaemonQuitIntent() === 'background') {
-      if (this.isDryRun()) {
-        logger.info('Native needs-input notification skipped', { reason: 'dry-run' });
-      } else {
-        try {
-          this.nativeNotificationSender({
-            id,
-            sessionId: data.sessionId,
-            ...buildApprovalNotification(undefined, 'native'),
-          });
-        } catch (error) {
-          logger.warn('Native needs-input notification failed', { error });
-        }
-      }
-    }
+    // Fallback B: the shell declared background continuation; fold native banners per session.
+    // Caller copy stays on the renderer path; native copy uses the session title and action label.
+    if (getDaemonQuitIntent() === 'background') this.nativeNeedsInput.enqueue({ ...data, id });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
@@ -455,6 +464,7 @@ class NotificationService implements Disposable {
    * remove_active），只收回 renderer 侧的补提醒队列。
    */
   retractNeedsInput(dedupeKey: string): void {
+    this.nativeNeedsInput.retract(dedupeKey);
     if (!this.deliveredNeedsInputKeys.has(dedupeKey)) {
       logger.debug('Skip retract for a needs-input key that was never delivered', { dedupeKey });
       return;
@@ -659,6 +669,7 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
+    this.nativeNeedsInput.clear();
     // 暂存队列每次暂存时已落盘；退出不是丢弃，留给下次启动补发（见 replayPersistedHeld）。
     for (const item of this.budget.dispose()) {
       logger.info('Notification persisted for next start', { notificationId: item.id, reason: 'service-disposed' });
