@@ -418,3 +418,6 @@ export const RUN_ERROR_CODE_MAX_ITERATIONS = 'MAX_ITERATIONS_REACHED';
  * BackgroundTaskManager.markCompleted；面板/通知侧不许直接展示这个裸串。
  */
 export const BACKGROUND_TASK_CANCELLED = 'USER_CANCELLED';
+
+/** 成员完成账本里 filesChanged 的条数上限（防止大目录改动撑爆账本行）。 */
+export const SUBAGENT_FILES_CHANGED_MAX = 200;
