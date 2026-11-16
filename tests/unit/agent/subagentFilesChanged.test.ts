@@ -91,6 +91,7 @@ async function runMember(agentId: string, tools: string[], steps: ToolStep[]) {
         },
         permission: { request: async () => true },
         events: { emit: () => {} },
+        abortSignal: new AbortController().signal,
       },
     });
   } finally {
