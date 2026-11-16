@@ -43,7 +43,8 @@ export const chatInputZh = {
     attachPages: '{count} 页',
     attachRemoveAria: '移除附件 {name}',
     attachmentAlreadyAdded: '{name} 已添加，无需重复添加',
-    attachmentLimitReached: '已添加 {added} 个，其余 {dropped} 个未添加（每条消息最多 {max} 个）。请先发送这一批，再继续添加。',
+    attachmentLimitReached: '附件已满（{max} 个）：这次加进了 {added} 个，另 {dropped} 个没加进来。发送这条消息后，就能继续添加剩下的。',
+    attachmentLimitReachedNone: '附件已满（{max} 个）：这次没有加进任何文件，{dropped} 个都没加进来。发送这条消息后，就能继续添加。',
     connectorIconRemoveAria: '取消挂载 {name}',
     // 底栏图标 / 框内胶囊的「来源三态」小卡：回答「这是啥、谁放的、为什么在」。
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
@@ -525,7 +526,8 @@ export const chatInputEn: typeof chatInputZh = {
     attachPages: '{count} pages',
     attachRemoveAria: 'Remove attachment {name}',
     attachmentAlreadyAdded: '{name} is already attached',
-    attachmentLimitReached: 'Added {added}; {dropped} more were not added (limit {max} per message). Send this batch, then add the rest.',
+    attachmentLimitReached: 'Attachments are full ({max}): {added} added this time, {dropped} more were not added. You can add the rest after sending this message.',
+    attachmentLimitReachedNone: 'Attachments are full ({max}): none were added this time, {dropped} were not added. You can add them after sending this message.',
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',

@@ -30,12 +30,6 @@
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
-    "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
-    "rule": "session_id",
-    "sample": "{activity.sourceSessionId}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
-  },
-  {
     "file": "src/renderer/components/TaskPanel/orchestration/components.tsx",
     "rule": "uuid",
     "sample": "{review.agentId}",

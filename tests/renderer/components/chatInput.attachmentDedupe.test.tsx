@@ -21,7 +21,10 @@ const i18nState = vi.hoisted(() => ({
 }));
 const readWorkspaceFile = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: toastSpy }));
+vi.mock('../../../src/renderer/hooks/useToast', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/renderer/hooks/useToast')>()),
+  toast: toastSpy,
+}));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: i18nState.language === 'en' ? en : zh, language: i18nState.language }),
 }));
@@ -75,6 +78,7 @@ function useComposerActionsHarness() {
     processFile,
     inputAreaRef: { current: null },
     setIsUploading: vi.fn(),
+    attachmentCount: attachments.length,
     setAttachments,
     setValue: vi.fn(),
     setVoiceInputContext: vi.fn(),
@@ -332,7 +336,7 @@ describe('ChatInput attachment dedupe', () => {
     expect(toastSpy.show).toHaveBeenCalledTimes(1);
     expect(toastSpy.show).toHaveBeenCalledWith(
       'warning',
-      `已添加 ${cap} 个，其余 ${dropped} 个未添加（每条消息最多 ${cap} 个）。请先发送这一批，再继续添加。`,
+      `附件已满（${cap} 个）：这次加进了 ${cap} 个，另 ${dropped} 个没加进来。发送这条消息后，就能继续添加剩下的。`,
     );
   });
 
@@ -396,7 +400,7 @@ describe('ChatInput attachment dedupe', () => {
     expect(toastSpy.show).toHaveBeenNthCalledWith(
       2,
       'warning',
-      `已添加 2 个，其余 3 个未添加（每条消息最多 ${cap} 个）。请先发送这一批，再继续添加。`,
+      `附件已满（${cap} 个）：这次加进了 2 个，另 3 个没加进来。发送这条消息后，就能继续添加剩下的。`,
     );
   });
 
@@ -404,12 +408,12 @@ describe('ChatInput attachment dedupe', () => {
     {
       language: 'zh' as const,
       expectedZeroAdded: (cap: number) =>
-        `已添加 0 个，其余 1 个未添加（每条消息最多 ${cap} 个）。请先发送这一批，再继续添加。`,
+        `附件已满（${cap} 个）：这次没有加进任何文件，1 个都没加进来。发送这条消息后，就能继续添加。`,
     },
     {
       language: 'en' as const,
       expectedZeroAdded: (cap: number) =>
-        `Added 0; 1 more were not added (limit ${cap} per message). Send this batch, then add the rest.`,
+        `Attachments are full (${cap}): none were added this time, 1 were not added. You can add them after sending this message.`,
     },
   ])('picker, paste, drop and addAttachments use identical $language overflow copy', async ({ language, expectedZeroAdded }) => {
     i18nState.language = language;
