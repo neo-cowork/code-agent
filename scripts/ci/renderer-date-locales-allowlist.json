@@ -54,7 +54,7 @@
     "reason": "Turn header displays only the time."
   },
   {
-    "file": "components/features/computerUse/ComputerUseContent.tsx",
+    "file": "components/features/computerUse/ComputerUseDiagnostics.tsx",
     "call": "new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })",
     "count": 1,
     "reason": "Computer-use timeline displays only the time."
