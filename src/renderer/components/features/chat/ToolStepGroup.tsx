@@ -35,6 +35,13 @@ import { findPendingPlanApproval, getPlanApprovalRecord } from '../../../utils/p
 import { PlanApprovalEvidence } from '../../PlanApprovalCard';
 import { isDelegationTool } from '../../../utils/agentActivity';
 import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
+import { getToolActionId } from '@shared/utils/toolUserLabel';
+
+// Bash/Write/Edit 的步骤文案（「运行了命令 ls」）本身已含动作，不再加「运行命令 · 」前缀。
+function isSelfLabelledAction(tool: string): boolean {
+  const id = getToolActionId(tool);
+  return id === 'runCommand' || id === 'writeFile' || id === 'editFile';
+}
 import { buildToolStatusLineCopy } from '../../../utils/toolStatusLinePresentation';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
 import { useAppStore } from '../../../stores/appStore';
@@ -302,7 +309,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const subject = typeof requestDetails.subject === 'string' ? requestDetails.subject.trim() : '';
     const stepLabel = request.tool === 'tmeetMeetingCreate'
       ? `${p.writeback.tmeetCreateTitle}${subject ? ` ${subject}` : ''}`
-      : connectorLabel !== request.tool && !humanizedStep.includes(connectorLabel)
+      : !isSelfLabelledAction(request.tool) && connectorLabel !== request.tool && !humanizedStep.includes(connectorLabel)
         ? `${connectorLabel} · ${humanizedStep}`
         : humanizedStep;
     const details = redactCredentialText(JSON.stringify(request.details, null, 2));

@@ -97,6 +97,22 @@ describe('ToolStepGroup resolved permission evidence', () => {
     expect(screen.queryByTestId('permission-card')).toBeNull();
   });
 
+  it.each([
+    ['Bash', { command: 'ls' }, '运行命令 · '],
+    ['Write', { file_path: '/tmp/x.txt', content: 'x' }, '写入文件 · '],
+    ['Edit', { file_path: '/tmp/x.txt', old_string: 'a', new_string: 'b' }, '编辑文件 · '],
+  ])('已批准的 %s 审批记录不加「动作名 · 」重复前缀', (tool, args, prefix) => {
+    state.resolved = [{ ...resolved('once'), tool, type: 'command', parentToolUseId: 'call-x' }];
+    const node: TraceNode = {
+      ...toolNode,
+      toolCall: { id: 'call-x', name: tool, args, result: 'ok', success: true } as TraceNode['toolCall'],
+    };
+    render(<ToolStepGroup nodes={[node]} sessionId="session-1" />);
+    const evidence = screen.getByTestId('permission-decision-evidence').textContent ?? '';
+    expect(evidence).toContain('你已允许');
+    expect(evidence).not.toContain(prefix);
+  });
+
   it('超时结果保留步骤旁重试入口', () => {
     state.resolved = [resolved('timeout')];
     render(<ToolStepGroup nodes={[toolNode]} sessionId="session-1" />);
