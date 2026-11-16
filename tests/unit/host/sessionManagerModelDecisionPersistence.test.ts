@@ -38,9 +38,9 @@ const fallbackDecision: ModelDecisionEventData = {
   requestedProvider: 'moonshot', requestedModel: 'kimi-k2.5',
   resolvedProvider: 'zhipu', resolvedModel: 'glm-5',
   role: null, billingMode: 'unknown',
-  fallbackFrom: { provider: 'moonshot', model: 'kimi-k2.5', reason: 'rate_limit' },
+  fallbackFrom: 'moonshot/kimi-k2.5',
   reason: 'fallback-availability',
-} as ModelDecisionEventData;
+};
 
 /** 路由 chip 的决策记录随消息落库：写入 metadata.modelDecision，重开会话读回 Message.modelDecision。 */
 describe('message modelDecision persistence', () => {

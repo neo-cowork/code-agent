@@ -5,14 +5,14 @@ import { shouldRenderModelDecisionChip } from '../../../src/renderer/components/
 
 describe('restored message with a fallback decision', () => {
   it('projects a node whose route chip renders', () => {
-    const modelDecision = {
+    const modelDecision: ModelDecisionEventData = {
       turnId: 'turn-1',
       requestedProvider: 'moonshot', requestedModel: 'kimi-k2.5',
       resolvedProvider: 'zhipu', resolvedModel: 'glm-5',
       role: null, billingMode: 'unknown',
-      fallbackFrom: { provider: 'moonshot', model: 'kimi-k2.5', reason: 'rate_limit' },
+      fallbackFrom: 'moonshot/kimi-k2.5',
       reason: 'fallback-availability',
-    } as ModelDecisionEventData;
+    };
     const messages: Message[] = [
       { id: 'u1', role: 'user', content: '总结 notes.txt', timestamp: 1 },
       { id: 'a1', role: 'assistant', content: '已总结', timestamp: 2, modelDecision },
