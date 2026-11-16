@@ -31,7 +31,7 @@ afterEach(() => { cleanup(); });
 
 const emptyViewText = async (): Promise<string> => {
   const view = await screen.findByTestId('meetings-view');
-  await waitFor(() => expect(view.textContent).not.toBe(''));
+  await waitFor(() => expect(view.querySelector('p')?.textContent).toMatch(/还没有会议记录|No meetings yet/));
   return view.textContent ?? '';
 };
 
