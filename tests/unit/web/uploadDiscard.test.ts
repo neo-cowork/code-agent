@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import { handleDiscardUpload, UPLOAD_ROOT_DIR, ensureUploadRootDir } from '../../../src/web/helpers/upload';
 import { MAX_UPLOAD_DISCARD_PATHS } from '../../../src/shared/constants/uploadDiscard';
 
@@ -32,8 +33,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   ensureUploadRootDir();
   db = new Database(':memory:');
-  db.exec(`CREATE TABLE messages (content TEXT, tool_calls TEXT, tool_results TEXT, attachments TEXT, metadata TEXT);
-    CREATE TABLE queued_inputs (envelope_json TEXT);`);
+  applyTestSessionSchema(db);
+  db.prepare(`INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+    VALUES ('s1', 'Upload discard test', 'test', 'test', 1, 1)`).run();
 });
 afterEach(() => {
   db.close();
@@ -69,7 +71,9 @@ describe('production upload discard handler', () => {
   });
   it.each(['content', 'attachments', 'metadata', 'tool_calls', 'tool_results'])('preserves a uuid referenced in message %s', (field) => {
     const kept = upload(), rejected = upload();
-    db.prepare(`INSERT INTO messages (${field}) VALUES (?)`).run(JSON.stringify({ path: kept }));
+    db.prepare(`INSERT INTO messages (id, session_id, role, content, timestamp)
+      VALUES ('m1', 's1', 'user', '', 1)`).run();
+    db.prepare(`UPDATE messages SET ${field} = ? WHERE id = 'm1'`).run(JSON.stringify({ path: kept }));
     discard([kept, rejected]);
     expect(fs.existsSync(kept)).toBe(true);
     expect(fs.existsSync(rejected)).toBe(false);
@@ -77,7 +81,8 @@ describe('production upload discard handler', () => {
   });
   it('preserves uuids in queued inputs and scans references once per request', () => {
     const kept = upload(), rejected = upload();
-    db.prepare('INSERT INTO queued_inputs VALUES (?)').run(JSON.stringify({ attachments: [{ path: kept }] }));
+    db.prepare(`INSERT INTO queued_inputs (id, session_id, envelope_json, created_at, updated_at)
+      VALUES ('q1', 's1', ?, 1, 1)`).run(JSON.stringify({ attachments: [{ path: kept }] }));
     const prepare = vi.spyOn(db, 'prepare');
     discard([kept, rejected, rejected]);
     expect(fs.existsSync(kept)).toBe(true);
