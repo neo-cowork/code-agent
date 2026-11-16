@@ -19,12 +19,41 @@ import { resolveModelPrice } from '../../src/shared/pricing/resolveModelPrice';
 const MIN_SESSIONS = 15;
 const MIN_RESULTS = 20;
 const MIN_TOKENS = 30_000;
+// Strict tier is always the original thresholds, whatever the relaxed run uses.
+const STRICT_RESULTS = 20;
+const STRICT_TOKENS = 30_000;
 const BUDGET_USD = 3;
 const RECENT = 10;
 const SUMMARY_FAIR_MAX_TOKENS = MODEL_MAX_TOKENS.DEFAULT;
-const OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1-fu1-fu1/compaction.json';
+const DEFAULT_OUTPUT = 'docs/research/assets/2026-11-14-jev-eval-fu1-fu1-fu1/compaction.json';
 const PRIVATE_ROOT = path.join(os.homedir(), 'work/out/N-JEV-COMPACTION-EVAL');
 const REASONS = ['admitted', 'truncated', 'overBudget', 'missing_*', 'empty', 'not_shorter'] as const;
+
+type EvalConfig = { minSessions: number; minResults: number; minTokens: number; output: string };
+
+function parseConfig(args: string[]): EvalConfig {
+  const read = (name: string): string | undefined => args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const positive = (name: string, fallback: number): number => {
+    const raw = read(name);
+    if (raw === undefined) return fallback;
+    check(/^[1-9]\d*$/.test(raw), `invalid_${name.replace(/-/g, '_')}`);
+    return Number(raw);
+  };
+  const output = read('output');
+  check(output === undefined || (output.length > 0 && /^[\w./-]+$/.test(output)), 'invalid_output');
+  return {
+    minSessions: positive('min-sessions', MIN_SESSIONS),
+    minResults: positive('min-results', MIN_RESULTS),
+    minTokens: positive('min-tokens', MIN_TOKENS),
+    output: output ?? DEFAULT_OUTPUT,
+  };
+}
+
+let CONFIG: EvalConfig = parseConfig([]);
+
+function isStrict(results: number, estimated: number): number {
+  return Number(results >= STRICT_RESULTS && estimated >= STRICT_TOKENS);
+}
 
 type SummaryReason = (typeof REASONS)[number];
 type Session = { id: string; origin: string; messages: Message[] };
@@ -66,6 +95,7 @@ type ManifestCounts = {
   tokens: number;
 };
 type Row = {
+  strict: number;
   id: string;
   beforeTokens: number;
   planOriginalTokens: number;
@@ -232,7 +262,7 @@ function readDevSessions(): { sessions: Session[]; totalSessions: number } {
       JOIN sessions s ON s.id=m.session_id WHERE m.visibility='active'
       GROUP BY m.session_id HAVING sum(CASE WHEN m.tool_results IS NOT NULL
         THEN json_array_length(m.tool_results) WHEN m.role='tool' THEN 1 ELSE 0 END)>=?
-      ORDER BY m.session_id`).all(MIN_RESULTS) as unknown as Array<{ id: string; origin: string | null }>;
+      ORDER BY m.session_id`).all(CONFIG.minResults) as unknown as Array<{ id: string; origin: string | null }>;
     const query = db.prepare(`SELECT id,role,content,timestamp,tool_calls,tool_results,attachments,compaction,metadata,thinking
       FROM messages WHERE session_id=? AND visibility='active' ORDER BY timestamp,rowid`);
     const sessions = candidates.map(({ id, origin }) => {
@@ -316,7 +346,16 @@ function selfCheck(): void {
     admitted: 1, truncated: 2, overBudget: 0, 'missing_*': 1, empty: 0, not_shorter: 0,
   });
   assert.equal(COMPACTION_SUMMARY.MAX_TOKENS, 4096);
-  console.log('self-check: 28 passed / 0 failed / 0 skipped; network_calls=0');
+  assert.deepEqual(parseConfig([]), { minSessions: 15, minResults: 20, minTokens: 30_000, output: DEFAULT_OUTPUT });
+  assert.deepEqual(parseConfig(['--min-sessions=40', '--min-results=10', '--min-tokens=15000', '--output=a/b.json']),
+    { minSessions: 40, minResults: 10, minTokens: 15_000, output: 'a/b.json' });
+  for (const bad of ['--min-results=0', '--min-results=x', '--min-tokens=-5', '--min-sessions=1.5', '--output=a b']) {
+    assert.throws(() => parseConfig([bad]));
+  }
+  assert.equal(isStrict(20, 30_000), 1);
+  assert.equal(isStrict(19, 30_000), 0);
+  assert.equal(isStrict(20, 29_999), 0);
+  console.log('self-check: 38 passed / 0 failed / 0 skipped; network_calls=0');
 }
 
 function median(values: number[]): number {
@@ -347,6 +386,24 @@ function computeArmStats<T extends Arm>(
   };
 }
 
+function reportGroup(label: string, tier: Row[]): Record<string, unknown> {
+  const admitted = (pick: (row: Row) => Arm): number => tier.filter((row) => pick(row).rejected === 0).length;
+  const S = computeArmStats(tier, (row) => row.S, false);
+  const SFair = computeArmStats(tier, (row) => row.SFair, false);
+  const J = computeArmStats(tier, (row) => row.J, true);
+  const fair = tier.filter((row) => row.SFair.rejected === 0);
+  const fairS = computeArmStats(fair, (row) => row.SFair, false);
+  const fairJ = computeArmStats(fair, (row) => row.J, true);
+  console.log(`group_${label} n=${tier.length} admitted_S=${admitted((row) => row.S)} admitted_SFair=${admitted((row) => row.SFair)} admitted_J=${admitted((row) => row.J)} median_retention S=${S.medians.retention} SFair=${SFair.medians.retention} J=${J.medians.retention} median_tokens S=${S.medians.tokens} SFair=${SFair.medians.tokens} J=${J.medians.tokens} median_ms S=${S.medians.ms} SFair=${SFair.medians.ms} J=${J.medians.ms} total_usd S=subscription SFair=subscription J=$${J.totals.usd.toFixed(8)}`);
+  if (tier.length > 0) {
+    const verdictAll = J.medians.retention < SFair.medians.retention ? 'report only, do not wire (不接电只留报告)' : 'wiring candidate (可接电候选)';
+    const verdictAdmitted = fairJ.medians.retention < fairS.medians.retention ? 'report only, do not wire (不接电只留报告)' : 'wiring candidate (可接电候选)';
+    console.log(`recommendation_${label}_all_${tier.length}=${verdictAll} token_delta_median_J_minus_SFair=${J.medians.tokens - SFair.medians.tokens} USD_delta=not_comparable_subscription J=$${J.totals.usd.toFixed(8)}`);
+    console.log(`recommendation_${label}_admitted_only_${fair.length}=${verdictAdmitted} token_delta_median_J_minus_SFair=${fairJ.medians.tokens - fairS.medians.tokens} USD_delta=not_comparable_subscription J=$${fairJ.totals.usd.toFixed(8)}`);
+  }
+  return { count: tier.length, admittedS: admitted((row) => row.S), admittedSFair: admitted((row) => row.SFair), admittedJ: admitted((row) => row.J), S, SFair, J, SFairAdmittedCount: fair.length, SFairAdmitted: fairS, JOnSFairAdmitted: fairJ };
+}
+
 function assertNumericAndIdsOnly(value: unknown, allowedIds: Set<string>, key?: string): void {
   if (Array.isArray(value)) {
     for (const item of value) assertNumericAndIdsOnly(item, allowedIds);
@@ -365,7 +422,7 @@ function assertNumericAndIdsOnly(value: unknown, allowedIds: Set<string>, key?: 
   check(typeof value === 'number' && Number.isFinite(value), 'artifact_non_numeric_leaf');
 }
 
-async function evaluate(sessions: Session[], needlesById: Map<string, string[]>, smokeOnly: boolean): Promise<void> {
+async function evaluate(sessions: Session[], required: number, needlesById: Map<string, string[]>, smokeOnly: boolean): Promise<void> {
   const dogfood = fs.readFileSync(path.join(os.homedir(), '.ship/grab/realrun-dev-model'), 'utf8').trim();
   check(dogfood === 'xiaomi', 'unsupported_dogfood_provider: explicitly configure the current subscription before running');
   check(process.env.XIAOMI_API_KEY?.trim(), 'missing_credentials: XIAOMI_API_KEY=unset');
@@ -485,6 +542,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
   const sfReasons: SummaryReason[] = [];
   try {
     for (const session of sessions) {
+      if (rows.length === required) break;
       const needles = needlesById.get(session.id)!;
       const original = project(session.messages);
       const sMessages = structuredClone(session.messages);
@@ -494,7 +552,11 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
       const plan = createCompactionPlan({ sessionId: session.id, source: 'manual_from_message',
         anchorMessageId: sMessages[Math.max(2, sMessages.length - RECENT)]?.id,
         messages: sMessages, skipAudit: true });
-      check(plan, 'summary_plan_missing');
+      if (!plan) {
+        // Production createCompactionPlan returns null when there is no compactable span (too few messages).
+        console.log(`skipped_no_plan id=${session.id} messages=${sMessages.length}`);
+        continue;
+      }
       const manifestFiles = plan.manifest.files.filter((file) => Boolean(file.path));
       const manifestCounts: ManifestCounts = {
         files: manifestFiles.length,
@@ -593,6 +655,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
         usd: jevUsd, calls: jevCalls, inputTokens: jevInput, outputTokens: 0, rejected: Number(result.skipped) };
       rows.push({
         id: session.id,
+        strict: isStrict(resultCount(session.messages), estimateConversationTokens(session.messages)),
         beforeTokens: tokens(original),
         planOriginalTokens: plan.originalTokens,
         manifest: manifestCounts,
@@ -610,6 +673,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     ModelRouter.prototype.inference = originalInference;
   }
 
+  check(rows.length === required, 'insufficient_plannable_sessions');
   check(rows.filter((row) => row.unavailable || row.badShape).length / rows.length <= 0.1, 'jev_unavailable_or_bad_shape_over_10_percent');
   const rejectionHistogramS = buildReasonHistogram(sReasons);
   const rejectionHistogramSFair = buildReasonHistogram(sfReasons);
@@ -632,6 +696,7 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     J: computeArmStats(prodAdmittedRows, (row) => row.J, true),
   };
 
+  const groupReports: Record<string, unknown> = {};
   console.log(`evaluated_ids=${JSON.stringify(rows.map((row) => row.id))}`);
   console.log(`histogram_S=${JSON.stringify(rejectionHistogramS)}`);
   console.log(`histogram_SFair=${JSON.stringify(rejectionHistogramSFair)}`);
@@ -651,8 +716,12 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
   const verdictAll = J.medians.retention < SFair.medians.retention ? 'report only, do not wire (不接电只留报告)' : 'wiring candidate (可接电候选)';
   const verdictAdmitted = likeForLikeSFairAdmitted.J.medians.retention < likeForLikeSFairAdmitted.SFair.medians.retention
     ? 'report only, do not wire (不接电只留报告)' : 'wiring candidate (可接电候选)';
-  console.log(`recommendation_all_15=${verdictAll} token_delta_total_J_minus_SFair=${J.totals.tokens - SFair.totals.tokens} token_delta_median_J_minus_SFair=${J.medians.tokens - SFair.medians.tokens} USD_delta=not_comparable_subscription SFair=subscription J=$${paidUsd.toFixed(8)}`);
+  console.log(`recommendation_all_${rows.length}=${verdictAll} token_delta_total_J_minus_SFair=${J.totals.tokens - SFair.totals.tokens} token_delta_median_J_minus_SFair=${J.medians.tokens - SFair.medians.tokens} USD_delta=not_comparable_subscription SFair=subscription J=$${paidUsd.toFixed(8)}`);
   console.log(`recommendation_admitted_only=${verdictAdmitted} token_delta_total_J_minus_SFair=${likeForLikeSFairAdmitted.J.totals.tokens - likeForLikeSFairAdmitted.SFair.totals.tokens} token_delta_median_J_minus_SFair=${likeForLikeSFairAdmitted.J.medians.tokens - likeForLikeSFairAdmitted.SFair.medians.tokens} USD_delta=not_comparable_subscription SFair=subscription J=$${likeForLikeSFairAdmitted.J.totals.usd.toFixed(8)}`);
+
+  for (const [label, tier] of [['strict', rows.filter((row) => row.strict === 1)], ['relaxed', rows.filter((row) => row.strict === 0)]] as const) {
+    groupReports[label] = reportGroup(label, tier);
+  }
 
   if (smokeOnly) {
     console.log(`smoke_complete=1 sessions=${rows.length} JSON_written=0`);
@@ -668,7 +737,10 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     summaryAsProductionMaxTokens: COMPACTION_SUMMARY.MAX_TOKENS,
     summaryFairMaxTokens: SUMMARY_FAIR_MAX_TOKENS,
     originalPlannedSessions: 20,
-    authorizedSessions: MIN_SESSIONS,
+    authorizedSessions: CONFIG.minSessions,
+    minResults: CONFIG.minResults,
+    minTokens: CONFIG.minTokens,
+    strictSessions: rows.filter((row) => row.strict === 1).length,
     evaluatedSessions: rows.length,
     directionalOnly: 1,
     evaluationNonLinkMatchFastPath: 1,
@@ -684,16 +756,18 @@ async function evaluate(sessions: Session[], needlesById: Map<string, string[]>,
     J,
     likeForLikeSFairAdmitted,
     likeForLikeSProdAdmitted,
+    groups: groupReports,
   };
   assertNumericAndIdsOnly(report, new Set(rows.map((row) => row.id)));
-  fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
-  fs.writeFileSync(OUTPUT, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
-  console.log(`n=${rows.length} original_planned_n=20 directional_only=1 JSON_written=1 output=${OUTPUT}`);
+  fs.mkdirSync(path.dirname(CONFIG.output), { recursive: true });
+  fs.writeFileSync(CONFIG.output, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
+  console.log(`n=${rows.length} original_planned_n=20 directional_only=1 JSON_written=1 output=${CONFIG.output}`);
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes('--self-check')) return selfCheck();
+  CONFIG = parseConfig(args);
   check(!fs.existsSync(path.join(os.homedir(), '.ship/disabled')), 'automation_disabled');
   check(JEV_MODEL === 'jev-1.13.0', 'jev_model_mismatch');
   const inventoryOnly = args.includes('--inventory');
@@ -702,7 +776,7 @@ async function main(): Promise<void> {
     console.log(`TYPESAFE_API_KEY=${process.env.TYPESAFE_API_KEY?.trim() ? 'set' : 'unset'}`);
     check(process.env.TYPESAFE_API_KEY?.trim(), 'missing_credentials: TYPESAFE_API_KEY=unset; network_calls=0; JSON_written=0');
     if (!smokeId) {
-      check(!fs.existsSync(OUTPUT), 'output_already_exists: preserve previous run; choose a fresh checkout');
+      check(!fs.existsSync(CONFIG.output), 'output_already_exists: preserve previous run; choose a fresh checkout');
     }
   }
   const source = args.includes('--dev-db')
@@ -711,9 +785,9 @@ async function main(): Promise<void> {
   const selectionPath = args.find((arg) => arg.startsWith('--session-ids='))?.slice('--session-ids='.length);
   const selectedIds: unknown = selectionPath ? JSON.parse(fs.readFileSync(selectionPath, 'utf8')) : undefined;
   if (selectedIds !== undefined) {
-    check(Array.isArray(selectedIds) && selectedIds.length === MIN_SESSIONS
+    check(Array.isArray(selectedIds) && selectedIds.length === CONFIG.minSessions
       && selectedIds.every((id) => typeof id === 'string' && /^[\w-]+$/.test(id))
-      && new Set(selectedIds).size === MIN_SESSIONS, 'invalid_authorized_session_ids');
+      && new Set(selectedIds).size === CONFIG.minSessions, 'invalid_authorized_session_ids');
     source.sessions = source.sessions.filter((session) => selectedIds.includes(session.id));
   }
   if (smokeId !== undefined) {
@@ -723,6 +797,7 @@ async function main(): Promise<void> {
   const qualified: Session[] = [];
   const needlesById = new Map<string, string[]>();
   const ids = new Set<string>();
+  const strictById = new Map<string, number>();
   console.log('| id | origin | tool results | estimated tokens | eligible |');
   console.log('|---|---|---:|---:|---:|');
   for (const session of source.sessions) {
@@ -730,18 +805,22 @@ async function main(): Promise<void> {
     ids.add(session.id);
     const results = resultCount(session.messages);
     const estimated = estimateConversationTokens(session.messages);
-    const eligible = results >= MIN_RESULTS && estimated >= MIN_TOKENS;
+    const eligible = results >= CONFIG.minResults && estimated >= CONFIG.minTokens;
     // JSON origin can contain private names: print only a fixed source category.
     console.log(`| ${session.id} | ${args.includes('--dev-db') ? session.origin : 'session-json'} | ${results} | ${estimated} | ${Number(eligible)} |`);
     if (eligible) {
       qualified.push(session);
+      strictById.set(session.id, isStrict(results, estimated));
       needlesById.set(session.id, extractNeedles(session.messages));
     }
   }
-  const required = smokeId !== undefined ? 1 : MIN_SESSIONS;
-  console.log(`inventory: total=${source.totalSessions} candidates=${source.sessions.length} qualified=${qualified.length} required=${required} network_calls=0 JSON_written=0`);
+  const required = smokeId !== undefined ? 1 : CONFIG.minSessions;
+  // Strict tier first, then by id.
+  qualified.sort((a, b) => (strictById.get(b.id)! - strictById.get(a.id)!) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const strictSelected = qualified.slice(0, required).filter((session) => strictById.get(session.id) === 1).length;
+  console.log(`inventory: total=${source.totalSessions} candidates=${source.sessions.length} qualified=${qualified.length} required=${required} min_results=${CONFIG.minResults} min_tokens=${CONFIG.minTokens} strict_qualified=${[...strictById.values()].reduce((a, b) => a + b, 0)} strict_in_selected=${strictSelected} network_calls=0 JSON_written=0`);
   check(qualified.length >= required, 'BLOCKED: precondition (sessions); network_calls=0; JSON_written=0');
-  if (!inventoryOnly) await evaluate(qualified.slice(0, required), needlesById, smokeId !== undefined);
+  if (!inventoryOnly) await evaluate(qualified, required, needlesById, smokeId !== undefined);
 }
 
 const restoreMatch = installNonLinkMatchFastPath();

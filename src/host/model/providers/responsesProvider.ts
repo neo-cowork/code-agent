@@ -3,7 +3,7 @@
 // 因为请求/响应均不是 /chat/completions SSE 形态。
 // ============================================================================
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
-import { SERVICE_TIER_REJECTION } from '../../../shared/constants';
+import { RESPONSES_FEATURE_REJECTION, SERVICE_TIER_REJECTION } from '../../../shared/constants';
 import type { InferenceOptions, ModelMessage, ModelResponse, Provider, StreamCallback } from '../types';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { explicitlyDeclaredEffortLevels } from '../providerRegistry';
@@ -244,6 +244,23 @@ function matchServiceTierRejection(status: number, errorText: string): { code?: 
   return undefined;
 }
 
+/** 本进程内已被中继拒绝 web_search 的 provider+model：后续轮次直接不挂该工具。 */
+const webSearchRejectedModels = new Set<string>();
+
+/** 400 + error.code（解析失败时退回原始正文）含 RESPONSES_FEATURE_NOT_SUPPORTED。 */
+function matchResponsesFeatureRejection(status: number, errorText: string): string | undefined {
+  if (status !== RESPONSES_FEATURE_REJECTION.status) return undefined;
+  try {
+    const code = ((JSON.parse(errorText) as Record<string, unknown>).error as Record<string, unknown> | undefined)?.code;
+    if (typeof code === 'string') return code === RESPONSES_FEATURE_REJECTION.code ? code : undefined;
+  } catch { /* 非 JSON：退回原始正文判据 */ }
+  return errorText.includes(RESPONSES_FEATURE_REJECTION.code) ? RESPONSES_FEATURE_REJECTION.code : undefined;
+}
+
+function isWebSearchTool(tool: unknown): boolean {
+  return Boolean(tool) && typeof tool === 'object' && (tool as { type?: unknown }).type === 'web_search';
+}
+
 function searchProgress(item: Record<string, unknown>): string {
   const action = item.action as Record<string, unknown> | undefined;
   const query = action?.query ?? item.query;
@@ -392,7 +409,8 @@ export class ResponsesProvider implements Provider {
     };
     const responseTools: unknown[] = [];
     // 逐轮「联网搜索」开关（默认开）：关掉时这一轮不挂 web_search，矩阵裁决让位。
-    if (options?.searchEnabled !== false && caps.search?.mode === 'deepseek-responses') responseTools.push({ type: 'web_search' });
+    if (options?.searchEnabled !== false && caps.search?.mode === 'deepseek-responses'
+      && !webSearchRejectedModels.has(`${config.provider}/${config.model}`)) responseTools.push({ type: 'web_search' });
     responseTools.push(...convertToolsToResponses(tools));
     if (responseTools.length) body.tools = responseTools;
     if (onStream) body.stream = true;
@@ -446,6 +464,22 @@ export class ResponsesProvider implements Provider {
         });
         const { service_tier: _dropped, ...standardBody } = body;
         response = await sendRequest(standardBody);
+        errorText = response.ok ? undefined : await response.text();
+      }
+    }
+    if (!response.ok && errorText !== undefined && Array.isArray(body.tools) && body.tools.some(isWebSearchTool)) {
+      const featureCode = matchResponsesFeatureRejection(response.status, errorText);
+      if (featureCode) {
+        logger.warn('[ResponsesProvider] web_search rejected by relay; retrying once without it', {
+          provider: config.provider,
+          model: config.model,
+          status: response.status,
+          code: featureCode,
+        });
+        webSearchRejectedModels.add(`${config.provider}/${config.model}`);
+        const remainingTools = (body.tools as unknown[]).filter((t) => !isWebSearchTool(t));
+        const { tools: _tools, ...bodyWithoutTools } = body;
+        response = await sendRequest(remainingTools.length ? { ...bodyWithoutTools, tools: remainingTools } : bodyWithoutTools);
         errorText = response.ok ? undefined : await response.text();
       }
     }

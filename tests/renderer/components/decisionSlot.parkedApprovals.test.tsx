@@ -210,7 +210,7 @@ describe('ParkedApprovalCards origin line (N-APPROVAL-CARD-USER-QUOTE-FU1-FIX �
 
   it('manual turn card shows the user quote and no scheduled-task line', async () => {
     await open([row({ userRequest: { text: '整理笔记', truncated: false } })]);
-    expect(screen.getByTestId('user-request-quote').textContent).toBe('你让我做的：「整理笔记」');
+    expect(screen.getByTestId('user-request-quote').textContent).toBe('来自你的消息：「整理笔记」');
     expect(screen.queryByTestId('scheduled-task-origin')).toBeNull();
   });
 });

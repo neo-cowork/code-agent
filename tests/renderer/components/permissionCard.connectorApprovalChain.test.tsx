@@ -142,8 +142,7 @@ describe('Feishu connector approval host -> renderer chain', () => {
     const { payload, completion } = start(false);
     expect(payload.details.userRequest?.text).toBe(userWords);
     render(<PermissionCard requestOverride={payload} sessionIdOverride="s1" />);
-    if (screen.queryByRole('button', { name: /更多选项与详情|More options & details/ })) fireEvent.click(screen.getByRole('button', { name: /更多选项与详情|More options & details/ }));
-    expect(screen.getByTestId('user-request-quote').textContent).toBe(`你让我做的：「${userWords}」`);
+    expect(screen.getByTestId('user-request-quote').textContent).toBe(`来自你的消息：「${userWords}」`);
     expect(screen.queryAllByTestId('scheduled-task-origin')).toHaveLength(0);
     await deny(completion);
   });

@@ -18,20 +18,6 @@ const fakeMac = vi.hoisted(() => {
       }
     }
 
-    if (script.includes('tell application "Calendar"')) {
-      if (script.includes('set newEvent to make new event')) {
-        const calendar = script.match(/tell calendar "([^"]+)"/)?.[1] ?? '';
-        const title = script.match(/summary:"([^"]*)"/)?.[1] ?? '';
-        return `event-1|${calendar}|${title}|||`;
-      }
-      if (script.includes('if writable of cal then')) {
-        return '日历\n工作';
-      }
-      if (script.includes('repeat with cal in every calendar')) {
-        return '节假日\n生日\n日历\n工作';
-      }
-    }
-
     throw new Error(`Unexpected fake AppleScript: ${script}`);
   });
 
@@ -51,7 +37,6 @@ vi.mock('../../../src/host/connectors', async (importOriginal) => {
 });
 
 import { getConnectorRegistry } from '../../../src/host/connectors';
-import { calendarCreateEventModule } from '../../../src/host/tools/modules/connectors/calendarCreateEvent';
 import { remindersCreateModule } from '../../../src/host/tools/modules/connectors/remindersCreate';
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
@@ -85,6 +70,7 @@ beforeEach(() => {
 });
 
 describe('localized native connector targets through production tools', () => {
+  // 日历已改走 EventKit（N-CALENDAR-ONE-PERMISSION-EVENTKIT），日历的目标解析见 tests/unit/connectors/calendarEventKit.test.ts
   it('uses the Chinese Reminders default list when list is omitted', async () => {
     const handler = await remindersCreateModule.createHandler();
     const result = await handler.execute(
@@ -108,33 +94,6 @@ describe('localized native connector targets through production tools', () => {
       line.includes('set targetList to default list') || line.includes('tell targetList')).join('\n'));
   });
 
-  it('uses the first writable Chinese calendar when calendar is omitted', async () => {
-    const handler = await calendarCreateEventModule.createHandler();
-    const result = await handler.execute(
-      { title: '默认事件', start_ms: 1_700_000_000_000 },
-      makeContext(),
-      allowAll,
-    );
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.output).toContain('- [日历] 默认事件');
-      expect(result.meta).toMatchObject({ calendar: '日历' });
-      expect(result.output).not.toContain('event-1');
-    }
-    expect(fakeMac.scripts).toHaveLength(2);
-    expect(scriptAt(0)).toContain('if writable of cal then');
-    expect(scriptAt(0)).toContain('repeat with cal in every calendar');
-    expect(scriptAt(1)).toContain('tell calendar "日历"');
-    expect(hasCreateScript()).toBe(true);
-    console.info('[proof ②] receipt:', result.ok ? result.output : result.error);
-    console.info('[proof ②] meta.calendar:', result.ok ? result.meta?.calendar : undefined);
-    console.info('[proof ②] recorded list script line:', scriptAt(0).split('\n').find((line) =>
-      line.includes('if writable of cal then')));
-    console.info('[proof ②] recorded create script line:', scriptAt(1).split('\n').find((line) =>
-      line.includes('tell calendar "日历"')));
-  });
-
   it('reports every Chinese Reminders list and performs no write for a missing name', async () => {
     const handler = await remindersCreateModule.createHandler();
     const result = await handler.execute(
@@ -156,25 +115,4 @@ describe('localized native connector targets through production tools', () => {
     console.info('[proof ③ reminders] script count:', fakeMac.scripts.length);
   });
 
-  it('reports every Chinese calendar, including read-only ones, and performs no write for a missing name', async () => {
-    const handler = await calendarCreateEventModule.createHandler();
-    const result = await handler.execute(
-      { calendar: '家庭采购', title: '不应创建', start_ms: 1_700_000_000_000 },
-      makeContext(),
-      allowAll,
-    );
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBe(
-        'Calendar create failed: No calendar named "家庭采购". Available calendars: 节假日, 生日, 日历, 工作. Omit calendar to use the first writable calendar.',
-      );
-    }
-    expect(fakeMac.scripts).toHaveLength(1);
-    expect(scriptAt(0)).toContain('repeat with cal in every calendar');
-    expect(scriptAt(0)).not.toContain('if writable of cal then');
-    expect(hasCreateScript()).toBe(false);
-    console.info('[proof ③ calendar] error:', result.ok ? result.output : result.error);
-    console.info('[proof ③ calendar] script count:', fakeMac.scripts.length);
-  });
 });

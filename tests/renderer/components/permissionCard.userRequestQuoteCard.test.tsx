@@ -177,4 +177,31 @@ describe('PermissionCard user request quote (whole card, normalizeRequest whitel
     expect(screen.getByTestId('connector-purpose').textContent)
       .toBe(messages.decisionCard.permission.connectorPurpose.replace('{purpose}', '同步下周会议'));
   });
+
+  it('写回卡已列出字段明细：不再引述用户原话，定时任务来源照常显示', () => {
+    state.language = 'zh';
+    const rawArgs = { calendar: '工作', title: '季度评审会', start_ms: 1787706000000, end_ms: 1787707800000 };
+    state.request = {
+      id: 'permission-writeback-quote',
+      tool: 'calendar_create_event',
+      type: 'file_write',
+      sessionId: 's1',
+      forceConfirm: true,
+      rawArgs,
+      details: { ...rawArgs, userRequest: { text: '明天加个评审会', truncated: false } },
+      timestamp: 1,
+    } as unknown as PermissionRequest;
+    const view = render(<PermissionCard />);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    view.unmount();
+
+    state.request = {
+      ...state.request,
+      details: { ...rawArgs, startedByAutomation: true, scheduledTaskName: '每日简报', userRequest: { text: '明天加个评审会', truncated: false } },
+    } as unknown as PermissionRequest;
+    render(<PermissionCard />);
+    expect(screen.queryByTestId('user-request-quote')).toBeNull();
+    expect(screen.getByTestId('scheduled-task-origin').textContent)
+      .toBe(zh.decisionCard.permission.startedByScheduledTask.replace('{name}', '每日简报'));
+  });
 });
