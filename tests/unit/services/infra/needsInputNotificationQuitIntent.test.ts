@@ -90,6 +90,17 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     });
   });
 
+  it('background native fallback uses English action copy', async () => {
+    platformMocks.language = 'en';
+    notificationService.setNotificationSessionTitleResolver(async () => 'Sales workbook');
+    setDaemonQuitIntent('background');
+    notificationService.notifyNeedsInput({ sessionId: 's-en', title: 'raw', body: 'raw', tool: 'excel_generate' });
+    await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith({
+      id: expect.any(String), sessionId: 's-en', title: 'Sales workbook', body: 'Waiting for your OK: Export spreadsheet',
+    });
+  });
+
   it('原生通知文案不带工具名（不复制调用方 title/body）', async () => {
     setDaemonQuitIntent('background');
     notificationService.notifyNeedsInput({
