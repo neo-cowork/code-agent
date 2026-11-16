@@ -27,7 +27,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
-import { Toggle } from '../../../primitives';
+import { Button, Toggle } from '../../../primitives';
 
 const logger = createLogger('NativeConnectorsSection');
 
@@ -468,6 +468,22 @@ interface NativeConnectorsSectionProps {
   presentation?: 'diagnostic' | 'grid';
 }
 
+const OperationError: React.FC<{
+  className: string;
+  prefix: string;
+  error: string;
+  showOpenSettings: boolean;
+  openSettingsLabel: string;
+  onOpenSettings: () => void;
+}> = ({ className, prefix, error, showOpenSettings, openSettingsLabel, onOpenSettings }) => (
+  <div className={`${className} flex flex-wrap items-center gap-2`}>
+    <span>{prefix}{error}</span>
+    {showOpenSettings && (
+      <Button size="sm" variant="secondary" onClick={onOpenSettings}>{openSettingsLabel}</Button>
+    )}
+  </div>
+);
+
 export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = ({
   presentation = 'diagnostic',
 }) => {
@@ -478,6 +494,15 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 只认 host 的结构化 errorCode，不做文案匹配
+  const needsAutomationSettings = statuses.some((status) => status.errorCode === 'not_authorized');
+  const openAutomationSettings = useCallback(async () => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'openAutomationSettings');
+    } catch (err) {
+      logger.error('Failed to open Automation settings', err);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -524,6 +549,16 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
     }
   }, [refresh]);
 
+  // 失败后只静默更新状态（拿 errorCode），不清 error
+  const refreshStatusesQuietly = useCallback(async () => {
+    try {
+      const next = await ipcService.invokeDomain<ConnectorStatusSummary[]>(IPC_DOMAINS.CONNECTOR, 'listStatuses');
+      if (Array.isArray(next)) setStatuses(next);
+    } catch (err) {
+      logger.warn('Failed to refresh connector statuses after failure', { err });
+    }
+  }, []);
+
   const runLifecycleAction = useCallback(async (id: string, action: NativeConnectorUiAction) => {
     setBusyKey(`${id}:${action}`);
     setError(null);
@@ -538,10 +573,11 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
     } catch (err) {
       logger.error('Failed to run native connector lifecycle action', { id, action, err });
       setError(err instanceof Error ? err.message : String(err));
+      await refreshStatusesQuietly();
     } finally {
       setBusyKey(null);
     }
-  }, [refresh]);
+  }, [refresh, refreshStatusesQuietly]);
 
   const rows = useMemo(
     () => buildNativeConnectorRows(items, statuses),
@@ -663,9 +699,14 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           );
         })}
         {error && (
-          <div className="col-span-full text-xs text-badge-danger">
-            {connectorText.operationFailedPrefix}{error}
-          </div>
+          <OperationError
+            className="col-span-full text-xs text-badge-danger"
+            prefix={connectorText.operationFailedPrefix}
+            error={error}
+            showOpenSettings={needsAutomationSettings}
+            openSettingsLabel={connectorText.openAutomationSettings}
+            onOpenSettings={() => void openAutomationSettings()}
+          />
         )}
       </div>
     );
@@ -714,7 +755,14 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       )}
 
       {error && (
-        <div className="mt-3 text-xs text-badge-danger">{connectorText.operationFailedPrefix}{error}</div>
+        <OperationError
+          className="mt-3 text-xs text-badge-danger"
+          prefix={connectorText.operationFailedPrefix}
+          error={error}
+          showOpenSettings={needsAutomationSettings}
+          openSettingsLabel={connectorText.openAutomationSettings}
+          onOpenSettings={() => void openAutomationSettings()}
+        />
       )}
     </div>
   );

@@ -71,4 +71,47 @@ describe('startBottomSettlement', () => {
     expect(frames).toBe(60);
     expect(onSettled).toHaveBeenCalledTimes(1);
   });
+
+  // 冷启动水合把同样内容的投影重建成新数组：结算不能半路让位（真机第二轮首开停在中间）。
+  function runWithRebuild(rebuild: (turns: TraceTurn[]) => TraceTurn[]) {
+    const turn = { turnNumber: 1, turnId: 't1', status: 'completed', startTime: 1, nodes: [] } as TraceTurn;
+    const turns: TraceTurn[] = [turn];
+    const projectionTurnsRef = { current: turns };
+    const { scroller, tick } = makeScroller(() => 3000);
+    const onSettled = vi.fn();
+    const onCancel = vi.fn();
+    startBottomSettlement({
+      turnsAtJump: turns,
+      projectionTurnsRef,
+      scrollerElementRef: { current: scroller as unknown as HTMLElement },
+      keepActiveOutputVisibleRef: { current: true },
+      activeDisplayScrollCancelRef: { current: null },
+      onSettled,
+      onCancel,
+    });
+    let frames = 0;
+    while (queue.length > 0) {
+      const cb = queue.shift()!;
+      frames += 1;
+      if (frames === 3) projectionTurnsRef.current = rebuild(turns);
+      cb();
+      tick();
+    }
+    return { onSettled, onCancel };
+  }
+
+  it('same-content projection rebuilds (new array, same turns) do not cancel the settlement', () => {
+    const { onSettled, onCancel } = runWithRebuild((turns) => turns.map((turn) => ({ ...turn })));
+    expect(onSettled).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('a genuinely new turn still cancels the settlement', () => {
+    const { onSettled, onCancel } = runWithRebuild((turns) => [
+      ...turns,
+      { turnNumber: 2, turnId: 't2', status: 'streaming', startTime: 2, nodes: [] } as TraceTurn,
+    ]);
+    expect(onSettled).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
 });

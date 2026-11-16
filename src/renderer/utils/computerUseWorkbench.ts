@@ -297,7 +297,7 @@ function explainFailureKind(kind: string): Omit<ComputerUseFailureExplanation, '
     case 'locator_missing':
       return {
         title: '目标元素找不到',
-        detail: '当前 selector、role/name 或 axPath 没命中。需要重新读取 AX candidates 或前台观察。',
+        detail: '没有找到要操作的元素。需要重新读取窗口内的可操作元素，或重新观察前台。',
         tone: 'warning',
       };
     case 'locator_ambiguous':

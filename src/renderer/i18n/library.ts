@@ -20,6 +20,7 @@ export const libraryZh = {
     meetingsTab: '会议',
     meetings: {
       empty: '还没有会议记录。在对话输入框的「+」里点「记这场会」开始录，或者从飞书妙记、腾讯会议导入。',
+      emptyWeb: '还没有会议记录。「记这场会」需要在桌面端使用；你也可以从飞书妙记、腾讯会议导入。',
       import: '导入会议',
       importTitle: '导入飞书妙记或腾讯会议',
       importLinkLabel: '飞书妙记链接',
@@ -150,6 +151,7 @@ export const libraryEn = {
     meetingsTab: 'Meetings',
     meetings: {
       empty: 'No meetings yet. Start one from “Record this meeting” in the + menu of the chat box, or import from Feishu Minutes or Tencent Meeting.',
+      emptyWeb: 'No meetings yet. “Record this meeting” is only available in the desktop app; you can also import from Feishu Minutes or Tencent Meeting.',
       import: 'Import meeting',
       importTitle: 'Import from Feishu Minutes or Tencent Meeting',
       importLinkLabel: 'Feishu Minutes link',

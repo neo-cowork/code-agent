@@ -1,3 +1,4 @@
+import type { Message } from '../../../src/shared/contract';
 // @vitest-environment jsdom
 import { emitCommandCenterToolStart, applyCommandCenterPreannounce } from '../../../src/host/agent/runtime/contextAssembly/sessionCommandCenterPreannounce';
 // Real host producers -> registry completion -> agent tree -> both display surfaces.
@@ -416,7 +417,8 @@ async function assertRestartDisplay(snapshot: AgentTreeSnapshot) {
     }} />);
     if (locale === 'en') {
       expect(notice.container.textContent).toContain(realShortName);
-      expect(notice.container.textContent).toContain('sign back in to the original account to view the task result');
+      expect(notice.container.textContent).toContain('view the result in the background task panel');
+      expect(notice.container.textContent).not.toMatch(/sign back in|sign in/i);
       expect(notice.container.textContent).not.toMatch(cjk);
     } else {
       expect(notice.container.textContent).toBe(mainZhWakeNote);
@@ -526,7 +528,7 @@ it.each(['en', 'zh'] as const)('localizes the real SessionCommandTask wake failu
   const notice: TraceNode = {
     id: 'wake-failure', type: 'system', timestamp: 1,
     content: mainZhSentence,
-    metadata: { backgroundWakeFailed: { taskId: 'session-work-not-in-tree', reason: 'wake_failed', title: shortName } },
+    metadata: { backgroundWakeFailed: { taskId: 'session-work-not-in-tree', reason: 'owner_missing', title: shortName } },
   };
   const view = render(<TraceNodeRenderer node={notice} sessionId={sessionId} />);
   const expected = locale === 'en'
@@ -563,6 +565,33 @@ it.each(['en', 'zh'] as const)('localizes the real SessionCommandTask wake failu
     expect(cjkTitle.container.textContent).not.toMatch(cjk);
     cjkTitle.unmount();
   }
+});
+
+it.each([
+  ['owner_missing', 'wakeFailedOwnerMissing'],
+  ['rate_limited', 'wakeFailedRateLimited'],
+  ['max_iterations', 'wakeFailedMaxIterations'],
+  ['wake_failed', 'wakeFailedGeneric'],
+  ['turn_error', 'wakeFailedGeneric'],
+  ['unknown_old_reason', 'wakeFailedGeneric'],
+] as const)('renders %s with the correct reason copy in English and stored Chinese', async (reason, key) => {
+  const title = 'Weekly competitor report';
+  language = 'en';
+  const detail = { taskId: 'weekly-report', reason, title } as NonNullable<Message['metadata']>['backgroundWakeFailed'];
+  const node: TraceNode = { id: `reason-${reason}`, type: 'system', timestamp: 1,
+    content: '旧中文消息保留：恢复原账号登录后可查看任务结果', metadata: { backgroundWakeFailed: detail } };
+  const view = render(<TraceNodeRenderer node={node} sessionId={sessionId} />);
+  expect(view.container.textContent).toBe(en.backgroundPanel[key].replace('{title}', title));
+  if (reason === 'owner_missing') expect(view.container.textContent).toContain('sign back in');
+  else expect(view.container.textContent).not.toMatch(/登录|sign back in|sign in/i);
+  view.unmount();
+  language = 'zh';
+  const stored = render(<TraceNodeRenderer node={node} sessionId={sessionId} />);
+  expect(stored.container.textContent).toBe(node.content);
+  stored.unmount();
+  const fresh = render(<TraceNodeRenderer node={{ ...node, content: '' }} sessionId={sessionId} />);
+  expect(fresh.container.textContent).toBe(zh.backgroundPanel[key].replace('{title}', title));
+  if (reason !== 'owner_missing') expect(fresh.container.textContent).not.toMatch(/登录|sign back in|sign in/i);
 });
 
 it.each(['en', 'zh'] as const)('localizes the persisted session-work restart notice in %s', (locale) => {
