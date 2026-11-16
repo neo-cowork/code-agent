@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { wrapTicketsAsLinks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
@@ -28,9 +28,11 @@ describe('wrapTicketsAsLinks reminder time zones and standards', () => {
 });
 
 describe('MessageContent reminder time zones', () => {
-  it('renders 2026-11-16 09:00 (UTC-8) without a ticket copy button or anchor', () => {
+  it('renders 2026-11-16 09:00 (UTC-8) without a ticket copy button or anchor', async () => {
     const text = '2026-11-16 09:00 (UTC-8)';
     const view = render(<MessageContent content={text} isUser={false} />);
+    // Wait for lazy MarkdownCore, rather than checking its plain-text fallback.
+    await waitFor(() => expect(view.container.querySelector('p')).not.toBeNull());
     expect(view.container.textContent).toContain(text);
     expect(view.container.querySelector('button[title^="点击复制"]')).toBeNull();
     expect(view.container.querySelector('a')).toBeNull();
