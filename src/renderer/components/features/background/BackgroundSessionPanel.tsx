@@ -17,6 +17,7 @@ import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-r
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
 import { useTaskStore } from '../../../stores/taskStore';
 import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutcomes';
@@ -192,8 +193,8 @@ export const BackgroundSessionPanel: React.FC = () => {
     // 收起胶囊只报 running 数（终态行不算「在跑」，也不转 spinner）；全终态时改报
     // 已结束条数，用户知道还有结果没清。
     const pillLabel = runningCount > 0
-      ? t.backgroundPanel.minimizedLabel.replace('{count}', String(runningCount))
-      : t.backgroundPanel.minimizedFinishedLabel.replace('{count}', String(backgroundSessions.length));
+      ? interpolatePlural(t.backgroundPanel.minimizedLabel, runningCount)
+      : interpolatePlural(t.backgroundPanel.minimizedFinishedLabel, backgroundSessions.length);
     return (
       <div className="w-full shrink-0 chat-col-pad pb-1">
         <div className="mx-auto flex w-full max-w-3xl justify-end">

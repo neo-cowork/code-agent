@@ -38,6 +38,7 @@ import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Ch
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
 import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPrompt';
 import { interpolate } from '../../../i18n/interpolate';
@@ -742,7 +743,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       <div className="mx-3 my-1.5 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-400">
         <div className="font-medium text-zinc-300">{title}</div>
         <div className="mt-1">
-          {t.chat.turnCheckoutNoteChanged.replace('{count}', String(checkoutNote.changedFileCount))}
+          {interpolatePlural(t.chat.turnCheckoutNoteChanged, checkoutNote.changedFileCount)}
         </div>
         {[...skipped, ...otherFailures].map((line) => <div key={line} className="mt-1">{line}</div>)}
         <div className="mt-1 text-zinc-500">{t.chat.turnCheckoutExternalEffects}</div>

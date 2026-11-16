@@ -6,8 +6,8 @@ import type {
 } from '@shared/contract/surfaceExecution';
 import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
 import { surfaceEventUserSummary, type RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SurfaceExecutionTranslationsV1 } from '../../../i18n/surfaceExecution';
-import { formatSurfaceExecutionCopy } from '../../../i18n/surfaceExecution';
 
 const INTERNAL_ASSIGNMENT = /\b(?:selector|grantId|traceId|toolName|backendNodeId|tabRef|windowRef)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
 const CONTROL_ACTIONS: readonly SurfaceSessionControlActionV1[] = [
@@ -221,8 +221,8 @@ export function formatSurfaceRelativeTime(
 ): string {
   const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
   if (minutes < 1) return copy.timing.justNow;
-  if (minutes < 60) return formatSurfaceExecutionCopy(copy.timing.minutes, { count: minutes });
-  return formatSurfaceExecutionCopy(copy.timing.hours, { count: Math.floor(minutes / 60) });
+  if (minutes < 60) return interpolatePlural(copy.timing.minutes, minutes);
+  return interpolatePlural(copy.timing.hours, Math.floor(minutes / 60));
 }
 
 export function formatSurfaceTimestamp(timestamp: number, language: 'zh' | 'en'): string {

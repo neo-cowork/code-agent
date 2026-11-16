@@ -11,7 +11,7 @@ type SurfaceEventStatusV1 = 'queued' | 'running' | 'waiting' | 'succeeded' | 'fa
 export interface SurfaceExecutionTranslationsV1 {
   panel: {
     label: string;
-    sessionCount: string;
+    sessionCount: { one: string; other: string };
     native: string;
     compatibility: string;
   };
@@ -40,8 +40,8 @@ export interface SurfaceExecutionTranslationsV1 {
     elapsed: string;
     heartbeat: string;
     justNow: string;
-    minutes: string;
-    hours: string;
+    minutes: { one: string; other: string };
+    hours: { one: string; other: string };
   };
   permission: {
     title: string;
@@ -157,7 +157,7 @@ export interface SurfaceExecutionTranslationsV1 {
 export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
   panel: {
     label: 'Surface 执行',
-    sessionCount: '{count} 个执行会话',
+    sessionCount: { one: '{count} 个执行会话', other: '{count} 个执行会话' },
     native: '实时执行账本',
     compatibility: '历史兼容记录',
   },
@@ -186,8 +186,8 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     elapsed: '已运行 {time}',
     heartbeat: '最近更新 {time}',
     justNow: '刚刚',
-    minutes: '{count} 分钟前',
-    hours: '{count} 小时前',
+    minutes: { one: '{count} 分钟前', other: '{count} 分钟前' },
+    hours: { one: '{count} 小时前', other: '{count} 小时前' },
   },
   permission: {
     title: '权限范围',
@@ -348,7 +348,7 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
 const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
   panel: {
     label: 'Surface execution',
-    sessionCount: '{count} execution sessions',
+    sessionCount: { one: '{count} execution session', other: '{count} execution sessions' },
     native: 'Live execution ledger',
     compatibility: 'Historical compatibility record',
   },
@@ -377,8 +377,8 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     elapsed: 'Running for {time}',
     heartbeat: 'Updated {time}',
     justNow: 'just now',
-    minutes: '{count} minutes ago',
-    hours: '{count} hours ago',
+    minutes: { one: '{count} minute ago', other: '{count} minutes ago' },
+    hours: { one: '{count} hour ago', other: '{count} hours ago' },
   },
   permission: {
     title: 'Permission scope',

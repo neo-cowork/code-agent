@@ -36,6 +36,7 @@ import { Button } from '../../../../primitives';
 import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import { useToolCallTerminalResolver } from '../../../../../hooks/useToolCallTerminalResolver';
 import { useI18n } from '../../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
 import { useDurableSwarmRunDetail } from '../../../../../hooks/useDurableSwarmRunDetail';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
@@ -329,7 +330,7 @@ export function ToolCallDisplay({
         )}
         {statusCheckCount > 1 && (
           <span className="shrink-0 text-xs text-zinc-500" data-testid="task-status-check-count">
-            {t.sessionTaskPresentation.checkedTimes.replace('{count}', String(statusCheckCount))}
+            {interpolatePlural(t.sessionTaskPresentation.checkedTimes, statusCheckCount)}
           </span>
         )}
       </div>
