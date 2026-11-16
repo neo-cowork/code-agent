@@ -9,6 +9,7 @@
 import React from 'react';
 import { ChevronRight, Stethoscope } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { useAppStore } from '../../../stores/appStore';
 import { useDoctorStore, hasDoctorFailures } from '../../../stores/doctorStore';
 
@@ -19,7 +20,7 @@ export const SidebarDoctorAlert: React.FC = () => {
 
   if (!hasDoctorFailures(report)) return null;
 
-  const label = cz.doctorIssues.replace('{count}', String(report.summary.fail));
+  const label = interpolatePlural(cz.doctorIssues, report.summary.fail);
 
   return (
     <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），与相邻入口行同构 */

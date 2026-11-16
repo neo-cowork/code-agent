@@ -39,6 +39,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
+import { interpolatePlural } from '../i18n/interpolate';
 import { cronRunAggregatesByTaskId, useCronRunGroups } from '../hooks/useCronRunGroups';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
@@ -988,7 +989,7 @@ export const Sidebar: React.FC = () => {
       {/* 撤销删除 Toast */}
       {pendingDelete && (
         <UndoToast
-          message={sb.deletedCount.replace('{count}', String(pendingDelete.ids.length))}
+          message={interpolatePlural(sb.deletedCount, pendingDelete.ids.length)}
           onUndo={undoDelete}
           onDismiss={() => {
             // timer 已经在 softDelete 中设置了，这里是视觉消失后的回调

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatLocalDateTime } from '../../../utils/i18nTime';
 import { resolveSearchRunLabels } from '../../../utils/sessionSearchRunLabel';
 import { getDisplaySessionTitle, getLocalizedSessionTitle } from '../../../utils/sessionPresentation';
@@ -195,7 +196,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                         {hitGroup && (
                           <>
                             <span aria-hidden="true"> · </span>
-                            <span>{sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}</span>
+                            <span>{interpolatePlural(sb.messageHits, hitGroup.totalHitCount)}</span>
                           </>
                         )}
                       </span>

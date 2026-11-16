@@ -23,7 +23,6 @@
   "src/renderer/i18n/sessionInspector.ts": 1,
   "src/renderer/i18n/sessionReplay.ts": 5,
   "src/renderer/i18n/sessionTaskPresentation.ts": 1,
-  "src/renderer/i18n/sidebar.ts": 8,
   "src/renderer/i18n/surfaceExecution.ts": 3,
   "src/renderer/i18n/turnCheckout.ts": 1,
   "src/renderer/i18n/turnDiff.ts": 1,
