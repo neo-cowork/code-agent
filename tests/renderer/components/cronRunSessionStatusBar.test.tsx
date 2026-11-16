@@ -46,6 +46,7 @@ import {
 } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
@@ -98,6 +99,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useAppStore.setState({ language: 'zh' });
   clearObservedCronRunStatusForSession('session-1');
   // 撤掉定时器相关的挂载残留
   vi.restoreAllMocks();
@@ -286,6 +288,46 @@ describe('CronRunSessionStatusBar（组件）', () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-1', 'deny', 'session-1');
     });
+  });
+
+  it('等批准：en 用半角冒号模板，整行无 CJK 字符或全角标点（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU3）', async () => {
+    useAppStore.setState({ language: 'en' });
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    listParkedApprovalsMock.mockResolvedValue([{
+      id: 'req-en',
+      kind: 'tool_approval',
+      sessionId: 'session-1',
+      tool: 'bash',
+      requestedAt: Date.now() - 5_000,
+      status: 'pending',
+      argsPreview: 'echo BG-PARKED-EN',
+    }]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('awaiting');
+    const text = screen.getByTestId('cron-run-status-text').textContent ?? '';
+    expect(text).toBe('Needs your approval: Run a command');
+    // 全角冒号 / CJK 一律不许出现在 en 状态行
+    expect(text).not.toMatch(/[\u3000-\u303f\uff00-\uffef]|[\u4e00-\u9fff]/);
+  });
+
+  it('等批准：zh 保持全角冒号模板「等你批准：<label>」（半角化回归闸）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    listParkedApprovalsMock.mockResolvedValue([{
+      id: 'req-zh',
+      kind: 'tool_approval',
+      sessionId: 'session-1',
+      tool: 'bash',
+      requestedAt: Date.now() - 5_000,
+      status: 'pending',
+      argsPreview: 'echo BG-PARKED-ZH',
+    }]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('awaiting');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行一条命令');
   });
 
   // review r6：AGENT_PERMISSION_RESPONSE 的注册类型是 Promise<void>，但真实写点各不相同

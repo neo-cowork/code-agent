@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import type { MeetingImportCandidate, MeetingSummaryRecord } from '@shared/contract/audioCapture';
-import { importMeeting, listMeetingImportCandidates, listMeetingRecords } from '../../../services/nativeDesktop';
+import { importMeeting, isNativeDesktopAvailable, listMeetingImportCandidates, listMeetingRecords } from '../../../services/nativeDesktop';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
@@ -135,7 +135,9 @@ export const MeetingsView: React.FC<{ initialMeetingId?: string | null }> = ({ i
         {meetings === null ? (
           <div className="flex justify-center py-16 text-zinc-500"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : meetings.length === 0 ? (
-          <p className="py-16 text-center text-sm leading-relaxed text-zinc-500">{copy.empty}</p>
+          <p className="py-16 text-center text-sm leading-relaxed text-zinc-500">
+            {isNativeDesktopAvailable() ? copy.empty : copy.emptyWeb}
+          </p>
         ) : (
           <ul className="divide-y divide-zinc-800/70">
             {meetings.map((m) => (

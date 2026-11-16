@@ -1,4 +1,6 @@
 import { EXCEL_READ_ACTIONS, EXCEL_WRITE_ACTIONS } from '@shared/constants/excelActions';
+import { resolveSkillName } from '@shared/resolveSkillName';
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
 // humanizeToolStep — 把工具调用（工具名 + 参数）合成一句人话步骤文案
@@ -437,7 +439,12 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
   }
 }
 
-export function humanizeToolStep(
+export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): string {
+  const language = CJK_PATTERN.test(args[2].toolStepHumanize.writeFallback) ? 'zh' : 'en';
+  return humanizeInternalText(buildToolStep(...args), language).text;
+}
+
+function buildToolStep(
   name: string,
   args: Record<string, unknown> | undefined,
   t: Translations,
@@ -585,7 +592,8 @@ export function humanizeToolStep(
       return h.taskManager;
     case 'skill': {
       // Skill schema 用 command 传技能名；历史/别名可能用 skill / name
-      const skillName = firstString(a, ['command', 'skill', 'name']);
+      const language = CJK_PATTERN.test(t.toolStepHumanize.writeFallback) ? 'zh' : 'en';
+      const skillName = resolveSkillName(firstString(a, ['command', 'skill', 'name']), language, '');
       return skillName ? h.skill.replace('{skill}', skillName) : h.skillFallback;
     }
     case 'screenshot':

@@ -681,7 +681,7 @@ describe('AutomationReviewInbox', () => {
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
     });
     expect(screen.getAllByTestId('parked-args-preview')).toHaveLength(2);
-    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Arguments: ' : '参数：'}invoice-export --token=***REDACTED***`);
+    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Details: ' : '操作内容：'}invoice-export --token=***REDACTED***`);
     // Same tool, reason and session; only requestedAt differs (indices 0 and 3).
     expect(cards[0].textContent).not.toBe(cards[3].textContent);
   });
@@ -775,7 +775,7 @@ describe('AutomationReviewInbox', () => {
       expect(screen.getByTestId('parked-args-preview')).toBeTruthy();
     });
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
-      '参数：curl https://api.example.com/v1 · Bearer ***REDACTED***',
+      '操作内容：curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
   });
 
@@ -789,7 +789,7 @@ describe('AutomationReviewInbox', () => {
       expect(screen.getByTestId('parked-args-preview')).toBeTruthy();
     });
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
-      'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
+      'Details: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
   });
 

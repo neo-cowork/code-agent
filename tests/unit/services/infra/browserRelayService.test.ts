@@ -600,10 +600,15 @@ describe('BrowserRelayService protocol v2 boundary', () => {
       actionScopes: ['screenshot'],
       ttlMs: 5,
     });
-    const request = await stream.next() as unknown as BrowserRelayLeaseRequestV2;
-    await expect(approval).rejects.toSatisfy(
+    // 5ms 审批超时可能在 stream.next() 返回前就触发；断言必须在任何 await 之前挂上，
+    // 否则 approval 在无人监听时被拒，vitest 记为 Unhandled Rejection（CI 偶发红）。
+    const timeoutAssertion = expect(approval).rejects.toSatisfy(
       (error: unknown) => relayErrorCode(error) === 'RELAY_OPERATION_TIMEOUT',
     );
+    // 确定性复现 CI 竞态：先让 5ms 超时必然触发，再去读消息。断言若挪到这之后就稳定红。
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const request = await stream.next() as unknown as BrowserRelayLeaseRequestV2;
+    await timeoutAssertion;
     expect(await stream.next()).toMatchObject({
       type: 'lease.request.cancel',
       requestId: request.requestId,

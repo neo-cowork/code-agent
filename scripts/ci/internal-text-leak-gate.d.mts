@@ -9,7 +9,7 @@ type AllowlistEntry = {
 };
 type LeakHit = Omit<AllowlistEntry, 'reason'> & { line: number };
 
-export function detectStaticStringLeaks(text: string): InternalTextFormat[];
+export function detectStaticStringLeaks(text: string, language?: 'zh' | 'en'): InternalTextFormat[];
 export function scanRendererStatic(options?: ScanOptions): {
   filesScanned: number;
   hits: LeakHit[];

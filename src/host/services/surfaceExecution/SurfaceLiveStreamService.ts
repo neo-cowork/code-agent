@@ -91,24 +91,32 @@ export class SurfaceLiveStreamService {
     }
 
     let handle: PageScreencastHandle;
+    type Frame = Parameters<Parameters<typeof startPageScreencast>[2]>[0];
+    const initial: { frame?: Frame } = {};
+    let started = false;
+    const deliverFrame = (frame: Frame) => {
+      if (!started) {
+        initial.frame = frame;
+        return;
+      }
+      // 开流后会话被别的对话接管 / 已停：立刻掐掉，不让帧漏给新归属。
+      if (this.active?.handle !== handle) return;
+      this.publish({
+        version: 1,
+        conversationId: request.conversationId,
+        surfaceSessionId: request.surfaceSessionId,
+        mimeType: 'image/jpeg',
+        dataUrl: `data:image/jpeg;base64,${frame.base64}`,
+        width: frame.width,
+        height: frame.height,
+        capturedAtMs: frame.capturedAtMs,
+      });
+    };
     try {
       handle = await startPageScreencast(
         page,
         { ...DEFAULT_PAGE_SCREENCAST_OPTIONS, ...bounds },
-        (frame) => {
-          // 开流后会话被别的对话接管 / 已停：立刻掐掉，不让帧漏给新归属。
-          if (this.active?.surfaceSessionId !== request.surfaceSessionId) return;
-          this.publish({
-            version: 1,
-            conversationId: request.conversationId,
-            surfaceSessionId: request.surfaceSessionId,
-            mimeType: 'image/jpeg',
-            dataUrl: `data:image/jpeg;base64,${frame.base64}`,
-            width: frame.width,
-            height: frame.height,
-            capturedAtMs: frame.capturedAtMs,
-          });
-        },
+        deliverFrame,
       );
     } catch {
       return this.refused(request.surfaceSessionId, 'unsupported');
@@ -126,6 +134,9 @@ export class SurfaceLiveStreamService {
       maxWidth: bounds.maxWidth,
       maxHeight: bounds.maxHeight,
     };
+    started = true;
+    if (initial.frame) deliverFrame(initial.frame);
+    initial.frame = undefined;
     return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
   }
 
