@@ -518,4 +518,16 @@ describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
     expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', { dirPath: '/tmp/proj-a/src/' });
     expect(result.current.fileRows.map((row) => row.name)).toEqual(['foo.ts']);
   });
+
+  it('(e) query 是绝对路径 @/abs/dir/：直接列该目录，不拼成 <base>//abs（Rework r1）', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/proj-a' });
+    const invoke = mockWorkspaceHost([
+      { prefix: '/Users/me/Documents/', data: [{ name: 'a.md', path: '/Users/me/Documents/a.md', isDirectory: false }] },
+    ]);
+    const { result } = setup();
+    await openPanel(result, '@/Users/me/Documents/');
+
+    expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', { dirPath: '/Users/me/Documents/' });
+    expect(result.current.fileRows.map((row) => row.name)).toEqual(['a.md']);
+  });
 });

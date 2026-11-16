@@ -61,6 +61,8 @@ function atMentionListDir(baseDir: string, searchQuery: string): string {
   const base = baseDir.endsWith('/') ? baseDir.slice(0, -1) : baseDir;
   const slashIndex = searchQuery.lastIndexOf('/');
   if (slashIndex < 0) return base;
+  // query 本身是绝对路径（@/abs/dir/、选中目录行后插入的 @/tmp/proj/src）：直接列它，不拼 base（否则 <base>//abs 被 host 吞错成 []）
+  if (/^(\/|[A-Za-z]:[\\/])/.test(searchQuery)) return searchQuery.slice(0, slashIndex + 1);
   return `${base}/${searchQuery.slice(0, slashIndex + 1)}`;
 }
 
