@@ -186,6 +186,8 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   if (!jobId) return null;
 
   if (status?.kind === 'awaiting') {
+    // 冒号进模板（zh 全角 / en 半角），不在组件里拼硬编码标点（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU3）。
+    const approvalLabel = status.approval.label;
     return (
       <div
         className="flex flex-wrap items-center gap-2 py-1 text-[13px] text-badge-warning"
@@ -195,8 +197,9 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
       >
         <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-mark-warning" aria-hidden="true" />
         <span data-testid="cron-run-status-text">
-          {copy.awaiting}
-          {status.approval.label ? `：${status.approval.label}` : ''}
+          {approvalLabel
+            ? copy.awaitingWithLabel.replace('{label}', () => approvalLabel)
+            : copy.awaiting}
         </span>
         {status.approval.command !== undefined && (
           <Button
