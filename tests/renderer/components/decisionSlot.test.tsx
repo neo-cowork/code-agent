@@ -575,6 +575,6 @@ describe('DecisionSlot', () => {
     expect(card.getAttribute('data-view-mode')).toBe('expanded');
     expect(screen.getByTestId('plan-step-list')).toBeTruthy();
     expect(screen.getByTestId('plan-approve-button')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '计划 · 拒绝' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
   });
 });

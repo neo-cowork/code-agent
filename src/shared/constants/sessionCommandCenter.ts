@@ -141,6 +141,27 @@ const SESSION_TASK_RESULT_STATUS_WORDS = {
 
 export type SessionTaskResultStatusWordLocale = keyof typeof SESSION_TASK_RESULT_STATUS_WORDS;
 
+const SESSION_TASK_DELIVERY_FAILURE_MESSAGES = {
+  zh: {
+    approval_timeout: '后台任务没能完成：需要你批准的操作一直没有等到批准，已停止。',
+    repair_exhausted: '后台任务没能完成：它调用的工具连续出错，已停止。',
+  },
+  en: {
+    approval_timeout: 'The background task could not finish: an action that needed your approval was never approved, so it stopped.',
+    repair_exhausted: 'The background task could not finish: a tool it used kept failing, so it stopped.',
+  },
+} as const;
+
+export type SessionTaskDeliveryFailure = keyof typeof SESSION_TASK_DELIVERY_FAILURE_MESSAGES.zh;
+
+export function formatSessionTaskDeliveryFailure(
+  reason: unknown,
+  locale: SessionTaskResultStatusWordLocale,
+): string | undefined {
+  if (reason !== 'approval_timeout' && reason !== 'repair_exhausted') return undefined;
+  return SESSION_TASK_DELIVERY_FAILURE_MESSAGES[locale][reason];
+}
+
 export function formatSessionTaskResultStatusWord(
   status: 'completed' | 'failed' | 'cancelled',
   locale: SessionTaskResultStatusWordLocale,
