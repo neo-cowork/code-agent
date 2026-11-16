@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   enabledNative: [] as string[],
   runAppleScript: vi.fn(async () => 'Work\nPersonal'),
 }));
+const { fakeCalendar } = await vi.hoisted(async () => ({
+  fakeCalendar: (await import('../connectors/fakeCalendarBridge')).createFakeCalendarBridge(),
+}));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mocks.warn, error: vi.fn() }),
@@ -15,8 +18,14 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ connectors: { enabledNative: mocks.enabledNative } }) }),
 }));
 
-// 只在 osascript 边界替身：连接器对象、registry、tool-search 都是真实的。
-vi.mock('../../../src/host/connectors/native/osascript', () => ({
+vi.mock('../../../src/host/permissions/envAssist/shellBridge/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/permissions/envAssist/shellBridge/client')>(),
+  resolveShellBridgeClientFromEnv: () => fakeCalendar.client,
+}));
+
+// 只替换 osascript / EventKit 原生桥：连接器对象、registry、tool-search 都是真实的。
+vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>(),
   runAppleScript: mocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -60,6 +69,7 @@ const darwin = process.platform === 'darwin';
 describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
   beforeEach(() => {
     mocks.warn.mockClear();
+    fakeCalendar.reset();
     resetProtocolRegistry();
     for (const schema of [remindersCreateSchema, mailDraftSchema, calendarCreateEventSchema]) {
       const module: ToolModule = {
@@ -96,18 +106,25 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(mocks.warn).not.toHaveBeenCalled();
   });
 
-  it('enabled + failed probe: not preloaded, warns readiness-failed', async () => {
+  it('enabled + failed probes: AppleScript connectors fail closed while EventKit stays unchecked', async () => {
     enable(ALL);
     mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
     await expect(getConnectorRegistry().get('reminders')!.execute('probe_access', {})).rejects.toThrow();
     mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
     await expect(getConnectorRegistry().get('mail')!.execute('probe_access', {})).rejects.toThrow();
-    mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
-    await expect(getConnectorRegistry().get('calendar')!.execute('probe_access', {})).rejects.toThrow();
-    for (const id of ALL) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
+    fakeCalendar.state.status = 2;
+    await getConnectorRegistry().get('calendar')!.execute('probe_access', {});
+    for (const id of ['reminders', 'mail']) {
+      expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
+    }
+    expect(getConnectorRegistry().get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
 
-    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
-    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(3);
+    const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names).toHaveLength(4);
+    expect(names).toEqual(expect.arrayContaining([
+      'calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event',
+    ]));
+    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(2);
   });
 
   it('enabled but platform unavailable: not preloaded, warns readiness-unavailable', () => {
