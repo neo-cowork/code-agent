@@ -8,7 +8,7 @@ const MIN = 60_000;
 function setup(opts: { enabled?: boolean; granted?: boolean; events?: MeetingUpcoming[]; active?: boolean } = {}) {
   let now = 1_000_000;
   const deps = {
-    enabled: () => opts.enabled ?? true,
+    enabled: vi.fn(() => opts.enabled ?? true),
     granted: vi.fn(async () => opts.granted ?? true),
     upcoming: vi.fn(async () => opts.events ?? []),
     isMeetingActive: () => opts.active ?? false,
@@ -42,9 +42,20 @@ describe('会前提醒（只提醒，不自动开录）', () => {
     expect(t.deps.notify).toHaveBeenCalledTimes(1);
     expect(t.deps.notify).toHaveBeenCalledWith(ev);
     expect(t.deps.upcoming).toHaveBeenCalledWith(1_000_000, 1_000_000 + L.CALENDAR_LEAD_MS);
-    expect(t.r.upcoming()).toEqual(ev);
+    expect(await t.r.upcoming()).toEqual(ev);
     t.setNow(ev.startAtMs + L.CALENDAR_LEAD_MS);
-    expect(t.r.upcoming()).toBeNull();
+    expect(await t.r.upcoming()).toBeNull();
+  });
+
+  it('关掉开关：录制条上的「快开始了」立刻收起，不等下一分钟巡检、更不挂到开会后', async () => {
+    const ev = { id: 'ek-1', title: '产品周会', startAtMs: 1_000_000 + MIN };
+    const t = setup({ events: [ev] });
+    await t.r.tick();
+    expect(await t.r.upcoming()).toEqual(ev);
+    t.deps.enabled.mockReturnValue(false);
+    expect(await t.r.upcoming()).toBeNull();
+    t.deps.enabled.mockReturnValue(true); // 重新打开也不会把已收起的那条翻出来（同一场只提醒一次）
+    expect(await t.r.upcoming()).toBeNull();
   });
 
   it('同名的两场会按 id 区分，各提醒一次', async () => {
