@@ -129,8 +129,8 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     expect(platformMocks.broadcast).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       expect.objectContaining({
-        title: '有操作等你确认', sessionId, urgent: true,
-        body: `无人值守任务需要确认「写入文件」，已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+        title: '需要授权', sessionId, urgent: true,
+        body: `需要授权：写入文件。任务已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
       }),
     );
 

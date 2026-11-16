@@ -18,6 +18,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
+  language: 'zh',
   broadcast: vi.fn(),
 }));
 
@@ -34,7 +35,7 @@ vi.mock('../../../src/host/services/infra/logger', () => {
   return { createLogger: vi.fn(() => fake), logger: fake, default: fake };
 });
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: platformMocks.language } }) }),
 }));
 
 const { AgentRunController } = await import('../../../src/web/routes/agentRunController');
@@ -69,6 +70,7 @@ function createController(sessionId = 'session-fg-1') {
 // 索引签名，同样破坏可比性。
 type PermissionRequestOverrides = {
   id?: string;
+  tool?: string;
   command?: string;
   resolved?: boolean;
   decision?: string;
@@ -92,6 +94,7 @@ function permissionRequest(overrides: PermissionRequestOverrides = {}): AgentEve
 describe('AgentRunController 前台 needs-input 横幅', () => {
   beforeEach(() => {
     platformMocks.focusedWindow = {};
+    platformMocks.language = 'zh';
     platformMocks.broadcast.mockClear();
     notificationService.clearRecentNotifications();
   });
@@ -99,6 +102,21 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     notificationService.clearRecentNotifications();
+  });
+
+  it.each([
+    ['en', 'Approval needed', 'Export spreadsheet'],
+    ['zh', '需要授权', '导出表格'],
+  ])('excel_generate foreground approval banner follows ui.language=%s', (language, title, action) => {
+    platformMocks.language = language;
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
+    createController().emitAgentEvent(permissionRequest({ tool: 'excel_generate' }));
+    expect(notify).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session-fg-1', title, body: `${title}${language === 'en' ? ': ' : '：'}${action}`, dedupeKey: 'perm-req-1',
+    });
+    const payload = notify.mock.calls[0][0];
+    expect(payload.body).not.toContain('excel_generate');
+    if (language === 'en') expect(payload.title + payload.body).not.toMatch(/[\u3400-\u9fff]/);
   });
 
   it('未决 permission_request → 恰好一次 notifyNeedsInput（dedupeKey = data.id，文案同落库口）', () => {

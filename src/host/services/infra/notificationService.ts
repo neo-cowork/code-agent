@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { buildApprovalNotification } from './approvalNotification';
 import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 // Notification Service
@@ -434,8 +435,7 @@ class NotificationService implements Disposable {
           this.nativeNotificationSender({
             id,
             sessionId: data.sessionId,
-            title: '有事项需要你确认',
-            body: '后台任务在等你确认，打开 Agent Neo 处理。',
+            ...buildApprovalNotification(undefined, 'native'),
           });
         } catch (error) {
           logger.warn('Native needs-input notification failed', { error });

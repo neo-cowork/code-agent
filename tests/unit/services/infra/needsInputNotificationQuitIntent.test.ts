@@ -9,6 +9,7 @@ import { PARKED_APPROVAL_ENTRY_PATH } from '../../../../src/shared/parkedApprova
 
 const platformMocks = vi.hoisted(() => ({
   focusedWindow: null as object | null,
+  language: 'zh',
   broadcast: vi.fn(),
   info: vi.fn(),
 }));
@@ -25,7 +26,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: platformMocks.info, warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: platformMocks.language } }) }),
 }));
 
 const { notificationService } =
@@ -37,6 +38,7 @@ const nativeSender = vi.fn();
 
 beforeEach(() => {
   platformMocks.focusedWindow = null;
+  platformMocks.language = 'zh';
   platformMocks.broadcast.mockClear();
   platformMocks.info.mockClear();
   nativeSender.mockClear();
@@ -77,6 +79,18 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
       title: '有事项需要你确认',
       body: '后台任务在等你确认，打开 Agent Neo 处理。',
     });
+  });
+
+  it('background native fallback follows ui.language=en without tool ids or CJK', () => {
+    platformMocks.language = 'en';
+    setDaemonQuitIntent('background');
+    notificationService.notifyNeedsInput({ sessionId: 's-en', title: 'excel_generate', body: '需要授权' });
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith({
+      id: expect.any(String), sessionId: 's-en', title: 'Confirmation needed',
+      body: 'A background task is waiting for your confirmation. Open Agent Neo to respond.',
+    });
+    const { title, body } = nativeSender.mock.calls[0][0];
+    expect(title + body).not.toMatch(/[\u3400-\u9fff]|excel_generate/);
   });
 
   it('原生通知文案不带工具名（不复制调用方 title/body）', () => {

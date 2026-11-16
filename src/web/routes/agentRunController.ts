@@ -2,7 +2,7 @@ import type { Response } from 'express';
 import type { AgentEvent, SessionStatus } from '../../shared/contract';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { notificationService } from '../../host/services/infra/notificationService';
-import { permissionNoticeBody } from '../../shared/utils/toolUserLabel';
+import { buildApprovalNotification } from '../../host/services/infra/approvalNotification';
 import { MessageDeltaAccumulator } from '../../host/protocol/messageDeltaAccumulator';
 import { createAgentRunSSEBatcher } from '../helpers/agentRunSSEBatcher';
 import { broadcastSSE, sendSSE } from '../helpers/sse';
@@ -175,12 +175,13 @@ export class AgentRunController {
         notificationService.retractNeedsInput(data.id);
         return;
       }
+      const notice = buildApprovalNotification(typeof data.tool === 'string' ? data.tool : undefined);
       notificationService.notifyNeedsInput({
         sessionId: this.deps.sessionId,
-        title: '需要授权',
-        body: permissionNoticeBody(typeof data.tool === 'string' ? data.tool : undefined),
+        ...notice,
         dedupeKey: data.id,
       });
+      this.deps.logger.info('Needs-input notification sent', notice);
     } catch (error) {
       this.deps.logger.warn(`[AgentRouter] Failed to sync needs-input notification for ${this.deps.sessionId}:`, error);
     }
