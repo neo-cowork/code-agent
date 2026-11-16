@@ -340,6 +340,7 @@ const gates = [
       'tests/unit/connectors/remindersBulkRead.test.ts',
       'tests/unit/app/sessionCommandCenterBrain.test.ts',
       'tests/unit/tools/toolExecutor.safeCommandPermission.test.ts',
+      'tests/unit/tools/modules/shell/bash.test.ts',
       'tests/unit/host/sandbox/managerNpmEnv.test.ts',
       'tests/unit/host/permissions/envAssist/shellBridgeProduction.test.ts',
       'tests/unit/host/permissions/envAssist/shellBridgeBuiltBundle.test.ts',

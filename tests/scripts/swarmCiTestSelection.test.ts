@@ -76,6 +76,13 @@ describe('pre-merge Vitest selection', () => {
     expect(linux?.['runs-on']).toBe('ubuntu-22.04');
     expect(linux?.if).toBeUndefined();
     expect(linux?.steps?.some((step) => step.run?.includes('apt-get install -y bubblewrap'))).toBe(true);
+    const steps = linux?.steps ?? [];
+    const dependencyIndex = steps.findIndex((step) => step.run === 'npm ci --ignore-scripts');
+    const nodeIndex = steps.findIndex((step) => step.run?.includes('/usr/local/bin/node'));
+    expect(dependencyIndex).toBeGreaterThan(-1);
+    expect(nodeIndex).toBeGreaterThan(dependencyIndex);
+    expect(steps[nodeIndex]?.run).toBe('sudo install -m 0755 "$(command -v node)" /usr/local/bin/node');
+    expect(steps.map((step) => step.run ?? '').join('\n')).not.toMatch(/\bcp\b[^\n]*\/usr\/local/);
   });
 
   it('covers every top-level test directory or records why it is excluded', () => {
