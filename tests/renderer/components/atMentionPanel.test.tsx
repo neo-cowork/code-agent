@@ -530,4 +530,32 @@ describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
     expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', { dirPath: '/Users/me/Documents/' });
     expect(result.current.fileRows.map((row) => row.name)).toEqual(['a.md']);
   });
+
+  it('(f) 灰色目录行相对工作目录：/tmp/proj-a/src/foo.ts 显示 src，根下文件无目录；选中仍是绝对路径（Rework r2）', async () => {
+    useAppStore.setState({ workingDirectory: '/tmp/proj-a' });
+    mockWorkspaceHost([
+      {
+        prefix: '/tmp/proj-a',
+        data: [
+          { name: 'foo.ts', path: '/tmp/proj-a/src/foo.ts', isDirectory: false },
+          { name: 'notes.md', path: '/tmp/proj-a/notes.md', isDirectory: false },
+        ],
+      },
+    ]);
+    const onFileSelect = vi.fn();
+    const { result } = renderHook(() => useAtMentionPanel({
+      sessionId: 'session-1',
+      projectId: null,
+      onFileSelect,
+      onSessionSelect: vi.fn(),
+      onArtifactSelect: vi.fn(),
+    }));
+    await openPanel(result, '@');
+
+    expect(result.current.fileRows.map((row) => [row.name, row.dir])).toEqual([
+      ['foo.ts', 'src'],
+      ['notes.md', ''],
+    ]);
+    expect(result.current.fileRows.map((row) => row.path)).toEqual(['/tmp/proj-a/src/foo.ts', '/tmp/proj-a/notes.md']);
+  });
 });

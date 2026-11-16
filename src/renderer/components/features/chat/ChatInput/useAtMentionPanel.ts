@@ -268,8 +268,8 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   // 整个 query 当子串会把 'src/' 也算进文件名，@src/ 会一行都不剩（浏览子目录就废了）。
   const fileNameFilter = query.slice(query.lastIndexOf('/') + 1);
   const fileRows = useMemo(
-    () => activeTab === 'all' || activeTab === 'files' ? buildFileRows(files, fileNameFilter, groupLimit) : [],
-    [activeTab, fileNameFilter, files, groupLimit],
+    () => activeTab === 'all' || activeTab === 'files' ? buildFileRows(files, fileNameFilter, groupLimit, resolveAtMentionBaseDir(sessionId)) : [],
+    [activeTab, fileNameFilter, files, groupLimit, sessionId],
   );
   const sessionRows = useMemo(
     () => activeTab === 'all' || activeTab === 'sessions'
