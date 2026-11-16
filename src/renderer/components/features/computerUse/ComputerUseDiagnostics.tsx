@@ -160,7 +160,7 @@ export const ComputerUseDiagnostics: React.FC<ComputerUseDiagnosticsProps> = ({
         <div className="space-y-4 p-4" data-testid="computer-use-diagnostics">
           <div className="space-y-2">
             <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">{diag.providerHeading}</div>
-            <div className="grid gap-2 md:grid-cols-3">
+            <div className="grid gap-2">
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-zinc-200">{diag.nativeDesktop}</span>

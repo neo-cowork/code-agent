@@ -384,7 +384,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (!input.nativeAvailable) {
     addExplanation(items, {
       id: 'native-runtime-unavailable',
-      title: '当前是 Web / 非 Tauri 模式',
+      title: '当前是网页版',
       detail: '在网页版里，macOS 权限、前台 app 和系统设置入口都读取不到，请在桌面版里打开本页。',
       tone: 'warning',
     });
