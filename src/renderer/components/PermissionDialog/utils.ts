@@ -12,6 +12,8 @@ import {
   Globe,
   MessageSquare,
   AlertTriangle,
+  FolderOpen,
+  Shield,
 } from 'lucide-react';
 import type { PermissionType, PermissionConfig } from './types';
 
@@ -74,10 +76,26 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
       bgColor: 'bg-indigo-500/10',
       borderColor: 'border-badge-accent/30',
     },
+    directory_access: {
+      icon: React.createElement(FolderOpen, { size: 20 }),
+      title: '访问其他文件夹',
+      color: 'text-badge-info',
+      bgColor: 'bg-blue-500/10',
+      borderColor: 'border-badge-info/30',
+    },
   };
 
-  return configs[type] || configs.command;
+  // 未登记的类型绝不借用命令模板（终端图标 + 「执行命令」）。
+  return configs[type] ?? NEUTRAL_PERMISSION_CONFIG;
 }
+
+const NEUTRAL_PERMISSION_CONFIG: PermissionConfig = {
+  icon: React.createElement(Shield, { size: 20 }),
+  title: '需要你确认',
+  color: 'text-badge-info',
+  bgColor: 'bg-blue-500/10',
+  borderColor: 'border-badge-info/30',
+};
 
 // 危险命令检测模式
 const DANGEROUS_PATTERNS = [

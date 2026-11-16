@@ -30,7 +30,7 @@ import {
   seedSessionMessagesFromPersisted,
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
-import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import { RunRegistry, RunSessionConflictError } from '../../../src/host/runtime/runRegistry';
 import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { applySessionDelegationsSchema } from '../../../src/host/services/core/database/schemaSessionDelegations';
@@ -3631,6 +3631,29 @@ describe('createAgentRouter', () => {
     const messages = mockCreateAgentLoop.mock.calls[0]?.[2] as Array<{ role: string; content: string }>;
     expect(messages.at(-1)).toMatchObject({ role: 'user', content: '补一句' });
     expect(mockSteer).not.toHaveBeenCalled();
+  });
+
+  // N-FIX-SEND-HANGS-WHEN-PARKED-RUN-SUPERSEDE-FAILS：空闲会话补发的新一轮起跑失败（会话被旧 run 占着）
+  // 必须回给发送方，不能先答 steered 再只写日志——那样界面永远停在「正在发送消息…」。
+  it('returns the start failure of an idle-session foreground turn instead of acknowledging it', async () => {
+    const conflict = () => { throw new RunSessionConflictError('session-held-by-parked-run'); };
+    const startSpy = vi.spyOn(runRegistry, 'start').mockImplementationOnce(conflict);
+    const startDurableSpy = vi.spyOn(runRegistry, 'startDurable').mockImplementationOnce(async () => conflict());
+    try {
+      const response = await fetch(`${baseUrl}/api/interrupt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content: '再看一下大后天的日程', sessionId: 'session-held-by-parked-run' }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(body).toEqual({ success: false, error: { code: 'RUN_SESSION_CONFLICT' } });
+      expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+    } finally {
+      startSpy.mockRestore();
+      startDurableSpy.mockRestore();
+    }
   });
 
   it('rejects invalid /api/tool-result bodies before resolving local tool results', async () => {

@@ -144,3 +144,292 @@ fn scheduled_only_tauri_exit_stays_resident_without_dialog() {
     assert_eq!(recorded.len(), 1, "exactly one query, no stop-intent POST");
     let _ = fs::remove_dir_all(data_dir);
 }
+
+// ---- Cmd+Q / macOS-terminate entry proofs (N-…-FU1-FU1) ----
+
+use crate::quit_dialog_i18n::{background_hint, QuitDialogLanguage};
+use tauri::Manager;
+
+const EN_SERVER_BODY: &str = include_str!("quit_flow_fixtures/quit-guard-scheduled-only-en.json");
+
+type Posted = Arc<Mutex<Vec<QuitDialogLanguage>>>;
+
+struct Scenario {
+    _app: tauri::App<tauri::test::MockRuntime>,
+    handle: tauri::AppHandle<tauri::test::MockRuntime>,
+    coordinator: Arc<QuitCoordinator>,
+    requests: Arc<Mutex<Vec<String>>>,
+    data_dir: PathBuf,
+    posted: Posted,
+    _cwd: CwdGuard,
+    _token: TokenGuard,
+}
+
+impl Scenario {
+    fn new(body: &'static str, tag: &str) -> Self {
+        let (port, requests) = spawn_guard_server(body.trim());
+        let data_dir = std::env::temp_dir().join(format!("neo-quit-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data_dir);
+        fs::create_dir_all(&data_dir).expect("data dir");
+        std::env::set_var("CODE_AGENT_WEB_PORT", port.to_string());
+        std::env::set_var("CODE_AGENT_DATA_DIR", &data_dir);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let (cwd, _) = CwdGuard::enter_with_server_stub();
+        let (_script, root) = crate::resolve_server_script(&handle).expect("server root");
+        let (token, _) = TokenGuard::ensure(root);
+        let coordinator = Arc::new(QuitCoordinator::new());
+        app.manage(coordinator.clone());
+        Self {
+            _app: app,
+            handle,
+            coordinator,
+            requests,
+            data_dir,
+            posted: Arc::new(Mutex::new(Vec::new())),
+            _cwd: cwd,
+            _token: token,
+        }
+    }
+
+    fn poster(&self) -> impl FnOnce(QuitDialogLanguage) -> Result<(), String> + Send + 'static {
+        let posted = self.posted.clone();
+        move |language| {
+            posted.lock().expect("posted").push(language);
+            Ok(())
+        }
+    }
+
+    /// 与 ⌘Q 一致：quit_app 菜单消费体 → exit(0) → 运行时重入 ExitRequested 处理体。
+    fn press_cmd_q(&self) {
+        let handle = self.handle.clone();
+        let poster = self.poster();
+        crate::handle_quit_app_menu(&self.handle, move |code| {
+            crate::handle_exit_requested(&handle, Some(code), || {}, poster);
+        });
+    }
+
+    fn wait_flow_done(&self) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut finished = false;
+        while Instant::now() < deadline && !finished {
+            finished = self.coordinator.begin_request();
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert!(finished, "flow must finish by releasing the dialog slot");
+        // 轮询探针自己占了槽位，归还以便下一次按键
+        self.coordinator.finish();
+    }
+
+    fn assert_resident_no_dialog(&self) {
+        assert!(!self.coordinator.exit_allowed(), "no exit granted");
+        assert!(!self.coordinator.background_continue(), "no detach armed");
+        assert!(!self.coordinator.stop_intent_landed(), "nothing stopped");
+        let recorded = self.requests.lock().expect("requests");
+        assert_eq!(recorded.len(), 1, "exactly one GET quit-guard, no stop-intent POST");
+        assert!(recorded[0].starts_with("GET /api/quit-guard HTTP/1.1"), "{}", recorded[0]);
+    }
+}
+
+impl Drop for Scenario {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.data_dir);
+    }
+}
+
+#[test]
+fn cmd_q_menu_entry_scheduled_only_stays_resident_without_dialog() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(REAL_SERVER_BODY, "cmdq");
+    s.press_cmd_q();
+    s.wait_flow_done();
+    s.assert_resident_no_dialog();
+    eprintln!(
+        "coordinator: exit_allowed={} background_continue={} stop_intent_landed={} slot_released=true",
+        s.coordinator.exit_allowed(),
+        s.coordinator.background_continue(),
+        s.coordinator.stop_intent_landed()
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn mac_terminate_origin_scheduled_only_stays_resident_without_dialog() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(REAL_SERVER_BODY, "macterm");
+    assert!(s.coordinator.begin_request(), "terminate hook takes the slot");
+    crate::spawn_quit_guard_flow_with(
+        s.handle.clone(),
+        s.coordinator.clone(),
+        QuitFlowOrigin::MacApplicationTerminate,
+        s.poster(),
+    );
+    s.wait_flow_done();
+    s.assert_resident_no_dialog();
+    eprintln!(
+        "coordinator: exit_allowed={} background_continue={} stop_intent_landed={} slot_released=true",
+        s.coordinator.exit_allowed(),
+        s.coordinator.background_continue(),
+        s.coordinator.stop_intent_landed()
+    );
+}
+
+fn first_then_second_hint(body: &'static str, tag: &str, language: QuitDialogLanguage, needle: &str) {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(body, tag);
+    let marker = s.data_dir.join("background-hint-shown");
+    assert!(!marker.exists(), "no marker before first entry");
+
+    s.press_cmd_q();
+    s.wait_flow_done();
+    {
+        let posted = s.posted.lock().expect("posted");
+        assert_eq!(posted.len(), 1, "first entry posts exactly one hint");
+        assert_eq!(posted[0], language);
+        let text = background_hint(posted[0]);
+        assert!(text.contains(needle), "{text}");
+    }
+    assert!(marker.exists(), "marker written after the first hint");
+
+    s.requests.lock().expect("requests").clear();
+    s.press_cmd_q();
+    s.wait_flow_done();
+    assert_eq!(s.posted.lock().expect("posted").len(), 1, "second entry posts nothing");
+}
+
+#[test]
+fn first_hint_names_quit_completely_once_zh() {
+    first_then_second_hint(REAL_SERVER_BODY, "hintzh", QuitDialogLanguage::Zh, "完全退出");
+}
+
+#[test]
+fn first_hint_names_quit_completely_once_en() {
+    first_then_second_hint(EN_SERVER_BODY, "hinten", QuitDialogLanguage::En, "Quit Completely");
+}
+
+// ---- Cmd+Q on real-webServer fixtures: maintenance-only / user schedule / disabled ----
+// Bodies in quit_flow_fixtures/quit-guard-{maintenance-only,user-schedule-enabled,
+// user-schedule-disabled}.json were captured from a real webServer (fresh data dir).
+
+const MAINTENANCE_ONLY_BODY: &str = include_str!("quit_flow_fixtures/quit-guard-maintenance-only.json");
+const USER_SCHEDULE_ENABLED_BODY: &str =
+    include_str!("quit_flow_fixtures/quit-guard-user-schedule-enabled.json");
+const USER_SCHEDULE_DISABLED_BODY: &str =
+    include_str!("quit_flow_fixtures/quit-guard-user-schedule-disabled.json");
+
+impl Scenario {
+    /// ⌘Q 同上，但数 ExitRequested 处理体里 prevent_exit 被调用的次数。
+    fn press_cmd_q_counting_prevent(&self) -> usize {
+        let prevented = Arc::new(Mutex::new(0usize));
+        let handle = self.handle.clone();
+        let poster = self.poster();
+        let counter = prevented.clone();
+        crate::handle_quit_app_menu(&self.handle, move |code| {
+            crate::handle_exit_requested(
+                &handle,
+                Some(code),
+                move || *counter.lock().expect("prevent counter") += 1,
+                poster,
+            );
+        });
+        let count = *prevented.lock().expect("prevent counter");
+        count
+    }
+
+    /// ExitNow 分支的 app.exit(0) 在真运行时会再次触发 ExitRequested；这里手动重入，
+    /// 返回这次重入里 prevent_exit 被调用的次数（0 = 退出放行）。
+    fn re_enter_exit_requested(&self) -> usize {
+        let prevented = Arc::new(Mutex::new(0usize));
+        let counter = prevented.clone();
+        crate::handle_exit_requested(
+            &self.handle,
+            Some(0),
+            move || *counter.lock().expect("prevent counter") += 1,
+            self.poster(),
+        );
+        let count = *prevented.lock().expect("prevent counter");
+        count
+    }
+
+    fn with_shell_state(self) -> Self {
+        use tauri::Manager;
+        self._app.manage(crate::AppState::default());
+        self
+    }
+
+    fn shutting_down(&self) -> bool {
+        use tauri::Manager;
+        self.handle
+            .state::<crate::AppState>()
+            .shutting_down
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn assert_real_quit_no_dialog(&self) {
+        // exit_allowed() 是消费型读取：ExitNow 授予的放行由下面的重入消费并断言，这里不先读。
+        assert!(!self.coordinator.background_continue(), "no detach armed");
+        assert!(!self.coordinator.stop_intent_landed(), "nothing stopped");
+        {
+            let recorded = self.requests.lock().expect("requests");
+            assert_eq!(recorded.len(), 1, "one GET quit-guard, no dialog, no stop-intent POST");
+            assert!(recorded[0].starts_with("GET /api/quit-guard HTTP/1.1"), "{}", recorded[0]);
+        }
+        assert!(self.posted.lock().expect("posted").is_empty(), "no background hint");
+        assert!(!self.data_dir.join("background-hint-shown").exists(), "no hint marker");
+        assert!(!self.shutting_down(), "cleanup has not run before the exit re-entry");
+        assert_eq!(self.re_enter_exit_requested(), 0, "re-entered ExitRequested is not prevented");
+        assert!(self.shutting_down(), "exit proceeds through cleanup_server (shell + tray + host go)");
+    }
+}
+
+fn real_quit_scenario(body: &'static str, tag: &str) {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(body, tag).with_shell_state();
+    assert_eq!(s.press_cmd_q_counting_prevent(), 1, "first ExitRequested is held while the guard queries");
+    s.wait_flow_done();
+    s.assert_real_quit_no_dialog();
+    eprintln!(
+        "[{tag}] background_continue={} shutting_down={} hints={}",
+        s.coordinator.background_continue(),
+        s.shutting_down(),
+        s.posted.lock().expect("posted").len()
+    );
+}
+
+#[test]
+fn cmd_q_maintenance_only_really_quits_without_dialog_or_tray() {
+    real_quit_scenario(MAINTENANCE_ONLY_BODY, "maintenanceonly");
+}
+
+#[test]
+fn cmd_q_user_schedule_enabled_minimizes_and_hints_once() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(USER_SCHEDULE_ENABLED_BODY, "userenabled").with_shell_state();
+    let window = tauri::WebviewWindowBuilder::new(&s._app, "main", tauri::WebviewUrl::default())
+        .build()
+        .expect("mock window");
+    let marker = s.data_dir.join("background-hint-shown");
+
+    assert_eq!(s.press_cmd_q_counting_prevent(), 1, "exit is prevented");
+    s.wait_flow_done();
+    s.assert_resident_no_dialog();
+    // mock 运行时的 minimize() 是空操作、is_minimized() 恒 false，最小化本身只能真机看；
+    // 这里证明走到了 minimize_and_hint（提示已发）且窗口没被销毁。
+    assert!(s.handle.get_webview_window("main").is_some(), "window kept, not closed");
+    drop(window);
+    assert!(!s.shutting_down(), "no cleanup: shell, tray and host stay alive");
+    assert_eq!(s.posted.lock().expect("posted").len(), 1, "first-time hint posted once");
+    assert!(marker.exists(), "background-hint-shown marker written");
+
+    s.requests.lock().expect("requests").clear();
+    assert_eq!(s.press_cmd_q_counting_prevent(), 1, "second Cmd+Q is prevented too");
+    s.wait_flow_done();
+    s.assert_resident_no_dialog();
+    assert!(!s.shutting_down());
+    assert_eq!(s.posted.lock().expect("posted").len(), 1, "second Cmd+Q must not hint again");
+}
+
+#[test]
+fn cmd_q_user_schedule_disabled_really_quits_without_dialog_or_tray() {
+    real_quit_scenario(USER_SCHEDULE_DISABLED_BODY, "userdisabled");
+}

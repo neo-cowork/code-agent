@@ -160,7 +160,7 @@ export class SwarmEventEmitter {
     });
   }
 
-  agentCompleted(scope: SwarmRunScope, agentId: string, output?: string): void {
+  agentCompleted(scope: SwarmRunScope, agentId: string, output?: string, filesChanged?: string[]): void {
     this.publish(scope, {
       type: 'swarm:agent:completed',
       timestamp: Date.now(),
@@ -175,6 +175,7 @@ export class SwarmEventEmitter {
           endTime: Date.now(),
           lastReport: output?.slice(0, 100),
           finalOutput: output,
+          ...(filesChanged && filesChanged.length > 0 ? { filesChanged } : {}),
         },
       },
     });

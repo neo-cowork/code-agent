@@ -62,6 +62,14 @@ export function getAgentSendFailureMessage(error: unknown): string {
     console.warn('[AgentSend] request rejected by host:', raw, rawBody ?? '');
     return rejected;
   }
+  // 域通道（/api/interrupt 等）非 2xx：transport 已按 status/code 把 message 换成人话
+  // （domainFailureMessage），直接用；否则会落到下面的通用句，丢掉「旧任务占着会话」这类可操作提示。
+  // （按 transport 的 HTTP_<status> 码判，不 import DomainInvokeError：很多测试整块 mock 掉 ipcService。）
+  const domainCode = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  if (typeof domainCode === 'string' && /^HTTP_\d+$/.test(domainCode) && message) {
+    console.warn('[AgentSend] domain http failure:', domainCode);
+    return message;
+  }
   // HTTP 状态级失败（transport 带 status 的 Error）：一句话人话，不加 Error: 前缀、
   // 不透传 message（可能是 HTML 错误页或内部报错文本）。
   if (typeof error === 'object' && error !== null) {

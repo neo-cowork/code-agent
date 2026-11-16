@@ -50,6 +50,9 @@ import { LibraryPanel } from '../../../src/renderer/components/features/knowledg
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { zh } from '../../../src/renderer/i18n/zh';
+import ipcService from '../../../src/renderer/services/ipcService';
+import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { fireEvent } from '@testing-library/react';
 
 function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
   return {
@@ -82,6 +85,20 @@ beforeEach(() => {
 });
 
 describe('LibraryPanel', () => {
+  it('rate-limited upload toast = importFailed + the plain message, no status code', async () => {
+    listLibraryItems.mockResolvedValue([]);
+    const plain = '上传太频繁了，请约 20 秒后再试。';
+    vi.mocked(ipcService.getPathForFile).mockRejectedValueOnce(new Error(plain));
+    useToastStore.setState({ toasts: [] });
+    const { container } = render(<LibraryPanel />);
+    await screen.findByTestId('library-upload');
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['# n'], 'weekly.md')] } });
+    await waitFor(() => expect(useToastStore.getState().toasts.length).toBe(1));
+    expect(useToastStore.getState().toasts[0].message).toBe(`${zh.library.importFailed}: ${plain}`);
+    expect(useToastStore.getState().toasts[0].message).not.toMatch(/429|Upload failed/);
+  });
+
   it('keeps the single-line header actions compact and the upload label unbroken', async () => {
     listLibraryItems.mockResolvedValue([]);
     render(<LibraryPanel />);

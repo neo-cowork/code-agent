@@ -393,6 +393,28 @@ describe.runIf(process.platform === 'darwin')('cua helper daemon reap', () => {
     expect(elapsed).toBeLessThan(1_500);
   });
 
+  it('① 关库前预算已耗尽（capMs=0，stop 意图取消等待吃光预算）时 reap 仍有保底窗口收掉 daemon', async () => {
+    const pid = await launchDetached('serve');
+    await new Promise((r) => setTimeout(r, 150));
+    const child = Number(readFile(join(dir, 'Fake Helper.app/Contents/MacOS/child.serve.pid'), 'utf-8'));
+
+    // 预热模块转换：生产里 reaper 在 bundle 内，动态 import 近乎零成本；这里测的是 reap 本身的耗时
+    await import('../../../src/host/mcp/cuaHelperReaper');
+    await import('../../../src/host/mcp/mcpDefaultServers');
+    const lines: string[] = [];
+    const t0 = Date.now();
+    await runShutdownFinalizers(0, (m) => lines.push(m));
+    const elapsed = Date.now() - t0;
+
+    const trace = lines.join('\n');
+    console.log('TRACE(capMs=0)', trace, 'elapsed', elapsed);
+    expect(trace).not.toContain('cua.reap timeout');
+    expect(trace).toContain('cua.reap daemons=1 killed=1');
+    expect(alive(pid)).toBe(false);
+    expect(alive(child)).toBe(false);
+    expect(elapsed).toBeLessThan(WEB_SERVER_SHUTDOWN_TIMEOUTS.STEP_MS);
+  });
+
   it('② 另有 <fake> mcp --socket 同 socket 的代理活着 ⇒ 守护进程保留，日志 shared_by_1_proxy', async () => {
     const daemon = await launchDetached('serve');
     const proxy = await launchDetached('mcp');
