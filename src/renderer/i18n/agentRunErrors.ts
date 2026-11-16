@@ -3,6 +3,7 @@
 
 import { PROMPT_REQUIRED, REQUEST_INVALID } from '@shared/contract/agentRunErrors';
 import type { Language } from './index';
+import { sessionConflictLabels } from './projectTrust';
 
 const promptRequiredCopy: Record<Language, string> = {
   zh: '请补一句话说明想让我做什么，然后再发送一次。',
@@ -31,8 +32,8 @@ export const httpFailureCopy = {
   },
   // A parked old run needs an explicit action before the next message can be sent.
   sessionHeldByOldRun: {
-    zh: '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。',
-    en: 'This message was not sent: an earlier task in this conversation is still open. Abandon that task first, then retry.',
+    zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
+    en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
   },
   tooManyRequests: {
     zh: '发送太频繁了，请稍等片刻再重试。',

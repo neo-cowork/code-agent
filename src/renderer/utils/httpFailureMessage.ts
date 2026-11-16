@@ -26,6 +26,16 @@ export function uploadFailureMessage(input: { status: number; retryAfterSeconds?
   return uploadCopy.generic[lang];
 }
 
+/** getPathForFile 上传失败：userMessage 永远是人话一句，调用方直接展示，不要展示 err.message 以外的底层文本。 */
+export class UploadFailureError extends Error {
+  readonly userMessage: string;
+  constructor(userMessage: string) {
+    super(userMessage);
+    this.name = 'UploadFailureError';
+    this.userMessage = userMessage;
+  }
+}
+
 /** 读 Retry-After：优先响应头，其次 JSON 体的 retryAfterSeconds；都没有返回 undefined。 */
 export function readRetryAfterSeconds(headerValue: string | null | undefined, body: string): number | undefined {
   const fromHeader = Number(headerValue);
@@ -96,4 +106,10 @@ export function domainFailureMessage(input: { status: number; body: string; lang
 export function isProjectSourceTrustFailure(error: unknown): boolean {
   return typeof error === 'object' && error !== null
     && (error as { code?: unknown }).code === 'PROJECT_SOURCE_TRUST';
+}
+
+/** 发送失败是不是会话被没结束的旧任务占着（失败说明下挂「放弃 / 重试」两个按钮）。 */
+export function isSessionConflictFailure(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && (error as { code?: unknown }).code === 'RUN_SESSION_CONFLICT';
 }

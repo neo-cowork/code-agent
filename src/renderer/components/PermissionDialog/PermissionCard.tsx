@@ -21,6 +21,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { getPermissionTitle } from './utils';
 import { describeApproval } from './describeApproval';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
@@ -503,7 +504,7 @@ export function PermissionCard({
             : editable
               ? w.mailSendTitle
               : isDangerous && described.kind === 'shell'
-                ? p.typeTitles.command
+                ? getPermissionTitle('command', p)
                 : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
@@ -605,7 +606,7 @@ export function PermissionCard({
         selectedId={invalid.length === 0 ? 'edit' : null}
         onSelect={() => {}}
         onConfirm={() => {
-          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
+          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft, request.rawArgs));
         }}
         onCollapse={onCollapse}
         enterDisabled
