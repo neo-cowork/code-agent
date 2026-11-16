@@ -67,7 +67,7 @@ describe('ToolCallDisplay keyboard interaction', () => {
       <ToolCallDisplay toolCall={makeToolCall()} index={0} total={1} />,
     );
 
-    expect(container.textContent).toContain('Read 1 lines');
+    expect(container.textContent).toContain('Read 1 line');
     expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeNull();
     expect(container.querySelector('.opacity-0')).toBeNull();
   });

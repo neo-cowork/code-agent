@@ -730,11 +730,12 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
 
   it('灰字行与连续次数句的 en 词条齐全', () => {
     expect(en.agentError.mutedLine).toBe('No reply · {reason}');
-    expect(en.agentError.repeat.noRetry).toContain('{n}');
+    expect(en.agentError.repeat.noRetry.other).toContain('{n}');
+    expect(en.agentError.repeat.noRetry.one).toContain('{n}');
     // 给下一步、不怪用户（N-FIX-AGENT-ERROR-CARD-STICKS-TO-LATER-TURNS）
-    expect(en.agentError.repeat.noRetry).toContain('Switch to another model');
-    expect(en.agentError.repeat.noRetry).not.toMatch(/will not fix|won't fix/);
-    expect(en.agentError.repeat.retryable).not.toContain('resending will not fix');
+    expect(en.agentError.repeat.noRetry.other).toContain('Switch to another model');
+    expect(en.agentError.repeat.noRetry.other).not.toMatch(/will not fix|won't fix/);
+    expect(en.agentError.repeat.retryable.other).not.toContain('resending will not fix');
     expect(en.agentError.shortReasons.auth).toBe('account authorization failed');
     expect(en.agentError.categories.auth.suggestion).toBe('The key may be wrong or expired, or the quota may be used up.');
     expect(en.agentError.actions.switchModel).toBe('Switch model');

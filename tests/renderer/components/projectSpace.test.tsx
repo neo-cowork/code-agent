@@ -102,6 +102,7 @@ import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { toast } from '../../../src/renderer/hooks/useToast';
 import { projectSpaceZh } from '../../../src/renderer/i18n/projectSpace';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 const ps = projectSpaceZh.projectSpace;
 const PROJECT_ID = 'proj_test1';
@@ -255,7 +256,7 @@ describe('ProjectSpacePage 列表视图', () => {
     await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
     expect(screen.getByTestId(`project-space-status-${PROJECT_ID}`).textContent).toBe(ps.statusActive);
     expect(screen.getByTestId(`project-space-topic-count-${PROJECT_ID}`).textContent).toBe(
-      ps.activeTopicBadge.replace('{count}', '3'),
+      interpolatePlural(ps.activeTopicBadge, 3),
     );
   });
 

@@ -63,10 +63,10 @@ describe('ResultSummary Write line counts', () => {
 
 describe('summarizeTool line count translations', () => {
   it.each([
-    ['Edit added', resultCall('Edit', { file_path: 'notes.md', edits: [{ old_text: 'a', new_text: 'a\nb' }] }, 'Edited'), '+1 行', '+1 lines'],
+    ['Edit added', resultCall('Edit', { file_path: 'notes.md', edits: [{ old_text: 'a', new_text: 'a\nb' }] }, 'Edited'), '+1 行', '+1 line'],
     ['Edit removed', resultCall('Edit', { file_path: 'notes.md', edits: [{ old_text: 'a\nb\nc', new_text: 'a' }] }, 'Edited'), '-2 行', '-2 lines'],
     ['Read', resultCall('Read', {}, 'one\ntwo'), '已读取 2 行', 'Read 2 lines'],
-    ['Read with KB', resultCall('Read', {}, 'x'.repeat(10001)), '已读取 1 行（约 10KB）', 'Read 1 lines (~10KB)'],
+    ['Read with KB', resultCall('Read', {}, 'x'.repeat(10001)), '已读取 1 行（约 10KB）', 'Read 1 line (~10KB)'],
     ['Bash', resultCall('Bash', { command: 'printf output' }, 'one\ntwo'), '2 行', '2 lines'],
     ['web_fetch', resultCall('web_fetch', {}, 'one\ntwo'), '2 行', '2 lines'],
   ] as const)('keeps the English string and localizes %s', (_label, toolCall, expectedZh, expectedEn) => {
