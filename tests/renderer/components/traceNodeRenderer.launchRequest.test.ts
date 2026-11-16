@@ -308,7 +308,8 @@ describe('TraceNodeRenderer launch request', () => {
     );
 
     expect(html).toContain('Claude Code 订阅链路失败');
-    expect(html).toContain('auth · auth_failed · 2 分钟前失败 · HTTP 401 · exit 1 · 需处理');
+    expect(html).not.toContain('auth_failed');
+    expect(html).toContain('route-trace-diagnostics-toggle');
     expect(html).toContain('Claude Code 认证失败。请完成 Claude CLI 登录或检查订阅/API 凭据后重试。');
     vi.useRealTimers();
   });

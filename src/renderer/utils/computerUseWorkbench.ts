@@ -208,7 +208,7 @@ function explainPermission(
     addExplanation(items, {
       id: `${kind}:unknown`,
       title: `${label} 未探测`,
-      detail: '当前页还没有拿到 macOS TCC 状态，只能展示降级原因，不能判断截图或界面内容的读取是否可靠。',
+      detail: '当前页还没有拿到 macOS 权限状态，只能展示降级原因，不能判断截图或界面内容的读取是否可靠。',
       tone: 'warning',
     });
     return;

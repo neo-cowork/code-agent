@@ -35,7 +35,7 @@ export function statusToneClass(tone: StatusTone): string {
 }
 
 export const StatusPill: React.FC<{ label: string; tone: StatusTone }> = ({ label, tone }) => (
-  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${statusToneClass(tone)}`}>
+  <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] ${statusToneClass(tone)}`}>
     {label}
   </span>
 );
