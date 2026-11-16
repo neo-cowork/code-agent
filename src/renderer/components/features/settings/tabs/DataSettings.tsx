@@ -292,8 +292,8 @@ interface TelemetryHealthSummary {
 
 function formatLastEventAt(
   ts: number | null,
-  text: DataSettingsText['telemetry']['time'] = DEFAULT_DATA_SETTINGS_TEXT.telemetry.time,
-  lang: Language = 'zh',
+  text: DataSettingsText['telemetry']['time'],
+  lang: Language,
 ): string {
   if (!ts) return text.noEvents;
   const delta = Date.now() - ts;

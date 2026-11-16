@@ -66,11 +66,11 @@ const CALENDAR_ACTION_LABELS: Record<CalendarActionKey, string> = {
   openApp: '打开 Calendar',
 };
 
-function formatDateTime(value?: string | number | null): string {
+function formatDateTime(value: string | number | null | undefined, language: 'zh' | 'en'): string {
   if (value == null) return '未返回';
   const date = typeof value === 'number' ? new Date(value) : new Date(value);
   if (Number.isNaN(date.getTime())) return '无效时间';
-  return formatFullDateTime(date);
+  return formatFullDateTime(date, language);
 }
 
 function formatNextRun(job: CronJobDefinition, language: 'zh' | 'en'): string {
@@ -83,8 +83,8 @@ function formatNextRun(job: CronJobDefinition, language: 'zh' | 'en'): string {
   );
 }
 
-function formatCheckedAt(value?: number): string {
-  return value ? formatDateTime(value) : '未检查';
+function formatCheckedAt(value: number | undefined, language: 'zh' | 'en'): string {
+  return value ? formatDateTime(value, language) : '未检查';
 }
 
 function getToneClasses(tone: 'ready' | 'warning' | 'error' | 'neutral'): string {
@@ -509,7 +509,7 @@ const TimeCapabilityPanel: React.FC = () => {
                     <CapabilityStatusCell
                       label="权限"
                       ready={calendarState.status?.readiness === 'ready'}
-                      detail={calendarState.status?.detail || calendarState.status?.error || formatCheckedAt(calendarState.status?.checkedAt)}
+                      detail={calendarState.status?.detail || calendarState.status?.error || formatCheckedAt(calendarState.status?.checkedAt, language)}
                     />
                     {calendarCapabilityRows.map((row) => (
                       <CapabilityStatusCell

@@ -209,7 +209,7 @@ export function WorkbenchHistoryRow({ item, summary }: WorkbenchHistoryRowProps)
 
 interface WorkbenchReferenceRowProps {
   reference: WorkbenchReference;
-  locale?: 'zh' | 'en';
+  locale: 'zh' | 'en';
   onOpenDetails?: (() => void) | null;
 }
 
@@ -244,7 +244,7 @@ function getWorkbenchReferenceInlineDetail(
 
 export function WorkbenchReferenceRow({
   reference,
-  locale = 'zh',
+  locale,
   onOpenDetails,
 }: WorkbenchReferenceRowProps) {
   const badge = getWorkbenchReferenceBadge(reference, { locale });

@@ -157,7 +157,7 @@ describe('任务列表摘要不漏开发者字串', () => {
     const input = buildCronJobInput(template.generate({}));
     const job = { ...input, id: 'j1', createdAt: 1, updatedAt: 1 } as CronJobDefinition;
 
-    const summary = formatActionSummary(job);
+    const summary = formatActionSummary(job, 'zh');
     // agentType 是自由文本标签，渲染它会在 cowork 界面里种出 "default agent" 这种字串
     expect(summary).not.toContain('agent');
     expect(summary).toBe(job.action.type === 'agent' ? job.action.prompt : summary);

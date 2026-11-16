@@ -150,8 +150,12 @@ async function closeOnboarding(page, lang) {
     name: lang === 'en' ? 'Skip for now, set up later in Settings' : '跳过，稍后在设置里配置',
     exact: true,
   });
-  if (await visible(skip)) await skip.click();
-  await page.waitForTimeout(1000);
+  await skip.waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+  if (await skip.isVisible().catch(() => false)) {
+    await skip.click();
+    await skip.waitFor({ state: 'hidden', timeout: 15000 });
+    await page.locator('[data-chat-input]').waitFor({ state: 'visible', timeout: 15000 });
+  }
 }
 
 async function sweepOnboarding(page, visit, lang) {
@@ -168,7 +172,10 @@ async function sweepOnboarding(page, visit, lang) {
     await clickRequired(page.getByTestId('onboarding-continue-to-chat'), 'onboarding connectors step');
     await visit('onboarding-connectors', page.getByTestId('onboarding-connectors-next'));
     await clickRequired(page.getByTestId('onboarding-connectors-skip'), 'onboarding voice-hotkey step');
-    await visit('onboarding-voice-hotkey', page.getByTestId('onboarding-voice-hotkey-skip'));
+    const voiceSkip = page.getByTestId('onboarding-voice-hotkey-skip');
+    await visit('onboarding-voice-hotkey', voiceSkip);
+    await clickRequired(voiceSkip, 'complete onboarding without a model call');
+    await voiceSkip.waitFor({ state: 'hidden', timeout: 15000 });
     return;
   }
   console.log('ONBOARDING no selectable subscription client; model/connectors/voice steps are unreachable without credentials');
@@ -203,7 +210,7 @@ async function sweepSettings(page, visit) {
       await page.getByTestId('settings-panel').locator('main').evaluate((element) => { element.scrollTop = element.scrollHeight; });
       await visit(`settings-${label}-bottom`, heading);
     }
-    if (/advanced|高级/i.test(label)) {
+    if (/advanced|execution engine|高级|执行引擎/i.test(label)) {
       const titles = await page.locator('[data-testid^="engine-switch-button-"]').evaluateAll((elements) => elements.map((element) => element.getAttribute('title') || ''));
       console.log(`ENGINE_SWITCH_TITLE_COUNT=${titles.length}`);
       titles.forEach((title, i) => console.log(`ENGINE_SWITCH_TITLE_${i + 1}=${JSON.stringify(title)}`));
@@ -229,6 +236,7 @@ async function sweepAutomations(page, visit, lang) {
 async function sweepCapabilityHub(page, visit) {
   await page.keyboard.press('Escape');
   await clickRequired(page.getByTestId('sidebar-capability-hub'), 'open Capability Hub');
+  await page.getByTestId('capability-hub-page').waitFor({ state: 'visible', timeout: 15000 });
   const tabs = page.locator('[data-testid^="capability-hub-tab-"]');
   const ids = await tabs.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-testid').replace('capability-hub-tab-', '')));
   if (ids.length < 5) throw new Error(`Capability Hub discovery failed: ${ids.length} tabs`);
@@ -249,14 +257,19 @@ async function sweepCapabilityHub(page, visit) {
 async function sweepProjectTasks(page, visit) {
   await clickRequired(page.getByTestId('sidebar-capability-projects'), 'open collaboration spaces');
   await visit('space-list', page.getByTestId('project-space-page'));
-  const existing = page.locator('[data-testid^="project-space-list-item-"]');
-  if (await existing.count() > 0) {
-    await clickRequired(existing, 'open a collaboration space');
-    await clickRequired(page.getByTestId('project-space-tab-tasks'), 'space Tasks tab');
-    await visit('space-tasks', page.getByTestId('project-space-tab-tasks'));
-  } else {
-    console.log('SPACE no existing collaboration space; Tasks tab requires a user-owned space and was not fabricated');
+  let existing = page.locator('[data-testid^="project-space-list-item-"]');
+  if (await existing.count() === 0) {
+    await clickRequired(page.getByTestId('project-space-create-open'), 'create an isolated test space');
+    await page.getByTestId('project-space-create-name').fill('Localization review');
+    await visit('space-create', page.getByTestId('project-space-create-modal'));
+    await page.locator('[role="dialog"]').last().getByRole('button').last().click();
+    await page.getByTestId('project-space-create-modal').waitFor({ state: 'hidden', timeout: 15000 });
+    existing = page.locator('[data-testid^="project-space-list-item-"]');
   }
+  await existing.first().waitFor({ state: 'visible', timeout: 15000 });
+  await clickRequired(existing, 'open a collaboration space');
+  await clickRequired(page.getByTestId('project-space-tab-tasks'), 'space Tasks tab');
+  await visit('space-tasks', page.getByTestId('project-space-tab-tasks'));
 }
 
 async function main() {
@@ -272,13 +285,14 @@ async function main() {
     await page.waitForTimeout(2000);
     await setLanguage(page, args.baseUrl, args.lang);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3000);
+    await page.locator('[data-testid="onboarding-route-subscription"], [data-chat-input]').first().waitFor({ state: 'visible', timeout: 30000 });
+    await page.waitForTimeout(6000);
     const visit = createVisitor(page, args.out, report);
     await sweepOnboarding(page, visit, args.lang);
     await closeOnboarding(page, args.lang);
     const webClose = page.getByRole('button', { name: /^(关闭|Close)$/ });
     if (await visible(webClose)) await webClose.first().click();
-    await visit('main-screen', page.locator('body'));
+    await visit('main-screen', page.locator('[data-chat-input]'));
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('code-agent:open-model-switcher')));
     await page.waitForTimeout(400);
     await visit('model-switcher-popover', page.locator('[data-model-search-input], [data-engine-panel]').first());

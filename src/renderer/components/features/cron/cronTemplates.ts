@@ -42,13 +42,10 @@ export interface CronTemplate {
    * generate 的 values 里 accountId/chatId/budget 三键由编辑器在提交时注入。
    */
   event?: boolean;
-  /**
-   * language 缺省 zh（存量行为）。en 时 name/description 取英文词条（没登记的维持草稿原文），
-   * agentPrompt 用 cronTemplatesEn 的手写英文版（group-listen 的提示词即用户输入，不翻译）。
-   */
+  /** en 时 name/description 取英文词条（没登记的维持草稿原文），agentPrompt 用手写英文版。 */
   /** description 里带用户输入（如群监听的任务）的模板：en 档的描述构造，缺省回退词条/中文草稿描述。 */
   enDescription?: (values: Record<string, string>) => string;
-  generate: (values: Record<string, string>, language?: CronTemplateLanguage) => CronJobDraft;
+  generate: (values: Record<string, string>, language: CronTemplateLanguage) => CronJobDraft;
 }
 
 // ── Connector dependency status ─────────────────────────────────────
@@ -361,8 +358,8 @@ function withLanguage(template: CronTemplate): CronTemplate {
   const generate = template.generate;
   return {
     ...template,
-    generate: (values, language = 'zh') => {
-      const draft = generate(values);
+    generate: (values, language) => {
+      const draft = generate(values, language);
       if (language !== 'en') return draft;
       const localized: Readonly<Record<string, { name: string; description: string }>> = cronCenterEn.cronCenter.templates;
       const copy = localized[template.id];

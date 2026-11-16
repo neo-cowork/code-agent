@@ -14,6 +14,7 @@ describe('buildGlobalTaskRecords', () => {
   it('does not mirror the current session into background tasks', () => {
     const tasks = buildGlobalTaskRecords({
       currentSessionId: 'session-current',
+      language: 'zh',
       sessionStates: {
         'session-current': { status: 'running' },
         'other-123456': { status: 'running' },
@@ -35,6 +36,7 @@ describe('buildGlobalTaskRecords', () => {
   it('resolves cross-session card titles from sessionStore sessions (DB title)', () => {
     const tasks = buildGlobalTaskRecords({
       currentSessionId: 'session-current',
+      language: 'zh',
       sessionStates: {
         'other-123456': { status: 'running' },
       } satisfies Record<string, SessionState>,
@@ -50,6 +52,7 @@ describe('buildGlobalTaskRecords', () => {
   it('classifies status through the shared session status presentation mapping', () => {
     const tasks = buildGlobalTaskRecords({
       currentSessionId: 'session-current',
+      language: 'zh',
       sessionStates: {
         'running-session': { status: 'running' },
         'failed-session': { status: 'error', error: 'boom' },

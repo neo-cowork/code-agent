@@ -71,7 +71,7 @@ export interface SavedRoutineRestateInput {
   /** 已解析的结果通道标签；空串 = 未设置。 */
   channelLabel: string;
   labels: SavedRoutineRestateLabels;
-  lang?: CronHumanLang;
+  lang: CronHumanLang;
   /**
    * 预保存确认卡（N-CRON-MORNING-TRIAGE-REST1）：在 when 与 result 之间补出
    * notifyWhen 行。值取 action.notifyWhen > action.urgencyCriteria > 兜底文案
@@ -88,7 +88,7 @@ export interface SavedRoutineRow {
 }
 
 export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): readonly SavedRoutineRow[] {
-  const { job, roleDisplayName = '', channelLabel, labels, lang = 'zh', notifyWhenRow = false } = input;
+  const { job, roleDisplayName = '', channelLabel, labels, lang, notifyWhenRow = false } = input;
   // what/when 复用聊天侧确认卡口径：保存后的定义是 create 输入的超集，结构字段一致。
   // notifyWhen 行由本函数按 notifyWhenRow 自算（聊天侧口径只认 restatement，编辑器
   // 输入没有）；result 行的值是原始 resultChannel，交给 channelLabel，不透出。

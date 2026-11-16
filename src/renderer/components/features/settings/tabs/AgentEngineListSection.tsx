@@ -151,6 +151,7 @@ export const AgentEngineListSection: React.FC = () => {
     const unavailableReason = getEngineUnavailableReason(
       descriptor,
       descriptor.kind !== 'native' && !effectiveWorkingDirectory,
+      t.settings.model.models.switcherPanel,
     );
     if (unavailableReason) {
       toast.info(unavailableReason);
@@ -177,7 +178,7 @@ export const AgentEngineListSection: React.FC = () => {
     } finally {
       setSwitchingEngine(null);
     }
-  }, [currentSessionId, effectiveWorkingDirectory, engineDefaultModels, section, updateSessionEngine]);
+  }, [currentSessionId, effectiveWorkingDirectory, engineDefaultModels, section, t.settings.model.models.switcherPanel, updateSessionEngine]);
 
   return (
     <SettingsSection
@@ -210,6 +211,7 @@ export const AgentEngineListSection: React.FC = () => {
                 ? getEngineUnavailableReason(
                   descriptor,
                   descriptor.kind !== 'native' && !effectiveWorkingDirectory,
+                  t.settings.model.models.switcherPanel,
                 )
                 : row.switchable
                   ? section.unavailableHint

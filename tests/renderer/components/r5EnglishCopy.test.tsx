@@ -180,7 +180,7 @@ describe('FB-1495 日期兜底词', () => {
     expect(formatDateTime(undefined, 'en')).toBe('Not set');
     expect(formatDateTime('', 'en')).toBe('Invalid time');
     expect(formatDateTime('not-a-date', 'en')).toBe('Invalid time');
-    expect(formatDateTime(undefined)).toBe('未设置');
+    expect(formatDateTime(undefined, 'zh')).toBe('未设置');
     expect(formatDateTime(new Date(2026, 10, 15, 9, 5), 'en')).not.toMatch(CJK);
   });
 });

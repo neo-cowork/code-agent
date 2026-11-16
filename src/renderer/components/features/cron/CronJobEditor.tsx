@@ -372,7 +372,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const cloudNotice = errors.cloudUnconfigured && <CronCloudCreateNotice
     onSwitchLocal={() => { setDraft((current) => ({ ...current, runsOn: 'local' })); setErrors({}); }}
     onSettings={() => {
-      const filled = step === 'fill' && selectedTemplate ? selectedTemplate.generate(templateValues) : draft;
+      const filled = step === 'fill' && selectedTemplate ? selectedTemplate.generate(templateValues, templateLanguage) : draft;
       stashCronEditorDraft({ ...filled, runsOn: draft.runsOn });
       gotoCloudSettingsForCreate();
     }}

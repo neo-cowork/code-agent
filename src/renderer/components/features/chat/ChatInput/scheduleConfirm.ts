@@ -220,7 +220,7 @@ function formatScheduleWhenLabel(
 export function buildScheduleConfirmRows(
   draft: Pick<PendingScheduleDraft, 'input' | 'restatement' | 'eventGroupName' | 'eventBindingNames'>,
   labels: ScheduleConfirmLabels,
-  lang: CronHumanLang = 'zh',
+  lang: CronHumanLang,
   eventLabels?: ScheduleEventConfirmLabels,
 ): readonly ScheduleConfirmRow[] {
   // 草案已经过 normalizeScheduleDraft，但这里仍按不可信输入读：任何字段非字符串都当缺失，不抛错。

@@ -77,7 +77,7 @@ export function getVisibleJobTags(job: Pick<CronJobDefinition, 'tags'>): string[
 
 export function getBuiltinJobDisplay(
   job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>,
-  language: Language = 'zh',
+  language: Language,
 ): BuiltinJobDisplay | null {
   const tag = findBuiltinTag(job.tags);
   if (!tag) return null;
@@ -90,6 +90,6 @@ export function getBuiltinJobDisplay(
 }
 
 /** Names are display projections; keep the original identity in storage and edit forms. */
-export function getJobDisplayName(job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>, language: Language = 'zh'): string {
+export function getJobDisplayName(job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>, language: Language): string {
   return humanizeInternalText(getBuiltinJobDisplay(job, language)?.name ?? job.name, language, { omitIds: true }).text;
 }

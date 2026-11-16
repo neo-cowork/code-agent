@@ -125,7 +125,7 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
           const copy = getTemplateDisplayCopy(template, cc.templates);
-          const generated = template.generate({});
+          const generated = template.generate({}, language);
           const scheduleLabel = formatCronTimeZoneSuffix(
             copy.scheduleLabel,
             generated.scheduleType === 'cron' ? generated.cronTimezone : undefined,

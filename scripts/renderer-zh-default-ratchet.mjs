@@ -53,7 +53,7 @@ function scanFile(rootDir, absPath) {
     findings.push({ file: rel, line: line + 1, column: character + 1, kind, preview: node.getText(sourceFile).replace(/\s+/g, ' ').slice(0, 160) });
   };
   const visit = (node) => {
-    if (ts.isParameter(node) && node.initializer) {
+    if ((ts.isParameter(node) || ts.isBindingElement(node)) && node.initializer) {
       if (ts.isIdentifier(node.name) && /^(?:lang|language|locale)$/.test(node.name.text)
         && ts.isStringLiteral(node.initializer) && node.initializer.text === 'zh') {
         add(node, 'zh-language-default');

@@ -359,6 +359,7 @@ describe('buildScheduleConfirmRows display redaction', () => {
     const rows = buildScheduleConfirmRows(
       { input, restatement: undefined },
       rowLabels,
+      'zh',
     );
     expect(rows.find((row) => row.key === 'what')?.value).toBe('back up notes --password=***REDACTED***');
     expect((input.action as { prompt: string }).prompt).toBe(prompt);
@@ -400,8 +401,8 @@ describe('buildScheduleConfirmRows — when 行按 UI 语言说人话', () => {
     expect(whenRow({ type: 'at', datetime: 'garbage' }, 'en')).toBe('Once');
   });
 
-  it('缺省 lang 保持 zh（既有调用方零扰动）', () => {
-    expect(whenRow({ type: 'cron', expression: '17 8 * * *' }, undefined as never)).toBe('每天 08:17');
+  it('显式 zh 保持既有文案', () => {
+    expect(whenRow({ type: 'cron', expression: '17 8 * * *' }, 'zh')).toBe('每天 08:17');
   });
 });
 
@@ -410,7 +411,7 @@ describe('buildScheduleConfirmRows', () => {
     expect(buildScheduleConfirmRows({
       input: rowInput,
       restatement: { what: '检查新邮件和需要跟进的事项', notifyWhen: '发现高优先级或需要回复的邮件' },
-    }, rowLabels)).toEqual([
+    }, rowLabels, 'zh')).toEqual([
       { key: 'what', label: '检查什么', value: '检查新邮件和需要跟进的事项' },
       { key: 'when', label: '什么时候', value: '每 1 天' },
       { key: 'notifyWhen', label: '什么变化值得通知', value: '发现高优先级或需要回复的邮件' },
@@ -419,14 +420,14 @@ describe('buildScheduleConfirmRows', () => {
   });
 
   it('falls back to the job name and review inbox when optional fields are absent', () => {
-    const rows = buildScheduleConfirmRows({ input: rowInput }, rowLabels);
+    const rows = buildScheduleConfirmRows({ input: rowInput }, rowLabels, 'zh');
     expect(rows[0]?.value).toBe('邮件巡检');
     expect(rows[2]?.value).toBe('任务完成或发现异常时通知');
     expect(rows[3]?.value).toBe(chatInputZh.scheduleConfirm.reviewInbox);
   });
 
   it('uses an explicit result channel when the draft provides one', () => {
-    const rows = buildScheduleConfirmRows({ input: { ...rowInput, resultChannel: 'feishu:ops' } }, rowLabels);
+    const rows = buildScheduleConfirmRows({ input: { ...rowInput, resultChannel: 'feishu:ops' } }, rowLabels, 'zh');
     expect(rows[3]?.value).toBe('feishu:ops');
   });
 });
@@ -447,7 +448,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     });
     const pending = result.current.pendingScheduleDraft;
     if (!pending) return null;
-    return buildScheduleConfirmRows(pending, rowLabels).map((row) => row.value);
+    return buildScheduleConfirmRows(pending, rowLabels, 'zh').map((row) => row.value);
   }
 
   it.each([
@@ -488,7 +489,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     const rows = buildScheduleConfirmRows({
       input: { name: 7, description: [], resultChannel: {}, schedule: null, action: null } as unknown as CreateCronJobInput,
       restatement: 5 as never,
-    }, rowLabels);
+    }, rowLabels, 'zh');
     // when 行不再有「按配置」兜底：真实链路里无效 schedule 在规范化阶段就被拒，
     // 这里只保证纯函数对垃圾输入不抛错（when 留空，生产不可达）。
     // notifyWhen 行只对 agent 动作出（判据无法生效就不给假口子），garbage action=null → 不出。

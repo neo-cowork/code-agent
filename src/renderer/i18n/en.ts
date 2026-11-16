@@ -645,7 +645,7 @@ export const en = {
     options: {
       zh: {
         name: 'Chinese (Simplified)',
-        native: '简体中文',
+        native: 'Chinese (Simplified)',
       },
       en: {
         name: 'English',

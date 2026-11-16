@@ -176,7 +176,7 @@ export const enSettingsCore = {
       languageTitle: 'Interface language',
       languageDescription: 'Choose the language used in the app interface',
       languageBadges: {
-        zh: '中',
+        zh: 'Zh',
         en: 'En',
       },
       developerMode: 'Developer mode',

@@ -255,7 +255,7 @@ describe('device / special path copy', () => {
       boundary: { id: 'file.external_write' },
     };
 
-    const summary = permissionSummary(request, zh);
+    const summary = permissionSummary(request, zh, 'zh');
     expect(summary).toBe('允许编辑 /dev/null（工作区外）？');
     expect(summary).not.toBe('允许编辑 null（工作区外）？');
   });
@@ -311,7 +311,7 @@ describe('device / special path copy', () => {
 
   it('titles /dev/stdout with the full path and does not infer a device from the path', () => {
     const request = writeRequest('/dev/stdout');
-    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
+    expect(permissionSummary(request, zh, 'zh')).toBe('允许写入 /dev/stdout（工作区外）？');
     expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
     expect(permissionConsequence(request, zh)).not.toContain('设备文件');
   });
@@ -324,7 +324,7 @@ describe('device / special path copy', () => {
       details: { path: '/workspace/src/report.md' },
       boundary: { id: 'file.project_write' },
     };
-    expect(permissionSummary(inside, zh)).toBe('允许编辑 report.md？');
+    expect(permissionSummary(inside, zh, 'zh')).toBe('允许编辑 report.md？');
     expect(permissionConsequence(inside, zh)).toBe('将写入 /workspace/src/report.md（约 1 个文件），可能覆盖现有内容。');
 
     const outside: PermissionRequest = {
@@ -334,7 +334,7 @@ describe('device / special path copy', () => {
       details: { path: '/tmp/notes.txt' },
       boundary: { id: 'file.external_write' },
     };
-    expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt（工作区外）？');
+    expect(permissionSummary(outside, zh, 'zh')).toBe('允许写入 notes.txt（工作区外）？');
     expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
   });
 
@@ -346,7 +346,7 @@ describe('device / special path copy', () => {
       details: { path: '/workspace/src/null' },
       boundary: { id: 'file.project_write' },
     };
-    expect(permissionSummary(request, zh)).toBe('允许编辑 null？');
+    expect(permissionSummary(request, zh, 'zh')).toBe('允许编辑 null？');
     expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
   });
 
@@ -358,7 +358,7 @@ describe('device / special path copy', () => {
       reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny,
       details: { command: 'echo x > "$SSHDIR/authorized_keys"' },
     };
-    expect(permissionSummary(request, zh)).toBe('这条命令说不清会写到哪个文件，而你设过禁止写入的路径。');
+    expect(permissionSummary(request, zh, 'zh')).toBe('这条命令说不清会写到哪个文件，而你设过禁止写入的路径。');
     expect(permissionConsequence(request, zh)).toBe('允许的话，它可能写到那些被禁止的位置。拒绝则什么都不写。');
   });
 

@@ -89,7 +89,7 @@ function localizeRoleChatSessionTitle(title: string, language: Language): string
   return title;
 }
 
-export function getDisplaySessionTitle(title?: string | null, language: Language = 'zh'): string {
+export function getDisplaySessionTitle(title: string | null | undefined, language: Language): string {
   const cleanTitle = humanizeInternalText(title ?? '', language, { omitIds: true }).text;
   return localizeDisplaySessionTitle(cleanTitle, language);
 }
@@ -129,7 +129,7 @@ export function splitCronSessionTitleParts(title: string): { prefix: string; nam
 }
 
 /** Display only: editing and stored-prefix detection must keep using the raw title. */
-export function getLocalizedSessionTitle(title?: string | null, language: Language = 'zh'): string {
+export function getLocalizedSessionTitle(title: string | null | undefined, language: Language): string {
   const displayTitle = getDisplaySessionTitle(title, language);
   const parts = splitCronSessionTitleParts(displayTitle);
   if (!parts || language === 'en') return displayTitle;
@@ -235,7 +235,7 @@ export function getSessionStatusPresentation(args: {
 
 export function buildSessionSearchText(args: {
   session: SessionWithMeta;
-  language?: Language;
+  language: Language;
   snapshot?: SessionWorkbenchSnapshot;
   status: SessionStatusPresentation;
 }): string {

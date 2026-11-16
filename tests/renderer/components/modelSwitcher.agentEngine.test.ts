@@ -34,6 +34,8 @@ import {
 import type { ModelSearchCapabilityOverview } from '../../../src/shared/contract';
 import { zh, en } from '../../../src/renderer/i18n';
 
+const panelText = zh.settings.model.models.switcherPanel;
+
 function descriptor(overrides: Partial<AgentEngineDescriptor>): AgentEngineDescriptor {
   return {
     manifestId: 'native',
@@ -124,13 +126,13 @@ describe('ModelSwitcher Agent Engine selection', () => {
       status: 'degraded',
       latencyP50: 1789,
       errorRate: 0.24,
-    })).toMatchObject({
+    }, panelText)).toMatchObject({
       state: 'degraded',
       label: '降级',
       detail: 'P50 1789ms · 错误率 24%',
     });
 
-    expect(buildProviderHealthSummary(null)).toMatchObject({
+    expect(buildProviderHealthSummary(null, panelText)).toMatchObject({
       state: 'unknown',
       label: '未检测',
       detail: '最近健康状态未上报',
@@ -239,7 +241,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
     });
     expect(sorted.map(group => group.provider)).toEqual(['deepseek', 'longcat']);
     // 模型行同样照实显示不可用——路由已跳过这家，界面不能还在亮绿点
-    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0')).toMatchObject({
+    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0', panelText)).toMatchObject({
       state: 'unavailable',
       label: '不可用',
     });
@@ -249,34 +251,34 @@ describe('ModelSwitcher Agent Engine selection', () => {
   // 路由恢复中给中性样式（恢复中），别让两端一个亮红一个照常用。
   it('unavailable 但最近一次事件是成功：显示成「恢复中」中性样式，不再标不可用', () => {
     const recovered = { status: 'unavailable', errorRate: 0.8, lastSuccessAt: 200, lastErrorAt: 100 };
-    expect(buildProviderHealthSummary(recovered)).toMatchObject({ state: 'recovering', label: '恢复中' });
-    expect(buildModelRowHealthSummary(recovered, 'LongCat-2.0')).toMatchObject({ state: 'recovering', label: '恢复中' });
+    expect(buildProviderHealthSummary(recovered, panelText)).toMatchObject({ state: 'recovering', label: '恢复中' });
+    expect(buildModelRowHealthSummary(recovered, 'LongCat-2.0', panelText)).toMatchObject({ state: 'recovering', label: '恢复中' });
     // 成功之后又失败（最近一次事件是失败）：照实显示不可用（R6 的 429 用例保持）
     const stillDown = { status: 'unavailable', errorRate: 1, lastSuccessAt: 100, lastErrorAt: 200 };
-    expect(buildModelRowHealthSummary(stillDown, 'LongCat-2.0')).toMatchObject({ state: 'unavailable', label: '不可用' });
+    expect(buildModelRowHealthSummary(stillDown, 'LongCat-2.0', panelText)).toMatchObject({ state: 'unavailable', label: '不可用' });
     // 旧 Host 不带两个时间戳：照实显示，不改写
-    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0')).toMatchObject({ state: 'unavailable' });
+    expect(buildModelRowHealthSummary({ status: 'unavailable', errorRate: 1 }, 'LongCat-2.0', panelText)).toMatchObject({ state: 'unavailable' });
   });
 
   it('quota 标记（余额/额度耗尽）有自己的话，不冒充密钥', () => {
-    expect(buildModelRowHealthSummary({ status: 'healthy', providerMark: { kind: 'quota' } }, 'LongCat-2.0')).toMatchObject({
+    expect(buildModelRowHealthSummary({ status: 'healthy', providerMark: { kind: 'quota' } }, 'LongCat-2.0', panelText)).toMatchObject({
       state: 'unavailable',
       label: '余额或额度用完了',
     });
   });
 
   it('summarizes provider billing mode for model strategy badges', () => {
-    expect(buildProviderBillingSummary('payg')).toMatchObject({
+    expect(buildProviderBillingSummary('payg', panelText)).toMatchObject({
       mode: 'payg',
       label: '按量',
       detail: expect.stringContaining('降低成本和延迟'),
     });
-    expect(buildProviderBillingSummary('plan')).toMatchObject({
+    expect(buildProviderBillingSummary('plan', panelText)).toMatchObject({
       mode: 'plan',
       label: '套餐',
       detail: expect.stringContaining('通常不省钱'),
     });
-    expect(buildProviderBillingSummary()).toMatchObject({
+    expect(buildProviderBillingSummary(undefined, panelText)).toMatchObject({
       mode: 'unknown',
       label: '计费未知',
       detail: expect.stringContaining('保守处理'),
@@ -285,7 +287,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
 
   it('renders provider billing badges with model strategy metadata', () => {
     const html = renderToStaticMarkup(React.createElement(ProviderBillingBadge, {
-      summary: buildProviderBillingSummary('unknown'),
+      summary: buildProviderBillingSummary('unknown', panelText),
     }));
 
     expect(html).toContain('data-provider-billing-mode="unknown"');
@@ -299,7 +301,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
         status: 'unavailable',
         latencyP50: 4200,
         errorRate: 0.91,
-      }),
+      }, panelText),
     }));
 
     expect(html).toContain('data-provider-health-state="unavailable"');
@@ -348,8 +350,8 @@ describe('ModelSwitcher Agent Engine selection', () => {
       displayModel: 'mimo-v2.5-pro',
       adaptive: true,
       overridden: false,
-      billingSummary: buildProviderBillingSummary('payg'),
-      healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }),
+      billingSummary: buildProviderBillingSummary('payg', panelText),
+      healthSummary: buildProviderHealthSummary({ status: 'healthy', latencyP50: 120, errorRate: 0 }, panelText),
       effort: { label: 'High', shortLabel: '高' },
       thinkingLabel: '思考',
     })).toBe(
@@ -365,8 +367,8 @@ describe('ModelSwitcher Agent Engine selection', () => {
       displayModel: 'glm-4.5v',
       adaptive: false,
       overridden: true,
-      billingSummary: buildProviderBillingSummary('unknown'),
-      healthSummary: buildProviderHealthSummary(null),
+      billingSummary: buildProviderBillingSummary('unknown', panelText),
+      healthSummary: buildProviderHealthSummary(null, panelText),
       effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
       '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
@@ -386,7 +388,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
     expect(formatNativeModelSwitcherTooltip({
       language: 'en', engineLabel: 'Neo', currentModel: 'main',
       displayProvider: 'xiaomi', displayModel: 'main', adaptive: false, overridden: false,
-      healthSummary: buildProviderHealthSummary(null),
+      healthSummary: buildProviderHealthSummary(null, panelText),
       effort: { label: 'High', shortLabel: '高' }, thinkingLabel: 'Think',
     })).toBe('Task model: xiaomi/main · Effort: High · Thinking: Think');
     expect(formatExternalModelSwitcherTooltip({
@@ -476,6 +478,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
         lastError: 'claude not found',
       }),
       needsWorkspace: false,
+      text: panelText,
     })).toMatchObject({
       tone: 'error',
       label: '不可用',
@@ -502,6 +505,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
         },
       }),
       needsWorkspace: false,
+      text: panelText,
       selectedModel: {
         id: 'sonnet',
         label: 'Sonnet',
@@ -538,6 +542,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
         executable: true,
       }),
       needsWorkspace: false,
+      text: panelText,
     })).toMatchObject({
       tone: 'warning',
       label: '需要配置',
@@ -555,6 +560,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
         capabilities: ['execute', 'stream_events'],
       }),
       needsWorkspace: false,
+      text: panelText,
       selectedModel: {
         id: 'haiku',
         label: 'Haiku',
@@ -578,6 +584,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
         capabilities: ['execute', 'stream_events'],
       }),
       needsWorkspace: false,
+      text: panelText,
       selectedModel: {
         id: 'sonnet',
         label: 'Sonnet',
@@ -610,12 +617,13 @@ describe('ModelSwitcher Agent Engine selection', () => {
       },
     });
 
-    expect(formatEngineReliabilityContract(claude)).toBe(
+    expect(formatEngineReliabilityContract(claude, panelText)).toBe(
       'CLI 可用 · 登录未检测 · quota 未检测 · stream-json · partial messages · 干净 transcript · 只读工具',
     );
     expect(buildEngineReliabilitySummary({
       descriptor: claude,
       needsWorkspace: false,
+      text: panelText,
       selectedModel: {
         id: 'sonnet',
         label: 'Sonnet',
@@ -642,8 +650,8 @@ describe('ModelSwitcher Agent Engine selection', () => {
       },
     });
 
-    expect(formatEngineReliabilityContract(codex)).toContain('已登录');
-    expect(formatEngineReliabilityContract(codex)).toContain('quota 耗尽');
+    expect(formatEngineReliabilityContract(codex, panelText)).toContain('已登录');
+    expect(formatEngineReliabilityContract(codex, panelText)).toContain('quota 耗尽');
   });
 
   it('renders provider image icons as images in the model switcher badge', () => {

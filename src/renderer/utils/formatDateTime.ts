@@ -8,8 +8,8 @@ import { languages, type Language } from '../i18n';
  * Fallbacks are language-aware: zh '未设置'/'无效时间', en 'Not set'/'Invalid time'.
  */
 export function formatDateTime(
-  value?: string | number | Date,
-  lang: Language = 'zh',
+  value: string | number | Date | undefined,
+  lang: Language,
   timeZone?: string,
 ): string {
   if (value == null) return languages[lang].dateTime.notSet;
