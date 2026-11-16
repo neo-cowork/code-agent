@@ -34,20 +34,40 @@ function humanizeParamLabels(diff: string): string {
 
 /**
  * 网页操作卡（web_action）：host 预览是「参数名: 值」逐行（action/text/selector…）。action 已由标题
- * 「操作网页」表达，其余只留用户要认的两样——输入/点击的文字、目标元素——并用本地化标签展示。
+ * 「操作网页」表达，其余每一行都上卡（只去掉 action），认识的参数用本地化标签，不认识的用人话化的参数名兜底。
+ * 不用白名单：handle_dialog 要填的文字、execute_goal 要做的任务丢了，用户就是在不知道提交什么时点批准（PR#3355 审查）。
  */
-function webActionRows(diff: string | undefined): Array<{ field: 'text' | 'target'; value: string }> {
-  const rows: Array<{ field: 'text' | 'target'; value: string }> = [];
+type WebActionField = 'text' | 'target' | 'dialogText' | 'dialogAction' | 'task' | 'key' | 'url' | 'destination';
+const WEB_ACTION_FIELDS: Record<string, WebActionField> = {
+  text: 'text', value: 'text',
+  selector: 'target', targetRef: 'target', ref: 'target',
+  dialogPromptText: 'dialogText', dialogAction: 'dialogAction',
+  task: 'task', key: 'key', url: 'url', destinationTargetRef: 'destination',
+};
+function webActionRows(diff: string | undefined): Array<{ field: WebActionField | null; key: string; value: string }> {
+  const rows: Array<{ field: WebActionField | null; key: string; value: string }> = [];
+  const seen = new Set<string>();
   for (const line of (diff ?? '').split('\n')) {
     const at = line.indexOf(':');
     if (at < 0) continue;
     const key = line.slice(0, at).trim();
     const value = line.slice(at + 1).trim();
-    if (!value) continue;
-    if (key === 'text' || key === 'value') rows.push({ field: 'text', value });
-    else if (key === 'selector' || key === 'targetRef' || key === 'ref') rows.push({ field: 'target', value });
+    if (!value || key === 'action') continue;
+    const field = WEB_ACTION_FIELDS[key] ?? null;
+    const dedupe = `${field ?? key}\u0000${value}`;
+    if (seen.has(dedupe)) continue;   // ref 与 targetRef 同值时只上一行
+    seen.add(dedupe);
+    rows.push({ field, key, value });
   }
   return rows;
+}
+
+function webActionLabel(field: WebActionField, labels: Record<`detailWeb${string}`, string>): string {
+  return {
+    text: labels.detailWebText, target: labels.detailWebTarget, dialogText: labels.detailWebDialogText,
+    dialogAction: labels.detailWebDialogAction, task: labels.detailWebTask, key: labels.detailWebKey,
+    url: labels.detailWebUrl, destination: labels.detailWebDestination,
+  }[field];
 }
 
 function sandboxStatusCopy(
@@ -231,11 +251,13 @@ export function RequestDetails({ request }: RequestDetailsProps) {
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
             <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
           )}
-          {kind === 'web_action' && webActionRows(details.preview.diff).map((row) => (
+          {kind === 'web_action' && webActionRows(details.preview.diff).map((row, index) => (
             <DetailItem
-              key={`${row.field}-${row.value}`}
-              label={row.field === 'text' ? labels.detailWebText : labels.detailWebTarget}
-              value={row.value}
+              key={`${index}-${row.key}`}
+              label={row.field ? webActionLabel(row.field, labels) : humanizeParamLabels(`${row.key}:`).slice(0, -1)}
+              value={row.field === 'dialogAction' && (row.value === 'accept' || row.value === 'dismiss')
+                ? (row.value === 'accept' ? labels.detailWebDialogAccept : labels.detailWebDialogDismiss)
+                : row.value}
             />
           ))}
           {details.preview.diff && kind !== 'web_open' && kind !== 'web_action' && (

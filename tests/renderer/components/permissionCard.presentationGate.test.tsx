@@ -153,6 +153,8 @@ async function askThroughExecutor(tool: string, params: Record<string, unknown>,
 const EXECUTOR_OVERRIDES: Array<{ tool: string; params: Record<string, unknown>; origin: string }> = [
   { tool: 'Browser', params: { action: 'navigate', url: 'https://example.com' }, origin: 'executor:Browser navigate' },
   { tool: 'Browser', params: { action: 'click_text', text: 'Finish' }, origin: 'executor:Browser click_text' },
+  { tool: 'Browser', params: { action: 'handle_dialog', dialogAction: 'accept', dialogPromptText: 'Transfer 300 to Alice' }, origin: 'executor:Browser handle_dialog' },
+  { tool: 'Browser', params: { action: 'execute_goal', task: 'Book the 9am meeting room for Friday' }, origin: 'executor:Browser execute_goal' },
   { tool: 'Bash', params: { command: 'ls -la' }, origin: 'executor:Bash' },
   { tool: 'Read', params: { file_path: 'OUTSIDE_FILE' }, origin: 'executor:Read outside' },
   { tool: 'spawn_agent', params: { name: 'Weekly summary', role: 'explorer', task: 'Summarize the weekly notes' }, origin: 'executor:spawn_agent' },
@@ -434,6 +436,27 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
       expect(text, `${language}: labelled text`).toContain(language === 'zh' ? '内容' : 'Text');
     }
     process.stdout.write(`rendered grant-free Browser click_text cards:\n${lines.join('\n')}\n`);
+  });
+
+  it('grant-free Browser dialog / goal cards keep what will be submitted (PR#3355 review: whitelist dropped them)', () => {
+    const lines: string[] = [];
+    for (const [origin, must, label] of [
+      ['executor:Browser handle_dialog', 'Transfer 300 to Alice', { zh: '对话框要填的内容', en: 'Text to enter in the dialog' }],
+      ['executor:Browser execute_goal', 'Book the 9am meeting room for Friday', { zh: '要完成的任务', en: 'Task to complete' }],
+    ] as const) {
+      const c = captured.find((x) => x.origin === origin);
+      expect(c, `${origin} asks for approval through the production executor`).toBeDefined();
+      const request = withoutBrowserGrant(c!.request);
+      for (const language of LANGUAGES) {
+        const { text } = renderCard(request, language);
+        lines.push(`${origin} ${language}: ${text}`);
+        expect(text, `${origin} ${language}: submitted value on the card`).toContain(must);
+        expect(text, `${origin} ${language}: localized label`).toContain(label[language]);
+        expect(text, `${origin} ${language}: no raw param keys`).not.toMatch(/dialogPromptText|dialogAction:|task:|action:/u);
+        if (language === 'zh') expect(text, `${origin} zh: no raw dialog enum`).not.toMatch(/\baccept\b|\bdismiss\b/u);
+      }
+    }
+    process.stdout.write(`rendered grant-free Browser dialog/goal cards:\n${lines.join('\n')}\n`);
   });
 
   it('a future tool nobody wrote copy for is neutral in both languages, for every command-shaped type', () => {
