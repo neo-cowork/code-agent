@@ -228,16 +228,23 @@ describe('SessionAgentsPanel', () => {
       expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe(prefix + reason);
     });
 
-    it('keeps two English background task titles distinguishable', async () => {
+    it('keeps English task titles in the en UI but falls back to the generic name in the zh UI', async () => {
       mockTree(snapshotOf([]));
       useBackgroundTaskStore.setState({ tasks: [
         backgroundTask({ title: 'Compare supplier pricing', status: 'failed', failure: { message: 'Original task reason' } }),
         backgroundTask({ id: 'task-2', title: 'Summarize meeting notes', status: 'running' }),
       ] });
       render(<SessionAgentsPanel />);
-      expect(await screen.findByText('Compare supplier pricing')).toBeTruthy();
-      expect(screen.getByText('Summarize meeting notes')).toBeTruthy();
-      expect(screen.getByTestId('agents-panel-status-task-1').textContent).toContain('Original task reason');
+      const status = await screen.findByTestId('agents-panel-status-task-1');
+      expect(status.textContent).toContain('Original task reason');
+      const panelText = screen.getByTestId('session-agents-panel').textContent;
+      if (uiLanguage === 'zh') {
+        expect(panelText).not.toContain('Compare supplier pricing');
+        expect(panelText).not.toContain('Summarize meeting notes');
+      } else {
+        expect(panelText).toContain('Compare supplier pricing');
+        expect(panelText).toContain('Summarize meeting notes');
+      }
     });
 
     it.each(['父任务已经结束', '未登记的失败', undefined])('localizes missing-code task failure and summary %s', async (reason) => {

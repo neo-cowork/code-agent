@@ -104,13 +104,31 @@ describe('SessionMemberBar（折叠 chip）', () => {
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     const t = language === 'zh' ? zh : en;
     const reason = t.toolStepHumanize.failureCodes['tool-unavailable'];
-    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · Budget review' : '2 agents · Failed · Budget review');
+    const first = language === 'zh' ? t.agentRoleLabels.roles.background : 'Budget review';
+    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · 助手' : '2 agents · Failed · Budget review');
     expect(chip.getAttribute('title')).toBe(
-      t.chat.delegationReceipt.failureDetail.replace('{status}', 'Budget review').replace('{reason}', reason) + '\n' + (language === 'zh' ? 'Notes review' : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
+      t.chat.delegationReceipt.failureDetail.replace('{status}', first).replace('{reason}', reason) + '\n' + (language === 'zh' ? t.agentRoleLabels.roles.background : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
     );
     expect(chip.getAttribute('title')).not.toContain('tool-unavailable');
     fireEvent.click(chip);
     expect(appState.openWorkbenchTab).toHaveBeenCalledWith('experts', { source: 'user' });
+  });
+
+  it.each([
+    ['zh', 'Extract and summarize contract.pdf', '1 个代理 · 失败 · 助手'],
+    ['zh', '提炼合同关键条款', '1 个代理 · 失败 · 提炼合同关键条款'],
+    ['zh', 'deepwiki', '1 个代理 · 失败 · deepwiki'],
+    ['en', 'Extract and summarize contract.pdf', '1 agent · Failed · Extract and summarize contract.pdf'],
+    ['en', '提炼合同关键条款', '1 agent · Failed · Background assistant'],
+  ] as const)('failed chip title matrix (%s, %s)', async (language, title, expected) => {
+    appState.language = language;
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'one', sessionId: 'session-1', source: 'delegate_task', title, status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain(expected);
+    if (language === 'zh' && title.includes(' ')) expect(chip.textContent).not.toContain(title);
   });
 
   it.each(['zh', 'en'] as const)('restart-interrupted failed chip localizes a Chinese background task title and reason (%s)', async (language) => {
@@ -145,8 +163,8 @@ describe('SessionMemberBar（折叠 chip）', () => {
     ] });
     render(<SessionMemberBar sessionId="session-1" />);
     const chip = await screen.findByTestId('session-member-bar-collapsed');
-    expect(chip.textContent).toContain(' · Budget review');
-    expect(chip.getAttribute('title')).toBe('Budget review');
+    expect(chip.textContent).toContain(' · 助手');
+    expect(chip.getAttribute('title')).toBe('助手');
   });
 
   it('没有团队也没有预选时不渲染', async () => {
