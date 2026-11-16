@@ -178,7 +178,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     const showMemory = hasUsedMemory(summary);
     if (!showModel && !showAgent && !degradedAgentId && !showMemory) return null;
     return (
-      <div className="mb-2 flex flex-wrap items-start gap-1">
+      <div className="mb-2 flex min-w-0 flex-wrap items-start gap-1">
         {showModel && (
           <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
             {modelName}

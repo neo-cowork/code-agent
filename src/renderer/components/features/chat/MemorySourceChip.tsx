@@ -33,7 +33,7 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
     ? t.memorySource.usedCount.replace('{count}', String(items.length))
     : t.memorySource.usedGeneric;
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
       <Button
         variant="ghost"
         size="sm"
@@ -46,7 +46,7 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
         {label}
       </Button>
       {open && (
-        <div className="max-w-full shrink-0 rounded-md border border-border-muted bg-surface-subtle px-2 py-1.5 text-[11px] text-zinc-400">
+        <div className="min-w-0 max-w-full shrink-0 rounded-md border border-border-muted bg-surface-subtle px-2 py-1.5 text-[11px] text-zinc-400">
           {items.length > 0 && (
             <ul className="mb-1 space-y-1">
               {items.map((item) => (
