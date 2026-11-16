@@ -22,6 +22,7 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
@@ -244,9 +245,7 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
 
     onProgress?.({ stage: 'starting', detail: `list ${path.basename(inputPath)}` });
 
-    const dirPath = path.isAbsolute(inputPath)
-      ? inputPath
-      : path.resolve(ctx.workingDir, inputPath);
+    const dirPath = resolveInputPath(inputPath, ctx.workingDir);
 
     try {
       const gitignoreLines = respectGitignore ? await readGitignoreLines(dirPath) : [];
