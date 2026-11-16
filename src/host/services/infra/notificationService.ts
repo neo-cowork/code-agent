@@ -60,8 +60,11 @@ function sendNativeNotification(payload: NativeNotificationPayload): void {
 }
 
 async function resolveNotificationSessionTitle(sessionId: string): Promise<string | undefined> {
-  const { getSessionManager } = await import('./sessionManager');
-  return (await getSessionManager().getSession(sessionId, 0))?.title;
+  const { getDatabase } = await import('../core/databaseService');
+  const { getAuthService } = await import('../auth/authService');
+  // Read only the local session row; loading a conversation can restore cloud history.
+  const userId = getAuthService().getCurrentUser()?.id ?? null;
+  return getDatabase().getSession(sessionId, { userId })?.title;
 }
 
 /**
