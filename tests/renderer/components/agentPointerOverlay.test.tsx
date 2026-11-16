@@ -116,14 +116,14 @@ describe('AgentPointerOverlay', () => {
     const html = renderToStaticMarkup(
       React.createElement(AgentPointerPreviewCard, {
         event,
-        title: 'Agent pointer',
         detail: 'Preview',
       }),
     );
 
-    expect(html).toContain('Agent pointer');
+    expect(html).toContain('Neo 的光标');
     expect(html).toContain('Preview');
-    expect(html).toContain('computer');
+    expect(html).toContain('电脑');
+    expect(html).not.toContain('Agent pointer');
   });
 
   it('renders recent pointer timeline entries', () => {

@@ -181,7 +181,7 @@ export function PermissionCard({
     setDraft(null);
   }, [requestId, appGrantCard]);
 
-  // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
+  // 可编辑写回工具：三选一（原样写回 / 修改后写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
   const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'
@@ -654,7 +654,8 @@ export function PermissionCard({
               {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
             </p>
           ) : null}
-          <UserRequestQuote details={request.details} labels={p} />
+          {/* 写回卡已逐项列出要写的字段，再引述用户原话是重复（N-FIX-APPROVAL-CARD-COPY-ODD 决策 B）；定时任务来源照常显示 */}
+          <UserRequestQuote details={editable ? { ...request.details, userRequest: undefined } : request.details} labels={p} />
           <RequestDetails request={request} />
         </>
       }

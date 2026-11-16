@@ -72,27 +72,15 @@
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
-    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "file": "src/renderer/components/features/computerUse/ComputerUseDiagnostics.tsx",
     "rule": "uuid",
-    "sample": "{target.windowTitle || target.bundleId || '没有窗口标题'}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
-  },
-  {
-    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
-    "rule": "internal_tool_name",
-    "sample": "执行链路：现有 `computer_use` 工具、permission dialog、action preview 和 desktop IPC 继续负责动作。",
+    "sample": "{target.windowTitle || target.bundleId || diag.noWindowTitle}",
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
     "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
     "rule": "uuid",
     "sample": "{actionSummary.trace.id}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
-  },
-  {
-    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
-    "rule": "internal_tool_name",
-    "sample": "还没有 Computer Surface action trace。执行过 `computer_use.get_state / observe / get_ax_elements` 后会在这里显示风险摘要。",
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {

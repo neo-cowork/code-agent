@@ -92,6 +92,12 @@ export const NOTIFICATION_BUDGET = {
   HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
+/** Shell-absent needs-input banners: fold a burst, then wait for resolution or quiet. */
+export const NEEDS_INPUT_NATIVE_FALLBACK = {
+  FOLD_WINDOW_MS: 3_000,
+  QUIET_PERIOD_MS: 600_000,
+} as const;
+
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
   /** 无交互 renderer 时的用户问题等待超时 */
