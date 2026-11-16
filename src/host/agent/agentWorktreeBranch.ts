@@ -9,12 +9,18 @@ const MAX_SLUG_WORDS = 4;
 const MAX_SLUG_CHARS = 24;
 const MAX_COLLISION_RETRIES = 5;
 const INTERNAL_ID_RE = /^agent_(.+)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const STOP_WORDS = new Set(['a', 'an', 'the', 'in', 'on', 'of', 'to', 'for', 'and', 'into', 'with', 'then', 'me', 'my', 'it', 'is']);
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'in', 'on', 'of', 'to', 'for', 'and', 'into', 'with', 'then', 'me', 'my', 'it', 'is',
+  'please', 'have', 'do', 'this', 'that', 'not', 'your', 'you', 'can', 'should',
+  'isolated', 'isolation', 'worktree', 'git', 'copy', 'sub', 'agent', 'subagent', 'checkout', 'project',
+]);
 
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 function toSlug(text: string | undefined): string {
-  const words = (text ?? '').toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  // 先剔除路径/URL 样的 token（含用户目录名），再取英文词
+  const plain = (text ?? '').split(/\s+/).filter((t) => !/[/\\]/.test(t)).join(' ');
+  const words = plain.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   const picked: string[] = [];
   let len = 0;
   for (const word of words.filter((w) => !STOP_WORDS.has(w))) {
