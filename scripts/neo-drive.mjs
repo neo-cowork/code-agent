@@ -21,6 +21,8 @@ const POLL_MS = 150;
 const VIEWPORT = { width: 1440, height: 900 };
 const NEEDS_USER_SELECTORS = ['[data-testid="decision-slot"]', '[data-testid="env-assist-card"]', '[data-testid="parked-approval-card"]'];
 const RUNNING_SELECTORS = ['[data-testid="composer-stop-button"]', '[data-testid="composer-stop-stopping"]'];
+// 运行失败卡（AgentErrorCard 的 role=alert，aria-label 中英两份）与限流行：出现就是失败，不能当 idle。
+const ERROR_SELECTORS = ['[role="alert"][aria-label="运行失败"]', '[role="alert"][aria-label="Run failed"]', '[data-testid="rate-limited-error-line"]'];
 
 export const USAGE = `neo-drive — 按元素操作 + 按状态等待地驱动 Agent Neo（无头 / 真机）
 
@@ -28,8 +30,8 @@ export const USAGE = `neo-drive — 按元素操作 + 按状态等待地驱动 A
   browser start --slotless[=标签] [--reuse-dist] | --dev[=槽号] | --url <http://127.0.0.1:端口> [--log-dir 目录]
   browser stop | browser status
 页面（连常驻浏览器，页面不随命令退出而关闭）:
-  new-session | open-session <会话 id|标题> | send <文本>
-  wait-idle [--expect idle|needs-user] [--grace ms] | wait-text <文本>
+  new-session | open-session <会话 id|标题> | select-model <模型名> | reload | send <文本>
+  wait-idle [--expect idle|needs-user] [--grace ms]（出现运行失败卡直接判失败） | wait-text <文本|/正则/>
   click <目标> | assert-visible <目标> | assert-bottom [--within ms] [--tolerance px]
   scroll-up [屏数] | scroll-down [屏数] | shot <名> [--dir 目录]
 真机（macOS，Agent Neo Dev 槽；--slot N 选槽，缺省 1）:
@@ -38,7 +40,8 @@ export const USAGE = `neo-drive — 按元素操作 + 按状态等待地驱动 A
   wait-log <正则> | wait-db <SQL> | shot-window <名>
 场景:
   run <场景.json> [--slotless[=标签]|--dev[=槽号]|--url <地址>]   一次跑完，输出每步耗时 JSON
-目标写法: 纯文本=按可见文字 | testid=<data-testid> | role=<角色>:<名称>（精确）或 role=<角色>:/正则/ | css=<选择器>
+目标写法: 纯文本或 /正则/=按可见文字 | testid=<data-testid> | role=<角色>:<名称>（精确）或 role=<角色>:/正则/ | css=<选择器>
+场景顶层 "model": "<模型名>"：每个 new-session 之后自动 select-model
 通用: --timeout <ms>（缺省 ${DEFAULT_TIMEOUT_MS}） --json（每条命令输出 JSON）
 文档: docs/testing/neo-drive.md`;
 
@@ -59,6 +62,10 @@ export function devSlotInfo(raw) {
   };
 }
 
+function asRegex(v) {
+  return v.length > 2 && v.startsWith('/') && v.endsWith('/') ? new RegExp(v.slice(1, -1)) : null;
+}
+
 export function parseTarget(spec) {
   if (typeof spec !== 'string' || !spec.trim()) throw new Error('目标不能为空');
   const s = spec.trim();
@@ -70,26 +77,29 @@ export function parseTarget(spec) {
     if (i === -1) return { kind: 'role', role: rest, name: undefined };
     const name = rest.slice(i + 1);
     // /正则/ 用于按钮名里带快捷键提示等附加文字的情况（如「允许一次 y」写成 role=button:/^允许一次/）
-    const re = name.length > 2 && name.startsWith('/') && name.endsWith('/') ? new RegExp(name.slice(1, -1)) : null;
-    return { kind: 'role', role: rest.slice(0, i), name: re ?? name };
+    return { kind: 'role', role: rest.slice(0, i), name: asRegex(name) ?? name };
   }
-  if (s.startsWith('text=')) return { kind: 'text', value: s.slice(5) };
-  return { kind: 'text', value: s };
+  const text = s.startsWith('text=') ? s.slice(5) : s;
+  return { kind: 'text', value: asRegex(text) ?? text };
 }
 
 /**
  * wait-idle 判定。sample = { t, running, cards: string[] }。
+ * - 出现基线里没有的运行失败卡 → error（优先于一切，失败不能被当成 idle）
  * - 出现基线里没有的需人卡片 → needs-user（审批卡/授权卡/环境代修卡）
  * - 见过运行中之后，「运行中」连续 quietMs 不再出现 → idle（防工具间隙闪断误判）
  * - 一直没见到运行中：超过 startGraceMs 才按 idle 收（run 快到没采到的情况）
  */
-export function createIdleTracker({ baselineCards = [], seenRunning = false, quietMs = 800, startGraceMs = 3_000 } = {}) {
+export function createIdleTracker({ baselineCards = [], baselineErrors = [], seenRunning = false, quietMs = 800, startGraceMs = 3_000 } = {}) {
   const baseline = new Set(baselineCards);
+  const baselineErr = new Set(baselineErrors);
   let sawRunning = seenRunning;
   let first;
   let quietSince;
   return (sample) => {
     first ??= sample.t;
+    const errors = (sample.errors ?? []).filter((e) => !baselineErr.has(e));
+    if (errors.length > 0) return { done: true, state: 'error', errors };
     const fresh = sample.cards.filter((c) => !baseline.has(c));
     if (fresh.length > 0) return { done: true, state: 'needs-user', cards: fresh };
     if (sample.running) {
@@ -137,12 +147,14 @@ export function parseScenario(raw, { ts = Date.now() } = {}) {
   if (!data || !Array.isArray(data.steps) || data.steps.length === 0) throw new Error('场景文件缺 steps 数组');
   const stamp = String(ts);
   const sub = (v) => (typeof v === 'string' ? v.replaceAll('${ts}', stamp) : v);
-  const steps = data.steps.map((step, i) => {
+  const steps = data.steps.flatMap((step, i) => {
     if (!step || typeof step.do !== 'string') throw new Error(`第 ${i + 1} 步缺 do`);
     if (!(step.do in ACTIONS)) throw new Error(`第 ${i + 1} 步未知动作: ${step.do}`);
-    return Object.fromEntries(Object.entries(step).map(([k, v]) => [k, sub(v)]));
+    const out = Object.fromEntries(Object.entries(step).map(([k, v]) => [k, sub(v)]));
+    // 顶层 model：每次新会话后自动切到该模型（新会话默认模型可能是没配钥匙的服务商）。
+    return data.model && step.do === 'new-session' ? [out, { do: 'select-model', model: data.model, ...(out.always ? { always: true } : {}) }] : [out];
   });
-  return { name: data.name ?? 'scenario', steps };
+  return { name: data.name ?? 'scenario', model: data.model, steps };
 }
 
 /** 顺序执行；任一步失败后只再跑 always:true 的清理步。exec(step) 抛错=失败。 */
@@ -316,6 +328,8 @@ async function browserStart(opts) {
     partial = state;
     const { browser, page } = await connect(state);
     try {
+      // 真机场景常以 quit→reset-tcc→launch 开头：应用没在跑时先停在空白页，交给场景里的 reload。
+      if (target.devSlot && !(await healthy(new URL(target.url).port))) return { url: target.url, browserPid: child.pid, cdpPort, dataDir: target.dataDir, page: 'blank' };
       await page.goto(`${target.url}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await page.locator('[data-chat-input], [data-session-id], .h-screen').first().waitFor({ timeout: 60_000 });
       await dismissFirstRun(page, { wait: true });
@@ -418,7 +432,7 @@ async function dismissFirstRun(page, { wait = false } = {}) {
 }
 
 async function sampleRun(page) {
-  return page.evaluate(([running, needs]) => {
+  return page.evaluate(([running, needs, errs]) => {
     const vis = (el) => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
@@ -430,8 +444,9 @@ async function sampleRun(page) {
       cards: needs.flatMap((sel) => [...document.querySelectorAll(sel)]
         .filter((el) => vis(el) && [...el.querySelectorAll('button')].some((b) => !b.disabled && vis(b)))
         .map((el) => `${sel}|${(el.textContent || '').trim().slice(0, 200)}`)),
+      errors: errs.flatMap((sel) => [...document.querySelectorAll(sel)].filter(vis).map((el) => (el.textContent || '').trim().slice(0, 300))),
     };
-  }, [RUNNING_SELECTORS, NEEDS_USER_SELECTORS]);
+  }, [RUNNING_SELECTORS, NEEDS_USER_SELECTORS, ERROR_SELECTORS]);
 }
 
 async function scrollerMetrics(page, delta = 0) {
@@ -489,6 +504,31 @@ const ACTIONS = {
     await page.locator('[data-chat-input]').waitFor({ timeout: 15_000 });
     return { sessionId: await active.getAttribute('data-session-id') };
   },
+  async 'select-model'({ page }, step) {
+    const name = step.model ?? step.arg;
+    if (!name) throw new Error('select-model 需要模型名（如「MiMo v2.6 Flash」）');
+    const trigger = page.getByRole('button', { name: /^(切换模型|Switch model)$/ }).filter({ visible: true }).last();
+    if ((await trigger.textContent())?.includes(name)) return { model: name, already: true };
+    await trigger.click();
+    const search = page.locator('[data-model-search-input]');
+    await search.waitFor({ timeout: 10_000 });
+    await search.fill(name);
+    const option = page.locator('[data-model-option-index]').filter({ hasText: name }).first();
+    await option.click({ timeout: 10_000 }).catch(async () => {
+      await search.fill('');
+      const seen = await page.locator('[data-model-option-index]').allInnerTexts();
+      await page.keyboard.press('Escape');
+      throw new Error(`模型列表里没有「${name}」；可选：${seen.map((t) => t.split('\n')[0]).join(' / ') || '（空）'}`);
+    });
+    await pollUntil(async () => (await trigger.textContent())?.includes(name), { timeoutMs: 10_000, what: `模型切到「${name}」` });
+    return { model: name };
+  },
+  async reload(ctx) {
+    // 真机 quit/launch 之后后端换了进程，页面要重新打开才会连上新服务。
+    await ctx.page.goto(`${ctx.target.url}/`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await ctx.page.locator('[data-chat-input], [data-session-id]').first().waitFor({ timeout: 60_000 });
+    await dismissFirstRun(ctx.page, { wait: true });
+  },
   async 'open-session'({ page }, step) {
     const key = step.session ?? step.arg;
     const byId = page.locator(`[data-session-id=${JSON.stringify(key)}]`);
@@ -518,17 +558,18 @@ const ACTIONS = {
   async 'wait-idle'(ctx, step) {
     const { page } = ctx;
     const base = await sampleRun(page);
-    const track = createIdleTracker({ baselineCards: base.cards, seenRunning: base.running, ...(step.grace ? { startGraceMs: Number(step.grace) } : {}) });
+    const track = createIdleTracker({ baselineCards: base.cards, baselineErrors: base.errors, seenRunning: base.running, ...(step.grace ? { startGraceMs: Number(step.grace) } : {}) });
     let verdict;
     await pollUntil(async () => {
       verdict = track(await sampleRun(page));
       return verdict.done;
     }, { timeoutMs: step.timeout ?? ctx.timeoutMs, what: '运行结束或需人卡片' });
+    if (verdict.state === 'error' && step.expect !== 'error') throw new Error(`运行失败：${verdict.errors.join(' / ')}`);
     if (step.expect && step.expect !== verdict.state) throw new Error(`期望 ${step.expect}，实际 ${verdict.state}${verdict.cards ? `：${verdict.cards.join(' / ')}` : ''}`);
     return verdict;
   },
   async 'wait-text'({ page, timeoutMs }, step) {
-    await locate(page, `text=${step.text ?? step.arg}`).waitFor({ timeout: step.timeout ?? timeoutMs });
+    await locate(page, `text=${step.text ?? step.arg}`).waitFor({ timeout: step.timeout ?? timeoutMs }); // 文本可写 /正则/
   },
   async click({ page, timeoutMs }, step) {
     const loc = locate(page, step.target ?? step.arg);

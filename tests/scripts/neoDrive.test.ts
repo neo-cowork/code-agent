@@ -40,6 +40,7 @@ describe('neo-drive 纯逻辑', () => {
     expect(parseTarget('role=dialog')).toEqual({ kind: 'role', role: 'dialog', name: undefined });
     expect(parseTarget('css=[data-chat-input]')).toEqual({ kind: 'css', value: '[data-chat-input]' });
     expect(parseTarget('允许')).toEqual({ kind: 'text', value: '允许' });
+    expect(parseTarget('/已允许 Neo (访问|控制)/')).toEqual({ kind: 'text', value: /已允许 Neo (访问|控制)/ });
     expect(() => parseTarget('  ')).toThrow();
   });
 
@@ -81,6 +82,13 @@ describe('neo-drive 纯逻辑', () => {
     expect(track({ t: 100, running: true, cards: ['old-card', 'new-card'] })).toEqual({ done: true, state: 'needs-user', cards: ['new-card'] });
   });
 
+  it('wait-idle：新出现的运行失败卡优先判 error（不当 idle），开始前就在的失败卡不算', () => {
+    const track = createIdleTracker({ baselineErrors: ['旧失败'], seenRunning: true, quietMs: 0 });
+    expect(track({ t: 0, running: true, cards: [], errors: ['旧失败'] }).done).toBe(false);
+    expect(track({ t: 100, running: false, cards: ['new-card'], errors: ['旧失败', '这个模型用不了：账号没通过授权'] }))
+      .toEqual({ done: true, state: 'error', errors: ['这个模型用不了：账号没通过授权'] });
+  });
+
   it('assert-visible：完全在视口与滚动容器内且未被遮挡才过', () => {
     const viewport = { width: 1440, height: 900 };
     const rect = { top: 600, bottom: 640, left: 100, right: 300, width: 200, height: 40 };
@@ -106,6 +114,11 @@ describe('neo-drive 纯逻辑', () => {
     const s = parseScenario({ steps: [{ do: 'send', text: 'neo-drive 测试 ${ts}' }] }, { ts: 42 });
     expect(s.steps[0].text).toBe('neo-drive 测试 42');
     expect(() => parseScenario({ steps: [{ do: 'tap' }] })).toThrow('未知动作');
+    const withModel = parseScenario({ model: 'MiMo v2.6 Flash', steps: [{ do: 'new-session' }, { do: 'send', text: 'hi' }, { do: 'new-session', always: true }] });
+    expect(withModel.steps.map((x: { do: string; model?: string; always?: boolean }) => [x.do, x.model ?? null, x.always ?? false])).toEqual([
+      ['new-session', null, false], ['select-model', 'MiMo v2.6 Flash', false], ['send', null, false],
+      ['new-session', null, true], ['select-model', 'MiMo v2.6 Flash', true],
+    ]);
     expect(() => parseScenario({ steps: [] })).toThrow();
   });
 

@@ -19,6 +19,7 @@
 # 无头：隔离数据目录 + dogfood 账号（复用 verify-slotless）
 node scripts/neo-drive.mjs browser start --slotless            # 已构建过可加 --reuse-dist
 node scripts/neo-drive.mjs new-session
+node scripts/neo-drive.mjs select-model "MiMo v2.6 Flash"    # 在输入框底部的模型选择器里搜索并选中
 node scripts/neo-drive.mjs send "写一段 300 字的介绍"
 node scripts/neo-drive.mjs wait-idle --expect idle
 node scripts/neo-drive.mjs assert-visible testid=turn-reply-actions
@@ -46,6 +47,7 @@ node scripts/neo-drive.mjs ax-click "Allow Full Access" --process UserNotificati
 |---|---|
 | `send` | 输入框已经清空，或者已经进入运行中（不等 run 结束） |
 | `wait-idle` | 出现**新的**、还在等人处理的卡片（审批卡、环境代修卡、停车审批卡，卡里要有可点的按钮）时返回 `needs-user`；见过运行中、而且停止按钮连续 800ms 没再出现时返回 `idle`。`--grace` 是允许多久都还没开始跑，比如授权之后自动续做的那段空档 |
+| `wait-idle`（失败） | 出现**新的**运行失败卡（「这个模型用不了…」之类）或限流行，直接判失败，error 里带卡片文字；不会当成 idle |
 | `wait-text` | 页面上出现这段文字 |
 | `assert-visible` | 元素整个落在视口和它的滚动容器里面，而且上、中、下三个点最上层命中的都是它自己（被输入框或浮层盖住就算不过，并报出盖住它的是谁） |
 | `assert-bottom` | 消息列表离底部不超过 4px，在 `--within` 毫秒内达到就算过 |
@@ -60,7 +62,9 @@ node scripts/neo-drive.mjs ax-click "Allow Full Access" --process UserNotificati
 { "name": "…", "steps": [ { "do": "send", "text": "neo-drive 测试 ${ts}" }, { "do": "wait-idle", "expect": "idle" } ] }
 ```
 
-`${ts}` 会被替换成这次运行的时间戳。任意一步失败后，后面只跑标了 `"always": true` 的清理步，整个场景判失败。
+顶层 `"model": "<模型名>"` 表示每次 `new-session` 之后自动切到这个模型。新会话的默认模型可能是没配钥匙的服务商，所以真机场景都写上这个字段。
+`${ts}` 会被替换成这次运行的时间戳。文字目标可以写成 `/正则/`，比如 `/已允许 Neo (访问|控制)/` 可以同时兼容新旧文案。
+真机场景要改 TCC 的，写成 `quit → reset-tcc → launch → reload` 开头：应用运行时 reset 不生效；重启后后端换了进程，页面要 `reload` 才能连上新服务。任意一步失败后，后面只跑标了 `"always": true` 的清理步，整个场景判失败。
 `click` 加 `"ifVisible": true` 表示在 timeout 之内没出现就跳过。三个基准场景放在 `scripts/neo-drive-scenarios/`。
 
 ## 在 mini 上跑

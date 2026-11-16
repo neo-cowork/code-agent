@@ -1,5 +1,6 @@
 {
   "name": "b 建测试日程 → 批准 → 改 → 批准 → 删 → 批准，跑完删干净（真机，--dev；需日历已授权）",
+  "model": "MiMo v2.6 Flash",
   "steps": [
     { "do": "new-session" },
     { "do": "send", "text": "在日历里建一个日程：标题「neo-drive 测试 ${ts}」，明天下午 3 点开始，时长 30 分钟。" },
