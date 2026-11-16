@@ -30,6 +30,7 @@ node scripts/neo-drive.mjs browser stop                         # 同时停掉�
 node scripts/neo-drive.mjs run scripts/neo-drive-scenarios/c-long-session-scroll-send.json --slotless
 
 # 真机：驱动已安装的 Agent Neo Dev（槽 1；--dev=2 选槽 2）
+node scripts/neo-drive.mjs preflight "DeepSeek V4.1 Flash" --dev   # 先确认 Dev 包有能用的模型，失败会打出运行失败卡原文
 node scripts/neo-drive.mjs run scripts/neo-drive-scenarios/a-calendar-grant.json --dev
 node scripts/neo-drive.mjs quit --slot 1        # 只按信号退出（先 TERM，15 秒后 KILL），不用 osascript quit
 node scripts/neo-drive.mjs install <worktree>   # 先 quit，再跑 <worktree>/scripts/tauri-install-dev.sh
@@ -40,6 +41,14 @@ node scripts/neo-drive.mjs ax-click "Allow Full Access" --process UserNotificati
 
 目标的写法：纯文本表示按可见文字找；`testid=<data-testid>`；`role=<角色>:<名称>`（名称精确匹配，比如 `role=button:允许访问日历`；按钮名带快捷键提示时用正则，比如审批卡的 `role=button:/^允许一次/`）；`css=<选择器>`。
 同名的元素有多个时，取最后一个可见的，因为聊天里最新的卡片总在最后。
+
+## 真机前置检查和 select-model 的副作用
+
+- 跑真机场景前，先 `preflight [模型名] --dev`。它做的事：新会话 → 切到这个模型 → 发「你好」→ 正常回完才算通过；失败时把运行失败卡原文打出来（比如「这个模型用不了：账号没通过授权」）。
+  场景里 `"model"` 写的必须是选择器里真能选、发「你好」能回的那个模型。Dev 包的模型环境不对时，场景会在 wait-idle 判失败，这不是工具的问题。
+- `select-model` 改的是**当前会话的模型（session override），会持久保存**。所以只在场景或 preflight 自己新建的会话里用，不要对已有会话执行 `open-session` 之后再 `select-model`。
+- `open-session`（场景里写 `"session"` 或 `"id"`）点完之后，会断言目标会话真的变成了当前会话（侧栏 `aria-current`），没切过去就判失败。侧栏里找不到这条会话也判失败。
+  场景步骤里写了不认识的字段名会直接报错，不会被静默忽略。
 
 ## 等待和断言
 

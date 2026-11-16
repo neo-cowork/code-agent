@@ -18,6 +18,8 @@ const STATE_PATH = path.join(HOME_DIR, 'state.json');
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_IDLE_EXIT_MS = 30 * 60_000;
 const POLL_MS = 150;
+const STEP_FIELDS = new Set(['do', 'always', 'timeout', 'text', 'target', 'session', 'id', 'model', 'expect', 'grace', 'within', 'tolerance',
+  'screens', 'name', 'dir', 'service', 'process', 'role', 'deep', 'pattern', 'sql', 'empty', 'worktree', 'ifVisible']);
 const VIEWPORT = { width: 1440, height: 900 };
 const NEEDS_USER_SELECTORS = ['[data-testid="decision-slot"]', '[data-testid="env-assist-card"]', '[data-testid="parked-approval-card"]'];
 const RUNNING_SELECTORS = ['[data-testid="composer-stop-button"]', '[data-testid="composer-stop-stopping"]'];
@@ -38,6 +40,9 @@ export const USAGE = `neo-drive — 按元素操作 + 按状态等待地驱动 A
   install <worktree> | quit | launch | reset-tcc <服务，如 Calendar>
   ax-click <元素名> [--process 进程名] [--role AXButton] [--deep]   （系统授权框: --process UserNotificationCenter；--deep 遍历整棵树，慢）
   wait-log <正则> | wait-db <SQL> | shot-window <名>
+前置检查（真机先跑这个：确认 Dev 包有能用的模型）:
+  preflight [模型名] [--slotless|--dev[=槽号]|--url <地址>]   新会话→切模型→发「你好」→正常回完即通过
+  注意：select-model 会持久改写当前会话的模型，只在场景/preflight 自己新建的会话里用
 场景:
   run <场景.json> [--slotless[=标签]|--dev[=槽号]|--url <地址>]   一次跑完，输出每步耗时 JSON
 目标写法: 纯文本或 /正则/=按可见文字 | testid=<data-testid> | role=<角色>:<名称>（精确）或 role=<角色>:/正则/ | css=<选择器>
@@ -150,6 +155,9 @@ export function parseScenario(raw, { ts = Date.now() } = {}) {
   const steps = data.steps.flatMap((step, i) => {
     if (!step || typeof step.do !== 'string') throw new Error(`第 ${i + 1} 步缺 do`);
     if (!(step.do in ACTIONS)) throw new Error(`第 ${i + 1} 步未知动作: ${step.do}`);
+    // 字段名写错不许静默忽略（曾把 open-session 的 id 当没写，点了侧栏第一条还报 ok）。
+    const unknown = Object.keys(step).filter((k) => !STEP_FIELDS.has(k));
+    if (unknown.length) throw new Error(`第 ${i + 1} 步（${step.do}）有不认识的字段: ${unknown.join(', ')}`);
     const out = Object.fromEntries(Object.entries(step).map(([k, v]) => [k, sub(v)]));
     // 顶层 model：每次新会话后自动切到该模型（新会话默认模型可能是没配钥匙的服务商）。
     return data.model && step.do === 'new-session' ? [out, { do: 'select-model', model: data.model, ...(out.always ? { always: true } : {}) }] : [out];
@@ -530,12 +538,24 @@ const ACTIONS = {
     await dismissFirstRun(ctx.page, { wait: true });
   },
   async 'open-session'({ page }, step) {
-    const key = step.session ?? step.arg;
+    const key = step.session ?? step.id ?? step.arg;
+    if (!key) throw new Error('open-session 需要会话 id 或标题（场景里写 "session" 或 "id"）');
     const byId = page.locator(`[data-session-id=${JSON.stringify(key)}]`);
-    const item = (await byId.count()) > 0 ? byId.first() : page.locator('[data-session-id]').filter({ hasText: key }).first();
+    const item = (await byId.count()) > 0
+      ? byId.first()
+      : page.locator('[data-session-id]').filter({ hasText: key }).first();
+    if ((await item.count()) === 0) throw new Error(`侧栏里找不到会话「${key}」（不在已加载列表里，或已归档）`);
+    const sessionId = await item.getAttribute('data-session-id');
     await item.click({ timeout: 15_000 });
+    // 点击不等于切过去了：必须看到目标会话成为当前会话（aria-current），否则后续 send 会发进别的会话。
+    await page.locator(`[data-session-id=${JSON.stringify(sessionId)}][aria-current="true"]`).first()
+      .waitFor({ timeout: 15_000 })
+      .catch(async () => {
+        const current = await page.locator('[data-session-id][aria-current="true"]').first().getAttribute('data-session-id').catch(() => null);
+        throw new Error(`点了会话 ${sessionId}，但当前会话是 ${current ?? '（无）'}`);
+      });
     await page.locator('[data-chat-input]').waitFor({ timeout: 15_000 });
-    return { sessionId: await item.getAttribute('data-session-id') };
+    return { sessionId };
   },
   async send(ctx, step) {
     const { page } = ctx;
@@ -764,7 +784,7 @@ async function healthy(port) {
 export function parseArgs(argv) {
   const opts = {};
   const pos = [];
-  const valued = new Set(['--url', '--timeout', '--grace', '--tolerance', '--expect', '--within', '--dir', '--process', '--role', '--slot', '--log-dir', '--idle-exit-min']);
+  const valued = new Set(['--model', '--url', '--timeout', '--grace', '--tolerance', '--expect', '--within', '--dir', '--process', '--role', '--slot', '--log-dir', '--idle-exit-min']);
   const camel = (k) => k.replace(/-(\w)/g, (_, c) => c.toUpperCase());
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -795,8 +815,17 @@ async function withPage(state, fn) {
   }
 }
 
-async function runScenario(file, opts) {
-  const scenario = parseScenario(readFileSync(file, 'utf8'));
+/** 前置检查：新会话 →（可选）切模型 → 发「你好」→ 正常回完才算环境可用；失败时 error 里是运行失败卡原文。 */
+export function preflightScenario(model) {
+  return {
+    name: `preflight${model ? `（${model}）` : ''}`,
+    ...(model ? { model } : {}),
+    steps: [{ do: 'new-session' }, { do: 'send', text: '你好' }, { do: 'wait-idle', expect: 'idle', timeout: 90_000 }],
+  };
+}
+
+async function runScenario(source, opts) {
+  const scenario = parseScenario(typeof source === 'string' ? readFileSync(source, 'utf8') : source);
   let state = liveState();
   let startedHere = false;
   if (!state && (opts.url || opts.dev !== undefined || opts.slotless !== undefined)) {
@@ -848,6 +877,9 @@ async function main(argv = process.argv.slice(2)) {
     else if (sub === 'stop') result = await browserStop();
     else if (sub === 'status') result = liveState() ?? { running: false };
     else throw new Error('browser start|stop|status');
+  } else if (cmd === 'preflight') {
+    result = await runScenario(preflightScenario(rest.join(' ') || opts.model), opts);
+    process.exitCode = result.ok ? 0 : 1;
   } else if (cmd === 'run') {
     if (!rest[0]) throw new Error('run 需要场景文件');
     result = await runScenario(rest[0], opts);

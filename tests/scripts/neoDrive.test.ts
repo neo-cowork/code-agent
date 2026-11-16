@@ -10,6 +10,7 @@ import {
   parseArgs,
   parseScenario,
   parseTarget,
+  preflightScenario,
   readLogsSince,
   runSteps,
   visibilityVerdict,
@@ -114,12 +115,21 @@ describe('neo-drive 纯逻辑', () => {
     const s = parseScenario({ steps: [{ do: 'send', text: 'neo-drive 测试 ${ts}' }] }, { ts: 42 });
     expect(s.steps[0].text).toBe('neo-drive 测试 42');
     expect(() => parseScenario({ steps: [{ do: 'tap' }] })).toThrow('未知动作');
+    expect(() => parseScenario({ steps: [{ do: 'open-session', sesion: 'x' }] })).toThrow('不认识的字段: sesion');
+    expect(parseScenario({ steps: [{ do: 'open-session', id: 'session_1' }] }).steps[0]).toEqual({ do: 'open-session', id: 'session_1' });
     const withModel = parseScenario({ model: 'MiMo v2.6 Flash', steps: [{ do: 'new-session' }, { do: 'send', text: 'hi' }, { do: 'new-session', always: true }] });
     expect(withModel.steps.map((x: { do: string; model?: string; always?: boolean }) => [x.do, x.model ?? null, x.always ?? false])).toEqual([
       ['new-session', null, false], ['select-model', 'MiMo v2.6 Flash', false], ['send', null, false],
       ['new-session', null, true], ['select-model', 'MiMo v2.6 Flash', true],
     ]);
     expect(() => parseScenario({ steps: [] })).toThrow();
+  });
+
+  it('preflight：新会话后先切模型，再发「你好」等正常回完', () => {
+    const s = parseScenario(preflightScenario('MiMo v2.6 Flash'));
+    expect(s.steps.map((x: { do: string }) => x.do)).toEqual(['new-session', 'select-model', 'send', 'wait-idle']);
+    expect(s.steps[3]).toMatchObject({ expect: 'idle' });
+    expect(parseScenario(preflightScenario(undefined)).steps.map((x: { do: string }) => x.do)).toEqual(['new-session', 'send', 'wait-idle']);
   });
 
   it('runSteps：一步失败后只跑 always 清理步，整体判红', async () => {
