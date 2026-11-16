@@ -2,9 +2,9 @@ import { expect, test, type APIRequestContext, type Page } from './fixtures/axeT
 import type { AgentEvent } from '../../src/shared/contract';
 
 // N-FIX-APPROVAL-COMMAND-CARD-DUP-EMPTY-DUMP：
-// 1. bash 命令卡命令正文只展示一次（不再叠 preview.summary 与 argsPreview）。
-// 2. spawn_agent 审批卡展示通用标题「需要你确认」与「派出子代理（角色）：任务摘要」，不再是空壳「执行工具 spawn_agent」。
-// 3. 超 8 行 / 400 字符的长脚本默认折叠前 8 行并展示「共 N 行，仅展示前 8 行 · 展开全部」。
+// 1. bash 命令卡展开详情后命令正文只展示一次（不再叠 preview.summary 与 argsPreview）。
+// 2. spawn_agent 审批卡展示子任务问句，详情展示「派出子代理（角色）：任务摘要」。
+// 3. 展开详情后，超 8 行 / 400 字符的长脚本仅展示前 8 行，并提供「展开全部」。
 
 type RendererAgentEvent = AgentEvent & { sessionId?: string };
 
@@ -102,6 +102,16 @@ async function prepareSession(page: Page, request: APIRequestContext): Promise<{
   return { token, sessionId };
 }
 
+async function expandPermissionDetails(page: Page): Promise<void> {
+  const face = page.getByTestId('permission-card-face');
+  await expect(face).toBeVisible();
+  await expect(face.getByRole('button')).toHaveText(['允许', '暂不']);
+  const toggle = page.getByRole('button', { name: '更多选项与详情', exact: true });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(page.getByTestId('permission-card-details-scroll')).toBeVisible();
+}
+
 test('bash 命令审批卡：命令文本只渲染一次', async ({ page, request }, testInfo) => {
   const { token, sessionId } = await prepareSession(page, request);
   const turnId = `bash-card-${Date.now()}`;
@@ -134,6 +144,8 @@ test('bash 命令审批卡：命令文本只渲染一次', async ({ page, reques
 
   const permissionCard = page.getByTestId('permission-card');
   await expect(permissionCard).toBeVisible({ timeout: 15_000 });
+  await expect(permissionCard).not.toContainText(BASH_COMMAND);
+  await expandPermissionDetails(page);
   await expect(permissionCard).toContainText(BASH_COMMAND, { timeout: 15_000 });
   await emitAgentEvents(request, token, [
     { type: 'stream_chunk', sessionId, data: { turnId, content: '等待确认。' } },
@@ -154,7 +166,7 @@ test('bash 命令审批卡：命令文本只渲染一次', async ({ page, reques
   });
 });
 
-test('spawn_agent 审批卡：显示通用确认标题与子代理角色+任务摘要', async ({ page, request }, testInfo) => {
+test('spawn_agent 审批卡：显示子任务问句与子代理角色+任务摘要', async ({ page, request }, testInfo) => {
   const { token, sessionId } = await prepareSession(page, request);
   const turnId = `spawn-card-${Date.now()}`;
   const requestId = `spawn-card-req-${Date.now()}`;
@@ -185,7 +197,10 @@ test('spawn_agent 审批卡：显示通用确认标题与子代理角色+任务�
 
   const permissionCard = page.getByTestId('permission-card');
   await expect(permissionCard).toBeVisible({ timeout: 15_000 });
-  await expect(permissionCard).toContainText('需要你确认', { timeout: 15_000 });
+  await expect(permissionCard).toContainText('启动子任务', { timeout: 15_000 });
+  await expect(permissionCard).toContainText('允许启动这个子任务？');
+  await expect(permissionCard).not.toContainText(summaryText);
+  await expandPermissionDetails(page);
   await expect(permissionCard).toContainText(summaryText, { timeout: 15_000 });
   await emitAgentEvents(request, token, [
     { type: 'stream_chunk', sessionId, data: { turnId, content: '等待确认。' } },
@@ -235,6 +250,8 @@ test('42 行长脚本审批卡：默认折叠前 8 行并提供展开全部按�
 
   const permissionCard = page.getByTestId('permission-card');
   await expect(permissionCard).toBeVisible({ timeout: 15_000 });
+  await expect(permissionCard).not.toContainText('step-1-output');
+  await expandPermissionDetails(page);
   await expect(permissionCard).toContainText('共 42 行，仅展示前 8 行', { timeout: 15_000 });
   await expect(permissionCard).toContainText('step-8-output', { timeout: 15_000 });
   await expect(permissionCard).not.toContainText('step-9-output');
