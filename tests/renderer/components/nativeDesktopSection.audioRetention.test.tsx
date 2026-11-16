@@ -101,12 +101,12 @@ describe('NativeDesktopSection audio retention', () => {
     expect(en.settings.nativeDesktop.audioRetention.rule).not.toContain('24');
     expect(en.settings.nativeDesktop.audioRetention.clear).toBe('Clear recordings');
     // 失败文案按错误分类，主文案模板不含 {error}（原始错误只进折叠 details）
-    expect(zh.settings.nativeDesktop.audioRetention.failedPermission).toContain('{count}');
-    expect(zh.settings.nativeDesktop.audioRetention.failedPermission).not.toContain('{error}');
-    expect(zh.settings.nativeDesktop.audioRetention.failedOther).toContain('{count}');
-    expect(zh.settings.nativeDesktop.audioRetention.failedOther).not.toContain('{error}');
-    expect(en.settings.nativeDesktop.audioRetention.failedPermission).toContain('{count}');
-    expect(en.settings.nativeDesktop.audioRetention.failedOther).toContain('{count}');
+    expect(zh.settings.nativeDesktop.audioRetention.failedPermission.other).toContain('{count}');
+    expect(zh.settings.nativeDesktop.audioRetention.failedPermission.other).not.toContain('{error}');
+    expect(zh.settings.nativeDesktop.audioRetention.failedOther.other).toContain('{count}');
+    expect(zh.settings.nativeDesktop.audioRetention.failedOther.other).not.toContain('{error}');
+    expect(en.settings.nativeDesktop.audioRetention.failedPermission.other).toContain('{count}');
+    expect(en.settings.nativeDesktop.audioRetention.failedOther.other).toContain('{count}');
     // zh/en 键集一致
     expect(Object.keys(zh.settings.nativeDesktop.audioRetention).sort())
       .toEqual(Object.keys(en.settings.nativeDesktop.audioRetention).sort());
@@ -285,7 +285,7 @@ describe('NativeDesktopSection audio retention', () => {
     render(React.createElement(NativeDesktopSection));
 
     // 权限类（小写 eperm 也要识别）
-    const main = await findFailureMain(/recordings could not be deleted/);
+    const main = await findFailureMain(/recordings? could not be deleted/);
     expect(main.textContent).toBe(
       '2 recordings could not be deleted: no delete permission. Check the recordings folder permissions in Finder and try again',
     );
@@ -298,9 +298,9 @@ describe('NativeDesktopSection audio retention', () => {
     cleanup();
     services.getAudioCaptureStatus.mockResolvedValue(status(1, 'transient hiccup'));
     render(React.createElement(NativeDesktopSection));
-    const other = await findFailureMain(/recordings could not be deleted/);
+    const other = await findFailureMain(/recordings? could not be deleted/);
     expect(other.textContent).toBe(
-      '1 recordings could not be deleted and this cleanup did not finish. You can retry later',
+      '1 recording could not be deleted and this cleanup did not finish. You can retry later',
     );
     expect(other.textContent).not.toContain('transient hiccup');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
