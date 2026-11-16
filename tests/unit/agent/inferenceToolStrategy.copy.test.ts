@@ -27,7 +27,7 @@ const decision: ModelDecisionEventData = {
   reason: 'user-selected',
   billingMode: 'unknown',
   fallbackFrom: null,
-  createdAt: 0,
+  timestamp: 0,
 };
 
 type CopyCase = {
