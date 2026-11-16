@@ -26,6 +26,7 @@ const harness = vi.hoisted(() => ({
   user: null as { id: string } | null,
   callbacks: [] as Array<(user: { id: string } | null, status: string) => void>,
   log: [] as Array<{ level: string; message: string; details?: Record<string, unknown> }>,
+  idleError: undefined as unknown,
   sendMessage: (async () => undefined) as (...args: unknown[]) => Promise<void>,
 }));
 
@@ -73,6 +74,7 @@ vi.mock('../../../src/host/task/TaskManager', async (importOriginal) => {
     ...original,
     getTaskManager: () => ({
       getSessionState: () => ({ status: 'idle' }),
+      startTask: async () => { throw harness.idleError; },
       getWaitingQueue: () => [],
       hasActivePrimaryRun: () => false,
       getOrCreateCurrentOrchestrator: () => orchestrator,
@@ -89,6 +91,10 @@ vi.mock('../../../src/host/task/TaskManager', async (importOriginal) => {
   };
 });
 
+import '../../../src/host/services/commandCenter/backgroundWakeNoteRetry';
+import { scheduleBackgroundSubagentIdleWake } from '../../../src/host/agent/backgroundSubagentIdleWake';
+import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import type { SubagentCompletionRecord } from '../../../src/host/agent/subagentCompletionNotification';
 import { createForegroundWake } from '../../../src/host/services/commandCenter/foregroundWake';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
 
@@ -164,6 +170,8 @@ describe('foreground wake when the session is not accessible for the current own
     { name: 'reply then step cap', reply: true, error: 'Max iterations reached', reason: null },
     { name: 'step cap without reply', reply: false, error: 'Max iterations reached', reason: 'max_iterations' },
     { name: 'owner lease missing', reply: false, error: 'Durable Run run-x has no live owner lease', reason: 'owner_missing' },
+    { name: 'rate limit', reply: false, error: 'Rate limit exceeded', reason: 'rate_limited' },
+    { name: 'session inaccessible', reply: false, error: 'Session session-owned-by-u1 not found', reason: 'owner_missing' },
     { name: 'other error after reply', reply: true, error: 'provider unavailable', reason: 'turn_error' },
   ])('$name persists the correct outcome through createForegroundWake', async ({ reply, error, reason }) => {
     harness.user = { id: 'u1' };
@@ -174,6 +182,7 @@ describe('foreground wake when the session is not accessible for the current own
         await getSessionManager().addMessageToSession(SESSION, message);
         for (const observer of harness.observers) observer(SESSION, { type: 'message', data: message });
       }
+      if (error.startsWith('Session ')) throw new Error(error);
       options.terminalErrorSink?.({ message: error });
     });
     await createForegroundWake()(makeTask(), 'completed');
@@ -182,6 +191,10 @@ describe('foreground wake when the session is not accessible for the current own
     expect(harness.observers.size).toBe(0);
     if (reason) {
       expect(notes).toHaveLength(1);
+      if (reason === 'owner_missing') expect(notes[0].content).toContain('恢复原账号登录');
+      else expect(notes[0].content).not.toMatch(/登录|sign back in|sign in/i);
+      process.stdout.write(`wake persisted row: ${JSON.stringify(notes[0])}\n`);
+      process.stdout.write(`wake log: ${JSON.stringify(logsOf('warn').find((entry) => entry.message.startsWith('Foreground wake failed:')))}\n`);
       expect(JSON.parse(notes[0].metadata!).backgroundWakeFailed).toEqual({ taskId: 'task-1', reason, title: '周报' });
       expect(logsOf('warn').find((entry) => entry.message.startsWith('Foreground wake failed:'))?.details).toMatchObject({ reason, message: error });
     } else {
@@ -284,4 +297,31 @@ describe('foreground wake when the session is not accessible for the current own
     expect(skipped?.details).toMatchObject({ sessionId: 'session-voice-like', sessionType: 'voice' });
     expect(harness.callbacks).toHaveLength(0);
   });
+  it.each([
+    ['rate', Object.assign(new Error('Rate limit exceeded'), { status: 429 }), 'rate_limited'],
+    ['owner', new Error('Durable Run idle-run has no live owner lease'), 'owner_missing'],
+  ] as const)('idle wake %s persists a real messages row through recordFailure', async (kind, error, reason) => {
+    harness.user = { id: 'u1' };
+    harness.idleError = error;
+    const agentId = `weekly-competitor-${kind}`;
+    getBackgroundSubagentRegistry().spawn(async () => ({ success: true, output: '竞品周报已整理', toolsUsed: [], iterations: 1 }), {
+      agentId, sessionId: SESSION, role: 'coder', title: '竞品周报', suppressIdleWake: true,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    scheduleBackgroundSubagentIdleWake({ agentId, sessionId: SESSION } as SubagentCompletionRecord);
+    await vi.advanceTimersByTimeAsync(50);
+    const rows = connection.prepare('SELECT role, content, metadata FROM messages WHERE session_id = ?').all(SESSION) as Array<{ role: string; content: string; metadata: string }>;
+    const notes = rows.filter(row => row.metadata && JSON.parse(row.metadata).backgroundWakeFailed);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].role).toBe('system');
+    expect(JSON.parse(notes[0].metadata).backgroundWakeFailed).toEqual({ taskId: agentId, reason, title: '竞品周报' });
+    if (reason === 'rate_limited') {
+      expect(notes[0].content).toContain('模型服务暂时限流');
+      expect(notes[0].content).not.toMatch(/登录|sign back in|sign in/i);
+    } else expect(notes[0].content).toContain('恢复原账号登录');
+    expect(harness.log.some(entry => /wake failure note not recorded/i.test(entry.message))).toBe(false);
+    process.stdout.write(`idle recordFailure persisted row: ${JSON.stringify(notes[0])}\n`);
+    process.stdout.write(`idle recordFailure not-recorded warnings: ${harness.log.filter(entry => /wake failure note not recorded/i.test(entry.message)).length}\n`);
+  });
+
 });
