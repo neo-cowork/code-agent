@@ -167,6 +167,7 @@ export const ExpertPanel: React.FC = () => {
   const setTab = useAppStore((s) => s.setExpertPanelTab);
 
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
+  const localizeRole = useLocalizeRole();
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [rolePacksLoading, setRolePacksLoading] = useState(true);
@@ -377,9 +378,12 @@ export const ExpertPanel: React.FC = () => {
     }
   };
 
-  const recipeMode = (recipe: TeamRecipe) => recipe.lead
-    ? t.team.expertTeam.replace('{lead}', entries.find((entry) => entry.roleId === recipe.lead?.roleId)?.displayName || recipe.lead.roleId)
-    : t.team.expertGroup.replace('{count}', String(recipe.members.length));
+  const recipeMode = (recipe: TeamRecipe) => {
+    const leadId = recipe.lead?.roleId;
+    if (!leadId) return t.team.expertGroup.replace('{count}', String(recipe.members.length));
+    const rawName = entries.find((entry) => entry.roleId === leadId)?.displayName ?? '';
+    return t.team.expertTeam.replace('{lead}', () => localizeRole(leadId, { name: rawName }).name || leadId);
+  };
 
   // 滚动由能力中心的外层容器统一负责，这里只排内容；
   // 页头走四 tab 共用的 HubTabHeader（吸顶）：第一行 = 大标题「专家」+ 操作簇

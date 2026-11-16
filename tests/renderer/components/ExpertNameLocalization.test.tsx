@@ -85,3 +85,21 @@ describe('built-in expert names follow the UI language', () => {
     expect(screen.getByText('资深产品经理')).toBeTruthy();
   });
 });
+
+describe('factory team card lead follows the UI language', () => {
+  const lead = async () => {
+    useAppStore.setState({ expertPanelTab: 'discover' });
+    render(<ExpertPanel />);
+    const card = await screen.findByTestId('team-recipe-product-spec');
+    return card.textContent ?? '';
+  };
+  it('en: lead expert Muzhi, no CJK in the lead slot', async () => {
+    useAppStore.setState({ language: 'en' });
+    const text = await lead();
+    expect(text).toContain('lead expert Muzhi');
+    expect(text.match(/lead expert ([A-Za-z]+)/)?.[1]).not.toMatch(/\p{Script=Han}/u);
+  });
+  it('zh: lead 牧之 unchanged', async () => {
+    expect(await lead()).toContain('牧之');
+  });
+});

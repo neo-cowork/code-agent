@@ -243,7 +243,7 @@ export const InputAddMenu: React.FC<Props> = ({
   const teamItems: InputAddSubmenuItem[] = recipes.map((recipe) => ({
     id: recipe.id,
     label: recipe.name,
-    sublabel: recipe.lead ? t.inputAddMenu.teamLeadPrefix.replace('{lead}', recipe.lead.roleId) : undefined,
+    sublabel: recipe.lead ? t.inputAddMenu.teamLeadPrefix.replace('{lead}', localizeRole(recipe.lead.roleId, { name: recipe.lead.roleId }).name) : undefined,
     description: recipe.description,
     selected: recipe.id === selectedTeamRecipeId,
   }));
