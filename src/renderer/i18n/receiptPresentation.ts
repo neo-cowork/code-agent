@@ -8,7 +8,7 @@ export const receiptPresentationZh = {
     showDetails: '展开执行详情',
     hideDetails: '收起执行详情',
     recipientSingle: '发给 {first}',
-    recipientMultiple: { one: '发给 {first} 等 {count} 人', other: '发给 {first} 等 {count} 人' },
+    recipientMultiple: '发给 {first} 等 {count} 人',
     humanToolLabels: {
       connectors: {
         mail: '邮件',
@@ -37,7 +37,7 @@ export const receiptPresentationZh = {
       openWebPages: '打开网页',
       rememberAndRecall: '记住和回想',
       otherAbility: '其他 {count} 项能力',
-      otherAbilities: { one: '其他 {count} 项能力', other: '其他 {count} 项能力' },
+      otherAbilities: '其他 {count} 项能力',
       separator: '、',
     },
   },
@@ -51,7 +51,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
     showDetails: 'Show execution details',
     hideDetails: 'Hide execution details',
     recipientSingle: 'Sent to {first}',
-    recipientMultiple: { one: 'Sent to {first} and others ({count} recipient)', other: 'Sent to {first} and others ({count} recipients)' },
+    recipientMultiple: 'Sent to {first} and others ({count} recipients)',
     humanToolLabels: {
       connectors: {
         mail: 'Mail',
@@ -80,7 +80,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
       openWebPages: 'Open web pages',
       rememberAndRecall: 'Remember and recall',
       otherAbility: '{count} other ability',
-      otherAbilities: { one: '{count} other ability', other: '{count} other abilities' },
+      otherAbilities: '{count} other abilities',
       separator: ', ',
     },
   },

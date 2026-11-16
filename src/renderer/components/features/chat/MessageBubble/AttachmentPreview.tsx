@@ -137,7 +137,7 @@ function getAttachmentMediaState(attachment: MessageAttachment): {
 }
 
 // 生命周期状态 → t.attachmentPreview 文案键
-const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, keyof AttachmentPreviewStrings> = {
+const MEDIA_STATE_LABEL_KEYS: Record<AttachmentMediaStateKey, 'stateWaiting' | 'stateDownloading' | 'stateEmbedded' | 'stateTranscribing' | 'stateReady' | 'stateFailed'> = {
   pending: 'stateWaiting',
   downloading: 'stateDownloading',
   embedded: 'stateEmbedded',
@@ -545,7 +545,7 @@ const AttachmentItem: React.FC<{
           {archiveManifest && (
             <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
-                ? interpolatePlural(t.attachmentPreview.archiveEntriesCount, Number(`${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}`))
+                ? interpolatePlural(t.attachmentPreview.archiveEntriesCount, archiveManifest.entries.length, { count: `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}` })
                 : archiveManifest.note}
               {dangerCount > 0
                 ? ` · ${interpolatePlural(t.attachmentPreview.dangerousPathsCount, dangerCount)}`

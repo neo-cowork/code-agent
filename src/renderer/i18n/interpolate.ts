@@ -21,8 +21,11 @@ export function interpolate(
 // 无复数语言（zh）one 与 other 同文即可，语义不变。
 // params 在选形之后应用，可带其它占位符，也可用 count 覆盖显示值（如截断时的 '50+'）：
 // 选形永远看数值 count，显示文本看 params.count，调用方不必再嵌套一层 interpolate。
+/** i18n 里 count 文案的 { one, other } 对。 */
+export interface PluralTemplates { one: string; other: string }
+
 export function interpolatePlural(
-  templates: { one: string; other: string },
+  templates: PluralTemplates,
   count: number,
   params: Record<string, string | number> = {},
 ): string {

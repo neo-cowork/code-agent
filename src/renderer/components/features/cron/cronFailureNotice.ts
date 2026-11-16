@@ -8,13 +8,14 @@ import {
 } from '@shared/utils/cronFailureClassification';
 import { parseScheduledJobName } from '@shared/i18n/cronNotificationTitle';
 import type { NotificationShowEvent } from '@shared/ipc';
+import { type PluralTemplates } from '../../../i18n/interpolate';
 
 interface CronFailureCopy {
   loginWallNotificationTitle: string;
   loginWallNotificationBody: string;
   failureNotificationTitle: string;
   failureToastView: string;
-  missedAlertsMerged: string;
+  missedAlertsMerged: PluralTemplates;
   failureQuotaWithReset: string;
   failureQuotaWithResetAndLimit: string;
   failureQuotaUnknown: string;

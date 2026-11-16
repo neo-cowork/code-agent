@@ -4,6 +4,7 @@ import type {
   SurfaceSessionStateV1,
 } from '@shared/contract/surfaceExecution';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import type { PluralTemplates } from './interpolate';
 
 type SurfacePhaseV1 = 'prepare' | 'observe' | 'act' | 'verify' | 'human' | 'recover' | 'artifact' | 'cleanup';
 type SurfaceEventStatusV1 = 'queued' | 'running' | 'waiting' | 'succeeded' | 'failed' | 'ambiguous' | 'cancelled';
@@ -11,7 +12,7 @@ type SurfaceEventStatusV1 = 'queued' | 'running' | 'waiting' | 'succeeded' | 'fa
 export interface SurfaceExecutionTranslationsV1 {
   panel: {
     label: string;
-    sessionCount: string;
+    sessionCount: PluralTemplates;
     native: string;
     compatibility: string;
   };
@@ -40,8 +41,8 @@ export interface SurfaceExecutionTranslationsV1 {
     elapsed: string;
     heartbeat: string;
     justNow: string;
-    minutes: string;
-    hours: string;
+    minutes: PluralTemplates;
+    hours: PluralTemplates;
   };
   permission: {
     title: string;
@@ -51,8 +52,8 @@ export interface SurfaceExecutionTranslationsV1 {
     grantExpired: string;
     grantNone: string;
     capabilities: string;
-    actionScope: string;
-    dataScope: string;
+    actionScope: PluralTemplates;
+    dataScope: PluralTemplates;
     expires: string;
     readonly: string;
     capability: Record<'observe' | 'input' | 'navigate' | 'file' | 'secret' | 'destructive', string>;

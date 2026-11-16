@@ -107,7 +107,13 @@ const groupPluralTexts = {
     'Could not run {count} steps',
   ],
 };
-const pluralExceptions = Object.entries(groupPluralTexts).flatMap(([file, texts]) => texts.map((text) => ({ file, text, reason: groupPluralReason })));
+const pluralExceptions = [
+  ...Object.entries(groupPluralTexts).flatMap(([file, texts]) => texts.map((text) => ({ file, text, reason: groupPluralReason }))),
+  { file: 'src/renderer/i18n/receiptPresentation.ts', text: 'Sent to {first} and others ({count} recipients)', reason: 'formatReceiptSummary (src/renderer/utils/receiptPresentation.ts) uses recipientMultiple only when recipient.count > 1; count 1 uses recipientSingle' },
+  { file: 'src/renderer/i18n/receiptPresentation.ts', text: '{count} other abilities', reason: 'roleToolCapabilities.ts picks otherAbility when unknownToolNames.size === 1 and otherAbilities only for size >= 2 (size > 0 guard)' },
+  { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There is still text from the input box: "{preview}", plus {count} attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftNoticeWithOneAttachment when safeAttachments.length === 1; this key only for >= 2' },
+  { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There are still {count} unsent attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftOneAttachmentOnly when safeAttachments.length === 1; this key only for >= 2' },
+];
 const usedPluralExceptions = new Set();
 let pluralHits = 0;
 

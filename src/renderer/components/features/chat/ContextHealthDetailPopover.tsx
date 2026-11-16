@@ -16,7 +16,8 @@
 import React, { useEffect } from 'react';
 import { Loader2, Shrink, X as XIcon } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
-import { interpolate } from '../../../i18n/interpolate';
+import type { Translations } from '../../../i18n';
+import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
 import { useAppStore } from '../../../stores/appStore';
 import { useStatusStore } from '../../../stores/statusStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -55,7 +56,7 @@ interface BucketSpec {
  * （bg-zinc-900/95）不随主题翻转，surface token 会翻所以不能走 token——分类色板属
  * viz 语义，按 design-system §5 行内登记豁免。
  */
-function buildBuckets(health: ContextHealthState, ch: Record<string, string>): BucketSpec[] {
+function buildBuckets(health: ContextHealthState, ch: Translations['taskStatusPanels']['contextHealth']): BucketSpec[] {
   const bs = health.breakdown.bySource;
   const sumRecord = (rec?: Record<string, number>) =>
     Object.values(rec ?? {}).reduce((a, b) => a + b, 0);
@@ -71,7 +72,7 @@ function buildBuckets(health: ContextHealthState, ch: Record<string, string>): B
     { key: 'fileReads', name: ch.bkFileReads, tokens: bs?.fileReads ?? 0, color: '#10b981' },
     {
       key: 'summary',
-      name: interpolate(ch.bkSummary, { count: compressionCount }),
+      name: interpolatePlural(ch.bkSummary, compressionCount),
       tokens: bs?.summary ?? 0,
       color: '#fb7185',
     },
@@ -338,7 +339,7 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                     <div className="mt-1 text-badge-success">
                       {compactResult.totalSavedTokens > 0
                         ? interpolate(ch.freedTokens, { tokens: formatContextTokenNumber(compactResult.totalSavedTokens) })
-                        : interpolate(ch.compactedCount, { count: compactResult.compressionCount })}
+                        : interpolatePlural(ch.compactedCount, compactResult.compressionCount)}
                     </div>
                   )}
                   {compactError && (

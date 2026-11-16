@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { openNativePath } from '../../../../services/tauriPluginFacade';
-import { interpolate } from '../../../../i18n/interpolate';
+import { interpolatePlural, type PluralTemplates } from '../../../../i18n/interpolate';
 import { classifyRetentionError } from './audioRetentionFailure';
 
 /** host 聚合状态形状（src/host/services/infra/cacheRetentionStatus.ts 的 CacheRetentionStatus） */
@@ -26,8 +26,8 @@ export interface CacheRetentionStatus {
 
 /** 失败行用到的文案键（zh/en 同构，真源在 i18n settings 的 data.cacheRetention 块） */
 interface CacheRetentionFailureText {
-  failedPermission: string;
-  failedOther: string;
+  failedPermission: PluralTemplates;
+  failedOther: PluralTemplates;
   openFolder: string;
   retry: string;
   details: string;
@@ -46,9 +46,9 @@ export const CacheRetentionFailureLine: React.FC<{
       console.warn('cacheRetention: failed to open data folder', error);
     });
   };
-  const main = interpolate(
+  const main = interpolatePlural(
     classifyRetentionError(lastError) === 'permission' ? text.failedPermission : text.failedOther,
-    { count: failedCount },
+    failedCount,
   );
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-[11px] text-badge-danger shrink-0">

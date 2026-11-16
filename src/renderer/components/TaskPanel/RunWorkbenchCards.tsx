@@ -45,6 +45,7 @@ import type { Translations } from '../../i18n';
 import { typedInvokeDomain } from '../../services/typedInvoke';
 import { useAppStore } from '../../stores/appStore';
 import { useRightPanelTabsStore } from '../../stores/rightPanelTabsStore';
+import { interpolatePlural } from '../../i18n/interpolate';
 
 function runStatusClass(status: RunUiStatus): string {
   switch (status) {
@@ -249,9 +250,7 @@ function dependencySummaryLabel(
     }));
   }
   if (summary.unlockingCount > 0) {
-    parts.push(formatTemplate(t.taskPanel.taskDependencySummaryUnlocking, {
-      count: summary.unlockingCount,
-    }));
+    parts.push(interpolatePlural(t.taskPanel.taskDependencySummaryUnlocking, summary.unlockingCount));
   }
 
   return parts.length > 0 ? parts.join(t.taskPanel.taskDependencySummarySeparator) : null;
