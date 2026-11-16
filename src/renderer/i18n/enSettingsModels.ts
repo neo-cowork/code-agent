@@ -601,7 +601,7 @@ export const enSettingsModels = {
         discover: 'Discover connections',
       },
       toast: {
-        refreshSuccess: 'MCP configuration refreshed from cloud',
+        refreshSuccess: 'External tools configuration refreshed from cloud',
         refreshFailed: 'Refresh failed',
         reconnectSuccessSuffix: ' reconnected',
         reconnectFailedMiddle: ' reconnect failed: ',
@@ -630,7 +630,7 @@ export const enSettingsModels = {
         cancelling: 'Cancelling...',
         cancelInstall: 'Cancel connection',
         refreshing: 'Refreshing...',
-        refreshFromCloud: 'Refresh MCP config from cloud',
+        refreshFromCloud: 'Refresh external tools config from cloud',
         addServer: 'Add server',
         stats: {
           overview: { label: 'Overview', caption: 'Connected / total' },
