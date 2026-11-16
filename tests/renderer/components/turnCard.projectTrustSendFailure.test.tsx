@@ -120,6 +120,9 @@ describe('rejected-send vs runtime-error turn presentation', () => {
     });
     await act(async () => { await accepted; });
     expect(confirmMock).toHaveBeenCalledWith('project:confirm-source-trust', { sessionId: SESSION_ID });
+    expect(invokeMock).toHaveBeenLastCalledWith('agent:send-message', expect.objectContaining({
+      clientMessageId: 'A', sessionId: SESSION_ID,
+    }));
     expect(mergeFailedSendOutbox(SESSION_ID, [], []).map((message) => message.id)).toEqual(['B', blocked[3].id]);
     const persistedA: Message = { ...blocked[0], metadata: undefined };
     window.domainAPI = { invoke: vi.fn(async (_domain: string, action: string) => ({
