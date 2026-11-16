@@ -565,7 +565,6 @@ export const enSettingsWork = {
         receiptCreatedMiddle: ', updated ',
         receiptUpdatedMiddle: ', skipped ',
         writtenFilesPrefix: 'Written files: ',
-        none: 'None',
         extraFilesPrefix: ' and ',
         extraFilesSuffix: ' total',
         mirrorPrefix: 'Mirror rebuild: ',

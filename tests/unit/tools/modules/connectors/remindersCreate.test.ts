@@ -54,6 +54,8 @@ async function run(
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
   execMock.mockReset();
   getMock.mockReset();
   getMock.mockReturnValue({ execute: execMock });
@@ -160,7 +162,7 @@ describe('remindersCreateModule (native)', () => {
     });
 
     it('reconciles to ok:true when create times out on osascript but list_reminders finds a matching reminder', async () => {
-      const remindAtMs = 1_760_000_000_000;
+      const remindAtMs = 1_800_000_000_000;
       const osascriptError = Object.assign(
         new Error('Command failed: osascript -e \'tell application "Reminders" to make new reminder\''),
         { killed: true, signal: 'SIGTERM' },
@@ -527,5 +529,54 @@ describe('remind_at_local through public execute', () => {
     execMock.mockResolvedValue({ data: { id: 'leap', list: '提醒事项', title: 'Leap', completed: false, remindAtMs: ms } });
     expect(await run({ title: 'Leap', remind_at_local: '2028-02-29 00:00' })).toMatchObject({ ok: true, output: expect.stringContaining('2028-02-29 00:00') });
     expect(execMock).toHaveBeenCalledWith('create_reminder', { title: 'Leap', remind_at_ms: ms });
+  });
+});
+
+describe('past reminder time guard through public execute', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
+  const NOW = '2026-11-14T23:17:00-08:00';
+  const pin = () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(NOW));
+  };
+
+  it('rejects a past remind_at_local before permission or connector, with actionable text', async () => {
+    pin();
+    const permit = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
+    const result = await run({ title: 'groceries', remind_at_local: '2026-11-14 20:30' }, makeCtx(), permit);
+    expect(result).toMatchObject({ ok: false, code: 'REMINDER_TIME_IN_PAST' });
+    if (result.ok) throw new Error('expected rejection');
+    expect(result.error).toContain('2026-11-14 20:30');
+    expect(result.error).toContain('2026-11-14 23:17');
+    expect(result.error).toContain('America/Los_Angeles');
+    expect(result.error).toContain('Do not create this reminder');
+    expect(result.error).toContain('2026-11-15 20:30');
+    expect(permit).not.toHaveBeenCalled();
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a past remind_at_ms passed directly', async () => {
+    pin();
+    const permit = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
+    const result = await run({ title: 'x', remind_at_ms: Date.parse(NOW) - 3 * 3600_000 }, makeCtx(), permit);
+    expect(result).toMatchObject({ ok: false, code: 'REMINDER_TIME_IN_PAST' });
+    expect(permit).not.toHaveBeenCalled();
+  });
+
+  it('grace boundary: 30s in the past is accepted, 120s rejected', async () => {
+    pin();
+    const now = Date.parse(NOW);
+    execMock.mockResolvedValue({ data: { id: 'g', list: 'Work', title: 'x', completed: false, remindAtMs: now - 30_000 } });
+    expect(await run({ title: 'x', remind_at_ms: now - 30_000 })).toMatchObject({ ok: true });
+    expect(await run({ title: 'x', remind_at_ms: now - 120_000 })).toMatchObject({ ok: false, code: 'REMINDER_TIME_IN_PAST' });
+  });
+
+  it('future local time is unchanged', async () => {
+    pin();
+    const ms = Date.parse('2026-11-15T20:30:00-08:00');
+    execMock.mockResolvedValue({ data: { id: 'f', list: 'Work', title: 'x', completed: false, remindAtMs: ms } });
+    expect(await run({ title: 'x', remind_at_local: '2026-11-15 20:30' })).toMatchObject({ ok: true });
+    expect(execMock).toHaveBeenCalledWith('create_reminder', { title: 'x', remind_at_ms: ms });
   });
 });

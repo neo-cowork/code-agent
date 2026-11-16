@@ -566,7 +566,6 @@ export const zhSettingsWork = {
         receiptCreatedMiddle: '，更新 ',
         receiptUpdatedMiddle: '，跳过 ',
         writtenFilesPrefix: '写入文件：',
-        none: '无',
         extraFilesPrefix: ' 等 ',
         extraFilesSuffix: ' 个',
         mirrorPrefix: 'mirror 重建：',

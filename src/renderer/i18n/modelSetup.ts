@@ -1,6 +1,6 @@
 export const modelSetupZh = {
   modelSetup: {
-    missingApiKey: '{provider} 尚未配置 API Key。已打开设置，请添加后再发送。',
+    missingApiKey: '{provider} 尚未配置密钥。已打开设置，请添加后再发送。',
     thisModel: '这个模型',
   },
 };

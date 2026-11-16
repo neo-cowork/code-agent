@@ -575,7 +575,7 @@ export const ComputerUseContent: React.FC = () => {
               <BoundaryCard
                 icon={<Eye className="h-4 w-4" />}
                 title="只读查看"
-                detail="当前页会读取 provider、权限、窗口候选、AX candidates 和最近 action trace。"
+                detail="当前页会读取权限、可操作的窗口和元素，以及最近的操作记录。"
                 tone="ready"
               />
               <BoundaryCard
@@ -785,7 +785,7 @@ export const ComputerUseContent: React.FC = () => {
                   {elementsLoading ? (
                     <div className="flex items-center justify-center p-6 text-sm text-zinc-500">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      正在读取 AX candidates
+                      正在读取可操作的元素
                     </div>
                   ) : elementCandidates.length === 0 ? (
                     <div className="p-6 text-sm text-zinc-500">
@@ -832,7 +832,7 @@ export const ComputerUseContent: React.FC = () => {
                     <h3 className="text-sm font-medium text-zinc-200">能力边界</h3>
                   </div>
                   <div className="space-y-2 p-4 text-xs leading-relaxed text-zinc-400">
-                    <p>只读：provider 状态、权限、前台窗口、最近活动、AX candidates、最近 action trace。</p>
+                    <p>只读：权限、前台窗口、最近活动、可操作的元素、最近的操作记录。</p>
                     <p>真实可执行：本页只有刷新和读取候选；不触发点击、输入、拖拽、快捷键或跨 app 流程。</p>
                     <p>执行链路：现有 `computer_use` 工具、permission dialog、action preview 和 desktop IPC 继续负责动作。</p>
                   </div>
