@@ -4,6 +4,7 @@
 
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
+import { NATIVE_APP_NAMES } from './appNames';
 import { createLogger } from '../../services/infra/logger';
 import {
   appleScriptFailureLogDetail,
@@ -63,6 +64,7 @@ function initialMailReadiness(): NativeReadiness {
 
 let mailReadiness: NativeReadiness = initialMailReadiness();
 let mailProbeError: string | undefined;
+let mailProbeErrorCode: ConnectorStatus['errorCode'];
 let mailProbeCheckedAt: number | undefined;
 // 最近一次探测拿到的账户列表是否为空（授权通过但 Mail 无账号）——getStatus 的
 // ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
@@ -71,6 +73,7 @@ let mailProbeListEmpty = false;
 export function resetMailConnectorReadiness(): void {
   mailReadiness = initialMailReadiness();
   mailProbeError = undefined;
+  mailProbeErrorCode = undefined;
   mailProbeCheckedAt = undefined;
   mailProbeListEmpty = false;
 }
@@ -81,7 +84,7 @@ function parseLine(line: string): string[] {
 
 function errorMessage(error: unknown): string {
   return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure('Mail', error).message
+    ? describeAppleScriptFailure(NATIVE_APP_NAMES.mail, error).message
     : error instanceof Error ? error.message : String(error);
 }
 
@@ -113,6 +116,7 @@ function buildMailStatus(capabilities: string[]): ConnectorStatus {
       connected: false,
       readiness: 'failed',
       error: mailProbeError,
+      errorCode: mailProbeErrorCode,
       checkedAt: mailProbeCheckedAt,
       detail: `Mail 授权/可用性检查失败：${mailProbeError || '未知错误'}`,
       actions: ['repair_permissions', 'disconnect', 'remove'],
@@ -396,12 +400,15 @@ async function probeMailAccess(): Promise<MailAccountItem[]> {
     mailReadiness = 'ready';
     mailProbeCheckedAt = Date.now();
     mailProbeError = undefined;
+  mailProbeErrorCode = undefined;
     mailProbeListEmpty = accounts.length === 0;
     return accounts;
   } catch (error) {
     mailReadiness = 'failed';
     mailProbeCheckedAt = Date.now();
     mailProbeError = errorMessage(error);
+    mailProbeErrorCode = isAppleScriptFailure(error)
+      && describeAppleScriptFailure('Mail', error).code === 'not_authorized' ? 'not_authorized' : undefined;
     throw error;
   }
 }

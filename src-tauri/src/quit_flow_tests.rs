@@ -144,3 +144,165 @@ fn scheduled_only_tauri_exit_stays_resident_without_dialog() {
     assert_eq!(recorded.len(), 1, "exactly one query, no stop-intent POST");
     let _ = fs::remove_dir_all(data_dir);
 }
+
+// ---- Cmd+Q / macOS-terminate entry proofs (N-…-FU1-FU1) ----
+
+use crate::quit_dialog_i18n::{background_hint, QuitDialogLanguage};
+use tauri::Manager;
+
+const EN_SERVER_BODY: &str = include_str!("quit_flow_fixtures/quit-guard-scheduled-only-en.json");
+
+type Posted = Arc<Mutex<Vec<QuitDialogLanguage>>>;
+
+struct Scenario {
+    _app: tauri::App<tauri::test::MockRuntime>,
+    handle: tauri::AppHandle<tauri::test::MockRuntime>,
+    coordinator: Arc<QuitCoordinator>,
+    requests: Arc<Mutex<Vec<String>>>,
+    data_dir: PathBuf,
+    posted: Posted,
+    _cwd: CwdGuard,
+    _token: TokenGuard,
+}
+
+impl Scenario {
+    fn new(body: &'static str, tag: &str) -> Self {
+        let (port, requests) = spawn_guard_server(body.trim());
+        let data_dir = std::env::temp_dir().join(format!("neo-quit-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data_dir);
+        fs::create_dir_all(&data_dir).expect("data dir");
+        std::env::set_var("CODE_AGENT_WEB_PORT", port.to_string());
+        std::env::set_var("CODE_AGENT_DATA_DIR", &data_dir);
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let (cwd, _) = CwdGuard::enter_with_server_stub();
+        let (_script, root) = crate::resolve_server_script(&handle).expect("server root");
+        let (token, _) = TokenGuard::ensure(root);
+        let coordinator = Arc::new(QuitCoordinator::new());
+        app.manage(coordinator.clone());
+        Self {
+            _app: app,
+            handle,
+            coordinator,
+            requests,
+            data_dir,
+            posted: Arc::new(Mutex::new(Vec::new())),
+            _cwd: cwd,
+            _token: token,
+        }
+    }
+
+    fn poster(&self) -> impl FnOnce(QuitDialogLanguage) -> Result<(), String> + Send + 'static {
+        let posted = self.posted.clone();
+        move |language| {
+            posted.lock().expect("posted").push(language);
+            Ok(())
+        }
+    }
+
+    /// 与 ⌘Q 一致：quit_app 菜单消费体 → exit(0) → 运行时重入 ExitRequested 处理体。
+    fn press_cmd_q(&self) {
+        let handle = self.handle.clone();
+        let poster = self.poster();
+        crate::handle_quit_app_menu(&self.handle, move |code| {
+            crate::handle_exit_requested(&handle, Some(code), || {}, poster);
+        });
+    }
+
+    fn wait_flow_done(&self) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut finished = false;
+        while Instant::now() < deadline && !finished {
+            finished = self.coordinator.begin_request();
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert!(finished, "flow must finish by releasing the dialog slot");
+        // 轮询探针自己占了槽位，归还以便下一次按键
+        self.coordinator.finish();
+    }
+
+    fn assert_resident_no_dialog(&self) {
+        assert!(!self.coordinator.exit_allowed(), "no exit granted");
+        assert!(!self.coordinator.background_continue(), "no detach armed");
+        assert!(!self.coordinator.stop_intent_landed(), "nothing stopped");
+        let recorded = self.requests.lock().expect("requests");
+        assert_eq!(recorded.len(), 1, "exactly one GET quit-guard, no stop-intent POST");
+        assert!(recorded[0].starts_with("GET /api/quit-guard HTTP/1.1"), "{}", recorded[0]);
+    }
+}
+
+impl Drop for Scenario {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.data_dir);
+    }
+}
+
+#[test]
+fn cmd_q_menu_entry_scheduled_only_stays_resident_without_dialog() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(REAL_SERVER_BODY, "cmdq");
+    s.press_cmd_q();
+    s.wait_flow_done();
+    s.assert_resident_no_dialog();
+    eprintln!(
+        "coordinator: exit_allowed={} background_continue={} stop_intent_landed={} slot_released=true",
+        s.coordinator.exit_allowed(),
+        s.coordinator.background_continue(),
+        s.coordinator.stop_intent_landed()
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn mac_terminate_origin_scheduled_only_stays_resident_without_dialog() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(REAL_SERVER_BODY, "macterm");
+    assert!(s.coordinator.begin_request(), "terminate hook takes the slot");
+    crate::spawn_quit_guard_flow_with(
+        s.handle.clone(),
+        s.coordinator.clone(),
+        QuitFlowOrigin::MacApplicationTerminate,
+        s.poster(),
+    );
+    s.wait_flow_done();
+    s.assert_resident_no_dialog();
+    eprintln!(
+        "coordinator: exit_allowed={} background_continue={} stop_intent_landed={} slot_released=true",
+        s.coordinator.exit_allowed(),
+        s.coordinator.background_continue(),
+        s.coordinator.stop_intent_landed()
+    );
+}
+
+fn first_then_second_hint(body: &'static str, tag: &str, language: QuitDialogLanguage, needle: &str) {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(body, tag);
+    let marker = s.data_dir.join("background-hint-shown");
+    assert!(!marker.exists(), "no marker before first entry");
+
+    s.press_cmd_q();
+    s.wait_flow_done();
+    {
+        let posted = s.posted.lock().expect("posted");
+        assert_eq!(posted.len(), 1, "first entry posts exactly one hint");
+        assert_eq!(posted[0], language);
+        let text = background_hint(posted[0]);
+        assert!(text.contains(needle), "{text}");
+    }
+    assert!(marker.exists(), "marker written after the first hint");
+
+    s.requests.lock().expect("requests").clear();
+    s.press_cmd_q();
+    s.wait_flow_done();
+    assert_eq!(s.posted.lock().expect("posted").len(), 1, "second entry posts nothing");
+}
+
+#[test]
+fn first_hint_names_quit_completely_once_zh() {
+    first_then_second_hint(REAL_SERVER_BODY, "hintzh", QuitDialogLanguage::Zh, "完全退出");
+}
+
+#[test]
+fn first_hint_names_quit_completely_once_en() {
+    first_then_second_hint(EN_SERVER_BODY, "hinten", QuitDialogLanguage::En, "Quit Completely");
+}

@@ -21,6 +21,7 @@ const ConnectorDomainRequestSchema = z.object({
     'oauthSetSecret',
     'oauthStatus',
     'openApp',
+    'openAutomationSettings',
     'probe',
     'remove',
     'repairPermission',

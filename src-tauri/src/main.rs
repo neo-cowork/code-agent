@@ -2476,10 +2476,53 @@ enum QuitFlowOrigin {
     MacApplicationTerminate,
 }
 
+/// `RunEvent::ExitRequested` 的处理体（抽成泛型函数，生产事件循环与无头测试共用）。
+fn handle_exit_requested<R: tauri::Runtime>(
+    app_handle: &AppHandle<R>,
+    code: Option<i32>,
+    prevent_exit: impl FnOnce(),
+    hint_poster: impl FnOnce(quit_dialog_i18n::QuitDialogLanguage) -> Result<(), String> + Send + 'static,
+) {
+    let coordinator = app_handle.state::<Arc<quit_guard::QuitCoordinator>>();
+    let restart_requested = code == Some(tauri::RESTART_EXIT_CODE);
+    if restart_requested || coordinator.exit_allowed() || coordinator.current_skip().is_some() {
+        // 「后台继续」（N-RESIDENT-HOST-SHELL-RUST）：壳退出但常驻宿主留着跑，
+        // 跳过 cleanup_server。豁免（关机/更新重启/信号）不置此标志，照旧清理。
+        if !coordinator.background_continue() {
+            cleanup_server(app_handle);
+        }
+    } else {
+        prevent_exit();
+        // 弹框去重：已开着 → 本次请求并入那个弹框，不重复弹也不直接退出
+        if coordinator.begin_request() {
+            spawn_quit_guard_flow_with(
+                app_handle.clone(),
+                coordinator.inner().clone(),
+                QuitFlowOrigin::TauriExit,
+                hint_poster,
+            );
+        }
+    }
+}
+
+/// `quit_app` 菜单项（⌘Q）的消费体：转 exit(0)，由运行时重入 ExitRequested。
+fn handle_quit_app_menu<R: tauri::Runtime>(_app_handle: &AppHandle<R>, request_exit: impl FnOnce(i32)) {
+    request_exit(0);
+}
+
 fn spawn_quit_guard_flow<R: tauri::Runtime>(
     app: AppHandle<R>,
     coordinator: Arc<quit_guard::QuitCoordinator>,
     origin: QuitFlowOrigin,
+) {
+    spawn_quit_guard_flow_with(app, coordinator, origin, background_resident::post_native_hint);
+}
+
+fn spawn_quit_guard_flow_with<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    coordinator: Arc<quit_guard::QuitCoordinator>,
+    origin: QuitFlowOrigin,
+    hint_poster: impl FnOnce(quit_dialog_i18n::QuitDialogLanguage) -> Result<(), String> + Send + 'static,
 ) {
     thread::spawn(move || {
         // token 解析镜像 auth.ts resolveDevAuthTokenPath：以 webServer 的 cwd 为准，
@@ -2505,7 +2548,7 @@ fn spawn_quit_guard_flow<R: tauri::Runtime>(
                 }
             }
             quit_guard::QuitDecision::HideToBackground { language } => {
-                background_resident::minimize_and_hint(&app, language);
+                background_resident::minimize_and_hint(&app, language, hint_poster);
                 coordinator.finish();
                 #[cfg(target_os = "macos")]
                 if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
@@ -4846,26 +4889,12 @@ fn main() {
         // 注意 ⌘Q 不天然走到这里：macOS 上 ⌘Q 由 setup_app_menu 的自定义项拦截后
         // 经 app.exit(0) 重入本分支（详见 setup_app_menu 注释）。
         RunEvent::ExitRequested { code, api, .. } => {
-            let coordinator = app_handle.state::<Arc<quit_guard::QuitCoordinator>>();
-            let restart_requested = code == Some(tauri::RESTART_EXIT_CODE);
-            if restart_requested || coordinator.exit_allowed() || coordinator.current_skip().is_some()
-            {
-                // 「后台继续」（N-RESIDENT-HOST-SHELL-RUST）：壳退出但常驻宿主留着跑，
-                // 跳过 cleanup_server。豁免（关机/更新重启/信号）不置此标志，照旧清理。
-                if !coordinator.background_continue() {
-                    cleanup_server(app_handle);
-                }
-            } else {
-                api.prevent_exit();
-                // 弹框去重：已开着 → 本次请求并入那个弹框，不重复弹也不直接退出
-                if coordinator.begin_request() {
-                    spawn_quit_guard_flow(
-                        app_handle.clone(),
-                        coordinator.inner().clone(),
-                        QuitFlowOrigin::TauriExit,
-                    );
-                }
-            }
+            handle_exit_requested(
+                app_handle,
+                code,
+                || api.prevent_exit(),
+                background_resident::post_native_hint,
+            );
         }
         RunEvent::Exit => {
             // 与 ExitRequested 同一判据：后台继续不清理；其余退出照旧收尸。
@@ -4894,7 +4923,7 @@ fn main() {
             });
         }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "quit_app" => {
-            app_handle.exit(0);
+            handle_quit_app_menu(app_handle, |code| app_handle.exit(code));
         }
         _ => {}
     });
