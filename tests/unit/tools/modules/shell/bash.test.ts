@@ -8,6 +8,7 @@ import { homedir, tmpdir } from 'os';
 import { dirname, join, parse, resolve } from 'path';
 import { resetPolicyEngine, getPolicyEngine } from '../../../../../src/host/permissions/policyEngine';
 import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../../src/host/security/policyEnforcer';
+import { classifyEnvBlocker } from '../../../../../src/host/permissions/envAssist/classify';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -1002,6 +1003,34 @@ describe('bashModule failure diagnostics wiring', () => {
       expect(result.code).toBe('FS_ERROR');
       expect(result.error).toContain('可能');
       expect(result.error).toContain('kill');
+    }
+  });
+
+  it.skipIf(process.platform !== 'darwin').each([
+    ['could not create image from display', '屏幕录制'],
+    ['execution error: Not authorized to send Apple events to "Finder". (-1743)', '自动化'],
+    ['execution error: System Events got an error: osascript is not allowed assistive access. (-1719)', '辅助功能'],
+  ])('foreground exit 1 with macOS privacy refusal %s names the System Settings page', async (stderr, page) => {
+    vi.stubEnv('SSH_CONNECTION', '');
+    vi.stubEnv('SSH_TTY', '');
+    vi.stubEnv('SSH_CLIENT', '');
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: `printf '%s\\n' '${stderr}' >&2; exit 1` },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain(`诊断：`);
+        expect(result.error).toContain(`隐私与安全性 > ${page}」打开 Neo`);
+        // No new card: Bash never feeds the env-assist classifier a notice.
+        expect(classifyEnvBlocker({ toolName: 'Bash', result, sessionId: 's', runId: 'r' })).toBeNull();
+        expect((result as { meta?: Record<string, unknown> }).meta?.envAssist).toBeUndefined();
+      }
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 

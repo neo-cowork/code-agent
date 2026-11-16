@@ -1,3 +1,6 @@
+import { detectScreenshotFailureCause } from '../../permissions/envAssist/screenshotFailureCause';
+import { isAppleEventsDenied } from '../../connectors/native/appleScriptFailure';
+
 const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
 
 /**
@@ -208,6 +211,38 @@ export interface BashFailureDiagnosticsInput {
   durationMs?: number;
   sandboxed?: boolean;
   workingDirectory?: string;
+  /** Host platform / environment used to gate the macOS privacy (TCC) hint; defaults to the live process. */
+  platform?: string;
+  env?: Record<string, string | undefined>;
+}
+
+// AppleScript System Events refusals: the launching app (Neo, not the script
+// runner) lacks Accessibility permission.
+const ACCESSIBILITY_DENIAL_PATTERN = /(?<!\d)-(?:1719|25211|1002)(?!\d)|not allowed assistive access|not allowed to send keystrokes/i;
+
+/**
+ * One 诊断 line naming the System Settings page when macOS privacy (TCC)
+ * refused a Bash-launched screen capture or AppleScript. No line over SSH (no GUI
+ * session: a permission switch cannot fix that) or on non-darwin hosts.
+ */
+function diagnoseTccDenial(input: {
+  failureText: string;
+  platform: string;
+  env: Record<string, string | undefined>;
+}): string | undefined {
+  if (input.platform !== 'darwin') return undefined;
+  const cause = detectScreenshotFailureCause({ platform: input.platform, env: input.env, message: input.failureText });
+  if (cause.kind === 'ssh_session_no_gui') return undefined;
+  if (isAppleEventsDenied(input.failureText)) {
+    return '诊断：macOS 拒绝了 Neo 控制其他应用（自动化权限未开）。请到「系统设置 > 隐私与安全性 > 自动化」打开 Neo，再试。';
+  }
+  if (ACCESSIBILITY_DENIAL_PATTERN.test(input.failureText)) {
+    return '诊断：macOS 拒绝了 Neo 模拟键鼠操作（辅助功能权限未开）。请到「系统设置 > 隐私与安全性 > 辅助功能」打开 Neo，再试。';
+  }
+  if (cause.kind === 'screen_recording_permission') {
+    return '诊断：macOS 拒绝了截屏（屏幕录制权限未开）。请到「系统设置 > 隐私与安全性 > 屏幕录制」打开 Neo，然后重启 Neo 再试。';
+  }
+  return undefined;
 }
 
 const SELF_KILL_SIGNALS = new Set<NodeJS.Signals>(['SIGTERM', 'SIGKILL']);
@@ -240,6 +275,13 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
     workingDirectory: input.workingDirectory,
   });
   if (sandboxDenial) diagnostics.push(sandboxDenial);
+
+  const tccDenial = diagnoseTccDenial({
+    failureText,
+    platform: input.platform ?? process.platform,
+    env: input.env ?? process.env,
+  });
+  if (tccDenial) diagnostics.push(tccDenial);
 
   if (nodeTool && MISSING_COMMAND_PATTERN.test(failureText)) {
     diagnostics.push(
