@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -33,6 +33,11 @@ const FOLLOWUP = 'No wait, make it Nov 17 at 15:00 and create it';
 // Only persistence/telemetry and the post-admission engine dispatch are local ports;
 // the adapter dispatches to ToolExecutor.execute, never recreates an admission rule.
 describe('connector follow-up through MessageProcessor.handleToolResponse', () => {
+  // The connector tools are registered on macOS only; pin the platform so the suite is host-independent
+  // (Linux CI otherwise answers "Unknown tool" before any approval is asked).
+  const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  beforeAll(() => { Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true }); });
+  afterAll(() => { Object.defineProperty(process, 'platform', realPlatform); });
   let messages: Message[];
   let events: AgentEvent[];
   let executor: ToolExecutor;

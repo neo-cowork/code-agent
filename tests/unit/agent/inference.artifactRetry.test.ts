@@ -262,7 +262,7 @@ describe('contextAssembly inference artifact retry', () => {
         tokenSavings: {
           status: 'estimated',
           savedTokens: 35,
-          detail: expect.stringContaining('真实账单以 provider usage 为准'),
+          detail: expect.stringContaining('真实账单以服务商用量为准'),
           measurement: {
             savingsSource: 'tool-spec-local-estimate',
             usageSource: 'model-response-usage',
@@ -331,7 +331,7 @@ describe('contextAssembly inference artifact retry', () => {
     expect(response.runtimeDiagnostics?.toolStrategy?.tokenSavings).toMatchObject({
       status: 'provider-reported',
       savedTokens: 17,
-      detail: expect.stringContaining('provider 已回传 programmatic tool saved tokens'),
+      detail: expect.stringContaining('服务商已回传工具节省量'),
       measurement: {
         savingsSource: 'provider-reported',
         usageSource: 'model-response-usage',

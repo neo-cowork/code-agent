@@ -39,9 +39,13 @@ export function BackgroundWakeFailureNote({
     : snapshot?.nodes.find((candidate) => candidate.id === detail.taskId || candidate.backgroundAgentId === detail.taskId);
   const title = usableMetadataTitle
     ?? (node ? agentNodeLabel(node, t.agentRoleLabels) : t.agentRoleLabels.roles.background);
+  const copy = detail.reason === 'owner_missing' ? t.backgroundPanel.wakeFailedOwnerMissing
+    : detail.reason === 'rate_limited' ? t.backgroundPanel.wakeFailedRateLimited
+      : detail.reason === 'max_iterations' ? t.backgroundPanel.wakeFailedMaxIterations
+        : t.backgroundPanel.wakeFailedGeneric;
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic" data-testid="background-wake-failure-note">
-      {interpolate(t.backgroundPanel.wakeFailed, { title })}
+      {interpolate(copy, { title })}
     </div>
   );
 }
