@@ -5,6 +5,12 @@ const mocks = vi.hoisted(() => ({
   enabledNative: [] as string[],
   runAppleScript: vi.fn(async () => 'Work\nPersonal'),
 }));
+// 日历自 #3483 走原生 EventKit 桥（不再走 osascript），在桥边界放假桥。
+const { fake } = await vi.hoisted(async () => ({ fake: (await import('../connectors/fakeCalendarBridge')).createFakeCalendarBridge() }));
+vi.mock('../../../src/host/permissions/envAssist/shellBridge/client', async (orig) => ({
+  ...(await orig<object>()),
+  resolveShellBridgeClientFromEnv: () => fake.client,
+}));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mocks.warn, error: vi.fn() }),
@@ -15,7 +21,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ connectors: { enabledNative: mocks.enabledNative } }) }),
 }));
 
-// 只在 osascript 边界替身：连接器对象、registry、tool-search 都是真实的。
+// 只在 osascript / 原生桥边界替身：连接器对象、registry、tool-search 都是真实的。
 vi.mock('../../../src/host/connectors/native/osascript', () => ({
   runAppleScript: mocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
@@ -30,6 +36,7 @@ import {
 } from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { getConnectorRegistry } from '../../../src/host/connectors/registry';
+import { resetCalendarConnectorReadiness } from '../../../src/host/connectors/native/calendar';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import type { ToolModule } from '../../../src/host/protocol/tools';
@@ -60,6 +67,8 @@ const darwin = process.platform === 'darwin';
 describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
   beforeEach(() => {
     mocks.warn.mockClear();
+    fake.reset();
+    resetCalendarConnectorReadiness();
     resetProtocolRegistry();
     for (const schema of [remindersCreateSchema, mailDraftSchema, calendarCreateEventSchema]) {
       const module: ToolModule = {
@@ -96,18 +105,23 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(mocks.warn).not.toHaveBeenCalled();
   });
 
-  it('enabled + failed probe: not preloaded, warns readiness-failed', async () => {
+  it('enabled + failed probe: reminders/mail not preloaded (readiness-failed); unauthorized calendar keeps its tools', async () => {
     enable(ALL);
     mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
     await expect(getConnectorRegistry().get('reminders')!.execute('probe_access', {})).rejects.toThrow();
     mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
     await expect(getConnectorRegistry().get('mail')!.execute('probe_access', {})).rejects.toThrow();
-    mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
-    await expect(getConnectorRegistry().get('calendar')!.execute('probe_access', {})).rejects.toThrow();
-    for (const id of ALL) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
+    // 日历未授权不算「坏了」：保持 unchecked、工具照常预载，调用时出授权卡（#3483）
+    fake.state.status = 2;
+    await getConnectorRegistry().get('calendar')!.execute('probe_access', {});
+    for (const id of ['reminders', 'mail']) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
+    expect(getConnectorRegistry().get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
 
-    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
-    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(3);
+    const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names).toContain('calendar_create_event');
+    expect(names).not.toContain('reminders_create');
+    expect(names).not.toContain('mail_draft');
+    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(2);
   });
 
   it('enabled but platform unavailable: not preloaded, warns readiness-unavailable', () => {

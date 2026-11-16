@@ -40,7 +40,7 @@ vi.mock('../../../../../src/host/runtime/envResumeWaiter', () => ({
 }));
 vi.mock('../../../../../src/host/app/applicationRunRegistry', () => ({ getApplicationRunRegistry: () => ({}) }));
 vi.mock('../../../../../src/host/permissions/envAssist/shellBridge/client', async (orig) => ({
-  ...(await orig<object>()), canRequestEnvGrant: () => true, resolveShellBridgeClientFromEnv: () => null,
+  ...(await orig<object>()), canRequestEnvGrant: async () => true, resolveShellBridgeClientFromEnv: () => null,
 }));
 vi.mock('../../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn(async () => true) }));
 

@@ -17,7 +17,7 @@ vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../../../../src/host/services/agentEngine/agentEngineEventSink', () => ({
   emitExternalAgentEvent: (sessionId: string, event: AgentEvent) => { mocks.events.push({ sessionId, event }); },
 }));
-vi.mock('../../../../../src/host/permissions/envAssist/shellBridge/client', () => ({ canRequestEnvGrant: () => true, resolveShellBridgeClientFromEnv: () => null }));
+vi.mock('../../../../../src/host/permissions/envAssist/shellBridge/client', () => ({ canRequestEnvGrant: async () => true, resolveShellBridgeClientFromEnv: () => null }));
 vi.mock('../../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn(async () => true) }));
 
 import { publishEnvAssistToolNotice } from '../../../../../src/host/permissions/envAssist/toolNotice';
