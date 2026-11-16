@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { ENV_ASSIST_BRIDGE_TIMEOUT_MS } from '../../../../shared/constants/envAssist';
+import { ENV_ASSIST_BRIDGE_PROBE_TIMEOUT_MS, ENV_ASSIST_BRIDGE_TIMEOUT_MS } from '../../../../shared/constants/envAssist';
 import { createLogger } from '../../../services/infra/logger';
 
 const BRIDGE_URL_ENV = 'CODE_AGENT_ENV_ASSIST_BRIDGE_URL';
@@ -17,7 +17,7 @@ export function bridgeErrorCode(error: unknown): string | undefined {
 }
 
 export interface ShellBridgeClient {
-  post<TResponse>(path: string, body?: Record<string, unknown>): Promise<TResponse>;
+  post<TResponse>(path: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<TResponse>;
 }
 
 interface CapturedBridgeEnv {
@@ -126,9 +126,13 @@ export function resolveShellBridgeClientFromEnv(
   }
 
   return {
-    async post<TResponse>(path: string, body: Record<string, unknown> = {}): Promise<TResponse> {
+    async post<TResponse>(
+      path: string,
+      body: Record<string, unknown> = {},
+      timeoutMs = ENV_ASSIST_BRIDGE_TIMEOUT_MS,
+    ): Promise<TResponse> {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), ENV_ASSIST_BRIDGE_TIMEOUT_MS);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       let response: Response;
       try {
         response = await fetch(`${baseUrl}${path}`, {
@@ -143,7 +147,7 @@ export function resolveShellBridgeClientFromEnv(
       } catch {
         const reason = 'env_assist_bridge:bridge_unreachable';
         logger.warn(reason);
-        throw new Error(reason);
+        throw Object.assign(new Error(reason), { bridgeFailure: controller.signal.aborted ? 'timeout' : 'unreachable' });
       } finally {
         clearTimeout(timer);
       }
@@ -169,10 +173,18 @@ export function resolveShellBridgeClientFromEnv(
   };
 }
 
-/** Cards only offer the prompting button when the desktop shell bridge can actually show the system dialog. */
-let grantBridgeAvailable: boolean | undefined;
-export function canRequestEnvGrant(): boolean {
-  // The shell hands credentials over once per process, so the answer never changes; resolve (and warn) once.
-  grantBridgeAvailable ??= resolveShellBridgeClientFromEnv() !== null;
-  return grantBridgeAvailable;
+/** Cards only offer the prompting button when a fresh passive probe reaches the desktop shell bridge. */
+export async function canRequestEnvGrant(): Promise<boolean> {
+  const client = resolveShellBridgeClientFromEnv();
+  if (!client) return false;
+  try {
+    await client.post('/v1/passive/accessibility', {}, ENV_ASSIST_BRIDGE_PROBE_TIMEOUT_MS);
+    return true;
+  } catch (error) {
+    const reason = (error as { bridgeFailure?: unknown } | null)?.bridgeFailure === 'timeout' ? 'timeout'
+      : error instanceof Error && error.message === 'env_assist_bridge:bridge_auth_rejected' ? 'auth_rejected'
+      : 'unreachable';
+    logger.warn('env_assist_bridge:grant_button_withheld', { reason });
+    return false;
+  }
 }

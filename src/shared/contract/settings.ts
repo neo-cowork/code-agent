@@ -143,6 +143,8 @@ export type ProxyMode = 'auto' | 'direct' | 'proxy';
 export interface ModelProviderSettings {
   apiKey?: string;
   apiKeyConfigured?: boolean;
+  /** Runtime credential origin; derived by the host, contains no credential value. */
+  apiKeySource?: 'saved' | 'account' | 'environment';
   /** 用户是否启用该 Provider 入口。仅表示入口开关，不代表当前运行时可用。 */
   enabled: boolean;
   /** 当前运行时是否可用；Local/Ollama 由本机发现刷新，不由 enabled 推导。 */
