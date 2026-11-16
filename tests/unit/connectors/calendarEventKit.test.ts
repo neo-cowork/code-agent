@@ -86,6 +86,16 @@ describe('calendar connector over EventKit', () => {
     expect((error as Error).message).toContain('call calendar list_events again');
   });
 
+  it('passes notes (CJK + newline) to EventKit unchanged and returns them; sends no notes key when absent', async () => {
+    const notes = '带上季度报表\n第二行';
+    const created = await calendarConnector.execute('create_event', { title: '周会', start_ms: HOUR, notes });
+    expect(fake.state.calls.at(-1)?.body).toEqual({ op: 'create', title: '周会', startMs: HOUR, endMs: HOUR + 30 * 60_000, notes });
+    expect(created.data).toMatchObject({ title: '周会', notes });
+
+    await calendarConnector.execute('create_event', { title: '无备注', start_ms: HOUR, notes: '   ' });
+    expect(fake.state.calls.at(-1)?.body).not.toHaveProperty('notes');
+  });
+
   it('creates in the named writable calendar (case-insensitive), or the system default; rejects unknown names before writing', async () => {
     fake.state.calendars = [
       { id: 'c-holidays', title: '节假日', writable: false },
