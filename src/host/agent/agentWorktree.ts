@@ -24,6 +24,7 @@ import type {
   AgentWorktreeReview,
 } from '../../shared/contract/agentTree';
 import { WORKTREE_BASE_DIR } from './agentWorktreePath';
+import { resolveAgentBranchName, readWorktreeBranch } from './agentWorktreeBranch';
 
 const execAsync = promisify(exec);
 const logger = createLogger('AgentWorktree');
@@ -471,16 +472,17 @@ export async function getAgentWorktreeReview(agentId: string): Promise<AgentWork
 
 /**
  * Create an isolated git worktree for an agent.
- * Branch name: agent/{agentId}
+ * Branch name: agent/<slug>-<hex> for internal ids / labelled tasks, else agent/{agentId}
  * Path: /tmp/code-agent-worktrees/{agentId}
  */
 export async function createAgentWorktree(
   agentId: string,
   repoPath: string,
-  baseBranch?: string
+  baseBranch?: string,
+  label?: string,
 ): Promise<WorktreeInfo> {
   const physicalAgentId = getAgentWorktreeKey(agentId);
-  const branchName = `agent/${physicalAgentId}`;
+  const branchName = await resolveAgentBranchName(agentId, physicalAgentId, repoPath, label);
   const safeName = physicalAgentId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const worktreePath = path.join(WORKTREE_BASE_DIR, safeName);
 
@@ -599,7 +601,7 @@ export async function cleanupAgentWorktree(
   repoPath: string,
   baseCommit?: string,
 ): Promise<WorktreeCleanupResult> {
-  const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
+  const branchName = await readWorktreeBranch(worktreePath, getAgentWorktreeKey(agentId));
 
   try {
     // Check for uncommitted changes in worktree
@@ -710,7 +712,7 @@ export async function discardAgentWorktree(
   worktreePath: string,
   repoPath: string,
 ): Promise<void> {
-  const branchName = `agent/${getAgentWorktreeKey(agentId)}`;
+  const branchName = await readWorktreeBranch(worktreePath, getAgentWorktreeKey(agentId));
   await execAsync(
     `git worktree remove --force ${shellQuote(worktreePath)}`,
     { cwd: repoPath, timeout: WORKTREE_TIMEOUT },

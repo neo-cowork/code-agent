@@ -285,7 +285,7 @@ export async function executeSingleSpawnAgent(
         forceWorktree: engineResolution.engine !== 'native',
       });
       if (effectiveIsolation === 'worktree') {
-        const prepared = await prepareSpawnAgentWorktree(agentId, cwd, context);
+        const prepared = await prepareSpawnAgentWorktree(agentId, cwd, context, task);
         if (!prepared.ok) { slotLease?.release(); slotLease = undefined; return prepared.failure; }
         worktreeInfo = prepared.worktreeInfo; cwd = worktreeInfo.worktreePath;
       }
