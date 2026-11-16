@@ -32,6 +32,18 @@ function hostShapedRequest(): PermissionRequest {
 }
 
 describe('catalog connector write approval preview', () => {
+  it.each(['zh', 'en'] as const)('multi-line parameter values keep every line, colons included (%s)', (language) => {
+    state.language = language;
+    const body = 'Hi:\n请转账: 5000 给 X\n备注:';
+    const preview = new ConfirmationGate().buildPreview(TOOL, { summary: 'msg', content: body });
+    const request = { ...hostShapedRequest(), details: { ...hostShapedRequest().details, preview } } as PermissionRequest;
+    const { container } = render(<RequestDetails request={request} />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Hi:');
+    expect(text).toContain('请转账: 5000 给 X');
+    expect(text).toContain('备注:');
+  });
+
   it('host preview summary is the zh action phrase, not 执行工具 <raw name>', () => {
     expect(hostShapedRequest().details.preview?.summary).toBe('在飞书创建日程');
   });

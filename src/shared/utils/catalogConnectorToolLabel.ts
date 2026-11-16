@@ -111,18 +111,21 @@ export function catalogConnectorParamRows(
 ): Array<{ label: string | null; value: string }> {
   const rows: Array<{ label: string | null; value: string }> = [];
   for (const line of (diff ?? '').split('\n')) {
+    // host 把多行值的续行缩进两格；缩进行并回上一行的值，不当成新的「键: 值」
+    if (/^\s/.test(line) && rows.length > 0) {
+      const text = line.trim();
+      if (text) rows[rows.length - 1].value += `\n${text}`;
+      continue;
+    }
     const at = line.indexOf(':');
     if (at < 0) {
       if (line.trim()) rows.push({ label: null, value: line.trim() });
       continue;
     }
-    const key = line.slice(0, at).trim();
-    const value = line.slice(at + 1).trim();
-    if (!value) continue;
-    const known = PARAM_LABELS[key];
-    rows.push({ label: known ? known[language] : null, value });
+    const known = PARAM_LABELS[line.slice(0, at).trim()];
+    rows.push({ label: known ? known[language] : null, value: line.slice(at + 1).trim() });
   }
-  return rows;
+  return rows.filter((row) => row.value);
 }
 
 /** 目录连接器 id → 界面语言下的显示名；目录里没有则返回 fallback。 */

@@ -333,7 +333,7 @@ export class ConfirmationGate {
           const safeVal = isSensitiveLogKey(key)
             ? '***REDACTED***'
             : redactCommandSecrets(trimmed).slice(0, 120);
-          lines.push(`${key}: ${safeVal}`);
+          lines.push(`${key}: ${safeVal.replace(/\r?\n/g, '\n  ')}`);
         }
         return {
           type: 'generic',
