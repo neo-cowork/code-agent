@@ -2157,6 +2157,11 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // 日历写回：批准卡的补充信息（默认日历名 / 要删那条的标题时间）只在这唯一一次审批里补，不改 params
+      if (executionToolName.startsWith('calendar_')) {
+        const { calendarApprovalDetails } = await import('./modules/connectors/calendarApprovalDetails');
+        Object.assign(permissionRequest.details, await calendarApprovalDetails(executionToolName, params));
+      }
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;
       if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;

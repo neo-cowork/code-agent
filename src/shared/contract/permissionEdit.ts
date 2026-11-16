@@ -45,6 +45,16 @@ const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
     { key: 'end_ms', kind: 'datetime' },
     { key: 'location', kind: 'string' },
   ],
+  // 删除单条日程走同一张中性写回卡（不是红色危险卡）：只删这一条（重复日程只删这一次）、删前留快照、删后可撤销。
+  // 红色只留给大范围不可逆：删整个重复系列、一次删多条——本工具都不做，做了再单独走危险卡。
+  // 字段全只读：宿主在请求批准前用快照补上标题/时间/地点，只给卡片看，不进删除请求。
+  calendar_delete_event: [
+    { key: 'calendar', kind: 'string', required: true, readonly: true },
+    { key: 'title', kind: 'string', readonly: true },
+    { key: 'start_ms', kind: 'datetime', readonly: true },
+    { key: 'end_ms', kind: 'datetime', readonly: true },
+    { key: 'location', kind: 'string', readonly: true },
+  ],
   reminders_create: [
     { key: 'list', kind: 'string', required: true, readonly: true },
     { key: 'title', kind: 'string', required: true },

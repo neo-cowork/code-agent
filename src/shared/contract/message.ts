@@ -467,7 +467,7 @@ export interface MessageMetadata {
    */
   backgroundWakeFailed?: {
     taskId: string;
-    reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
+    reason: 'owner_missing' | 'rate_limited' | 'wake_failed' | 'max_iterations' | 'turn_error';
     title?: string;
   };
   /**
