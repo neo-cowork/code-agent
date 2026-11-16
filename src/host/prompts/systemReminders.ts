@@ -461,6 +461,18 @@ const OFFICE_FILE_OPERATION_RE = new RegExp([
   String.raw`(?:convert|export|save|copy|move)\b[^.]{0,64}?\.(?:docx|xlsx)\b[^.]{0,32}?\b(?:to|into)\b`,
 ].join('|'), 'i');
 
+/**
+ * 用户明确点名要后台任务（「在后台做」「开一个后台任务」/ "in the background"、"background task"）。
+ * 单轮文件交付收口（隐藏委派工具 + 「不要派发后台」提醒）只面向**没**提后台的请求；
+ * 用户明说要后台时它是权威指令，收口会让模型编出「没有后台槽位」的借口并转前台。
+ */
+const EXPLICIT_BACKGROUND_REQUEST_RE = new RegExp([
+  String.raw`(?:在|放到?|转到?|丢到?|开(?:一个|个)?|起(?:一个|个)?|用|跑|帮我|执行|运行)\s*后台`,
+  String.raw`后台\s*(?:任务|运行|执行|跑|做|处理|生成|导出)`,
+  String.raw`\bbackground\s+(?:task|job|agent)s?\b`,
+  String.raw`\b(?:in|to|as)\s+(?:the\s+|a\s+)?background\b`,
+].join('|'), 'i');
+
 function isOfficeFileDeliverablePrompt(message: string): boolean {
   if (OFFICE_FILE_OPERATION_RE.test(message)) return false;
   if (!OFFICE_DELIVERABLE_VERB_RE.test(message)) return false;
@@ -661,7 +673,8 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isMultiDimension,
     isBoundedComparison,
     isOfficeFileDeliverable,
-    isOneTurnFileDeliverable: isOfficeFileDeliverable && !isComplexTask && !isMultiDimension,
+    isOneTurnFileDeliverable: isOfficeFileDeliverable && !isComplexTask && !isMultiDimension &&
+      !EXPLICIT_BACKGROUND_REQUEST_RE.test(prompt),
     isComplexTask,
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),

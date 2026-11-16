@@ -129,6 +129,16 @@ describe('toolRunPolicy', () => {
       expect(kept).not.toContain('workflow');
     });
 
+    it('用户明确要后台任务：delegate_task 留在工具面；无后台字样的同类请求仍被移出', () => {
+      const names = (prompt: string) => filterToolsByRunPolicy([
+        tool('delegate_task'), tool('excel_generate'), tool('Read'),
+      ], { messages: [{ role: 'user', content: prompt }] } as any).map((item) => item.name);
+
+      expect(names('Start a background task: export signups.csv as an Excel file (.xlsx) and notify me when done')).toContain('delegate_task');
+      expect(names('开一个后台任务，把 signups.csv 导出成 Excel 文件 .xlsx，完成后通知我')).toContain('delegate_task');
+      expect(names('Export signups.csv as an Excel file (.xlsx)')).not.toContain('delegate_task');
+    });
+
     it('前台白名单 + 文件交付：生成工具进面，委派工具出局（组装末端形状）', () => {
       const ctx = {
         allowedToolNames: [
