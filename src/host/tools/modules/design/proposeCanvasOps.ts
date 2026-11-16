@@ -120,7 +120,7 @@ export async function executeProposeCanvasOps(
     const { notificationService } = await import('../../../services/infra/notificationService');
     notificationService.notifyNeedsInput({
       sessionId: ctx.sessionId || '',
-      title: '画布提议待审批',
+      title: '画布修改待确认',
       body: rationale || `${ops.length} 项画布修改待你确认`,
     });
   } catch {
