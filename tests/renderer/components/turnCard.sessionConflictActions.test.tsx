@@ -115,10 +115,18 @@ describe('RUN_SESSION_CONFLICT failure note actions', () => {
   it('Abandon cancels the old run with abandonParked and reports done', async () => {
     await sendAndConflict('zh');
     view();
-    invokeMock.mockResolvedValueOnce(undefined);
+    invokeMock.mockResolvedValueOnce({ message: 'Cancelled', runId: 'r1' });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '放弃' })); });
     expect(invokeMock).toHaveBeenLastCalledWith('agent:cancel', { sessionId: SESSION_ID, abandonParked: true });
     expect(screen.getByRole('status').textContent).toContain('旧任务已结束');
+  });
+
+  it('Abandon that the host answers with "No active agent to cancel" is not reported as done', async () => {
+    await sendAndConflict('zh');
+    view();
+    invokeMock.mockResolvedValueOnce({ message: 'No active agent to cancel' });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '放弃' })); });
+    expect(screen.getByRole('status').textContent).toContain('没能结束旧任务');
   });
 
   it('Abandon failure is reported, not swallowed', async () => {

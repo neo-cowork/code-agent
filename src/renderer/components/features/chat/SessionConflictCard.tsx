@@ -39,7 +39,11 @@ export function SessionConflictCard({ node, sessionId }: {
     if (!anchorSessionId) return;
     setState('abandoning');
     try {
-      await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId: anchorSessionId, abandonParked: true });
+      // web 取消路由对「没找到可终态化的 run」也回 200（message 不是 Cancelled，旧任务仍在）：
+      // 租约还没回收的窗口里真机撞到过——不能把它报成「已结束」。桌面 IPC 无返回体，按成功算。
+      const result = await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId: anchorSessionId, abandonParked: true }) as unknown;
+      const message = (result as { message?: unknown } | null | undefined)?.message;
+      if (typeof message === 'string' && message !== 'Cancelled') throw new Error('nothing cancelled');
       // 与「放弃」停靠入口一致：不乐观清「可继续」投影，防陈旧快照守卫把它复活。
       useSessionStore.setState((s) => ({
         sessions: s.sessions.map((session) => (
