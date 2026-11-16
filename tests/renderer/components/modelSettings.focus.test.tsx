@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ModelConfig } from '../../../src/shared/contract';
+import type { ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { ModelSettings } from '../../../src/renderer/components/features/settings/tabs/ModelSettings';
 
@@ -40,6 +40,48 @@ describe('ModelSettings one-shot API key focus', () => {
     expect(useAppStore.getState().settingsModelFocus?.nonce).not.toBe(nonce);
     await waitFor(() => expect(document.activeElement?.hasAttribute('data-model-api-key')).toBe(true));
     expect(useAppStore.getState().settingsModelFocus).toBeNull();
+  });
+
+  it('guide focuses the saved default provider rather than the currently edited provider', async () => {
+    const view = render(<Settings initialProvider="deepseek" />);
+    const guide = await waitFor(() => {
+      const button = view.getByRole('button', { name: 'No API key yet? Add one here' });
+      expect(button).toBeTruthy();
+      return button;
+    });
+    fireEvent.click(guide);
+    await waitFor(() => {
+      expect(document.activeElement?.hasAttribute('data-model-api-key')).toBe(true);
+      expect(document.activeElement?.closest('[data-model-provider]')?.getAttribute('data-model-provider')).toBe('openai');
+    });
+  });
+
+  it.each([
+    ['environment', 'Using the key from your environment'],
+    ['account', 'Provided by your account'],
+    ['saved', 'API Key saved'],
+  ] as const)('renders %s source through ModelSettings and hides the guide', async (source, text) => {
+    const provider = settings.models.providers.openai as ModelProviderSettings;
+    Object.assign(provider, { apiKeyConfigured: true, apiKeySource: source });
+    try {
+      const view = render(<Settings initialProvider="openai" />);
+      await waitFor(() => expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe(text));
+      expect(view.container.querySelector('[data-model-key-guide]')).toBeNull();
+    } finally {
+      delete provider.apiKeyConfigured;
+      delete provider.apiKeySource;
+    }
+  });
+
+  it('clearing an unsaved key restores waiting rather than retaining a false available state', async () => {
+    const view = render(<Settings initialProvider="openai" />);
+    await waitFor(() => expect(view.container.querySelector('[data-model-key-guide]')).not.toBeNull());
+    const input = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]')!;
+    fireEvent.change(input, { target: { value: 'dummy-staged-key' } });
+    expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('API Key not saved yet');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('Waiting for API Key');
+    expect(view.container.querySelector('[data-model-key-guide]')).not.toBeNull();
   });
 
   it('ordinary settings navigation discards a pending model focus', () => {

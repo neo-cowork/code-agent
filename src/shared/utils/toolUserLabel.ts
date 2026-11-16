@@ -6,6 +6,7 @@
 // 原始命令只放在审批卡的可展开详情里，通知只说动作。
 // ============================================================================
 
+import { PARKED_APPROVAL_ENTRY_PATH } from '../parkedApprovalLocation';
 import { findConnectorToolMetadata, isMcpToolName } from '../contract/workbenchTools';
 
 const TOOL_USER_LABELS: Record<string, string> = {
@@ -14,6 +15,9 @@ const TOOL_USER_LABELS: Record<string, string> = {
   writefile: '写入文件',
   edit: '编辑文件',
   editfile: '编辑文件',
+  docedit: '编辑文档',
+  excelgenerate: '导出表格',
+  docxgenerate: '生成文档',
   read: '读取文件',
   readfile: '读取文件',
   glob: '查找文件',
@@ -27,6 +31,7 @@ const TOOL_USER_LABELS: Record<string, string> = {
 
 const TOOL_USER_LABELS_EN: Record<string, string> = {
   bash: 'Run command', write: 'Write file', writefile: 'Write file', edit: 'Edit file', editfile: 'Edit file',
+  docedit: 'Edit document', excelgenerate: 'Export spreadsheet', docxgenerate: 'Create document',
   read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
   webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search',
   browseraction: 'Browser action', computeruse: 'Computer action',
@@ -50,8 +55,23 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
   return (en ? TOOL_USER_LABELS_EN[key] : TOOL_USER_LABELS[key]) ?? (en ? 'Action' : UNKNOWN_LABEL);
 }
 
-/** 「需要授权」类通知正文：只说动作，不带原始命令 / 工具名。 */
-export function permissionNoticeBody(toolName?: string): string {
-  const name = (toolName ?? '').trim();
-  return name ? `需要授权：${toolUserLabel(name)}` : '请求执行权限';
+/** Approval copy for host banners; only localized actions, never commands or tool ids. */
+export function permissionNotice(
+  toolName: string | undefined,
+  language: 'zh' | 'en',
+  context: 'approval' | 'parked' | 'native' = 'approval',
+): { title: string; body: string } {
+  const en = language === 'en';
+  // The native fallback also serves questions: preserve its generic wording.
+  if (context === 'native') return {
+    title: en ? 'Confirmation needed' : '有事项需要你确认',
+    body: en ? 'A background task is waiting for your confirmation. Open Agent Neo to respond.' : '后台任务在等你确认，打开 Agent Neo 处理。',
+  };
+  const title = en ? 'Approval needed' : '需要授权';
+  const label = toolName?.trim() ? toolUserLabel(toolName, language) : undefined;
+  const body = label ? `${title}${en ? ': ' : '：'}${label}` : (en ? 'Review the proposed action.' : '请求执行权限');
+  if (context !== 'parked') return { title, body };
+  return { title, body: `${body}${en
+    ? '. The task is paused. Open Agent Neo to review the unattended task.'
+    : `。任务已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`}` };
 }

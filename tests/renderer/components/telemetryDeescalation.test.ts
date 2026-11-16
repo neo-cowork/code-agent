@@ -30,8 +30,8 @@ describe('TurnCard 轮时间戳常驻（UX round2 20i）', () => {
 describe('TurnCard 思考行不重复', () => {
   it('流式思考阶段始终渲染 ThinkingDigestBanner，底部状态槽不再重复出思考信号', () => {
     expect(turnCard).toContain('<ThinkingDigestBanner');
-    expect(turnCard).toContain("showCaret={busySignal === 'text-caret'}");
-    expect(turnCard).toContain("waitingReason={busySignal === 'text-caret'");
+    expect(turnCard).toContain("showCaret={waitingForApproval || busySignal === 'text-caret'}");
+    expect(turnCard).toContain("waitingReason={waitingForApproval ? 'approval' : busySignal === 'text-caret'");
     expect(turnCard).toContain('const busySignal = resolveBusySignal(turn)');
     expect(turnCard).not.toContain('isThinking={isThinkingPhase}');
   });
@@ -39,7 +39,8 @@ describe('TurnCard 思考行不重复', () => {
   it('工具行已出现但正文未到时，等待信号只落在时间线底部', () => {
     expect(turnCard).not.toContain('placeStreamingIndicatorBeforeDigest');
     expect(turnCard).toContain('{streamingIndicator}');
-    expect(turnCard).toContain("preparationPhase={preparationPhase}");
+    expect(turnCard).toContain("preparationPhase={waitingForApproval ? undefined : preparationPhase}");
+    expect(turnCard).toContain("runningToolStartTime={!waitingForApproval && busySignal === 'text-caret' ? runningToolStartTime : undefined}");
   });
 });
 
