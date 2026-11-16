@@ -1,23 +1,29 @@
 // Runs the BUILT desktop entry (dist/web/webServer.cjs -> webServer.bundle.cjs), not the TypeScript source:
 // the shell hands the loopback bridge credentials over on stdin and the host log must show whether they arrived.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const ENTRY = path.resolve(__dirname, '../../../../../dist/web/webServer.cjs');
 const BUNDLE = path.resolve(path.dirname(ENTRY), 'webServer.bundle.cjs');
-const builtBundleMissing = !existsSync(ENTRY) || !existsSync(BUNDLE);
-if (builtBundleMissing) {
-  console.warn(`[shellBridgeBuiltBundle] skipped: ${BUNDLE} is absent — run \`npm run build:web\` first`);
-}
 
 type Variant = 'handshake' | 'no_flag' | 'stdin_eof' | 'bad_line';
 
-describe.skipIf(process.platform !== 'darwin' || builtBundleMissing)('built webServer bundle: shell bridge handshake', () => {
-  const cleanup: Array<() => void> = [];
-  afterEach(() => { for (const fn of cleanup.splice(0)) fn(); });
+describe.skipIf(process.platform !== 'darwin')('built webServer bundle: shell bridge handshake', () => {
+  const cleanup: Array<() => Promise<void>> = [];
+  afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); });
+
+  // A fresh checkout has no dist/: build the real bundle instead of skipping (fast gates forbid skipped tests).
+  beforeAll(() => {
+    if (existsSync(ENTRY) && existsSync(BUNDLE)) return;
+    console.warn(`[shellBridgeBuiltBundle] ${BUNDLE} is absent — building it with the web target`);
+    const built = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'esbuild.config.ts', 'web'], {
+      cwd: path.resolve(__dirname, '../../../../..'), encoding: 'utf8',
+    });
+    if (built.status !== 0 || !existsSync(BUNDLE)) throw new Error(`web bundle build failed:\n${built.stdout}\n${built.stderr}`);
+  }, 180000);
 
   async function freePort(): Promise<number> {
     return new Promise((resolve) => {
@@ -41,7 +47,12 @@ describe.skipIf(process.platform !== 'darwin' || builtBundleMissing)('built webS
       },
       stdio: ['pipe', 'ignore', 'ignore'],
     });
-    cleanup.push(() => { child.kill('SIGKILL'); rmSync(home, { recursive: true, force: true }); });
+    cleanup.push(async () => {
+      // Wait for the host to be really gone, or it keeps writing logs while the directory is removed (ENOTEMPTY).
+      const exited = new Promise<void>((resolve) => { child.once('exit', () => resolve()); });
+      if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await exited; }
+      rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    });
     if (variant === 'stdin_eof') child.stdin.end();
     else if (variant === 'bad_line') child.stdin.write('garbage line\n');
     else child.stdin.write('CODE_AGENT_ENV_ASSIST_BRIDGE http://127.0.0.1:9 built-bundle-token\n'); // pipe stays open, like the shell
