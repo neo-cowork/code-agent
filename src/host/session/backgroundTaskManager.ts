@@ -1,3 +1,4 @@
+import { readUiLanguage } from './sessionTitleHostPrompt';
 // ============================================================================
 // Background Task Manager - 后台任务管理
 // ============================================================================
@@ -147,7 +148,9 @@ class BackgroundTaskManager extends EventEmitter {
     notificationService.notifyTaskComplete({
       sessionId,
       sessionTitle: task.title,
-      summary: message === BACKGROUND_TASK_CANCELLED ? '任务已停止' : message || '任务已完成',
+      summary: message === BACKGROUND_TASK_CANCELLED
+        ? (readUiLanguage() === 'en' ? 'Task stopped' : '任务已停止')
+        : message || (readUiLanguage() === 'en' ? 'Task completed' : '任务已完成'),
       duration: Date.now() - task.startedAt,
       toolsUsed: [],
     }, { force: true });
@@ -165,7 +168,7 @@ class BackgroundTaskManager extends EventEmitter {
     if (task?.status !== 'running') return;
 
     task.status = 'failed';
-    task.completionMessage = error || '任务执行失败';
+    task.completionMessage = error || (readUiLanguage() === 'en' ? 'Task failed' : '任务执行失败');
 
     logger.warn('Background task failed', { sessionId, error });
 

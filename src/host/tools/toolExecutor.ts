@@ -105,6 +105,7 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { skillBoundaryAllowsTool } from './skillBoundaryScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
+import { observeInToolApproval } from './inToolApprovalObserve';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
@@ -1310,7 +1311,10 @@ export class ToolExecutor {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
-          const ask = normalizePermissionAskResult(await this.requestPermission(request));
+          const ask = await observeInToolApproval({
+            sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, request,
+            ask: async () => normalizePermissionAskResult(await this.requestPermission(request)),
+          });
           context.permissionAskResults?.set(request, ask);
           if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
