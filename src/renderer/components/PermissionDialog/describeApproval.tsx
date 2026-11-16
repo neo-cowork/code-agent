@@ -151,7 +151,7 @@ export function describeApproval(
 ): ApprovalDescription {
   const described = describeKind(request, t, language);
   if (getToolActionId(request.tool)
-      && !['dangerous_command', 'directory_access', 'file_delete'].includes(request.type)) {
+      && ['command', 'file_read', 'file_write', 'file_edit', 'network'].includes(request.type)) {
     described.title = toolUserLabel(request.tool, language);
   }
   const grant = request.details.browserSessionGrant;
