@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest as ContractPermissionRequest } from '../../../src/shared/contract/permission';
 
-// ADR-067 刀 2：peer 消息触发的审批卡必须标明「此动作由 agent X 的消息触发」。
+// ADR-067 刀 2：peer 消息触发的审批卡必须标明「此操作由 X 的消息触发」。
 // PermissionCard 是 store 连接型组件（permissionCard.reason.test.tsx 同款 mock）。
 
 const storeState = vi.hoisted(() => ({
@@ -73,14 +73,14 @@ describe('PermissionCard peer 起源标注（ADR-067 D3）', () => {
     const html = render(baseRequest({
       details: { command: 'rm -rf /tmp/x', triggeredByAgentMessage: { senderAgentId: 'agent-b' } },
     }));
-    expect(html).toContain('此动作由 agent agent-b 的消息触发');
+    expect(html).toContain('此操作由 agent-b 的消息触发');
   });
 
   it('senderAgentId 缺省时仍出标注（不崩、不漏标）', () => {
     const html = render(baseRequest({
       details: { command: 'rm -rf /tmp/x', triggeredByAgentMessage: {} },
     }));
-    expect(html).toContain('此动作由 agent ? 的消息触发');
+    expect(html).toContain('此操作由 ? 的消息触发');
   });
 
   it('无 peer 标记时不渲染标注', () => {

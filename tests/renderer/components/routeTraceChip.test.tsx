@@ -69,7 +69,7 @@ describe('RouteTraceChip', () => {
 	    expect(html).toContain('按量付费');
     expect(html).toContain('0.12 · 规则估计');
     expect(html).toContain('不代表模型质量评分');
-	    expect(html).toContain('外部工具');
+	    expect(html).toContain('MCP');
     expect(html).toContain('github');
     expect(html).toContain('本地估算少占 128 tokens 上下文');
     expect(html).toContain('本地工具规格估算');

@@ -451,7 +451,7 @@ export const RouteTraceChip: React.FC<{ decision: ModelDecisionEventData; defaul
           <div className="grid gap-1 sm:grid-cols-2">
 	            <DetailRow label="请求" value={<span className="font-mono text-[10px]">{requested}</span>} />
 	            <DetailRow label="实际" value={<span className="font-mono text-[10px]">{resolved}</span>} />
-	            {providerIdentity && <DetailRow label="服务商" value={providerIdentity} />}
+	            {providerIdentity && <DetailRow label="Provider" value={providerIdentity} />}
 	            {decision.taskClass && <DetailRow label="任务" value={TASK_LABELS[decision.taskClass]} />}
             {complexityScore && <DetailRow label="复杂度" value={complexityScore} />}
             <DetailRow label="计费" value={BILLING_LABELS[decision.billingMode]} />
@@ -460,7 +460,7 @@ export const RouteTraceChip: React.FC<{ decision: ModelDecisionEventData; defaul
             {decision.toolPolicy && <DetailRow label="工具" value={TOOL_LABELS[decision.toolPolicy]} />}
             {toolPolicyDetail && <DetailRow label="工具策略" value={toolPolicyDetail} />}
             {visibleTools && <DetailRow label="工具数" value={<span className="font-mono text-[10px]">{visibleTools}</span>} />}
-            {mcpTools && <DetailRow label="外部工具" value={<span className="font-mono text-[10px]">{mcpTools}</span>} />}
+            {mcpTools && <DetailRow label="MCP" value={<span className="font-mono text-[10px]">{mcpTools}</span>} />}
             {programmaticTools && <DetailRow label="程序化" value={programmaticTools} />}
             {toolTokenSavingsBasis && <DetailRow label="估算" value={toolTokenSavingsBasis} />}
             {toolProviderUsage && <DetailRow label="用量" value={toolProviderUsage} />}
