@@ -2,6 +2,8 @@
 export const BROWSER_STAGE_VIEWPORT = {
   /** ResizeObserver 上报去抖 */
   DEBOUNCE_MS: 300,
+  /** Active live-stream horizontal layout sampling cadence. */
+  OVERFLOW_SAMPLE_INTERVAL_MS: 1000,
   /** 视口 CSS 最小宽/高 */
   MIN_CSS_WIDTH: 320,
   MIN_CSS_HEIGHT: 240,
