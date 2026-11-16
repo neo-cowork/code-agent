@@ -13,6 +13,7 @@ import {
   groupRuntimeModelOptionsByProvider,
   hasConfiguredDefaultRuntimeModel,
   hasConfiguredRuntimeModels,
+  hasConfiguredRuntimeProvider,
   inferModelCapabilities,
   isProviderIconAssetRef,
   isProviderImageIcon,
@@ -293,6 +294,9 @@ describe('modelRuntime', () => {
     expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: true })).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false })).toBe(false);
+    expect(hasConfiguredRuntimeProvider(settings, 'custom-team-relay')).toBe(true);
+    expect(hasConfiguredRuntimeProvider(settings, 'custom-team-relay', { allowCloudManaged: false })).toBe(false);
+    expect(hasConfiguredRuntimeProvider(settings, 'xiaomi', { allowCloudManaged: false })).toBe(true);
   });
 
   it('requires the active default provider to be configured before send', () => {
