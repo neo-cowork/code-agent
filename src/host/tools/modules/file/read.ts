@@ -142,7 +142,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       return {
         ok: false,
         error: `Cannot read ${ext} file as text — binary content will be garbled. Use ${hint} tool instead.\nPath: ${filePath}`,
-        code: 'INVALID_ARGS',
+        code: 'BINARY_FILE_NOT_TEXT',
       };
     }
 
@@ -159,7 +159,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error: `Cannot read ${filePath} as GBK: ${err.message}. Try without encoding, or the file may be binary.`,
-            code: 'INVALID_ARGS',
+            code: 'BINARY_FILE_NOT_TEXT',
           };
         }
       } else {

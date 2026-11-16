@@ -190,8 +190,13 @@ export class CLIAgent {
     if (!this.sessionId) {
       throw new Error('CLI session initialization did not produce a sessionId');
     }
-    const persistedSession = await getSessionManager().getSession(this.sessionId, 0).catch(() => null);
-    const persistedExpertRoleId = readPersistedExpertThread(persistedSession?.metadata)?.roleId;
+    let persistedMetadata: Record<string, unknown> | undefined;
+    try {
+      persistedMetadata = getSessionManager().getSessionMetadata(this.sessionId);
+    } catch {
+      persistedMetadata = undefined;
+    }
+    const persistedExpertRoleId = readPersistedExpertThread(persistedMetadata)?.roleId;
     const persistedExpertOverride = !this.config.agentOverride && persistedExpertRoleId
       ? resolveExplicitAgentOverride(persistedExpertRoleId)
       : null;
@@ -788,8 +793,7 @@ export class CLIAgent {
   async getSessionTitle(): Promise<string | null> {
     if (!this.sessionId) return null;
     try {
-      const session = await getSessionManager().getSession(this.sessionId, 0);
-      return session?.title ?? null;
+      return getSessionManager().getSessionTitle(this.sessionId) ?? null;
     } catch {
       return null;
     }
