@@ -17,7 +17,7 @@ import {
 const MANUAL_CREATE_KINDS: ReadonlySet<string> = new Set(['user', 'feedback', 'project', 'reference']);
 
 /** 面向渲染层的错误码（渲染层映射成大白话） */
-export const MEMORY_CREATE_ERROR = {
+const MEMORY_CREATE_ERROR = {
   EMPTY: 'MEMORY_CREATE_EMPTY',
   KIND_FORBIDDEN: 'MEMORY_CREATE_KIND_FORBIDDEN',
 } as const;
