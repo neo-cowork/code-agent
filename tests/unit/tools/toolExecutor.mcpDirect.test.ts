@@ -1,3 +1,4 @@
+import { userDeniedGoalStickyError } from '../../../src/host/tools/toolPermissionClassification';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mcpDefinition = {
@@ -170,7 +171,7 @@ describe('ToolExecutor MCP dynamic direct execution', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('Permission denied by user. The user just declined this kind of action. Do not request approval for the same goal again by rewording it or changing the command or arguments. First ask the user one short question about how to proceed: use AskUserQuestion if available, otherwise your final message. For unattended, scheduled or background runs, put that question in your final message. Wait for a new user message before requesting approval for this kind of action again.');
+    expect(result.error).toBe(`Permission denied by user. ${userDeniedGoalStickyError('mcp__github__search_code').modelText}`);
     expect(mocks.callTool).not.toHaveBeenCalled();
   });
 
