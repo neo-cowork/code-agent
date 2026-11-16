@@ -18,6 +18,8 @@ import type {
   MemoryChangeJournalRow,
   MemoryEntry,
   MemoryEntryBatchReviewResult,
+  MemoryEntryCreateRequest,
+  MemoryEntryCreateResult,
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntrySourceOfTruth,
@@ -28,6 +30,8 @@ import type {
 import { findSourceSessionRef, formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
 import { journalRestoreRequest } from './memoryJournalSnapshot';
 import { MemoryEntryHistoryList } from './MemoryEntryHistoryList';
+import { MemoryEntryAddForm } from './MemoryEntryAddForm';
+import { MEMORY_ENTRY_ADD_COPY } from '../../../../i18n/memoryEntryAdd';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -47,6 +51,7 @@ type MemorySettingsText = typeof zh.settings.memory;
 
 type MemoryEntryCommand =
   | { action: 'memoryEntries' }
+  | ({ action: 'memoryEntryCreate' } & MemoryEntryCreateRequest)
   | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
   | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' }
   | { action: 'memoryEntryJournal'; entryId: string; limit?: number }
@@ -509,6 +514,19 @@ export const MemoryEntriesManager: React.FC<{
 
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 border-b border-zinc-800 lg:border-b-0 lg:border-r">
+            <MemoryEntryAddForm
+              language={language === 'en' ? 'en' : 'zh'}
+              disabled={busy !== null}
+              projectPath={useAppStore.getState().workingDirectory}
+              submit={(request) => invokeMemoryEntryCommand<MemoryEntryCreateResult>({ action: 'memoryEntryCreate', ...request })}
+              onCreated={async (entry, duplicate) => {
+                setSearchQuery(''); setStatusFilter('all'); setKindFilter('all'); setSourceFilter('all');
+                await loadEntries();
+                setSelectedEntryId(entry.id);
+                setMessage({ type: duplicate ? 'error' : 'success', text: MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'][duplicate ? 'duplicate' : 'saved'] });
+                await onChanged?.();
+              }}
+            />
             <div className="grid gap-2 border-b border-zinc-800 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto]">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
@@ -679,6 +697,9 @@ export const MemoryEntriesManager: React.FC<{
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">
                           {row.statusLabel}
+                          {entries.find((item) => item.id === row.id)?.source.kind === 'manual' && (
+                            <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-manual-badge">{MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually}</div>
+                          )}
                           {row.pausedLabel && (
                             <div className="mt-1 text-[11px] text-badge-warning" data-testid="memory-entry-paused-badge">{row.pausedLabel}</div>
                           )}
