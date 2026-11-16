@@ -160,7 +160,9 @@ export function PermissionCard({
     && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
       || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
-  const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
+  // 删一条日程可撤销（删前留快照），和建 / 改同配色：主按钮「删除」，不默认突出「取消」、不给红框
+  // （爸 11-16：删一条日程不至于红色警示；红色只留给删整个系列 / 一次删多条这类收不回的操作）。
+  const safeDefaultDeny = request !== null && request.tool !== 'calendar_delete_event' && isSafeDefaultDeny(request);
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）

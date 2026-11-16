@@ -120,6 +120,9 @@ function nativeRequest(
   };
 }
 
+/** Button primitive 的 primary 变体标记（主按钮渐变底） */
+const PRIMARY_MARK = 'from-primary-800';
+
 const calendarCreateRequest = nativeRequest('permission-calendar-create', 'calendar_create_event', {
   calendar: '工作',
   title: '季度评审会',
@@ -441,10 +444,16 @@ describe('PermissionCard · mail_send 改一改再发', () => {
   });
 
   it('删除单条日程：同一套中性写回卡（不是红色危险卡），写清标题/时间/日历，只有「删除 / 取消」，提示可撤销', async () => {
-    state.request = nativeRequest('permission-calendar-delete', 'calendar_delete_event', {
+    // 真机第五轮：host 给删除请求带 dangerLevel=warning，卡片曾因此走「默认突出取消 + 删除红框」的安全默认样式
+    state.request = { ...nativeRequest('permission-calendar-delete', 'calendar_delete_event', {
       calendar: '日历', event_uid: 'cal:EV1', title: 'F 真机测试', start_ms: localMs(9), end_ms: localMs(10), location: '三楼',
-    }, '日历');
+    }, '日历'), dangerLevel: 'warning' };
     render(<PermissionCard />);
+    const deleteButton = screen.getByRole('button', { name: /^删除/ });
+    const cancelButton = screen.getByRole('button', { name: /^取消/ });
+    expect(deleteButton.className).not.toContain('border-red-500');
+    expect(deleteButton.className).toContain(PRIMARY_MARK);
+    expect(cancelButton.className).not.toContain(PRIMARY_MARK);
     expect(screen.getByText('删除日历事件')).toBeTruthy();
     expect(screen.getByText('删除日历事件「F 真机测试」？')).toBeTruthy();
     expect(screen.queryByText('危险操作')).toBeNull();
