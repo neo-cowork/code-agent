@@ -136,6 +136,15 @@ describe('工作文件夹状态展示', () => {
     expect(screen.getByTestId('cron-job-working-folder').textContent).toContain('chatdir');
   });
 
+  it('状态文案完整显示：标签元素没有 truncate，窄列里提示另起一行', () => {
+    useSessionStore.setState({ sessions: [{ id: 'run-1' }] } as never);
+    render(<CronRunWorkingFolderStatus sessionId="run-1" runsOn="local" />);
+    const label = screen.getByTestId('cron-run-working-folder-label');
+    expect(label.textContent).toBe('未选择工作文件夹');
+    expect(label.className).not.toContain('truncate');
+    expect(screen.getByTestId('cron-run-working-folder').className).toContain('flex-wrap');
+  });
+
   it('云端任务与非 agent 任务不渲染', () => {
     const { container } = render(<CronJobWorkingFolderStatus job={makeJob({ runsOn: 'cloud' })} />);
     expect(container.innerHTML).toBe('');
