@@ -1,3 +1,4 @@
+import { hooksLoadStateZh } from './hooksLoadState';
 import { outcomeWordsZh } from './outcomeWords';
 import { zhAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsZh } from './permissionGrants';
@@ -976,7 +977,7 @@ export const zhSettingsWork = {
       refresh: '刷新',
       globalConfig: '全局配置',
       projectConfig: '项目配置',
-      loadFailedPrefix: '加载失败：',
+      ...hooksLoadStateZh,
       enabledTitle: '已启用',
       emptyEnabled: '没有任何 Hook 注册。点击上方"打开"按钮新建配置。',
       unusedTitle: '未启用',
@@ -986,11 +987,7 @@ export const zhSettingsWork = {
         revealTitle: '在访达中显示',
         locate: '定位',
       },
-      toggle: {
-        enable: '启用',
-        disable: '停用',
-        disabledBadge: '已停用',
-      },
+      toggle: { enable: '启用', disable: '停用', disabledBadge: '已停用' },
       typeLabels: {
         command: '命令',
         prompt: 'Prompt',

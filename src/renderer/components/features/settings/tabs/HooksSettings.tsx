@@ -29,12 +29,24 @@ interface HookSummary {
   configPaths: { global: string; project: string | null };
 }
 
+class HookInvokeError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+  }
+}
+
 async function invokeHook<T>(action: string, payload?: unknown): Promise<T> {
   const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.HOOK, action, payload);
   if (!response?.success) {
-    throw new Error(response?.error?.message || `Hook action failed: ${action}`);
+    throw new HookInvokeError(response?.error?.message || `Hook action failed: ${action}`, response?.error?.code);
   }
   return response.data as T;
+}
+
+// 管理员守卫的拒绝：IPC 信封是 FORBIDDEN，非 2xx 的 HTTP 传输层是 HTTP_403。
+function isPermissionDenied(e: unknown): boolean {
+  const code = e instanceof HookInvokeError ? e.code : undefined;
+  return code === 'FORBIDDEN' || code === 'HTTP_403';
 }
 
 const HOOK_TYPE_BADGE: Record<HookListItem['type'], { color: string }> = {
@@ -49,17 +61,21 @@ export const HooksSettings: React.FC = () => {
   const hooksText = t.settings.hooks;
   const [summary, setSummary] = useState<HookSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<'forbidden' | 'loadFailed' | 'actionFailed' | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [showUnused, setShowUnused] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setNotice(null);
     try {
       const data = await invokeHook<HookSummary>('list');
       setSummary(data);
+      setLoadFailed(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setSummary(null);
+      setLoadFailed(true);
+      setNotice(isPermissionDenied(e) ? 'forbidden' : 'loadFailed');
       logger.error('Failed to load hooks', { err: e });
     } finally {
       setLoading(false);
@@ -100,7 +116,13 @@ export const HooksSettings: React.FC = () => {
       await invokeHook('setEnabled', { filePath, key: item.key, enabled });
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (isPermissionDenied(e)) {
+        setSummary(null);
+        setLoadFailed(true);
+        setNotice('forbidden');
+      } else {
+        setNotice('actionFailed');
+      }
       logger.error('Failed to toggle hook', { err: e });
     }
   }, [summary, load]);
@@ -137,7 +159,7 @@ export const HooksSettings: React.FC = () => {
       </div>
 
       {/* 配置文件入口 */}
-      {summary && (
+      {!loadFailed && summary && (
         <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800">
           <ConfigPathRow
             label={hooksText.globalConfig}
@@ -158,13 +180,19 @@ export const HooksSettings: React.FC = () => {
         </div>
       )}
 
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
-          {hooksText.loadFailedPrefix}{error}
+      {notice === 'forbidden' && (
+        <div role="status" className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-300">
+          {hooksText.forbidden}
+        </div>
+      )}
+      {notice && notice !== 'forbidden' && (
+        <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
+          {hooksText[notice]}
         </div>
       )}
 
       {/* 已启用 Hook */}
+      {!loadFailed && (
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-sm font-medium text-zinc-300">
@@ -199,9 +227,10 @@ export const HooksSettings: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* 未启用 Event */}
-      {summary && summary.unused.length > 0 && (
+      {!loadFailed && summary && summary.unused.length > 0 && (
         <div className="space-y-2">
           <button
             type="button"
