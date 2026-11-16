@@ -152,6 +152,9 @@ describe('settings vocabulary', () => {
     expect(zh.settings.model.models.selectableLabel).toBe('显示在模型选择里');
     expect(zh.settings.model.connection.baseUrlHint).toBe(words.addressHint);
     expect(zh.onboarding.baseUrlHint).toBe(words.addressHint);
+    // 核查员 r9 缺口：门只拦「API Key」整词，中转站卡片描述里单独的「Key」漏网
+    expect(zh.onboarding.providerCards.relay.description).toContain(words.keyLabel);
+    expect(zh.onboarding.providerCards.relay.description).not.toMatch(/\bKey\b/u);
     expect(zh.settings.model.addProvider.baseUrlHint).toBe(words.addressHint);
     expect(en.settings.model.list.addProvider).toBe('Add Provider');
     expect(getSettingsVocabulary('en').keyLabel).toBe('API Key');

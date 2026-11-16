@@ -26,6 +26,7 @@ import { createLogger } from '../../../../utils/logger';
 import { interpolatePlural } from '../../../../i18n/interpolate';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localizeCatalogProviderName } from '../../../../i18n/providerDisplay';
+import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { Toggle } from '../../../primitives/Toggle';
 import { Button } from '../../../primitives/Button';
@@ -443,7 +444,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           >
             <option value="">{text.executionModelFollowSession}</option>
             {PROVIDER_MODELS.map((provider) => (
-              <option key={provider.id} value={provider.id}>{localizeCatalogProviderName(provider, uiLanguage)}</option>
+              <option key={provider.id} value={provider.id}>{getProviderDisplayName(provider.id, undefined, localizeCatalogProviderName(provider, uiLanguage), uiLanguage)}</option>
             ))}
           </select>
           <select

@@ -885,10 +885,10 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         rows: [
           { area: '市场源', status: 'complete', detail: '管理员可新增、刷新、移除 marketplace，并查看缓存位置与插件数量。' },
           { area: '发现', status: 'complete', detail: '可按市场源、关键词、标签、作者、skill、command 过滤插件目录。' },
-          { area: '安装', status: 'complete', detail: '支持用户级和项目级安装；skills、commands、provider/theme/UI 都会先落为受管资产，安装后保持禁用。' },
+          { area: '安装', status: 'complete', detail: `支持用户级和项目级安装；skills、commands、${v.provider}/theme/UI 都会先落为受管资产，安装后保持禁用。` },
           { area: '生命周期', status: 'complete', detail: '已安装插件可启用、禁用、卸载，并回读最新状态；卸载会移除插件资产目录。' },
           { area: '权限', status: 'complete', detail: '插件目录和装卸对所有用户开放；marketplace 源的增删只对管理员开放。' },
-          { area: '运行时适配', status: 'partial', detail: 'skill/command 型插件启用后进入运行面；provider/theme/UI 目前只作为受管资产和 adapter pending 展示。' },
+          { area: '运行时适配', status: 'partial', detail: `skill/command 型插件启用后进入运行面；${v.provider}/theme/UI 目前只作为受管资产和 adapter pending 展示。` },
           { area: '治理', status: 'partial', detail: '已展示来源、路径、scope 和安装时间；签名校验、审核流、版本升级策略还没有前端闭环。' },
         ],
         title: '完整性评估',
