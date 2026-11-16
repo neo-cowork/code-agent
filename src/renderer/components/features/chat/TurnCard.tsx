@@ -606,6 +606,7 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
     } catch {
+      // clipboard unavailable (permission/insecure context): the copied tick simply stays off
     }
   };
   return (
