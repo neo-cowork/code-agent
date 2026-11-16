@@ -433,7 +433,7 @@ export const ComputerUseContent: React.FC = () => {
       || surface?.targetApp
       || observation?.snapshot?.appName
       || frontmost?.appName
-      || 'current app';
+      || copy.currentApp;
     return {
       id: actionSummary?.trace.id || 'computer-surface-pointer-preview',
       surface: 'computer',
@@ -451,6 +451,7 @@ export const ComputerUseContent: React.FC = () => {
     actionSummary?.trace.failureKind,
     actionSummary?.trace.agentPointerEvent,
     actionSummary?.trace.id,
+    copy.currentApp,
     frontmost?.appName,
     livePointer.event,
     livePointer.lastEvent,
@@ -657,8 +658,7 @@ export const ComputerUseContent: React.FC = () => {
 
                 <AgentPointerPreviewCard
                   event={pointerPreview}
-                  title="Agent pointer"
-                  detail="Desktop actions use the same visible pointer in trace rows, screenshots, and this Surface panel."
+                  detail={t.localOps.pointer.computerDetail}
                   live={livePointer.isLive || !livePointer.lastEvent}
                 />
                 <AgentPointerTimelineList entries={livePointer.timeline} />
@@ -677,21 +677,6 @@ export const ComputerUseContent: React.FC = () => {
                       <span className="shrink-0">窗口</span>
                       <span className="min-w-0 text-right text-zinc-200">{observation?.snapshot?.windowTitle || frontmost?.windowTitle || '未知'}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Surface ready</span>
-                      <span className={surface?.ready ? 'text-badge-success' : 'text-badge-warning'}>
-                        {surface?.ready ? 'yes' : 'no / unknown'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Approval scope</span>
-                      <span className="text-zinc-200">{surface?.approvalScope || 'unknown'}</span>
-                    </div>
-                    {surface?.evidenceSummary?.slice(0, 3).map((line) => (
-                      <div key={line} className="rounded border border-zinc-800 bg-zinc-900/60 p-2 text-zinc-500">
-                        {line}
-                      </div>
-                    ))}
                   </div>
                 </section>
               </aside>

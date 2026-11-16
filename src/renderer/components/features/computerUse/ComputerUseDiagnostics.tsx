@@ -199,6 +199,21 @@ export const ComputerUseDiagnostics: React.FC<ComputerUseDiagnosticsProps> = ({
             {observeError && (
               <p className="text-xs text-badge-warning">{diag.observeError}: {observeError}</p>
             )}
+            <div className="space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-400">
+              <div className="flex items-center justify-between gap-3">
+                <span>{diag.surfaceReady}</span>
+                <span className={surface?.ready ? 'text-badge-success' : 'text-badge-warning'}>
+                  {surface?.ready ? diag.yes : diag.noUnknown}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>{diag.approvalScope}</span>
+                <span className="text-zinc-200">{surface?.approvalScope || diag.unknownScope}</span>
+              </div>
+              {surface?.evidenceSummary?.slice(0, 3).map((line) => (
+                <div key={line} className="rounded border border-zinc-800 bg-zinc-900/60 p-2 text-zinc-500">{line}</div>
+              ))}
+            </div>
           </div>
 
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/30">

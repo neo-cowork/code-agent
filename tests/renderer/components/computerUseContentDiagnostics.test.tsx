@@ -31,6 +31,7 @@ import { setComputerUseSnapshot } from '../../../src/renderer/stores/computerUse
 import type { ComputerUseSnapshot } from '../../../src/renderer/stores/computerUseStore';
 
 const BANNED = [/provider/i, /token/i, /AX candidates/i, /axPath/i];
+const BANNED_STATUS = [/Surface ready/i, /Approval scope/i, /Agent pointer/i, /current app/i];
 
 function seedSnapshot(): void {
   setComputerUseSnapshot({
@@ -78,7 +79,7 @@ describe('ComputerUseContent diagnostics fold', () => {
     await waitFor(() => expect(screen.getByTestId('computer-use-diagnostics-toggle')).toBeTruthy());
 
     const before = root.textContent ?? '';
-    for (const word of BANNED) expect(before).not.toMatch(word);
+    for (const word of [...BANNED, ...BANNED_STATUS]) expect(before).not.toMatch(word);
     expect(screen.queryByTestId('computer-use-diagnostics')).toBeNull();
 
     fireEvent.click(screen.getByTestId('computer-use-diagnostics-toggle'));
@@ -87,6 +88,8 @@ describe('ComputerUseContent diagnostics fold', () => {
     expect(panel.textContent).toMatch(/Native Desktop/);
     expect(panel.textContent).toMatch(/AX candidates|AX Tree/);
     expect(panel.textContent).toMatch(/Safari/);
+    expect(panel.textContent).toMatch(/Surface ready/);
+    expect(panel.textContent).toMatch(/Approval scope/);
   });
 });
 
