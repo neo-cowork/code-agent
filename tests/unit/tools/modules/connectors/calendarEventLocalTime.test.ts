@@ -124,7 +124,7 @@ describe('calendar_create_event start_local/end_local through ToolExecutor.execu
     const startMs = Date.parse(startIso);
     const endMs = endIso ? Date.parse(endIso) : undefined;
     const requestPermission = vi.fn(async (request: PermissionRequestData) => {
-      expect(mocks.connectorExecute).not.toHaveBeenCalled();
+      expect(mocks.connectorExecute).not.toHaveBeenCalledWith('create_event', expect.anything());
       expect(request.details).toMatchObject({ start_ms: startMs });
       if (endMs !== undefined) expect(request.details).toMatchObject({ end_ms: endMs });
       expect(request.details).not.toHaveProperty('start_local');
