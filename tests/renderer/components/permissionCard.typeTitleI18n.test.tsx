@@ -64,7 +64,17 @@ describe('审批卡按权限类型给的标题跟随界面语言（FB-1151）', 
   });
 
   it('八种权限类型的标题：中文与改动前逐字相同，英文都不含中文', () => {
-    expect(languages.zh.decisionCard.permission.typeTitles).toEqual({
+    const pick = (p: (typeof languages)['zh']['decisionCard']['permission']) => ({
+      file_read: p.titleFileRead,
+      file_write: p.titleFileWrite,
+      file_edit: p.titleFileEdit,
+      file_delete: p.titleFileDelete,
+      command: p.titleCommand,
+      dangerous_command: p.titleDangerousCommand,
+      network: p.titleNetwork,
+      mcp: p.titleMcp,
+    });
+    expect(pick(languages.zh.decisionCard.permission)).toEqual({
       file_read: '读取文件',
       file_write: '创建文件',
       file_edit: '编辑文件',
@@ -74,8 +84,6 @@ describe('审批卡按权限类型给的标题跟随界面语言（FB-1151）', 
       network: '网络请求',
       mcp: 'MCP 工具',
     });
-    const en = languages.en.decisionCard.permission.typeTitles;
-    expect(Object.keys(en).sort()).toEqual(Object.keys(languages.zh.decisionCard.permission.typeTitles).sort());
-    for (const title of Object.values(en)) expect(title).not.toMatch(HAN);
+    for (const title of Object.values(pick(languages.en.decisionCard.permission))) expect(title).not.toMatch(HAN);
   });
 });
