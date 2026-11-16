@@ -455,6 +455,14 @@ describe('deletion consequence file count for multi-target rm', () => {
     expect(consequence).not.toContain('个文件');
   });
 
+  it('en: 单个确切目标显示 (1 file)，2 个显示 (2 files)', () => {
+    const en = decisionCardEn as never;
+    const one = deletionRequest('sudo rm ./old-log-1.log', { commandSecurityFlags: ['sudo_rm'] });
+    expect(permissionConsequence(one, en)).toBe('Permanently deletes ./old-log-1.log (1 file) without using Trash.');
+    const two = deletionRequest('sudo rm ./old-log-1.log ./old-log-2.log', { commandSecurityFlags: ['sudo_rm'] });
+    expect(permissionConsequence(two, en)).toBe('Permanently deletes ./old-log-1.log (2 files) without using Trash.');
+  });
+
   it('en: 2 个确切目标显示 (2 files)，通配符显示 (multiple files)', () => {
     const en = decisionCardEn as never;
     const twoTargets = deletionRequest('sudo rm ./old-log-1.log ./old-log-2.log', {
