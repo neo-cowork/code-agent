@@ -146,7 +146,7 @@ function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactEle
 export function describeApproval(
   request: PermissionRequest,
   t: Translations,
-  language: Language = 'zh',
+  language: Language,
 ): ApprovalDescription {
   const described = describeKind(request, t, language);
   const grant = request.details.browserSessionGrant;

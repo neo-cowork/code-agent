@@ -63,3 +63,22 @@ export function rejectedRequestMessage(error: unknown, language: Language): stri
   if (code !== PROMPT_REQUIRED && status !== 400 && status !== 422) return undefined;
   return promptRequiredCopy[language] ?? promptRequiredCopy.zh;
 }
+
+export const uploadCopy = {
+  rateLimitedSeconds: {
+    zh: (n: number) => `上传太频繁了，请约 ${n} 秒后再试。`,
+    en: (n: number) => `Too many uploads in a short time. Try again in about ${n} seconds.`,
+  },
+  rateLimited: {
+    zh: '上传太频繁了，请稍等片刻再试。',
+    en: 'Too many uploads in a short time. Wait a moment and try again.',
+  },
+  tooLarge: {
+    zh: '文件太大，无法上传，请换一个小一点的文件。',
+    en: 'This file is too large to upload. Try a smaller file.',
+  },
+  generic: {
+    zh: '没能上传这个文件，请稍后再试。',
+    en: 'Could not upload this file. Please try again.',
+  },
+} as const;

@@ -223,10 +223,10 @@ export function buildProviderManagementRows({
   config,
   providerConfigs,
   labels = zh.settings.model.helpers,
-  language = 'zh',
+  language,
 }: {
   providers: ProviderDisplayInfo[];
-  language?: 'zh' | 'en';
+  language: 'zh' | 'en';
   config: ModelConfig;
   providerConfigs?: ProviderConfigMap;
   labels?: ModelSettingsHelperLabels;

@@ -469,6 +469,8 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
       }
     }
     // The type table itself must not fall back to the command template either.
-    expect(getPermissionConfig('future_type' as never).title).not.toBe(getPermissionConfig('command').title);
+    // (titles moved to the language packs; the table now carries only the icon/colours of each template)
+    const iconType = (type: string) => (getPermissionConfig(type as never).icon as { type: unknown }).type;
+    expect(iconType('future_type')).not.toBe(iconType('command'));
   });
 });

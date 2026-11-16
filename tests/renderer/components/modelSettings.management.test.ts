@@ -71,6 +71,7 @@ describe('ModelSettings management helpers', () => {
       },
     };
     const rows = buildProviderManagementRows({
+      language: 'zh',
       providers: [openaiProvider, moonshotProvider],
       config,
       providerConfigs,
@@ -102,6 +103,7 @@ describe('ModelSettings management helpers', () => {
     };
 
     const [row] = buildProviderManagementRows({
+      language: 'zh',
       providers: [openaiProvider],
       config: { ...config, provider: 'moonshot', model: 'kimi-k2.5' },
       providerConfigs,
@@ -113,6 +115,7 @@ describe('ModelSettings management helpers', () => {
 
   it('pins the default provider to the top of the management list', () => {
     const rows = buildProviderManagementRows({
+      language: 'zh',
       providers: [moonshotProvider, openaiProvider],
       config,
       providerConfigs: {},
@@ -123,6 +126,7 @@ describe('ModelSettings management helpers', () => {
 
   it('keeps a stable order regardless of selection (no reorder on click)', () => {
     const rows = buildProviderManagementRows({
+      language: 'zh',
       providers: [moonshotProvider, openaiProvider],
       config,
       providerConfigs: {},
@@ -170,6 +174,7 @@ describe('ModelSettings management helpers', () => {
     expect(resolveModelForProvider(customProvider, 'missing-model', providerConfigs.custom)).toBe('mimo-v2.5-pro');
 
     const [row] = buildProviderManagementRows({
+      language: 'zh',
       providers: [customProvider],
       config: customConfig,
       providerConfigs,
@@ -304,6 +309,7 @@ describe('ModelSettings management helpers', () => {
       model: 'custom-model',
     });
     const [row] = buildProviderManagementRows({
+      language: 'zh',
       providers: [{
         id: 'custom',
         name: 'Custom Provider',
@@ -444,6 +450,7 @@ describe('ModelSettings management helpers', () => {
     } satisfies ProviderInfo;
 
     const rows = buildProviderManagementRows({
+      language: 'zh',
       providers: [openaiProvider, localProvider],
       config,
       providerConfigs: {},
