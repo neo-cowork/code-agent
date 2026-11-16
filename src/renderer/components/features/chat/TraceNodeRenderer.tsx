@@ -90,7 +90,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   suppressSendFailedBadge,
   fileChangesByPath,
 }) => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   let content: React.ReactNode;
 
   switch (node.type) {
@@ -671,7 +671,7 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 // ---- System Node ----
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   if (node.metadata?.backgroundWakeFailed) {
     return (
