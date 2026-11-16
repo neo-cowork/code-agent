@@ -59,8 +59,8 @@ function createDummyContext(): SessionCommandContext {
 }
 
 describe('defineSessionRoutes 表面差异', () => {
-  it('全量表 47 个 action，与 web 形态同集合（桩替换的是 handler 不是键）', () => {
-    expect(Object.keys(sessionRoutes.actions)).toHaveLength(47);
+  it('全量表 48 个 action，与 web 形态同集合（桩替换的是 handler 不是键）', () => {
+    expect(Object.keys(sessionRoutes.actions)).toHaveLength(48);
     expect(Object.keys(defineSessionRoutes('web').actions).sort())
       .toEqual(Object.keys(sessionRoutes.actions).sort());
   });

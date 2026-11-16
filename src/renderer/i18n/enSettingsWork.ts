@@ -1,3 +1,4 @@
+import { hooksLoadStateEn } from './hooksLoadState';
 // Settings namespace translations (en/Work) — 纯平移拆分（债务门）
 import { enAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsEn } from './permissionGrants';
@@ -564,7 +565,6 @@ export const enSettingsWork = {
         receiptCreatedMiddle: ', updated ',
         receiptUpdatedMiddle: ', skipped ',
         writtenFilesPrefix: 'Written files: ',
-        none: 'None',
         extraFilesPrefix: ' and ',
         extraFilesSuffix: ' total',
         mirrorPrefix: 'Mirror rebuild: ',
@@ -975,7 +975,7 @@ export const enSettingsWork = {
       refresh: 'Refresh',
       globalConfig: 'Global config',
       projectConfig: 'Project config',
-      loadFailedPrefix: 'Load failed: ',
+      ...hooksLoadStateEn,
       enabledTitle: 'Enabled',
       emptyEnabled: 'No Hooks are registered. Click the "Open" button above to create a config.',
       unusedTitle: 'Unused',

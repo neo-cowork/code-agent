@@ -145,7 +145,7 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 const MAX_CACHE_SIZE = 100;
 
 // 只读工具 — 无副作用，始终自动批准
-const READ_ONLY_TOOLS = new Set([
+export const READ_ONLY_TOOLS = new Set([
   'read_file', 'Read', 'glob', 'Glob',
   'grep', 'Grep', 'list_directory', 'ListDirectory',
   'search_files', 'SearchFiles', 'ToolSearch',

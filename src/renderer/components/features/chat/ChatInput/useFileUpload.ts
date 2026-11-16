@@ -221,7 +221,8 @@ export function useFileUpload() {
       };
       reader.readAsText(file);
     });
-  }, [showToast]);
+    // t 必须进依赖：否则语言切换后回调仍闭包首次渲染的文案树，toast 中英混杂
+  }, [showToast, t]);
 
   // 处理文件夹
   const processFolderEntry = useCallback(async (
@@ -351,7 +352,7 @@ export function useFileUpload() {
       mimeType: 'inode/directory', data: summary, files: fileContents, path: folderPath,
       folderStats: { totalFiles: files.length, totalSize, byType },
     };
-  }, [showToast]);
+  }, [showToast, t]);
 
   return { processFile, processFolderEntry };
 }

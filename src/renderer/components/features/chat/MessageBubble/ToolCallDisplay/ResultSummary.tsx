@@ -1,3 +1,4 @@
+import { HumanizedText } from '../../../../HumanizedText';
 // ============================================================================
 // ResultSummary - Result summary line with ⎿ indent connector
 // Aligned with StatusIndicator width (w-4)
@@ -27,7 +28,7 @@ export function ResultSummary({ toolCall, inline = false }: Props) {
 
   const content = (
     <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
-      {summary}
+      <HumanizedText text={summary} />
     </span>
   );
 

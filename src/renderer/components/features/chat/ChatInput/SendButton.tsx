@@ -30,6 +30,10 @@ export interface SendButtonProps {
   onStop?: () => void;
   /** 继续 parked durable run 的回调 */
   onContinue?: () => void;
+  /** 放弃 parked durable run（与「继续」同一处入口） */
+  onAbandon?: () => void;
+  /** 停着但不给「继续」的 run（等环境授权，授权后自动续做）：发送键旁仍留「放弃」 */
+  canAbandon?: boolean;
   /** 自定义按钮文字（如 "开始研究"），传入后按钮会显示文字 */
   label?: string;
 }
@@ -53,6 +57,8 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onClick,
   onStop,
   onContinue,
+  onAbandon,
+  canAbandon = false,
   label,
 }) => {
   const { t } = useI18n();
@@ -123,20 +129,35 @@ export const SendButton: React.FC<SendButtonProps> = ({
     );
   }
 
+  const abandonButton = onAbandon ? (
+    <button /* ds-allow:button: 与「继续」/发送同组的紧凑文本按钮，需保持发送区紧凑布局 */
+      type="button"
+      onClick={onAbandon}
+      className="h-7 shrink-0 whitespace-nowrap rounded-full px-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-200"
+      data-testid="abandon-run-button"
+    >
+      {t.chat.durableAbandon}
+    </button>
+  ) : null;
+
   // parked durable run + 空输入：继续原 run；一旦有草稿，上面的普通发送态优先。
+  // 停住的任务只有这一处操作入口：「继续」为主，「放弃」并在同一处（输入框上方只说原因）。
   if (hasContinuation && !hasContent) {
     return (
-      <button /* ds-allow:button: Continue 胶囊按钮包含图标与文本，需保持发送区紧凑布局 */
-        type="button"
-        onClick={onContinue}
-        className="flex h-7 items-center gap-1.5 rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
-        aria-label={t.chatInput.continueAria}
-        title={t.chatInput.continueAria}
-        data-testid="continue-run-button"
-      >
-        <RotateCcw className="h-3.5 w-3.5" />
-        <span>{t.chatInput.continueLabel}</span>
-      </button>
+      <div className="flex shrink-0 items-center gap-0.5" data-testid="continue-run-control">
+        {abandonButton}
+        <button /* ds-allow:button: Continue 胶囊按钮包含图标与文本，需保持发送区紧凑布局 */
+          type="button"
+          onClick={onContinue}
+          className="flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-3 text-xs font-medium text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all hover:bg-brand-hover active:scale-95"
+          aria-label={t.chatInput.continueAria}
+          title={t.chatInput.continueAria}
+          data-testid="continue-run-button"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          <span>{t.chatInput.continueLabel}</span>
+        </button>
+      </div>
     );
   }
 
@@ -162,7 +183,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
     );
   }
 
-  return (
+  const sendButton = (
     <button
       type={type}
       disabled={isDisabled}
@@ -177,6 +198,16 @@ export const SendButton: React.FC<SendButtonProps> = ({
       <ArrowUp className="h-3.5 w-3.5 stroke-[2.4]" />
     </button>
   );
+  // 等环境授权的停车没有「继续」（授权后自动续做），但用户不想授权时仍要能放弃：放弃留在发送键旁这一处。
+  if (canAbandon && abandonButton && !hasContent) {
+    return (
+      <div className="flex shrink-0 items-center gap-0.5" data-testid="continue-run-control">
+        {abandonButton}
+        {sendButton}
+      </div>
+    );
+  }
+  return sendButton;
 };
 
 export default SendButton;

@@ -11,8 +11,10 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // 只作刷新信号；标题与 tile 都读服务侧按任务折算的 countPendingReview。
 // ============================================================================
 
+import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useState } from 'react';
 import { isEditableTool } from '@shared/contract';
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
@@ -64,7 +66,7 @@ function recordUrgency(record: SessionAutomationRecord): CronUrgency {
 
 type InboxCopy = ReturnType<typeof useI18n>['t']['cronCenter'];
 
-function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string {
+function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy, language: 'zh' | 'en'): string {
   const title = item.displayTool ?? item.tool ?? '';
   const storedPrefix = '重启前发起 · ';
   const restarted = title.startsWith(storedPrefix);
@@ -72,7 +74,7 @@ function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string
   const knownTool = name.toLowerCase();
   const displayName = knownTool === 'bash' || knownTool === 'write'
     ? copy.parkedVoided.tools[knownTool]
-    : !name || name === 'unknown' ? copy.parkedPendingAction : name;
+    : !name || name === 'unknown' ? copy.parkedPendingAction : toolUserLabel(name, language);
   return `${restarted ? copy.parkedVoided.restartPrefix : ''}${displayName}`;
 }
 
@@ -340,7 +342,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         data-testid="parked-approval-item"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc)}</div>
+                          <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh')}</div>
                           {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
@@ -354,7 +356,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
                   const scopeNote = isExternal
-                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (parkedToolTitle(item, cc)))
+                    ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh')))
                     : null;
                   // B4 铸权入口：仅 external + 能确定性提取 target 时出现（模型侧无入口）。
                   const canMintStanding = isExternal && !!item.standingGrantTarget;
@@ -370,7 +372,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
                               ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
-                              : (parkedToolTitle(item, cc))}
+                              : (parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh'))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
                               {cc.parkedExternalBadge}
@@ -508,9 +510,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
                     {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
                     <div className="text-[11px] text-zinc-500">
-                      {cc.parkedVoided.startedAt.replace('{time}', new Date(item.requestedAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN', {
-                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-                      }))}
+                      {cc.parkedVoided.startedAt.replace('{time}', formatDateTime(item.requestedAt, language))}
                     </div>
                     {item.argsPreview && (
                       <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">
@@ -628,7 +628,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                   )
                                   : cc.inboxMissedAt.replace(
                                     '{time}',
-                                    new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                    formatDateTime(record.config.missedNotice.scheduledAt, language),
                                   )}
                               </div>
                             ) : record.config?.loginWall ? (
@@ -640,9 +640,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                 {isCloud
                                   ? cc.inboxCloudCompleted.replace(
                                     '{time}',
-                                    new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                    formatDateTime(record.config.pendingReview.at, language),
                                   )
-                                  : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
+                                  : formatDateTime(record.config.pendingReview.at, language)}
                               </div>
                             )}
                           </div>

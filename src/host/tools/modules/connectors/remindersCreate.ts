@@ -12,6 +12,7 @@ import type {
 } from '../../../protocol/tools';
 import { normalizeReminderCreateTime } from '../../reminderCreateTime';
 import { getConnectorRegistry } from '../../../connectors';
+import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import {
   appleScriptFailureLogDetail,
   describeAppleScriptFailure,
@@ -201,7 +202,7 @@ async function executeRemindersCreate(
 
   const connector = getConnectorRegistry().get('reminders');
   if (!connector) {
-    return { ok: false, error: 'Reminders connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'create'), code: 'NOT_INITIALIZED' };
   }
 
   try {

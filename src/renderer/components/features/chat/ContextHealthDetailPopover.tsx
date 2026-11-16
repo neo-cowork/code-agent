@@ -88,10 +88,12 @@ export function sessionHasSentMessage(messages = useSessionStore.getState?.().me
 
 interface ContextHealthDetailPopoverProps {
   onClose: () => void;
+  width?: number;
 }
 
 export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProps> = ({
   onClose,
+  width = 440,
 }) => {
   const { t } = useI18n();
   const ch = t.taskStatusPanels.contextHealth;
@@ -145,13 +147,11 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
       ? ((contextHealth.estimatedTokens - contextHealth.currentTokens) / contextHealth.currentTokens) * 100
       : null;
   const showEstimateDeviation = shouldShowEstimateDeviation(estimateDeviation);
-  const estimateDeviationLabel = estimateDeviation === null
-    ? ''
-    : `${estimateDeviation > 0 ? '+' : ''}${estimateDeviation.toFixed(1)}`;
 
   return (
     <div
-      className="absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur"
+      className="absolute bottom-full right-0 z-30 mb-2 rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur wrap-anywhere @container"
+      style={{ width }}
       data-testid="context-health-detail"
       role="dialog"
       aria-label={ch.detailModalTitle}
@@ -172,8 +172,8 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
         {detailMode === 'ready' && contextHealth ? (
           <div>
             {/* 大数字行 + 分段总条：总量的唯一出口 */}
-            <div className="mb-2 flex items-baseline justify-between gap-2 tabular-nums">
-              <span className="flex-shrink-0 text-sm font-semibold text-zinc-50">
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 tabular-nums">
+              <span className="min-w-0 text-sm font-semibold text-zinc-50">
                 {windowKnown
                   ? interpolate(ch.usageSummary, {
                     percent: formatContextUsagePercent(displayPercent),
@@ -205,13 +205,11 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                 )}
                 {showEstimateDeviation && (
                   <span
-                    className="ml-1.5 text-zinc-500"
+                    className="mt-1 block text-zinc-500"
                     data-testid="context-health-deviation"
                     title={ch.estimateDeviationTitle}
                   >
-                    {interpolate(ch.estimateDeviation, {
-                      percent: estimateDeviationLabel,
-                    })}
+                    {ch.estimateDeviation}
                   </span>
                 )}
               </span>
@@ -254,9 +252,9 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
 
                 <div data-testid="context-bucket-list" data-cost-column={showCostColumn ? 'on' : 'off'}>
                   <div className={`grid gap-2 pb-1 text-[10px] text-zinc-500 ${
-                    showCostColumn ? 'grid-cols-[minmax(0,1fr)_116px_112px]' : 'grid-cols-[minmax(0,1fr)_116px]'
+                    showCostColumn ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] @max-[360px]:grid-cols-2' : 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'
                   }`}>
-                    <span>{ch.bucketColumn}</span>
+                    <span className={showCostColumn ? '@max-[360px]:col-span-full' : undefined}>{ch.bucketColumn}</span>
                     <span className="text-right">{ch.tokenShareColumn}</span>
                     {showCostColumn && <span className="text-right">{ch.costShareColumn}</span>}
                   </div>
@@ -267,21 +265,21 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                       <div
                         key={bucket.key}
                         className={`grid items-center gap-2 py-1 text-xs ${
-                          showCostColumn ? 'grid-cols-[minmax(0,1fr)_116px_112px]' : 'grid-cols-[minmax(0,1fr)_116px]'
+                          showCostColumn ? 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] @max-[360px]:grid-cols-2' : 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'
                         }`}
                       >
-                        <span className="flex min-w-0 items-center gap-2 text-zinc-300">
+                        <span className={`flex min-w-0 items-start gap-2 text-zinc-300 ${showCostColumn ? '@max-[360px]:col-span-full' : ''}`}>
                           <span
                             className="h-2 w-2 flex-shrink-0 rounded-sm"
                             style={{ background: bucket.color }}
                           />
-                          <span className="truncate">{bucket.name}</span>
+                          <span className="min-w-0">{bucket.name}</span>
                         </span>
-                        <span className="whitespace-nowrap text-right text-[11px] text-zinc-400 tabular-nums">
+                        <span className="min-w-0 text-right text-[11px] text-zinc-400 tabular-nums">
                           {formatContextTokens(bucket.tokens, ch.tokenUnit)} · {share.toFixed(1)}%
                         </span>
                         {showCostColumn && (
-                          <span className="whitespace-nowrap text-right text-[11px] text-zinc-400 tabular-nums">
+                          <span className="min-w-0 text-right text-[11px] text-zinc-400 tabular-nums">
                             {bucketHasCost
                               ? `${formatUsd(knownBucketCost.costUsd)} · ${knownBucketCost.inputCostPercent.toFixed(1)}%`
                               : ''}
@@ -297,14 +295,9 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
                     className="mt-2 rounded-md bg-surface-hover px-2.5 py-2 text-[11px] text-zinc-400"
                     data-testid="context-cost-ranking-status"
                   >
-                    {showCostColumn
-                      ? interpolate(ch.bucketRanking, {
-                        tokenBucket: tokenLargestBucket.name,
-                        costBucket: ch.pendingValidation,
-                      })
-                      : interpolate(ch.bucketRankingTokensOnly, {
-                        tokenBucket: tokenLargestBucket.name,
-                      })}
+                    {interpolate(ch.bucketRankingTokensOnly, {
+                      tokenBucket: tokenLargestBucket.name,
+                    })}
                   </div>
                 )}
               </>
@@ -314,21 +307,21 @@ export const ContextHealthDetailPopover: React.FC<ContextHealthDetailPopoverProp
               <div className="mt-3 border-t border-border-muted pt-3" data-testid="context-cache-cost-split">
                 <div className="mb-1 text-[11px] font-medium text-zinc-300">{ch.cacheSplitTitle}</div>
                 <div className="mb-2 text-[10px] text-zinc-500">{ch.cacheSplitHint}</div>
-                <div className="grid grid-cols-[minmax(0,1fr)_116px_112px] gap-2 py-1 text-[11px] text-zinc-400">
-                  <span>{ch.cachedInput}</span>
-                  <span className="whitespace-nowrap text-right tabular-nums">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] @max-[360px]:grid-cols-2 gap-2 py-1 text-[11px] text-zinc-400">
+                  <span className="@max-[360px]:col-span-full">{ch.cachedInput}</span>
+                  <span className="min-w-0 text-right tabular-nums">
                     {formatContextTokens(cacheCostSplit.cachedTokens, ch.tokenUnit)} · {((cacheCostSplit.cachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
                   </span>
-                  <span className="whitespace-nowrap text-right tabular-nums">
+                  <span className="min-w-0 text-right tabular-nums">
                     {formatUsd(cacheCostSplit.cachedCostUsd)} · {cacheCostSplit.cachedCostPercent.toFixed(1)}%
                   </span>
                 </div>
-                <div className="grid grid-cols-[minmax(0,1fr)_116px_112px] gap-2 py-1 text-[11px] text-zinc-400">
-                  <span>{ch.uncachedInput}</span>
-                  <span className="whitespace-nowrap text-right tabular-nums">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] @max-[360px]:grid-cols-2 gap-2 py-1 text-[11px] text-zinc-400">
+                  <span className="@max-[360px]:col-span-full">{ch.uncachedInput}</span>
+                  <span className="min-w-0 text-right tabular-nums">
                     {formatContextTokens(cacheCostSplit.uncachedTokens, ch.tokenUnit)} · {((cacheCostSplit.uncachedTokens / cacheSplitTokens) * 100).toFixed(1)}%
                   </span>
-                  <span className="whitespace-nowrap text-right tabular-nums">
+                  <span className="min-w-0 text-right tabular-nums">
                     {formatUsd(cacheCostSplit.uncachedCostUsd)} · {cacheCostSplit.uncachedCostPercent.toFixed(1)}%
                   </span>
                 </div>

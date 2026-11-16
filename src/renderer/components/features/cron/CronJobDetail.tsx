@@ -25,6 +25,7 @@ import {
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
+import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
@@ -32,7 +33,7 @@ import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { CronJobApprovalHint } from './CronJobApprovalHint';
-import { getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
+import { getJobDisplayName, getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
 import { formatDetailDuration } from './formatDetailDuration';
@@ -109,7 +110,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const latestLabel = latestMeta.label;
   const awaitingApproval = awaitingRun != null;
   const builtinDisplay = getBuiltinJobDisplay(job, language);
-  const displayName = builtinDisplay?.name ?? job.name;
+  const displayName = getJobDisplayName(job, language);
   const displayDescription = builtinDisplay?.description ?? job.description;
   const displayTags = getVisibleJobTags(job);
   const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
@@ -171,6 +172,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
                 />
               </div>
             )}
+            {(job.maxRunBudget ?? 0) > 0 && <div className="mt-2"><FlatFeeBudgetNote variant="center" /></div>}
             <div className="mt-2 max-w-3xl text-sm">
               {displayDescription ? (
                 <p className="text-zinc-400">{displayDescription}</p>
@@ -335,7 +337,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               />
             </section>
             <section className="min-h-0 overflow-y-auto">
-              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} />
+              <CronExecutionDetail execution={selectedExecution} jobName={displayName} runsOn={job.runsOn} hasRunBudget={(job.maxRunBudget ?? 0) > 0} />
             </section>
           </div>
         )}

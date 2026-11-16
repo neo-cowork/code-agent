@@ -8,6 +8,7 @@
 // 一个文件只挂一条常设指令。到点重写、留版本、失败回滚由 host 侧负责。
 // ============================================================================
 
+import { formatDateTime } from '../utils/formatDateTime';
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { AlertTriangle, CalendarClock } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -139,11 +140,9 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
     : pv.standingRefreshSetup;
   const failure = standingRefresh?.lastRefreshFailed;
   // 失败态 chip 只放短状态（不含时间——长标签撞上 max-w 会被截掉「已保留上一版」）；
-  // 时间与原因都进 title。时间按 app 语言（zh→zh-CN / en→en-US）格式化，不用浏览器
-  // 默认 locale，避免 zh 界面冒出 AM/PM。
-  const failureLocale = language === 'zh' ? 'zh-CN' : 'en-US';
+  // 时间与原因都进 title；zh/en 使用同一 24 小时时间格式。
   const failureChipLabel = failure ? pv.standingRefreshFailedChip : undefined;
-  const failureTime = failure ? new Date(failure.at).toLocaleString(failureLocale) : undefined;
+  const failureTime = failure ? formatDateTime(failure.at, language) : undefined;
 
   return (
     <>

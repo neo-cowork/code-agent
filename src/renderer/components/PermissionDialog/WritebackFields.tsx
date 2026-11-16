@@ -8,6 +8,7 @@
 // 字段表来自 @shared/contract 的 EDITABLE_TOOL_FIELDS，renderer 不自持一份。
 // ============================================================================
 
+import { formatDateTime } from '../../utils/formatDateTime';
 import React, { useState } from 'react';
 import { EDITABLE_TOOL_FIELDS, type EditableField } from '@shared/contract';
 import { Input } from '../primitives/Input';
@@ -81,7 +82,7 @@ function localDatetimeToIso(value: string, millis: number): string {
 function formattedDatetime(raw: unknown, language: string): string {
   const date = typeof raw === 'number' || typeof raw === 'string' ? new Date(raw) : null;
   if (!date || Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString(language === 'en' ? 'en-US' : 'zh-CN');
+  return formatDateTime(date, language === 'en' ? 'en' : 'zh');
 }
 
 export function draftFromArgs(tool: string, args: Record<string, unknown>): WritebackDraft {
@@ -202,8 +203,8 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
           : field.kind === 'datetime'
             ? formattedDatetime(raw, language)
             : (typeof raw === 'string' ? raw : '');
-        // 可选列表字段为空就不占一行（密送常年为空）
-        if (!text && !field.required && field.kind === 'string_list') return null;
+        // 空值整行不渲染：「日历：无」这类占位对用户没有信息量
+        if (!text) return null;
         if (field.multiline) {
           return (
             <div key={field.key} className="pt-1 border-t border-zinc-700/60">
@@ -214,7 +215,7 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
         return row(
           field.key,
           labels[field.key] ?? field.key,
-          <span data-testid={`writeback-view-${field.key}`}>{text || <span className="text-zinc-600">{w.none}</span>}</span>,
+          <span data-testid={`writeback-view-${field.key}`}>{text}</span>,
         );
       })}
       {attachments.length > 0 && row('attachments', w.fieldAttachments.replace(/（.*）|\(.*\)/, ''), (

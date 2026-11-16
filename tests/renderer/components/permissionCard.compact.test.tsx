@@ -124,7 +124,7 @@ describe('PermissionCard 紧凑/展开判据', () => {
 
     const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
     expect(card.dataset.viewMode).toBe('expanded');
-    expect(screen.getByText('允许调用这个 MCP 工具？')).toBeTruthy();
+    expect(screen.getByText('允许调用这个外部工具？')).toBeTruthy();
     expect(screen.getByText('lark-prod / docs.search')).toBeTruthy();
     const header = card.firstElementChild as HTMLElement;
     expect(header.textContent).not.toContain('MCPUnified');

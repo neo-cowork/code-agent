@@ -158,6 +158,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
 
   // Screen Memory
   { tab: 'openchronicle', labelKey: 'automaticScreenMemory', keywords: ['screen memory', 'openchronicle', 'daemon', 'desktop activity'] },
+  { tab: 'openchronicle', labelKey: 'meetingCalendarReminder', keywords: ['calendar', 'meeting reminder', 'eventkit'] },
   {
     tab: 'openchronicle',
     labelKey: 'manualDesktopActivity',

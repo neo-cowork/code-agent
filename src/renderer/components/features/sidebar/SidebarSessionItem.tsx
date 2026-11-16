@@ -1,4 +1,7 @@
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useCronStore } from '../../../stores/cronStore';
+import { getLatestExecutionStatus, isPermissionDeniedExecution } from '../cron/types';
 import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
 import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
 import React from 'react';
@@ -10,7 +13,7 @@ import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getLocalizedSessionTitle, getSessionStatusPresentation, splitCronSessionTitleParts } from '../../../utils/sessionPresentation';
-import { formatLocalDateTime, localeForLanguage } from '../../../utils/i18nTime';
+import { formatLocalDateTime } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
 import { getSidebarCronTaskId } from './sidebarCronRunFolding';
@@ -136,6 +139,17 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const { t, language } = useI18n();
   const s = t.sidebarSession;
   const projectCopy = t.sidebarProject;
+  const cronTaskId = getSidebarCronTaskId(session);
+  const cronExecution = useCronStore((state) => {
+    if (!cronTaskId) return undefined;
+    const latest = state.latestExecutions[cronTaskId];
+    return latest?.sessionId === session.id ? latest
+      : state.recentExecutions.find((execution) => execution.sessionId === session.id)
+        ?? state.executionsByJobId[cronTaskId]?.find((execution) => execution.sessionId === session.id);
+  });
+  const deniedStatus = cronExecution && isPermissionDeniedExecution(cronExecution)
+    ? getLatestExecutionStatus(cronExecution, t.cronCenter)
+    : undefined;
   const isUnread = unreadSessionIds.has(session.id);
   const isSelected = currentSessionId === session.id;
   const isChecked = selectedSessionIds.has(session.id);
@@ -187,7 +201,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
   const forkParentSessionId = getForkParentSessionId(session);
-  const cronTaskId = getSidebarCronTaskId(session);
   const cronRunAggregate = cronTaskId ? cronRunAggregatesByTaskId?.[cronTaskId] : undefined;
   const latestRunTime = formatLocalDateTime(latestActivityAt, language);
   const cronRunsToggleLabel = cronRunsExpanded
@@ -214,7 +227,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       aria-label={s.openSession.replace('{title}', displayTitle)}
       data-session-id={session.id}
       data-testid={`sidebar-session-${session.id}`}
-      title={new Date(latestActivityAt).toLocaleString(localeForLanguage(language))}
+      title={formatDateTime(latestActivityAt, language)}
       className={`group relative pl-0 pr-1.5 py-1.5 rounded-lg cursor-pointer transition-colors duration-150 ${isSelected && !multiSelectMode ? 'bg-zinc-700/60' : isChecked ? 'bg-blue-500/10 border border-badge-info/20' : 'hover:bg-zinc-800'}`}
     >
       <div className="flex items-center gap-2">
@@ -281,6 +294,14 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               </div>
             )}
           </div>
+        )}
+        {!isRenaming && !isRunning && deniedStatus && (
+          <span
+            data-testid="sidebar-cron-permission-denied"
+            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${deniedStatus.className}`}
+          >
+            {deniedStatus.label}
+          </span>
         )}
         {!isRenaming && cronRunAggregate && cronRunAggregate.runCount > 1 && cronRunAggregate.latestSessionId === session.id && (
           onToggleCronRuns && cronTaskId ? (

@@ -23,9 +23,18 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
-  packMemoryEntries: mocks.packMemoryEntries,
-}));
+// 只 mock packMemoryEntries（打包是外部依赖）；storedMemoryToEntry 等其余导出走真实现——
+// buildSeedMemoryBlock 的用量淘汰过滤需要它算条目 id，mock 缺了会让过滤抛错被外层 catch
+// 吞成 null，测试假红（N-MEM-EVICT-NEVER-READ-FU1）。
+vi.mock('../../../src/host/memory/memoryEntryRuntime', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/host/memory/memoryEntryRuntime')>(
+    '../../../src/host/memory/memoryEntryRuntime',
+  );
+  return {
+    ...actual,
+    packMemoryEntries: mocks.packMemoryEntries,
+  };
+});
 
 import {
   buildPackedSeedMemoryBlock,

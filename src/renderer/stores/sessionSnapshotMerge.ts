@@ -70,7 +70,11 @@ function findLiveCounterpart(
     if (snapshotById.has(liveMessage.id)) continue;
     if (liveMessage.role !== 'assistant') continue;
     if (precedingUserId(live, liveMessage) !== snapshotUserId) continue;
-    if (!isStreamingAssistantCounterpart(snapshotMessage.content, liveMessage.content)) continue;
+    // 失败轮的错误载体正文为空，正文判据配不上：renderer 自补的 `agent-error-<ts>`
+    // 与落库那条同轮同为失败消息即是同一次失败。配不上就会落到尾部、挂进最新一轮
+    // （N-FIX-AGENT-ERROR-CARD-STICKS-TO-LATER-TURNS）。
+    const sameFailure = Boolean(snapshotMessage.metadata?.agentError && liveMessage.metadata?.agentError);
+    if (!sameFailure && !isStreamingAssistantCounterpart(snapshotMessage.content, liveMessage.content)) continue;
     if (hasConflictingToolCalls(snapshotMessage, liveMessage)) continue;
     return liveMessage;
   }
@@ -195,6 +199,8 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
     ...snapshotMessage,
     ...liveMessage,
     content: mergedContentOf(snapshotMessage, liveMessage),
+    // live 草稿的时间戳是开轮时刻，落库那条是写入时刻；取晚的，轮次用时才覆盖到最终回复。
+    timestamp: Math.max(snapshotMessage.timestamp, liveMessage.timestamp),
     reasoning: pickBody(snapshotMessage.reasoning, liveMessage.reasoning),
     // live 草稿的 metadata 可能只有 correlation 一个键（turn_start 建的草稿就是），
     // 整体铺开会把 snapshot 落库的 agentError / turnQuality 等键抹掉——按键合并，

@@ -2,7 +2,7 @@
 // Desktop IPC Handlers - 原生桌面活动查询
 // ============================================================================
 
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import type { IpcMain } from '../platform';
 import type { IPCResponse } from '@shared/ipc';
 import type { RawDomainRouteHandlers } from '@shared/ipc/domainRoutes';
@@ -23,9 +23,9 @@ import type { ManagedBrowserProxyInput } from '../services/infra/browserService'
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
-import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings, getSqlitePath } from '../services/desktop/desktopAudioCapture';
-import { MeetingSession, createSqliteMeetingStore } from '../services/desktop/meetingSession';
-import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode, AudioCapturePrerequisites, MeetingImportCandidate } from '@shared/contract/audioCapture';
+import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings } from '../services/desktop/desktopAudioCapture';
+import { createMeetingIpc } from './desktopMeeting';
+import type { AudioCaptureMissingPrerequisiteCode, AudioCaptureMode, AudioCapturePrerequisites } from '@shared/contract/audioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -49,27 +49,11 @@ function stopManualAudio(): void {
   stopDesktopAudioCapture();
 }
 
-// 「记这场会」（N-MEETING-SESSION）：只由用户在会话「+」菜单手动开始，录音走会议模式
-const meetingSession = new MeetingSession(
-  createSqliteMeetingStore(() => getSqlitePath(), (dbPath, sql, json) => {
-    try {
-      return execFileSync('sqlite3', json ? ['-json', dbPath, sql] : [dbPath, sql], { encoding: 'utf-8' });
-    } catch (error) {
-      logger.warn('[会议] 读写 meetings 失败', { error: error instanceof Error ? error.message : String(error) });
-      return '';
-    }
-  }),
-  {
-    start: async () => getAudioCaptureStatus().capturing, // 录音已由 startAudioCapture 处理器开好，这里只确认
-    stop: stopManualAudio,
-    isCapturing: () => getAudioCaptureStatus().capturing,
-  },
-  Date.now,
-  // 散会自动交记言出纪要（N-MEETING-PAGE）；开关、转写长度在 meetingMinutes 里判，这里只入队
-  (record) => {
-    void import('../services/desktop/meetingMinutes').then(({ enqueueMeetingMinutes }) => enqueueMeetingMinutes(record.id));
-  },
-);
+// 「记这场会」（N-MEETING-SESSION）：会议状态、会前提醒与会议动作在 desktopMeeting.ts
+const meeting = createMeetingIpc({
+  startMeetingCapture: (service) => startMeetingCapture(service as NativeDesktopService),
+  stopManualAudio,
+});
 
 const logger = createLogger('DesktopIPC');
 const FULL_DISK_ACCESS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
@@ -565,69 +549,13 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
   },
   stopAudioCapture: async (_service, _raw) => {
     stopManualAudio();
-    meetingSession.onCaptureStoppedExternally(); // 设置页关录音时，这场会跟着结束
+    meeting.onCaptureStoppedExternally(); // 设置页关录音时，这场会跟着结束
     return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
   },
   getAudioCaptureStatus: async (_service, _raw) => {
     return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
   },
-  startMeeting: async (service, raw) => {
-    if (!meetingSession.status().current) {
-      const started = await startMeetingCapture(service);
-      if (!started.success) return started; // 缺转写引擎等前置：原样带回界面
-    }
-    const payload = raw as { title?: unknown } | undefined;
-    const title = typeof payload?.title === 'string' ? payload.title : undefined;
-    return { success: true, data: await meetingSession.start(title) } satisfies IPCResponse<unknown>;
-  },
-  pauseMeeting: async (_service, _raw) => {
-    return { success: true, data: meetingSession.pause() } satisfies IPCResponse<unknown>;
-  },
-  resumeMeeting: async (service, _raw) => {
-    if (meetingSession.status().current?.state === 'paused') {
-      const started = await startMeetingCapture(service);
-      if (!started.success) return started;
-    }
-    return { success: true, data: await meetingSession.resume() } satisfies IPCResponse<unknown>;
-  },
-  stopMeeting: async (_service, _raw) => {
-    return { success: true, data: meetingSession.end('manual') } satisfies IPCResponse<unknown>;
-  },
-  getMeetingStatus: async (_service, _raw) => {
-    return { success: true, data: meetingSession.status() } satisfies IPCResponse<unknown>;
-  },
-  // 会议页（N-MEETING-PAGE）：列表带纪要状态，详情带整场转写；导入后与本机录的会一样按设置自动出纪要
-  listMeetings: async (_service, _raw) => {
-    meetingSession.status(); // 先收尾上次意外退出没走完的会，列表里才不会挂着「记录中」
-    const { getMeetingRecordStore } = await import('../services/desktop/meetingRecordsDefault');
-    return { success: true, data: (await getMeetingRecordStore()).list(50) } satisfies IPCResponse<unknown>;
-  },
-  getMeetingDetail: async (_service, raw) => {
-    const id = typeof (raw as { id?: unknown } | undefined)?.id === 'string' ? (raw as { id: string }).id : '';
-    const { getMeetingRecordStore } = await import('../services/desktop/meetingRecordsDefault');
-    const store = await getMeetingRecordStore();
-    const meeting = id ? store.get(id) : null;
-    if (!meeting) return { success: false, error: { code: 'NOT_FOUND', message: 'meeting not found' } } satisfies IPCResponse<unknown>;
-    return { success: true, data: { meeting, transcript: store.transcript(meeting) } } satisfies IPCResponse<unknown>;
-  },
-  regenerateMeetingMinutes: async (_service, raw) => {
-    const id = typeof (raw as { id?: unknown } | undefined)?.id === 'string' ? (raw as { id: string }).id : '';
-    if (!id) return { success: false, error: { code: 'INVALID_ARGS', message: 'id is required' } } satisfies IPCResponse<unknown>;
-    const { enqueueMeetingMinutes } = await import('../services/desktop/meetingMinutes');
-    enqueueMeetingMinutes(id, true);
-    return { success: true, data: { queued: true } } satisfies IPCResponse<unknown>;
-  },
-  listMeetingImportCandidates: async (_service, _raw) => {
-    const { listMeetingImportCandidates, defaultImportDeps } = await import('../services/desktop/meetingImport');
-    return { success: true, data: await listMeetingImportCandidates(await defaultImportDeps()) } satisfies IPCResponse<unknown>;
-  },
-  importMeeting: async (_service, raw) => {
-    const { importMeeting, defaultImportDeps } = await import('../services/desktop/meetingImport');
-    const { enqueueMeetingMinutes } = await import('../services/desktop/meetingMinutes');
-    const result = await importMeeting(raw as MeetingImportCandidate, await defaultImportDeps());
-    if (result.created) enqueueMeetingMinutes(result.id);
-    return { success: true, data: result } satisfies IPCResponse<unknown>;
-  },
+  ...meeting.handlers,
   clearAudioRecordings: async (_service, _raw) => {
     return { success: true, data: clearAudioRecordings() } satisfies IPCResponse<unknown>;
   },

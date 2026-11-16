@@ -452,7 +452,7 @@ export const SaaSConnectorsSection: React.FC<SaaSConnectorsSectionProps> = ({
               ) : !isCli && !isUnavailable && (
                 <button /* ds-allow:button: 卡片右上角紧凑状态动作位 */
                   type="button"
-                  aria-label={`${rowBusy ? text.actions.connecting : presentation.actionLabel} ${providerName}`}
+                  aria-label={`${rowBusy ? text.actions.connecting : presentation.actionLabel} ${providerName}`.trim()}
                   data-testid={`saas-card-action-${status.id}`}
                   disabled={rowBusy}
                   onClick={(event) => {

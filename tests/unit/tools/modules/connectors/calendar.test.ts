@@ -122,7 +122,16 @@ describe('calendarModule (native)', () => {
       getMock.mockReturnValue(undefined);
       const result = await run({ action: 'list_calendars' });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe('NOT_INITIALIZED');
+      if (!result.ok) {
+        expect(result.code).toBe('NOT_INITIALIZED');
+        expect(result.error).toContain('Calendar is not connected on this computer, so calendar events cannot be read');
+        expect(result.error).toContain('Connectors page');
+        expect(result.error).toContain('能力中心 > 连接器');
+        expect(result.error).not.toContain('设置 > 连接器');
+        expect(result.error).toContain('never state that there are no events');
+        expect(result.error).toContain('other sources');
+        expect(result.error).not.toContain('connector is not available');
+      }
     });
 
     it('returns a plain reason without the osascript command line', async () => {
