@@ -11,6 +11,8 @@ import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { en } from '../../../src/renderer/i18n/en';
 
+const state = vi.hoisted(() => ({ pending: null as PermissionRequest | null }));
+
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: en, language: 'en' }) }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -18,8 +20,8 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     (selector: (state: unknown) => unknown) => selector({
       processingSessionIds: new Set(),
       openPreview: vi.fn(),
-      pendingPermissionRequest: null,
-      pendingPermissionSessionId: null,
+      pendingPermissionRequest: state.pending,
+      pendingPermissionSessionId: state.pending ? 'session-1' : null,
       queuedPermissionRequests: [],
       resolvedPermissionRequests: {} as Record<string, PermissionRequest[]>,
     }),
@@ -41,7 +43,7 @@ import { humanizeToolGroupLabel } from '../../../src/renderer/utils/humanizeTool
 import { DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
 import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); state.pending = null; });
 
 function runningNode(id: string, name: string, args: Record<string, unknown>): TraceNode {
   return { id: `node-${id}`, type: 'tool_call', content: '', timestamp: 1, toolCall: { id, name, args } } as TraceNode;
@@ -62,6 +64,17 @@ describe('English step-summary label at count 1 vs 2 (ToolStepGroup)', () => {
       isStreamingTurn
     />);
     expect(two).toContain('Running 2 commands');
+  });
+
+  it('pending-approval group header: one command awaiting approval reads "Request to run 1 command"', () => {
+    state.pending = {
+      id: 'permission-pending', sessionId: 'session-1', parentToolUseId: 'a', tool: 'Bash', type: 'command',
+      details: { command: 'rm old-draft.txt' } as PermissionRequest['details'], timestamp: 1,
+    } as PermissionRequest;
+    const read = doneNode('r', 'Read', { file_path: '/tmp/a.txt' }, true);
+    const html = renderToStaticMarkup(<ToolStepGroup nodes={[runningNode('a', 'Bash', { command: 'rm old-draft.txt' }), read]} sessionId="session-1" isStreamingTurn />);
+    expect(html).toContain('Request to run 1 command');
+    expect(html).not.toMatch(/\b1 (steps|commands)\b/);
   });
 
   it.each([
