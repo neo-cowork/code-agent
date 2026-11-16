@@ -50,6 +50,9 @@ export function shouldStreamSurfaceFrames(input: SurfaceLiveFrameStreamInput): b
     && input.sessionRunning;
 }
 
+/** 复述 start 的间隔：页面被换掉后最迟这么久恢复出画面 */
+const STREAM_REASSERT_INTERVAL_MS = 2000;
+
 /** 帧写 store 的节流间隔：不要每帧都打 zustand set（裁定：1 秒一次足够留影用） */
 const FRAME_STORE_WRITE_THROTTLE_MS = 1000;
 
@@ -230,21 +233,33 @@ export function useSurfaceLiveFrames(
       },
     );
 
-    void startSurfaceLiveStream(request)
-      .then((state) => {
-        if (cancelled) return;
-        setStreaming(state.streaming);
-        setUnavailableReason(state.streaming ? null : state.reason ?? 'unsupported');
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setStreaming(false);
-          setUnavailableReason('unsupported');
-        }
-      });
+    // 开流不是一次性的：结果页关闭后「重新打开」会在同一 surface 会话下起新浏览器，
+    // 入参（会话/可见性/尺寸）全没变，effect 不会重跑；之前被拒（not_running）的状态
+    // 也就永远停在「接不到画面」。所以持续复述 start，由 host 按页面是否换过决定保持或重开
+    // （host 端同页同尺寸时是空操作）。
+    let reassertTimer: ReturnType<typeof setTimeout> | undefined;
+    const begin = () => {
+      void startSurfaceLiveStream(request)
+        .then((state) => {
+          if (cancelled) return;
+          setStreaming(state.streaming);
+          setUnavailableReason(state.streaming ? null : state.reason ?? 'unsupported');
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setStreaming(false);
+            setUnavailableReason('unsupported');
+          }
+        })
+        .finally(() => {
+          if (!cancelled) reassertTimer = setTimeout(begin, STREAM_REASSERT_INTERVAL_MS);
+        });
+    };
+    begin();
 
     return () => {
       cancelled = true;
+      if (reassertTimer) clearTimeout(reassertTimer);
       activeSessionRef.current = null;
       unsubscribe?.();
       // 终态留影移交必须在 cleanup 做：终态时入参的 surfaceSessionId 已变 null，
