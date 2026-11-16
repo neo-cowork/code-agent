@@ -324,7 +324,7 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
     invokeMock.mockRejectedValueOnce(Object.assign(new Error('409'), { status: 409, code: 'RUN_SESSION_CONFLICT' }));
     const conflictCopy = '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。';
     // transport 已把 409 + RUN_SESSION_CONFLICT 的域信封换成人话（domainFailureMessage）。
-    invokeDomainMock.mockRejectedValueOnce(Object.assign(new Error(conflictCopy), { code: 'HTTP_409' }));
+    invokeDomainMock.mockRejectedValueOnce(Object.assign(new Error(conflictCopy), { code: 'RUN_SESSION_CONFLICT' }));
     const hook = renderSendHook();
 
     let delivery: unknown;
@@ -342,7 +342,7 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
       retryPrompt: envelope.content,
       retryClientMessageId: 'client-msg-keep',
       retrySessionId: 'session-failed-bubble',
-      sendFailureCode: 'SEND_REJECTED',
+      sendFailureCode: 'RUN_SESSION_CONFLICT',
     });
   });
 });

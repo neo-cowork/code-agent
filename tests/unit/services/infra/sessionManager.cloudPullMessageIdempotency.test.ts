@@ -187,6 +187,41 @@ describe('SessionManager.getSession 云端回填幂等（T6 messages.id UNIQUE�
       .toEqual({ content: 'hydrated from cloud' });
   });
 
+  it('CLI metadata and title reads never hydrate or write an empty local conversation', async () => {
+    coreDb.createSessionWithId('cli-read-only', {
+      title: 'CLI session title', userId: 'user-1',
+      metadata: { expertThread: { roleId: 'expert-1', setAt: 42 } },
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    coreDb.createSessionWithId('cli-other-owner', {
+      title: 'Other user title', userId: 'user-2',
+      metadata: { private: true },
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    const baseline = await sessionManager.getSession('cli-read-only', 0);
+    sessionManager.clearCache();
+    supabaseRows.from.mockClear();
+    supabaseRows.value = [{
+      id: 'cloud-only-message', role: 'user', content: 'Must not be restored', timestamp: 1,
+      visibility: 'active', is_deleted: false,
+    }];
+    const addMessage = vi.spyOn(coreDb, 'addMessage');
+    const rows = () => coreConnection.prepare('SELECT * FROM messages ORDER BY id').all();
+    const changes = () => coreConnection.prepare('SELECT total_changes() AS count').get();
+    const beforeRows = rows();
+    const beforeChanges = changes();
+
+    expect(sessionManager.getSessionMetadata('cli-read-only')).toEqual(baseline?.metadata);
+    expect(sessionManager.getSessionTitle('cli-read-only')).toBe(baseline?.title);
+    expect(sessionManager.getSessionMetadata('cli-other-owner')).toBeUndefined();
+    expect(sessionManager.getSessionTitle('cli-other-owner')).toBeUndefined();
+    expect(supabaseRows.from, 'read-only accessors must not query Supabase').toHaveBeenCalledTimes(0);
+    expect(addMessage, 'read-only accessors must not write messages').toHaveBeenCalledTimes(0);
+    expect(rows(), 'read-only accessors must preserve SQLite rows').toEqual(beforeRows);
+    expect(changes(), 'read-only accessors must not change SQLite').toEqual(beforeChanges);
+    console.info(`ASSERT cli-read-only accessors: cloudQueries=${supabaseRows.from.mock.calls.length}, addMessageCalls=${addMessage.mock.calls.length}, rows=${beforeRows.length}, sqliteWrites=0`);
+  });
+
   it.each([false, true])('native title lookup never hydrates or rewrites an uncached conversation (local history cleared=%s)', async (clearHistory) => {
     coreDb.createSessionWithId('notification-title', {
       title: 'Meeting summary', userId: 'user-1',
