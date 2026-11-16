@@ -45,6 +45,7 @@ import {
   recursivelyRemovesPath, resolveCandidatePath,
 } from './permissionClassifierShell';
 import { classifyFileWrite } from './fileWriteClassification';
+import { EXCEL_READ_ACTIONS } from '../../shared/constants/excelActions';
 import type { ToolDefinition } from '../../shared/contract';
 
 export { bashCommandRequiresPermission };
@@ -264,7 +265,12 @@ export class PermissionClassifier {
     };
     let ruleResult: ClassificationResult | null;
     try {
-      const fileWrite = await classifyFileWrite(toolName, args, classificationContext, startTime);
+      // ExcelAutomate read actions are write-level by declaration but read-level by policy: they must
+      // still pass the credential / private-memory read check that Read gets (file_path=~/.ssh/id_rsa).
+      const excelSensitiveRead = toolName === 'ExcelAutomate' && EXCEL_READ_ACTIONS.has(String(args.action ?? ''))
+        ? this.classifySensitiveMemoryRead(toolName, args, { ...classificationContext, permissionLevel: 'read' }, startTime)
+        : null;
+      const fileWrite = excelSensitiveRead ?? await classifyFileWrite(toolName, args, classificationContext, startTime);
       if (cached && toolName !== 'ExcelAutomate' && !fileWrite?.bypassCache) return { ...classificationHostReason(cached, toolName), cached: true };
       ruleResult = fileWrite ?? this.classifyByRules(toolName, args, classificationContext, startTime);
     } catch (error) {
