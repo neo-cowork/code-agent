@@ -404,7 +404,7 @@ jobs:
   # Full: merge gate，smoke + Playwright e2e（含 webServer 构建）
   # ---------------------------------------------------------------------------
   # ---------------------------------------------------------------------------
-  # Unit: 全部 unit + renderer，4 路分片并行
+  # Unit: PR Vitest 目录，4 路分片并行
   #
   # 2026-09-05 从 smoke job 里拆出来。动机是实测账：smoke job 一轮 1134s，其中这一步
   # 独占 782s（69%），整条 PR 门 wall clock 22min 大半卡在它一个人身上，且它跟前面
@@ -476,11 +476,11 @@ jobs:
         run: node -e "require('node-pty')"
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
-        # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
+        # 2026-09-05 全收 tests/unit + tests/renderer；2026-11-16 补齐其余未选目录。
         # main-full-gate 是合入后检测门，红了不挡合并（#668）；不能让未点名目录继续漏门。
         # Vitest 位置参数是路径子串，tests/unit 会递归包含根级及所有子目录。
         # ROOT_UNIT_TESTS 的 glob 展开及空展开自检因此移除：已没有可能空展开的 glob；
-        # tests/scripts 合同要求两个整目录参数，并分别检查实际目录有测试文件，防退回子集或单侧空转。
+        # tests/scripts 合同要求整目录参数，并分别检查实际目录有测试文件，防退回子集或单侧空转。
         #
         # 平台性排除（保留既有两条，逐文件）：
         # - webSearch.test.ts：PR #691 Ubuntu 真跑 `401 Unauthorized: invalid API key`，需要真 key。
@@ -501,6 +501,8 @@ jobs:
         # 排除必须绑定实测失败文件，不能用平台理由整目录一刀切。
         run: |
           node scripts/ci/vitest-with-flake-ledger.mjs --job "Unit + renderer vitest shard ${{ matrix.shard }}" -- npx vitest run tests/unit tests/renderer \
+            tests/shared tests/agent tests/main tests/wrappers tests/services tests/channels \
+            tests/tools tests/web tests/artifacts tests/utils tests/integration \
             --shard=${{ matrix.shard }}/4 --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts' \
@@ -752,6 +754,44 @@ jobs:
         # node scripts/perf-journey-ratchet.mjs --tighten
         run: node scripts/perf-journey-ratchet.mjs
 
+  darwin:
+    name: Darwin-gated vitest (merge group)
+    if: github.event_name == 'merge_group'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Darwin-gated vitest (merge group)
+        run: |
+          node scripts/ci/vitest-with-flake-ledger.mjs --job "Darwin-gated vitest" -- npx vitest run \
+            tests/agent/agentOrchestrator.test.ts \
+            tests/scripts/tauriInstallSignAnchor.test.ts \
+            tests/unit/connectors/nativeConnectorStatus.test.ts \
+            tests/unit/connectors/appleScriptFailure.test.ts \
+            tests/unit/connectors/remindersBulkRead.test.ts \
+            tests/unit/app/sessionCommandCenterBrain.test.ts \
+            tests/unit/tools/toolExecutor.safeCommandPermission.test.ts \
+            tests/unit/host/sandbox/managerNpmEnv.test.ts \
+            tests/unit/host/permissions/envAssist/shellBridgeProduction.test.ts \
+            tests/unit/host/permissions/envAssist/shellBridgeBuiltBundle.test.ts \
+            tests/unit/host/permissions/envAssist/shellBridgeHandshake.test.ts \
+            tests/unit/web/webShutdownFinalizers.test.ts \
+            tests/unit/ipc/workspacePreviewFormats.test.ts \
+            tests/unit/services/core/keytarAdapter.test.ts \
+            tests/unit/agent/nativeConnectorPreload.test.ts \
+            --retry=1
+
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，
   # 用 scripts/ci/swarm-streak.sh 按需查询，避免 [skip ci] commit + 1-commit
   # lag 的 trade-off。详见 docs/decisions/010-swarm-road-to-10.md #1。
@@ -759,18 +799,19 @@ jobs:
   # ---------------------------------------------------------------------------
   # 合并队列总闸（11-07 仓库迁到 neo-cowork 组织开 merge queue）：
   # 分支规则的必需检查只有 ai-review。PR 上它是 ship 写的人审判决状态；
-  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full 全部 success。
+  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full/darwin 全部 success。
   # always()：上游失败时本任务照跑并失败——若被跳过，GitHub 会把跳过的必需检查当通过。
   # ---------------------------------------------------------------------------
   merge-queue-gate:
     name: ai-review
     if: ${{ always() && github.event_name == 'merge_group' }}
-    needs: [smoke, unit, full]
+    needs: [smoke, unit, full, darwin]
     runs-on: ubuntu-24.04
     steps:
-      - name: Swarm smoke/unit/full 全部通过
+      - name: Swarm smoke/unit/full/darwin 全部通过
         run: |
-          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }}"
+          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }} darwin=${{ needs.darwin.result }}"
           test "${{ needs.smoke.result }}" = success
           test "${{ needs.unit.result }}" = success
           test "${{ needs.full.result }}" = success
+          test "${{ needs.darwin.result }}" = success
