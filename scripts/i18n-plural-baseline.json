@@ -21,12 +21,10 @@
   "src/renderer/i18n/renderHumanPipe.ts": 2,
   "src/renderer/i18n/rolePack.ts": 1,
   "src/renderer/i18n/sessionInspector.ts": 1,
-  "src/renderer/i18n/sessionReplay.ts": 5,
   "src/renderer/i18n/sessionTaskPresentation.ts": 1,
   "src/renderer/i18n/surfaceExecution.ts": 3,
   "src/renderer/i18n/turnCheckout.ts": 1,
   "src/renderer/i18n/turnDiff.ts": 1,
-  "src/renderer/i18n/turnRail.ts": 3,
   "src/renderer/i18n/unsentDraft.ts": 2,
   "src/renderer/i18n/voice.ts": 3,
   "src/renderer/i18n/voiceAudit.ts": 2
