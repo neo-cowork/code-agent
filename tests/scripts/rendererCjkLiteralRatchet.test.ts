@@ -426,6 +426,30 @@ describe('renderer-cjk-literal-ratchet', () => {
     expect(runCli().status).toBe(0);
   });
 
+  it('uses the upgraded HEAD baseline when main still records an older scope', () => {
+    const file = 'src/renderer/components/Existing.tsx';
+    const samplePath = join(repoRoot, file);
+    writeFileSync(samplePath, 'export const Existing = () => <div>存量中文</div>;\n');
+    writeFileSync(join(contractRoot, 'boundary.ts'), 'export const BOUNDARY = "ok";\n');
+    writeFileSync(baselinePath, JSON.stringify({ schemaVersion: 1, files: { [file]: 1 } }));
+    git('init', '-q');
+    commitAll('old scope');
+    git('branch', 'scope-base');
+    writeBaseline({ [file]: 1 });
+    commitAll('upgrade scope');
+    const env = { RENDERER_CJK_RATCHET_BASE_REF: 'scope-base' };
+    const clean = runCli([], env);
+    expect(clean.status, clean.stderr).toBe(0);
+    expect(clean.stdout).not.toContain('未做手工上调比对');
+
+    writeFileSync(samplePath, 'export const Existing = () => <div title="新增标题">存量中文</div>;\n');
+    writeBaseline({ [file]: 2 });
+    const raised = runCli([], env);
+    expect(raised.status).toBe(1);
+    expect(raised.stderr).toContain('基线被手工上调（对比 HEAD）');
+    expect(runCli(['--update-baseline'], env).status).toBe(1);
+  });
+
   it('scope version: a baseline recorded under the old scope is rejected and can be re-recorded only then', () => {
     writeFileSync(join(rendererRoot, 'Clean.tsx'), 'export const Clean = () => <div>Hello</div>;\n', 'utf8');
     writeFileSync(join(contractRoot, 'ok.ts'), 'export const OK = "契约存量";\n', 'utf8');

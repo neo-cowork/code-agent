@@ -3,13 +3,14 @@
 // 英文：不含中文，也不含中文标点；中文：与迁入语言包之前写在代码里的字面量逐字相同。
 import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, render } from '@testing-library/react';
 import type { AgentEngineDescriptor } from '../../../src/shared/contract/agentEngine';
 import { languages } from '../../../src/renderer/i18n';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 import {
   ProviderSourceBadge,
+  buildThinkingSegmentOptions,
   buildEngineReliabilitySummary,
   buildModelRowHealthSummary,
   buildProviderBillingSummary,
@@ -40,23 +41,27 @@ const descriptor = (overrides: Partial<AgentEngineDescriptor> = {}): AgentEngine
 
 /** 模型切换器 helper 在当前界面语言下给出的各类文字。 */
 function helperOutputs(): string[] {
-  const health = buildProviderHealthSummary({ status: 'degraded', errorRate: 0.42, latencyP50: 120 } as never);
-  const billing = buildProviderBillingSummary('payg');
+  const text = languages[useAppStore.getState().language].settings.model.models.switcherPanel;
+  const health = buildProviderHealthSummary({ status: 'degraded', errorRate: 0.42, latencyP50: 120 } as never, text);
+  const billing = buildProviderBillingSummary('payg', text);
+  const badge = render(<ProviderSourceBadge sourceLabel="team" />);
+  const badgeText = badge.container.textContent ?? '';
+  cleanup();
   return strings([
-    buildProviderHealthSummary(null),
+    buildProviderHealthSummary(null, text),
     health,
     billing,
-    buildProviderBillingSummary(null),
-    buildModelRowHealthSummary({ providerMark: { kind: 'auth' } } as never, 'm'),
-    buildProviderMetaTitle({ healthSummary: health, billingSummary: billing, providerSourceLabel: 'team', providerProtocol: 'openai' } as never),
-    getEngineUnavailableReason(descriptor(), true),
-    getEngineUnavailableReason(descriptor({ executable: false }), false),
-    getEngineUnavailableReason(descriptor({ installState: 'missing' }), false),
-    buildEngineReliabilitySummary({ descriptor: descriptor(), needsWorkspace: false } as never),
-    buildEngineReliabilitySummary({ descriptor: descriptor({ runtimeState: 'not_configured' }), needsWorkspace: false } as never),
-    buildEngineReliabilitySummary({ descriptor: descriptor({ runtimeState: 'unknown' }), needsWorkspace: false } as never),
-    buildEngineReliabilitySummary({ descriptor: descriptor(), needsWorkspace: true } as never),
-    renderToStaticMarkup(<ProviderSourceBadge sourceLabel="team" />).replace(/<[^>]+>/g, ' '),
+    buildProviderBillingSummary(null, text),
+    buildModelRowHealthSummary({ providerMark: { kind: 'auth' } } as never, 'm', text),
+    buildProviderMetaTitle({ healthSummary: health, billingSummary: billing, providerSourceLabel: 'team', providerProtocol: 'openai' } as never, text),
+    getEngineUnavailableReason(descriptor(), true, text),
+    getEngineUnavailableReason(descriptor({ executable: false }), false, text),
+    getEngineUnavailableReason(descriptor({ installState: 'missing' }), false, text),
+    buildEngineReliabilitySummary({ descriptor: descriptor(), needsWorkspace: false, text } as never),
+    buildEngineReliabilitySummary({ descriptor: descriptor({ runtimeState: 'not_configured' }), needsWorkspace: false, text } as never),
+    buildEngineReliabilitySummary({ descriptor: descriptor({ runtimeState: 'unknown' }), needsWorkspace: false, text } as never),
+    buildEngineReliabilitySummary({ descriptor: descriptor(), needsWorkspace: true, text } as never),
+    badgeText,
   ]);
 }
 
@@ -64,7 +69,7 @@ afterEach(() => useAppStore.setState({ language: 'zh' }));
 
 describe('FB-1489 模型切换器', () => {
   it('英文语言包整包不含中文和中文标点', () => {
-    expect(strings(languages.en.modelSwitcherCopy).filter((text) => CJK.test(text))).toEqual([]);
+    expect(strings(languages.en.settings.model.models.switcherPanel).filter((text) => CJK.test(text))).toEqual([]);
     expect(strings(languages.en.modelSwitcherTooltip).filter((text) => CJK.test(text))).toEqual([]);
   });
 
@@ -86,23 +91,29 @@ describe('FB-1489 模型切换器', () => {
     expect(en.length).toBe(zh.length);
     expect(en.filter((text) => CJK.test(text))).toEqual([]);
     expect(en).toContain('Choose a working folder first');
-    expect(en).toContain('Codex CLI is ready. Current model: default selection.');
+    expect(en).toContain('Codex CLI is available, current model default selection.');
   });
 
-  it('推理强度的短标签在取值那一刻才看语言（不是模块加载时定死）', () => {
-    const shortLabels = () => getEngineEffortOptions('codex_cli').map((option) => option.shortLabel);
-    const zh = shortLabels();
-    expect(zh.some((label) => ['低', '中', '高', '极高'].includes(label))).toBe(true);
+  it('呈现的思考档位跟随当前界面语言（静态配置不直接呈现）', () => {
+    const labels = () => buildThinkingSegmentOptions({
+      labels: languages[useAppStore.getState().language].settings.model.models,
+      effortOptions: getEngineEffortOptions('codex_cli'), thinkingEnabled: true,
+      effortLevelExplicit: true, effortLevel: 'high', setThinkingEnabled: () => undefined,
+      setEffortLevel: () => undefined, setAutomaticEffortLevel: () => undefined,
+    }).map((option) => option.label);
+    const zh = labels();
+    expect(zh).toEqual(['自动', '关', '低', '中', '高']);
     useAppStore.setState({ language: 'en' });
-    const en = shortLabels();
-    expect(en.length).toBe(zh.length);
+    const en = labels();
+    expect(en).toHaveLength(zh.length);
+    expect(en).toEqual(['Auto', 'Off', 'Low', 'Med', 'High']);
     expect(en.filter((label) => CJK.test(label))).toEqual([]);
   });
 
   it('悬停提示：中文与迁入前逐字相同，英文不含中文', () => {
     const native = (language: 'zh' | 'en', extra: Record<string, unknown> = {}) => formatNativeModelSwitcherTooltip({
       language, engineLabel: 'Neo', currentModel: 'main', displayProvider: 'longcat', displayModel: 'LongCat-2.0',
-      adaptive: false, overridden: false, billingSummary: { label: language === 'zh' ? '按量' : 'Pay as you go' },
+      adaptive: false, overridden: false, billingSummary: buildProviderBillingSummary('payg', languages[language].settings.model.models.switcherPanel),
       effort: { label: 'High', shortLabel: '高' }, thinkingLabel: language === 'zh' ? '思考' : 'Thinking', ...extra,
     } as never);
     expect(native('zh')).toBe('主任务模型: longcat/LongCat-2.0 · 计费: 按量 · 推理强度: 高 · 思考: 思考');
@@ -115,19 +126,19 @@ describe('FB-1489 模型切换器', () => {
     for (const extra of [{}, { adaptive: true }, { overridden: true }, { switchedFrom: { provider: 'a', model: 'b' }, shownProvider: 'c', shownModel: 'd' }]) {
       expect(native('en', extra)).not.toMatch(CJK);
     }
-    expect(native('en')).toBe('Main task model: longcat/LongCat-2.0 · Billing: Pay as you go · Effort: High · Thinking: Thinking');
+    expect(native('en')).toBe('Task model: longcat/LongCat-2.0 · Billing: Pay as you go · Effort: High · Thinking: Thinking');
   });
 
   it('组件里的文案：中文与迁入前逐字相同', () => {
-    const zh = languages.zh.modelSwitcherCopy;
+    const zh = languages.zh.settings.model.models.switcherPanel;
     expect([
-      zh.panelTitle, zh.searchPlaceholder, zh.noModelHint, zh.restoreMainModel, zh.switchModelAria, zh.goToModelSettings,
-      zh.auto, zh.autoHint, zh.noMatchingModel, zh.noModelYet, zh.configureModel, zh.defaultModel, zh.thinking, zh.notThinking,
-      zh.switchFailed.replace('{error}', 'E'), zh.autoSwitchFailed.replace('{error}', 'E'), zh.unknownError,
-      zh.switchedSuffix.replace('{label}', 'M'), zh.engineProbeUnavailable, zh.engineSwitchFailed, zh.externalModelSwitchFailed,
+      zh.header, zh.searchPlaceholder, zh.noModelBody, zh.restoreMain, zh.triggerAria, zh.openModelSettings,
+      zh.auto, zh.autoHint, zh.noMatch, zh.noModelTitle, zh.configureModel, languages.zh.settings.model.models.switcherTooltip.defaultModel, languages.zh.settings.model.models.switcherTooltip.thinkingOn, languages.zh.settings.model.models.switcherTooltip.thinkingOff,
+      zh.switchFailed.replace('{reason}', 'E'), zh.autoSwitchFailed.replace('{reason}', 'E'), zh.unknownError,
+      `M${zh.switchedSuffix}`, zh.engineProbeUnavailable, zh.engineSwitchFailed, zh.externalModelSwitchFailed,
     ]).toEqual([
       '主任务模型', '搜索主任务模型…', '配好 Provider 和 API Key 后再选择主任务模型。', '恢复主任务模型', '切换模型', '去模型设置',
-      '自动', '按任务、成本和能力切换', '无匹配模型', '还没有可用模型', '配置模型', '默认模型', '思考', '不思考',
+      '自动', '按任务、成本和能力切换', '无匹配模型', '还没有可用模型', '配置模型', '默认模型', '开', '关',
       '模型切换失败: E。请检查 API Key 或网络连接', '切换到自动模式失败: E', '未知错误',
       'M（已换）', '执行引擎探测结果不可用', '执行引擎切换失败', '外部引擎模型切换失败',
     ]);

@@ -5,7 +5,6 @@ import { dateTimeCopyEn, dateTimeCopyZh } from './dateTimeCopy';
 import { engineManifestEn, engineManifestZh } from './engineManifest';
 import { engineModelPanelEn, engineModelPanelZh } from './engineModelPanel';
 import { punctuationEn, punctuationZh } from './punctuation';
-import { modelSwitcherCopyEn, modelSwitcherCopyZh } from './modelSwitcherCopy';
 import { visualModelLabelsEn, visualModelLabelsZh } from './visualModelLabels';
 
 export const catalogCopyZh = {
@@ -14,7 +13,6 @@ export const catalogCopyZh = {
   ...visualModelLabelsZh,
   ...capabilityDetailCopyZh,
   ...dateTimeCopyZh,
-  ...modelSwitcherCopyZh,
   ...punctuationZh,
 };
 
@@ -24,6 +22,5 @@ export const catalogCopyEn: typeof catalogCopyZh = {
   ...visualModelLabelsEn,
   ...capabilityDetailCopyEn,
   ...dateTimeCopyEn,
-  ...modelSwitcherCopyEn,
   ...punctuationEn,
 };

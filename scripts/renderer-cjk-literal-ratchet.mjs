@@ -352,7 +352,7 @@ function runGit(repoRoot, args) {
 }
 
 // 已提交的基线：与 origin/main 的 merge-base 上那一份；那里还没有基线文件（本门首次引入的分支）
-// 时退到 HEAD。两处都没有 = 首次初始化，没有可比对象。每条跳过原因都单独说明，不静默。
+// 或扫描口径不同的时候退到 HEAD。两处都没有可比基线 = 首次初始化/扩围。跳过原因不静默。
 function readCommittedBaseline(repoRoot, baselinePath) {
   const topLevel = runGit(repoRoot, ['rev-parse', '--show-toplevel']);
   if (topLevel.error || topLevel.status !== 0) {
@@ -380,21 +380,24 @@ function readCommittedBaseline(repoRoot, baselinePath) {
     );
   }
 
+  const skippedScopes = [];
   for (const ref of [mergeBase, 'HEAD']) {
     const shown = runGit(repoRoot, ['show', `${ref}:${relPath}`]);
     if (shown.status === 0) {
       const label = ref === 'HEAD' ? 'HEAD' : ref.slice(0, 9);
       const committed = parseBaseline(shown.stdout, `${label}:${relPath}`);
       if (committed.scopeVersion !== SCOPE_VERSION) {
-        return {
-          skipped: `已提交的基线（${label}）按口径 ${committed.scopeVersion} 录制，当前口径 ${SCOPE_VERSION}；` +
-            '口径升级后的重录不与旧基线逐条比对',
-        };
+        skippedScopes.push(`已提交的基线（${label}）按口径 ${committed.scopeVersion} 录制，当前口径 ${SCOPE_VERSION}`);
+        continue;
       }
       return { label, entries: committed.entries };
     }
   }
-  return { skipped: `比较基点 ${mergeBase.slice(0, 9)} 与 HEAD 都还没有已提交的基线（首次引入）` };
+  return {
+    skipped: skippedScopes.length > 0
+      ? `${skippedScopes.join('；')}；口径升级后的重录不与旧基线逐条比对`
+      : `比较基点 ${mergeBase.slice(0, 9)} 与 HEAD 都还没有已提交的基线（首次引入）`,
+  };
 }
 
 function serializeBaselineFiles(entriesMap) {

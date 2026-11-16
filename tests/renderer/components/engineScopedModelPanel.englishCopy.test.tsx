@@ -68,7 +68,7 @@ describe('执行引擎选择面板跟随界面语言（FB-1282）', () => {
     useAppStore.setState({ language: 'en' });
     const engines = renderPanel('engines');
     expect(engines.container.textContent).toContain('Choose an engine');
-    expect(engines.container.textContent).toContain('Detected, sign-in required');
+    expect(engines.container.textContent).toContain('Found, sign-in needed');
     expect(readable(engines.container)).not.toMatch(HAN);
     cleanup();
     const models = renderPanel('models');
@@ -79,9 +79,9 @@ describe('执行引擎选择面板跟随界面语言（FB-1282）', () => {
   it('中文界面：面板文案与改动前逐字相同', () => {
     const copy = languages.zh.engineModelPanel;
     expect([
-      copy.backToModels, copy.engineListTitle, copy.engineListSubtitle, copy.openEngineSettingsAria, copy.engineSettingsTitle,
-      copy.engineSearchPlaceholder, copy.detectingEngines, copy.noMatchingEngine, copy.stateReady, copy.stateNotDetected,
-      copy.stateNeedsLogin, copy.stateAuthUnverified, copy.stateAdapterClosed, copy.stateUnavailable, copy.providerModels,
+      copy.backToModels, copy.pickEngineTitle, copy.pickEngineHint, copy.openEngineSettingsAria, copy.engineSettingsTitle,
+      copy.searchEnginePlaceholder, copy.detectingEngines, copy.noMatchingEngine, copy.stateReady, copy.stateNotDetected,
+      copy.stateNeedsLogin, copy.stateLoginUnverified, copy.stateAdapterClosed, copy.stateUnavailable, copy.providerModels,
       copy.goToSettings, copy.switchEngine,
     ]).toEqual([
       '返回模型', '选择执行引擎', '先选引擎，再选择它真实可用的模型', '打开执行引擎设置', '执行引擎设置',
