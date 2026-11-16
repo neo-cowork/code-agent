@@ -7,8 +7,14 @@ import { CHOOSE_FOLDER_ENTRY_LABEL } from '@shared/i18n/chooseFolderEntry';
 // ============================================================================
 
 export const sidebarZh = {
+  assistantMessageAria: '助手消息',
+  skillTimeline: { selected: '本轮使用', triggered: '已触发', written: '已加载' },
   modelSwitcherTooltip: {
     engine: '运行引擎', service: '服务状态', effort: '推理强度', thinking: '思考',
+    model: '主任务模型: {model}', billing: '计费: {billing}',
+    adaptive: '自动路由（按任务、成本和能力切换，当前主任务 {model}）',
+    overridden: '已覆盖: {model} (原主任务: {original})',
+    switched: '这一轮实际在用: {shown}（你选的是 {original}，已自动换过）',
   },
 
   sidebar: {
@@ -399,8 +405,14 @@ export const sidebarZh = {
 };
 
 export const sidebarEn: typeof sidebarZh = {
+  assistantMessageAria: 'Assistant message',
+  skillTimeline: { selected: 'Selected', triggered: 'Used', written: 'Loaded' },
   modelSwitcherTooltip: {
     engine: 'Engine', service: 'Provider', effort: 'Effort', thinking: 'Thinking',
+    model: 'Task model: {model}', billing: 'Billing: {billing}',
+    adaptive: 'Automatic selection (current task model: {model})',
+    overridden: 'Selected: {model} (original task model: {original})',
+    switched: 'Actually in use this turn: {shown} (you selected {original}, switched automatically)',
   },
 
   sidebar: {

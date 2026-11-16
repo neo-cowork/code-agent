@@ -130,7 +130,7 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
       IPC_CHANNELS.NOTIFICATION_SHOW,
       expect.objectContaining({
         title: '有操作等你确认', sessionId, urgent: true,
-        body: `无人值守任务请求执行 write_file，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+        body: `无人值守任务请求执行 写入文件，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
       }),
     );
 

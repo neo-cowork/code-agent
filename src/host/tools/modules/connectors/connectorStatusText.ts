@@ -9,6 +9,8 @@ interface ConnectorCopy {
   title: string;
   dataNoun: string;
   userTarget: string;
+  /** Plural noun for the "never claim emptiness" sentence on read actions. */
+  emptyClaim: string;
 }
 
 export type ConnectorUnavailableAction = 'read' | 'send' | 'create' | 'change';
@@ -20,21 +22,27 @@ const UNAVAILABLE_ACTION_PHRASE: Record<ConnectorUnavailableAction, (copy: Conne
   change: (c) => `${c.dataNoun} cannot be changed`,
 };
 
+// The real UI entry: Connectors tab of the Capability Hub (renderer capabilityHub.ts).
+const CONNECTORS_PAGE_HINT = 'the Connectors page (the Connectors tab inside the Capability Hub; in the Chinese interface 能力中心 > 连接器)';
+
 const CONNECTOR_COPY: Record<StatusConnectorId, ConnectorCopy> = {
   mail: {
     title: 'Mail',
     dataNoun: 'email',
     userTarget: 'email',
+    emptyClaim: 'emails',
   },
   calendar: {
     title: 'Calendar',
     dataNoun: 'calendar events',
     userTarget: 'Calendar',
+    emptyClaim: 'events',
   },
   reminders: {
     title: 'Reminders',
     dataNoun: 'reminders',
     userTarget: 'Reminders',
+    emptyClaim: 'reminders',
   },
 };
 
@@ -56,7 +64,10 @@ export function formatConnectorUnavailableMessage(
   action: ConnectorUnavailableAction = 'read',
 ): string {
   const copy = CONNECTOR_COPY[connectorId];
-  return `${copy.title} is not connected on this computer, so ${UNAVAILABLE_ACTION_PHRASE[action](copy)}. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on the Connectors page. Do not quote this line.`;
+  const readGuard = action === 'read'
+    ? ` Do not answer this question from other sources (for example meeting records or files), and never state that there are no ${copy.emptyClaim}.`
+    : '';
+  return `${copy.title} is not connected on this computer, so ${UNAVAILABLE_ACTION_PHRASE[action](copy)}. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}.${readGuard} Do not quote this line.`;
 }
 
 export function formatConnectorStatusOutput(
@@ -70,14 +81,14 @@ export function formatConnectorStatusOutput(
 ): string {
   const copy = CONNECTOR_COPY[connectorId];
   if (status.unavailable) {
-    return `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on the Connectors page. Do not quote this line.`;
+    return `${copy.title} is not connected on this computer, so ${copy.dataNoun} cannot be read. Tell the user in plain words, in their own language, that ${copy.userTarget} is not connected yet and can be connected on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
   }
 
   const trimmedDetail = status.detail?.trim() ?? '';
   const detailSentence = trimmedDetail ? ` ${ensureSentenceEnd(trimmedDetail)}` : '';
 
   if (!status.connected) {
-    return `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on the Connectors page. Do not quote this line.`;
+    return `${copy.title} is not connected right now, so ${copy.dataNoun} cannot be read.${detailSentence} Tell the user in plain words, in their own language, that ${copy.userTarget} is not ready yet and can be checked or authorized on ${CONNECTORS_PAGE_HINT}. Do not quote this line.`;
   }
 
   const actionCapabilities = status.capabilities.filter((cap) => Boolean(cap) && cap !== 'get_status');

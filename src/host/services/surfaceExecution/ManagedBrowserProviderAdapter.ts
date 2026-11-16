@@ -489,7 +489,7 @@ export class ManagedBrowserProviderAdapter {
           ?? this.keptRegistry.getParkedAlive(identity.conversationId));
       if (kept) {
         const candidate = this.acquireBrowser(kept.serviceKey);
-        if (candidate.isRunning() && candidate.getActiveTab()) {
+        if (candidate.isProcessAlive() && candidate.getActiveTab()) {
           keptService = candidate;
           keptServiceKey = kept.serviceKey;
           if (!isUserRun(identity) && kept.reason === 'takeover') {

@@ -128,6 +128,18 @@ describe('regenerate 的重试锚点', () => {
     expect(send.mock.calls[0][0]).toBe('A 会话的问题');
   });
 
+  it('⑤ skips hidden child and wake inputs when retrying a background failure row', () => {
+    install([
+      { id: 'first', role: 'user', content: '第一问', timestamp: 1 },
+      { id: 'latest', role: 'user', content: 'try that again', timestamp: 2 },
+      { id: 'child', role: 'user', content: 'internal child instruction', timestamp: 3, isMeta: true },
+      { id: 'wake', role: 'user', content: 'internal wake input', timestamp: 4, isMeta: true },
+      { id: 'result', role: 'system', content: '', timestamp: 5 },
+    ]);
+    useMessageActionStore.getState().regenerateMessage('result');
+    expect(send).toHaveBeenCalledExactlyOnceWith('try that again');
+  });
+
   it('没有锚点时保持原行为：往回找最近的 user 消息', () => {
     install([
       { id: 'u-a', role: 'user', content: '问题 A', timestamp: 1 },
