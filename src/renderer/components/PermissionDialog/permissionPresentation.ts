@@ -87,13 +87,11 @@ function isGenericCommandRequest(request: PermissionRequest): boolean {
 }
 
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
-  if (request.details.browserSessionGrant) return 'expanded';
-  if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
-  // 没有文件目标的「文件类」请求是中性卡（describeApproval 归 generic），要展开才看得到范围。
-  return (request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit')
-    && fileTarget(request)
-    ? 'compact'
-    : 'expanded';
+  if (request.details.browserSessionGrant || request.rawArgs || request.details.targetApp?.name
+    || isSandboxEscalation(request)
+    || request.reasonCode === PermissionRequestReason.SensitiveStepHandback
+    || request.details.sensitiveStep) return 'expanded';
+  return 'compact';
 }
 
 export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
@@ -107,7 +105,6 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
-  const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
     && !isDeletionRequest(request)
@@ -116,13 +113,13 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   }
   switch (request.type) {
     case 'file_read':
-      return compactTarget ? p.questionFileRead.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget ? p.questionFileRead.replace('{target}', compactTarget) : p.questionFallback;
     case 'file_write':
-      return compactTarget ? p.questionFileWrite.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget ? p.questionFileWrite.replace('{target}', compactTarget) : p.questionFallback;
     case 'file_edit':
-      return compactTarget ? p.questionFileEdit.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget ? p.questionFileEdit.replace('{target}', compactTarget) : p.questionFallback;
     case 'file_delete':
-      return compactTarget ? p.questionFileDelete.replace('{target}', `${compactTarget}${qualifier}`) : p.questionFallback;
+      return compactTarget ? p.questionFileDelete.replace('{target}', compactTarget) : p.questionFallback;
     case 'command':
       return p.questionCommand;
     case 'dangerous_command':
@@ -185,7 +182,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return undefined;
   }
   const p = t.decisionCard.permission;
-  if (isGenericCommandRequest(request)) return p.genericApprovalDescription;
+  if (isGenericCommandRequest(request)) return undefined;
   const parsedRmTargets = parseRmTargets(request.details.command ?? '');
   const target = request.details.affectedPath
     || fileTarget(request)
@@ -214,18 +211,16 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
     return p.consequenceUncertainWriteTarget;
   }
-  if (request.boundary?.id === 'file.external_read') {
-    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target) : p.targetFallback);
-  }
-  if (isOutsideWorkspace(request)) {
+  if (request.boundary?.id === 'file.external_write') {
     return p.consequenceOutside
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
-  if (request.type === 'network' || request.type === 'mcp') {
+  if (request.details.connectorAccess?.access === 'write' || request.riskClass === 'external'
+    || request.boundary?.id === 'connector.external_write'
+    || (request.type === 'network' && request.details.method && !['GET', 'HEAD', 'OPTIONS'].includes(request.details.method.toUpperCase()))) {
     const endpoint = request.details.connectorAccess?.connectorName
       || request.details.url
-      || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
     return p.consequenceNetwork.replace('{target}', redactCredentialText(endpoint));
   }
@@ -233,16 +228,6 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceWrite
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
-  }
-  if (request.type === 'command' || request.type === 'dangerous_command') {
-    const risk = request.details.commandRiskLevel ?? (request.dangerLevel === 'danger' ? 'high' : 'medium');
-    if (risk === 'critical' || risk === 'high') return p.consequenceHighRiskCommand;
-    const classifierRules = request.decisionTrace?.steps.map((step) => step.rule) ?? [];
-    if (classifierRules.includes('B1: sensitive_credential_read')) return p.consequenceCredentialReadCommand;
-    if (classifierRules.includes('B1: git_remote_or_credential_write')) return p.consequenceGitRemoteWriteCommand;
-    return risk === 'unknown'
-      ? p.consequenceUnknownRiskCommand
-      : p.consequenceRiskCommand;
   }
   return undefined;
 }

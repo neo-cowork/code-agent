@@ -104,7 +104,7 @@ async function webHandlerJson(requestId: string, response: 'allow' | 'deny') {
 }
 
 function confirmAllowOnce() {
-  fireEvent.click(screen.getByRole('button', { name: /允许一次/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^允许$/ }));
 }
 
 describe('PermissionCard late click over the real HTTP chain', () => {
@@ -165,7 +165,7 @@ describe('PermissionCard late click over the real HTTP chain', () => {
     expect(loggedText).not.toContain(argsSentinel);
   });
 
-  it('delivered response keeps today behaviour through the same chain', async () => {
+  it.each([['允许', 'once', 'allow'], ['暂不', 'deny', 'deny'], ['本次任务内允许', 'run', 'allow_run'], ['24 小时内允许', '24h', 'allow_24h']])('delivered %s preserves %s through HTTP as %s', async (label, level, wire) => {
     foregroundOutcome.value = 'delivered';
     const wireJson = await webHandlerJson(request.id, 'allow');
     expect(wireJson).toMatchObject({ success: true, data: { source: 'foreground-permission-island' } });
@@ -179,14 +179,16 @@ describe('PermissionCard late click over the real HTTP chain', () => {
     })) as unknown as typeof fetch;
 
     render(<PermissionCard requestOverride={request} sessionIdOverride="session-current" />);
-    confirmAllowOnce();
+    if (wire === 'allow_run' || wire === 'allow_24h') fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
 
     await waitFor(() => {
       expect(recordPermissionDecision).toHaveBeenCalledWith(
         expect.objectContaining({ id: request.id }),
-        'once',
+        level,
         'session-current',
       );
+      expect(JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body)).toEqual([request.id, wire, request.sessionId]);
       expect(toastError).not.toHaveBeenCalled();
       expect(dismissPermissionRequest).not.toHaveBeenCalled();
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
-import { permissionConsequence, permissionSummary, isSafeDefaultDeny } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
+import { permissionConsequence, permissionSummary, isSafeDefaultDeny, defaultPermissionViewMode } from '../../../src/renderer/components/PermissionDialog/permissionPresentation';
 import { decisionCardEn, decisionCardZh } from '../../../src/renderer/i18n/decisionCard';
 
 const baseRequest: PermissionRequest = {
@@ -121,7 +121,7 @@ describe('isSafeDefaultDeny', () => {
   });
 });
 
-it('describes unknown command risk without calling it safe', () => {
+it('keeps unknown command risk off the face', () => {
   const request: PermissionRequest = {
     ...baseRequest,
     tool: 'Bash',
@@ -129,7 +129,7 @@ it('describes unknown command risk without calling it safe', () => {
     details: { command: './bin/kill -9 12345', commandRiskLevel: 'unknown' },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
+  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
 });
 
 describe('per-app grant card consequence suppression', () => {
@@ -160,10 +160,10 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' }, command: 'chmod 777 ~/.ssh/id_rsa' },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh)).toBeUndefined();
   });
 
-  it('forceConfirm 的按应用请求（appGrantCard=false）仍保留命令后果行', () => {
+  it('forceConfirm 的按应用请求也不叠普通命令后果行', () => {
     const request: PermissionRequest = {
       ...baseRequest,
       tool: 'computer_use',
@@ -172,11 +172,11 @@ describe('per-app grant card consequence suppression', () => {
       details: { targetApp: { name: 'Safari' } },
     };
 
-    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+    expect(permissionConsequence(request, zh)).toBeUndefined();
   });
 });
 
-it('shows the deterministic command guard reason instead of generic local-risk copy', () => {
+it('keeps the deterministic command guard reason in details', () => {
   const request: PermissionRequest = {
     ...baseRequest,
     tool: 'Bash',
@@ -198,7 +198,7 @@ it('shows the deterministic command guard reason instead of generic local-risk c
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令将写入 Git 远端或远端/凭据配置，需要你确认。');
+  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
 });
 
 it.each([
@@ -226,7 +226,7 @@ it.each([
     },
   };
 
-  expect(permissionConsequence(request, decisionCardZh as never)).toBe('将执行高风险命令，可能覆盖本机系统或项目状态。');
+  expect(permissionConsequence(request, decisionCardZh as never)).toBeUndefined();
   expect(request.reason).toContain('deterministic supplement');
 });
 
@@ -256,8 +256,8 @@ describe('device / special path copy', () => {
     };
 
     const summary = permissionSummary(request, zh);
-    expect(summary).toBe('允许编辑 /dev/null（工作区外）？');
-    expect(summary).not.toBe('允许编辑 null（工作区外）？');
+    expect(summary).toBe('允许编辑 /dev/null？');
+    expect(summary).not.toBe('允许编辑 null？');
   });
 
   it('host-marked device uses the device copy and skips overwrite wording', () => {
@@ -311,7 +311,7 @@ describe('device / special path copy', () => {
 
   it('titles /dev/stdout with the full path and does not infer a device from the path', () => {
     const request = writeRequest('/dev/stdout');
-    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout（工作区外）？');
+    expect(permissionSummary(request, zh)).toBe('允许写入 /dev/stdout？');
     expect(permissionConsequence(request, zh)).toContain('可能覆盖现有内容');
     expect(permissionConsequence(request, zh)).not.toContain('设备文件');
   });
@@ -334,7 +334,7 @@ describe('device / special path copy', () => {
       details: { path: '/tmp/notes.txt' },
       boundary: { id: 'file.external_write' },
     };
-    expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt（工作区外）？');
+    expect(permissionSummary(outside, zh)).toBe('允许写入 notes.txt？');
     expect(permissionConsequence(outside, zh)).toBe('将在工作区外写入 /tmp/notes.txt（约 1 个文件），可能覆盖现有内容。');
   });
 
@@ -470,5 +470,18 @@ describe('deletion consequence file count for multi-target rm', () => {
     expect(consequence).toBe('Permanently deletes /workspace/./*.log (multiple files) without using Trash.');
     expect(consequence).toContain('(multiple files)');
     expect(consequence).not.toMatch(/\(1 files?\)/);
+  });
+});
+
+describe('defaultPermissionViewMode keeps only decision-critical special surfaces expanded', () => {
+  it.each([
+    { ...baseRequest, details: { browserSessionGrant: { target: 'open@example.com', previousOrigins: [] } } },
+    { ...baseRequest, rawArgs: { to: ['team@example.com'], content: 'Contract notes' } },
+    { ...baseRequest, details: { action: 'sandbox_escalate_once', deniedPath: '/shared/notes.md' } },
+    { ...baseRequest, reasonCode: PermissionRequestReason.SensitiveStepHandback },
+    { ...baseRequest, details: { sensitiveStep: { kind: 'password' as const } } },
+    { ...baseRequest, details: { targetApp: { name: 'Notes' } } },
+  ])('keeps the specialized consent surface expanded: %j', (request) => {
+    expect(defaultPermissionViewMode(request)).toBe('expanded');
   });
 });
