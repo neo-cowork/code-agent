@@ -289,6 +289,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
 
   // 专家团成员：投递要带 swarm run id（宿主 swarm:send-user-message 按 run 作用域解析）
   const memberRunId = durableDetail?.run.id ?? activeRunId;
+  const subtitle = member.profession ? member.displayName : member.roleId;
   const memberTarget: MemberInputTarget = {
     key: member.key,
     kind: 'expert',
@@ -308,7 +309,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <RoleInitialAvatar roleId={member.roleId} name={member.displayName} className="h-8 w-8 text-xs" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-zinc-100">{member.displayProfession || member.displayName}</h2>
-          <p className="truncate text-xs text-zinc-400">{member.profession ? member.displayName : member.roleId}</p>
+          <p className="truncate text-xs text-zinc-400">{subtitle}</p>
         </div>
         <StopMemberButton target={memberTarget} sessionId={sessionId} runId={memberRunId} />
       </header>

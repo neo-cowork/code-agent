@@ -96,12 +96,13 @@ const ExpertCardHead: React.FC<{ entry: RolePanelEntry; professionFallback: stri
   professionFallback,
 }) => {
   const localized = useLocalizeRole()(entry.roleId, { name: entry.displayName ?? '', profession: entry.profession });
+  const shownName = localized.name || entry.roleId;
   return (
     <div className="flex items-center gap-2.5">
       <RoleAvatarTile roleId={entry.roleId} icon={entry.icon} name={localized.name} />
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium text-zinc-100">
-          {localized.name || entry.roleId}
+          {shownName}
         </span>
         <span className="block truncate text-xs text-zinc-500">
           {localized.profession || professionFallback}

@@ -122,6 +122,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
             const { entry } = item;
             const busy = busyRoleId === entry.roleId;
             const localized = localizeRole(entry.roleId, { name: entry.displayName ?? '', profession: entry.visual.profession });
+            const shownName = localized.name || entry.roleId;
             return (
               <article key={entry.roleId} data-testid={`role-pack-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
                 <div>
@@ -129,7 +130,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                     <div className="flex items-center gap-2.5">
                       <RoleAvatarTile roleId={entry.roleId} icon={entry.visual.icon} name={localized.name} />
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-zinc-100">{localized.name || entry.roleId}</span>
+                        <span className="block truncate text-sm font-medium text-zinc-100">{shownName}</span>
                         <span className="block truncate text-xs text-zinc-500">{localized.profession}</span>
                       </span>
                     </div>
