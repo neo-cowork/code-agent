@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from '../../../primitives/Button';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 const EMPTY_NAMES: string[] = [];
 
@@ -40,19 +41,14 @@ export function UnsentDraftNotice({
     const tpl = safeAttachments.length === 1
       ? t.chatInput.unsentDraftNoticeWithOneAttachment
       : t.chatInput.unsentDraftNoticeWithAttachments;
-    base = tpl
-      .replace('{preview}', () => preview)
-      .replace('{count}', () => String(safeAttachments.length))
-      .replace('{names}', () => joinedAttachments);
+    base = interpolatePlural(tpl, safeAttachments.length, { preview, count: String(safeAttachments.length), names: joinedAttachments });
   } else if (hasText) {
     base = t.chatInput.unsentDraftNotice.replace('{preview}', () => preview);
   } else if (hasAttachments) {
     const tpl = safeAttachments.length === 1
       ? t.chatInput.unsentDraftOneAttachmentOnly
       : t.chatInput.unsentDraftAttachmentsOnly;
-    base = tpl
-      .replace('{count}', () => String(safeAttachments.length))
-      .replace('{names}', () => joinedAttachments);
+    base = interpolatePlural(tpl, safeAttachments.length, { count: String(safeAttachments.length), names: joinedAttachments });
   }
 
   let message = base;

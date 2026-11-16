@@ -7,6 +7,7 @@ import { X, FileText, Code, Database, Globe, File, Folder, Music, Video, Present
 import type { ArchiveManifest, MessageAttachment, AttachmentCategory, PresentationSummary } from '../../../../../shared/contract';
 import { IconButton } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 export interface AttachmentBarProps {
   /** 附件列表 */
@@ -68,18 +69,18 @@ const AttachmentItem: React.FC<{
   // 获取附件描述
   const getDescription = () => {
     if (att.category === 'folder' && att.folderStats) {
-      return t.chatInput.attachFolderFiles.replace('{count}', String(att.folderStats.totalFiles));
+      return interpolatePlural(t.chatInput.attachFolderFiles, att.folderStats.totalFiles);
     }
     if (att.category === 'pdf' && att.pageCount) {
-      return t.chatInput.attachPages.replace('{count}', String(att.pageCount));
+      return interpolatePlural(t.chatInput.attachPages, att.pageCount);
     }
     if (att.category === 'presentation') {
       const summary = parseJson<PresentationSummary>(att.pptJson);
-      return summary?.slideCount !== undefined ? t.chatInput.attachPages.replace('{count}', String(summary.slideCount)) : 'PPT';
+      return summary?.slideCount !== undefined ? interpolatePlural(t.chatInput.attachPages, summary.slideCount) : 'PPT';
     }
     if (att.category === 'archive' && att.archiveManifest) {
       const manifest = att.archiveManifest as ArchiveManifest;
-      return manifest.supported ? t.chatInput.attachFolderFiles.replace('{count}', String(manifest.totalFiles)) : manifest.format;
+      return manifest.supported ? interpolatePlural(t.chatInput.attachFolderFiles, manifest.totalFiles) : manifest.format;
     }
     if (att.language) {
       return att.language;

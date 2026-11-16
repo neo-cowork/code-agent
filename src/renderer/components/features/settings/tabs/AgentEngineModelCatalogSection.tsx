@@ -12,6 +12,7 @@ import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { Select } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 const logger = createLogger('AgentEngineModelCatalogSection');
 
@@ -177,9 +178,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
 
                 <div className="min-w-0 text-xs text-zinc-400">
                   <div>
-                    {section.modelSelectableSummary
-                      .replace('{enabled}', String(enabledModels.length))
-                      .replace('{total}', String(engine.models.length))}
+                    {interpolatePlural(section.modelSelectableSummary, engine.models.length, { total: engine.models.length, enabled: String(enabledModels.length) })}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {engine.models.slice(0, 5).map((model) => (

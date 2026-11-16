@@ -48,6 +48,7 @@ import { RecentlyDeletedRoles } from './RecentlyDeletedRoles';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory, matchesRoleSearch } from './roleCategoryGroups';
 import { HubTabHeader } from '../capabilityHub/HubTabHeader';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 type ExpertTab = 'mine' | 'discover';
 
@@ -132,7 +133,7 @@ const ExpertCard: React.FC<{
     {/* truncate 只对块级生效：外层必须 flex + min-w-0，否则长履历会撑破卡片 */}
     {tab === 'mine' ? (
       <div className="flex min-w-0 items-baseline text-[11px] text-zinc-500">
-        {entry.memoryCount > 0 || entry.lastWork ? <><span className="flex-shrink-0">{text.memoryCount.replace('{count}', String(entry.memoryCount))}</span>{entry.lastWork ? <span className="ml-2 min-w-0 truncate" title={formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision, text.roleDetail.historyWake)}>{text.lastWorkPrefix}{formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision, text.roleDetail.historyWake)}</span> : null}</> : text.noRecordYet}
+        {entry.memoryCount > 0 || entry.lastWork ? <><span className="flex-shrink-0">{interpolatePlural(text.memoryCount, entry.memoryCount)}</span>{entry.lastWork ? <span className="ml-2 min-w-0 truncate" title={formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision, text.roleDetail.historyWake)}>{text.lastWorkPrefix}{formatRoleHistoryLine(entry.lastWork, text.roleDetail.historyDecision, text.roleDetail.historyWake)}</span> : null}</> : text.noRecordYet}
       </div>
     ) : null}
     {tab === 'mine' ? <RolePackHealthNotice item={rolePacksByRoleId.get(entry.roleId)} busy={busyRolePackId === entry.roleId} onRetryMissingSkills={onRetryMissingSkills} /> : null}
@@ -375,7 +376,7 @@ export const ExpertPanel: React.FC = () => {
 
   const recipeMode = (recipe: TeamRecipe) => recipe.lead
     ? t.team.expertTeam.replace('{lead}', entries.find((entry) => entry.roleId === recipe.lead?.roleId)?.displayName || recipe.lead.roleId)
-    : t.team.expertGroup.replace('{count}', String(recipe.members.length));
+    : interpolatePlural(t.team.expertGroup, recipe.members.length);
 
   // 滚动由能力中心的外层容器统一负责，这里只排内容；
   // 页头走四 tab 共用的 HubTabHeader（吸顶）：第一行 = 大标题「专家」+ 操作簇

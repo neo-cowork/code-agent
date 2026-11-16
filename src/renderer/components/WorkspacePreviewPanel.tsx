@@ -53,6 +53,7 @@ import {
   RevisionPanel,
   PreviewBody,
 } from './workspacePreview/parts';
+import { interpolatePlural } from '../i18n/interpolate';
 
 type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
@@ -261,7 +262,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
         },
       );
       const restoredFileCount = result.restoredFileCount + result.deletedFileCount;
-      setRevisionActionMessage(wp.restoredFiles.replace('{count}', String(restoredFileCount)));
+      setRevisionActionMessage(interpolatePlural(wp.restoredFiles, restoredFileCount));
     } catch (error) {
       setRevisionActionError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -665,7 +666,7 @@ export const WorkspacePreviewPanel: React.FC<WorkspacePreviewPanelProps> = ({
       {activeDrawer === 'gallery' && (
         <AssetDrawerPanel
           title={wp.galleryTitle}
-          subtitle={wp.visualAssets.replace('{count}', String(galleryItems.length))}
+          subtitle={interpolatePlural(wp.visualAssets, galleryItems.length)}
           onClose={() => setActiveDrawer(null)}
         >
           {galleryItems.length === 0 ? (

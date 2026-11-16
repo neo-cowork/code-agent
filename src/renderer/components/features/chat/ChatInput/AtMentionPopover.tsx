@@ -22,6 +22,7 @@ import {
   type AtMentionSessionRow,
   type AtMentionTab,
 } from './atMentionPanelModel';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 interface AtMentionPopoverProps {
   query: string;
@@ -71,7 +72,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
       {/* 任务 15：搜索可见性 —— query 非空回显结果数，空 query 提示可搜索 */}
       <div className="sticky top-0 z-10 elevation-l2 border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-500">
         {query.trim()
-          ? t.mentionPanel.searchEcho.replace('{query}', query).replace('{count}', String(totalCount))
+          ? interpolatePlural(t.mentionPanel.searchEcho, totalCount, { query })
           : t.mentionPanel.emptyHint}
       </div>
 
@@ -173,10 +174,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs">{getDisplaySessionTitle(row.title, language)}</span>
                   <span className="block truncate text-[10px] text-zinc-500">
-                    {t.mentionPanel.sessionMeta
-                      .replace('{time}', formatRelativeTime(t, row.updatedAt))
-                      .replace('{count}', String(row.messageCount))
-                      .replace('{project}', row.projectName || t.mentionPanel.unknownProject)}
+                    {interpolatePlural(t.mentionPanel.sessionMeta, row.messageCount, { time: formatRelativeTime(t, row.updatedAt), project: row.projectName || t.mentionPanel.unknownProject })}
                   </span>
                 </span>
               </button>

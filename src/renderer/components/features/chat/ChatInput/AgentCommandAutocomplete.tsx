@@ -4,6 +4,7 @@ import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { useI18n } from '../../../../hooks/useI18n';
 import type { AgentCommandOption } from './agentCommand';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 /** /agent autocomplete list. Extracted from ChatInput so the god file does not grow. */
 export function AgentCommandAutocomplete({
@@ -28,7 +29,7 @@ export function AgentCommandAutocomplete({
       {/* 任务 15：query echo —— 输入过滤词可见，空 query 给搜索提示 */}
       <div className="border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-500">
         {query?.trim()
-          ? t.mentionPanel.searchEcho.replace('{query}', query).replace('{count}', String(options.length))
+          ? interpolatePlural(t.mentionPanel.searchEcho, options.length, { query })
           : t.mentionPanel.emptyHintAgent}
       </div>
       {options.map((option, index) => (

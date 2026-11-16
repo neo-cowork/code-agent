@@ -17,6 +17,7 @@ import type { MemoryImportDryRunResult } from '@shared/contract/memory';
 import { SEED_INJECTION } from '@shared/constants';
 import { Button } from '../../../primitives';
 import type { ExternalImportCopy } from './ExternalImportSettings';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 export type DirectiveState = 'pending' | 'imported' | 'declined' | 'already-imported' | 'headless' | 'failed';
 
@@ -142,7 +143,7 @@ function RuleGroupSection({
           aria-expanded={expanded}
           rightIcon={expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         >
-          {copyRules.rulesFound.replace('{count}', String(group.rules.length))}
+          {interpolatePlural(copyRules.rulesFound, group.rules.length)}
         </Button>
       </div>
       {expanded && (

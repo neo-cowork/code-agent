@@ -50,6 +50,7 @@ import {
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -339,7 +340,7 @@ export function ToolCallDisplay({
         )}
         {statusCheckCount > 1 && (
           <span className="shrink-0 text-xs text-zinc-500" data-testid="task-status-check-count">
-            {t.sessionTaskPresentation.checkedTimes.replace('{count}', String(statusCheckCount))}
+            {interpolatePlural(t.sessionTaskPresentation.checkedTimes, statusCheckCount)}
           </span>
         )}
       </div>
@@ -611,7 +612,7 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
       {showSummary && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className={failed > 0 ? 'text-badge-warning' : 'text-zinc-400'}>
-            {copy.agents.replace('{count}', String(total))}
+            {interpolatePlural(copy.agents, total)}
           </span>
           <span>{copy.completed.replace('{completed}', String(completed)).replace('{total}', String(total))}</span>
           {failed > 0 && (

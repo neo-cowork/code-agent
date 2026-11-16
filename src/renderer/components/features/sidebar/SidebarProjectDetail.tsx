@@ -32,6 +32,7 @@ import {
   renameProject,
   setProjectStatus,
 } from '../../../services/projectClient';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export interface SidebarProjectDetailProps {
   projectId?: string;
@@ -120,8 +121,8 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
   const { t, language } = useI18n();
   const p = t.sidebarProject;
   const sessionCount = meta?.sessionCount ?? fallbackSessionCount;
-  const goalFallback = meta ? p.goalCountFallback.replace('{count}', String(meta.goalCount ?? 0)) : p.detailLoading;
-  const artifactFallback = meta ? p.artifactCountFallback.replace('{count}', String(meta.artifactCount ?? 0)) : p.detailLoading;
+  const goalFallback = meta ? interpolatePlural(p.goalCountFallback, meta.goalCount ?? 0) : p.detailLoading;
+  const artifactFallback = meta ? interpolatePlural(p.artifactCountFallback, meta.artifactCount ?? 0) : p.detailLoading;
   const goalCounts = getGoalCounts(meta?.goals);
   const visibleGoals = meta?.goals?.slice(0, 4) ?? [];
   const visibleArtifacts = meta?.recentArtifacts?.slice(0, 4) ?? [];
@@ -425,7 +426,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
             <FileText className="h-3 w-3 shrink-0 text-zinc-600" />
             <span className="shrink-0 text-zinc-500">{p.artifacts}</span>
             <span className="min-w-0 flex-1 truncate text-zinc-600">
-              {meta ? p.artifactCountFallback.replace('{count}', String(meta.artifactCount ?? 0)) : artifactFallback}
+              {meta ? interpolatePlural(p.artifactCountFallback, meta.artifactCount ?? 0) : artifactFallback}
             </span>
           </div>
           {visibleArtifacts.length > 0 ? (

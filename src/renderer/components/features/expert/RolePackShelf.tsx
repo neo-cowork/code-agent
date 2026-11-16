@@ -15,6 +15,7 @@ import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
 import { RoleAvatarTile } from './RoleAvatarTile';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export interface RolePackHealthNoticeProps {
   /** 缺省表示该角色不是云下发包，直接不渲染（省掉调用方的 has + 非空断言） */
@@ -36,7 +37,7 @@ export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item
         <div data-testid={`role-pack-degraded-${item.entry.roleId}`} className="rounded-md border border-badge-warning/30 bg-amber-500/10 p-2">
           <div className="flex items-center gap-1.5 text-xs text-badge-warning">
             <AlertTriangle className="h-3.5 w-3.5" />
-            <span>{text.degraded.replace('{count}', String(missingSkills.length))}</span>
+            <span>{interpolatePlural(text.degraded, missingSkills.length)}</span>
           </div>
           <p data-testid={`role-pack-missing-skills-${item.entry.roleId}`} className="mt-1 text-[11px] leading-relaxed text-badge-warning/80">
             {text.missingSkills.replace('{skills}', missingSkills.join('、'))}

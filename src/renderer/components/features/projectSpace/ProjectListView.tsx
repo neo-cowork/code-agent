@@ -33,6 +33,7 @@ import { EmptyState } from '../../primitives/EmptyState';
 import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';
 import { Modal, ModalFooter } from '../../primitives/Modal';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export interface ProjectListViewProps {
   onSelect: (projectId: string) => void;
@@ -267,7 +268,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
               <span className="flex flex-shrink-0 items-center gap-3">
                 {project.activeTopicCount > 0 && (
                   <Badge className="border-badge-accent/30 bg-violet-500/10 text-[11px] text-badge-accent" data-testid={`project-space-topic-count-${project.id}`}>
-                    {ps.activeTopicBadge.replace('{count}', String(project.activeTopicCount))}
+                    {interpolatePlural(ps.activeTopicBadge, project.activeTopicCount)}
                   </Badge>
                 )}
                 {/* 固定宽右对齐：有无徽标时间列都对齐（爸抓的时间列不齐） */}

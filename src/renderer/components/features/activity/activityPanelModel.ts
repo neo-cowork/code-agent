@@ -172,13 +172,11 @@ function buildRecentSummary(args: {
     const screenshotCount = events.filter((event) => event.screenshotPath).length;
 
     return {
-      recentHeadline: copy.recent.headline
-        .replace('{count}', String(events.length))
-        .replace('{app}', events[0]?.appName || copy.recent.unknownApp),
+      recentHeadline: interpolatePlural(copy.recent.headline, events.length, { app: events[0]?.appName || copy.recent.unknownApp }),
       recentDetail: [
         topApps.length ? copy.recent.topApps.replace('{apps}', topApps.join(' / ')) : '',
         screenshotCount > 0 ? copy.recent.screenshotEvidence.replace('{count}', String(screenshotCount)) : '',
-        analyzedCount > 0 ? copy.recent.analyzed.replace('{count}', String(analyzedCount)) : '',
+        analyzedCount > 0 ? interpolatePlural(copy.recent.analyzed, analyzedCount) : '',
       ].filter(Boolean).join(' · ') || copy.recent.noMoreSummary,
       recentItems: events.slice(0, 5).map((event) => ({
         key: event.id,
@@ -235,12 +233,10 @@ function buildCapabilityRows(args: {
       key: 'activity-context',
       label: 'ActivityContext',
       value: availableSourceCount > 0
-        ? copy.capability.sourcesAvailable.replace('{count}', String(availableSourceCount))
+        ? interpolatePlural(copy.capability.sourcesAvailable, availableSourceCount)
         : copy.capability.noContext,
       detail: args.context
-        ? copy.capability.tokenBudget
-          .replace('{tokens}', String(args.context.tokenBudgetHint.targetTokens))
-          .replace('{count}', String(args.context.evidenceRefs.length))
+        ? interpolatePlural(copy.capability.tokenBudget, args.context.evidenceRefs.length, { tokens: String(args.context.tokenBudgetHint.targetTokens) })
         : copy.capability.contextNotReturned,
       tone: availableSourceCount > 0 ? 'ready' : 'idle',
     },
@@ -256,7 +252,7 @@ function buildCapabilityRows(args: {
       label: copy.sources.tauriNativeDesktop,
       value: nativeProvider
         ? copy.providerStates[nativeProvider.state]
-        : copy.capability.nativeRecords.replace('{count}', String(args.native.recentEvents.length)),
+        : interpolatePlural(copy.capability.nativeRecords, args.native.recentEvents.length),
       detail: nativeProvider?.summary || sources.get('tauri-native-desktop')?.unavailableReason || copy.capability.nativeFallback,
       tone: nativeProvider ? providerStateTone(nativeProvider.state) : args.native.recentEvents.length > 0 ? 'ready' : 'idle',
     },
@@ -283,7 +279,7 @@ function buildCapabilityRows(args: {
             ? copy.capability.modeMeeting
             : args.native.audioStatus.captureMode === 'system-audio' ? copy.capability.modeSystemAudio : copy.capability.modeMicrophone)
         : args.native.audioSegments.length > 0
-          ? copy.capability.transcriptSegments.replace('{count}', String(args.native.audioSegments.length))
+          ? interpolatePlural(copy.capability.transcriptSegments, args.native.audioSegments.length)
           : audioSource?.unavailableReason || copy.capability.audioFallback,
       tone: audioSource?.status === 'available' || args.native.audioSegments.length > 0 || args.native.audioStatus?.capturing ? 'ready' : 'idle',
     },
@@ -332,9 +328,9 @@ function buildLocalEvidenceItems(args: {
       key: 'local:evidence',
       label: copy.localEvidence.evidenceLabel,
       detail: [
-        evidenceCount > 0 ? copy.localEvidence.evidenceRefs.replace('{count}', String(evidenceCount)) : '',
-        screenshotCount > 0 ? copy.localEvidence.screenshotsLocal.replace('{count}', String(screenshotCount)) : '',
-        audioPathCount > 0 ? copy.localEvidence.audioPaths.replace('{count}', String(audioPathCount)) : '',
+        evidenceCount > 0 ? interpolatePlural(copy.localEvidence.evidenceRefs, evidenceCount) : '',
+        screenshotCount > 0 ? interpolatePlural(copy.localEvidence.screenshotsLocal, screenshotCount) : '',
+        audioPathCount > 0 ? interpolatePlural(copy.localEvidence.audioPaths, audioPathCount) : '',
       ].filter(Boolean).join(' · '),
       tone: 'ready',
     });

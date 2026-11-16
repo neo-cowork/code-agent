@@ -4,6 +4,7 @@
 
 import type { ToolCall } from '@shared/contract';
 import type { Translations } from '../../../../../../i18n';
+import { interpolatePlural } from '../../../../../../i18n/interpolate';
 
 export function summarizeBash(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
@@ -109,7 +110,7 @@ export function summarizeBash(toolCall: ToolCall, t: Translations): string | nul
   }
 
   // Multi-line output - show line count
-  return t.toolResultSummary.lineCount.replace('{count}', String(lines.length));
+  return interpolatePlural(t.toolResultSummary.lineCount, lines.length);
 }
 
 function shortenPath(path: string): string {

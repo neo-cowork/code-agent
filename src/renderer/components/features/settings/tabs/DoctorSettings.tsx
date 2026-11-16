@@ -44,6 +44,7 @@ import {
   type DoctorStatus,
 } from '../../../../types/doctor';
 import { runDoctorFix } from '../../../../utils/doctorFixActions';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 // ============================================================================
 // Constants
@@ -284,9 +285,7 @@ export const DoctorSettings: React.FC = () => {
                 onChange={(event) => setIncludeRecordings(event.target.checked)}
                 className="h-3.5 w-3.5 accent-zinc-400"
               />
-              {doctorText.includeRecordings
-                .replace('{count}', String(recordingSummary.count))
-                .replace('{size}', `${(recordingSummary.totalBytes / 1024 / 1024).toFixed(1)} MB`)}
+              {interpolatePlural(doctorText.includeRecordings, recordingSummary.count, { size: `${(recordingSummary.totalBytes / 1024 / 1024).toFixed(1)} MB` })}
             </label>
           )}
           {report && (

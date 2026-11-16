@@ -1,6 +1,7 @@
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import type { Translations } from '../i18n';
 import { getHumanToolLabel } from './toolHumanLabel';
+import { interpolatePlural } from '../i18n/interpolate';
 
 type HumanToolLabels = Translations['receiptPresentation']['humanToolLabels'];
 type RoleCapabilityLabels = Translations['receiptPresentation']['roleCapabilityLabels'];
@@ -77,7 +78,7 @@ export function getRoleToolCapabilities(args: {
       ? args.capabilityLabels.otherAbility
       : args.capabilityLabels.otherAbilities;
     capabilities.push(
-      fallback.replace('{count}', String(unknownToolNames.size)),
+      interpolatePlural(fallback, unknownToolNames.size),
     );
   }
 

@@ -58,6 +58,7 @@ import {
   MediaAssetActionBar,
   MediaAssetLightbox,
 } from './MediaAssetControls';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 // 附件卡用户可见文案的 i18n 小节（t.attachmentPreview）
 type AttachmentPreviewStrings = Translations['attachmentPreview'];
@@ -537,20 +538,17 @@ const AttachmentItem: React.FC<{
           </div>
           <div className="text-xs text-zinc-500">
             {archiveManifest
-              ? `${archiveManifest.format} · ${t.attachmentPreview.archiveFilesCount.replace('{count}', String(archiveManifest.totalFiles))}`
+              ? `${archiveManifest.format} · ${interpolatePlural(t.attachmentPreview.archiveFilesCount, archiveManifest.totalFiles)}`
               : formatFileSize(displayAttachment.size)}
           </div>
           {stateBadge}
           {archiveManifest && (
             <div className={`mt-1 truncate text-xs ${dangerCount > 0 ? 'text-badge-warning' : 'text-zinc-400'}`}>
               {archiveManifest.supported
-                ? t.attachmentPreview.archiveEntriesCount.replace(
-                  '{count}',
-                  `${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}`,
-                )
+                ? interpolatePlural(t.attachmentPreview.archiveEntriesCount, Number(`${archiveManifest.entries.length}${archiveManifest.truncated ? '+' : ''}`))
                 : archiveManifest.note}
               {dangerCount > 0
-                ? ` · ${t.attachmentPreview.dangerousPathsCount.replace('{count}', String(dangerCount))}`
+                ? ` · ${interpolatePlural(t.attachmentPreview.dangerousPathsCount, dangerCount)}`
                 : ''}
             </div>
           )}
@@ -575,7 +573,7 @@ const AttachmentItem: React.FC<{
           <span className={`${color} text-2xs`}>{label}</span>
           <span>·</span>
           {category === 'pdf' && displayAttachment.pageCount
-            ? <span>{t.attachmentPreview.pageCount.replace('{count}', String(displayAttachment.pageCount))}</span>
+            ? <span>{interpolatePlural(t.attachmentPreview.pageCount, displayAttachment.pageCount)}</span>
             : category === 'excel' && displayAttachment.sheetCount
               ? <span>{t.attachmentPreview.sheetsRowsCount
                 .replace('{sheets}', String(displayAttachment.sheetCount))
@@ -652,7 +650,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             <div className="text-sm font-medium text-zinc-200">
               {stats.folderName
                 ? `📁 ${stats.folderName}`
-                : t.attachmentPreview.folderFilesCount.replace('{count}', String(attachments.length))}
+                : interpolatePlural(t.attachmentPreview.folderFilesCount, attachments.length)}
             </div>
             <div className="text-xs text-zinc-500">
               {summaryParts} · {formatFileSize(stats.totalSize)}
@@ -673,7 +671,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({ attachment
             className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400"
           >
             <ChevronDown className="h-3 w-3" />
-            {t.attachmentPreview.collapseFilesCount.replace('{count}', String(attachments.length))}
+            {interpolatePlural(t.attachmentPreview.collapseFilesCount, attachments.length)}
           </button>
         </div>
       )}

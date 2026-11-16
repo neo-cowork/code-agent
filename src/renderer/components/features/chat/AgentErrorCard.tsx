@@ -26,6 +26,7 @@ import { useMessageActionStore } from '../../../stores/messageActionStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { extractReadableProviderReason } from '../../../utils/genericProviderReason';
 import { OPEN_MODEL_SWITCHER_EVENT } from '../../StatusBar/ModelSwitcher';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'auth',
@@ -151,7 +152,7 @@ function buildRepeatNotice(
   const template = NO_RETRY_CATEGORIES.has(category)
     ? t.agentError.repeat.noRetry
     : t.agentError.repeat.retryable;
-  return template.replace('{n}', String(run.runLength));
+  return interpolatePlural(template, run.runLength, { n: run.runLength });
 }
 
 /** WorkBuddy 式结构化错误报告：friendly 文案 + 排障字段，排障收益主要靠它。 */
