@@ -585,8 +585,7 @@ export const BrowserSurfaceContent: React.FC = () => {
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <AgentPointerPreviewCard
                   event={pointerPreview}
-                  title="Agent pointer"
-                  detail="Browser actions use the same visible pointer in trace rows and screenshot previews."
+                  detail={t.localOps.pointer.browserDetail}
                   live={livePointer.isLive || !livePointer.lastEvent}
                 />
                 <AgentPointerTimelineList entries={livePointer.timeline} />

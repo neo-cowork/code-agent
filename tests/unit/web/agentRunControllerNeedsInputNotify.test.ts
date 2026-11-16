@@ -110,6 +110,7 @@ describe('AgentRunController 前台 needs-input 横幅', () => {
       sessionId: 'session-fg-1',
       title: '需要授权',
       body: '需要授权：运行命令',
+      tool: 'bash',
       dedupeKey: 'perm-req-1',
     });
     // 事件本身照常进 SSE，横幅只是旁路。
