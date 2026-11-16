@@ -1,6 +1,6 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
 import type { ToolCall } from '@shared/contract';
-import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
+import { AgentFailureCode, HostReasonCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
@@ -247,6 +247,7 @@ type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
 
 const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Set([
   'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+  'TOOL_DISABLED_FOR_RUN',
   'WORKBENCH_SCOPE_DENIED',
   'PROJECT_SOURCE_READ_ONLY',
   'RUN_CONTEXT_MISMATCH',
@@ -369,7 +370,9 @@ export function humanizeToolError(
         : null;
     return {
       summary: hostReasonCopy.summary,
-      detail: outcome?.reason ?? hostReasonCopy.detail,
+      detail: typeof hostReason !== 'string' && hostReason?.code === HostReasonCode.PermissionDeniedByUser
+        ? hostReasonCopy.detail ?? outcome?.reason
+        : outcome?.reason ?? hostReasonCopy.detail,
     };
   }
   const failureCode = inferAgentFailureCode({

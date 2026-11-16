@@ -11,18 +11,18 @@ function durationText(durationMs: number, locale: SessionTaskSlotLocale): string
 
 const messages = {
   zh: {
-    detail: (taskLabel: string, laneKey: string, duration: string) => (
-      `任务「${taskLabel}」在 lane「${laneKey}」占用 ${duration}后仍未收到终态事件，可能是运行进程异常退出。系统已自动释放占位，并将原任务标记为失败。`
+    detail: (taskLabel: string, duration: string) => (
+      `「${taskLabel}」已经 ${duration}没有进展，可能中途异常退出，我已把它标记为失败。`
     ),
     screen: '任务长时间没有回报结束状态，系统已释放它占用的任务队列，请重试',
     spoken: '任务长时间没有回报结束状态，系统已经释放任务队列。这件事没有完成，请重试。',
   },
   en: {
-    detail: (taskLabel: string, laneKey: string, duration: string) => (
-      `Task “${taskLabel}” occupied lane “${laneKey}” for ${duration} without a terminal event, likely because the run process exited unexpectedly. The slot was released automatically and the original task was marked as failed.`
+    detail: (taskLabel: string, duration: string) => (
+      `“${taskLabel}” has made no progress for ${duration} and may have stopped unexpectedly. I’ve marked it as failed.`
     ),
-    screen: 'The task stopped reporting its final state, so its queue slot was released. Please retry',
-    spoken: 'The task stopped reporting its final state, so its queue slot was released. It did not finish. Please retry.',
+    screen: 'The task has made no progress for a long time. Please retry',
+    spoken: 'The task has made no progress for a long time. It did not finish. Please retry.',
   },
 } as const;
 
@@ -39,13 +39,11 @@ const approvalWaitFailure = {
 
 export function formatSessionTaskSlotRecoveryDetail(input: {
   taskLabel: string;
-  laneKey: string;
   occupiedMs: number;
   locale: SessionTaskSlotLocale;
 }): string {
   return messages[input.locale].detail(
     input.taskLabel,
-    input.laneKey,
     durationText(input.occupiedMs, input.locale),
   );
 }

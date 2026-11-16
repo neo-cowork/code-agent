@@ -10,6 +10,10 @@ export const toolErrorCodesZh = {
     summary: '写入全局记忆需要你本人确认',
     detail: '这次没有写入；需要保存的话重新发起，并在确认窗口里点「确认」。',
   },
+  TOOL_DISABLED_FOR_RUN: {
+    summary: '这一步没有执行，这一轮对话里没有开放这个操作',
+    detail: '请在新消息里再告诉 Neo 你想做什么（比如具体的时间或内容），它会重新发起。',
+  },
   WORKBENCH_SCOPE_DENIED: {
     summary: '当前工作台范围不允许使用这个工具',
     detail: '工具被工作台范围拦截；调整范围或改用范围内的工具。',
@@ -112,6 +116,10 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED: {
     summary: 'Writing to global memory needs your confirmation',
     detail: 'Nothing was written. To save it, ask again and click "Confirm" in the confirmation window.',
+  },
+  TOOL_DISABLED_FOR_RUN: {
+    summary: 'This step did not run: that action was not available in this turn',
+    detail: 'Tell Neo again in a new message what you want (for example the exact time or details) and it will retry.',
   },
   WORKBENCH_SCOPE_DENIED: {
     summary: 'This tool is not allowed in the current workbench scope',
