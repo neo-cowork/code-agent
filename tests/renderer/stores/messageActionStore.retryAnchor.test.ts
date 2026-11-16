@@ -239,17 +239,6 @@ describe('regenerate 的重试锚点', () => {
     expect(send.mock.calls[0][1]).toEqual({ clientMessageId: 'user-failed-run' });
   });
 
-  it('重试错误时跳过后台任务和唤醒的内部消息', () => {
-    install([
-      { id: 'user-request', role: 'user', content: 'try that again', timestamp: 1 },
-      { id: 'internal', role: 'user', content: 'internal task prompt', timestamp: 2, isMeta: true },
-      { id: 'error', role: 'assistant', content: '', timestamp: 3 },
-    ]);
-    useMessageActionStore.getState().regenerateMessage('error');
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith('try that again');
-  });
-
   it('运行中 session.retry 不重做已成功轮', () => {
     useSessionStore.setState({
       currentSessionId: 'session-running',

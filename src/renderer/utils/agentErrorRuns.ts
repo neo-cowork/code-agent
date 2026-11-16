@@ -7,7 +7,7 @@ export function projectAgentErrorRuns(messages: Message[]) {
   const failedRounds = new Set<number>();
   let round = 0;
   for (const message of messages) {
-    if (message.role === 'user' && !message.isMeta) round += 1;
+    if (message.role === 'user') round += 1;
     if (message.metadata?.agentError) failedRounds.add(round);
   }
   round = 0;
@@ -19,7 +19,7 @@ export function projectAgentErrorRuns(messages: Message[]) {
     let runLength = 0;
     let sawUserSinceLastFailure = false;
     for (const msg of messages) {
-      if (msg.role === 'user' && !msg.isMeta) {
+      if (msg.role === 'user') {
         round += 1;
         sawUserSinceLastFailure = true;
         continue;

@@ -158,7 +158,7 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     }
 
     for (let i = idx - 1; i >= 0; i--) {
-      if (messages[i].role === 'user' && !messages[i].isMeta && (messages[i].content?.trim() || messages[i].attachments?.length)) {
+      if (messages[i].role === 'user' && (messages[i].content?.trim() || messages[i].attachments?.length)) {
         const failed = messages[i].metadata?.sendFailed === true;
         if (running && !failed) return;
         const retryContext = {
