@@ -32,6 +32,52 @@ const tooManyRequests: Record<Language, string> = {
   en: 'Too many requests in a short time. Wait a moment and try again.',
 };
 
+const uploadCopy = {
+  rateLimitedSeconds: {
+    zh: (n: number) => `上传太频繁了，请约 ${n} 秒后再试。`,
+    en: (n: number) => `Too many uploads in a short time. Try again in about ${n} seconds.`,
+  },
+  rateLimited: {
+    zh: '上传太频繁了，请稍等片刻再试。',
+    en: 'Too many uploads in a short time. Wait a moment and try again.',
+  },
+  tooLarge: {
+    zh: '文件太大，无法上传，请换一个小一点的文件。',
+    en: 'This file is too large to upload. Try a smaller file.',
+  },
+  generic: {
+    zh: '没能上传这个文件，请稍后再试。',
+    en: 'Could not upload this file. Please try again.',
+  },
+} as const;
+
+/** 上传通道非 2xx → 一句话人话；retryAfterSeconds 来自 Retry-After 头或 429 响应体（跨域读不到头时兜底）。 */
+export function uploadFailureMessage(input: { status: number; retryAfterSeconds?: number; language: Language }): string {
+  const { status, retryAfterSeconds, language } = input;
+  const lang: Language = language === 'en' ? 'en' : 'zh';
+  if (status === 429) {
+    if (retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return uploadCopy.rateLimitedSeconds[lang](Math.ceil(retryAfterSeconds));
+    }
+    return uploadCopy.rateLimited[lang];
+  }
+  if (status === 413) return uploadCopy.tooLarge[lang];
+  return uploadCopy.generic[lang];
+}
+
+/** 读 Retry-After：优先响应头，其次 JSON 体的 retryAfterSeconds；都没有返回 undefined。 */
+export function readRetryAfterSeconds(headerValue: string | null | undefined, body: string): number | undefined {
+  const fromHeader = Number(headerValue);
+  if (headerValue && Number.isFinite(fromHeader) && fromHeader > 0) return fromHeader;
+  try {
+    const parsed = JSON.parse(body) as { retryAfterSeconds?: unknown };
+    const n = parsed?.retryAfterSeconds;
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface HttpFailureMessageInput {
   status: number;
   code?: string;
