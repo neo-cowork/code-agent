@@ -123,6 +123,14 @@ describe('delegation failure fold', () => {
     expect(view.queryAllByTestId('delegation-failure-superseded')).toHaveLength(0);
   });
 
+  it('3b: two different unrecognised (generic) failures are not folded', () => {
+    setup([task(1, 'failed', '找不到文件 report.xlsx'), task(2, 'failed', '浏览器进程意外崩溃')], [...flow(1), ...flow(2)]);
+    const view = renderAll(2);
+    expect(view.getAllByTestId('delegation-failure')).toHaveLength(2);
+    expect(view.getAllByTestId('delegation-failed-actions')).toHaveLength(2);
+    expect(view.queryAllByTestId('delegation-failure-superseded')).toHaveLength(0);
+  });
+
   it('3c: a completed delegation or a later successful reply resets the run', () => {
     setup([task(1, 'failed'), task(2, 'completed'), task(3, 'failed')], [...flow(1), ...flow(2), ...flow(3)]);
     let view = renderAll(3);

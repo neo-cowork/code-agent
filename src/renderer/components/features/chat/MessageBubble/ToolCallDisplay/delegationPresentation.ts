@@ -204,7 +204,8 @@ function taskFailureCause(task: Task): string | undefined {
   const reason = task.failure?.reason;
   if (isAgentFailureCode(reason)) return `code:${reason}`;
   const category = classifyAgentError({ message: task.failure?.message || task.summary })?.category;
-  return category ? `category:${category}` : undefined;
+  // 'generic' is the classifier's catch-all: unrelated failures land there, so it is not a shared cause.
+  return category && category !== 'generic' ? `category:${category}` : undefined;
 }
 
 function fromTask(task: Task, t: Translations): DelegationPresentation {
