@@ -1,5 +1,6 @@
 import type { CronUrgency } from '@shared/contract/sessionAutomation';
 import { splitCronRunMessage } from '@shared/cronRunMessage';
+import { isUserOnlyCronDenial } from '@shared/cronPermissionDenied';
 import { declaresCronUrgencyQuiet, isCronUrgency, parseUrgencyHeader } from '@shared/cronUrgency';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -34,8 +35,12 @@ export function cronRunResultView(value: unknown): {
   const summaryText = readableText(source) || undefined;
   const parsed = parseUrgencyHeader(source);
   const declaredInDigest = parsed.urgency !== 'fyi' || declaresCronUrgencyQuiet(source);
+  // A user-only denial was capped to the persisted tier by the host; the digest header must not override it.
+  const cappedByHost = isUserOnlyCronDenial(value.permissionDenied) && isCronUrgency(value.urgency);
   // Host normalizes an absent header to fyi. Do not invent a declared chip for it.
-  const urgency = declaredInDigest
+  const urgency = cappedByHost
+    ? value.urgency as CronUrgency
+    : declaredInDigest
     ? parsed.urgency
     : isCronUrgency(value.urgency) && value.urgency !== 'fyi'
       ? value.urgency
