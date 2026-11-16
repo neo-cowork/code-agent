@@ -465,13 +465,25 @@ const OFFICE_FILE_OPERATION_RE = new RegExp([
  * 用户明确点名要后台任务（「在后台做」「开一个后台任务」/ "in the background"、"background task"）。
  * 单轮文件交付收口（隐藏委派工具 + 「不要派发后台」提醒）只面向**没**提后台的请求；
  * 用户明说要后台时它是权威指令，收口会让模型编出「没有后台槽位」的借口并转前台。
+ * 两道防误判：① 「后台」作名词（商家后台/管理后台/用后台导出的数据）不算——正则只收「在/放到…后台」
+ * 这类动作介词和「后台任务/后台跑」等，且「后台管理/系统/页面…」排除；② 命中前同一分句里有否定
+ * （不要在后台跑 / don't run it in the background）不算。
  */
 const EXPLICIT_BACKGROUND_REQUEST_RE = new RegExp([
-  String.raw`(?:在|放到?|转到?|丢到?|开(?:一个|个)?|起(?:一个|个)?|用|跑|帮我|执行|运行)\s*后台`,
-  String.raw`后台\s*(?:任务|运行|执行|跑|做|处理|生成|导出)`,
+  String.raw`(?:在|放到?|转到?|丢到?|扔到?)\s*后台(?!管理|系统|页面|界面|登录|账号|入口|数据)`,
+  String.raw`后台\s*(?:任务|运行|执行|跑|做|处理|生成)`,
   String.raw`\bbackground\s+(?:task|job|agent)s?\b`,
   String.raw`\b(?:in|to|as)\s+(?:the\s+|a\s+)?background\b`,
-].join('|'), 'i');
+].join('|'), 'gi');
+const BACKGROUND_NEGATION_RE = /不要|别|不用|不必|无需|不需要|不想|不许|禁止|勿|\b(?:don'?t|do not|never|not|no need to|without|instead of)\b/i;
+
+function hasExplicitBackgroundRequest(message: string): boolean {
+  for (const m of message.matchAll(EXPLICIT_BACKGROUND_REQUEST_RE)) {
+    const clause = message.slice(0, m.index).split(/[，,。.;；!！?？\n]/).pop() ?? '';
+    if (!BACKGROUND_NEGATION_RE.test(clause)) return true;
+  }
+  return false;
+}
 
 function isOfficeFileDeliverablePrompt(message: string): boolean {
   if (OFFICE_FILE_OPERATION_RE.test(message)) return false;
@@ -674,7 +686,7 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isBoundedComparison,
     isOfficeFileDeliverable,
     isOneTurnFileDeliverable: isOfficeFileDeliverable && !isComplexTask && !isMultiDimension &&
-      !EXPLICIT_BACKGROUND_REQUEST_RE.test(prompt),
+      !hasExplicitBackgroundRequest(prompt),
     isComplexTask,
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),

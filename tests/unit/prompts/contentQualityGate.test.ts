@@ -281,6 +281,21 @@ describe('单轮 Office 文件交付 — 意图与提醒', () => {
     expect(getSystemReminders(prompt).some((r) => r.includes('不要派发后台任务'))).toBe(false);
   });
 
+  it.each([
+    ['zh 否定', '不要在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['en 否定', "Don't run it in the background, just export signups.csv as an Excel file (.xlsx)"],
+    ['en not as', 'Export signups.csv as an Excel file (.xlsx), not as a background task'],
+    ['zh 商家后台名词', '把商家后台导出的 orders.csv 整理成 Excel 文件 .xlsx 导出'],
+    ['zh 用后台导出的数据', '用后台导出的数据生成一个 Excel 文件 .xlsx'],
+    ['zh 在后台管理系统', '在后台管理系统里导出报名名单，保存成 Excel 文件 .xlsx'],
+  ])('否定或「后台」作名词时仍判单轮交付：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
+  it('同一句里否定在别的分句不影响：「不要问我，在后台导出」仍算要后台', () => {
+    expect(detectTaskFeatures('不要问我，在后台把名单导出成 Excel 文件 .xlsx').isOneTurnFileDeliverable).toBe(false);
+  });
+
   it('无后台字样的导出仍判单轮交付，并带「不要派发后台」提醒', () => {
     const prompt = 'Export signups.csv as an Excel file (.xlsx)';
     expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);

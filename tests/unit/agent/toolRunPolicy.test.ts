@@ -137,6 +137,8 @@ describe('toolRunPolicy', () => {
       expect(names('Start a background task: export signups.csv as an Excel file (.xlsx) and notify me when done')).toContain('delegate_task');
       expect(names('开一个后台任务，把 signups.csv 导出成 Excel 文件 .xlsx，完成后通知我')).toContain('delegate_task');
       expect(names('Export signups.csv as an Excel file (.xlsx)')).not.toContain('delegate_task');
+      expect(names('不要在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx')).not.toContain('delegate_task');
+      expect(names('把商家后台导出的 orders.csv 整理成 Excel 文件 .xlsx 导出')).not.toContain('delegate_task');
     });
 
     // 后台通道的「通知能力」：Neo 没有独立的 notify 工具——后台任务用 Bash（osascript）发系统通知，
