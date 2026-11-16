@@ -483,7 +483,9 @@ export async function createAgentWorktree(
 ): Promise<WorktreeInfo> {
   const physicalAgentId = getAgentWorktreeKey(agentId);
   const branchName = await resolveAgentBranchName(agentId, physicalAgentId, repoPath, label);
-  const safeName = physicalAgentId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  // 可读分支名同时作目录名：模型汇报常原样转述路径，目录里带内部 id 会再次外露
+  const safeName = (branchName === `agent/${physicalAgentId}` ? physicalAgentId : branchName.slice('agent/'.length))
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
   const worktreePath = path.join(WORKTREE_BASE_DIR, safeName);
 
   // Determine base: explicit param or current HEAD
