@@ -1,3 +1,4 @@
+import { getToolActionId, toolUserLabel } from '@shared/utils/toolUserLabel';
 // ============================================================================
 // describeApproval - 审批卡标题 / 图标 / 问句 / 后果行的唯一解析点
 //
@@ -149,6 +150,11 @@ export function describeApproval(
   language: Language = 'zh',
 ): ApprovalDescription {
   const described = describeKind(request, t, language);
+  // Name the action consistently without changing classification, questions or permission semantics.
+  if (getToolActionId(request.tool)
+      && !['dangerous_command', 'directory_access', 'file_delete'].includes(request.type)) {
+    described.title = toolUserLabel(request.tool, language);
+  }
   const grant = request.details.browserSessionGrant;
   // 站点已解析的授权卡（按站点问句）保持专属文案；站点未解析的网页导航只说「访问这个网址」，
   // 不再借专属卡的「无法确认当前网站」。
@@ -183,7 +189,7 @@ function describeKind(
     case 'file_delete':
     case 'network': {
       const title = kind === 'shell' || kind === 'network'
-        ? getPermissionConfig(request.type).title
+        ? getPermissionConfig(request.type, language).title
         : p[FILE_TITLE_KEY[kind]];
       return {
         kind,

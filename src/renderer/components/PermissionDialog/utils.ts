@@ -1,3 +1,4 @@
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
 // ============================================================================
 // PermissionDialog - Utility Functions
 // ============================================================================
@@ -18,25 +19,25 @@ import {
 import type { PermissionType, PermissionConfig } from './types';
 
 // 权限配置映射
-export function getPermissionConfig(type: PermissionType): PermissionConfig {
+export function getPermissionConfig(type: PermissionType, language: 'zh' | 'en' = 'zh'): PermissionConfig {
   const configs: Record<PermissionType, PermissionConfig> = {
     file_read: {
       icon: React.createElement(FileText, { size: 20 }),
-      title: '读取文件',
+      title: toolUserLabel('Read', language),
       color: 'text-badge-info',
       bgColor: 'bg-blue-500/10',
       borderColor: 'border-badge-info/30',
     },
     file_write: {
       icon: React.createElement(FilePlus, { size: 20 }),
-      title: '创建文件',
+      title: toolUserLabel('Write', language),
       color: 'text-badge-success',
       bgColor: 'bg-green-500/10',
       borderColor: 'border-badge-success/30',
     },
     file_edit: {
       icon: React.createElement(FileEdit, { size: 20 }),
-      title: '编辑文件',
+      title: toolUserLabel('Edit', language),
       color: 'text-badge-warning',
       bgColor: 'bg-yellow-500/10',
       borderColor: 'border-badge-warning/30',
@@ -50,7 +51,7 @@ export function getPermissionConfig(type: PermissionType): PermissionConfig {
     },
     command: {
       icon: React.createElement(Terminal, { size: 20 }),
-      title: '执行命令',
+      title: toolUserLabel('Bash', language),
       color: 'text-badge-accent',
       bgColor: 'bg-purple-500/10',
       borderColor: 'border-badge-accent/30',

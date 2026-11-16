@@ -1,3 +1,5 @@
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
+
 // ============================================================================
 // 决策卡统一词条（权限审批卡 / swarm 启动审批卡 / workflow 启动审批卡）
 // 2026-07-29 拍板：三种决策卡统一迁移到 UserQuestionCard 视觉骨架（DecisionCard），
@@ -31,9 +33,9 @@ export const decisionCardZh = {
       questionMcp: '允许调用 {target}？',
       questionMcpGeneric: '允许调用这个外部工具？',
       questionFallback: '允许这次操作？',
-      titleFileRead: '读取文件',
-      titleFileWrite: '创建文件',
-      titleFileEdit: '编辑文件',
+      titleFileRead: toolUserLabel('Read', 'zh'),
+      titleFileWrite: toolUserLabel('Write', 'zh'),
+      titleFileEdit: toolUserLabel('Edit', 'zh'),
       titleFileDelete: '删除文件',
       titleFolderAccess: '访问其他文件夹',
       questionFolderAccess: '允许访问这个文件夹？',
@@ -346,9 +348,9 @@ export const decisionCardEn: typeof decisionCardZh = {
       questionMcp: 'Allow calling {target}?',
       questionMcpGeneric: 'Allow calling this MCP tool?',
       questionFallback: 'Allow this operation?',
-      titleFileRead: 'Read file',
-      titleFileWrite: 'Create file',
-      titleFileEdit: 'Edit file',
+      titleFileRead: toolUserLabel('Read', 'en'),
+      titleFileWrite: toolUserLabel('Write', 'en'),
+      titleFileEdit: toolUserLabel('Edit', 'en'),
       titleFileDelete: 'Delete file',
       titleFolderAccess: 'Access another folder',
       questionFolderAccess: 'Allow access to this folder?',

@@ -1,3 +1,4 @@
+import { getToolActionId } from '@shared/utils/toolUserLabel';
 import type { Translations } from '../i18n';
 import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
 import { getToolDisplayName } from '../components/features/chat/MessageBubble/ToolCallDisplay/utils';
@@ -10,16 +11,6 @@ const CONNECTOR_LABEL_KEYS: Record<string, keyof HumanToolLabels['connectors']> 
   reminders: 'reminders',
   tmeet: 'tmeet',
   feishu: 'feishu',
-};
-
-const TOOL_LABEL_KEYS: Record<string, keyof HumanToolLabels['tools']> = {
-  webfetch: 'webFetch',
-  websearch: 'webSearch',
-  read: 'readFile',
-  glob: 'findFiles',
-  grep: 'findFiles',
-  readfile: 'readFile',
-  memorysearch: 'memorySearch',
 };
 
 function normalizedLabelKey(value: string | undefined): string {
@@ -40,16 +31,12 @@ export function getHumanToolLabel(args: {
   const connectorKey = CONNECTOR_LABEL_KEYS[normalizedLabelKey(connectorId)];
   if (connectorKey) return args.labels.connectors[connectorKey];
 
-  const toolKey = TOOL_LABEL_KEYS[normalizedLabelKey(toolName)];
+  const toolKey = getToolActionId(toolName);
   if (toolKey) return args.labels.tools[toolKey];
 
   return getToolDisplayName(toolName || args.labels.unknownTool);
 }
 
-// Background task details are not approval labels and may localize file actions.
 export function getBackgroundTaskToolLabel(args: { toolName: string; labels: HumanToolLabels }): string {
-  const key = normalizedLabelKey(args.toolName);
-  if (key === 'write' || key === 'writefile') return args.labels.tools.writeFile;
-  if (key === 'edit' || key === 'editfile') return args.labels.tools.editFile;
   return getHumanToolLabel(args);
 }

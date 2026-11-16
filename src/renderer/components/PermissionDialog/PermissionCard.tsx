@@ -504,7 +504,7 @@ export function PermissionCard({
             : editable
               ? w.mailSendTitle
               : isDangerous && described.kind === 'shell'
-                ? getPermissionConfig('command').title
+                ? getPermissionConfig('command', language).title
                 : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />

@@ -1,3 +1,4 @@
+import { getToolActionId, toolUserLabel } from './utils/toolUserLabel';
 import { resolveSkillName } from './resolveSkillName';
 import {
   detectInternalTextLeaks, CATALOG_SLUG_GLOBAL_RE,
@@ -23,11 +24,7 @@ export interface HumanizedInternalTextResult {
 }
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
-  read_file: { zh: '读取文件', en: 'Read file' },
-  write_file: { zh: '写入文件', en: 'Write file' },
-  edit_file: { zh: '编辑文件', en: 'Edit file' },
   list_directory: { zh: '查看目录', en: 'List directory' },
-  web_fetch: { zh: '读取网页', en: 'Fetch web page' },
   todo_write: { zh: '更新待办清单', en: 'Update checklist' },
   spawn_agent: { zh: '启动协作助手', en: 'Start helper' },
   agent_message: { zh: '发送协作消息', en: 'Send helper message' },
@@ -36,10 +33,7 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   steer_task: { zh: '调整任务方向', en: 'Steer task' },
   cancel_task: { zh: '停止任务', en: 'Stop task' },
   memory_store: { zh: '保存记忆', en: 'Save memory' },
-  memory_search: { zh: '检索记忆', en: 'Search memory' },
   tool_search: { zh: '查找可用工具', en: 'Find available tools' },
-  computer_use: { zh: '操作桌面界面', en: 'Control desktop screen' },
-  browser_action: { zh: '操作浏览器', en: 'Control browser' },
   plan_update: { zh: '更新执行计划', en: 'Update plan' },
   plan_read: { zh: '查看执行计划', en: 'Read plan' },
   findings_write: { zh: '记录关键发现', en: 'Record findings' },
@@ -55,7 +49,6 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   create_new: { zh: '新建会话', en: 'Create a new chat' },
   candidateSetId: { zh: '候选会话', en: 'candidate chats' },
   MemoryRead: { zh: '读取记忆', en: 'Read memory' },
-  Glob: { zh: '按名称查找文件', en: 'Find files by name' },
 };
 
 interface EnglishStatePattern {
@@ -146,6 +139,7 @@ function humanizeMcpToolName(rawName: string, lang: InternalTextLanguage): strin
 }
 
 function humanizeToolToken(token: string, lang: InternalTextLanguage): string {
+  if (getToolActionId(token)) return toolUserLabel(token, lang);
   const known = INTERNAL_TOOL_LABELS[token];
   if (known) {
     return known[lang];

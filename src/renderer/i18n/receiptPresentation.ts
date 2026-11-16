@@ -1,3 +1,4 @@
+import { getToolActionLabels } from '@shared/utils/toolUserLabel';
 import { roleEditReceiptZh, roleEditReceiptEn } from './roleEditReceipt';
 
 export const receiptPresentationZh = {
@@ -17,16 +18,7 @@ export const receiptPresentationZh = {
         tmeet: '腾讯会议',
         feishu: '飞书',
       },
-      tools: {
-        runCommand: '运行命令',
-        writeFile: '写入文件',
-        editFile: '编辑文件',
-        webFetch: '网页抓取',
-        webSearch: '联网搜索',
-        readFile: '读取文件',
-        findFiles: '查找文件',
-        memorySearch: '记忆检索',
-      },
+      tools: getToolActionLabels('zh'),
       unknownTool: '工具',
     },
     roleCapabilityLabels: {
@@ -60,16 +52,7 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         tmeet: 'Tencent Meeting',
         feishu: 'Feishu',
       },
-      tools: {
-        runCommand: 'Run command',
-        writeFile: 'Write file',
-        editFile: 'Edit file',
-        webFetch: 'Web fetch',
-        webSearch: 'Web search',
-        readFile: 'Read file',
-        findFiles: 'Find files',
-        memorySearch: 'Memory search',
-      },
+      tools: getToolActionLabels('en'),
       unknownTool: 'Tool',
     },
     roleCapabilityLabels: {

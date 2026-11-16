@@ -8,29 +8,44 @@
 
 import { findConnectorToolMetadata, isMcpToolName } from '../contract/workbenchTools';
 
-const TOOL_USER_LABELS: Record<string, string> = {
-  bash: '运行命令',
-  write: '写入文件',
-  writefile: '写入文件',
-  edit: '编辑文件',
-  editfile: '编辑文件',
-  read: '读取文件',
-  readfile: '读取文件',
-  glob: '查找文件',
-  grep: '搜索内容',
-  webfetch: '网页抓取',
-  websearch: '联网搜索',
-  memorysearch: '记忆检索',
-  browseraction: '浏览器操作',
-  computeruse: '电脑操作',
+// Action ids also serve as renderer translation keys. Aliases contain no translated copy.
+const TOOL_ACTION_LABELS = {
+  runCommand: { zh: '运行命令', en: 'Run command' },
+  writeFile: { zh: '写入文件', en: 'Write file' },
+  editFile: { zh: '编辑文件', en: 'Edit file' },
+  readFile: { zh: '读取文件', en: 'Read file' },
+  findFiles: { zh: '查找文件', en: 'Find files' },
+  searchContents: { zh: '搜索内容', en: 'Search contents' },
+  webFetch: { zh: '网页抓取', en: 'Web fetch' },
+  webSearch: { zh: '联网搜索', en: 'Web search' },
+  memorySearch: { zh: '记忆检索', en: 'Memory search' },
+  browserAction: { zh: '浏览器操作', en: 'Browser action' },
+  computerUse: { zh: '电脑操作', en: 'Computer action' },
 };
 
-const TOOL_USER_LABELS_EN: Record<string, string> = {
-  bash: 'Run command', write: 'Write file', writefile: 'Write file', edit: 'Edit file', editfile: 'Edit file',
-  read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
-  webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search',
-  browseraction: 'Browser action', computeruse: 'Computer action',
+type ToolActionId = keyof typeof TOOL_ACTION_LABELS;
+
+const TOOL_ACTION_ALIASES: Readonly<Record<string, ToolActionId>> = {
+  bash: 'runCommand', runcommand: 'runCommand',
+  write: 'writeFile', writefile: 'writeFile',
+  edit: 'editFile', editfile: 'editFile',
+  read: 'readFile', readfile: 'readFile',
+  glob: 'findFiles', findfiles: 'findFiles',
+  grep: 'searchContents', searchcontents: 'searchContents',
+  webfetch: 'webFetch', websearch: 'webSearch', memorysearch: 'memorySearch',
+  browseraction: 'browserAction', computeruse: 'computerUse',
 };
+
+/** Resolve only registered action names; consumers retain their own unknown-tool fallback. */
+export function getToolActionId(toolName: string): ToolActionId | undefined {
+  const key = toolName.trim().toLowerCase().replace(/[-_\s]/g, '');
+  return Object.hasOwn(TOOL_ACTION_ALIASES, key) ? TOOL_ACTION_ALIASES[key] : undefined;
+}
+
+/** Renderer translation tree and host notifications share the same bilingual action table. */
+export function getToolActionLabels(language: 'zh' | 'en'): Record<ToolActionId, string> {
+  return Object.fromEntries(Object.entries(TOOL_ACTION_LABELS).map(([id, copy]) => [id, copy[language]])) as Record<ToolActionId, string>;
+}
 
 const UNKNOWN_LABEL = '操作';
 
@@ -46,8 +61,8 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
     return connector.action?.zh ? `${connector.connectorName}：${connector.action.zh}` : connector.connectorName;
   }
   if (isMcpToolName(name)) return en ? 'External tool' : '外部工具';
-  const key = name.toLowerCase().replace(/[-_\s]/g, '');
-  return (en ? TOOL_USER_LABELS_EN[key] : TOOL_USER_LABELS[key]) ?? (en ? 'Action' : UNKNOWN_LABEL);
+  const action = getToolActionId(name);
+  return action ? TOOL_ACTION_LABELS[action][language] : (en ? 'Action' : UNKNOWN_LABEL);
 }
 
 /** 「需要授权」类通知正文：只说动作，不带原始命令 / 工具名。 */
