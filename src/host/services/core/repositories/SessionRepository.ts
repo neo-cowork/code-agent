@@ -23,7 +23,7 @@ import {
 } from './sessionRepositoryParsers';
 import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import * as sidecarState from './sessionRepositorySidecarState';
-import { getLatestUserAuthorId as readLatestUserAuthorId } from './sessionRepositoryParsers';
+import { getLatestUserAuthorId as readLatestUserAuthorId, serializeMessageMetadata } from './sessionRepositoryParsers';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
 import { SessionFtsRepository } from './SessionFtsRepository';
 import {
@@ -509,7 +509,7 @@ export class SessionRepository {
         message.effortLevel || null,
         this.resolveSyncedAt(options),
         message.contentParts ? JSON.stringify(message.contentParts) : null,
-        message.metadata ? JSON.stringify(message.metadata) : null,
+        serializeMessageMetadata(message.metadata, message.modelDecision),
         message.isMeta ? 1 : 0,
         message.compaction ? JSON.stringify(message.compaction) : null,
         message.visibility ?? 'active',
@@ -666,9 +666,9 @@ export class SessionRepository {
       setClauses.push('content_parts = ?');
       values.push(updates.contentParts ? JSON.stringify(updates.contentParts) : null);
     }
-    if (updates.metadata !== undefined) {
+    if (updates.metadata !== undefined || updates.modelDecision !== undefined) {
       setClauses.push('metadata = ?');
-      values.push(updates.metadata ? JSON.stringify(updates.metadata) : null);
+      values.push(serializeMessageMetadata(updates.metadata, updates.modelDecision, this.db.prepare('SELECT metadata FROM messages WHERE id = ?').pluck().get(messageId)));
     }
     if (updates.isMeta !== undefined) {
       setClauses.push('is_meta = ?');
