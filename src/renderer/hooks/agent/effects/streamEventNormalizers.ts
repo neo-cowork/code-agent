@@ -42,14 +42,19 @@ import type {
   TurnIdPayload,
 } from './streamEventTypes';
 
-const MODEL_DECISION_REASONS = new Set<ModelDecisionReason>([
-  'user-selected',
-  'role-tier',
-  'simple-task-free',
-  'billing-gate-skip',
-  'capability-vision',
-  'fallback-availability',
-]);
+const MODEL_DECISION_REASONS = new Set(Object.keys({
+  'user-selected': true,
+  'default-model': true,
+  'role-tier': true,
+  'simple-task-free': true,
+  'billing-gate-skip': true,
+  'strategy-fast': true,
+  'strategy-main': true,
+  'strategy-deep': true,
+  'strategy-vision': true,
+  'capability-vision': true,
+  'fallback-availability': true,
+} satisfies Record<ModelDecisionReason, true>));
 
 const BILLING_MODES = new Set<BillingMode>([
   'free',
