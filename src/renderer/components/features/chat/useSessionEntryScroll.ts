@@ -114,7 +114,7 @@ interface BottomSettlementOptions {
  * 投影重建好几次（新数组引用），按引用比会把结算半路掐断，会话首开停在离底几十到一两百像素
  * 处（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER 真机第二轮）。
  */
-export function isSameTurnList(current: readonly TraceTurn[], atJump: readonly TraceTurn[]): boolean {
+function isSameTurnList(current: readonly TraceTurn[], atJump: readonly TraceTurn[]): boolean {
   return current === atJump
     || (current.length === atJump.length && current.at(-1)?.turnId === atJump.at(-1)?.turnId);
 }
