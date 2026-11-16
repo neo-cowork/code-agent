@@ -48,6 +48,7 @@ import { RecentlyDeletedRoles } from './RecentlyDeletedRoles';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory, matchesRoleSearch } from './roleCategoryGroups';
 import { HubTabHeader } from '../capabilityHub/HubTabHeader';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 
 type ExpertTab = 'mine' | 'discover';
 
@@ -93,19 +94,22 @@ function expertSourceLabel(entry: RolePanelEntry, sourceText: Record<string, str
 const ExpertCardHead: React.FC<{ entry: RolePanelEntry; professionFallback: string }> = ({
   entry,
   professionFallback,
-}) => (
-  <div className="flex items-center gap-2.5">
-    <RoleAvatarTile roleId={entry.roleId} icon={entry.icon} name={entry.displayName} />
-    <span className="min-w-0">
-      <span className="block truncate text-sm font-medium text-zinc-100">
-        {entry.displayName || entry.roleId}
+}) => {
+  const localized = useLocalizeRole()(entry.roleId, { name: entry.displayName ?? '', profession: entry.profession });
+  return (
+    <div className="flex items-center gap-2.5">
+      <RoleAvatarTile roleId={entry.roleId} icon={entry.icon} name={localized.name} />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-zinc-100">
+          {localized.name || entry.roleId}
+        </span>
+        <span className="block truncate text-xs text-zinc-500">
+          {localized.profession || professionFallback}
+        </span>
       </span>
-      <span className="block truncate text-xs text-zinc-500">
-        {entry.profession || professionFallback}
-      </span>
-    </span>
-  </div>
-);
+    </div>
+  );
+};
 
 const ExpertCard: React.FC<{
   entry: RolePanelEntry;
@@ -163,6 +167,7 @@ export const ExpertPanel: React.FC = () => {
   const setTab = useAppStore((s) => s.setExpertPanelTab);
 
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
+  const localizeRole = useLocalizeRole();
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [rolePacksLoading, setRolePacksLoading] = useState(true);
@@ -373,9 +378,12 @@ export const ExpertPanel: React.FC = () => {
     }
   };
 
-  const recipeMode = (recipe: TeamRecipe) => recipe.lead
-    ? t.team.expertTeam.replace('{lead}', entries.find((entry) => entry.roleId === recipe.lead?.roleId)?.displayName || recipe.lead.roleId)
-    : t.team.expertGroup.replace('{count}', String(recipe.members.length));
+  const recipeMode = (recipe: TeamRecipe) => {
+    const leadId = recipe.lead?.roleId;
+    if (!leadId) return t.team.expertGroup.replace('{count}', String(recipe.members.length));
+    const rawName = entries.find((entry) => entry.roleId === leadId)?.displayName ?? '';
+    return t.team.expertTeam.replace('{lead}', () => localizeRole(leadId, { name: rawName }).name || leadId);
+  };
 
   // 滚动由能力中心的外层容器统一负责，这里只排内容；
   // 页头走四 tab 共用的 HubTabHeader（吸顶）：第一行 = 大标题「专家」+ 操作簇

@@ -20,6 +20,7 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
   describeLastToolFailure,
@@ -95,6 +96,7 @@ const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const text = t.expert.workRecord;
   const memberText = t.expert.memberBar;
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
@@ -216,7 +218,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
             <Bot className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-zinc-100">{name}</h2>
+            <h2 className="truncate text-sm font-semibold text-zinc-100">{localizeRole(name, { name }).name}</h2>
           </div>
           <StopMemberButton target={plainTarget} sessionId={sessionId} runId={activeRunId} />
         </header>
@@ -290,7 +292,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   const memberTarget: MemberInputTarget = {
     key: member.key,
     kind: 'expert',
-    name: member.profession || member.name,
+    name: member.name,
     live: member.status === 'running',
   };
 
@@ -301,10 +303,10 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <BackToMainButton label={text.backToChat} />
       </div>
       <header className="mx-auto flex max-w-3xl items-center gap-3 border-b border-zinc-800 pb-3">
-        <RoleInitialAvatar roleId={member.roleId} name={member.name} className="h-8 w-8 text-xs" />
+        <RoleInitialAvatar roleId={member.roleId} name={member.displayName} className="h-8 w-8 text-xs" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-zinc-100">{member.profession || member.name}</h2>
-          <p className="truncate text-xs text-zinc-400">{member.profession ? member.name : member.roleId}</p>
+          <h2 className="truncate text-sm font-semibold text-zinc-100">{member.displayProfession || member.displayName}</h2>
+          <p className="truncate text-xs text-zinc-400">{member.profession ? member.displayName : member.roleId}</p>
         </div>
         <StopMemberButton target={memberTarget} sessionId={sessionId} runId={memberRunId} />
       </header>
