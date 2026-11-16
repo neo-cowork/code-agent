@@ -1,3 +1,4 @@
+import { UI } from '@shared/constants';
 import { toast, useToastStore } from '../../../../hooks/useToast';
 import type { AttachmentMergeResult } from './attachmentDedupe';
 
@@ -33,6 +34,7 @@ export function notifyAttachmentMerge(
         .replace('{added}', String(result.addedCount))
         .replace('{dropped}', String(result.overflowCount))
         .replace('{max}', String(result.cap)),
+      UI.TOAST_PERSISTENT_DURATION,
     );
   }
 }

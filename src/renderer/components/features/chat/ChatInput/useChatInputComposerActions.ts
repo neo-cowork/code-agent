@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type React from 'react';
 import type { MessageAttachment } from '@shared/contract';
 import type { SpeechTranscribeResult } from '@shared/contract';
@@ -41,9 +41,11 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
   } = params;
   const { t } = useI18n();
 
-  // 附件清空（发送后或用户逐个移除）后，「附件已满」提示不再适用
+  const previousAttachmentCount = useRef(attachmentCount);
+  // Removing attachments or sending makes the previous limit warning stale.
   useEffect(() => {
-    if (attachmentCount === 0) dismissAttachmentLimitToast();
+    if (attachmentCount < previousAttachmentCount.current) dismissAttachmentLimitToast();
+    previousAttachmentCount.current = attachmentCount;
   }, [attachmentCount]);
 
   const appendAttachments = useCallback((incoming: MessageAttachment[]) => {
