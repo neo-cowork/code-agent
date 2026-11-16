@@ -36,12 +36,16 @@ import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
-import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
+import {
+  SESSION_COMMAND_CENTER_TOOL_NAMES,
+  formatSessionTaskDeliveryFailure,
+} from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
+import { getTaskDeliveryFailure } from './taskDeliveryVerdict';
+import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
   SESSION_STOP_REQUESTED_EVENT,
@@ -368,11 +372,14 @@ export class TaskManager extends EventEmitter {
           seenArtifactLocations.add(location);
           return true;
         });
-        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
-        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
+        const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
+        this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          ...(deliveryFailed
-            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+          ...(deliveryFailure
+            ? {
+              error: formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale())
+                ?? (finalMessage?.content?.trim() || 'Task delivery failed.'),
+            }
             : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });
