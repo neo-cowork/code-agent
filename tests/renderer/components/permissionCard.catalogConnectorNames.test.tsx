@@ -56,7 +56,6 @@ describe('catalog connector write approval preview', () => {
     const request = hostShapedRequest();
     const { container } = render(<RequestDetails request={request} />);
     const text = [container.textContent, describeApproval(request, language === 'zh' ? zh : en, language).question].join('\n');
-    process.stdout.write(`[${language}] ${JSON.stringify(text)}\n`);
     expect(text).toContain(language === 'zh' ? '开始时间' : 'Start time');
     expect(text).toContain('weekly sync');
     expect(text).toContain('happy'); // 未知参数只留值
@@ -70,7 +69,6 @@ import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
 describe('status bar step for catalog connector writes', () => {
   it.each([['zh', zh, '正在飞书创建日程'], ['en', en, 'Creating an event in Feishu']] as const)('running (%s)', (_l, t, expected) => {
     const text = humanizeToolStep(TOOL, params, t, undefined, 'running');
-    process.stdout.write(`[step ${_l}] ${text}\n`);
     expect(text).toBe(expected);
   });
 });

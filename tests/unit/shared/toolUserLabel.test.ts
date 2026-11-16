@@ -49,8 +49,9 @@ describe('toolUserLabel', () => {
     const tool = 'mcp__lark__calendar_v4_calendarEvent_create';
     expect(toolUserLabel(tool)).toBe('在飞书创建日程');
     expect(toolUserLabel(tool, 'en')).toBe('Create an event in Feishu');
-    expect(permissionNoticeBody(tool)).toBe('需要授权：在飞书创建日程');
-    for (const text of [toolUserLabel(tool), toolUserLabel(tool, 'en'), permissionNoticeBody(tool)]) {
+    expect(permissionNotice(tool, 'zh').body).toBe('需要授权：在飞书创建日程');
+    expect(permissionNotice(tool, 'en').body).toBe('Approval needed: Create an event in Feishu');
+    for (const text of [toolUserLabel(tool), toolUserLabel(tool, 'en'), permissionNotice(tool, 'zh').body, permissionNotice(tool, 'en').body]) {
       expect(text).not.toMatch(/mcp__|lark|start_time|start time/i);
     }
   });
