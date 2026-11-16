@@ -20,6 +20,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
+import { stripToolCallProtocolMarkup } from '../../agent/runtime/contextAssembly/transcriptProjection';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
@@ -155,10 +156,11 @@ export function buildSessionTaskResultMessage(
   id: string = `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   locale: SessionTaskResultStatusWordLocale = 'zh',
 ): Message {
+  const cleanResultText = resultText === undefined ? undefined : stripToolCallProtocolMarkup(resultText);
   return {
     id,
     role: 'system',
-    content: `[任务结果] ${task.shortName}｜${formatSessionTaskResultStatusWord(status, locale)}｜${resultText}`,
+    content: `[任务结果] ${task.shortName}｜${formatSessionTaskResultStatusWord(status, locale)}｜${cleanResultText}`,
     timestamp: Date.now(),
     metadata: {
       backgroundTaskResult: {
@@ -166,7 +168,7 @@ export function buildSessionTaskResultMessage(
         taskId: task.id,
         shortName: task.shortName,
         status,
-        summary: resultText ?? '',
+        summary: cleanResultText ?? '',
       },
     },
   };

@@ -269,4 +269,18 @@ describe('background terminal failure projection', () => {
     expect(card.content).not.toMatch(/<\/?(?:tool_call|longcat_tool_call)>|targetRef/);
     expect(card.metadata?.backgroundTaskResult?.summary).not.toMatch(/<\/?(?:tool_call|longcat_tool_call)>|targetRef/);
   });
+
+  it('cleans the shared builder used by deferred restart recovery', async () => {
+    const { buildSessionTaskResultMessage } = await import('../../../src/host/services/commandCenter/sessionCommandTaskRestartRecovery');
+    const card = buildSessionTaskResultMessage(
+      { id: 'task-restart', shortName: 'titles' },
+      'completed',
+      'Recovered.\n<tool_call>{"targetRef":"e5"}</tool_call>',
+      'result-restart',
+      'en',
+    );
+
+    expect(card.content).toBe('[任务结果] titles｜finished｜Recovered.');
+    expect(card.metadata?.backgroundTaskResult?.summary).toBe('Recovered.');
+  });
 });
