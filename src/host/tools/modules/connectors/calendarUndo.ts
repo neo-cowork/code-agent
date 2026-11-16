@@ -31,11 +31,13 @@ async function restore(sessionId: string, toolCallId: string): Promise<CalendarU
   const manager = getSessionManager();
   // SessionManager applies the signed-in user's session ownership fence.
   const messages: Message[] = await manager.getMessages(sessionId);
-  const message = messages.find((m) => m.toolCalls?.some((c) => c.id === toolCallId && c.name === 'calendar_delete_event'));
+  // 工具调用在 assistant 消息里，结果单独存在 role=tool 的消息里（Dev 库实测），两边分开找
+  const isDelete = messages.some((m) => m.toolCalls?.some((c) => c.id === toolCallId && c.name === 'calendar_delete_event'));
+  const message = messages.find((m) => m.toolResults?.some((r) => r.toolCallId === toolCallId));
   const results = message?.toolResults ?? [];
   const index = results.findIndex((r) => r.toolCallId === toolCallId);
   const result = results[index];
-  if (!message || !result) return { ok: false, reason: 'not_found' };
+  if (!isDelete || !message || !result) return { ok: false, reason: 'not_found' };
   const meta = result.metadata ?? {};
   if (typeof meta.undoneUid === 'string') return { ok: false, reason: 'already_undone' };
   if (!result.success || meta.undoable !== true || !isSnapshot(meta.before)) return { ok: false, reason: 'not_undoable' };

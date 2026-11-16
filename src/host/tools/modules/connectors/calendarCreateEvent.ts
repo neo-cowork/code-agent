@@ -30,12 +30,6 @@ async function executeCalendarCreateEvent(
     return { ok: false, error: 'start_ms must be a number', code: 'INVALID_ARGS' };
   }
 
-  // 没指定日历：先把实际会写入的默认日历名填上，批准卡显示真名而不是「无」，写入也落在同一个日历
-  if (typeof args.calendar !== 'string' || !args.calendar.trim()) {
-    const fallback = await getConnectorRegistry().get('calendar')?.execute('default_calendar', {}).catch(() => undefined);
-    if (typeof fallback?.data === 'string' && fallback.data) args = { ...args, calendar: fallback.data };
-  }
-
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };

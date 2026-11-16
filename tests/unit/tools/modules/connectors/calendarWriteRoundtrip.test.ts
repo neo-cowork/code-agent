@@ -4,6 +4,7 @@
 //   ② 删除批准时卡片拿到的是要删那条的标题/时间/日历，删除请求本身不带这些；
 //   ③ 删后「撤销」按会话 + 工具调用 id 用宿主自存的快照重建，重复点击不会建两条。
 // Evidence class: hermetic-protocol.
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import type { Message } from '../../../../../src/shared/contract';
@@ -34,6 +35,7 @@ import { calendarUpdateEventModule } from '../../../../../src/host/tools/modules
 import { calendarDeleteEventModule } from '../../../../../src/host/tools/modules/connectors/calendarDeleteEvent';
 import { calendarModule } from '../../../../../src/host/tools/modules/connectors/calendar';
 import { undoCalendarDelete } from '../../../../../src/host/tools/modules/connectors/calendarUndo';
+import { calendarApprovalDetails } from '../../../../../src/host/tools/modules/connectors/calendarApprovalDetails';
 import { useDarwinPlatform } from '../../../connectors/fakeCalendarBridge';
 
 useDarwinPlatform();
@@ -76,30 +78,44 @@ describe('calendar write round trip (EventKit)', () => {
     expect(fake.state.items).toEqual([]);
   });
 
-  it('② the delete approval sees the snapshot (title / time / calendar); the delete request itself stays minimal', async () => {
+  it('② one approval only: the card details come from the pre-execution approval; the handler asks with the exact model args (so the top-level grant short-circuits)', async () => {
     fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼', notes: '带材料' });
+    // What the single top-level approval card shows (merged into its details by toolExecutor).
+    expect(await calendarApprovalDetails('calendar_delete_event', { calendar: '日历', event_uid: 'cal-id-8012:EV1' }))
+      .toEqual({ calendar: '日历', title: '评审', start_ms: HOUR, end_ms: 2 * HOUR, location: '三楼' });
+    expect(await calendarApprovalDetails('calendar_create_event', { title: 'x', start_ms: 1 })).toEqual({ calendar: '日历' });
+    expect(await calendarApprovalDetails('calendar_create_event', { title: 'x', start_ms: 1, calendar: 'Work' })).toEqual({});
+    expect(await calendarApprovalDetails('calendar_update_event', { calendar: '日历', event_uid: 'x' })).toEqual({});
+    // 11-16 real run: a handler asking with different args than the approved ones raised a second card.
+    const toolSource = readFileSync('src/host/tools/toolExecutor.ts', 'utf8');
+    const merged = toolSource.indexOf('calendarApprovalDetails(executionToolName, params)');
+    expect(merged).toBeGreaterThan(0);
+    expect(merged).toBeLessThan(toolSource.indexOf('getDenialRegistry().observeApproval'));
     const asked: Array<Record<string, unknown>> = [];
-    const result = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: 'cal-id-8012:EV1' }, async (_t, args) => { asked.push(args as Record<string, unknown>); return { allow: true }; });
+    const askSpy: CanUseToolFn = async (_t, args) => { asked.push(args as Record<string, unknown>); return { allow: true }; };
+    await run(calendarCreateEventModule, { title: '新会', start_ms: HOUR }, askSpy);
+    const result = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: 'cal-id-8012:EV1' }, askSpy);
     expect(result.ok).toBe(true);
-    expect(asked).toEqual([{ calendar: '日历', event_uid: 'cal-id-8012:EV1', title: '评审', start_ms: HOUR, end_ms: 2 * HOUR, location: '三楼' }]);
-    expect(fake.state.calls.find((c) => c.path === '/v1/write/calendar-event')?.body).toEqual({ op: 'delete', eventId: 'cal-id-8012:EV1' });
+    expect(asked).toEqual([{ title: '新会', start_ms: HOUR }, { calendar: '日历', event_uid: 'cal-id-8012:EV1' }]);
+    expect(fake.state.calls.filter((c) => c.path === '/v1/write/calendar-event').at(-1)?.body).toEqual({ op: 'delete', eventId: 'cal-id-8012:EV1' });
     expect(result.meta).toMatchObject({ undoable: true, before: { title: '评审', notes: '带材料', calendar: '日历' } });
   });
 
   it('③ undo rebuilds the deleted event from the host-side snapshot once; a second click does not create another', async () => {
     fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼', notes: '带材料' });
     const result = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: 'cal-id-8012:EV1' });
-    store.messages.push({
-      id: 'm1', role: 'assistant', content: '', timestamp: 1,
-      toolCalls: [{ id: 'tc-del', name: 'calendar_delete_event', arguments: {} }],
-      toolResults: [{ toolCallId: 'tc-del', success: true, output: result.output, metadata: result.meta }],
-    } as Message);
+    // Storage shape seen in the Dev DB: the call lives on the assistant message, the result on a separate role=tool message.
+    store.messages.push(
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, toolCalls: [{ id: 'tc-del', name: 'calendar_delete_event', arguments: {} }] } as Message,
+      { id: 'm2', role: 'tool', content: '', timestamp: 2, toolResults: [{ toolCallId: 'tc-del', success: true, output: result.output, metadata: result.meta }] } as Message,
+    );
     expect(fake.state.items).toEqual([]);
 
     const first = await undoCalendarDelete('s', 'tc-del');
     expect(first).toMatchObject({ ok: true });
     expect(fake.state.items).toHaveLength(1);
     expect(fake.state.calls.at(-1)?.body).toMatchObject({ op: 'create', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼', notes: '带材料', calendarId: 'cal-id-8012' });
+    expect(store.updates[0]).toMatchObject({ id: 'm2' });
     expect(store.updates[0].updates.toolResults?.[0].metadata).toMatchObject({ undoneUid: expect.any(String) });
 
     expect(await undoCalendarDelete('s', 'tc-del')).toEqual({ ok: false, reason: 'already_undone' });

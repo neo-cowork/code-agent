@@ -31,9 +31,9 @@ export function CalendarDeleteUndo({ toolCall, sessionId }: { toolCall: ToolCall
       setState('failed');
     }
   };
-  if (state === 'done') return <p className="ml-6 mt-1 text-xs text-badge-success" data-testid="calendar-delete-undone">{w.undoDeleteDone}</p>;
+  if (state === 'done') return <p className="mt-1 text-xs text-badge-success" data-testid="calendar-delete-undone">{w.undoDeleteDone}</p>;
   return (
-    <div className="ml-6 mt-1 flex items-center gap-2">
+    <div className="mt-1 flex items-center gap-2">
       <Button type="button" variant="secondary" size="sm" disabled={state === 'busy'} onClick={() => void undo()} data-testid="calendar-delete-undo">
         {state === 'busy' ? w.undoDeleteBusy : w.undoDelete}
       </Button>

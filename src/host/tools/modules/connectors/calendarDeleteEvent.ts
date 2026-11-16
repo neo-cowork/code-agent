@@ -35,20 +35,10 @@ async function executeCalendarDeleteEvent(
     return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'change'), code: 'NOT_INITIALIZED' };
   }
 
-  // 先留快照：批准卡要显示删的是哪条（标题、时间、所在日历），删后「撤销」用它重建。
+  // 删前留快照，删后「撤销」用它重建。批准卡上的标题 / 时间由执行前那唯一一次审批补（calendarApprovalDetails）；
+  // 这里给 canUseTool 的必须是原参数，否则和已批准的那份不一致会再弹一张卡（真机第四轮）。
   const undoMetadata = await captureCalendarBefore(connector, args);
-  // 只给批准卡看的参数：执行仍用原 args（快照字段不进删除请求）
-  const approvalArgs = undoMetadata.undoable
-    ? {
-        ...args,
-        calendar: undoMetadata.before.calendar,
-        title: undoMetadata.before.title,
-        start_ms: undoMetadata.before.startAtMs,
-        end_ms: undoMetadata.before.endAtMs,
-        ...(undoMetadata.before.location ? { location: undoMetadata.before.location } : {}),
-      }
-    : args;
-  const permit = await canUseTool(schema.name, approvalArgs);
+  const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
   }
