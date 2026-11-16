@@ -14,6 +14,9 @@ const TOOL_USER_LABELS: Record<string, string> = {
   writefile: '写入文件',
   edit: '编辑文件',
   editfile: '编辑文件',
+  docedit: '编辑文档',
+  excelgenerate: '导出表格',
+  docxgenerate: '生成文档',
   read: '读取文件',
   readfile: '读取文件',
   glob: '查找文件',
@@ -27,6 +30,7 @@ const TOOL_USER_LABELS: Record<string, string> = {
 
 const TOOL_USER_LABELS_EN: Record<string, string> = {
   bash: 'Run command', write: 'Write file', writefile: 'Write file', edit: 'Edit file', editfile: 'Edit file',
+  docedit: 'Edit document', excelgenerate: 'Export spreadsheet', docxgenerate: 'Create document',
   read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
   webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search',
   browseraction: 'Browser action', computeruse: 'Computer action',

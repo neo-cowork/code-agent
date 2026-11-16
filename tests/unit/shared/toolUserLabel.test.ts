@@ -3,6 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { permissionNoticeBody, toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
 
 describe('toolUserLabel', () => {
+  it.each([
+    ['DocEdit', '编辑文档', 'Edit document'],
+    ['excel_generate', '导出表格', 'Export spreadsheet'],
+    ['docx_generate', '生成文档', 'Create document'],
+    ['Bash', '运行命令', 'Run command'],
+    ['mail_send', '邮件：发送', 'Mail: send an email'],
+  ])('%s labels name the action in zh/en without tool ids', (tool, zh, en) => {
+    expect(toolUserLabel(tool, 'zh')).toContain(zh);
+    expect(toolUserLabel(tool, 'en')).toContain(en);
+    for (const locale of ['zh', 'en'] as const) {
+      expect(toolUserLabel(tool, locale)).not.toContain(tool);
+    }
+    expect(toolUserLabel(tool, 'en')).not.toMatch(/[\u3400-\u9fff]/);
+  });
   it('内置工具给动作名，不露原名', () => {
     expect(toolUserLabel('Bash')).toBe('运行命令');
     expect(toolUserLabel('Write')).toBe('写入文件');
