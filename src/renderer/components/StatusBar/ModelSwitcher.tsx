@@ -1,4 +1,4 @@
-import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from './modelSwitcherTooltips';
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip, formatModelSwitcherLabel } from './modelSwitcherTooltips';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -18,7 +18,6 @@ import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
   groupRuntimeModelOptionsByProvider,
-  getRuntimeModelLabel,
   hasConfiguredRuntimeModels,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
@@ -263,10 +262,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     return () => window.removeEventListener(OPEN_MODEL_SWITCHER_EVENT, handleOpenRequest);
   }, []);
   useEffect(() => {
-    if (!open) {
-      setSettingsLoaded(false);
-      return;
-    }
+    setSettingsLoaded(false);
     const api = window.domainAPI;
     if (!api) {
       setSettingsLoaded(true);
@@ -599,10 +595,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
 
   // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
   const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
-  const switchedLabel = shown.switchedFrom
-    ? `${getRuntimeModelLabel(shown.model, shown.provider, modelSettings)}${panelText.switchedSuffix}`
-    : null;
-  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? panelText.auto : getRuntimeModelLabel(displayModel, displayProvider, modelSettings));
+  const nativeDisplayLabel = overrideAdaptive ? panelText.auto
+    : formatModelSwitcherLabel(shown.model, shown.provider, modelSettings, modelOptions, language) + (shown.switchedFrom ? panelText.switchedSuffix : '');
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -649,6 +643,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         language,
         engineLabel: ENGINE_SHORT_LABEL[engine.kind],
         currentModel,
+        settings: modelSettings,
         displayProvider,
         displayModel,
         adaptive: overrideAdaptive,
@@ -893,7 +888,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-medium">{opt.label}</span>
+                                <span className="font-medium">{formatModelSwitcherLabel(opt.model, opt.provider, modelSettings, modelOptions, language)}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
                                     className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"

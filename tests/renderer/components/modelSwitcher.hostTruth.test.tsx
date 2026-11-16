@@ -56,8 +56,9 @@ const getModelOverride = vi.fn(async () => ({ success: true, data: mocks.hostOve
 // host 侧 getEffectiveModel = 运行循环同款解析（override > 默认含回落）
 const getEffectiveModel = vi.fn(async () => ({ success: true, data: { ...(mocks.hostOverride ?? mocks.hostDefault), adaptive: false } }));
 
-function installDomainApi() {
+function installDomainApi(settings?: unknown) {
   const invoke = vi.fn(async (_domain: string, action: string) => {
+    if (action === 'get' && settings) return { success: true, data: settings };
     if (action === 'getModelOverride') return getModelOverride();
     if (action === 'getEffectiveModel') return getEffectiveModel();
     if (action === 'listSources') return { success: true, data: [] };
@@ -96,6 +97,28 @@ afterEach(() => {
 });
 
 describe('ModelSwitcher 显示 host 实际调用的模型', () => {
+  it('loads provider names and duplicate source labels before the picker is ever opened', async () => {
+    mocks.hostOverride = { provider: 'custom-tokenrhythm', model: 'mimo-v2.5-pro' };
+    const settings = { models: { providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true,
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元',
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+    } } };
+    const invoke = vi.fn(async (_domain: string, action: string) => {
+      if (action === 'get') return { success: true, data: settings };
+      if (action === 'getModelOverride') return getModelOverride();
+      if (action === 'getEffectiveModel') return getEffectiveModel();
+      return { success: false, data: null };
+    });
+    Object.defineProperty(window, 'domainAPI', { configurable: true, value: { invoke } });
+    render(<Harness />);
+    await waitFor(() => expect(trigger().title).toContain('基元/mimo-v2.5-pro'));
+    expect(trigger().textContent).toBe('MiMo v2.5 Pro · 基元');
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+    expect(trigger().title).not.toContain('custom-');
+  });
+
   it('新会话、还没发消息：渲染层设置快照与 host 不一致（快照 gpt-5.5，host 说 LongCat-2.0）→ 输入框按 host 显示', async () => {
     render(<Harness />);
     await waitFor(() => expect(trigger().textContent).toMatch(/longcat/i));
@@ -149,6 +172,7 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
 
   it('路由把模型换掉：显示真正在用的那个，并标「已换」+ 提示原来选的是谁', async () => {
     mocks.hostOverride = { provider: 'custom-tokenrhythm', model: 'mimo-v2.6-flash' };
+    installDomainApi({ models: { providers: { 'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元', models: { 'mimo-v2.6-flash': { enabled: true } } } } } });
     render(<Harness />);
     await waitFor(() => expect(trigger().textContent).toMatch(/mimo v?-?2\.6/i));
 
@@ -156,7 +180,7 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
 
     await waitFor(() => expect(trigger().textContent).toContain('（已换）'));
     expect(trigger().textContent).toContain('GLM');
-    expect(trigger().getAttribute('title')).toContain('你选的是 custom-tokenrhythm/mimo-v2.6-flash');
+    expect(trigger().getAttribute('title')).toContain('你选的是 基元/mimo-v2.6-flash');
   });
 });
 

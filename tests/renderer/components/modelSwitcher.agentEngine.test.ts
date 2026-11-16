@@ -1,4 +1,5 @@
-import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip, formatModelSwitcherLabel } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
+import { buildRuntimeModelOptions } from '../../../src/shared/modelRuntime';
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -340,6 +341,38 @@ describe('ModelSwitcher Agent Engine selection', () => {
     expect(renderToStaticMarkup(React.createElement(ProviderTransportBadge, {}))).toBe('');
   });
 
+  it.each(['zh', 'en'] as const)('names the configured session provider in %s tooltips and duplicate labels', (language) => {
+    const settings = { models: { providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true,
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元',
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+    } } } as unknown as AppSettings;
+    const options = buildRuntimeModelOptions(settings, ['xiaomi']);
+    const base = { language, settings, engineLabel: 'Neo', currentModel: 'main',
+      displayProvider: 'custom-tokenrhythm' as const, displayModel: 'mimo-v2.5-pro',
+      adaptive: false, overridden: true };
+    expect(formatNativeModelSwitcherTooltip(base)).toBe(language === 'zh'
+      ? '已覆盖: 基元/mimo-v2.5-pro (原主任务: main)'
+      : 'Selected: 基元/mimo-v2.5-pro (original task model: main)');
+    expect(formatNativeModelSwitcherTooltip({ ...base, overridden: false })).toBe(language === 'zh'
+      ? '主任务模型: 基元/mimo-v2.5-pro' : 'Task model: 基元/mimo-v2.5-pro');
+    const switched = formatNativeModelSwitcherTooltip({ ...base,
+      switchedFrom: { provider: 'custom-tokenrhythm', model: 'mimo-v2.5-pro', reason: 'fallback' },
+      shownProvider: 'xiaomi', shownModel: 'mimo-v2.6-flash' });
+    expect(switched).toBe(language === 'zh'
+      ? '这一轮实际在用: 小米 MiMo/mimo-v2.6-flash（你选的是 基元/mimo-v2.5-pro，已自动换过）'
+      : 'Actually in use this turn: Xiaomi MiMo/mimo-v2.6-flash (you selected 基元/mimo-v2.5-pro, switched automatically)');
+    expect(switched).not.toContain('custom-');
+    expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'custom-tokenrhythm', settings, options, language))
+      .toBe('MiMo v2.5 Pro · 基元');
+    expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'xiaomi', settings, options, language))
+      .toBe(language === 'zh' ? 'MiMo v2.5 Pro · 小米 MiMo' : 'MiMo v2.5 Pro · Xiaomi MiMo');
+    expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'custom-tokenrhythm', settings,
+      options.filter((option) => option.provider === 'custom-tokenrhythm'), language)).toBe('MiMo v2.5 Pro');
+    expect(formatNativeModelSwitcherTooltip({ ...base, settings: null })).not.toContain('custom-');
+  });
+
   it('formats native trigger tooltip with main task strategy context', () => {
     expect(formatNativeModelSwitcherTooltip({
       engineLabel: 'Neo',
@@ -369,7 +402,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
-      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
+      '已覆盖: Zhipu GLM/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
     );
   });
 
@@ -388,7 +421,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       displayProvider: 'xiaomi', displayModel: 'main', adaptive: false, overridden: false,
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'High', shortLabel: '高' }, thinkingLabel: 'Think',
-    })).toBe('Task model: xiaomi/main · Effort: High · Thinking: Think');
+    })).toBe('Task model: Xiaomi MiMo/main · Effort: High · Thinking: Think');
     expect(formatExternalModelSwitcherTooltip({
       language: 'en', engineLabel: 'Claude', model: 'sonnet',
       effort: { label: 'High', shortLabel: '高' }, reliabilityLabel: 'ready',

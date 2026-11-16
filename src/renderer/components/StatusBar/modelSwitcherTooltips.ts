@@ -1,10 +1,31 @@
-import type { ModelProvider } from '@shared/contract';
+import type { AppSettings, ModelProvider } from '@shared/contract';
+import { getRuntimeModelLabel, type RuntimeModelOption } from '@shared/modelRuntime';
+import { getProviderDisplayName } from '@shared/constants';
+import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import { languages, type Language } from '../../i18n';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
+
+function providerName(provider: string, settings: AppSettings | null | undefined, language: Language): string {
+  return resolveProviderLabel(provider,
+    settings?.models?.providers?.[provider as ModelProvider]?.displayName
+      || getProviderDisplayName(provider) || getProviderDisplayName('custom'), language);
+}
+
+export function formatModelSwitcherLabel(
+  model: string, provider: ModelProvider, settings: AppSettings | null,
+  options: RuntimeModelOption[], language: Language,
+): string {
+  const label = getRuntimeModelLabel(model, provider, settings);
+  if (!options.some((option) => option.model === model && option.provider !== provider)) return label;
+  const selected = options.find((option) => option.model === model && option.provider === provider);
+  const sourceLabel = selected?.providerSourceLabel || settings?.models?.providers?.[provider]?.displayName || selected?.providerLabel;
+  return `${label} · ${sourceLabel ? resolveProviderLabel(provider, sourceLabel, language) : providerName(provider, settings, language)}`;
+}
 
 export function formatNativeModelSwitcherTooltip(args: {
   language?: Language;
   engineLabel: string;
+  settings?: AppSettings | null;
   currentModel: string;
   displayProvider: ModelProvider;
   displayModel: string;
@@ -22,15 +43,16 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
+  const identity = (provider: string, model: string) => `${providerName(provider, args.settings, language)}/${model}`;
   const modelLine = args.switchedFrom
     ? labels.switched
-        .replace('{shown}', `${args.shownProvider}/${args.shownModel}`)
-        .replace('{original}', `${args.switchedFrom.provider}/${args.switchedFrom.model}`)
+        .replace('{shown}', identity(args.shownProvider ?? args.displayProvider, args.shownModel ?? args.displayModel))
+        .replace('{original}', identity(args.switchedFrom.provider, args.switchedFrom.model))
     : args.adaptive
       ? labels.adaptive.replace('{model}', args.currentModel)
       : args.overridden
-        ? labels.overridden.replace('{model}', `${args.displayProvider}/${args.displayModel}`).replace('{original}', args.currentModel)
-        : labels.model.replace('{model}', `${args.displayProvider}/${args.displayModel}`);
+        ? labels.overridden.replace('{model}', identity(args.displayProvider, args.displayModel)).replace('{original}', args.currentModel)
+        : labels.model.replace('{model}', identity(args.displayProvider, args.displayModel));
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,
