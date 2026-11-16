@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { permissionNotice, toolUserLabel } from '../../../src/shared/utils/toolUserLabel';
 import { getBackgroundTaskToolLabel, getHumanToolLabel } from '../../../src/renderer/utils/toolHumanLabel';
 import { describeApproval } from '../../../src/renderer/components/PermissionDialog/describeApproval';
-import { getPermissionConfig } from '../../../src/renderer/components/PermissionDialog/utils';
+import { getPermissionTitle } from '../../../src/renderer/components/PermissionDialog/utils';
 import type { PermissionRequest } from '../../../src/renderer/components/PermissionDialog/types';
 import { en, zh } from '../../../src/renderer/i18n';
 
@@ -48,7 +48,7 @@ for (const language of ['zh', 'en'] as const) {
       expect(p.titleFileWrite).toBe(toolUserLabel('Write', language));
       expect(p.titleFileEdit).toBe(toolUserLabel('Edit', language));
       for (const [type, tool] of [['command', 'Bash'], ['file_read', 'Read'], ['file_write', 'Write'], ['file_edit', 'Edit']] as const) {
-        expect(getPermissionConfig(type, language).title).toBe(toolUserLabel(tool, language));
+        expect(getPermissionTitle(type, p)).toBe(toolUserLabel(tool, language));
       }
       expect(p.titleFileDelete).toBe(language === 'zh' ? '删除文件' : 'Delete file');
       expect(p.questionCommand).toBe(language === 'zh' ? '允许执行这条命令？' : 'Allow running this command?');
@@ -58,7 +58,7 @@ for (const language of ['zh', 'en'] as const) {
       expect(getHumanToolLabel({ toolName: 'unregistered_tool', labels: t.receiptPresentation.humanToolLabels })).toBe('unregistered_tool');
       const request: PermissionRequest = { id: 'unknown', tool: 'unregistered_tool', type: 'command', details: {} };
       expect(describeApproval(request, t, language).title).toBe(t.decisionCard.permission.genericApprovalTitle);
-      expect(describeApproval({ ...request, tool: 'Bash', type: 'dangerous_command', details: { command: 'rm notes.txt' } }, t, language).title).toBe(getPermissionConfig('dangerous_command', language).title);
+      expect(describeApproval({ ...request, tool: 'Bash', type: 'dangerous_command', details: { command: 'rm notes.txt' } }, t, language).title).toBe(getPermissionTitle('dangerous_command', t.decisionCard.permission));
     });
   });
 }

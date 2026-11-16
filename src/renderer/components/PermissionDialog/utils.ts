@@ -1,4 +1,3 @@
-import { toolUserLabel } from '@shared/utils/toolUserLabel';
 // ============================================================================
 // PermissionDialog - Utility Functions
 // ============================================================================
@@ -16,70 +15,78 @@ import {
   FolderOpen,
   Shield,
 } from 'lucide-react';
+import type { Translations } from '../../hooks/useI18n';
 import type { PermissionType, PermissionConfig } from './types';
 
+/** 卡片类型标题的唯一出口：全部走 i18n，utils 里不留任何语言字面量；未登记类型落中性标题。 */
+export function getPermissionTitle(type: PermissionType, p: Translations['decisionCard']['permission']): string {
+  switch (type) {
+    case 'file_read': return p.titleFileRead;
+    case 'file_write': return p.titleFileWrite;
+    case 'file_edit': return p.titleFileEdit;
+    case 'file_delete': return p.titleFileDelete;
+    case 'command': return p.titleCommand;
+    case 'dangerous_command': return p.titleDangerousCommand;
+    case 'network': return p.titleNetwork;
+    case 'mcp': return p.titleMcp;
+    case 'directory_access': return p.titleFolderAccess;
+    default: return p.genericApprovalTitle;
+  }
+}
+
 // 权限配置映射
-export function getPermissionConfig(type: PermissionType, language: 'zh' | 'en' = 'zh'): PermissionConfig {
+export function getPermissionConfig(type: PermissionType): PermissionConfig {
   const configs: Record<PermissionType, PermissionConfig> = {
     file_read: {
       icon: React.createElement(FileText, { size: 20 }),
-      title: toolUserLabel('Read', language),
       color: 'text-badge-info',
       bgColor: 'bg-blue-500/10',
       borderColor: 'border-badge-info/30',
     },
     file_write: {
       icon: React.createElement(FilePlus, { size: 20 }),
-      title: toolUserLabel('Write', language),
       color: 'text-badge-success',
       bgColor: 'bg-green-500/10',
       borderColor: 'border-badge-success/30',
     },
     file_edit: {
       icon: React.createElement(FileEdit, { size: 20 }),
-      title: toolUserLabel('Edit', language),
       color: 'text-badge-warning',
       bgColor: 'bg-yellow-500/10',
       borderColor: 'border-badge-warning/30',
     },
     file_delete: {
       icon: React.createElement(Trash2, { size: 20 }),
-      title: '删除文件',
       color: 'text-badge-danger',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/30',
     },
     command: {
       icon: React.createElement(Terminal, { size: 20 }),
-      title: toolUserLabel('Bash', language),
       color: 'text-badge-accent',
       bgColor: 'bg-purple-500/10',
       borderColor: 'border-badge-accent/30',
     },
     dangerous_command: {
       icon: React.createElement(AlertTriangle, { size: 20 }),
-      title: '危险命令',
       color: 'text-badge-danger',
       bgColor: 'bg-red-500/10',
       borderColor: 'border-red-500/30',
     },
     network: {
       icon: React.createElement(Globe, { size: 20 }),
-      title: '网络请求',
       color: 'text-badge-info',
       bgColor: 'bg-badge-info',
       borderColor: 'border-badge-info/30',
     },
     mcp: {
       icon: React.createElement(MessageSquare, { size: 20 }),
-      title: 'MCP 工具',
       color: 'text-badge-accent',
       bgColor: 'bg-indigo-500/10',
       borderColor: 'border-badge-accent/30',
     },
     directory_access: {
       icon: React.createElement(FolderOpen, { size: 20 }),
-      title: '访问其他文件夹',
       color: 'text-badge-info',
       bgColor: 'bg-blue-500/10',
       borderColor: 'border-badge-info/30',
@@ -92,7 +99,6 @@ export function getPermissionConfig(type: PermissionType, language: 'zh' | 'en' 
 
 const NEUTRAL_PERMISSION_CONFIG: PermissionConfig = {
   icon: React.createElement(Shield, { size: 20 }),
-  title: '需要你确认',
   color: 'text-badge-info',
   bgColor: 'bg-blue-500/10',
   borderColor: 'border-badge-info/30',

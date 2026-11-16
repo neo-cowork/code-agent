@@ -1,4 +1,3 @@
-import { getToolActionId, toolUserLabel } from '@shared/utils/toolUserLabel';
 // ============================================================================
 // describeApproval - 审批卡标题 / 图标 / 问句 / 后果行的唯一解析点
 //
@@ -8,13 +7,14 @@ import { getToolActionId, toolUserLabel } from '@shared/utils/toolUserLabel';
 // 参照 openai/codex approval_overlay.rs 的穷尽 match：新增 kind 不写文案就编不过。
 // ============================================================================
 
+import { getToolActionId, toolUserLabel } from '@shared/utils/toolUserLabel';
 import React from 'react';
 import { Bot, Globe, Settings2, Shield, Terminal } from 'lucide-react';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
-import { formatFilePath, getPermissionConfig } from './utils';
+import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
@@ -150,7 +150,6 @@ export function describeApproval(
   language: Language = 'zh',
 ): ApprovalDescription {
   const described = describeKind(request, t, language);
-  // Name the action consistently without changing classification, questions or permission semantics.
   if (getToolActionId(request.tool)
       && !['dangerous_command', 'directory_access', 'file_delete'].includes(request.type)) {
     described.title = toolUserLabel(request.tool, language);
@@ -189,7 +188,7 @@ function describeKind(
     case 'file_delete':
     case 'network': {
       const title = kind === 'shell' || kind === 'network'
-        ? getPermissionConfig(request.type, language).title
+        ? getPermissionTitle(request.type, p)
         : p[FILE_TITLE_KEY[kind]];
       return {
         kind,

@@ -46,7 +46,7 @@ import {
 } from '../../../security/slotDataDirGuard';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
-import { resolveInputPath } from '../../utils/resolveInputPath';
+import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
 
 const execFileAsync = promisify(execFile);
 const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
@@ -568,6 +568,9 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     if (typeof pattern !== 'string' || !pattern) {
       return { ok: false, error: 'pattern is required and must be a string', code: 'INVALID_ARGS' };
     }
+
+    const noWorkingFolder = guardUnattendedInputPath(args.path as string | undefined, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {

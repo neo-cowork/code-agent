@@ -32,6 +32,7 @@ import { TurnQualityStrip } from './TurnQualityStrip';
 import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
 import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
+import { SessionConflictCard } from './SessionConflictCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
@@ -578,6 +579,11 @@ const AssistantTextNode: React.FC<{
       {/* 旧项目 Source 快照缺失的发送失败：正文已是人话句子，这里补「确认并重发」 */}
       {node.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST' && (
         <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
+      )}
+
+      {/* 会话被没结束的旧任务占着：说明句点名的「放弃 / 重试」在这里真有按钮 */}
+      {node.metadata?.sendFailureCode === 'RUN_SESSION_CONFLICT' && (
+        <SessionConflictCard node={node} sessionId={sessionId} />
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}

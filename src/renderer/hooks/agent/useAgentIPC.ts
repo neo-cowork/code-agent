@@ -54,7 +54,7 @@ import {
   claimSendInflight,
   type ChatSendDelivery,
 } from '../../utils/chatSendState';
-import { isProjectSourceTrustFailure } from '../../utils/httpFailureMessage';
+import { isProjectSourceTrustFailure, isSessionConflictFailure } from '../../utils/httpFailureMessage';
 import {
   buildSendFailureRetryAnchor,
   markOptimisticUserSendFailed,
@@ -562,7 +562,10 @@ export function useAgentIPC({
             role: 'assistant',
             content: getAgentSendFailureMessage(error),
             timestamp: Date.now(),
-            metadata: { ...buildSendFailureRetryAnchor(failedUser, effectiveSessionId), sendFailureCode: SEND_REJECTED_FAILURE_CODE },
+            metadata: {
+              ...buildSendFailureRetryAnchor(failedUser, effectiveSessionId),
+              sendFailureCode: isSessionConflictFailure(error) ? 'RUN_SESSION_CONFLICT' : SEND_REJECTED_FAILURE_CODE,
+            },
           };
           if (effectiveSessionId) recordFailedSend(effectiveSessionId, failedUser, errorMessage);
           addMessage(errorMessage);
@@ -711,7 +714,9 @@ export function useAgentIPC({
         // PROJECT_SOURCE_TRUST 保留专属码供气泡挂「确认并重发」入口。
         const sendFailureCode = isProjectSourceTrustFailure(sendFailure)
           ? 'PROJECT_SOURCE_TRUST'
-          : SEND_REJECTED_FAILURE_CODE;
+          : isSessionConflictFailure(sendFailure)
+            ? 'RUN_SESSION_CONFLICT'
+            : SEND_REJECTED_FAILURE_CODE;
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
