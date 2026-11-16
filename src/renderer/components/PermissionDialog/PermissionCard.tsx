@@ -180,7 +180,7 @@ export function PermissionCard({
     setDraft(null);
   }, [requestId, appGrantCard]);
 
-  // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
+  // 可编辑写回工具：三选一（原样写回 / 修改后写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
   const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'

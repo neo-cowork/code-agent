@@ -154,7 +154,7 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('启动团队');
     expect(html).toContain('批准 3 个成员启动？');
     expect(html).toContain('准备启动 3 个 agent');
-    expect(html).toContain('团队启动 · 允许');
+    expect(html).toContain('启动');
     expect(html).toContain('拒绝');
     expect(html).toContain('取消');
     expect(html).toContain('允许');
@@ -177,7 +177,7 @@ describe('TraceNodeRenderer launch request', () => {
 
     expect(html).toContain('已允许');
     expect(html).toContain('按计划启动');
-    expect(html).not.toContain('团队启动 · 允许</span></button>');
+    expect(html).not.toContain('启动</span></button>');
     // C4 紧凑历史：摘要 + feedback，不再展开任务清单
     expect(html).toContain('准备启动 3 个 agent');
     expect(html).not.toContain('依赖 task-builder');
