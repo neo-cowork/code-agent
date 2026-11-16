@@ -29,7 +29,7 @@ vi.mock('../../../../../src/host/connectors', async (orig) => {
   return { ...(await orig<object>()), getConnectorRegistry: () => ({ get: (id: string) => (id === 'calendar' ? calendarConnector : undefined) }) };
 });
 
-import { resetCalendarConnectorReadiness } from '../../../../../src/host/connectors/native/calendar';
+import { calendarConnector, resetCalendarConnectorReadiness } from '../../../../../src/host/connectors/native/calendar';
 import { calendarCreateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarCreateEvent';
 import { calendarUpdateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarUpdateEvent';
 import { calendarDeleteEventModule } from '../../../../../src/host/tools/modules/connectors/calendarDeleteEvent';
@@ -85,7 +85,8 @@ describe('calendar write round trip (EventKit)', () => {
       .toEqual({ calendar: '日历', title: '评审', start_ms: HOUR, end_ms: 2 * HOUR, location: '三楼' });
     expect(await calendarApprovalDetails('calendar_create_event', { title: 'x', start_ms: 1 })).toEqual({ calendar: '日历' });
     expect(await calendarApprovalDetails('calendar_create_event', { title: 'x', start_ms: 1, calendar: 'Work' })).toEqual({});
-    expect(await calendarApprovalDetails('calendar_update_event', { calendar: '日历', event_uid: 'x' })).toEqual({});
+    expect(await calendarApprovalDetails('calendar_update_event', { calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR }))
+      .toEqual({ title: '评审', location: '三楼', calendarApprovalSnapshotFields: ['title', 'location'] });
     // 11-16 real run: a handler asking with different args than the approved ones raised a second card.
     const toolSource = readFileSync('src/host/tools/toolExecutor.ts', 'utf8');
     const merged = toolSource.indexOf('calendarApprovalDetails(executionToolName, params)');
@@ -99,6 +100,70 @@ describe('calendar write round trip (EventKit)', () => {
     expect(asked).toEqual([{ title: '新会', start_ms: HOUR }, { calendar: '日历', event_uid: 'cal-id-8012:EV1' }]);
     expect(fake.state.calls.filter((c) => c.path === '/v1/write/calendar-event').at(-1)?.body).toEqual({ op: 'delete', eventId: 'cal-id-8012:EV1' });
     expect(result.meta).toMatchObject({ undoable: true, before: { title: '评审', notes: '带材料', calendar: '日历' } });
+  });
+
+  it('update enrichment fills only missing keys, including the authoritative calendar, without mutating model args', async () => {
+    fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼' });
+    const args = Object.freeze({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR });
+    expect(await calendarApprovalDetails('calendar_update_event', args))
+      .toEqual({ title: '评审', location: '三楼', calendarApprovalSnapshotFields: ['title', 'location'] });
+    expect(args).toEqual({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR });
+    const explicit = { ...args, calendar: '日历', title: '新标题', end_ms: 4 * HOUR, location: '' };
+    expect(await calendarApprovalDetails('calendar_update_event', explicit)).toEqual({});
+    expect(fake.state.calls.at(-1)).toMatchObject({ path: '/v1/read/calendar-event', body: { eventId: args.event_uid } });
+  });
+
+  it('start-only updates retain a feasible old end, but never project an end earlier than the proposed start', async () => {
+    fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼' });
+    const earlier = Object.freeze({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 0 });
+    expect(await calendarApprovalDetails('calendar_update_event', earlier)).toEqual({
+      title: '评审', end_ms: 2 * HOUR, location: '三楼', calendarApprovalSnapshotFields: ['title', 'end_ms', 'location'],
+    });
+    const later = Object.freeze({ ...earlier, start_ms: 3 * HOUR });
+    expect(await calendarApprovalDetails('calendar_update_event', later)).toEqual({
+      title: '评审', location: '三楼', calendarApprovalSnapshotFields: ['title', 'location'],
+    });
+    expect(earlier).toEqual({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 0 });
+    expect(later).toEqual({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR });
+  });
+
+  it.each([0, 3 * HOUR])('end-only updates do not imply a snapshot start; the native connector requires an explicit start (%s)', async (end) => {
+    fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR });
+    const args = Object.freeze({ calendar: '日历', event_uid: 'cal-id-8012:EV1', end_ms: end });
+    expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({
+      title: '评审', calendarApprovalSnapshotFields: ['title'],
+    });
+    const result = await run(calendarUpdateEventModule, args);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('start_ms is required when end_ms is provided');
+    expect(fake.state.calls.filter((c) => c.path === '/v1/write/calendar-event')).toEqual([]);
+    expect(args).toEqual({ calendar: '日历', event_uid: 'cal-id-8012:EV1', end_ms: end });
+  });
+
+  it('update projects the get_event calendar name when the model did not supply a calendar', async () => {
+    const execute = vi.spyOn(calendarConnector, 'execute').mockResolvedValue({ data: {
+      calendar: 'Work', title: 'Quarterly review', startAtMs: HOUR, endAtMs: 2 * HOUR, location: '',
+    } });
+    try {
+      expect(await calendarApprovalDetails('calendar_update_event', { event_uid: 'event-1' }))
+        .toEqual({ calendar: 'Work', title: 'Quarterly review', start_ms: HOUR, end_ms: 2 * HOUR,
+          calendarApprovalSnapshotFields: ['calendar', 'title', 'start_ms', 'end_ms'] });
+      // Even an incorrect calendar stays model-supplied; enrichment must not redirect a write.
+      expect(await calendarApprovalDetails('calendar_update_event', { event_uid: 'event-1', calendar: 'Quarterly review' }))
+        .toEqual({ title: 'Quarterly review', start_ms: HOUR, end_ms: 2 * HOUR,
+          calendarApprovalSnapshotFields: ['title', 'start_ms', 'end_ms'] });
+    } finally {
+      execute.mockRestore();
+    }
+  });
+
+  it('a failed get_event leaves update approval usable and does not request native permission', async () => {
+    const args = Object.freeze({ calendar: '日历', event_uid: 'missing', start_ms: 3 * HOUR });
+    expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({});
+    fake.state.status = 2;
+    expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({});
+    expect(args).toEqual({ calendar: '日历', event_uid: 'missing', start_ms: 3 * HOUR });
+    expect(fake.state.grants).toBe(0);
   });
 
   it('③ undo rebuilds the deleted event from the host-side snapshot once; a second click does not create another', async () => {

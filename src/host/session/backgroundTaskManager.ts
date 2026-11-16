@@ -124,7 +124,7 @@ class BackgroundTaskManager extends EventEmitter {
    * 不允许。终态条目常驻列表直到用户清除（dismissTerminal）或切前台——不自动删除，
    * 否则用户没盯着面板的 3 秒窗口一过结果就没了（N-BGPANEL-STOP-TERMINAL）。
    */
-  async markCompleted(sessionId: string, message?: string): Promise<void> {
+  async markCompleted(sessionId: string, message?: string, duration?: number): Promise<void> {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
@@ -151,7 +151,7 @@ class BackgroundTaskManager extends EventEmitter {
       summary: message === BACKGROUND_TASK_CANCELLED
         ? (readUiLanguage() === 'en' ? 'Task stopped' : '任务已停止')
         : message || (readUiLanguage() === 'en' ? 'Task completed' : '任务已完成'),
-      duration: Date.now() - task.startedAt,
+      duration,
       toolsUsed: [],
     }, { force: true });
   }
@@ -163,7 +163,7 @@ class BackgroundTaskManager extends EventEmitter {
    * 失败与完成同一档「默默长跑、终态才冒头」——焦点门不该吞掉失败提醒
    * （2026-10-11 验收：撞 max-step 上限的失败轮无任何提示）。
    */
-  markFailed(sessionId: string, error?: string): void {
+  markFailed(sessionId: string, error?: string, duration?: number): void {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
@@ -184,7 +184,7 @@ class BackgroundTaskManager extends EventEmitter {
       summary: error === RUN_ERROR_CODE_MAX_ITERATIONS
         ? '已达最大执行轮次，任务停止（部分结果已保留）'
         : `任务失败: ${error || '未知错误'}`,
-      duration: Date.now() - task.startedAt,
+      duration,
       toolsUsed: [],
       succeeded: false,
     }, { force: true });
