@@ -5,6 +5,7 @@
 // 写不进就等原 owner 的登录态信号补写一次（无轮询）。文案复用 foregroundWake
 // 的句式，不自造新文案。刻意只依赖 foregroundWake / authService / logger：
 // idle-wake 等轻消费方动态引它不会再拖进 sessionManager 那条重链。
+import type { MessageMetadata } from '../../../shared/contract';
 import { formatBackgroundWakeFailureNote, recordBackgroundWakeFailureNote } from './foregroundWake';
 import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import { getAuthService } from '../auth/authService';
@@ -16,9 +17,9 @@ export async function recordBackgroundWakeFailureNoteWithOwnerRetry(input: {
   sessionId: string;
   taskId: string;
   shortName: string;
-  reason: 'owner_missing' | 'wake_failed';
+  reason: NonNullable<MessageMetadata['backgroundWakeFailed']>['reason'];
 }): Promise<void> {
-  const content = formatBackgroundWakeFailureNote(input.shortName);
+  const content = formatBackgroundWakeFailureNote(input.shortName, input.reason);
   const write = (): Promise<void> => recordBackgroundWakeFailureNote(
     input.sessionId,
     content,

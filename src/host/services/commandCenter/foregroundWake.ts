@@ -11,6 +11,8 @@ import {
   SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { AgentOrchestrator } from '../../agent/agentOrchestrator';
+import { classifyError } from '../../model/errorClassifier';
+import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import type { AgentRunOptions } from '../../research/types';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getTaskManager } from '../../task/TaskManager';
@@ -128,8 +130,20 @@ function hasQueuedUserInput(sessionId: string): boolean {
   }
 }
 
-export function formatBackgroundWakeFailureNote(shortName: string): string {
-  return `后台任务「${shortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
+export function formatBackgroundWakeFailureNote(
+  shortName: string,
+  reason: NonNullable<NonNullable<Message['metadata']>['backgroundWakeFailed']>['reason'],
+): string {
+  if (reason === 'owner_missing') {
+    return `后台任务「${shortName}」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。`;
+  }
+  if (reason === 'rate_limited') {
+    return `后台任务「${shortName}」已结束；模型服务暂时限流，自动汇报没能完成。任务结果在后台任务面板里可以查看，稍后也可以直接问我。`;
+  }
+  if (reason === 'max_iterations') {
+    return `后台任务「${shortName}」已结束；自动汇报用完了可用步骤，没能完成。任务结果在后台任务面板里可以查看，也可以直接问我。`;
+  }
+  return `后台任务「${shortName}」已结束；自动汇报没能完成。任务结果在后台任务面板里可以查看，也可以直接问我。`;
 }
 
 export async function recordBackgroundWakeFailureNote(
@@ -368,8 +382,8 @@ export function createForegroundWake(
       });
       await dependencies.recordWakeFailureNote(
         sessionId,
-        formatBackgroundWakeFailureNote(task.shortName),
-        { taskId: task.id, reason: 'wake_failed', title: task.shortName },
+        formatBackgroundWakeFailureNote(task.shortName, 'owner_missing'),
+        { taskId: task.id, reason: 'owner_missing', title: task.shortName },
       ).catch((noteError) => {
         dependencies.logger.warn('Foreground wake failure note not recorded', {
           reason: 'session_not_accessible_retries_exhausted',
@@ -529,6 +543,7 @@ export function createForegroundWake(
         turnSystemContext: [FOREGROUND_WAKE_CONTRACT],
       });
       let capturedError: string | null = null;
+      let capturedFailure: unknown;
       const options = {
         ...brainOptions,
         mode: 'normal',
@@ -543,6 +558,7 @@ export function createForegroundWake(
         terminalErrorSink: (data: unknown) => {
           if (capturedError === null || capturedError === 'Max iterations reached') {
             capturedError = getAgentErrorMessage(data) ?? 'wake turn failed';
+            capturedFailure = data;
           }
         },
       } satisfies AgentRunOptions;
@@ -559,6 +575,7 @@ export function createForegroundWake(
       });
       turnRan = true;
       let thrownError: string | null = null;
+      let thrownFailure: unknown;
       let reportedToUser = false;
       const stopObserving = manager.observeAgentEvents((eventSessionId, event, taskId) => {
         if (eventSessionId !== sessionId || taskId || event.type !== 'message') return;
@@ -571,6 +588,7 @@ export function createForegroundWake(
         await orchestrator.sendMessage(wakePrompt(task, status), undefined, options);
       } catch (error) {
         thrownError = error instanceof Error ? error.message : String(error);
+        thrownFailure = error;
       } finally {
         stopObserving();
       }
@@ -583,17 +601,20 @@ export function createForegroundWake(
         return;
       }
       if (failureMessage !== null) {
-        // 失败原因分开记：owner lease 缺失是 run 注册问题，其余是唤醒轮自身失败
-        const ownerMissing = failureMessage.includes('no live owner lease');
+        const failure = capturedError === 'Max iterations reached' && thrownError
+          ? thrownFailure : capturedError !== null ? capturedFailure : thrownFailure;
+        const ownerMissing = failureMessage.includes('no live owner lease')
+          || isSessionNotAccessibleError(failure);
         const reason = ownerMissing ? 'owner_missing'
-          : failureMessage === 'Max iterations reached' ? 'max_iterations' : 'turn_error';
+          : classifyError(failure) === 'rate_limit' || classifyError(failureMessage) === 'rate_limit' ? 'rate_limited'
+            : failureMessage === 'Max iterations reached' ? 'max_iterations' : 'turn_error';
         dependencies.logger.warn(
           `Foreground wake failed: ${ownerMissing ? 'owner missing' : 'wake turn failed'}`,
           { sessionId, taskId: task.id, reason, message: failureMessage },
         );
         await dependencies.recordWakeFailureNote(
           sessionId,
-          formatBackgroundWakeFailureNote(task.shortName),
+          formatBackgroundWakeFailureNote(task.shortName, reason),
           { taskId: task.id, reason, title: task.shortName },
         ).catch((noteError) => {
           dependencies.logger.warn('Foreground wake failure note not recorded', {

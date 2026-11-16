@@ -19,7 +19,7 @@ let log = '';
 let capture = '';
 let abort: AbortController;
 let recording: Promise<void>;
-let mode: 'report' | 'failure' = 'report';
+let mode: 'report' | 'failure' | 'throw' = 'report';
 let wakeRequests = 0;
 const wakeToolCounts: number[] = [];
 const children = new Set<string>();
@@ -58,6 +58,13 @@ beforeAll(async () => {
     else if (wake) {
       wakeRequests++;
       wakeToolCounts.push(body.tools?.length ?? 0);
+      if (mode === 'throw') {
+        // Mid-stream socket loss rejects the whole turn (an exception, not a finalizer error event).
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        response.write(`data: ${JSON.stringify({ id: 'cut', object: 'chat.completion.chunk', choices: [{ index: 0, delta: { role: 'assistant', content: '后台' } }] })}\n\n`);
+        setTimeout(() => response.destroy(), 20);
+        return;
+      }
       if (mode === 'failure') {
         response.writeHead(400, { 'Content-Type': 'application/json' });
         response.end(JSON.stringify({ error: { message: 'fixture wake unavailable', type: 'invalid_request_error' } }));
@@ -157,8 +164,8 @@ function events(raw: string): Array<{ type: string; sessionId?: string; data: Re
 }
 
 describe('idle background report through the production host', () => {
-  it.each(['allow', 'deny', 'failure'] as const)('%s: one report, no generic failure event', async (variant) => {
-    mode = variant === 'failure' ? 'failure' : 'report';
+  it.each(['allow', 'deny', 'failure', 'throw'] as const)('%s: one report, no generic failure event', async (variant) => {
+    mode = variant === 'failure' || variant === 'throw' ? variant : 'report';
     const from = capture.length;
     const beforeRequests = wakeRequests;
     const stream = await api('run', { project: path.join(output, 'workspace'), prompt: `fixture-case-${variant}: 派出后台助手检查工作目录，只回复已启动。` });
@@ -185,8 +192,10 @@ describe('idle background report through the production host', () => {
     expect(decisions).toBeGreaterThan(0);
     expect(existsSync(path.join(output, `fixture-case-${variant}.txt`))).toBe(variant === 'allow');
     expect(received.filter((event) => event.type === 'error')).toEqual([]);
-    expect(wakeRequests - beforeRequests).toBe(1);
-    if (variant === 'failure') {
+    // A thrown turn is retried by the provider layer; every other variant wakes exactly once.
+    if (variant === 'throw') expect(wakeRequests - beforeRequests).toBeGreaterThanOrEqual(1);
+    else expect(wakeRequests - beforeRequests).toBe(1);
+    if (variant === 'failure' || variant === 'throw') {
       expect(received.filter((event) => event.type === 'message' && (event.data.metadata as { backgroundWakeFailed?: unknown })?.backgroundWakeFailed)).toHaveLength(1);
     } else {
       expect(received.filter((event) => event.type === 'message' && event.data.content === '后台任务已结束，已按你的决定处理。')).toHaveLength(1);
