@@ -1,5 +1,6 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { normalizeReminderCreateTime } from './reminderCreateTime';
+import { normalizeCalendarEventTime } from './calendarEventTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -674,6 +675,11 @@ export class ToolExecutor {
       return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
     }
     params = reminderTime.args;
+    const calendarTime = normalizeCalendarEventTime(executionToolName, params);
+    if (!calendarTime.ok) {
+      return { success: false, error: calendarTime.error, metadata: { code: calendarTime.code } };
+    }
+    params = calendarTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
@@ -844,6 +850,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: formatToolSchemaValidationError(executionToolName, blockingIssues),
+        metadata: { code: 'ARG_VALIDATION_FAILED' },
       };
     }
     // 未声明字段不硬拒：剥离后放行 + 上报（生产档），开发档额外 fail-loud。
@@ -2157,7 +2164,9 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      // 日历写回：批准卡的补充信息（默认日历名 / 要删那条的标题时间）只在这唯一一次审批里补，不改 params
+      // 日历写回：批准卡的补充信息（默认日历名 / 要改或删那条的标题时间）只在这唯一一次审批里补，不改 params
+      // Only the host enrichment may label display-only calendar snapshot fields.
+      delete permissionRequest.details.calendarApprovalSnapshotFields;
       if (executionToolName.startsWith('calendar_')) {
         const { calendarApprovalDetails } = await import('./modules/connectors/calendarApprovalDetails');
         Object.assign(permissionRequest.details, await calendarApprovalDetails(executionToolName, params));
