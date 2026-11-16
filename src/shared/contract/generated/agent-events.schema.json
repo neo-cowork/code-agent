@@ -2930,6 +2930,9 @@
           ],
           "additionalProperties": false
         },
+        "parkedToolCallId": {
+          "type": "string"
+        },
         "doneKey": {
           "type": "string"
         },

@@ -34,6 +34,8 @@ export interface EnvAssistNotice {
       | { route: string };
   };
   resume: { mode: 'auto' | 'manual'; parkId?: string };
+  /** Exact call that parked this run; absent for notices from ordinary tool failures. */
+  parkedToolCallId?: string;
   doneKey?: string;
   updatedAt: number;
   devDiagnostic?: { rawRef: string };

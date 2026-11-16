@@ -17,6 +17,7 @@ export const EnvAssistNoticeSchema = z.object({
     ]).optional(),
   }).optional(),
   resume: z.object({ mode: z.enum(['auto', 'manual']), parkId: z.string().optional() }),
+  parkedToolCallId: z.string().optional(),
   doneKey: z.string().optional(), updatedAt: z.number(),
   devDiagnostic: z.object({ rawRef: z.string() }).optional(),
 }) satisfies z.ZodType<EnvAssistNotice>;

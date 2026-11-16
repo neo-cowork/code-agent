@@ -94,8 +94,8 @@ describe('⑤ calendar refusal parks the run and the grant resumes it', () => {
     });
     expect(f.db.prepare("SELECT * FROM tool_execution_events WHERE phase='complete'").all()).toHaveLength(0);
     const card = emitted.find((e) => e.type === 'env_assist_notice')?.data as { id: string; phase: string; action: { kind: string } };
-    expect(card).toMatchObject({ class: 'perm_calendars', phase: 'needs_user', target: { id: 'calendar' }, action: { kind: 'request_grant', payload: { pane: 'calendars' } } });
-    expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist?.phase).toBe('needs_user');
+    expect(card).toMatchObject({ class: 'perm_calendars', phase: 'needs_user', parkedToolCallId: 'env-call', target: { id: 'calendar' }, action: { kind: 'request_grant', payload: { pane: 'calendars' } } });
+    expect(store.messages.find((m) => m.id === `env-assist:${card.id}`)?.metadata?.envAssist).toMatchObject({ phase: 'needs_user', parkedToolCallId: 'env-call' });
   });
 
   it('real shape: the session folder (任务_…) was never created because the run only read — resume recreates it instead of native_workspace_unavailable', async () => {
