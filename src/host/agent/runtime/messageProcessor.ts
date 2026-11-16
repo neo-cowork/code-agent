@@ -70,8 +70,7 @@ import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
-import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
-import { getInabilityReplyGuidance } from '../../../shared/inabilityReplyContract';
+import { deniedToolFinalReply, deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { isBashToolName } from '../../tools/toolNames';
 import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
@@ -672,13 +671,12 @@ export class MessageProcessor {
           error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
       }
       this.guardState.toolCallRetryCount++;
-      const otherDeniedNames = Array.from(new Set(deniedToolCalls.map((toolCall) => toolCall.name).filter((name) => !isBashToolName(name)))).join(', ');
       const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
       this.contextAssembly.injectSystemMessage(
         [
           '<tool-run-policy>',
-          getInabilityReplyGuidance(this.ctx.turn?.runUserPrompt ?? ''),
-          `The previous call was NOT run.${otherDeniedNames ? ` Internal call identifiers, not user-facing wording: ${otherDeniedNames}.` : ''}`,
+          this.ctx.foregroundToolFace ? 'The previous call was NOT run.'
+            : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
           deniedToolRetryGuidance(this.ctx),
           ...(shellDenial ? [shellDenial.guidance] : []),
           '</tool-run-policy>',
@@ -690,7 +688,7 @@ export class MessageProcessor {
         const finalMessage: Message = {
           id: this.contextAssembly.generateId(),
           role: 'assistant',
-          content: shellDenial?.finalMessage ?? '这一步我现在做不了，先停在这里，没有继续操作。需要的话请告诉我怎么调整。',
+          content: deniedToolFinalReply(this.ctx),
           timestamp: Date.now(),
           effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),

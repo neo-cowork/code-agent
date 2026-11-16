@@ -4,6 +4,7 @@
 // 历史是整段加载的（restoreSession 走账本全量回放），所以没有「未加载」态；
 // 跳转直接 scrollToIndex。
 // ============================================================================
+import type { RoleLabels } from '../stores/roleLabelsStore';
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import { extractUserRequest } from '@shared/utils/turnScaffold';
 import { roleEditReceiptZh } from '../i18n/roleEditReceipt';
@@ -62,9 +63,10 @@ function isVoiceTurn(turn: TraceTurn): boolean {
 export function buildTurnRailItems(
   turns: readonly TraceTurn[],
   editRolePromptTemplate: string = roleEditReceiptZh.roleEditReceipt.userPrompt,
+  roleLabels?: RoleLabels,
 ): TurnRailItem[] {
   const projectPrompt = (raw: string | undefined) => (
-    raw ? formatEditRoleUserPrompt(extractUserRequest(raw), editRolePromptTemplate) : raw
+    raw ? formatEditRoleUserPrompt(extractUserRequest(raw), editRolePromptTemplate, roleLabels) : raw
   );
   return turns.filter((turn) => !turn.standalone).map((turn) => ({
     turnId: turn.turnId,

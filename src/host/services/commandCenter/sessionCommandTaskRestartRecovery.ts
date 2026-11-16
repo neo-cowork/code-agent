@@ -14,6 +14,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
 import { getDatabase } from '../core';
+import { closeInterruptedCommandTaskChild } from '../../agent/parkedApprovalRunClosure';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
@@ -430,6 +431,16 @@ export async function recoverInterruptedSessionCommandTasks(): Promise<number> {
     }
     // 账本终态行不依赖会话可读：无论消息写成写不成都先落，别让侧栏永远「运行中」。
     writeInterruptedLedgerRow(ledger, marker, text);
+    try {
+      const database = getDatabase();
+      await closeInterruptedCommandTaskChild(database.getDurableRunRepository(), database.getPendingApprovalRepo(),
+        marker.sessionId, marker.taskId, Date.now());
+    } catch (error) {
+      logger.warn('Lost approval restart closure unavailable', {
+        sessionId: marker.sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
     try {
       await writeInterruptedMessage(marker, locale, text);
     } catch (error) {

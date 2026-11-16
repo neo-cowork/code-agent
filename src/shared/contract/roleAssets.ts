@@ -231,6 +231,8 @@ export interface RolePanelDetail {
   definition: string | null;
   /** agent 定义文件路径（编辑跳转用） */
   definitionPath: string;
+  /** 一句话简介（agent.md frontmatter description；可能是加载器的占位文案，展示前需过滤） */
+  description?: string;
   /** 角色记忆（可删可编辑） */
   memories: RolePanelMemory[];
   /** 工作履历（产物清单，最新在后） */

@@ -154,6 +154,7 @@ export function buildDynamicPromptCacheKey(
   return [
     ctx.runtime.sessionId,
     ctx.runtime.agentId || '',
+    ctx.runtime.systemPrompt || '',
     ctx.runtime.workingDirectory || '',
     String(ctx.runtime.isDefaultWorkingDirectory),
     String(ctx.runtime.turn.isSimpleTaskMode),
@@ -247,7 +248,8 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
       bytes: projectSystemPrompt.custom.length,
     });
   } else {
-    systemPrompt = getPromptForTask();
+    // Keep the entry point's existing identity/routing instructions when rebuilding requests.
+    systemPrompt = ctx.runtime.systemPrompt || getPromptForTask();
   }
 
   // provider 变体（roadmap 2.4）：按 provider 家族追加纪律段落
@@ -398,7 +400,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
 ${deferredToolsSummary}
 
-用法：调用 ToolSearch 时传入 JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
+用法：ToolSearch JSON 参数，例如 {"query":"browser"} 搜索浏览器工具，或 {"query":"select:Browser"} 直接加载。
 [mcp:*] 分组下是外部 MCP 服务器提供的工具（命名格式 mcp__<server>__<tool>），同样通过 ToolSearch 加载后才能调用，例如 {"query":"select:mcp__github__search_code"}。
 </deferred-tools>`;
       systemPrompt = appendPromptBlockWithinBudget(

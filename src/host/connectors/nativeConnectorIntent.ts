@@ -8,6 +8,7 @@
 //      （ADR-059 修订：连接器工具按轮进面，不做 schema 常驻声明，防前缀缓存打掉）。
 // ============================================================================
 
+import { isScheduleTaskChatIntent } from '../app/scheduleTaskChatIntent';
 import { CONNECTOR_TOOL_NAMES } from '../../shared/contract/workbenchTools';
 import { isCoreToolName } from '../services/toolSearch/deferredTools';
 import { createLogger } from '../services/infra/logger';
@@ -26,6 +27,10 @@ const NATIVE_CONNECTOR_INTENT_RES: ReadonlyArray<readonly [string, RegExp]> = [
   ['calendar', /日程|日历|\bcalendar\b|\bschedule\s+(?:a|an|the)\s+(?:meeting|event)\b/i],
 ];
 
+// Recurrence is only a loose scheduling exposure signal. Existing reminder reads
+// and edits must keep their connector tools; foreground cannot discover them later.
+const REMINDER_MANAGEMENT_INTENT_RE = /查看|查询|查找|列出|显示|修改|更改|调整|改到|改成|删除|取消|完成|推迟|提前|\b(?:show|list|view|read|find|search|get|update|edit|change|move|reschedule|delete|remove|cancel|complete|check)\b/i;
+
 export interface NativeConnectorIntentInput {
   /** 本轮用户输入（最新一条 user 消息或前台 prompt 原文）。 */
   userText: string;
@@ -41,10 +46,13 @@ export interface NativeConnectorIntentInput {
  * 无意图命中时零副作用（不触 configService/registry），无关轮次的前缀缓存不受影响。
  * 就绪口径与 cron.ipc / cronMailPoller 一致：unchecked（重启后未探测）仍算可用，
  * failed / unavailable 才排除——已授权用户不该被逼去再点一次。
+ * 未启用/未注册只放读工具（见循环内注释）；failed / unavailable 分支不动。
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = NATIVE_CONNECTOR_INTENT_RES
-    .filter(([, re]) => re.test(input.userText))
+    .filter(([id, re]) => re.test(input.userText)
+      && !(id === 'reminders' && isScheduleTaskChatIntent(input.userText)
+        && !REMINDER_MANAGEMENT_INTENT_RE.test(input.userText)))
     .map(([id]) => id);
   if (matched.length === 0) return [];
 
@@ -59,16 +67,24 @@ export function getNativeConnectorToolNamesForIntent(input: NativeConnectorInten
   const scoped = input.allowedConnectorIds ?? [];
   const registry = getConnectorRegistry();
   const tools: string[] = [];
+  // 未启用/未注册：只放读工具（各连接器清单首项），让模型调用后拿到「未连接，可在连接器页打开」
+  // 的工具结果并转述，而不是在零信号下拿别处数据答「今天没有日程」。写工具一律不放。
+  const exposeReadToolOnly = (connectorId: string): void => {
+    const readTool = CONNECTOR_TOOL_NAMES[connectorId]?.[0];
+    if (readTool && !isCoreToolName(readTool)) tools.push(readTool);
+  };
   for (const connectorId of matched) {
     if (!enabledNative.includes(connectorId)) {
-      logger.warn(`[ContextAssembly] Native connector not preloaded (reason: not-enabled): ${connectorId}`);
+      logger.warn(`[ContextAssembly] Native connector not enabled, exposing read tool only (reason: not-enabled): ${connectorId}`);
+      if (scoped.length === 0 || scoped.includes(connectorId)) exposeReadToolOnly(connectorId);
       continue;
     }
     // 用户本轮手选了别的连接器 = 显式收窄，不替他加。
     if (scoped.length > 0 && !scoped.includes(connectorId)) continue;
     const connector = registry.get(connectorId);
     if (!connector) {
-      logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: not-registered): ${connectorId}`);
+      logger.warn(`[ContextAssembly] Enabled native connector missing from registry, exposing read tool only (reason: not-registered): ${connectorId}`);
+      exposeReadToolOnly(connectorId);
       continue;
     }
     const readiness = connector.getCachedStatus?.().readiness;

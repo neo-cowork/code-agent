@@ -1,7 +1,8 @@
 // ============================================================================
 // formatDateTime 语言感知档（N-CRON-DETAIL-TIME-FORMAT-MIXED / FB-567+FB-570）：
-// zh 固定 24 小时制 `YYYY/MM/DD HH:mm`（手工拼，不跟机器 locale 走）；
-// en 维持 en-US 原样。与 cronRunListTime.test.ts 同层，钉详情页时间口径。
+// zh 与 en 统一 `YYYY/MM/DD HH:mm`（24 小时制、零填充、无秒、不跟机器 locale 走，
+// N-FIX-DATETIME-FORMAT-MIXED-ACROSS-SCREENS）。与 cronRunListTime.test.ts 同层，
+// 钉详情页时间口径。
 // N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1：实现迁到 src/renderer/utils/formatDateTime.ts
 // 供全 renderer 复用，钉的还是同一个函数。
 // ============================================================================
@@ -41,11 +42,18 @@ describe('formatDateTime (detail time, language-aware)', () => {
     expect(enPm).not.toBe(formatDateTime(new Date(2026, 10, 9, 4, 5, 0).getTime(), 'en'));
   });
 
-  it('兜底文案保留：未设置 / 无效时间', () => {
+  it('en：与中文使用同一零填充的 24 小时格式（无 AM/PM、无秒）', () => {
+    expect(formatDateTime(AT, 'en')).toBe('2026/11/09 04:00');
+    expect(formatDateTime(PM, 'en')).toBe('2026/11/09 16:05');
+  });
+
+  it('兜底文案随语言：zh 未设置/无效时间，en Not set/Invalid time（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU3）', () => {
     expect(formatDateTime(undefined, 'zh')).toBe('未设置');
     expect(formatDateTime('not-a-date', 'zh')).toBe('无效时间');
-    expect(formatDateTime(undefined, 'en')).toBe('未设置');
-    expect(formatDateTime('not-a-date', 'en')).toBe('无效时间');
+    expect(formatDateTime(undefined, 'en')).toBe('Not set');
+    expect(formatDateTime('not-a-date', 'en')).toBe('Invalid time');
+    // 缺省 lang = zh：老调用方（不传 lang）行为零变化
+    expect(formatDateTime(undefined)).toBe('未设置');
   });
 
   it('formatScheduleSummary 一次性档把 lang 传进时间（zh/en 各自口径）', () => {

@@ -4,7 +4,7 @@
     {
       "id": "openai",
       "name": "OpenAI",
-      "description": "GPT / o 系列模型",
+      "description": "GPT / o series models",
       "apiUrl": "https://api.openai.com/v1",
       "apiKeyHint": "your-api-key",
       "default": "gpt-5.5",
@@ -73,7 +73,7 @@
     {
       "id": "claude",
       "name": "Anthropic",
-      "description": "Claude 系列模型",
+      "description": "Claude series models",
       "apiUrl": "https://api.anthropic.com",
       "apiKeyHint": "your-anthropic-key",
       "default": "claude-opus-4-7",
@@ -136,7 +136,7 @@
     {
       "id": "deepseek",
       "name": "DeepSeek",
-      "description": "深度求索",
+      "description": "DeepSeek models",
       "apiUrl": "https://api.deepseek.com",
       "apiKeyHint": "your-api-key",
       "default": "deepseek-flash",
@@ -176,8 +176,8 @@
     },
     {
       "id": "zhipu",
-      "name": "智谱 AI",
-      "description": "GLM 系列模型",
+      "name": "Zhipu GLM",
+      "description": "GLM series models",
       "apiUrl": "https://api.0ki.cn/api/paas/v4",
       "default": "glm-5.1",
       "models": [
@@ -236,8 +236,8 @@
     },
     {
       "id": "qwen",
-      "name": "通义千问",
-      "description": "阿里云 Qwen 模型",
+      "name": "Qwen",
+      "description": "Alibaba Cloud Qwen models",
       "apiUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "default": "qwen3-max",
       "models": [
@@ -272,7 +272,7 @@
     {
       "id": "moonshot",
       "name": "Kimi",
-      "description": "Moonshot AI 模型",
+      "description": "Moonshot AI models",
       "apiUrl": "https://cn.haioi.net/v1",
       "default": "kimi-k2.5",
       "models": [
@@ -304,7 +304,7 @@
     {
       "id": "minimax",
       "name": "MiniMax",
-      "description": "MiniMax 海螺 AI",
+      "description": "MiniMax Hailuo AI",
       "apiUrl": "https://api.minimaxi.com/v1",
       "default": "MiniMax-M2.7",
       "models": [
@@ -323,7 +323,7 @@
     {
       "id": "longcat",
       "name": "LongCat",
-      "description": "LongCat API 开放平台（OpenAI / Claude 兼容）",
+      "description": "LongCat API open platform (OpenAI / Claude compatible)",
       "apiUrl": "https://api.longcat.chat/openai/v1",
       "apiKeyHint": "sk-...",
       "default": "LongCat-2.0",
@@ -338,8 +338,8 @@
     },
     {
       "id": "xiaomi",
-      "name": "小米 MiMo",
-      "description": "小米 Token Plan 包月套餐（OpenAI 兼容）",
+      "name": "Xiaomi MiMo",
+      "description": "Xiaomi Token Plan monthly subscription (OpenAI compatible)",
       "apiUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
       "apiKeyHint": "tp-...",
       "default": "mimo-v2.5-pro",
@@ -374,7 +374,7 @@
     {
       "id": "openrouter",
       "name": "OpenRouter",
-      "description": "多模型路由服务",
+      "description": "Multi-model routing service",
       "apiUrl": "https://openrouter.ai/api/v1",
       "default": "anthropic/claude-opus-4-7",
       "models": [
@@ -457,7 +457,7 @@
     {
       "id": "perplexity",
       "name": "Perplexity",
-      "description": "AI 搜索服务",
+      "description": "AI search service",
       "apiUrl": "https://api.perplexity.ai",
       "default": "sonar-pro",
       "models": [
@@ -496,7 +496,7 @@
     {
       "id": "local",
       "name": "Local (Ollama)",
-      "description": "本地 Ollama 模型",
+      "description": "Local Ollama models",
       "apiUrl": "http://localhost:11434/v1",
       "default": "qwen3.5:9b",
       "models": [
@@ -522,8 +522,8 @@
     },
     {
       "id": "volcengine",
-      "name": "火山引擎 (豆包)",
-      "description": "字节跳动豆包系列模型",
+      "name": "Volcengine (Doubao)",
+      "description": "ByteDance Doubao series models",
       "apiUrl": "https://ark.cn-beijing.volces.com/api/v3",
       "apiKeyHint": "your-volcengine-key",
       "default": "doubao-seed-1-6",
@@ -553,7 +553,7 @@
     {
       "id": "grok",
       "name": "Grok",
-      "description": "xAI Grok 系列",
+      "description": "xAI Grok series",
       "apiUrl": "https://api.x.ai/v1",
       "default": "grok-4-1-fast-non-reasoning",
       "models": [
@@ -572,7 +572,7 @@
     {
       "id": "custom",
       "name": "Custom Provider",
-      "description": "OpenAI-compatible 自定义服务商",
+      "description": "OpenAI-compatible custom provider",
       "apiUrl": "https://api.example.com/v1",
       "default": "custom-model",
       "models": [

@@ -57,6 +57,7 @@ function createFakeWindow(initialUrl = 'about:blank') {
   let snapshotSeq = 0;
   const tab = { id: 'tab-1', url: initialUrl, title: 'Fixture' };
   const callOrder: string[] = [];
+  const importedStates: string[] = [];
   const navigate = vi.fn(async (url: string) => {
     callOrder.push(`navigate:${url}`);
     tab.url = url;
@@ -71,14 +72,16 @@ function createFakeWindow(initialUrl = 'about:blank') {
       return {};
     }),
     isRunning: () => running,
+    isProcessAlive: () => running,
     getActiveTab: () => (running ? { ...tab } : null),
     listTabs: () => (running ? [{ ...tab }] : []),
     navigate,
     exportStorageState: vi.fn(async (filePath: string) => {
-      await fs.promises.writeFile(filePath, JSON.stringify({ cookies: [], origins: [] }), 'utf8');
+      await fs.promises.writeFile(filePath, JSON.stringify({ cookies: [{ name: 'neo_demo_session', value: '1' }], origins: [] }), 'utf8');
     }),
-    importStorageState: vi.fn(async () => {
+    importStorageState: vi.fn(async (filePath: string) => {
       callOrder.push('importStorageState');
+      importedStates.push(await fs.promises.readFile(filePath, 'utf8'));
     }),
     getSessionState: () => ({
       sessionId: 'session-1',
@@ -110,6 +113,7 @@ function createFakeWindow(initialUrl = 'about:blank') {
   return {
     tab,
     callOrder,
+    importedStates,
     navigate,
     service: service as unknown as BrowserService,
     raw: service,
@@ -284,6 +288,63 @@ describe('managed browser cross-turn last page restore', () => {
         }),
       );
       await h.runtime.endRun(turn2);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('keeps login state and last page when turn 1 ends normally (no abort, no manual export)', async () => {
+    const h = createHarness();
+    try {
+      const turn1 = h.startAgentRun('conversation-login', 'run-1');
+      await h.navigateInRun(turn1, 'https://host/pricing?plan=pro#annual');
+      const turn1Key = h.adapter.getBinding(turn1)!.serviceKey;
+      await h.runtime.endRun(turn1);
+      expect(h.windows.get(turn1Key)!.raw.exportStorageState).toHaveBeenCalledTimes(1);
+
+      const turn2 = h.startAgentRun('conversation-login', 'run-2');
+      const observed = await h.observeInRun(turn2);
+      const turn2Window = h.windows.get(h.adapter.getBinding(turn2)!.serviceKey)!;
+      expect(observed.output).toBe('URL: https://host/pricing');
+      expect(turn2Window.callOrder).toEqual([
+        'ensureSession:about:blank',
+        'importStorageState',
+        'navigate:https://host/pricing',
+      ]);
+      expect(turn2Window.importedStates).toHaveLength(1);
+      expect(JSON.parse(turn2Window.importedStates[0]).cookies).toEqual([{ name: 'neo_demo_session', value: '1' }]);
+      await h.runtime.endRun(turn2);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('clears the normal-end login state with the conversation reset', async () => {
+    const h = createHarness();
+    try {
+      const turn1 = h.startAgentRun('conversation-del', 'run-1');
+      await h.navigateInRun(turn1, 'https://host/pricing');
+      await h.runtime.endRun(turn1);
+      await h.adapter.clearConversationResumeState('conversation-del');
+
+      const turn2 = h.startAgentRun('conversation-del', 'run-2');
+      await h.observeInRun(turn2);
+      const turn2Window = h.windows.get(h.adapter.getBinding(turn2)!.serviceKey)!;
+      expect(turn2Window.importedStates).toHaveLength(0);
+      expect(turn2Window.navigate).not.toHaveBeenCalled();
+      await h.runtime.endRun(turn2);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('does not export conversation login state from the personal-profile window', async () => {
+    const h = createHarness();
+    try {
+      const userTurn = h.startUserRun('conversation-personal-login', 'user-1');
+      await h.navigateInRun(userTurn, 'https://host/personal/settings');
+      await h.runtime.endRun(userTurn);
+      expect(h.personalWindow.raw.exportStorageState).not.toHaveBeenCalled();
     } finally {
       h.cleanup();
     }

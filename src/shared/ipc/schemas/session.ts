@@ -27,6 +27,7 @@ const SessionDomainRequestSchema = z.object({
     'getForkLineage',
     'findExpertThread',
     'getMemoryContext',
+    'getEffectiveModel',
     'getMessages',
     'getModelOverride',
     'getRecap',

@@ -6,13 +6,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import type { MeetingImportCandidate, MeetingSummaryRecord } from '@shared/contract/audioCapture';
-import { importMeeting, listMeetingImportCandidates, listMeetingRecords } from '../../../services/nativeDesktop';
+import { importMeeting, isNativeDesktopAvailable, listMeetingImportCandidates, listMeetingRecords } from '../../../services/nativeDesktop';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { MeetingPage, formatClock, sourceLabel } from './MeetingPage';
 
 type Copy = ReturnType<typeof useI18n>['t']['library']['meetings'];
@@ -27,6 +28,7 @@ function minutesBadge(m: MeetingSummaryRecord, copy: Copy): string {
 }
 
 const ImportDialog: React.FC<{ copy: Copy; onClose: () => void; onImported: (id: string) => void }> = ({ copy, onClose, onImported }) => {
+  const { language } = useI18n();
   const [link, setLink] = useState('');
   const [loading, setLoading] = useState(true);
   const [candidates, setCandidates] = useState<MeetingImportCandidate[]>([]);
@@ -85,7 +87,7 @@ const ImportDialog: React.FC<{ copy: Copy; onClose: () => void; onImported: (id:
                         <div className="truncate text-[13px] text-zinc-200">{c.title}</div>
                         <div className="text-[11px] text-zinc-500">
                           {c.source === 'feishu' ? copy.sourceFeishu : copy.sourceTmeet}
-                          {c.startedAtMs ? ` · ${new Date(c.startedAtMs).toLocaleDateString()} ${formatClock(c.startedAtMs)}` : ''}
+                          {c.startedAtMs ? ` · ${formatDateTime(c.startedAtMs, language)}` : ''}
                         </div>
                       </div>
                       <Button type="button" size="sm" variant="secondary" disabled={busyRef !== null} onClick={() => { void run(c); }}>
@@ -104,7 +106,7 @@ const ImportDialog: React.FC<{ copy: Copy; onClose: () => void; onImported: (id:
 };
 
 export const MeetingsView: React.FC<{ initialMeetingId?: string | null }> = ({ initialMeetingId = null }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.library.meetings;
   const [meetings, setMeetings] = useState<MeetingSummaryRecord[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(initialMeetingId);
@@ -133,7 +135,9 @@ export const MeetingsView: React.FC<{ initialMeetingId?: string | null }> = ({ i
         {meetings === null ? (
           <div className="flex justify-center py-16 text-zinc-500"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : meetings.length === 0 ? (
-          <p className="py-16 text-center text-sm leading-relaxed text-zinc-500">{copy.empty}</p>
+          <p className="py-16 text-center text-sm leading-relaxed text-zinc-500">
+            {isNativeDesktopAvailable() ? copy.empty : copy.emptyWeb}
+          </p>
         ) : (
           <ul className="divide-y divide-zinc-800/70">
             {meetings.map((m) => (
@@ -147,7 +151,7 @@ export const MeetingsView: React.FC<{ initialMeetingId?: string | null }> = ({ i
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm text-zinc-200">{m.title}</div>
                     <div className="mt-0.5 text-[11px] text-zinc-500">
-                      {new Date(m.startedAtMs).toLocaleDateString()} {formatClock(m.startedAtMs)}{m.endedAtMs ? ` – ${formatClock(m.endedAtMs)}` : ''} · {sourceLabel(m.source, copy)}
+                      {formatDateTime(m.startedAtMs, language)}{m.endedAtMs ? ` – ${formatClock(m.endedAtMs)}` : ''} · {sourceLabel(m.source, copy)}
                     </div>
                   </div>
                   <span className="shrink-0 text-[11px] text-zinc-500">{minutesBadge(m, copy)}</span>

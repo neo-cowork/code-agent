@@ -22,6 +22,13 @@ describe('settings search index', () => {
     }
   });
 
+  it('会前提醒能被搜到（真机反馈：入口太深、搜不到）', () => {
+    for (const q of ['会前提醒', '日历', '会议提醒', 'meeting reminder']) {
+      expect(searchSettings(q).map((entry) => entry.labelKey), q).toContain('meetingCalendarReminder');
+    }
+    expect(SETTINGS_INDEX.find((e) => e.labelKey === 'meetingCalendarReminder')?.tab).toBe('openchronicle');
+  });
+
   it('covers conversation settings', () => {
     expect(searchSettings(zh.settings.searchIndex.modelRoutingStrategy).map((entry) => entry.tab)).toContain('conversation');
     expect(searchSettings(en.settings.searchIndex.modelRoutingStrategy).map((entry) => entry.tab)).toContain('conversation');

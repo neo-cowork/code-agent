@@ -7,6 +7,7 @@ import {
   resolveCLIPermissionModeFlag,
   setInteractiveApprovalProvider,
 } from '../../../src/cli/permissionPolicy';
+import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { getPermissionClassifier } from '../../../src/host/tools/permissionClassifier';
 import { setCommandPolicyRulesForTest } from '../../../src/host/tools/modules/shell/commandPolicy';
 import { getSandboxManager } from '../../../src/host/sandbox';
@@ -115,6 +116,32 @@ describe('交互审批注册点（P4 Ink TUI）', () => {
   });
 });
 
+describe('CLI 交互通道的同条消息拒绝 sticky（跨工具）', () => {
+  it('Write 被用户拒绝后，同消息里改文件的 Bash 在交互卡前被拒，只读 Bash 与新消息照常走 provider', async () => {
+    getDenialRegistry().clearAll();
+    const scope = { sessionId: 'cli-s', sourceMessageId: 'm1' };
+    await getDenialRegistry().observeApproval({
+      ...scope, toolName: 'Write', enabled: true,
+      request: { tool: 'Write', type: 'file_write' },
+      ask: async () => ({ approved: false, denialSource: 'user' as const }),
+    });
+    const provider = vi.fn(async () => ({ approved: true as const }));
+    setInteractiveApprovalProvider(provider);
+    try {
+      const handler = createCLIPermissionHandler();
+      const refused = await handler(makeRequest({ ...scope, details: { command: 'echo plan > ~/Downloads/plan.md' } }));
+      expect(refused).toMatchObject({ approved: false, denialSource: 'goal-sticky-host' });
+      expect(provider).not.toHaveBeenCalled();
+      await expect(handler(makeRequest({ ...scope, details: { command: 'pwd' } }))).resolves.toEqual({ approved: true });
+      await expect(handler(makeRequest({ ...{ ...scope, sourceMessageId: 'm2' }, details: { command: 'echo plan > ~/Downloads/plan.md' } })))
+        .resolves.toEqual({ approved: true });
+      expect(provider).toHaveBeenCalledTimes(2);
+    } finally {
+      setInteractiveApprovalProvider(null);
+      getDenialRegistry().clearAll();
+    }
+  });
+});
 
 describe('resolveCLIPermissionModeFlag', () => {
   it('未传标志时返回 undefined（现有行为不变）', () => {

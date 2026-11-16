@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
@@ -41,7 +42,7 @@ async function executeCalendarCreateEvent(
 
   const connector = getConnectorRegistry().get('calendar');
   if (!connector) {
-    return { ok: false, error: 'Calendar connector is not available.', code: 'NOT_INITIALIZED' };
+    return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'create'), code: 'NOT_INITIALIZED' };
   }
 
   try {

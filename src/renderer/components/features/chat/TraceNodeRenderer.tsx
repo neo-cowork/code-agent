@@ -1,3 +1,5 @@
+import { presentReplyBody } from '@shared/replyBodyPresentation';
+import { HumanizedText } from '../../HumanizedText';
 // ============================================================================
 // TraceNodeRenderer - Render individual trace nodes by type
 // Reuses existing MessageContent, ToolCallDisplay components; UserNode below
@@ -5,6 +7,7 @@
 // dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
+import { useRoleLabels } from '../../../stores/roleLabelsStore';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
@@ -190,6 +193,7 @@ const UserNode: React.FC<{
   streaming?: boolean;
 }> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, telemetryRecovered, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
+  const roleLabels = useRoleLabels();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
@@ -201,7 +205,7 @@ const UserNode: React.FC<{
   const displayContent = sourceType === 'voice'
     ? normalizeSpokenFileName(rawDisplayContent)
     : rawDisplayContent;
-  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt);
+  const shownContent = formatEditRoleUserPrompt(displayContent, t.roleEditReceipt.userPrompt, roleLabels);
   const showUserChrome = Boolean(shownContent) || sendFailed;
 
   return (
@@ -336,7 +340,7 @@ const AssistantTextNode: React.FC<{
   inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
 }> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasReportingStreamingDisplayRef = useRef(false);
@@ -354,7 +358,7 @@ const AssistantTextNode: React.FC<{
   const sessionLive = useAppStore((state) => (sessionId ? state.processingSessionIds.has(sessionId) : false));
   const resumeNote = sessionLive ? node.metadata?.streamResumeNote : undefined;
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
-  const wakeFields = wakeRationaleFromMetadata(node.metadata);
+  const metadataWakeFields = wakeRationaleFromMetadata(node.metadata);
 
   const preannounce = node.metadata?.backgroundTaskPreannounce;
   const preannounceCopy = preannounce?.title
@@ -362,8 +366,15 @@ const AssistantTextNode: React.FC<{
     : t.backgroundPanel.preannounce.generic;
   const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
     ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
+  const automationType = node.metadata?.automation?.automationType;
+  const protocol = node.metadata?.wakeRationale || automationType === 'role_wake'
+    ? 'wake' : automationType === 'cron' ? 'cron' : undefined;
+  const reply = presentReplyBody(localizedContent, language, { protocol, isStreaming: Boolean(turnStreaming) });
+  const wakeFields = metadataWakeFields ?? (reply.rationale || reply.evidence
+    ? { rationale: reply.rationale, evidence: reply.evidence, missing: !reply.rationale }
+    : null);
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
-    content: localizedContent || '',
+    content: reply.text || '',
     isStreaming: Boolean(turnStreaming),
   });
 
@@ -456,7 +467,7 @@ const AssistantTextNode: React.FC<{
   return (
     <div
       ref={rootRef}
-      aria-label="助手消息"
+      aria-label={t.assistantMessageAria}
       className="relative group/msg"
       onMouseUp={updateSelectionCopy}
       onKeyUp={updateSelectionCopy}
@@ -570,6 +581,12 @@ const AssistantTextNode: React.FC<{
       )}
 
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
+      {reply.technicalDetails && (
+        <details className="mt-2 text-xs text-zinc-500" data-testid="reply-technical-details">
+          <summary className="cursor-pointer">{t.agentError.details.technical}</summary>
+          <pre className="whitespace-pre-wrap break-words">{reply.technicalDetails}</pre>
+        </details>
+      )}
 
     </div>
   );
@@ -787,10 +804,19 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
     return <VoiceCallSummaryCard summary={node.metadata.voiceCallSummary} />;
   }
 
+  // 后台任务提前停下的结论句：是会话末尾的结论行，不是过程噪音——正常字号/字重、不斜体。
+  if (node.metadata?.backgroundTaskStopped) {
+    return (
+      <div className="py-1.5 text-sm leading-relaxed text-zinc-300" data-testid="background-task-stopped-note">
+        {node.content}
+      </div>
+    );
+  }
+
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
-      {node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content}
+      <HumanizedText text={node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content} />
     </div>
   );
 };
