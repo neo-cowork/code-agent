@@ -372,7 +372,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     for (const language of LANGUAGES) {
       const { text } = renderCard(read.request, language);
       expect(text).toContain(language === 'zh' ? '允许读取' : 'Allow reading');
-      expect(screen.queryByTestId('permission-consequence')).toBeNull();
+      expect(screen.getByTestId('permission-consequence').textContent).toMatch(language === 'zh' ? /只读取/ : /Only reads/);
       expect(stripUserValues(text, read.request)).not.toMatch(/写入|覆盖|write|overwrite/iu);
     }
   });

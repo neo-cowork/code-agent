@@ -87,6 +87,14 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
     || (request.type === 'command' && isDangerousCommand(request.details.command));
 }
 
+/** 高危命令：卡面必须让人看见命令本身与危险标识，不能藏进折叠详情。 */
+export function isHighRiskCommandRequest(request: PermissionRequest): boolean {
+  const risk = request.details.commandRiskLevel;
+  return request.type === 'dangerous_command'
+    || request.dangerLevel === 'danger'
+    || (request.type === 'command' && (risk === 'high' || risk === 'critical'));
+}
+
 function isGenericCommandRequest(request: PermissionRequest): boolean {
   return request.type === 'command'
     && request.tool.trim().toLowerCase() !== 'bash'
@@ -99,7 +107,8 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
   if (request.details.browserSessionGrant || request.rawArgs || request.details.targetApp?.name
     || isSandboxEscalation(request)
     || request.reasonCode === PermissionRequestReason.SensitiveStepHandback
-    || request.details.sensitiveStep) return 'expanded';
+    || request.details.sensitiveStep
+    || isHighRiskCommandRequest(request)) return 'expanded';
   return 'compact';
 }
 
@@ -114,6 +123,10 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
+  // 工作区外读取是凭据/隐私外泄的关键信号，问句里必须带限定。
+  const readTarget = compactTarget && request.boundary?.id === 'file.external_read'
+    ? `${compactTarget}（${p.workspaceOutside}）`
+    : compactTarget;
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
     && !isDeletionRequest(request)
@@ -122,7 +135,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   }
   switch (request.type) {
     case 'file_read':
-      return compactTarget ? p.questionFileRead.replace('{target}', compactTarget) : p.questionFallback;
+      return compactTarget ? p.questionFileRead.replace('{target}', readTarget ?? '') : p.questionFallback;
     case 'file_write':
       return compactTarget ? p.questionFileWrite.replace('{target}', compactTarget) : p.questionFallback;
     case 'file_edit':
@@ -221,6 +234,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
     return p.consequenceUncertainWriteTarget;
   }
+  if (request.boundary?.id === 'file.external_read') {
+    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target) : p.targetFallback);
+  }
   if (request.boundary?.id === 'file.external_write') {
     return p.consequenceOutside
       .replace('{target}', safeTarget ?? p.targetFallback)
@@ -239,6 +255,9 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceWrite
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
+  }
+  if (isHighRiskCommandRequest(request) && (request.type === 'command' || request.type === 'dangerous_command')) {
+    return p.consequenceHighRiskCommand;
   }
   return undefined;
 }

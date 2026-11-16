@@ -167,7 +167,7 @@ describe('PermissionCard quiet face', () => {
     [externalWrite, 1],
     [dangerousCommand, 1],
     [{ ...internalWrite, tool: 'Read', type: 'file_read' as const }, 0],
-    [{ ...internalWrite, tool: 'Read', type: 'file_read' as const, boundary: { id: 'file.external_read' as const } }, 0],
+    [{ ...internalWrite, tool: 'Read', type: 'file_read' as const, boundary: { id: 'file.external_read' as const } }, 1],
     [{ ...internalWrite, tool: 'Bash', type: 'command' as const, details: { command: 'ls reports', commandRiskLevel: 'medium' as const } }, 0],
     [{ ...mcpRequest, details: { connectorAccess: { connectorId: 'lark', connectorName: '飞书', access: 'write' as const } } }, 1],
     [{ ...mcpRequest, details: { method: 'POST', url: 'https://example.com' } }, 1],
@@ -175,8 +175,16 @@ describe('PermissionCard quiet face', () => {
   ])('face consequence count: %j => %i', (request, count) => {
     renderRequest(request);
     expect(screen.queryAllByTestId('permission-consequence')).toHaveLength(count);
-    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    // 高危命令卡默认展开，没有折叠开关。
+    const toggle = screen.queryByRole('button', { name: '更多选项与详情' });
+    if (toggle) fireEvent.click(toggle);
     expect(screen.queryAllByTestId('permission-consequence')).toHaveLength(count);
+  });
+
+  it('outside-workspace read names the boundary in the question and keeps one consequence line', () => {
+    renderRequest({ ...internalWrite, tool: 'Read', type: 'file_read' as const, details: { path: '/Users/x/.ssh/id_rsa' }, boundary: { id: 'file.external_read' as const } });
+    expect(screen.getByText('允许读取 id_rsa（工作区外）？')).toBeTruthy();
+    expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
   });
 
   it('external write keeps safe primary response and moves the qualifier out of the question', async () => {
@@ -199,10 +207,11 @@ describe('PermissionCard quiet face', () => {
     else { expect(text).toContain('可能覆盖现有内容'); expect(text).not.toContain('设备文件'); }
   });
 
-  it('deletion has one consequence and safe primary, but hides the raw command', () => {
+  it('dangerous deletion command has one consequence, a danger badge, the visible command and safe primary', () => {
     renderRequest(dangerousCommand);
     expect(screen.getByTestId('permission-consequence').textContent).toBe('将永久删除 dist（约 312 个文件），不进回收站。');
-    expect(screen.queryByText('rm -rf ./dist')).toBeNull();
+    expect(screen.getByText('危险')).toBeTruthy();
+    expect(screen.getByTestId('permission-card').innerHTML).toContain('rm -rf ./dist');
     expect(screen.getByRole('button', { name: '暂不' }).className).toContain('from-primary-800');
     expect(screen.getByRole('button', { name: '允许' }).className).toContain('border-red-500/50');
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('border-red-500');

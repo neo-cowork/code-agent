@@ -80,7 +80,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
       dangerLevel: 'danger',
     });
 
-    expect(html).not.toContain(DANGER_COPY);
+    expect(html).toContain(DANGER_COPY);
     expect(html).toContain('border-red-500');
     expect(html).toContain('border-red-500');
     for (const label of STANDING_GRANTS) expect(html).not.toContain(label);
@@ -95,7 +95,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
       timestamp: 1,
     });
 
-    expect(html).not.toContain(DANGER_COPY);
+    expect(html).toContain(DANGER_COPY);
     expect(html).toContain('border-red-500');
   });
 

@@ -189,11 +189,12 @@ describe('DecisionSlot', () => {
     expect(slot.className).toContain('chat-col-pad');
     expect(slot.className).not.toContain('overflow-y-auto');
     expect(screen.getByText('执行操作')).toBeTruthy();
-    expect(screen.queryByText('危险')).toBeNull();
+    expect(screen.getAllByText('危险').length).toBeGreaterThan(0);
     expect(screen.getByTestId('permission-card').firstElementChild?.className).toContain('border-red-500');
     expect(screen.getByText('还有 2 项')).toBeTruthy();
     expect(screen.queryByText('创建文件')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '更多选项与详情' }));
+    // 高危命令卡默认展开，不再需要点开。
+    expect(screen.queryByRole('button', { name: '更多选项与详情' })).toBeNull();
     expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
     expect(screen.getByTestId('permission-card-face').textContent).toContain('暂不');
     expect(screen.queryByTestId('permission-card-actions')).toBeNull();

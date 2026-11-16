@@ -34,7 +34,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionConsequence, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isHighRiskCommandRequest, isSafeDefaultDeny, permissionConsequence, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
@@ -535,9 +535,10 @@ export function PermissionCard({
     : defaultPermissionViewMode(request);
   const quietFace = !editable && !appGrantCard && !sandboxEscalation && !request.details.browserSessionGrant;
   const faceConsequence = quietFace && described.kind !== 'generic' ? permissionConsequence(request, t) : undefined;
-  const headerEnd = (!quietFace && safeDefaultDeny) || pendingHeaderEnd ? (
+  const showDangerBadge = safeDefaultDeny && (!quietFace || (request !== null && isHighRiskCommandRequest(request)));
+  const headerEnd = showDangerBadge || pendingHeaderEnd ? (
     <span className="flex items-center gap-2">
-      {!quietFace && safeDefaultDeny && (
+      {showDangerBadge && (
         <span className="rounded-full border border-red-500/35 bg-red-500/10 px-2 py-0.5 text-[10px] text-badge-danger">
           {t.decisionCard.dangerBadge}
         </span>
