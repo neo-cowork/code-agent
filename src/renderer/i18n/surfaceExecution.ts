@@ -157,7 +157,7 @@ export interface SurfaceExecutionTranslationsV1 {
 export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
   panel: {
     label: 'Surface 执行',
-    sessionCount: '{count} 个执行会话',
+    sessionCount: { one: '{count} 个执行会话', other: '{count} 个执行会话' },
     native: '实时执行账本',
     compatibility: '历史兼容记录',
   },
@@ -186,8 +186,8 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     elapsed: '已运行 {time}',
     heartbeat: '最近更新 {time}',
     justNow: '刚刚',
-    minutes: '{count} 分钟前',
-    hours: '{count} 小时前',
+    minutes: { one: '{count} 分钟前', other: '{count} 分钟前' },
+    hours: { one: '{count} 小时前', other: '{count} 小时前' },
   },
   permission: {
     title: '权限范围',
@@ -197,8 +197,8 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
     grantExpired: '授权已过期',
     grantNone: '未授予操作权限',
     capabilities: '能力',
-    actionScope: '{count} 类允许动作',
-    dataScope: '{count} 个数据范围',
+    actionScope: { one: '{count} 类允许动作', other: '{count} 类允许动作' },
+    dataScope: { one: '{count} 个数据范围', other: '{count} 个数据范围' },
     expires: '到期 {time}',
     readonly: '历史记录不会恢复旧授权；续跑会创建新的受控执行',
     capability: {
@@ -348,7 +348,7 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
 const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
   panel: {
     label: 'Surface execution',
-    sessionCount: '{count} execution sessions',
+    sessionCount: { one: '{count} execution session', other: '{count} execution sessions' },
     native: 'Live execution ledger',
     compatibility: 'Historical compatibility record',
   },
@@ -377,8 +377,8 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     elapsed: 'Running for {time}',
     heartbeat: 'Updated {time}',
     justNow: 'just now',
-    minutes: '{count} minutes ago',
-    hours: '{count} hours ago',
+    minutes: { one: '{count} minute ago', other: '{count} minutes ago' },
+    hours: { one: '{count} hour ago', other: '{count} hours ago' },
   },
   permission: {
     title: 'Permission scope',
@@ -388,8 +388,8 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     grantExpired: 'Permission expired',
     grantNone: 'No operation permission',
     capabilities: 'Capabilities',
-    actionScope: '{count} allowed action classes',
-    dataScope: '{count} data scopes',
+    actionScope: { one: '{count} allowed action class', other: '{count} allowed action classes' },
+    dataScope: { one: '{count} data scope', other: '{count} data scopes' },
     expires: 'Expires {time}',
     readonly: 'History never restores old authority; continuation creates a new controlled run',
     capability: {

@@ -252,7 +252,7 @@ export const enSettingsModels = {
       pageDescription: 'Checks 9 categories of system health — environment, network, config, database and more. Failures link to one-click fixes.',
       exportLogs: 'Export logs',
       exportBundle: 'Export diagnostics bundle',
-      includeRecordings: 'Include call recordings ({count} calls, {size})',
+      includeRecordings: { one: 'Include call recordings ({count} call, {size})', other: 'Include call recordings ({count} calls, {size})' },
       includeRecordingsHint: 'Recordings are raw audio and cannot be redacted. Unticked means no audio in the bundle.',
       rerun: 'Run again',
       start: 'Start diagnostics',

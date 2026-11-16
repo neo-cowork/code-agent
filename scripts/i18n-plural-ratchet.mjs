@@ -47,13 +47,15 @@ const countPlaceholder = /\{(?:count|n|total)\}((?:\s+[A-Za-z][A-Za-z-]*){1,3})/
 const notPlural = new Set([
   'is', 'was', 'has', 'does', 'its', 'this', 'as', 'us', 'plus', 'less', 'status', 'across', 'access', 'process',
   'always', 'yes', 'various', 'suspicious', 'previous', 'unless', 'during', 'business', 'address', 'progress', 'success', 'class',
-  'canvas', 'bus', 'focus', 'analysis', 'axis', 'basis', 'alias', 'bias', 'gas', 'lens', 'news', 'perhaps', 'thus',
+  'canvas', 'bus', 'focus', 'analysis', 'axis', 'basis', 'alias', 'bias', 'gas', 'lens', 'news', 'perhaps', 'thus', 'needs', 'exists', 'leaves',
 ]);
 const irregularPlural = new Set(['children', 'people', 'men', 'women', 'times']);
-function pluralWordAfterCount(value) {
+// In a pair's `one` slot only the first two words are checked: a singular noun can be followed by a
+// verb or relative clause ("{count} script that runs by itself").
+function pluralWordAfterCount(value, wordLimit = 3) {
   if (/[\u3400-\u9fff]/.test(value)) return null; // Chinese copy: out of scope
   for (const match of value.matchAll(countPlaceholder)) {
-    const words = match[1].trim().split(/\s+/).slice(0, 3);
+    const words = match[1].trim().split(/\s+/).slice(0, wordLimit);
     for (const word of words) {
       const lower = word.toLowerCase().replace(/[^a-z-]/g, '');
       if (irregularPlural.has(lower)) return word;
@@ -119,7 +121,7 @@ for (const file of files) {
       if (/\b[A-Za-z]+\(s\)/.test(value)) {
         findings.push(`${point} contains forbidden literal "(s)": ${value}`);
       }
-      const plural = pluralWordAfterCount(value);
+      const plural = pluralWordAfterCount(value, pairProperty(node.parent) === 'one' ? 2 : 3);
       if (plural && pairProperty(node.parent) !== 'other') {
         pluralHits++;
         const relativeFile = path.relative(repoRoot, file).split(path.sep).join('/');

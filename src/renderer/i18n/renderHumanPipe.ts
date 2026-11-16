@@ -9,7 +9,7 @@ export const renderHumanPipeZh = {
     },
     toolDetails: {
       collapse: '收起',
-      expandRemaining: '展开剩余 {count} 行',
+      expandRemaining: { one: '展开剩余 {count} 行', other: '展开剩余 {count} 行' },
       noChange: '没有变化',
       viewDiff: '查看改动',
       fileLabel: '文件',
@@ -116,7 +116,7 @@ export const renderHumanPipeZh = {
       genericTool: '完成了一个步骤',
     },
     workflowPreview: {
-      agents: '{count} 个子任务',
+      agents: { one: '{count} 个子任务', other: '{count} 个子任务' },
       completed: '{completed}/{total} 已完成',
       failed: '{count} 未完成',
       step: '第 {count} 步',
@@ -141,7 +141,7 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
     },
     toolDetails: {
       collapse: 'Collapse',
-      expandRemaining: 'Show {count} more lines',
+      expandRemaining: { one: 'Show {count} more line', other: 'Show {count} more lines' },
       noChange: 'No changes',
       viewDiff: 'View changes',
       fileLabel: 'File',
@@ -248,7 +248,7 @@ export const renderHumanPipeEn: typeof renderHumanPipeZh = {
       genericTool: 'Completed a step',
     },
     workflowPreview: {
-      agents: '{count} subtasks',
+      agents: { one: '{count} subtask', other: '{count} subtasks' },
       completed: '{completed}/{total} completed',
       failed: '{count} not completed',
       step: 'Step {count}',

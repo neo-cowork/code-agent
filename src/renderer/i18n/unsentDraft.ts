@@ -3,9 +3,9 @@
 export const unsentDraftCopyZh = {
   unsentDraftNotice: '上次输入框里还有一段内容：「{preview}」',
   unsentDraftNoticeWithOneAttachment: '上次输入框里还有一段内容：「{preview}」，另有 1 个附件：{names}',
-  unsentDraftNoticeWithAttachments: '上次输入框里还有一段内容：「{preview}」，另有 {count} 个附件：{names}',
+  unsentDraftNoticeWithAttachments: { one: '上次输入框里还有一段内容：「{preview}」，另有 {count} 个附件：{names}', other: '上次输入框里还有一段内容：「{preview}」，另有 {count} 个附件：{names}' },
   unsentDraftOneAttachmentOnly: '上次输入框里还有 1 个未发送附件：{names}',
-  unsentDraftAttachmentsOnly: '上次输入框里还有 {count} 个未发送附件：{names}',
+  unsentDraftAttachmentsOnly: { one: '上次输入框里还有 {count} 个未发送附件：{names}', other: '上次输入框里还有 {count} 个未发送附件：{names}' },
   unsentDraftOneDroppedOnly: '上次添加的附件没能保存或恢复：{dropped}',
   unsentDraftDroppedOnly: '上次添加的附件没能保存或恢复：{dropped}',
   unsentDraftDroppedSuffix: '（没能保存或恢复：{dropped}）',
@@ -17,9 +17,9 @@ export const unsentDraftCopyZh = {
 export const unsentDraftCopyEn: typeof unsentDraftCopyZh = {
   unsentDraftNotice: 'There is still text from the input box: "{preview}"',
   unsentDraftNoticeWithOneAttachment: 'There is still text from the input box: "{preview}", plus 1 attachment: {names}',
-  unsentDraftNoticeWithAttachments: 'There is still text from the input box: "{preview}", plus {count} attachments: {names}',
+  unsentDraftNoticeWithAttachments: { one: 'There is still text from the input box: "{preview}", plus {count} attachment: {names}', other: 'There is still text from the input box: "{preview}", plus {count} attachments: {names}' },
   unsentDraftOneAttachmentOnly: 'There is still 1 unsent attachment: {names}',
-  unsentDraftAttachmentsOnly: 'There are still {count} unsent attachments: {names}',
+  unsentDraftAttachmentsOnly: { one: 'There are still {count} unsent attachment: {names}', other: 'There are still {count} unsent attachments: {names}' },
   unsentDraftOneDroppedOnly: 'Attachment could not be saved or restored: {dropped}',
   unsentDraftDroppedOnly: 'Attachments could not be saved or restored: {dropped}',
   unsentDraftDroppedSuffix: ' (could not be saved or restored: {dropped})',
