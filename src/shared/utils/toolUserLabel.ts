@@ -17,7 +17,7 @@ const TOOL_USER_LABELS: Record<string, string> = {
   read: '读取文件',
   readfile: '读取文件',
   glob: '查找文件',
-  grep: '查找文件',
+  grep: '搜索内容',
   webfetch: '网页抓取',
   websearch: '联网搜索',
   memorysearch: '记忆检索',
@@ -25,17 +25,29 @@ const TOOL_USER_LABELS: Record<string, string> = {
   computeruse: '电脑操作',
 };
 
+const TOOL_USER_LABELS_EN: Record<string, string> = {
+  bash: 'Run command', write: 'Write file', writefile: 'Write file', edit: 'Edit file', editfile: 'Edit file',
+  read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
+  webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search',
+  browseraction: 'Browser action', computeruse: 'Computer action',
+};
+
 const UNKNOWN_LABEL = '操作';
 
 /** 用户看得懂的动作名；连接器工具返回连接器名（邮件/日历…），未知工具返回「操作」而不是原名。 */
-export function toolUserLabel(toolName?: string): string {
+export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): string {
+  const en = language === 'en';
   const name = (toolName ?? '').trim();
-  if (!name) return UNKNOWN_LABEL;
+  if (!name) return en ? 'Action' : UNKNOWN_LABEL;
   if (/[\u4e00-\u9fff]/.test(name)) return name; // 已经是中文展示名
   const connector = findConnectorToolMetadata(name);
-  if (connector) return connector.action?.zh ? `${connector.connectorName}：${connector.action.zh}` : connector.connectorName;
-  if (isMcpToolName(name)) return '外部工具';
-  return TOOL_USER_LABELS[name.toLowerCase().replace(/[-_\s]/g, '')] ?? UNKNOWN_LABEL;
+  if (connector) {
+    if (en) return connector.action?.en ? `${connector.connectorNameEn}: ${connector.action.en}` : connector.connectorNameEn;
+    return connector.action?.zh ? `${connector.connectorName}：${connector.action.zh}` : connector.connectorName;
+  }
+  if (isMcpToolName(name)) return en ? 'External tool' : '外部工具';
+  const key = name.toLowerCase().replace(/[-_\s]/g, '');
+  return (en ? TOOL_USER_LABELS_EN[key] : TOOL_USER_LABELS[key]) ?? (en ? 'Action' : UNKNOWN_LABEL);
 }
 
 /** 「需要授权」类通知正文：只说动作，不带原始命令 / 工具名。 */

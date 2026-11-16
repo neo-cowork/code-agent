@@ -328,8 +328,8 @@ function formatToolTokenSavingsMeasurement(decision: ModelDecisionEventData): st
     ? '用量=服务商用量'
     : '用量=未回传';
   const reported = measurement.providerReportedSavings
-    ? '服务商已回传 节省量'
-    : '无 服务商回传的节省量';
+    ? '服务商已回传节省量'
+    : '无服务商回传的节省量';
   return `${savingsSource} · ${usageSource} · ${reported}`;
 }
 

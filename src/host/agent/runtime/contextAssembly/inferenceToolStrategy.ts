@@ -45,8 +45,8 @@ function buildProviderReportedSavingsSnapshot(usage: ModelResponse['usage'] | un
 }
 
 function formatProviderUsageDetail(providerUsage: ModelToolTokenSavingsProviderUsage | undefined): string {
-  if (!providerUsage) return '真实账单以 provider usage 为准。';
-  return `本轮 provider usage 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens；真实账单以 provider usage 为准。`;
+  if (!providerUsage) return '真实账单以服务商用量为准。';
+  return `本轮服务商用量 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens；真实账单以服务商用量为准。`;
 }
 
 function formatProviderReportedSavingsDetail(
@@ -54,9 +54,9 @@ function formatProviderReportedSavingsDetail(
   providerUsage: ModelToolTokenSavingsProviderUsage | undefined,
 ): string {
   const usageDetail = providerUsage
-    ? `本轮 provider usage 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens。`
-    : '本轮 provider usage 未回传。';
-  return `provider 已回传 programmatic tool saved tokens：${providerReport.savedTokens} tokens；${usageDetail}`;
+    ? `本轮服务商用量 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens。`
+    : '本轮服务商用量 未回传。';
+  return `服务商已回传 programmatic tool 节省量：${providerReport.savedTokens} tokens；${usageDetail}`;
 }
 
 function buildRuntimeProviderHealthSnapshot(provider: string): ModelProviderHealthSnapshot {
@@ -185,8 +185,8 @@ export function buildToolStrategyDiagnostics(
       : {
           status: 'not-measured',
           detail: providerUsage
-            ? `本轮没有可见程序化工具，token saved 不计量；本轮 provider usage 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens。`
-            : '本轮没有可见程序化工具，token saved 不计量。',
+            ? `本轮没有可见程序化工具，节省量不计量；本轮服务商用量 已回传：输入 ${providerUsage.inputTokens} / 输出 ${providerUsage.outputTokens} tokens。`
+            : '本轮没有可见程序化工具，节省量不计量。',
           measurement: {
             savingsSource: 'not-measured',
             usageSource: providerUsage ? 'model-response-usage' : 'unavailable',

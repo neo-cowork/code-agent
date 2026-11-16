@@ -21,4 +21,10 @@ describe('toolUserLabel', () => {
     expect(permissionNoticeBody('mail_send')).not.toContain('mail_send');
     expect(permissionNoticeBody(undefined)).toBe('请求执行权限');
   });
+  it('英文界面给英文动作名', () => {
+    expect(toolUserLabel('Bash', 'en')).toBe('Run command');
+    expect(toolUserLabel('mcp__x__y', 'en')).toBe('External tool');
+    expect(toolUserLabel('some_internal_tool_v2', 'en')).toBe('Action');
+    expect(toolUserLabel('Grep')).toBe('搜索内容');
+  });
 });

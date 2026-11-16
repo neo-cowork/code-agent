@@ -21,7 +21,7 @@
     "tokenSavings": {
       "status": "provider-reported",
       "savedTokens": 42,
-      "detail": "provider 已回传 programmatic tool saved tokens：42 tokens；本轮 provider usage 已回传：输入 500 / 输出 50 tokens。",
+      "detail": "服务商已回传 programmatic tool 节省量：42 tokens；本轮服务商用量已回传：输入 500 / 输出 50 tokens。",
       "measurement": {
         "savingsSource": "provider-reported",
         "usageSource": "model-response-usage",
