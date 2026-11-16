@@ -49,7 +49,7 @@ const CONNECTORS = new Map(RECOMMENDED_MCP_SERVERS
   .filter((entry) => entry.readOnlyTools !== undefined)
   .map((entry) => [entry.id, entry]));
 
-export interface CatalogConnectorTool {
+interface CatalogConnectorTool {
   connectorId: string;
   name: string;
   nameEn: string;
@@ -58,7 +58,7 @@ export interface CatalogConnectorTool {
   noun?: { zh: string; one: string; many: string };
 }
 
-export function resolveCatalogConnectorTool(toolName: string | undefined): CatalogConnectorTool | undefined {
+function resolveCatalogConnectorTool(toolName: string | undefined): CatalogConnectorTool | undefined {
   const parsed = /^mcp__(.+?)__(.+)$/.exec(toolName ?? '');
   const entry = parsed ? CONNECTORS.get(parsed[1]) : undefined;
   if (!parsed || !entry) return undefined;
