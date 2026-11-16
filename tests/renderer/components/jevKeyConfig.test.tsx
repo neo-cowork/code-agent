@@ -76,7 +76,7 @@ describe('JevKeyConfig 判官区块', () => {
     stubIpc({ enabled: true, openRouterConsent: false }, statusOf('openrouter_pending_consent'));
     render(<JevKeyConfig />);
     const statusLine = await screen.findByTestId('jev-judge-status');
-    expect(statusLine.textContent).toContain('检测到你的 OpenRouter key，尚未允许使用');
+    expect(statusLine.textContent).toContain('检测到你的 OpenRouter 密钥，尚未允许使用');
     expect(screen.getByTestId('jev-disclosure').textContent).toContain('OpenRouter');
     expect(screen.getByTestId('jev-consent-allow')).toBeDefined();
   });
@@ -96,7 +96,7 @@ describe('JevKeyConfig 判官区块', () => {
   it('官方 key 态：状态行报官方 key，没有 Allow 按钮', async () => {
     stubIpc({ enabled: true }, statusOf('official'));
     render(<JevKeyConfig />);
-    expect((await screen.findByTestId('jev-judge-status')).textContent).toContain('官方 TypeSafe key');
+    expect((await screen.findByTestId('jev-judge-status')).textContent).toContain('官方 TypeSafe 密钥');
     expect(screen.queryByTestId('jev-consent-allow')).toBeNull();
     expect(screen.getByTestId('jev-disclosure').textContent).toContain('api.typesafe.ai');
   });
@@ -156,7 +156,7 @@ describe('JevKeyConfig 判官区块', () => {
 
     fireEvent.click(screen.getByTestId('jev-key-change'));
     fireEvent.click(screen.getByTestId('jev-key-save'));
-    expect(await screen.findByText('清除 TypeSafe API Key？')).toBeTruthy();
+    expect(await screen.findByText('清除 TypeSafe 密钥？')).toBeTruthy();
     fireEvent.click(screen.getByText('清除'));
     await waitFor(() => {
       expect(ipcService.invokeDomain).toHaveBeenCalledWith(
@@ -189,7 +189,7 @@ describe('JevKeyConfig Neo 云判官区块', () => {
     stubIpc({ enabled: true, neoHostedEnabled: true }, statusOf('neo_hosted'));
     const { container } = render(<JevKeyConfig />);
     expect((await screen.findByTestId('jev-judge-status')).textContent).toContain('Neo 云判官');
-    expect((await screen.findByTestId('jev-judge-status')).textContent).toContain('没有自己的 key');
+    expect((await screen.findByTestId('jev-judge-status')).textContent).toContain('没有自己的密钥');
     expect(screen.getByTestId('jev-disclosure').textContent).toContain('经 Neo 的服务器转发');
     expect(screen.getByTestId('jev-disclosure').textContent).toContain('不存储请求内容');
     const row = screen.getByTestId('jev-hosted-row');
