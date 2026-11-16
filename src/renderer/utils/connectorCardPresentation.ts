@@ -4,6 +4,17 @@ import type { zh } from '../i18n/zh';
 type ConnectorCardStatusLabels = (typeof zh)['settings']['mcp']['grid']['cardStatus'];
 type ConnectorCardConnectionState = WorkbenchMcpRegistryItem['lifecycle']['connectionState'];
 
+export function countConnectedMcpServers(
+  servers: readonly WorkbenchMcpRegistryItem[],
+  installingServerIds: ReadonlySet<string> = new Set(),
+): number {
+  return servers.filter((server) => (
+    server.enabled
+    && !installingServerIds.has(server.id)
+    && server.lifecycle.connectionState === 'connected'
+  )).length;
+}
+
 function getStatusLabel(
   server: WorkbenchMcpRegistryItem,
   labels: ConnectorCardStatusLabels,

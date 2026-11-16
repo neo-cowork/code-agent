@@ -601,7 +601,7 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         discover: '发现连接',
       },
       toast: {
-        refreshSuccess: 'MCP 配置已从云端刷新',
+        refreshSuccess: '外部工具配置已从云端刷新',
         refreshFailed: '刷新失败',
         reconnectSuccessSuffix: ' 重连成功',
         reconnectFailedMiddle: ' 重连失败: ',
@@ -630,7 +630,7 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         cancelling: '取消中…',
         cancelInstall: '取消连接',
         refreshing: '刷新中…',
-        refreshFromCloud: '从云端刷新 MCP 配置',
+        refreshFromCloud: '从云端刷新外部工具配置',
         addServer: '添加服务器',
         stats: {
           overview: { label: '总览', caption: '已连接 / 全部' },

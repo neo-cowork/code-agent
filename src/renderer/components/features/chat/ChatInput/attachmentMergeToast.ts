@@ -3,6 +3,7 @@ import type { AttachmentMergeResult } from './attachmentDedupe';
 
 interface AttachmentMergeCopy {
   attachmentAlreadyAdded: string;
+  attachmentAlreadyAddedMany: string;
   attachmentLimitReached: string;
   attachmentLimitReachedNone: string;
 }
@@ -22,7 +23,11 @@ export function notifyAttachmentMerge(
 ): void {
   if (result.skippedCount > 0) {
     const duplicateName = result.duplicates[0]?.incoming.name ?? '';
-    toast.show('warning', copy.attachmentAlreadyAdded.replace('{name}', duplicateName));
+    const template = result.skippedCount > 1 ? copy.attachmentAlreadyAddedMany : copy.attachmentAlreadyAdded;
+    toast.show(
+      'warning',
+      template.replace('{name}', duplicateName).replace('{count}', String(result.skippedCount)),
+    );
   }
   if (result.overflowCount > 0) {
     const template = result.addedCount > 0 ? copy.attachmentLimitReached : copy.attachmentLimitReachedNone;

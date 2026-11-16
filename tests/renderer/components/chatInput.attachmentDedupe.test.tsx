@@ -374,7 +374,7 @@ describe('ChatInput attachment dedupe', () => {
 
     expect(result.current.attachments).toHaveLength(cap);
     expect(toastSpy.show).toHaveBeenCalledTimes(1);
-    expect(toastSpy.show).toHaveBeenCalledWith('warning', 'contract-01.txt 已添加，无需重复添加');
+    expect(toastSpy.show).toHaveBeenCalledWith('warning', 'contract-01.txt 等 2 个文件已添加，无需重复添加');
   });
 
   it('existing chips + incoming mix: counts only unique files dropped by the cap', async () => {
