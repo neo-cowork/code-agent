@@ -4,6 +4,9 @@
 
 export const renderHumanPipeZh = {
   rendererHumanPipe: {
+    routeTrace: {
+      diagnostics: '诊断',
+    },
     toolDetails: {
       collapse: '收起',
       expandRemaining: { one: '展开剩余 {count} 行', other: '展开剩余 {count} 行' },
@@ -133,6 +136,9 @@ export const renderHumanPipeZh = {
 
 export const renderHumanPipeEn: typeof renderHumanPipeZh = {
   rendererHumanPipe: {
+    routeTrace: {
+      diagnostics: 'Diagnostics',
+    },
     toolDetails: {
       collapse: 'Collapse',
       expandRemaining: { one: 'Show {count} more line', other: 'Show {count} more lines' },

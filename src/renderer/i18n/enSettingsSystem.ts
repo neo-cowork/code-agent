@@ -544,7 +544,7 @@ export const enSettingsSystem = {
         title: 'Try it',
         feishu: [
           'Send today’s meeting notes to the Feishu group [Product Weekly], @-mentioning the three leads at the top.',
-          'Every Friday at 5pm, summarize what you did for me this week and post it to the Feishu group [Product Weekly].',
+          'Every Friday at 5pm, summarize the tasks completed this week into a weekly report and post it to the Feishu group [Product Weekly].',
           'I’ve finished this draft. Post the summary to the Feishu group [Project Updates] with a note on which section to read.',
         ],
         googleCalendar: [

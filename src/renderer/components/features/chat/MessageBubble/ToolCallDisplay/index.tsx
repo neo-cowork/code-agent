@@ -42,6 +42,7 @@ import { useDurableSwarmRunDetail } from '../../../../../hooks/useDurableSwarmRu
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
 import { isDelegationTool } from '../../../../../utils/agentActivity';
 import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
+import { projectSupersededDelegationFailures } from './delegationFailureRuns';
 import {
   deriveDelegationPresentation,
   resolveAgentActivityTarget,
@@ -202,6 +203,15 @@ export function ToolCallDisplay({
       ),
     };
   }, [agentTree?.nodes, backgroundTasks, delegationTool, memberDetail, sessionId, toolCall, t]);
+
+  const sessionMessages = useSessionStore((state) => state.messages);
+  const failureSuperseded = useMemo(() => {
+    if (delegationPresentation?.state !== 'failed' || !sessionMessages || sessionId !== currentSessionId) return false;
+    return projectSupersededDelegationFailures(
+      sessionMessages,
+      (call) => deriveDelegationPresentation(call, backgroundTasks, [], t),
+    ).has(toolCall.id);
+  }, [delegationPresentation?.state, sessionMessages, sessionId, currentSessionId, backgroundTasks, t, toolCall.id]);
 
   const displayToolCall = useMemo(
     () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
@@ -364,7 +374,7 @@ export function ToolCallDisplay({
           }}>{t.deliveryExperience.continueQuestion}</Button>
       )}
 
-      {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
+      {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} superseded={failureSuperseded} />}
 
       {!delegationPresentation && actionPreview && (
         <BrowserComputerActionPreviewLine preview={actionPreview} />
