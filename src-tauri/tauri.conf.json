@@ -20,6 +20,7 @@
         "minHeight": 640,
         "resizable": true,
         "dragDropEnabled": false,
+        "acceptFirstMouse": true,
         "visible": false,
         "url": "about:blank",
         "backgroundColor": "#18181b",

@@ -2372,6 +2372,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
         .inner_size(1200.0, 800.0)
         .min_inner_size(960.0, 640.0)
         .disable_drag_drop_handler()
+        .accept_first_mouse(true)
         .build()
         .map_err(|error| format!("Failed to rebuild main window: {error}"))?;
 
