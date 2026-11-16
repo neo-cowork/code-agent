@@ -18,6 +18,7 @@ import { humanizeToolGroupLabel } from '../../../src/renderer/utils/humanizeTool
 import { interpolate, interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { getSurfaceExecutionTranslations } from '../../../src/renderer/i18n/surfaceExecution';
 
 const mocks = vi.hoisted(() => ({
   tasks: [] as Task[],
@@ -237,5 +238,111 @@ describe('{ one, other } templates rendered with interpolatePlural (en 0/1/2, zh
     expect(interpolatePlural(zh.chat.compactionCountBadge, 1)).toBe('已压缩 1 次');
     expect(interpolatePlural(zh.chat.compactionTokensSaved, 1)).toBe('节省 1 tokens');
     expect(interpolatePlural(zh.previewWorkspace.workspacePreview.restoredFiles, 2)).toBe('已恢复 2 个文件。');
+  });
+});
+
+// 返修轮：任务面板头「Done · 1 steps」缺陷（workbenchTabs）+ baseline 里可见
+// 任务/侧栏摘要的同类硬复数。en 1/2/0 各断言；zh one/other 同文，1 与 2 输出不变。
+describe('rework: task-panel header and visible task/sidebar summaries (en 1 reads singular)', () => {
+  it('workbenchTabs overviewRunStepsDone: total 1 reads "Done · 1 step" (the reported defect)', () => {
+    expect(interpolatePlural(en.workbenchTabs.overviewRunStepsDone, 1)).toBe('Done · 1 step');
+    expect(interpolatePlural(en.workbenchTabs.overviewRunStepsDone, 2)).toBe('Done · 2 steps');
+    expect(interpolatePlural(en.workbenchTabs.overviewRunStepsDone, 0)).toBe('Done · 0 steps');
+    expect(interpolatePlural(zh.workbenchTabs.overviewRunStepsDone, 1)).toBe('已完成 · 共 1 步');
+    expect(interpolatePlural(zh.workbenchTabs.overviewRunStepsDone, 2)).toBe('已完成 · 共 2 步');
+  });
+
+  it('workbenchTabs agentWindow.tabCount', () => {
+    expect(interpolatePlural(en.workbenchTabs.agentWindow.tabCount, 1)).toBe('1 tab');
+    expect(interpolatePlural(en.workbenchTabs.agentWindow.tabCount, 2)).toBe('2 tabs');
+    expect(interpolatePlural(zh.workbenchTabs.agentWindow.tabCount, 1)).toBe('1 个标签页');
+  });
+
+  it('sidebar: search hits / deleted conversations / automations / doctor checks', () => {
+    expect(interpolatePlural(en.sidebar.messageHits, 1)).toBe('1 message match');
+    expect(interpolatePlural(en.sidebar.messageHits, 2)).toBe('2 message matches');
+    expect(interpolatePlural(en.sidebar.deletedCount, 1)).toBe('Deleted 1 conversation');
+    expect(interpolatePlural(en.sidebar.deletedCount, 2)).toBe('Deleted 2 conversations');
+    expect(interpolatePlural(en.sidebar.capabilityZone.automationCount, 1)).toBe('1 task');
+    expect(interpolatePlural(en.sidebar.capabilityZone.automationCount, 2)).toBe('2 tasks');
+    expect(interpolatePlural(en.sidebar.capabilityZone.doctorIssues, 1)).toBe('1 check failing');
+    expect(interpolatePlural(en.sidebar.capabilityZone.doctorIssues, 2)).toBe('2 checks failing');
+    expect(interpolatePlural(zh.sidebar.deletedCount, 1)).toBe('已删除 1 个对话');
+    expect(interpolatePlural(zh.sidebar.capabilityZone.doctorIssues, 2)).toBe('2 项检查未通过');
+  });
+
+  it('sidebar project: goal / artifact / message counts, hidden sessions', () => {
+    expect(interpolatePlural(en.sidebarProject.goalCountFallback, 1)).toBe('1 goal');
+    expect(interpolatePlural(en.sidebarProject.goalCountFallback, 2)).toBe('2 goals');
+    expect(interpolatePlural(en.sidebarProject.artifactCountFallback, 1)).toBe('1 artifact');
+    expect(interpolatePlural(en.sidebarProject.artifactCountFallback, 2)).toBe('2 artifacts');
+    expect(interpolatePlural(en.sidebarProject.messageCount, 1)).toBe('1 message');
+    expect(interpolatePlural(en.sidebarProject.messageCount, 2)).toBe('2 messages');
+    expect(interpolatePlural(en.sidebarProject.moreSessionsHidden, 1)).toBe('1 more session not shown');
+    expect(interpolatePlural(en.sidebarProject.moreSessionsHidden, 2)).toBe('2 more sessions not shown');
+    expect(interpolatePlural(zh.sidebarProject.messageCount, 1)).toBe('1 消息');
+    expect(interpolatePlural(zh.sidebarProject.moreSessionsHidden, 2)).toBe('另有 2 条会话未展示');
+  });
+
+  it('turn rail: all turns / with messages / queued additions', () => {
+    expect(interpolatePlural(en.turnRail.allTurns, 1)).toBe('All 1 turn');
+    expect(interpolatePlural(en.turnRail.allTurns, 2)).toBe('All 2 turns');
+    expect(interpolate(
+      interpolatePlural(en.turnRail.allTurnsWithMessages, 1),
+      { messages: 2 },
+    )).toBe('All 1 turn · 2 messages');
+    expect(interpolate(
+      interpolatePlural(en.turnRail.allTurnsWithMessages, 2),
+      { messages: 5 },
+    )).toBe('All 2 turns · 5 messages');
+    expect(interpolatePlural(en.turnRail.includesAdded, 1)).toBe('Includes 1 added message');
+    expect(interpolatePlural(en.turnRail.includesAdded, 2)).toBe('Includes 2 added messages');
+    expect(interpolatePlural(zh.turnRail.allTurns, 1)).toBe('全部 1 轮');
+    expect(interpolate(
+      interpolatePlural(zh.turnRail.allTurnsWithMessages, 2),
+      { messages: 3 },
+    )).toBe('全部 2 轮 · 共 3 条消息');
+    expect(interpolatePlural(zh.turnRail.includesAdded, 1)).toBe('含 1 条追加消息');
+  });
+
+  it('session replay dialog: overflow rows', () => {
+    expect(interpolatePlural(en.sessionReplay.dialog.moreOutputs, 1)).toBe('1 more output');
+    expect(interpolatePlural(en.sessionReplay.dialog.moreOutputs, 2)).toBe('2 more outputs');
+    expect(interpolatePlural(en.sessionReplay.dialog.moreTaskEvents, 1)).toBe('1 more task event');
+    expect(interpolatePlural(en.sessionReplay.dialog.moreWorkflowRuns, 2)).toBe('2 more workflow runs');
+    expect(interpolatePlural(en.sessionReplay.dialog.moreBackgroundTasks, 1)).toBe('1 more background task');
+    expect(interpolatePlural(en.sessionReplay.dialog.moreTurnsHidden, 1)).toBe('1 more turn not shown');
+    expect(interpolatePlural(en.sessionReplay.dialog.moreBlocks, 2)).toBe('2 more blocks');
+    expect(interpolatePlural(zh.sessionReplay.dialog.moreTurnsHidden, 1)).toBe('另有 1 轮未展示');
+    expect(interpolatePlural(zh.sessionReplay.dialog.moreBlocks, 2)).toBe('另有 2 个 block');
+  });
+
+  it('task status / background pill / checkout note / diff confirm', () => {
+    expect(interpolatePlural(en.sessionTaskPresentation.checkedTimes, 1)).toBe('checked 1 time');
+    expect(interpolatePlural(en.sessionTaskPresentation.checkedTimes, 2)).toBe('checked 2 times');
+    expect(interpolatePlural(en.backgroundPanel.minimizedLabel, 1)).toBe('1 background task');
+    expect(interpolatePlural(en.backgroundPanel.minimizedLabel, 2)).toBe('2 background tasks');
+    expect(interpolatePlural(en.backgroundPanel.minimizedFinishedLabel, 1)).toBe('1 finished background task');
+    expect(interpolatePlural(en.backgroundPanel.minimizedFinishedLabel, 2)).toBe('2 finished background tasks');
+    expect(interpolatePlural(en.chat.turnCheckoutNoteChanged, 1)).toBe('1 workspace file was processed.');
+    expect(interpolatePlural(en.chat.turnCheckoutNoteChanged, 2)).toBe('2 workspace files were processed.');
+    expect(interpolatePlural(en.turnDiff.confirmMessage, 1)).toContain('changes to 1 file from this turn');
+    expect(interpolatePlural(en.turnDiff.confirmMessage, 2)).toContain('changes to 2 files from this turn');
+    expect(interpolatePlural(zh.chat.turnCheckoutNoteChanged, 1)).toBe('工作区处理了 1 个文件。');
+    expect(interpolatePlural(zh.turnDiff.confirmMessage, 2)).toContain('将回滚本轮对 2 个文件的全部修改');
+  });
+
+  it('surface execution panel: session count and relative time', () => {
+    const en2 = getSurfaceExecutionTranslations('en');
+    const zh2 = getSurfaceExecutionTranslations('zh');
+    expect(interpolatePlural(en2.panel.sessionCount, 1)).toBe('1 execution session');
+    expect(interpolatePlural(en2.panel.sessionCount, 2)).toBe('2 execution sessions');
+    expect(interpolatePlural(en2.timing.minutes, 1)).toBe('1 minute ago');
+    expect(interpolatePlural(en2.timing.minutes, 2)).toBe('2 minutes ago');
+    expect(interpolatePlural(en2.timing.hours, 1)).toBe('1 hour ago');
+    expect(interpolatePlural(en2.timing.hours, 2)).toBe('2 hours ago');
+    expect(interpolatePlural(zh2.panel.sessionCount, 1)).toBe('1 个执行会话');
+    expect(interpolatePlural(zh2.timing.minutes, 2)).toBe('2 分钟前');
+    expect(interpolatePlural(zh2.timing.hours, 1)).toBe('1 小时前');
   });
 });

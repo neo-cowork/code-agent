@@ -14,10 +14,13 @@ import {
 import type { RunUiState, RunUiStatus } from '../../../src/renderer/types/runWorkbench';
 
 const runModel = vi.hoisted(() => ({ current: null as unknown }));
+// 返修轮：英文 UI 单步概要读「Done · 1 step」——语言可切换的 mock，默认 zh 保持原用例。
+const language = vi.hoisted(() => ({ current: 'zh' as 'zh' | 'en' }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ language: 'zh', t: zh }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => (language.current === 'en' ? { language: 'en', t: en } : { language: 'zh', t: zh }) };
 });
 vi.mock('../../../src/renderer/hooks/useRunWorkbenchModel', () => ({
   useRunWorkbenchModel: () => runModel.current,
@@ -67,7 +70,10 @@ function sessionTask(steps: Array<{ title: string; status: string }>) {
   }];
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  language.current = 'zh';
+});
 
 describe('deriveRunOverviewTone', () => {
   it('进行中系 → live；waiting_approval 单列 waiting；completed → done；blocked/cancelled → error', () => {
@@ -275,5 +281,32 @@ describe('OverviewRunHeader 细进度线', () => {
     );
     render(<OverviewRunHeader />);
     expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('已完成 · 共 1 步');
+  });
+
+  // 返修轮（FB-1490 follow-up）：英文 UI 单步任务完成态读「Done · 1 step」，不再是
+  // 「Done · 1 steps」（缺陷截图 2-after-completed-aggregates.png）。
+  describe('英文 UI（OverviewRunHeader）', () => {
+    it('completed：单步读 "Done · 1 step"', () => {
+      language.current = 'en';
+      setRun(
+        run({ status: 'completed', startedAt: START, endedAt: START + 2_000, toolStepOutcome: { failed: 0, total: 1 } }),
+        sessionTask([{ title: 'read notes', status: 'completed' }]),
+      );
+      render(<OverviewRunHeader />);
+      expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('Done · 1 step');
+    });
+
+    it('completed：两步读 "Done · 2 steps"', () => {
+      language.current = 'en';
+      setRun(
+        run({ status: 'completed', startedAt: START, endedAt: START + 2_000, toolStepOutcome: { failed: 0, total: 2 } }),
+        sessionTask([
+          { title: 'read notes', status: 'completed' },
+          { title: 'write summary', status: 'completed' },
+        ]),
+      );
+      render(<OverviewRunHeader />);
+      expect(screen.getByTestId('overview-run-header-steps').textContent).toBe('Done · 2 steps');
+    });
   });
 });
