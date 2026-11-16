@@ -13,14 +13,8 @@ export interface CommandCenterToolStartInput {
   emitToolStart(): void;
 }
 
-// N-FIX-DELEGATE-PREANNOUNCE-GARBLED rework r2（台账③）：extractUserRequest 的契约是
-// 「整条消息以 </user_request> 收尾 + 行首开始标签」才算包装，其余形状原样返回。凡是它
-// 没能可靠剥出原话的形状（结束标签后还有内容、嵌套包装、只有脚手架块没有包装），返回值
-// 会带着轮首系统块的标签或包装标签本身。这时宁可说固定句，也不把脚手架残片当任务转述。
-// 只认这三种标签（台账点名的判定集）：包装标签本身 + 候选能力块头。生产面所有脚手架
-// 生产者（applyTurnSystemContext / web 路由 / mergeTurnSystemContext）都经
-// wrapWithTurnSystemContext 收在包装体里，其余块标签不在此列（不扩判定面）。
-const TURN_SCAFFOLD_TAG_PATTERN = /<\/?user_request>|<background_capability_stats>/;
+// If extraction leaves any scaffold tag, use generic copy rather than quoting system context.
+const TURN_SCAFFOLD_TAG_PATTERN = /<\/?[a-z][\w-]*>/i;
 
 function preannounceTitle(userMessage: string): string | undefined {
   const request = extractUserRequest(userMessage).replace(/\s+/g, ' ').trim();

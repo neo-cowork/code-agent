@@ -11,6 +11,9 @@ export const APPLE_EVENTS_PERMISSION_PROMPT_TIMEOUT_MS = 90_000;
 /** Loopback request timeout when calling the desktop shell env-assist endpoint. */
 export const ENV_ASSIST_BRIDGE_TIMEOUT_MS = 15_000;
 
+/** Short non-prompting probe budget before an env-assist card chooses its action. */
+export const ENV_ASSIST_BRIDGE_PROBE_TIMEOUT_MS = 2_000;
+
 /** Calendar setting grant (ADR-090 perm_calendars): passive re-read cadence and how long one click waits for the dialog. */
 export const ENV_ASSIST_CALENDAR_POLL_MS = 1_000;
 export const ENV_ASSIST_CALENDAR_CONFIRM_MS = 60_000;
