@@ -145,7 +145,7 @@ describe('readOnly 只读探索档', () => {
     const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
     expect(result.success).toBe(false);
     expect(result.error).toContain('The user just declined this kind of action.');
-    expect(result.error).toContain('End this turn now with one short final');
+    expect(result.error).toContain('End this turn now with exactly one short final');
     expect(result.error).not.toContain('切换会话权限档');
   });
 

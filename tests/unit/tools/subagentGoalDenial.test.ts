@@ -9,6 +9,7 @@ import { getPermissionModeManager, resetPermissionModeManager } from '../../../s
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { userDeniedGoalStickyError } from '../../../src/host/tools/toolPermissionClassification';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { createProtocolSubagentExecutionContext } from '../../../src/host/agent/subagentExecutionContext';
 import type { AppSettings } from '../../../src/shared/contract';
@@ -20,7 +21,7 @@ vi.mock('../../../src/host/security/execPolicy', async (original) => ({
   getExecPolicyStore: () => ({ match: () => null, getRules: () => [], learnFromApproval: () => false }),
 }));
 
-const stickyText = 'End this turn now with one short final sentence saying that the declined action was not performed (and briefly what was already done earlier in this turn, if anything). Do not claim that nothing was changed.';
+const stickyText = userDeniedGoalStickyError('Bash').modelText;
 
 describe('same-goal denial propagates to sub-agents (createSubagentToolRuntime lane)', () => {
   let cwd: string;

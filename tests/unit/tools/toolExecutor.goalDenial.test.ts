@@ -180,7 +180,9 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     const args = { file_path: file, content: '- Discussed plans\n- Assigned owners\n- Set next meeting\n' };
     const denied = await tool.execute('Write', args, options);
     expect(denied.success).toBe(false);
-    expect(denied.error).toContain('End this turn now with one short final sentence saying that the declined action was not performed (and briefly what was already done earlier in this turn, if anything). Do not claim that nothing was changed.');
+    expect(denied.error).toContain('End this turn now with exactly one short final sentence: state that the declined action was not performed and, if anything was completed earlier in this turn, mention it in the same sentence.');
+    expect(denied.error).toContain('Do not add a second sentence, a list, or an offer to continue.');
+    expect(denied.error).toContain('Do not claim that nothing was changed.');
     expect(denied.error).toContain('Do not ask a question or call a question tool.');
     expect(denied.error).toContain('state in one final sentence that the action was declined and skipped.');
     expect(denied.error).toContain('Wait for a new user message before requesting approval');

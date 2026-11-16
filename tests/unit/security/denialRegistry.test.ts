@@ -155,7 +155,7 @@ describe('goal registry is independent of fingerprint availability', () => {
     });
     expect(result.message).toBe(`declined from inbox ${guidance}`);
     expect(result.message?.split(guidance)).toHaveLength(2);
-    expect(result.message).toContain('End this turn now with one short final sentence');
+    expect(result.message).toContain('End this turn now with exactly one short final sentence');
     expect(result.message).not.toMatch(/how to proceed|AskUserQuestion/);
   });
   it('null fingerprint still records a real user denial, isolated by family/session/message', async () => {
