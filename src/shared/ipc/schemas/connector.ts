@@ -27,6 +27,7 @@ const ConnectorDomainRequestSchema = z.object({
     'repairPermission',
     'retry',
     'setNativeEnabled',
+    'undoCalendarDelete',
   ]),
   payload: z.unknown().optional(),
   requestId: z.string().optional(),
