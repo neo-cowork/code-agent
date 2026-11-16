@@ -1,9 +1,12 @@
-//! Scheduled-only quit keeps the desktop shell resident and explains the real exit once.
+//! Background-resident quit (scheduled-only, or the dialog's "keep running in background") keeps the desktop shell resident and explains the real exit once.
 
 use std::{fs, path::Path};
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
 
 use crate::quit_dialog_i18n::{background_hint, QuitDialogLanguage};
+use crate::quit_guard::{self, QuitAnswerAction, QuitCoordinator};
+use crate::QuitFlowOrigin;
 
 const HINT_MARKER: &str = "background-hint-shown";
 
@@ -41,6 +44,55 @@ pub(crate) fn minimize_and_hint<R: Runtime>(
         Ok(true) => eprintln!("background-resident: first-time hint posted"),
         Ok(false) => eprintln!("background-resident: hint already shown"),
         Err(error) => eprintln!("background-resident: hint not recorded: {error}"),
+    }
+}
+
+/// The one hide-to-background ending: minimize, release the dialog slot, and on macOS
+/// cancel the pending `applicationShouldTerminate`. Never exits the shell or touches the host.
+pub(crate) fn hide_to_background<R: Runtime>(
+    app: &AppHandle<R>,
+    coordinator: &Arc<QuitCoordinator>,
+    origin: QuitFlowOrigin,
+    language: QuitDialogLanguage,
+    poster: impl FnOnce(QuitDialogLanguage) -> Result<(), String>,
+) {
+    minimize_and_hint(app, language, poster);
+    coordinator.finish();
+    #[cfg(target_os = "macos")]
+    if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+        crate::reply_to_mac_application_terminate(app, false);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = origin;
+}
+
+/// Quit-dialog answer handling (extracted from the dialog callback so tests can drive it).
+pub(crate) fn handle_quit_dialog_answer<R: Runtime>(
+    app: &AppHandle<R>,
+    coordinator: &Arc<QuitCoordinator>,
+    origin: QuitFlowOrigin,
+    action: QuitAnswerAction,
+    language: QuitDialogLanguage,
+    poster: impl FnOnce(QuitDialogLanguage) -> Result<(), String>,
+) {
+    match action {
+        QuitAnswerAction::BackgroundContinue => {
+            hide_to_background(app, coordinator, origin, language, poster);
+        }
+        QuitAnswerAction::StayRunning => {
+            // Cancel: clean up nothing, the app keeps running.
+            coordinator.finish();
+            #[cfg(target_os = "macos")]
+            if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+                crate::reply_to_mac_application_terminate(app, false);
+            }
+        }
+        QuitAnswerAction::Quit => crate::execute_quit_exit_plan(
+            app.clone(),
+            coordinator.clone(),
+            origin,
+            quit_guard::quit_exit_plan(QuitAnswerAction::Quit),
+        ),
     }
 }
 
