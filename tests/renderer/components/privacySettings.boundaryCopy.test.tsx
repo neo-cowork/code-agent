@@ -92,7 +92,7 @@ describe('PrivacySettings boundary copy', () => {
       '本地 whisper-cpp、Groq Whisper、智谱/Kimi 后处理',
       '日志只记录 size、mimeType、duration、错误码，不记录转写正文。',
       'OpenAI、Anthropic、Groq、Moonshot、Zhipu',
-      '诊断包和日志必须脱敏 provider key。',
+      '诊断包和日志必须脱敏模型服务密钥。',
     ]) {
       expect(html).toContain(text);
     }
