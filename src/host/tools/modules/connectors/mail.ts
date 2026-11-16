@@ -227,7 +227,7 @@ async function executeMail(
         : `Mail connector failed: ${error instanceof Error ? error.message : String(error)}`,
       // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
       // 判据读 metadata.code，缺了它 mail 的授权被拒永远发不出环境卡片）。
-      code: osascriptFailure ? failure.code : 'MAIL_CONNECTOR_FAILED',
+      code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
   }
 }

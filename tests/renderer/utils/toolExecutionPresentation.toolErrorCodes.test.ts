@@ -7,7 +7,8 @@ import { en } from '../../../src/renderer/i18n/en';
 
 const NEW_CODES = [
   'BINARY_FILE_NOT_TEXT',
-  'MAIL_CONNECTOR_FAILED',
+  'CONNECTOR_FAILED',
+  'NOT_INITIALIZED',
   'ARG_VALIDATION_FAILED',
   'STALE_FILE',
   'READ_DIGEST_MISMATCH',

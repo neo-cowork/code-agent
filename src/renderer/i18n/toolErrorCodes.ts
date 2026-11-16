@@ -78,9 +78,9 @@ export const toolErrorCodesZh = {
     summary: '这类文件不能当纯文本直接读取',
     detail: 'Neo 会换一种方式打开它，你不需要做任何事。',
   },
-  MAIL_CONNECTOR_FAILED: {
-    summary: '这次没能连上邮件',
-    detail: '请确认已允许 Neo 访问邮件，稍后再试一次；原始报错可在下方展开查看。',
+  CONNECTOR_FAILED: {
+    summary: '这次没能连上对应的应用',
+    detail: '请确认已允许 Neo 访问它（邮件、日历、提醒事项等），稍后再试一次；原始报错可在下方展开查看。',
   },
   ARG_VALIDATION_FAILED: {
     summary: 'Neo 这一步准备的内容不完整，没有执行',
@@ -97,6 +97,10 @@ export const toolErrorCodesZh = {
   READ_REQUIRED_AFTER_SEARCH: {
     summary: '这个文件还没有完整读过，暂时不能修改',
     detail: 'Neo 会先打开读完整再修改，你不需要做任何事。',
+  },
+  NOT_INITIALIZED: {
+    summary: '这项功能还没有准备好',
+    detail: '如果是邮件、日历这类连接，请在能力中心 > 连接器里打开后再试。',
   },
 };
 
@@ -177,9 +181,9 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
     summary: 'This kind of file can\'t be read as plain text',
     detail: 'Neo will open it another way; there is nothing you need to do.',
   },
-  MAIL_CONNECTOR_FAILED: {
-    summary: 'Couldn\'t reach your mail this time',
-    detail: 'Check that Neo is allowed to access Mail, then try again later; the original error can be expanded below.',
+  CONNECTOR_FAILED: {
+    summary: 'Couldn\'t reach that app this time',
+    detail: 'Check that Neo is allowed to access it (Mail, Calendar, Reminders and so on), then try again later; the original error can be expanded below.',
   },
   ARG_VALIDATION_FAILED: {
     summary: 'Neo prepared this step incompletely, so it was not run',
@@ -196,5 +200,9 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   READ_REQUIRED_AFTER_SEARCH: {
     summary: 'This file has not been fully read yet, so it can\'t be changed',
     detail: 'Neo will open and read it fully first; there is nothing you need to do.',
+  },
+  NOT_INITIALIZED: {
+    summary: 'This feature isn\'t ready yet',
+    detail: 'For connections such as Mail or Calendar, turn them on in Capability Hub > Connectors, then try again.',
   },
 };

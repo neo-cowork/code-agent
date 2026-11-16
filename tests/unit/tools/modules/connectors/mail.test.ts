@@ -163,13 +163,13 @@ describe('mailModule (native)', () => {
       expect(meta.detail).not.toContain('set a1 to');
     });
 
-    it('tags non-osascript failures with MAIL_CONNECTOR_FAILED and osascript ones with their own code', async () => {
+    it('tags non-osascript failures with CONNECTOR_FAILED and osascript ones with their own code', async () => {
       execMock.mockRejectedValue(new Error('socket hang up'));
       const plain = await run({ action: 'get_status' });
       expect(plain.ok).toBe(false);
       if (!plain.ok) {
         expect(plain.error).toContain('Mail connector failed: socket hang up');
-        expect(plain.code).toBe('MAIL_CONNECTOR_FAILED');
+        expect(plain.code).toBe('CONNECTOR_FAILED');
       }
       execMock.mockRejectedValue(Object.assign(new Error('Command failed: osascript\nMail got an error: Can\'t get mailbox (-1728)'), { code: 1 }));
       const scripted = await run({ action: 'get_status' });
