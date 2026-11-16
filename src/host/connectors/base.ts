@@ -14,6 +14,8 @@ export interface ConnectorStatus {
   // 供渲染层区分「已连接」与「连上了但还没内容」——detail 在 ready 分支是固定文案，
   // 真实描述只出现在被 IPC 层丢弃的 execute summary 里，不能靠文案匹配。
   noAccessibleItems?: boolean;
+  // failed 时的结构化原因（来自 describeAppleScriptFailure().code）；渲染层据此显示「打开系统设置」，不做文案匹配
+  errorCode?: 'not_authorized';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }

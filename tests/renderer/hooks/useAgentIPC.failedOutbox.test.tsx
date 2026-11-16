@@ -37,13 +37,15 @@ function sender() {
   }));
 }
 
-async function fail(attachments?: MessageAttachment[]) {
-  invoke.mockRejectedValueOnce(new Error('HTTP 500: Internal Server Error'));
+async function fail(attachments?: MessageAttachment[], clientMessageId = 'original-client-id', trust = false) {
+  invoke.mockRejectedValueOnce(trust
+    ? Object.assign(new Error('Project folder needs confirmation'), { status: 422, code: 'PROJECT_SOURCE_TRUST' })
+    : new Error('HTTP 500: Internal Server Error'));
   const hook = sender();
   await act(async () => {
     expect(await hook.result.current.sendMessage({
       content: 'Summarize this file into 3 bullet points', sessionId,
-      clientMessageId: 'original-client-id', attachments,
+      clientMessageId, attachments,
     })).toEqual({ outcome: 'failed' });
   });
   return hook;
@@ -71,11 +73,70 @@ beforeEach(async () => {
 afterEach(() => { vi.restoreAllMocks(); useMessageActionStore.getState().unregister(); });
 
 describe('failed send outbox through sendMessage and switchSession', () => {
+  it.each([false, true])('keeps both blocked turns in send order after switch and module reload (attachment=%s)', async (withAttachment) => {
+    await fail(undefined, 'blocked-A', true);
+    await fail(withAttachment ? [attachment] : undefined, 'blocked-B', true);
+    const expected = useSessionStore.getState().messages;
+    const order = expected.map((message) => message.id);
+    expect(order[0]).toBe('blocked-A');
+    expect(order[2]).toBe('blocked-B');
+    await returnToSession();
+    console.log('switch order:', useSessionStore.getState().messages.map((message) => message.id));
+    expect(useSessionStore.getState().messages.map((message) => message.id)).toEqual(order);
+    expect(useSessionStore.getState().messages).toEqual(expected);
+    vi.resetModules();
+    const { useSessionStore: reloaded } = await import('../../../src/renderer/stores/sessionStore');
+    await reloaded.getState().switchSession(sessionId);
+    console.log('reload order:', reloaded.getState().messages.map((message) => message.id));
+    expect(reloaded.getState().messages.map((message) => message.id)).toEqual(order);
+    expect(reloaded.getState().messages.filter((message) => message.metadata?.sendFailureCode === 'PROJECT_SOURCE_TRUST')).toHaveLength(2);
+    if (withAttachment) expect(reloaded.getState().messages[2].attachments?.[0].name).toBe('notes.md');
+  });
+
+  it('places restored pairs between loaded history by timestamp and prunes only the DB-owned turn', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+    await fail(undefined, 'blocked-A', true);
+    vi.spyOn(Date, 'now').mockReturnValue(300);
+    await fail([attachment], 'blocked-B', true);
+    const failed = useSessionStore.getState().messages;
+    dbMessages = [
+      { id: 'before', role: 'assistant', content: 'Earlier notes', timestamp: 50 },
+      { id: 'between', role: 'assistant', content: 'Saved notes', timestamp: 200 },
+      { id: 'after', role: 'assistant', content: 'Later notes', timestamp: 400 },
+    ];
+    await returnToSession();
+    expect(useSessionStore.getState().messages.map((message) => message.id)).toEqual([
+      'before', failed[0].id, failed[1].id, 'between', failed[2].id, failed[3].id, 'after',
+    ]);
+    dbMessages = [{ ...failed[0], metadata: undefined }];
+    await returnToSession(true);
+    expect(useSessionStore.getState().messages.filter((message) => message.id === 'blocked-A')).toEqual(dbMessages);
+    expect(useSessionStore.getState().messages.some((message) => message.id === failed[1].id)).toBe(false);
+    expect(JSON.parse(localStorage.getItem(key)!).map((entry: { user: Message }) => entry.user.id)).toEqual(['blocked-B']);
+    vi.resetModules();
+    const { useSessionStore: reloaded } = await import('../../../src/renderer/stores/sessionStore');
+    await reloaded.getState().switchSession(sessionId);
+    expect(reloaded.getState().messages.map((message) => message.id)).toEqual(['blocked-A', failed[2].id, failed[3].id]);
+  });
+
+  it('loads the legacy single-object value after module reload', async () => {
+    await fail([attachment]);
+    const stored = JSON.parse(localStorage.getItem(key)!);
+    localStorage.setItem(key, JSON.stringify(Array.isArray(stored) ? stored[0] : stored));
+    const expected = useSessionStore.getState().messages;
+    vi.resetModules();
+    const { useSessionStore: reloaded } = await import('../../../src/renderer/stores/sessionStore');
+    await reloaded.getState().switchSession(sessionId);
+    expect(reloaded.getState().messages).toEqual(expected);
+    expect(reloaded.getState().messages[0].attachments?.[0].name).toBe('notes.md');
+  });
+
   it.each([['Markdown attachment', [attachment]], ['text only', undefined]] as const)(
     'restores %s and its error/retry anchor after switching away and back', async (_variant, attachments) => {
       await fail(attachments ? [...attachments] : undefined);
       const failed = useSessionStore.getState().messages;
-      expect(JSON.parse(localStorage.getItem(key)!).user.attachments).toEqual(attachments);
+      const stored = JSON.parse(localStorage.getItem(key)!);
+      expect((Array.isArray(stored) ? stored[0] : stored).user.attachments).toEqual(attachments);
       await returnToSession();
       expect(useSessionStore.getState().messages).toEqual(failed);
       expect(useSessionStore.getState().messages[0].metadata?.sendFailed).toBe(true);
@@ -141,6 +202,22 @@ describe('failed send outbox through sendMessage and switchSession', () => {
     expect(localStorage.getItem(key)).not.toBeNull();
     await useSessionStore.getState().deleteSession(sessionId);
     expect(localStorage.getItem(key)).toBeNull();
+  });
+
+  it('accepting an unrelated id cannot erase unread storage when its read throws', async () => {
+    const hook = await fail();
+    const serialized = localStorage.getItem(key)!;
+    await useSessionStore.getState().deleteSession(sessionId);
+    localStorage.setItem(key, serialized);
+    useSessionStore.setState({ currentSessionId: sessionId, messages: [] });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+    invoke.mockResolvedValueOnce(undefined);
+    await act(async () => {
+      await hook.result.current.sendMessage({ sessionId, clientMessageId: 'unrelated-id', content: 'Summarize next week plans' });
+    });
+    read.mockRestore();
+    expect(localStorage.getItem(key)).toBe(serialized);
   });
 
   it('a failed edited resend keeps the newer text even when quota leaves an older disk entry', async () => {

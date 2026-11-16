@@ -433,7 +433,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                     复用浏览器登录
                   </div>
                   <div className="text-[11px] text-zinc-500">
-                    从本机 Chrome / Edge / Brave / Arc… 导入 Cookie 到托管浏览器（需 Keychain 授权，不落 cookie value）
+                    从本机 Chrome / Edge / Brave / Arc… 导入 Cookie 到托管浏览器（需钥匙串授权，不保存登录凭据）
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -622,7 +622,7 @@ export const BrowserSurfaceContent: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-[11px] text-zinc-500">尚未刷新账号状态摘要。这里不会展示 cookie value 或 token。</div>
+              <div className="text-[11px] text-zinc-500">尚未刷新账号状态摘要。这里不会显示登录凭据。</div>
             )}
           </section>
 

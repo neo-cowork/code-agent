@@ -27,6 +27,12 @@ const busy: Record<Language, string> = {
   en: 'The previous turn is still finishing. Try again in a moment.',
 };
 
+// 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
+const sessionHeldByOldRun: Record<Language, string> = {
+  zh: '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。',
+  en: 'This message was not sent: an earlier task in this conversation is still open. Abandon that task first, then retry.',
+};
+
 const tooManyRequests: Record<Language, string> = {
   zh: '发送太频繁了，请稍等片刻再重试。',
   en: 'Too many requests in a short time. Wait a moment and try again.',
@@ -43,6 +49,7 @@ export function httpFailureMessage(input: HttpFailureMessageInput): string {
   const { status, code, language } = input;
   const pick = (copy: Record<Language, string>): string => copy[language] ?? copy.zh;
   if (code === 'PROJECT_SOURCE_TRUST') return pick(projectSourceTrustCopy);
+  if (code === 'RUN_SESSION_CONFLICT') return pick(sessionHeldByOldRun);
   if (status === 401 || status === 403) return pick(accessDenied);
   if (status === 409) return pick(busy);
   if (status === 429) return pick(tooManyRequests);

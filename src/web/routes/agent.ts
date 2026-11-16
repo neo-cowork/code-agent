@@ -34,6 +34,7 @@ import { resolveForegroundMcpToolScope } from '../../host/mcp/foregroundMcpServe
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { resolveRoleChatToolFace } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
+import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
@@ -1988,14 +1989,38 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         attachments,
         context,
       };
-      res.json({ success: true, data: { outcome: 'steered' } });
-      void runAgentTurn(
-        buildQueuedAgentRunBody(envelope),
-        createOfflineAgentRunResponseSink(),
-        { connectedClient: false },
-      ).catch((error) => {
-        logger.error(`[AgentRouter] Failed to start foreground continuation for ${sessionId}:`, error);
+      // 等新一轮真登记起跑再回执：先答 steered 再只写日志，起跑失败（会话被旧 run 占着等）时
+      // 界面永远停在「正在发送消息…」（N-FIX-SEND-HANGS-WHEN-PARKED-RUN-SUPERSEDE-FAILS）。
+      const started = await new Promise<{ ok: true } | { ok: false; status: number; code: string }>((resolve) => {
+        const timer = setTimeout(
+          () => resolve({ ok: false, status: 504, code: 'RUN_START_TIMEOUT' }),
+          INTERACTION_TIMEOUTS.FOREGROUND_TURN_START,
+        );
+        const settle = (outcome: { ok: true } | { ok: false; status: number; code: string }) => {
+          clearTimeout(timer);
+          resolve(outcome);
+        };
+        runAgentTurn(
+          buildQueuedAgentRunBody(envelope),
+          createOfflineAgentRunResponseSink(),
+          { connectedClient: false, onDurableActivated: () => settle({ ok: true }) },
+        ).then(
+          // 轮次结束都没走到起跑 = 预检就被拒了（离线 sink 吞掉了 4xx 回执）。
+          () => settle({ ok: false, status: 500, code: 'RUN_NOT_STARTED' }),
+          (error: unknown) => {
+            logger.error(`[AgentRouter] Failed to start foreground continuation for ${sessionId}:`, error);
+            settle(error instanceof RunSessionConflictError
+              ? { ok: false, status: 409, code: error.code }
+              : { ok: false, status: 500, code: 'RUN_START_FAILED' });
+          },
+        );
       });
+      if (started.ok) {
+        res.json({ success: true, data: { outcome: 'steered' } });
+      } else {
+        // 不带 message：界面按 status/code 出人话，内部报错只进日志。
+        res.status(started.status).json({ success: false, error: { code: started.code } });
+      }
       return;
     }
 
