@@ -30,6 +30,9 @@ export async function calendarApprovalDetails(toolName: string, params: Record<s
       for (const key of Object.keys(details)) {
         if (Object.hasOwn(params, key)) delete details[key];
       }
+      // Preserve provenance: these current values may prefill the form, but are not proposed writes.
+      const snapshotFields = Object.keys(details);
+      if (snapshotFields.length > 0) details.calendarApprovalSnapshotFields = snapshotFields;
     }
     return details;
   } catch {

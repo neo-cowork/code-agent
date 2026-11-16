@@ -85,13 +85,15 @@ function formattedDatetime(raw: unknown, language: string): string {
   return formatDateTime(date, language === 'en' ? 'en' : 'zh');
 }
 
-export function draftFromArgs(tool: string, args: Record<string, unknown>): WritebackDraft {
+export function draftFromArgs(tool: string, args: Record<string, unknown>, includeSnapshot = false): WritebackDraft {
   const draft: WritebackDraft = {};
+  const snapshotFields = !includeSnapshot && Array.isArray(args.calendarApprovalSnapshotFields)
+    ? args.calendarApprovalSnapshotFields : [];
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
     if (field.readonly) continue;
     const raw = args[field.key];
     // 更新是局部补丁：缺失字段保持缺失，用户输入（包括主动清空）才加入草稿。
-    if (tool === 'calendar_update_event' && !Object.hasOwn(args, field.key)) continue;
+    if (tool === 'calendar_update_event' && (!Object.hasOwn(args, field.key) || snapshotFields.includes(field.key))) continue;
     if (field.kind === 'string_list') {
       draft[field.key] = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '';
     } else if (field.kind === 'datetime') {
@@ -275,14 +277,24 @@ export function WritebackEditForm({
   const w = t.decisionCard.permission.writeback;
   const labels = useFieldLabels();
   const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
-  const pristine = draftFromArgs(tool, original);
+  const pristine = draftFromArgs(tool, original, true);
   const invalid = new Map(validateWritebackDraft(tool, draft).map((issue) => [issue.fieldKey, issue.reason]));
   const attachments = Array.isArray(original.attachments)
     ? original.attachments.filter((v): v is string => typeof v === 'string')
     : [];
 
+  const changeField = (key: string, value: string) => {
+    const next = { ...draft, [key]: value };
+    // The update API requires a start when the user explicitly edits the end.
+    if (tool === 'calendar_update_event' && key === 'end_ms' && value !== ''
+      && !Object.hasOwn(next, 'start_ms') && pristine.start_ms) {
+      next.start_ms = pristine.start_ms;
+    }
+    onChange(next);
+  };
+
   const renderField = (field: EditableField) => {
-    const value = draft[field.key] ?? '';
+    const value = draft[field.key] ?? pristine[field.key] ?? '';
     const changed = value !== (pristine[field.key] ?? '');
     const invalidReason = invalid.get(field.key);
     const errorMessage = invalidReason === WritebackValidationReason.Required
@@ -315,7 +327,7 @@ export function WritebackEditForm({
             minRows={4}
             maxRows={14}
             autoResize
-            onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}
+            onChange={(e) => changeField(field.key, e.target.value)}
           />
         ) : field.kind === 'datetime' ? (
           <>
@@ -326,7 +338,7 @@ export function WritebackEditForm({
               hourLabel={t.cronCenter.simpleHourLabel}
               minuteLabel={t.cronCenter.simpleMinuteLabel}
               size="sm"
-              onChange={(next) => onChange({ ...draft, [field.key]: next })}
+              onChange={(next) => changeField(field.key, next)}
             />
             {errorMessage && <p className="mt-1 text-xs text-badge-danger">{errorMessage}</p>}
           </>
@@ -336,7 +348,7 @@ export function WritebackEditForm({
             type="text"
             inputSize="sm"
             placeholder={field.kind === 'string_list' ? w.listPlaceholder : undefined}
-            onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}
+            onChange={(e) => changeField(field.key, e.target.value)}
           />
         )}
       </div>

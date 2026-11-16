@@ -86,7 +86,7 @@ describe('calendar write round trip (EventKit)', () => {
     expect(await calendarApprovalDetails('calendar_create_event', { title: 'x', start_ms: 1 })).toEqual({ calendar: '日历' });
     expect(await calendarApprovalDetails('calendar_create_event', { title: 'x', start_ms: 1, calendar: 'Work' })).toEqual({});
     expect(await calendarApprovalDetails('calendar_update_event', { calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR }))
-      .toEqual({ title: '评审', end_ms: 2 * HOUR, location: '三楼' });
+      .toEqual({ title: '评审', end_ms: 2 * HOUR, location: '三楼', calendarApprovalSnapshotFields: ['title', 'end_ms', 'location'] });
     // 11-16 real run: a handler asking with different args than the approved ones raised a second card.
     const toolSource = readFileSync('src/host/tools/toolExecutor.ts', 'utf8');
     const merged = toolSource.indexOf('calendarApprovalDetails(executionToolName, params)');
@@ -106,7 +106,7 @@ describe('calendar write round trip (EventKit)', () => {
     fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼' });
     const args = Object.freeze({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR });
     expect(await calendarApprovalDetails('calendar_update_event', args))
-      .toEqual({ title: '评审', end_ms: 2 * HOUR, location: '三楼' });
+      .toEqual({ title: '评审', end_ms: 2 * HOUR, location: '三楼', calendarApprovalSnapshotFields: ['title', 'end_ms', 'location'] });
     expect(args).toEqual({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 3 * HOUR });
     const explicit = { ...args, calendar: '日历', title: '新标题', end_ms: 4 * HOUR, location: '' };
     expect(await calendarApprovalDetails('calendar_update_event', explicit)).toEqual({});
@@ -119,10 +119,12 @@ describe('calendar write round trip (EventKit)', () => {
     } });
     try {
       expect(await calendarApprovalDetails('calendar_update_event', { event_uid: 'event-1' }))
-        .toEqual({ calendar: 'Work', title: 'Quarterly review', start_ms: HOUR, end_ms: 2 * HOUR });
+        .toEqual({ calendar: 'Work', title: 'Quarterly review', start_ms: HOUR, end_ms: 2 * HOUR,
+          calendarApprovalSnapshotFields: ['calendar', 'title', 'start_ms', 'end_ms'] });
       // Even an incorrect calendar stays model-supplied; enrichment must not redirect a write.
       expect(await calendarApprovalDetails('calendar_update_event', { event_uid: 'event-1', calendar: 'Quarterly review' }))
-        .toEqual({ title: 'Quarterly review', start_ms: HOUR, end_ms: 2 * HOUR });
+        .toEqual({ title: 'Quarterly review', start_ms: HOUR, end_ms: 2 * HOUR,
+          calendarApprovalSnapshotFields: ['title', 'start_ms', 'end_ms'] });
     } finally {
       execute.mockRestore();
     }
