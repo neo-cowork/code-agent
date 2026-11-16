@@ -88,7 +88,7 @@ function executor(requestPermission: ConstructorParameters<typeof ToolExecutor>[
 describe('reminder wall-clock normalization before executor approval', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-11-01T00:00:00Z'));
+    vi.setSystemTime(new Date('2026-11-08T15:30:00Z'));
     resetToolResolver();
     vi.stubEnv('TZ', 'Asia/Shanghai');
     mocks.getSchemas.mockReturnValue([remindersCreateModule.schema]);
@@ -109,7 +109,7 @@ describe('reminder wall-clock normalization before executor approval', () => {
     mocks.connectorExecute.mockResolvedValue({ data: { id: 'actual', list: '提醒事项', title: 'Report', completed: false, remindAtMs: ms } });
     const args = { title: 'Report', remind_at_local: '2026-11-09 09:00' };
     const result = await executor(requestPermission).execute('reminders_create', args, { sessionId: `local-${++session}` });
-    expect(result).toMatchObject({ success: true, output: expect.stringContaining('提醒时间：2026-11-09 09:00 (UTC+8)（周一，Asia/Shanghai）') });
+    expect(result).toMatchObject({ success: true, output: expect.stringContaining('提醒时间：2026-11-09 09:00 (UTC+8)（明天，周一，Asia/Shanghai）') });
     expect(requestPermission).toHaveBeenCalledOnce();
     expect(mocks.connectorExecute).toHaveBeenCalledWith('create_reminder', { title: 'Report', remind_at_ms: ms });
     expect(args).not.toHaveProperty('remind_at_ms');
