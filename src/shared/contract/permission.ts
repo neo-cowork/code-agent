@@ -26,9 +26,10 @@ export type PermissionType =
 
 /**
  * Host 对写入目标的 stat 结论。渲染层只消费这个字段，不得从原始 file_path 推断。
- * unknown / 缺省一律按 regular 出覆盖警告（fail-closed）。
+ * absent 仅表示 lstat/stat 的 ENOENT/ENOTDIR；工作区内新目标无需覆盖警告。
+ * unknown / 缺省（含其他 stat 错误）一律按 regular 出覆盖警告（fail-closed）。
  */
-export const FILE_TARGET_KINDS = ['device', 'regular', 'unknown'] as const;
+export const FILE_TARGET_KINDS = ['device', 'regular', 'absent', 'unknown'] as const;
 export type FileTargetKind = (typeof FILE_TARGET_KINDS)[number];
 
 // 审批级别
