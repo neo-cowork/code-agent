@@ -153,10 +153,10 @@ const remindersUpdateRequest = nativeRequest('permission-reminders-update', 'rem
 }, '提醒事项');
 
 function enterEdit() {
-  fireEvent.click(screen.getByRole('button', { name: /改一改再/ }));
+  fireEvent.click(screen.getByRole('button', { name: /修改后/ }));
 }
 const toInput = () => screen.getByTestId('writeback-edit-to') as HTMLInputElement;
-const sendEdited = () => screen.getByRole('button', { name: '邮件发送 · 修改后允许' });
+const sendEdited = () => screen.getByRole('button', { name: '按修改后的内容发送' });
 
 describe('PermissionCard · mail_send 改一改再发', () => {
   beforeEach(() => {
@@ -182,7 +182,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.queryByText('危险操作')).toBeNull();
     expect(screen.getByTestId('writeback-view-content').textContent).toContain('请在周五前确认');
     expect(screen.getByText('发这封邮件给 li.wei@acme.com？')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /改一改再发/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /修改后发送/ })).toBeTruthy();
   });
 
   it('改收件人 → 按修改后发送 → IPC 带改后的 updatedArgs，response 是一次性 allow', async () => {
@@ -253,22 +253,22 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.getByTestId('writeback-view-start').textContent).toContain('2026');
     expect(screen.getByTestId('writeback-view-end').textContent).toContain('2026');
     expect(screen.getByText('数据与隐私详情')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /改一改再创建/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /修改后创建/ })).toBeTruthy();
   });
 
   it('默认值可改提示有中英文卡面文案', () => {
     expect(decisionCardEn.decisionCard.permission.writeback.tmeetWriteWarning)
-      .toContain('default subject or times filled by the model');
+      .toContain('“Edit, then create”');
   });
 
   it('腾讯会议改主题和本地时间后把 ISO updatedArgs 直达一次性 allow 通道', async () => {
     state.request = meetingRequest;
     render(<PermissionCard />);
-    fireEvent.click(screen.getByRole('button', { name: /改一改再创建/ }));
+    fireEvent.click(screen.getByRole('button', { name: /修改后创建/ }));
     fireEvent.change(screen.getByTestId('writeback-edit-subject'), { target: { value: 'product sync' } });
     const editedStart = new Date('2026-08-26T09:15:00+08:00');
     changeDatetime('start', `${editedStart.getFullYear()}-${pad(editedStart.getMonth() + 1)}-${pad(editedStart.getDate())}T${pad(editedStart.getHours())}:${pad(editedStart.getMinutes())}`);
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -320,7 +320,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime('start_ms', '2026-08-26T09:15');
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -343,7 +343,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime('remind_at_ms', '2026-08-26T17:45');
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -368,7 +368,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime(field, value);
-    fireEvent.click(screen.getByRole('button', { name: '更新 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -390,7 +390,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     expect((screen.getByTestId('writeback-edit-remind_at_ms-date') as HTMLInputElement).value).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -408,7 +408,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime('end_ms', '2026-08-26T08:59');
-    const submit = screen.getByRole('button', { name: '创建 · 修改后允许' }) as HTMLButtonElement;
+    const submit = screen.getByRole('button', { name: '按修改后的内容创建' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(screen.getByText('结束时间不能早于开始时间')).toBeTruthy();
     expect(screen.queryByText('必填')).toBeNull();
@@ -435,7 +435,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect((screen.getByTestId(`writeback-edit-${field}-time-hour`) as HTMLSelectElement).value).toBe('23');
     expect((screen.getByTestId(`writeback-edit-${field}-time-minute`) as HTMLSelectElement).value).toBe('45');
     expect(screen.getByTestId('writeback-edit-form').textContent).not.toMatch(/AM|PM/);
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, `precision-${tool}`, 'allow', 'request-session',
       expect.objectContaining({ [field]: millis }),
@@ -462,7 +462,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.getByTestId('writeback-view-title').textContent).toBe('F 真机测试');
     expect(screen.getByTestId('writeback-view-start_ms').textContent).not.toBe('');
     expect(screen.getByTestId('calendar-delete-note')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /改一改/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /修改后/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /^删除/ }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'permission-calendar-delete', 'allow', 'request-session',

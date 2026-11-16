@@ -340,3 +340,54 @@ describe('ask 拒绝（真人点拒审批卡）的人话卡片（真实 executor
     expect(markup).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
+
+
+describe('denial recovery sentence in the real chat detail row', () => {
+  it.each([
+    ['zh', '你刚才拒绝了这类操作。请在新消息里再告诉 Neo 要做什么，确认卡片就会重新出现。'],
+    ['en', 'You declined this kind of action. Tell Neo what you want in a new message to bring the approval card back.'],
+  ] as const)('%s explains the new-message exit even when the model stays silent', async (language, sentence) => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+    const { getDenialRegistry } = await import('../../../src/host/security/denialRegistry');
+    getDenialRegistry().clearAll();
+    const executor = new ToolExecutor({ workingDirectory: os.tmpdir(), requestPermission: async () => ({ approved: false, denialSource: 'user' }) });
+    executor.setAuditEnabled(false);
+    const options = { sessionId: 'sticky-row-copy', sourceMessageId: 'same-user-message' };
+    await executor.execute('Bash', { command: 'find . -name draft -delete' }, options);
+    const result = await executor.execute('Bash', { command: 'find . -name draft -delete' }, options);
+    expect(result.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedByUser });
+    i18nState.lang = language;
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('sticky-refusal', 'Bash', {}, result),
+    }));
+    expect(markup).toContain(sentence);
+    expect(markup).not.toContain('The user just declined');
+    process.stdout.write(`sticky-row-${language}: ${markup}\n`);
+    getDenialRegistry().clearAll();
+  });
+});
+
+describe('turn-disabled tool bounce in the real chat detail row', () => {
+  it.each([
+    ['zh', '请在新消息里再告诉 Neo 你想做什么'],
+    ['en', 'Tell Neo again in a new message what you want'],
+  ] as const)('%s shows a way out instead of the generic fallback', (language, sentence) => {
+    const result = {
+      success: false,
+      error: "calendar_create_event is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.",
+      metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
+    } as unknown as ToolExecutionResult;
+    i18nState.lang = language;
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('disabled-row', 'calendar_create_event', {}, result),
+    }));
+    expect(markup).toContain(sentence);
+    expect(markup).not.toContain('展开可查看详情');
+    expect(markup).not.toContain('expand for details');
+    expect(markup).not.toContain('TOOL_DISABLED_FOR_RUN');
+    const folded = humanizeToolFailureReason(asToolCall('disabled-row', 'calendar_create_event', {}, result), language === 'zh' ? zh : en);
+    expect(folded).toContain(sentence);
+    process.stdout.write(`disabled-row-${language}: ${markup}\nfolded-${language}: ${folded}\n`);
+  });
+});
