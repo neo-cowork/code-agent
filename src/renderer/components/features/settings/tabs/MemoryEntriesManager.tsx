@@ -488,7 +488,7 @@ export const MemoryEntriesManager: React.FC<{
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
         <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
           {[
-            [memoryText.entries.stats.total, String(entries.length), `${result?.sourceCounts.light_file ?? 0} Light / ${result?.sourceCounts.db_memory ?? 0} DB`],
+            [memoryText.entries.stats.total, String(entries.length), memoryText.entries.stats.totalCaption.replace('{files}', String(result?.sourceCounts.light_file ?? 0)).replace('{db}', String(result?.sourceCounts.db_memory ?? 0))],
             [memoryText.entries.stats.currentMatched, String(rows.length), memoryText.entries.stats.filteredCaption],
             [memoryText.entries.stats.active, String(entries.filter((entry) => entry.status === 'active').length), memoryText.entries.stats.activeCaption],
             [memoryText.entries.stats.governance, String(entries.filter((entry) => entry.status === 'candidate' || entry.status === 'stale').length), memoryText.entries.stats.governanceCaption],
@@ -708,7 +708,7 @@ export const MemoryEntriesManager: React.FC<{
                           )}
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">{row.kindLabel}</td>
-                        <td className="px-3 py-3 align-top text-zinc-400">{row.sourceLabel}</td>
+                        <td className="px-3 py-3 align-top text-zinc-400">{entries.find((item) => item.id === row.id)?.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : row.sourceLabel}</td>
                         <td className="px-3 py-3 align-top text-zinc-400">{row.updatedAtLabel}</td>
                       </tr>
                     ))}
@@ -736,9 +736,8 @@ export const MemoryEntriesManager: React.FC<{
                       ) : (
                         <Database className="h-4 w-4 text-badge-info" />
                       )}
-                      <span className="truncate">{getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth)}</span>
+                      <span className="truncate">{selectedEntry.source.kind === 'manual' ? MEMORY_ENTRY_ADD_COPY[language === 'en' ? 'en' : 'zh'].addedManually : getMemoryEntrySourceLabel(selectedEntry.source.sourceOfTruth, memoryText.sourceLabels)}</span>
                     </div>
-                    <div className="mt-1 truncate font-mono text-[11px] text-zinc-500">{selectedEntry.id}</div>
                   </div>
                   <button
                     type="button"
@@ -863,13 +862,7 @@ export const MemoryEntriesManager: React.FC<{
                 <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
                   <div className="mb-2 font-medium text-zinc-400">{memoryText.entries.evidence}</div>
                   {selectedEntry.evidence.length > 0 ? (
-                    <div className="space-y-1">
-                      {selectedEntry.evidence.slice(0, 4).map((item, index) => (
-                        <div key={`${selectedEntry.id}-evidence-${index}`} className="truncate font-mono text-[11px]">
-                          {item.filePath || item.memoryId || item.sessionId || item.candidateId || item.source || 'unknown'}
-                        </div>
-                      ))}
-                    </div>
+                    <div>{memoryText.entries.evidenceCount.replace('{count}', String(selectedEntry.evidence.length))}</div>
                   ) : (
                     <div>{memoryText.entries.noEvidence}</div>
                   )}

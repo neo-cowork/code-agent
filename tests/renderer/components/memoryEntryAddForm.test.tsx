@@ -100,4 +100,17 @@ describe('MemoryEntriesManager add memory entry', () => {
     await waitFor(() => expect(screen.getByText(new RegExp(dupText))).toBeTruthy());
     expect(screen.getAllByTestId('memory-entry-row')).toHaveLength(2);
   });
+  it.each(['zh', 'en'] as const)('%s: panel shows no internal names for a manually added entry', async (language) => {
+    lang.current = language;
+    store = [entry({
+      id: 'mem_entry_62628bae', title: 'Reply briefly', summary: 'Reply briefly', content: 'Reply briefly',
+      source: { kind: 'manual', sourceOfTruth: 'light_file', filePath: 'memory-62628bae.md' },
+      evidence: [{ filePath: 'memory-62628bae.md' }] as MemoryEntry['evidence'],
+    })];
+    const { container } = render(<MemoryEntriesManager />);
+    await waitFor(() => expect(screen.getAllByTestId('memory-entry-row')).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('memory-entry-row'));
+    const text = container.textContent ?? '';
+    expect(text).not.toMatch(/Light|\bDB\b|source of truth|mem_entry_|memory-62628bae|\.md\b/);
+  });
 });
