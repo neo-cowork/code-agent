@@ -304,7 +304,7 @@ describe('SubagentExecutor environment notice', () => {
     expect(notices).toHaveLength(1);
     expect(notices[0][1]).toMatchObject({
       sessionId: request.context.sessionId, runId: request.context.runId,
-      class: 'perm_automation', target: { id: AUTOMATION_FAILURE_CASES[tool].target },
+      class: AUTOMATION_FAILURE_CASES[tool].blocker, target: { id: AUTOMATION_FAILURE_CASES[tool].target },
     });
     expect(persistence.messages).toHaveLength(1);
     expect(JSON.stringify(persistence.messages)).not.toMatch(/-1743|osascript|Apple events|TCC/i);

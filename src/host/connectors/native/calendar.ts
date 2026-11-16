@@ -1,20 +1,16 @@
 // ============================================================================
-// Native Calendar Connector - macOS Calendar via AppleScript
+// Native Calendar Connector - macOS Calendar via EventKit (ADR-090 perm_calendars)
+//
+// 走桌面壳原生桥的 EventKit 路由（src-tauri/src/env_assist_calendar_items.rs），与会前提醒是同一项「日历」授权：
+// 不打开「日历」app、主机不起任何脚本子进程、从不弹框（弹框只在用户点击签发的凭证里，见 envAssist/calendarGrant.ts 与 ipc/envAssist.ipc.ts）。
+// 原生层每次读写前自己重查「完全访问」，这里不传、也不信任何授权状态。
 // ============================================================================
 
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
-import {
-  buildAppleScriptDateVar,
-  describeAppleScriptFailure,
-  escapeAppleScriptString,
-  isAppleScriptFailure,
-  parseAppleScriptDate,
-  runAppleScript,
-  sharedAppleScriptHandlers,
-} from './osascript';
-
-/** Every Calendar script may be the one that shows the automation dialog. */
-const runCalendarScript = (lines: string[]) => runAppleScript(lines, { permissionTarget: 'com.apple.iCal' });
+import type { CalendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
+import { calendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
+import { createShellPassiveBridge } from '../../permissions/envAssist/probes/shellPassiveBridge';
+import { bridgeErrorCode, resolveShellBridgeClientFromEnv, type ShellBridgeClient } from '../../permissions/envAssist/shellBridge/client';
 
 interface CalendarEventItem {
   uid: string;
@@ -27,519 +23,261 @@ interface CalendarEventItem {
   url?: string;
 }
 
-type NativeReadiness = 'unchecked' | 'ready' | 'failed' | 'unavailable';
-
-function initialCalendarReadiness(): NativeReadiness {
-  return process.platform === 'darwin' ? 'unchecked' : 'unavailable';
+interface NativeCalendar { id: string; title: string; writable: boolean; isDefault?: boolean }
+interface NativeItem {
+  id: string; calendar: string; title: string; startMs: number; endMs: number;
+  recurring: boolean; location: string; notes: string; url: string;
 }
 
-let calendarReadiness: NativeReadiness = initialCalendarReadiness();
-let calendarProbeError: string | undefined;
-let calendarProbeCheckedAt: number | undefined;
-// 最近一次探测拿到的日历列表是否为空（授权通过但无日历）——getStatus 的
-// ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
-let calendarProbeListEmpty = false;
+/** Same caps as the native route (MAX_ITEMS_WINDOW_MS / MAX_ITEMS). */
+const MAX_WINDOW_MS = 400 * 24 * 60 * 60 * 1000;
+const MAX_LIMIT = 200;
+
+export type CalendarFailureCode = 'not_authorized' | 'not_found' | 'unavailable' | 'read_failed';
+
+const FAILURE_MESSAGES: Record<CalendarFailureCode, string> = {
+  not_authorized: 'Calendar access has not been allowed yet. （还没有允许 Neo 访问日历。）',
+  not_found: 'No calendar event or calendar matches that id/name. Event uids from earlier in this conversation may be stale: call calendar list_events again and use the uid it returns. （找不到对应的日程或日历：之前拿到的 uid 可能已失效，请重新 list_events 后用新的 uid。）',
+  unavailable: 'Calendar is only available in the Agent Neo desktop app on macOS. （日历只能在 macOS 的 Agent Neo 桌面版里使用。）',
+  read_failed: 'Calendar could not be read or changed right now; please try again later. （日历暂时读写失败，请稍后再试。）',
+};
+
+/** Failures carry a machine code (classify / parking read it) and a model-facing sentence without native detail. */
+export class CalendarFailure extends Error {
+  constructor(readonly code: CalendarFailureCode, message = FAILURE_MESSAGES[code]) {
+    super(message);
+    this.name = 'CalendarFailure';
+  }
+}
+
+export function isCalendarFailure(error: unknown): error is CalendarFailure {
+  return error instanceof CalendarFailure;
+}
+
+const WRITE_UNCONFIRMED = 'Calendar did not confirm the change, so the result is unknown. Check the calendar before retrying; do not retry blindly. （日历没有确认这次修改，结果无法确认：请先查看日历是否已改好，不要直接重试。）';
+
+function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
+  if (isCalendarFailure(error)) return error;
+  switch (bridgeErrorCode(error)) {
+    case 'calendar_not_authorized': return new CalendarFailure('not_authorized');
+    case 'event_not_found': case 'calendar_not_found': return new CalendarFailure('not_found');
+    case 'no_writable_calendar':
+      return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.');
+    // 写操作超时 / 桥断开：改没改成不知道，不能劝模型重试
+    default: return write ? new CalendarFailure('read_failed', WRITE_UNCONFIRMED) : new CalendarFailure('read_failed');
+  }
+}
+
+// ponytail: one shell bridge per process (the shell hands credentials over once); reset drops it for tests.
+let cachedClient: ShellBridgeClient | null | undefined;
+function bridge(): ShellBridgeClient | null {
+  if (cachedClient === undefined) cachedClient = process.platform === 'darwin' ? resolveShellBridgeClientFromEnv() : null;
+  return cachedClient;
+}
+
+async function call<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
+  const client = bridge();
+  if (!client) throw new CalendarFailure('unavailable');
+  try {
+    return await client.post<T>(path, body);
+  } catch (error) {
+    throw failureFromBridge(error, path.startsWith('/v1/write/'));
+  }
+}
+
+// 最近一次被动探针（从不弹框）的结果；只用于 getCachedStatus。永不缓存 failed：未授权也保留工具，调用时原生层 403 → 出卡。
+let lastAccess: CalendarAccess | undefined;
+let lastCheckedAt: number | undefined;
+let lastListEmpty = false;
 
 export function resetCalendarConnectorReadiness(): void {
-  calendarReadiness = initialCalendarReadiness();
-  calendarProbeError = undefined;
-  calendarProbeCheckedAt = undefined;
-  calendarProbeListEmpty = false;
+  cachedClient = undefined;
+  lastAccess = undefined;
+  lastCheckedAt = undefined;
+  lastListEmpty = false;
 }
 
-function parseLine(line: string): string[] {
-  return line.split('|').map((part) => part.trim());
+/** The single calendar authorization truth (same probe as the card and the meeting reminder switch). */
+async function readCalendarAccess(): Promise<CalendarAccess> {
+  const client = bridge();
+  lastAccess = client ? await calendarAccess(createShellPassiveBridge(client)) : 'unavailable';
+  lastCheckedAt = Date.now();
+  return lastAccess;
 }
 
-function errorMessage(error: unknown): string {
-  return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure('Calendar', error).message
-    : error instanceof Error ? error.message : String(error);
-}
+const ACCESS_DETAIL: Record<Exclude<CalendarAccess, 'granted'>, string> = {
+  undecided: '还没有允许 Neo 访问日历；用到日历时会请你允许一次。',
+  denied: '日历访问被拒绝了：请在「系统设置 → 隐私与安全性 → 日历」里允许 Neo。',
+  write_only: '日历只给了「仅添加事件」：请在「系统设置 → 隐私与安全性 → 日历」里改成「完全访问」。',
+  restricted: '日历访问被系统限制（家长控制或公司管理），Neo 改不了。',
+  unavailable: '日历只能在 macOS 的 Agent Neo 桌面版里使用。',
+};
 
 function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
   if (process.platform !== 'darwin') {
+    return { connected: false, readiness: 'unavailable', detail: 'Calendar connector 仅在 macOS 可用。', actions: [], capabilities };
+  }
+  if (lastAccess === 'granted') {
     return {
-      connected: false,
-      readiness: 'unavailable',
-      detail: 'Calendar connector 仅在 macOS 可用。',
-      actions: [],
-      capabilities,
+      connected: true, readiness: 'ready', checkedAt: lastCheckedAt,
+      detail: 'Calendar connector 已允许访问日历。', noAccessibleItems: lastListEmpty,
+      actions: ['disconnect', 'remove'], capabilities,
     };
   }
-
-  if (calendarReadiness === 'ready') {
-    return {
-      connected: true,
-      readiness: 'ready',
-      checkedAt: calendarProbeCheckedAt,
-      detail: 'Calendar connector 已通过本地授权/可用性检查。',
-      noAccessibleItems: calendarProbeListEmpty,
-      actions: ['disconnect', 'remove'],
-      capabilities,
-    };
-  }
-
-  if (calendarReadiness === 'failed') {
-    return {
-      connected: false,
-      readiness: 'failed',
-      error: calendarProbeError,
-      checkedAt: calendarProbeCheckedAt,
-      detail: `Calendar 授权/可用性检查失败：${calendarProbeError || '未知错误'}`,
-      actions: ['repair_permissions', 'disconnect', 'remove'],
-      capabilities,
-    };
-  }
-
   return {
     connected: false,
+    // 未授权不是「坏了」：按需探测口径算 unchecked，工具照常可用，调用时出授权卡（不写 failed，免得整轮摘掉工具）
     readiness: 'unchecked',
-    detail: 'Calendar connector 已启用，但还未检查本地授权；点“检查/授权”时才会拉起 Calendar 或触发系统授权。',
+    checkedAt: lastCheckedAt,
+    detail: lastAccess ? ACCESS_DETAIL[lastAccess] : 'Calendar connector 已启用，用到时才检查日历授权。',
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities,
   };
 }
 
-async function listCalendars(): Promise<string[]> {
-  const output = await runCalendarScript([
-    ...sharedAppleScriptHandlers(),
-    'tell application "Calendar"',
-    'set outputLines to {}',
-    'repeat with cal in every calendar',
-    'set end of outputLines to my sanitizeText(name of cal)',
-    'end repeat',
-    'return my joinLines(outputLines)',
-    'end tell',
-  ]);
-
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+async function listCalendarInfos(): Promise<NativeCalendar[]> {
+  const res = await call<{ calendars?: NativeCalendar[] }>('/v1/read/calendars');
+  if (!Array.isArray(res?.calendars)) throw new CalendarFailure('read_failed');
+  return res.calendars;
 }
 
-async function listWritableCalendars(): Promise<string[]> {
-  const output = await runCalendarScript([
-    ...sharedAppleScriptHandlers(),
-    'tell application "Calendar"',
-    'set outputLines to {}',
-    'repeat with cal in every calendar',
-    'if writable of cal then set end of outputLines to my sanitizeText(name of cal)',
-    'end repeat',
-    'return my joinLines(outputLines)',
-    'end tell',
-  ]);
-
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function resolveCalendarName(requestedName: string, availableCalendars: string[]): string {
-  const exactMatch = availableCalendars.find((name) => name === requestedName);
-  if (exactMatch) return exactMatch;
-
-  const caseInsensitiveMatches = availableCalendars.filter(
-    (name) => name.toLowerCase() === requestedName.toLowerCase(),
-  );
-  if (caseInsensitiveMatches.length === 1) return caseInsensitiveMatches[0];
-
-  const availableText = availableCalendars.length > 0 ? availableCalendars.join(', ') : '(none)';
+function resolveCalendar(requestedName: string, available: NativeCalendar[]): NativeCalendar {
+  const exact = available.find((c) => c.title === requestedName);
+  if (exact) return exact;
+  const loose = available.filter((c) => c.title.toLowerCase() === requestedName.toLowerCase());
+  if (loose.length === 1) return loose[0];
+  const names = available.length > 0 ? available.map((c) => c.title).join(', ') : '(none)';
   throw new Error(
-    `No calendar named "${requestedName}". Available calendars: ${availableText}. Omit calendar to use the first writable calendar.`,
+    `No calendar named "${requestedName}". Available calendars: ${names}. Omit calendar to use the first writable calendar.`,
   );
 }
 
-async function probeCalendarAccess(): Promise<string[]> {
-  if (process.platform !== 'darwin') {
-    calendarReadiness = 'unavailable';
-    calendarProbeCheckedAt = Date.now();
-    calendarProbeError = 'Calendar connector 仅在 macOS 可用。';
-    throw new Error(calendarProbeError);
-  }
-
-  try {
-    const calendars = await listCalendars();
-    calendarReadiness = 'ready';
-    calendarProbeCheckedAt = Date.now();
-    calendarProbeError = undefined;
-    calendarProbeListEmpty = calendars.length === 0;
-    return calendars;
-  } catch (error) {
-    calendarReadiness = 'failed';
-    calendarProbeCheckedAt = Date.now();
-    calendarProbeError = errorMessage(error);
-    throw error;
-  }
+/** A recurring series shares one EventKit id; the uid adds that occurrence's start so writes hit only it. */
+function toUid(item: NativeItem): string {
+  return item.recurring ? `${item.id}@${item.startMs}` : item.id;
 }
 
-const SEGMENTED_LIST_EVENTS_DEADLINE_MS = 45_000;
-
-interface ListEventsOutcome {
-  events: CalendarEventItem[];
-  unreadCalendars?: string[];
+function parseCalendarUid(uid: string): { eventId: string; occurrenceMs?: number } {
+  const match = /^(.+)@(-?\d+)$/.exec(uid);
+  return match ? { eventId: match[1], occurrenceMs: Number(match[2]) } : { eventId: uid };
 }
 
-function buildSingleCalendarEventsScript(
-  calendarReference: string | number,
-  fromMs: number,
-  toMs: number,
-  eventLimit: number,
-): string[] {
-  const calendarSelector = typeof calendarReference === 'number'
-    ? String(calendarReference)
-    : `"${escapeAppleScriptString(calendarReference)}"`;
-  return [
-    ...sharedAppleScriptHandlers(),
-    ...buildAppleScriptDateVar('fromDate', fromMs),
-    ...buildAppleScriptDateVar('toDate', toMs),
-    'tell application "Calendar"',
-    'set outputLines to {}',
-    `set eventLimit to ${eventLimit}`,
-    'set emittedCount to 0',
-    `set targetCalendars to {calendar ${calendarSelector}}`,
-    'repeat with cal in targetCalendars',
-    'set matchingEvents to every event of cal whose end date >= fromDate and start date <= toDate',
-    'repeat with ev in matchingEvents',
-    'set rawLocation to ""',
-    'try',
-    'set rawLocation to location of ev',
-    'end try',
-    'set eventLocation to my sanitizeText(rawLocation)',
-    'set rawNotes to ""',
-    'try',
-    'set rawNotes to description of ev',
-    'end try',
-    'set eventNotes to my sanitizeText(rawNotes)',
-    'set rawUrl to ""',
-    'try',
-    'set rawUrl to url of ev',
-    'end try',
-    'set eventUrl to my sanitizeText(rawUrl)',
-    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my isoDateText(start date of ev)) & "|" & (my isoDateText(end date of ev)) & "|" & eventLocation & "|" & eventNotes & "|" & eventUrl',
-    'set end of outputLines to eventLine',
-    'set emittedCount to emittedCount + 1',
-    'if emittedCount >= eventLimit then exit repeat',
-    'end repeat',
-    'if emittedCount >= eventLimit then exit repeat',
-    'end repeat',
-    'return my joinLines(outputLines)',
-    'end tell',
-  ];
-}
-
-function parseEventsFromAppleScriptOutput(
-  output: string,
-  fromMs: number,
-  toMs: number,
-): CalendarEventItem[] {
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [uid, calendar, title, startRaw, endRaw, location, notes, url] = parseLine(line);
-      return {
-        uid,
-        calendar,
-        title,
-        startAtMs: parseAppleScriptDate(startRaw),
-        endAtMs: parseAppleScriptDate(endRaw),
-        location: location || undefined,
-        notes: notes || undefined,
-        url: url || undefined,
-      } satisfies CalendarEventItem;
-    })
-    .filter((event) => {
-      if (event.startAtMs === null && event.endAtMs === null) return true;
-      const start = event.startAtMs ?? event.endAtMs ?? 0;
-      const end = event.endAtMs ?? event.startAtMs ?? start;
-      return end >= fromMs && start <= toMs;
-    });
-}
-
-function sortAndTruncateEvents(events: CalendarEventItem[], limit: number): CalendarEventItem[] {
-  return [...events]
-    .sort((a, b) => {
-      const aTime = a.startAtMs ?? Number.MAX_SAFE_INTEGER;
-      const bTime = b.startAtMs ?? Number.MAX_SAFE_INTEGER;
-      return aTime - bTime;
-    })
-    .slice(0, limit);
-}
-
-async function listEvents(payload: Record<string, unknown>): Promise<ListEventsOutcome> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const fromMs = typeof payload.from_ms === 'number' ? payload.from_ms : new Date().setHours(0, 0, 0, 0);
-  const toMs = typeof payload.to_ms === 'number' ? payload.to_ms : Date.now() + 14 * 24 * 60 * 60 * 1000;
-  const limit = typeof payload.limit === 'number' ? payload.limit : 20;
-  const eventLimit = Math.max(1, Math.min(limit, 200));
-
-  if (calendarName) {
-    const output = await runCalendarScript(buildSingleCalendarEventsScript(calendarName, fromMs, toMs, eventLimit));
-    return {
-      events: sortAndTruncateEvents(parseEventsFromAppleScriptOutput(output, fromMs, toMs), limit),
-    };
-  }
-
-  const calendars = await listCalendars();
-  if (calendars.length === 0) {
-    return { events: [] };
-  }
-
-  const deadlineAt = Date.now() + SEGMENTED_LIST_EVENTS_DEADLINE_MS;
-  const collected: CalendarEventItem[] = [];
-  const unreadCalendars: string[] = [];
-  let lastTimeoutError: unknown;
-
-  for (let i = 0; i < calendars.length; i++) {
-    const cal = calendars[i];
-    if (i > 0 && Date.now() >= deadlineAt) {
-      unreadCalendars.push(...calendars.slice(i));
-      break;
-    }
-    try {
-      const output = await runCalendarScript(buildSingleCalendarEventsScript(i + 1, fromMs, toMs, eventLimit));
-      const parsed = parseEventsFromAppleScriptOutput(output, fromMs, toMs);
-      collected.push(...parsed);
-      if (collected.length >= eventLimit) {
-        break;
-      }
-    } catch (error) {
-      if (isAppleScriptFailure(error) && describeAppleScriptFailure('Calendar', error).code === 'timeout') {
-        unreadCalendars.push(cal);
-        lastTimeoutError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  if (unreadCalendars.length === calendars.length && lastTimeoutError !== undefined) {
-    throw lastTimeoutError;
-  }
-
+function toEvent(item: NativeItem): CalendarEventItem {
   return {
-    events: sortAndTruncateEvents(collected, limit),
-    unreadCalendars: unreadCalendars.length > 0 ? unreadCalendars : undefined,
+    uid: toUid(item),
+    calendar: item.calendar,
+    title: item.title,
+    startAtMs: Number.isFinite(item.startMs) ? item.startMs : null,
+    endAtMs: Number.isFinite(item.endMs) ? item.endMs : null,
+    location: item.location || undefined,
+    notes: item.notes || undefined,
+    url: item.url || undefined,
   };
+}
+
+function eventOf(res: { event?: NativeItem } | undefined): CalendarEventItem {
+  if (!res?.event || typeof res.event.id !== 'string') throw new CalendarFailure('read_failed');
+  return toEvent(res.event);
+}
+
+const str = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+const finite = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+async function listEvents(payload: Record<string, unknown>): Promise<CalendarEventItem[]> {
+  const calendarName = str(payload.calendar);
+  const fromMs = finite(payload.from_ms) ?? new Date().setHours(0, 0, 0, 0);
+  const requestedTo = finite(payload.to_ms) ?? Date.now() + 14 * 24 * 60 * 60 * 1000;
+  // ponytail: an over-long range is clamped to the native cap instead of failing; split the range if that ever matters.
+  const toMs = Math.min(Math.max(requestedTo, fromMs + 1), fromMs + MAX_WINDOW_MS);
+  const limit = Math.max(1, Math.min(Math.floor(finite(payload.limit) ?? 20), MAX_LIMIT));
+  const calendarId = calendarName ? resolveCalendar(calendarName, await listCalendarInfos()).id : undefined;
+  const res = await call<{ events?: NativeItem[] }>('/v1/read/calendar-items', {
+    fromMs, toMs, limit, ...(calendarId ? { calendarId } : {}),
+  });
+  if (!Array.isArray(res?.events)) throw new CalendarFailure('read_failed');
+  return res.events.map(toEvent);
+}
+
+function requireEventArgs(payload: Record<string, unknown>, action: string): { calendar: string; uid: string } {
+  const calendar = str(payload.calendar);
+  const uid = str(payload.event_uid);
+  if (!calendar) throw new Error(`calendar is required for ${action}`);
+  if (!uid) throw new Error(`event_uid is required for ${action}`);
+  return { calendar, uid };
 }
 
 async function getEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const eventUid = typeof payload.event_uid === 'string' ? payload.event_uid.trim() : '';
-
-  if (!calendarName) {
-    throw new Error('calendar is required for get_event');
-  }
-  if (!eventUid) {
-    throw new Error('event_uid is required for get_event');
-  }
-
-  const output = await runCalendarScript([
-    ...sharedAppleScriptHandlers(),
-    'tell application "Calendar"',
-    `tell calendar "${escapeAppleScriptString(calendarName)}"`,
-    `set targetEvent to first event whose uid is "${escapeAppleScriptString(eventUid)}"`,
-    'set rawLocation to ""',
-    'try',
-    'set rawLocation to location of targetEvent',
-    'end try',
-    'set rawNotes to ""',
-    'try',
-    'set rawNotes to description of targetEvent',
-    'end try',
-    'set rawUrl to ""',
-    'try',
-    'set rawUrl to url of targetEvent',
-    'end try',
-    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my isoDateText(start date of targetEvent)) & "|" & (my isoDateText(end date of targetEvent)) & "|" & (my sanitizeText(rawLocation)) & "|" & (my sanitizeText(rawNotes)) & "|" & (my sanitizeText(rawUrl))`,
-    'end tell',
-    'end tell',
-  ]);
-
-  const [uid, calendar, title, startRaw, endRaw, location, notes, url] = parseLine(output);
-  return {
-    uid,
-    calendar,
-    title,
-    startAtMs: parseAppleScriptDate(startRaw),
-    endAtMs: parseAppleScriptDate(endRaw),
-    location: location || undefined,
-    notes: notes || undefined,
-    url: url || undefined,
-  };
+  const { uid } = requireEventArgs(payload, 'get_event');
+  const { eventId, occurrenceMs } = parseCalendarUid(uid);
+  return eventOf(await call('/v1/read/calendar-event', { eventId, ...(occurrenceMs !== undefined ? { occurrenceMs } : {}) }));
 }
 
 async function createEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
-  const requestedCalendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
-  const startMs = typeof payload.start_ms === 'number' ? payload.start_ms : NaN;
-  const endMs = typeof payload.end_ms === 'number' ? payload.end_ms : startMs + 30 * 60 * 1000;
-  const location = typeof payload.location === 'string' ? payload.location.trim() : '';
-
-  if (!title) {
-    throw new Error('title is required for create_event');
-  }
-  if (!Number.isFinite(startMs)) {
-    throw new Error('start_ms is required for create_event');
-  }
-  if (!Number.isFinite(endMs) || endMs < startMs) {
-    throw new Error('end_ms must be greater than or equal to start_ms');
-  }
-  const calendarName = requestedCalendarName
-    ? resolveCalendarName(requestedCalendarName, await listCalendars())
-    : (await listWritableCalendars())[0] ?? '';
-
-  if (!calendarName) {
-    throw new Error('No writable calendar is available. Omit calendar to use the first writable calendar.');
-  }
-
-  const propertyParts = [
-    `summary:"${escapeAppleScriptString(title)}"`,
-    'start date:startDate',
-    'end date:endDate',
-  ];
-
-  if (location) {
-    propertyParts.push(`location:"${escapeAppleScriptString(location)}"`);
-  }
-
-  const output = await runCalendarScript([
-    ...sharedAppleScriptHandlers(),
-    ...buildAppleScriptDateVar('startDate', startMs),
-    ...buildAppleScriptDateVar('endDate', endMs),
-    'tell application "Calendar"',
-    `tell calendar "${escapeAppleScriptString(calendarName)}"`,
-    `set newEvent to make new event at end with properties {${propertyParts.join(', ')}}`,
-    `return (uid of newEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of newEvent)) & "|" & (my isoDateText(start date of newEvent)) & "|" & (my isoDateText(end date of newEvent)) & "|" & (my sanitizeText(location of newEvent))`,
-    'end tell',
-    'end tell',
-  ]);
-
-  const [uid, calendar, parsedTitle, startRaw, endRaw, parsedLocation] = parseLine(output);
-  return {
-    uid,
-    calendar,
-    title: parsedTitle,
-    startAtMs: parseAppleScriptDate(startRaw),
-    endAtMs: parseAppleScriptDate(endRaw),
-    location: parsedLocation || undefined,
-  };
+  const requestedCalendar = str(payload.calendar);
+  const title = str(payload.title);
+  const startMs = finite(payload.start_ms);
+  const endMs = finite(payload.end_ms) ?? (startMs !== undefined ? startMs + 30 * 60 * 1000 : undefined);
+  const location = str(payload.location);
+  // notes：只有撤销删除时用快照重建会带（聊天工具的 schema 没有这个字段）
+  const notes = str(payload.notes);
+  if (!title) throw new Error('title is required for create_event');
+  if (startMs === undefined) throw new Error('start_ms is required for create_event');
+  if (endMs === undefined || endMs < startMs) throw new Error('end_ms must be greater than or equal to start_ms');
+  const calendarId = requestedCalendar
+    ? resolveCalendar(requestedCalendar, (await listCalendarInfos()).filter((c) => c.writable)).id
+    : undefined; // 原生层用系统的默认日历
+  return eventOf(await call('/v1/write/calendar-event', {
+    op: 'create', title, startMs, endMs,
+    ...(calendarId ? { calendarId } : {}), ...(location ? { location } : {}), ...(notes ? { notes } : {}),
+  }));
 }
 
 async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const eventUid = typeof payload.event_uid === 'string' ? payload.event_uid.trim() : '';
-  const hasTitle = typeof payload.title === 'string';
-  const title = hasTitle ? (payload.title as string).trim() : '';
-  const hasStart = typeof payload.start_ms === 'number' && Number.isFinite(payload.start_ms);
-  const startMs = hasStart ? payload.start_ms as number : undefined;
-  const hasEnd = typeof payload.end_ms === 'number' && Number.isFinite(payload.end_ms);
-  const endMs = hasEnd ? payload.end_ms as number : undefined;
-  const hasLocation = Object.prototype.hasOwnProperty.call(payload, 'location') && typeof payload.location === 'string';
-  const location = hasLocation ? (payload.location as string).trim() : '';
-
-  if (!calendarName) {
-    throw new Error('calendar is required for update_event');
-  }
-  if (!eventUid) {
-    throw new Error('event_uid is required for update_event');
-  }
-  if (!hasTitle && !hasStart && !hasEnd && !hasLocation) {
+  const { uid } = requireEventArgs(payload, 'update_event');
+  const title = typeof payload.title === 'string' ? payload.title.trim() : undefined;
+  const startMs = finite(payload.start_ms);
+  const endMs = finite(payload.end_ms);
+  const location = typeof payload.location === 'string' ? payload.location.trim() : undefined;
+  if (!title && startMs === undefined && endMs === undefined && location === undefined) {
     throw new Error('at least one field must be provided for update_event');
   }
-  if (hasEnd && !hasStart && typeof endMs === 'number') {
-    throw new Error('start_ms is required when end_ms is provided');
-  }
-  if (typeof startMs === 'number' && typeof endMs === 'number' && endMs < startMs) {
+  if (endMs !== undefined && startMs === undefined) throw new Error('start_ms is required when end_ms is provided');
+  if (startMs !== undefined && endMs !== undefined && endMs < startMs) {
     throw new Error('end_ms must be greater than or equal to start_ms');
   }
-
-  const lines = [
-    ...sharedAppleScriptHandlers(),
-  ];
-
-  if (typeof startMs === 'number') {
-    lines.push(...buildAppleScriptDateVar('startDate', startMs));
-  }
-  if (typeof endMs === 'number') {
-    lines.push(...buildAppleScriptDateVar('endDate', endMs));
-  }
-
-  lines.push(
-    'tell application "Calendar"',
-    `tell calendar "${escapeAppleScriptString(calendarName)}"`,
-    `set targetEvent to first event whose uid is "${escapeAppleScriptString(eventUid)}"`,
-  );
-
-  if (hasTitle && title) {
-    lines.push(`set summary of targetEvent to "${escapeAppleScriptString(title)}"`);
-  }
-  if (typeof startMs === 'number') {
-    lines.push('set start date of targetEvent to startDate');
-  }
-  if (typeof endMs === 'number') {
-    lines.push('set end date of targetEvent to endDate');
-  }
-  if (hasLocation) {
-    lines.push(`set location of targetEvent to "${escapeAppleScriptString(location)}"`);
-  }
-
-  lines.push(
-    `return (uid of targetEvent as text) & "|" & (my sanitizeText("${escapeAppleScriptString(calendarName)}")) & "|" & (my sanitizeText(summary of targetEvent)) & "|" & (my isoDateText(start date of targetEvent)) & "|" & (my isoDateText(end date of targetEvent)) & "|" & (my sanitizeText(location of targetEvent))`,
-    'end tell',
-    'end tell',
-  );
-
-  const output = await runCalendarScript(lines);
-  const [uid, calendar, parsedTitle, startRaw, endRaw, parsedLocation] = parseLine(output);
-  return {
-    uid,
-    calendar,
-    title: parsedTitle,
-    startAtMs: parseAppleScriptDate(startRaw),
-    endAtMs: parseAppleScriptDate(endRaw),
-    location: parsedLocation || undefined,
-  };
+  const { eventId, occurrenceMs } = parseCalendarUid(uid);
+  return eventOf(await call('/v1/write/calendar-event', {
+    op: 'update', eventId,
+    ...(occurrenceMs !== undefined ? { occurrenceMs } : {}),
+    ...(title ? { title } : {}),
+    ...(startMs !== undefined ? { startMs } : {}),
+    ...(endMs !== undefined ? { endMs } : {}),
+    ...(location !== undefined ? { location } : {}),
+  }));
 }
 
-async function deleteEvent(payload: Record<string, unknown>): Promise<{
-  uid: string;
-  calendar: string;
-  title: string;
-  deleted: boolean;
-}> {
-  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
-  const eventUid = typeof payload.event_uid === 'string' ? payload.event_uid.trim() : '';
+async function deleteEvent(payload: Record<string, unknown>): Promise<{ uid: string; calendar: string; title: string; deleted: boolean }> {
+  const { calendar, uid } = requireEventArgs(payload, 'delete_event');
+  const { eventId, occurrenceMs } = parseCalendarUid(uid);
+  const res = await call<{ deleted?: boolean; title?: string }>('/v1/write/calendar-event', {
+    op: 'delete', eventId, ...(occurrenceMs !== undefined ? { occurrenceMs } : {}),
+  });
+  if (res?.deleted !== true) throw new CalendarFailure('read_failed');
+  return { uid, calendar, title: typeof res.title === 'string' ? res.title : '', deleted: true };
+}
 
-  if (!calendarName) {
-    throw new Error('calendar is required for delete_event');
-  }
-  if (!eventUid) {
-    throw new Error('event_uid is required for delete_event');
-  }
+/** probe_access: passive only (startup / background callers must never prompt). Lists calendars when granted. */
+async function probe(): Promise<number | null> {
+  if ((await readCalendarAccess()) !== 'granted') return null;
+  const calendars = await listCalendarInfos();
+  lastListEmpty = calendars.length === 0;
+  return calendars.length;
+}
 
-  const output = await runCalendarScript([
-    ...sharedAppleScriptHandlers(),
-    'tell application "Calendar"',
-    `tell calendar "${escapeAppleScriptString(calendarName)}"`,
-    `set targetEvent to first event whose uid is "${escapeAppleScriptString(eventUid)}"`,
-    'set eventTitle to my sanitizeText(summary of targetEvent)',
-    'delete targetEvent',
-    'return eventTitle',
-    'end tell',
-    'end tell',
-  ]);
-
-  return {
-    uid: eventUid,
-    calendar: calendarName,
-    title: output,
-    deleted: true,
-  };
+function probeSummary(count: number | null): string {
+  if (count === null) return `Calendar 还没有允许访问：${ACCESS_DETAIL[(lastAccess ?? 'undecided') as Exclude<CalendarAccess, 'granted'>]}`;
+  return count > 0 ? `Calendar 授权/可用性检查通过，可访问 ${count} 个日历` : 'Calendar 授权/可用性检查通过，但没有找到可访问的日历';
 }
 
 export const calendarConnector: Connector = {
@@ -550,6 +288,7 @@ export const calendarConnector: Connector = {
     return buildCalendarStatus(this.capabilities);
   },
   async getStatus(): Promise<ConnectorStatus> {
+    if (process.platform === 'darwin') await readCalendarAccess();
     return buildCalendarStatus(this.capabilities);
   },
   async execute(action: string, payload: Record<string, unknown>): Promise<ConnectorExecutionResult> {
@@ -557,76 +296,51 @@ export const calendarConnector: Connector = {
       case 'get_status':
         return { data: await this.getStatus() };
       case 'probe_access': {
-        const calendars = await probeCalendarAccess();
-        return {
-          data: await this.getStatus(),
-          summary: calendars.length > 0
-            ? `Calendar 授权/可用性检查通过，可访问 ${calendars.length} 个日历`
-            : 'Calendar 授权/可用性检查通过，但没有找到可访问的日历',
-        };
+        const count = await probe();
+        return { data: buildCalendarStatus(this.capabilities), summary: probeSummary(count) };
       }
       case 'repair_permissions': {
-        resetCalendarConnectorReadiness();
-        const calendars = await probeCalendarAccess();
-        return {
-          data: await this.getStatus(),
-          summary: calendars.length > 0
-            ? `Calendar 权限修复检查通过，可访问 ${calendars.length} 个日历`
-            : 'Calendar 权限修复检查通过，但没有找到可访问的日历',
-        };
+        // 用户在连接器页点「修复权限」：与授权卡、会前提醒开关同一个授权出口（点击凭证弹一次 / 已拒绝开系统设置）
+        const { grantCalendarFromConnectorClick } = await import('../../ipc/envAssist.ipc');
+        await grantCalendarFromConnectorClick();
+        const count = await probe();
+        return { data: buildCalendarStatus(this.capabilities), summary: probeSummary(count) };
       }
       case 'disconnect':
       case 'remove':
         resetCalendarConnectorReadiness();
         return {
-          data: await this.getStatus(),
+          data: buildCalendarStatus(this.capabilities),
           summary: action === 'disconnect' ? 'Calendar connector 已断开。' : 'Calendar connector 已移除。',
         };
+      case 'default_calendar': {
+        // 不指定日历时会写进哪个日历（系统「新事件默认日历」），给批准卡显示；拿不到就是 null，卡上不显示这一行
+        const title = (await listCalendarInfos()).find((c) => c.isDefault && c.writable)?.title ?? null;
+        return { data: title };
+      }
       case 'list_calendars': {
-        const calendars = await listCalendars();
-        return {
-          data: calendars,
-          summary: calendars.length > 0 ? `找到 ${calendars.length} 个日历` : '没有找到可访问的日历',
-        };
+        const calendars = (await listCalendarInfos()).map((c) => c.title);
+        return { data: calendars, summary: calendars.length > 0 ? `找到 ${calendars.length} 个日历` : '没有找到可访问的日历' };
       }
       case 'list_events': {
-        const { events, unreadCalendars } = await listEvents(payload);
-        const baseSummary = events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件';
-        const unreadNote = unreadCalendars && unreadCalendars.length > 0
-          ? `（以下日历读取超时未包含：${unreadCalendars.join('、')}）`
-          : '';
-        return {
-          data: events,
-          summary: `${baseSummary}${unreadNote}`,
-        };
+        const events = await listEvents(payload);
+        return { data: events, summary: events.length > 0 ? `找到 ${events.length} 条日历事件` : '没有找到匹配的日历事件' };
       }
       case 'get_event': {
         const event = await getEvent(payload);
-        return {
-          data: event,
-          summary: `找到日历事件：${event.title}`,
-        };
+        return { data: event, summary: `找到日历事件：${event.title}` };
       }
       case 'create_event': {
         const event = await createEvent(payload);
-        return {
-          data: event,
-          summary: `已创建日历事件：${event.title}`,
-        };
+        return { data: event, summary: `已创建日历事件：${event.title}` };
       }
       case 'update_event': {
         const event = await updateEvent(payload);
-        return {
-          data: event,
-          summary: `已更新日历事件：${event.title}`,
-        };
+        return { data: event, summary: `已更新日历事件：${event.title}` };
       }
       case 'delete_event': {
         const event = await deleteEvent(payload);
-        return {
-          data: event,
-          summary: `已删除日历事件：${event.title}`,
-        };
+        return { data: event, summary: `已删除日历事件：${event.title}` };
       }
       default:
         throw new Error(`Unsupported calendar action: ${action}`);

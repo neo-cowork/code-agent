@@ -31,6 +31,8 @@ import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, g
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
 import { isBareInterruptionNode } from '../../../utils/bareInterruptionNode';
+import { envParkedTurnDuration } from '../../../utils/envParkedTurn';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
 import { TurnFeedback } from './TurnFeedback';
 import { MessageContextMenu } from './MessageContextMenu';
@@ -123,14 +125,16 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const voiceRuntime = useVoiceLiveRuntime();
   const voiceCallInFlight = voiceRuntime.phase === 'live' || voiceRuntime.phase === 'connecting';
   const [isForking, setIsForking] = useState(false);
+  const hasEnvPark = useMemo(() => turn.nodes.some(node => node.metadata?.envAssist?.parkedToolCallId), [turn.nodes]);
+  const messages = useSessionStore(state => hasEnvPark && state.currentSessionId === sessionId ? state.messages : undefined);
   const stats = useMemo(() => {
-    const duration = turn.endTime ? turn.endTime - turn.startTime : null;
+    const duration = envParkedTurnDuration(turn, messages ?? []);
     const time = new Date(turn.startTime).toLocaleTimeString('zh-CN', {
       hour: '2-digit',
       minute: '2-digit',
     });
     return { duration, time };
-  }, [turn]);
+  }, [turn, messages]);
   const isStreaming = turn.status === 'streaming';
   const displayNodes = useMemo(
     () => groupAdjacentToolCalls(turn.nodes),
@@ -404,6 +408,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   <ToolStepGroup
                     key={d.key}
                     nodes={d.tools}
+                    turnNodes={turn.nodes}
                     sessionId={sessionId}
                     defaultExpanded={policy.toolGroupDefaultExpanded}
                     isStreamingTurn={isStreaming}

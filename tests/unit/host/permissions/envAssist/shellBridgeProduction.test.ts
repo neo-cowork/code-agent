@@ -106,7 +106,7 @@ describe.skipIf(process.platform !== 'darwin')('real stdin -> production host br
     }
     expect(bridge.requests.every((r) => r.authorized && r.method === 'POST')).toBe(true);
     expect(bridge.requests.filter((r) => r.path.endsWith('/automation')).map((r) => r.body))
-      .toEqual(Array(3).fill({ targetBundleId: 'com.apple.iCal' }));
+      .toEqual(Array(3).fill({ targetBundleId: 'com.apple.mail' })); // 日历已改走 EventKit，自动化以邮件为代表
   }, 60000);
 
   it('diagnostic-only probes issue zero grant POSTs; no-handshake control returns not_available through the same route', async () => {

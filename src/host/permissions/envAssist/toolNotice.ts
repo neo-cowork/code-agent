@@ -16,6 +16,7 @@ const pending = new Map<string, Promise<void>>();
 export async function publishEnvAssistToolNotice(input: {
   toolName: string; result: Pick<ToolResult, 'success' | 'error' | 'output' | 'metadata'>; sessionId: string; runId?: string;
   modelResult?: Pick<ToolResult, 'success' | 'error' | 'output' | 'metadata'>;
+  parkedToolCallId?: string;
   onEvent: (event: AgentEvent) => void;
 }): Promise<void> {
   if (!input.runId) return;
@@ -25,11 +26,14 @@ export async function publishEnvAssistToolNotice(input: {
     && classifyCuaFailure(cuaFailureText(input.result)) === 'permission' ? await readCuaHelperPermissionState() : undefined;
   const notice = classifyEnvBlocker({ ...input, runId: input.runId, cuaPermissions });
   if (!notice) return;
+  if (input.parkedToolCallId) notice.parkedToolCallId = input.parkedToolCallId;
   // Diagnostics remain in the connector's host log. Neither events nor model input get the raw error.
   if (!canOpenEnvSettings()) { notice.phase = 'unsupported'; delete notice.action; }
   // Only Apple-events targets can tell "never asked" from "refused", so only they get the in-place system dialog.
   // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
-  else if (notice.action?.payload && 'pane' in notice.action.payload && notice.action.payload.pane === 'automation' && canRequestEnvGrant()) {
+  // Calendar (EventKit) can tell too: undecided shows the dialog, refused opens Settings (calendarGrant.askCalendarFromClick).
+  else if (notice.action?.payload && 'pane' in notice.action.payload
+    && (notice.action.payload.pane === 'automation' || notice.action.payload.pane === 'calendars') && canRequestEnvGrant()) {
     notice.action.kind = 'request_grant';
   }
   input.result.error = [

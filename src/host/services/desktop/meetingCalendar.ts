@@ -36,10 +36,14 @@ export class MeetingCalendarReminder {
     this.timer.unref?.(); // 不因为这个巡检拖住进程退出
   }
 
-  /** 录制条上显示的「XX 快开始了」：开始后过了 LEAD 就不再挂着 */
-  upcoming(): MeetingUpcoming | null {
+  /** 录制条上显示的「XX 快开始了」：开关关了立刻不挂；开始后过了 LEAD 也不再挂着 */
+  async upcoming(): Promise<MeetingUpcoming | null> {
     const cur = this.current;
     if (!cur || this.deps.isMeetingActive()) return null;
+    if (!(await this.deps.enabled())) {
+      this.current = null;
+      return null;
+    }
     return this.now() - cur.startAtMs < MEETING_SESSION_LIMITS.CALENDAR_LEAD_MS ? cur : null;
   }
 

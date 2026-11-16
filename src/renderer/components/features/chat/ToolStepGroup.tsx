@@ -1,3 +1,4 @@
+import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
@@ -45,9 +46,12 @@ import { foldSessionTaskStatus } from '../../../utils/foldSessionTaskStatus';
 import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalResolver';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import { useEnvParkedStep } from '../../../hooks/useEnvParkedTarget';
+import { supersededEnvParkedCalls } from '../../../utils/envParkedTurn';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
+  /** Full turn context: a permission card or assistant text can separate continuation groups. */
+  turnNodes?: TraceNode[];
   sessionId?: string;
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
@@ -62,6 +66,7 @@ const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes: sourceNodes,
+  turnNodes = sourceNodes,
   sessionId,
   defaultExpanded = false,
   isStreamingTurn = false,
@@ -69,13 +74,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   receiptTimestamp,
 }) => {
   const { t } = useI18n();
-  const nodes = useMemo(() => sourceNodes.map((node) => {
+  const supersededCalls = useMemo(() => isStreamingTurn ? new Set<string>() : supersededEnvParkedCalls(turnNodes), [turnNodes, isStreamingTurn]);
+  const nodes = useMemo(() => sourceNodes.filter(node => !supersededCalls.has(node.toolCall?.id ?? '')).map((node) => {
     const tc = node.toolCall;
     if (!tc || getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
       toolCallId: tc.id, success: tc.success ?? true, output: tc.result, metadata: tc.metadata,
     } }) !== 'question') return node;
     return { ...node, toolCall: { ...tc, success: false } };
-  }), [sourceNodes]);
+  }), [sourceNodes, supersededCalls]);
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
@@ -565,6 +571,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               {t.decisionCard.permission.retry}
             </Button>
           )}
+        </div>
+      ))}
+
+      {/* 删一条日程后的「撤销」挂在组这一层：步骤组默认收起，挂在展开后的步骤里用户找不到（真机第四轮） */}
+      {toolCalls.filter(canUndoCalendarDelete).map((toolCall) => (
+        <div key={`undo-${toolCall.id}`} className="ml-4 pl-3">
+          <CalendarDeleteUndo toolCall={toolCall} sessionId={sessionId ?? undefined} />
         </div>
       ))}
 

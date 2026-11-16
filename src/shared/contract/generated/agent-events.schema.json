@@ -2756,6 +2756,7 @@
           "type": "string",
           "enum": [
             "perm_automation",
+            "perm_calendars",
             "perm_accessibility",
             "perm_screen_recording",
             "perm_input_monitoring",
@@ -2858,6 +2859,7 @@
                       "type": "string",
                       "enum": [
                         "automation",
+                        "calendars",
                         "accessibility",
                         "screenCapture",
                         "inputMonitoring",
@@ -2927,6 +2929,9 @@
             "mode"
           ],
           "additionalProperties": false
+        },
+        "parkedToolCallId": {
+          "type": "string"
         },
         "doneKey": {
           "type": "string"

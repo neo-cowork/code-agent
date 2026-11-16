@@ -62,16 +62,12 @@ const legacyLines: Record<string, string[]> = {
   "src/host/tools/modules/connectors/remindersCreate.ts": ["} from '../../../connectors/native/osascript';", "'Do not work around this by running osascript or AppleScript through Bash or any script; at most retry reminders_create once or tell the user.';", "'Do not work around this by running osascript or AppleScript through Bash or any script; do not retry reminders_create blindly and tell the user.';", "ctx.logger.warn('reminders_create osascript failed', {"],
   // Existing connector failure logging and safety guidance.
   "src/host/tools/modules/connectors/appleScriptWriteFailure.ts": ["} from '../../../connectors/native/osascript';", "'Do not work around this by running osascript or AppleScript through Bash or any script; tell the user what failed.';", "logger.warn(`${toolName} osascript failed`, {"],
-  // Calendar connector execution/failure translation (S4).
-  "src/host/tools/modules/connectors/calendar.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "const failureCode = osascriptFailure ? failure.code : 'connector_error';", "error: osascriptFailure", "...(osascriptFailure ? { code: failure.code } : {}),"],
   // Reminders connector execution/failure translation (S4).
   "src/host/tools/modules/connectors/reminders.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "code: osascriptFailure ? failure.code : 'connector_error',", "error: osascriptFailure", "...(osascriptFailure ? { code: failure.code } : {}),"],
   // Mail connector execution/failure translation (S4).
   "src/host/tools/modules/connectors/mail.ts": ["} from '../../../connectors/native/osascript';", "const osascriptFailure = isAppleScriptFailure(error);", "code: osascriptFailure ? failure.code : 'connector_error',", "error: osascriptFailure", "...(osascriptFailure ? { code: failure.code } : {}),"],
   // Photos connector executes user-requested Apple Events (S4).
   "src/host/connectors/native/photos.ts": ["import { escapeAppleScriptString, runAppleScript } from './osascript';", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(scriptLines);"],
-  // Calendar connector execution/failure translation (S4).
-  "src/host/connectors/native/calendar.ts": ["runAppleScript,", "} from './osascript';", "const runCalendarScript = (lines: string[]) => runAppleScript(lines, { permissionTarget: 'com.apple.iCal' });"],
   // Reminders connector execution/failure translation (S4).
   "src/host/connectors/native/reminders.ts": ["runAppleScript,", "} from './osascript';", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript([", "const output = await runAppleScript(lines);", "const output = await runAppleScript(lines);", "const output = await runAppleScript(["],
   // Shared existing AppleScript subprocess executor (S4).

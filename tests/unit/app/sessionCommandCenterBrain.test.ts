@@ -486,10 +486,13 @@ describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — �
     expect(options.allowedToolNames).not.toContain('reminders_create');
   });
 
-  it('未启用：不进面（行为与改动前一致，不扩面）', () => {
+  // #3448（connector off claims no events）：未启用时只放命中连接器的读工具，让模型拿到
+  // 「未连接」的工具结果去转述，而不是零信号下答「没有」；写工具一律不进面。
+  // 生产 registry 只按 enabledNative 配置，未启用连接器不在 registry，读工具执行即 NOT_INITIALIZED。
+  it('未启用：只多出命中连接器的读工具，写工具不进面', () => {
     getConnectorRegistry().configure(CONNECTOR_ALL);
     expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期'))
-      .toEqual(getTextForegroundToolNames());
+      .toEqual([...getTextForegroundToolNames(), 'mail']);
   });
 
   // rework r1（PR #2808 ai-review）：手选/专家连接器收窄必须透传——范围外即使意图
