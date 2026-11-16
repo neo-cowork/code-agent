@@ -9,10 +9,10 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CONFIG_DIR_DEV } from '../src/shared/constants/configDir.ts';
+import { CONFIG_DIR_DEV } from '../../src/shared/constants/configDir.ts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, '..');
+const repoRoot = path.resolve(scriptDir, '..', '..');
 const HOME_DIR = process.env.NEO_DRIVE_HOME || path.join(os.homedir(), '.cache', 'neo-drive');
 const STATE_PATH = path.join(HOME_DIR, 'state.json');
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -310,7 +310,7 @@ async function resolveTarget(opts) {
   }
   if (opts.slotless !== undefined) {
     const label = typeof opts.slotless === 'string' && opts.slotless ? opts.slotless : 'neo-drive';
-    const out = execFileSync(process.execPath, [path.join(scriptDir, 'verify-slotless.mjs'), label, ...(opts.reuseDist ? ['--reuse-dist'] : [])], {
+    const out = execFileSync(process.execPath, [path.join(repoRoot, 'scripts', 'verify-slotless.mjs'), label, ...(opts.reuseDist ? ['--reuse-dist'] : [])], {
       cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'],
     });
     const url = out.match(/^NEO_VERIFY_URL=(.+)$/m)?.[1];
@@ -396,7 +396,7 @@ function cleanupState(state) {
     try { process.kill(state.watchdogPid, 'SIGTERM'); } catch { /* 已退出 */ }
   }
   if (state.slotlessDataDir) {
-    spawnSync(process.execPath, [path.join(scriptDir, 'verify-slotless.mjs'), '--stop', state.slotlessDataDir], { stdio: ['ignore', 2, 2] });
+    spawnSync(process.execPath, [path.join(repoRoot, 'scripts', 'verify-slotless.mjs'), '--stop', state.slotlessDataDir], { stdio: ['ignore', 2, 2] });
   }
   if (state.userDataDir?.startsWith(path.join(HOME_DIR, 'profile-'))) rmSync(state.userDataDir, { recursive: true, force: true });
   rmSync(STATE_PATH, { force: true });
@@ -934,7 +934,7 @@ async function main(argv = process.argv.slice(2)) {
     } else {
       const state = liveState();
       assertNoConflict(state, opts);
-      if (!state) throw new Error('没有常驻浏览器：先 node scripts/neo-drive.mjs browser start --slotless|--dev|--url <地址>');
+      if (!state) throw new Error('没有常驻浏览器：先 node scripts/neo-drive/neo-drive.mjs browser start --slotless|--dev|--url <地址>');
       const ctx = { opts, target: state, timeoutMs, logMarks: state.logMarks };
       const detail = await withPage(state, (page) => ACTIONS[cmd](Object.assign(ctx, { page }), step));
       // send 在 ctx 上记下发送前的日志偏移，留给下一条 wait-log。

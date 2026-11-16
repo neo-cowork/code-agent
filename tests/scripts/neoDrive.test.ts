@@ -16,7 +16,7 @@ import {
   targetConflict,
   visibilityVerdict,
   // @ts-expect-error —— 纯 JS 测试工具入口，无类型声明
-} from '../../scripts/neo-drive.mjs';
+} from '../../scripts/neo-drive/neo-drive.mjs';
 
 type Sample = { t: number; running: boolean; cards: string[] };
 

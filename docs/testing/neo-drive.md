@@ -1,6 +1,6 @@
 # neo-drive：按元素操作、按状态等待地驱动 Agent Neo
 
-`scripts/neo-drive.mjs` 是一个测试工具，用来替代「按截图坐标点 → 固定 sleep → 截图 → 看图判断」的验收方式。
+`scripts/neo-drive/neo-drive.mjs` 是一个测试工具，用来替代「按截图坐标点 → 固定 sleep → 截图 → 看图判断」的验收方式。
 它按元素去点（文字、`data-testid`、角色），等待都看状态（运行结束、出现需要用户处理的卡片、日志行、库里的行），
 截图只在要给人看的时候才截。本机和 mini 用同一份脚本。
 
@@ -17,26 +17,26 @@
 
 ```bash
 # 无头：隔离数据目录 + dogfood 账号（复用 verify-slotless）
-node scripts/neo-drive.mjs browser start --slotless            # 已构建过可加 --reuse-dist
-node scripts/neo-drive.mjs new-session
-node scripts/neo-drive.mjs select-model "MiMo v2.6 Flash"    # 在输入框底部的模型选择器里搜索并选中
-node scripts/neo-drive.mjs send "写一段 300 字的介绍"
-node scripts/neo-drive.mjs wait-idle --expect idle
-node scripts/neo-drive.mjs assert-visible testid=turn-reply-actions
-node scripts/neo-drive.mjs shot after
-node scripts/neo-drive.mjs browser stop                         # 同时停掉隔离服务
+node scripts/neo-drive/neo-drive.mjs browser start --slotless            # 已构建过可加 --reuse-dist
+node scripts/neo-drive/neo-drive.mjs new-session
+node scripts/neo-drive/neo-drive.mjs select-model "MiMo v2.6 Flash"    # 在输入框底部的模型选择器里搜索并选中
+node scripts/neo-drive/neo-drive.mjs send "写一段 300 字的介绍"
+node scripts/neo-drive/neo-drive.mjs wait-idle --expect idle
+node scripts/neo-drive/neo-drive.mjs assert-visible testid=turn-reply-actions
+node scripts/neo-drive/neo-drive.mjs shot after
+node scripts/neo-drive/neo-drive.mjs browser stop                         # 同时停掉隔离服务
 
 # 场景一次跑完（自动起停浏览器），输出每步耗时 JSON
-node scripts/neo-drive.mjs run scripts/neo-drive-scenarios/c-long-session-scroll-send.json --slotless
+node scripts/neo-drive/neo-drive.mjs run scripts/neo-drive/scenarios/c-long-session-scroll-send.json --slotless
 
 # 真机：驱动已安装的 Agent Neo Dev（槽 1；--dev=2 选槽 2）
-node scripts/neo-drive.mjs preflight "DeepSeek V4.1 Flash" --dev   # 先确认 Dev 包有能用的模型，失败会打出运行失败卡原文
-node scripts/neo-drive.mjs run scripts/neo-drive-scenarios/a-calendar-grant.json --dev
-node scripts/neo-drive.mjs quit --slot 1        # 只按信号退出（先 TERM，15 秒后 KILL），不用 osascript quit
-node scripts/neo-drive.mjs install <worktree>   # 先 quit，再跑 <worktree>/scripts/tauri-install-dev.sh
-node scripts/neo-drive.mjs launch
-node scripts/neo-drive.mjs reset-tcc Calendar
-node scripts/neo-drive.mjs ax-click "Allow Full Access" --process UserNotificationCenter
+node scripts/neo-drive/neo-drive.mjs preflight "DeepSeek V4.1 Flash" --dev   # 先确认 Dev 包有能用的模型，失败会打出运行失败卡原文
+node scripts/neo-drive/neo-drive.mjs run scripts/neo-drive/scenarios/a-calendar-grant.json --dev
+node scripts/neo-drive/neo-drive.mjs quit --slot 1        # 只按信号退出（先 TERM，15 秒后 KILL），不用 osascript quit
+node scripts/neo-drive/neo-drive.mjs install <worktree>   # 先 quit，再跑 <worktree>/scripts/tauri-install-dev.sh
+node scripts/neo-drive/neo-drive.mjs launch
+node scripts/neo-drive/neo-drive.mjs reset-tcc Calendar
+node scripts/neo-drive/neo-drive.mjs ax-click "Allow Full Access" --process UserNotificationCenter
 ```
 
 目标的写法：纯文本表示按可见文字找；`testid=<data-testid>`；`role=<角色>:<名称>`（名称精确匹配，比如 `role=button:允许访问日历`；按钮名带快捷键提示时用正则，比如审批卡的 `role=button:/^允许一次/`）；`css=<选择器>`。
@@ -74,7 +74,7 @@ node scripts/neo-drive.mjs ax-click "Allow Full Access" --process UserNotificati
 顶层 `"model": "<模型名>"` 表示每次 `new-session` 之后自动切到这个模型。新会话的默认模型可能是没配钥匙的服务商，所以真机场景都写上这个字段。
 `${ts}` 会被替换成这次运行的时间戳。文字目标可以写成 `/正则/`，比如 `/已允许 Neo (访问|控制)/` 可以同时兼容新旧文案。
 真机场景要改 TCC 的，写成 `quit → reset-tcc → launch → reload` 开头：应用运行时 reset 不生效；重启后后端换了进程，页面要 `reload` 才能连上新服务。任意一步失败后，后面只跑标了 `"always": true` 的清理步，整个场景判失败。
-`click` 加 `"ifVisible": true` 表示在 timeout 之内没出现就跳过。三个基准场景放在 `scripts/neo-drive-scenarios/`。
+`click` 加 `"ifVisible": true` 表示在 timeout 之内没出现就跳过。三个基准场景放在 `scripts/neo-drive/scenarios/`。
 
 ## 在 mini 上跑
 
@@ -83,7 +83,7 @@ mini 上的主检出 `~/work/code-agent` 不一定是当前的 main，要先开�
 ```bash
 ssh neo-worker 'cd ~/work/code-agent && git fetch -q origin && git worktree add --detach ~/work/wt/NEO-DRIVE origin/main \
   && bash scripts/worktree-bootstrap.sh ~/work/wt/NEO-DRIVE'
-ssh neo-worker 'cd ~/work/wt/NEO-DRIVE && node scripts/neo-drive.mjs run scripts/neo-drive-scenarios/c-long-session-scroll-send.json --slotless'
+ssh neo-worker 'cd ~/work/wt/NEO-DRIVE && node scripts/neo-drive/neo-drive.mjs run scripts/neo-drive/scenarios/c-long-session-scroll-send.json --slotless'
 ```
 
 - 无头模式（`--slotless`，或者 `--url` 指向本机服务）：通过 ssh 直接就能用，不需要图形会话。
