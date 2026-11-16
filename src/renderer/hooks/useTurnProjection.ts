@@ -303,7 +303,6 @@ export function projectTurns(
   // 消息之间的同因报错是**同一轮失败**的重复上报（web 路径 host 结构化标记与原始
   // 供应商报错各落一条），只算一次、只渲染最后一条。带 toolCalls 的轮中消息不打断
   // 连续段——那一轮可能还会失败。
-  const agentErrorRunByMessageId = projectAgentErrorRuns(messages);
   const lastFailureId = messages.findLast(msg => msg.role === 'assistant' && msg.metadata?.agentError)?.id ?? null;
 
   for (const msg of messages) {
@@ -673,10 +672,6 @@ export function projectTurns(
         }
         const attachReasoning = !reasoningAttachedForMessage;
         reasoningAttachedForMessage = true;
-        // 只在唯一错误落点复用前台/后台共用的连续失败折叠结果。
-        const agentErrorRun = includeAgentError && projectedMetadata?.agentError
-          ? agentErrorRunByMessageId.get(msg.id)
-          : undefined;
         turn.nodes.push({
           id: index && index > 1 ? `${msg.id}-text-${index}` : `${msg.id}-text`,
           messageId: msg.id,
@@ -690,7 +685,6 @@ export function projectTurns(
           metadata: index && index > 1 && (includeAgentError ? projectedMetadata : contentMetadata)?.backgroundTaskPreannounce
             ? { ...(includeAgentError ? projectedMetadata : contentMetadata), backgroundTaskPreannounce: undefined }
             : includeAgentError ? projectedMetadata : contentMetadata,
-          ...(agentErrorRun ? { agentErrorRun } : {}),
         });
       };
 
@@ -894,6 +888,7 @@ export function projectTurns(
     }
   }
 
+  projectAgentErrorRuns(messages, turns);
   markFeedbackEligibleNodes(turns);
   markRecoveredFailures(turns);
 
