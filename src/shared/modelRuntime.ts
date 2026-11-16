@@ -700,7 +700,7 @@ export function buildRuntimeModelOptions(
   runtimeOptions: {
     includeDisabledProviders?: readonly ModelProvider[];
     /**
-     * 同一模型家族只保留最新来源；同名模型的不同来源、显式包含的当前来源不去重。
+     * 同一模型家族只保留最新来源；显式包含的当前来源不去重。
      * 设置页档位要能看到/校验每个已配来源，传 false，否则被去重掉的来源会被误判「不可用」并被自愈改写。
      */
     dedupeProviderGroups?: boolean;
@@ -807,7 +807,7 @@ export function buildRuntimeModelOptions(
   }
   for (const source of sources) {
     const hasSharedModel = source.models.some((model) => (providersByModel.get(model.id)?.size ?? 0) > 1);
-    if (!includedDisabledProviders.has(source.providerId) && !hasSharedModel && runtimeOptions.dedupeProviderGroups !== false && latestSourceByGroup.get(source.providerGroup) !== source) continue;
+    if (!includedDisabledProviders.has(source.providerId) && runtimeOptions.dedupeProviderGroups !== false && latestSourceByGroup.get(source.providerGroup) !== source) continue;
 
     for (const model of source.models) {
       if (isPureGenerationModel(model.capabilities)) continue; // U5：纯生成模型不进对话选择器

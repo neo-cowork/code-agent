@@ -343,12 +343,14 @@ describe('ModelSwitcher Agent Engine selection', () => {
 
   it.each(['zh', 'en'] as const)('names the configured session provider in %s tooltips and duplicate labels', (language) => {
     const settings = { models: { providers: {
-      xiaomi: { enabled: true, apiKeyConfigured: true,
+      xiaomi: { enabled: true, apiKeyConfigured: true, updatedAt: 200,
         models: { 'mimo-v2.5-pro': { enabled: true } } },
-      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元',
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元', updatedAt: 100,
         models: { 'mimo-v2.5-pro': { enabled: true } } },
     } } } as unknown as AppSettings;
-    const options = buildRuntimeModelOptions(settings, ['xiaomi']);
+    const options = buildRuntimeModelOptions(settings, ['xiaomi'], {
+      includeDisabledProviders: ['custom-tokenrhythm'],
+    });
     const base = { language, settings, engineLabel: 'Neo', currentModel: 'main',
       displayProvider: 'custom-tokenrhythm' as const, displayModel: 'mimo-v2.5-pro',
       adaptive: false, overridden: true };

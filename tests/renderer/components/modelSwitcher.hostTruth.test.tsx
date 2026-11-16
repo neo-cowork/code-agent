@@ -100,9 +100,9 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
   it('loads provider names and duplicate source labels before the picker is ever opened', async () => {
     mocks.hostOverride = { provider: 'custom-tokenrhythm', model: 'mimo-v2.5-pro' };
     const settings = { models: { providers: {
-      xiaomi: { enabled: true, apiKeyConfigured: true,
+      xiaomi: { enabled: true, apiKeyConfigured: true, updatedAt: 200,
         models: { 'mimo-v2.5-pro': { enabled: true } } },
-      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元',
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元', updatedAt: 100,
         models: { 'mimo-v2.5-pro': { enabled: true } } },
     } } };
     const invoke = vi.fn(async (_domain: string, action: string) => {
