@@ -65,11 +65,11 @@ const TOOL_KEY_CHECKS: Record<string, () => boolean> = {
  * 单测用同一批 i18n 导出拼路径核对：
  *   sidebarZh/En.sidebar.menuSettings
  *   zhSettingsCore/enSettingsCore.tabs.model
- *   zhSettingsModels/enSettingsModels.model.providers.zhipu.name（两种语言都是「智谱 AI」）
+ *   zhSettingsModels/enSettingsModels.model.providers.zhipu.name（en=Zhipu GLM，zh=智谱 AI）
  *   model.list.addKey
  * gui_agent 只认 env、设置页没有入口，不进这张表。
  */
-const ZHIPU_SETTINGS_PATH_EN = 'Settings -> General model -> 智谱 AI (Add Key)';
+const ZHIPU_SETTINGS_PATH_EN = 'Settings -> General model -> Zhipu GLM (Add Key)';
 const ZHIPU_SETTINGS_PATH_ZH = '设置 -> 通用模型 -> 智谱 AI（添加）';
 
 interface ToolUnlockHint {
@@ -160,7 +160,7 @@ export function unavailableUnlockHintLine(deniedToolNames: readonly string[] = [
     `Turn on: ${settingsPathEn}.`,
     `以下能力未开启（不要调用）：${capabilityZh}。`,
     `开启：${settingsPathZh}。`,
-    'When you tell the user a capability is not enabled, reply in the language of the user\'s latest message and quote the Turn-on path above in that same language.',
+    'When you tell the user a capability is not enabled, reply in the language of the user\'s latest message and quote the Turn-on path above in that language.',
     '告知用户某能力未开启时，用用户最新一条消息的语言回复，并引用上面对应语言的开启路径。',
   ].join(' ');
 }

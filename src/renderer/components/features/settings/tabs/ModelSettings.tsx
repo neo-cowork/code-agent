@@ -17,6 +17,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { resolveProviderText } from '../../../../i18n/providerDisplay';
 import { Button, Toggle } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
@@ -150,8 +151,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     const providerTexts = modelText.providers as Record<string, { name?: string; description?: string }>;
     const builtInProviders = PROVIDER_MODELS.map((p) => ({
       id: p.id,
-      name: providerTexts?.[p.id === 'claude' ? 'anthropic' : p.id]?.name || p.name,
-      description: providerTexts?.[p.id === 'claude' ? 'anthropic' : p.id]?.description || p.description,
+      ...resolveProviderText(p.id, providerTexts?.[p.id === 'claude' ? 'anthropic' : p.id], language, p),
       models: p.models,
     }));
     const seen = new Set(builtInProviders.map((provider) => provider.id));
@@ -160,7 +160,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       .map(([providerId, providerConfig]) => buildProviderInfoFromSettings(providerId as ModelProvider, providerConfig))
       .filter((provider): provider is ProviderDisplayInfo => Boolean(provider));
     return [...builtInProviders, ...customProviders];
-  }, [modelText.providers, providerConfigs]);
+  }, [language, modelText.providers, providerConfigs]);
 
   useEffect(() => {
     let cancelled = false;

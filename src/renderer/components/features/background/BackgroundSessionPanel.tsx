@@ -1,3 +1,4 @@
+import { HumanizedText } from '../../HumanizedText';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // Background Session Panel - 后台任务面板（composer 正上方的列内面板）
@@ -114,7 +115,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
             {getDisplaySessionTitle(session.title, language)}
           </div>
           <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
-            {line}
+            <HumanizedText text={line} />
           </div>
           {session.progress !== undefined && isRunning && (
             <div className="mt-1 h-1 bg-zinc-600 rounded-full overflow-hidden">

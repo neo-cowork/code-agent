@@ -244,6 +244,48 @@ describe('settings.ipc access control', () => {
     return created;
   }
 
+  it.each([false, true])('lets a non-admin save readOnlyProbePlan=%s through settings set', async (enabled) => {
+    const config = realConfigService();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => config as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { permissions: { readOnlyProbePlan: enabled } },
+    });
+
+    expect(response.success).toBe(true);
+    expect(config.getSettings().permissions.readOnlyProbePlan).toBe(enabled);
+  });
+
+  it('blocks a non-admin readOnlyProbePlan patch mixed with bypassPermissions', async () => {
+    const updateSettings = vi.fn();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ updateSettings }) as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { permissions: { readOnlyProbePlan: false, permissionMode: 'bypassPermissions' } },
+    });
+
+    expect(response).toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([[null], ['false'], [0], [{}], [[]], [undefined]])('keeps non-boolean readOnlyProbePlan=%j behind the admin gate', async (value) => {
+    const updateSettings = vi.fn();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ updateSettings }) as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { permissions: { readOnlyProbePlan: value } },
+    });
+
+    expect(response).toMatchObject({ success: false, error: { code: 'FORBIDDEN' } });
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
   it('lets a verified non-admin save their own deny rules; the live PolicyEngine denies without restart (N-PERMRULES-LOCAL-OWNER)', async () => {
     const config = realConfigService();
     const ipc = makeFakeIpc();

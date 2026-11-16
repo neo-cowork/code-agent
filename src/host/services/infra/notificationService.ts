@@ -208,7 +208,7 @@ class NotificationService implements Disposable {
   private record(notification: Omit<RecordedNotification, 'createdAt' | 'delivery'>): RecordedNotification {
     const entry: RecordedNotification = {
       ...notification,
-      title: sanitizeNotificationText(notification.title, 120),
+      title: sanitizeNotificationText(notification.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(notification.body, 320),
       createdAt: Date.now(),
       delivery: this.isDryRun() ? 'dry_run' : 'sent',
@@ -318,7 +318,7 @@ class NotificationService implements Disposable {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
       ...payload,
-      title: sanitizeNotificationText(payload.title, 120),
+      title: sanitizeNotificationText(payload.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(payload.body, 320),
     });
   }
@@ -556,13 +556,30 @@ class NotificationService implements Disposable {
       intent: 'task_complete',
       type: 'task_complete',
       sessionId: data.sessionId,
-      title: sanitizeNotificationText(data.title, 120),
+      title: sanitizeNotificationText(data.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(body, 320),
       delivery: {},
     });
     if (disposition === 'delivered') {
       logger.info('Notification dispatched', { intent: 'task_complete', sessionId: data.sessionId });
     }
+  }
+
+  /**
+   * 会前提醒（N-MEETING-SESSION）：日历上的会快开始了，问用户要不要记这场会。
+   * 要用户决定，按 needs_input 放行、绕过焦点门；没有目标会话，点击只唤起应用（录制条上点开始）。
+   */
+  notifyMeetingStarting(data: { title: string; body: string }): void {
+    if (!this.isIntentAllowed('needs_input')) return;
+    if (!this.shouldNotify(true)) return;
+    this.enqueueBudgeted({
+      intent: 'needs_input',
+      type: 'plugin',
+      sessionId: '',
+      title: data.title,
+      body: data.body,
+      delivery: { urgent: true },
+    });
   }
 
   /**

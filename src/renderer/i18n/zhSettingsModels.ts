@@ -1,80 +1,54 @@
-// Settings namespace translations (zh/Models)
-// ============================================================================
-import { getSettingsVocabulary } from './settingsVocabulary';
+import { modelSwitcherCopyZh } from './modelSwitcherCopy'; import { getSettingsVocabulary } from './settingsVocabulary';
 import { zhSkillCaution } from './zhSkillCaution';
 import { zhSkillCautionRules } from './zhSkillCautionRules';
-
-const v = getSettingsVocabulary('zh');
-export const zhSettingsModels = {
+const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
     model: {
-      title: '模型配置',
-      description: `先（可选）开启「按任务自动切换」，再到下方接入${v.provider}、配置模型。`,
-      unknownError: '未知错误',
-      // 无人值守半价档说明行（N-MODELCAT-SERVICE-TIER-COST）：倍率数字由组件从
-      // SERVICE_TIER_COST_MULTIPLIER 常量注入 {multiplier}，文案里不落字面量。
-      serviceTierCostNote: '无人值守任务自动用半价档（约 {multiplier}×，被拒自动回标准价）',
+      title: '模型配置', description: `先（可选）开启「按任务自动切换」，再到下方接入${v.provider}、配置模型。`,
+      unknownError: '未知错误', serviceTierCostNote: '无人值守任务自动用半价档（约 {multiplier}×，被拒自动回标准价）',
       providers: {
         deepseek: {
-          name: 'DeepSeek',
-          description: 'DeepSeek 聊天 API',
+          name: 'DeepSeek', description: 'DeepSeek 聊天 API',
         },
         anthropic: {
-          name: 'Claude',
-          description: 'Anthropic Claude API',
+          name: 'Claude', description: 'Anthropic Claude API',
         },
         openai: {
-          name: 'OpenAI',
-          description: 'GPT-4.1 / o3 系列',
+          name: 'OpenAI', description: 'GPT-4.1 / o3 系列',
         },
         gemini: {
-          name: 'Gemini',
-          description: 'Google Gemini 2.5 系列',
+          name: 'Gemini', description: 'Google Gemini 2.5 系列',
         },
         openrouter: {
-          name: 'OpenRouter',
-          description: '中转服务 (Gemini/Claude/GPT)',
+          name: 'OpenRouter', description: '中转服务 (Gemini/Claude/GPT)',
         },
         zhipu: {
-          name: '智谱 AI',
-          description: 'GLM-4 系列模型',
+          name: '智谱 AI', description: 'GLM-4 系列模型',
         },
         qwen: {
-          name: '通义千问',
-          description: `阿里云通义千问模型；同一个${v.keyLabel}同时供实时语音、图片生成与口述转写使用`,
+          name: '通义千问', description: `阿里云通义千问模型；同一个${v.keyLabel}同时供实时语音、图片生成与口述转写使用`,
         },
         moonshot: {
-          name: 'Kimi',
-          description: 'Moonshot AI 模型',
+          name: 'Kimi', description: 'Moonshot AI 模型',
         },
         minimax: {
-          name: 'MiniMax',
-          description: 'MiniMax 海螺 AI',
+          name: 'MiniMax', description: 'MiniMax 海螺 AI',
         },
         perplexity: {
-          name: 'Perplexity',
-          description: 'AI 搜索服务',
+          name: 'Perplexity', description: 'AI 搜索服务',
         },
       },
       helpers: {
-        iconSizePrefix: '当前约 ',
-        iconSizeMiddle: ' KB，',
-        iconTooLarge: `${v.provider}图标不能超过 96 KB。`,
-        iconUnsupportedAssetRef: `${v.provider}图标资产引用无效，请重新上传图片。`,
-        iconUnsupportedValue: '只支持短文本标识，或 PNG、JPG、WebP、GIF、SVG 的 base64 data:image 图标。',
-        claudeProtocolSuffix: ' · Claude 协议',
-        keylessRunning: '✓ 本地服务',
-        keylessUnavailable: '服务未运行',
-        keylessChecking: '检测本地服务…',
-        protocolClaude: 'Claude 协议',
+        iconSizePrefix: '当前约 ', iconSizeMiddle: ' KB，',
+        iconTooLarge: `${v.provider}图标不能超过 96 KB。`, iconUnsupportedAssetRef: `${v.provider}图标资产引用无效，请重新上传图片。`,
+        iconUnsupportedValue: '只支持短文本标识，或 PNG、JPG、WebP、GIF、SVG 的 base64 data:image 图标。', claudeProtocolSuffix: ' · Claude 协议',
+        keylessRunning: '✓ 本地服务', keylessUnavailable: '服务未运行',
+        keylessChecking: '检测本地服务…', protocolClaude: 'Claude 协议',
         protocolOpenai: 'OpenAI 兼容',
       },
       taskStrategy: {
-        loading: '任务策略配置还没有加载完成。',
-        toggleTitle: '开启自动切换',
-        toggleDescription: '开启后主任务 / 快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。',
-        toggleAriaLabel: '开启自动按任务切换模型',
-        autoSaveBadge: '自动保存',
-        unavailableBadge: '不可用',
+        loading: '任务策略配置还没有加载完成。', toggleTitle: '开启自动切换',
+        toggleDescription: '开启后主任务 / 快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。', toggleAriaLabel: '开启自动按任务切换模型',
+        autoSaveBadge: '自动保存', unavailableBadge: '不可用',
         unavailableSuffix: '（不可用）',
         profiles: {
           fast: { label: '快速任务模型', description: '短问答、改写、格式整理' },
@@ -83,33 +57,23 @@ export const zhSettingsModels = {
           vision: { label: '视觉任务模型', description: '图片、截图、视觉输入' },
         },
         memory: {
-          label: '记忆整理模型',
-          description: '用于会话落卡、复盘与记忆合并；未单独配置时跟随快速模型。',
-          followFast: '跟随快速模型（默认）',
-          costHint: '升到更强模型会消耗更高额度，按量计费 API 会产生更高费用。',
-          unavailableHint: '这个模型不在已启用的模型列表里（可能是手动写入的配置，或服务商、模型已停用）。记忆整理仍会直接调用它，调不通时这一轮整理会失败。可以改为跟随快速模型，或到服务商里启用这个模型。',
-          resetToFollowFast: '改为跟随快速模型',
+          label: '记忆整理模型', description: '用于会话落卡、复盘与记忆合并；未单独配置时跟随快速模型。',
+          followFast: '跟随快速模型（默认）', costHint: '升到更强模型会消耗更高额度，按量计费 API 会产生更高费用。',
+          unavailableHint: '这个模型不在已启用的模型列表里（可能是手动写入的配置，或服务商、模型已停用）。记忆整理仍会直接调用它，调不通时这一轮整理会失败。可以改为跟随快速模型，或到服务商里启用这个模型。', resetToFollowFast: '改为跟随快速模型',
         },
       },
       providerSection: {
-        title: v.provider,
-        description: `接入${v.provider}、选默认模型；勾选哪些模型进对话的模型选择。`,
+        title: v.provider, description: `接入${v.provider}、选默认模型；勾选哪些模型进对话的模型选择。`,
       },
       addProvider: {
-        title: `新增${v.provider}`,
-        displayName: '显示名称',
-        apiKeyLabel: v.keyLabel,
-        baseUrlHint: v.addressHint,
-        afterAddHint: `添加后点击「发现模型」拉取该${v.provider}的可用模型列表。`,
-        submit: `添加${v.provider}`,
+        title: `新增${v.provider}`, displayName: '显示名称',
+        apiKeyLabel: v.keyLabel, baseUrlHint: v.addressHint,
+        afterAddHint: `添加后点击「发现模型」拉取该${v.provider}的可用模型列表。`, submit: `添加${v.provider}`,
       },
       list: {
-        keyStatus: `✓ ${v.keyLabel}`,
-        modelUnit: '模型',
-        defaultBadge: '★ 默认',
-        ollamaUnavailableHint: '启动 Ollama 后可用',
-        addKey: '添加',
-        searchPlaceholder: `搜索${v.provider}或模型…`,
+        keyStatus: `✓ ${v.keyLabel}`, modelUnit: '模型',
+        defaultBadge: '★ 默认', ollamaUnavailableHint: '启动 Ollama 后可用',
+        addKey: '添加', searchPlaceholder: `搜索${v.provider}或模型…`,
         addProvider: `新增${v.provider}`,
         doctor: '诊断',
         configuredPrefix: '已可用 · ',
@@ -160,17 +124,15 @@ export const zhSettingsModels = {
         unverifiedGroup: '高级：未验证的模型',
         unverifiedHint: '这些模型没验证过工具调用。选了之后，让 Neo 干活可能中途失败或什么都不做——自担风险。',
         contextLabel: '上下文',
-        // 这一档从底栏收进面板里了，标题不能继续是英文 Effort
         effortSectionLabel: '思考深度',
-        // 思考段（Thinking/Effort 合并）：关/低/中/高 4 等分
         thinkingSectionLabel: '思考',
         thinkingExternalHint: '此引擎自行决定推理档位',
+        ...modelSwitcherCopyZh,
         thinkingOptionAuto: '自动',
         thinkingOptionOff: '关',
         thinkingOptionLow: '低',
         thinkingOptionMedium: '中',
         thinkingOptionHigh: '高',
-        // 逐轮联网搜索开关：模型自带搜索或已配外部搜索源时才可用
         searchSectionLabel: '联网搜索',
         searchOptionOn: '开',
         searchOptionOff: '关',
@@ -283,7 +245,6 @@ export const zhSettingsModels = {
       pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
       exportBundle: '导出诊断包',
-      // 录音进包必须是导出时的显式勾选，默认不勾（N-L7-REC 工单 §4）。
       includeRecordings: '包含通话录音（{count} 段，{size}）',
       includeRecordingsHint: '录音是原始音频，无法脱敏。不勾选则诊断包里没有音频。',
       rerun: '重新诊断',
@@ -924,10 +885,10 @@ export const zhSettingsModels = {
         rows: [
           { area: '市场源', status: 'complete', detail: '管理员可新增、刷新、移除 marketplace，并查看缓存位置与插件数量。' },
           { area: '发现', status: 'complete', detail: '可按市场源、关键词、标签、作者、skill、command 过滤插件目录。' },
-          { area: '安装', status: 'complete', detail: `支持用户级和项目级安装；skills、commands、${v.provider}/theme/UI 都会先落为受管资产，安装后保持禁用。` },
+          { area: '安装', status: 'complete', detail: '支持用户级和项目级安装；skills、commands、provider/theme/UI 都会先落为受管资产，安装后保持禁用。' },
           { area: '生命周期', status: 'complete', detail: '已安装插件可启用、禁用、卸载，并回读最新状态；卸载会移除插件资产目录。' },
           { area: '权限', status: 'complete', detail: '插件目录和装卸对所有用户开放；marketplace 源的增删只对管理员开放。' },
-          { area: '运行时适配', status: 'partial', detail: `skill/command 型插件启用后进入运行面；${v.provider}/theme/UI 目前只作为受管资产和 adapter pending 展示。` },
+          { area: '运行时适配', status: 'partial', detail: 'skill/command 型插件启用后进入运行面；provider/theme/UI 目前只作为受管资产和 adapter pending 展示。' },
           { area: '治理', status: 'partial', detail: '已展示来源、路径、scope 和安装时间；签名校验、审核流、版本升级策略还没有前端闭环。' },
         ],
         title: '完整性评估',
@@ -956,7 +917,6 @@ export const zhSettingsModels = {
         commands: 'Commands',
         pluginAsset: 'Plugin asset',
         trust: 'Trust',
-        none: '无',
       },
       marketplace: {
         title: '插件市场',

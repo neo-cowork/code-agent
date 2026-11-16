@@ -106,6 +106,7 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { skillBoundaryAllowsTool } from './skillBoundaryScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
+import { observeInToolApproval } from './inToolApprovalObserve';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
@@ -116,6 +117,7 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
+import { tryReadOnlyProbe } from './readOnlyProbeHook';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -808,7 +810,8 @@ export class ToolExecutor {
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
       return {
         success: false,
-        error: `Tool not allowed: ${executionToolName} (disabled by --tools/--disallowed-tools)`,
+        error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
+        metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
       };
     }
 
@@ -1309,7 +1312,10 @@ export class ToolExecutor {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
-          const ask = normalizePermissionAskResult(await this.requestPermission(request));
+          const ask = await observeInToolApproval({
+            sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, request,
+            ask: async () => normalizePermissionAskResult(await this.requestPermission(request)),
+          });
           context.permissionAskResults?.set(request, ask);
           if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
@@ -1783,6 +1789,17 @@ export class ToolExecutor {
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
       }
 
+      // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
+      // bashArgumentForcesClassification 不参与：共享解析器读不懂 `command -v` 时它恒为 true，而它防的凭据读/git 写/rm/dd 在计划文法里不存在、路径另行校验。
+      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification) {
+        const probe = await tryReadOnlyProbe({ command: cmd, workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments });
+        if (probe) {
+          logger.info('readonly_probe_plan_hit', { programs: probe.programs });
+          recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+          return { success: true, output: probe.output, metadata: { readonlyProbePlan: true } };
+        }
+      }
+
       // 3. lenient 模式（已决策 2026-06-10，朋友测试包默认）：硬毙清单照拦
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
@@ -2110,7 +2127,7 @@ export class ToolExecutor {
         logger.debug('ConfirmationGate preview error:', error);
       }
       const preAsk = needsUserApproval ? resolvePreAskGrant({
-        toolName: executionToolName,
+        toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
         standingGrantTarget,
         browserSessionTarget: browserSessionGrant?.target,
@@ -2349,14 +2366,14 @@ export class ToolExecutor {
 
       const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
-        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, analysisFailed: Boolean(commandAnalysisFailedReason), request: permissionRequest,
         ask: () => requestPermissionWithTelemetry({
           request: permissionRequest,
           toolCallId: options.currentToolCallId,
           requestPermission: this.requestPermission,
         }),
       });
-      if (commandAnalysisFailedReason) {
+      if (commandAnalysisFailedReason && ask.denialSource !== 'goal-sticky-host') {
         ask.approved = false;
         ask.denialSource = 'fail-closed';
         ask.message = commandAnalysisDenialError(executionToolName).modelText;
