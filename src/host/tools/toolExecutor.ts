@@ -1,5 +1,6 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { normalizeReminderCreateTime } from './reminderCreateTime';
+import { normalizeCalendarEventTime } from './calendarEventTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -674,6 +675,11 @@ export class ToolExecutor {
       return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
     }
     params = reminderTime.args;
+    const calendarTime = normalizeCalendarEventTime(executionToolName, params);
+    if (!calendarTime.ok) {
+      return { success: false, error: calendarTime.error, metadata: { code: calendarTime.code } };
+    }
+    params = calendarTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);

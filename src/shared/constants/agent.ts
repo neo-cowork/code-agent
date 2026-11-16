@@ -104,7 +104,7 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v124：N-FIX-EN-GENERATION-COST-CONFIRM-HOST-ZH-FU1——ui.language=en 时系统提示词追加回复语言指令（zh 字节不变）；叠加 main 的 sys-v123。
 // sys-v125: merge main's shared inability/language contract with ordered tool-face resolution and background handoff.
 // sys-v126：整合合并——自然语言定时任务按轮暴露 schedule_task 与精简后的延迟工具 JSON 用法措辞，叠上 main 的 sys-v125。
-export const PROMPT_VERSION = 'sys-v126' as const;
+export const PROMPT_VERSION = 'sys-v127' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

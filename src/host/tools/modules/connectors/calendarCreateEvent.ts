@@ -16,6 +16,7 @@ import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifa
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { calendarCreateEventSchema as schema } from './calendarCreateEvent.schema';
 import { formatConnectorTime } from './connectorTime';
+import { normalizeCalendarEventTime } from '../../calendarEventTime';
 
 async function executeCalendarCreateEvent(
   args: Record<string, unknown>,
@@ -26,8 +27,11 @@ async function executeCalendarCreateEvent(
   if (typeof args.title !== 'string' || args.title.length === 0) {
     return { ok: false, error: 'title must be a non-empty string', code: 'INVALID_ARGS' };
   }
+  const eventTime = normalizeCalendarEventTime(schema.name, args);
+  if (!eventTime.ok) return eventTime;
+  args = eventTime.args;
   if (typeof args.start_ms !== 'number') {
-    return { ok: false, error: 'start_ms must be a number', code: 'INVALID_ARGS' };
+    return { ok: false, error: 'start_local (YYYY-MM-DD HH:mm, host-local) or start_ms is required', code: 'INVALID_ARGS' };
   }
 
   const permit = await canUseTool(schema.name, args);

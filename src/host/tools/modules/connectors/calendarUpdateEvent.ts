@@ -17,6 +17,7 @@ import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { calendarUpdateEventSchema as schema } from './calendarUpdateEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 import { formatConnectorTime } from './connectorTime';
+import { normalizeCalendarEventTime } from '../../calendarEventTime';
 
 async function executeCalendarUpdateEvent(
   args: Record<string, unknown>,
@@ -30,6 +31,10 @@ async function executeCalendarUpdateEvent(
   if (typeof args.event_uid !== 'string' || args.event_uid.length === 0) {
     return { ok: false, error: 'event_uid must be a non-empty string', code: 'INVALID_ARGS' };
   }
+
+  const eventTime = normalizeCalendarEventTime(schema.name, args);
+  if (!eventTime.ok) return eventTime;
+  args = eventTime.args;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
