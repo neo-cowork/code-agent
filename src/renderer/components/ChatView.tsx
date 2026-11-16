@@ -70,15 +70,16 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
-import { ensureModelConfigured as checkModelConfigured } from '../utils/ensureModelConfigured';
-import { hasConfiguredDefaultRuntimeModel } from '@shared/modelRuntime';
+import {
+  ensureModelConfigured as checkModelConfigured,
+  hasConfiguredSessionRuntimeModel,
+} from '../utils/ensureModelConfigured';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
 import type {
-  AppSettings,
   Message,
   MessageAttachment,
   StreamRecoverySnapshot,
@@ -586,7 +587,7 @@ export const ChatView: React.FC = () => {
     onDropStart: clearGlobalDragState,
     onAttachments: (attachments) => chatInputRef.current?.addAttachments(attachments),
   });
-  const ensureModelConfigured = useCallback(() => checkModelConfigured(t, language), [t, language]);
+  const ensureModelConfigured = useCallback((sessionId: string | null) => checkModelConfigured(t, language, { currentSessionId: sessionId }), [t, language]);
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
@@ -608,7 +609,7 @@ export const ChatView: React.FC = () => {
       })),
       send: async () => {
         const sendConfiguredMessage = async () => {
-          const modelReady = await ensureModelConfigured();
+          const modelReady = await ensureModelConfigured(feedbackSessionId);
           if (!modelReady) return false;
           const delivery = await sendMessage(outboundEnvelope);
           if (delivery?.outcome === 'queued' && feedbackSessionId) {
@@ -639,8 +640,7 @@ export const ChatView: React.FC = () => {
           // 照旧回滚，那条路改前就在，行为不变。
           return true;
         };
-        const localModelReady = !isAuthenticated && await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
-          .then((settings) => hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false }), () => false);
+        const localModelReady = !isAuthenticated && await hasConfiguredSessionRuntimeModel(feedbackSessionId, { allowCloudManaged: false });
         return (await (localModelReady ? sendConfiguredMessage() : requireAuthAsync(sendConfiguredMessage))) === true;
       },
     });

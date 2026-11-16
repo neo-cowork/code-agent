@@ -59,6 +59,10 @@ describe('AgentOrchestrator Stop before first model packet', () => {
   beforeEach(() => {
     vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
     vi.stubEnv('EVAL_DISABLED', 'true');
+    // 该测试导入链唯一的 console 发射器是 logger（src/host/services/infra/logger.ts:276，全级别走
+    // console.error）；其 fire-and-forget 异步任务在 teardown 边缘仍在发日志，挂在 worker 的
+    // onUserConsoleLog RPC 上 → EnvironmentTeardownError 假红。静音绿跑的全部 console RPC 流量。
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     root = realpathSync(mkdtempSync(path.join(tmpdir(), 'cancel-first-packet-')));
     db = new Database(path.join(root, 'test.db'));
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -101,6 +105,10 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     await orchestrator.drainWorkspaceServices();
     resetApplicationRunRegistryForTests();
     vi.restoreAllMocks(); vi.unstubAllEnvs();
+    // restoreAllMocks 会把 beforeEach 里的静音一并还原；在收尾动作前重新压上，覆盖
+    // 「最后一个 hook → worker 关 RPC」的尾巴日志窗口（15 连跑里 1/15 假红正落在这个窗口）。
+    // 刻意不在文件末尾还原：残留到下一个测试文件的静音会在其首次 vi.restoreAllMocks 时自愈。
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     db.close(); rmSync(root, { recursive: true, force: true });
     store.sessions = undefined;
   });
@@ -115,15 +123,18 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     const stopped = Promise.all([orchestrator.cancel('user'), orchestrator.cancel('user'), orchestrator.cancel('user')]);
     try {
       await vi.waitFor(() => expect(runtime.control.isSettled).toBe(true), { timeout: 2500 });
-    } finally {
-      console.log('STOP_STATE', JSON.stringify({
+    } catch (error) {
+      // 诊断快照只在等待失败时才构建，并附到失败信息里（绿跑零 console RPC 流量——大 payload
+      // 走 worker 的 onUserConsoleLog RPC 会在 teardown 期触发 EnvironmentTeardownError 假红）。
+      const state = JSON.stringify({
         isSettled: runtime.control.isSettled, aborted: signal?.aborted,
         streamedContent: runtime.turn.lastStreamedContent,
         sessions: db.prepare('select id,status from sessions').all(),
         durable: db.prepare('select run_id,status,envelope_json from durable_runs').all(),
         messages: db.prepare('select role,content from messages order by rowid').all(),
         terminalEvents: events.filter((event) => event.type === 'agent_cancelled'),
-      }));
+      });
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\nwait state: ${state}`, { cause: error });
     }
     await stopped; await run; await Promise.all(writes);
     expect(Date.now() - stoppedAt).toBeLessThan(3000);

@@ -29,7 +29,7 @@ import type {
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
-import { resolveInputPath } from '../../utils/resolveInputPath';
+import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
 import { applyPartialToOutput } from '../shell/partialResults';
 import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
@@ -184,7 +184,10 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
       };
     }
 
-    const inputPath = (args.path as string | undefined) || ctx.workingDir;
+    const requestedPath = args.path as string | undefined;
+    const noWorkingFolder = guardUnattendedInputPath(requestedPath, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
+    const inputPath = requestedPath || ctx.workingDir;
     const offset = parsePositiveInteger(args.offset, 0, Number.MAX_SAFE_INTEGER);
     const limit = parsePositiveInteger(args.limit, MAX_RESULTS, MAX_LIMIT) || MAX_RESULTS;
     const sort = parseSort(args.sort);
