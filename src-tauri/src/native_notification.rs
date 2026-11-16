@@ -187,10 +187,68 @@ impl ClickDelivery {
     }
 }
 
+/// Event name of the durable record of which path released the cold-start click
+/// queue (FB-1351/FB-1343): a LaunchServices cold start has no stderr sink, so
+/// the release reason has to land in desktop-shell-events.ndjson instead.
+const NOTIFICATION_CLICK_RELEASED_EVENT: &str = "notification-click-released";
+/// The timeout release is the abnormal path, so it warns; renderer-ready is routine.
+const NOTIFICATION_CLICK_READY_TIMEOUT_REASON: &str = "notification-click-ready-timeout";
+
+/// Pure payload for the release record. `None` when no click was waiting: every
+/// normal boot fires renderer-ready with an empty queue and must stay quiet.
+fn notification_click_released_payload(reason: &str, released: usize) -> Option<serde_json::Value> {
+    if released == 0 {
+        return None;
+    }
+    let level = match reason {
+        NOTIFICATION_CLICK_READY_TIMEOUT_REASON => "warn",
+        _ => "info",
+    };
+    Some(serde_json::json!({
+        "event": NOTIFICATION_CLICK_RELEASED_EVENT,
+        "level": level,
+        "message": format!("released {released} queued notification click(s) via {reason}"),
+        "details": { "reason": reason, "releasedCount": released },
+    }))
+}
+
+/// Wrap the payload in the same envelope as `write_process_cleanup_event` and
+/// append it to the durable shell event log.
+fn write_notification_click_released<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    reason: &str,
+    released: usize,
+) {
+    let Some(payload) = notification_click_released_payload(reason, released) else {
+        return;
+    };
+    crate::append_shell_event_payload(
+        app,
+        serde_json::json!({
+            "schemaVersion": 1,
+            "source": "tauri-shell",
+            "generatedAt": crate::now_millis_string(),
+            "level": payload["level"],
+            "event": payload["event"],
+            "appVersion": app.config().version,
+            "bundleId": app.config().identifier,
+            "channel": crate::desktop_shell_channel(
+                Some(&app.config().identifier),
+                cfg!(debug_assertions),
+            ),
+            "pid": std::process::id(),
+            "webPort": crate::web_port(),
+            "message": payload["message"],
+            "details": payload["details"],
+        }),
+    );
+}
+
 #[cfg(target_os = "macos")]
 mod delegate {
     use super::{
-        clicked_payload, notification_id, ClickDelivery, NOTIFICATION_ID_KEY, SESSION_ID_KEY,
+        clicked_payload, notification_id, write_notification_click_released, ClickDelivery,
+        NOTIFICATION_ID_KEY, SESSION_ID_KEY,
     };
     use block2::DynBlock;
     use objc2::{
@@ -288,6 +346,8 @@ mod delegate {
                 .lock()
                 .expect("notification click mutex poisoned")
                 .renderer_ready();
+            let released = pending.len();
+            write_notification_click_released(&ready_app, "renderer-ready", released);
             for payload in pending {
                 if let Err(error) = ready_app.emit("notification-clicked", payload) {
                     eprintln!(
@@ -319,10 +379,12 @@ mod delegate {
                 .expect("notification click mutex poisoned")
                 .renderer_ready_timeout(installed_at.elapsed());
             if let Some((reason, pending)) = release {
+                let released = pending.len();
                 eprintln!(
                     "[native_notification] WARN {reason}: released {} queued click(s)",
                     pending.len()
                 );
+                write_notification_click_released(&timeout_app, reason, released);
                 for payload in pending {
                     if let Err(error) = timeout_app.emit("notification-clicked", payload) {
                         eprintln!(
@@ -690,6 +752,64 @@ mod tests {
         );
         assert!(delivery.renderer_ready().is_empty());
         assert_eq!(delivery.receive(payload.clone()), Some(payload));
+    }
+
+    #[test]
+    fn click_released_payload_records_renderer_ready_release() {
+        let payload = super::notification_click_released_payload("renderer-ready", 2).unwrap();
+        assert_eq!(payload["event"], super::NOTIFICATION_CLICK_RELEASED_EVENT);
+        assert_eq!(payload["level"], "info");
+        assert_eq!(
+            payload["details"],
+            serde_json::json!({ "reason": "renderer-ready", "releasedCount": 2 })
+        );
+        assert_eq!(
+            payload["message"],
+            "released 2 queued notification click(s) via renderer-ready"
+        );
+    }
+
+    #[test]
+    fn click_released_payload_warns_on_timeout_release() {
+        let payload = super::notification_click_released_payload(
+            super::NOTIFICATION_CLICK_READY_TIMEOUT_REASON,
+            1,
+        )
+        .unwrap();
+        assert_eq!(payload["event"], super::NOTIFICATION_CLICK_RELEASED_EVENT);
+        assert_eq!(payload["level"], "warn");
+        assert_eq!(payload["details"]["reason"], "notification-click-ready-timeout");
+        assert_eq!(payload["details"]["releasedCount"], 1);
+    }
+
+    #[test]
+    fn click_released_payload_is_none_without_queued_clicks() {
+        assert_eq!(
+            super::notification_click_released_payload("renderer-ready", 0),
+            None
+        );
+        assert_eq!(
+            super::notification_click_released_payload(
+                super::NOTIFICATION_CLICK_READY_TIMEOUT_REASON,
+                0
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn click_released_payload_serializes_with_the_release_contract() {
+        let payload = super::notification_click_released_payload(
+            super::NOTIFICATION_CLICK_READY_TIMEOUT_REASON,
+            3,
+        )
+        .unwrap();
+        // The durable record is one JSON line; the wire form keeps the dotted paths.
+        let roundtripped: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap();
+        assert_eq!(roundtripped["event"], "notification-click-released");
+        assert_eq!(roundtripped["details"]["reason"], "notification-click-ready-timeout");
+        assert_eq!(roundtripped["details"]["releasedCount"], 3);
     }
 
     #[test]

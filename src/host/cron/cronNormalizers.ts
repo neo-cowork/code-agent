@@ -19,7 +19,7 @@ import {
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA, EXTERNAL_WATCH } from '../../shared/constants';
 import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
 import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronUrgency';
-import { isCronPermissionDeniedMarker } from '../../shared/cronPermissionDenied';
+import { isCronPermissionDeniedMarker, isUserOnlyCronDenial } from '../../shared/cronPermissionDenied';
 import type { CronPermissionDeniedMarker, CronUrgency } from '../../shared/contract/sessionAutomation';
 
 import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cronRunArtifacts';
@@ -133,6 +133,7 @@ export function buildCronAgentActionResult(
   const parsedDigest = parseCronRunDigest(finalAssistantText);
   const digest = artifactContext ? filterReadOnlyCronArtifacts(parsedDigest, artifactContext) : parsedDigest;
   const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.fullSummary ?? digest.summary ?? finalAssistantText);
+  const userDeclined = isUserOnlyCronDenial(permissionDenied);
   const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
     ? extractCronAlertText(finalAssistantText)
     : '';
@@ -142,7 +143,7 @@ export function buildCronAgentActionResult(
     result,
     sessionId,
     digest,
-    urgency,
+    urgency: userDeclined ? 'fyi' : urgency,
     ...(urgencyRaw ? { urgencyRaw } : {}),
     ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
     ...(notifyQuietRound ? { notifySuppressed: true } : {}),
