@@ -81,11 +81,11 @@ describe('space creation through the real domain IPC client', () => {
       } else {
         fireEvent.change(screen.getByTestId('project-space-create-workspace'), { target: { value: created.workspacePath } });
       }
-      fireEvent.click(screen.getByRole('button', { name: 'Create', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
       if (source === 'trust') {
         await screen.findByTestId('project-space-create-trust-confirm');
         expect(saved).toBe(false);
-        fireEvent.click(screen.getByRole('button', { name: 'Create', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
       }
       try {
         await waitFor(() => expect(screen.queryByTestId('project-space-create-modal')).toBeNull());
@@ -122,7 +122,7 @@ describe('space creation through the real domain IPC client', () => {
       return ok({ state: 'trusted', dangerousItems: [], blockedItems: [] });
     });
     openCreate();
-    fireEvent.click(screen.getByRole('button', { name: 'Create', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     try {
       await screen.findByTestId(`project-space-list-item-${created.id}`);
       await act(async () => { oldRead.resolve({ success: false, error: { message: 'old read failed' } }); });
