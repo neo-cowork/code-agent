@@ -798,10 +798,12 @@ export const MemoryTab: React.FC = () => {
                   <div className="font-medium text-badge-success">
                     {memoryText.import.receiptPrefix}{importResult.applied}{memoryText.import.receiptMiddle}{importResult.created}{memoryText.import.receiptCreatedMiddle}{importResult.updatedApplied}{memoryText.import.receiptUpdatedMiddle}{importResult.skippedApply}
                   </div>
-                  <div className="mt-2 text-badge-success/80">
-                    {memoryText.import.writtenFilesPrefix}{importResult.writtenFiles.length > 0 ? importResult.writtenFiles.slice(0, 4).join('、') : memoryText.import.none}
-                    {importResult.writtenFiles.length > 4 ? `${memoryText.import.extraFilesPrefix}${importResult.writtenFiles.length}${memoryText.import.extraFilesSuffix}` : ''}
-                  </div>
+                  {importResult.writtenFiles.length > 0 && (
+                    <div className="mt-2 text-badge-success/80">
+                      {memoryText.import.writtenFilesPrefix}{importResult.writtenFiles.slice(0, 4).join('、')}
+                      {importResult.writtenFiles.length > 4 ? `${memoryText.import.extraFilesPrefix}${importResult.writtenFiles.length}${memoryText.import.extraFilesSuffix}` : ''}
+                    </div>
+                  )}
                   {importResult.mirrorRebuild && (
                     <div className="mt-1 text-badge-success/80">
                       {memoryText.import.mirrorPrefix}{importResult.mirrorRebuild.mirrored}/{importResult.mirrorRebuild.totalLightFiles}{memoryText.import.mirrorCreatedMiddle}{importResult.mirrorRebuild.created}{memoryText.import.mirrorUpdatedMiddle}{importResult.mirrorRebuild.updated}

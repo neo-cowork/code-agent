@@ -133,7 +133,9 @@ describe('onboarding engine recommendation copy', () => {
 
     expect(recommended.map((manifest) => manifest.id)).toEqual(['qoder_work', 'comate_zulu', 'cursor_cli']);
     for (const manifest of recommended) {
-      expect(zhCopy[manifest.id]).toEqual(manifest.recommendation);
+      // 语言包独立维护白话文案；manifest 里的原文只是语言包缺项时的兜底，不再要求逐字一致
+      expect(zhCopy[manifest.id]?.label).toBeTruthy();
+      expect(zhCopy[manifest.id]?.reason).toBeTruthy();
       const en = enCopy[manifest.id];
       expect(en?.label).toBeTruthy();
       expect(en?.reason).toBeTruthy();

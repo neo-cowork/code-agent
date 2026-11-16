@@ -917,7 +917,6 @@ export const enSettingsModels = {
         commands: 'Commands',
         pluginAsset: 'Plugin asset',
         trust: 'Trust',
-        none: 'None',
       },
       marketplace: {
         title: 'Plugin marketplace',

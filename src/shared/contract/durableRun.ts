@@ -302,28 +302,10 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
   if (!Number.isInteger(envelope.cursor.checkpointSeq) || envelope.cursor.checkpointSeq < 0) {
     throw new Error('cursor.checkpointSeq must be a non-negative integer');
   }
-  if (envelope.interruptCause !== undefined && !isRunInterruptCause(envelope.interruptCause)) {
-    throw new Error(`Unsupported interrupt cause: ${String(envelope.interruptCause)}`);
-  }
-  if (envelope.interrupt_cause !== undefined && !isRunInterruptCause(envelope.interrupt_cause)) {
-    throw new Error(`Unsupported interrupt cause: ${String(envelope.interrupt_cause)}`);
-  }
-  if (envelope.interruptCause !== undefined
-    && envelope.interrupt_cause !== undefined
-    && envelope.interruptCause !== envelope.interrupt_cause) {
-    throw new Error('interruptCause and interrupt_cause must agree');
-  }
-  if (envelope.envBlocked !== undefined) {
-    const block = envelope.envBlocked;
-    if (getRunInterruptCause(envelope) !== 'env_blocked' || !block || !isEnvBlockerClass(block.class)
-      || typeof block.target !== 'string' || !block.target.trim()
-      || typeof block.toolCallId !== 'string' || !block.toolCallId.trim()) {
-      throw new Error('Invalid envBlocked metadata');
-    }
-  }
-  if (getRunInterruptCause(envelope) === 'env_blocked' && !envelope.envBlocked) {
-    throw new Error('env_blocked requires envBlocked metadata');
-  }
+  // 停靠元数据只对还会被继续的 run 有意义；终态 run 的这几项是历史残留，不再校验——否则
+  // 一条停靠类别不认识的 run（旧/新版本混装、数据损坏、未来新增类别）连「取消」都写不进去，
+  // 永远占着会话唯一约束（N-FIX-SEND-HANGS-WHEN-PARKED-RUN-SUPERSEDE-FAILS）。
+  if (!isTerminalRunStatus(envelope.status)) assertRunParkMetadata(envelope);
   if (envelope.autoResumeCount !== undefined
     && (!Number.isInteger(envelope.autoResumeCount) || envelope.autoResumeCount < 0)) {
     throw new Error('autoResumeCount must be a non-negative integer');
@@ -381,6 +363,32 @@ export function assertRunEnvelope(envelope: RunEnvelope): void {
     idempotencyKeys.add(operation.idempotencyKey);
   }
   assertChildRunProjection(envelope.runId, envelope.childRuns ?? []);
+}
+
+/** 停靠元数据（interruptCause / envBlocked）校验；非终态 run 写库前必须通过。 */
+export function assertRunParkMetadata(envelope: RunEnvelope): void {
+  if (envelope.interruptCause !== undefined && !isRunInterruptCause(envelope.interruptCause)) {
+    throw new Error(`Unsupported interrupt cause: ${String(envelope.interruptCause)}`);
+  }
+  if (envelope.interrupt_cause !== undefined && !isRunInterruptCause(envelope.interrupt_cause)) {
+    throw new Error(`Unsupported interrupt cause: ${String(envelope.interrupt_cause)}`);
+  }
+  if (envelope.interruptCause !== undefined
+    && envelope.interrupt_cause !== undefined
+    && envelope.interruptCause !== envelope.interrupt_cause) {
+    throw new Error('interruptCause and interrupt_cause must agree');
+  }
+  if (envelope.envBlocked !== undefined) {
+    const block = envelope.envBlocked;
+    if (getRunInterruptCause(envelope) !== 'env_blocked' || !block || !isEnvBlockerClass(block.class)
+      || typeof block.target !== 'string' || !block.target.trim()
+      || typeof block.toolCallId !== 'string' || !block.toolCallId.trim()) {
+      throw new Error('Invalid envBlocked metadata');
+    }
+  }
+  if (getRunInterruptCause(envelope) === 'env_blocked' && !envelope.envBlocked) {
+    throw new Error('env_blocked requires envBlocked metadata');
+  }
 }
 
 function isRunInterruptCause(value: unknown): value is RunInterruptCause {

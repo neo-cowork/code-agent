@@ -29,7 +29,7 @@ import {
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 import { useAppStore } from '../stores/appStore';
-import { domainFailureMessage, httpFailureMessage } from '../utils/httpFailureMessage';
+import { domainFailureMessage, httpFailureMessage, readRetryAfterSeconds, uploadFailureMessage } from '../utils/httpFailureMessage';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -1023,7 +1023,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         if (authError) {
           throw new Error(authError.message);
         }
-        throw new Error(`Upload failed: ${res.status}`);
+        throw new Error(uploadFailureMessage({ status: res.status, retryAfterSeconds: readRetryAfterSeconds(res.headers.get('Retry-After'), errorBody), language: useAppStore.getState().language }));
       }
 
       const uploadedPath = extractUploadedPath(await readJsonResponse(res));

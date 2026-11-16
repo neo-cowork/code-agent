@@ -34,6 +34,11 @@ vi.mock('../../../src/host/config/configPaths', () => ({
   getProjectConfigDir: (dir: string) => `${dir}/.code-agent`,
 }));
 
+// Keep the real language directive, but isolate settings from the narrow fs mock.
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+}));
+
 vi.mock('../../../src/host/security/folderTrustService', () => ({
   isProjectConfigTrustedSync: () => true,
 }));

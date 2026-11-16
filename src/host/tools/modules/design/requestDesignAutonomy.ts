@@ -103,7 +103,7 @@ export async function executeRequestDesignAutonomy(
     const { notificationService } = await import('../../../services/infra/notificationService');
     notificationService.notifyNeedsInput({
       sessionId: ctx.sessionId || '',
-      title: '自主信封待审批',
+      title: '设计自动探索待确认',
       body: rationale || goal,
     });
   } catch {

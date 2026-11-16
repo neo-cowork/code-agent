@@ -47,6 +47,7 @@ vi.mock('../../../../src/host/services/core/configService', () => ({
 let mockUiLanguage = 'zh';
 
 import {
+  isDefaultWorkDirectory,
   isPlannedSessionWorkDirectory,
   materializeSessionWorkDirectory,
   maybeDivertCollidingSessionWorkDirectory,
@@ -866,5 +867,49 @@ describe('isPlannedSessionWorkDirectory', () => {
     expect(isPlannedSessionWorkDirectory(path.join(root, '我自己的文件夹'), env)).toBe(false);
     expect(isPlannedSessionWorkDirectory('', env)).toBe(false);
     expect(isPlannedSessionWorkDirectory('   ', env)).toBe(false);
+  });
+});
+
+describe('isDefaultWorkDirectory', () => {
+  let tempHome: string;
+  let env: NodeJS.ProcessEnv;
+  let root: string;
+
+  beforeEach(async () => {
+    mockUiLanguage = 'zh';
+    tempHome = await mkdtemp(path.join(tmpdir(), 'session-work-dir-root-'));
+    env = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: path.join(tempHome, '.code-agent') };
+    root = getDefaultWorkDirectory(env);
+  });
+
+  afterEach(async () => {
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  it('accepts the default work root itself, ignoring trailing separators and surrounding blanks', () => {
+    expect(isDefaultWorkDirectory(root, env)).toBe(true);
+    expect(isDefaultWorkDirectory(root + path.sep, env)).toBe(true);
+    expect(isDefaultWorkDirectory(`  ${root}  `, env)).toBe(true);
+  });
+
+  it('rejects planned folders, non-planned subfolders, siblings, outside paths, and empty strings', () => {
+    expect(isDefaultWorkDirectory(path.join(root, '任务_1011_标题'), env)).toBe(false);
+    expect(isDefaultWorkDirectory(path.join(root, '我自己的文件夹'), env)).toBe(false);
+    expect(isDefaultWorkDirectory(path.join(tempHome, 'Neo2'), env)).toBe(false);
+    expect(isDefaultWorkDirectory(path.join(tempHome, 'elsewhere'), env)).toBe(false);
+    expect(isDefaultWorkDirectory('', env)).toBe(false);
+    expect(isDefaultWorkDirectory('   ', env)).toBe(false);
+  });
+
+  it('follows the same env handling as isPlannedSessionWorkDirectory (dev slot and nested data-dir shapes)', () => {
+    // Dev 槽数据目录 .code-agent-dev → 根是 ~/Neo-dev
+    const devEnv = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: path.join(tempHome, '.code-agent-dev') };
+    expect(isDefaultWorkDirectory(path.join(tempHome, 'Neo-dev'), devEnv)).toBe(true);
+    expect(isDefaultWorkDirectory(path.join(tempHome, 'Neo'), devEnv)).toBe(false);
+    // 嵌套数据目录（测试临时目录）→ 根是 <dataDir>-work
+    const nestedDataDir = path.join(tempHome, 'nested', '.code-agent');
+    const nestedEnv = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: nestedDataDir };
+    expect(isDefaultWorkDirectory(`${nestedDataDir}-work`, nestedEnv)).toBe(true);
+    expect(isDefaultWorkDirectory(path.join(tempHome, 'Neo'), nestedEnv)).toBe(false);
   });
 });

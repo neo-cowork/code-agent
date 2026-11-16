@@ -23,6 +23,7 @@ import type {
 } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeSettingsTerms } from '../../../../i18n/settingsVocabulary';
 import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -41,7 +42,7 @@ import { buildEngineSectionRowsFromSources } from './agentEngineSectionHelpers';
 const logger = createLogger('AgentEngineListSection');
 
 export const AgentEngineListSection: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const section = t.engineCompat.engineSection;
   const [sources, setSources] = useState<AgentEngineSourceDescriptor[] | null>(null);
   const [descriptors, setDescriptors] = useState<AgentEngineDescriptor[]>([]);
@@ -293,7 +294,7 @@ export const AgentEngineListSection: React.FC = () => {
                     </Button>
                   </div>
 
-                  <p className="mt-1.5 text-xs text-zinc-500">{row.summary}</p>
+                  <p className="mt-1.5 text-xs text-zinc-500">{localizeSettingsTerms(row.summary, language)}</p>
                   <p
                     className="mt-1 text-[11px] text-zinc-400"
                     data-engine-status-detail={row.manifestId}
