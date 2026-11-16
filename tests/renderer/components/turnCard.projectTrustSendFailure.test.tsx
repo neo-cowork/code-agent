@@ -4,7 +4,7 @@
 // PROJECT_SOURCE_TRUST 只留信任句 + 确认按钮，其余发送失败保留用户气泡「没发出去 · 编辑重发」徽章与下一步提示句；
 // 真正进入运行期后的失败仍显示红色恢复横幅；重发成功经 failedSendOutbox 合并后标记消失、恢复正常状态。
 import React from 'react';
-import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { REQUEST_INVALID } from '../../../src/shared/contract/agentRunErrors';
@@ -16,20 +16,22 @@ import {
   shouldShowStreamingState,
 } from '../../../src/renderer/utils/streamingStatePresentation';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { mergeFailedSendOutbox } from '../../../src/renderer/stores/failedSendOutbox';
+import { clearFailedSend, mergeFailedSendOutbox } from '../../../src/renderer/stores/failedSendOutbox';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSwarmStore } from '../../../src/renderer/stores/swarmStore';
+import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
 import { projectSourceTrustCopy } from '../../../src/renderer/i18n/agentRunErrors';
 import { languages, type Language } from '../../../src/renderer/i18n';
 
 const invokeMock = vi.hoisted(() => vi.fn());
+const confirmMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: invokeMock,
     invokeDomain: vi.fn(),
-    unsafeInvoke: vi.fn(),
+    unsafeInvoke: confirmMock,
   },
 }));
 
@@ -59,7 +61,9 @@ const PROMPT = '帮我把本周会议纪要整理成一份简短周报';
 
 beforeEach(() => {
   invokeMock.mockReset();
+  confirmMock.mockReset();
   localStorage.clear();
+  clearFailedSend(SESSION_ID);
   useAppStore.setState({ language: 'zh', isProcessing: false, processingSessionIds: new Set() });
   useSessionStore.setState({ currentSessionId: SESSION_ID, sessions: [], messages: [] });
   useSwarmStore.getState().reset();
@@ -68,13 +72,15 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useMessageActionStore.getState().unregister();
   localStorage.clear();
+  clearFailedSend(SESSION_ID);
   useAppStore.setState({ language: 'zh', isProcessing: false, processingSessionIds: new Set() });
   useSessionStore.setState({ currentSessionId: null, sessions: [], messages: [] });
   useTaskStore.setState({ sessionStates: {} });
 });
 
-async function sendAndFail(language: Language, error: unknown) {
+async function sendAndFail(language: Language, error: unknown, clientMessageId = 'u') {
   useAppStore.setState({ language });
   invokeMock.mockRejectedValueOnce(error);
   const hook = renderHook(() => useAgentIPC({
@@ -89,7 +95,7 @@ async function sendAndFail(language: Language, error: unknown) {
     const delivery = await hook.result.current.sendMessage({
       content: PROMPT,
       sessionId: SESSION_ID,
-      clientMessageId: 'u',
+      clientMessageId,
     });
     expect(delivery).toEqual({ outcome: 'failed' });
   });
@@ -97,6 +103,37 @@ async function sendAndFail(language: Language, error: unknown) {
 }
 
 describe('rejected-send vs runtime-error turn presentation', () => {
+  it('confirming A clears only A; accepted A loads once from DB while B survives a module reload', async () => {
+    const trustError = () => Object.assign(new Error('Folder needs confirmation'), { status: 422, code: 'PROJECT_SOURCE_TRUST' });
+    const hook = await sendAndFail('zh', trustError(), 'A');
+    await sendAndFail('zh', trustError(), 'B');
+    const blocked = useSessionStore.getState().messages;
+    let accepted!: Promise<unknown>;
+    useMessageActionStore.getState().register((content, context) => {
+      accepted = hook.result.current.sendMessage({ content, sessionId: SESSION_ID, ...context });
+    }, () => useSessionStore.getState().messages);
+    confirmMock.mockResolvedValueOnce({ confirmed: true });
+    invokeMock.mockResolvedValueOnce(undefined);
+    render(<TurnBasedTraceView projection={projectTurns(blocked, SESSION_ID, false)} />);
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole('button', { name: '确认并重发' })[0]);
+    });
+    await act(async () => { await accepted; });
+    expect(confirmMock).toHaveBeenCalledWith('project:confirm-source-trust', { sessionId: SESSION_ID });
+    expect(mergeFailedSendOutbox(SESSION_ID, [], []).map((message) => message.id)).toEqual(['B', blocked[3].id]);
+    const persistedA: Message = { ...blocked[0], metadata: undefined };
+    window.domainAPI = { invoke: vi.fn(async (_domain: string, action: string) => ({
+      success: true, data: action === 'load'
+        ? { id: SESSION_ID, title: 'Meeting notes', createdAt: 1, updatedAt: 2, status: 'idle', messages: [persistedA] }
+        : [],
+    })) } as unknown as typeof window.domainAPI;
+    vi.resetModules();
+    const { useSessionStore: reloaded } = await import('../../../src/renderer/stores/sessionStore');
+    await reloaded.getState().switchSession(SESSION_ID);
+    expect(reloaded.getState().messages.map((message) => message.id)).toEqual(['A', 'B', blocked[3].id]);
+    expect(reloaded.getState().messages.filter((message) => message.id === 'A')).toEqual([persistedA]);
+  });
+
   it.each(['zh', 'en'] as const)('PROJECT_SOURCE_TRUST shows only the sentence and one confirm button in %s', async (language) => {
     await sendAndFail(
       language,
