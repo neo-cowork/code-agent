@@ -934,13 +934,15 @@ pub fn handshake_line(url: &str, token: &str) -> String {
 }
 
 /// Writes the single handshake line to the child's stdin and flushes; keeps the handle open.
-pub fn write_handshake(stdin: Option<&mut std::process::ChildStdin>, url: &str, token: &str) {
+/// A failure is returned (never swallowed) so the caller can leave a trace in the shell event log.
+pub fn write_handshake(stdin: Option<&mut std::process::ChildStdin>, url: &str, token: &str) -> Result<(), String> {
     use std::io::Write;
-    if let Some(pipe) = stdin {
-        let _ = pipe
-            .write_all(handshake_line(url, token).as_bytes())
-            .and_then(|_| pipe.flush());
-    }
+    let Some(pipe) = stdin else {
+        return Err("child stdin pipe missing".to_string());
+    };
+    pipe.write_all(handshake_line(url, token).as_bytes())
+        .and_then(|_| pipe.flush())
+        .map_err(|error| format!("handshake write failed: {error}"))
 }
 
 #[cfg(test)]
