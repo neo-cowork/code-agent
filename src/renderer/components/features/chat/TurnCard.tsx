@@ -587,7 +587,7 @@ const VoiceDispatchCardHeader: React.FC<{
           data-testid="voice-task-speaker"
           className="shrink-0 rounded-md border border-border-muted bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-400"
         >
-          {localizeRole(speaker.agentId, { name: speaker.displayName }).name}
+          {localizeRole(speaker.displayName, { name: speaker.displayName }).name}
         </span>
       )}
       {expanded ? (
