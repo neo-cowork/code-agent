@@ -598,9 +598,9 @@ describe('ChatView send authentication', () => {
 describe('ChatView missing API Key notice', () => {
   it.each([
     ['en', 'openai', 'No API Key for OpenAI yet. Settings is open — add one, then send again.'],
-    ['zh', 'openai', 'OpenAI 尚未配置 API Key。已打开设置，请添加后再发送。'],
+    ['zh', 'openai', 'OpenAI 尚未配置密钥。已打开设置，请添加后再发送。'],
     ['en', 'custom-meeting', 'No API Key for this model yet. Settings is open — add one, then send again.'],
-    ['zh', 'custom-meeting', '这个模型 尚未配置 API Key。已打开设置，请添加后再发送。'],
+    ['zh', 'custom-meeting', '这个模型 尚未配置密钥。已打开设置，请添加后再发送。'],
   ] as const)('toast copy and provider target %s/%s', async (language, provider, expected) => {
     locale.language = language;
     settingsInvokeMock.mockResolvedValue({ models: { default: provider, defaultProvider: 'deepseek', providers: {} } });

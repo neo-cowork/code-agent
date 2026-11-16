@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "files": {
-    "src/renderer/components/ConfirmModal.tsx": 10,
     "src/renderer/components/CsvTable.tsx": 3,
     "src/renderer/components/design/DesignCanvas.tsx": 1,
     "src/renderer/components/features/agentTeam/AgentTeamPanel.tsx": 7,

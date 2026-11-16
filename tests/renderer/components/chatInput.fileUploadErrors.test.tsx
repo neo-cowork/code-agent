@@ -45,6 +45,7 @@ vi.mock('../../../src/renderer/utils/logger', () => ({
 }));
 
 import { useFileUpload } from '../../../src/renderer/components/features/chat/ChatInput/useFileUpload';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 class FailingFileReader {
   onload: ((event: ProgressEvent<FileReader>) => void) | null = null;
@@ -143,5 +144,82 @@ describe('useFileUpload failure feedback', () => {
     expect(await processFile(file)).toBeNull();
     expect(showToast).toHaveBeenCalledTimes(1);
     expect(showToast).toHaveBeenCalledWith('warning', '文件 "large.txt" 太大（11B），最大支持 10MB');
+  });
+});
+
+describe('useFileUpload feedback follows the switched UI language', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ipc.getPathForFile.mockImplementation(async (file: File) => `/tmp/${file.name}`);
+    ipc.extractDocxHtml.mockResolvedValue(null);
+    ipc.extractExcelText.mockResolvedValue(null);
+    readDirectoryEntry.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    act(() => {
+      useAppStore.setState({ language: 'zh' });
+    });
+    vi.unstubAllGlobals();
+  });
+
+  // 以默认语言 zh 渲染 hook，再用 act 把 store 语言切到 en。
+  // 若回调依赖数组漏掉 t，回调仍闭包着首次渲染（zh）的文案树。
+  function renderInZhThenSwitchToEn() {
+    act(() => {
+      useAppStore.setState({ language: 'zh' });
+    });
+    const { result } = renderHook(() => useFileUpload());
+    act(() => {
+      useAppStore.setState({ language: 'en' });
+    });
+    return result;
+  }
+
+  async function processFileAfterSwitch(file: File) {
+    const result = renderInZhThenSwitchToEn();
+    let attachment: Awaited<ReturnType<typeof result.current.processFile>>;
+    await act(async () => {
+      attachment = await result.current.processFile(file);
+    });
+    return attachment!;
+  }
+
+  it.each([
+    ['big.txt', 'File "big.txt" is too large (11B); the limit is 10MB'],
+  ] as const)('%s 超限 toast 在切到英文后用英文文案', async (fileName, expected) => {
+    const file = new File(['x'], fileName);
+    Object.defineProperty(file, 'size', { value: 11 });
+
+    expect(await processFileAfterSwitch(file)).toBeNull();
+    expect(showToast).toHaveBeenCalledWith('warning', expected);
+    const message = showToast.mock.calls[0]?.[1] as string;
+    expect(message).not.toMatch(/[一-鿿]/);
+  });
+
+  it('Word 解析失败 toast 在切到英文后用英文文案', async () => {
+    expect(await processFileAfterSwitch(new File(['x'], 'broken.docx'))).toBeNull();
+    expect(showToast).toHaveBeenCalledWith(
+      'error',
+      'Failed to process "broken.docx": could not parse the Word document. Check the file and retry',
+    );
+    const message = showToast.mock.calls[0]?.[1] as string;
+    expect(message).not.toMatch(/[一-鿿]/);
+  });
+
+  it('空文件夹 toast 在切到英文后用英文文案', async () => {
+    const result = renderInZhThenSwitchToEn();
+    let attachment: Awaited<ReturnType<typeof result.current.processFolderEntry>>;
+    await act(async () => {
+      attachment = await result.current.processFolderEntry({} as FileSystemDirectoryEntry, 'empty-folder');
+    });
+
+    expect(attachment!).toBeNull();
+    expect(showToast).toHaveBeenCalledWith(
+      'warning',
+      'Folder "empty-folder" has no processable files. Pick a folder with readable files',
+    );
+    const message = showToast.mock.calls[0]?.[1] as string;
+    expect(message).not.toMatch(/[一-鿿]/);
   });
 });

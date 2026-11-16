@@ -1,4 +1,5 @@
 import {
+  assertRunParkMetadata,
   getRunInterruptCause,
   type PendingOperation,
   type RunEnvelope,
@@ -138,8 +139,17 @@ export async function supersedeSessionRoots(
   sessionId: string,
   now: number,
 ): Promise<void> {
-  for (const { runId, status } of superseded) {
+  for (const envelope of superseded) {
+    const { runId, status } = envelope;
     const payload = { sessionId, reason: 'superseded_by_new_message' };
+    // 停靠元数据本版本不认识（版本混装/数据损坏/未来新类别）照样取消：终态写入不校验它，这里只留痕。
+    try {
+      assertRunParkMetadata(envelope);
+    } catch (error) {
+      logger.warn('Superseding parked durable run with unrecognized park metadata', {
+        sessionId, runId, error: error instanceof Error ? error.message : String(error),
+      });
+    }
     await (status === 'waiting'
       ? registry.terminalRecoveredWaitingRun({ runId }, now, { abandonParked: true })
       : registry.terminalDurable(runId, { now, status: 'cancelled', reason: payload.reason, event: { type: 'run_cancelled', payload, recordedAt: now } })

@@ -437,7 +437,6 @@ export const zhSettingsSystem = {
       connected: '已连接',
       enabled: '启用',
       disabled: '停用',
-      empty: '无',
       separator: '、',
       availableActionsPrefix: '可用动作: ',
       capabilitiesPrefix: '能力: ',
@@ -513,7 +512,6 @@ export const zhSettingsSystem = {
         customAppHint: '适用于已有自建应用的用户。密码型输入，保存后不回显；只存本机加密存储，不写入任何配置文件。',
       },
       actions: {
-        none: '无',
         startUsing: '去使用',
         saveAndConnect: '保存并连接',
         saving: '保存中…',

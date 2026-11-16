@@ -39,8 +39,8 @@ describe('macOS Dock and AppleEvent quit guard', () => {
   // 整条流程无法在无头环境里跑。TauriExit 来源由 src-tauri/src/quit_flow_tests.rs 真跑
   // spawn_quit_guard_flow；这里只钉死两个来源「只在收尾方式上不同」，决策共用同一个 decide_quit。
   it('keeps the two quit origins identical except for how they finish', () => {
-    const flow = /fn spawn_quit_guard_flow<[^>]+>\([\s\S]*?\n\}\n/.exec(main);
-    expect(flow, 'spawn_quit_guard_flow anchor missing').not.toBeNull();
+    const flow = /fn spawn_quit_guard_flow_with<[^>]+>\([\s\S]*?\n\}\n/.exec(main);
+    expect(flow, 'spawn_quit_guard_flow_with anchor missing').not.toBeNull();
     const body = flow![0];
 
     expect(body.match(/decide_quit\(/g)).toHaveLength(1);
@@ -52,7 +52,7 @@ describe('macOS Dock and AppleEvent quit guard', () => {
 
     const hide = /QuitDecision::HideToBackground \{ language \} => \{([\s\S]*?)\n {12}\}\n {12}quit_guard::QuitDecision::Confirm/.exec(body);
     expect(hide, 'HideToBackground arm anchor missing').not.toBeNull();
-    expect(hide![1]).toContain('background_resident::minimize_and_hint(&app, language);');
+    expect(hide![1]).toContain('background_resident::minimize_and_hint(&app, language, hint_poster);');
     expect(hide![1]).toContain('QuitFlowOrigin::MacApplicationTerminate');
     expect(hide![1]).toContain('reply_to_mac_application_terminate(&app, false);');
     expect(hide![1]).not.toContain('app.exit(0)');
@@ -67,9 +67,10 @@ describe('macOS Dock and AppleEvent quit guard', () => {
     ]);
 
     // 两个入口都汇入同一个函数，只传不同的 origin。
-    expect(main).toMatch(/api\.prevent_exit\(\);[\s\S]*?spawn_quit_guard_flow\(\s*app_handle\.clone\(\),\s*coordinator\.inner\(\)\.clone\(\),\s*QuitFlowOrigin::TauriExit,/);
+    expect(main).toMatch(/prevent_exit\(\);[\s\S]*?spawn_quit_guard_flow_with\(\s*app_handle\.clone\(\),\s*coordinator\.inner\(\)\.clone\(\),\s*QuitFlowOrigin::TauriExit,/);
     expect(main).toMatch(/spawn_quit_guard_flow\([^)]*QuitFlowOrigin::MacApplicationTerminate/);
     // 菜单/托盘「退出」(quit_app) 只是 exit(0)，随后落进上面的 ExitRequested 受守卫分支。
-    expect(main).toMatch(/"quit_app" => \{\s*app_handle\.exit\(0\);/);
+    expect(main).toMatch(/"quit_app" => \{\s*handle_quit_app_menu\(app_handle, \|code\| app_handle\.exit\(code\)\);/);
+    expect(main).toMatch(/fn handle_quit_app_menu[^{]*\{\s*request_exit\(0\);/);
   });
 });

@@ -252,17 +252,17 @@ function formatCheckedAt(checkedAt: number | undefined, locale: string): string 
 }
 
 function formatActionLabels(actions: NativeConnectorUiAction[], text: NativeConnectorsText): string {
-  if (actions.length === 0) return text.empty;
+  if (actions.length === 0) return '';
   return actions.map((action) => text.actions[action].label).join(text.separator);
 }
 
 function formatRuntimeActionLabels(actions: RuntimeConnectorUiAction[], text: NativeConnectorsText): string {
-  if (actions.length === 0) return text.empty;
+  if (actions.length === 0) return '';
   return actions.map((action) => text.actions[action].label).join(text.separator);
 }
 
 function formatCapabilities(capabilities: string[], text: NativeConnectorsText): string {
-  if (capabilities.length === 0) return text.empty;
+  if (capabilities.length === 0) return '';
   return capabilities.join(text.separator);
 }
 
@@ -310,10 +310,12 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">
-                {text.availableActionsPrefix}{formatActionLabels(lifecycleActions, text)}
-                {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
-              </div>
+              {(lifecycleActions.length > 0 || checkedAt) && (
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  {lifecycleActions.length > 0 ? `${text.availableActionsPrefix}${formatActionLabels(lifecycleActions, text)}` : ''}
+                  {checkedAt ? (lifecycleActions.length > 0 ? text.lastCheckedPrefix : text.lastCheckedPrefix.replace(/^ · /, '')) + checkedAt : ''}
+                </div>
+              )}
               {detail && (
                 <div className={`mt-1 text-xs ${row.status?.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                   {detail}
@@ -411,13 +413,17 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                 </span>
               )}
             </div>
-            <div className="mt-1 text-[11px] text-zinc-500">
-              {text.capabilitiesPrefix}{formatCapabilities(row.capabilities, text)}
-              {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
-            </div>
-            <div className="mt-1 text-[11px] text-zinc-500">
-              {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
-            </div>
+            {(row.capabilities.length > 0 || checkedAt) && (
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {row.capabilities.length > 0 ? `${text.capabilitiesPrefix}${formatCapabilities(row.capabilities, text)}` : ''}
+                {checkedAt ? (row.capabilities.length > 0 ? text.lastCheckedPrefix : text.lastCheckedPrefix.replace(/^ · /, '')) + checkedAt : ''}
+              </div>
+            )}
+            {lifecycleActions.length > 0 && (
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
+              </div>
+            )}
             {detail && (
               <div className={`mt-1 text-xs ${row.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                 {detail}
@@ -621,7 +627,9 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           const label = connectorText.grid.labels[row.id as keyof typeof connectorText.grid.labels] ?? row.label;
           const description = connectorText.grid.descriptions[
             row.id as keyof typeof connectorText.grid.descriptions
-          ] ?? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`;
+          ] ?? ((row.status?.capabilities ?? []).length > 0
+            ? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`
+            : '');
           const statusDetail = row.enabled && row.status?.readiness
             ? connectorText.grid.statusDetail[row.status.readiness]
             : description;
