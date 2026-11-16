@@ -82,6 +82,13 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         unconfiguredPrefix: `待添加${v.keyLabel} · `,
       },
       header: {
+        apiKeyAccount: '由你的账户提供',
+        apiKeyEnvironment: '正在使用环境提供的密钥',
+        apiKeyUnsaved: `${v.keyLabel}尚未保存`,
+        apiKeyAvailable: `${v.keyLabel}可用`,
+        noKeyGuide: `还没有${v.keyLabel}？先在这里填`,
+        keyNeededSuffix: `（需要${v.keyLabel}）`,
+
         unsetAddress: '未设置地址',
         noApiKey: `无需${v.keyLabel}`,
         apiKeySaved: `${v.keyLabel}已保存`,

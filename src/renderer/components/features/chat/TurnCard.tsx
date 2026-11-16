@@ -229,10 +229,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const streamingIndicator = isStreaming && !suppressBusySignal ? (
     <StreamingIndicator
       startTime={turn.startTime}
-      runningToolStartTime={busySignal === 'text-caret' ? runningToolStartTime : undefined}
-      showCaret={busySignal === 'text-caret'}
-      preparationPhase={preparationPhase}
-      waitingReason={busySignal === 'text-caret'
+      runningToolStartTime={!waitingForApproval && busySignal === 'text-caret' ? runningToolStartTime : undefined}
+      showCaret={waitingForApproval || busySignal === 'text-caret'}
+      preparationPhase={waitingForApproval ? undefined : preparationPhase}
+      waitingReason={waitingForApproval ? 'approval' : busySignal === 'text-caret'
         ? !lastNodeIsStreamingText && !hasTimelineActivity ? 'model' : undefined
         : getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
       subagentCount={getRunningSubagentCount(turn.nodes)}
@@ -438,7 +438,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
@@ -607,6 +607,7 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
     } catch {
+      // clipboard unavailable (permission/insecure context): the copied tick simply stays off
     }
   };
   return (

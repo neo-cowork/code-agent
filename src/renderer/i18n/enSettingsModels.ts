@@ -82,6 +82,13 @@ export const enSettingsModels = {
         unconfiguredPrefix: 'Needs Key · ',
       },
       header: {
+        apiKeyAccount: 'Provided by your account',
+        apiKeyEnvironment: 'Using the key from your environment',
+        apiKeyUnsaved: 'API Key not saved yet',
+        apiKeyAvailable: 'API Key available',
+        noKeyGuide: 'No API key yet? Add one here',
+        keyNeededSuffix: ' (Key needed)',
+
         unsetAddress: 'No address set',
         noApiKey: 'No API Key needed',
         apiKeySaved: 'API Key saved',
