@@ -5,8 +5,10 @@ import type { CuaHelperPermissionState } from './cua/helperPermissionState';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
 
 const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {
-  calendar: 'calendar', mail: 'mail', reminders: 'reminders', reminders_create: 'reminders',
+  mail: 'mail', reminders: 'reminders', reminders_create: 'reminders',
 };
+/** Calendar reads and writes go through EventKit: one permission (perm_calendars), not Apple events. */
+const CALENDAR_TOOLS = new Set(['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']);
 
 /** A failed MCP result keeps the driver's text in `output`; `error` is only the generic backfill from ensureFailedToolResultError. */
 export function cuaFailureText(result: { error?: unknown; output?: unknown }): string {
@@ -41,8 +43,12 @@ export function classifyEnvBlocker(input: {
   if (surface.approvalScope === 'blocked' || ['protected app', 'approval required'].includes(String(surface.blockedReason))) return null;
   let blocker: EnvBlockerClass;
   let target: string;
-  let pane: 'automation' | 'accessibility' | 'screenCapture';
-  if (AUTOMATION_TARGETS[input.toolName] && (result.code ?? metadata.code) === 'not_authorized') {
+  let pane: 'automation' | 'calendars' | 'accessibility' | 'screenCapture';
+  if (CALENDAR_TOOLS.has(input.toolName) && (result.code ?? metadata.code) === 'not_authorized') {
+    blocker = 'perm_calendars';
+    target = 'calendar';
+    pane = 'calendars';
+  } else if (AUTOMATION_TARGETS[input.toolName] && (result.code ?? metadata.code) === 'not_authorized') {
     blocker = 'perm_automation';
     target = AUTOMATION_TARGETS[input.toolName];
     pane = 'automation';

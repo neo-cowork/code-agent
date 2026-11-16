@@ -12,7 +12,6 @@ vi.mock('../../../src/host/connectors/native/osascript', () => ({
   sharedAppleScriptHandlers: () => [],
 }));
 
-import { calendarConnector } from '../../../src/host/connectors/native/calendar';
 import { remindersConnector } from '../../../src/host/connectors/native/reminders';
 
 beforeEach(() => {
@@ -76,109 +75,5 @@ describe('native connector create target resolution', () => {
       expect(scriptAt(1)).toContain('tell list "Work"');
     });
   });
-
-  describe('Calendar', () => {
-    it('uses the first writable calendar when omitted and returns its real name', async () => {
-      osascriptMocks.runAppleScript
-        .mockResolvedValueOnce('日历')
-        .mockResolvedValueOnce('evt-default|日历|Default event|||');
-
-      const result = await calendarConnector.execute('create_event', {
-        title: 'Default event',
-        start_ms: 1_700_000_000_000,
-      });
-
-      expect(result.data).toMatchObject({ calendar: '日历', title: 'Default event' });
-      expect(scriptAt(0)).toContain('if writable of cal then');
-      expect(scriptAt(1)).toContain('tell calendar "日历"');
-    });
-
-    it('reports a plain-words error when no writable calendar exists', async () => {
-      osascriptMocks.runAppleScript.mockResolvedValueOnce('');
-
-      await expect(calendarConnector.execute('create_event', {
-        title: 'Should not be created',
-        start_ms: 1_700_000_000_000,
-      })).rejects.toThrow(
-        'No writable calendar is available. Omit calendar to use the first writable calendar.',
-      );
-      expect(osascriptMocks.runAppleScript).toHaveBeenCalledTimes(1);
-    });
-
-    it('rejects a nonexistent calendar with all options before running a write script', async () => {
-      osascriptMocks.runAppleScript.mockResolvedValueOnce('日历\nWork\nPersonal');
-
-      await expect(calendarConnector.execute('create_event', {
-        calendar: 'Missing',
-        title: 'Should not be created',
-        start_ms: 1_700_000_000_000,
-      })).rejects.toThrow(
-        'No calendar named "Missing". Available calendars: 日历, Work, Personal. Omit calendar to use the first writable calendar.',
-      );
-      expect(osascriptMocks.runAppleScript).toHaveBeenCalledTimes(1);
-    });
-
-    it('accepts a localized calendar name and writes with the exact real name', async () => {
-      osascriptMocks.runAppleScript
-        .mockResolvedValueOnce('Work\n日历')
-        .mockResolvedValueOnce('evt-localized|日历|Localized event|||');
-
-      const result = await calendarConnector.execute('create_event', {
-        calendar: '日历',
-        title: 'Localized event',
-        start_ms: 1_700_000_000_000,
-      });
-
-      expect(result.data).toMatchObject({ calendar: '日历' });
-      expect(scriptAt(1)).toContain('tell calendar "日历"');
-    });
-
-    it('resolves a wrong-case calendar name to the real name', async () => {
-      osascriptMocks.runAppleScript
-        .mockResolvedValueOnce('Work\nPersonal')
-        .mockResolvedValueOnce('evt-case|Work|Case event|||');
-
-      const result = await calendarConnector.execute('create_event', {
-        calendar: 'work',
-        title: 'Case event',
-        start_ms: 1_700_000_000_000,
-      });
-
-      expect(result.data).toMatchObject({ calendar: 'Work' });
-      expect(scriptAt(1)).toContain('tell calendar "Work"');
-    });
-
-    it('writes notes to the Calendar description property (CJK + newline) and reads them back', async () => {
-      osascriptMocks.runAppleScript
-        .mockResolvedValueOnce('Work')
-        .mockResolvedValueOnce('evt-notes|Work|周会||||带上季度报表 第二行');
-
-      const result = await calendarConnector.execute('create_event', {
-        calendar: 'Work',
-        title: '周会',
-        start_ms: 1_700_000_000_000,
-        notes: '带上季度报表\n第二行',
-      });
-
-      const script = scriptAt(1);
-      expect(script).toContain('description:"带上季度报表" & linefeed & "第二行"');
-      expect(script).toContain('description of newEvent');
-      expect(result.data).toMatchObject({ uid: 'evt-notes', notes: '带上季度报表 第二行' });
-    });
-
-    it('does not set a description when notes are absent or blank', async () => {
-      osascriptMocks.runAppleScript
-        .mockResolvedValueOnce('Work')
-        .mockResolvedValueOnce('evt-plain|Work|Plain||||');
-
-      await calendarConnector.execute('create_event', {
-        calendar: 'Work',
-        title: 'Plain',
-        start_ms: 1_700_000_000_000,
-        notes: '   ',
-      });
-
-      expect(scriptAt(1)).not.toContain('description:');
-    });
-  });
+  // Calendar 的建日程目标解析改走 EventKit，见 calendarEventKit.test.ts
 });
