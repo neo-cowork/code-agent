@@ -2,6 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthUser } from '../../../shared/contract/auth';
 import type { Project } from '../../../shared/contract/project';
+import {
+  getProjectCollaborationErrorMessage,
+  type ProjectCollaborationErrorCode,
+} from '../../../shared/i18n/projectCollaborationErrors';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import { getAuthService } from '../auth/authService';
 import { getDatabase } from '../core/databaseService';
 import type { ProjectRepository } from '../core/repositories';
@@ -10,34 +15,7 @@ import {
   type Database as SupabaseDatabase,
 } from '../infra/supabaseService';
 
-export type ProjectCollaborationErrorCode =
-  | 'COLLAB_AUTH_REQUIRED'
-  | 'COLLAB_LOCAL_USER_FORBIDDEN'
-  | 'COLLAB_OFFLINE'
-  | 'COLLAB_FORBIDDEN'
-  | 'COLLAB_PROJECT_NOT_FOUND'
-  | 'COLLAB_NOT_CLOUD_SPACE'
-  | 'COLLAB_INVITE_NOT_FOUND'
-  | 'COLLAB_INVITE_REVOKED'
-  | 'COLLAB_INVITE_EXPIRED'
-  | 'COLLAB_INVITE_EXHAUSTED'
-  | 'COLLAB_INVALID_ARGS'
-  | 'COLLAB_SERVICE_ERROR';
-
-const ERROR_MESSAGES: Record<ProjectCollaborationErrorCode, string> = {
-  COLLAB_AUTH_REQUIRED: '请先登录后再使用协同空间。',
-  COLLAB_LOCAL_USER_FORBIDDEN: '本地访客身份不能写入云端，请先登录正式账号。',
-  COLLAB_OFFLINE: '协同服务当前不可用，请检查网络后重试。',
-  COLLAB_FORBIDDEN: '只有空间所有者可以执行此操作。',
-  COLLAB_PROJECT_NOT_FOUND: '本地项目不存在或已被删除。',
-  COLLAB_NOT_CLOUD_SPACE: '该项目尚未升级或加入云协同空间。',
-  COLLAB_INVITE_NOT_FOUND: '邀请码不存在。',
-  COLLAB_INVITE_REVOKED: '邀请码已被撤销。',
-  COLLAB_INVITE_EXPIRED: '邀请码已过期。',
-  COLLAB_INVITE_EXHAUSTED: '邀请码使用次数已达上限。',
-  COLLAB_INVALID_ARGS: '协同空间参数无效。',
-  COLLAB_SERVICE_ERROR: '协同服务暂时出错，请稍后重试。',
-};
+export type { ProjectCollaborationErrorCode };
 
 type CloudErrorLike = {
   code?: string | null;
@@ -47,7 +25,7 @@ type CloudErrorLike = {
 
 export class ProjectCollaborationError extends Error {
   constructor(readonly code: ProjectCollaborationErrorCode) {
-    super(ERROR_MESSAGES[code]);
+    super(getProjectCollaborationErrorMessage(getHostUiLocale(), code));
     this.name = 'ProjectCollaborationError';
   }
 }

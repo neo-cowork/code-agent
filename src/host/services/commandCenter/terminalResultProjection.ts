@@ -72,7 +72,7 @@ export function deferTerminalResultProjectionUntilAccessible(input: {
         sessionId: task.sessionId,
         taskId: task.id,
         shortName: task.shortName,
-        reason: 'wake_failed',
+        reason: 'owner_missing',
       });
     },
     onSettled: input.onSettled,

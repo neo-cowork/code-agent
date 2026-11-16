@@ -107,7 +107,7 @@ export function publishBackgroundSubagentVisibility(options: {
   void promise.then(
     (result) => {
       if (result.success) {
-        emitter.agentCompleted(scope, agentId, result.output);
+        emitter.agentCompleted(scope, agentId, result.output, result.filesChanged);
         finishRun(false);
         unregisterVisibility?.();
         return;
