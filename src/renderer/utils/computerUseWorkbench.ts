@@ -199,7 +199,7 @@ function explainPermission(
     addExplanation(items, {
       id: `${kind}:optional`,
       title: `${label} 可选`,
-      detail: '默认走 AX 树模式（capture_mode=ax），无需录屏权限。仅当需要截图做视觉消歧时再单独授权。',
+      detail: '默认无需录屏权限。仅当需要截图辅助判断时再单独授权。',
       tone: 'neutral',
     });
     return;
@@ -208,7 +208,7 @@ function explainPermission(
     addExplanation(items, {
       id: `${kind}:unknown`,
       title: `${label} 未探测`,
-      detail: '当前页还没有拿到 macOS TCC 状态，Computer Use 只能展示降级原因，不能判断截图或 AX 读取是否可靠。',
+      detail: '当前页还没有拿到 macOS TCC 状态，只能展示降级原因，不能判断截图或界面内容的读取是否可靠。',
       tone: 'warning',
     });
     return;
@@ -251,7 +251,7 @@ function explainPermission(
   addExplanation(items, {
     id: `${kind}:${permission.status}`,
     title: `${label} ${permission.status === 'denied' ? '未授权' : '未确认'}`,
-    detail: permission.detail || `${label} 状态未确认，窗口截图、AX tree 或浏览器上下文读取可能失败。`,
+    detail: permission.detail || `${label} 状态未确认，窗口截图、界面内容或浏览器信息的读取可能失败。`,
     tone: permission.status === 'denied' ? 'blocked' : 'warning',
   });
 }
@@ -261,67 +261,67 @@ function explainFailureKind(kind: string): Omit<ComputerUseFailureExplanation, '
     case 'permission_denied':
       return {
         title: '权限未开',
-        detail: 'macOS 拒绝了 Computer Surface 读取或控制。通常要检查 Accessibility 和 Screen Recording。',
+        detail: 'macOS 拒绝了 Neo 读取或控制屏幕。通常要检查「辅助功能」和「屏幕录制」权限。',
         tone: 'blocked',
       };
     case 'target_app_not_running':
       return {
         title: '目标 app 没运行',
-        detail: '目标 app 不在当前可见进程或最近窗口候选里，先让目标 app 启动并出现窗口。',
+        detail: '目标 app 现在没有打开，先启动它并让窗口出现。',
         tone: 'blocked',
       };
     case 'target_not_frontmost':
       return {
         title: '目标不在前台',
-        detail: '当前 surface 需要前台窗口兜底，目标 app 没有前台焦点时不该执行坐标或键盘动作。',
+        detail: '目标 app 不在最前面时，Neo 不会替你点击或输入，先把它切到前台。',
         tone: 'warning',
       };
     case 'target_window_not_found':
       return {
         title: '窗口不可读',
-        detail: '窗口 id、标题或 bounds 已失效，重新读取窗口候选后再判断能不能后台操作。',
+        detail: '这个窗口已经关闭或变化了，请刷新后重新选择窗口。',
         tone: 'blocked',
       };
     case 'ax_unavailable':
       return {
-        title: 'AX tree 不可用',
-        detail: '目标 app 没有暴露可用 Accessibility tree，或当前权限不足。Electron、CEF、WKWebView 壳常见只暴露很浅的容器。',
+        title: '读不到界面元素',
+        detail: '这个 app 没有提供可读的界面内容，或辅助功能权限不足。Electron、CEF、WKWebView 壳常见只暴露很浅的容器。',
         tone: 'blocked',
       };
     case 'ax_tree_poor':
       return {
-        title: 'AX tree 质量低',
-        detail: '元素缺少 label、role 或 axPath，自动定位容易误命中。Electron、CEF、WKWebView 壳也常见这种浅层 tree；先展示候选和失败原因，避免直接执行。',
+        title: '界面元素信息太少',
+        detail: '屏幕上的元素缺少名称或类型，自动定位容易点错。Electron、CEF、WKWebView 壳也常见这种情况；先展示原因，避免直接执行。',
         tone: 'warning',
       };
     case 'locator_missing':
       return {
         title: '目标元素找不到',
-        detail: '没有找到要操作的元素。需要重新读取窗口内的可操作元素，或重新观察前台。',
+        detail: '没有找到要操作的那个元素。需要重新读取屏幕上的元素，或重新观察前台窗口。',
         tone: 'warning',
       };
     case 'locator_ambiguous':
       return {
         title: '目标元素不唯一',
-        detail: '多个元素同时匹配，应该选择具体 axPath 或更窄的 role/name。',
+        detail: '有多个元素同时符合，需要指定得更具体一些。',
         tone: 'warning',
       };
     case 'coordinate_untrusted':
       return {
         title: '坐标不可信',
-        detail: '窗口坐标和当前屏幕证据对不上，不能把坐标动作当成可靠后台控制。',
+        detail: '窗口位置和当前屏幕内容对不上，不能把按位置点击当成可靠的后台操作。',
         tone: 'blocked',
       };
     case 'action_execution_failed':
       return {
         title: '动作执行失败',
-        detail: '底层系统事件或 AX 调用失败。当前页只展示失败证据，不自动重试。',
+        detail: '系统没能完成这一步操作。当前页只展示失败原因，不会自动重试。',
         tone: 'blocked',
       };
     default:
       return {
         title: '证据不可用',
-        detail: '没有足够的窗口、截图或 AX 证据支撑 Computer Use 动作。',
+        detail: '没有足够的窗口或屏幕信息来支撑电脑操作。',
         tone: 'warning',
       };
   }
@@ -385,7 +385,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
     addExplanation(items, {
       id: 'native-runtime-unavailable',
       title: '当前是 Web / 非 Tauri 模式',
-      detail: '没有 Tauri native bridge 时，macOS 权限、前台 app 和系统设置入口都会降级；只能读取 desktop domain 已暴露的状态。',
+      detail: '在网页版里，macOS 权限、前台 app 和系统设置入口都读取不到，请在桌面版里打开本页。',
       tone: 'warning',
     });
   }
@@ -393,8 +393,8 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (input.desktopProviderError) {
     addExplanation(items, {
       id: 'desktop-provider-error',
-      title: 'Computer/Desktop provider 未返回',
-      detail: input.desktopProviderError,
+      title: '桌面能力没有响应',
+      detail: '读取桌面状态时出错了，展开「诊断」可以看到原始信息。',
       tone: 'blocked',
     });
   }
@@ -403,7 +403,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
     addExplanation(items, {
       id: 'frontmost-unsupported',
       title: '前台窗口上下文不可读',
-      detail: '当前 native desktop provider 不能读取 frontmost app/window，窗口列表只能降级到最近活动或空状态。',
+      detail: '当前环境读不到最前面的应用和窗口，窗口列表只能显示最近活动，或者为空。',
       tone: 'warning',
     });
   }
@@ -414,15 +414,15 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   addExplanation(items, {
     id: 'automation-per-app',
     title: 'Automation 是按目标 app 授权',
-    detail: 'macOS 没有一个可复用的全局 Automation 状态。Apple Events / browser URL 读取会按目标 app 单独触发或失败，当前页只展示这个边界。',
+    detail: 'macOS 没有统一的自动化开关。读取浏览器网址等操作会按目标 app 分别询问或失败，当前页只说明这一点。',
     tone: 'neutral',
   });
 
   if (!input.surface) {
     addExplanation(items, {
       id: 'surface-missing',
-      title: 'Computer Surface 状态为空',
-      detail: 'desktop domain 没有返回 Computer Surface state，无法判断后台 AX、后台 CGEvent 或前台兜底是否可用。',
+      title: '还没读到屏幕状态',
+      detail: '没有读到屏幕状态，暂时无法判断能不能在后台操作。',
       tone: 'blocked',
     });
   }
@@ -431,7 +431,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (surface?.blockedReason) {
     addExplanation(items, {
       id: 'surface-blocked',
-      title: 'Computer Surface 被阻塞',
+      title: '屏幕操作被阻止',
       detail: surface.blockedReason,
       tone: 'blocked',
     });
@@ -457,7 +457,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
     addExplanation(items, {
       id: 'foreground-fallback',
       title: '只能前台兜底',
-      detail: '当前模式会作用在前台 app/window。目标 app 不在前台或焦点被抢走时，点击和输入都不应该自动执行。',
+      detail: '当前只能作用在最前面的窗口。目标 app 不在前台或焦点被抢走时，不会自动点击或输入。',
       tone: 'warning',
     });
   }
@@ -466,7 +466,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
     addExplanation(items, {
       id: 'background-unavailable',
       title: '后台控制面不可用',
-      detail: surface.safetyNote || '当前没有可用的后台 AX / CGEvent surface，只能保留只读诊断。',
+      detail: surface.safetyNote || '当前不能在后台操作，只能查看状态。',
       tone: 'blocked',
     });
   }
@@ -474,8 +474,8 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (surface?.axQuality?.grade === 'poor') {
     addExplanation(items, {
       id: 'ax-quality-poor',
-      title: 'AX tree 可读性差',
-      detail: surface.axQuality.reasons.join('；') || '元素标签或 axPath 覆盖不足，不能安全定位。',
+      title: '界面元素信息太少',
+      detail: '屏幕上的元素缺少名称，不能安全定位。展开「诊断」可以看到具体原因。',
       tone: 'warning',
     });
   }
@@ -483,10 +483,10 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (input.elementsError) {
     addExplanation(items, {
       id: 'elements-error',
-      title: '可操作元素读取失败',
+      title: '读取屏幕元素失败',
       detail: input.selectedTargetApp
-        ? `${input.selectedTargetApp}: ${input.elementsError}`
-        : input.elementsError,
+        ? `读取「${input.selectedTargetApp}」的界面元素时出错了，展开「诊断」可以看到原始信息。`
+        : '读取界面元素时出错了，展开「诊断」可以看到原始信息。',
       tone: 'blocked',
     });
   }
@@ -495,7 +495,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
     addExplanation(items, {
       id: 'observe-error',
       title: '前台窗口观察失败',
-      detail: input.observeError,
+      detail: '观察前台窗口时出错了，展开「诊断」可以看到原始信息。',
       tone: 'warning',
     });
   }
@@ -503,8 +503,8 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (input.targets.length === 0) {
     addExplanation(items, {
       id: 'no-targets',
-      title: '没有可展示的 app/window 候选',
-      detail: '没有 frontmost context、recent desktop events 或已批准 app。当前页只能展示 provider 和权限状态。',
+      title: '没有可展示的 app / 窗口',
+      detail: '没有读到最前面的应用、最近的桌面活动或已批准的 app，当前页只能展示权限状态。',
       tone: 'neutral',
     });
   }
