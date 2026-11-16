@@ -180,13 +180,11 @@ export const HooksSettings: React.FC = () => {
         </div>
       )}
 
-      {notice === 'forbidden' && (
-        <div role="status" className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2 text-xs text-zinc-300">
-          {hooksText.forbidden}
-        </div>
-      )}
-      {notice && notice !== 'forbidden' && (
-        <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-badge-danger">
+      {notice && (
+        <div
+          role={notice === 'forbidden' ? 'status' : 'alert'}
+          className={`rounded-lg border px-3 py-2 text-xs ${notice === 'forbidden' ? 'border-zinc-700 bg-zinc-900/40 text-zinc-300' : 'border-red-500/30 bg-red-500/10 text-badge-danger'}`}
+        >
           {hooksText[notice]}
         </div>
       )}
