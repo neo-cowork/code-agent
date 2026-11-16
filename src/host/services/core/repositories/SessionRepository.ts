@@ -668,7 +668,7 @@ export class SessionRepository {
     }
     if (updates.metadata !== undefined || updates.modelDecision !== undefined) {
       setClauses.push('metadata = ?');
-      values.push(serializeMessageMetadata(updates.metadata, updates.modelDecision, this.db.prepare('SELECT metadata FROM messages WHERE id = ?').pluck().get(messageId)));
+      values.push(serializeMessageMetadata(updates.metadata, updates.modelDecision, (this.db.prepare('SELECT metadata FROM messages WHERE id = ?').get(messageId) as { metadata?: unknown } | undefined)?.metadata));
     }
     if (updates.isMeta !== undefined) {
       setClauses.push('is_meta = ?');
