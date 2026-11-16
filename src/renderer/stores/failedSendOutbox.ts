@@ -94,9 +94,13 @@ export function recordFailedSend(sessionId: string, user: Message, error: Messag
 
 /** Clear only the accepted client ID; accepting another turn must not lose this one. */
 export function clearFailedSend(sessionId: string, clientMessageId?: string): void {
-  write(sessionId, clientMessageId
-    ? (read(sessionId) ?? []).filter((entry) => entry.user.id !== clientMessageId)
-    : []);
+  if (!clientMessageId) {
+    write(sessionId, []);
+    return;
+  }
+  const entries = read(sessionId);
+  if (!entries?.some((entry) => entry.user.id === clientMessageId)) return;
+  write(sessionId, entries.filter((entry) => entry.user.id !== clientMessageId));
 }
 
 export function mergeFailedSendOutbox(sessionId: string, messages: Message[], persisted: Message[]): Message[] {

@@ -204,6 +204,22 @@ describe('failed send outbox through sendMessage and switchSession', () => {
     expect(localStorage.getItem(key)).toBeNull();
   });
 
+  it('accepting an unrelated id cannot erase unread storage when its read throws', async () => {
+    const hook = await fail();
+    const serialized = localStorage.getItem(key)!;
+    await useSessionStore.getState().deleteSession(sessionId);
+    localStorage.setItem(key, serialized);
+    useSessionStore.setState({ currentSessionId: sessionId, messages: [] });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+    invoke.mockResolvedValueOnce(undefined);
+    await act(async () => {
+      await hook.result.current.sendMessage({ sessionId, clientMessageId: 'unrelated-id', content: 'Summarize next week plans' });
+    });
+    read.mockRestore();
+    expect(localStorage.getItem(key)).toBe(serialized);
+  });
+
   it('a failed edited resend keeps the newer text even when quota leaves an older disk entry', async () => {
     const hook = await fail([attachment]);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
