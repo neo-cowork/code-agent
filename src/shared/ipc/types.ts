@@ -242,6 +242,8 @@ export interface ConnectorStatusSummary {
   checkedAt?: number;
   /** 授权通过但账号/日历/列表为空（mail/calendar/reminders），见 host ConnectorStatus 同名字段 */
   noAccessibleItems?: boolean;
+  /** failed 时的结构化原因：not_authorized = macOS 自动化授权被拒 */
+  errorCode?: 'not_authorized';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
