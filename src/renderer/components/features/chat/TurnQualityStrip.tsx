@@ -10,6 +10,7 @@ import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 import { useSessionModels } from './sessionModelsContext';
+import { MemorySourceChip, hasUsedMemory } from './MemorySourceChip';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
@@ -174,9 +175,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
       ? requestedAgentId
       : null;
-    if (!showModel && !showAgent && !degradedAgentId) return null;
+    const showMemory = hasUsedMemory(summary);
+    if (!showModel && !showAgent && !degradedAgentId && !showMemory) return null;
     return (
-      <div className="mb-2 flex items-center gap-1">
+      <div className="mb-2 flex flex-wrap items-start gap-1">
         {showModel && (
           <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
             {modelName}
@@ -198,6 +200,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             {t.agentCommand.badgeNotAppliedSuffix}
           </span>
         )}
+        {showMemory && <MemorySourceChip summary={summary} />}
       </div>
     );
   }
