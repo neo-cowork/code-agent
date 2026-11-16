@@ -45,6 +45,47 @@ export function revealTurnEnd(
   virtuoso?.scrollToIndex({ index: turnIndex, align: 'end', behavior: 'auto' });
 }
 
+// 末尾内容超出 Footer 呼吸带（h-6）再多 8px 被挡在可视区下方，就算「下面还有」。
+const HIDDEN_BELOW_TOLERANCE_PX = 32;
+
+/**
+ * 末尾内容是否真被挡在可视区下方。Virtuoso 的 96px「在底部」阈值会把几十像素的差距藏起来：
+ * 卡底和按钮被裁，却不出「回到底部」，用户不知道下面还有东西（真机第二轮）。
+ * 「回到底部」按这个和 isAtBottom 取并集：要么落底，要么出箭头。
+ * paused 为真（流式跟随、入场结算）时不判，防闪；recheckKey 变化时补判一次。
+ */
+export function useContentHiddenBelow(
+  scroller: HTMLElement | null,
+  pausedRef: RefObject<boolean>,
+  recheckKey: string,
+): boolean {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (!scroller) return;
+    let frame: number | null = null;
+    const check = () => {
+      frame = null;
+      setHidden(!pausedRef.current
+        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > HIDDEN_BELOW_TOLERANCE_PX);
+    };
+    const schedule = () => {
+      if (frame === null) frame = requestAnimationFrame(check);
+    };
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
+    observer?.observe(scroller);
+    const itemList = scroller.querySelector('[data-testid="virtuoso-item-list"]');
+    if (itemList) observer?.observe(itemList);
+    scroller.addEventListener('scroll', schedule, { passive: true });
+    schedule();
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      observer?.disconnect();
+      scroller.removeEventListener('scroll', schedule);
+    };
+  }, [pausedRef, recheckKey, scroller]);
+  return hidden;
+}
+
 // scroller 还没量出尺寸时无从判断，返回 null 表示保持现状，不要硬猜。
 function computeScrollerAtBottom(
   scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'> | null,
@@ -66,6 +107,16 @@ interface BottomSettlementOptions {
   shouldContinue?: () => boolean;
   onSettled?: () => void;
   onCancel?: () => void;
+}
+
+/**
+ * 落底结算只在「轮」真的变了（新增/减少一轮、末轮换了）时让位。冷启动水合会把同样内容的
+ * 投影重建好几次（新数组引用），按引用比会把结算半路掐断，会话首开停在离底几十到一两百像素
+ * 处（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER 真机第二轮）。
+ */
+export function isSameTurnList(current: readonly TraceTurn[], atJump: readonly TraceTurn[]): boolean {
+  return current === atJump
+    || (current.length === atJump.length && current.at(-1)?.turnId === atJump.at(-1)?.turnId);
 }
 
 export function startBottomSettlement({
@@ -100,7 +151,7 @@ export function startBottomSettlement({
   const settleBottom = () => {
     frame = null;
     if (
-      projectionTurnsRef.current !== turnsAtJump
+      !isSameTurnList(projectionTurnsRef.current, turnsAtJump)
       || !keepActiveOutputVisibleRef.current
       || !shouldContinue()
     ) {

@@ -14,7 +14,7 @@ import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '..
 import { TurnRail } from './TurnRail';
 import { useTurnRailJump } from './useTurnRailJump';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
-import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
+import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, useContentHiddenBelow, useSessionEntryScroll } from './useSessionEntryScroll';
 export { isScrollerNearBottom } from './useSessionEntryScroll';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -382,6 +382,18 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     setIsAtBottom,
     onEntrySettled: followLatestTurnAfterEntry,
   });
+  // 流式贴底跟随、入场结算期间差距是暂时的，不据此出「回到底部」。
+  const hiddenBelowPausedRef = useMemo(() => ({
+    get current() {
+      return sessionEntrySettlingRef.current
+        || (outputFollowStreamingRef.current && keepActiveOutputVisibleRef.current);
+    },
+  }), []);
+  const contentHiddenBelow = useContentHiddenBelow(
+    scrollerElement,
+    hiddenBelowPausedRef,
+    `${isAtBottom}|${entryHidden}|${outputFollowTurn?.status ?? ''}`,
+  );
   const outputFollowRevision = useMemo(
     () => getTurnOutputRevision(outputFollowTurn, {
       includeAssistantContentLength: outputFollowTurn?.status !== 'streaming',
@@ -1177,7 +1189,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           Footer,
         }}
       />
-      {!isAtBottom && projection.turns.length > 0 && (
+      {(!isAtBottom || contentHiddenBelow) && projection.turns.length > 0 && (
         <button
           type="button"
           onClick={handleJumpToBottom}

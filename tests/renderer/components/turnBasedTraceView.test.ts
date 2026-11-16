@@ -433,6 +433,31 @@ describe('TurnBasedTraceView session-entry settle cancel', () => {
   });
 });
 
+describe('TurnBasedTraceView 离底不远但末尾被挡', () => {
+  it('Virtuoso 仍报在底部（阈值 96 内）而末尾差 60px 时也出「回到底部」', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 }));
+    for (let frame = 0; frame < 70; frame += 1) {
+      act(() => {
+        flushAnimationFrames();
+        vi.runOnlyPendingTimers();
+      });
+    }
+    act(() => mocks.virtuosoProps.atBottomStateChange(true));
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 2000, configurable: true },
+      clientHeight: { value: 600, configurable: true },
+    });
+    scroller.scrollTop = 2000 - 600 - 60;
+    act(() => {
+      scroller.dispatchEvent(new Event('scroll'));
+      flushAnimationFrames();
+    });
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).not.toBeNull();
+  });
+});
+
 describe('TurnBasedTraceView focus helpers', () => {
   it('counts only leading history turns inserted before the previous first turn', () => {
     expect(getPrependedTurnCount('turn-1', [makeTurn(-2), makeTurn(-1), makeTurn(0)]))
