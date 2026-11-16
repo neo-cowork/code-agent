@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
-import { useSessionEntryScroll } from '../../../src/renderer/components/features/chat/useSessionEntryScroll';
+import { isContentHiddenBelow, revealTurnEnd, useSessionEntryScroll } from '../../../src/renderer/components/features/chat/useSessionEntryScroll';
 
 const turns = (n: number) => Array.from({ length: n }, (_, i) => ({ turnId: `t${i}` })) as unknown as TraceTurn[];
 
@@ -88,5 +88,25 @@ describe('useSessionEntryScroll · 入场隐藏', () => {
     expect(result.current.entryHidden).toBe(true);
     await act(async () => { props.scrollerElementRef.current.dispatchEvent(new Event('wheel')); });
     expect(result.current.entryHidden).toBe(false);
+  });
+});
+
+describe('revealTurnEnd', () => {
+  it('末轮落到真实底部（含 Footer），非末轮仍按 turn 末尾对齐', () => {
+    const scrollToIndex = vi.fn();
+    const scroller = { scrollTop: 100, scrollHeight: 2400 };
+    revealTurnEnd({ scrollToIndex }, scroller, 4, 5);
+    expect(scroller.scrollTop).toBe(2400);
+    expect(scrollToIndex).not.toHaveBeenCalled();
+
+    revealTurnEnd({ scrollToIndex }, scroller, 2, 5);
+    expect(scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'end', behavior: 'auto' });
+  });
+});
+
+describe('isContentHiddenBelow', () => {
+  it('阈值内也要报「下面还有」：离底 60px（卡底和按钮被裁）算被挡，Footer 呼吸带内不算', () => {
+    expect(isContentHiddenBelow({ scrollHeight: 2000, clientHeight: 600, scrollTop: 2000 - 600 - 60 })).toBe(true);
+    expect(isContentHiddenBelow({ scrollHeight: 2000, clientHeight: 600, scrollTop: 2000 - 600 - 20 })).toBe(false);
   });
 });

@@ -27,6 +27,124 @@ export function isScrollerNearBottom(
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
+/**
+ * 把跟随中的 turn 末尾露出来。它是列表最后一项时直接落到真实底部（含 Footer 呼吸间距）：
+ * scrollToIndex(align:'end') 按 Virtuoso 自己量的项高对齐，末张卡的外边距和 Footer 落在视口外，
+ * 停车后的授权卡按钮露半截又不到「回到底部」的阈值（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER）。
+ */
+export function revealTurnEnd(
+  virtuoso: Pick<VirtuosoHandle, 'scrollToIndex'> | null,
+  scroller: Pick<HTMLElement, 'scrollTop' | 'scrollHeight'> | null,
+  turnIndex: number,
+  turnCount: number,
+): void {
+  if (scroller && turnIndex === turnCount - 1) {
+    scroller.scrollTop = scroller.scrollHeight;
+    return;
+  }
+  virtuoso?.scrollToIndex({ index: turnIndex, align: 'end', behavior: 'auto' });
+}
+
+// 末尾内容超出 Footer 呼吸带（h-6）再多 8px 被挡在可视区下方，就算「下面还有」。
+const HIDDEN_BELOW_TOLERANCE_PX = 32;
+
+/**
+ * 末尾内容是否真被挡在可视区下方。Virtuoso 的 96px「在底部」阈值会把几十像素的差距藏起来：
+ * 卡底和按钮被裁，却不出「回到底部」，用户不知道下面还有东西（真机第二轮）。
+ */
+export function isContentHiddenBelow(
+  scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+): boolean {
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > HIDDEN_BELOW_TOLERANCE_PX;
+}
+
+/** 滚动或列表/视口尺寸变化后（每帧至多一次）回调，供「回到底部」按真实几何重算。 */
+export function useScrollGeometryChange(scroller: HTMLElement | null, onChange: () => void): void {
+  useEffect(() => {
+    if (!scroller) return;
+    let frame: number | null = null;
+    const schedule = () => {
+      if (frame === null) frame = requestAnimationFrame(() => { frame = null; onChange(); });
+    };
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
+    observer?.observe(scroller);
+    const itemList = scroller.querySelector('[data-testid="virtuoso-item-list"]');
+    if (itemList) observer?.observe(itemList);
+    scroller.addEventListener('scroll', schedule, { passive: true });
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      observer?.disconnect();
+      scroller.removeEventListener('scroll', schedule);
+    };
+  }, [onChange, scroller]);
+}
+
+// 用户在列表里按过指针（展开/折叠、拖滚动条）后这段时间内，列表变高变矮都不追底，免得点开的内容被顶走。
+const LIST_GROWTH_AFTER_POINTER_PAUSE_MS = 1000;
+
+interface ListResizeFollowOptions {
+  scroller: HTMLElement | null;
+  virtuosoRef: RefObject<VirtuosoHandle | null>;
+  projectionTurnsRef: RefObject<TraceTurn[]>;
+  keepActiveOutputVisibleRef: RefObject<boolean>;
+  outputFollowStreamingRef: RefObject<boolean>;
+  sessionEntrySettlingRef: RefObject<boolean>;
+  historyPrependInProgressRef: RefObject<boolean>;
+  isUserScrollSuppressed: () => boolean;
+}
+
+/**
+ * 非流式贴底跟随时，列表里任何一轮晚到的高度变化（会话首开后授权卡按钮、content-visibility
+ * 落定的真实排版、图片/代码块）都要重新落底：只盯跟随轮会让会话首开停在中间，列表变矮时
+ * Virtuoso 的补偿也可能把视口留在离底一两百像素处。流式期间不参与（仍只盯活动轮，防抖动）；
+ * 用户按着/刚松开指针（展开折叠、拖滚动条）或本来就离底很远时不动。
+ * 不经跟随轮登记（会话首开时它为空，补登记要多一次 React commit，perf-journey 棘轮不收）。
+ */
+export function useListResizeFollow({
+  scroller, virtuosoRef, projectionTurnsRef, keepActiveOutputVisibleRef,
+  outputFollowStreamingRef, sessionEntrySettlingRef, historyPrependInProgressRef, isUserScrollSuppressed,
+}: ListResizeFollowOptions): void {
+  useEffect(() => {
+    const itemList = scroller?.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]');
+    if (!scroller || !itemList || typeof ResizeObserver !== 'function') return;
+    let lastHeight = itemList.getBoundingClientRect().height;
+    let pointerDown = false;
+    let pointerUpAt = 0;
+    let cancelReveal: (() => void) | null = null;
+    const onPointerDown = () => { pointerDown = true; };
+    const onPointerUp = () => { pointerDown = false; pointerUpAt = Date.now(); };
+    const observer = new ResizeObserver(() => {
+      const height = itemList.getBoundingClientRect().height;
+      const delta = Math.abs(height - lastHeight);
+      lastHeight = height;
+      if (delta === 0 || outputFollowStreamingRef.current) return;
+      if (!keepActiveOutputVisibleRef.current || isUserScrollSuppressed()) return;
+      if (!isScrollerNearBottom(scroller, 96 + delta)) return;
+      if (cancelReveal) return;
+      // 等 Virtuoso 这一轮测量补偿做完再落底，否则补偿会把视口又挪走。
+      cancelReveal = scheduleAfterLayout(() => {
+        cancelReveal = null;
+        if (pointerDown || Date.now() - pointerUpAt < LIST_GROWTH_AFTER_POINTER_PAUSE_MS) return;
+        if (!keepActiveOutputVisibleRef.current || isUserScrollSuppressed()) return;
+        // 入场结算/历史前插期间由它们自己定位，这里不插手。
+        if (sessionEntrySettlingRef.current || historyPrependInProgressRef.current) return;
+        const turns = projectionTurnsRef.current;
+        revealTurnEnd(virtuosoRef.current, scroller, turns.length - 1, turns.length);
+      });
+    });
+    observer.observe(itemList);
+    scroller.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    return () => {
+      cancelReveal?.();
+      observer.disconnect();
+      scroller.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+    };
+  }, [historyPrependInProgressRef, isUserScrollSuppressed, keepActiveOutputVisibleRef, outputFollowStreamingRef,
+    projectionTurnsRef, scroller, sessionEntrySettlingRef, virtuosoRef]);
+}
+
 // scroller 还没量出尺寸时无从判断，返回 null 表示保持现状，不要硬猜。
 function computeScrollerAtBottom(
   scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'> | null,
@@ -48,6 +166,16 @@ interface BottomSettlementOptions {
   shouldContinue?: () => boolean;
   onSettled?: () => void;
   onCancel?: () => void;
+}
+
+/**
+ * 落底结算只在「轮」真的变了（新增/减少一轮、末轮换了）时让位。冷启动水合会把同样内容的
+ * 投影重建好几次（新数组引用），按引用比会把结算半路掐断，会话首开停在离底几十到一两百像素
+ * 处（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER 真机第二轮）。
+ */
+function isSameTurnList(current: readonly TraceTurn[], atJump: readonly TraceTurn[]): boolean {
+  return current === atJump
+    || (current.length === atJump.length && current.at(-1)?.turnId === atJump.at(-1)?.turnId);
 }
 
 export function startBottomSettlement({
@@ -82,7 +210,7 @@ export function startBottomSettlement({
   const settleBottom = () => {
     frame = null;
     if (
-      projectionTurnsRef.current !== turnsAtJump
+      !isSameTurnList(projectionTurnsRef.current, turnsAtJump)
       || !keepActiveOutputVisibleRef.current
       || !shouldContinue()
     ) {
