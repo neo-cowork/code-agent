@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SurfaceLiveFrameV1 } from '../../../../src/shared/contract/surfaceExecution';
 import { SurfaceLiveStreamService } from '../../../../src/host/services/surfaceExecution/SurfaceLiveStreamService';
 
-const startPageScreencast = vi.hoisted(() => vi.fn());
+const { startPageScreencast, warn } = vi.hoisted(() => ({ startPageScreencast: vi.fn(), warn: vi.fn() }));
+vi.mock('../../../../src/host/services/infra/logger', async (original) => {
+  const actual = await original<typeof import('../../../../src/host/services/infra/logger')>();
+  return { ...actual, createLogger: (name: string) => name === 'SurfaceLiveStream'
+    ? { info: vi.fn(), warn } : actual.createLogger(name) };
+});
+import { pageOverflowsHorizontally } from '../../../../src/host/services/surfaceExecution/pageOverflowProbe';
 
 vi.mock('../../../../src/host/services/infra/browser/pageScreencast', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -20,10 +26,13 @@ function buildRuntime(session: Record<string, unknown> | null) {
   return { sessions: { get: () => session } } as never;
 }
 
-function buildAdapter(input: { running?: boolean; hasPage?: boolean; page?: { id: string } } = {}) {
+function buildAdapter(input: { running?: boolean; hasPage?: boolean; page?: object } = {}) {
   const running = input.running ?? true;
   const hasPage = input.hasPage ?? true;
-  const page = input.page ?? { id: 'page' };
+  const page = input.page ?? { context: () => ({ newCDPSession: async () => ({
+    send: async () => ({ cssContentSize: { width: 320 }, cssLayoutViewport: { clientWidth: 320 } }),
+    detach: async () => undefined,
+  }) }) };
   return {
     findBindingBySurfaceSessionId: () => ({
       browserService: {
@@ -45,9 +54,15 @@ const REQUEST = { version: 1 as const, conversationId: 'session-a', surfaceSessi
 
 describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', () => {
   let published: SurfaceLiveFrameV1[];
+  const services: SurfaceLiveStreamService[] = [];
+  afterEach(async () => {
+    for (const service of services.splice(0)) await service.stop(REQUEST.surfaceSessionId);
+    vi.useRealTimers();
+  });
 
   beforeEach(() => {
     published = [];
+    warn.mockClear();
     stop.mockClear();
     startPageScreencast.mockReset();
     startPageScreencast.mockImplementation(async (
@@ -64,12 +79,83 @@ describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', (
     session?: Record<string, unknown> | null;
     adapter?: ReturnType<typeof buildAdapter>;
   } = {}) {
-    return new SurfaceLiveStreamService(
+    const service = new SurfaceLiveStreamService(
       buildRuntime(overrides.session === undefined ? RUNNING_BROWSER_SESSION : overrides.session),
       overrides.adapter ?? buildAdapter(),
       (frame) => published.push(frame),
     );
+    services.push(service);
+    return service;
   }
+
+
+  it.each([[420, true], [320, false], [324, false], [323.9, false], [324.1, true]])(
+    'CSS content width %s maps to overflow %s', (width, expected) => {
+      expect(pageOverflowsHorizontally({
+        cssContentSize: { width }, cssLayoutViewport: { clientWidth: 320 },
+      })).toBe(expected);
+    },
+  );
+
+  it('publishes pageOverflowX through start, samples at most once per second and updates static frames', async () => {
+    vi.useFakeTimers();
+    const send = vi.fn().mockResolvedValue({ cssContentSize: { width: 420 }, cssLayoutViewport: { clientWidth: 320 } });
+    const detach = vi.fn(async () => undefined);
+    const service = build({ adapter: buildAdapter({ page: {
+      context: () => ({ newCDPSession: async () => ({ send, detach }) }),
+    } }) });
+    await service.start(REQUEST);
+    const frame = { base64: 'AAAA', width: 320, height: 600, capturedAtMs: 42 };
+    emitFrame(frame);
+    expect(published.at(-1)).toHaveProperty('pageOverflowX', true);
+    for (let i = 0; i < 10; i++) emitFrame(frame);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(send).toHaveBeenCalledTimes(1);
+    send.mockResolvedValue({ cssContentSize: { width: 320 }, cssLayoutViewport: { clientWidth: 320 } });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenLastCalledWith('Page.getLayoutMetrics');
+    expect(published.at(-1)).toHaveProperty('pageOverflowX', false);
+    await service.stop(REQUEST.surfaceSessionId);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(detach).toHaveBeenCalledOnce();
+  });
+
+  it('omits pageOverflowX and warns with the reason after metrics fail, then recovers', async () => {
+    vi.useFakeTimers();
+    const send = vi.fn().mockResolvedValue({ cssContentSize: { width: 420 }, cssLayoutViewport: { clientWidth: 320 } });
+    const service = build({ adapter: buildAdapter({ page: {
+      context: () => ({ newCDPSession: async () => ({ send, detach: async () => undefined }) }),
+    } }) });
+    await service.start(REQUEST);
+    emitFrame({ base64: 'AAAA', width: 320, height: 600, capturedAtMs: 42 });
+    expect(published.at(-1)).toHaveProperty('pageOverflowX', true);
+    send.mockRejectedValueOnce(new Error('CDP metric read failed'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(published.at(-1)).not.toHaveProperty('pageOverflowX');
+    expect(warn).toHaveBeenCalledWith('Surface live stream layout metrics failed', {
+      surfaceSessionId: 'surface-1', message: 'CDP metric read failed',
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(published.at(-1)).toHaveProperty('pageOverflowX', true);
+  });
+
+  it('does not publish metrics or images from a replaced active page', async () => {
+    vi.useFakeTimers();
+    let page: object = { context: () => ({ newCDPSession: async () => ({
+      send: async () => ({ cssContentSize: { width: 420 }, cssLayoutViewport: { clientWidth: 320 } }),
+      detach: async () => undefined,
+    }) }) };
+    const service = build({ adapter: { findBindingBySurfaceSessionId: () => ({
+      browserService: { isRunning: () => true, getActiveTab: () => ({ page }) },
+    }) } as never });
+    await service.start(REQUEST);
+    page = {};
+    emitFrame({ base64: 'OLD', width: 320, height: 600, capturedAtMs: 42 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(published).toHaveLength(0);
+  });
 
   it('归属对得上就开流，帧带会话归属推给 renderer', async () => {
     const service = build();

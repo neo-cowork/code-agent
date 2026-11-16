@@ -3,6 +3,7 @@ import type {
   SurfaceLiveStreamRequestV1,
   SurfaceLiveStreamStateV1,
 } from '../../../shared/contract/surfaceExecution';
+import { PageOverflowProbe } from './pageOverflowProbe';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { broadcastToRenderer } from '../../platform/windowBridge';
 import { createLogger } from '../infra/logger';
@@ -47,6 +48,7 @@ interface ActiveStream {
   conversationId: string;
   surfaceSessionId: string;
   handle: PageScreencastHandle;
+  overflowProbe: PageOverflowProbe;
   /** 开流时绑定的页面：用来识别「同会话但页面已被换掉/关掉」 */
   page: unknown;
   expiryTimer: NodeJS.Timeout;
@@ -99,13 +101,16 @@ export class SurfaceLiveStreamService {
     type Frame = Parameters<Parameters<typeof startPageScreencast>[2]>[0];
     const initial: { frame?: Frame } = {};
     let started = false;
+    let pageOverflowX: boolean | undefined;
+    let latestFrame: Frame | undefined;
     const deliverFrame = (frame: Frame) => {
       if (!started) {
         initial.frame = frame;
         return;
       }
       // 开流后会话被别的对话接管 / 已停：立刻掐掉，不让帧漏给新归属。
-      if (this.active?.handle !== handle) return;
+      if (this.active?.handle !== handle || this.currentPage(request.surfaceSessionId) !== page) return;
+      latestFrame = frame;
       this.publish({
         version: 1,
         conversationId: request.conversationId,
@@ -115,6 +120,7 @@ export class SurfaceLiveStreamService {
         width: frame.width,
         height: frame.height,
         capturedAtMs: frame.capturedAtMs,
+        ...(pageOverflowX === undefined ? {} : { pageOverflowX }),
       });
     };
     try {
@@ -127,6 +133,16 @@ export class SurfaceLiveStreamService {
       return this.refused(request.surfaceSessionId, 'unsupported');
     }
 
+    const overflowProbe = new PageOverflowProbe(page, (overflow) => {
+      if (this.active?.handle !== handle || pageOverflowX === overflow) return;
+      pageOverflowX = overflow;
+      if (latestFrame) deliverFrame(latestFrame);
+    }, (error) => {
+      logger.warn('Surface live stream layout metrics failed', {
+        surfaceSessionId: request.surfaceSessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }, () => this.active?.handle === handle && this.currentPage(request.surfaceSessionId) === page);
     const expiryTimer = setTimeout(() => {
       void this.stopActive('watchdog_expiry');
     }, MAX_STREAM_MS);
@@ -135,6 +151,7 @@ export class SurfaceLiveStreamService {
       conversationId: request.conversationId,
       surfaceSessionId: request.surfaceSessionId,
       handle,
+      overflowProbe,
       page,
       expiryTimer,
       maxWidth: bounds.maxWidth,
@@ -148,6 +165,7 @@ export class SurfaceLiveStreamService {
     });
     if (initial.frame) deliverFrame(initial.frame);
     initial.frame = undefined;
+    await overflowProbe.start();
     return { version: 1, surfaceSessionId: request.surfaceSessionId, streaming: true };
   }
 
@@ -182,6 +200,7 @@ export class SurfaceLiveStreamService {
       sessionState: session?.state,
       reason,
     });
+    await active.overflowProbe.stop();
     await active.handle.stop().catch((error) => {
       logger.warn('Surface live stream teardown failed', {
         conversationId: active.conversationId,
