@@ -5,6 +5,7 @@
   "src/renderer/i18n/en.ts": 3,
   "src/renderer/i18n/knowledgeMemory.ts": 1,
   "src/renderer/i18n/labGpt1.ts": 6,
+  "src/renderer/i18n/localOps.ts": 1,
   "src/renderer/i18n/receiptPresentation.ts": 1,
   "src/renderer/i18n/unsentDraft.ts": 2,
   "src/renderer/i18n/voice.ts": 1
