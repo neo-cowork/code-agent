@@ -10,7 +10,7 @@ import type { MessageAttachment } from '../../../../../shared/contract';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 import { mergeAttachments } from './attachmentDedupe';
-import { notifyAttachmentMerge } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import { collectDroppedAttachmentsAndSkillZips } from './utils';
 
 interface UseDragAndDropOptions {
