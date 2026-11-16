@@ -1,0 +1,27 @@
+{
+  "name": "b 建测试日程 → 批准 → 改 → 批准 → 删 → 批准，跑完删干净（真机，--dev；需日历已授权）",
+  "model": "MiMo v2.6 Flash",
+  "steps": [
+    { "do": "new-session" },
+    { "do": "send", "text": "在日历里建一个日程：标题「neo-drive 测试 ${ts}」，明天下午 3 点开始，时长 30 分钟。" },
+    { "do": "wait-idle", "expect": "needs-user" },
+    { "do": "click", "target": "role=button:/^允许一次/" },
+    { "do": "wait-idle", "expect": "idle", "grace": 10000 },
+    { "do": "send", "text": "把日程「neo-drive 测试 ${ts}」改到明天下午 4 点。" },
+    { "do": "wait-idle", "expect": "needs-user" },
+    { "do": "click", "target": "role=button:/^允许一次/" },
+    { "do": "wait-idle", "expect": "idle", "grace": 10000 },
+    { "do": "send", "text": "删除日程「neo-drive 测试 ${ts}」。" },
+    { "do": "wait-idle", "expect": "needs-user" },
+    { "do": "click", "target": "role=button:/^允许一次/" },
+    { "do": "wait-idle", "expect": "idle", "grace": 10000 },
+    { "do": "shot", "name": "b-after-delete" },
+    { "do": "click", "always": true, "target": "testid=composer-stop-button", "ifVisible": true, "timeout": 2000 },
+    { "do": "wait-idle", "always": true, "grace": 3000 },
+    { "do": "send", "always": true, "text": "查一下日历里从今天起 7 天内还有没有标题以「neo-drive 测试」开头的日程；有就全部删除，最后只回答「已清空」。" },
+    { "do": "wait-idle", "always": true, "grace": 10000 },
+    { "do": "click", "always": true, "target": "role=button:/^允许一次/", "ifVisible": true, "timeout": 2000 },
+    { "do": "wait-idle", "always": true, "expect": "idle", "grace": 10000 },
+    { "do": "wait-text", "always": true, "text": "已清空", "timeout": 30000 }
+  ]
+}

@@ -18,7 +18,6 @@ import { glob as globLib } from 'glob';
 import * as fs from 'fs/promises';
 import { readdir as readdirCb } from 'fs';
 import type { Dirent } from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import type {
   ToolHandler,
@@ -30,6 +29,7 @@ import type {
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { applyPartialToOutput } from '../shell/partialResults';
 import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
@@ -53,19 +53,6 @@ const DEFAULT_IGNORE = [
   '**/coverage/**',
 ];
 type GlobSort = 'path' | 'name' | 'mtime' | 'size';
-
-function expandTilde(filePath: string): string {
-  if (!filePath) return filePath;
-  if (filePath === '~') return os.homedir();
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2));
-  return filePath;
-}
-
-function resolveInputPath(inputPath: string, workingDir: string): string {
-  const expanded = expandTilde(inputPath);
-  if (path.isAbsolute(expanded)) return expanded;
-  return path.join(workingDir, expanded);
-}
 
 function parsePositiveInteger(value: unknown, fallback: number, max: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;

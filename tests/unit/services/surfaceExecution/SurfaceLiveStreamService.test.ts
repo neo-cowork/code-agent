@@ -20,14 +20,15 @@ function buildRuntime(session: Record<string, unknown> | null) {
   return { sessions: { get: () => session } } as never;
 }
 
-function buildAdapter(input: { running?: boolean; hasPage?: boolean } = {}) {
+function buildAdapter(input: { running?: boolean; hasPage?: boolean; page?: { id: string } } = {}) {
   const running = input.running ?? true;
   const hasPage = input.hasPage ?? true;
+  const page = input.page ?? { id: 'page' };
   return {
     findBindingBySurfaceSessionId: () => ({
       browserService: {
         isRunning: () => running,
-        getActiveTab: () => (hasPage ? { id: 'tab-1', page: { id: 'page' } } : null),
+        getActiveTab: () => (hasPage ? { id: 'tab-1', page } : null),
       },
     }),
   } as never;
@@ -121,6 +122,52 @@ describe('SurfaceLiveStreamService（B1-R·R1 帧流归属与生命周期）', (
 
     emitFrame({ base64: 'BBBB', width: 960, height: 600, capturedAtMs: 2 });
     expect(published).toHaveLength(1);
+  });
+
+  it('同一 surface 会话的活动页被换掉（结果页关闭后重新打开）：start 必须重开流，不能沿用死页面上的旧流', async () => {
+    let page = { id: 'page-old' };
+    let running = true;
+    const adapter = {
+      findBindingBySurfaceSessionId: () => ({
+        browserService: {
+          isRunning: () => running,
+          getActiveTab: () => ({ id: 'tab-1', page }),
+        },
+      }),
+    } as never;
+    const service = build({ adapter });
+    await service.start(REQUEST);
+    expect(startPageScreencast).toHaveBeenCalledTimes(1);
+
+    // 窗口死了：旧流还挂在死页面上，此时 start 要报「没在跑」而不是 streaming:true
+    running = false;
+    expect(await service.start(REQUEST)).toMatchObject({ streaming: false, reason: 'not_running' });
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(service.isStreaming('surface-1')).toBe(false);
+
+    // 重新打开：同 surface 会话、新浏览器、新页面
+    running = true;
+    page = { id: 'page-new' };
+    expect(await service.start(REQUEST)).toMatchObject({ streaming: true });
+    expect(startPageScreencast).toHaveBeenCalledTimes(2);
+    expect(startPageScreencast.mock.calls[1][0]).toBe(page);
+    emitFrame({ base64: 'NEW', width: 960, height: 600, capturedAtMs: 7 });
+    expect(published.at(-1)?.dataUrl).toBe('data:image/jpeg;base64,NEW');
+  });
+
+  it('活动页直接被换成新页面（浏览器没停）：同一 start 入口也重开流', async () => {
+    let page = { id: 'page-old' };
+    const adapter = {
+      findBindingBySurfaceSessionId: () => ({
+        browserService: { isRunning: () => true, getActiveTab: () => ({ id: 'tab-1', page }) },
+      }),
+    } as never;
+    const service = build({ adapter });
+    await service.start(REQUEST);
+    page = { id: 'page-new' };
+    expect(await service.start(REQUEST)).toMatchObject({ streaming: true });
+    expect(startPageScreencast).toHaveBeenCalledTimes(2);
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it('重复 start 同一会话不重开流', async () => {

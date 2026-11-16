@@ -222,8 +222,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     );
   }, [currentModels, modelSearch]);
   const providerRows = useMemo(
-    () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers }),
-    [providers, config, providerConfigs, modelText.helpers],
+    () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers, language }),
+    [providers, config, providerConfigs, modelText.helpers, language],
   );
   const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows, defaultSelection.provider), [providerRows, defaultSelection.provider]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
@@ -493,7 +493,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           );
           const promotedModel = providerConfigForSave.model || config.model;
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          toast.success(`${modelText.toast.defaultPromotedPrefix}${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
+          toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedModel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {
@@ -848,7 +848,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     toast.success(modelText.toast.modelAdded);
   }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, markDirty, modelText.toast.modelAdded, modelText.toast.modelIdRequired, onChange]);
 
-  const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
+  const providerTitle = selectedProviderRow?.name || config.provider;
   const providerIconPresets = getProviderIconPresets(config.provider);
   const providerIdentityManaged = isProviderIdentityManaged(currentProviderConfig);
 
