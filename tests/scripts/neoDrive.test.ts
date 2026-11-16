@@ -5,11 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { devSlotBundleId, devSlotDataDirName, devSlotProductName, devSlotWebPort } from '../../src/shared/devSlot';
 import {
   createIdleTracker,
+  createSendTracker,
   devSlotInfo,
   isAtBottom,
   parseArgs,
   parseScenario,
   parseTarget,
+  pickModelOptions,
   preflightScenario,
   readLogsSince,
   runSteps,
@@ -78,6 +80,38 @@ describe('neo-drive 纯逻辑', () => {
     expect(track({ t: 3_100, running: false, cards: [] })).toMatchObject({ done: true, state: 'idle', sawRunning: false });
   });
 
+  it('wait-idle：没有确认过的 send 也没给 grace 时，一直没见到运行中判 never-ran，不当 idle（11-16 真机假通过）', () => {
+    const track = createIdleTracker({ quietMs: 0, startGraceMs: 3_000, requireRunning: true });
+    expect(track({ t: 0, running: false, cards: [] }).done).toBe(false);
+    expect(track({ t: 4_000, running: false, cards: [] })).toEqual({ done: true, state: 'never-ran' });
+    const ran = createIdleTracker({ quietMs: 0, requireRunning: true });
+    expect(feed(ran, [{ t: 0, running: true, cards: [] }, { t: 100, running: false, cards: [] }])).toMatchObject({ state: 'idle', sawRunning: true });
+  });
+
+  it('send：输入框被切走（模型未配置跳到设置页）时判失败并带上提示条，不因「输入框空了」判受理（11-16 真机假通过）', () => {
+    const track = createSendTracker({ baselineMatches: 0, baselineToasts: ['旧提示'], goneMs: 1_000 });
+    const s = { matches: 0, running: false, sendFailed: false };
+    expect(track({ ...s, t: 0, composer: false, toasts: ['旧提示', '当前主任务模型未配置 API Key'] }).done).toBe(false);
+    const r = track({ ...s, t: 1_000, composer: false, toasts: ['旧提示', '当前主任务模型未配置 API Key'] });
+    expect(r).toMatchObject({ done: true, ok: false });
+    expect(r.reason).toContain('当前主任务模型未配置 API Key');
+    expect(r.reason).not.toContain('旧提示');
+  });
+
+  it('send：用户气泡进了列表且见过运行中才算受理；只出现其一不算，超时原因说清缺哪样', () => {
+    const s = { composer: true, sendFailed: false, toasts: [] };
+    const onlyMsg = createSendTracker({ baselineMatches: 1 });
+    expect(onlyMsg({ ...s, t: 0, matches: 1, running: true }).done).toBe(false); // 运行中但列表里还是旧的那条
+    expect(onlyMsg({ ...s, t: 100, matches: 2, running: false }).done).toBe(true); // 前面见过运行中 + 新气泡
+    const noRun = createSendTracker({ baselineMatches: 0 });
+    expect(noRun({ ...s, t: 0, matches: 1, running: false }).done).toBe(false);
+    expect(noRun.timeoutReason()).toContain('一直没进入运行中');
+    const noMsg = createSendTracker({ baselineMatches: 0 });
+    expect(noMsg({ ...s, t: 0, matches: 0, running: false }).done).toBe(false);
+    expect(noMsg.timeoutReason()).toContain('没出现在消息列表里');
+    expect(createSendTracker()({ ...s, t: 0, matches: 1, running: false, sendFailed: true })).toMatchObject({ done: true, ok: false });
+  });
+
   it('wait-idle：新出现的需人卡片立即返回 needs-user，开始前就在的卡不算', () => {
     const track = createIdleTracker({ baselineCards: ['old-card'], seenRunning: true });
     expect(track({ t: 0, running: true, cards: ['old-card'] }).done).toBe(false);
@@ -95,6 +129,20 @@ describe('neo-drive 纯逻辑', () => {
     const track = createIdleTracker({ baselineErrors: ['这个模型用不了'], seenRunning: true, quietMs: 0 });
     expect(track({ t: 0, running: false, cards: [], errors: ['这个模型用不了', '这个模型用不了'] }))
       .toEqual({ done: true, state: 'error', errors: ['这个模型用不了'] });
+  });
+
+  it('select-model：显示名/模型 id 精确匹配，跨服务商同名要「服务商/模型名」才唯一（11-16 真机点错到小米）', () => {
+    const rows = [
+      { label: 'mimo-v2.5-pro', modelId: 'mimo-v2.5-pro', provider: 'TokenRhythm' },
+      { label: 'MiMo v2.5 Pro', modelId: 'mimo-v2.5-pro', provider: '小米 MiMo' },
+      { label: 'MiMo v2.6 Flash', modelId: 'mimo-v2.6-flash', provider: '小米 MiMo' },
+      { label: 'claude-opus-4-8', modelId: 'anthropic/claude-opus-4-8', provider: 'CommonStack Claude' },
+    ];
+    expect(pickModelOptions(rows, 'mimo-v2.5-pro')).toHaveLength(2);
+    expect(pickModelOptions(rows, 'TokenRhythm/mimo-v2.5-pro')).toEqual([rows[0]]);
+    expect(pickModelOptions(rows, 'MiMo v2.6 Flash')).toEqual([rows[2]]);
+    expect(pickModelOptions(rows, 'MiMo v2.6')).toEqual([]); // 不做子串匹配
+    expect(pickModelOptions(rows, 'anthropic/claude-opus-4-8')).toEqual([rows[3]]); // 模型 id 自带 / 时先整串匹配
   });
 
   it('常驻浏览器与命令行显式目标不一致时报冲突，不静默沿用旧目标', () => {
