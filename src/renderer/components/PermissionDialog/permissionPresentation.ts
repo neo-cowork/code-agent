@@ -46,6 +46,15 @@ function isOutsideWorkspace(request: PermissionRequest): boolean {
   return request.boundary?.id === 'file.external_read' || request.boundary?.id === 'file.external_write';
 }
 
+/** Display-only formatting: target identity and permission boundaries stay unchanged. */
+function consequenceFileTarget(request: PermissionRequest, target: string): string {
+  const redacted = redactCredentialText(target);
+  if (!isOutsideWorkspace(request)) return compactFileTarget(redacted);
+  const normalized = redacted.replace(/\\/g, '/');
+  const homeAbbreviated = normalized.replace(/^(?:\/(?:Users|home)\/[^/]+|[a-z]:\/Users\/[^/]+)(?=\/|$)/iu, '~');
+  return formatFilePath(homeAbbreviated);
+}
+
 function isDeletionRequest(request: PermissionRequest): boolean {
   const flags = request.details.commandSecurityFlags ?? [];
   return request.type === 'file_delete'
@@ -148,7 +157,8 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
 
 function fileCountText(count: number | undefined, t: Translations): string {
   if (count === undefined) return '';
-  return t.decisionCard.permission.fileCount.replace('{count}', String(count));
+  const p = t.decisionCard.permission;
+  return (count === 1 ? p.fileCountOne : p.fileCount).replace('{count}', String(count));
 }
 
 /**
@@ -187,7 +197,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   const target = request.details.affectedPath
     || fileTarget(request)
     || parsedRmTargets.targets[0];
-  const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
+  const safeTarget = target ? consequenceFileTarget(request, target) : undefined;
   const deletion = isDeletionRequest(request);
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
   const writeCount = request.details.affectedFileCount ?? (safeTarget ? 1 : undefined);
@@ -225,6 +235,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceNetwork.replace('{target}', redactCredentialText(endpoint));
   }
   if (request.type === 'file_write' || request.type === 'file_edit') {
+    if (request.details.targetKind === 'absent') return undefined;
     return p.consequenceWrite
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));

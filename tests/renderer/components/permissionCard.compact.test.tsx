@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { resolveFileTargetKind } from '../../../src/host/permissions/fileTargetKind';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { PermissionRequest } from '../../../src/shared/contract';
@@ -133,6 +137,31 @@ describe('PermissionCard quiet face', () => {
     expect(screen.getByTestId('user-request-quote')).toBeTruthy();
   });
 
+  it('host stat proves new workspace file has no consequence; existing/outside keep one without internal paths', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'quiet-new-file-'));
+    const target = path.join(dir, 'contract-notes.md');
+    const quoted = { text: 'Save the contract key points', truncated: false };
+    try {
+      const fresh = renderRequest({ ...internalWrite, details: { path: target, targetKind: resolveFileTargetKind(target), userRequest: quoted } });
+      expect(screen.queryAllByTestId('permission-consequence')).toHaveLength(0);
+      expect(screen.getByTestId('permission-card-face').textContent).not.toContain('/Users/');
+      expect(screen.getByTestId('permission-card-face').textContent).toContain('允许写入 contract-notes.md？');
+      expect(screen.getByTestId('user-request-quote').textContent).toContain(quoted.text);
+      expect(within(screen.getByTestId('permission-card-face')).getAllByRole('button')).toHaveLength(2);
+      fresh.unmount();
+      writeFileSync(target, 'Existing notes');
+      const existing = renderRequest({ ...internalWrite, details: { path: target, targetKind: resolveFileTargetKind(target) } });
+      expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
+      expect(screen.getByTestId('permission-consequence').textContent).toContain('contract-notes.md');
+      expect(screen.getByTestId('permission-card-face').textContent).not.toContain(dir);
+      existing.unmount();
+      renderRequest({ ...externalWrite, details: { path: '/Users/example/Documents/contract-notes.md', targetKind: 'absent' } });
+      expect(screen.getAllByTestId('permission-consequence')).toHaveLength(1);
+      expect(screen.getByTestId('permission-consequence').textContent).toContain('~/Documents/contract-notes.md');
+      expect(screen.getByTestId('permission-card-face').textContent).not.toContain('/Users/');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it.each([
     [internalWrite, 1],
     [externalWrite, 1],
@@ -172,7 +201,7 @@ describe('PermissionCard quiet face', () => {
 
   it('deletion has one consequence and safe primary, but hides the raw command', () => {
     renderRequest(dangerousCommand);
-    expect(screen.getByTestId('permission-consequence').textContent).toBe('将永久删除 /workspace/dist（约 312 个文件），不进回收站。');
+    expect(screen.getByTestId('permission-consequence').textContent).toBe('将永久删除 dist（约 312 个文件），不进回收站。');
     expect(screen.queryByText('rm -rf ./dist')).toBeNull();
     expect(screen.getByRole('button', { name: '暂不' }).className).toContain('from-primary-800');
     expect(screen.getByRole('button', { name: '允许' }).className).toContain('border-red-500/50');
