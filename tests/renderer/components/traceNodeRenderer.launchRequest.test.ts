@@ -154,9 +154,10 @@ describe('TraceNodeRenderer launch request', () => {
     expect(html).toContain('启动团队');
     expect(html).toContain('批准 3 个成员启动？');
     expect(html).toContain('准备启动 3 个 agent');
-    expect(html).toContain('启动');
-    expect(html).toContain('取消');
-    expect(html).toContain('取消');
+    // 选项按钮本身：标题「启动团队」也含「启动」，所以按选项标签精确断言
+    expect(html).toContain('<div class="font-medium text-zinc-200 text-sm">启动</div>');
+    expect(html).toContain('<div class="font-medium text-zinc-200 text-sm">取消</div>');
+    expect(html).toContain('取消这次启动');
     expect(html).toContain('允许');
     // 重型形态退役：不展开 per-task 工具/依赖列表
     expect(html).not.toContain('依赖 task-builder');

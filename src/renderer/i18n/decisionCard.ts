@@ -180,7 +180,6 @@ export const decisionCardZh = {
         redaction: '脱敏',
       },
       expiredHint: '这次审批已超时，模型侧已按自动拒绝处理。',
-      tellModelContinue: '继续执行',
       // N-WRITEBACK-EDIT：写回类工具的专属呈现与「修改后发送」编辑态
       writeback: {
         mailSendTitle: '发送邮件',
@@ -494,7 +493,6 @@ export const decisionCardEn: typeof decisionCardZh = {
         redaction: 'Redaction',
       },
       expiredHint: 'This approval timed out and was auto-denied.',
-      tellModelContinue: 'Tell the model to continue',
       writeback: {
         mailSendTitle: 'Send email',
         outboundMaskedNote: 'Sensitive information removed. […hidden] markers in the email are masked content, and recipients will see them the same way.',

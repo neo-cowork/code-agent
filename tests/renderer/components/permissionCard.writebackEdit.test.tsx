@@ -462,7 +462,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.getByTestId('writeback-view-title').textContent).toBe('F 真机测试');
     expect(screen.getByTestId('writeback-view-start_ms').textContent).not.toBe('');
     expect(screen.getByTestId('calendar-delete-note')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /改一改/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /修改后/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /^删除/ }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'permission-calendar-delete', 'allow', 'request-session',
