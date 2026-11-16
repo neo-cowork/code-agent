@@ -347,14 +347,14 @@ describe('RoleFirstWakeCard', () => {
     const card = await screen.findByTestId('role-created-direct-card');
     expect(card.textContent?.match(/日历助理AB12/g)).toHaveLength(1);
     expect(screen.getByText('已创建')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '改一改' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '修改' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '删除' })).toBeTruthy();
     expect(screen.getByText('能做')).toBeTruthy();
     expect(screen.getByText('每天盯日程，提醒冲突和临近的会议')).toBeTruthy();
     expect(screen.getByText('不会')).toBeTruthy();
     expect(screen.getByText('新建、修改或删除日历事件')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: '改一改' }));
+    fireEvent.click(screen.getByRole('button', { name: '修改' }));
     expect(startEditRoleChat).toHaveBeenCalledWith('日历助理AB12');
 
     invokeDomain.mockClear();
@@ -368,7 +368,7 @@ describe('RoleFirstWakeCard', () => {
       'deleteRole',
       { roleId: '日历助理AB12' },
     ));
-    await waitFor(() => expect(screen.queryByRole('button', { name: '改一改' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: '修改' })).toBeNull());
 
     invokeDomain.mockClear();
     await act(async () => {
@@ -379,7 +379,7 @@ describe('RoleFirstWakeCard', () => {
       'restoreDeletedRole',
       { trashId: 'trash-direct' },
     ));
-    await waitFor(() => expect(screen.getByRole('button', { name: '改一改' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: '修改' })).toBeTruthy());
     expect(useAppStore.getState().expertDetailRoleId).toBeNull();
   });
 

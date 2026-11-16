@@ -27,7 +27,7 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../../../src/host/services/agentEngine/agentEngineEventSink', () => ({ emitExternalAgentEvent: () => undefined }));
 vi.mock('../../../../src/host/permissions/envAssist/settingsPane', () => ({ canOpenEnvSettings: () => true, openEnvSettings: vi.fn(async () => true) }));
 vi.mock('../../../../src/host/permissions/envAssist/shellBridge/client', () => ({
-  canRequestEnvGrant: () => true,
+  canRequestEnvGrant: async () => true,
   resolveShellBridgeClientFromEnv: () => (store.bridge ? {} : null),
 }));
 vi.mock('../../../../src/host/permissions/envAssist/probes/shellPassiveBridge', () => ({ createShellPassiveBridge: () => store.bridge }));

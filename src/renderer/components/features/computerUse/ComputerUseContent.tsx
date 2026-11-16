@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   AlertTriangle,
-  AppWindow,
   Circle,
   Eye,
   Loader2,
@@ -10,7 +9,6 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  SquareMousePointer,
   ZapOff,
 } from 'lucide-react';
 import {
@@ -36,7 +34,6 @@ import {
   describeComputerUseFailures,
   getNativePermissionStatus,
   type ComputerUseFailureExplanation,
-  type ComputerUseTarget,
 } from '../../../utils/computerUseWorkbench';
 import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
 import {
@@ -50,34 +47,14 @@ import {
   subscribeComputerUseSnapshot,
   setComputerUseSnapshot,
 } from '../../../stores/computerUseStore';
-
-type StatusTone = 'ready' | 'blocked' | 'warning' | 'neutral';
-
-interface ElementCandidate {
-  id: string;
-  role: string;
-  label: string;
-  axPath: string | null;
-  enabled: boolean | null;
-}
-
-function formatTime(value?: number | null): string {
-  if (!value || !Number.isFinite(value)) return '未知';
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function statusToneClass(tone: StatusTone): string {
-  switch (tone) {
-    case 'ready':
-      return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
-    case 'blocked':
-      return 'border-badge-danger/30 bg-badge-danger text-badge-danger';
-    case 'warning':
-      return 'border-badge-warning/30 bg-badge-warning text-badge-warning';
-    default:
-      return 'border-zinc-700/60 bg-zinc-800/70 text-zinc-400';
-  }
-}
+import { useI18n } from '../../../hooks/useI18n';
+import {
+  ComputerUseDiagnostics,
+  StatusPill,
+  toElementCandidates,
+  statusToneClass,
+  type StatusTone,
+} from './ComputerUseDiagnostics';
 
 function permissionTone(permission: NativePermissionStatus | null): StatusTone {
   if (!permission) return 'warning';
@@ -105,63 +82,9 @@ function permissionLabel(permission: NativePermissionStatus | null): string {
   }
 }
 
-function firstString(record: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return null;
-}
-
-function toElementCandidates(result: ComputerSurfaceElementsResult | null): ElementCandidate[] {
-  const metadata = result?.metadata;
-  const raw = metadata?.elements || metadata?.candidates;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-
-  return raw.slice(0, 16).map((item, index) => {
-    const record = item && typeof item === 'object' && !Array.isArray(item)
-      ? item as Record<string, unknown>
-      : {};
-    const role = firstString(record, ['role', 'subrole', 'type']) || 'AXElement';
-    const label =
-      firstString(record, ['name', 'title', 'label', 'description', 'text', 'value'])
-      || firstString(record, ['selector'])
-      || '未命名元素';
-    const axPath = firstString(record, ['axPath', 'path']);
-    const enabled = typeof record.enabled === 'boolean' ? record.enabled : null;
-    const indexValue = typeof record.index === 'number' ? record.index : index + 1;
-    return {
-      id: `${axPath || role}-${indexValue}`,
-      role,
-      label,
-      axPath,
-      enabled,
-    };
-  });
-}
-
 function extractMetadataNumber(result: ComputerSurfaceElementsResult | null, key: string): number | null {
   const value = result?.metadata?.[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function targetSourceLabel(source: ComputerUseTarget['source']): string {
-  switch (source) {
-    case 'frontmost':
-      return '前台';
-    case 'surface':
-      return 'Surface';
-    case 'approved':
-      return '已批准';
-    case 'denied':
-      return '已拒绝';
-    default:
-      return '最近';
-  }
 }
 
 function failureToneClass(tone: ComputerUseFailureExplanation['tone']): string {
@@ -169,12 +92,6 @@ function failureToneClass(tone: ComputerUseFailureExplanation['tone']): string {
   if (tone === 'warning') return 'border-badge-warning/20 bg-badge-warning text-badge-warning';
   return 'border-zinc-700/60 bg-zinc-900/60 text-zinc-300';
 }
-
-const StatusPill: React.FC<{ label: string; tone: StatusTone }> = ({ label, tone }) => (
-  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${statusToneClass(tone)}`}>
-    {label}
-  </span>
-);
 
 const BoundaryCard: React.FC<{
   icon: React.ReactNode;
@@ -199,17 +116,17 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
     ready: false,
     background: false,
     approvalScope: 'blocked',
-    safetyNote: 'Web 模式没有 native desktop bridge；这里仅展示 Computer Use 的能力边界和降级原因。',
+    safetyNote: '网页版读不到桌面状态；这里只说明电脑操作的能力范围和不可用的原因。',
     targetApp: null,
-    blockedReason: 'Tauri runtime not available',
+    blockedReason: '网页版里无法读取桌面状态',
     approvedApps: [],
     deniedApps: [],
     lastAction: null,
     lastSnapshot: null,
     failureKind: 'evidence_unavailable',
-    blockingReasons: ['Tauri runtime not available'],
+    blockingReasons: ['网页版里无法读取桌面状态'],
     recommendedAction: '在桌面壳中打开后再读取窗口、截图和 AX evidence。',
-    evidenceSummary: ['Web mode: native desktop evidence unavailable'],
+    evidenceSummary: ['网页版里读不到桌面信息'],
     axQuality: null,
   };
 }
@@ -459,7 +376,12 @@ export const ComputerUseContent: React.FC = () => {
   }, [loadElements, selectedTargetApp]);
 
   const actionSummary = useMemo(() => buildRecentComputerUseAction(surface), [surface]);
-  const elementCandidates = useMemo(() => toElementCandidates(elementsResult), [elementsResult]);
+  const { t } = useI18n();
+  const copy = t.localOps.computerUse;
+  const elementCandidates = useMemo(
+    () => toElementCandidates(elementsResult, copy.diag.unnamedElement),
+    [elementsResult, copy.diag.unnamedElement],
+  );
   const screenPermission = getNativePermissionStatus(permissionSnapshot, 'screenCapture');
   const accessibilityPermission = getNativePermissionStatus(permissionSnapshot, 'accessibility');
   const failureExplanations = useMemo(
@@ -489,14 +411,6 @@ export const ComputerUseContent: React.FC = () => {
     ],
   );
 
-  const providerTone: StatusTone = desktopProviderError
-    ? 'blocked'
-    : surface?.ready
-      ? 'ready'
-      : surface
-        ? 'warning'
-        : 'neutral';
-  const nativeTone: StatusTone = nativeAvailable ? 'ready' : 'warning';
   const axQuality = elementsResult?.metadata?.axQuality && typeof elementsResult.metadata.axQuality === 'object'
     ? elementsResult.metadata.axQuality as { grade?: string; elementCount?: number; reasons?: string[] }
     : surface?.axQuality || null;
@@ -519,7 +433,7 @@ export const ComputerUseContent: React.FC = () => {
       || surface?.targetApp
       || observation?.snapshot?.appName
       || frontmost?.appName
-      || 'current app';
+      || copy.currentApp;
     return {
       id: actionSummary?.trace.id || 'computer-surface-pointer-preview',
       surface: 'computer',
@@ -537,6 +451,7 @@ export const ComputerUseContent: React.FC = () => {
     actionSummary?.trace.failureKind,
     actionSummary?.trace.agentPointerEvent,
     actionSummary?.trace.id,
+    copy.currentApp,
     frontmost?.appName,
     livePointer.event,
     livePointer.lastEvent,
@@ -551,13 +466,12 @@ export const ComputerUseContent: React.FC = () => {
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          正在读取 Computer Surface
+          {copy.loading}
         </div>
       ) : (
         <div className="flex flex-1 min-h-0">
           <div className="w-[300px] shrink-0 border-r border-zinc-800 p-4 overflow-y-auto">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <StatusPill label="诊断" tone="neutral" />
+            <div className="mb-3 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -568,63 +482,22 @@ export const ComputerUseContent: React.FC = () => {
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
               >
                 {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                刷新
+                {copy.refresh}
               </button>
             </div>
             <div className="space-y-3">
               <BoundaryCard
                 icon={<Eye className="h-4 w-4" />}
-                title="只读查看"
-                detail="当前页会读取权限、可操作的窗口和元素，以及最近的操作记录。"
+                title={copy.readTitle}
+                detail={copy.readDetail}
                 tone="ready"
               />
               <BoundaryCard
                 icon={<ZapOff className="h-4 w-4" />}
-                title="执行动作"
-                detail="点击、输入、拖拽、多步 GUI 自动化没有在这个入口开放。真实动作仍走现有 tool permission 和确认链路。"
+                title={copy.actTitle}
+                detail={copy.actDetail}
                 tone="warning"
               />
-            </div>
-
-            <div className="mt-5 space-y-2">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Provider</div>
-              <div className="space-y-2">
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-zinc-200">Native Desktop</span>
-                    <StatusPill label={nativeAvailable ? 'Tauri 可用' : 'Web 降级'} tone={nativeTone} />
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {capabilities
-                      ? `${capabilities.platform} · ${capabilities.phase}`
-                      : '没有 native bridge 时，系统权限和前台窗口只能降级展示。'}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-zinc-200">Computer Surface</span>
-                    <StatusPill
-                      label={surface?.mode || (desktopProviderError ? '不可用' : '未知')}
-                      tone={providerTone}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {surface?.safetyNote || desktopProviderError || '等待 surface state。'}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-zinc-200">Activity Collector</span>
-                    <StatusPill
-                      label={collectorStatus?.running ? '采集中' : collectorStatus ? '已停止' : '未知'}
-                      tone={collectorStatus?.running ? 'ready' : collectorStatus ? 'warning' : 'neutral'}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    只作为 app/window 候选来源，不等同于 Computer Use 授权。
-                  </p>
-                </div>
-              </div>
             </div>
 
             <div className="mt-5 space-y-2">
@@ -637,7 +510,7 @@ export const ComputerUseContent: React.FC = () => {
                   <StatusPill label={permissionLabel(accessibilityPermission)} tone={permissionTone(accessibilityPermission)} />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                  {accessibilityPermission?.detail || 'Agent Neo 通过辅助功能权限读取 AX 树并替你操作应用。'}
+                  {accessibilityPermission?.detail || copy.accessibilityHint}
                   {accessibilityPermission?.status !== 'granted' && (
                     <span className="text-zinc-400">授权弹窗会显示 <span className="text-zinc-200">Agent Neo Computer Use</span>。</span>
                   )}
@@ -664,7 +537,7 @@ export const ComputerUseContent: React.FC = () => {
                   />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                  默认 AX 树模式无需录屏；仅当需要截图做视觉消歧时再开启。
+                  {copy.screenHint}
                 </p>
                 {screenPermission?.status !== 'granted' && nativeAvailable && (
                   <button
@@ -684,7 +557,7 @@ export const ComputerUseContent: React.FC = () => {
                   <StatusPill label="按 app 单独授权" tone="warning" />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                  Apple Events 权限按目标 app 触发，当前 bridge 不提供全局状态；浏览器 URL/title 读取会按目标 app 降级。
+                  {copy.automationHint}
                 </p>
               </div>
             </div>
@@ -693,119 +566,6 @@ export const ComputerUseContent: React.FC = () => {
           <div className="flex-1 min-w-0 overflow-y-auto">
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-4 p-5">
               <div className="space-y-4">
-                <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
-                  <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <AppWindow className="h-4 w-4 text-badge-info" />
-                      <h3 className="text-sm font-medium text-zinc-200">App / Window 候选</h3>
-                    </div>
-                    <span className="text-[11px] text-zinc-500">{targets.length} 个候选</span>
-                  </div>
-                  {targets.length === 0 ? (
-                    <div className="p-6 text-sm text-zinc-500">
-                      没有拿到 frontmost context、recent activity 或 approved app。Web 模式和无 provider 场景会落到这里。
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-zinc-800/80">
-                      {targets.map((target) => {
-                        const selected = target.appName === selectedTargetApp;
-                        return (
-                          <button
-                            key={target.id}
-                            type="button"
-                            onClick={() => setSelectedTargetApp(target.appName)}
-                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
-                              selected ? 'bg-badge-info' : 'hover:bg-zinc-800/40'
-                            }`}
-                          >
-                            <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                              selected ? 'bg-badge-info text-badge-info' : 'bg-zinc-800 text-zinc-500'
-                            }`}>
-                              <AppWindow className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="truncate text-sm font-medium text-zinc-200">{target.appName}</span>
-                                <span className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-500">
-                                  {targetSourceLabel(target.source)}
-                                </span>
-                              </div>
-                              <div className="mt-1 truncate text-xs text-zinc-500">
-                                {target.windowTitle || target.bundleId || '没有窗口标题'}
-                              </div>
-                            </div>
-                            <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(target.capturedAtMs)}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
-                  <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <SquareMousePointer className="h-4 w-4 text-badge-success" />
-                      <h3 className="text-sm font-medium text-zinc-200">AX Tree / 可操作元素</h3>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!selectedTargetApp || elementsLoading}
-                      onClick={() => void loadElements(selectedTargetApp)}
-                      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
-                    >
-                      {elementsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                      重新读取
-                    </button>
-                  </div>
-                  <div className="border-b border-zinc-800/80 px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusPill
-                        label={selectedTargetApp || '未选择 app'}
-                        tone={selectedTargetApp ? 'neutral' : 'warning'}
-                      />
-                      {axQuality?.grade && (
-                        <StatusPill
-                          label={`AX ${axQuality.grade}`}
-                          tone={axQuality.grade === 'good' ? 'ready' : axQuality.grade === 'usable' ? 'warning' : 'blocked'}
-                        />
-                      )}
-                      <StatusPill
-                        label={`${metadataElementCount ?? elementCandidates.length} elements`}
-                        tone={elementCandidates.length > 0 ? 'ready' : elementsError ? 'blocked' : 'neutral'}
-                      />
-                    </div>
-                    {Array.isArray(axQuality?.reasons) && axQuality.reasons.length > 0 && (
-                      <p className="mt-2 text-xs text-badge-warning">{axQuality.reasons.slice(0, 2).join('；')}</p>
-                    )}
-                    {elementsError && (
-                      <p className="mt-2 text-xs text-badge-danger">{elementsError}</p>
-                    )}
-                  </div>
-                  {elementsLoading ? (
-                    <div className="flex items-center justify-center p-6 text-sm text-zinc-500">
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      正在读取可操作的元素
-                    </div>
-                  ) : elementCandidates.length === 0 ? (
-                    <div className="p-6 text-sm text-zinc-500">
-                      没有可展示元素。常见原因是 Accessibility 未授权、目标窗口不可读、Electron/CEF/WKWebView 只暴露容器，或目标 app 当前不在可访问状态。
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-zinc-800/80">
-                      {elementCandidates.map((candidate) => (
-                        <div key={candidate.id} className="grid grid-cols-[120px_minmax(0,1fr)_110px] gap-3 px-4 py-2.5 text-xs">
-                          <span className="truncate font-mono text-zinc-500">{candidate.role}</span>
-                          <span className="truncate text-zinc-200">{candidate.label}</span>
-                          <span className="truncate text-right font-mono text-zinc-600">
-                            {candidate.axPath || (candidate.enabled === false ? 'disabled' : 'no axPath')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
                     <AlertTriangle className="h-4 w-4 text-badge-warning" />
@@ -823,6 +583,24 @@ export const ComputerUseContent: React.FC = () => {
                     ))}
                   </div>
                 </section>
+
+                <ComputerUseDiagnostics
+                  nativeAvailable={nativeAvailable}
+                  capabilities={capabilities}
+                  surface={surface}
+                  collectorStatus={collectorStatus}
+                  desktopProviderError={desktopProviderError}
+                  observeError={observeError}
+                  targets={targets}
+                  selectedTargetApp={selectedTargetApp}
+                  onSelectTarget={setSelectedTargetApp}
+                  elementCandidates={elementCandidates}
+                  elementCount={metadataElementCount ?? elementCandidates.length}
+                  elementsLoading={elementsLoading}
+                  elementsError={elementsError}
+                  axQuality={axQuality}
+                  onReloadElements={() => void loadElements(selectedTargetApp)}
+                />
               </div>
 
               <aside className="space-y-4">
@@ -832,16 +610,16 @@ export const ComputerUseContent: React.FC = () => {
                     <h3 className="text-sm font-medium text-zinc-200">能力边界</h3>
                   </div>
                   <div className="space-y-2 p-4 text-xs leading-relaxed text-zinc-400">
-                    <p>只读：权限、前台窗口、最近活动、可操作的元素、最近的操作记录。</p>
-                    <p>真实可执行：本页只有刷新和读取候选；不触发点击、输入、拖拽、快捷键或跨 app 流程。</p>
-                    <p>执行链路：现有 `computer_use` 工具、permission dialog、action preview 和 desktop IPC 继续负责动作。</p>
+                    <p>{copy.boundarySeen}</p>
+                    <p>{copy.boundaryPage}</p>
+                    <p>{copy.boundaryFlow}</p>
                   </div>
                 </section>
 
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
                     <MousePointerClick className="h-4 w-4 text-badge-info" />
-                    <h3 className="text-sm font-medium text-zinc-200">最近一次 Tool Call</h3>
+                    <h3 className="text-sm font-medium text-zinc-200">{copy.lastActionTitle}</h3>
                   </div>
                   {actionSummary?.preview ? (
                     <div className="space-y-3 p-4">
@@ -873,15 +651,14 @@ export const ComputerUseContent: React.FC = () => {
                     </div>
                   ) : (
                     <div className="p-4 text-sm text-zinc-500">
-                      还没有 Computer Surface action trace。执行过 `computer_use.get_state / observe / get_ax_elements` 后会在这里显示风险摘要。
+                      {copy.lastActionEmpty}
                     </div>
                   )}
                 </section>
 
                 <AgentPointerPreviewCard
                   event={pointerPreview}
-                  title="Agent pointer"
-                  detail="Desktop actions use the same visible pointer in trace rows, screenshots, and this Surface panel."
+                  detail={t.localOps.pointer.computerDetail}
                   live={livePointer.isLive || !livePointer.lastEvent}
                 />
                 <AgentPointerTimelineList entries={livePointer.timeline} />
@@ -900,21 +677,6 @@ export const ComputerUseContent: React.FC = () => {
                       <span className="shrink-0">窗口</span>
                       <span className="min-w-0 text-right text-zinc-200">{observation?.snapshot?.windowTitle || frontmost?.windowTitle || '未知'}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Surface ready</span>
-                      <span className={surface?.ready ? 'text-badge-success' : 'text-badge-warning'}>
-                        {surface?.ready ? 'yes' : 'no / unknown'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Approval scope</span>
-                      <span className="text-zinc-200">{surface?.approvalScope || 'unknown'}</span>
-                    </div>
-                    {surface?.evidenceSummary?.slice(0, 3).map((line) => (
-                      <div key={line} className="rounded border border-zinc-800 bg-zinc-900/60 p-2 text-zinc-500">
-                        {line}
-                      </div>
-                    ))}
                   </div>
                 </section>
               </aside>

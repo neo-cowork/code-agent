@@ -72,27 +72,15 @@
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
-    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
+    "file": "src/renderer/components/features/computerUse/ComputerUseDiagnostics.tsx",
     "rule": "uuid",
-    "sample": "{target.windowTitle || target.bundleId || '没有窗口标题'}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
-  },
-  {
-    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
-    "rule": "internal_tool_name",
-    "sample": "执行链路：现有 `computer_use` 工具、permission dialog、action preview 和 desktop IPC 继续负责动作。",
+    "sample": "{target.windowTitle || target.bundleId || diag.noWindowTitle}",
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
     "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
     "rule": "uuid",
     "sample": "{actionSummary.trace.id}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
-  },
-  {
-    "file": "src/renderer/components/features/computerUse/ComputerUseContent.tsx",
-    "rule": "internal_tool_name",
-    "sample": "还没有 Computer Surface action trace。执行过 `computer_use.get_state / observe / get_ax_elements` 后会在这里显示风险摘要。",
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
@@ -514,5 +502,26 @@
     "rule": "raw_json",
     "sample": "{typeof displayRaw === 'string' ? displayRaw : JSON.stringify(displayRaw, null, 2)}",
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
+  },
+  {
+    "file": "src/host/services/sessionAutomation/sessionAutomationService.ts",
+    "rule": "raw_id_interpolation",
+    "sample": "`${input.event}:${record.id}:${input.resultSessionId ?? record.updatedAt}`",
+    "reason": "N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY",
+    "detail": "Non-display event deduplication key (fourth writeAutomationMessage argument), never message content; N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY."
+  },
+  {
+    "file": "src/shared/i18n/subagentLeftoverShells.ts",
+    "rule": "raw_id_interpolation",
+    "sample": "`- \\`${item.commandSummary}\\`（任务 ${item.taskId}，已运行 ${durationText(item.elapsedMs, locale)}）。仍在运行，可手动停止。`",
+    "reason": "N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY",
+    "detail": "Existing leftover-shell cleanup report outside this ticket’s three exits; retained for task-specific manual stop. Tracked sibling of N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY, not a new-copy precedent."
+  },
+  {
+    "file": "src/shared/i18n/subagentLeftoverShells.ts",
+    "rule": "raw_id_interpolation",
+    "sample": "`- \\`${item.commandSummary}\\` (task ${item.taskId}, running ${durationText(item.elapsedMs, locale)}). Still running — can be stopped manually.`",
+    "reason": "N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY",
+    "detail": "Existing English leftover-shell cleanup report outside this ticket’s three exits; retained for task-specific manual stop. Tracked sibling of N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY, not a new-copy precedent."
   }
 ]

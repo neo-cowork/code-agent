@@ -33,7 +33,7 @@ export async function publishEnvAssistToolNotice(input: {
   // Screen recording / accessibility must be toggled in Settings anyway (macOS shows the screen-recording dialog only once ever).
   // Calendar (EventKit) can tell too: undecided shows the dialog, refused opens Settings (calendarGrant.askCalendarFromClick).
   else if (notice.action?.payload && 'pane' in notice.action.payload
-    && (notice.action.payload.pane === 'automation' || notice.action.payload.pane === 'calendars') && canRequestEnvGrant()) {
+    && (notice.action.payload.pane === 'automation' || notice.action.payload.pane === 'calendars') && await canRequestEnvGrant()) {
     notice.action.kind = 'request_grant';
   }
   input.result.error = [
