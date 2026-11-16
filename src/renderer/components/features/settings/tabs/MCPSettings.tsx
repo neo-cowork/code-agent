@@ -52,7 +52,10 @@ import {
   getWorkbenchCapabilityStatusPresentation,
   getWorkbenchCapabilityTitle,
 } from '../../../../utils/workbenchPresentation';
-import { getConnectorCardPresentation } from '../../../../utils/connectorCardPresentation';
+import {
+  countConnectedMcpServers,
+  getConnectorCardPresentation,
+} from '../../../../utils/connectorCardPresentation';
 import type { WorkbenchMcpRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import {
   findWorkbenchCapabilityHistoryItem,
@@ -158,9 +161,10 @@ export const MCPSettings: React.FC = () => {
     () => activeSheetTarget ? findWorkbenchCapabilityHistoryItem(history, activeSheetTarget) : null,
     [activeSheetTarget, history],
   );
+  const installingServerIds = useMemo(() => new Set(
+    Object.keys(serverInstallStates).filter((serverId) => serverInstallStates[serverId] === 'installing'),
+  ), [serverInstallStates]);
   const serverSummary = useMemo(() => {
-    const connectedCount = mcpStatus?.connectedServers.length
-      ?? mcpServers.filter((server) => server.lifecycle.connectionState === 'connected').length;
     const toolCount = mcpStatus?.toolCount
       ?? mcpServers.reduce((sum, server) => sum + server.toolCount, 0);
     const resourceCount = mcpStatus?.resourceCount
@@ -172,13 +176,13 @@ export const MCPSettings: React.FC = () => {
 
     return {
       total: mcpServers.length,
-      connected: connectedCount,
+      connected: countConnectedMcpServers(mcpServers, installingServerIds),
       enabled: mcpServers.filter((server) => server.enabled).length,
       attention: attentionCount,
       tools: toolCount,
       resources: resourceCount,
     };
-  }, [mcpServers, mcpStatus]);
+  }, [installingServerIds, mcpServers, mcpStatus]);
   const visibleMcpServers = useMemo(() => {
     // cua-driver 是当前桌面操作底座；argus 仅在 cua-driver 未注册时作为旧底座回退。
     // 两者在主网格表达同一个用户能力，管理员诊断表仍保留全部真实服务。
@@ -189,6 +193,10 @@ export const MCPSettings: React.FC = () => {
       && (!COMPUTER_USE_SERVER_IDS.has(server.id) || server.id === computerUseServer?.id)
     ));
   }, [mcpServers]);
+  const visibleServerSummary = useMemo(() => ({
+    total: visibleMcpServers.length,
+    connected: countConnectedMcpServers(visibleMcpServers, installingServerIds),
+  }), [installingServerIds, visibleMcpServers]);
   const localMcpServers = useMemo(
     () => visibleMcpServers.filter((server) => LOCAL_MCP_SERVER_IDS.has(server.id)),
     [visibleMcpServers],
@@ -553,8 +561,8 @@ export const MCPSettings: React.FC = () => {
         ) : undefined}
       >
         <div className="text-xs text-zinc-500">
-          {mcpText.grid.connectedSummaryPrefix}{serverSummary.connected}
-          {mcpText.grid.connectedSummaryMiddle}{serverSummary.total}{mcpText.grid.connectedSummarySuffix}
+          {mcpText.grid.connectedSummaryPrefix}{visibleServerSummary.connected}
+          {mcpText.grid.connectedSummaryMiddle}{visibleServerSummary.total}{mcpText.grid.connectedSummarySuffix}
         </div>
 
         {message && (
