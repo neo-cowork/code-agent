@@ -652,7 +652,8 @@ export function PermissionCard({
               {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
             </p>
           ) : null}
-          <UserRequestQuote details={request.details} labels={p} />
+          {/* 写回卡已逐项列出要写的字段，再引述用户原话是重复（N-FIX-APPROVAL-CARD-COPY-ODD 决策 B）；定时任务来源照常显示 */}
+          <UserRequestQuote details={editable ? { ...request.details, userRequest: undefined } : request.details} labels={p} />
           <RequestDetails request={request} />
         </>
       }
