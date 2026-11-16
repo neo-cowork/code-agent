@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sandboxDeniedWritePath,
   sandboxDeniedWriteCreatesDirectory,
+  diagnoseBashFailure,
 } from '../../../../src/host/tools/shell/sandboxFailureDiagnostics';
 
 // Fixtures below are raw stderr pasted verbatim from real seatbelt denials
@@ -406,5 +407,86 @@ describe('sandboxDeniedWritePath', () => {
     expect(sandboxDeniedWritePath('chmod: Unable to change file mode on /x: No such file or directory')).toBeUndefined();
     expect(sandboxDeniedWritePath("chmod: changing permissions of '/x': Read-only file system")).toBeUndefined();
     expect(sandboxDeniedWritePath('chmod: Unable to change file mode on foo: Operation not permitted')).toBeUndefined();
+  });
+});
+
+// Raw stderr from the in-repo real fixtures (screenshotFailureCause / appleScriptFailure tests)
+// plus the osascript accessibility strings from the user reports.
+const SCREENCAPTURE_DENIED = 'could not create image from display';
+const AUTOMATION_DENIED = 'execution error: Not authorized to send Apple events to "Safari". (-1743)';
+const ACCESSIBILITY_1719 = 'execution error: System Events got an error: osascript is not allowed assistive access. (-1719)';
+const ACCESSIBILITY_25211 = 'osascript: error: not allowed assistive access (-25211)';
+const ACCESSIBILITY_1002 = 'execution error: System Events got an error: osascript is not allowed to send keystrokes. (1002)';
+const ACCESSIBILITY_1002_CODE = 'execution error: osascript is not allowed to send keystrokes. (-1002)';
+
+describe('diagnoseBashFailure TCC privacy hint', () => {
+  const run = (command: string, stderr: string, over: { platform?: string; env?: Record<string, string> } = {}) =>
+    diagnoseBashFailure({ command, stderr, code: 1, platform: over.platform ?? 'darwin', env: over.env ?? {} });
+
+  it('screencapture refusal names Screen Recording and a Neo restart', () => {
+    const lines = run('screencapture -x /tmp/a.png', SCREENCAPTURE_DENIED);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('「系统设置 > 隐私与安全性 > 屏幕录制」打开 Neo');
+    expect(lines[0]).toContain('重启 Neo');
+  });
+
+  it('-1743 names Automation and is not classed as Screen Recording', () => {
+    const lines = run('osascript -e x', AUTOMATION_DENIED);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('隐私与安全性 > 自动化」打开 Neo');
+    expect(lines[0]).not.toContain('屏幕录制');
+  });
+
+  it.each([ACCESSIBILITY_1719, ACCESSIBILITY_25211, ACCESSIBILITY_1002, ACCESSIBILITY_1002_CODE])(
+    'accessibility refusal names Accessibility, never osascript: %s',
+    (stderr) => {
+      const lines = run('osascript -e x', stderr);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('隐私与安全性 > 辅助功能」打开 Neo');
+      expect(lines[0]).not.toContain('重启');
+      expect(lines[0]).not.toMatch(/打开 osascript/);
+    },
+  );
+
+  it('adds no line over SSH (no GUI session)', () => {
+    expect(run('screencapture -x a.png', SCREENCAPTURE_DENIED, { env: { SSH_CONNECTION: '1 2 3 4' } })).toEqual([]);
+    expect(run('osascript -e x', AUTOMATION_DENIED, { env: { SSH_TTY: '/dev/ttys001' } })).toEqual([]);
+  });
+
+  it('adds no line off darwin', () => {
+    expect(run('screencapture -x a.png', SCREENCAPTURE_DENIED, { platform: 'linux' })).toEqual([]);
+  });
+
+  it('ordinary sandbox Operation not permitted keeps its diagnostic and gets no TCC line', () => {
+    const lines = diagnoseBashFailure({
+      command: 'touch ~/x',
+      stderr: '/bin/sh: /Users/tester/x: Operation not permitted',
+      code: 1,
+      sandboxed: true,
+      workingDirectory: '/work',
+      platform: 'darwin',
+      env: {},
+    });
+    expect(lines).toEqual(['沙盒拒绝：/Users/tester/x（沙盒只允许写 /work 与临时目录）']);
+  });
+
+  it('ambiguous codes alone are not a permission refusal (-1719 Invalid index, -1002 unsupported URL)', () => {
+    expect(run('osascript -e x', 'execution error: System Events got an error: Invalid index. (-1719)')).toEqual([]);
+    expect(run('osascript -e x', 'NSURLErrorDomain Code=-1002 "unsupported URL"')).toEqual([]);
+  });
+
+  it('adds no line when the failing command is not screencapture/osascript, even if the output quotes the text', () => {
+    expect(run('cat build.log', SCREENCAPTURE_DENIED)).toEqual([]);
+    expect(run('curl http://x', AUTOMATION_DENIED)).toEqual([]);
+    expect(run('npm test', ACCESSIBILITY_25211)).toEqual([]);
+  });
+
+  it('screencapture command does not get an Automation line, osascript command does not get Screen Recording', () => {
+    expect(run('screencapture -x a.png', AUTOMATION_DENIED)).toEqual([]);
+    expect(run('osascript -e x', SCREENCAPTURE_DENIED)).toEqual([]);
+  });
+
+  it('unrelated numbers do not trip the accessibility pattern', () => {
+    expect(run('node x.js', 'error code -10020 at line 1002')).toEqual([]);
   });
 });
