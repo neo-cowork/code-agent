@@ -519,18 +519,21 @@
     "file": "src/host/services/sessionAutomation/sessionAutomationService.ts",
     "rule": "raw_id_interpolation",
     "sample": "`${input.event}:${record.id}:${input.resultSessionId ?? record.updatedAt}`",
-    "reason": "Non-display event deduplication key (fourth writeAutomationMessage argument), never message content; N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY."
+    "reason": "N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY",
+    "detail": "Non-display event deduplication key (fourth writeAutomationMessage argument), never message content; N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY."
   },
   {
     "file": "src/shared/i18n/subagentLeftoverShells.ts",
     "rule": "raw_id_interpolation",
     "sample": "`- \\`${item.commandSummary}\\`（任务 ${item.taskId}，已运行 ${durationText(item.elapsedMs, locale)}）。仍在运行，可手动停止。`",
-    "reason": "Existing leftover-shell cleanup report outside this ticket’s three exits; retained for task-specific manual stop. Tracked sibling of N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY, not a new-copy precedent."
+    "reason": "N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY",
+    "detail": "Existing leftover-shell cleanup report outside this ticket’s three exits; retained for task-specific manual stop. Tracked sibling of N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY, not a new-copy precedent."
   },
   {
     "file": "src/shared/i18n/subagentLeftoverShells.ts",
     "rule": "raw_id_interpolation",
     "sample": "`- \\`${item.commandSummary}\\` (task ${item.taskId}, running ${durationText(item.elapsedMs, locale)}). Still running — can be stopped manually.`",
-    "reason": "Existing English leftover-shell cleanup report outside this ticket’s three exits; retained for task-specific manual stop. Tracked sibling of N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY, not a new-copy precedent."
+    "reason": "N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY",
+    "detail": "Existing English leftover-shell cleanup report outside this ticket’s three exits; retained for task-specific manual stop. Tracked sibling of N-UX-HUMAN-LANGUAGE-CORPUS-AUDIT-FU1-HOST-COPY, not a new-copy precedent."
   }
 ]
