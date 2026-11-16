@@ -623,7 +623,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         try {
           const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined);
           if (result?.success) {
-            writeAssistant(interpolatePlural(t.slashDiagnostics.compactedSuccess, Number(result.savedTokens.toLocaleString('en-US')), { n: result.savedTokens.toLocaleString('en-US') }));
+            writeAssistant(interpolatePlural(t.slashDiagnostics.compactedSuccess, result.savedTokens, { n: result.savedTokens.toLocaleString('en-US') }));
           } else {
             writeAssistant(t.slashDiagnostics.compactNotExecuted + (result?.reason ? t.slashDiagnostics.compactNotExecutedReasonWrap.replace('{reason}', result.reason) : ''));
           }

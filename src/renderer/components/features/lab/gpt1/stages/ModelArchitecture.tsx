@@ -99,7 +99,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
 
               {/* Transformer Blocks */}
               <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800">
-                <div className="text-xs text-zinc-500 mb-2 text-center">{interpolatePlural(ma.thinkingLayerLabel, modelConfig.nLayer)}</div>
+                <div className="text-xs text-zinc-500 mb-2 text-center">{interpolatePlural(ma.thinkingLayerLabel, modelConfig.nLayer, { repeats: modelConfig.nLayer })}</div>
 
                 {/* Attention */}
                 <button
