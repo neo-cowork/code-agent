@@ -173,7 +173,10 @@ export function PermissionCard({
   // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
-  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event';
+  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'
+    || request?.tool === 'calendar_delete_event';
+  // 单条日程删除：中性写回卡 +「删除 / 取消」，没有「改一改」（见 permissionEdit 里 calendar_delete_event 的说明）
+  const isNativeDelete = request?.tool === 'calendar_delete_event';
   const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update';
   const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
   const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
@@ -416,7 +419,10 @@ export function PermissionCard({
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
     : undefined;
   const browserCopy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
-  const options: DecisionOption[] = editable ? [
+  const options: DecisionOption[] = editable && isNativeDelete ? [
+    { id: 'once', label: w.optionDelete, description: w.optionDeleteDesc, shortcut: 'y' },
+    { id: 'deny', label: w.optionDenyDelete, description: w.optionDenyDeleteDesc, shortcut: 'n' },
+  ] : editable ? [
     {
       id: 'once',
       label: isMeetingCreate ? w.optionCreate : isNativeCreate ? w.optionCreateItem : isNativeUpdate ? w.optionUpdate : w.optionSend,
@@ -480,6 +486,8 @@ export function PermissionCard({
       ? w.calendarCreateTitle
       : request.tool === 'calendar_update_event'
         ? w.calendarUpdateTitle
+        : isNativeDelete
+        ? w.calendarDeleteTitle
         : request.tool === 'reminders_create'
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
@@ -506,6 +514,8 @@ export function PermissionCard({
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)
       : request.tool === 'calendar_update_event'
         ? (contentTitle ? w.calendarUpdateQuestion.replace('{title}', contentTitle) : w.calendarUpdateQuestionFallback)
+        : isNativeDelete
+        ? (contentTitle ? w.calendarDeleteQuestion.replace('{title}', contentTitle) : w.calendarDeleteQuestionFallback)
         : request.tool === 'reminders_create'
           ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
           : request.tool === 'reminders_update'

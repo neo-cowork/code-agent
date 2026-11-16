@@ -81,12 +81,13 @@ struct WriteRequest {
     #[serde(rename = "endMs")]
     end_ms: Option<i64>,
     location: Option<String>,
+    notes: Option<String>,
 }
 
 /// Shape checks only; whether the event / calendar exists is the native layer's answer (404).
 fn parse_write(body: &[u8]) -> Result<WriteOp, ()> {
     let r: WriteRequest = serde_json::from_slice(body).map_err(|_| ())?;
-    let fields = EventFields { title: r.title, start_ms: r.start_ms, end_ms: r.end_ms, location: r.location };
+    let fields = EventFields { title: r.title, start_ms: r.start_ms, end_ms: r.end_ms, location: r.location, notes: r.notes };
     if let (Some(start), Some(end)) = (fields.start_ms, fields.end_ms) {
         if end < start {
             return Err(());
@@ -102,7 +103,7 @@ fn parse_write(body: &[u8]) -> Result<WriteOp, ()> {
             Ok(WriteOp::Create { calendar_id: r.calendar_id, fields })
         }
         "update" => {
-            if r.calendar_id.is_some() || fields == EventFields::default() {
+            if r.calendar_id.is_some() || fields.notes.is_some() || fields == EventFields::default() {
                 return Err(());
             }
             Ok(WriteOp::Update { event_id: event_id.ok_or(())?, occurrence_ms: r.occurrence_ms, fields })
@@ -501,7 +502,7 @@ mod tests {
         assert_eq!(code, 404, "{raw}");
         assert!(raw.contains("event_not_found"));
 
-        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", r#"{"op":"create","title":"新会","startMs":10,"endMs":20,"location":"三楼"}"#);
+        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", r#"{"op":"create","title":"新会","startMs":10,"endMs":20,"location":"三楼","notes":"撤销重建带备注"}"#);
         assert_eq!(code, 200, "{raw}");
         assert!(raw.contains(r#""id":"new""#) && raw.contains(r#""title":"新会""#), "{raw}");
     }

@@ -48,6 +48,8 @@ pub struct EventFields {
     pub start_ms: Option<i64>,
     pub end_ms: Option<i64>,
     pub location: Option<String>,
+    /// Only for re-creating a deleted event from its snapshot (undo); the chat tool never sends it.
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -228,6 +230,10 @@ mod imp {
         if let Some(location) = &fields.location {
             let location = NSString::from_str(location);
             let _: () = unsafe { msg_send![ev, setLocation: &*location] };
+        }
+        if let Some(notes) = &fields.notes {
+            let notes = NSString::from_str(notes);
+            let _: () = unsafe { msg_send![ev, setNotes: &*notes] };
         }
         Ok(())
     }

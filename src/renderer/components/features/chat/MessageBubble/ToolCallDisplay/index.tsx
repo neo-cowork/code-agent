@@ -13,6 +13,7 @@ import { useParkedToolCallIds } from '../../../../../stores/parkedApprovalStore'
 import { isToolCallAwaitingApproval } from '../../../../../utils/sessionNeedsInput';
 import { useSessionStore } from '../../../../../stores/sessionStore';
 import { ToolHeader } from './ToolHeader';
+import { CalendarDeleteUndo, canUndoCalendarDelete } from './CalendarDeleteUndo';
 import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
 import { getStatusColor, type ToolStatus } from './styles';
@@ -351,6 +352,9 @@ export function ToolCallDisplay({
         <div className="ml-6 mt-1 text-xs leading-5 text-badge-success" data-testid="tool-call-recovered-note">
           {t.deliveryExperience.recovered}
         </div>
+      )}
+      {canUndoCalendarDelete(toolCall) && (
+        <CalendarDeleteUndo toolCall={toolCall} sessionId={mediaContext?.sessionId || currentSessionId || undefined} />
       )}
       {getToolPreflightKind(toolCall) === 'question' && (
         <Button type="button" variant="secondary" size="sm" className="ml-6 mt-2"

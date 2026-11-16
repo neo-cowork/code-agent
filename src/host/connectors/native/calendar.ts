@@ -219,6 +219,8 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   const startMs = finite(payload.start_ms);
   const endMs = finite(payload.end_ms) ?? (startMs !== undefined ? startMs + 30 * 60 * 1000 : undefined);
   const location = str(payload.location);
+  // notes：只有撤销删除时用快照重建会带（聊天工具的 schema 没有这个字段）
+  const notes = str(payload.notes);
   if (!title) throw new Error('title is required for create_event');
   if (startMs === undefined) throw new Error('start_ms is required for create_event');
   if (endMs === undefined || endMs < startMs) throw new Error('end_ms must be greater than or equal to start_ms');
@@ -227,7 +229,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
     : undefined; // 原生层用系统的默认日历
   return eventOf(await call('/v1/write/calendar-event', {
     op: 'create', title, startMs, endMs,
-    ...(calendarId ? { calendarId } : {}), ...(location ? { location } : {}),
+    ...(calendarId ? { calendarId } : {}), ...(location ? { location } : {}), ...(notes ? { notes } : {}),
   }));
 }
 
