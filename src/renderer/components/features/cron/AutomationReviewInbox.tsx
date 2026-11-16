@@ -14,6 +14,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useCallback, useEffect, useState } from 'react';
 import { isEditableTool } from '@shared/contract';
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
@@ -73,7 +74,7 @@ function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy): string
   const knownTool = name.toLowerCase();
   const displayName = knownTool === 'bash' || knownTool === 'write'
     ? copy.parkedVoided.tools[knownTool]
-    : !name || name === 'unknown' ? copy.parkedPendingAction : name;
+    : !name || name === 'unknown' ? copy.parkedPendingAction : toolUserLabel(name);
   return `${restarted ? copy.parkedVoided.restartPrefix : ''}${displayName}`;
 }
 

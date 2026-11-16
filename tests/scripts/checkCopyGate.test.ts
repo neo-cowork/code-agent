@@ -15,8 +15,7 @@ const JARGON = '幂' + '等';
 const BT = '`';
 
 type ScanResult = {
-  violations: { 'pressure-word': string[]; ellipsis: string[] };
-  warnings: { jargon: string[] };
+  violations: { 'pressure-word': string[]; ellipsis: string[]; jargon: string[] };
   fileCount: number;
 };
 
@@ -29,7 +28,7 @@ describe('copy gate（check-copy.mjs）', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('红例：压力词 / 中文串三点 / 黑话逐条命中，行号准确', () => {
+  it('红例：压力词 / 中文串三点 / 黑话（棘轮，基线 0）逐条命中，行号准确', () => {
     const red = [
       `const a = '${PRESSURE}安装全部依赖';`,
       `const b = '加载中${DOTS}';`,
@@ -47,8 +46,15 @@ describe('copy gate（check-copy.mjs）', () => {
     expect(r.violations.ellipsis).toHaveLength(2);
     expect(r.violations.ellipsis[0]).toContain(':2');
     expect(r.violations.ellipsis[1]).toContain(':5');
-    expect(r.warnings.jargon).toHaveLength(1);
-    expect(r.warnings.jargon[0]).toContain(':3');
+    expect(r.violations.jargon).toHaveLength(1);
+    expect(r.violations.jargon[0]).toContain(':3');
+  });
+
+  it('黑话词表含 copy-audit E 类英文内部词（N-FIX-UI-RAW-TOOL-NAMES-EXPOSED）', () => {
+    writeFileSync(join(dir, 'e.ts'), "const x = '读取 AX' + ' candidates 失败';\nconst y = '不展示 cookie' + ' value';\nconst z = '需要重新读取 AX candidates';\n");
+    const r = scanCopy(join(dir, 'e.ts')) as ScanResult;
+    expect(r.violations.jargon).toHaveLength(1);
+    expect(r.violations.jargon[0]).toContain(':3');
   });
 
   it('绿例：注释先剥（maka #663 回归）/ copy-allow 豁免 / 英文串三点 / spread / regex 引号，全不误报', () => {
@@ -68,7 +74,7 @@ describe('copy gate（check-copy.mjs）', () => {
 
     expect(r.violations['pressure-word']).toHaveLength(0);
     expect(r.violations.ellipsis).toHaveLength(0);
-    expect(r.warnings.jargon).toHaveLength(0);
+    expect(r.violations.jargon).toHaveLength(0);
   });
 
   it('模板串插值不再漂移行号：同行插值行号不 +1、跨行插值按实际换行数补齐、copy-allow 在真实行生效', () => {
