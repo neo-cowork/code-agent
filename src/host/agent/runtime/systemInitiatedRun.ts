@@ -14,7 +14,7 @@ import { isTerminalAgentError } from '../../../shared/utils/agentErrorClassifica
 
 /** 返回 true 表示该事件已交给调用方的 sink，不得再向会话前端投递。 */
 export function consumeSystemRunTerminalError(
-  options: Pick<AgentRunOptions, 'terminalErrorSink'> | undefined,
+  options: Pick<AgentRunOptions, 'terminalErrorSink' | 'inputHistoryVisibility'> | undefined,
   event: AgentEvent,
 ): boolean {
   if (event.type !== 'error' || !options?.terminalErrorSink || !isTerminalAgentError(event.data)) return false;
