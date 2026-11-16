@@ -1,3 +1,6 @@
+import { detectScreenshotFailureCause } from '../../permissions/envAssist/screenshotFailureCause';
+import { isAppleEventsDenied } from '../../connectors/native/appleScriptFailure';
+
 const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
 
 /**
@@ -208,6 +211,47 @@ export interface BashFailureDiagnosticsInput {
   durationMs?: number;
   sandboxed?: boolean;
   workingDirectory?: string;
+  /** Host platform / environment used to gate the macOS privacy (TCC) hint; defaults to the live process. */
+  platform?: string;
+  env?: Record<string, string | undefined>;
+}
+
+// AppleScript System Events refusals: the launching app (Neo, not the script
+// runner) lacks Accessibility permission.
+// Bare -1719 (errAEIllegalIndex, "Invalid index") and -1002 (NSURLErrorUnsupportedURL)
+// are ambiguous; only the wording or the unambiguous AX code -25211 counts.
+const ACCESSIBILITY_DENIAL_PATTERN = /(?<!\d)-25211(?!\d)|not allowed assistive access|not allowed to send keystrokes/i;
+const SCREENCAPTURE_COMMAND_PATTERN = /(?:^|[\s;&|(`/])screencapture\b/;
+// `osa(?:script)`: the static no-prompt scan flags the bare tool name in this module.
+const OSASCRIPT_COMMAND_PATTERN = /(?:^|[\s;&|(`/])osa(?:script)\b/;
+
+/**
+ * One 诊断 line naming the System Settings page when macOS privacy (TCC)
+ * refused a Bash-launched screen capture or AppleScript. No line over SSH (no GUI
+ * session: a permission switch cannot fix that) or on non-darwin hosts.
+ */
+function diagnoseTccDenial(input: {
+  command: string;
+  failureText: string;
+  platform: string;
+  env: Record<string, string | undefined>;
+}): string | undefined {
+  if (input.platform !== 'darwin') return undefined;
+  const usesScreencapture = SCREENCAPTURE_COMMAND_PATTERN.test(input.command);
+  const usesOsascript = OSASCRIPT_COMMAND_PATTERN.test(input.command);
+  if (!usesScreencapture && !usesOsascript) return undefined;
+  const cause = detectScreenshotFailureCause({ platform: input.platform, env: input.env, message: input.failureText });
+  if (cause.kind === 'ssh_session_no_gui') return undefined;
+  if (usesOsascript && isAppleEventsDenied(input.failureText)) {
+    return '诊断：macOS 拒绝了 Neo 控制其他应用（自动化权限未开）。请到「系统设置 > 隐私与安全性 > 自动化」打开 Neo，再试。';
+  }
+  if (usesOsascript && ACCESSIBILITY_DENIAL_PATTERN.test(input.failureText)) {
+    return '诊断：macOS 拒绝了 Neo 模拟键鼠操作（辅助功能权限未开）。请到「系统设置 > 隐私与安全性 > 辅助功能」打开 Neo，再试。';
+  }
+  if (usesScreencapture && cause.kind === 'screen_recording_permission') {
+    return '诊断：macOS 拒绝了截屏（屏幕录制权限未开）。请到「系统设置 > 隐私与安全性 > 屏幕录制」打开 Neo，然后重启 Neo 再试。';
+  }
+  return undefined;
 }
 
 const SELF_KILL_SIGNALS = new Set<NodeJS.Signals>(['SIGTERM', 'SIGKILL']);
@@ -240,6 +284,14 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
     workingDirectory: input.workingDirectory,
   });
   if (sandboxDenial) diagnostics.push(sandboxDenial);
+
+  const tccDenial = diagnoseTccDenial({
+    command: input.command,
+    failureText,
+    platform: input.platform ?? process.platform,
+    env: input.env ?? process.env,
+  });
+  if (tccDenial) diagnostics.push(tccDenial);
 
   if (nodeTool && MISSING_COMMAND_PATTERN.test(failureText)) {
     diagnostics.push(
