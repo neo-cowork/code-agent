@@ -150,13 +150,14 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    // 施工单二 B：轻量 inline 问答——问题句 + 摘要一句 + 批准/拒绝，无重型任务清单
+    // 施工单二 B：轻量 inline 问答——问题句 + 摘要一句 + 启动/取消，无重型任务清单
     expect(html).toContain('启动团队');
     expect(html).toContain('批准 3 个成员启动？');
     expect(html).toContain('准备启动 3 个 agent');
-    expect(html).toContain('团队启动 · 允许');
-    expect(html).toContain('拒绝');
-    expect(html).toContain('取消');
+    // 选项按钮本身：标题「启动团队」也含「启动」，所以按选项标签精确断言
+    expect(html).toContain('<div class="font-medium text-zinc-200 text-sm">启动</div>');
+    expect(html).toContain('<div class="font-medium text-zinc-200 text-sm">取消</div>');
+    expect(html).toContain('取消这次启动');
     expect(html).toContain('允许');
     // 重型形态退役：不展开 per-task 工具/依赖列表
     expect(html).not.toContain('依赖 task-builder');
@@ -177,7 +178,7 @@ describe('TraceNodeRenderer launch request', () => {
 
     expect(html).toContain('已允许');
     expect(html).toContain('按计划启动');
-    expect(html).not.toContain('团队启动 · 允许</span></button>');
+    expect(html).not.toContain('启动</span></button>');
     // C4 紧凑历史：摘要 + feedback，不再展开任务清单
     expect(html).toContain('准备启动 3 个 agent');
     expect(html).not.toContain('依赖 task-builder');
@@ -308,7 +309,8 @@ describe('TraceNodeRenderer launch request', () => {
     );
 
     expect(html).toContain('Claude Code 订阅链路失败');
-    expect(html).toContain('auth · auth_failed · 2 分钟前失败 · HTTP 401 · exit 1 · 需处理');
+    expect(html).not.toContain('auth_failed');
+    expect(html).toContain('route-trace-diagnostics-toggle');
     expect(html).toContain('Claude Code 认证失败。请完成 Claude CLI 登录或检查订阅/API 凭据后重试。');
     vi.useRealTimers();
   });

@@ -179,6 +179,7 @@ export class AgentRunController {
         sessionId: this.deps.sessionId,
         title: '需要授权',
         body: permissionNoticeBody(typeof data.tool === 'string' ? data.tool : undefined),
+        tool: typeof data.tool === 'string' ? data.tool : undefined,
         dedupeKey: data.id,
       });
     } catch (error) {

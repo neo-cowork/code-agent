@@ -168,7 +168,6 @@
     "src/host/services/desktop/photoLibraryTagger.ts": 4,
     "src/host/services/external/openchronicleSupervisor.ts": 1,
     "src/host/services/infra/devServerManager.ts": 5,
-    "src/host/services/infra/notificationService.ts": 2,
     "src/host/services/lab/LabService.ts": 5,
     "src/host/services/library/libraryIngest.ts": 3,
     "src/host/services/library/libraryService.ts": 4,
