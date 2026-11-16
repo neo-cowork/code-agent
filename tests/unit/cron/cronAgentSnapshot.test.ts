@@ -73,6 +73,9 @@ vi.mock('../../../src/host/task', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
+import { executeCronAgentAction } from '../../../src/host/cron/cronAgentAction';
+import { permissionDenialError } from '../../../src/host/tools/toolPermissionClassification';
+import { AgentFailureCode } from '../../../src/shared/contract';
 import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
 import { stripCronPromptDecoration } from '../../../src/shared/cronRunMessage';
 
@@ -425,5 +428,46 @@ describe('CronService external_event 无变化则安静门', () => {
       '这只是一次普通心跳，没有任何标记。',
     );
     expect(result.skipped).toBeUndefined();
+  });
+});
+
+
+describe('executeCronAgentAction — declined scheduled step', () => {
+  it.each([false, true])('includes the denial attribution sentence in agent prompts (snapshot=%s)', async (snapshot) => {
+    const definition = makeDefinition(snapshot ? { [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true } : undefined);
+    const host = { loadJob: () => definition, updateJob: vi.fn(), deliverCronResult: vi.fn(), recordSessionId: vi.fn() };
+    await executeCronAgentAction(host, definition, definition.action as AgentAction, 'denied-run');
+    const prompt = agentState.sendMessage.mock.calls[0][0];
+    expect(prompt).toContain('the user clicked Deny on the approval card');
+    expect(prompt).toContain('a timeout is an automatic denial');
+    expect(prompt).toContain('never say nobody can confirm');
+    expect(prompt).toContain('name the declined step');
+    expect(prompt).toContain('explicitly say "you declined <step>" for a user denial');
+    expect(prompt).toContain('nothing was done if no productive action succeeded');
+  });
+
+  it.each(['ListDirectory', 'Write'])('settles user denial followed by successful %s through the production entry', async (name) => {
+    const definition = makeDefinition();
+    const final = assistantMessage('<cron_summary>urgency: must_today\nYou declined moving downloaded files; nothing was moved.</cron_summary>');
+    agentState.getMessages.mockReturnValue([
+      { role: 'assistant', toolCalls: [{ id: 'denied', name: 'Bash', arguments: { command: 'mv Downloads/notes.txt Documents/' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'denied', success: false, metadata: {
+        failureCode: AgentFailureCode.PermissionDenied, hostReason: permissionDenialError('Bash', 'user'),
+      } }] },
+      { role: 'assistant', toolCalls: [{ id: 'fallback', name, arguments: { path: 'Downloads' } }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'fallback', success: true, output: 'notes.txt' }] }, final,
+    ]);
+    const host = { loadJob: () => definition, updateJob: vi.fn(), deliverCronResult: vi.fn(), recordSessionId: vi.fn() };
+    const result = await executeCronAgentAction(host, definition, definition.action as AgentAction, 'denied-run') as {
+      permissionDenied?: { steps: Array<{ reason: string }> }; urgency: string;
+    };
+    if (name === 'ListDirectory') {
+      expect(result.permissionDenied?.steps[0].reason).toBe('user');
+      expect(result.urgency).toBe('fyi');
+    } else {
+      expect(result.permissionDenied).toBeUndefined();
+      expect(result.urgency).toBe('must_today');
+    }
+    expect(agentState.cleanup).toHaveBeenCalledWith('cron-session-1');
   });
 });

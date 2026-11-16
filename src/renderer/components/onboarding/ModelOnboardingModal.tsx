@@ -154,7 +154,8 @@ function getOnboardingEngineStatus(
   if (source.evidence === 'local_spike') {
     return { detail: s.localSpikeNotInstalledDetail, badge: s.badgeComingSoon };
   }
-  const recommendation = getEngineRecommendation(source, engineCopy);
+  const recommendations: Record<string, { label: string; reason: string } | undefined> = s.recommendations;
+  const recommendation = recommendations[source.manifestId] ?? getEngineRecommendation(source, engineCopy);
   return {
     detail: recommendation?.reason || s.noEvidenceDetail,
     badge: recommendation?.label || s.badgeRecommendedInstall,

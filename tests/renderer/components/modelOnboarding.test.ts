@@ -9,6 +9,7 @@ import {
   selectOnboardingDefaultModel,
 } from '../../../src/renderer/components/onboarding/modelOnboarding';
 import { onboardingEn, onboardingZh } from '../../../src/renderer/i18n/onboarding';
+import { listExternalEngineManifests } from '../../../src/shared/externalEngineManifest';
 
 const zhText = onboardingZh.onboarding;
 
@@ -120,5 +121,25 @@ describe('onboarding English language pack', () => {
     expect(withChinese).toEqual([]);
     expect(onboardingEn.onboarding.detectingClients).toBe('Checking local clients…');
     expect(onboardingEn.onboarding.noClientsDetected).toBe('No official clients detected on this computer.');
+  });
+});
+
+describe('onboarding engine recommendation copy', () => {
+  it('keeps a language-pack entry for every engine manifest recommendation', () => {
+    type RecommendationCopy = Record<string, { label: string; reason: string } | undefined>;
+    const zhCopy: RecommendationCopy = zhText.engineStatus.recommendations;
+    const enCopy: RecommendationCopy = onboardingEn.onboarding.engineStatus.recommendations;
+    const recommended = listExternalEngineManifests().filter((manifest) => manifest.recommendation);
+
+    expect(recommended.map((manifest) => manifest.id)).toEqual(['qoder_work', 'comate_zulu', 'cursor_cli']);
+    for (const manifest of recommended) {
+      // 语言包独立维护白话文案；manifest 里的原文只是语言包缺项时的兜底，不再要求逐字一致
+      expect(zhCopy[manifest.id]?.label).toBeTruthy();
+      expect(zhCopy[manifest.id]?.reason).toBeTruthy();
+      const en = enCopy[manifest.id];
+      expect(en?.label).toBeTruthy();
+      expect(en?.reason).toBeTruthy();
+      expect(`${en?.label}${en?.reason}`).not.toMatch(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u);
+    }
   });
 });

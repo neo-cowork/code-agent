@@ -5,13 +5,13 @@ import { languages, type Language } from '../i18n';
  * Full date-time in zh and en: `YYYY/MM/DD HH:mm`, zero padded, 24-hour, no seconds.
  * Uses local time unless a caller already has an explicit timezone (cron schedules).
  * Run tables omit the year only for current-year rows via formatRunListTime.
+ * Fallbacks are language-aware: zh '未设置'/'无效时间', en 'Not set'/'Invalid time'.
  */
 export function formatDateTime(
   value?: string | number | Date,
   lang: Language = 'zh',
   timeZone?: string,
 ): string {
-  // 没有时间 / 时间无效时的兜底词同样跟界面语言（FB-1495）
   if (value == null) return languages[lang].dateTime.notSet;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return languages[lang].dateTime.invalid;
