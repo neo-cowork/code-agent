@@ -79,13 +79,15 @@ describe('connector follow-up through MessageProcessor.handleToolResponse', () =
   function user(content: string) {
     const prior = [...messages];
     messages.push({ id: `user-${++seq}`, role: 'user', content, timestamp: seq });
+    const turn = TurnState.forTest({ currentTurnId: `turn-${seq}` });
+    turn.beginRun(content);
     const ctx = {
       sessionId: 'connector-followup', runId: `run-${seq}`, workingDirectory: process.cwd(), messages,
       allowedToolNames: getTextForegroundToolNamesForPrompt(content, undefined, undefined, prior),
       foregroundToolFace: true, enableToolDeferredLoading: true, enableHooks: false,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash' },
       maxToolCallRetries: 3, artifact: ArtifactState.forTest(), control: ControlState.forTest(),
-      turn: TurnState.forTest({ currentTurnId: `turn-${seq}`, runUserPrompt: content }),
+      turn,
       stats: RunStatsState.forTest(), contextHealth: ContextHealthState.forTest(), turnQualityState: {},
       nudgeManager: { checkProgressState: vi.fn() }, onEvent: (event: AgentEvent) => events.push(event),
     } as unknown as RuntimeContext;
