@@ -165,7 +165,7 @@ describe('RouteTraceChip diagnostics fold', () => {
     const before = details.textContent ?? '';
     expect(before).toContain('本轮使用你选定的模型执行。');
     expect(before).toContain('登录已失效，请重新登录后重试。');
-    for (const word of [...BANNED, /endpoint/i, /stream-json/i, /MCP bridge/i]) {
+    for (const word of [...BANNED, /endpoint/i, /地址/, /stream-json/i, /MCP bridge/i]) {
       expect(before).not.toMatch(word);
     }
     expect(screen.queryByTestId('route-trace-diagnostics')).toBeNull();
@@ -174,7 +174,7 @@ describe('RouteTraceChip diagnostics fold', () => {
     const panel = screen.getByTestId('route-trace-diagnostics');
     expect(panel.textContent).toMatch(/provider/i);
     expect(panel.textContent).toMatch(/token/i);
-    expect(panel.textContent).toMatch(/endpoint/i);
+    expect(panel.textContent).toContain("地址 https://relay.example/v1");
     expect(panel.textContent).toMatch(/stream-json/i);
   });
 });
