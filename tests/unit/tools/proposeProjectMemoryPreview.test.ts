@@ -18,7 +18,7 @@ describe('ProposeProjectMemory approval preview', () => {
   beforeEach(() => { language.value = 'zh'; });
 
   it.each([['purpose', '项目用途', 1], ['key-files', '重要文件', 2], ['conventions', '项目约定', 3]] as const)(
-    'zh shows %s progress %i/3 across several cards', (topic, name, n) => {
+    'zh %s (%s) shows progress %i/3 across several cards', (topic, name, n) => {
       const p = preview({ topic, summary: 's', content: '内容' });
       expect(p.summary).toContain(name);
       expect(p.summary).toContain(`${n}/3`);
