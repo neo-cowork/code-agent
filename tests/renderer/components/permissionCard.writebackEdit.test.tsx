@@ -374,6 +374,50 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     ));
   });
 
+  it.each(['zh', 'en'] as const)('%s: start-only outcome never renders a snapshot End before the proposed Start', async (language) => {
+    state.language = language;
+    const proposed = { calendar: 'Work', event_uid: 'event-uid-1', start_ms: localMs(16) };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: 'Work', title: 'Quarterly review', startAtMs: localMs(9), endAtMs: localMs(9, 30),
+    } });
+    state.request = { ...calendarUpdateRequest, details: {
+      ...proposed, ...await calendarApprovalDetails('calendar_update_event', proposed),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('writeback-view-start_ms').textContent).toContain('16:00');
+    expect(screen.queryByTestId('writeback-view-end_ms')).toBeNull();
+    expect(screen.getByTestId('permission-card').textContent).not.toMatch(/Event ID|事件 ID|event-uid-1/);
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh' ? /修改后更新/ : /Edit, then update/ }));
+    expect((screen.getByTestId('writeback-edit-end_ms-date') as HTMLInputElement).value).toBe('');
+    fireEvent.change(screen.getByTestId('writeback-edit-title'), { target: { value: 'Revised review' } });
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh' ? '按修改后的内容更新' : 'Update edited version' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { start_ms: localMs(16), title: 'Revised review' },
+    ));
+  });
+
+  it.each([8, 10])('end-only proposal at %s:30 requires an explicit start in the edit form', async (hour) => {
+    const proposed = { calendar: 'Work', event_uid: 'event-uid-1', end_ms: localMs(hour, 30) };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: 'Work', title: 'Quarterly review', startAtMs: localMs(9), endAtMs: localMs(9, 30),
+    } });
+    state.request = { ...calendarUpdateRequest, details: {
+      ...proposed, ...await calendarApprovalDetails('calendar_update_event', proposed),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.queryByTestId('writeback-view-start_ms')).toBeNull();
+    expect(screen.getByTestId('writeback-view-end_ms')).toBeTruthy();
+    enterEdit();
+    expect((screen.getByTestId('writeback-edit-start_ms-date') as HTMLInputElement).value).toBe('');
+    changeDatetime('start_ms', '2026-08-26T08:00');
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { start_ms: localMs(8), end_ms: localMs(hour, 30) },
+    ));
+  });
+
   it.each([8, 16])('snapshot context: start-only move to %s:00 plus a title edit never sends the old end/location', async (hour) => {
     const proposed = { calendar: '工作', event_uid: 'event-uid-1', start_ms: localMs(hour) };
     readCalendarEvent.mockResolvedValue({ data: {
@@ -383,10 +427,12 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     state.request = { ...calendarUpdateRequest, details: { ...proposed, ...snapshot } as PermissionRequest['details'] };
     render(<PermissionCard />);
     expect(screen.getByTestId('writeback-view-title').textContent).toBe('季度评审会');
-    expect(screen.getByTestId('writeback-view-end_ms').textContent).toBeTruthy();
+    if (hour === 16) expect(screen.queryByTestId('writeback-view-end_ms')).toBeNull();
+    else expect(screen.getByTestId('writeback-view-end_ms').textContent).toContain('09:30');
     enterEdit();
     expect((screen.getByTestId('writeback-edit-title') as HTMLInputElement).value).toBe('季度评审会');
-    expect((screen.getByTestId('writeback-edit-end_ms-time-hour') as HTMLSelectElement).value).toBe('09');
+    expect((screen.getByTestId('writeback-edit-end_ms-date') as HTMLInputElement).value)
+      .toBe(hour === 16 ? '' : '2026-08-26');
     fireEvent.change(screen.getByTestId('writeback-edit-title'), { target: { value: '改后的评审会' } });
     const submit = screen.getByRole('button', { name: '按修改后的内容更新' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);

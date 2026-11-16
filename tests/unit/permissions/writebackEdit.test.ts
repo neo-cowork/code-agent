@@ -247,7 +247,7 @@ describe('toolExecutor：编辑后放行 → 派发的就是编辑后的参数',
       expect(requests).toHaveLength(1);
       const details = (requests[0] as { details: Record<string, unknown> }).details;
       if (lookupFails) expect(details).not.toHaveProperty('calendarApprovalSnapshotFields');
-      else expect(details.calendarApprovalSnapshotFields).toEqual(['title', 'end_ms']);
+      else expect(details.calendarApprovalSnapshotFields).toEqual(['title']);
       expect(dispatched[0].params).toEqual(original);
     } finally {
       execute.mockRestore();
