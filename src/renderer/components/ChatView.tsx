@@ -70,10 +70,8 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
-import { DEFAULT_PROVIDER } from '@shared/constants';
-import { getLocalizedProviderDisplayName } from '../i18n/providerDisplay';
-import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
-import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
+import { ensureModelConfigured as checkModelConfigured } from '../utils/ensureModelConfigured';
+import { hasConfiguredDefaultRuntimeModel } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
@@ -139,7 +137,6 @@ export const ChatView: React.FC = () => {
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
-  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const {
     currentSessionId,
     sessions,
@@ -589,23 +586,7 @@ export const ChatView: React.FC = () => {
     onDropStart: clearGlobalDragState,
     onAttachments: (attachments) => chatInputRef.current?.addAttachments(attachments),
   });
-  const ensureModelConfigured = useCallback(async (): Promise<boolean> => {
-    try {
-      const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
-      if (hasConfiguredDefaultRuntimeModel(settings)) return true;
-      if (hasConfiguredRuntimeModels(settings)) {
-        toast.info(t.chat.configureModelKeyFirst);
-        openSettingsTab('model');
-        return false;
-      }
-      const provider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
-      toast.info(t.modelSetup.missingApiKey.replace('{provider}', getLocalizedProviderDisplayName(provider, language) || t.modelSetup.thisModel));
-      useAppStore.getState().openModelSettings(provider);
-      return false;
-    } catch {
-      return true;
-    }
-  }, [openSettingsTab, t, language]);
+  const ensureModelConfigured = useCallback(() => checkModelConfigured(t, language), [t, language]);
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
@@ -976,6 +957,7 @@ export const ChatView: React.FC = () => {
                 afterFirstUserMessage={cronRunStatusBar}
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
                 suppressActiveBusySignal={pendingAssistantFeedback !== null}
+                userSendAt={pendingAssistantFeedback?.startedAt ?? null}
               />
             </ErrorBoundary>
           )}

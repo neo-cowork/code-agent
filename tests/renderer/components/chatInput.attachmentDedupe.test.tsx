@@ -42,6 +42,7 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
 import { ChatInput, type ChatInputHandle } from '../../../src/renderer/components/features/chat/ChatInput';
 import { useChatInputComposerActions } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputComposerActions';
 import { useDragAndDrop } from '../../../src/renderer/components/features/chat/ChatInput/useDragAndDrop';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import ipcService from '../../../src/renderer/services/ipcService';
 
@@ -176,6 +177,8 @@ describe('ChatInput attachment dedupe', () => {
     attachmentId = 0;
     i18nState.language = 'zh';
     resetCapabilityStore();
+    // FB-1531 后 @ 面板文件列表以工作目录为基目录；本夹具靠 listFiles 返回 sales.csv
+    useAppStore.setState({ workingDirectory: '/tmp/dedupe-proj' });
     Element.prototype.scrollIntoView = vi.fn();
     readWorkspaceFile.mockResolvedValue('region,sales\nNorth,10');
     vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain, action) => {
@@ -200,6 +203,7 @@ describe('ChatInput attachment dedupe', () => {
     cleanup();
     vi.restoreAllMocks();
     delete (window as { domainAPI?: unknown }).domainAPI;
+    useAppStore.setState({ workingDirectory: null });
     resetCapabilityStore();
   });
 

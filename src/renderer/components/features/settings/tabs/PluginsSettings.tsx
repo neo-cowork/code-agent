@@ -593,18 +593,24 @@ export const PluginsSettings: React.FC = () => {
                       <span className="text-zinc-300">{pluginsText.installed.runtime}</span>
                       <span className="ml-2">{getPluginRuntimeReason(plugin, pluginsText.runtimeReasons)}</span>
                     </div>
-                    <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
-                      <span className="text-zinc-300">{pluginsText.installed.skills}</span>
-                      <span className="ml-2">{plugin.skills.length ? plugin.skills.join(' · ') : pluginsText.installed.none}</span>
-                    </div>
-                    <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
-                      <span className="text-zinc-300">{pluginsText.installed.commands}</span>
-                      <span className="ml-2">{(plugin.commands ?? []).length ? plugin.commands?.join(' · ') : pluginsText.installed.none}</span>
-                    </div>
-                    <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
-                      <span className="text-zinc-300">{pluginsText.installed.pluginAsset}</span>
-                      <span className="ml-2 break-all">{plugin.pluginRoot ? toDisplayPath(plugin.pluginRoot) : pluginsText.installed.none}</span>
-                    </div>
+                    {plugin.skills.length > 0 && (
+                      <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
+                        <span className="text-zinc-300">{pluginsText.installed.skills}</span>
+                        <span className="ml-2">{plugin.skills.join(' · ')}</span>
+                      </div>
+                    )}
+                    {(plugin.commands ?? []).length > 0 && (
+                      <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500">
+                        <span className="text-zinc-300">{pluginsText.installed.commands}</span>
+                        <span className="ml-2">{plugin.commands?.join(' · ')}</span>
+                      </div>
+                    )}
+                    {plugin.pluginRoot && (
+                      <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
+                        <span className="text-zinc-300">{pluginsText.installed.pluginAsset}</span>
+                        <span className="ml-2 break-all">{toDisplayPath(plugin.pluginRoot)}</span>
+                      </div>
+                    )}
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
                       <span className="text-zinc-300">{pluginsText.installed.trust}</span>
                       <span className="ml-2">{getPluginTrustSummary(plugin, pluginsText.trustSummary)}</span>
