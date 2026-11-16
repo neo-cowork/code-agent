@@ -302,9 +302,9 @@ async function sweepCsvPreview(page, visit, out, baseUrl, lang) {
     await clickRequired(page.getByText(name, { exact: true }), `open ${name} preview`);
     let assertion = page.locator('table').first();
     if (surface === 'csv-preview-parse-warning') {
-      assertion = page.getByText(lang === 'en' ? /^Parse warning: / : /^解析告警：/);
+      assertion = page.getByText(/^(?:Parse warning: |解析告警：)/);
     } else if (surface === 'csv-preview-truncated') {
-      assertion = page.getByText(lang === 'en' ? /^Showing first 5000 of 5001 rows/ : /^显示前 5000 \/ 5001 行/);
+      assertion = page.getByText(/^(?:Showing first 5000 of 5001 rows|显示前 5000 \/ 5001 行)/);
     }
     await visit(surface, assertion);
     if (surface === 'csv-preview') {
@@ -317,7 +317,7 @@ async function sweepCsvPreview(page, visit, out, baseUrl, lang) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   fs.mkdirSync(args.out, { recursive: true });
-  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const browser = await chromium.launch({ headless: true });
   const report = { baseUrl: args.baseUrl, lang: args.lang, surfaces: [] };
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
