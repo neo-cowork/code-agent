@@ -82,6 +82,13 @@ export const zhSettingsModels = {
         unconfiguredPrefix: '待添加 Key · ',
       },
       header: {
+        apiKeyAccount: '由你的账户提供',
+        apiKeyEnvironment: '正在使用环境提供的密钥',
+        apiKeyUnsaved: 'API Key 尚未保存',
+        apiKeyAvailable: 'API Key 可用',
+        noKeyGuide: '还没有 API Key？先在这里填',
+        keyNeededSuffix: '（需要 Key）',
+
         unsetAddress: '未设置地址',
         noApiKey: '无需 API Key',
         apiKeySaved: 'API Key 已保存',
