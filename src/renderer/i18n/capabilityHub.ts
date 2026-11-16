@@ -219,7 +219,7 @@ export const capabilityHubEn = {
     evidenceNoTokens: '{count}× · last {days}d · avg {steps} steps',
     tokensSuffix: '{tokens} tokens',
     unnamed: 'Repeated work',
-    whyGrouped: { one: 'The only run used the same set of steps ({variants} orderings)', other: 'All {count} runs used the same set of steps ({variants} orderings)' },
+    whyGrouped: { one: '{count} run used the same set of steps ({variants} orderings)', other: 'All {count} runs used the same set of steps ({variants} orderings)' },
     degraded: 'Finished with a downgrade before',
     missing: 'Failed for a missing piece before',
     tierSkill: 'Write it down',

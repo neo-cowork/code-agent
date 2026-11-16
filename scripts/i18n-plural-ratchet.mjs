@@ -142,7 +142,10 @@ for (const file of files) {
 }
 
 for (const entry of pluralExceptions) {
-  if (!usedPluralExceptions.has(entry)) findings.push(`stale plural exception: ${entry.file} (${entry.reason})`);
+  // Entries for files absent from the scanned root (test fixtures) cannot be stale.
+  if (!usedPluralExceptions.has(entry) && fs.existsSync(path.join(repoRoot, entry.file))) {
+    findings.push(`stale plural exception: ${entry.file} "${entry.text}" (${entry.reason})`);
+  }
 }
 console.log(`[i18n-plural-ratchet] plural hits=${pluralHits}; allowed=${usedPluralExceptions.size}`);
 
