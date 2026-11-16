@@ -138,12 +138,12 @@ export function createIdleTracker({ baselineCards = [], baselineErrors = [], see
 }
 
 /**
- * send 受理判定。sample = { t, matches, running, composer, sendFailed, toasts: string[] }。
+ * send 受理判定。sample = { t, matches, running, composer, sendFailed(发送失败标记个数), toasts: string[] }。
  * matches = 消息列表里含这段文字的用户气泡数；baselineMatches 是回车前的数。
  * 只有「新用户气泡出现在列表里」且「见过运行中」才算发出去了（输入框清空不算：发送被拦、页面被切到设置页时输入框也会没）。
  * 输入框消失满 goneMs 且列表里没出现这条消息 → 立即判失败（如模型未配置被切到设置页），原因带上新出现的提示条。
  */
-export function createSendTracker({ baselineMatches = 0, baselineToasts = [], goneMs = 1_000 } = {}) {
+export function createSendTracker({ baselineMatches = 0, baselineFailed = 0, baselineToasts = [], goneMs = 1_000 } = {}) {
   const baseToasts = countBy(baselineToasts);
   let sawMessage = false;
   let sawRunning = false;
@@ -155,7 +155,8 @@ export function createSendTracker({ baselineMatches = 0, baselineToasts = [], go
     if (fresh.length) toasts = fresh;
     if (sample.matches > baselineMatches) sawMessage = true;
     if (sample.running) sawRunning = true;
-    if (sample.sendFailed) return { done: true, ok: false, reason: why('用户气泡标了「发送失败」') };
+    // 旧气泡上的「发送失败」标记会一直留在会话里，只认回车后多出来的。
+    if ((sample.sendFailed ?? 0) > baselineFailed) return { done: true, ok: false, reason: why('用户气泡标了「发送失败」') };
     if (sawMessage && sawRunning) return { done: true, ok: true };
     if (sample.composer || sawMessage) goneSince = undefined;
     else {
@@ -546,7 +547,7 @@ async function sampleSend(page, text) {
       matches: [...document.querySelectorAll('[data-testid="user-message-content"]')].filter((el) => (el.textContent || '').includes(needle)).length,
       running: running.some((sel) => [...document.querySelectorAll(sel)].some(vis)),
       composer: [...document.querySelectorAll('[data-chat-input]')].some(vis),
-      sendFailed: !!document.querySelector('[data-testid="user-message-send-failed"]'),
+      sendFailed: document.querySelectorAll('[data-testid="user-message-send-failed"]').length,
       // Toast 是 role=alert 且没有 aria-label；运行失败卡有 aria-label，归 wait-idle 管。
       toasts: [...document.querySelectorAll('[role="alert"]:not([aria-label])')].filter(vis).map((el) => (el.textContent || '').trim().slice(0, 200)).filter(Boolean),
     };
@@ -618,7 +619,7 @@ const ACTIONS = {
     await search.fill('');
     // 行文字 = 显示名 + 徽标 + 末尾的模型 id；分组标题 = 服务商名。按显示名或模型 id 精确匹配，命中多个就报错，不静默挑第一个
     // （11-16 真机：「mimo-v2.5-pro」同时命中 TokenRhythm 和小米，点到的是小米、key 无效）。
-    const rows = await page.locator('[data-model-option-index]').evaluateAll((els) => els
+    const readRows = () => page.locator('[data-model-option-index]').evaluateAll((els) => els
       .filter((el) => el.getAttribute('data-model-option-index') !== '0')
       .map((el) => ({
         index: el.getAttribute('data-model-option-index'),
@@ -628,6 +629,15 @@ const ACTIONS = {
         provider: [...(el.parentElement?.firstElementChild?.children ?? [])]
           .filter((c) => c.tagName === 'SPAN' && !c.hasAttribute('aria-label') && c.textContent.trim()).pop()?.textContent.trim() ?? '',
       })));
+    // 菜单刚打开时先渲染内置目录、已配置的服务商随后才到（11-16 真机读到过没有 TokenRhythm 分组的列表），连续两次读到同一份才用。
+    let prev = '';
+    const rows = await pollUntil(async () => {
+      const cur = await readRows();
+      const key = JSON.stringify(cur);
+      const stable = key === prev ? cur : null;
+      prev = key;
+      return stable;
+    }, { timeoutMs: 5_000, intervalMs: 300, what: '模型列表稳定' });
     const hits = pickModelOptions(rows, name);
     if (hits.length !== 1) {
       await page.keyboard.press('Escape');
@@ -676,7 +686,7 @@ const ACTIONS = {
     // 文字真进了输入框才回车。innerText 给短超时：输入框没了时 locator 默认会干等 30 秒。
     await pollUntil(async () => (await input.innerText({ timeout: 500 }).catch(() => '')).includes(text.slice(0, 20)), { timeoutMs: 5_000, what: '文字进入输入框' });
     const before = await sampleSend(page, text);
-    const track = createSendTracker({ baselineMatches: before.matches, baselineToasts: before.toasts });
+    const track = createSendTracker({ baselineMatches: before.matches, baselineFailed: before.sendFailed, baselineToasts: before.toasts });
     ctx.sendVerified = false;
     await page.keyboard.press('Enter');
     let verdict;

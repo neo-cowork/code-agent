@@ -90,7 +90,7 @@ describe('neo-drive 纯逻辑', () => {
 
   it('send：输入框被切走（模型未配置跳到设置页）时判失败并带上提示条，不因「输入框空了」判受理（11-16 真机假通过）', () => {
     const track = createSendTracker({ baselineMatches: 0, baselineToasts: ['旧提示'], goneMs: 1_000 });
-    const s = { matches: 0, running: false, sendFailed: false };
+    const s = { matches: 0, running: false, sendFailed: 0 };
     expect(track({ ...s, t: 0, composer: false, toasts: ['旧提示', '当前主任务模型未配置 API Key'] }).done).toBe(false);
     const r = track({ ...s, t: 1_000, composer: false, toasts: ['旧提示', '当前主任务模型未配置 API Key'] });
     expect(r).toMatchObject({ done: true, ok: false });
@@ -99,7 +99,7 @@ describe('neo-drive 纯逻辑', () => {
   });
 
   it('send：用户气泡进了列表且见过运行中才算受理；只出现其一不算，超时原因说清缺哪样', () => {
-    const s = { composer: true, sendFailed: false, toasts: [] };
+    const s = { composer: true, sendFailed: 0, toasts: [] };
     const onlyMsg = createSendTracker({ baselineMatches: 1 });
     expect(onlyMsg({ ...s, t: 0, matches: 1, running: true }).done).toBe(false); // 运行中但列表里还是旧的那条
     expect(onlyMsg({ ...s, t: 100, matches: 2, running: false }).done).toBe(true); // 前面见过运行中 + 新气泡
@@ -109,7 +109,10 @@ describe('neo-drive 纯逻辑', () => {
     const noMsg = createSendTracker({ baselineMatches: 0 });
     expect(noMsg({ ...s, t: 0, matches: 0, running: false }).done).toBe(false);
     expect(noMsg.timeoutReason()).toContain('没出现在消息列表里');
-    expect(createSendTracker()({ ...s, t: 0, matches: 1, running: false, sendFailed: true })).toMatchObject({ done: true, ok: false });
+    expect(createSendTracker()({ ...s, t: 0, matches: 1, running: false, sendFailed: 1 })).toMatchObject({ done: true, ok: false });
+    // 会话里早先就有一条发送失败的气泡：回车前已在的标记不算，这次照常受理
+    const oldFail = createSendTracker({ baselineMatches: 0, baselineFailed: 1 });
+    expect(oldFail({ ...s, t: 0, matches: 1, running: true, sendFailed: 1 })).toEqual({ done: true, ok: true });
   });
 
   it('wait-idle：新出现的需人卡片立即返回 needs-user，开始前就在的卡不算', () => {
