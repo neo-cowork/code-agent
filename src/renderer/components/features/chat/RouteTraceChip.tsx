@@ -288,8 +288,17 @@ function formatToolPolicyDetail(decision: ModelDecisionEventData): string | null
   return null;
 }
 
+// host 生成的诊断句仍带英文内部词（改 host 串要重录 request-replay 快照，只能在 mini 录），展示时在这里映射成用户语义。
+function localizeDiagnosticDetail(text: string): string {
+  return text
+    .replace(/\s*provider usage\s*/g, '服务商用量')
+    .replace(/provider 已回传/g, '服务商已回传')
+    .replace(/\s*(?:saved tokens|token saved)\s*/g, '节省量');
+}
+
 function formatToolTokenSavingsDetail(decision: ModelDecisionEventData): string | null {
-  return decision.toolStrategy?.tokenSavings?.detail ?? null;
+  const detail = decision.toolStrategy?.tokenSavings?.detail;
+  return detail ? localizeDiagnosticDetail(detail) : null;
 }
 
 function formatToolTokenSavingsBasis(decision: ModelDecisionEventData): string | null {

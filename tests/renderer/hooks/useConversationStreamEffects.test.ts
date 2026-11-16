@@ -478,7 +478,7 @@ describe('applyConversationStreamEvent model_decision', () => {
             tokenSavings: {
               status: 'estimated',
               savedTokens: 64,
-              detail: '估算值，真实账单以服务商用量为准。',
+              detail: '估算值，真实账单以 provider usage 为准。',
               basis: {
                 source: 'tool-spec-local-estimate',
                 toolCount: 3,

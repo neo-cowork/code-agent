@@ -38,7 +38,7 @@ describe('RouteTraceChip', () => {
             tokenSavings: {
               status: 'estimated',
               savedTokens: 128,
-              detail: '估算值：工具规格若写入普通消息上下文，约占 128 tokens；真实账单以服务商用量为准。',
+              detail: '估算值：工具规格若写入普通消息上下文，约占 128 tokens；真实账单以 provider usage 为准。',
               measurement: {
                 savingsSource: 'tool-spec-local-estimate',
                 usageSource: 'model-response-usage',
@@ -84,6 +84,9 @@ describe('RouteTraceChip', () => {
     expect(html).toContain('节省量是工具规格少占上下文的本地估算');
     expect(html).toContain('不等同服务商账单节省');
     expect(html).toContain('真实账单以服务商用量为准');
+    // host 原串仍是英文工程词，渲染层必须映射掉
+    expect(html).not.toContain('provider usage');
+    expect(html).not.toContain('saved tokens');
 	  });
 
 	  it('shows 服务商回传的节省量 without the local-estimate boundary', () => {
@@ -113,7 +116,7 @@ describe('RouteTraceChip', () => {
 	            tokenSavings: {
 	              status: 'provider-reported',
 	              savedTokens: 42,
-	              detail: '服务商已回传 programmatic tool 节省量：42 tokens；本轮服务商用量 已回传：输入 500 / 输出 50 tokens。',
+	              detail: 'provider 已回传 programmatic tool saved tokens：42 tokens；本轮 provider usage 已回传：输入 500 / 输出 50 tokens。',
 	              measurement: {
 	                savingsSource: 'provider-reported',
 	                usageSource: 'model-response-usage',
