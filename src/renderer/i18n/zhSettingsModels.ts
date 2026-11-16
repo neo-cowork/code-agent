@@ -917,7 +917,6 @@ export const zhSettingsModels = {
         commands: 'Commands',
         pluginAsset: 'Plugin asset',
         trust: 'Trust',
-        none: '无',
       },
       marketplace: {
         title: '插件市场',

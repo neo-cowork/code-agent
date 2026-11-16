@@ -546,12 +546,26 @@ export function useAgentIPC({
           return outcome;
         } catch (error) {
           logger.error('Foreground input delivery failed', error);
-          addMessage({
+          // 没送达：用户气泡留在时间线上标失败，错误卡带重试锚点（与主发送失败同一出口）。
+          const failedUser: Message = {
+            id: messageId,
+            role: 'user',
+            content: runtimeEnvelope.content,
+            attachments: runtimeEnvelope.attachments,
+            timestamp: Date.now(),
+            metadata: toMessageMetadata(runtimeContext),
+          };
+          upsertOptimisticUserMessage(failedUser, addMessage);
+          markOptimisticUserSendFailed(messageId);
+          const errorMessage: Message = {
             id: generateMessageId(),
             role: 'assistant',
             content: getAgentSendFailureMessage(error),
             timestamp: Date.now(),
-          });
+            metadata: { ...buildSendFailureRetryAnchor(failedUser, effectiveSessionId), sendFailureCode: SEND_REJECTED_FAILURE_CODE },
+          };
+          if (effectiveSessionId) recordFailedSend(effectiveSessionId, failedUser, errorMessage);
+          addMessage(errorMessage);
           return { outcome: 'failed' as const };
         }
       };

@@ -179,4 +179,77 @@ describe('listDirectoryModule', () => {
       else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
     }
   });
+
+  // N-FIX-LAZY-WORKDIR-READONLY-SEARCH-ENOENT-FU1：默认工作根本身也是懒创建的，
+  // 新数据目录上首轮之前不存在；缺失的根与缺失的计划目录一样按空目录处理，但
+  // 措辞中性——不把工作根说成任务文件夹。
+  it('returns ok neutral empty text on the missing default work root itself without creating it, and ENOENT on a missing non-planned sibling', async () => {
+    const prevHome = process.env.CODE_AGENT_HOME;
+    const prevDataDir = process.env.CODE_AGENT_DATA_DIR;
+    const dataDir = path.join(tmpDir, '.code-agent');
+    process.env.CODE_AGENT_HOME = tmpDir;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+
+    try {
+      const workRoot = path.join(tmpDir, 'Neo');
+      const sibling = path.join(tmpDir, 'Neo-missing-sibling');
+
+      const handler = await listDirectoryModule.createHandler();
+      const rootResult = await handler.execute(
+        { path: workRoot, recursive: true },
+        makeCtx({ workingDir: workRoot }),
+        allowAll,
+      );
+
+      expect(rootResult.ok).toBe(true);
+      if (rootResult.ok) {
+        expect(rootResult.output).toContain('(empty — this folder has no files yet)');
+        expect(rootResult.output).not.toContain('task folder');
+        expect(rootResult.meta).toMatchObject({
+          dirPath: workRoot,
+          recursive: true,
+          entryCount: 0,
+          fileCount: 0,
+          directoryCount: 0,
+          entries: [],
+          nextOffset: null,
+          entriesTruncated: false,
+        });
+      }
+      // 只读探查不为懒工作根落盘
+      await expect(fs.stat(workRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const siblingResult = await handler.execute(
+        { path: sibling, recursive: true },
+        makeCtx({ workingDir: tmpDir }),
+        allowAll,
+      );
+      expect(siblingResult).toEqual({
+        ok: false,
+        error: `Directory not found: ${sibling}`,
+        code: 'ENOENT',
+      });
+    } finally {
+      if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
+      else process.env.CODE_AGENT_HOME = prevHome;
+      if (prevDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
+    }
+  });
+
+  it('existing but empty default work root lists as a normal empty folder (unchanged)', async () => {
+    const workRoot = path.join(tmpDir, 'Neo-existing-empty');
+    await fs.mkdir(workRoot, { recursive: true });
+    const handler = await listDirectoryModule.createHandler();
+    const result = await handler.execute(
+      { path: workRoot, recursive: true },
+      makeCtx({ workingDir: workRoot }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('(empty page)');
+      expect(result.output).not.toContain('no files yet');
+    }
+  });
 });
