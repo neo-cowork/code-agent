@@ -470,6 +470,22 @@ describe('diagnoseBashFailure TCC privacy hint', () => {
     expect(lines).toEqual(['沙盒拒绝：/Users/tester/x（沙盒只允许写 /work 与临时目录）']);
   });
 
+  it('ambiguous codes alone are not a permission refusal (-1719 Invalid index, -1002 unsupported URL)', () => {
+    expect(run('osascript -e x', 'execution error: System Events got an error: Invalid index. (-1719)')).toEqual([]);
+    expect(run('osascript -e x', 'NSURLErrorDomain Code=-1002 "unsupported URL"')).toEqual([]);
+  });
+
+  it('adds no line when the failing command is not screencapture/osascript, even if the output quotes the text', () => {
+    expect(run('cat build.log', SCREENCAPTURE_DENIED)).toEqual([]);
+    expect(run('curl http://x', AUTOMATION_DENIED)).toEqual([]);
+    expect(run('npm test', ACCESSIBILITY_25211)).toEqual([]);
+  });
+
+  it('screencapture command does not get an Automation line, osascript command does not get Screen Recording', () => {
+    expect(run('screencapture -x a.png', AUTOMATION_DENIED)).toEqual([]);
+    expect(run('osascript -e x', SCREENCAPTURE_DENIED)).toEqual([]);
+  });
+
   it('unrelated numbers do not trip the accessibility pattern', () => {
     expect(run('node x.js', 'error code -10020 at line 1002')).toEqual([]);
   });

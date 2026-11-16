@@ -1007,17 +1007,17 @@ describe('bashModule failure diagnostics wiring', () => {
   });
 
   it.skipIf(process.platform !== 'darwin').each([
-    ['could not create image from display', '屏幕录制'],
-    ['execution error: Not authorized to send Apple events to "Finder". (-1743)', '自动化'],
-    ['execution error: System Events got an error: osascript is not allowed assistive access. (-1719)', '辅助功能'],
-  ])('foreground exit 1 with macOS privacy refusal %s names the System Settings page', async (stderr, page) => {
+    ['screencapture', 'could not create image from display', '屏幕录制'],
+    ['osascript', 'execution error: Not authorized to send Apple events to "Finder". (-1743)', '自动化'],
+    ['osascript', 'execution error: System Events got an error: osascript is not allowed assistive access. (-1719)', '辅助功能'],
+  ])('foreground exit 1 with macOS privacy refusal %s %s names the System Settings page', async (tool, stderr, page) => {
     vi.stubEnv('SSH_CONNECTION', '');
     vi.stubEnv('SSH_TTY', '');
     vi.stubEnv('SSH_CLIENT', '');
     try {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(
-        { command: `printf '%s\\n' '${stderr}' >&2; exit 1` },
+        { command: `${tool}() { printf '%s\\n' '${stderr}' >&2; return 1; }; ${tool} -x out.png` },
         makeCtx(),
         allowAll,
       );
@@ -1029,6 +1029,24 @@ describe('bashModule failure diagnostics wiring', () => {
         expect(classifyEnvBlocker({ toolName: 'Bash', result, sessionId: 's', runId: 'r' })).toBeNull();
         expect((result as { meta?: Record<string, unknown> }).meta?.envAssist).toBeUndefined();
       }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.skipIf(process.platform !== 'darwin')('foreground exit 1 from an unrelated command quoting a refusal gets no privacy line', async () => {
+    vi.stubEnv('SSH_CONNECTION', '');
+    vi.stubEnv('SSH_TTY', '');
+    vi.stubEnv('SSH_CLIENT', '');
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: `printf '%s\\n' 'could not create image from display' >&2; exit 1` },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).not.toContain('隐私与安全性');
     } finally {
       vi.unstubAllEnvs();
     }
