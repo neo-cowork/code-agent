@@ -844,6 +844,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: formatToolSchemaValidationError(executionToolName, blockingIssues),
+        metadata: { code: 'ARG_VALIDATION_FAILED' },
       };
     }
     // 未声明字段不硬拒：剥离后放行 + 上报（生产档），开发档额外 fail-loud。

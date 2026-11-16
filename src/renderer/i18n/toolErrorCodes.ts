@@ -74,6 +74,30 @@ export const toolErrorCodesZh = {
     summary: '没能为子任务建隔离副本',
     detail: '请确认这个文件夹是可用的 git 仓库后重试，原始报错可在下方展开查看。',
   },
+  BINARY_FILE_NOT_TEXT: {
+    summary: '这类文件不能当纯文本直接读取',
+    detail: 'Neo 会换一种方式打开它，你不需要做任何事。',
+  },
+  MAIL_CONNECTOR_FAILED: {
+    summary: '这次没能连上邮件',
+    detail: '请确认已允许 Neo 访问邮件，稍后再试一次；原始报错可在下方展开查看。',
+  },
+  ARG_VALIDATION_FAILED: {
+    summary: 'Neo 这一步准备的内容不完整，没有执行',
+    detail: '不是你的问题，Neo 会自行调整后再试；没有变化时可以再说一次你的需求。',
+  },
+  STALE_FILE: {
+    summary: '文件在 Neo 读取之后被改动过，这次没有写入',
+    detail: 'Neo 会重新读取最新内容后再修改，避免覆盖你的改动。',
+  },
+  READ_DIGEST_MISMATCH: {
+    summary: '覆盖前的核对没有通过，这次没有写入',
+    detail: 'Neo 会先重新读取这个文件再决定怎么改，你不需要做任何事。',
+  },
+  READ_REQUIRED_AFTER_SEARCH: {
+    summary: '这个文件还没有完整读过，暂时不能修改',
+    detail: 'Neo 会先打开读完整再修改，你不需要做任何事。',
+  },
 };
 
 export const toolErrorCodesEn: typeof toolErrorCodesZh = {
@@ -148,5 +172,29 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   WORKTREE_CREATE_FAILED: {
     summary: 'Couldn\'t create an isolated copy for the subtask',
     detail: 'Make sure this folder is a usable git repository and try again; the original error can be expanded below.',
+  },
+  BINARY_FILE_NOT_TEXT: {
+    summary: 'This kind of file can\'t be read as plain text',
+    detail: 'Neo will open it another way; there is nothing you need to do.',
+  },
+  MAIL_CONNECTOR_FAILED: {
+    summary: 'Couldn\'t reach your mail this time',
+    detail: 'Check that Neo is allowed to access Mail, then try again later; the original error can be expanded below.',
+  },
+  ARG_VALIDATION_FAILED: {
+    summary: 'Neo prepared this step incompletely, so it was not run',
+    detail: 'This is not your fault. Neo will adjust and try again; if nothing changes, say what you need once more.',
+  },
+  STALE_FILE: {
+    summary: 'The file changed after Neo read it, so nothing was written',
+    detail: 'Neo will read the latest content before editing, so your changes are not overwritten.',
+  },
+  READ_DIGEST_MISMATCH: {
+    summary: 'The check before overwriting did not pass, so nothing was written',
+    detail: 'Neo will read the file again first; there is nothing you need to do.',
+  },
+  READ_REQUIRED_AFTER_SEARCH: {
+    summary: 'This file has not been fully read yet, so it can\'t be changed',
+    detail: 'Neo will open and read it fully first; there is nothing you need to do.',
   },
 };
