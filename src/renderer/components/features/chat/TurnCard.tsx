@@ -432,7 +432,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
