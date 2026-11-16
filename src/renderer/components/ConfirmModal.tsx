@@ -6,6 +6,7 @@ import React from 'react';
 import { AlertTriangle, Shield } from 'lucide-react';
 import { Modal, ModalHeader, ModalFooter, Button } from './primitives';
 import { UI } from '@shared/constants';
+import { useI18n } from '../hooks/useI18n';
 
 // ============================================================================
 // ToolCreateConfirmModal - Confirm before creating dynamic tool
@@ -31,6 +32,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
   onAllow,
   onDeny,
 }) => {
+  const { t } = useI18n();
   const isDangerous = request.type === 'bash_script';
 
   return (
@@ -44,8 +46,8 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
           icon={isDangerous ? <AlertTriangle className="w-6 h-6" /> : <Shield className="w-6 h-6" />}
           iconBgClass={isDangerous ? 'bg-red-500/20' : 'bg-indigo-500/20'}
           iconColorClass={isDangerous ? 'text-badge-danger' : 'text-badge-accent'}
-          title="创建动态工具"
-          subtitle="AI 请求创建以下工具"
+          title={t.toolCreateConfirm.title}
+          subtitle={t.toolCreateConfirm.subtitle}
           onClose={onDeny}
         />
       }
@@ -55,7 +57,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
             onClick={onDeny}
             variant="ghost"
           >
-            拒绝
+            {t.toolCreateConfirm.deny}
           </Button>
           <Button
             onClick={onAllow}
@@ -63,7 +65,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
             leftIcon={<Shield className="w-4 h-4" />}
             className={isDangerous ? '' : '!bg-indigo-600 hover:!bg-indigo-500'}
           >
-            允许创建
+            {t.toolCreateConfirm.allow}
           </Button>
         </ModalFooter>
       }
@@ -74,7 +76,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
           <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
             <AlertTriangle className="w-5 h-5 text-badge-danger shrink-0 mt-0.5" />
             <div className="text-sm text-badge-danger">
-              此工具类型为 <code className="px-1 bg-red-500/20 rounded">bash_script</code>，可以执行系统命令。请仔细确认后再允许。
+              {t.toolCreateConfirm.warningPrefix}<code className="px-1 bg-red-500/20 rounded">bash_script</code>{t.toolCreateConfirm.warningSuffix}
             </div>
           </div>
         )}
@@ -82,11 +84,11 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         {/* Tool Info */}
         <div className="space-y-3">
           <div className="flex items-start gap-2">
-            <span className="text-xs text-zinc-500 w-16 shrink-0">名称:</span>
+            <span className="text-xs text-zinc-500 min-w-20 shrink-0">{t.toolCreateConfirm.nameLabel}</span>
             <span className="text-sm text-zinc-200 font-mono">{request.name}</span>
           </div>
           <div className="flex items-start gap-2">
-            <span className="text-xs text-zinc-500 w-16 shrink-0">类型:</span>
+            <span className="text-xs text-zinc-500 min-w-20 shrink-0">{t.toolCreateConfirm.typeLabel}</span>
             <span className={`text-sm font-mono px-2 py-0.5 rounded ${
               isDangerous ? 'bg-red-500/20 text-badge-danger' : 'bg-zinc-700 text-zinc-400'
             }`}>
@@ -94,7 +96,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
             </span>
           </div>
           <div className="flex items-start gap-2">
-            <span className="text-xs text-zinc-500 w-16 shrink-0">描述:</span>
+            <span className="text-xs text-zinc-500 min-w-20 shrink-0">{t.toolCreateConfirm.descriptionLabel}</span>
             <span className="text-sm text-zinc-400">{request.description}</span>
           </div>
         </div>
@@ -102,7 +104,7 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         {/* Code Preview */}
         {(request.code || request.script) && (
           <div className="space-y-1">
-            <span className="text-xs text-zinc-500">代码预览:</span>
+            <span className="text-xs text-zinc-500">{t.toolCreateConfirm.codePreviewLabel}</span>
             <pre className={`text-xs p-3 rounded-lg border overflow-x-auto max-h-40 ${
               isDangerous
                 ? 'bg-red-500/10 border-red-500/20 text-badge-danger'
