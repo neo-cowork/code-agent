@@ -62,6 +62,7 @@ export function createFakeCalendarBridge() {
             const item: FakeItem = {
               id: `ev-${state.nextId++}`, calendarId: cal.id, calendar: cal.title, title: String(body.title),
               startMs: Number(body.startMs), endMs: Number(body.endMs), location: typeof body.location === 'string' ? body.location : '',
+              notes: typeof body.notes === 'string' ? body.notes : '',
             };
             state.items.push(item);
             return { event: full(item) } as T;

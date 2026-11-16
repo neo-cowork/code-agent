@@ -1,5 +1,8 @@
 import * as os from 'os';
 import * as path from 'path';
+import type { ToolContext, ToolResult } from '../../protocol/tools';
+import { getPermissionModeManager } from '../../permissions/modes';
+import { getDatabase } from '../../services/core/databaseService';
 
 /** Expand a leading home-directory marker without changing other paths. */
 export function expandTilde(filePath: string): string {
@@ -13,6 +16,31 @@ export function resolveInputPath(inputPath: string, workingDir: string): string 
   const expanded = expandTilde(inputPath);
   if (path.isAbsolute(expanded)) return expanded;
   return path.join(workingDir, expanded);
+}
+
+export function guardUnattendedInputPath(
+  inputPath: string | undefined,
+  ctx: Pick<ToolContext, 'sessionId' | 'logger'>,
+): ToolResult<never> | null {
+  if (inputPath !== undefined && path.isAbsolute(expandTilde(inputPath))) return null;
+  if (!getPermissionModeManager().isUnattendedSession(ctx.sessionId)) return null;
+
+  let hasWorkingDirectory = false;
+  try {
+    const workingDirectory = getDatabase().getSession(ctx.sessionId ?? '')?.workingDirectory;
+    hasWorkingDirectory = typeof workingDirectory === 'string' && workingDirectory.trim().length > 0;
+  } catch (error) {
+    ctx.logger.warn('Could not resolve the session working folder for an unattended read', {
+      sessionId: ctx.sessionId,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (hasWorkingDirectory) return null;
+  return {
+    ok: false,
+    code: 'WORKING_DIRECTORY_REQUIRED',
+    error: 'This run has no working folder. Pick a folder for the task first; absolute paths are still allowed.',
+  };
 }
 
 export interface ParsedInput {

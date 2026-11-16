@@ -195,6 +195,14 @@ export class CLISessionManager {
     return sessionWithMessages;
   }
 
+  getSessionMetadata(sessionId: string): Record<string, unknown> | undefined {
+    return this.getDb()?.getSession(sessionId)?.metadata;
+  }
+
+  getSessionTitle(sessionId: string): string | undefined {
+    return this.getDb()?.getSession(sessionId)?.title;
+  }
+
   /**
    * 列出所有会话
    */
