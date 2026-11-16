@@ -156,7 +156,7 @@ async function executeCalendar(
       error: calendarFailure
         ? error.message
         : `Calendar connector failed: ${error instanceof Error ? error.message : String(error)}`,
-      ...(calendarFailure ? { code: error.code } : {}),
+      code: calendarFailure ? error.code : 'CONNECTOR_FAILED',
     };
   }
 }

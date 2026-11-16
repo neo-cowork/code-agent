@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadAndValidateAllowlist } from '../../scripts/ci/internal-text-leak-gate.mjs';
+import { loadAndValidateAllowlist, scanRendererStatic } from '../../scripts/ci/internal-text-leak-gate.mjs';
 import allowlist from '../../scripts/lib/internal-text-leak-allowlist.json';
 
 const ALLOWLIST_REL_PATH = 'scripts/lib/internal-text-leak-allowlist.json';
@@ -17,15 +17,17 @@ describe('scripts/lib/internal-text-leak-allowlist.json', () => {
     expect(entries).toEqual(allowlist);
 
     const seenKeys = new Set<string>();
-    const nonRendererPaths: string[] = [];
+    const { hostCopyRoots } = scanRendererStatic();
+    const nonCopyPaths: string[] = [];
     const duplicateKeys: string[] = [];
     const unownedEntries: string[] = [];
     const notBareTicketId: string[] = [];
     const retiredReasonEntries: string[] = [];
 
     for (const entry of entries) {
-      if (!entry.file.startsWith('src/renderer/')) {
-        nonRendererPaths.push(entry.file);
+      if (!entry.file.startsWith('src/renderer/')
+        && !hostCopyRoots.some((root: string) => entry.file === root || entry.file.startsWith(`${root}/`))) {
+        nonCopyPaths.push(entry.file);
       }
 
       const key = `${entry.file}|${entry.rule}|${entry.sample.replace(/\s+/g, ' ').trim()}`;
@@ -45,7 +47,7 @@ describe('scripts/lib/internal-text-leak-allowlist.json', () => {
       }
     }
 
-    expect(nonRendererPaths).toEqual([]);
+    expect(nonCopyPaths).toEqual([]);
     expect(duplicateKeys).toEqual([]);
     expect(unownedEntries).toEqual([]);
     expect(notBareTicketId).toEqual([]);

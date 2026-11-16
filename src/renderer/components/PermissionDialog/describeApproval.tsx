@@ -13,7 +13,7 @@ import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
-import { formatFilePath, getPermissionConfig } from './utils';
+import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
 import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
@@ -184,7 +184,7 @@ function describeKind(
     case 'file_delete':
     case 'network': {
       const title = kind === 'shell' || kind === 'network'
-        ? getPermissionConfig(request.type).title
+        ? getPermissionTitle(request.type, p)
         : p[FILE_TITLE_KEY[kind]];
       const connector = request.details.connectorAccess;
       const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';

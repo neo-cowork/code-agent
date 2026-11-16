@@ -55,13 +55,13 @@ pub(crate) fn prompt_text(
 ) -> &'static str {
     match (language, offers_background_continue, prompt) {
         (QuitDialogLanguage::Zh, true, QuitPrompt::RunningTasks) => {
-            "有任务正在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
+            "有任务正在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, true, QuitPrompt::Both) => {
-            "有任务正在运行，也有定时任务。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
+            "有任务正在运行，也有定时任务。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, true, QuitPrompt::Unverified) => {
-            "无法确认是否有任务在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出"
+            "无法确认是否有任务在运行。\n\n后台继续：关闭窗口，任务和定时任务照常运行\n\n停止并退出：停止全部任务（含定时任务）并退出"
         }
         (QuitDialogLanguage::Zh, false, QuitPrompt::RunningTasks) => {
             "有任务正在运行。退出将停止这些任务。"
@@ -73,13 +73,13 @@ pub(crate) fn prompt_text(
             "无法确认是否有任务在运行。退出将停止运行中的任务和定时任务。"
         }
         (QuitDialogLanguage::En, true, QuitPrompt::RunningTasks) => {
-            "Tasks are currently running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
+            "Tasks are currently running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\n\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
         (QuitDialogLanguage::En, true, QuitPrompt::Both) => {
-            "Tasks are currently running, and there are scheduled tasks.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
+            "Tasks are currently running, and there are scheduled tasks.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\n\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
         (QuitDialogLanguage::En, true, QuitPrompt::Unverified) => {
-            "Unable to confirm whether tasks are running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
+            "Unable to confirm whether tasks are running.\n\nKeep Running in Background: Close the window; tasks and scheduled tasks will continue running\n\nStop and Quit: Stop all tasks (including scheduled tasks) and quit"
         }
         (QuitDialogLanguage::En, false, QuitPrompt::RunningTasks) => {
             "Tasks are currently running. Quitting will stop these tasks."
@@ -108,14 +108,11 @@ mod tests {
                 QuitPrompt::Unverified,
             ] {
                 let three = prompt_text(prompt, true, language);
-                let (lead, explanations) = three
-                    .split_once("\n\n")
-                    .expect("lead and explanations need a blank line");
-                assert!(!lead.is_empty() && !lead.contains('\n'));
-                let lines: Vec<_> = explanations.lines().collect();
-                assert_eq!(lines.len(), 2);
-                assert!(lines[0].starts_with(copy.background_button));
-                assert!(lines[1].starts_with(copy.quit_button));
+                let parts: Vec<_> = three.split("\n\n").collect();
+                assert_eq!(parts.len(), 3);
+                assert!(parts[1].starts_with(copy.background_button));
+                assert!(parts[2].starts_with(copy.quit_button));
+                assert!(parts.iter().all(|part| !part.is_empty() && !part.contains('\n')));
                 assert!(!prompt_text(prompt, false, language).contains('\n'));
             }
         }

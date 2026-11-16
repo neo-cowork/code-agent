@@ -11,6 +11,7 @@
 
 import type { Language } from '../i18n';
 import { projectSourceTrustCopy } from '../i18n/agentRunErrors';
+import { sessionConflictLabels } from '../i18n/projectTrust';
 
 const genericFailure: Record<Language, string> = {
   zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
@@ -29,8 +30,8 @@ const busy: Record<Language, string> = {
 
 // 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
 const sessionHeldByOldRun: Record<Language, string> = {
-  zh: '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。',
-  en: 'This message was not sent: an earlier task in this conversation is still open. Abandon that task first, then retry.',
+  zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
+  en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
 };
 
 const tooManyRequests: Record<Language, string> = {
@@ -69,6 +70,16 @@ export function uploadFailureMessage(input: { status: number; retryAfterSeconds?
   }
   if (status === 413) return uploadCopy.tooLarge[lang];
   return uploadCopy.generic[lang];
+}
+
+/** getPathForFile 上传失败：userMessage 永远是人话一句，调用方直接展示，不要展示 err.message 以外的底层文本。 */
+export class UploadFailureError extends Error {
+  readonly userMessage: string;
+  constructor(userMessage: string) {
+    super(userMessage);
+    this.name = 'UploadFailureError';
+    this.userMessage = userMessage;
+  }
 }
 
 /** 读 Retry-After：优先响应头，其次 JSON 体的 retryAfterSeconds；都没有返回 undefined。 */
@@ -141,4 +152,10 @@ export function domainFailureMessage(input: { status: number; body: string; lang
 export function isProjectSourceTrustFailure(error: unknown): boolean {
   return typeof error === 'object' && error !== null
     && (error as { code?: unknown }).code === 'PROJECT_SOURCE_TRUST';
+}
+
+/** 发送失败是不是会话被没结束的旧任务占着（失败说明下挂「放弃 / 重试」两个按钮）。 */
+export function isSessionConflictFailure(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && (error as { code?: unknown }).code === 'RUN_SESSION_CONFLICT';
 }
