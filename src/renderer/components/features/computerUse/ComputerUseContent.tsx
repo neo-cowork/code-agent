@@ -116,7 +116,7 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
     ready: false,
     background: false,
     approvalScope: 'blocked',
-    safetyNote: 'Web 模式没有 native desktop bridge；这里仅展示 Computer Use 的能力边界和降级原因。',
+    safetyNote: '网页版读不到桌面状态；这里只说明电脑操作的能力范围和不可用的原因。',
     targetApp: null,
     blockedReason: '网页版里无法读取桌面状态',
     approvedApps: [],
@@ -126,7 +126,7 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
     failureKind: 'evidence_unavailable',
     blockingReasons: ['网页版里无法读取桌面状态'],
     recommendedAction: '在桌面壳中打开后再读取窗口、截图和 AX evidence。',
-    evidenceSummary: ['Web mode: native desktop evidence unavailable'],
+    evidenceSummary: ['网页版里读不到桌面信息'],
     axQuality: null,
   };
 }

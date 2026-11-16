@@ -465,7 +465,7 @@ export function describeComputerUseFailures(input: ComputerUseFailureInput): Com
   if (surface?.mode === 'background_surface_unavailable') {
     addExplanation(items, {
       id: 'background-unavailable',
-      title: '后台控制面不可用',
+      title: '暂时不能在后台操作',
       detail: surface.safetyNote || '当前不能在后台操作，只能查看状态。',
       tone: 'blocked',
     });
