@@ -41,7 +41,7 @@ import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifact
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
+import { getTaskDeliveryFailure } from './taskDeliveryVerdict';
 import {
   DEFAULT_CONFIG,
   SESSION_STOP_REQUESTED_EVENT,
@@ -368,11 +368,11 @@ export class TaskManager extends EventEmitter {
           seenArtifactLocations.add(location);
           return true;
         });
-        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
-        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
+        const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
+        this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          ...(deliveryFailed
-            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+          ...(deliveryFailure
+            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.', deliveryFailure }
             : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });

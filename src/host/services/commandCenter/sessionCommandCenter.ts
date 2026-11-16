@@ -29,6 +29,7 @@ import {
 import {
   deferTerminalResultProjectionUntilAccessible,
   projectTerminalResult,
+  resolveLocale,
 } from './terminalResultProjection';
 import { isSessionNotAccessibleError } from './sessionAccessRetry';
 import { getConfigService } from '../core/configService';
@@ -42,6 +43,7 @@ import {
   composeSessionCommandTaskResultText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
+  formatSessionTaskDeliveryFailure,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
@@ -542,6 +544,7 @@ export class SessionCommandCenter {
     const data = event.data as {
       taskId?: unknown;
       error?: unknown;
+      deliveryFailure?: unknown;
       conclusion?: unknown;
       artifacts?: unknown;
     } | undefined;
@@ -585,14 +588,15 @@ export class SessionCommandCenter {
     }
     if (event.type === 'task_error') {
       const rawError = typeof data?.error === 'string' ? data.error : '执行失败';
+      const detail = formatSessionTaskDeliveryFailure(data?.deliveryFailure, resolveLocale()) ?? rawError;
       const stopped = resolveStoppedTaskOutcome({
         status: 'failed',
-        detail: rawError,
+        detail,
         lastUrl: this.lastUrlByTask.get(task.id),
       });
       if (stopped.notice && stopped.kind) task.stopped = { content: stopped.notice, kind: stopped.kind };
-      // 任务记录 / ledger / 给模型的 [任务结果] 保留原始错误（诊断依据）；白话说明只走 backgroundTaskStopped 通道。
-      await this.settle(task, 'failed', rawError);
+      // 终止性审批/工具修复失败用固定人话句；其余任务记录、ledger 与模型结果保留原始错误。
+      await this.settle(task, 'failed', detail);
       return;
     }
     if (event.type === 'task_cancelled') {

@@ -16,12 +16,13 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 import { getAuthService } from '../auth/authService';
+import { stripToolCallProtocolMarkup } from '../../agent/runtime/contextAssembly/transcriptProjection';
 
 const logger = createLogger('TerminalResultProjection');
 
 export type TerminalResultStatus = 'completed' | 'failed' | 'cancelled';
 
-function resolveLocale(): SessionTaskResultStatusWordLocale {
+export function resolveLocale(): SessionTaskResultStatusWordLocale {
   try {
     return getConfigService().getSettings().ui.language;
   } catch {
@@ -37,9 +38,9 @@ export async function projectTerminalResult(
   task: SessionCommandTask,
   status: TerminalResultStatus,
 ): Promise<void> {
-  // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
-  // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
-  const resultText = task.resultText ?? task.summary;
+  // 模型读 resultText，卡片读 backgroundTaskResult.summary；两者共用这份净化后的文本。
+  const rawResultText = task.resultText ?? task.summary;
+  const resultText = rawResultText === undefined ? undefined : stripToolCallProtocolMarkup(rawResultText);
   await getSessionManager().addMessageToSession(
     task.sessionId,
     buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale()),
