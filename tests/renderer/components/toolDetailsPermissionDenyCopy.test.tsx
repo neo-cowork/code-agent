@@ -367,3 +367,27 @@ describe('denial recovery sentence in the real chat detail row', () => {
     getDenialRegistry().clearAll();
   });
 });
+
+describe('turn-disabled tool bounce in the real chat detail row', () => {
+  it.each([
+    ['zh', '请在新消息里再告诉 Neo 你想做什么'],
+    ['en', 'Tell Neo again in a new message what you want'],
+  ] as const)('%s shows a way out instead of the generic fallback', (language, sentence) => {
+    const result = {
+      success: false,
+      error: "calendar_create_event is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.",
+      metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
+    } as unknown as ToolExecutionResult;
+    i18nState.lang = language;
+    const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
+      toolCall: asToolCall('disabled-row', 'calendar_create_event', {}, result),
+    }));
+    expect(markup).toContain(sentence);
+    expect(markup).not.toContain('展开可查看详情');
+    expect(markup).not.toContain('expand for details');
+    expect(markup).not.toContain('TOOL_DISABLED_FOR_RUN');
+    const folded = humanizeToolFailureReason(asToolCall('disabled-row', 'calendar_create_event', {}, result), language === 'zh' ? zh : en);
+    expect(folded).toContain(sentence);
+    process.stdout.write(`disabled-row-${language}: ${markup}\nfolded-${language}: ${folded}\n`);
+  });
+});

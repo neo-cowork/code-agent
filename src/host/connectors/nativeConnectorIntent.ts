@@ -44,15 +44,19 @@ export interface NativeConnectorIntentInput {
   allowedConnectorIds?: readonly string[];
 }
 
-// Carry only an explicit reference/parameter correction, stopping at the first topic change.
-// A unique prior connector is required; ambiguous multi-connector turns do not guess a target.
-const FOLLOWUP_PREFIX_RE = /^(?:(?:no[,\s]+wait|actually|instead|please|不对|等等|请|麻烦)[,，。!！\s]*)+/iu;
-const CONNECTOR_FOLLOWUP_RE = /^(?:(?:make|move|change|reschedule|set|create|send|save|try|do|delete|cancel)\s+(?:it|that|this)\b|(?:change|set)\s+the\s+(?:time|date|title|recipient)\b|(?:把)?(?:它|这个|那个|刚才的)(?:改|换|设|建|创|发|存|删|取消|再)|(?:改成|改到|换成|再试一次|重新创建|重新发送))/iu;
+// Carry the previous connector intent only for a short, attended correction/continuation that names
+// no other target: a correction cue or a date/time token. Topic changes stop the carry; a unique
+// prior connector is required, so ambiguous multi-connector turns do not guess a target.
+const FOLLOWUP_MAX_CHARS = 80;
+const FOLLOWUP_CUE_RE = /\b(?:make|move|change|reschedule|set|create|add|send|save|try|do|delete|cancel|instead|again|retry|please|okay|ok)\b|改|换|设|建|创|发|存|删|取消|再|重新|吧|帮我/iu;
+const FOLLOWUP_TIME_RE = /\d\s*(?:[:：]\d|点|時|时|号|日|月|am\b|pm\b|st\b|nd\b|rd\b|th\b)|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d|\bnoon\b|上午|下午|晚上|中午|今晚/iu;
 const OTHER_TARGET_RE = /\b(?:file|folder|report|spreadsheet|document|code|function|website|image|video)\b|文件|文件夹|报告|表格|代码|函数|网页|图片|视频/iu;
 
 function isConnectorFollowup(text: string): boolean {
-  return !OTHER_TARGET_RE.test(text) && !isScheduleTaskChatIntent(text)
-    && CONNECTOR_FOLLOWUP_RE.test(text.trim().replace(FOLLOWUP_PREFIX_RE, ''));
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= FOLLOWUP_MAX_CHARS
+    && !OTHER_TARGET_RE.test(trimmed) && !isScheduleTaskChatIntent(trimmed)
+    && (FOLLOWUP_CUE_RE.test(trimmed) || FOLLOWUP_TIME_RE.test(trimmed));
 }
 
 function explicitConnectorIntent(userText: string): string[] {

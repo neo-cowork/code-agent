@@ -202,4 +202,34 @@ describe('connector follow-up through MessageProcessor.handleToolResponse', () =
     expect(other.dispatch).not.toHaveBeenCalled();
     expect(cards()).toHaveLength(1);
   });
+
+  it.each([
+    'Okay, make it Nov 17 at 15:00',
+    '把时间改成17号下午3点',
+    'No, Nov 17 at 3pm please',
+    'Make the meeting Nov 17 at 15:00 instead',
+    '17号下午三点吧，帮我建上',
+  ])('ordinary correction %j after a decline reaches a NEW permission_request', async (correction) => {
+    await user(FIRST).call();
+    expect(cards()).toHaveLength(1);
+    const second = user(correction);
+    const result = await second.call();
+    expect(result?.metadata?.code).not.toBe('TOOL_DISABLED_FOR_RUN');
+    expect(second.dispatch).toHaveBeenCalledOnce();
+    expect(cards()).toHaveLength(2);
+  });
+
+  it.each([
+    'What is the weather like in Beijing?',
+    '今天北京天气怎么样',
+    'Write a sorting function for me',
+    'Explain how rainbows form.',
+  ])('unrelated new topic %j after a decline stays bounced with zero new cards', async (other) => {
+    await user(FIRST).call();
+    const next = user(other);
+    const result = await next.call();
+    expect(result?.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    expect(next.dispatch).not.toHaveBeenCalled();
+    expect(cards()).toHaveLength(1);
+  });
 });

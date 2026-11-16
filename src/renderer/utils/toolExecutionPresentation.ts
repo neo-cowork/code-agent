@@ -247,6 +247,7 @@ type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
 
 const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Set([
   'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
+  'TOOL_DISABLED_FOR_RUN',
   'WORKBENCH_SCOPE_DENIED',
   'PROJECT_SOURCE_READ_ONLY',
   'RUN_CONTEXT_MISMATCH',
