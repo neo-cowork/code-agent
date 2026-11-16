@@ -117,3 +117,59 @@ describe('background rate limits by visible user turn', () => {
     expect(counts()).toEqual({ full: 0, muted: 2, rate: 1 });
   });
 });
+
+// Message shapes below are copied from a real run (web build, dogfood model, 429 fault proxy):
+// user -> assistant{delegate_task + preannounce} -> hidden child prompt -> tool{sessionTask accepted}
+// -> assistant progress text -> hidden continuation ctx -> system backgroundTaskResult(failed)
+// -> system backgroundTaskStopped -> hidden wake prompt -> hidden ctx -> system backgroundWakeFailed.
+function realTurn(n: number, text: string, tasks: string[]): Message[] {
+  const t = n * 1000;
+  const calls = tasks.map((_, k) => `call_${n}_${k}`);
+  return [
+    { id: `ru${n}`, role: 'user', content: text, timestamp: t },
+    { id: `ra${n}`, role: 'assistant', content: `我先把“${text.slice(0, 20)}…”交给后台执行，完成后回到这里交付结果。`, timestamp: t + 1,
+      toolCalls: calls.map((id, k) => ({ id, name: 'delegate_task', arguments: { lane_key: `lane-${n}-${k}`, prompt: 'x' } })),
+      metadata: { backgroundTaskPreannounce: { text: '我先交给后台执行。', title: text.slice(0, 20) } } },
+    ...tasks.map((_, k): Message => ({ id: `rc${n}${k}`, role: 'user', content: 'This task covers only the objective in <drafted_task_plan>', isMeta: true, timestamp: t + 2 + k })),
+    ...tasks.map((taskId, k): Message => ({ id: `rt${n}${k}`, role: 'tool', content: '', timestamp: t + 5 + k,
+      toolResults: [{ toolCallId: calls[k], success: true, output: `后台任务「${taskId}」已开始，尚未完成；完成后会在这里告诉你结果。`,
+        metadata: { sessionTask: { outcome: 'accepted', tasks: [{ taskId, shortName: taskId, status: 'running' }] } } }] })),
+    { id: `rp${n}`, role: 'assistant', content: '后台任务正在跑，读完标题后我会直接告诉你结果。', timestamp: t + 10 },
+    { id: `rx${n}`, role: 'system', content: '<failed-run-continuation-context> 上一轮 agent 运行在完成最终回复前失败。', isMeta: true, timestamp: t + 20 },
+    ...tasks.flatMap((taskId, k): Message[] => [
+      { id: `rr${n}${k}`, role: 'system', content: `[任务结果] ${taskId}｜已失败｜${summary}`, timestamp: t + 30 + k * 3,
+        metadata: { backgroundTaskResult: { source: 'agent-result', taskId, shortName: taskId, status: 'failed', summary } } },
+      { id: `rs${n}${k}`, role: 'system', content: `「${taskId}」：${summary}`, timestamp: t + 31 + k * 3,
+        metadata: { backgroundTaskStopped: { taskId, kind: 'error' } } },
+      { id: `rw${n}${k}`, role: 'user', content: `后台任务 ${taskId} 已失败，结果摘要：${summary}。`, isMeta: true, timestamp: t + 32 + k * 3 },
+    ]),
+    { id: `rf${n}`, role: 'system', content: '后台任务已结束；自动汇报这一步没能完成。', timestamp: t + 60,
+      metadata: { backgroundWakeFailed: { taskId: tasks[0], reason: 'turn_error', title: tasks[0] } } },
+  ];
+}
+describe('real-run shapes: one rate line for the latest failed visible turn', () => {
+  beforeEach(() => {
+    useAppStore.setState({ language: 'zh', processingSessionIds: new Set(), disclosureLevel: 'simple' });
+    useSessionStore.setState({ currentSessionId: 'background-rate', runningSessionIds: new Set() });
+  });
+  afterEach(() => { cleanup(); useMessageActionStore.getState().unregister(); });
+  const texts = ['Open example.com as a background browser task', 'Now do the same for example.org', 'And one more background browser task for example.net'];
+  it.each([
+    { label: '3 turns x 1 failed child', tasks: [['task-a'], ['task-b'], ['task-c']] },
+    { label: '2 turns x 1 child + latest turn with 2 children', tasks: [['task-a'], ['task-b'], ['task-c', 'task-d']] },
+  ])('$label: collapsed/expanded history has two grey lines, one rate line, no red cards', ({ tasks }) => {
+    const messages = tasks.flatMap((ids, i) => realTurn(i + 1, texts[i], ids));
+    const persisted = JSON.stringify(messages);
+    render(view(messages));
+    expect(counts()).toEqual({ full: 0, muted: 2, rate: 1 });
+    expect(JSON.stringify(messages)).toBe(persisted); // nothing synthesized into / overwritten in the persisted rows
+  });
+  it('retry resends the latest visible user message of the latest failed turn, never a hidden prompt', () => {
+    const messages = [['task-a'], ['task-b'], ['task-c', 'task-d']].flatMap((ids, i) => realTurn(i + 1, texts[i], ids));
+    const send = vi.fn();
+    useMessageActionStore.getState().register(send, () => messages);
+    render(view(messages));
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(send).toHaveBeenCalledExactlyOnceWith(texts[2]);
+  });
+});
