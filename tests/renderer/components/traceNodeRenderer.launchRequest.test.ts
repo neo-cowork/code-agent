@@ -150,12 +150,12 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    // 施工单二 B：轻量 inline 问答——问题句 + 摘要一句 + 批准/拒绝，无重型任务清单
+    // 施工单二 B：轻量 inline 问答——问题句 + 摘要一句 + 启动/取消，无重型任务清单
     expect(html).toContain('启动团队');
     expect(html).toContain('批准 3 个成员启动？');
     expect(html).toContain('准备启动 3 个 agent');
     expect(html).toContain('启动');
-    expect(html).toContain('拒绝');
+    expect(html).toContain('取消');
     expect(html).toContain('取消');
     expect(html).toContain('允许');
     // 重型形态退役：不展开 per-task 工具/依赖列表
