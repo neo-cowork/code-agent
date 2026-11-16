@@ -122,4 +122,19 @@ describe('calendar write round trip (EventKit)', () => {
     expect(fake.state.items).toHaveLength(1);
     expect(await undoCalendarDelete('s', 'unknown')).toEqual({ ok: false, reason: 'not_found' });
   });
+
+  it('④ a meeting invite with very long notes still restores (notes capped under the bridge body limit, marked as truncated)', async () => {
+    const longNotes = '拨入号码与多语言说明。'.repeat(3_000); // 30k chars ≈ 90 KB UTF-8, over the 64 KiB bridge limit
+    fake.state.items.push({ id: 'cal-id-8012:EV2', calendarId: 'cal-id-8012', calendar: '日历', title: '周会', startMs: HOUR, endMs: 2 * HOUR, notes: longNotes });
+    const result = await run(calendarDeleteEventModule, { calendar: '日历', event_uid: 'cal-id-8012:EV2' });
+    store.messages.push(
+      { id: 'm1', role: 'assistant', content: '', timestamp: 1, toolCalls: [{ id: 'tc-long', name: 'calendar_delete_event', arguments: {} }] } as Message,
+      { id: 'm2', role: 'tool', content: '', timestamp: 2, toolResults: [{ toolCallId: 'tc-long', success: true, output: result.output, metadata: result.meta }] } as Message,
+    );
+    expect(await undoCalendarDelete('s', 'tc-long')).toMatchObject({ ok: true });
+    const body = fake.state.calls.at(-1)?.body as { notes: string };
+    expect(Buffer.byteLength(JSON.stringify(body), 'utf8')).toBeLessThan(64 * 1024);
+    expect(body.notes.endsWith('（备注过长，撤销时已截断）')).toBe(true);
+    expect(body.notes.startsWith('拨入号码与多语言说明。')).toBe(true);
+  });
 });

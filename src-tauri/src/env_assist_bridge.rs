@@ -18,8 +18,10 @@ mod imp {
     use std::time::Duration;
 
     const BRIDGE_TOKEN_BYTES: usize = 32;
-    // Room for a calendar write (title + location in CJK); every other route takes an empty or tiny body.
-    const MAX_BODY_BYTES: usize = 4096;
+    // Room for a calendar write: undo re-creates a deleted event with its notes, and meeting invites carry long
+    // notes (dial-ins, multi-language text). 64 KiB covers that; the host also caps restored notes below it.
+    // Every other route takes an empty or tiny body; the bearer token + loopback check run first either way.
+    const MAX_BODY_BYTES: usize = 64 * 1024;
     const MAX_HEADER_BYTES: usize = 8192;
     const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -796,13 +798,12 @@ mod imp {
             let server = start_bridge_server(token.clone(), fake.clone()).expect("start bridge");
             let host = format!("127.0.0.1:{}", server.port);
 
-            let oversize = format!(
-                "{{\"targetBundleId\":\"{}\"}}",
-                "a".repeat(MAX_BODY_BYTES + 1)
-            );
+            // Declared length over the limit is refused before the body is read. (The body itself is not sent:
+            // with a 64 KiB limit a real oversize body would outrun the socket buffer and the early 413 + close
+            // would surface as a client-side connection reset instead of a readable status.)
             let req = format!(
-                "POST /v1/passive/automation HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{oversize}",
-                oversize.len()
+                "POST /v1/passive/automation HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{{}}",
+                MAX_BODY_BYTES + 1
             );
             let (status, _) = send_raw_http(server.port, &req);
             assert_eq!(status, 413);

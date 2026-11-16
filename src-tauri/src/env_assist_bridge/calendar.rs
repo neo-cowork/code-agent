@@ -476,6 +476,18 @@ mod tests {
         assert_eq!(fake.reads.load(Ordering::SeqCst) + fake.writes.load(Ordering::SeqCst), 0);
     }
 
+    /// ai-review Important: undo re-creates an event with its notes; a meeting invite's notes run well past 4 KB.
+    #[test]
+    fn a_create_with_long_notes_fits_the_body_limit() {
+        let (fake, server) = start(FULL_ACCESS);
+        let notes = "拨入号码与多语言说明。".repeat(1_500); // ≈ 49 KB UTF-8
+        let body = format!(r#"{{"op":"create","title":"周会","startMs":10,"endMs":20,"notes":"{notes}"}}"#);
+        assert!(body.len() > 40_000);
+        let (code, raw) = post(server.port, &server.token, "/v1/write/calendar-event", &body);
+        assert_eq!(code, 200, "{}", &raw[..raw.len().min(200)]);
+        assert_eq!(fake.writes.load(Ordering::SeqCst), 1);
+    }
+
     /// One weekly series, two occurrences sharing the id: the occurrence time picks the second one only.
     #[test]
     fn write_addresses_one_occurrence_of_a_recurring_series() {

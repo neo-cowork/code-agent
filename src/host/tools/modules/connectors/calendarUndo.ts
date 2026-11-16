@@ -2,7 +2,8 @@
 // 删除前 calendar_delete_event 把快照（标题/时间/地点/备注/日历）存进工具结果元数据；这里只按
 // 「会话 + 工具调用 id」从宿主自己的库里取快照重建，渲染层传不进任何日程内容（不能借撤销任意建日程）。
 // 用户亲手点的、可再删掉的恢复操作，不再走批准卡。
-// ponytail: 重复日程的某一次被删后，撤销重建的是一条普通日程（不恢复整个系列）；要恢复系列时再做。
+// ponytail: 撤销只重建标题 / 时间 / 地点 / 备注 / 日历：重复日程的某一次被删后重建为普通日程，全天、提醒、参会人、链接不恢复，
+// 同名日历按标题取第一个；要恢复这些时再扩原生快照与建日程路由。
 import type { Message } from '../../../../shared/contract';
 import { getConnectorRegistry } from '../../../connectors';
 import { getSessionManager } from '../../../services/infra/sessionManager';
@@ -16,6 +17,16 @@ const isSnapshot = (v: unknown): v is Snapshot => {
   return typeof s?.calendar === 'string' && typeof s.title === 'string'
     && typeof s.startAtMs === 'number' && typeof s.endAtMs === 'number';
 };
+
+/**
+ * 原生桥请求体上限 64 KiB（env_assist_bridge.rs MAX_BODY_BYTES）。备注超长时截断并注明，
+ * 保证日程本身一定能建回来，而不是整条撤销失败（ai-review Important）。按 UTF-8 每字最多 3 字节留足余量。
+ */
+const MAX_RESTORED_NOTES_CHARS = 16_000;
+const NOTES_TRUNCATED_MARK = '\n…（备注过长，撤销时已截断）';
+function capNotes(notes: string): string {
+  return notes.length <= MAX_RESTORED_NOTES_CHARS ? notes : notes.slice(0, MAX_RESTORED_NOTES_CHARS) + NOTES_TRUNCATED_MARK;
+}
 
 // 同一条撤销正在进行时，第二次点击直接当已撤销（防并发建出两条）
 const inflight = new Set<string>();
@@ -48,7 +59,7 @@ async function restore(sessionId: string, toolCallId: string): Promise<CalendarU
   try {
     const created = await connector.execute('create_event', {
       calendar: before.calendar, title: before.title, start_ms: before.startAtMs, end_ms: before.endAtMs,
-      ...(before.location ? { location: before.location } : {}), ...(before.notes ? { notes: before.notes } : {}),
+      ...(before.location ? { location: before.location } : {}), ...(before.notes ? { notes: capNotes(before.notes) } : {}),
     });
     uid = String((created.data as { uid?: unknown }).uid ?? '');
   } catch {
