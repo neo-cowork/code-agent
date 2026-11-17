@@ -95,12 +95,20 @@ export interface LastToolFailure {
   at: number;
 }
 
+/** 委派任务里每次 Bash 调用的 arguments.description（可能缺）与命令；渲染端过滤后才可上屏。 */
+export interface BashStep {
+  description?: string;
+  command: string;
+}
+
 export interface TaskProgress {
   current?: number;
   total?: number;
   percent?: number;
   label?: string;
   lastToolStep?: LastToolStep;
+  /** 按调用序的 Bash 步骤（最近 20 条），任务结束后仍在。 */
+  bashSteps?: BashStep[];
   lastToolFailure?: LastToolFailure;
 }
 

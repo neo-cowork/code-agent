@@ -12,6 +12,7 @@ import type {
   AgentWorktreeArtifact,
   AgentTreeWorktreeState,
 } from '../../shared/contract/agentTree';
+import type { BashStep } from '../../shared/contract/backgroundTask';
 import type { EvidenceRef } from '../../shared/contract/evidence';
 import type { ManagedAgentStatus } from './spawnGuard';
 import { getSpawnGuard } from './spawnGuard';
@@ -320,6 +321,18 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
   };
 }
 
+function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
+  const steps: BashStep[] = [];
+  for (const message of record.messages) {
+    for (const call of message.toolCalls ?? []) {
+      if (call.name !== 'Bash' && call.name !== 'bash') continue;
+      const description = bashStepDescription(call.name, call.arguments);
+      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '' });
+    }
+  }
+  return steps.length > 0 ? steps.slice(-20) : undefined;
+}
+
 function progressFromContext(record: SubagentContextRecord): string | undefined {
   const previews = record.snapshot?.previews;
   if (previews && previews.length > 0) {
@@ -453,6 +466,8 @@ function mergeContextRecord(
   if (activeTool) node.activeTool = activeTool;
   const lastToolStep = lastToolStepFromContext(record);
   if (lastToolStep) node.lastToolStep = lastToolStep;
+  const bashSteps = bashStepsFromContext(record);
+  if (bashSteps) node.bashSteps = bashSteps;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));
 
   const progress = progressFromContext(record);

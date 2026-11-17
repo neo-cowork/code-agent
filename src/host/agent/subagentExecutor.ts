@@ -185,7 +185,7 @@ export class SubagentExecutor {
       ? Math.max(0, Math.floor(config.maxToolCalls))
       : undefined;
     const toolsUsed: string[] = [];
-    const bashSteps: Array<{ description: string; command: string }> = [];
+    const bashSteps: Array<{ description?: string; command: string }> = [];
     // 持久化角色履历用：收集实例产出的产物（设计 §4.3 履历 = 产物清单）
     const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
@@ -877,8 +877,9 @@ export class SubagentExecutor {
 
             toolsUsed.push(toolCall.name);
             const bashArgs = toolCall.arguments as { description?: unknown; command?: unknown } | undefined;
-            if ((toolCall.name === 'Bash' || toolCall.name === 'bash') && typeof bashArgs?.description === 'string') {
-              bashSteps.push({ description: bashArgs.description, command: typeof bashArgs.command === 'string' ? bashArgs.command.slice(0, 200) : '' });
+            if (toolCall.name === 'Bash' || toolCall.name === 'bash') {
+              const description = typeof bashArgs?.description === 'string' ? bashArgs.description : undefined;
+              bashSteps.push({ ...(description ? { description } : {}), command: typeof bashArgs?.command === 'string' ? bashArgs.command.slice(0, 200) : '' });
             }
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);

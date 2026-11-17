@@ -161,7 +161,7 @@ export function buildContextSnapshot(
   provider: string | undefined,
   toolsUsed: string[],
   attachments?: Array<{ name?: string }>,
-  bashSteps: Array<{ description: string; command: string }> = [],
+  bashSteps: Array<{ description?: string; command: string }> = [],
 ): SwarmAgentContextSnapshot {
   const maxTokens = resolveContextWindow(model, provider);
   const normalizedMessages = messages.map((message) => ({
