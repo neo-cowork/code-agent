@@ -26,7 +26,7 @@ async function answerCard(env: AttemptEnv, page: Page): Promise<void> {
   if (text.includes(realData)) {
     await clickCardButton(page, '拒绝');
     env.note(`模型把记忆写到了真实主目录 ${realData}，脚本拒绝了（模型分支）`);
-    return;
+    throw new Error(`审批卡要写真实主目录 ${realData}，已拒绝；模型会反复重试同一路径，这次尝试到此为止`);
   }
   await approveCard(page);
   env.scratch.cardClicks = Number(env.scratch.cardClicks ?? 0) + 1;
