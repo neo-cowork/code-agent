@@ -308,6 +308,23 @@ export function diagnoseBashFailure(input: BashFailureDiagnosticsInput): string[
   return diagnostics;
 }
 
+/** TCC hint for a COMPLETED command (exit 0 via `; echo`, `|| true`, `2>&1 | tail`): matches stdout+stderr. */
+export function diagnoseCompletedBashTcc(input: {
+  command: string;
+  stdout?: string;
+  stderr?: string;
+  platform?: string;
+  env?: Record<string, string | undefined>;
+}): string[] {
+  const line = diagnoseTccDenial({
+    command: input.command,
+    failureText: [input.stdout, input.stderr].filter(Boolean).join('\n'),
+    platform: input.platform ?? process.platform,
+    env: input.env ?? process.env,
+  });
+  return line ? [line] : [];
+}
+
 export function appendFailureDiagnostics(message: string, diagnostics: string[]): string {
   if (diagnostics.length === 0) return message;
   return `${message}\n\n${diagnostics.join('\n')}`;
