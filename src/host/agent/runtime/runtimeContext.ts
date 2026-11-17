@@ -127,6 +127,8 @@ export interface RuntimeContext {
   /** Auxiliary runs keep their provider usage out of the session's main ring. */
   readonly publishContextHealth?: boolean;
   readonly unattendedTurn?: boolean;
+  /** Delegated/background run (runRegistration auxiliary): skill alias hits do not narrow its tools. */
+  readonly auxiliaryRun?: boolean;
   readonly deniedToolNames?: string[];
   readonly allowedToolNames?: string[];
   readonly foregroundToolFace?: boolean;
