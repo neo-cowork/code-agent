@@ -66,6 +66,29 @@ function prefersReducedMotion(): boolean {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+/** 无思考文本时的合成收起行：不可展开、无 chevron，永不含思考正文；计时从 sinceMs 起。 */
+export const PendingThinkingLine: React.FC<{ sinceMs: number }> = ({ sinceMs }) => {
+  const { t } = useI18n();
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    setNow(Date.now());
+    const interval = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(interval);
+  }, []);
+  const seconds = Math.max(1, Math.ceil(Math.max(0, now - sinceMs) / 1000));
+  const duration = t.chat.thinkingDurationSeconds.replace('{seconds}', String(seconds));
+  return (
+    <div className="py-0.5 text-sm text-zinc-500" data-testid="thinking-digest" data-synthetic="true">
+      <div className="flex min-w-0 items-center gap-2 py-0.5 text-zinc-500">
+        <Brain className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 truncate font-medium streaming-thinking-shimmer">
+          {t.chat.thinkingActiveWithDuration.replace('{duration}', duration)}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 interface ThinkingDigestBannerProps {
   segments: TurnThinkingSegment[];
   activeSegmentId: string | null;
@@ -82,7 +105,6 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   turnEndTime,
   pendingSinceMs,
 }) => {
-  const isPending = segments.length === 0 && pendingSinceMs !== undefined;
   const { t, language } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
@@ -109,11 +131,11 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   }, [activeSegmentId, hasNonThinkingContentAfterThinking]);
 
   useEffect(() => {
-    if (!activeSegmentId && !isPending) return;
+    if (!activeSegmentId) return;
     setNow(Date.now());
     const interval = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(interval);
-  }, [activeSegmentId, isPending]);
+  }, [activeSegmentId]);
 
   const reasoningTextRevision = segments.map((segment) => segment.text).join('\u0000');
   useLayoutEffect(() => {
@@ -123,19 +145,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   }, [expanded, reasoningTextRevision]);
 
   if (segments.length === 0) {
-    if (pendingSinceMs === undefined) return null;
-    const pendingSeconds = Math.max(1, Math.ceil(Math.max(0, now - pendingSinceMs) / 1000));
-    const pendingDuration = t.chat.thinkingDurationSeconds.replace('{seconds}', String(pendingSeconds));
-    return (
-      <div className="py-0.5 text-sm text-zinc-500" data-testid="thinking-digest" data-synthetic="true">
-        <div className="flex min-w-0 items-center gap-2 py-0.5 text-zinc-500">
-          <Brain className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 truncate font-medium streaming-thinking-shimmer">
-            {t.chat.thinkingActiveWithDuration.replace('{duration}', pendingDuration)}
-          </span>
-        </div>
-      </div>
-    );
+    return pendingSinceMs === undefined ? null : <PendingThinkingLine sinceMs={pendingSinceMs} />;
   }
 
   const durationMs = segments.reduce((total, segment) => {
