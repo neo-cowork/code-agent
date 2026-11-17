@@ -51,15 +51,6 @@ function unknownField(source: object, key: string): unknown {
   return (source as Record<string, unknown>)[key];
 }
 
-/** 通用卡的预览行是 `Label: value`。删除提醒的问句从这里取标题，不另开一张删除卡。 */
-function previewField(diff: string | undefined, label: string): string {
-  const prefix = `${label}: `;
-  for (const line of diff?.split('\n') ?? []) {
-    if (line.startsWith(prefix)) return line.slice(prefix.length).trim();
-  }
-  return '';
-}
-
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
   request: import('@shared/contract').PermissionRequest
@@ -113,6 +104,9 @@ function normalizeRequest(
       from_ms: unknownField(request.details, 'from_ms'),
       to_ms: unknownField(request.details, 'to_ms'),
       calendar: unknownField(request.details, 'calendar'),
+      list: unknownField(request.details, 'list'),
+      title: unknownField(request.details, 'title'),
+      remind_at_ms: unknownField(request.details, 'remind_at_ms'),
       sensitiveStep: request.details.sensitiveStep,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
@@ -495,7 +489,7 @@ export function PermissionCard({
     ? request.rawArgs.title.trim()
     : '';
   const deleteReminderTitle = request.tool === 'reminders_delete'
-    ? previewField(request.details.preview?.diff, 'Title')
+    ? typeof request.details.title === 'string' ? request.details.title.trim() : ''
     : '';
   const hasDetailFields = Boolean(
     request.details.command ||

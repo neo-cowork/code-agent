@@ -97,6 +97,26 @@ function sandboxStatusCopy(
   return labels.sandboxDegraded;
 }
 
+function reminderDeleteDetailRows(
+  source: Record<string, unknown>,
+  w: { fieldList: string; fieldTitle: string; fieldRemindAt: string },
+  language: string,
+): Array<{ label: string; value: string }> {
+  const text = (key: string) => (typeof source[key] === 'string' ? (source[key] as string).trim() : '');
+  const at = source.remind_at_ms;
+  const rows = [
+    { label: w.fieldList, value: text('list') },
+    { label: w.fieldTitle, value: text('title') },
+    {
+      label: w.fieldRemindAt,
+      value: typeof at === 'number' && Number.isFinite(at)
+        ? new Date(at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')
+        : '',
+    },
+  ];
+  return rows.filter((row) => row.value);
+}
+
 export function RequestDetails({ request }: RequestDetailsProps) {
   const { language, t } = useI18n();
   const developerMode = useAppStore().developerMode === true;
@@ -115,6 +135,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         : null}
     </p>;
   }
+  const reminderDeleteRows = request.tool === 'reminders_delete' && details.preview?.type === 'generic'
+    ? reminderDeleteDetailRows(details as Record<string, unknown>, labels.writeback, language)
+    : null;
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
 
@@ -248,8 +271,15 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         />
       )}
 
+      {/* 删除提醒：行从结构化字段按界面语言渲染，不展示 host 预览里的英文 `Label: value` 行 */}
+      {reminderDeleteRows && (
+        <div className="mt-4">
+          {reminderDeleteRows.map((row) => <DetailItem key={row.label} label={row.label} value={row.value} />)}
+        </div>
+      )}
+
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
-      {details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
+      {!reminderDeleteRows && details.preview && details.preview.type !== 'diff' && !(details.preview.type === 'command' && details.command) && (
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic')
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (

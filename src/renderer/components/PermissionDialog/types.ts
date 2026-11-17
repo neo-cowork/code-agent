@@ -79,6 +79,9 @@ export interface PermissionRequestDetails {
   from_ms?: unknown;
   to_ms?: unknown;
   calendar?: unknown;
+  list?: unknown;
+  title?: unknown;
+  remind_at_ms?: unknown;
   /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
   requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
   access?: string;

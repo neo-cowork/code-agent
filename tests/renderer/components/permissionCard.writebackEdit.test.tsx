@@ -389,7 +389,17 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(text).toContain(language === 'zh' ? '删除提醒「交电费」？' : 'Delete reminder “交电费”?');
     expect(text).toContain('工作');
     expect(text).toContain('交电费');
-    expect(text).toContain('Remind At:');
+    expect(text).not.toMatch(/List:|Title:|Remind At:/);
+    if (language === 'zh') {
+      expect(text).toContain('清单');
+      expect(text).toContain('标题');
+      expect(text).toContain('提醒时间');
+    } else {
+      expect(text).toContain('List');
+      expect(text).toContain('Title');
+      expect(text).toContain('Reminder time');
+      expect(text).not.toContain('删除提醒');
+    }
     expect(text).not.toMatch(/rem-opaque-91|提醒 ID|Reminder ID|reminder_id/);
   });
 
