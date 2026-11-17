@@ -16,7 +16,7 @@ Optional parameters:
 - location
 
 Use this only when the user wants to modify a real local calendar event.
-Resolve relative dates using Today's date and Local timezone in <env> (the host-local zone used by Calendar.app). Do not use the UTC date as the local date. Give new times as start_local / end_local in YYYY-MM-DD HH:mm (24-hour) form in that local timezone. The host converts them to the actual instant, including daylight saving; never do epoch arithmetic for these fields. Supply only one time form per field (start_local or start_ms, end_local or end_ms).`,
+Resolve relative dates using Today's date and Local timezone in <env> (the host-local zone used by Calendar.app). Do not use the UTC date as the local date. Give new times as start_local / end_local in YYYY-MM-DD HH:mm (24-hour) form in that local timezone. The host converts them to the actual instant, including daylight saving; never do epoch arithmetic for these fields. If only the start (start_local / start_ms) is given, the event keeps its duration and the end moves with it; to change the length, give both start and end. Supply only one time form per field (start_local or start_ms, end_local or end_ms).`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

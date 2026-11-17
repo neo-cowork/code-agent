@@ -267,4 +267,55 @@ describe('agentTreeService', () => {
 
     expect(snapshot.summary.ownershipConflicts).toEqual([]);
   });
+
+  describe('workdir prefix and tool-call observation leaks', () => {
+    const PREFIX = '[工作目录: /Users/x/notes] 所有文件路径基于此目录。\n\n';
+    const leaks = (value: unknown) => JSON.stringify(value);
+
+    it('strips the prefix from SpawnGuard and parallel task shapes', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        spawnAgents: [{ id: 'a', role: 'explore', treeId: 's', status: 'running', task: `${PREFIX}读笔记`, createdAt: 1 }],
+        parallelTasks: [{ taskId: 'b', role: 'explore', task: `${PREFIX}检查 data.csv`, tools: [], status: 'pending' }],
+      });
+      const a = snapshot.nodes.find((n) => n.id === 'a')!;
+      const b = snapshot.nodes.find((n) => n.id === 'b')!;
+      expect(a.task).toBe('读笔记');
+      expect(a.progress).toBe('读笔记');
+      expect(b.task).toBe('检查 data.csv');
+      expect(b.progress).toBe('检查 data.csv');
+      expect(leaks(snapshot)).not.toContain('工作目录');
+      expect(leaks(snapshot)).not.toContain('/Users/x');
+    });
+
+    it('strips the prefix from the persisted lifecycle task', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'c', messages: [], updatedAt: 5,
+          lifecycle: { status: 'running', displayName: 'Explorer', task: `${PREFIX}读笔记`, background: false, startedAt: 1 },
+        }],
+      } as never);
+      expect(snapshot.nodes.find((n) => n.id === 'c')!.task).toBe('读笔记');
+    });
+
+    it('does not surface a trailing "Calling Tool(json)" observation as progress', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'd', updatedAt: 5,
+          messages: [
+            { role: 'assistant', content: '已读完第一份', timestamp: 1 },
+            { role: 'assistant', content: 'Calling Read({"file_path":"/Users/x/a.md"})', toolCalls: [{ id: 't', name: 'Read', arguments: { file_path: '/Users/x/a.md' } }], timestamp: 2 },
+          ],
+        }],
+      } as never);
+      const node = snapshot.nodes.find((n) => n.id === 'd')!;
+      expect(node.progress).toBe('已读完第一份');
+      expect(leaks(node)).not.toContain('Calling');
+    });
+  });
 });
