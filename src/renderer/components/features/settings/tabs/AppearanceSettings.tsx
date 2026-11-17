@@ -343,6 +343,7 @@ export const AppearanceSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div
+                    data-language-self-name
                     className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
                       language === lang.code
                         ? 'bg-zinc-700 text-zinc-100'
@@ -352,7 +353,7 @@ export const AppearanceSettings: React.FC = () => {
                     {lang.code === 'zh' ? appearanceText.languageBadges.zh : appearanceText.languageBadges.en}
                   </div>
                   <div>
-                    <div className="font-medium text-zinc-200 text-sm">{lang.native}</div>
+                    <div data-language-self-name className="font-medium text-zinc-200 text-sm">{lang.native}</div>
                     <div className="text-xs text-zinc-400">{lang.name}</div>
                   </div>
                 </div>

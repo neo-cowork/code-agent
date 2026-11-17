@@ -64,6 +64,10 @@ function collectCjk(page, surface) {
         matches: (element) => Boolean(element.closest('[data-session-id], [data-user-content], [contenteditable="true"]')),
       },
       {
+        reason: 'language picker shows each language in its own script so users can switch back',
+        matches: (element) => element.hasAttribute('data-language-self-name'),
+      },
+      {
         reason: 'built-in expert content (name, profession, intro, keywords, example prompts) is owned by N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU4',
         matches: (element, text) => {
           const name = element.closest('[data-testid^="expert-card-"]')?.querySelector('.text-sm.font-medium.text-zinc-100');

@@ -8,6 +8,10 @@ describe('language picker native names', () => {
     expect(languages.en.language.options.en.native).toBe('English');
   });
 
+  it('en pack keeps the Chinese badge as 中 (same as main)', () => {
+    expect(languages.en.settings.appearance.languageBadges.zh).toBe('中');
+  });
+
   it('zh pack agrees', () => {
     expect(languages.zh.language.options.zh.native).toBe('简体中文');
     expect(languages.zh.language.options.en.native).toBe('English');
