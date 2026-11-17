@@ -30,6 +30,7 @@ import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { goToExpertThread } from "../../../utils/inviteExpert";
 import { formatLocalDateTime } from "../../../utils/i18nTime";
 import { useI18n } from "../../../hooks/useI18n";
+import { useLocalizeRole } from "../../../hooks/useLocalizeRole";
 import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
 import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
@@ -835,6 +836,7 @@ function initialRoleDetailTab(): RoleDetailTab {
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const roleText = t.settings.roles;
   const expertText = t.expert;
   const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
@@ -870,14 +872,15 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   }, [loadDetail]);
   // 头像资产按 roleId 查表，命中就替掉页头的 lucide 图标（未命中的自建角色仍走图标）
   const detailAvatar = getRoleAvatarAsset(roleId);
+  const shownRole = localizeRole(roleId, { name: detail?.visual.displayName ?? '', profession: detail?.visual.profession });
   return (
     <FullScreenPage testId={`role-detail-page-${roleId}`} variant="inline">
       <FullScreenPageHeader
         icon={detailAvatar
-          ? <img src={detailAvatar} alt={detail?.visual.displayName || roleId} className="h-7 w-7 rounded-lg object-cover" />
+          ? <img src={detailAvatar} alt={shownRole.name || roleId} className="h-7 w-7 rounded-lg object-cover" />
           : <RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
-        title={detail?.visual.displayName || roleId}
-        description={detail?.visual.profession || roleText.detail.subtitle}
+        title={shownRole.name || roleId}
+        description={shownRole.profession || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.capabilityHub.title}
         actions={<div className="flex items-center gap-2">
