@@ -128,8 +128,6 @@ class BackgroundTaskManager extends EventEmitter {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
-    task.title = await this.resolveLiveTitle(sessionId, task.title);
-    if (task.status !== 'running') return;
     task.status = 'completed';
     task.progress = 100;
     task.completionMessage = message;
@@ -143,6 +141,10 @@ class BackgroundTaskManager extends EventEmitter {
 
     // Keep background settlement, while a running role wake owns its output notification.
     if (isRoleWakeRunActive(sessionId)) return;
+
+    // 终态与 running-guard 已同步落定；标题读取慢/卡住不拖面板收线。读完后条目被切前台/
+    // 重新入后台（map 里已不是这个对象）就不再通知，免得盖掉新条目。
+    if (!(await this.refreshLiveTitle(sessionId, task))) return;
 
     // 发送系统通知。force：后台完成提醒绕过焦点门——用户可能正停在 app 里聊别的会话
     // （与 loop/定时任务同一档「默默长跑、完成才冒头」）。通知摘要不吃裸 code
@@ -169,8 +171,6 @@ class BackgroundTaskManager extends EventEmitter {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
-    task.title = await this.resolveLiveTitle(sessionId, task.title);
-    if (task.status !== 'running') return;
     task.status = 'failed';
     task.completionMessage = error || (readUiLanguage() === 'en' ? 'Task failed' : '任务执行失败');
 
@@ -180,6 +180,8 @@ class BackgroundTaskManager extends EventEmitter {
       type: 'failed',
       task,
     });
+
+    if (!(await this.refreshLiveTitle(sessionId, task))) return;
 
     // 发送系统通知。succeeded:false → 标题「任务失败」；MAX_ITERATIONS code 就地翻人话。
     notificationService.notifyTaskComplete({
@@ -194,13 +196,19 @@ class BackgroundTaskManager extends EventEmitter {
     }, { force: true });
   }
 
-  /** 终态时按实时会话标题取名（改名/智能标题后快照已过期）；取不到回落快照。 */
-  private async resolveLiveTitle(sessionId: string, fallback: string): Promise<string> {
+  /**
+   * 终态后按实时会话标题刷新条目标题（改名/智能标题后快照已过期），取不到回落快照。
+   * 返回 false = 读取期间条目已被移出/替换，调用方不应再通知。
+   */
+  private async refreshLiveTitle(sessionId: string, task: BackgroundSessionInfo): Promise<boolean> {
     try {
       const session = await getSessionManager().getSession(sessionId);
-      return session?.title?.trim() || fallback;
+      const live = session?.title?.trim();
+      if (this.backgroundSessions.get(sessionId) !== task) return false;
+      if (live) task.title = live;
+      return true;
     } catch {
-      return fallback;
+      return this.backgroundSessions.get(sessionId) === task;
     }
   }
 

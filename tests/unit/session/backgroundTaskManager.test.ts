@@ -291,3 +291,45 @@ describe('通知读实时会话标题（不吃 moveToBackground 时的快照）'
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('终态先落定、后读标题（读会话慢/卡住不拖收线）', () => {
+  it.each(['markCompleted', 'markFailed'] as const)('%s：getSession 挂起时条目已同步收线，通知在读完后才发', async (method) => {
+    await backgroundSession('session-1');
+    const events = collectUpdates();
+    let release!: (value: unknown) => void;
+    sessionManagerState.getSession.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+
+    const pending = getBackgroundTaskManager()[method]('session-1');
+
+    // 调用刚返回 promise（未 await）：面板条目已是终态、已发终态更新
+    expect(getBackgroundTaskManager().getAllTasks()[0].status).toBe(method === 'markCompleted' ? 'completed' : 'failed');
+    expect(events.map((e) => e.type)).toEqual([method === 'markCompleted' ? 'completed' : 'failed']);
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+
+    release({ id: 'session-1', title: '服务合同要点' });
+    await pending;
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete.mock.calls[0][0]).toMatchObject({ sessionTitle: '服务合同要点' });
+  });
+
+  it.each(['markCompleted', 'markFailed'] as const)('%s：读标题期间条目被切前台后重新入后台 → 旧调用不通知、不动新的 running 条目', async (method) => {
+    await backgroundSession('session-1');
+    let release!: (value: unknown) => void;
+    sessionManagerState.getSession.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    const pending = getBackgroundTaskManager()[method]('session-1');
+
+    getBackgroundTaskManager().moveToForeground('session-1');
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-1', title: '长任务' });
+    await backgroundSession('session-1');
+    const events = collectUpdates();
+
+    release({ id: 'session-1', title: '旧调用读到的标题' });
+    await pending;
+
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    const tasks = getBackgroundTaskManager().getAllTasks();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ status: 'running', title: '长任务' });
+  });
+});

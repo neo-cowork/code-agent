@@ -154,10 +154,10 @@ export async function settlePrimaryRunSessionStatus(
  * 与事件流收线互为幂等；用户取消在调用方（两个 run 入口的 catch）更早的取消分支
  * 返回，不会走到这里。
  */
-export function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): void {
+export async function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
-  void backgroundManager.markFailed(
+  await backgroundManager.markFailed(
     sessionId,
     resolveBackgroundRunSettlement({ status: 'error', errorMessage }).message,
   );
