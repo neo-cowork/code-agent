@@ -29,6 +29,7 @@ import {
   stripStreamBreakMarker,
 } from '../utils/streamInterruptionPresentation';
 import { normalizeEditArgs } from '@shared/utils/editToolArgs';
+import { isRecoverableAfterLaterSuccess } from './failureRecovery';
 import { isToolInterruptionPlaceholder } from '../utils/toolExecutionPresentation';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
@@ -991,20 +992,16 @@ function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
  * 或非空的助手正文/最终答案），说明这次失败已被恢复——标记 recovered，让 UI 把它降级
  * 为安静脚注，而不是用最差的中间步骤顶着红色 failed 当整轮头条。
  *
- * 降级只在两种情况下发生，别的失败一律照原样红着：
+ * 降级只在三种情况下发生，别的失败一律照原样红着：
  *  1. 【联网检索类工具】（web search / fetch）之后出现任意成功标志——这类"换搜索源/
  *     换抓取方式重试"是常态恢复模式；
  *  2. 【Edit】之后出现**同一处**编辑成功——判据是 editKey（路径 + 编辑项列表
  *     （old/new/replace_all，多 item 按序）全等，形状经 normalizeEditArgs 归一，
  *     兼容注册的 edits[] 形状与 legacy edit_file 平铺形状），不是"后面有别的成功
  *     就算"。Edit 的失败多半是独立真错误，只有当模型确实把同一处改成功了，那次
- *     失败才算被自己收尾。Bash 及其余工具不参与降级。
+ *     失败才算被自己收尾；
+ *  3. 【系统关卡封口行】（metadata.bounced，见 failureRecovery.ts）。Bash 的真实失败不参与降级。
  */
-function isRecoverableRetrievalTool(name: string | undefined): boolean {
-  if (!name) return false;
-  return /web|search|fetch|tavily|exa|perplexity|brave/i.test(name);
-}
-
 function markRecoveredFailures(turns: TraceTurn[]): void {
   for (const turn of turns) {
     let laterSuccess = false;
@@ -1031,7 +1028,7 @@ function markRecoveredFailures(turns: TraceTurn[]): void {
         node.type === 'tool_call' &&
         node.toolCall?.success === false &&
         laterSuccess &&
-        isRecoverableRetrievalTool(node.toolCall.name)
+        isRecoverableAfterLaterSuccess(node.toolCall)
       ) {
         node.toolCall.recovered = true;
       }

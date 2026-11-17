@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 import type { Message } from '../../../src/shared/contract';
 import type { TaskManagerEvent } from '../../../src/host/task/taskManagerTypes';
 
 const sessionManagerState = vi.hoisted(() => ({
   getSession: vi.fn(),
+}));
+
+const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
 }));
 
 const orchestratorState = vi.hoisted(() => ({
@@ -60,12 +67,14 @@ import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
 } from '../../../src/host/task/backgroundTaskLedger';
+import { buildSessionTaskResultMessage } from '../../../src/host/services/commandCenter/sessionCommandTaskRestartRecovery';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 type EventData = {
   taskId?: string;
   conclusion?: string;
   error?: string;
+  detail?: string;
   artifacts?: Array<{ artifactId?: string; path?: string }>;
 };
 
@@ -80,7 +89,7 @@ function artifact(artifactId: string, path: string, role = 'deliverable') {
 }
 
 function messages(input: {
-  calls: Array<{ id: string; name: string; success: boolean; artifact?: ReturnType<typeof artifact> }>;
+  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; artifact?: ReturnType<typeof artifact> }>;
   conclusion: string;
 }): Message[] {
   return [
@@ -101,6 +110,7 @@ function messages(input: {
         success: call.success,
         ...(call.success ? { output: 'ok' } : { error: 'save failed' }),
         ...(call.artifact ? { metadata: { artifact: call.artifact } } : {}),
+        ...(call.hostCode ? { metadata: { hostReason: { code: call.hostCode } } } : {}),
       })),
     },
     { id: 'assistant-final', role: 'assistant', content: input.conclusion, timestamp: 3 },
@@ -113,7 +123,7 @@ async function runBackgroundTask(runMessages: Message[]): Promise<TaskManagerEve
   manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
   const terminalEvents: TaskManagerEvent[] = [];
   manager.on('event', (event: TaskManagerEvent) => {
-    if (event.type === 'task_completed' || event.type === 'task_error') terminalEvents.push(event);
+    if (event.type === 'task_completed' || event.type === 'task_error' || event.type === 'task_cancelled') terminalEvents.push(event);
   });
 
   await manager.startBackgroundTask('task-1', 'session-1', 'do the work');
@@ -251,5 +261,86 @@ describe('TaskManager background delivery verdict', () => {
     expect((event.data as EventData).artifacts).toEqual([
       expect.objectContaining({ artifactId: 'first', path: '/work/report.md' }),
     ]);
+  });
+
+  it('ends a user-denied write as task_cancelled with one plain sentence', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'write-1', name: 'Write', success: false, hostCode: HostReasonCode.PermissionDeniedByUser }],
+      conclusion: '创建文件的写入操作被拒绝，因此该文件未被生成。',
+    }));
+
+    expect(event.type).toBe('task_cancelled');
+    expect((event.data as EventData).detail).toBe('你拒绝了这一步，任务已停止。');
+  });
+
+  it('keeps a tool-error write failed even when the host reason is not a user denial', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'write-1', name: 'Write', success: false, hostCode: HostReasonCode.PermissionDeniedSafetyRule }],
+      conclusion: 'Blocked by policy.',
+    }));
+    expect(event.type).toBe('task_error');
+  });
+
+  it('keeps an approval timeout failed as approval_timeout', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'write-1', name: 'Write', success: false, hostCode: HostReasonCode.PermissionDeniedTimeout }],
+      conclusion: 'Timed out.',
+    }));
+    expect(event.type).toBe('task_error');
+    expect((event.data as EventData).error).toContain('一直没有等到批准');
+  });
+
+  it('keeps a denied write completed when another write succeeded', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'write-1', name: 'Write', success: false, hostCode: HostReasonCode.PermissionDeniedByUser },
+        { id: 'write-2', name: 'Write', success: true },
+      ],
+      conclusion: 'Saved the second file.',
+    }));
+    expect(event.type).toBe('task_completed');
+  });
+
+  it('projects a user-denied background task as a cancelled [任务结果] row, zh and en', async () => {
+    for (const [language, status, sentence] of [
+      ['zh', '已取消', '你拒绝了这一步，任务已停止。'],
+      ['en', 'cancelled', 'You declined this step, so the task was stopped.'],
+    ] as const) {
+      configState.language = language;
+      resetSessionTaskConcurrencyPoolForTest();
+      resetBackgroundTaskLedgerForTest();
+      orchestratorState.messageRuns.push(messages({
+        calls: [{ id: 'write-1', name: 'Write', success: false, hostCode: HostReasonCode.PermissionDeniedByUser }],
+        conclusion: '写入操作被拒绝，文件未生成。',
+      }));
+      const manager = new TaskManager({ maxConcurrentTasks: 1 });
+      manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+      const projectTerminalResult = vi.fn();
+      const center = new SessionCommandCenter(manager, {
+        projectTerminalResult,
+        persistMemberInput: vi.fn(),
+        wakeForegroundBrain: vi.fn(),
+      });
+      const spawned = await center.spawn({
+        sessionId: 'session-1', title: 'Summary', shortName: 'summary', laneKey: 'summary',
+        submissionKey: `summary-${language}`, prompt: 'write summary',
+        workspaceScope: createWorkspaceScope('project-1', [{
+          sourceId: 'primary', path: '/work', role: 'primary', access: 'read_write',
+        }]),
+      });
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      await vi.waitFor(() => expect(projectTerminalResult).toHaveBeenCalled());
+      const [task, projectedStatus] = projectTerminalResult.mock.calls[0];
+      const row = buildSessionTaskResultMessage(
+        task, projectedStatus, task.resultText ?? task.summary, `session-task-result-${task.id}`, language,
+      );
+      const projected = JSON.stringify(row);
+      expect(row.metadata?.backgroundTaskResult?.status).toBe('cancelled');
+      expect(projected).toContain(status);
+      expect(projected).toContain(sentence);
+      expect(projected).not.toContain('写入操作被拒绝');
+      center.dispose();
+    }
+    configState.language = 'zh';
   });
 });

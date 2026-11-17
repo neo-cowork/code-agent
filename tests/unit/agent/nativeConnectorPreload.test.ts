@@ -22,7 +22,8 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 }));
 
 // 只在 osascript / 原生桥边界替身：连接器对象、registry、tool-search 都是真实的。
-vi.mock('../../../src/host/connectors/native/osascript', () => ({
+vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>(),
   runAppleScript: mocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -118,6 +119,10 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(getConnectorRegistry().get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
 
     const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names).toHaveLength(4);
+    expect(names).toEqual(expect.arrayContaining([
+      'calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event',
+    ]));
     expect(names).toContain('calendar_create_event');
     expect(names).not.toContain('reminders_create');
     expect(names).not.toContain('mail_draft');

@@ -234,11 +234,11 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       assistant: { label: '{name}已完成', reason: '步骤已全部执行' },
     },
     'completed-with-warnings': {
-      timeline: { label: '已完成，有提醒', reason: '任务完成，但仍有未解决的问题' },
-      badge: { label: '有提醒', reason: '任务完成，但仍有未解决的问题' },
-      detail: { label: '任务已完成，有提醒', reason: '仍有问题需要留意' },
-      notification: { label: '任务已完成，有提醒', reason: '仍有问题需要留意' },
-      assistant: { label: '{name}已完成', reason: '仍有问题需要留意' },
+      timeline: { label: '已完成，有提醒', reason: '有步骤没有成功，结果可能不完整' },
+      badge: { label: '有提醒', reason: '有步骤没有成功，结果可能不完整' },
+      detail: { label: '任务已完成，有提醒', reason: '有步骤没有成功，结果可能不完整' },
+      notification: { label: '任务已完成，有提醒', reason: '有步骤没有成功，结果可能不完整' },
+      assistant: { label: '{name}已完成', reason: '有步骤没有成功，结果可能不完整' },
     },
     aborted: {
       timeline: { label: '已中止', reason: '执行在完成前终止' },
@@ -393,11 +393,11 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       assistant: { label: '{name} finished', reason: 'All steps finished' },
     },
     'completed-with-warnings': {
-      timeline: { label: 'Completed with warnings', reason: 'The task finished with unresolved issues' },
-      badge: { label: 'Warnings', reason: 'The task finished with unresolved issues' },
-      detail: { label: 'Task completed with warnings', reason: 'Some issues still need attention' },
-      notification: { label: 'Task completed with warnings', reason: 'Some issues still need attention' },
-      assistant: { label: '{name} finished', reason: 'Some issues still need attention' },
+      timeline: { label: 'Completed with warnings', reason: 'A step did not succeed, so the result may be incomplete' },
+      badge: { label: 'Warnings', reason: 'A step did not succeed, so the result may be incomplete' },
+      detail: { label: 'Task completed with warnings', reason: 'A step did not succeed, so the result may be incomplete' },
+      notification: { label: 'Task completed with warnings', reason: 'A step did not succeed, so the result may be incomplete' },
+      assistant: { label: '{name} finished', reason: 'A step did not succeed, so the result may be incomplete' },
     },
     aborted: {
       timeline: { label: 'Aborted', reason: 'The run ended before completion' },
