@@ -358,8 +358,8 @@ describe('web app assembly (createApp)', () => {
   // ① 显式 res.status(5xx).json 也要留 method/route/status/reason 日志；
   // ② next(err) 的 5xx 出 JSON {error, code}（无 HTML、无 stack），且不与观察者双记。
   // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：POST /api/project/confirm-source-trust
-  // 只吃 sessionId；会话缺失 404、服务拒绝 422 带稳定 reason、幂等成功 200。
-  it('serves the project trust confirm endpoint with 200/404/422 shapes', async () => {
+  // 只吃 sessionId；会话缺失 404、服务拒绝 200 带稳定 reason、幂等成功 200。
+  it('serves the project trust confirm endpoint with 200/400/404 shapes', async () => {
     const app = createApp(buildDeps('/tmp/seam-assembly-project-trust'));
     const server = http.createServer(app);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -383,7 +383,7 @@ describe('web app assembly (createApp)', () => {
       projectTrustMocks.session = null;
       expect((await post({ sessionId: 'sess-gone' })).status).toBe(404);
 
-      // Source 缺快照且目录不在盘上 → 服务拒绝 422 + reason
+      // Source 缺快照且目录不在盘上 → 服务拒绝 200 + reason
       projectTrustMocks.session = { id: 'sess-trust', projectId: 'proj-trust' };
       projectTrustMocks.sources = [{
         id: 'src-legacy', projectId: 'proj-trust', path: '/tmp/definitely-not-there',
@@ -392,11 +392,11 @@ describe('web app assembly (createApp)', () => {
         createdAt: 1, updatedAt: 1,
       }];
       const rejected = await post({ sessionId: 'sess-trust' });
-      expect(rejected.status).toBe(422);
+      expect(rejected.status).toBe(200);
       expect(await rejected.json()).toEqual({
-        error: 'Project folder trust could not be re-confirmed',
-        code: 'PROJECT_TRUST_CONFIRM_REJECTED',
+        confirmed: false,
         reason: 'source_missing',
+        folderName: 'definitely-not-there',
       });
       expect(projectTrustMocks.updateProject).not.toHaveBeenCalled();
 

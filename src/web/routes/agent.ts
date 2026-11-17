@@ -3,6 +3,8 @@ import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
+import { existsSync } from 'node:fs';
+import { resolveWorkspacePath } from '../../host/runtime/workspaceScope';
 import { randomUUID } from 'node:crypto';
 import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
@@ -809,6 +811,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // run lifecycle, including Native RunContext/tool execution. Request
       // context and the legacy session cwd are only source provenance here.
       resolvedProject = runWorkspaceScope.primaryRoot;
+    }
+    if (runWorkspaceScope && !runWorkspaceScope.version.startsWith('isolated-v1:')) {
+      // A saved Source replacement can leave both the session row and a mounted
+      // client's request pointing at the removed folder. Repair only absent paths
+      // outside the verified scope; valid project subdirectories keep their cwd.
+      const verifiedScope = runWorkspaceScope;
+      const isRemovedProjectDirectory = (directory: string): boolean =>
+        !resolveWorkspacePath(verifiedScope, directory, 'read') && !existsSync(directory);
+      if (persistedSession?.workingDirectory && isRemovedProjectDirectory(persistedSession.workingDirectory)) {
+        if (!sessionManagerForRun?.updateSession) throw new Error('SESSION_WORKSPACE_RECOVERY_UNAVAILABLE');
+        await sessionManagerForRun.updateSession(sessionId, {
+          workingDirectory: runWorkspaceScope.primaryRoot,
+          updatedAt: Date.now(),
+        });
+        persistedSession = { ...persistedSession, workingDirectory: runWorkspaceScope.primaryRoot };
+      }
+      if (isRemovedProjectDirectory(resolvedProject)) {
+        resolvedProject = runWorkspaceScope.primaryRoot;
+        logger.info('[AgentRouter] Using verified primary Source after folder replacement', { sessionId, projectId: runWorkspaceScope.projectId });
+      }
     }
     // 外部引擎把 resolvedProject 当子进程 cwd，缺失会被 assertWorkspaceCwd 硬拒
     // （"must exist"）——懒开目录对它们没有「等首个写工具」的余地，preflight 落盘。

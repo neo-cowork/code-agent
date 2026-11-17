@@ -261,6 +261,11 @@ export function buildAgentRows(input: {
     });
   }
 
+  // 多个任务都折叠成同一个兜底名时加序号，否则面板/chip 里分不清哪个失败、该停哪个
+  const fallback = t.agentRoleLabels.roles.background;
+  const folded = rows.filter((row) => row.kind === 'task' && row.name === fallback);
+  if (folded.length > 1) folded.forEach((row, index) => { row.name = `${fallback} ${index + 1}`; });
+
   return rows;
 }
 
