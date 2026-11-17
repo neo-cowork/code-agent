@@ -29,6 +29,8 @@ type SearchTab = 'current' | 'cross';
 
 interface ChatSearchBarProps {
   visible: boolean;
+  /** 打开时预填的查询词（侧栏命中跳转的兜底：节点没找到时带着搜索词打开） */
+  seedQuery?: string;
   projection: TraceProjection;
   onClose: () => void;
   onMatchesChange: (matches: SearchMatch[], activeIndex: number) => void;
@@ -37,6 +39,7 @@ interface ChatSearchBarProps {
 
 export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   visible,
+  seedQuery,
   projection,
   onClose,
   onMatchesChange,
@@ -67,6 +70,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   // Focus input when opened
   useEffect(() => {
     if (visible) {
+      if (seedQuery) setQuery(seedQuery);
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setQuery('');
@@ -77,7 +81,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
       setCrossLoading(false);
       onMatchesChange([], 0);
     }
-  }, [visible, onMatchesChange]);
+  }, [visible, seedQuery, onMatchesChange]);
 
   // Current session search
   useEffect(() => {

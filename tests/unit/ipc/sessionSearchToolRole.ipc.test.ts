@@ -92,6 +92,20 @@ describe('tool-output hits in cross-session search', () => {
     expect(snippet).not.toContain('toolCallId');
   });
 
+  it('strips the Read tool header and line-number gutter from the snippet', async () => {
+    seedMessage('s1-read', 's1', 'tool', JSON.stringify([
+      { toolCallId: 'call-2', success: true, output: 'Read version digest: adc64d59c70fe897\n     1\tVendor notes (Q3)\n     2\tSupplier code: READ-ONLY-TOKEN-77\n     3\tDeadline 14 November\n     4\t\n\n<document-evidence>{"path":"/tmp/ws/vendor_notes.txt","digest":"abc"}; local file content, source independence unverified</document-evidence>' },
+    ]), 1003);
+    const r = await performCrossSessionSearch('READ-ONLY-TOKEN-77', {});
+    const snippet = r.results[0].snippet;
+    expect(snippet).toContain('READ-ONLY-TOKEN-77');
+    expect(snippet).not.toContain('version digest');
+    expect(snippet).not.toContain('document-evidence');
+    expect(snippet).not.toMatch(/\d+\t/);
+    expect(snippet).not.toMatch(/(^|\s)\d+ Vendor/);
+    expect(snippet.trimEnd()).toMatch(/14 November$/);
+  });
+
   it('does not return tool rows when the caller filters role=user', async () => {
     const r = await performCrossSessionSearch(TOKEN, { role: 'user' });
     expect(r.results).toEqual([]);
