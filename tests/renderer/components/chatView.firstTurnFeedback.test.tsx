@@ -14,6 +14,7 @@ import type { AgentEventEnvelope } from '../../../src/shared/contract';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { STARTUP_TIMEOUTS } from '../../../src/shared/constants';
 
 const listeners = vi.hoisted(() => new Map<string, (event: AgentEventEnvelope) => void>());
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -118,17 +119,21 @@ describe('ChatView first-turn assistant feedback', () => {
     });
   });
 
-  it('advances one placeholder only after enqueue, durable activation, and first model delta events', () => {
+  it('keeps real phases event-driven while overdue admission copy changes once', () => {
     vi.useFakeTimers();
     const send = vi.fn(() => new Promise<boolean>(() => {}));
     render(<PendingSendHarness send={send} />);
 
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
-    vi.advanceTimersByTime(20_000);
+    act(() => vi.advanceTimersByTime(STARTUP_TIMEOUTS.SLOW_START_NOTICE_MS - 1));
     expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('正在发送消息…');
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByTestId('assistant-send-placeholder').textContent).toBe(zh.chat.slowStarting);
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('submitting');
 
     fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
-    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('已排队，正在启动…');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent).toBe(zh.chat.slowStarting);
+    expect(screen.getByTestId('streaming-preparation-indicator').getAttribute('data-preparation-phase')).toBe('queued');
     expect(screen.getAllByTestId('assistant-send-placeholder')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));

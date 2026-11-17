@@ -40,6 +40,7 @@ chat: {
   // 巡航信号旁的强制停止按钮
   longToolStop: '停止',
   sendingMessage: '正在发送消息…', queuedStarting: '已排队，正在启动…', preparingReply: '正在准备…', organizingStreamingReply: '正在整理回复…',
+  slowStarting: '启动比平时慢，请稍候…',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: { one: ' · {count} 段', other: ' · {count} 段' },
@@ -537,6 +538,7 @@ chat: {
   // Force-stop button next to the cruise signal
   longToolStop: 'Stop',
   sendingMessage: 'Sending message…', queuedStarting: 'Queued, starting…', preparingReply: 'Preparing…', organizingStreamingReply: 'Organizing the reply…',
+  slowStarting: 'Taking longer than usual to start…',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: { one: ' · {count} segment', other: ' · {count} segments' },
