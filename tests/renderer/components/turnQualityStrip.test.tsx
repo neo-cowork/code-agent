@@ -288,7 +288,7 @@ describe('TurnQualityStrip expert display name', () => {
     const itemBlock = (id: string, title: string, preview: string) => ({
       blockType: 'seed-memory' as const, trigger: 'session_start', source: 'memory-packer',
       injected: true, chars: 10, count: 1,
-      items: [{ entryId: id, title, kind: 'project', scope: 'project', status: 'active', score: 0.93, preview }],
+      items: [{ entryId: id, title, kind: 'project' as const, scope: 'project' as const, status: 'active' as const, score: 0.93, preview }],
     });
 
     it('shows a count chip (zh) and expands to titles + previews without scores or entry ids', () => {
