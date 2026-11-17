@@ -144,6 +144,16 @@ describe('agent worktree artifacts survive restart (real git)', () => {
     expect(await branchRow(node)).toBe(branch);
   });
 
+  it('does not create a phantom unknown node for a hydrated artifact without a lifecycle record', async () => {
+    vi.resetModules();
+    const tree = await import('../../../src/host/agent/agentTreeService');
+    // no context record at all (pruned, or belongs to another session)
+    const snapshot = tree.getAgentTreeSnapshot({ sessionId: SESSION });
+    expect(snapshot.nodes.find((n) => n.id === AGENT_ID)).toBeUndefined();
+    const other = tree.getAgentTreeSnapshot({ sessionId: 'another-session' });
+    expect(other.nodes.find((n) => n.id === AGENT_ID)).toBeUndefined();
+  });
+
   it('no branch row after discard (cleaned artifact)', async () => {
     const wt = await import('../../../src/host/agent/agentWorktree');
     await wt.discardAgentWorktree(AGENT_ID, worktreePath, repo);

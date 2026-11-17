@@ -668,7 +668,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
 
 export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}): AgentTreeSnapshot {
   const sessionId = options.sessionId?.trim() || undefined;
-  return buildAgentTreeSnapshot({
+  const sources: AgentTreeSnapshotSources = {
     sessionId,
     now: options.now,
     spawnAgents: getSpawnGuard().list(),
@@ -677,11 +677,21 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     // 会话隔离：能归属到别的会话的后台代理不进本会话快照（无 sessionId 的保留原口径）
     backgroundAgents: getBackgroundSubagentRegistry().list()
       .filter((handle) => !sessionId || !handle.sessionId || handle.sessionId === sessionId),
-    worktrees: options.worktrees ?? listAgentWorktreeArtifacts(),
     // 同一根脊柱：冲突从 fileOwnershipRegistry 拉（string scope = session:<id>），
     // 不给 renderer 新开 channel。
     ownershipConflicts: sessionId
       ? getFileOwnershipRegistry().listConflicts(sessionId)
       : [],
+  };
+  if (options.worktrees) return buildAgentTreeSnapshot({ ...sources, worktrees: options.worktrees });
+  const artifacts = listAgentWorktreeArtifacts();
+  if (artifacts.length === 0) return buildAgentTreeSnapshot(sources);
+  // Artifacts have no session or lifecycle; they may only decorate agents a lifecycle source
+  // already produced. Otherwise (hydrated after restart, record pruned / other session) they
+  // would create a phantom `unknown` node that reads as a still-working agent.
+  const known = new Set(buildAgentTreeSnapshot(sources).nodes.map((node) => node.id));
+  return buildAgentTreeSnapshot({
+    ...sources,
+    worktrees: artifacts.filter((artifact) => known.has(artifact.agentId)),
   });
 }
