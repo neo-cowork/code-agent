@@ -1751,7 +1751,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
-          const sessionsTable = sb.supabase.from('sessions');
           // Insert user message (skip if pre-persisted)
           if (!userMsgPrePersistedSupabase) {
             await sb.supabase.from('messages').insert({
@@ -1780,13 +1779,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               source_device_id: 'web',
             });
           }
-          // 更新会话标题（第一轮消息时）
-          if (isNewSession) {
-            await sessionsTable.update({
-              title: buildSessionTitle(titleSource),
-              updated_at: Date.now(),
-            }).eq('id', sessionId);
-          }
+          // 首轮标题只在 syncSupabaseSessionRow 以 insert-if-absent 写入；这里不再用截断档覆盖已回写的智能标题。
         }
       } catch (sbErr) {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
