@@ -14,7 +14,7 @@
  */
 export const UNATTENDED_SERVICE_TIER = 'flex';
 
-export const SERVICE_TIER_ELIGIBLE_PROVIDER = 'openai';
+const SERVICE_TIER_ELIGIBLE_PROVIDER = 'openai';
 
 export function isServiceTierEligibleProvider(provider: string): boolean {
   return provider === SERVICE_TIER_ELIGIBLE_PROVIDER;
