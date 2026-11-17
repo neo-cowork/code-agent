@@ -52,6 +52,7 @@ describe('resolveStoppedTaskOutcome markup-only browser conclusion', () => {
 });
 
 const REAL_FAILED_ROWS = [
+  '**任务未能完成：定价表没有抓到，因此没有 3 条要点可交付。**\n- 抓取失败原因：DNS 直接失败。',
   '**任务未完成——页面打不开，没有任何定价表内容。**\n原因：域名无法解析。',
   '没能取到显示名称',
 ];
