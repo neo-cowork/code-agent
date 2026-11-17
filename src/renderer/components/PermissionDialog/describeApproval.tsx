@@ -18,6 +18,7 @@ import { permissionConsequence, permissionSummary } from './permissionPresentati
 import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 import { formatDateTime } from '../../utils/formatDateTime';
+import { resolveReadObjectLabel } from '../../utils/toolHumanLabel';
 
 type ApprovalKind =
   | 'shell'
@@ -34,6 +35,7 @@ type ApprovalKind =
   | 'role_setting'
   | 'subtask'
   | 'calendar_read'
+  | 'read_generic'
   | 'generic';
 
 interface ApprovalDescription {
@@ -81,7 +83,11 @@ function uploadFileName(request: PermissionRequest): string | undefined {
   return name ? redactCredentialText(name) : undefined;
 }
 
-function classify(request: PermissionRequest): ApprovalKind {
+function readObjectLabel(request: PermissionRequest, t: Translations): string | undefined {
+  return resolveReadObjectLabel({ toolName: request.tool, labels: t.receiptPresentation.humanToolLabels });
+}
+
+function classify(request: PermissionRequest, t: Translations): ApprovalKind {
   const tool = request.tool.trim();
   const lower = tool.toLowerCase();
   if (lower === 'set_role_proactivity') return 'role_setting';
@@ -101,7 +107,9 @@ function classify(request: PermissionRequest): ApprovalKind {
     case 'file_edit':
     case 'file_delete':
       // 没有文件目标的「文件类」请求只是 permissionLevel 推断出来的类型，不是真文件操作。
-      return fileTarget(request) ? request.type : 'generic';
+      if (fileTarget(request)) return request.type;
+      // 无文件目标的只读请求 = 只读协议工具（提醒/会议记录/邮件…）：有对象名就说读什么。
+      return request.type === 'file_read' && readObjectLabel(request, t) ? 'read_generic' : 'generic';
     case 'network':
     case 'mcp':
       return 'network';
@@ -184,6 +192,7 @@ function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactEle
       return React.createElement(Bot, { size: 20 });
     case 'calendar_read':
       return React.createElement(CalendarDays, { size: 20 });
+    case 'read_generic':
     case 'generic':
       return React.createElement(Shield, { size: 20 });
     default:
@@ -211,7 +220,7 @@ function describeKind(
   t: Translations,
   language: Language,
 ): Omit<ApprovalDescription, 'dedicatedBrowserCard'> {
-  const kind = classify(request);
+  const kind = classify(request, t);
   const p = t.decisionCard.permission;
   const icon = iconFor(kind, request);
   const url = request.details.url ? redactCredentialText(request.details.url) : undefined;
@@ -282,6 +291,16 @@ function describeKind(
       return { kind, title: p.titleSubtask, question: p.questionSubtask, consequence: genericConsequence, icon };
     case 'calendar_read':
       return { kind, title: p.titleCalendarRead, question: p.questionCalendarRead, consequence: calendarReadScope(request, p, language), icon };
+    case 'read_generic': {
+      const label = readObjectLabel(request, t) ?? '';
+      return {
+        kind,
+        title: p.titleReadObject.replace('{label}', label),
+        question: p.questionReadObject.replace('{label}', label),
+        consequence: undefined,
+        icon,
+      };
+    }
     case 'generic':
       return {
         kind,
