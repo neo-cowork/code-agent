@@ -31,9 +31,10 @@ export async function prepareSpawnAgentWorktree(
   agentId: string,
   cwd: string,
   context: Pick<SubagentExecutionContext, 'swarmRunScope' | 'agentId'>,
+  label?: string,
 ): Promise<PrepareSpawnAgentWorktreeResult> {
   try {
-    const worktreeInfo = await createAgentWorktree(agentId, cwd);
+    const worktreeInfo = await createAgentWorktree(agentId, cwd, undefined, label);
     if (context.swarmRunScope) {
       await getParallelAgentCoordinatorRegistry().get(context.swarmRunScope)?.recordTaskWorktree(context.agentId ?? '', worktreeInfo.worktreePath);
     }
