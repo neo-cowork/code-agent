@@ -62,6 +62,7 @@ describe('space creation through the real domain IPC client', () => {
           }] : [],
         });
         if (action === 'listWithActivity') {
+          if (payload?.includeArchived) return ok([]);
           if (!payload?.spacesOnly) return ok([existing, candidate]);
           reads += 1;
           return reads === 1 ? oldRead.promise : ok(saved ? [existing, created] : [existing]);
@@ -115,7 +116,7 @@ describe('space creation through the real domain IPC client', () => {
     let reads = 0;
     invoke.mockImplementation(async (_domain: string, action: string, payload?: Record<string, unknown>) => {
       if (action === 'listWithActivity') {
-        if (!payload?.spacesOnly) return ok([]);
+        if (payload?.includeArchived || !payload?.spacesOnly) return ok([]);
         return ++reads === 1 ? oldRead.promise : ok([created]);
       }
       if (action === 'createSpace') return ok(created);
