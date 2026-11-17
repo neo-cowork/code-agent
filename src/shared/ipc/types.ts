@@ -397,11 +397,19 @@ export interface AxialCodingEntryIpc {
 // Cross-session search types (跨会话搜索)
 // ----------------------------------------------------------------------------
 
+/** 「本项目」范围描述符：主机在 SQL 层按它过滤整库（语义同侧栏 getProjectSearchKey）。 */
+export interface CrossSessionSearchProjectScope {
+  projectId?: string | null;
+  workingDirectory?: string | null;
+}
+
 export interface CrossSessionSearchOptions {
   /** Maximum results to return */
   limit?: number;
   /** Search only in specific sessions */
   sessionIds?: string[];
+  /** Search only sessions of one project (whole history, filtered in SQL before LIMIT) */
+  projectScope?: CrossSessionSearchProjectScope;
   /** Filter by message role */
   role?: 'user' | 'assistant' | 'system';
   /** Case-sensitive search */

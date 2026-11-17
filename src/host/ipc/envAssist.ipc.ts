@@ -9,7 +9,7 @@ import { canOpenEnvSettings, openEnvSettings } from '../permissions/envAssist/se
 import { createCuaHelperGrantBridge, type CuaHelperGrantBridge } from '../permissions/envAssist/grants/cuaHelperGrantBridge';
 import { createDefaultGrantBridge, mintClickToken, requestGrant, requestHelperGrant } from '../permissions/envAssist/grants/requestGrant';
 import { accessibilityProbe, automationProbe, calendarAccess, inputMonitoringProbe, screenRecordingProbe } from '../permissions/envAssist/probes/passiveProbes';
-import { enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps, type PendingEnable } from '../permissions/envAssist/calendarSetting';
+import { askCalendarOnce, enableCalendarReminder, recheckCalendarReminder, type CalendarSettingDeps, type PendingEnable } from '../permissions/envAssist/calendarSetting';
 import { askCalendarFromClick, isCalendarNotice, settleCalendarGranted } from '../permissions/envAssist/calendarGrant';
 import type { CalendarAccess } from '../permissions/envAssist/probes/passiveProbes';
 import { readCuaHelperPermissionState, type CuaHelperPermissionState } from '../permissions/envAssist/cua/helperPermissionState';
@@ -256,6 +256,24 @@ export async function grantCalendarFromConnectorClick(): Promise<void> {
     open: deps.open, available: deps.available,
   });
   if (asked.access === 'granted') await settleCalendarGranted('connector_repair');
+}
+
+/**
+ * ADR-090 修订（N-ENV-ASSIST-FOREGROUND-DIRECT-PROMPT）：用户本人在前台发起的这一轮里，日历工具碰到「未决定」——
+ * 用户就在跟前、请求是他自己的，直接弹一次系统框并等答复，不先出卡。凭证仍只在本文件签发；
+ * 只有「未决定」才弹（已拒绝/只写/受限不弹，调用方照旧出卡）。调用方负责只在前台、非无人值守、非子代理时调用。
+ */
+export async function grantCalendarForForegroundRequest(toolCallId: string): Promise<CalendarAccess> {
+  const deps = buildDefaultDependencies();
+  const asked = await askCalendarOnce({
+    access: () => calendarAccess(deps.passiveBridge ?? null),
+    prompt: () => requestGrant(mintClickToken(`foreground:${toolCallId}`), { pane: 'calendars' }, deps.grantBridge ?? null)
+      .catch(() => 'not_available' as const),
+  });
+  const access = asked?.access ?? 'unavailable';
+  logger.info('Calendar foreground request: direct dialog', { prompted: asked?.prompted === true, access });
+  if (access === 'granted') await settleCalendarGranted('foreground_request');
+  return access;
 }
 
 /** Opener injection is also used by hosts without a desktop; it never grants permission. */
