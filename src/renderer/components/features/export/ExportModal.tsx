@@ -9,6 +9,7 @@ import { formatDateTime } from '../../../utils/formatDateTime';
 import React, { useState, useCallback } from 'react';
 import { X, Download, FileText, FileJson, Check, Copy } from 'lucide-react';
 import type { Message } from '@shared/contract';
+import type { Language } from '../../../i18n';
 import { Button, IconButton, Modal } from '../../primitives';
 import { createLogger } from '../../../utils/logger';
 import { sanitizeMessagesForBrowserComputerExport } from '../../../utils/browserComputerExportRedaction';
@@ -38,9 +39,9 @@ interface ExportModalProps {
 // Helper Functions
 // ============================================================================
 
-function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlySet<string>): string {
+function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlySet<string>, language: Language): string {
   const role = message.role === 'user' ? '**用户**' : '**助手**';
-  const timestamp = formatDateTime(message.timestamp);
+  const timestamp = formatDateTime(message.timestamp, language);
   let content = message.content;
 
   // 处理工具调用
@@ -70,8 +71,8 @@ function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlyS
   return `### ${role}\n_${timestamp}_\n\n${content}\n`;
 }
 
-export function exportToMarkdown(title: string, messages: Message[]): string {
-  const header = `# ${title}\n\n导出时间：${formatDateTime(new Date())}\n\n---\n\n`;
+export function exportToMarkdown(title: string, messages: Message[], language: Language): string {
+  const header = `# ${title}\n\n导出时间：${formatDateTime(new Date(), language)}\n\n---\n\n`;
   const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
   const surfaceToolCallIds = new Set<string>();
   for (const message of safeMessages) {
@@ -88,7 +89,7 @@ export function exportToMarkdown(title: string, messages: Message[]): string {
   }
 
   const messageContent = safeMessages
-    .map((message) => formatMessageToMarkdown(message, surfaceToolCallIds))
+    .map((message) => formatMessageToMarkdown(message, surfaceToolCallIds, language))
     .join('\n---\n\n');
   const surfaceExecution = formatSurfaceExecutionProjectionForMarkdown(
     collectSurfaceExecutionExportProjection(safeMessages),
@@ -137,9 +138,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   // 生成导出内容
   const generateContent = useCallback(() => {
     return format === 'markdown'
-      ? exportToMarkdown(displayTitle, messages)
+      ? exportToMarkdown(displayTitle, messages, language)
       : exportToJson(sessionTitle, messages);
-  }, [format, sessionTitle, displayTitle, messages]);
+  }, [format, sessionTitle, displayTitle, messages, language]);
 
   // 复制到剪贴板
   const handleCopyToClipboard = async () => {

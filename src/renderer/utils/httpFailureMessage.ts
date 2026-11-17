@@ -10,53 +10,7 @@
 // ============================================================================
 
 import type { Language } from '../i18n';
-import { projectSourceTrustCopy } from '../i18n/agentRunErrors';
-import { sessionConflictLabels } from '../i18n/projectTrust';
-
-const genericFailure: Record<Language, string> = {
-  zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
-  en: 'Neo could not complete the request; please try again in a moment.',
-};
-
-const accessDenied: Record<Language, string> = {
-  zh: '本地服务没有接受这次请求，请刷新页面后重试。',
-  en: 'The local session could not be verified. Refresh the page and try again.',
-};
-
-const busy: Record<Language, string> = {
-  zh: '上一轮还没结束，请稍候再发送。',
-  en: 'The previous turn is still finishing. Try again in a moment.',
-};
-
-// 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
-const sessionHeldByOldRun: Record<Language, string> = {
-  zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
-  en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
-};
-
-const tooManyRequests: Record<Language, string> = {
-  zh: '发送太频繁了，请稍等片刻再重试。',
-  en: 'Too many requests in a short time. Wait a moment and try again.',
-};
-
-const uploadCopy = {
-  rateLimitedSeconds: {
-    zh: (n: number) => `上传太频繁了，请约 ${n} 秒后再试。`,
-    en: (n: number) => `Too many uploads in a short time. Try again in about ${n} seconds.`,
-  },
-  rateLimited: {
-    zh: '上传太频繁了，请稍等片刻再试。',
-    en: 'Too many uploads in a short time. Wait a moment and try again.',
-  },
-  tooLarge: {
-    zh: '文件太大，无法上传，请换一个小一点的文件。',
-    en: 'This file is too large to upload. Try a smaller file.',
-  },
-  generic: {
-    zh: '没能上传这个文件，请稍后再试。',
-    en: 'Could not upload this file. Please try again.',
-  },
-} as const;
+import { httpFailureCopy, projectSourceTrustCopy, uploadCopy } from '../i18n/agentRunErrors';
 
 /** 上传通道非 2xx → 一句话人话；retryAfterSeconds 来自 Retry-After 头或 429 响应体（跨域读不到头时兜底）。 */
 export function uploadFailureMessage(input: { status: number; retryAfterSeconds?: number; language: Language }): string {
@@ -106,11 +60,11 @@ export function httpFailureMessage(input: HttpFailureMessageInput): string {
   const { status, code, language } = input;
   const pick = (copy: Record<Language, string>): string => copy[language] ?? copy.zh;
   if (code === 'PROJECT_SOURCE_TRUST') return pick(projectSourceTrustCopy);
-  if (code === 'RUN_SESSION_CONFLICT') return pick(sessionHeldByOldRun);
-  if (status === 401 || status === 403) return pick(accessDenied);
-  if (status === 409) return pick(busy);
-  if (status === 429) return pick(tooManyRequests);
-  return pick(genericFailure);
+  if (code === 'RUN_SESSION_CONFLICT') return pick(httpFailureCopy.sessionHeldByOldRun);
+  if (status === 401 || status === 403) return pick(httpFailureCopy.accessDenied);
+  if (status === 409) return pick(httpFailureCopy.busy);
+  if (status === 429) return pick(httpFailureCopy.tooManyRequests);
+  return pick(httpFailureCopy.genericFailure);
 }
 
 // 域路由（src/web/routes/domain.ts）与终端错误处理（serverErrors.ts）自己的故障位：

@@ -485,11 +485,11 @@ export function buildCronJobInput(
 // 迁出供全 renderer 复用）。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
 
 /** Run table: MM/DD HH:mm in the current local year; YYYY/MM/DD HH:mm otherwise. */
-export function formatRunListTime(value?: string | number): string {
+export function formatRunListTime(value: string | number | undefined, lang: CronHumanLang): string {
   if (value == null) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  const full = formatDateTime(date);
+  const full = formatDateTime(date, lang);
   return date.getFullYear() === new Date().getFullYear() ? full.slice(5) : full;
 }
 
@@ -497,7 +497,7 @@ export function formatRunListTime(value?: string | number): string {
  * 运行耗时的人话显示：<1s / N 秒 / X 分 Y 秒 / X 小时 Y 分 / X 天 Y 小时，末尾为 0 的部分省略。
  * 先取整到秒再按余数拆分，59.9s 才会正确进位成 1 分。
  */
-export function formatDuration(ms?: number | null, lang: CronHumanLang = 'zh'): string {
+export function formatDuration(ms: number | null | undefined, lang: CronHumanLang): string {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
   const zh = lang === 'zh';
   if (ms === 0) return '0s';
@@ -528,7 +528,7 @@ export interface EventScheduleDisplayNames {
 
 export function formatScheduleSummary(
   job: CronJobDefinition,
-  lang: CronHumanLang = 'zh',
+  lang: CronHumanLang,
   eventNames?: EventScheduleDisplayNames,
 ): string {
   switch (job.schedule.type) {
@@ -569,7 +569,7 @@ export function formatScheduleSummary(
   }
 }
 
-export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
+export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang): string {
   const builtin = getBuiltinJobDisplay(job, lang);
   if (builtin) return builtin.actionLabel;
   switch (job.action.type) {

@@ -13,6 +13,7 @@ import { describeIntegrityCheckStatus } from '../../services/core/database/integ
 import { getLedgerCorruptionStreak } from '../../services/core/database/ledgerCorruptionMonitor';
 import { describeBackupStatus } from '../../services/infra/dbBackup';
 import type { DoctorItem } from '../types';
+import { doctorCopy } from '../i18n/doctorCopy';
 
 const REQUIRED_SESSION_COLUMNS = ['id', 'title', 'is_deleted', 'is_archived'] as const;
 
@@ -26,7 +27,7 @@ export function checkNodeVersion(): DoctorItem {
     status: isPass ? 'pass' : 'fail',
     message: `Node.js ${version}`,
     details: isPass ? undefined : 'Requires Node.js >= 18',
-    suggestion: isPass ? undefined : '请升级 Node.js 到 18 或以上版本',
+    suggestion: isPass ? undefined : doctorCopy().environment.upgradeNode,
     fix: isPass ? undefined : { code: DOCTOR_FIX_CODES.OPEN_RUNTIME_HELP },
   };
 }
@@ -40,7 +41,7 @@ export function checkConfigDir(): DoctorItem {
     status: exists ? 'pass' : 'warn',
     message: exists ? configDir : 'Config directory not found',
     details: exists ? undefined : `Expected at ${configDir}`,
-    suggestion: exists ? undefined : '应用首次启动会自动创建配置目录，可忽略此警告',
+    suggestion: exists ? undefined : doctorCopy().environment.configDirAutoCreated,
     fix: exists ? undefined : { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
   };
 }
@@ -53,7 +54,7 @@ export async function checkDatabase(): Promise<DoctorItem> {
       name: 'SQLite database',
       status: 'warn',
       message: 'Database not found',
-      suggestion: '应用首次运行时会自动创建数据库，可忽略',
+      suggestion: doctorCopy().environment.databaseAutoCreated,
     };
   }
   try {
@@ -69,7 +70,7 @@ export async function checkDatabase(): Promise<DoctorItem> {
         status: 'warn',
         message: `${sizeMB} MB · schema check unavailable`,
         details: dbPath,
-        suggestion: '数据库连接尚未初始化，请在应用启动完成后重试诊断',
+        suggestion: doctorCopy().environment.databaseNotReady,
       };
     }
     const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name?: unknown }>;
@@ -89,7 +90,7 @@ export async function checkDatabase(): Promise<DoctorItem> {
         status: 'fail',
         message: `sessions schema missing: ${missingColumns.join(', ')}`,
         details: `${sizeMB} MB · ${dbPath} · ${extras}`,
-        suggestion: '重启应用以执行数据库迁移；若仍失败，请备份后检查数据库',
+        suggestion: doctorCopy().environment.restartForMigration,
         fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
       };
     }
@@ -116,7 +117,7 @@ export async function checkDatabase(): Promise<DoctorItem> {
       status: 'fail',
       message: 'Cannot read database',
       details: err instanceof Error ? err.message : String(err),
-      suggestion: '检查数据库文件权限，或删除后让应用重建',
+      suggestion: doctorCopy().environment.checkDatabasePermissions,
       fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
     };
   }
@@ -147,7 +148,7 @@ export async function checkDiskUsage(): Promise<DoctorItem> {
       name: 'Disk usage',
       status: 'warn',
       message: 'Cannot check disk usage',
-      suggestion: '检查配置目录的访问权限',
+      suggestion: doctorCopy().environment.checkConfigDirAccess,
       fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
     };
   }

@@ -14,6 +14,7 @@ import type {
 } from '@shared/contract';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
+import { routeTraceDiagnosticsEn, routeTraceDiagnosticsZh } from '../../../i18n/routeTraceDiagnostics';
 
 const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'user-selected': '用户选择',
@@ -291,16 +292,16 @@ function formatToolPolicyDetail(decision: ModelDecisionEventData): string | null
 }
 
 // host 生成的诊断句仍带英文内部词（改 host 串要重录 request-replay 快照，只能在 mini 录），展示时在这里映射成用户语义。
-function localizeDiagnosticDetail(text: string): string {
+function localizeDiagnosticDetail(text: string, copy: typeof routeTraceDiagnosticsZh): string {
   return text
-    .replace(/\s*provider usage\s*/g, '服务商用量')
-    .replace(/provider 已回传/g, '服务商已回传')
-    .replace(/\s*(?:saved tokens|token saved)\s*/g, '节省量');
+    .replace(/\s*provider usage\s*/g, copy.providerUsage)
+    .replace(/provider 已回传/g, copy.providerReported)
+    .replace(/\s*(?:saved tokens|token saved)\s*/g, copy.savedTokens);
 }
 
-function formatToolTokenSavingsDetail(decision: ModelDecisionEventData): string | null {
+function formatToolTokenSavingsDetail(decision: ModelDecisionEventData, copy: typeof routeTraceDiagnosticsZh): string | null {
   const detail = decision.toolStrategy?.tokenSavings?.detail;
-  return detail ? localizeDiagnosticDetail(detail) : null;
+  return detail ? localizeDiagnosticDetail(detail, copy) : null;
 }
 
 function formatToolTokenSavingsBasis(decision: ModelDecisionEventData): string | null {
@@ -412,9 +413,10 @@ export const RouteTraceChip: React.FC<{
   /** 诊断区默认收起；仅验收脚本/静态渲染需要直接看到工程细节时传 true。 */
   defaultDiagnosticsExpanded?: boolean;
 }> = ({ decision, defaultExpanded = false, defaultDiagnosticsExpanded = false }) => {
+  const { t, language } = useI18n();
+  const diagnosticCopy = language === 'en' ? routeTraceDiagnosticsEn : routeTraceDiagnosticsZh;
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(defaultDiagnosticsExpanded);
-  const { t } = useI18n();
   const diagnosticsLabel = t.rendererHumanPipe.routeTrace.diagnostics;
   const requested = formatModel(decision.requestedProvider, decision.requestedModel);
   const resolved = formatModel(decision.resolvedProvider, decision.resolvedModel);
@@ -429,7 +431,7 @@ export const RouteTraceChip: React.FC<{
   const mcpTools = formatMcpTools(decision);
   const programmaticTools = formatProgrammaticTools(decision);
   const toolPolicyDetail = formatToolPolicyDetail(decision);
-  const toolTokenSavingsDetail = formatToolTokenSavingsDetail(decision);
+  const toolTokenSavingsDetail = formatToolTokenSavingsDetail(decision, diagnosticCopy);
   const toolTokenSavingsBasis = formatToolTokenSavingsBasis(decision);
   const toolProviderUsage = formatToolProviderUsage(decision);
   const toolProviderReport = formatToolProviderReport(decision);

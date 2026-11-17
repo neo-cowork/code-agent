@@ -28,7 +28,7 @@ export const sessionTaskPresentationEn: typeof sessionTaskPresentationZh = {
     accepted: "Started in the background: {name}. I'll tell you when it's done.",
     queued: 'Queued: {name}. It will start automatically when its turn comes.',
     reused: 'Continuing to track: {name} — {status}',
-    statusLine: '{name}　{status}{detail}',
+    statusLine: '{name} — {status}{detail}',
     detail: ': {detail}',
     checkedTimes: 'checked {count} times',
     status: {

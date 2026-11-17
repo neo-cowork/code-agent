@@ -13,6 +13,7 @@ import { resolveProviderApiKey, resolveProviderBaseUrl } from '../../model/provi
 import { DOCTOR_PROBE_REAL_SUCCESS_MAX_AGE_MS } from '../../../shared/constants/doctor';
 import { getConfigService } from '../../services/core/configService';
 import type { DoctorItem } from '../types';
+import { doctorCopy } from '../i18n/doctorCopy';
 
 function getConnectivityFixCode(errorCode: string | undefined): DoctorFixCode {
   switch (errorCode) {
@@ -58,7 +59,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           category: 'network',
           name: info.displayName,
           status: 'skip',
-          message: '未配置 API Key',
+          message: doctorCopy().network.noApiKey,
         };
       }
 
@@ -104,7 +105,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           category: 'network',
           name: info.displayName,
           status: isFail ? 'fail' : 'warn',
-          message: result.error?.message ?? '连接失败',
+          message: result.error?.message ?? doctorCopy().network.connectFailed,
           suggestion: result.error?.suggestion,
           details: code,
           durationMs,
@@ -115,7 +116,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           category: 'network',
           name: info.displayName,
           status: 'warn',
-          message: `内部错误: ${err instanceof Error ? err.message : String(err)}`,
+          message: doctorCopy().network.internalError(err instanceof Error ? err.message : String(err)),
           durationMs: Date.now() - started,
           fix: { code: DOCTOR_FIX_CODES.OPEN_PROXY_HELP },
         };
@@ -130,7 +131,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           category: 'network' as const,
           name: providerEntries[i][1].displayName,
           status: 'warn' as const,
-          message: '检查异常',
+          message: doctorCopy().network.checkException,
           details: r.reason instanceof Error ? r.reason.message : String(r.reason),
           fix: { code: DOCTOR_FIX_CODES.OPEN_PROXY_HELP },
         },

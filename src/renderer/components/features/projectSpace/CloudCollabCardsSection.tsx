@@ -135,7 +135,7 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
     } catch (error) {
       setResyncFeedback({
         kind: 'error',
-        text: `${ps.cloudCardsResyncFailed}：${error instanceof Error ? error.message : String(error)}`,
+        text: `${ps.cloudCardsResyncFailed}${t.punctuation.colon}${error instanceof Error ? error.message : String(error)}`,
       });
     } finally {
       setResyncBusy(false);
@@ -194,7 +194,7 @@ export const CloudCollabCardsSection: React.FC<CloudCollabCardsSectionProps> = (
         )}
         {loadState === 'error' && (
           <div className="flex items-center justify-between gap-2 rounded border border-badge-danger/25 bg-rose-500/10 px-2 py-1 text-[11px] leading-5 text-badge-danger" data-testid="cloud-collab-load-error">
-            <span className="min-w-0">{ps.cloudCardsLoadFailed}：{loadError}</span>
+            <span className="min-w-0">{ps.cloudCardsLoadFailed}{t.punctuation.colon}{loadError}</span>
             <button /* ds-allow:button: 云卡加载失败区的内联重试，rose 警示语境无对应 Button 变体 */
               type="button"
               className="shrink-0 rounded border border-badge-danger/30 px-1.5 py-0.5 text-[10px] text-badge-danger hover:bg-rose-500/15"

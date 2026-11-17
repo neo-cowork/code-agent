@@ -18,6 +18,8 @@ import type { WorkbenchCapabilityRegistryItem } from '../../../src/renderer/util
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
+const pickerZh = zh.slashCommands.picker;
+
 const makeSkill = (overrides: Partial<ParsedSkill>): ParsedSkill => ({
   name: 'docx',
   description: 'Word document helper',
@@ -74,8 +76,8 @@ describe('slash picker model', () => {
 
   it('ranks exact slash command matches ahead of substring matches', () => {
     const commands = [
-      createCommandCandidate({ id: 'workflow', label: 'Workflow', description: 'Run workflow' }),
-      createCommandCandidate({ id: 'low', label: 'Low', description: 'Low effort' }),
+      createCommandCandidate({ id: 'workflow', label: 'Workflow', description: 'Run workflow' }, pickerZh),
+      createCommandCandidate({ id: 'low', label: 'Low', description: 'Low effort' }, pickerZh),
     ];
 
     expect(filterAndRankSlashCandidates(commands, 'low').map((cmd) => cmd.id)).toEqual([
@@ -90,7 +92,7 @@ describe('slash picker model', () => {
       description: 'Summarize current topic',
       source: 'file',
       hints: ['$ARGUMENTS'],
-    })).toMatchObject({
+    }, pickerZh)).toMatchObject({
       id: 'prompt:summarize',
       kind: 'prompt',
       actionKind: 'prefill-prompt',
@@ -98,7 +100,7 @@ describe('slash picker model', () => {
       promptName: 'summarize',
     });
 
-    expect(createAgentCandidates(agents)).toEqual(expect.arrayContaining([
+    expect(createAgentCandidates(agents, pickerZh)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'agent:reviewer',
         kind: 'agent',
@@ -125,7 +127,7 @@ describe('slash picker model', () => {
       ],
       mountedSkills: mounted,
       selectedSkillIds: ['docx'],
-    });
+    }, pickerZh);
 
     expect(candidates[0]).toMatchObject({
       id: 'skill:docx',
@@ -141,21 +143,21 @@ describe('slash picker model', () => {
 
   it('limits empty query to high-frequency and currently relevant entries', () => {
     const commands = [
-      createCommandCandidate({ id: 'context', label: 'Context', description: 'Open context inspector' }),
+      createCommandCandidate({ id: 'context', label: 'Context', description: 'Open context inspector' }, pickerZh),
       createCommandCandidate({
         id: 'goal',
         label: 'Goal',
         description: 'Start autonomous goal mode',
         emptyQueryVisible: true,
         emptyQueryRank: 5,
-      }),
+      }, pickerZh),
       createCommandCandidate({
         id: 'new',
         label: 'New Chat',
         description: 'Start a new chat',
         emptyQueryVisible: true,
         emptyQueryRank: 1,
-      }),
+      }, pickerZh),
     ];
 
     expect(filterAndRankSlashCandidates(commands, '').map((cmd) => cmd.id)).toEqual(['new', 'goal']);
@@ -170,7 +172,7 @@ describe('slash picker model', () => {
       hints: ['$ARGUMENTS'],
       contentPreview: '请做安全审查...',
       contentSearchText: '请做安全审查，关注权限风险和回滚方案。',
-    });
+    }, pickerZh);
 
     const [matched] = filterAndRankSlashCandidates([prompt], '权限风险');
     expect(matched).toMatchObject({
@@ -196,7 +198,7 @@ describe('slash picker model', () => {
         reason: '当前输入提到 Word 文档',
         action: 'mount',
       }],
-    });
+    }, pickerZh);
 
     expect(candidates[0]).toMatchObject({
       group: 'skill',
@@ -208,7 +210,7 @@ describe('slash picker model', () => {
     expect(filterAndRankSlashCandidates(candidates, 'doc').map((item) => item.id)).toEqual(['skill:docx']);
   });
 
-  it('effectLabel/描述装饰走注入 labels（en 传入则输出英文，缺省回退中文）', () => {
+  it('effectLabel/描述装饰走注入的当前语言 labels', () => {
     const pickerEn = en.slashCommands.picker;
     expect(createCommandCandidate(
       { id: 'goal', label: 'Goal', description: 'Set goal', actionKind: 'prefill-leading-command' },
@@ -236,8 +238,7 @@ describe('slash picker model', () => {
     }, pickerEn);
     expect(skills[0]?.effectLabel).toBe(pickerEn.mountAndSelect);
 
-    // 缺省回退中文（zh 键即历史硬编码文案）
-    expect(createCommandCandidate({ id: 'x', label: 'X', description: 'X' }).effectLabel)
+    expect(createCommandCandidate({ id: 'x', label: 'X', description: 'X' }, pickerZh).effectLabel)
       .toBe(zh.slashCommands.picker.executeNow);
   });
 
@@ -287,7 +288,7 @@ describe('slash picker model', () => {
       resourceCount: 0,
     } satisfies WorkbenchCapabilityRegistryItem;
 
-    expect(createWorkbenchCapabilityCandidates([connector, mcp], ['connector:mail'])).toEqual([
+    expect(createWorkbenchCapabilityCandidates([connector, mcp], ['connector:mail'], pickerZh)).toEqual([
       expect.objectContaining({
         id: 'connector:mail',
         group: 'suggested',
@@ -308,10 +309,10 @@ describe('slash picker model', () => {
   it('空查询只留系统内置和已装技能，壳层命令与连接器要打字才出现', () => {
     const builtin = createCommandCandidate({
       id: 'goal', label: 'Goal', description: '设目标', emptyQueryVisible: true, emptyQueryRank: 1,
-    });
+    }, pickerZh);
     const shell = createCommandCandidate({
       id: 'sidebar', label: 'Sidebar', description: '侧栏',
-    });
+    }, pickerZh);
     const skill = createSkillCandidates({
       availableSkills: [
         makeSkill({ name: 'docx', userInvocable: true, enabled: false, metadata: { category: '文档' } }),
@@ -319,7 +320,7 @@ describe('slash picker model', () => {
       ],
       mountedSkills: [],
       selectedSkillIds: [],
-    });
+    }, pickerZh);
     const visible = filterAndRankSlashCandidates([builtin, shell, ...skill], '');
     expect(visible.map((item) => item.id)).toEqual(['goal', 'skill:docx']);
     expect(skill.find((item) => item.skillName === 'docx')).toMatchObject({
@@ -340,14 +341,14 @@ describe('slash picker model', () => {
   it('内置命令排在技能前面，空查询截断也不会把 /doctor 挤掉', () => {
     const doctor = createCommandCandidate({
       id: 'doctor', label: 'Doctor', description: '检查', emptyQueryVisible: true, emptyQueryRank: 10,
-    });
+    }, pickerZh);
     const skills = Array.from({ length: 50 }, (_, index) => createCommandCandidate({
       id: `skill-${index}`,
       label: `Skill ${index}`,
       description: '技能',
       emptyQueryVisible: true,
       emptyQueryRank: 55,
-    }));
+    }, pickerZh));
     const visible = filterAndRankSlashCandidates([doctor, ...skills], '', { maxEmptyItems: 48 });
     expect(visible[0]?.id).toBe('doctor');
     expect(visible).toHaveLength(48);

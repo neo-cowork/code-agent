@@ -4,6 +4,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useTurnExecutionStore, type HookActivityEvent, type RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import { useWorkbenchCapabilities } from './useWorkbenchCapabilities';
+import { useI18n } from './useI18n';
 import { buildTurnExecutionClarityProjection } from '../utils/turnTimelineProjection';
 
 const EMPTY_ROUTING_EVENTS: RoutingEvidenceEvent[] = [];
@@ -36,6 +37,8 @@ export function useTurnExecutionClarity(
       : null,
   );
 
+  const hookCopy = useI18n().t.turnHooks;
+
   return useMemo(
     () => buildTurnExecutionClarityProjection({
       projection,
@@ -46,7 +49,8 @@ export function useTurnExecutionClarity(
       hookEvents,
       hookRunning,
       workingDirectory,
+      hookCopy,
     }),
-    [capabilities, hookEvents, hookRunning, launchRequests, projection, routingEvents, swarmEvents, workingDirectory],
+    [capabilities, hookCopy, hookEvents, hookRunning, launchRequests, projection, routingEvents, swarmEvents, workingDirectory],
   );
 }

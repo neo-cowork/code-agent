@@ -3,6 +3,7 @@
 
 import { PROMPT_REQUIRED, REQUEST_INVALID } from '@shared/contract/agentRunErrors';
 import type { Language } from './index';
+import { sessionConflictLabels } from './projectTrust';
 
 const promptRequiredCopy: Record<Language, string> = {
   zh: '请补一句话说明想让我做什么，然后再发送一次。',
@@ -14,6 +15,31 @@ const requestRejectedCopy: Record<Language, string> = {
   zh: '本地服务没有接受这次请求，请刷新页面后重试。',
   en: 'Neo could not accept this request. Refresh the page and try again.',
 };
+
+/** HTTP transport failure copy, keyed by the stable status/code mapping. */
+export const httpFailureCopy = {
+  genericFailure: {
+    zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
+    en: 'Neo could not complete the request; please try again in a moment.',
+  },
+  accessDenied: {
+    zh: '本地服务没有接受这次请求，请刷新页面后重试。',
+    en: 'The local session could not be verified. Refresh the page and try again.',
+  },
+  busy: {
+    zh: '上一轮还没结束，请稍候再发送。',
+    en: 'The previous turn is still finishing. Try again in a moment.',
+  },
+  // A parked old run needs an explicit action before the next message can be sent.
+  sessionHeldByOldRun: {
+    zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
+    en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
+  },
+  tooManyRequests: {
+    zh: '发送太频繁了，请稍等片刻再重试。',
+    en: 'Too many requests in a short time. Wait a moment and try again.',
+  },
+} satisfies Record<string, Record<Language, string>>;
 
 /** PROJECT_SOURCE_TRUST（旧项目 Source 身份快照缺失，需就地确认）：导出供 transport 层映射复用。 */
 export const projectSourceTrustCopy: Record<Language, string> = {
@@ -38,3 +64,22 @@ export function rejectedRequestMessage(error: unknown, language: Language): stri
   if (code !== PROMPT_REQUIRED && status !== 400 && status !== 422) return undefined;
   return promptRequiredCopy[language] ?? promptRequiredCopy.zh;
 }
+
+export const uploadCopy = {
+  rateLimitedSeconds: {
+    zh: (n: number) => `上传太频繁了，请约 ${n} 秒后再试。`,
+    en: (n: number) => `Too many uploads in a short time. Try again in about ${n} seconds.`,
+  },
+  rateLimited: {
+    zh: '上传太频繁了，请稍等片刻再试。',
+    en: 'Too many uploads in a short time. Wait a moment and try again.',
+  },
+  tooLarge: {
+    zh: '文件太大，无法上传，请换一个小一点的文件。',
+    en: 'This file is too large to upload. Try a smaller file.',
+  },
+  generic: {
+    zh: '没能上传这个文件，请稍后再试。',
+    en: 'Could not upload this file. Please try again.',
+  },
+} as const;

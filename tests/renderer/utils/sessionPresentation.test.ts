@@ -89,6 +89,7 @@ describe('sessionPresentation', () => {
 
     const text = buildSessionSearchText({
       session,
+      language: 'zh',
       snapshot: session.workbenchSnapshot,
       status: {
         kind: 'live',

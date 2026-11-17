@@ -13,7 +13,7 @@ function localeForLanguage(language: Language): string {
 export function formatCronJobDateTime(
   value: string | number | Date,
   timeZone: string | undefined,
-  language: Language = 'zh',
+  language: Language,
 ): string {
   const resolved = resolveTimeZone(timeZone);
   if (!resolved) return formatDateTime(value, language);
@@ -22,7 +22,7 @@ export function formatCronJobDateTime(
 }
 
 /** Machine-local next-run time for the detail page's comparison line. */
-export function formatCronJobLocalDateTime(value: string | number | Date, language: Language = 'zh'): string {
+export function formatCronJobLocalDateTime(value: string | number | Date, language: Language): string {
   return formatDateTime(value, language);
 }
 
@@ -35,7 +35,7 @@ export function cronJobUsesDifferentTimeZone(timeZone?: string): boolean {
 export function formatCronScheduleLabelWithZone(
   expression: string,
   timeZone: string | undefined,
-  language: CronHumanLang = 'zh',
+  language: CronHumanLang,
 ): string {
   const base = formatCronExpressionLabel(expression, timeZone, language);
   return formatCronTimeZoneSuffix(base, timeZone, language);
@@ -45,7 +45,7 @@ export function formatCronScheduleLabelWithZone(
 export function formatCronJobShortTime(
   value: string | number | Date,
   timeZone: string | undefined,
-  language: Language = 'zh',
+  language: Language,
 ): string {
   const resolved = resolveTimeZone(timeZone);
   const locale = localeForLanguage(language);

@@ -65,7 +65,7 @@ describe('带用户输入的模板描述不被固定文案覆盖', () => {
     const en = groupListen.generate({ task: 'summarize release mentions' }, 'en');
     expect(en.name).toBe('Group listen');
     expect(en.description).toContain('summarize release mentions');
-    expect(groupListen.generate({ task: '总结发布相关' }).description).toBe('监听群消息：总结发布相关');
+    expect(groupListen.generate({ task: '总结发布相关' }, 'zh').description).toBe('监听群消息：总结发布相关');
     // 两个不同任务的 en 描述必须可区分
     expect(groupListen.generate({ task: 'a' }, 'en').description).not.toBe(groupListen.generate({ task: 'b' }, 'en').description);
   });
@@ -73,12 +73,12 @@ describe('带用户输入的模板描述不被固定文案覆盖', () => {
 
 describe('推荐模板：名称跟随 UI 语言', () => {
   it('generate 缺省仍是中文；en 取英文词条与英文 agent 提示词', () => {
-    expect(dailyReview.generate({}).name).toBe('每日回顾');
+    expect(dailyReview.generate({}, 'zh').name).toBe('每日回顾');
     const en = dailyReview.generate({}, 'en');
     expect(en.name).toBe('Daily review');
     expect(en.description).toBe('Review today’s progress and follow-ups');
     // FU1：en 档 agent 提示词是手写英文版，不再是中文原文
-    expect(en.agentPrompt).not.toBe(dailyReview.generate({}).agentPrompt);
+    expect(en.agentPrompt).not.toBe(dailyReview.generate({}, 'zh').agentPrompt);
     expect(en.agentPrompt).not.toMatch(/[㐀-鿿]/);
     expect(en.agentPrompt).toContain('review my work today');
   });
@@ -94,7 +94,7 @@ describe('推荐模板：名称跟随 UI 语言', () => {
     // 存进任务的是英文提示词（Action 框展示的就是它）
     expect(submitted.action.type).toBe('agent');
     if (submitted.action.type === 'agent') {
-      expect(submitted.action.prompt).not.toBe(dailyReview.generate({}).agentPrompt);
+      expect(submitted.action.prompt).not.toBe(dailyReview.generate({}, 'zh').agentPrompt);
       expect(submitted.action.prompt).not.toMatch(/[㐀-鿿]/);
     }
 

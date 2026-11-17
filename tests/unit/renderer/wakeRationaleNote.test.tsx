@@ -11,6 +11,7 @@ import {
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({
     t: {
+      punctuation: { colon: '：' },
       wakeRationale: {
         why: '为什么',
         whyAria: '为什么推荐这条',

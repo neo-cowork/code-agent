@@ -8,6 +8,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Papa from 'papaparse';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { compareCsvCells } from '../utils/csvSort';
+import { useI18n } from '../hooks/useI18n';
+import { csvTableEn, csvTableZh } from '../i18n/csvTable';
 
 // Cap rendered rows. File parses fully so sort/filter see everything, but
 // the DOM only materializes this many to keep the table responsive.
@@ -28,6 +30,8 @@ interface SortState {
 }
 
 const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
+  const { language } = useI18n();
+  const text = language === 'en' ? csvTableEn : csvTableZh;
   const [sort, setSort] = useState<SortState | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
 
@@ -109,7 +113,7 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
   if (columns.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-        {parseError ?? '空表或无法解析的 CSV'}
+        {parseError ?? text.emptyOrUnparseable}
       </div>
     );
   }
@@ -118,7 +122,7 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
     <div className="flex flex-col h-full bg-zinc-900 text-zinc-200">
       {parseError && (
         <div className="px-3 py-1.5 text-[11px] text-badge-warning bg-amber-500/10 border-b border-badge-warning/20">
-          解析告警：{parseError}
+          {text.parseWarning}{parseError}
         </div>
       )}
       <div className="flex-1 overflow-auto">
@@ -137,7 +141,7 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
                   <button
                     onClick={() => toggleSort(col)}
                     className="flex items-center gap-1 w-full px-2 py-1.5 hover:bg-zinc-700/60 transition-colors"
-                    title={`点击排序：${col}`}
+                    title={text.sortBy(col)}
                   >
                     <span className="truncate">{col}</span>
                     {sort?.column === col ? (
@@ -152,7 +156,7 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
                   <span
                     onPointerDown={(e) => handleResizeStart(e, col)}
                     className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-primary-500/40"
-                    title="拖动调整列宽"
+                    title={text.resizeColumn}
                   />
                 </th>
               ))}
@@ -181,8 +185,8 @@ const CsvTable: React.FC<CsvTableProps> = ({ content, delimiter }) => {
       </div>
       <div className="px-3 py-1.5 text-[10px] text-zinc-500 bg-zinc-800 border-t border-zinc-700">
         {truncated
-          ? `显示前 ${MAX_RENDERED_ROWS} / ${sortedRows.length} 行（排序/预览仅限前 ${MAX_RENDERED_ROWS} 行）`
-          : `${sortedRows.length} 行 × ${columns.length} 列`}
+          ? text.truncatedSummary(MAX_RENDERED_ROWS, sortedRows.length)
+          : text.sizeSummary(sortedRows.length, columns.length)}
       </div>
     </div>
   );

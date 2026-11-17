@@ -111,6 +111,7 @@ describe('resolveSavedRoutineChannelLabel', () => {
 describe('buildSavedRoutineRestateRows', () => {
   it('agent+roleId：what 带角色前缀，when 是人话（非原始 cron 串），result 用解析标签', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({ resultChannel: '工作飞书:chat-1' }),
       roleDisplayName: '小星',
       channelLabel: '工作飞书 · 项目群',
@@ -125,6 +126,7 @@ describe('buildSavedRoutineRestateRows', () => {
 
   it('role-wake：无 prompt 时 what 回落到任务名，仍带角色前缀', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         name: '小星主动性',
         action: { type: 'role-wake', roleId: 'role-x' },
@@ -142,6 +144,7 @@ describe('buildSavedRoutineRestateRows', () => {
 
   it('every / at / 复杂 cron 的人话 when（en 档按语言切换）', () => {
     const every = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         scheduleType: 'every',
         schedule: { type: 'every', interval: 2, unit: 'hours' },
@@ -153,6 +156,7 @@ describe('buildSavedRoutineRestateRows', () => {
     expect(every[1].value).toBe('每 2 小时');
 
     const at = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         scheduleType: 'at',
         schedule: { type: 'at', datetime: '2026-03-19T09:00:00' },
@@ -164,6 +168,7 @@ describe('buildSavedRoutineRestateRows', () => {
     expect(at[1].value).toMatch(/\d{2}\/\d{2} \d{2}:\d{2}/);
 
     const complex = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({ schedule: { type: 'cron', expression: '7 9-17/2 * * 1,3' } }),
       roleDisplayName: '小星',
       channelLabel: '',
@@ -172,7 +177,7 @@ describe('buildSavedRoutineRestateRows', () => {
     expect(complex[1].value).toBe('自定义时间 · 7 9-17/2 * * 1,3');
 
     const enRows = buildSavedRoutineRestateRows({
-      job: agentJob(),
+            job: agentJob(),
       roleDisplayName: 'Nova',
       channelLabel: '',
       labels: {
@@ -188,6 +193,7 @@ describe('buildSavedRoutineRestateRows', () => {
 
   it('event 调度（channel 与 connector:mail 源）when 是固定句子，绝不空行', () => {
     const channelEvent = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         scheduleType: 'event',
         schedule: { type: 'event', source: 'channel', accountId: 'acc-1', eventName: 'message' },
@@ -200,6 +206,7 @@ describe('buildSavedRoutineRestateRows', () => {
     expect(channelEvent[1].value).not.toBe('');
 
     const mailEvent = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         scheduleType: 'event',
         schedule: { type: 'event', source: 'connector', connector: 'mail', accountId: '我的邮箱', eventName: 'message' },
@@ -213,6 +220,7 @@ describe('buildSavedRoutineRestateRows', () => {
 
   it('行内容跟随保存的记录：record 的 goal 与调度是什么就显示什么', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         name: '记录里的名字',
         schedule: { type: 'cron', expression: '30 8 * * 1-5' },
@@ -230,6 +238,7 @@ describe('buildSavedRoutineRestateRows', () => {
     const goal = 'Read the competitor updates I follow and turn them into a one-page brief';
     expect(goal.length).toBeGreaterThan(48);
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         // 复刻 buildSimpleDraft 的 name 兜底：用户没起名时 name = goal 前 48 字（截在词中间）
         name: goal.slice(0, 48),
@@ -247,6 +256,7 @@ describe('buildSavedRoutineRestateRows', () => {
 
   it('agent 记录 prompt 空白时 what 回落到任务名（buildScheduleConfirmRows 既有口径）', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({
         name: '记录里的名字',
         action: { type: 'agent', agentType: 'default', prompt: '   ', roleId: 'role-x' },
@@ -261,6 +271,7 @@ describe('buildSavedRoutineRestateRows', () => {
   it('what 行只遮罩展示值，保存记录里的 prompt 保持原文', () => {
     const prompt = '备份笔记 --password=hunter2xyz';
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({ action: { type: 'agent', agentType: 'default', prompt, roleId: 'role-x' } }),
       roleDisplayName: '小星',
       channelLabel: '',
@@ -276,6 +287,7 @@ describe('buildSavedRoutineRestateRows', () => {
   // 「每天 09:00」会以为它会跑——停用副本必须出第四行「状态」讲清楚。
   it('停用副本追加第四行「状态」，启用任务保持恰好三行', () => {
     const disabled = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({ enabled: false }),
       roleDisplayName: '小星',
       channelLabel: '',
@@ -289,6 +301,7 @@ describe('buildSavedRoutineRestateRows', () => {
     });
 
     const enabled = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob(),
       roleDisplayName: '小星',
       channelLabel: '',
@@ -299,7 +312,7 @@ describe('buildSavedRoutineRestateRows', () => {
 
   it('en 语言档：停用副本的第四行是英文停用提示', () => {
     const rows = buildSavedRoutineRestateRows({
-      job: agentJob({ enabled: false }),
+            job: agentJob({ enabled: false }),
       roleDisplayName: 'Nova',
       channelLabel: '',
       labels: {
@@ -331,6 +344,7 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
 
   it('notifyWhenRow：四行 what/when/notifyWhen/result，无角色前缀，notifyWhen 走兜底文案', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: roleLessInput(),
       channelLabel: '',
       labels,
@@ -345,6 +359,7 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
 
   it('notifyWhenRow：设了 urgencyCriteria 时 notifyWhen 行陈述判据原文', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: roleLessInput({
         action: {
           type: 'agent', agentType: 'default', prompt: '盯竞品并汇总',
@@ -360,6 +375,7 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
 
   it('notifyWhenRow：action.notifyWhen 优先于 urgencyCriteria', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: roleLessInput({
         action: {
           type: 'agent', agentType: 'default', prompt: '盯竞品并汇总',
@@ -375,6 +391,7 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
 
   it('notifyWhenRow：非 agent 动作不出 notifyWhen 行（通知判据只挂在 agent 执行链上）', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({ action: { type: 'shell', command: 'echo ok' } }),
       channelLabel: '',
       labels,
@@ -385,6 +402,7 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
 
   it('不开 notifyWhenRow 照旧三行（保存后复述视图形状不变）', () => {
     const rows = buildSavedRoutineRestateRows({
+      lang: 'zh',
       job: agentJob({ action: { type: 'agent', agentType: 'default', prompt: 'p', urgencyCriteria: '判据' } }),
       roleDisplayName: '小星',
       channelLabel: '',
@@ -405,7 +423,7 @@ describe('buildSavedRoutineRestateRows · 预保存确认卡（notifyWhenRow）'
     };
     const input = buildCronJobInput(draft);
     expect('id' in input).toBe(false);
-    const rows = buildSavedRoutineRestateRows({ job: input, channelLabel: '', labels, notifyWhenRow: true });
+    const rows = buildSavedRoutineRestateRows({ job: input, lang: 'zh', channelLabel: '', labels, notifyWhenRow: true });
     expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'notifyWhen', 'result']);
     expect(rows[1].value).toBe('每天 09:00');
   });

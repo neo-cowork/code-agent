@@ -67,6 +67,7 @@ import {
   isMcpAuthenticationFailure,
 } from '../../../../utils/mcpRecovery';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeMcpCatalog, translateCatalogText } from '../../../../utils/catalogText';
 import { useConnectorCardFocus, getConnectorFocusBannerText } from '../../../../hooks/useConnectorCardFocus';
 import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
@@ -130,7 +131,9 @@ export const MCPSettings: React.FC = () => {
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
   const [pendingDisconnectServerId, setPendingDisconnectServerId] = useState<string | null>(null);
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖
-  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogPayload>(getBuiltinMcpCatalogPayload);
+  const [rawMcpCatalog, setMcpCatalog] = useState<McpCatalogPayload>(getBuiltinMcpCatalogPayload);
+  // 目录里的名称/说明/角标按界面语言显示（FB-1301）；云端下发的目录同样经过这里
+  const mcpCatalog = useMemo(() => localizeMcpCatalog(rawMcpCatalog, language), [rawMcpCatalog, language]);
 
   // 加载云端 MCP 推荐目录（失败时保持内置兜底）
   useEffect(() => {
@@ -384,7 +387,11 @@ export const MCPSettings: React.FC = () => {
     const isComputerUse = COMPUTER_USE_SERVER_IDS.has(server.id);
     const riskTier = getMcpRiskTier(server.id);
     const displayName = isComputerUse ? mcpText.grid.sections.local.computerUseTitle : server.label;
-    const cardPresentation = getConnectorCardPresentation(server, mcpText.grid.cardStatus, { connectionState, displayName });
+    const cardPresentation = getConnectorCardPresentation(
+      { ...server, description: translateCatalogText(server.description, language) },
+      mcpText.grid.cardStatus,
+      { connectionState, displayName },
+    );
 
     return (
       <div

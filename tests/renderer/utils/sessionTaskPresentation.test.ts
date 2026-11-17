@@ -32,10 +32,10 @@ describe('sessionTaskPresentation', () => {
       '归档　已中断',
     ].join('\n'));
     expect(formatSessionTaskOutput(statusMetadata, rawStatus, en)).toBe([
-      '写稿　Running',
-      '校对　Completed: 已经核对',
-      '发布　Failed: 服务暂时不可用',
-      '归档　Interrupted',
+      '写稿 — Running',
+      '校对 — Completed: 已经核对',
+      '发布 — Failed: 服务暂时不可用',
+      '归档 — Interrupted',
     ].join('\n'));
   });
 
@@ -62,7 +62,7 @@ describe('sessionTaskPresentation', () => {
       outcome: 'status', tasks: [{ shortName: '报告', status: 'completed', detail: '已用 Read 核对，写入 /work/My Project/报告.md。' }],
     } };
     expect(formatSessionTaskOutput(metadata, '', zh)).toBe('报告　已完成：已用 读取文件 核对，写入 报告.md。');
-    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告　Completed: 已用 Read file 核对，写入 报告.md。');
+    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告 — Completed: 已用 Read file 核对，写入 报告.md。');
     expect(metadata.sessionTask.tasks[0].detail).toContain('/work/My Project/报告.md');
   });
 
@@ -71,7 +71,7 @@ describe('sessionTaskPresentation', () => {
       { shortName: '报告', status: 'completed', detail: 'Write 后用 Edit 修改。' },
     ] } };
     expect(formatSessionTaskOutput(metadata, '', zh)).toBe('报告　已完成：写入文件 后用 编辑文件 修改。');
-    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告　Completed: Write file 后用 Edit file 修改。');
+    expect(formatSessionTaskOutput(metadata, '', en)).toBe('报告 — Completed: Write file 后用 Edit file 修改。');
   });
 
   it('preserves the old raw output when sessionTask metadata is absent or invalid', () => {

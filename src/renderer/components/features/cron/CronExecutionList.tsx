@@ -146,8 +146,8 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                       />
                     </td>
                   )}
-                  <td className={`whitespace-nowrap text-zinc-300 tabular-nums ${tdClass}`}>{formatRunListTime(execution.scheduledAt)}</td>
-                  <td className={`whitespace-nowrap text-zinc-400 tabular-nums ${tdClass}`}>{formatRunListTime(execution.startedAt)}</td>
+                  <td className={`whitespace-nowrap text-zinc-300 tabular-nums ${tdClass}`}>{formatRunListTime(execution.scheduledAt, language)}</td>
+                  <td className={`whitespace-nowrap text-zinc-400 tabular-nums ${tdClass}`}>{formatRunListTime(execution.startedAt, language)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{formatDuration(execution.duration, language)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 tabular-nums ${tdClass}`} data-testid="cron-execution-cost-cell">{formatRunCostUsd(execution.cost, costRunsOn)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{execution.retryAttempt}</td>

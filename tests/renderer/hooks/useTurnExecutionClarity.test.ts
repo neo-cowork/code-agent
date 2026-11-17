@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TraceProjection } from '../../../src/shared/contract/trace';
+import { languages } from '../../../src/renderer/i18n';
 import { buildTurnExecutionClarityProjection } from '../../../src/renderer/utils/turnTimelineProjection';
 
 describe('buildTurnExecutionClarityProjection', () => {
@@ -82,6 +83,7 @@ describe('buildTurnExecutionClarityProjection', () => {
     };
 
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection,
       capabilities: {
         skills: [
@@ -189,6 +191,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects structured tool artifact metadata into artifact ownership', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-artifact',
         activeTurnIndex: -1,
@@ -276,6 +279,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects parallel routing evidence from launch requests and swarm events', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-2',
         activeTurnIndex: -1,
@@ -355,6 +359,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects unified tool artifact metadata into artifact ownership timeline nodes', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-artifacts',
         activeTurnIndex: -1,
@@ -450,6 +455,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects auto routing evidence from session-scoped routing events', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-auto',
         activeTurnIndex: -1,
@@ -513,6 +519,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('marks an automatic default fallback for main-stream suppression while retaining evidence', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-auto-fallback',
         activeTurnIndex: -1,
@@ -561,6 +568,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects explicit routing evidence（显式选择命中 → mode explicit）', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-explicit',
         activeTurnIndex: -1,
@@ -609,6 +617,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects degraded routing evidence（显式选择失败降级 → warning fallback 步骤，不再静默）', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-degraded',
         activeTurnIndex: -1,
@@ -659,6 +668,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('reconstructs direct routing evidence from persisted metadata when runtime events are gone', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-direct-persisted',
         activeTurnIndex: -1,
@@ -719,6 +729,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('ignores parallel routing evidence from another session and keeps the current turn scoped', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-1',
         activeTurnIndex: -1,
@@ -796,6 +807,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('injects hook activity into the conversation turn timeline', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-hooks',
         activeTurnIndex: -1,
@@ -880,6 +892,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('uses runtime turn ids before timestamp windows when projecting hook activity', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-hooks',
         activeTurnIndex: -1,
@@ -958,6 +971,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('passes hook decision reason through to timeline items', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-hooks',
         activeTurnIndex: -1,
@@ -1004,6 +1018,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects a running hook batch even before any trigger lands', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-hooks',
         activeTurnIndex: -1,
@@ -1043,6 +1058,7 @@ describe('buildTurnExecutionClarityProjection', () => {
 
   it('projects skill trigger and instruction write activity into the current turn', () => {
     const enriched = buildTurnExecutionClarityProjection({
+      hookCopy: languages.zh.turnHooks,
       projection: {
         sessionId: 'session-skill',
         activeTurnIndex: -1,

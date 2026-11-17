@@ -1,4 +1,5 @@
 import type { ToolCall } from '@shared/contract';
+import { computerUsePermissionExplainZh } from '../i18n/computerUsePermissionExplain';
 import type {
   ComputerSurfaceState,
   DesktopActivityEvent,
@@ -193,13 +194,14 @@ function explainPermission(
   optional = false,
 ): void {
   const label = getPermissionCopy(kind);
+  const copy = computerUsePermissionExplainZh;
   // cua 默认 capture_mode=ax（只读 AX 树，免录屏）。录屏是可选增强：未授权不阻断，
   // 仅提示「需要视觉消歧时再开」。详见 内部文档 §11.1。
   if (optional && (permission?.status !== 'granted')) {
     addExplanation(items, {
       id: `${kind}:optional`,
-      title: `${label} 可选`,
-      detail: '默认无需录屏权限。仅当需要截图辅助判断时再单独授权。',
+      title: `${label} ${copy.optional}`,
+      detail: copy.optionalDetail,
       tone: 'neutral',
     });
     return;
@@ -207,8 +209,8 @@ function explainPermission(
   if (!permission) {
     addExplanation(items, {
       id: `${kind}:unknown`,
-      title: `${label} 未探测`,
-      detail: '当前页还没有拿到 macOS 权限状态，只能展示降级原因，不能判断截图或界面内容的读取是否可靠。',
+      title: `${label} ${copy.unknown}`,
+      detail: copy.unknownDetail,
       tone: 'warning',
     });
     return;
@@ -221,8 +223,8 @@ function explainPermission(
   if (permission.status === 'unsupported') {
     addExplanation(items, {
       id: `${kind}:unsupported`,
-      title: `${label} 当前平台不支持`,
-      detail: permission.detail || '这个权限只在 macOS 桌面 runtime 下可用。',
+      title: `${label} ${copy.unsupported}`,
+      detail: permission.detail || copy.unsupportedDetail,
       tone: 'neutral',
     });
     return;
@@ -231,8 +233,8 @@ function explainPermission(
   if (permission.status === 'needs_restart') {
     addExplanation(items, {
       id: `${kind}:needs_restart`,
-      title: `${label} 需要重启`,
-      detail: permission.detail || `${label} 授权后需要重启 Agent Neo 才能生效。`,
+      title: `${label} ${copy.needsRestart}`,
+      detail: permission.detail || copy.needsRestartDetail(label),
       tone: 'blocked',
     });
     return;
@@ -241,8 +243,8 @@ function explainPermission(
   if (permission.status === 'wrong_bundle_id') {
     addExplanation(items, {
       id: `${kind}:wrong_bundle_id`,
-      title: `${label} Bundle 不匹配`,
-      detail: permission.detail || `${label} 授权落在了另一个包上，请给当前运行包重新授权。`,
+      title: `${label} ${copy.wrongBundle}`,
+      detail: permission.detail || copy.wrongBundleDetail(label),
       tone: 'blocked',
     });
     return;
@@ -250,8 +252,8 @@ function explainPermission(
 
   addExplanation(items, {
     id: `${kind}:${permission.status}`,
-    title: `${label} ${permission.status === 'denied' ? '未授权' : '未确认'}`,
-    detail: permission.detail || `${label} 状态未确认，窗口截图、界面内容或浏览器信息的读取可能失败。`,
+    title: `${label} ${permission.status === 'denied' ? copy.denied : copy.unconfirmed}`,
+    detail: permission.detail || copy.unconfirmedDetail(label),
     tone: permission.status === 'denied' ? 'blocked' : 'warning',
   });
 }

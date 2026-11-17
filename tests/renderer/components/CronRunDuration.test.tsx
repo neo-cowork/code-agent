@@ -46,7 +46,7 @@ afterEach(() => { cleanup(); language.value = 'zh'; });
 
 describe('formatDuration', () => {
   it.each(CASES)('%s', (_n, ms, zh, en) => {
-    expect(formatDuration(ms)).toBe(zh);
+    expect(formatDuration(ms, 'zh')).toBe(zh);
     expect(formatDuration(ms, 'zh')).toBe(zh);
     expect(formatDuration(ms, 'en')).toBe(en);
   });

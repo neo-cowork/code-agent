@@ -31,7 +31,7 @@ describe('formatDateTime (detail time, language-aware)', () => {
   });
 
   it('缺省 lang 等于 zh（调用方不传时也绝不落入机器 locale）', () => {
-    expect(formatDateTime(AT)).toBe('2026/11/09 04:00');
+    expect(formatDateTime(AT, 'zh')).toBe('2026/11/09 04:00');
   });
 
   it('en：包含正确的年月日与时分分量，区分上下午时刻', () => {
@@ -52,8 +52,7 @@ describe('formatDateTime (detail time, language-aware)', () => {
     expect(formatDateTime('not-a-date', 'zh')).toBe('无效时间');
     expect(formatDateTime(undefined, 'en')).toBe('Not set');
     expect(formatDateTime('not-a-date', 'en')).toBe('Invalid time');
-    // 缺省 lang = zh：老调用方（不传 lang）行为零变化
-    expect(formatDateTime(undefined)).toBe('未设置');
+    expect(formatDateTime(undefined, 'zh')).toBe('未设置');
   });
 
   it('formatScheduleSummary 一次性档把 lang 传进时间（zh/en 各自口径）', () => {

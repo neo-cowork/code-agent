@@ -22,6 +22,7 @@ import { useComposerStore } from '../../../../stores/composerStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { notifyLibraryPinChanged } from '../../knowledge/libraryPinEvents';
 import { useI18n } from '../../../../hooks/useI18n';
+import { getProjectDisplayName } from '../../../../utils/projectDisplayName';
 import { toast } from '../../../../hooks/useToast';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 import {
@@ -166,11 +167,11 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
     );
     setProjectNames(new Map(
       projectsResult.status === 'fulfilled'
-        ? projectsResult.value.map((project) => [project.id, project.name])
+        ? projectsResult.value.map((project) => [project.id, getProjectDisplayName(project, t.sidebarProject)])
         : [],
     ));
     setArtifacts(artifactsResult.status === 'fulfilled' ? artifactsResult.value : []);
-  }, []);
+  }, [t.sidebarProject]);
 
   // 换会话后 pin 是真源在会话上的，重拉一次避免拿上个会话的选中态
   useEffect(() => {

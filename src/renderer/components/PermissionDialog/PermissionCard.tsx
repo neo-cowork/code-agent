@@ -512,7 +512,7 @@ export function PermissionCard({
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : described.icon;
   const question = connectorQuestion ?? (sandboxEscalation
-    ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t))
+    ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t, language))
     : appGrantCard && !isDangerous
     ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
     : isMeetingCreate

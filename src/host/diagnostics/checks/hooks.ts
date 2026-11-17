@@ -12,6 +12,7 @@ import { promises as fs } from 'fs';
 import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getHooksConfigPaths, parseHooksConfig } from '../../hooks/configParser';
 import type { DoctorItem, DoctorStatus } from '../types';
+import { doctorCopy } from '../i18n/doctorCopy';
 
 interface HookSourceCheckInput {
   source: 'global' | 'project';
@@ -53,9 +54,9 @@ async function checkOneSource({ source, workingDirectory }: HookSourceCheckInput
   if (existed.length === 0) {
     return {
       category: 'hooks',
-      name: `${source} hooks 配置`,
+      name: doctorCopy().names.hooksConfigOf(source),
       status: 'skip',
-      message: '未配置（不存在）',
+      message: doctorCopy().hooks.notConfigured,
     };
   }
 
@@ -71,11 +72,11 @@ async function checkOneSource({ source, workingDirectory }: HookSourceCheckInput
   if (syntaxErr) {
     return {
       category: 'hooks',
-      name: `${source} hooks 配置`,
+      name: doctorCopy().names.hooksConfigOf(source),
       status: 'warn',
-      message: 'JSON 解析失败',
+      message: doctorCopy().hooks.jsonParseFailed,
       details: `${target.path}\n${syntaxErr}`,
-      suggestion: '检查 JSON 语法（引号、逗号、括号匹配）',
+      suggestion: doctorCopy().hooks.jsonParseSuggestion,
       fix: { code: DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS },
     };
   }
@@ -85,22 +86,22 @@ async function checkOneSource({ source, workingDirectory }: HookSourceCheckInput
     const status: DoctorStatus = parsed.length > 0 ? 'pass' : 'skip';
     return {
       category: 'hooks',
-      name: `${source} hooks 配置`,
+      name: doctorCopy().names.hooksConfigOf(source),
       status,
       message:
         parsed.length > 0
-          ? `${parsed.length} 个 hook 已加载`
-          : '文件可解析但无 hook',
+          ? doctorCopy().hooks.loaded(parsed.length)
+          : doctorCopy().hooks.noHooks,
       details: target.path,
     };
   } catch (err) {
     return {
       category: 'hooks',
-      name: `${source} hooks 配置`,
+      name: doctorCopy().names.hooksConfigOf(source),
       status: 'warn',
-      message: '解析出错',
+      message: doctorCopy().hooks.parseError,
       details: `${target.path}\n${err instanceof Error ? err.message : String(err)}`,
-      suggestion: '查看上面 details 中的解析错误',
+      suggestion: doctorCopy().hooks.parseErrorSuggestion,
       fix: { code: DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS },
     };
   }

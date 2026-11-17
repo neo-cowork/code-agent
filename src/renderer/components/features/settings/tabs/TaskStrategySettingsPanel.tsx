@@ -14,6 +14,7 @@ import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { modelKeyOptionLabel } from './modelKeyOptionLabel';
 import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
+import { translateCatalogText } from '../../../../utils/catalogText';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
 // 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
@@ -231,7 +232,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (
                         <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                          {optionLabel(option.provider, option.label)}
+                          {optionLabel(option.provider, translateCatalogText(option.label, language))}
                         </option>
                       ))}
                     </optgroup>
@@ -274,7 +275,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
               <optgroup key={group.label} label={group.label}>
                 {group.options.map((option) => (
                   <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                    {optionLabel(option.provider, option.label)}
+                    {optionLabel(option.provider, translateCatalogText(option.label, language))}
                   </option>
                 ))}
               </optgroup>

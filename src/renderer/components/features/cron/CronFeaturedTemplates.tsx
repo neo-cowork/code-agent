@@ -125,7 +125,7 @@ export const CronFeaturedTemplates: React.FC = () => {
           const isPending = pendingId === template.id;
           const connectorStatuses = getTemplateConnectorStatuses(template, connectedConnectorIds);
           const copy = getTemplateDisplayCopy(template, cc.templates);
-          const generated = template.generate({});
+          const generated = template.generate({}, language);
           const scheduleLabel = formatCronTimeZoneSuffix(
             copy.scheduleLabel,
             generated.scheduleType === 'cron' ? generated.cronTimezone : undefined,
@@ -201,7 +201,7 @@ export const CronFeaturedTemplates: React.FC = () => {
                   <span>
                     {cc.connectorNeededHint.replace(
                       '{name}',
-                      gateHint.missing.map((status) => status.label).join('、'),
+                      gateHint.missing.map((status) => status.label).join(t.punctuation.listSeparator),
                     )}
                   </span>
                   <button

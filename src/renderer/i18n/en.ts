@@ -52,7 +52,7 @@ import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
 import { renderHumanPipeEn } from './renderHumanPipe';
 import { outcomeWordsEn } from './outcomeWords'; import { delegationFailedActionsEn } from './delegationFailedActions';
-import { engineModelPanelEn } from './engineModelPanel';
+import { catalogCopyEn } from './catalogCopy';
 import { jevAdvisoryEn } from './jevAdvisory';
 import { workflowStallEn } from './workflowStall';
 import { connectorRequiredEn } from './connectorRequired';
@@ -78,7 +78,7 @@ export const en = {
   ...workbenchTabsEn,
   ...receiptPresentationEn,
   ...renderHumanPipeEn,
-  ...outcomeWordsEn, ...delegationFailedActionsEn, ...engineModelPanelEn,
+  ...outcomeWordsEn, ...delegationFailedActionsEn, ...catalogCopyEn,
   ...jevAdvisoryEn,
   ...workflowStallEn,
   ...connectorRequiredEn,

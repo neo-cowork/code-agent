@@ -94,7 +94,7 @@ interface SlashCommandSeed {
   action: () => void;
 }
 
-function makeCommand(seed: SlashCommandSeed, labels?: SlashPickerLabels): SlashCommand {
+function makeCommand(seed: SlashCommandSeed, labels: SlashPickerLabels): SlashCommand {
   return {
     ...createCommandCandidate(seed, labels),
     icon: seed.icon,

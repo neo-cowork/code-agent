@@ -7,23 +7,23 @@ import { formatDateTime } from '../../../src/renderer/utils/formatDateTime';
 describe('formatRunListTime (run-list time column)', () => {
   it('number input and ISO string of the same instant give the same MM/DD HH:mm text', () => {
     const ms = 1760000000000; // 2025-10-09T04:53:20Z → 本地时区稳定取同一 Date 的字段
-    expect(formatRunListTime(ms)).toBe(formatRunListTime(new Date(ms).toISOString()));
+    expect(formatRunListTime(ms, 'zh')).toBe(formatRunListTime(new Date(ms).toISOString(), 'zh'));
   });
 
   it('pads month/day/hour/minute to two digits', () => {
     const d = new Date(2023, 1, 5, 7, 8, 0);
-    const text = formatRunListTime(d.getTime());
+    const text = formatRunListTime(d.getTime(), 'zh');
     expect(text).toMatch(/^(?:2023\/)?02\/05 07:08$/);
     const [datePart, hm] = text.split(' ');
     datePart.split('/').slice(-2).concat(hm.split(':')).forEach((part) => expect(part).toHaveLength(2));
   });
 
   it('undefined gives the dash', () => {
-    expect(formatRunListTime(undefined)).toBe('—');
+    expect(formatRunListTime(undefined, 'zh')).toBe('—');
   });
 
   it('invalid string gives the dash', () => {
-    expect(formatRunListTime('not-a-date')).toBe('—');
+    expect(formatRunListTime('not-a-date', 'zh')).toBe('—');
   });
 });
 
@@ -35,23 +35,23 @@ describe('formatRunListTime year rule (frozen clock, N-FIX-DATETIME-FORMAT-MIXED
 
   it('current-year row stays short and agrees with the full detail text', () => {
     const ms = new Date(2026, 10, 4, 0, 50, 38).getTime();
-    expect(formatRunListTime(ms)).toBe('11/04 00:50');
-    expect(formatRunListTime(new Date(ms).toISOString())).toBe('11/04 00:50');
-    expect(formatDateTime(ms, 'en')).toBe(`2026/${formatRunListTime(ms)}`);
+    expect(formatRunListTime(ms, 'zh')).toBe('11/04 00:50');
+    expect(formatRunListTime(new Date(ms).toISOString(), 'zh')).toBe('11/04 00:50');
+    expect(formatDateTime(ms, 'en')).toBe(`2026/${formatRunListTime(ms, 'zh')}`);
     expect(formatDateTime(ms, 'zh')).toBe('2026/11/04 00:50');
   });
 
   it('older and future rows carry the year in the same padded 24-hour shape', () => {
     const ms = new Date(2025, 1, 5, 7, 8, 59).getTime();
-    expect(formatRunListTime(ms)).toBe('2025/02/05 07:08');
-    expect(formatRunListTime(ms)).toBe(formatDateTime(ms, 'en'));
-    expect(formatRunListTime(new Date(2027, 0, 1, 0, 0).getTime())).toBe('2027/01/01 00:00');
+    expect(formatRunListTime(ms, 'zh')).toBe('2025/02/05 07:08');
+    expect(formatRunListTime(ms, 'zh')).toBe(formatDateTime(ms, 'en'));
+    expect(formatRunListTime(new Date(2027, 0, 1, 0, 0).getTime(), 'zh')).toBe('2027/01/01 00:00');
   });
 
   it('uses the current clock year across New Year', () => {
     const ms = new Date(2026, 11, 31, 23, 59).getTime();
-    expect(formatRunListTime(ms)).toBe('12/31 23:59');
+    expect(formatRunListTime(ms, 'zh')).toBe('12/31 23:59');
     vi.setSystemTime(new Date(2027, 0, 1));
-    expect(formatRunListTime(ms)).toBe('2026/12/31 23:59');
+    expect(formatRunListTime(ms, 'zh')).toBe('2026/12/31 23:59');
   });
 });

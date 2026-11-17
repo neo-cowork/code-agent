@@ -11,6 +11,7 @@ import {
   featuresFromModelMetadata,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
+import { translateCatalogText } from '../../../../utils/catalogText';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
 import { ProviderDetailCard } from './ProviderDetailSections';
@@ -52,7 +53,7 @@ function ModelRow({
   modelSettings,
   onThinkingChange,
 }: ModelRowProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const features = featuresFromModelMetadata({
     modelId: model.id,
@@ -70,7 +71,7 @@ function ModelRow({
       {/* 左：①名称 + 默认 + 内置 / ②类型标签 */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-zinc-100">{model.label}</span>
+          <span className="text-sm font-medium text-zinc-100">{translateCatalogText(model.label, language)}</span>
           {isDefault && (
             <span className="rounded border border-badge-warning/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-badge-warning">{modelText.defaultBadge}</span>
           )}

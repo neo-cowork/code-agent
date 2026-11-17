@@ -77,7 +77,7 @@ function sessionStatusKindToTaskStatus(kind: SessionStatusKind): TaskRecord['sta
 }
 
 export function buildGlobalTaskRecords(args: {
-  language?: Language;
+  language: Language;
   currentSessionId: string | null;
   sessionStates: ReturnType<typeof useTaskStore.getState>['sessionStates'];
   /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */

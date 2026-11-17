@@ -263,9 +263,9 @@ export function formatMarketplaceSource(source: MarketplaceSource): string {
 }
 
 export function formatDate(
-  value?: string,
-  labels: PluginDateLabels = zh.settings.plugins.date,
-  lang: Language = 'zh',
+  value: string | undefined,
+  labels: PluginDateLabels,
+  lang: Language,
 ): string {
   if (!value) return labels.unknown;
   const date = new Date(value);

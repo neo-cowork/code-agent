@@ -7,6 +7,7 @@
 import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getProviderHealthMonitor } from '../../model/providerHealthMonitor';
 import type { DoctorItem } from '../types';
+import { doctorCopy } from '../i18n/doctorCopy';
 
 export function checkProviderHealth(): DoctorItem[] {
   const monitor = getProviderHealthMonitor();
@@ -17,9 +18,9 @@ export function checkProviderHealth(): DoctorItem[] {
     return [
       {
         category: 'provider_health',
-        name: 'Provider 健康监控',
+        name: doctorCopy().names.providerHealthMonitor,
         status: 'skip',
-        message: '当前后端进程尚无运行时数据（启动/重启后未发起过 API 请求）',
+        message: doctorCopy().providerHealth.noRuntimeData,
         details: backendProcess,
       },
     ];
@@ -35,15 +36,15 @@ export function checkProviderHealth(): DoctorItem[] {
         break;
       case 'degraded':
         status = 'warn';
-        suggestion = '错误率偏高，可观察是否需要切换 provider';
+        suggestion = doctorCopy().providerHealth.degradedSuggestion;
         break;
       case 'recovering':
         status = 'warn';
-        suggestion = '正在恢复中，连续成功 3 次后会回到 healthy';
+        suggestion = doctorCopy().providerHealth.recoveringSuggestion;
         break;
       case 'unavailable':
         status = 'fail';
-        suggestion = '错误率超过 70%，建议临时切换到其他 provider';
+        suggestion = doctorCopy().providerHealth.unavailableSuggestion;
         break;
       default:
         status = 'warn';

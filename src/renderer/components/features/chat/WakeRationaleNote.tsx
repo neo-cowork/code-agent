@@ -70,7 +70,7 @@ export const WakeRationaleNote: React.FC<{ fields: WakeRationaleFields }> = ({ f
               <p data-testid="wake-rationale-text"><HumanizedText text={rationale ?? ''} /></p>
               {evidence && evidence !== rationale ? (
                 <p data-testid="wake-rationale-evidence" className="mt-1 text-zinc-500">
-                  {text.evidenceLabel}：<HumanizedText text={evidence} />
+                  {text.evidenceLabel}{t.punctuation.colon}<HumanizedText text={evidence} />
                 </p>
               ) : null}
             </>

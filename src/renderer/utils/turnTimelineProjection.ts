@@ -15,6 +15,8 @@ import {
 import type { WorkbenchCapabilities } from '../hooks/useWorkbenchCapabilities';
 import type { HookActivityEvent, HookRunningEvent, RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import type { SwarmTimelineEvent } from '../stores/swarmStore';
+import type { Translations } from '../i18n/zh';
+import { interpolate, interpolatePlural } from '../i18n/interpolate';
 import { buildArtifactOwnershipItems } from './artifactOwnership';
 import { buildWorkbenchCapabilityScope } from './workbenchScopeInspector';
 
@@ -29,7 +31,14 @@ interface ProjectionArgs {
   hookRunning?: HookRunningEvent | null;
   /** 会话工作目录：只用于产物去重键的词法对齐，不参与任何展示路径。 */
   workingDirectory?: string | null;
+  /** Hooks 折叠行摘要的文案（按界面语言传入；投影函数自己不带任何语言的字面量）。 */
+  hookCopy: HookSummaryCopy;
 }
+
+type HookSummaryCopy = Pick<
+  Translations['turnHooks'],
+  'blockedCount' | 'errored' | 'momentCount' | 'hookCount' | 'nameSeparator'
+>;
 
 interface TurnWindow {
   start: number;
@@ -70,7 +79,8 @@ function buildHookActivity(
   turn: TraceTurn,
   window: TurnWindow,
   hookEvents: HookActivityEvent[] = [],
-  hookRunning?: HookRunningEvent | null,
+  hookRunning: HookRunningEvent | null | undefined,
+  copy: HookSummaryCopy,
 ): TurnHookActivity | undefined {
   const eventWindow = getTurnEventWindow(turn, window);
   const relevantEvents = hookEvents
@@ -101,14 +111,14 @@ function buildHookActivity(
   const names = Array.from(new Set(relevantEvents.flatMap((event) => event.names || [])));
 
   // 摘要只说「哪个时机、是哪几个 hook」。耗时/命中数/改写次数是调试量，不上屏。
-  const head = events.length === 1 ? events[0] : `${events.length} 个时机`;
+  const head = events.length === 1 ? events[0] : interpolatePlural(copy.momentCount, events.length);
   const tail = names.length > 0
-    ? names.join('、')
-    : `${totalHooks} 个 hook`;
+    ? names.join(copy.nameSeparator)
+    : interpolatePlural(copy.hookCount, totalHooks);
   const alert = blockedCount > 0
-    ? `拦下 ${blockedCount} 次 · `
+    ? `${interpolate(copy.blockedCount, { count: blockedCount })} · `
     : errorCount > 0
-      ? `${errorCount} 个出错 · `
+      ? `${interpolate(copy.errored, { count: errorCount })} · `
       : '';
 
   return {
@@ -582,7 +592,7 @@ function enrichTurn(
     args.swarmEvents,
     args.routingEvents,
   );
-  const hookActivity = buildHookActivity(turn, window, args.hookEvents, args.hookRunning);
+  const hookActivity = buildHookActivity(turn, window, args.hookEvents, args.hookRunning, args.hookCopy);
   const skillActivity = buildSkillActivity(turn, args.capabilities);
   const artifactOwnership = buildArtifactOwnershipItems(turn, routingEvidence, args.workingDirectory);
 
@@ -700,6 +710,7 @@ export function buildTurnExecutionClarityProjection(args: ProjectionArgs): Trace
       routingEvents: args.routingEvents,
       hookEvents: args.hookEvents || [],
       hookRunning: args.hookRunning ?? null,
+      hookCopy: args.hookCopy,
       workingDirectory: args.workingDirectory,
     })),
   };

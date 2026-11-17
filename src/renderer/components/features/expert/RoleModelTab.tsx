@@ -13,6 +13,7 @@ import type { RolePanelDetail } from '@shared/contract/roleAssets';
 import { listExternalEngineManifests } from '@shared/externalEngineManifest';
 import { buildRuntimeModelOptions, groupRuntimeModelOptionsByProvider } from '@shared/modelRuntime';
 import { useI18n } from '../../../hooks/useI18n';
+import { translateCatalogText } from '../../../utils/catalogText';
 import { resolveProviderLabel } from '../../../i18n/providerDisplay';
 import { SettingsSection } from '../settings/SettingsLayout';
 
@@ -178,7 +179,7 @@ export const RoleModelTab: React.FC<RoleModelTabProps> = ({ equipment, busy, onS
                         className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${selected ? 'bg-emerald-900/25 text-badge-success' : 'text-zinc-300 hover:bg-zinc-800/60'} ${disabled ? 'opacity-60' : ''}`}
                       >
                         <Check className={`h-3.5 w-3.5 shrink-0 ${selected ? 'text-badge-success' : 'text-transparent'}`} />
-                        <span className="truncate">{option.label}</span>
+                        <span className="truncate">{translateCatalogText(option.label, language)}</span>
                       </button>
                     );
                   })}
