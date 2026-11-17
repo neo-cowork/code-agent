@@ -15,18 +15,23 @@ vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: async () => null,
 }));
 
+/** 设了值 = 会话来自一个定时任务，且该任务被授权读写这个文件夹。 */
+const cronGrant = vi.hoisted(() => ({ root: undefined as string | undefined }));
 vi.mock('../../../src/host/services/core/databaseService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/host/services/core/databaseService')>();
   return { ...actual, getDatabase: () => ({
     getMessages: () => [],
-    getSession: () => null,
-    getDb: () => ({ prepare: () => ({ get: () => undefined, all: () => [] }) }),
+    getSession: () => cronGrant.root ? { origin: { kind: 'cron', id: 'k2-probe-job' } } : null,
+    getDb: () => ({ prepare: () => ({
+      get: () => cronGrant.root ? { metadata: JSON.stringify({ writeGrantRoot: cronGrant.root }) } : undefined,
+      all: () => [],
+    }) }),
   }) as unknown as ReturnType<typeof actual.getDatabase> };
 });
 
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
-import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { beginRunPolicy, endRunPolicy } from '../../../src/host/permissions/runPolicySnapshot';
 import { getDecisionHistory, resetDecisionHistory } from '../../../src/host/security/decisionHistory';
@@ -47,6 +52,7 @@ describe('一句话规则先于只读探测免卡', () => {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'k2-probe-')));
     await fs.writeFile(path.join(root, 'note.txt'), 'hello');
     asks = [];
+    cronGrant.root = undefined;
     delete process.env.CODE_AGENT_READONLY_PROBE;
     getToolCache().clear();
     resetPermissionModeManager();
@@ -64,7 +70,7 @@ describe('一句话规则先于只读探测免卡', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  function run(command: string) {
+  function run(command: string, scheduled = false) {
     const executor = new ToolExecutor({
       requestPermission: async (request) => {
         asks.push({ handback: (request as { handback?: boolean }).handback });
@@ -73,6 +79,12 @@ describe('一句话规则先于只读探测免卡', () => {
       workingDirectory: root,
     });
     executor.setAuditEnabled(false);
+    if (scheduled) {
+      // 定时任务的 run：无人值守 + 后台拓扑，授权文件夹内的只读命令本来免卡。
+      cronGrant.root = root;
+      getPermissionModeManager().markUnattendedSession(SESSION);
+      executor.setExecutionTopology('async_agent');
+    }
     return executor.execute('Bash', { command }, { sessionId: SESSION });
   }
   const probeRows = () => getDecisionHistory().getAll().filter((entry) => entry.reason === 'readonly-probe-plan');
@@ -137,5 +149,31 @@ describe('一句话规则先于只读探测免卡', () => {
     beginRunPolicy(RUN_ID, SESSION, { roleId: undefined, initiatingText: '帮我查一下属性' });
     await run(ATTRS);
     expect(asks).toEqual([]);
+  });
+  describe('定时任务（已授权文件夹内）', () => {
+    const listThenEcho = () => `ls -la "${root}"; echo "done"`;
+
+    it('对照：没有规则时不出卡', async () => {
+      beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '每日巡检' });
+      const result = await run(listThenEcho(), true);
+      expect(result.success).toBe(true);
+      expect(asks).toEqual([]);
+    });
+
+    it('带角色范围的 ask 命中后半段命令：出卡', async () => {
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'ask', rule: 'Bash(echo *)', roleId: ROLE }] });
+      beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '每日巡检' });
+      await run(listThenEcho(), true);
+      expect(asks).toHaveLength(1);
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('带角色范围的 handback 命中后半段命令：出卡', async () => {
+      getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'handback', rule: 'Bash(echo *)', roleId: ROLE }] });
+      beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '每日巡检' });
+      await run(listThenEcho(), true);
+      expect(asks).toHaveLength(1);
+      expect(probeRows()).toHaveLength(0);
+    });
   });
 });
