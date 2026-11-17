@@ -667,6 +667,7 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        ...(data.description ? { description: data.description } : {}),
         at: Date.now(),
       },
     };

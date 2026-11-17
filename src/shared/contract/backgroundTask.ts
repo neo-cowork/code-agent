@@ -78,6 +78,8 @@ export interface LastToolStep {
   toolIndex?: number;
   toolTotal?: number;
   target?: string;
+  /** Bash 的 arguments.description；渲染端过滤（usableBashDescription）后才上屏，不是 shortDescription。 */
+  description?: string;
   at: number;
 }
 
