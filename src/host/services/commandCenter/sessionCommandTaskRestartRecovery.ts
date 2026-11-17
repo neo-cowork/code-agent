@@ -20,7 +20,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
-import { stripModelMarkup } from '../../../shared/modelMarkupStrip';
+import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
@@ -146,15 +146,6 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
       message: error instanceof Error ? error.message : String(error),
     });
   }
-}
-
-/** 结果卡专用：先剥 longcat 协议标记，再剥 Hermes/Qwen 式 <tool_call>（未闭合到串尾）。只作用于卡片，不改主链路正文。 */
-function stripCardToolCallMarkup(text: string): string {
-  const cleaned = stripModelMarkup(text)
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<tool_call>[\s\S]*$/g, '')
-    .replace(/<\/tool_call>/g, '');
-  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** 正常终态与重启中断共用的「[任务结果]」系统消息形状（正文用人话状态词，metadata 保持机器可读）。 */
