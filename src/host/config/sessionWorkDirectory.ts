@@ -9,7 +9,7 @@
 // 纯问答会话不产生任何目录；首个非只读工具派发前才补 mkdir
 // （materializeSessionWorkDirectory，幂等）。目录只创建、永不删除/改名；标题洗掉
 // 文件系统非法字符，撞名追加 -2/-3 后缀。首轮智能标题还没算完，目录名回退到
-// 首条用户消息的第一个分句；标题就位后目录仍未落盘时，可按标题重规划一次
+// 短而干净的首个分句；长/脏请求先限时取小模型摘要，失败用规则名。标题就位后可重规划
 // （maybeReplanSessionWorkDirectory），盘上零改动。标题本身也先按分句切再截 40 字
 // （截断停在分句/词边界）；降级标题（消息前缀 / 以 `...` 结尾）不重规划。
 //
@@ -35,7 +35,9 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Message, MessageAttachment } from '../../shared/contract/message';
 import { getConfigService } from '../services/core/configService';
-import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
+import { deriveRuleSummaryTitle, isPlaceholderSessionTitle, isProvisionalAutoTitle } from '../../shared/sessionTitlePlaceholder';
+import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../shared/constants/timeouts';
+import { buildHostSessionTitlePrompt } from '../session/sessionTitleHostPrompt';
 import { getDefaultWorkDirectory } from './configPaths';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { createLogger } from '../services/infra/logger';
@@ -45,8 +47,10 @@ const logger = createLogger('SessionWorkDirectory');
 export interface SessionWorkDirectoryOptions {
   /** 会话标题；占位标题（「新对话」等）视为没有标题 */
   sessionTitle?: string;
-  /** 首条用户消息；没有可用标题时取第一个分句当目录名（不再拦腰截断句子） */
+  /** 首条用户消息；没有可用标题时，短分句直用，长/脏请求限时摘要后规则兜底。 */
   userMessage?: string;
+  /** 仅首轮规划调用；undefined 表示小模型不可用。配置层不依赖模型层。 */
+  askTitle?: (prompt: string, signal: AbortSignal) => Promise<{ success: boolean; content?: string } | undefined>;
   /** 空消息首轮以首个非空附件名兜底；文件去扩展名，文件夹保留名称。 */
   attachments?: readonly Pick<MessageAttachment, 'name' | 'category'>[];
   /** 目录名里的 MMDD 取这个时间戳（缺省 Date.now()），本地时区 */
@@ -156,6 +160,76 @@ function sanitizeFolderTitle(raw: string): string | undefined {
   if (!collapsed) return undefined;
   const capped = capFolderTitle(collapsed);
   return capped || undefined;
+}
+
+/** 先判原始分句，避免清掉括号/URL 后把脏请求误当短标题。 */
+function needsShortTaskTitle(message: string): boolean {
+  const clause = firstClause(message.trim());
+  return Array.from(clause).length > 16
+    || /[（）()［］[\]【】{}｛｝：:、`/\\]/.test(clause)
+    || deriveRuleSummaryTitle(clause) !== clause;
+}
+
+/** 路径/URL 是输入材料，不是任务名；先整段移除再分句，绝不拼接斜杠两侧。 */
+function cleanRuleFolderTitle(message: string, language?: 'zh' | 'en'): string | undefined {
+  const prose = message
+    .replace(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g, ' ')
+    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s（）()【】[\]，。；：、]+/gi, ' ')
+    .replace(/(?:[a-z]:\\|~?\/|\.{1,2}\/|\b[\w.-]+[/\\])[^\s（）()【】[\]，。；：、]*/gi, ' ')
+    .trim();
+  const clause = prose.split(/[（）()［］[\]【】{}｛｝：:、]|[。！？.!?；;，,\n]/)[0]?.trim();
+  return clause ? sanitizeFolderTitle(deriveRuleSummaryTitle(clause, language)) : undefined;
+}
+
+async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions): Promise<string | undefined> {
+  const message = options.userMessage?.trim();
+  if (!message) return undefined; // 附件名沿用既有路径。
+  const started = Date.now();
+  const logDecision = (source: 'model' | 'rule' | 'short-clean', reason: string) => {
+    logger.info(`Task folder title source=${source} elapsedMs=${Date.now() - started} reason=${reason}`);
+  };
+  if (!needsShortTaskTitle(message)) {
+    logDecision('short-clean', 'clean-first-clause');
+    return sanitizeFolderTitle(message);
+  }
+  let reason = 'unavailable';
+  const askTitle = options.askTitle;
+  if (askTitle) {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const answer = await Promise.race([
+        Promise.resolve().then(() => askTitle(
+          buildHostSessionTitlePrompt(message.slice(0, 500)), controller.signal,
+        )),
+        new Promise<'timeout'>((resolve) => {
+          timer = setTimeout(() => { resolve('timeout'); controller.abort(); }, SESSION_WORK_DIRECTORY_TIMEOUTS.TITLE_WAIT_MS);
+        }),
+      ]);
+      if (answer === 'timeout') reason = 'timeout';
+      else if (answer) {
+        const title = answer.success ? answer.content?.trim().replace(/^["'「『]|["'」』]$/g, '').replace(/[。！？.!?]$/g, '') : undefined;
+        const flatMessage = message.replace(/\s+/g, ' ');
+        const flatTitle = title?.replace(/(?:\.\.\.|…)+$/, '').replace(/\s+/g, ' ');
+        // 与会话标题相同的前缀/反向前缀回声检查；目录不豁免短回声。
+        const echo = flatTitle && (flatMessage.startsWith(flatTitle) || flatTitle.startsWith(flatMessage));
+        const cleaned = title && !/[（）()［］[\]【】{}｛｝：:、`/\\]/.test(title)
+          && deriveRuleSummaryTitle(title.slice(0, 16)) === title.slice(0, 16)
+          ? sanitizeFolderTitle(title) : undefined;
+        if (title && !echo && cleaned === title && Array.from(title).length <= TITLE_MAX_CHARS) {
+          logDecision('model', 'short-title');
+          return title;
+        }
+        reason = echo ? 'echo' : title ? 'invalid-answer' : 'no-answer';
+      }
+    } catch {
+      reason = 'error';
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  logDecision('rule', reason);
+  return cleanRuleFolderTitle(message, options.language);
 }
 
 /**
@@ -299,7 +373,13 @@ export async function planSessionWorkDirectory(
   options: SessionWorkDirectoryOptions = {},
 ): Promise<string> {
   const root = getDefaultWorkDirectory(options.env);
-  const baseName = buildSessionFolderBaseName(options);
+  const title = usableSessionTitle(options.sessionTitle);
+  const useExistingTitle = title && (!options.userMessage || !isProvisionalAutoTitle(title, options.userMessage));
+  const firstTurnTitle = useExistingTitle ? title : await chooseFirstTurnFolderTitle(options);
+  const baseName = buildSessionFolderBaseName({
+    ...options, sessionTitle: firstTurnTitle, userMessage: undefined,
+    attachments: options.userMessage?.trim() ? undefined : options.attachments,
+  });
   return findFreeSessionWorkDirectory(root, baseName, resolveReservationSet(root, options.reservedPaths));
 }
 

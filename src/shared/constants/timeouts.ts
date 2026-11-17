@@ -718,3 +718,8 @@ export const OS_NOTIFICATION_TIMEOUTS = {
   /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
   PERMISSION_READ_MS: 3_000,
 } as const;
+
+/** 首轮任务目录命名：最多等待小模型 3 秒，再用规则名继续。 */
+export const SESSION_WORK_DIRECTORY_TIMEOUTS = {
+  TITLE_WAIT_MS: 3_000,
+} as const;

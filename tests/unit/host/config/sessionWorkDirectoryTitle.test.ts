@@ -1,0 +1,141 @@
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  materializeSessionWorkDirectory, maybeReplanSessionWorkDirectory, planSessionWorkDirectory,
+} from '../../../../src/host/config/sessionWorkDirectory';
+import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../../../src/shared/constants/timeouts';
+
+const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
+vi.mock('../../../../src/host/services/infra/logger', () => ({ createLogger: () => log }));
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+}));
+
+const rr85 = '我把合同文件夹整个拖进来了（共 30 份：PDF、Excel 表、图片、文本都有），请逐份摘要并写入 notes.md';
+const cases = [
+  [rr85, '合同文件夹逐份摘要', '合同文件夹整个拖进来了', 'zh'],
+  ['请帮我整理 `/tmp/contracts` 和 /tmp/notes 的会议记录（附原始资料），输出摘要', '会议记录摘要', '整理 和 的会议记录', 'zh'],
+  ['Please help me organize all the contracts and produce a detailed summary for the team (thirty documents)', 'Contract collection summary', 'organize all the', 'en'],
+] as const;
+let home: string;
+let env: NodeJS.ProcessEnv;
+const now = new Date(2026, 10, 13, 12).getTime();
+beforeEach(async () => {
+  vi.clearAllMocks();
+  home = await mkdtemp(path.join(tmpdir(), 'folder-title-'));
+  env = { CODE_AGENT_HOME: home, CODE_AGENT_DATA_DIR: path.join(home, '.code-agent') };
+});
+afterEach(async () => {
+  vi.useRealTimers();
+  await rm(home, { recursive: true, force: true });
+});
+
+describe('first-turn task folder title through planSessionWorkDirectory', () => {
+  it.each(cases)('① short task name for %s with and without a model', async (userMessage, modelTitle, ruleTitle, language) => {
+    const askTitle = vi.fn(async () => ({ success: true, content: modelTitle }));
+    const model = await planSessionWorkDirectory({ userMessage, askTitle, now, env, language });
+    const rule = await planSessionWorkDirectory({ userMessage, now, env, language });
+    const prefix = language === 'en' ? 'Task' : '任务';
+    expect(path.basename(model)).toBe(`${prefix}_1113_${modelTitle}`);
+    expect(path.basename(rule)).toBe(`${prefix}_1113_${ruleTitle}`);
+    expect(askTitle).toHaveBeenCalledOnce();
+    expect(askTitle).toHaveBeenCalledWith(expect.stringContaining('Generate a short session title'), expect.any(AbortSignal));
+    expect(log.info.mock.calls.map(([line]) => line)).toEqual([
+      expect.stringMatching(/source=model elapsedMs=\d+ reason=short-title/),
+      expect.stringMatching(/source=rule elapsedMs=\d+ reason=unavailable/),
+    ]);
+    console.log(`① model=${path.basename(model)} rule=${path.basename(rule)}`);
+  });
+
+  it('② keeps a short clean clause and never calls the model', async () => {
+    const askTitle = vi.fn();
+    const result = await planSessionWorkDirectory({ userMessage: '整理本周会议纪要，按日期分组', askTitle, now, env });
+    expect(path.basename(result)).toBe('任务_1113_整理本周会议纪要');
+    expect(askTitle).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/source=short-clean elapsedMs=\d+ reason=clean-first-clause/));
+  });
+
+  it.each([
+    ['unavailable', undefined],
+    ['echo', { success: true, content: rr85 }],
+    ['echo', { success: true, content: '我把合同文件夹整个拖进来了…' }],
+    ['no-answer', { success: false }],
+    ['no-answer', { success: true, content: '' }],
+    ['invalid-answer', { success: true, content: '请整理合同' }],
+    ['invalid-answer', { success: true, content: '/tmp/contracts' }],
+  ] as const)('③ falls back with reason=%s', async (reason, answer) => {
+    const result = await planSessionWorkDirectory({ userMessage: rr85, askTitle: async () => answer, now, env });
+    expect(path.basename(result)).toBe('任务_1113_合同文件夹整个拖进来了');
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(new RegExp(`source=rule elapsedMs=\\d+ reason=${reason}$`)));
+    console.log(log.info.mock.calls[0][0]);
+  });
+
+  it('③ times out at exactly 3 s, aborts the call and ignores a late answer', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    let complete: ((answer: { success: boolean; content: string }) => void) | undefined;
+    const askTitle = vi.fn((_prompt: string, incoming: AbortSignal) => {
+      signal = incoming;
+      return new Promise<{ success: boolean; content: string }>(resolve => { complete = resolve; });
+    });
+    const result = planSessionWorkDirectory({ userMessage: rr85, askTitle, now, env });
+    let settled = false;
+    void result.then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(SESSION_WORK_DIRECTORY_TIMEOUTS.TITLE_WAIT_MS - 1);
+    expect(settled).toBe(false);
+    expect(signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const directory = await result;
+    expect(path.basename(directory)).toBe('任务_1113_合同文件夹整个拖进来了');
+    expect(signal?.aborted).toBe(true);
+    expect(log.info).toHaveBeenCalledExactlyOnceWith('Task folder title source=rule elapsedMs=3000 reason=timeout');
+    console.log(log.info.mock.calls[0][0]);
+    complete?.({ success: true, content: '迟到的摘要' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(log.info).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('falls back on an exception and removes the timer on fast success or failure', async () => {
+    vi.useFakeTimers();
+    await planSessionWorkDirectory({ userMessage: rr85, askTitle: async () => { throw new Error('offline'); }, now, env });
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('reason=error'));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['（', '(', '【', '[', '：', ':', '、', '｛'])('cleans dirty short clauses containing %s', async delimiter => {
+    const result = await planSessionWorkDirectory({ userMessage: `整理合同${delimiter}附件`, now, env });
+    expect(path.basename(result)).toBe('任务_1113_整理合同');
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('source=rule'));
+  });
+
+  it.each(['/tmp/x', 'https://example.com/docs', '`/tmp/x`', 'C:\\docs\\x', 'sub/notes.md'])('drops the entire token %s before sanitizing', async token => {
+    const result = await planSessionWorkDirectory({ userMessage: `请整理 ${token} 合同`, now, env });
+    expect(path.basename(result)).toBe('任务_1113_整理 合同');
+  });
+
+  it('does not mistake the provisional web title for a usable smart title', async () => {
+    const askTitle = vi.fn(async () => ({ success: true, content: '合同文件夹逐份摘要' }));
+    const result = await planSessionWorkDirectory({ sessionTitle: rr85.slice(0, 30) + '...', userMessage: rr85, askTitle, now, env });
+    expect(path.basename(result)).toBe('任务_1113_合同文件夹逐份摘要');
+    expect(askTitle).toHaveBeenCalledOnce();
+  });
+
+  it('⑥ never renames a materialized model-named folder in later preflight', async () => {
+    const current = await planSessionWorkDirectory({ userMessage: rr85, askTitle: async () => ({ success: true, content: '合同文件夹逐份摘要' }), now, env });
+    await materializeSessionWorkDirectory(current);
+    await writeFile(path.join(current, 'notes.md'), 'contract summaries');
+    expect(await maybeReplanSessionWorkDirectory({ workingDirectory: current, sessionTitle: '合同风险评估', userMessage: rr85, env })).toBeUndefined();
+    expect(await readdir(path.dirname(current))).toEqual([path.basename(current)]);
+    expect(await readdir(current)).toEqual(['notes.md']);
+  });
+
+  it('skips the model for an existing smart title or attachment-only request', async () => {
+    const askTitle = vi.fn();
+    expect(path.basename(await planSessionWorkDirectory({ sessionTitle: '合同摘要', userMessage: rr85, askTitle, now, env }))).toBe('任务_1113_合同摘要');
+    expect(path.basename(await planSessionWorkDirectory({ attachments: [{ name: 'budget.xlsx', category: 'data' }], askTitle, now, env }))).toBe('任务_1113_budget');
+    expect(askTitle).not.toHaveBeenCalled();
+  });
+});

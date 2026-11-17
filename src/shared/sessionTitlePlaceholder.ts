@@ -87,7 +87,7 @@ const TITLE_RULE_MAX_CHARS = 20;
 const TITLE_ECHO_EXEMPT_MAX_CHARS = 8;
 const CLAUSE_SPLIT = /[，。；：！？,;:!?\n]|\.(?=\s|$)/;
 const REQUEST_BOILERPLATE =
-  /^(?:请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
+  /^(?:我把|请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
 
 function firstLineOf(sourceText: string): string {
   return sourceText.trim().split('\n')[0]?.trim() ?? '';
@@ -105,7 +105,7 @@ function isEchoSessionTitle(title: string, sourceText: string): boolean {
 }
 
 /** 无模型 / 模型仍回声时的规则摘要：首行首个分句去掉请求套话，最多 20 字，不带 `...`。 */
-function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
+export function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
   const first = firstLineOf(sessionTitleSource(sourceText, language)) || APPSHOT_SESSION_TITLE[language];
   let clause = (first.split(CLAUSE_SPLIT).find((part) => part.trim()) ?? first).trim();
   for (let i = 0; i < 3; i++) {
