@@ -139,6 +139,9 @@ chatSearch: {
   roleUser: '用户',
   roleAssistant: '助手',
   roleSystem: '系统',
+  roleTool: '工具输出',
+  messageHitPrefix: '消息命中',
+  toolHitPrefix: '工具输出命中',
   turnNumber: '第 {n} 轮',
 },
 forkLineage: {
@@ -617,6 +620,9 @@ chatSearch: {
   roleUser: 'User',
   roleAssistant: 'Assistant',
   roleSystem: 'System',
+  roleTool: 'Tool output',
+  messageHitPrefix: 'Message match',
+  toolHitPrefix: 'Tool output match',
   turnNumber: 'Turn {n}',
 },
 forkLineage: {
