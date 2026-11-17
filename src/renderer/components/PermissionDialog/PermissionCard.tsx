@@ -46,6 +46,10 @@ function stringField(source: object, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function unknownField(source: object, key: string): unknown {
+  return (source as Record<string, unknown>)[key];
+}
+
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
   request: import('@shared/contract').PermissionRequest
@@ -96,6 +100,9 @@ function normalizeRequest(
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
+      from_ms: unknownField(request.details, 'from_ms'),
+      to_ms: unknownField(request.details, 'to_ms'),
+      calendar: unknownField(request.details, 'calendar'),
       sensitiveStep: request.details.sensitiveStep,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
