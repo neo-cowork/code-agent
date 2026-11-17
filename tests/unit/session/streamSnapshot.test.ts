@@ -35,6 +35,8 @@ const partialSnapshot = (content: string, timestamp = 100) => ({
 
 describe('stream snapshot run isolation', () => {
   let tempDir: string;
+  let dataDir: string;
+  let priorDataDir: string | undefined;
 
   const identity = (overrides: Partial<StreamSnapshotIdentity> = {}): StreamSnapshotIdentity => ({
     workingDir: tempDir,
@@ -48,9 +50,15 @@ describe('stream snapshot run isolation', () => {
     loggerWarn.mockClear();
     loggerInfo.mockClear();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-stream-'));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-agent-stream-data-'));
+    priorDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
   });
 
   afterEach(() => {
+    if (priorDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = priorDataDir;
+    fs.rmSync(dataDir, { recursive: true, force: true });
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -155,20 +163,48 @@ describe('stream snapshot run isolation', () => {
       .toMatchObject({ content: 'abort flush', interruptionReason: 'user' });
   });
 
-  it('explicitly discards an unscoped legacy snapshot instead of attaching it to a session', () => {
+  it('ignores an unscoped legacy snapshot without touching the user folder', () => {
     const legacyPath = path.join(tempDir, '.code-agent', 'stream-snapshot.json');
     fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
-    fs.writeFileSync(legacyPath, JSON.stringify({
-      ...partialSnapshot('legacy'),
-      sessionId: 'session-1',
-      turnId: 'turn-legacy',
-    }));
+    const legacyBody = JSON.stringify({ ...partialSnapshot('legacy'), sessionId: 'session-1', turnId: 'turn-legacy' });
+    fs.writeFileSync(legacyPath, legacyBody);
 
     expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' })).toBeNull();
-    expect(fs.existsSync(legacyPath)).toBe(false);
-    expect(loggerWarn).toHaveBeenCalledWith(
-      'Discarded legacy unscoped stream snapshot; run identity was unavailable',
-    );
+    expect(fs.readFileSync(legacyPath, 'utf8')).toBe(legacyBody);
+  });
+
+  it('writes snapshots under the app data dir and leaves the work folder untouched', () => {
+    const before = fs.readdirSync(tempDir);
+    const scoped = identity();
+    const handler = createSnapshotHandler(scoped);
+    handler(partialSnapshot('mid-stream'));
+
+    expect(fs.readdirSync(tempDir)).toEqual(before);
+    expect(getStreamSnapshotPath(scoped).startsWith(path.join(dataDir, 'stream-snapshots'))).toBe(true);
+    expect(fs.existsSync(getStreamSnapshotPath(scoped))).toBe(true);
+    // 崩溃重启后（新读取方）能读回
+    expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: scoped.sessionId })).toMatchObject({ content: 'mid-stream' });
+    clearStreamSnapshot(scoped);
+    expect(fs.readdirSync(tempDir)).toEqual(before);
+  });
+
+  it('still reads a snapshot an older build left in the work folder, read-only', () => {
+    const legacyDir = path.join(tempDir, '.code-agent', 'stream-snapshots', Buffer.from('session-1').toString('base64url'));
+    const runFile = path.join(legacyDir, `${Buffer.from('run-old').toString('base64url')}.json`);
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const workspace = fs.realpathSync(tempDir);
+    fs.writeFileSync(path.join(legacyDir, 'current-run.json'), JSON.stringify({
+      schemaVersion: 2, workspace, sessionId: 'session-1', runId: 'run-old', claimedAt: 1,
+    }));
+    fs.writeFileSync(runFile, JSON.stringify({
+      ...partialSnapshot('left by older build'),
+      schemaVersion: 2, workspace, sessionId: 'session-1', runId: 'run-old', turnId: 'turn-1',
+      updatedAt: 1, streamStatus: 'incomplete', stableForExecution: false, incompleteToolCallIds: [], executionToolCalls: [],
+    }));
+    const snapshotBytes = fs.readFileSync(runFile);
+
+    expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' })).toMatchObject({ content: 'left by older build' });
+    expect(fs.readFileSync(runFile).equals(snapshotBytes)).toBe(true);
   });
 
   it('keeps the last valid snapshot readable when an orphan temp file is truncated', () => {

@@ -114,12 +114,14 @@ class SkillWatcher extends EventEmitter implements Disposable {
    * 监听指定目录
    */
   private watchDirectory(dir: string, source: 'user' | 'project' | 'library'): void {
-    // 确保目录存在
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-    } catch (error) {
-      // 目录可能已存在或无权创建
-      logger.debug('Could not create directory', { dir, error: String(error) });
+    // 项目级目录属于用户文件夹：只监听已存在的，绝不替用户创建 .claude / .code-agent。
+    // 用户级/库级目录在应用自己的配置目录下，仍按需创建。
+    if (source !== 'project') {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        logger.debug('Could not create directory', { dir, error: String(error) });
+      }
     }
 
     // 检查目录是否存在且可访问
