@@ -56,7 +56,8 @@ export type MemoryEntrySourceKind =
   | 'knowledge_inbox'
   | 'recent_conversation'
   | 'precompact_flush'
-  | 'import';
+  | 'import'
+  | 'manual';
 
 export type MemoryImportAdapterId =
   | 'codex-local-custom'
@@ -291,6 +292,20 @@ export interface MemoryMirrorRebuildResult {
   /** 对应 light 文件已不存在、被软归档的镜像行数 */
   removed: number;
   skipped: Array<{ filename: string; reason: string }>;
+}
+
+export interface MemoryEntryCreateRequest {
+  content?: string;
+  /** 仅 user / feedback / project / reference；其余由 host 拒绝 */
+  kind?: string;
+  projectPath?: string | null;
+}
+
+export interface MemoryEntryCreateResult {
+  created: boolean;
+  /** 已有同内容的有效记忆：不再新建，entry 指向已有那条 */
+  duplicate: boolean;
+  entry: MemoryEntry;
 }
 
 export interface MemoryEntryUpdateRequest {

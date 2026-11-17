@@ -1,13 +1,12 @@
 import * as path from 'path';
 import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
+import { getHostUiLocale } from '../../host/config/hostUiLocale';
 import { isPlannedSessionWorkDirectory } from '../../host/config/sessionWorkDirectory';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { createLogger } from '../../host/services/infra/logger';
-import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../shared/i18n/chooseFolderEntry';
+import { getInitMemoryNoFolderHint } from '../../shared/i18n/chooseFolderEntry';
 
 const logger = createLogger('AgentSlashExpansion');
-
-const INIT_MEMORY_NO_FOLDER_PROMPT = `Call no tools. Reply with exactly one plain sentence in the user's language saying that no folder has been chosen yet and directing them to click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" (Chinese label: "${CHOOSE_FOLDER_ENTRY_LABEL.zh}") in the sidebar, then asking them to send /init-memory again.`;
 
 function isSystemAssignedWorkingDirectory(workingDirectory?: string): boolean {
   if (!workingDirectory?.trim()) return false;
@@ -33,7 +32,7 @@ export async function expandSlashPromptForModel(
     if (!resolution) return visiblePrompt;
     if (resolution.name === 'init-memory' && isSystemAssignedWorkingDirectory(workingDirectory)) {
       logger.info('Skipped /init-memory expansion: working directory not chosen by user');
-      return INIT_MEMORY_NO_FOLDER_PROMPT;
+      return `Call no tools. Reply with exactly the following text, character for character, and nothing else:\n${getInitMemoryNoFolderHint(getHostUiLocale())}`;
     }
     logger.info('Expanded prompt command', { name: resolution.name, source: resolution.source });
     return resolution.prompt;

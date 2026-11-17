@@ -8,6 +8,8 @@ export const UI = {
   MAX_HISTORY_ITEMS: 100,
   /** Toast 默认显示时长 (ms) */
   TOAST_DURATION: 5000,
+  /** Keep the toast visible until explicitly removed. */
+  TOAST_PERSISTENT_DURATION: 0,
   /** 复制成功反馈时长 (ms) */
   COPY_FEEDBACK_DURATION: 2000,
   /** 侧边栏默认宽度 */
