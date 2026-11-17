@@ -54,8 +54,11 @@ export const f10: FlowDef = {
         if (!ok.some((t) => READ_TOOLS.includes(t))) return `没有读表的工具成功事件：\n${describeRows(events, ['tool_name', 'phase', 'status'])}`;
         env.note(events.some((e) => e.tool_name === 'delegate_task') ? '模型转后台（delegate_task）读表' : '模型在前台直接读表');
         const decisions = inSessions(d.permissionDecisions, ids);
-        const bad = decisions.filter((r) => r.final_outcome === 'deny' || r.reason === 'timeout');
+        // 审批超时、或点了拒绝才算审批流程出问题；命令分析失败被系统直接拦下是另一回事（模型换了做法），只记下
+        const bad = decisions.filter((r) => r.reason === 'timeout' || (r.final_outcome === 'deny' && r.reason === 'user'));
         if (bad.length) return `有被拒绝/超时的审批：\n${describeRows(bad, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
+        const blocked = decisions.filter((r) => r.final_outcome === 'deny' && r.reason !== 'user' && r.reason !== 'timeout');
+        if (blocked.length) env.note(`有 ${blocked.length} 条命令被系统直接拦下（${String(blocked[0].reason)}），模型换了做法`);
         if (env.scratch.clicks && !decisions.some((r) => r.history_outcome === 'ask-approved')) return '点过允许，但 permission_decisions 里没有 ask-approved';
         return null;
       }),
