@@ -461,7 +461,6 @@ export class MessageProcessor {
       toolCallCount: this.ctx.stats.totalToolCallCount,
       iterations,
       hasDesktopEvidence: hasAppshotEvidence,
-      completionReportOnly: this.ctx.completionReportOnly === true,
     });
     if (desktopClaimGate.action === 'retry') {
       logger.warn('[DesktopActionClaimGate] retrying text response without desktop tool evidence', {

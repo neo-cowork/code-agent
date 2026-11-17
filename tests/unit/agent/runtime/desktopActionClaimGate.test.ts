@@ -231,13 +231,20 @@ describe('applyDesktopActionClaimGate', () => {
     expect(result.action).toBe('none');
   });
 
-  it('后台任务汇报轮转述「已附加文件」不被当成无证据的桌面声明', () => {
-    const wakeContent = '<background_task_hidden_wake>后台任务「报销附件」已结束：已在浏览器里打开页面并点击上传框，附上 invoice.pdf</background_task_hidden_wake>';
+  it('后台任务唤醒的隐藏消息不算用户的桌面请求，汇报「已附加文件」不被拦', () => {
+    const wake = '<background_task_hidden_wake>后台任务「报销附件」已结束：已在浏览器里打开页面并点击上传框，截图确认 invoice.pdf 已附加</background_task_hidden_wake>';
     const report = '后台已经打开了报销单页面，点击了上传框，invoice.pdf 已附加，页面显示已选择该文件，没有提交。';
-    const base = { recentUserMessages: [wakeContent], assistantContent: report, toolCallCount: 0, iterations: 1 };
-    expect(applyDesktopActionClaimGate(base).action).toBe('retry');
-    const reportOnly = applyDesktopActionClaimGate({ ...base, completionReportOnly: true });
-    expect(reportOnly.action).toBe('none');
-    expect(reportOnly.content).toBe(report);
+    const history = [
+      { role: 'user', content: '请在后台打开报销单页面，把 invoice.pdf 附到上传框里' },
+      { role: 'assistant', content: '我把这件事交给后台任务去做。' },
+      { role: 'user', content: wake, isMeta: true },
+    ];
+    expect(collectRecentUserTexts(history)).toEqual(['请在后台打开报销单页面，把 invoice.pdf 附到上传框里']);
+    const result = applyDesktopActionClaimGate({ recentUserMessages: collectRecentUserTexts(history), assistantContent: report, toolCallCount: 0, iterations: 1 });
+    expect(result.action).toBe('none');
+    expect(result.content).toBe(report);
+    // 对照：同样的文本若作为普通用户消息，仍会触发闸门（闸门本身没被放松）。
+    const asUser = applyDesktopActionClaimGate({ recentUserMessages: [wake], assistantContent: report, toolCallCount: 0, iterations: 1 });
+    expect(asUser.action).toBe('retry');
   });
 });

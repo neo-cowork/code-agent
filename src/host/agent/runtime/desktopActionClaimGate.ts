@@ -32,12 +32,13 @@ const DESKTOP_CLAIM_GATE_WARNING =
 const RECENT_USER_TURNS = 3;
 
 export function collectRecentUserTexts(
-  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string }>,
+  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string; isMeta?: boolean }>,
 ): string[] {
   const texts: string[] = [];
   for (let i = messages.length - 1; i >= 0 && texts.length < RECENT_USER_TURNS; i--) {
     const message = messages[i];
-    if (message.role !== 'user' || message.visibility === 'rewound') continue;
+    // isMeta 是宿主注入的隐藏用户消息（后台任务唤醒等，正文是子任务结果）：不是用户自己提的桌面请求。
+    if (message.role !== 'user' || message.visibility === 'rewound' || message.isMeta === true) continue;
     if (typeof message.content === 'string') texts.push(message.content);
   }
   return texts;
@@ -51,11 +52,6 @@ export interface DesktopActionClaimGateInput {
   toolCallCount: number;
   iterations: number;
   hasDesktopEvidence?: boolean;
-  /**
-   * 后台任务完成汇报轮（completionReportOnly）：本轮按设计没有桌面/浏览器工具，正文是对已结束任务结果的转述；
-   * 要求本轮自带工具证据只会把「已附加」这类如实汇报判成无证据，单步预算下重试直接耗尽成「自动汇报没能完成」。
-   */
-  completionReportOnly?: boolean;
 }
 
 export type DesktopActionClaimGateResult =
@@ -71,7 +67,7 @@ export function applyDesktopActionClaimGate(
     return { action: 'none', content };
   }
 
-  if (input.toolCallCount > 0 || input.hasDesktopEvidence || input.completionReportOnly) {
+  if (input.toolCallCount > 0 || input.hasDesktopEvidence) {
     return { action: 'none', content };
   }
 
