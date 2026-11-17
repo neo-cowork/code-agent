@@ -15,6 +15,15 @@ function turn(turnNumber: number, nodes: TraceNode[]): TraceTurn {
 }
 
 describe('buildTurnRailItems', () => {
+  it('旧组队行：确定性前缀被剥掉，旧主理人 brief 行的轮不进轨道', () => {
+    const brief = '你是主理人。\n执行铁律：第一步必须调用 spawn_agent；\nagents JSON：[{"role":"溯真"}]';
+    const items = buildTurnRailItems([
+      turn(1, [node('user', '【组队 · 产品规格】会员增长方案'), node('assistant_text', '团队已启动')]),
+      turn(2, [node('user', brief), node('assistant_text', '定稿如下')]),
+    ]);
+    expect(items.map((item) => item.prompt)).toEqual(['会员增长方案']);
+  });
+
   it('每轮一项：用户那句做提示预览、最后一条有正文的 Neo 回复做结论预览', () => {
     const items = buildTurnRailItems([
       turn(1, [node('user', '把封面标题改成《8 月客户之声周报》'), node('assistant_text', ''), node('assistant_text', '标题已更新，封面和页眉同步改好。')]),

@@ -543,6 +543,7 @@ export class SessionCommandCenter {
       taskId?: unknown;
       error?: unknown;
       conclusion?: unknown;
+      detail?: unknown;
       artifacts?: unknown;
     } | undefined;
     const id = typeof data?.taskId === 'string' ? data.taskId : undefined;
@@ -596,7 +597,7 @@ export class SessionCommandCenter {
       return;
     }
     if (event.type === 'task_cancelled') {
-      await this.settle(task, 'cancelled', '任务已取消。');
+      await this.settle(task, 'cancelled', typeof data?.detail === 'string' ? data.detail : '任务已取消。');
     }
   }
 
