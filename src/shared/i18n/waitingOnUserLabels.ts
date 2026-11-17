@@ -15,7 +15,10 @@
 // （由 tests/renderer/i18n/waitingOnUserLabelsGate.test.ts 静态扫描守住）。
 // 不在范围：宿主通知文案、审批/提问卡片标题与按钮、「N 个操作等你确认」计数句。
 // ============================================================================
-export const WAITING_ON_USER_LABELS = {
+export const WAITING_ON_USER_LABELS: Record<
+  'zh' | 'en',
+  { approval: string; approvalWithLabel: string; question: string }
+> = {
   zh: {
     approval: '等你确认',
     approvalWithLabel: '等你确认：{label}',
@@ -26,4 +29,4 @@ export const WAITING_ON_USER_LABELS = {
     approvalWithLabel: 'Needs your approval: {label}',
     question: 'Waiting for you',
   },
-} as const;
+};
