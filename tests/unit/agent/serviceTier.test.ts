@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveServiceTier, withServiceTier, applyRunServiceTier } from '../../../src/host/agent/serviceTier';
 import { normalizeSubagentModelContext } from '../../../src/host/agent/subagentProtocolContext';
-import { UNATTENDED_SERVICE_TIER } from '../../../src/shared/constants';
+import { isServiceTierEligibleProvider, UNATTENDED_SERVICE_TIER } from '../../../src/shared/constants';
 import type { ModelConfig } from '../../../src/shared/contract';
 
 const config = (overrides: Partial<ModelConfig>): ModelConfig => ({ provider: 'openai', model: 'gpt-6.1-sol', ...overrides });
@@ -28,6 +28,13 @@ describe('resolveServiceTier（纯解析）', () => {
 });
 
 describe('applyRunServiceTier（run 接缝）', () => {
+  it('渲染层共用的资格 helper 与 run 接缝对同一 provider 列表一致', () => {
+    for (const provider of ['openai', 'xiaomi', 'custom-tokenrhythm', 'deepseek']) {
+      const resolved = applyRunServiceTier(config({ provider }), true);
+      expect(resolved.serviceTier === UNATTENDED_SERVICE_TIER).toBe(isServiceTierEligibleProvider(provider));
+    }
+  });
+
   it('无人值守 + openai → 挂半价档', () => {
     expect(applyRunServiceTier(config({}), true)).toMatchObject({ serviceTier: UNATTENDED_SERVICE_TIER });
   });

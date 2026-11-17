@@ -1,4 +1,5 @@
 import { executeSingleSpawnAgent } from './spawnSingleAgent';
+import { withWorkdirPrefix } from '../workdirPrefix';
 // ============================================================================
 // Spawn Agent — execute helpers
 // Gen 7: Multi-Agent capability
@@ -296,7 +297,7 @@ async function executeParallelAgents(
       id: taskId,
       role: agent.role,
       name: displayNames[index],
-      task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
+      task: withWorkdirPrefix(cwd, agent.task),
       systemPrompt,
       tools,
       maxIterations: getAgentMaxIterations(agentConfig),
