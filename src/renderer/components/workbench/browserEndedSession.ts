@@ -13,7 +13,7 @@ export function selectBrowserEndedSession(
   if (display?.session.surface !== 'browser') return null;
   if (!activeSessionId && (display.session.state === 'completed' || display.session.state === 'failed')) return display;
   if (managedUrl && managedUrl !== 'about:blank') return null;
-  const persisted = display.source === 'persisted' && !display.writable;
+  const persisted = display.source === 'persisted' && !display.writable && managedUrl === 'about:blank';
   // A persisted running state describes the pre-crash process. Opening its panel
   // can create a targetless user-browser placeholder whose snapshot replaces history.
   if (!persisted && !isUserOpenedSurfaceV1(display)) return null;
