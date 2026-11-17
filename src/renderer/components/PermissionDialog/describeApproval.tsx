@@ -8,7 +8,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Bot, Globe, Settings2, Shield, Terminal } from 'lucide-react';
+import { Bot, CalendarDays, Globe, Settings2, Shield, Terminal } from 'lucide-react';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import type { Translations } from '../../hooks/useI18n';
 import type { Language } from '../../i18n';
@@ -16,6 +16,7 @@ import type { PermissionRequest } from './types';
 import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
+import { formatDateTime } from '../../utils/formatDateTime';
 
 type ApprovalKind =
   | 'shell'
@@ -30,6 +31,7 @@ type ApprovalKind =
   | 'web_clipboard'
   | 'role_setting'
   | 'subtask'
+  | 'calendar_read'
   | 'generic';
 
 interface ApprovalDescription {
@@ -53,6 +55,8 @@ const FILE_TITLE_KEY = {
   file_delete: 'titleFileDelete',
 } as const;
 
+const CALENDAR_READ_ACTIONS = new Set(['list_events', 'list_calendars']);
+
 const WEB_OPEN_ACTIONS = new Set(['open', 'navigate', 'new_tab', 'newTab']);
 
 function isShellRequest(request: PermissionRequest): boolean {
@@ -72,6 +76,7 @@ function classify(request: PermissionRequest): ApprovalKind {
   const lower = tool.toLowerCase();
   if (lower === 'set_role_proactivity') return 'role_setting';
   if (lower === 'spawn_agent' || lower === 'agentspawn') return 'subtask';
+  if (lower === 'calendar' && CALENDAR_READ_ACTIONS.has(String(request.details.action ?? ''))) return 'calendar_read';
   if (/^browser(?:$|[_.])/u.test(lower)) {
     const action = String(request.details.action ?? '');
     if (action === 'write_clipboard') return 'web_clipboard';
@@ -112,6 +117,35 @@ function userFacingReason(reason: string | undefined): string | undefined {
   return redactCredentialText(text);
 }
 
+function calendarReadScope(request: PermissionRequest, p: Translations['decisionCard']['permission'], language: Language): string {
+  const args = request.details;
+  if (args.action === 'list_calendars') return p.calendarReadScopeCalendars;
+  const time = (raw: unknown): string | undefined => {
+    const ms = typeof raw === 'string' && raw.trim() ? Number(raw) : raw;
+    return typeof ms === 'number' && Number.isFinite(ms) ? formatDateTime(ms, language) : undefined;
+  };
+  const from = time(args.from_ms);
+  const to = time(args.to_ms);
+  const range = from && to
+    ? p.calendarReadRange.replace('{from}', from).replace('{to}', to)
+    : from
+      ? p.calendarReadRangeFrom.replace('{from}', from)
+      : to
+        ? p.calendarReadRangeUntil.replace('{to}', to)
+        : p.calendarReadRangeDefault;
+  const name = typeof args.calendar === 'string' ? redactCredentialText(args.calendar.trim()) : '';
+  return `${range}${p.calendarReadSeparator}${name ? p.calendarReadCalendar.replace('{name}', name) : p.calendarReadAllCalendars}`;
+}
+
+/** 通用卡下方没有任何可列的内容时，「请确认下面的……」是空指向，不上卡。 */
+function hasListableDetails(request: PermissionRequest): boolean {
+  const d = request.details;
+  return Boolean(
+    request.rawArgs || request.argsPreview || d.preview || d.command || d.url || d.path || d.filePath
+    || d.changes || (d.server && d.toolName) || d.sandbox,
+  );
+}
+
 function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactElement {
   switch (kind) {
     case 'shell':
@@ -136,6 +170,8 @@ function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactEle
       return React.createElement(Settings2, { size: 20 });
     case 'subtask':
       return React.createElement(Bot, { size: 20 });
+    case 'calendar_read':
+      return React.createElement(CalendarDays, { size: 20 });
     case 'generic':
       return React.createElement(Shield, { size: 20 });
     default:
@@ -224,12 +260,14 @@ function describeKind(
       };
     case 'subtask':
       return { kind, title: p.titleSubtask, question: p.questionSubtask, consequence: genericConsequence, icon };
+    case 'calendar_read':
+      return { kind, title: p.titleCalendarRead, question: p.questionCalendarRead, consequence: calendarReadScope(request, p, language), icon };
     case 'generic':
       return {
         kind,
         title: p.genericApprovalTitle,
         question: p.genericApprovalQuestion,
-        consequence: quiet(genericConsequence),
+        consequence: hasListableDetails(request) ? quiet(genericConsequence) : undefined,
         icon,
       };
     default:

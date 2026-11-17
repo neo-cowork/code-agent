@@ -183,7 +183,11 @@ class ProtocolToolResolver implements ToolResolver {
       // ADR-090 修订：用户本人前台这一轮碰到日历「未决定」→ 直接弹一次系统框；允许了就当轮重做这次调用，不出卡
       if (!protoResult.ok && protoResult.code === 'not_authorized' && CALENDAR_TOOLS.has(dispatchName) && isUserPresentForegroundTurn(ctx)) {
         const { grantCalendarForForegroundRequest } = await import('../../ipc/envAssist.ipc');
-        if (await grantCalendarForForegroundRequest(ctx.currentToolCallId ?? dispatchName) === 'granted') {
+        const access = await grantCalendarForForegroundRequest(ctx.currentToolCallId ?? dispatchName, ctx.abortSignal);
+        if (access === 'aborted') {
+          return { success: false, error: 'Tool execution aborted', metadata: { code: 'ABORTED' } };
+        }
+        if (access === 'granted') {
           const permit = firstPermit;
           const reuseCanUseTool: typeof canUseTool = permit?.allow ? async () => permit : canUseTool;
           protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, reuseCanUseTool));
