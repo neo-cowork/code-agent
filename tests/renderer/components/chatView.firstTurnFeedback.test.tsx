@@ -8,6 +8,7 @@ import {
   type AssistantFeedbackState,
 } from '../../../src/renderer/utils/sendWithImmediateAssistantFeedback';
 import { StreamingIndicator } from '../../../src/renderer/components/features/chat/StreamingIndicator';
+import { AssistantFeedbackIndicator } from '../../../src/renderer/components/features/chat/AssistantFeedbackIndicator';
 
 import { useAssistantFeedbackEvents } from '../../../src/renderer/components/features/chat/useAssistantFeedbackEvents';
 import type { AgentEventEnvelope } from '../../../src/shared/contract';
@@ -76,13 +77,7 @@ function PendingSendHarness({ send, liveStage }: {
       )}
       {feedback !== null && (
         <div data-testid="assistant-send-placeholder">
-          <StreamingIndicator
-            startTime={feedback.startedAt}
-            preparationPhase={feedback.phase === 'submitting'
-              ? 'submitting'
-              : feedback.phase === 'queued' ? 'queued' : undefined}
-            waitingReason={feedback.phase === 'waiting_model' ? 'model' : undefined}
-          />
+          <AssistantFeedbackIndicator feedback={feedback} />
         </div>
       )}
     </div>
@@ -137,7 +132,7 @@ describe('ChatView first-turn assistant feedback', () => {
     expect(screen.getAllByTestId('assistant-send-placeholder')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));
-    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('信号传输中，正在等待模型回响…');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('正在准备…');
     expect(screen.getAllByTestId('assistant-send-placeholder')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: '首个 delta' }));
@@ -152,7 +147,7 @@ describe('ChatView first-turn assistant feedback', () => {
     fireEvent.click(screen.getByRole('button', { name: 'durable 激活' }));
     fireEvent.click(screen.getByRole('button', { name: 'enqueue 成功' }));
 
-    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('信号传输中，正在等待模型回响…');
+    expect(screen.getByTestId('assistant-send-placeholder').textContent).toContain('正在准备…');
   });
 
   // FU3-FU1-FU1 真跑实录：直接投递（starter 卡）没有 durable 队列，task_start 不带

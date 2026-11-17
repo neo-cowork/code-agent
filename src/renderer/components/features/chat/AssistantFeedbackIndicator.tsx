@@ -2,12 +2,12 @@ import React from 'react';
 import type { AssistantFeedbackState } from '../../../utils/sendWithImmediateAssistantFeedback';
 import { StreamingIndicator } from './StreamingIndicator';
 
-/** A queued message is not yet running; all other pre-reply phases show preparation. */
+/** Send/queue phases keep their own copy (and slow-start notice); activation onward shows preparation. */
 export function AssistantFeedbackIndicator({ feedback }: { feedback: AssistantFeedbackState }) {
   return (
     <StreamingIndicator
       startTime={feedback.startedAt}
-      preparationPhase={feedback.phase === 'queued' ? 'queued' : 'preparing'}
+      preparationPhase={feedback.phase === 'queued' || feedback.phase === 'submitting' ? feedback.phase : 'preparing'}
     />
   );
 }
