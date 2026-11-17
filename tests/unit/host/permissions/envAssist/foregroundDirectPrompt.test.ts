@@ -52,6 +52,18 @@ describe('foreground user request on an undecided calendar prompts directly', ()
     expect(result.output).toContain('Work');
   });
 
+  it('the re-run reuses the approval already given for this call (no second 「允许一次」)', async () => {
+    const baselineAsk = vi.fn(async () => true);
+    fake.state.status = 3;
+    await run({ foregroundToolFace: true, requestPermission: baselineAsk });
+    fake.state.status = 0;
+    resetCalendarConnectorReadiness();
+    const ask = vi.fn(async () => true);
+    const result = await run({ foregroundToolFace: true, requestPermission: ask });
+    expect(result.success).toBe(true);
+    expect(ask.mock.calls.length).toBe(baselineAsk.mock.calls.length);
+  });
+
   it('not a foreground user turn (background / sub-agent) → no dialog, ordinary not_authorized failure', async () => {
     const result = await run({ foregroundToolFace: false });
     expect(mocks.grant).not.toHaveBeenCalled();

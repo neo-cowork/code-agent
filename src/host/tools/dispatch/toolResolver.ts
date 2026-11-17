@@ -176,12 +176,17 @@ class ProtocolToolResolver implements ToolResolver {
       });
       const canUseTool = buildCanUseToolFromLegacy(ctx, dispatchName);
 
-      let protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, canUseTool));
+      // 记下本次调用已拿到的放行：前台直接弹框授权后重做同一次调用时沿用，不再让用户点第二次「允许一次」
+      let firstPermit: Awaited<ReturnType<typeof canUseTool>> | undefined;
+      const recordingCanUseTool: typeof canUseTool = async (...callArgs) => (firstPermit = await canUseTool(...callArgs));
+      let protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, recordingCanUseTool));
       // ADR-090 修订：用户本人前台这一轮碰到日历「未决定」→ 直接弹一次系统框；允许了就当轮重做这次调用，不出卡
       if (!protoResult.ok && protoResult.code === 'not_authorized' && CALENDAR_TOOLS.has(dispatchName) && isUserPresentForegroundTurn(ctx)) {
         const { grantCalendarForForegroundRequest } = await import('../../ipc/envAssist.ipc');
         if (await grantCalendarForForegroundRequest(ctx.currentToolCallId ?? dispatchName) === 'granted') {
-          protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, canUseTool));
+          const permit = firstPermit;
+          const reuseCanUseTool: typeof canUseTool = permit?.allow ? async () => permit : canUseTool;
+          protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, reuseCanUseTool));
         }
       }
       if (protoResult.ok) {
