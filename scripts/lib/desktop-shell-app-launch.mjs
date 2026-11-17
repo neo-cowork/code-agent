@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { setTimeout } from 'node:timers';
 
 const OPEN_TIMEOUT_MS = 30_000;
 const KILL_GRACE_MS = 1000;
@@ -23,7 +24,7 @@ export function buildOpenArgv(appPath, dataDir, port) {
 // pids whose command line starts with <appPath>/Contents/MacOS/ (read-only via ps).
 export function listAppPids(appPath) {
   const prefix = `${path.join(appPath, 'Contents', 'MacOS')}${path.sep}`;
-  let out = '';
+  let out;
   try {
     out = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   } catch {
