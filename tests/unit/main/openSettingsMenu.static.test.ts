@@ -9,8 +9,8 @@ describe('macOS Settings menu contract', () => {
   it('puts Settings with Cmd+, between About and Services in the app submenu', () => {
     const submenu = main.slice(main.indexOf('let app_submenu ='), main.indexOf('let edit_submenu ='));
     expect(submenu).toContain('MenuItem::with_id(handle, "open_settings", labels.settings, true, Some("Cmd+,"))');
-    expect(submenu.indexOf('PredefinedMenuItem::about')).toBeLessThan(submenu.indexOf('"open_settings"'));
-    expect(submenu.indexOf('"open_settings"')).toBeLessThan(submenu.indexOf('PredefinedMenuItem::services'));
+    expect(submenu.indexOf('&predefined.about')).toBeLessThan(submenu.indexOf('"open_settings"'));
+    expect(submenu.indexOf('"open_settings"')).toBeLessThan(submenu.indexOf('&predefined.services'));
   });
   it('focuses the main window and emits the same event consumed by the settings action', () => {
     const branch = /RunEvent::MenuEvent\(event\) if event.id\(\).as_ref\(\) == "open_settings" => \{([\s\S]*?)\n {8}\}/.exec(main);
