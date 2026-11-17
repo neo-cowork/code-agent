@@ -14,8 +14,11 @@ import { decisionCardEn } from '../../../src/renderer/i18n/decisionCard';
 
 const state = vi.hoisted(() => ({ request: null as PermissionRequest | null, sessionId: null as string | null, language: 'zh' as 'zh' | 'en' }));
 const readCalendarEvent = vi.hoisted(() => vi.fn());
+const readReminder = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/connectors', () => ({
-  getConnectorRegistry: () => ({ get: () => ({ execute: readCalendarEvent }) }),
+  getConnectorRegistry: () => ({
+    get: (id: string) => ({ execute: id === 'reminders' ? readReminder : readCalendarEvent }),
+  }),
 }));
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -50,7 +53,9 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: vi.fn()
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
 import { validateWritebackDraft } from '../../../src/renderer/components/PermissionDialog/WritebackFields';
 import { calendarApprovalDetails } from '../../../src/host/tools/modules/connectors/calendarApprovalDetails';
-import { applyEditedArgs } from '../../../src/shared/contract/permissionEdit';
+import { applyRemindersDeletePreview, remindersApprovalDetails } from '../../../src/host/tools/modules/connectors/remindersApprovalDetails';
+import { ConfirmationGate } from '../../../src/host/agent/confirmationGate';
+import { EDITABLE_TOOL_FIELDS, applyEditedArgs } from '../../../src/shared/contract/permissionEdit';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 
 // host 默认分支：details = {...params} + 透传字段；mail_send 是 write 级 ⇒ type file_write、risk high ⇒ danger
@@ -183,6 +188,8 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     releaseApprovalResponse(remindersCreateRequest.id);
     releaseApprovalResponse(remindersUpdateRequest.id);
     releaseApprovalResponse('permission-reminders-no-time');
+    releaseApprovalResponse('permission-reminders-update-hidden-id');
+    releaseApprovalResponse('permission-reminders-delete-hidden-id');
   });
 
   it('查看态：卡头是「发送邮件」，正文上屏，不再是危险命令红卡', () => {
@@ -298,7 +305,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     [calendarCreateRequest, '创建日历事件', ['calendar', 'title', 'start_ms', 'end_ms', 'location'], ['calendar']],
     [calendarUpdateRequest, '更新日历事件', ['calendar', 'title', 'start_ms', 'end_ms', 'location'], ['calendar', 'event_uid']],
     [remindersCreateRequest, '新建提醒', ['list', 'title', 'notes', 'remind_at_ms'], ['list']],
-    [remindersUpdateRequest, '更新提醒', ['list', 'reminder_id', 'title', 'notes', 'remind_at_ms'], ['list', 'reminder_id']],
+    [remindersUpdateRequest, '更新提醒', ['list', 'title', 'notes', 'remind_at_ms'], ['list', 'reminder_id']],
   ] as const)('%s：查看态字段齐全，标识只展示不出编辑控件', (native, expectedTitle, viewFields, readonlyFields) => {
     state.request = native;
     render(<PermissionCard />);
@@ -341,6 +348,91 @@ describe('PermissionCard · mail_send 改一改再发', () => {
       IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
     ));
     expect(invoke.mock.calls[0]).toHaveLength(4);
+  });
+
+  it.each(['zh', 'en'] as const)('%s: update reminder card lists list, title and time, and hides the reminder id', async (language) => {
+    readReminder.mockResolvedValue({
+      data: { id: 'rem-opaque-91', list: '工作', title: '交电费', completed: false, remindAtMs: localMs(8) },
+    });
+    const params = { list: '工作', reminder_id: 'rem-opaque-91', remind_at_ms: localMs(20) };
+    const extra = await remindersApprovalDetails('reminders_update', params);
+    state.language = language;
+    state.request = nativeRequest('permission-reminders-update-hidden-id', 'reminders_update', { ...params, ...extra }, '提醒事项');
+    render(<PermissionCard />);
+    const card = screen.getByTestId('permission-card');
+    expect(card.textContent).toContain(language === 'zh' ? '更新提醒「交电费」？' : 'Update reminder “交电费”?');
+    expect(screen.getByTestId('writeback-view-list').textContent).toBe('工作');
+    expect(screen.getByTestId('writeback-view-title').textContent).toBe('交电费');
+    expect(screen.getByTestId('writeback-view-remind_at_ms').textContent).toContain('20');
+    expect(card.textContent).not.toMatch(/rem-opaque-91|提醒 ID|Reminder ID|reminder_id/);
+    expect(screen.queryByTestId('writeback-view-reminder_id')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh' ? /^更新/ : /^Update/ }));
+    await waitFor(() => expect(invoke.mock.calls[0]).toHaveLength(4));
+  });
+
+  it.each(['zh', 'en'] as const)('%s: delete reminder card names the reminder and hides the id', async (language) => {
+    readReminder.mockResolvedValue({
+      data: { id: 'rem-opaque-91', list: '工作', title: '交电费', completed: false, remindAtMs: localMs(20) },
+    });
+    const params = { list: '工作', reminder_id: 'rem-opaque-91' };
+    const preview = new ConfirmationGate().buildPreview('reminders_delete', params);
+    const extra = await remindersApprovalDetails('reminders_delete', params);
+    applyRemindersDeletePreview(preview, extra);
+    state.language = language;
+    state.request = {
+      ...nativeRequest('permission-reminders-delete-hidden-id', 'reminders_delete', { ...params, ...extra, preview }, '提醒事项'),
+      dangerLevel: 'danger',
+    };
+    render(<PermissionCard />);
+    const card = screen.getByTestId('permission-card');
+    const text = card.textContent ?? '';
+    expect(text).toContain(language === 'zh' ? '删除提醒「交电费」？' : 'Delete reminder “交电费”?');
+    expect(text).toContain('工作');
+    expect(text).toContain('交电费');
+    expect(text).toContain('Remind At:');
+    expect(text).not.toMatch(/rem-opaque-91|提醒 ID|Reminder ID|reminder_id/);
+  });
+
+  it('a readonly internal id never renders, for reminders as well as calendar', () => {
+    const marked: string[] = [];
+    for (const [tool, fields] of Object.entries(EDITABLE_TOOL_FIELDS)) {
+      const details: Record<string, unknown> = {};
+      let visible = '';
+      for (const field of fields) {
+        if (field.readonly && field.internalId) {
+          details[field.key] = 'INTERNAL-ID-SENTINEL';
+          marked.push(`${tool}.${field.key}`);
+          continue;
+        }
+        if (field.kind === 'string_list') {
+          details[field.key] = ['visible-list-value'];
+          visible = 'visible-list-value';
+        } else if (field.kind === 'datetime') {
+          details[field.key] = field.key.endsWith('_ms') ? localMs(9) : '2026-08-26T09:00:00+08:00';
+        } else {
+          details[field.key] = `visible-${field.key}`;
+          visible = `visible-${field.key}`;
+        }
+      }
+      state.request = nativeRequest(`permission-internal-${tool}`, tool, details, '清单');
+      const view = render(<PermissionCard />);
+      const text = screen.getByTestId('permission-card').textContent ?? '';
+      expect(text, tool).not.toContain('INTERNAL-ID-SENTINEL');
+      expect(text, tool).not.toMatch(/提醒 ID|Reminder ID|事件 ID|Event ID/);
+      if (visible) expect(text, tool).toContain(visible);
+      view.unmount();
+      cleanup();
+    }
+    expect(marked).toEqual(['calendar_update_event.event_uid', 'reminders_update.reminder_id']);
+  });
+
+  it('host still rejects a rewritten reminder id', () => {
+    const result = applyEditedArgs(
+      'reminders_update',
+      { list: '工作', reminder_id: 'rem-opaque-91', title: '交电费' },
+      { reminder_id: 'other-id' },
+    );
+    expect(result.ok).toBe(false);
   });
 
   it('failed enrichment still renders a sparse update; editing time does not clear untouched title/location', async () => {

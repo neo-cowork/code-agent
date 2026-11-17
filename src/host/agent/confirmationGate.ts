@@ -281,7 +281,6 @@ export class ConfirmationGate {
         const details = [summary];
         pushDetail(details, 'List', normalizeString(params.list));
         pushDetail(details, 'Title', normalizeString(params.title));
-        pushDetail(details, 'Reminder ID', normalizeString(params.reminder_id));
         if (typeof params.completed === 'boolean') {
           pushDetail(details, 'Completed', params.completed ? 'true' : 'false');
         }

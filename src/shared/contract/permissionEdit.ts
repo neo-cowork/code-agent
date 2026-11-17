@@ -18,6 +18,11 @@ export interface EditableField {
   required?: boolean;
   /** 只在审批卡查看态展示；编辑态不出控件，host 也拒绝 updatedArgs 修改。 */
   readonly?: boolean;
+  /**
+   * 内部标识。查看态整行不渲染，编辑态也不出控件。
+   * 值仍留在原参数里，host 只按 readonly 拒绝修改，派发参数不变。
+   */
+  internalId?: true;
   /** 多行文本（renderer 用 Textarea）。 */
   multiline?: boolean;
 }
@@ -40,7 +45,7 @@ const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
   ],
   calendar_update_event: [
     { key: 'calendar', kind: 'string', required: true, readonly: true },
-    { key: 'event_uid', kind: 'string', required: true, readonly: true },
+    { key: 'event_uid', kind: 'string', required: true, readonly: true, internalId: true },
     { key: 'title', kind: 'string' },
     { key: 'start_ms', kind: 'datetime' },
     { key: 'end_ms', kind: 'datetime' },
@@ -64,7 +69,7 @@ const NATIVE_EDITABLE_TOOL_FIELDS: Readonly<Record<string, readonly EditableFiel
   ],
   reminders_update: [
     { key: 'list', kind: 'string', required: true, readonly: true },
-    { key: 'reminder_id', kind: 'string', required: true, readonly: true },
+    { key: 'reminder_id', kind: 'string', required: true, readonly: true, internalId: true },
     { key: 'title', kind: 'string' },
     { key: 'notes', kind: 'string', multiline: true },
     { key: 'remind_at_ms', kind: 'datetime' },

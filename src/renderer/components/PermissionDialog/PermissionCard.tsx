@@ -51,6 +51,15 @@ function unknownField(source: object, key: string): unknown {
   return (source as Record<string, unknown>)[key];
 }
 
+/** 通用卡的预览行是 `Label: value`。删除提醒的问句从这里取标题，不另开一张删除卡。 */
+function previewField(diff: string | undefined, label: string): string {
+  const prefix = `${label}: `;
+  for (const line of diff?.split('\n') ?? []) {
+    if (line.startsWith(prefix)) return line.slice(prefix.length).trim();
+  }
+  return '';
+}
+
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
   request: import('@shared/contract').PermissionRequest
@@ -485,6 +494,9 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
+  const deleteReminderTitle = request.tool === 'reminders_delete'
+    ? previewField(request.details.preview?.diff, 'Title')
+    : '';
   const hasDetailFields = Boolean(
     request.details.command ||
     request.details.path ||
@@ -536,6 +548,10 @@ export function PermissionCard({
           ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
           : request.tool === 'reminders_update'
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
+            : request.tool === 'reminders_delete'
+              ? (deleteReminderTitle
+                ? w.remindersDeleteQuestion.replace('{title}', deleteReminderTitle)
+                : w.remindersDeleteQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
     : described.question);

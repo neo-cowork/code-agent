@@ -207,7 +207,7 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
   return (
     <div className="space-y-1.5 rounded bg-zinc-800/60 p-2.5" data-testid="writeback-fields-view">
       {fields.map((field) => {
-        if (field.readonly && field.key === 'event_uid') return null;
+        if (field.internalId) return null;
         const raw = args[field.key];
         const text = field.kind === 'string_list'
           ? (Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '')
@@ -281,7 +281,7 @@ export function WritebackEditForm({
   const { t } = useI18n();
   const w = t.decisionCard.permission.writeback;
   const labels = useFieldLabels();
-  const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
+  const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly && !field.internalId);
   const pristine = draftFromArgs(tool, original, true);
   const invalid = new Map(validateWritebackDraft(tool, draft).map((issue) => [issue.fieldKey, issue.reason]));
   const attachments = Array.isArray(original.attachments)
