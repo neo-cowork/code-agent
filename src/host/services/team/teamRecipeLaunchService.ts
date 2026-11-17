@@ -134,9 +134,19 @@ async function persistTeamLead(input: ValidatedTeamRecipeLaunch): Promise<void> 
   }
 }
 
+async function writeVisibleTopicRow(input: ValidatedTeamRecipeLaunch): Promise<void> {
+  await getSessionManager().addMessageToSession(input.sessionId, {
+    id: generateMessageId(),
+    role: 'user',
+    content: input.topic,
+    timestamp: Date.now(),
+  });
+}
+
 /** 原有 durable 团队路径；lead 不可用或验真失败时的唯一降级目标。 */
 async function launchTeamRecipeDeterministic(
   input: ValidatedTeamRecipeLaunch,
+  options: { topicRowWritten?: boolean } = {},
 ): Promise<LaunchTeamRecipeResult> {
   const registry = getConfiguredApplicationRunRegistry();
   if (!registry) {
@@ -146,12 +156,8 @@ async function launchTeamRecipeDeterministic(
   // 起点消息既让会话可见组队请求，也是 Native Durable 工具 checkpoint 的 sourceMessageId 锚点
   // （prepareNativeToolCheckpoint 取会话最后一条 user 消息，缺则每个工具调用都抛）。
   // 主理人路径不需要它——sendMessage 自己会落一条 user 消息，重复落会让会话出现两条起点。
-  await getSessionManager().addMessageToSession(input.sessionId, {
-    id: generateMessageId(),
-    role: 'user',
-    content: `【组队 · ${input.recipe.name}】${input.topic}`,
-    timestamp: Date.now(),
-  });
+  // 可见内容只放用户自己的话（topic），不加任何前缀/编排文案。
+  if (!options.topicRowWritten) await writeVisibleTopicRow(input);
 
   const agents = compileRecipeToAgents(input.recipe, input.topic);
   const requestedRunId = `team_recipe_${crypto.randomUUID()}`;
@@ -244,16 +250,19 @@ async function launchTeamRecipeViaLead(input: ValidatedTeamRecipeLaunch): Promis
   const leadToolBoundary = leadRole ? resolveRoleToolBoundary(lead.roleId, leadRole.tools) : null;
 
   const startedAt = Date.now();
+  // 首条可见气泡 = 用户原话；编排 brief 走 meta 通道（不渲染、仍发给模型）。
+  await writeVisibleTopicRow(input);
   try {
     await orchestrator.sendMessage(buildLeadBrief(input.recipe, input.topic), undefined, {
       mode: 'normal',
+      inputHistoryVisibility: 'meta',
       agentOverrideId: lead.roleId,
       turnSystemContext: [contextBlock],
       ...(leadToolBoundary ? { allowedToolNames: toRoleBoundaryRunAllowlist(leadToolBoundary.allowedTools) } : {}),
     });
   } catch (error) {
     console.warn('[TeamRecipe] 主理人降级：主会话轮执行失败', error);
-    await launchTeamRecipeDeterministic(input);
+    await launchTeamRecipeDeterministic(input, { topicRowWritten: true });
     return;
   }
 
@@ -280,7 +289,7 @@ async function launchTeamRecipeViaLead(input: ValidatedTeamRecipeLaunch): Promis
     // 主理人没起团就自己出稿 = WorkBuddy 铁律④「禁止主理人代写成员产出」违规。
     // 此时几乎没花钱，降级重跑是划算的补救。
     console.warn('[TeamRecipe] 主理人降级：未发现本轮已完成成员 run，丢弃主理人自写稿');
-    await launchTeamRecipeDeterministic(input);
+    await launchTeamRecipeDeterministic(input, { topicRowWritten: true });
     return;
   }
 
