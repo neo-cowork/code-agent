@@ -69,4 +69,31 @@ describe('parked banner through OrchestratorPermissionIsland.requestPermission',
       await pending;
     }
   });
+  it('用户自己的聊天断线停车：只写需要授权的事，不指去运行记录（11-17 mini）', async () => {
+    state.language = 'zh';
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
+    const repo = { insert: vi.fn(), resolve: vi.fn(() => 1) };
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions,
+        autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [],
+      } }),
+      isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main',
+      hasApprovalUi: () => false, onEvent: vi.fn(), isDetachedRun: () => true,
+      injectedPendingApprovalRepo: repo as unknown as PendingApprovalRepository,
+    });
+    const pending = island.requestPermission({
+      type: 'file_write', tool: 'excel_generate', details: {}, sessionId: 'own-chat',
+    });
+    try {
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledOnce());
+      expect(repo.insert).toHaveBeenCalledOnce();
+      const payload = notify.mock.calls[0][0];
+      expect(payload).toMatchObject({ sessionId: 'own-chat', title: '需要授权', body: '需要授权：导出表格' });
+      expect(payload.body).not.toContain(PARKED_APPROVAL_ENTRY_PATH);
+    } finally {
+      island.drainPendingPermissions();
+      await pending;
+    }
+  });
 });
+

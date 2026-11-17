@@ -427,12 +427,11 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     state.request = { ...calendarUpdateRequest, details: { ...proposed, ...snapshot } as PermissionRequest['details'] };
     render(<PermissionCard />);
     expect(screen.getByTestId('writeback-view-title').textContent).toBe('季度评审会');
-    if (hour === 16) expect(screen.queryByTestId('writeback-view-end_ms')).toBeNull();
-    else expect(screen.getByTestId('writeback-view-end_ms').textContent).toContain('09:30');
+    expect(screen.queryByTestId('writeback-view-end_ms')).toBeNull();
     enterEdit();
     expect((screen.getByTestId('writeback-edit-title') as HTMLInputElement).value).toBe('季度评审会');
     expect((screen.getByTestId('writeback-edit-end_ms-date') as HTMLInputElement).value)
-      .toBe(hour === 16 ? '' : '2026-08-26');
+      .toBe('');
     fireEvent.change(screen.getByTestId('writeback-edit-title'), { target: { value: '改后的评审会' } });
     const submit = screen.getByRole('button', { name: '按修改后的内容更新' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);

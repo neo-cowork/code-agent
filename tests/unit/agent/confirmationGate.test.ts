@@ -2,7 +2,8 @@
 // ConfirmationGate Tests [E2]
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
   ConfirmationGate,
   getConfirmationGate,
@@ -264,6 +265,117 @@ describe('ConfirmationGate', () => {
       expect(preview!.diff).toBe(`任务：${'x'.repeat(200)}\n权限：可修改文件、运行命令`);
     });
 
+
+    it.each(['spawn_agent', 'AgentSpawn'])('%s: parallel preview lists every task and its own permission', (tool) => {
+      const preview = getConfirmationGate().buildPreview(tool, {
+        parallel: true,
+        name: '不能替代全部助手', task: '不能替代全部任务', role: 'coder',
+        agents: [
+          { name: '销售要点', task: `整理 ${WS}/sales.txt`, role: 'explore' },
+          { name: '产品要点', task: `审阅 ${WS}/product.txt`, role: 'explore' },
+          { name: '客服要点', task: `写入 ${WS}/support-summary.md`, role: 'coder' },
+        ],
+      }, { workspaceRoot: WS });
+      expect(preview).toEqual({
+        type: 'generic', summary: '派出 3 个子代理',
+        diff: '销售要点\n任务：整理 ./sales.txt\n权限：只读查看\n\n产品要点\n任务：审阅 ./product.txt\n权限：只读查看\n\n客服要点\n任务：写入 ./support-summary.md\n权限：可修改文件、运行命令',
+      });
+      expect(`${preview?.summary}\n${preview?.diff}`).not.toMatch(/explore|reviewer|coder|不能替代/);
+    });
+
+    it('parallel unnamed agents use the task and redact and limit each block independently', () => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        parallel: true,
+        agents: [
+          { task: `读取 ${WS}/sales.txt API_KEY=task-secret ${'x'.repeat(250)}`, role: 'explore' },
+          { name: '记录 API_KEY=name-secret', task: `读取 ${WS}-outside/product.txt`, role: 'unknown-role' },
+        ],
+      }, { workspaceRoot: WS });
+      const blocks = preview?.diff?.split('\n\n');
+      expect(preview?.summary).toBe('派出 2 个子代理');
+      expect(blocks).toHaveLength(2);
+      expect(blocks![0].split('\n')[0]).toHaveLength(200);
+      expect(blocks![0].split('\n')[1]).toHaveLength('任务：'.length + 200);
+      expect(blocks![0]).toContain('读取 ./sales.txt');
+      expect(blocks![0]).toContain('权限：只读查看');
+      expect(blocks![1]).toContain(`任务：读取 ${WS}-outside/product.txt`);
+      expect(blocks![1]).toContain('权限：可修改文件、运行命令');
+      expect(preview?.diff).not.toMatch(/task-secret|name-secret|unknown-role/);
+    });
+
+    it.each([{}, { parallel: true, agents: [] }])('missing task with no agents is explicit and logged: %j', (params) => {
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', params);
+        expect(preview).toEqual({
+          type: 'generic', summary: '派出子代理：未说明任务',
+          diff: '任务：未说明任务\n权限：可修改文件、运行命令',
+        });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'),
+          { field: 'params.task' },
+        );
+      } finally { warn.mockRestore(); }
+    });
+
+    it('parallel blank task preserves the named agent and logs its field index', () => {
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', {
+          parallel: true,
+          agents: [{ name: '销售助手', task: '  ', role: 'explore' }, { role: 'coder' }],
+        });
+        expect(preview?.diff).toBe('销售助手\n任务：未说明任务\n权限：只读查看\n\n未说明任务\n任务：未说明任务\n权限：可修改文件、运行命令');
+        for (const field of ['params.agents[0].task', 'params.agents[1].task']) {
+          expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'), { field },
+          );
+        }
+      } finally { warn.mockRestore(); }
+    });
+
+    it.each([undefined, false, 'true'])('agents alone do not select parallel preview: %s', (parallel) => {
+      const preview = getConfirmationGate().buildPreview('spawn_agent', {
+        parallel, task: '整理销售笔记', role: 'explore', agents: [{ task: '不执行的分支', role: 'coder' }],
+      });
+      expect(preview?.summary).toBe('派出子代理：整理销售笔记');
+      expect(preview?.diff).toBe('任务：整理销售笔记\n权限：只读查看');
+    });
+
+    it.each(['spawn_agent', 'AgentSpawn'])('%s: English parallel copy keeps every task and permission visible', (tool) => {
+      const locale = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue('en');
+      try {
+        const preview = getConfirmationGate().buildPreview(tool, {
+          parallel: true,
+          agents: [
+            { name: 'Sales notes', task: `Read ${WS}/sales.txt`, role: 'explore' },
+            { task: `Write ${WS}/summary.md`, role: 'coder' },
+            { task: ' ', role: 'explore' },
+          ],
+        }, { workspaceRoot: WS });
+        expect(preview).toEqual({
+          type: 'generic', summary: 'Spawn 3 sub-agents',
+          diff: 'Sales notes\nTask: Read ./sales.txt\nPermission: Read-only\n\nWrite ./summary.md\nTask: Write ./summary.md\nPermission: Can modify files and run commands\n\nTask not stated\nTask: Task not stated\nPermission: Read-only',
+        });
+        const tasks = preview?.diff?.split('\n').filter(line => line.startsWith('Task: '));
+        expect(tasks).toHaveLength(3);
+        expect(tasks?.every(line => line.slice('Task: '.length).trim().length > 0)).toBe(true);
+        expect(`${preview?.summary}\n${preview?.diff}`).not.toMatch(/explore|coder|任务|权限/);
+      } finally { locale.mockRestore(); }
+    });
+
+    it('English missing single task remains explicit in summary and details and still warns', () => {
+      const locale = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue('en');
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', { parallel: true, agents: [] });
+        expect(preview?.summary).toContain('Task not stated');
+        expect(preview?.diff).toBe('Task: Task not stated\nPermission: Can modify files and run commands');
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'), { field: 'params.task' },
+        );
+      } finally { warn.mockRestore(); locale.mockRestore(); }
+    });
 
     it('should return generic preview with up to 3 redacted string param diff lines for default tools', () => {
       const preview = gate.buildPreview('custom_tool', {

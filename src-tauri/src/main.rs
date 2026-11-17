@@ -2307,9 +2307,16 @@ fn renderer_navigation_failure_message(error: &str) -> String {
     format!("Renderer navigation failed after webServer healthcheck: {error}")
 }
 
-/// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
-/// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
-fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+enum WebServerRecovery {
+    Healthy,
+    Restarted,
+    GuardHeld,
+    DaemonBusy,
+}
+
+/// Shared single-flight recovery for window recreation and menu reload.
+fn recover_web_server(app: &tauri::AppHandle) -> Result<WebServerRecovery, String> {
+    let mut recovery = WebServerRecovery::Healthy;
     if !is_server_running() {
         // 单飞闸（与死亡重启共用）：拿不到说明监督线程正在拉起，不与其抢
         // spawn；它成功后会自己 navigate main 窗口。拿到则由本路径自愈。
@@ -2350,6 +2357,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
                     )
                 });
                 if attached_alive {
+                    recovery = WebServerRecovery::DaemonBusy;
                     let diagnostics = new_boot_diagnostics(app);
                     write_shell_event(
                         app,
@@ -2365,6 +2373,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
                     );
                 } else {
                     let child = start_web_server(app)?;
+                    recovery = WebServerRecovery::Restarted;
                     if let Some(child_pid) = app.state::<AppState>().store_child(child) {
                         // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
                         // desktop-shell-webserver-exited-unexpectedly 事件，之后交给
@@ -2377,6 +2386,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
             // 能自愈，不能被上一轮的 3 连败卡死）。
             webserver_supervise::reset_history();
         } else {
+            recovery = WebServerRecovery::GuardHeld;
             let diagnostics = new_boot_diagnostics(app);
             write_shell_event(
                 app,
@@ -2391,6 +2401,14 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
             );
         }
     }
+
+    Ok(recovery)
+}
+
+/// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
+/// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
+fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+    recover_web_server(app)?;
 
     let url = boot_server_url()
         .parse::<tauri::Url>()
@@ -2915,7 +2933,11 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         handle,
         "View",
         true,
-        &[&PredefinedMenuItem::fullscreen(handle, None)?],
+        &[
+            &MenuItem::with_id(handle, "reload_window", labels.reload, true, Some("Cmd+R"))?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+        ],
     )?;
 
     let window_menu = Submenu::with_id_and_items(
@@ -4919,6 +4941,33 @@ fn main() {
         RunEvent::MenuEvent(event) if event.id().as_ref() == "open_settings" => {
             let _ = request_main_window_focus(app_handle);
             app_handle.emit("menu:open-settings", ()).ok();
+        }
+        #[cfg(target_os = "macos")]
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "reload_window" => {
+            let app = app_handle.clone();
+            thread::spawn(move || {
+                let result = (|| -> Result<_, String> {
+                    let recovery = recover_web_server(&app)?;
+                    let window = app.get_webview_window("main").ok_or("Main window unavailable")?;
+                    window.reload().map_err(|error| error.to_string())?;
+                    match recovery {
+                        WebServerRecovery::Healthy => Ok(serde_json::json!({ "outcome": "reloaded" })),
+                        WebServerRecovery::Restarted => Ok(serde_json::json!({ "outcome": "restarted-server" })),
+                        WebServerRecovery::GuardHeld => Ok(serde_json::json!({
+                            "outcome": "skipped-guard-held", "reason": webserver_supervise::SKIP_GUARD_HELD,
+                        })),
+                        WebServerRecovery::DaemonBusy => Err(webserver_supervise::SKIP_DAEMON_ALIVE.to_string()),
+                    }
+                })();
+                let (level, details) = match result {
+                    Ok(details) => ("info", details),
+                    Err(error) => ("error", serde_json::json!({ "outcome": "failed", "error": error })),
+                };
+                write_shell_event(
+                    &app, &new_boot_diagnostics(&app), level, "desktop-shell-reload-window",
+                    "main window reload requested", Some(details),
+                );
+            });
         }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "full_quit" => {
             let app = app_handle.clone();
