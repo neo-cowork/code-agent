@@ -57,6 +57,9 @@ const summary: TurnQualitySummary = {
   },
 } as TurnQualitySummary;
 
+// 无记忆注入的轮次：安静徽标测试用它，避免记忆 chip（有按钮）干扰「无交互」断言。
+const quiet = { ...summary, memory: { mode: 'auto', blocks: [] } } as TurnQualitySummary;
+
 describe('TurnQualityStrip', () => {
   beforeEach(() => {
     useAppStore.setState({ developerMode: false });
@@ -68,7 +71,7 @@ describe('TurnQualityStrip', () => {
   });
 
   it('renders only a quiet model-name badge for regular users', () => {
-    const { container } = render(<TurnQualityStrip summary={summary} />);
+    const { container } = render(<TurnQualityStrip summary={quiet} />);
     const text = container.textContent || '';
     expect(text).toContain('glm-5');
     expect(text).not.toContain('88');
@@ -79,7 +82,7 @@ describe('TurnQualityStrip', () => {
   });
 
   it('手动指定 agent 后，非开发者模式也透出安静 agent 徽标（本轮由 X 执行）', () => {
-    const { container } = render(<TurnQualityStrip summary={summary} />);
+    const { container } = render(<TurnQualityStrip summary={quiet} />);
     const text = container.textContent || '';
     expect(text).toContain('coder');
     // 仍然安静：无按钮、无展开
@@ -88,14 +91,14 @@ describe('TurnQualityStrip', () => {
 
   it('自动路由默认 agent（default/缺失）不显示 agent 徽标', () => {
     const auto: TurnQualitySummary = {
-      ...summary,
+      ...quiet,
       capabilities: { agentName: 'default', toolsUsed: [] },
     } as TurnQualitySummary;
     const { container } = render(<TurnQualityStrip summary={auto} />);
     expect(container.textContent || '').not.toContain('default');
 
     const missing: TurnQualitySummary = {
-      ...summary,
+      ...quiet,
       capabilities: { toolsUsed: [] },
     } as TurnQualitySummary;
     const { container: c2 } = render(<TurnQualityStrip summary={missing} />);
@@ -104,7 +107,7 @@ describe('TurnQualityStrip', () => {
 
   it('显式选择降级（requestedAgentId ≠ agentId）→ 安静警示徽标透出「未生效」', () => {
     const degraded: TurnQualitySummary = {
-      ...summary,
+      ...quiet,
       capabilities: { agentId: 'default', agentName: 'default', requestedAgentId: 'ghost-agent', toolsUsed: [] },
     } as TurnQualitySummary;
     const { container } = render(<TurnQualityStrip summary={degraded} />);
@@ -117,7 +120,7 @@ describe('TurnQualityStrip', () => {
 
   it('显式选择命中（requestedAgentId === agentId）→ 不出现「未生效」警示', () => {
     const hit: TurnQualitySummary = {
-      ...summary,
+      ...quiet,
       capabilities: { agentId: 'coder', agentName: 'coder', requestedAgentId: 'coder', toolsUsed: [] },
     } as TurnQualitySummary;
     const { container } = render(<TurnQualityStrip summary={hit} />);
@@ -276,5 +279,71 @@ describe('TurnQualityStrip expert display name', () => {
     fireEvent.click(container.querySelector('[aria-expanded]')!);
     expect(container.textContent?.match(/小满/g)?.length).toBe(2);
     expect(container.textContent).not.toContain('weekly-helper');
+  });
+  describe('memory source chip (non-developer)', () => {
+    const withItems = (extra: Partial<TurnQualitySummary['memory']> = {}): TurnQualitySummary => ({
+      ...summary,
+      memory: { ...summary.memory, ...extra },
+    }) as TurnQualitySummary;
+    const itemBlock = (id: string, title: string, preview: string) => ({
+      blockType: 'seed-memory' as const, trigger: 'session_start', source: 'memory-packer',
+      injected: true, chars: 10, count: 1,
+      items: [{ entryId: id, title, kind: 'project' as const, scope: 'project' as const, status: 'active' as const, score: 0.93, preview }],
+    });
+
+    it('shows a count chip (zh) and expands to titles + previews without scores or entry ids', () => {
+      useAppStore.setState({ language: 'zh' } as never);
+      const s = withItems({ blocks: [itemBlock('mem-secret-1', '上次会议决策', '决定周五上线'), itemBlock('mem-secret-2', '评审人', '由小王负责')] });
+      const { container } = render(<TurnQualityStrip summary={s} />);
+      const chip = container.querySelector('button') as HTMLButtonElement;
+      expect(chip.textContent).toContain('参考了 2 条记忆');
+      expect(container.textContent).not.toContain('上次会议决策');
+      fireEvent.click(chip);
+      const text = container.textContent || '';
+      expect(text).toContain('上次会议决策');
+      expect(text).toContain('决定周五上线');
+      expect(text).toContain('设置 → 记忆');
+      expect(text).not.toContain('mem-secret');
+      expect(text).not.toContain('0.93');
+      expect(text).not.toMatch(/Seed|Index|Hint/);
+    });
+
+    it('shows the English label and hint', () => {
+      useAppStore.setState({ language: 'en' } as never);
+      const { container } = render(<TurnQualityStrip summary={withItems()} />);
+      const chip = container.querySelector('button') as HTMLButtonElement;
+      expect(chip.textContent).toContain('Used 1 memories');
+      fireEvent.click(chip);
+      expect(container.textContent).toContain('Settings → Memory');
+      useAppStore.setState({ language: 'zh' } as never);
+    });
+
+    it('shows a generic chip for an injected block without items', () => {
+      useAppStore.setState({ language: 'zh' } as never);
+      const s = withItems({ blocks: [{ blockType: 'seed-memory', trigger: 'session_start', source: 'database-seed', injected: true, chars: 50, count: 3 }] });
+      const { container } = render(<TurnQualityStrip summary={s} />);
+      expect(container.querySelector('button')?.textContent).toContain('参考了记忆');
+    });
+
+    it('shows no chip when only the always-on memory_index (and other non-content blocks) was injected', () => {
+      const blocks = (['memory_index', 'memory_hint', 'recent_conversations', 'failure_journal'] as const).map((blockType) => ({
+        blockType, trigger: 'memory_index_available', source: 'light-memory-index', injected: true, chars: 200, count: 5,
+      }));
+      const { container } = render(<TurnQualityStrip summary={withItems({ blocks })} />);
+      expect(container.querySelector('button')).toBeNull();
+      expect(container.textContent).not.toContain('参考了');
+    });
+
+    it('shows no chip when memory is off, not injected, or count is 0', () => {
+      const off = withItems({ mode: 'off' });
+      const notInjected = withItems({ blocks: [{ ...summary.memory.blocks[0], injected: false }] });
+      const zero = withItems({ blocks: [{ ...summary.memory.blocks[0], count: 0 }] });
+      for (const s of [off, notInjected, zero]) {
+        const { container, unmount } = render(<TurnQualityStrip summary={s} />);
+        expect(container.querySelector('button')).toBeNull();
+        expect(container.textContent).not.toContain('参考了');
+        unmount();
+      }
+    });
   });
 });
