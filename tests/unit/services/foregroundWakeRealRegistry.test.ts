@@ -190,6 +190,18 @@ describe('background task settlement wake with a real RunRegistry', () => {
     manager.emitTask({ type: 'task_completed', sessionId: SESSION, data: { taskId: task.id, conclusion } } as TaskManagerEvent);
   }
 
+  it('still starts the foreground wake for a task_error stopped as error', async () => {
+    const task = await startForegroundWithTask();
+    manager.emitTask({ type: 'task_error', sessionId: SESSION,
+      data: { taskId: task.id, error: 'navigation failed' } } as TaskManagerEvent);
+    await vi.waitFor(() => expect(wakeSends).toBe(1));
+    const stopped = center.list(SESSION).find(candidate => candidate.id === task.id);
+    expect(stopped?.stopped?.kind).toBe('error');
+    expect(info).toHaveBeenCalledWith('Foreground wake starting', expect.objectContaining({ taskId: task.id }));
+    const log = info.mock.calls.find(([message]) => message === 'Foreground wake starting');
+    process.stdout.write(`ERROR_WAKE_RAW ${JSON.stringify({ kind: stopped?.stopped?.kind, wakeSends, log })}\n`);
+  });
+
   it('wake turn that spawns a follow-up task does not hit "no live owner lease"', async () => {
     const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let followUpTask: SessionCommandTask | undefined;
