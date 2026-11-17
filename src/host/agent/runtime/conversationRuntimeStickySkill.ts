@@ -175,12 +175,18 @@ export async function resolveNaturalLanguageCreateRoleInvocation(
 
 /**
  * A skill's allowed-tools boundary constrains only the run started under that skill.
- * An auxiliary (delegated background) run has no human to approve anything and its prompt is
- * machine-built text, so a bare-word alias hit there must not narrow its tools. `/slash` still applies.
+ * The one proven false hit: the machine-built delegated-task prompt contains the word "scope",
+ * which aliases task-brief-builder; in a background run nobody can approve the resulting forced asks.
+ * Everything else (strict skills, other aliases, /slash) keeps its boundary on auxiliary runs too.
  */
 export function skillBoundaryAppliesToRun(
   run: Pick<RuntimeContext, 'auxiliaryRun'>,
-  invocation: { matchKind: string },
+  invocation: { matchKind: string; matchedText?: string; skill: { name: string } },
 ): boolean {
-  return !(run.auxiliaryRun === true && invocation.matchKind === 'alias');
+  return !(
+    run.auxiliaryRun === true
+    && invocation.matchKind === 'alias'
+    && invocation.skill.name === 'task-brief-builder'
+    && invocation.matchedText?.toLowerCase() === 'scope'
+  );
 }

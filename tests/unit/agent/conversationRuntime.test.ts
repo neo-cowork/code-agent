@@ -1481,6 +1481,17 @@ describe('ConversationRuntime', () => {
         expect(ctx.turn.skillToolBoundary).toBeUndefined();
       });
 
+      it('auxiliary run keeps the strict boundary for an alias hit like "dream" / "distill"', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        for (const [text, name] of [['dream about this', 'dream'], ['distill this video', 'distill']]) {
+          ctx.turn.setSkillToolBoundary(undefined);
+          await runtime.initializeRun(text);
+          expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: name, matchKind: 'alias' });
+          expect(ctx.turn.skillToolBoundary).toMatchObject({ skillName: name, strict: true });
+        }
+      });
+
       it('delegated run still honours an explicit /slash skill boundary', async () => {
         await useRealBuiltinResolution();
         ctx.auxiliaryRun = true;
