@@ -39,6 +39,8 @@ export interface SessionCreateOptions {
   workingDirectory?: string;
   /** 建行时写入的归属用户；缺省 NULL（纯 CLI 无登录）。 */
   userId?: string | null;
+  /** 建行时写入的项目归属；之后分支会继承它，所以必须在建行时给。 */
+  projectId?: string | null;
 }
 
 export interface SessionScopedMessageOptions extends SessionCreateOptions {
@@ -125,6 +127,7 @@ export class CLISessionManager {
       title: options.title || this.generateSessionTitle(),
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,
+      ...(options.projectId ? { projectId: options.projectId } : {}),
       createdAt: now,
       updatedAt: now,
     });
