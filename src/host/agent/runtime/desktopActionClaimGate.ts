@@ -3,6 +3,7 @@
 // ============================================================================
 // Prevents a text-only response from presenting desktop actions or observations
 // as facts when no Computer/Desktop tool call happened in the current run.
+import { isBackgroundWakeMessage } from './backgroundWakeMessage';
 
 const DESKTOP_REQUEST_RE =
   /\bcomputer[\s_-]?use\b|\bcomputer surface\b|\bdesktop\b|\bscreenshot\b|\bscreen\b|桌面|屏幕|截图|截屏|截个屏|鼠标|键盘|点击|双击|右键|滚动|拖拽|打开(?:记事本|备忘录|应用|窗口|app)|关掉|关闭|当前会议|会议内容|会议记录|腾讯会议|飞书会议|voov|tencentmeeting|imeeting|notes|textedit|spotlight/i;
@@ -32,13 +33,14 @@ const DESKTOP_CLAIM_GATE_WARNING =
 const RECENT_USER_TURNS = 3;
 
 export function collectRecentUserTexts(
-  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string; isMeta?: boolean }>,
+  messages: ReadonlyArray<{ role: string; content?: unknown; visibility?: string; isMeta?: boolean; metadata?: { automation?: { automationId?: string } } | null }>,
 ): string[] {
   const texts: string[] = [];
   for (let i = messages.length - 1; i >= 0 && texts.length < RECENT_USER_TURNS; i--) {
     const message = messages[i];
-    // isMeta 是宿主注入的隐藏用户消息（后台任务唤醒等，正文是子任务结果）：不是用户自己提的桌面请求。
-    if (message.role !== 'user' || message.visibility === 'rewound' || message.isMeta === true) continue;
+    if (message.role !== 'user' || message.visibility === 'rewound') continue;
+    // 后台任务唤醒消息的正文是子任务结果，不是用户提的桌面请求；其它 isMeta 指令（任务指令/改道等）照常计入。
+    if (message.isMeta === true && isBackgroundWakeMessage(message)) continue;
     if (typeof message.content === 'string') texts.push(message.content);
   }
   return texts;
