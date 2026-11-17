@@ -88,12 +88,18 @@ export async function driveTurn(page: Page, handlers: TurnHandlers, timeoutMs: n
 export async function clickCardButton(page: Page, label: string): Promise<void> {
   const card = page.getByTestId('permission-card').first();
   const before = await card.innerText();
+  const countBefore = await page.getByTestId('permission-card').count();
   await card.getByRole('button', { name: label }).click({ timeout: 10_000 });
-  // 点完这张卡应当收起（或换成下一张不同的卡）；原样还在就是「点了没反应」，别让轮询把它当成新的一张
-  await waitFor(`点「${label}」后审批卡收起`, async () => {
-    if (!(await card.isVisible())) return true;
-    return (await card.innerText()) !== before;
-  }, 15_000).catch(() => { throw new Error(`点「${label}」后审批卡 15 秒内没有收起`); });
+  // 点完这张卡应当收起（或换成下一张不同的卡）；原样还在就是「点了没反应」。快速轮询，别漏掉短暂的收起
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    if (!(await card.isVisible().catch(() => false))) return;
+    // 排队的两张卡文字可能一样（路径被截断），所以数量减少也算收起
+    if ((await page.getByTestId('permission-card').count()) < countBefore) return;
+    if ((await card.innerText().catch(() => before)) !== before) return;
+    if (Date.now() > deadline) throw new Error(`点「${label}」后审批卡 15 秒内没有收起（原样还在）`);
+    await sleep(100);
+  }
 }
 
 export async function pageText(page: Page): Promise<string> {

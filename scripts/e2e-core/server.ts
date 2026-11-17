@@ -79,3 +79,17 @@ export function captureEvents(server: ServerInfo, file: string): () => void {
   })();
   return () => abort.abort();
 }
+
+/** 服务崩过（比如进程内异常退出）就用同一个数据目录和端口拉起来；返回要写进 reason 的说明，没崩返回 null。 */
+export async function ensureServerAlive(bin: string, server: ServerInfo): Promise<string | null> {
+  const alive = await fetch(`http://127.0.0.1:${server.port}/api/health`, {
+    headers: { Authorization: `Bearer ${server.token}` }, signal: AbortSignal.timeout(3_000),
+  }).then((r) => r.ok, () => false);
+  if (alive) return null;
+  try {
+    runRealrun(bin, ['restart', '--out', server.dir], START_TIMEOUT_MS);
+  } catch (e) {
+    throw new Error(`服务已退出且 neo-realrun restart 失败：${(e as Error).message}`, { cause: e });
+  }
+  return `服务在上一轮里退出过，已用 neo-realrun restart 拉起（日志见 ${path.join(server.dir, 'server-1.log')}）`;
+}
