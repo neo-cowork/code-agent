@@ -937,7 +937,7 @@ describe('ProjectComposer 底部输入框', () => {
   });
 });
 
-// ---- P1-C0：云协同空间（邀请按钮 / 成员卡 / 云标） ----
+// ---- P1-C0：云协作空间（邀请按钮 / 成员卡 / 云标） ----
 const cloudFixture = { ...projectFixture, cloudProjectId: 'cloud-1' };
 const cloudDetailFixture = { ...detailFixture, project: { ...cloudFixture } };
 
@@ -966,7 +966,7 @@ function setupCloudSpace() {
 }
 
 describe('空间页头邀请按钮（两态）', () => {
-  it('cloudProjectId 为空：文案「升级为协同空间」，确认后调 promoteToCloudSpace 并刷新 detail', async () => {
+  it('cloudProjectId 为空：文案「升级为协作空间」，确认后调 promoteToCloudSpace 并刷新 detail', async () => {
     await enterSpaceView();
     const button = await screen.findByTestId('project-space-invite-open');
     expect(button.textContent).toContain(ps.promoteToCloud);
@@ -984,7 +984,7 @@ describe('空间页头邀请按钮（两态）', () => {
   });
 
   it('promoteToCloudSpace 失败：toast 真因，detail 不刷新', async () => {
-    vi.mocked(projectClient.promoteToCloudSpace).mockRejectedValue(new Error('请先登录后再使用协同空间。'));
+    vi.mocked(projectClient.promoteToCloudSpace).mockRejectedValue(new Error('请先登录后再使用协作空间。'));
     await enterSpaceView();
     fireEvent.click(await screen.findByTestId('project-space-invite-open'));
     await screen.findByTestId('project-space-invite-promote-modal');
@@ -1029,7 +1029,7 @@ describe('右栏成员卡（四卡形态的第五卡：云空间直渲染，无�
     return screen.findByTestId('project-space-members-card');
   }
 
-  it('云协同空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
+  it('云协作空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
     setupCloudSpace();
     vi.mocked(projectClient.listMembers).mockResolvedValue(membersFixture);
     const card = await openMembersCard();
@@ -1089,7 +1089,7 @@ describe('云标', () => {
     expect(screen.queryByTestId(`project-space-cloud-badge-${PROJECT_ID}`)).toBeNull();
   });
 
-  it('空间页头：云协同空间状态 chip 旁出现云标', async () => {
+  it('空间页头：云协作空间状态 chip 旁出现云标', async () => {
     setupCloudSpace();
     await enterSpaceView();
     await screen.findByTestId('project-space-header-cloud-badge');
@@ -1104,7 +1104,7 @@ describe('云标', () => {
 
 // ---- P1-C1：任务 tab 云端成员卡只读区（组件行为详见 cloudCollabCardsSection.test） ----
 describe('任务 tab 云端成员卡只读区（挂载条件）', () => {
-  it('云协同空间：切任务 tab 渲染只读区（在本地 topic 面板之上）', async () => {
+  it('云协作空间：切任务 tab 渲染只读区（在本地 topic 面板之上）', async () => {
     setupCloudSpace();
     await enterSpaceView();
     fireEvent.click(screen.getByTestId('project-space-tab-tasks'));
