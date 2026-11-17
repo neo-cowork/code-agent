@@ -8,6 +8,7 @@ import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
+import { CronRunWorkingFolderStatus } from './CronWorkingFolderStatus';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Button } from '../../primitives/Button';
@@ -223,6 +224,8 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           )}
         </div>
       </div>
+
+      <CronRunWorkingFolderStatus sessionId={execution.sessionId} runsOn={runsOn} />
 
       {execution.status === 'running' && awaitingRun != null && (
         <div

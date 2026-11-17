@@ -433,3 +433,94 @@ fn cmd_q_user_schedule_enabled_minimizes_and_hints_once() {
 fn cmd_q_user_schedule_disabled_really_quits_without_dialog_or_tray() {
     real_quit_scenario(USER_SCHEDULE_DISABLED_BODY, "userdisabled");
 }
+
+// ---- Dialog answer 「后台继续」: same resident shape as scheduled-only HideToBackground ----
+// show_quit_confirm_dialog 的回调只做「解析标签 → handle_quit_dialog_answer」；对话框插件在
+// mock 运行时不存在，所以这里直接驱动生产的应答处理体。
+
+type EndState = (bool, bool, bool, bool);
+
+impl Scenario {
+    /// (exit_allowed, background_continue, stop_intent_landed, slot_released)
+    /// exit_allowed 是消费型读取，只在断言末尾调用一次。
+    fn end_state(&self) -> EndState {
+        let released = self.coordinator.begin_request();
+        if released {
+            self.coordinator.finish();
+        }
+        (
+            self.coordinator.exit_allowed(),
+            self.coordinator.background_continue(),
+            self.coordinator.stop_intent_landed(),
+            released,
+        )
+    }
+
+    fn answer(&self, origin: QuitFlowOrigin, action: crate::quit_guard::QuitAnswerAction) {
+        assert!(self.coordinator.begin_request(), "dialog holds the slot while open");
+        crate::background_resident::handle_quit_dialog_answer(
+            &self.handle,
+            &self.coordinator,
+            origin,
+            action,
+            QuitDialogLanguage::Zh,
+            self.poster(),
+        );
+    }
+}
+
+#[test]
+fn dialog_background_continue_keeps_shell_resident_and_never_exits() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let s = Scenario::new(REAL_SERVER_BODY, "dlgbg");
+    let _window = tauri::WebviewWindowBuilder::new(&s._app, "main", tauri::WebviewUrl::default())
+        .build()
+        .expect("mock window");
+
+    s.answer(QuitFlowOrigin::TauriExit, crate::quit_guard::QuitAnswerAction::BackgroundContinue);
+
+    assert!(s.handle.get_webview_window("main").is_some(), "window kept, not closed");
+    assert!(
+        s.requests.lock().expect("requests").is_empty(),
+        "no quit-intent / detach POST: nothing is stopped or handed over"
+    );
+    assert_eq!(s.posted.lock().expect("posted").len(), 1, "first-time hint names the tray exit");
+    let state = s.end_state();
+    eprintln!(
+        "dialog 后台继续: exit_allowed={} background_continue={} stop_intent_landed={} slot_released={}",
+        state.0, state.1, state.2, state.3
+    );
+    assert_eq!(state, (false, false, false, true));
+}
+
+#[test]
+fn both_background_resident_paths_end_in_the_same_coordinator_state() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // path A: scheduled-only quit → QuitDecision::HideToBackground
+    let a = Scenario::new(REAL_SERVER_BODY, "tableA");
+    a.press_cmd_q();
+    a.wait_flow_done();
+    let scheduled_only = a.end_state();
+    let a_hints = a.posted.lock().expect("posted").len();
+    drop(a);
+
+    // path B: dialog answer 后台继续 (every origin this platform has)
+    let mut rows: Vec<(&str, EndState, usize)> = vec![("scheduled-only (HideToBackground)", scheduled_only, a_hints)];
+    let mut origins = vec![("dialog 后台继续 / TauriExit", QuitFlowOrigin::TauriExit)];
+    #[cfg(target_os = "macos")]
+    origins.push(("dialog 后台继续 / MacApplicationTerminate", QuitFlowOrigin::MacApplicationTerminate));
+    for (name, origin) in origins {
+        let b = Scenario::new(REAL_SERVER_BODY, "tableB");
+        b.answer(origin, crate::quit_guard::QuitAnswerAction::BackgroundContinue);
+        let hints = b.posted.lock().expect("posted").len();
+        rows.push((name, b.end_state(), hints));
+    }
+    for (name, state, hints) in &rows {
+        eprintln!("| {name} | {state:?} | hints={hints} |");
+    }
+    assert!(
+        rows.iter().all(|(_, state, hints)| *state == rows[0].1 && *hints == rows[0].2),
+        "all background-resident paths must share one end state: {rows:?}"
+    );
+    assert_eq!(rows[0].1, (false, false, false, true));
+}

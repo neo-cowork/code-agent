@@ -476,7 +476,14 @@ fn post_unc_with_session(
             RcBlock::new(move |granted: Bool, error: *mut NSError| {
                 let granted = granted.as_bool();
                 let result = if !error.is_null() && !granted {
-                    Err("UNUserNotificationCenter authorization request failed".to_string())
+                    // 带上系统原因（如 UNErrorDomain 1「Notifications are not allowed」= 非 Apple 签名包）
+                    let detail = unsafe { &*error };
+                    Err(format!(
+                        "UNUserNotificationCenter authorization request failed: {} {} {}",
+                        detail.domain(),
+                        detail.code(),
+                        detail.localizedDescription()
+                    ))
                 } else {
                     Ok(granted)
                 };
