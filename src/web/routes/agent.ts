@@ -718,6 +718,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            askTitle: async (titlePrompt, signal) => {
+              const { quickTask, isQuickModelAvailable } = await import('../../host/model/quickModel');
+              return isQuickModelAvailable() ? quickTask(titlePrompt, undefined, signal) : undefined;
+            },
             attachments: body.attachments,
             reservedPaths: workDirReservations,
           })

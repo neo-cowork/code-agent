@@ -28,8 +28,11 @@ interface AuthActionResult {
   error?: unknown;
 }
 
-const AUTH_BACKEND_STARTUP_MESSAGE = '登录服务启动失败，请重启应用或检查网络后重试。';
-const AUTH_BACKEND_REACHABILITY_MESSAGE = '登录服务暂时连不上，请检查网络或代理设置后重试。';
+// 登录错误文案随 UI 语言取值：store 在 React 外也会被调用（deep-link 回调等），
+// 不能用 hook，只能在调用时读 languages[当前语言]（同 sessionCreate.ts 先例）。
+function authErrorCopy() {
+  return languages[useAppStore.getState().language].auth.errors;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -64,25 +67,26 @@ function getErrorMessage(error: unknown): string {
 }
 
 export function formatAuthErrorMessage(message: unknown): string {
+  const copy = authErrorCopy();
   const rawMessage = getErrorMessage(message).trim();
-  if (!rawMessage) return '操作失败';
+  if (!rawMessage) return copy.operationFailed;
   if (/^(?:\{\}|\[object Object\])$/i.test(rawMessage)) {
-    return AUTH_BACKEND_REACHABILITY_MESSAGE;
+    return copy.backendReachability;
   }
   if (/invalid login credentials/i.test(rawMessage)) {
-    return '邮箱或密码不正确，请检查后重试。';
+    return copy.invalidCredentials;
   }
   if (/email not confirmed/i.test(rawMessage)) {
-    return '邮箱还没有完成验证，请先打开验证邮件。';
+    return copy.emailNotConfirmed;
   }
   if (/user already registered|already been registered/i.test(rawMessage)) {
-    return '这个邮箱已经注册过了，请直接登录或找回密码。';
+    return copy.emailAlreadyRegistered;
   }
   if (/auth_request_failed|fetch failed|failed to fetch|networkerror|network request failed|timeout|timed out|aborted|econn|enotfound|eai_again|epipe|socket hang up|proxy|tls handshake|service unavailable/i.test(rawMessage)) {
-    return AUTH_BACKEND_REACHABILITY_MESSAGE;
+    return copy.backendReachability;
   }
   if (/supabase not initialized|auth_backend_unavailable|invalid supabase url|missing supabase anon key/i.test(rawMessage)) {
-    return AUTH_BACKEND_STARTUP_MESSAGE;
+    return copy.backendStartup;
   }
   return rawMessage;
 }
@@ -299,7 +303,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         await reloadSessionsForAuthenticatedUser();
         return true;
       }
-      set({ error: getResultErrorMessage(result, '快捷登录失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].auth.errors.quickLoginFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
@@ -355,7 +359,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       if (result?.success) {
         return true;
       }
-      set({ error: getResultErrorMessage(result, '发送重置邮件失败') });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].auth.errors.sendResetMailFailed) });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
@@ -375,7 +379,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         });
         return true;
       }
-      set({ error: getResultErrorMessage(result, '更新密码失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].auth.errors.updatePasswordFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
@@ -399,7 +403,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         });
         return true;
       }
-      set({ error: getResultErrorMessage(result, '验证重置链接失败'), isLoading: false });
+      set({ error: getResultErrorMessage(result, languages[useAppStore.getState().language].auth.errors.verifyResetLinkFailed), isLoading: false });
       return false;
     } catch (error) {
       set({ error: getDisplayErrorMessage(error), isLoading: false });
