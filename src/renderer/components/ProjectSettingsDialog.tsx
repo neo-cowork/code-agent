@@ -14,6 +14,9 @@ import {
 import { useI18n } from '../hooks/useI18n';
 import { isWebMode } from '../utils/platform';
 import { Z_LAYERS } from '../styles/zLayers';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('ProjectSettingsDialog');
 
 export interface ProjectSettingsDialogProps {
   projectId: string;
@@ -67,7 +70,9 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
       setGitStates(states);
       setConfirmedDirtySourceIds([]);
     }).catch((reason) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      if (cancelled) return;
+      logger.warn('Project settings load failed', { error: String(reason) });
+      setError(copy.loadFailed);
     }).finally(() => {
       if (!cancelled) setBusy(false);
     });
@@ -115,7 +120,10 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
       onSaved?.(updated);
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      const code = (reason as { code?: unknown } | null)?.code;
+      const known = typeof code === 'string' && Object.hasOwn(copy.saveErrors, code);
+      setError(known ? copy.saveErrors[code as keyof typeof copy.saveErrors] : copy.saveErrors.fallback);
+      logger.warn('Project save failed', { error: String(reason) });
     } finally {
       setBusy(false);
     }
