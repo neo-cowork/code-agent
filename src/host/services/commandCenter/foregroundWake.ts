@@ -201,7 +201,7 @@ function wakePrompt(task: SessionCommandTask, status: Extract<WakeStatus, 'compl
   const supplement = task.userInputCount ? `期间用户直接给它补了 ${task.userInputCount} 句。` : '';
   // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
   const resultText = task.resultText ?? task.summary ?? task.detail ?? '无摘要';
-  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${resultText}。${supplement}`;
+  return `后台任务 ${task.shortName} 已${outcome}，结果摘要：${resultText}。${supplement}汇报时不要原样引用 agent_ 开头的内部编号，也不要写带这类编号的临时目录路径；改动在分支里时只写分支名。`;
 }
 
 export function createForegroundWake(
