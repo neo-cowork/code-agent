@@ -103,7 +103,7 @@ export const SessionAgentsPanel: React.FC = () => {
     : null;
 
   const nameOf = (agentId: string): string =>
-    rows.find((row) => row.key === agentId)?.name ?? agentId;
+    (() => { const row = rows.find((item) => item.key === agentId); return row ? row.displayName ?? row.name : agentId; })();
 
   // standby ×：把该成员从本次预选排除（启动时少起这个人）；
   // × 到最后一个不剩 = 整团取消，清掉配方预选本身（排除标记随 setSelectedTeamRecipeId 一并复位）
@@ -272,7 +272,7 @@ export const SessionAgentsPanel: React.FC = () => {
                 {row.kind === 'expert' ? (
                   <RoleInitialAvatar
                     roleId={row.roleId ?? row.name}
-                    name={row.name}
+                    name={row.displayName ?? row.name}
                     icon={row.icon}
                     className="h-6 w-6 shrink-0 text-[10px]"
                   />
@@ -283,7 +283,7 @@ export const SessionAgentsPanel: React.FC = () => {
                 )}
                 <span className="flex min-w-0 flex-1 flex-col leading-tight">
                   <span className="flex items-center gap-1">
-                    <span className="truncate text-xs font-medium text-zinc-100">{row.name}</span>
+                    <span className="truncate text-xs font-medium text-zinc-100">{row.displayName ?? row.name}</span>
                     {row.isLead && (
                       <span
                         data-testid={`member-lead-badge-${row.roleId ?? row.key}`}
@@ -337,7 +337,7 @@ export const SessionAgentsPanel: React.FC = () => {
                   type="button"
                   data-testid={`member-standby-remove-${row.roleId ?? row.key}`}
                   onClick={() => removeStandbyMember(row)}
-                  aria-label={text.standbyRemoveAria.replace('{name}', row.name)}
+                  aria-label={text.standbyRemoveAria.replace('{name}', row.displayName ?? row.name)}
                   className="shrink-0 rounded-full p-0.5 text-zinc-500 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                 >
                   <X className="h-3 w-3" aria-hidden />

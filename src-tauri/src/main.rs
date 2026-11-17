@@ -93,6 +93,8 @@ const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BOOT_DIAGNOSTICS_PATH_ENV: &str = "AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE";
 const BOOT_DIAGNOSTICS_FILE: &str = "desktop-shell-boot-latest.json";
 const SHELL_EVENTS_FILE: &str = "desktop-shell-events.ndjson";
+const SHELL_EVENTS_MAX_BYTES: u64 = 5 * 1024 * 1024;
+static SHELL_EVENTS_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const GLOBAL_HOTKEY_FOCUS_RETRY_DELAYS_MS: &[u64] = &[0, 25, 50, 100, 200, 400, 800];
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["dist", "bundled-node", "bin", "node"],
@@ -1364,25 +1366,52 @@ fn desktop_shell_event_payload(
 }
 
 fn append_shell_event_payload<R: tauri::Runtime>(app: &tauri::AppHandle<R>, payload: serde_json::Value) {
-    let json = match serde_json::to_string(&payload) {
-        Ok(json) => json,
-        Err(_) => return,
-    };
-    eprintln!("{json}");
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string(&payload)?;
+        eprintln!("{json}");
+        let path = shell_events_path(app).ok_or("shell data directory unavailable")?;
+        // Serialize size check, rotation and append across shell worker threads.
+        let _guard = SHELL_EVENTS_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::fs::create_dir_all(path.parent().ok_or("shell log parent unavailable")?)?;
+        let incoming = json.len() as u64 + 1;
+        if incoming > SHELL_EVENTS_MAX_BYTES {
+            return Err("shell event exceeds log size cap".into());
+        }
+        let size = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(error.into()),
+        };
+        if size.saturating_add(incoming) > SHELL_EVENTS_MAX_BYTES {
+            let rotated = path.with_file_name(format!("{SHELL_EVENTS_FILE}.1"));
+            match std::fs::remove_file(&rotated) {
+                Ok(()) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
+            std::fs::rename(&path, rotated)?;
+        }
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+        writeln!(file, "{json}")?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("shell event write failed: {error}");
+    }
+}
 
-    let Some(path) = shell_events_path(app) else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let _ = writeln!(file, "{json}");
-    }
+pub(crate) fn log_shell_line<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>, level: &str, event: &str, message: &str,
+) {
+    append_shell_event_payload(app, serde_json::json!({
+        "schemaVersion": 1,
+        "source": "tauri-shell",
+        "generatedAt": now_millis_string(),
+        "level": level,
+        "event": event,
+        "pid": std::process::id(),
+        "message": message,
+    }));
 }
 
 fn write_shell_event(
@@ -2278,9 +2307,16 @@ fn renderer_navigation_failure_message(error: &str) -> String {
     format!("Renderer navigation failed after webServer healthcheck: {error}")
 }
 
-/// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
-/// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
-fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+enum WebServerRecovery {
+    Healthy,
+    Restarted,
+    GuardHeld,
+    DaemonBusy,
+}
+
+/// Shared single-flight recovery for window recreation and menu reload.
+fn recover_web_server(app: &tauri::AppHandle) -> Result<WebServerRecovery, String> {
+    let mut recovery = WebServerRecovery::Healthy;
     if !is_server_running() {
         // 单飞闸（与死亡重启共用）：拿不到说明监督线程正在拉起，不与其抢
         // spawn；它成功后会自己 navigate main 窗口。拿到则由本路径自愈。
@@ -2321,6 +2357,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
                     )
                 });
                 if attached_alive {
+                    recovery = WebServerRecovery::DaemonBusy;
                     let diagnostics = new_boot_diagnostics(app);
                     write_shell_event(
                         app,
@@ -2336,6 +2373,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
                     );
                 } else {
                     let child = start_web_server(app)?;
+                    recovery = WebServerRecovery::Restarted;
                     if let Some(child_pid) = app.state::<AppState>().store_child(child) {
                         // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
                         // desktop-shell-webserver-exited-unexpectedly 事件，之后交给
@@ -2348,6 +2386,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
             // 能自愈，不能被上一轮的 3 连败卡死）。
             webserver_supervise::reset_history();
         } else {
+            recovery = WebServerRecovery::GuardHeld;
             let diagnostics = new_boot_diagnostics(app);
             write_shell_event(
                 app,
@@ -2362,6 +2401,14 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
             );
         }
     }
+
+    Ok(recovery)
+}
+
+/// 僵尸实例自愈：主窗口已销毁时重建窗口并导航到 webServer；
+/// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
+fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+    recover_web_server(app)?;
 
     let url = boot_server_url()
         .parse::<tauri::Url>()
@@ -2569,12 +2616,7 @@ fn spawn_quit_guard_flow_with<R: tauri::Runtime>(
                 }
             }
             quit_guard::QuitDecision::HideToBackground { language } => {
-                background_resident::minimize_and_hint(&app, language, hint_poster);
-                coordinator.finish();
-                #[cfg(target_os = "macos")]
-                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
-                    reply_to_mac_application_terminate(&app, false);
-                }
+                background_resident::hide_to_background(&app, &coordinator, origin, language, hint_poster);
             }
             quit_guard::QuitDecision::Confirm { prompt, language } => {
                 let offers_background_continue = matches!(
@@ -2587,6 +2629,7 @@ fn spawn_quit_guard_flow_with<R: tauri::Runtime>(
                     quit_guard::quit_prompt_text(prompt, offers_background_continue, language),
                     language,
                     origin,
+                    hint_poster,
                 );
             }
         }
@@ -2610,6 +2653,7 @@ fn show_quit_confirm_dialog<R: tauri::Runtime>(
     message: &str,
     language: quit_guard::QuitDialogLanguage,
     origin: QuitFlowOrigin,
+    hint_poster: impl FnOnce(quit_dialog_i18n::QuitDialogLanguage) -> Result<(), String> + Send + 'static,
 ) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
@@ -2659,43 +2703,15 @@ fn show_quit_confirm_dialog<R: tauri::Runtime>(
                 MessageDialogResult::Custom(label) => Some(label),
                 _ => None,
             };
-            let plan = quit_guard::quit_exit_plan(
-                // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
+            // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
+            background_resident::handle_quit_dialog_answer(
+                &app,
+                &coordinator,
+                origin,
                 button_set.dialog_answer_action(custom_label.as_deref()),
-                // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
-                cfg!(not(unix)),
+                language,
+                hint_poster,
             );
-            if plan.exit {
-                if plan.arm_detach {
-                    let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
-                        quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
-                    });
-                    if !quit_guard::arm_background_continue_detach(
-                        &server_url(),
-                        token.as_deref(),
-                        quit_guard::QUIT_GUARD_TIMEOUT,
-                    ) {
-                        // 通知没落地就退壳 = Windows 上 EOF 把任务停掉。留在 app 里。
-                        eprintln!(
-                            "background-continue: daemon did not accept detach; staying in the app"
-                        );
-                        coordinator.finish();
-                        #[cfg(target_os = "macos")]
-                        if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
-                            reply_to_mac_application_terminate(&app, false);
-                        }
-                        return;
-                    }
-                }
-                execute_quit_exit_plan(app, coordinator, origin, plan);
-            } else {
-                // 取消：什么都不清理（webServer 继续跑），app 继续运行
-                coordinator.finish();
-                #[cfg(target_os = "macos")]
-                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
-                    reply_to_mac_application_terminate(&app, false);
-                }
-            }
         });
 }
 
@@ -2706,36 +2722,25 @@ fn execute_quit_exit_plan<R: tauri::Runtime>(
     origin: QuitFlowOrigin,
     plan: quit_guard::QuitExitPlan,
 ) {
-    // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
-    // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
-    // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
-    let mode = if plan.cleanup_server {
-        "stop"
-    } else {
-        "background"
-    };
+    // 停止并退出：在退壳 / cleanup 之前声明意图。
+    // POST 失败不拦退出：没 token 和请求失败分开记一条警告。
     let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
         quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
     });
     if token.is_none() {
-        eprintln!("quit-intent: no token; continuing exit ({mode})");
+        eprintln!("quit-intent: no token; continuing exit (stop)");
     } else if !quit_guard::post_quit_intent(
         &server_url(),
         token.as_deref(),
-        mode,
+        "stop",
         quit_guard::QUIT_GUARD_TIMEOUT,
     ) {
-        eprintln!("quit-intent: request failed; continuing exit ({mode})");
+        eprintln!("quit-intent: request failed; continuing exit (stop)");
     } else if plan.cleanup_server {
         // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
         // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
         coordinator.set_stop_intent_landed();
         hide_windows_for_stop_wait(&app);
-    }
-    // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
-    // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
-    if !plan.cleanup_server {
-        coordinator.set_background_continue();
     }
     coordinator.allow_exit();
     coordinator.finish();
@@ -2928,7 +2933,11 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         handle,
         "View",
         true,
-        &[&PredefinedMenuItem::fullscreen(handle, None)?],
+        &[
+            &MenuItem::with_id(handle, "reload_window", labels.reload, true, Some("Cmd+R"))?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+        ],
     )?;
 
     let window_menu = Submenu::with_id_and_items(
@@ -4933,13 +4942,40 @@ fn main() {
             let _ = request_main_window_focus(app_handle);
             app_handle.emit("menu:open-settings", ()).ok();
         }
+        #[cfg(target_os = "macos")]
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "reload_window" => {
+            let app = app_handle.clone();
+            thread::spawn(move || {
+                let result = (|| -> Result<_, String> {
+                    let recovery = recover_web_server(&app)?;
+                    let window = app.get_webview_window("main").ok_or("Main window unavailable")?;
+                    window.reload().map_err(|error| error.to_string())?;
+                    match recovery {
+                        WebServerRecovery::Healthy => Ok(serde_json::json!({ "outcome": "reloaded" })),
+                        WebServerRecovery::Restarted => Ok(serde_json::json!({ "outcome": "restarted-server" })),
+                        WebServerRecovery::GuardHeld => Ok(serde_json::json!({
+                            "outcome": "skipped-guard-held", "reason": webserver_supervise::SKIP_GUARD_HELD,
+                        })),
+                        WebServerRecovery::DaemonBusy => Err(webserver_supervise::SKIP_DAEMON_ALIVE.to_string()),
+                    }
+                })();
+                let (level, details) = match result {
+                    Ok(details) => ("info", details),
+                    Err(error) => ("error", serde_json::json!({ "outcome": "failed", "error": error })),
+                };
+                write_shell_event(
+                    &app, &new_boot_diagnostics(&app), level, "desktop-shell-reload-window",
+                    "main window reload requested", Some(details),
+                );
+            });
+        }
         RunEvent::MenuEvent(event) if event.id().as_ref() == "full_quit" => {
             let app = app_handle.clone();
             let coordinator = app_handle.state::<Arc<quit_guard::QuitCoordinator>>().inner().clone();
             thread::spawn(move || {
                 execute_quit_exit_plan(
                     app, coordinator, QuitFlowOrigin::TauriExit,
-                    quit_guard::quit_exit_plan(quit_guard::QuitAnswerAction::Quit, cfg!(not(unix))),
+                    quit_guard::quit_exit_plan(quit_guard::QuitAnswerAction::Quit),
                 )
             });
         }
