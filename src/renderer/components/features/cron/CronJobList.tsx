@@ -21,6 +21,7 @@ import {
   getLatestExecutionStatus,
 } from './types';
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
+import { CronJobWorkingFolderStatus } from './CronWorkingFolderStatus';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
 import { getJobDisplayName, getBuiltinJobDisplay } from './builtinJobDisplay';
@@ -183,6 +184,8 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                       {job.enabled ? cc.enabled : cc.disabled}
                     </span>
                   </div>
+
+                  <CronJobWorkingFolderStatus job={job} />
 
                   {displayDescription && (
                     <div className="mt-2 line-clamp-2 text-xs text-zinc-400">{displayDescription}</div>
