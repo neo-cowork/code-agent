@@ -62,6 +62,11 @@ const PERSONAL_CHAT_SOURCE_RULE: Record<SessionTitleLanguage, string> = {
  * 要吐标记，第一次必然拿不到快照，就只能退而求其次拿整段回答顶替，
  * 于是把一坨叙述性文字当成状态注回下一轮。
  */
+/** 运行会话没有工作文件夹时追加的系统提示：别在主目录/数据目录里翻找，也别说「文件夹是空的」。 */
+export const CRON_NO_WORKING_FOLDER_NOTICE =
+  '本任务没有选定工作文件夹，当前运行目录不是用户的文件夹：不要到主目录、应用数据目录或其他位置翻找文件，也不要说「文件夹是空的」。'
+  + '如果任务需要读取用户的文件或文件夹，请直接告诉用户「这个任务还没有选择工作文件夹」，请他先编辑任务选一个文件夹再运行，然后停止；不需要文件的任务照常完成。';
+
 export function buildCronAgentPrompt(
   prompt: string,
   snapshot: unknown,

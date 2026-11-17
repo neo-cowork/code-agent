@@ -76,7 +76,7 @@ import { CronService } from '../../../src/host/cron/cronService';
 import { executeCronAgentAction } from '../../../src/host/cron/cronAgentAction';
 import { permissionDenialError } from '../../../src/host/tools/toolPermissionClassification';
 import { AgentFailureCode } from '../../../src/shared/contract';
-import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
+import { buildCronAgentPrompt, CRON_NO_WORKING_FOLDER_NOTICE } from '../../../src/host/cron/cronAgentPrompt';
 import { stripCronPromptDecoration } from '../../../src/shared/cronRunMessage';
 
 interface CronServiceHarness {
@@ -172,6 +172,20 @@ describe('CronService agent run snapshot wiring', () => {
     expect(agentState.sendMessage.mock.calls[0][2].toolScope).toEqual({ optInPersonalSkillIds: ['wechat-local-query'] });
     expect(agentState.sendMessage.mock.calls[0][0]).not.toContain('默认不读个人聊天记录');
     expect(agentState.sendMessage.mock.calls[0][2].systemInstructions).toContain(UNATTENDED_TRUST_NOTICE);
+  });
+
+  it('运行会话没有工作文件夹时追加「未选择工作文件夹」系统提示；有文件夹则不追加', async () => {
+    const service = new CronService();
+    const harness = service as unknown as CronServiceHarness;
+    const definition = makeDefinition();
+    if (definition.action.type !== 'agent') throw new Error('Expected agent');
+    await harness.executeAction(definition, definition.action);
+    expect(agentState.sendMessage.mock.calls[0][2].systemInstructions).toContain(CRON_NO_WORKING_FOLDER_NOTICE);
+
+    agentState.sendMessage.mockClear();
+    agentState.createSession.mockResolvedValue({ id: 'cron-session-2', workingDirectory: '/Users/me/notes' });
+    await harness.executeAction(definition, definition.action);
+    expect(agentState.sendMessage.mock.calls[0][2].systemInstructions).toEqual([UNATTENDED_TRUST_NOTICE]);
   });
 
   it('subscribes unattended cron and heartbeat runs without streaming deltas', async () => {

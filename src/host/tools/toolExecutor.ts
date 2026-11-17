@@ -2169,7 +2169,12 @@ export class ToolExecutor {
       delete permissionRequest.details.calendarApprovalSnapshotFields;
       if (executionToolName.startsWith('calendar_')) {
         const { calendarApprovalDetails } = await import('./modules/connectors/calendarApprovalDetails');
-        Object.assign(permissionRequest.details, await calendarApprovalDetails(executionToolName, params));
+        try {
+          Object.assign(permissionRequest.details, await calendarApprovalDetails(executionToolName, params));
+        } catch (error) {
+          // 要改 / 删的日程找不到：不弹一张说不清是哪条的卡，直接让模型重新 list_events
+          return { success: false, error: error instanceof Error ? error.message : String(error), metadata: { code: 'CALENDAR_EVENT_NOT_FOUND' } };
+        }
       }
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;
