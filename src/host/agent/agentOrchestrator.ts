@@ -145,6 +145,7 @@ export class AgentOrchestrator {
       isDevModeAutoApproveEnabled: () => this.configService.isDevModeAutoApproveEnabled(),
       getExecutionTopology: () => this.toolExecutor.getExecutionTopology(),
       hasApprovalUi: config.hasApprovalUi,
+      isDetachedRun: config.isDetachedRun,
       onEvent: (event) => this.onEvent(event),
       injectedPendingApprovalRepo: config.pendingApprovalRepo,
     });
