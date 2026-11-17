@@ -93,6 +93,8 @@ const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BOOT_DIAGNOSTICS_PATH_ENV: &str = "AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE";
 const BOOT_DIAGNOSTICS_FILE: &str = "desktop-shell-boot-latest.json";
 const SHELL_EVENTS_FILE: &str = "desktop-shell-events.ndjson";
+const SHELL_EVENTS_MAX_BYTES: u64 = 5 * 1024 * 1024;
+static SHELL_EVENTS_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const GLOBAL_HOTKEY_FOCUS_RETRY_DELAYS_MS: &[u64] = &[0, 25, 50, 100, 200, 400, 800];
 const BUNDLED_NODE_PATHS: &[&[&str]] = &[
     &["dist", "bundled-node", "bin", "node"],
@@ -1364,25 +1366,52 @@ fn desktop_shell_event_payload(
 }
 
 fn append_shell_event_payload<R: tauri::Runtime>(app: &tauri::AppHandle<R>, payload: serde_json::Value) {
-    let json = match serde_json::to_string(&payload) {
-        Ok(json) => json,
-        Err(_) => return,
-    };
-    eprintln!("{json}");
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string(&payload)?;
+        eprintln!("{json}");
+        let path = shell_events_path(app).ok_or("shell data directory unavailable")?;
+        // Serialize size check, rotation and append across shell worker threads.
+        let _guard = SHELL_EVENTS_WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::fs::create_dir_all(path.parent().ok_or("shell log parent unavailable")?)?;
+        let incoming = json.len() as u64 + 1;
+        if incoming > SHELL_EVENTS_MAX_BYTES {
+            return Err("shell event exceeds log size cap".into());
+        }
+        let size = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(error) => return Err(error.into()),
+        };
+        if size.saturating_add(incoming) > SHELL_EVENTS_MAX_BYTES {
+            let rotated = path.with_file_name(format!("{SHELL_EVENTS_FILE}.1"));
+            match std::fs::remove_file(&rotated) {
+                Ok(()) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
+            std::fs::rename(&path, rotated)?;
+        }
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+        writeln!(file, "{json}")?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("shell event write failed: {error}");
+    }
+}
 
-    let Some(path) = shell_events_path(app) else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let _ = writeln!(file, "{json}");
-    }
+pub(crate) fn log_shell_line<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>, level: &str, event: &str, message: &str,
+) {
+    append_shell_event_payload(app, serde_json::json!({
+        "schemaVersion": 1,
+        "source": "tauri-shell",
+        "generatedAt": now_millis_string(),
+        "level": level,
+        "event": event,
+        "pid": std::process::id(),
+        "message": message,
+    }));
 }
 
 fn write_shell_event(
