@@ -8,6 +8,7 @@ import {
   isLegacyCoordinatorScope,
   LEGACY_COORDINATOR_SCOPE,
   type CompletedParallelCoordinatorSnapshot,
+  type ParallelAgentTaskSnapshot,
   type CoordinatorConfig,
   type ParallelCoordinatorTerminalStatus,
 } from './parallelAgentCoordinatorTypes';
@@ -162,6 +163,26 @@ export class ParallelAgentCoordinatorRegistry {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Read-only: task snapshots of every live coordinator and every finalized run
+   * that belongs to `sessionId`. Never creates a coordinator (getOrCreate throws
+   * for finalized scopes), never touches other sessions.
+   */
+  listSessionTaskSnapshots(sessionId: string): ParallelAgentTaskSnapshot[] {
+    const tasks: ParallelAgentTaskSnapshot[] = [];
+    for (const coordinator of this.coordinators.values()) {
+      if (coordinator.getScope()?.sessionId !== sessionId) continue;
+      tasks.push(...coordinator.getTaskSnapshots());
+    }
+    for (const snapshot of this.completedSnapshots.values()) {
+      if (snapshot.scope.sessionId !== sessionId) continue;
+      for (const task of snapshot.tasks) {
+        tasks.push({ ...task, task: '', tools: [] });
+      }
+    }
+    return tasks;
   }
 
   /** Global shutdown only. Run/user cancellation must use abortRun/abortSession. */
