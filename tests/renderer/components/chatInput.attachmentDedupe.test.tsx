@@ -43,6 +43,7 @@ import { ChatInput, type ChatInputHandle } from '../../../src/renderer/component
 import { useChatInputComposerActions } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputComposerActions';
 import { useDragAndDrop } from '../../../src/renderer/components/features/chat/ChatInput/useDragAndDrop';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useComposerAttachmentLimitStore } from '../../../src/renderer/stores/composerAttachmentLimitStore';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import ipcService from '../../../src/renderer/services/ipcService';
 
@@ -171,9 +172,18 @@ function appendAtTrigger(): void {
   fireEvent.input(editor);
 }
 
+function limitMessage(): string | undefined {
+  const n = useComposerAttachmentLimitStore.getState().notice;
+  if (!n) return undefined;
+  const c = (i18nState.language === 'en' ? en : zh).chatInput;
+  return (n.kind === 'partial' ? c.attachmentLimitReached : c.attachmentLimitReachedNone)
+    .replace('{added}', String(n.added)).replace('{dropped}', String(n.dropped)).replace('{max}', String(n.max));
+}
+
 describe('ChatInput attachment dedupe', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useComposerAttachmentLimitStore.getState().clear();
     attachmentId = 0;
     i18nState.language = 'zh';
     resetCapabilityStore();
@@ -333,11 +343,9 @@ describe('ChatInput attachment dedupe', () => {
     expect(result.current.attachments).toHaveLength(cap);
     expect(result.current.attachments[0]?.name).toBe('contract-01.txt');
     expect(result.current.attachments[cap - 1]?.name).toBe(`contract-${String(cap).padStart(2, '0')}.txt`);
-    expect(toastSpy.show).toHaveBeenCalledTimes(1);
-    expect(toastSpy.show).toHaveBeenCalledWith(
-      'warning',
+    expect(toastSpy.show).not.toHaveBeenCalled();
+    expect(limitMessage()).toBe(
       `附件已满（${cap} 个）：这次加进了 ${cap} 个，另 ${dropped} 个没加进来。发送这条消息后，就能继续添加剩下的。`,
-      UI.TOAST_PERSISTENT_DURATION,
     );
   });
 
@@ -396,13 +404,10 @@ describe('ChatInput attachment dedupe', () => {
     });
 
     expect(result.current.attachments).toHaveLength(cap);
-    expect(toastSpy.show).toHaveBeenCalledTimes(2);
+    expect(toastSpy.show).toHaveBeenCalledTimes(1);
     expect(toastSpy.show).toHaveBeenNthCalledWith(1, 'warning', 'contract-01.txt 已添加，无需重复添加');
-    expect(toastSpy.show).toHaveBeenNthCalledWith(
-      2,
-      'warning',
+    expect(limitMessage()).toBe(
       `附件已满（${cap} 个）：这次加进了 2 个，另 3 个没加进来。发送这条消息后，就能继续添加剩下的。`,
-      UI.TOAST_PERSISTENT_DURATION,
     );
   });
 
@@ -432,21 +437,22 @@ describe('ChatInput attachment dedupe', () => {
     await act(async () => {
       await composerResult.current.handleFileSelect(asFileList(uniqueFiles(1, cap + 1)));
     });
-    const pickerMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
+    const pickerMessage = limitMessage();
+    expect(pickerMessage).toBe(expectedMessage);
+    expect(toastSpy.show).not.toHaveBeenCalled();
 
-    toastSpy.show.mockClear();
+    useComposerAttachmentLimitStore.getState().clear();
     await act(async () => {
       await composerResult.current.handleImagePaste(
         new File(['extra-image'], 'extra.png', { type: 'image/png' }),
       );
     });
-    const pasteMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
+    const pasteMessage = limitMessage();
+    expect(pasteMessage).toBe(expectedMessage);
     unmountComposer();
 
     // 3. Drop via useDragAndDrop
-    toastSpy.show.mockClear();
+    useComposerAttachmentLimitStore.getState().clear();
     const { result: dropResult, unmount: unmountDrop } = renderHook(() => useDropHarness());
     await act(async () => {
       await dropResult.current.handleDrop(dropFilesEvent(uniqueFiles(cap, 1)));
@@ -456,12 +462,12 @@ describe('ChatInput attachment dedupe', () => {
     await act(async () => {
       await dropResult.current.handleDrop(dropFilesEvent(uniqueFiles(1, cap + 1)));
     });
-    const dropMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
+    const dropMessage = limitMessage();
+    expect(dropMessage).toBe(expectedMessage);
     unmountDrop();
 
     // 4. Imperative addAttachments via exported ChatInput handle (global drop zone)
-    toastSpy.show.mockClear();
+    useComposerAttachmentLimitStore.getState().clear();
     const ref = createRef<ChatInputHandle>();
     const view = render(<ChatInput ref={ref} onSend={vi.fn()} />);
     act(() => {
@@ -473,8 +479,9 @@ describe('ChatInput attachment dedupe', () => {
     act(() => {
       ref.current!.addAttachments([uniqueAttachment(cap + 1)]);
     });
-    const handleMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
+    const handleMessage = limitMessage();
+    expect(handleMessage).toBe(expectedMessage);
+    expect(screen.getByTestId('composer-attachment-limit').textContent).toContain(expectedMessage);
     expect(screen.getAllByRole('group')).toHaveLength(cap);
 
     expect(pickerMessage).toBe(expectedMessage);
