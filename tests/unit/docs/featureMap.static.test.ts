@@ -38,9 +38,10 @@ describe('docs/e2e/feature-map.md', () => {
     }
   });
 
-  it('every testid mention uses the testid: form with a file', () => {
-    const bare = [...MAP.matchAll(/`testid:([a-z0-9-]+)`(?! @ `)/g)];
-    expect(bare.map((m) => m[1])).toEqual([]);
+  it('every testid mention is well-formed and carries its file', () => {
+    const tokens = [...MAP.matchAll(/`testid:[^`]*`( @ `[^`]+`)?/g)];
+    const malformed = tokens.filter((m) => !/^`testid:[a-z0-9-]+` @ `[^`]+`$/.test(m[0])).map((m) => m[0]);
+    expect(malformed).toEqual([]);
   });
 
   it('touched-path directories exist', () => {
