@@ -19,14 +19,14 @@
 | F04 | 「我这周日程怎么样」 | shell | none | 真机批 |
 | F05 | 审批卡：允许一次 | web | tests/e2e/approval-command-card.spec.ts | hermetic-protocol；real-runtime（本单真跑） |
 | F06 | 审批卡：拒绝 | web | tests/e2e/approval-command-card.spec.ts（只验卡片渲染） | hermetic-protocol |
-| F07 | 审批卡：本次任务内允许 | web | none | real-runtime |
+| F07 | 审批卡：本次任务内允许 | web | none | 暂无（尚无真跑样本） |
 | F08 | 「放后台去做，做完告诉我」 | web | tests/e2e/task-panel-session-tasks.spec.ts | real-runtime（本单真跑） |
 | F09 | 跑到一半点停止 | web | tests/e2e/run-lifecycle-stability.spec.ts | hermetic-protocol |
 | F10 | 丢一个 xlsx / PDF / 图片让它分析 | web | none | real-runtime（本单真跑） |
 | F11 | 「打开这个网页告诉我讲了什么」 | shell | none | 真机批 |
 | F12 | 网站要登录，我接手登录后让它继续 | shell | none | 真机批 |
 | F13 | 开会时录音，会后看纪要 | shell | none | 真机批 |
-| F14 | 「记住我的周报格式」→ 新会话里用上 | web | none | real-runtime（本单真跑，写入受阻） |
+| F14 | 「记住我的周报格式」→ 新会话里用上 | web | none | real-runtime（本单真跑，确认由脚本代答） |
 | F15 | 「每周一早上 9 点帮我整理周报」 | web | tests/e2e/cronEditorFooterVisible.spec.ts（只验编辑器布局） | hermetic-protocol |
 | F16 | 重新打开一个很长的旧会话 | web | tests/e2e/chat-return-blank-log.spec.ts | hermetic-protocol |
 | F17 | 界面语言中英切换 | web | tests/e2e/settings-ia-folding.spec.ts（只覆盖设置布局） | hermetic-protocol |
@@ -153,12 +153,12 @@
 
 ### F14 — 记忆写入并在新会话召回
 - **Preconditions**: surface web；记忆开启（默认自动）。
-- **Steps**: 1. 说「记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万」。2. 遇到保存确认点「确认」。3. 新开一个会话说「帮我起草这周周报」。
-- **Selectors**: `testid:sidebar-new-task` @ `src/renderer/components/features/sidebar/SidebarNewTaskRow.tsx`；`testid:memory-settings-tab` @ `src/renderer/components/features/settings/tabs/MemoryTab.tsx`；`testid:memory-entry-row` @ `src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx`。
+- **Steps**: 1. 说「记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万」。2. 出现「确认用户规则」弹窗（不是审批卡），点「确认保存规则」；2 分钟内不点会自动关闭、本次不写入。3. 新开一个会话说「帮我起草这周周报」。
+- **Selectors**: 确认弹窗是 `src/renderer/components/features/memory/MemoryConfirmModal.tsx`，**没有 data-testid**，用可见文字定位：标题「确认用户规则」、按钮「确认保存规则」（文案在 `src/renderer/i18n/zh.ts` 的 `memory.confirmDirectiveTitle` / `confirmDirectiveSave`）；超时常量 `MEMORY_TIMEOUTS.DIRECTIVE_CONFIRM` = 120000 毫秒（`src/shared/constants/timeouts.ts`）；`testid:sidebar-new-task` @ `src/renderer/components/features/sidebar/SidebarNewTaskRow.tsx`；`testid:memory-settings-tab` @ `src/renderer/components/features/settings/tabs/MemoryTab.tsx`；`testid:memory-entry-row` @ `src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx`。
 - **Expected UI**: 第一轮明确说「已记住」；设置里记忆列表多一条；第二个会话的草稿直接用三段式。
-- **Observable**: `memories` 表新增 `status='active'` 行（或 `~/.code-agent/memory/` 下新文件）；`permission_decisions` 里该写入为 `allow`。
+- **Observable**: 成功：`<home>/.code-agent/memory/` 下出现新的 .md 文件，`Write` 的 `tool_execution_events` 为 complete success；第二个会话的工具事件里有对该文件的 `Read`。失败（没点或超时）：`Write` 工具结果带错误码 `DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED`，文案含「确认窗口等了 2 分钟没有等到响应，已自动关闭，这次没有写入」，目录里没有新文件。注意：这条确认路径在 Web/界面分支**不写** `permission_decisions`（只有无界面的 CLI 分支才记 `ask-denied` / `auto-approve`），别拿那张表判断。
 - **Failure looks like**: 说「记住了」但没落盘；每次新会话都忘；写入被拦了却不告诉用户。
-- **Proof**: 本单真跑：无人确认时写入被拒（`realrun/db-4.json`：`Write` 记忆目录 `deny | ask-denied | no-approval-ui`），召回因此没发生；`realrun2` 回复为「没记住——保存全局偏好需要你点确认」。写入后的召回需有确认动作的环境验证。
+- **Proof**: 本单真跑闭环成功（`realrun3`，用外部脚本在 `/api/events` 收到 `memory:confirm-request` 后向 `/api/memory/confirm-response` 回 `confirmed:true`，等价于点「确认保存规则」）：写入生成 `周报格式偏好.md`，新会话先 `Read` 该文件再按三段式起草（见证据档 Rework r1）。不回应时的失败形态见 `realrun2/db-4.json`（错误码行 875）。点真实弹窗按钮这一步没有用浏览器驱动，标 partial。
 
 ### F15 — 定时任务创建并运行
 - **Preconditions**: surface web；已配置模型。
@@ -229,4 +229,4 @@ PR 改了主路径时，描述里贴：
 - 目标 15-20 条，最终 18 条：任务书点名的 15 类全部保留，把审批卡拆成允许一次 / 拒绝 / 本次任务内允许三条（近期审批类修复最多，粒度要细），日历拆成新建 / 修改 / 删除撤销 / 读取四条。
 - 日历（F01-F04）、浏览器（F11 F12）、会议（F13）依赖原生能力，标 `shell`，Web 构建只能验审批卡形状和组件，真实效果走真机批。
 - 未收入：语音通话、设计画布、多 Agent 团队、连接器（邮件 / 飞书）写入——它们重要但不属于「每个 PR 都该复查」的最小集，后续按改动频率再加。
-- 真跑发现并已写进卡片：附件分析会被模型自行转后台（F10 与 F08 同路径）；后台任务里的审批无人处理会 60 秒静默超时；记忆写入需要用户确认，无确认环境下不会落盘（F14）。
+- 真跑发现并已写进卡片：附件分析会被模型自行转后台（F10 与 F08 同路径）；后台任务里的审批无人处理会 60 秒静默超时；记忆写入要先在「确认用户规则」弹窗点确认，2 分钟内没点就不写入、也不会记入 `permission_decisions`（F14）。
