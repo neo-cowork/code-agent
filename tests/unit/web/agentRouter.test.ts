@@ -112,6 +112,8 @@ const cloudRunLedgerStub = {
 const mockQueuedInputEnqueue = vi.spyOn(QueuedInputRepository.prototype, 'enqueue')
   .mockImplementation(() => undefined);
 
+vi.mock('../../../src/host/model/quickModel', () => ({ isQuickModelAvailable: () => false, quickTask: vi.fn() }));
+
 vi.mock('../../../src/cli/adapter', () => ({
   createCLIAgent: vi.fn(async () => ({
     getConfig: () => ({
@@ -5062,7 +5064,7 @@ describe('createAgentRouter', () => {
     //（ui.language=zh 档；无标题 → 首条用户消息第一个分句）
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: expectedDir,
     }));
@@ -5235,7 +5237,7 @@ describe('createAgentRouter', () => {
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     // 首轮按分句规划、已回写、还没落盘；第二轮智能标题已就位
-    const plannedFromClause = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const plannedFromClause = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     const replanned = `${tempDataDir}-work/任务_${mmdd}_季度总结报告`;
     const updateSession = vi.fn(async () => undefined);
     await startAgentApi({
@@ -5280,7 +5282,7 @@ describe('createAgentRouter', () => {
 
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const materializedFolder = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const materializedFolder = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     mkdirSync(materializedFolder, { recursive: true });
     writeFileSync(join(materializedFolder, '既有产物.md'), 'keep');
     const updateSession = vi.fn(async (_sessionId: string, _updates: Record<string, unknown>) => undefined);
@@ -5419,7 +5421,7 @@ describe('createAgentRouter', () => {
 
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     // 首轮目录回写到已存在的会话行（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
     expect(sessionRows.get(sessionId)?.workingDirectory).toBe(expectedDir);
     // 两轮都跑在同一个按会话目录里；两轮都是纯对话（loop 被 mock、无写工具），
@@ -5575,7 +5577,7 @@ describe('createAgentRouter', () => {
     await response.text();
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
     // 懒开：只规划不落盘
     expect(existsSync(expectedDir)).toBe(false);
@@ -5650,7 +5652,7 @@ describe('createAgentRouter', () => {
     await response.text();
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
     // 懒开：只规划不落盘（loop 被 mock、无写工具，本轮不该有任何目录出现）
     expect(existsSync(expectedDir)).toBe(false);

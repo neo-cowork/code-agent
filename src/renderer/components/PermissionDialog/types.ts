@@ -75,6 +75,8 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** Browser 上传审批：host 只给「.../<文件名>」的展示串，卡面只取文件名。 */
+  file?: string;
   /** calendar 读取卡的时间窗与日历名（host 原参数透传，缺省走默认窗口）。 */
   from_ms?: unknown;
   to_ms?: unknown;

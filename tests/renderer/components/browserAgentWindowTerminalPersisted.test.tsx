@@ -7,6 +7,7 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
 import { surfaceExecutionScopeKeyV1 } from '../../../src/renderer/utils/surfaceExecutionProjection';
+import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../src/shared/contract/surfaceExecution';
 import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract/surfaceExecution';
 import type { useWorkbenchBrowserSession } from '../../../src/renderer/hooks/useWorkbenchBrowserSession';
 import type { LiveAgentPointerState } from '../../../src/renderer/hooks/useLiveAgentPointer';
@@ -63,7 +64,7 @@ function buildBrowserSessionState(): BrowserSessionState {
 }
 
 /** 种一条终态 browser surface 会话投影（不带内存留影帧，模拟重启后的状态） */
-function seedTerminalSessionWithoutFrame(): void {
+function seedTerminalSessionWithoutFrame(state: 'completed' | 'running' = 'completed', placeholder = false, liveAgent = false): SurfaceConversationSnapshotV1 {
   const snapshot: SurfaceConversationSnapshotV1 = {
     version: 1,
     conversationId: 'session-a',
@@ -92,7 +93,7 @@ function seedTerminalSessionWithoutFrame(): void {
             successorObservation: false,
           },
         },
-        state: 'completed',
+        state,
         activeTarget: {
           kind: 'browser',
           browserInstanceId: 'browser-1',
@@ -116,7 +117,24 @@ function seedTerminalSessionWithoutFrame(): void {
     }],
     updatedAt: 61_000,
   };
+  if (liveAgent) {
+    snapshot.sessions[0].source = 'live';
+    snapshot.sessions[0].writable = true;
+  }
+  if (placeholder) {
+    const previous = snapshot.sessions[0];
+    snapshot.sessions.push({
+      ...previous, source: 'live', writable: true, updatedAt: 62_000,
+      session: {
+        ...previous.session, sessionId: 'surface-blank', runId: 'run-blank',
+        agentId: SURFACE_USER_BROWSER_AGENT_ID, state: 'running',
+        activeTarget: { kind: 'browser', browserInstanceId: 'browser-blank', windowRef: 'window-blank',
+          tabRef: 'tab-blank', documentRevision: 'rev-blank' },
+      },
+    });
+  }
   useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', snapshot);
+  return snapshot;
 }
 
 describe('BrowserAgentWindow 终态留影：重启后从盘上读回', () => {
@@ -137,6 +155,126 @@ describe('BrowserAgentWindow 终态留影：重启后从盘上读回', () => {
   });
 
   afterEach(() => cleanup());
+
+  function showBlankManagedPage(placeholder: boolean): void {
+    browserSessionState.browserSurfaceSessionId = placeholder ? 'surface-blank' : 'surface-1';
+    browserSessionState.managedSession = {
+      running: true, tabCount: 1, activeTab: { id: 'blank', url: 'about:blank', title: '' },
+    };
+    liveFrameState = {
+      frame: { version: 1, conversationId: 'session-a', surfaceSessionId: browserSessionState.browserSurfaceSessionId,
+        mimeType: 'image/jpeg', dataUrl: 'data:image/jpeg;base64,Ymxhbms=', width: 1280, height: 720, capturedAtMs: 62_000 },
+      streaming: true, unavailableReason: null,
+    };
+    mocks.getPersistedSurfaceTerminalFrame.mockResolvedValue({ version: 1, frame: null });
+  }
+
+  it.each([false, true])('read-only running history after restart overrides the blank frame (placeholder=%s)', async (placeholder) => {
+    seedTerminalSessionWithoutFrame('running', placeholder);
+    showBlankManagedPage(placeholder);
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    expect(screen.queryByTestId('browser-agent-window-frame')).toBeNull();
+    expect(screen.getByTestId('browser-agent-window-stage').getAttribute('role')).not.toBe('application');
+    expect(screen.getByText('Example Domain')).toBeTruthy();
+    expect(mocks.getPersistedSurfaceTerminalFrame).toHaveBeenCalledWith({
+      version: 1, conversationId: 'session-a', surfaceSessionId: 'surface-1',
+    });
+  });
+
+  it.each([
+    ['zh', '已结束', '执行中'],
+    ['en', 'Ended', 'Running'],
+  ] as const)('ended history uses coherent badge and address text (%s)', async (language, ended, running) => {
+    useAppStore.setState({ language });
+    const snapshot = seedTerminalSessionWithoutFrame('running', true);
+    showBlankManagedPage(true);
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    const badge = screen.getByTestId('browser-agent-window-ended-badge');
+    const address = screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement;
+    expect(screen.getByTestId('browser-agent-window-status-dot').getAttribute('title')).toBe(ended);
+    expect.soft(badge.textContent).toBe(ended);
+    expect.soft(badge.textContent).not.toContain(running);
+    expect.soft(address.value).toBe('example.com');
+    expect.soft(address.value).not.toContain('about:blank');
+    // The placeholder's partial snapshot must not bring its state/URL back into the card.
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+        ...snapshot, sessions: snapshot.sessions.slice(1), updatedAt: 63_000,
+      });
+    });
+    expect.soft(screen.getByTestId('browser-agent-window-ended-badge').textContent).toBe(ended);
+    expect.soft(address.value).toBe('example.com');
+  });
+
+  it('does not display the placeholder URL when the ended target has no origin', async () => {
+    const snapshot = seedTerminalSessionWithoutFrame();
+    delete snapshot.sessions[0].session.activeTarget;
+    useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', snapshot);
+    browserSessionState.managedSession = {
+      running: true, tabCount: 1, activeTab: { id: 'blank', url: 'about:blank', title: '' },
+    };
+    mocks.getPersistedSurfaceTerminalFrame.mockResolvedValue({ version: 1, frame: null });
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    expect((screen.getByTestId('browser-agent-window-address-input') as HTMLInputElement).value).toBe('');
+  });
+
+  it('keeps the read-only card when the placeholder response replaces the historical snapshot', async () => {
+    const snapshot = seedTerminalSessionWithoutFrame('running', true);
+    showBlankManagedPage(true);
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    await act(async () => {
+      useSurfaceExecutionStore.getState().setNativeSnapshot('session-a', {
+        ...snapshot, sessions: snapshot.sessions.slice(1), updatedAt: 63_000,
+      });
+    });
+    expect(screen.getByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    expect(screen.getByText('Example Domain')).toBeTruthy();
+    expect(screen.queryByTestId('browser-agent-window-frame')).toBeNull();
+    await act(async () => { useSessionStore.setState({ currentSessionId: 'session-b' }); });
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+  });
+
+  it('a resumed live agent replaces a cached ended card', async () => {
+    seedTerminalSessionWithoutFrame('running', true);
+    showBlankManagedPage(true);
+    render(<BrowserAgentWindow />);
+    expect(await screen.findByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    await act(async () => { seedTerminalSessionWithoutFrame('running', true, true); });
+    expect(screen.getByTestId('browser-agent-window-frame')).toBeTruthy();
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+  });
+
+  it.each([false, true])('a live agent keeps its frame even beside a blank user placeholder (%s)', (placeholder) => {
+    seedTerminalSessionWithoutFrame('running', placeholder, true);
+    showBlankManagedPage(placeholder);
+    render(<BrowserAgentWindow />);
+    expect(screen.getByTestId('browser-agent-window-frame')).toBeTruthy();
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+  });
+
+  it('a newly navigated managed page takes priority over archived history', () => {
+    seedTerminalSessionWithoutFrame('running', true);
+    showBlankManagedPage(true);
+    const view = render(<BrowserAgentWindow />);
+    expect(screen.getByTestId('browser-agent-window-terminal-summary')).toBeTruthy();
+    browserSessionState.managedSession.activeTab!.url = 'https://news.ycombinator.com';
+    view.rerender(<BrowserAgentWindow />);
+    expect(screen.getByTestId('browser-agent-window-frame')).toBeTruthy();
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+  });
+
+  it('never borrows archived history from another conversation', () => {
+    seedTerminalSessionWithoutFrame('running', true);
+    showBlankManagedPage(true);
+    useSessionStore.setState({ currentSessionId: 'session-b' });
+    render(<BrowserAgentWindow />);
+    expect(screen.queryByTestId('browser-agent-window-terminal-summary')).toBeNull();
+    expect(mocks.getPersistedSurfaceTerminalFrame).not.toHaveBeenCalled();
+  });
 
   it('frameByScope 空 + 盘上有帧：读回后渲染留影而非摘要卡，帧写回 store 标 stale', async () => {
     seedTerminalSessionWithoutFrame();

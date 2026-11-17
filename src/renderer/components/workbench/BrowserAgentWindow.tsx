@@ -1,3 +1,4 @@
+import { selectBrowserEndedSession } from './browserEndedSession';
 import { BrowserPageOverflowHint } from './BrowserPageOverflowHint';
 import { resolveBrowserEmptyText } from './browserAgentWindowEmptyText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -20,7 +21,6 @@ import { getPersistedSurfaceTerminalFrame } from '../../services/surfaceExecutio
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppshotsStore } from '../../stores/appshotsStore';
 import {
-  selectSurfaceExecutionRunSessionV1,
   selectActiveBrowserSurfaceSessionV1,
   useSurfaceExecutionStore,
 } from '../../stores/surfaceExecutionStore';
@@ -113,17 +113,11 @@ export const BrowserAgentWindow: React.FC = () => {
     managedSession, preview, ownedByCurrentSession,
     browserSurfaceSessionId, browserSurfaceTitle, browserSurfaceOrigin,
   } = browserSession;
-  // 终态留影：展示层改用**含终态**的选择器拿会话（开流入参仍是上面排除终态的那个，
-  // 护栏不动）。只在「没有活跃 browser 会话 且 选中的是终态 browser 会话」时进留影/摘要卡。
-  const displaySurfaceSession = useSurfaceExecutionStore((state) => (
-    selectSurfaceExecutionRunSessionV1(state.sessionsByScope, { conversationId: currentSessionId })
+  const endedSessionRef = useRef<ReturnType<typeof selectBrowserEndedSession>>(null);
+  const terminalSurfaceSession = useSurfaceExecutionStore((state) => selectBrowserEndedSession(
+    state.sessionsByScope, currentSessionId, browserSurfaceSessionId, managedSession.activeTab?.url, endedSessionRef.current,
   ));
-  const terminalSurfaceSession = !browserSurfaceSessionId
-    && displaySurfaceSession?.session.surface === 'browser'
-    && (displaySurfaceSession.session.state === 'completed'
-      || displaySurfaceSession.session.state === 'failed')
-    ? displaySurfaceSession
-    : null;
+  if (terminalSurfaceSession) endedSessionRef.current = terminalSurfaceSession;
   const terminalScopeKey = terminalSurfaceSession
     ? surfaceExecutionScopeKeyV1(terminalSurfaceSession.scope)
     : null;
@@ -136,19 +130,17 @@ export const BrowserAgentWindow: React.FC = () => {
   // chrome 条必须描述**画面里那扇窗**。
   // host getManagedBrowserSession 已优先 surface 绑定实例（user-browser-link 与 agent 同窗），
   // page_load / framenavigated 会刷新 URL·title·canGoBack 并广播——managed tab 是实时真源。
-  // surface origin/title 仅在 managed 尚未回填时兜底；running 仍以 surface 会话存在为准
-  // （防默认单例 running=false 把状态点刷灰）。
+  // 结束卡使用历史目标描述画面；活流仍在 managed 尚未回填时回退到 surface origin/title。
+  // 活流状态点仍以 surface 会话存在为准，防默认单例 running=false 把状态点刷灰。
   const managedUrl = managedSession.activeTab?.url || preview?.url || null;
   const managedTitle = managedSession.activeTab?.title || preview?.title || null;
-  const running = Boolean(browserSurfaceSessionId) || managedSession.running;
-  const activeTitle = managedTitle
-    || (browserSurfaceSessionId ? browserSurfaceTitle : null)
-    || (terminalSurfaceSession ? terminalBrowserTarget?.title ?? null : null);
+  const running = !terminalSurfaceSession && (Boolean(browserSurfaceSessionId) || managedSession.running);
+  const activeTitle = terminalSurfaceSession ? terminalBrowserTarget?.title ?? null
+    : managedTitle || (browserSurfaceSessionId ? browserSurfaceTitle : null);
   // 有机跨域跳转（如 baidu → wappass）后 managedUrl 与 surface origin 不同源是正常的
   // （同一扇窗），必须回写完整 URL；surface origin 只在 managed 空时兜底。
-  const activeUrl = managedUrl
-    || (browserSurfaceSessionId ? browserSurfaceOrigin : null)
-    || (terminalSurfaceSession ? terminalBrowserTarget?.origin ?? null : null);
+  const activeUrl = terminalSurfaceSession ? terminalBrowserTarget?.origin ?? null
+    : managedUrl || (browserSurfaceSessionId ? browserSurfaceOrigin : null);
   const pointerEvent = livePointer.event || livePointer.lastEvent;
   const modeLabel = browserSession.mode === 'managed'
     ? copy.modeManaged
@@ -342,7 +334,7 @@ export const BrowserAgentWindow: React.FC = () => {
     workspace: workingDirectory,
     ownedByCurrentSession,
     annotateMode,
-    ready: Boolean(liveStream.frame && browserSurfaceSessionId),
+    ready: Boolean(liveStream.frame && browserSurfaceSessionId && !terminalSurfaceSession),
     agentSurfaceBusy,
     contentWidth: stageFollow?.viewport.width
       ?? liveStream.frame?.width
@@ -586,7 +578,7 @@ export const BrowserAgentWindow: React.FC = () => {
       >
         <span
           data-testid="browser-agent-window-status-dot"
-          title={running ? copy.running : copy.stopped}
+          title={terminalSurfaceSession ? surfaceCopy.terminal.badge : running ? copy.running : copy.stopped}
           className={`mx-1 h-2 w-2 shrink-0 rounded-full ${
             running ? 'bg-mark-success' : 'bg-zinc-600'
           }`}
@@ -770,7 +762,7 @@ export const BrowserAgentWindow: React.FC = () => {
               {navigationPending?.url}
             </div>
           </div>
-        ) : liveStream.frame ? (
+        ) : liveStream.frame && !terminalSurfaceSession ? (
           <img
             data-testid="browser-agent-window-frame"
             src={liveStream.frame.dataUrl}
@@ -810,8 +802,8 @@ export const BrowserAgentWindow: React.FC = () => {
               className="rounded-full border border-white/10 bg-zinc-900/80 px-2 py-0.5 text-[10px] text-zinc-300"
             >
               {surfaceCopy.terminal.badge}
-              {' · '}
-              {surfaceCopy.state[terminalSurfaceSession.session.state]}
+              {(terminalSurfaceSession.session.state === 'completed' || terminalSurfaceSession.session.state === 'failed')
+                && ` · ${surfaceCopy.state[terminalSurfaceSession.session.state]}`}
             </span>
             <div className="max-w-[320px] truncate text-xs text-zinc-300">
               {terminalBrowserTarget?.title || surfaceCopy.terminal.untitled}
