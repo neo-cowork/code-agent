@@ -22,7 +22,9 @@ describe('macOS Dock and AppleEvent quit guard', () => {
     expect(hook![0]).toContain('spawn_quit_guard_flow(');
     expect(hook![0]).toContain('QuitFlowOrigin::MacApplicationTerminate');
     expect(main).toContain('replyToApplicationShouldTerminate(should_terminate)');
-    expect(main).toContain('reply_to_mac_application_terminate(&app, false);');
+    // 取消 terminate 的回复：HideToBackground / 后台继续共用 background_resident::hide_to_background，取消应答在其 StayRunning 分支
+    const resident = fs.readFileSync(path.join(process.cwd(), 'src-tauri/src/background_resident.rs'), 'utf8');
+    expect(resident.match(/reply_to_mac_application_terminate\(app, false\)/g)).toHaveLength(2);
 
     // The worker must call the existing pure decision function. This prevents a
     // second Dock/AppleEvent-specific busy/idle policy from drifting from ⌘Q.
@@ -52,9 +54,8 @@ describe('macOS Dock and AppleEvent quit guard', () => {
 
     const hide = /QuitDecision::HideToBackground \{ language \} => \{([\s\S]*?)\n {12}\}\n {12}quit_guard::QuitDecision::Confirm/.exec(body);
     expect(hide, 'HideToBackground arm anchor missing').not.toBeNull();
-    expect(hide![1]).toContain('background_resident::minimize_and_hint(&app, language, hint_poster);');
-    expect(hide![1]).toContain('QuitFlowOrigin::MacApplicationTerminate');
-    expect(hide![1]).toContain('reply_to_mac_application_terminate(&app, false);');
+    // 收尾（最小化、释放槽位、mac 取消 terminate）收在 hide_to_background 里，对话框「后台继续」共用
+    expect(hide![1]).toContain('background_resident::hide_to_background(&app, &coordinator, origin, language, hint_poster);');
     expect(hide![1]).not.toContain('app.exit(0)');
 
     // origin 只在三个「怎么收尾」的位置被读取：ExitNow 的 match、HideToBackground 的 matches!、
@@ -62,7 +63,7 @@ describe('macOS Dock and AppleEvent quit guard', () => {
     const originUses = body.split('\n').filter((line) => /\borigin\b/.test(line) && !line.includes('origin: QuitFlowOrigin'));
     expect(originUses.map((line) => line.trim())).toEqual([
       'match origin {',
-      'if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {',
+      'background_resident::hide_to_background(&app, &coordinator, origin, language, hint_poster);',
       'origin,',
     ]);
 
