@@ -39,7 +39,7 @@ import { COLLAPSED_SETTINGS_TAB_GROUPS } from '../../../src/renderer/utils/setti
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
-type Dict = typeof en;
+type Dict = typeof en | typeof zh;
 
 function expectedLabel(dict: Dict, id: string): string {
   if (id === 'agentEngine') return dict.engineCompat.engineSection.title;
