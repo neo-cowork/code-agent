@@ -33,6 +33,7 @@ const MemoryDomainRequestSchema = z.object({
     'memoryAudit',
     'memoryEntries',
     'memoryEntryBatchReview',
+    'memoryEntryCreate',
     'memoryEntryDelete',
     'memoryEntryJournal',
     'memoryEntryResumeInjection',

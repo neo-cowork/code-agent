@@ -282,6 +282,15 @@ function parseJsonValue(value: string, fieldName: string): Record<string, unknow
   }
 }
 
+/** 保存前规整 metadata.workingDirectory：去首尾空白，空白串视为没选（删键）。 */
+function normalizeWorkingDirectory(metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const raw = metadata?.workingDirectory;
+  if (!metadata || typeof raw !== 'string') return metadata;
+  const { workingDirectory: _raw, ...rest } = metadata;
+  const trimmed = raw.trim();
+  return trimmed ? { ...rest, workingDirectory: trimmed } : rest;
+}
+
 export function buildCronJobInput(
   draft: CronJobDraft,
   validation = cronEditorChromeZh.editorChrome.validation,
@@ -311,7 +320,7 @@ export function buildCronJobInput(
       .map((tag) => tag.trim())
       .filter(Boolean),
     // 原样回写编辑前的 metadata（编辑器无 metadata 表单）；新建任务没有底稿 → 空。
-    metadata: draft.metadata ?? {},
+    metadata: normalizeWorkingDirectory(draft.metadata) ?? {},
   };
   if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
     throw new Error(validation.budgetInvalid);

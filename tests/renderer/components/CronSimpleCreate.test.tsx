@@ -171,6 +171,21 @@ describe('CronSimpleCreate', () => {
     expect(createJob.mock.calls[0][0]).toMatchObject({ maxRunBudget: 2 });
   });
 
+  it('面板新建任务选了工作文件夹：createJob 载荷带 metadata.workingDirectory；未选则不带', async () => {
+    createJob.mockImplementation(async (input) => ({
+      ...(input as object), id: 'folder-job', createdAt: 1, updatedAt: 1,
+    } as CronJobDefinition));
+    const onDone = vi.fn();
+    render(<CronSimpleCreate onDone={onDone} />);
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '把这个文件夹里的笔记总结成周报' } });
+    fireEvent.change(screen.getByTestId('cron-working-folder-input'), { target: { value: '/Users/me/notes' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(createJob.mock.calls[0][0].metadata).toEqual({ workingDirectory: '/Users/me/notes' });
+  });
+
   it('空预算创建为不限（null）', async () => {
     createJob.mockImplementation(async (input) => ({
       ...(input as object), id: 'unlimited-job', createdAt: 1, updatedAt: 1,

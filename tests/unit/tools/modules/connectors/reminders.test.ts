@@ -19,7 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { remindersModule } from '../../../../../src/host/tools/modules/connectors/reminders';
-import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
+import { formatConnectorNow, formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -287,6 +287,64 @@ describe('remindersModule (native)', () => {
         );
         expect(result.output).toContain('- #r2 [Work] Null task | 无提醒时间');
         expect(result.output).toContain('- #r3 [Work] Missing task (completed) | 无提醒时间');
+      }
+    });
+
+    it('list_reminders prefixes the now line and tags due state computed by the host', async () => {
+      const nowMs = Date.UTC(2026, 10, 16, 9, 0, 0);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(nowMs);
+      try {
+        execMock.mockResolvedValue({
+          data: [
+            { id: 'f1', list: 'Work', title: 'Future', completed: false, remindAtMs: nowMs + 2 * 3600_000 },
+            { id: 'p1', list: 'Work', title: 'Past', completed: false, remindAtMs: nowMs - 3600_000 },
+            { id: 'n1', list: 'Work', title: 'NoTime', completed: false, remindAtMs: null },
+            { id: 'c1', list: 'Work', title: 'Done', completed: true, remindAtMs: nowMs - 3600_000 },
+          ],
+        });
+        const result = await run({ action: 'list_reminders' });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const lines = result.output.split('\n');
+          expect(lines[0]).toBe(formatConnectorNow(nowMs));
+          expect(lines.find((l) => l.includes('#f1'))).toMatch(/（未到点）$/);
+          expect(lines.find((l) => l.includes('#p1'))).toMatch(/（已过点）$/);
+          const none = lines.find((l) => l.includes('#n1')) ?? '';
+          expect(none).toMatch(/无提醒时间$/);
+          const done = lines.find((l) => l.includes('#c1')) ?? '';
+          expect(done).not.toMatch(/（未到点）|（已过点）/);
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([
+      ['Asia/Shanghai', '(UTC+8)'],
+      ['America/Los_Angeles', '(UTC-8)'],
+    ])('list_reminders due tags follow the instant under TZ=%s', async (tz, offset) => {
+      const nowMs = Date.UTC(2026, 10, 16, 9, 0, 0);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(nowMs);
+      vi.stubEnv('TZ', tz);
+      try {
+        execMock.mockResolvedValue({
+          data: [
+            { id: 'f1', list: 'Work', title: 'Future', completed: false, remindAtMs: nowMs + 3600_000 },
+            { id: 'p1', list: 'Work', title: 'Past', completed: false, remindAtMs: nowMs - 3600_000 },
+          ],
+        });
+        const result = await run({ action: 'list_reminders' });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output.split('\n')[0]).toContain(offset);
+          expect(result.output).toMatch(/#f1 .*（未到点）/);
+          expect(result.output).toMatch(/#p1 .*（已过点）/);
+        }
+      } finally {
+        vi.unstubAllEnvs();
+        vi.useRealTimers();
       }
     });
 
