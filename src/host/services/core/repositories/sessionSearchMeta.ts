@@ -5,6 +5,8 @@ import { localizeCronSessionTitle } from '../../../../shared/cronSessionTitle';
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
+import type { CrossSessionSearchProjectScope } from '../../../../shared/ipc/types';
+import { pushProjectScopeCondition } from './sessionProjectScope';
 
 export interface SessionSearchMetaRow {
   sessionId: string;
@@ -24,6 +26,12 @@ function ownerClause(userId: OwnerFilter, params: unknown[]): string {
   return ' AND s.user_id = ?';
 }
 
+function projectClause(scope: CrossSessionSearchProjectScope | undefined, params: unknown[]): string {
+  const conditions: string[] = [];
+  pushProjectScopeCondition(conditions, params, scope);
+  return conditions.map((c) => ` AND ${c}`).join('');
+}
+
 function toRow(row: Record<string, unknown>): SessionSearchMetaRow {
   const updatedAt = Number(row.updated_at);
   const createdAt = Number(row.created_at);
@@ -41,11 +49,12 @@ export function getSessionSearchMeta(
   db: BetterSqlite3.Database,
   sessionIds: string[],
   userId: OwnerFilter,
+  projectScope?: CrossSessionSearchProjectScope,
 ): SessionSearchMetaRow[] {
   const ids = Array.from(new Set(sessionIds));
   if (ids.length === 0) return [];
   const params: unknown[] = [...ids];
-  const owner = ownerClause(userId, params);
+  const owner = ownerClause(userId, params) + projectClause(projectScope, params);
   const rows = db
     .prepare(
       `SELECT s.id, s.title, s.updated_at, s.created_at, s.status FROM sessions s
@@ -67,6 +76,7 @@ export function searchSessionTitles(
   query: string,
   userId: OwnerFilter,
   limit: number,
+  projectScope?: CrossSessionSearchProjectScope,
 ): SessionSearchMetaRow[] {
   const needle = query.trim();
   if (!needle) return [];
@@ -78,7 +88,7 @@ export function searchSessionTitles(
   }
   const pattern = `%${escapeLike(needle)}%`;
   const params: unknown[] = [pattern, pattern, pattern];
-  const owner = ownerClause(userId, params);
+  const owner = ownerClause(userId, params) + projectClause(projectScope, params);
   params.push(limit);
   const rows = db
     .prepare(

@@ -157,9 +157,10 @@ describe('calendar write round trip (EventKit)', () => {
     }
   });
 
-  it('a failed get_event leaves update approval usable and does not request native permission', async () => {
+  it('a not_found get_event propagates (no card); not_authorized still leaves approval usable and requests no native permission', async () => {
     const args = Object.freeze({ calendar: '日历', event_uid: 'missing', start_ms: 3 * HOUR });
-    expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({});
+    await expect(calendarApprovalDetails('calendar_update_event', args)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(calendarApprovalDetails('calendar_delete_event', args)).rejects.toMatchObject({ code: 'not_found' });
     fake.state.status = 2;
     expect(await calendarApprovalDetails('calendar_update_event', args)).toEqual({});
     expect(args).toEqual({ calendar: '日历', event_uid: 'missing', start_ms: 3 * HOUR });

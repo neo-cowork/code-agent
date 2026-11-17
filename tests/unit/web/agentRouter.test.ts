@@ -1283,6 +1283,53 @@ describe('createAgentRouter', () => {
     }
   });
 
+  it('repairs a removed project cwd from the trusted replacement Source on resend and the next turn', async () => {
+    await closeServer();
+    const root = await mkdtemp(join(tmpdir(), 'agent-repicked-source-'));
+    const replacement = join(root, 'replacement-notes');
+    mkdirSync(replacement);
+    const removed = join(root, 'removed-notes');
+    const scope = Object.freeze({
+      projectId: 'project-repicked', primaryRoot: replacement,
+      roots: Object.freeze([Object.freeze({ sourceId: 'replacement-source', path: replacement,
+        role: 'primary' as const, access: 'read_write' as const })]),
+      version: 'repicked-scope-v1',
+    });
+    const session = { id: 'session-repicked', title: 'Meeting notes',
+      projectId: scope.projectId, workingDirectory: removed };
+    const updateSession = vi.fn(async (_id: string, updates: { workingDirectory?: string }) => {
+      if (updates.workingDirectory) session.workingDirectory = updates.workingDirectory;
+    });
+    projectServiceMocks.getWorkspaceScope.mockReturnValue(scope);
+    try {
+      await startAgentApi({ tryGetSessionManager: async () => ({
+        getSession: async () => ({ ...session }), updateSession,
+      }) });
+      for (const clientMessageId of ['original-failed-message', 'next-message']) {
+        mockCreateAgentLoop.mockImplementationOnce(() => ({
+          run: vi.fn(async () => undefined), cancel: mockCancel,
+        }));
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'Read the updated meeting notes in notes.txt',
+            sessionId: session.id, clientMessageId, context: { workingDirectory: removed } }),
+        });
+        expect(response.status).toBe(200);
+        await response.text();
+        expect(createCLIAgent).toHaveBeenLastCalledWith(expect.objectContaining({ project: replacement }));
+        expect(mockCreateRunToolExecutor.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
+          workspace: replacement, workspaceScope: scope,
+        }));
+        expect(session.workingDirectory).toBe(replacement);
+        expect(existsSync(removed)).toBe(false);
+      }
+      expect(updateSession).toHaveBeenCalledWith(session.id, expect.objectContaining({ workingDirectory: replacement }));
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   // N-FIX-SIGNED-OUT-SEND-500-RAW-HTML-REDESIGN：trusted Source 的 identity 快照缺失时
   // getWorkspaceScope 抛 ProjectSourceTrustError——此前经 Express 默认 handler 出整页
   // HTML 500。现在写 SSE 之前收口成 422 + 稳定码；且 run 未注册，第二次发送拿到同一
