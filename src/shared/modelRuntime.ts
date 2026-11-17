@@ -754,7 +754,7 @@ export function buildRuntimeModelOptions(
     });
     const isCustomProvider = providerId === 'custom' || isDynamicCustomProviderId(providerId);
     const models = isCustomProvider && providerGroup !== providerId
-      ? selectableRuntimeModels.filter((model) => modelBelongsToProviderGroup(model.id, providerGroup))
+      ? enabledModels.filter((model) => modelBelongsToProviderGroup(model.id, providerGroup))
       : enabledModels;
     if (models.length === 0) return;
     const canonicalGroupLabel = getProviderDisplayName(providerGroup) || providerGroup;
