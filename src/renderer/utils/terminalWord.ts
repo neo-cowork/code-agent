@@ -16,7 +16,14 @@ function resolveCompletedKey(steps: ToolStepOutcome | undefined): OutcomeKey {
 
 type ToolStepOutcome = NonNullable<RunUiState['toolStepOutcome']>;
 
-type FinishedToolStep = { name?: string; arguments?: unknown; success?: boolean };
+type FinishedToolStep = { id?: string; name?: string; arguments?: unknown; success?: boolean };
+
+/** Ledger task fields the delegation matching reads (a structural subset of the background `Task`). */
+export type DelegationLedgerTask = {
+  toolCallId?: string;
+  status: string;
+  progress?: { lastToolFailure?: unknown };
+};
 
 function targetTokens(args: unknown): Set<string> {
   const targets = new Set<string>();
@@ -65,25 +72,72 @@ function sameTarget(a: string, b: string): boolean {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-/** Finished steps in call order; only failures without a later matching success remain. */
-export function classifyToolSteps(steps: readonly FinishedToolStep[]): ToolStepOutcome | undefined {
+const FILE_LIKE_TARGET = /\/|\.[A-Za-z0-9]{1,8}$/;
+const PATH_STOP = /[\s"'`<>()（）「」《》，。、：；,;]/;
+
+/** Does the delegation prompt name this failed target (file name or path, same-file rules as `sameTarget`)? */
+function promptNamesTarget(prompt: string, target: string): boolean {
+  const text = prompt.replace(/\\/g, '/');
+  const base = target.slice(target.lastIndexOf('/') + 1);
+  if (!base) return false;
+  for (let at = text.indexOf(base); at !== -1; at = text.indexOf(base, at + 1)) {
+    const before = text[at - 1] ?? '';
+    const after = text[at + base.length] ?? '';
+    const afterNext = text[at + base.length + 1] ?? '';
+    if (/[A-Za-z0-9_-]/.test(after) || (after === '.' && /[A-Za-z0-9_]/.test(afterNext))) continue;
+    let start = at;
+    if (before === '/') {
+      while (start > 0 && !PATH_STOP.test(text[start - 1])) start -= 1;
+    } else if (/[A-Za-z0-9_.-]/.test(before) && /^[A-Za-z0-9_.-]/.test(base)) {
+      continue;
+    }
+    const candidate = text.slice(start, at + base.length).replace(/^\.\//, '');
+    if (sameTarget(candidate, target)) return true;
+  }
+  return false;
+}
+
+/** A completed, failure-free ledger task for this delegate_task call: the only thing that can stand in for a retry. */
+function completedDelegationPrompt(step: FinishedToolStep, tasks: readonly DelegationLedgerTask[]): string | null {
+  if (step.name !== 'delegate_task' || step.success === false || !step.id) return null;
+  const prompt = (step.arguments as { prompt?: unknown } | null | undefined)?.prompt;
+  if (typeof prompt !== 'string' || !prompt) return null;
+  const done = tasks.some((task) =>
+    task.toolCallId === step.id && task.status === 'completed' && !task.progress?.lastToolFailure);
+  return done ? prompt : null;
+}
+
+/**
+ * Finished steps in call order; only failures without a later matching success remain.
+ * `tasks` (ledger) lets a later completed `delegate_task` whose prompt names every failed file recover that failure.
+ */
+export function classifyToolSteps(
+  steps: readonly FinishedToolStep[],
+  tasks: readonly DelegationLedgerTask[] = [],
+): ToolStepOutcome | undefined {
   if (!steps.length) return undefined;
   const successfulTargets = new Set<string>();
   // Untargeted steps (npm test, List): only an identical later call (same tool + same arguments) is a retry.
   const successfulUntargetedCalls = new Set<string>();
+  const delegatedPrompts: string[] = [];
   const callKey = (step: FinishedToolStep) => `${step.name}\u0000${JSON.stringify(step.arguments ?? null)}`;
   let failed = 0;
   for (let index = steps.length - 1; index >= 0; index--) {
     const step = steps[index];
     const targets = targetTokens(step.arguments);
     if (step.success !== false) {
+      const delegated = completedDelegationPrompt(step, tasks);
+      if (delegated) delegatedPrompts.push(delegated);
       for (const target of targets) successfulTargets.add(target);
       if (!targets.size && step.name) successfulUntargetedCalls.add(callKey(step));
     } else {
       const recovered = targets.size
         ? [...targets].some((target) => [...successfulTargets].some((done) => sameTarget(target, done)))
         : Boolean(step.name && successfulUntargetedCalls.has(callKey(step)));
-      if (!recovered) failed += 1;
+      const files = [...targets].filter((target) => FILE_LIKE_TARGET.test(target));
+      const delegatedRecovery = !recovered && files.length > 0
+        && files.every((file) => delegatedPrompts.some((prompt) => promptNamesTarget(prompt, file)));
+      if (!recovered && !delegatedRecovery) failed += 1;
     }
   }
   return { failed, total: steps.length };
