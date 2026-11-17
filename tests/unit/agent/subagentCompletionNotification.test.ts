@@ -58,7 +58,7 @@ describe('subagent completion response contract', () => {
     expect(record.content).toContain('禁止使用 [agent]、[worker]、agent 或 worker 等泛称');
     expect(reminder).toContain('- 依赖核验: completed, duration_ms=150');
     expect(reminder).not.toContain('reviewer');
-    expect(record.content).toContain('回复中不要提及内部角色名、工具名或标识符。');
+    expect(record.content).toContain('回复中不要提及内部角色名、工具名或标识符；不要原样引用 agent_ 开头的内部编号');
   });
 
   it.each(['user_visible', 'internal', 'shell'] as const)('keeps role on the record but out of the %s notification payload', (kind) => {

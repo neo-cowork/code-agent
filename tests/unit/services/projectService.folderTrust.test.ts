@@ -311,7 +311,7 @@ describe('ProjectService 信任快照补拍（confirmSessionProjectSources）', 
     const svc = new ProjectService(() => repo);
 
     await expect(confirmSessionProjectSources({ projectId: 'proj-gone', projects: svc }))
-      .rejects.toMatchObject({ reason: 'source_missing' });
+      .rejects.toMatchObject({ reason: 'source_missing', folderName: 'gone-project' });
     expect(svc.listSources('proj-gone')[0].identityIno).toBeNull();
   });
 
@@ -337,7 +337,7 @@ describe('ProjectService 信任快照补拍（confirmSessionProjectSources）', 
     const svc = new ProjectService(() => repo);
 
     await expect(confirmSessionProjectSources({ projectId: 'proj-drifted', projects: svc }))
-      .rejects.toMatchObject({ reason: 'identity_changed' });
+      .rejects.toMatchObject({ reason: 'identity_changed', folderName: 'drifted-project' });
   });
 
   it('folder_trust 已被显式吊销：拒绝 folder_trust_blocked，吊销决定不被一键确认覆盖', async () => {
