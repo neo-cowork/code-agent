@@ -1792,14 +1792,15 @@ export class ToolExecutor {
     const readOnlyProbeGates = {
       forcePermissionHandler: Boolean(this.forcePermissionHandler), readArgumentForcesClassification, protectedWriteForcesConfirmation,
       policyForcesConfirmation, readOnlyForcesConfirmation, boundaryViolation: Boolean(boundaryViolation), unresolvedWriteTargetForcesAsk,
-      writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification, commandAnalysisFailedReason: Boolean(commandAnalysisFailedReason),
+      writeWithoutWorkspaceAuthority, scheduleWriteGrantRequired, consequenceForcesClassification,
       peerOriginForcesConfirmation, launderRetryForcesAsk, shellDesktopAutomation: Boolean(shellDesktopAutomation), guardFabricAskRule: guardFabricForcesApproval && guardFabricAskRuleOnly,
     };
     const readOnlyProbeDetail = boundaryViolation ? { skillName: boundaryViolation.skillName } : undefined;
     const readOnlyProbeInput = { command: String(params.command ?? ''), workingDirectory: bashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, sessionId: effectiveSessionId, currentAttachments: options.currentAttachments };
     // 拓扑 ask（async_agent 后台 Bash）使下面的 P0 块整体跳过：只读探测在此单独放行，其余捷径仍被拓扑 ask 挡住。
     if (isBashToolName(policyToolName) && params.command && !isPreApproved && guardFabricForcesApproval && !guardFabricAskRuleOnly) {
-      const probe = await tryReadOnlyProbeBehindGates(readOnlyProbeGates, readOnlyProbeInput, readOnlyProbeDetail);
+      // 无人值守（cron）会话的只读授权只来自定时任务的文件夹授权，不认用户提示词里的路径：留给下游原有处理。
+      const probe = await tryReadOnlyProbeBehindGates({ ...readOnlyProbeGates, unattendedSession: getPermissionModeManager().isUnattendedSession(effectiveSessionId) }, readOnlyProbeInput, readOnlyProbeDetail);
       if (probe) {
         logger.info('readonly_probe_plan_hit', { programs: probe.programs, topology: executionTopology });
         recordDecision(executionToolName, params, 'auto-approve', 'readonly-probe-plan', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
