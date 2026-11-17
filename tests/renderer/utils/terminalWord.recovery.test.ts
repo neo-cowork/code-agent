@@ -31,6 +31,9 @@ const cases: { name: string; steps: Step[]; outcome: string; failed: number }[] 
   { name: 'targeted success cannot recover untargeted failure', steps: [{ name: 'Read', arguments: {}, success: false }, read('a.pdf', true)], outcome: 'completed-with-warnings', failed: 1 },
   { name: 'pending success cannot recover a failure', steps: [read('a.pdf', false), { ...read('a.pdf', true), pending: true }], outcome: 'failed-tool', failed: 1 },
   { name: 'streaming success cannot recover a failure', steps: [read('a.pdf', false), { ...read('a.pdf', true), streaming: true }], outcome: 'failed-tool', failed: 1 },
+  { name: 'cd directory shared by two commands does not recover a different file', steps: [bash('cd "/ws/合同" && pdftotext 合同A.pdf -', false), bash('cd "/ws/合同" && pdftotext 合同B.pdf -', true)], outcome: 'completed-with-warnings', failed: 1 },
+  { name: '/dev/null redirection sink does not link commands', steps: [bash('pdftotext /ws/合同A.pdf - 2>/dev/null', false), bash('ls /ws/x 2>/dev/null', true)], outcome: 'completed-with-warnings', failed: 1 },
+  { name: 'cd command failure recovered by Read of the same file', steps: [bash('cd "/ws/合同" && pdftotext 合同A.pdf -', false), read('/ws/合同/合同A.pdf', true)], outcome: 'completed', failed: 0 },
   { name: 'differently spelled typo stays unresolved', steps: [read('aa.pdf', false), read('a.pdf', true)], outcome: 'completed-with-warnings', failed: 1 },
 ];
 

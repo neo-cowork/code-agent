@@ -45,7 +45,11 @@ function targetTokens(args: unknown): Set<string> {
             else if (token.includes('/') || /\.[\p{L}\p{N}]+$/u.test(token)) add(token);
           }
         };
-        scan(value);
+        // Shared non-file tokens must not link steps: working dirs (cd/pushd), redirection sinks, /dev/*.
+        scan(value
+          .replace(/\b(?:cd|pushd)\s+(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|]+)/g, ' ')
+          .replace(/\d*[<>]{1,2}&?\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|]+)/g, ' ')
+          .replace(/\/dev\/\w+/g, ' '));
       }
     } else if (Array.isArray(value)) {
       for (const item of value) visit(item, key);
