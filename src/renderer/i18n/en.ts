@@ -797,7 +797,7 @@ export const en = {
     confirmMemoryTitle: 'Confirm Memory',
     confirmMemoryBody: 'AI learned the content above. Save it to memory?',
     confirmDirectiveTitle: 'Confirm user rule',
-    confirmDirectiveBody: 'Once saved, this rule takes priority over product defaults in future sessions. You can revoke it in Memory Management, and the write remains auditable.',
+    confirmDirectiveBody: 'Once saved, this rule takes priority over product defaults in future sessions. You can revoke it in Memory Management, and the change remains auditable.',
     confirmSkip: 'Skip',
     confirmSave: 'Save',
     confirmDirectiveSave: 'Confirm Rule',
