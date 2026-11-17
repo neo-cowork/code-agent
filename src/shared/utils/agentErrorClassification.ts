@@ -14,6 +14,9 @@ import type { AgentErrorMetadata } from '../contract';
 import { RESPONSES_FEATURE_REJECTION, RUN_ERROR_CODE_MAX_ITERATIONS } from '../constants';
 import { hasInsufficientBalanceSignal } from './providerError';
 
+/** 只有 statusText、没有任何字段/原因的 400（可带 AI SDK 的 `AI_APICallError:` 前缀）。 */
+const EMPTY_BAD_REQUEST_RE = /^(?:ai_apicallerror:\s*)?(?:bad request|invalid request)\.?$/;
+
 type AgentErrorPayload = Record<string, unknown>;
 
 function isRecord(value: unknown): value is AgentErrorPayload {
@@ -183,6 +186,10 @@ export function classifyAgentError(
 
     if (normalized === 'forbidden' || normalized === 'ai_apicallerror: forbidden' || hasStatus(403)) {
       return { ...base, category: 'forbidden', httpStatus: explicitStatus ?? 403 };
+    }
+
+    if (EMPTY_BAD_REQUEST_RE.test(normalized)) {
+      return { ...base, category: 'bad_request', httpStatus: explicitStatus ?? 400 };
     }
 
     if (normalized === 'not found' || normalized === 'ai_apicallerror: not found' || hasStatus(404)) {
