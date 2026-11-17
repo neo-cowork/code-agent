@@ -113,11 +113,11 @@ describe('calendar write round trip (EventKit)', () => {
     expect(fake.state.calls.at(-1)).toMatchObject({ path: '/v1/read/calendar-event', body: { eventId: args.event_uid } });
   });
 
-  it('start-only updates retain a feasible old end, but never project an end earlier than the proposed start', async () => {
+  it('start-only updates never project the old end (the end moves with the start), whether the start moves earlier or later', async () => {
     fake.state.items.push({ id: 'cal-id-8012:EV1', calendarId: 'cal-id-8012', calendar: '日历', title: '评审', startMs: HOUR, endMs: 2 * HOUR, location: '三楼' });
     const earlier = Object.freeze({ calendar: '日历', event_uid: 'cal-id-8012:EV1', start_ms: 0 });
     expect(await calendarApprovalDetails('calendar_update_event', earlier)).toEqual({
-      title: '评审', end_ms: 2 * HOUR, location: '三楼', calendarApprovalSnapshotFields: ['title', 'end_ms', 'location'],
+      title: '评审', location: '三楼', calendarApprovalSnapshotFields: ['title', 'location'],
     });
     const later = Object.freeze({ ...earlier, start_ms: 3 * HOUR });
     expect(await calendarApprovalDetails('calendar_update_event', later)).toEqual({
