@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   currentSessionId: 'session-1' as string | null,
   running: new Set<string>(),
   messages: [] as StoredMessage[],
-  sendPrompt: vi.fn(async () => undefined),
+  sendPrompt: vi.fn(async (_content: string, _context?: { clientMessageId?: string }) => undefined),
 }));
 
 vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
@@ -277,6 +277,7 @@ describe('delegation retry id and persisted sent state', () => {
         content: '请重新做一下刚才失败的任务：对比两份报价单中同类物料的单价',
         timestamp: 5_000,
       });
+      return undefined;
     });
     const presentation = failedCard('task-quote');
     const first = render(<DelegationReceipt presentation={presentation} />);
