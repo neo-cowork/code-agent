@@ -999,6 +999,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       }
     }) as CommandBridgeAPI['off'],
 
+    discardUploadedFiles: async (paths) => (await import('./discardTempUpload')).createDiscardTempUpload(baseUrl, getAuthHeaders)(paths),
     uploadFolderBatch: createFolderBatchUpload(baseUrl, getAuthHeaders),
 
     getPathForFile: async (_file: File) => {

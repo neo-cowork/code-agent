@@ -123,7 +123,7 @@ describe('task_complete 的后台收口（完成通知/面板状态）', () => {
       persistEventToSession: (sessionId: string, event: unknown, snapshot?: unknown, eventKey?: string) => Promise<void>;
     }).persistEventToSession('session-1', TASK_COMPLETE_EVENT, undefined, 'session-1');
 
-    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好');
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好', 4200);
     expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
   });
 
@@ -316,7 +316,7 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     await persist('session-1', { type: 'agent_complete', data: null }, undefined, 'session-1');
 
     expect(backgroundManagerState.markCompleted).toHaveBeenCalledTimes(1);
-    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好');
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', '周报已写好', 4200);
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 
