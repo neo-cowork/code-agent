@@ -452,7 +452,7 @@ export class AgentOrchestrator {
     this.isInterrupting = false;
 
     const pending = this.pendingSteerMessages.splice(0);
-    await this.sendMessage(newMessage, attachments, options, messageMetadata, clientMessageId);
+    await this.sendMessage(newMessage, attachments, { ...options, displayContent: newMessage }, messageMetadata, clientMessageId);
     this.queuePendingSteer(pending, sessionId, 'after interrupt');
     return { outcome: 'steered' };
   }

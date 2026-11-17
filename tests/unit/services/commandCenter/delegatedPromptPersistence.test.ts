@@ -21,6 +21,7 @@ import { resetBackgroundTaskLedgerForTest } from '../../../../src/host/task/back
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { backfillMissingTelemetryUserPrompts } from '../../../../src/host/services/infra/sessionManagerTelemetryBackfill';
 import { buildTranscriptReplay } from '../../../../src/host/telemetry/replay/transcriptReplayBuilder';
+import { AgentOrchestrator } from '../../../../src/host/agent/agentOrchestrator';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
 // Internal scaffolding of the delegated prompt: it must reach the model, never a stored user row.
@@ -147,5 +148,18 @@ describe('delegate_task persists only the drafted plan as the background run use
       for (const row of prompts) expect(row.user_prompt ?? '').not.toContain(marker);
       expect(requests.join('\n')).toContain(marker);
     }
+  });
+  it('stores a steer sent to an idle delegated run as the instruction, not the inherited plan', async () => {
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.models = { ...settings.models, default: 'xiaomi', providers: { xiaomi: { enabled: true, apiKey: 'fixture-key', model: 'mimo-v2.6-flash' } } };
+    const config = { getSettings: () => settings, getApiKey: () => 'fixture-key', getServiceApiKey: () => '', isDevModeAutoApproveEnabled: () => false } as unknown as ConfigService;
+    const orchestrator = new AgentOrchestrator({ configService: config, hasApprovalUi: () => false, getHomeDir: () => root, onEvent: () => {} });
+    orchestrator.setSessionId('chat-session');
+    orchestrator.setWorkingDirectory(root, { syncWorkspaceServices: false });
+    await orchestrator.interruptAndContinue('Only look at page 1.', undefined, { mode: 'normal', displayContent: PLAN, historyVisibility: 'meta', disableAutoAgent: true });
+    await orchestrator.drainWorkspaceServices();
+    const rows = db.prepare("select content from messages where session_id = 'chat-session' and role = 'user'").all() as Array<{ content: string }>;
+    expect(rows.map((row) => row.content)).toContain('Only look at page 1.');
+    expect(rows.map((row) => row.content)).not.toContain(PLAN);
   });
 });
