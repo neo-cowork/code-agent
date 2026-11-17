@@ -2,6 +2,7 @@
 // Settings IPC Handlers - settings:* 通道
 // ============================================================================
 
+import { countPdfTextPages } from './pdfPageCount';
 import type { IpcMain } from '../platform';
 import { app, broadcastToRenderer } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -677,7 +678,7 @@ export function registerSettingsHandlers(
     for (const bin of ['/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext']) {
       try {
         const { stdout } = await execFileAsync(bin, [filePath, '-'], { maxBuffer: 50 * 1024 * 1024 });
-        const pageCount = (stdout.match(/\f/g) || []).length + 1;
+        const pageCount = countPdfTextPages(stdout);
         return { text: stdout, pageCount };
       } catch { /* 未安装，继续尝试 */ }
     }

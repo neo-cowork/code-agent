@@ -9,7 +9,7 @@ import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
 import { backgroundPanelEn } from './backgroundPanel';
-import { voiceEn } from './voice';
+import { voiceEn } from './voice'; import { cronWorkingFolderEn } from './cronWorkingFolder';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { deliveryExperienceEn } from './deliveryExperience';
@@ -945,7 +945,7 @@ export const en = {
   ...backgroundPanelEn,
   ...voiceEn,
   ...sidebarEn,
-  ...cronCenterEn,
+  ...cronCenterEn, ...cronWorkingFolderEn,
   ...previewWorkspaceEn,
   ...deliveryExperienceEn,
   ...modalPrimitivesEn,
