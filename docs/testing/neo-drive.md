@@ -89,5 +89,25 @@ ssh neo-worker 'cd ~/work/wt/NEO-DRIVE && node scripts/neo-drive/neo-drive.mjs r
 ```
 
 - 无头模式（`--slotless`，或者 `--url` 指向本机服务）：通过 ssh 直接就能用，不需要图形会话。
+
+场景 c 在 mini 上无头实测耗时（2026-11-17，模型 `custom-tokenrhythm/deepseek-flash`，`ok: true`，一次跑通）：
+
+| 步骤 | 耗时 | 结果 |
+|------|------|------|
+| bootstrap | n/a（工作树已由派单预先引导好，`node_modules` 在位；再跑会因「目标与源同一路径」被脚本拒绝） | 未计时 |
+| 整个场景（`totalMs`） | 72315 ms（约 72 秒） | 通过 |
+| `new-session` | 193 ms | 通过 |
+| `send`（长文请求） | 516 ms | 通过 |
+| `wait-idle` | 66007 ms | 通过 |
+| `scroll-up` | 112 ms | 通过 |
+| `send`（追问） | 286 ms | 通过 |
+| `assert-bottom` | 1 ms | 通过 |
+| `wait-idle` | 5092 ms | 通过 |
+| `assert-bottom` | 1 ms | 通过 |
+| `assert-visible` | 22 ms | 通过 |
+| `shot` | 85 ms | 通过 |
+| cleanup（`browser stop`） | 不到 1 秒（`--slotless` 的 run 结束时已自行停掉服务，`browser stop` 回「没有常驻浏览器」） | 通过 |
+
+命令总墙钟约 92 秒（含服务启动、渲染层构建和自检，约 20 秒）；耗时主要在第一次 `wait-idle`（模型写长文），随模型响应速度波动。
 - 真机模式里，`--dev` 的页面驱动、`quit/launch/install/reset-tcc`、`wait-log/wait-db` 在 ssh 下都能用，前提是 Dev 包已经在 mini 的图形会话里运行。
   `ax-click` 和 `shot-window` 要用到 System Events 和屏幕录制，ssh 进程拿不到图形会话的辅助功能/录屏授权，要放到图形会话的终端里跑。（尚未实测，待验）
