@@ -33,6 +33,15 @@ describe('e2e-core result.json', () => {
     expect(exitCodeFor(result)).toBe(1);
   });
 
+  it('an infrastructure interruption is a skip, not a flow failure, and still blocks exit 0', () => {
+    const skipped = buildAttempt({ n: 1, infra: true, failedStep: { n: 3, text: 's' }, durationMs: 1, screenshot: null, sse: null, db: null, reason: 'browser has been closed' });
+    expect(skipped.status).toBe('skip');
+    expect(formatFailure('F08', skipped)).toMatch(/^SKIP F08 step 3: s/);
+    const result = buildResult(meta, [buildFlowResult('F08', 't', [skipped, passed(2), passed(3)])]);
+    expect(result.summary).toEqual({ pass: 2, fail: 0, skip: 1, stable3: 0 });
+    expect(exitCodeFor(result)).toBe(1);
+  });
+
   it('exit code is 0 only when every attempt passed', () => {
     expect(exitCodeFor(buildResult(meta, [buildFlowResult('F05', 't', [passed(1)])]))).toBe(0);
     expect(exitCodeFor(buildResult(meta, []))).toBe(1);

@@ -1,7 +1,7 @@
 import { describeRows, expectDb, family, inSessions } from './db';
 import { writeSalesXlsx } from './fixtures';
 import type { FlowDef } from './types';
-import { approveCard, driveTurn, openFolderSession, sendMessage } from './ui';
+import { approveCard, driveTurn, openFolderSession, sendMessage, settleBackground } from './ui';
 
 const TURN_TIMEOUT_MS = 300_000;
 const READ_TOOLS = ['ExcelAutomate', 'Bash', 'Read', 'Glob'];
@@ -25,6 +25,8 @@ export const f10: FlowDef = {
         await driveTurn(env.page, {
           onPermissionCard: async (page) => { clicks++; await approveCard(page); },
         }, TURN_TIMEOUT_MS);
+        // 模型常把读表转给后台：前台收尾后还要等后台任务做完，才有回复可读
+        await settleBackground(env.page, async (page) => { clicks++; await approveCard(page); }, TURN_TIMEOUT_MS);
         env.note(clicks ? `读文件时点了 ${clicks} 次允许` : '没有弹审批卡');
         env.scratch.clicks = clicks;
       },

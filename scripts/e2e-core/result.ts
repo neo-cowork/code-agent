@@ -37,6 +37,8 @@ export const STABLE_ATTEMPTS = 3;
 
 export interface AttemptInput {
   n: number;
+  /** 基础设施中断（浏览器被关/崩溃）：没有评估这条流程，记为 skip。 */
+  infra?: boolean;
   failedStep: FailedStep | null;
   durationMs: number;
   screenshot: string | null;
@@ -49,7 +51,7 @@ export interface AttemptInput {
 export function buildAttempt(input: AttemptInput): AttemptResult {
   return {
     n: input.n,
-    status: input.failedStep ? 'fail' : 'pass',
+    status: input.infra ? 'skip' : input.failedStep ? 'fail' : 'pass',
     failedStep: input.failedStep ? { n: input.failedStep.n, text: input.failedStep.text } : null,
     durationMs: input.durationMs,
     screenshot: input.screenshot,
@@ -88,7 +90,8 @@ export function exitCodeFor(result: CoreResult): number {
 
 export function formatFailure(flowId: string, attempt: AttemptResult): string {
   const step = attempt.failedStep;
-  const head = step ? `FAIL ${flowId} step ${step.n}: ${step.text}` : `FAIL ${flowId}`;
+  const word = attempt.status === 'skip' ? 'SKIP' : 'FAIL';
+  const head = step ? `${word} ${flowId} step ${step.n}: ${step.text}` : `${word} ${flowId}`;
   return [
     head,
     `  attempt: ${attempt.n}${attempt.reason ? `  reason: ${attempt.reason}` : ''}`,

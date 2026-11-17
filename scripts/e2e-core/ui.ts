@@ -160,3 +160,17 @@ export async function backgroundTaskRow(page: Page): Promise<{ status: string; t
   const m = /后台任务\s+\d+\s+后台\s+(进行中|完成|失败|已完成|已中断)\s+(\S[^\n]*)/.exec(text);
   return m ? { status: m[1], title: m[2].trim() } : null;
 }
+
+/** 前台回合收尾后，转后台的任务可能还在跑（审批卡也会在这时冒出来）：处理卡片，等到右栏「后台任务」不再是「进行中」。 */
+export async function settleBackground(page: Page, onCard: (page: Page) => Promise<void>, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let calm = 0;
+  while (Date.now() < deadline) {
+    if (await page.getByTestId('permission-card').first().isVisible().catch(() => false)) { await onCard(page); calm = 0; continue; }
+    const row = await backgroundTaskRow(page);
+    if (row?.status === '进行中') calm = 0;
+    else if (++calm >= 3) return;
+    await sleep(POLL_MS);
+  }
+  throw new Error(`等待后台任务收尾超时（${Math.round(timeoutMs / 1000)}s）`);
+}

@@ -63,7 +63,7 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
   await context.close();
   const reasonText = [reason && `${reason}`, ...notes].filter(Boolean).join('；');
   return buildAttempt({
-    n, failedStep, durationMs: Date.now() - started, screenshot, sse: sseFile, db: lastDb, reason: failedStep ? reasonText : notes.join('；'),
+    n, infra: /Target page, context or browser has been closed|Browser has been closed/.test(reason), failedStep, durationMs: Date.now() - started, screenshot, sse: sseFile, db: lastDb, reason: failedStep ? reasonText : notes.join('；'),
   });
 }
 
@@ -79,7 +79,7 @@ async function runIsolated(flow: FlowDef, n: number, ctx: { headed: boolean; ser
     ]);
   } catch (e) {
     return buildAttempt({
-      n, failedStep: { n: 0, text: '浏览器或脚本异常中断' }, durationMs: Date.now() - started,
+      n, infra: /has been closed/.test((e as Error).message), failedStep: { n: 0, text: '浏览器或脚本异常中断' }, durationMs: Date.now() - started,
       screenshot: null, sse: null, db: null, reason: (e as Error).message,
     });
   } finally {

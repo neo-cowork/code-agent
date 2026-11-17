@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describeRows, expectDb, family, inSessions } from './db';
 import type { Page } from 'playwright';
 import type { AttemptEnv, FlowDef } from './types';
-import { approveCard, clickCardButton, driveTurn, openFolderSession, openNewSession, pageText, sendMessage, sleep } from './ui';
+import { approveCard, clickCardButton, driveTurn, openFolderSession, openNewSession, pageText, sendMessage, settleBackground, sleep } from './ui';
 
 const REMEMBER = '记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万';
 const TURN_TIMEOUT_MS = 240_000;
@@ -83,7 +83,9 @@ export const f14: FlowDef = {
       run: async (env) => {
         env.sessionIds.push(await openNewSession(env.page));
         await sendMessage(env.page, '帮我起草这周周报');
-        await driveTurn(env.page, { onPermissionCard: async (page) => { env.note('第二个会话读记忆文件时点了允许'); await approveCard(page); } }, TURN_TIMEOUT_MS);
+        const allow = async (page: Page) => { env.note('第二个会话读记忆文件时点了允许'); await approveCard(page); };
+        await driveTurn(env.page, { onPermissionCard: allow }, TURN_TIMEOUT_MS);
+        await settleBackground(env.page, allow, TURN_TIMEOUT_MS);
         const { data } = await env.readDb();
         const reply = inSessions(data.messages, [env.sessionIds[1]]).filter((m) => m.role === 'assistant').map((m) => String(m.content ?? '')).join('\n');
         if (!/进展/.test(reply) || !/风险/.test(reply) || !/计划/.test(reply)) throw new Error(`第二个会话的草稿不是三段式：${reply.slice(0, 160)}`);
