@@ -82,6 +82,8 @@ describe('BrowserService launch layer resume hook', () => {
     await service.launch({ leaseOwner: 'test', conversationId: 'conv-a' });
     expect(fake.navigations).toEqual([LAST_URL]);
     expect(resume.importForConversation).toHaveBeenCalledWith('conv-a', service);
+    // the consumed login slot is put back so another window of the same conversation can still restore it
+    expect(resume.exportForConversation).toHaveBeenCalledWith('conv-a', service);
 
     // same conversation, window already on its page: no second navigation
     await service.launch({ leaseOwner: 'test', conversationId: 'conv-a' });
