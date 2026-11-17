@@ -45,9 +45,12 @@ pub(crate) fn minimize_and_hint<R: Runtime>(
         Ok(false) => crate::log_shell_line(app, "info", "background-hint-shown", "background-resident: hint already shown"),
         Err(error) => {
             #[cfg(not(target_os = "macos"))]
-            if error.starts_with("background-resident: native hint unsupported: ") {
+            let error = if error.starts_with("background-resident: native hint unsupported: ") {
                 crate::log_shell_line(app, "warn", "background-native-hint-unsupported", &error);
-            }
+                "native hint skipped on this platform".to_string()
+            } else {
+                error
+            };
             crate::log_shell_line(app, "warn", "background-hint-not-recorded", &format!("background-resident: hint not recorded: {error}"));
         },
     }
