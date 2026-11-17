@@ -75,7 +75,15 @@ export function useCronOsNotification(
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
       if (needsInput && event.sessionId) {
-        // 待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
+        // 用户自己发起的会话：run 断线转后台后审批虽停车落库，卡仍在聊天里原位可批，
+        // 点「查看」回该会话（11-17 真机：跳运行记录页，用户找不到授权）。
+        const session = useSessionStore.getState().sessions?.find((s) => s.id === event.sessionId);
+        const kind = session?.origin?.kind;
+        if (session && kind !== 'cron' && kind !== 'heartbeat') {
+          onOpenSessionRef.current(event.sessionId);
+          return;
+        }
+        // 定时/后台运行的待审批卡在「自动化」→「运行记录」；有 pending 项就打开该页。
         let parked = false;
         try {
           const items = await sessionAutomationClient.listParkedApprovals();
