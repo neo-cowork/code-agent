@@ -295,6 +295,13 @@ export class OrchestratorPermissionIsland {
         },
       });
     }
+    // 前台卡被人答了也要撤回已投递的「需要授权」补提醒：否则 renderer 离开期间的提醒队列
+    // 留着已处理的条目，用户回来看到「有 N 条提醒」点进去什么都没有（11-17 真机）。
+    try {
+      notificationService.retractNeedsInput(requestId);
+    } catch (err) {
+      logger.warn('Answered approval notification retract failed', err);
+    }
     pending.resolve(response, undefined, updatedArgs);
     return 'delivered';
   }
