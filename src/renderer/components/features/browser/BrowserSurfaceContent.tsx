@@ -15,6 +15,7 @@ import type {
   ManagedBrowserExternalBridgeState,
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSession';
@@ -102,6 +103,7 @@ export const BrowserSurfaceContent: React.FC = () => {
   const accountState = browserSession.managedSession.accountState || browserSession.preview?.accountState || null;
   const bridge = browserSession.managedSession.externalBridge || browserSession.preview?.externalBridge || null;
 
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const run = useCallback(async (action: BusyAction, fn: () => Promise<void>) => {
     setBusyAction(action);
     setError(null);
@@ -121,20 +123,20 @@ export const BrowserSurfaceContent: React.FC = () => {
     await ipcService.invokeDomain<ManagedBrowserSessionState>(
       IPC_DOMAINS.DESKTOP,
       'openManagedBrowserUrl',
-      { url, mode: 'visible', profileMode: 'isolated' },
+      { url, mode: 'visible', profileMode: 'isolated', conversationId: currentSessionId ?? undefined },
     );
     setNotice('已在本次隔离的托管浏览器打开。关闭后会清理临时 profile。');
-  }), [run, setBrowserSessionMode, url]);
+  }), [run, setBrowserSessionMode, url, currentSessionId]);
 
   const handleLaunch = useCallback(() => run('launch', async () => {
     setBrowserSessionMode('managed');
     await ipcService.invokeDomain<ManagedBrowserSessionState>(
       IPC_DOMAINS.DESKTOP,
       'ensureManagedBrowserSession',
-      { mode: 'visible', profileMode: 'isolated' },
+      { mode: 'visible', profileMode: 'isolated', conversationId: currentSessionId ?? undefined },
     );
     setNotice('托管浏览器已启动。');
-  }), [run, setBrowserSessionMode]);
+  }), [run, setBrowserSessionMode, currentSessionId]);
 
   const handleRefreshAccount = useCallback(() => run('refresh', async () => {
     await ipcService.invokeDomain<AccountRefreshResult>(

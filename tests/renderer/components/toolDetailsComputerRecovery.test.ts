@@ -1,3 +1,4 @@
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -218,11 +219,13 @@ describe('ToolDetails computer recovery actions', () => {
       },
     }, zh.rendererHumanPipe.toolDetails);
 
+    useSessionStore.setState({ currentSessionId: 'conv-recovery' });
     await actions.find((action) => action.id === 'launch_managed_browser')?.run?.();
 
     expect(invokeMock).toHaveBeenCalledWith(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession', {
       url: 'about:blank',
       provider: 'system-chrome-cdp',
+      conversationId: 'conv-recovery',
     });
   });
 });
