@@ -20,6 +20,7 @@ import { resetSessionTaskConcurrencyPoolForTest } from '../../../../src/host/ser
 import { resetBackgroundTaskLedgerForTest } from '../../../../src/host/task/backgroundTaskLedger';
 import { executeDelegateTask } from '../../../../src/host/tools/modules/commandCenter/sessionCommandCenter';
 import { backfillMissingTelemetryUserPrompts } from '../../../../src/host/services/infra/sessionManagerTelemetryBackfill';
+import { buildTranscriptReplay } from '../../../../src/host/telemetry/replay/transcriptReplayBuilder';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
 // Internal scaffolding of the delegated prompt: it must reach the model, never a stored user row.
@@ -33,6 +34,7 @@ const databaseStub = vi.hoisted(() => () => {
     getDb: () => store.db,
     addMessage: (id: string, message: Message) => repoOf().addMessage(id, message),
     getSession: (id: string) => repoOf().getSession(id),
+    getMessages: (id: string) => repoOf().getMessages(id),
     listSessions: () => [],
     listMemories: () => [],
     getTodos: () => [],
@@ -135,6 +137,10 @@ describe('delegate_task persists only the drafted plan as the background run use
 
     const userRows = db.prepare("select content, is_meta from messages where session_id = 'chat-session' and role = 'user'").all() as Array<{ content: string; is_meta: number }>;
     const prompts = db.prepare("select user_prompt from telemetry_turns where session_id = 'chat-session'").all() as Array<{ user_prompt: string }>;
+    // Replay built from the transcript shows the plan sentence as the delegated row, with no scaffolding.
+    const replay = buildTranscriptReplay('chat-session', () => ({}) as never);
+    const replayUserText = (replay?.turns ?? []).flatMap((turn) => turn.blocks).filter((block) => block.type === 'user').map((block) => block.content);
+    expect(replayUserText).toContain(PLAN);
     expect(userRows.some((row) => row.is_meta === 1 && row.content === PLAN)).toBe(true);
     for (const marker of DELEGATED_SCAFFOLDING_MARKERS) {
       for (const row of userRows) expect(row.content).not.toContain(marker);
