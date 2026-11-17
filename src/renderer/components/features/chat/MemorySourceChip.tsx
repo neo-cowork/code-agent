@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { Brain } from 'lucide-react';
-import type { TurnQualityMemoryItem, TurnQualitySummary } from '@shared/contract/turnQuality';
+import type { TurnQualityMemoryBlockType, TurnQualityMemoryItem, TurnQualitySummary } from '@shared/contract/turnQuality';
 import { Button } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 
-/** 本轮实际注入的记忆条目（按 entryId 去重）；mode=off 或无注入块时返回 null。failure_journal 是引擎自检，不算「记忆」。 */
+// 白名单：memory_index 是每轮常驻的 MemoryRead 目录（无 items），不代表这轮用了记忆。
+const USED_MEMORY_BLOCK_TYPES = new Set<TurnQualityMemoryBlockType>(['seed-memory', 'user-memory', 'user-directives']);
+
+/** 本轮实际注入的记忆条目（按 entryId 去重）；mode=off 或无注入块时返回 null。只认真正把记忆内容放进提示词的块；常驻目录 memory_index、memory_hint、recent_conversations、failure_journal 都不算「本条回复参考了记忆」。 */
 function usedMemory(summary: TurnQualitySummary): { items: TurnQualityMemoryItem[] } | null {
   if (summary.memory.mode === 'off') return null;
-  const injected = summary.memory.blocks.filter((block) => block.injected && block.count > 0 && block.blockType !== 'failure_journal');
+  const injected = summary.memory.blocks.filter((block) => block.injected && block.count > 0 && USED_MEMORY_BLOCK_TYPES.has(block.blockType));
   if (injected.length === 0) return null;
   const seen = new Set<string>();
   const items = injected.flatMap((block) => block.items || []).filter((item) => {

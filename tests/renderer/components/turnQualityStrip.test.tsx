@@ -325,6 +325,15 @@ describe('TurnQualityStrip expert display name', () => {
       expect(container.querySelector('button')?.textContent).toContain('参考了记忆');
     });
 
+    it('shows no chip when only the always-on memory_index (and other non-content blocks) was injected', () => {
+      const blocks = (['memory_index', 'memory_hint', 'recent_conversations', 'failure_journal'] as const).map((blockType) => ({
+        blockType, trigger: 'memory_index_available', source: 'light-memory-index', injected: true, chars: 200, count: 5,
+      }));
+      const { container } = render(<TurnQualityStrip summary={withItems({ blocks })} />);
+      expect(container.querySelector('button')).toBeNull();
+      expect(container.textContent).not.toContain('参考了');
+    });
+
     it('shows no chip when memory is off, not injected, or count is 0', () => {
       const off = withItems({ mode: 'off' });
       const notInjected = withItems({ blocks: [{ ...summary.memory.blocks[0], injected: false }] });
