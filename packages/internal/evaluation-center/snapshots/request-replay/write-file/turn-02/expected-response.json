@@ -1,6 +1,6 @@
 {
   "type": "text",
-  "content": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (34 chars)",
+  "content": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)",
   "finishReason": "stop",
   "actualProvider": "acceptance",
   "actualModel": "e2e-local-agent-model",

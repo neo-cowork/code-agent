@@ -22,7 +22,7 @@
         },
         {
           "type": "assistant_text",
-          "text": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (34 chars)"
+          "text": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)"
         }
       ],
       "fileChanges": [
