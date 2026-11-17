@@ -235,8 +235,8 @@ describe('no self grant', () => {
     const needle = /mintAppGrant(?:Session|Standing)\b/g;
     const hits = files.filter((file) => needle.test(readFileSync(file, 'utf8')));
     expect(hits.map((file) => path.relative(process.cwd(), file)).sort()).toEqual([
-      'src/host/agent/orchestratorPermissions.ts',
       'src/host/permissions/appGrantStore.ts',
+      'src/host/permissions/humanGrantPolicy.ts',
     ]);
   });
 });

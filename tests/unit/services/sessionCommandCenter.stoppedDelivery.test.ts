@@ -13,9 +13,10 @@ const h = vi.hoisted(() => ({
   manager: undefined as unknown,
   db: undefined as unknown as Database.Database,
   repository: undefined as unknown as SessionRepository,
-  variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed',
+  variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed' | 'markup_only',
   events: [] as AgentEvent[],
   pageOutput: '',
+  conclusion: '',
 }));
 const storage = {
   addMessageToSession: async (sessionId: string, message: Message) => {
@@ -38,7 +39,11 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
     constructor(private readonly options: { onEvent: (event: AgentEvent) => Promise<void> }) {}
     setSessionId() {}
     setWorkspaceScopeAuthority() {}
-    getMessages() { return h.variant === 'no_conclusion' ? [] : [{ role: 'assistant', content: '已查看首页。' }]; }
+    getMessages() {
+      if (h.variant === 'no_conclusion') return [];
+      if (h.variant === 'markup_only') return [{ role: 'assistant', content: h.conclusion }];
+      return [{ role: 'assistant', content: '已查看首页。' }];
+    }
     async sendMessage() {
       await this.options.onEvent({ type: 'tool_call_start', data: {
         id: 'browser-1', name: 'Browser', arguments: { action: 'navigate', url: 'https://baike.baidu.com/item/%E9%B9%88%E9%B9%95' },
@@ -87,7 +92,7 @@ beforeEach(() => {
 });
 afterEach(() => { center?.dispose(); h.db?.close(); });
 
-async function stop(variant: typeof h.variant) {
+async function stop(variant: typeof h.variant, replay = true) {
   h.variant = variant;
   manager.emitAgentEventForSession('session-stop', { type: 'message', data: {
     id: 'foreground-reply', role: 'assistant', content: '正在整理你的周报，已保留第一部分。', timestamp: 1,
@@ -102,8 +107,12 @@ async function stop(variant: typeof h.variant) {
   if (result.outcome === 'requires_choice') throw new Error('unexpected admission result');
   await vi.waitFor(() => expect(rows().some((m) => m.metadata?.backgroundTaskResult)).toBe(true));
   // Replay the same terminal event: must not create a second visible note.
-  manager.emit('task_error', { type: 'task_error', sessionId: 'session-stop', data: { taskId: result.task.id, error: 'duplicate' } });
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  // handleTaskEvent writes task.stopped before settle's terminal guard, so a replay
+  // mutates the in-memory kind even though the persisted note stays the first one.
+  if (replay) {
+    manager.emit('task_error', { type: 'task_error', sessionId: 'session-stop', data: { taskId: result.task.id, error: 'duplicate' } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   return rows();
 }
 
@@ -188,5 +197,27 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     const messages = await stop('completed');
     expect(messages.filter((m) => m.metadata?.backgroundTaskStopped)).toHaveLength(0);
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a markup-only browser conclusion unfinished through the task_completed event', async () => {
+    h.conclusion = '<tool_call><function=Browser><parameter=action>type</parameter><parameter=targetRef>tref_snapshot_example_23</parameter><parameter=text>Tauri</parameter></function></tool_call>';
+    const messages = await stop('markup_only', false);
+    const task = center.list('session-stop')[0];
+    expect(task).toMatchObject({ status: 'failed', stopped: { kind: 'no_conclusion' } });
+    expect(task.detail).toContain('没有留下最终结果');
+    expect(task.detail).toContain('继续');
+    expect(task.detail).toContain('最后停留在页面「鹈鹕_百度百科」');
+    expect(task.detail).not.toMatch(/tool_call|function=|targetRef/);
+    const card = messages.find((m) => m.metadata?.backgroundTaskResult);
+    expect(card?.metadata?.backgroundTaskResult).toMatchObject({ status: 'failed' });
+    expect(card?.content).toContain('已失败');
+    expect(card?.content).toContain('没有留下最终结果');
+    expect(card?.content).toContain('继续');
+    expect(card?.content).not.toMatch(/tool_call|function=|targetRef/);
+    const notes = messages.filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].metadata?.backgroundTaskStopped).toMatchObject({ kind: 'no_conclusion' });
+    expect(notes[0].content).toContain('最后停留在页面「鹈鹕_百度百科」');
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
   });
 });
