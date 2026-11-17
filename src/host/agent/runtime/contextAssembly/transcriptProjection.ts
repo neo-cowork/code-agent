@@ -3,7 +3,7 @@ import type { ContextInterventionSnapshot } from '../../../../shared/contract/co
 import { compactModelSummarize } from '../../../context/compactModel';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger } from './shared';
-import { stripModelMarkup } from '../../../../shared/modelMarkupStrip';
+import { stripLongcatMarkup } from '../../../../shared/modelMarkupStrip';
 import { getProtocolToolSchemas } from '../../../tools/protocolToolRegistration';
 import {
   formatArtifactRepairToolResultContent,
@@ -173,9 +173,9 @@ export async function summarizeCollapsedContext(
  * 与 renderer 侧 messageContentParts.SYSTEM_TAG_PATTERNS 的 longcat 段对齐；
  * 未闭合的 <longcat_tool_call> 按 <think> 同款兜底剥到串尾。
  */
-/** 剥离正文里的 think / 工具调用协议裸标记（实现见 shared/modelMarkupStrip）；无标记时原样返回。 */
+/** 剥离正文里的工具调用协议裸标记（issue #1991，实现见 shared/modelMarkupStrip）。刻意不剥 think：此路径落库，字面 think 标签可能是代码示例。 */
 export function stripToolCallProtocolMarkup(content: string): string {
-  return stripModelMarkup(content);
+  return stripLongcatMarkup(content);
 }
 
 export function stripInternalFormatMimicry(_ctx: ContextAssemblyCtx, content: string): string {

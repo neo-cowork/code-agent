@@ -58,13 +58,16 @@ export function stripThinkMarkup(text: string): string {
   return splitThinkTags(text, '').content;
 }
 
-/** 用户可见出口的统一剥离：think + LongCat 工具协议裸标记。无标记时原样返回。 */
+/** 只剥 LongCat 工具协议裸标记（落库/转录路径用，不碰 think：正文里的字面 think 标签可能是代码示例）。 */
+export function stripLongcatMarkup(content: string): string {
+  if (!content?.includes('longcat_')) return content;
+  let cleaned = content;
+  for (const pattern of LONGCAT_PATTERNS) cleaned = cleaned.replace(pattern, '');
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** 仅用于「只给人看、不落库」的展示出口：think + LongCat 裸标记。无标记时原样返回。 */
 export function stripModelMarkup(text: string): string {
   if (!text) return text;
-  let cleaned = stripThinkMarkup(text);
-  if (cleaned.includes('longcat_')) {
-    for (const pattern of LONGCAT_PATTERNS) cleaned = cleaned.replace(pattern, '');
-    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
-  }
-  return cleaned;
+  return stripLongcatMarkup(stripThinkMarkup(text));
 }
