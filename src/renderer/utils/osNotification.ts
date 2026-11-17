@@ -12,7 +12,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../services/nativeDesktop';
 import { invokeNativeCommandAction, type NativeSystemNotificationResult } from '../services/nativeCommandFacade';
-import { toast } from '../hooks/useToast';
+import { toast, useToastStore } from '../hooks/useToast';
 import { OS_NOTIFICATION_TIMEOUTS } from '@shared/constants';
 
 const FOREGROUND_FAILURE_TOAST_MS = 10_000;
@@ -202,10 +202,19 @@ async function postOsNotificationInner(
     } else {
       const reason = result.reason ?? 'UNUserNotificationCenter notification failed';
       console.warn('[osNotification] UNUserNotificationCenter 发送失败', reason);
+      // 系统通知发不出（如 Dev 包非 Apple 签名被拒授权）时不静默：补一条应用内 toast，用户回到窗口能看到。
+      const fallbackToast = !toastShown;
+      if (fallbackToast) {
+        const { onOpen, openLabel } = flags;
+        const action = onOpen && openLabel ? { label: openLabel, onClick: onOpen } : undefined;
+        useToastStore.getState().addToast(flags.failure === true ? 'error' : 'info', `${opts.title}: ${opts.body}`, FOREGROUND_FAILURE_TOAST_MS, action);
+      }
       reportDelivery({
         mode: 'tauri',
         backend: 'unc',
         error: reason,
+        ...(fallbackToast ? { fallbackToast: true } : {}),
+        ...toastFlag,
       });
     }
     return;

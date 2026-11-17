@@ -195,7 +195,28 @@ describe('osNotification', () => {
       expect(warn).toHaveBeenCalledWith('[osNotification] UNUserNotificationCenter 发送失败', 'authorization denied');
       const reports = domainInvoke.mock.calls.filter((call) => call[1] === 'reportClientDelivery');
       expect(reports).toHaveLength(1);
-      expect(reports[0][2]).toEqual({ mode: 'tauri', backend: 'unc', error: 'authorization denied' });
+      expect(reports[0][2]).toEqual({ mode: 'tauri', backend: 'unc', error: 'authorization denied', fallbackToast: true });
+      // 系统通知发不出不静默：补一条应用内 toast
+      const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({ type: 'info', message: '任务完成 - 循环: 已完成 1 轮' }),
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('UNC failure for an urgent failure already toasted in the foreground does not add a second toast', async () => {
+    tauriInvoke.mockResolvedValue({ backend: 'unc', ok: false, reason: 'authorization denied' });
+    (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: 't', body: 'b' }, { urgent: true, failure: true });
+      const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+      expect(useToastStore.getState().toasts).toHaveLength(1);
+      const reports = domainInvoke.mock.calls.filter((call) => call[1] === 'reportClientDelivery');
+      expect(reports[0][2]).toEqual({ mode: 'tauri', backend: 'unc', error: 'authorization denied', toastShown: true });
     } finally {
       warn.mockRestore();
     }
