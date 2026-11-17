@@ -103,12 +103,14 @@ describe('resolveFileTargetKind', () => {
     expect(resolveFileTargetKind(link)).toBe('regular');
   });
 
-  it.skipIf(!posix)('whitespace-padded path is not trimmed into an existing different file', () => {
+  it.skipIf(!posix)('whitespace-padded path follows what each tool really opens', () => {
     const dir = tmpDir();
     writeFileSync(path.join(dir, 'report.md'), 'payload');
-    // The tool would create a new file literally named ' report.md '; classifying the
-    // trimmed name instead would borrow the existing file's kind.
-    expect(resolveFileTargetKind(' report.md ', dir)).toBe('unknown');
+    // Write/Append resolve through resolveInputPath, which trims the identifier (cleanXmlResidues
+    // no longer does), so the padded spelling targets the existing report.md.
+    expect(resolveFileTargetKind(' report.md ', dir)).toBe('regular');
+    // Edit (expandTilde:false) uses path.resolve untrimmed: a new file literally named ' report.md '.
+    expect(resolveFileTargetKind(' report.md ', dir, { expandTilde: false })).toBe('unknown');
     expect(resolveFileTargetKind('report.md', dir)).toBe('regular');
   });
 

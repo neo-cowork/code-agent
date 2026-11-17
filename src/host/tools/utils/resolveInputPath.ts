@@ -13,7 +13,8 @@ export function expandTilde(filePath: string): string {
 }
 
 export function resolveInputPath(inputPath: string, workingDir: string): string {
-  const expanded = expandTilde(inputPath);
+  // cleanXmlResidues no longer trims untagged strings, so a padded model path is trimmed here.
+  const expanded = expandTilde(inputPath.trim());
   if (path.isAbsolute(expanded)) return expanded;
   return path.join(workingDir, expanded);
 }
@@ -22,7 +23,7 @@ export function guardUnattendedInputPath(
   inputPath: string | undefined,
   ctx: Pick<ToolContext, 'sessionId' | 'logger'>,
 ): ToolResult<never> | null {
-  if (inputPath !== undefined && path.isAbsolute(expandTilde(inputPath))) return null;
+  if (inputPath !== undefined && path.isAbsolute(expandTilde(inputPath.trim()))) return null;
   if (!getPermissionModeManager().isUnattendedSession(ctx.sessionId)) return null;
 
   let hasWorkingDirectory = false;

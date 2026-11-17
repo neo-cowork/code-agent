@@ -286,7 +286,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'command must not be empty', code: 'INVALID_ARGS' };
     }
 
-    const command = unwrapSelfReference(rawCommand);
+    // Padding is not part of the command: cleanXmlResidues no longer trims untagged strings.
+    const command = unwrapSelfReference(rawCommand.trim());
     const implicitBackground = rewriteImplicitBackgroundCommand(command);
     const normalizedCommand = implicitBackground.command;
     const permissionModeManager = getPermissionModeManager();

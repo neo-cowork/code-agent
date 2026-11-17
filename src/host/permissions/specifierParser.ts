@@ -102,7 +102,8 @@ export function matchSpecifier(
     return true; // No specifier means match all inputs for this tool
   }
   if (specifier.specifierType === 'command') {
-    return matchCommandSpecifier(specifier.specifier, input, intent);
+    return matchCommandSpecifier(specifier.specifier, input.trim(), intent);
   }
-  return globMatches(specifier.specifier, input);
+  // Identifiers (command/path) are matched trimmed: cleanXmlResidues no longer trims untagged strings.
+  return globMatches(specifier.specifier, input.trim());
 }
