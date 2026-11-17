@@ -18,7 +18,7 @@ import {
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
-import { formatConnectorTime } from './connectorTime';
+import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
@@ -31,11 +31,16 @@ interface ReminderItem {
   remindAtMs?: number | null;
 }
 
-function formatReminder(reminder: ReminderItem): string {
-  const remindAt = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs)
-    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs)}`
+function formatReminder(reminder: ReminderItem, now: number = Date.now()): string {
+  const hasTime = typeof reminder.remindAtMs === 'number' && Number.isFinite(reminder.remindAtMs);
+  const remindAt = hasTime
+    ? `提醒时间：${formatConnectorTime(reminder.remindAtMs as number)}`
     : '无提醒时间';
-  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}`;
+  // 到点状态由宿主按时刻比较给出，模型只转述，不自行推断。
+  const dueState = hasTime && !reminder.completed
+    ? ((reminder.remindAtMs as number) > now ? '（未到点）' : '（已过点）')
+    : '';
+  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''} | ${remindAt}${dueState}`;
 }
 
 function buildRemindersMeta(
@@ -137,8 +142,9 @@ async function executeReminders(
 
     // list_reminders
     const reminders = result.data as ReminderItem[];
+    const now = Date.now();
     const output = reminders.length > 0
-      ? `提醒事项 (${reminders.length})：\n${reminders.map(formatReminder).join('\n')}`
+      ? `${formatConnectorNow(now)}\n提醒事项 (${reminders.length})：\n${reminders.map((r) => formatReminder(r, now)).join('\n')}`
       : '没有找到匹配的提醒。';
     return {
       ok: true,
@@ -163,7 +169,7 @@ async function executeReminders(
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
       // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
       // 判据读 metadata.code，缺了它 reminders 的授权被拒永远发不出环境卡片）。
-      ...(osascriptFailure ? { code: failure.code } : {}),
+      code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
   }
 }

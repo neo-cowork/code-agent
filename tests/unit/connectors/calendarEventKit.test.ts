@@ -86,6 +86,16 @@ describe('calendar connector over EventKit', () => {
     expect((error as Error).message).toContain('call calendar list_events again');
   });
 
+  it('passes notes (CJK + newline) to EventKit unchanged and returns them; sends no notes key when absent', async () => {
+    const notes = '带上季度报表\n第二行';
+    const created = await calendarConnector.execute('create_event', { title: '周会', start_ms: HOUR, notes });
+    expect(fake.state.calls.at(-1)?.body).toEqual({ op: 'create', title: '周会', startMs: HOUR, endMs: HOUR + 30 * 60_000, notes });
+    expect(created.data).toMatchObject({ title: '周会', notes });
+
+    await calendarConnector.execute('create_event', { title: '无备注', start_ms: HOUR, notes: '   ' });
+    expect(fake.state.calls.at(-1)?.body).not.toHaveProperty('notes');
+  });
+
   it('creates in the named writable calendar (case-insensitive), or the system default; rejects unknown names before writing', async () => {
     fake.state.calendars = [
       { id: 'c-holidays', title: '节假日', writable: false },
@@ -117,6 +127,31 @@ describe('calendar connector over EventKit', () => {
     expect((await calendarConnector.execute('default_calendar', {})).data).toBe('家庭');
     fake.state.calendars = [{ id: 'c-work', title: 'Work', writable: true }];
     expect((await calendarConnector.execute('default_calendar', {})).data).toBeNull();
+  });
+
+  it('start-only update keeps the duration and sends only startMs', async () => {
+    fake.state.items.push({ id: 'e1', calendarId: 'c-work', calendar: 'Work', title: '周会', startMs: 10 * HOUR, endMs: 11 * HOUR });
+    const res = await calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e1', start_ms: 16 * HOUR });
+    expect(res.data).toMatchObject({ startAtMs: 16 * HOUR, endAtMs: 17 * HOUR });
+    const write = fake.state.calls.find((c) => c.path === '/v1/write/calendar-event')!;
+    expect(write.body.startMs).toBe(16 * HOUR);
+    expect('endMs' in write.body).toBe(false);
+  });
+
+  it('native event_end_not_after_start surfaces as a plain message, not WRITE_UNCONFIRMED', async () => {
+    const realPost = fake.client.post;
+    fake.client.post = async <T>(path: string, body?: Record<string, unknown>): Promise<T> => {
+      if (path === '/v1/write/calendar-event') throw Object.assign(new Error('env_assist_bridge:bridge_http_400'), { bridgeError: 'event_end_not_after_start' });
+      return realPost<T>(path, body);
+    };
+    try {
+      const error = await failureOf(calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e1', start_ms: 1, end_ms: 2 }));
+      expect(isCalendarFailure(error)).toBe(true);
+      expect((error as Error).message).toContain('must be later than the start');
+      expect((error as Error).message).not.toContain('result is unknown');
+    } finally {
+      fake.client.post = realPost;
+    }
   });
 
   it('keeps the old argument validation messages', async () => {

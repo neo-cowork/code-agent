@@ -16,6 +16,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { SESSION_SEARCH } from '../../shared/constants';
+import type { CrossSessionSearchProjectScope } from '../../shared/ipc/types';
 import type { Message } from '../../shared/contract';
 import {
   SessionLocalCache,
@@ -53,7 +54,7 @@ export interface SessionSearchFtsSource {
       role?: string;
       limitCap?: number;
       shortQueryFallback?: boolean;
-      activeSessionScope?: { userId: string | null };
+      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
     }
   ): SessionSearchFtsHit[];
   countSessionMessagesFts(
@@ -62,7 +63,7 @@ export interface SessionSearchFtsSource {
       sessionIds?: string[];
       role?: string;
       shortQueryFallback?: boolean;
-      activeSessionScope?: { userId: string | null };
+      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
     }
   ): { matches: number; sessions: number };
   getMessages(sessionId: string, limit?: number): Message[];
@@ -97,7 +98,7 @@ export interface SearchOptions {
   /** Sort direction */
   sortOrder?: 'asc' | 'desc';
   /** FTS 路径：在 SQL 层（LIMIT 之前）只召回未删除、未归档、归属匹配的会话 */
-  activeSessionScope?: { userId: string | null };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
 }
 
 /**

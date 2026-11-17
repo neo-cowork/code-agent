@@ -13,6 +13,7 @@ import type { RoleFirstWakeSnapshot } from '@shared/contract/roleAssets';
 import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { interpolate } from '../../../i18n/interpolate';
 import { consumeFirstWakeSuggestion, getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
 import { useAppStore } from '../../../stores/appStore';
@@ -22,8 +23,12 @@ import { resolveAgentErrorCopy, WAKE_CARD_CHECK_ACCOUNT_CATEGORIES } from './Age
 import { MODEL_OVERRIDE_CHANGE_EVENT, OPEN_MODEL_SWITCHER_EVENT } from '../../StatusBar/ModelSwitcher';
 import { hasCalendarSource } from './roleWakeSources';
 import { RoleWakeProposalsCard } from './RoleWakeProposalsCard';
+import { PendingThinkingLine } from './ThinkingDigestBanner';
 
 const POLL_MS = 3000;
+
+// 快照不带开始时间：计时从本次应用会话里首次见到该专家在醒来的时刻起，卡片重挂（切会话再回来）不归零。
+const wakeFirstSeenAt = new Map<string, number>();
 
 interface RoleFirstWakeCardProps {
   roleId: string;
@@ -60,12 +65,12 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     void listRoles().then((entries) => {
       if (cancelled) return;
       const name = entries.find((entry) => entry.roleId === roleId)?.displayName?.trim();
-      if (name) setDisplayName(name);
+      if (name) setDisplayName(localizeBuiltinRole(roleId, { name }, language).name);
     }).catch(() => {
       // 展示名只用于头像与无障碍标签，失败就用 roleId
     });
     return () => { cancelled = true; };
-  }, [roleId]);
+  }, [roleId, language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +188,8 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const suggestions = sourcesMode === 'connected' ? (snapshot?.suggestions ?? []).slice(0, 3) : [];
   const intro = snapshot?.intro?.trim() ?? '';
   const showRunning = isActiveState(state) || live === 'optimistic';
+  if (showRunning && !wakeFirstSeenAt.has(roleId)) wakeFirstSeenAt.set(roleId, Date.now());
+  if (!showRunning && state !== 'pending') wakeFirstSeenAt.delete(roleId);
   const showFailed = state === 'failed';
   const showNone = (state === 'completed' || showFailed) && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
@@ -243,13 +250,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       <div className="col-start-2 min-w-0 pt-[3px]">
         {showRunning && (
           <div className="flex items-center gap-2">
-            <span
-              className="size-2 shrink-0 rounded-full bg-brand animate-pulse motion-reduce:animate-none"
-              aria-hidden="true"
-              data-testid="role-first-wake-pulse"
-            />
-            {/* 无已连接源时模型没在熟悉任何数据，只准备一句开场：不能说「熟悉已连接的数据」 */}
-            <p className="text-base leading-relaxed text-text-tertiary">{sourcesMode === 'none' ? copy.runningNone : copy.running}</p>
+            <PendingThinkingLine sinceMs={wakeFirstSeenAt.get(roleId) ?? Date.now()} />
             {skipButton}
           </div>
         )}

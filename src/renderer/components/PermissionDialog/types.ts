@@ -75,6 +75,10 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** calendar 读取卡的时间窗与日历名（host 原参数透传，缺省走默认窗口）。 */
+  from_ms?: unknown;
+  to_ms?: unknown;
+  calendar?: unknown;
   /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
   requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
   access?: string;
@@ -133,7 +137,6 @@ export interface PermissionRequest {
 // 权限配置
 export interface PermissionConfig {
   icon: ReactNode;
-  title: string;
   color: string;
   bgColor: string;
   borderColor: string;

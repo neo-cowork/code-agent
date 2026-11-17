@@ -33,6 +33,7 @@ impl Language {
         match self {
             Self::En => Labels {
                 settings: "Settings…",
+                reload: "Reload",
                 quit: "Quit Agent Neo",
                 full_quit: "Quit Completely",
                 quick_ask: "Quick Ask",
@@ -41,6 +42,7 @@ impl Language {
             },
             Self::Zh => Labels {
                 settings: "设置…",
+                reload: "重新载入",
                 quit: "退出 Agent Neo",
                 full_quit: "完全退出",
                 quick_ask: "快速提问",
@@ -54,6 +56,7 @@ impl Language {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Labels {
     pub settings: &'static str,
+    pub reload: &'static str,
     pub full_quit: &'static str,
     pub quit: &'static str,
     pub quick_ask: &'static str,
@@ -84,6 +87,7 @@ fn update_items(items: Vec<MenuItemKind<tauri::Wry>>, labels: &Labels) -> tauri:
             MenuItemKind::MenuItem(item) => {
                 let text = match item.id().as_ref() {
                     "open_settings" => labels.settings,
+                    "reload_window" => labels.reload,
                     "quit_app" => labels.quit,
                     "full_quit" => labels.full_quit,
                     "quick_ask" => labels.quick_ask,
@@ -135,6 +139,7 @@ mod tests {
             Language::En.labels(),
             Labels {
                 settings: "Settings…",
+                reload: "Reload",
                 quit: "Quit Agent Neo",
                 full_quit: "Quit Completely",
                 quick_ask: "Quick Ask",
@@ -151,6 +156,7 @@ mod tests {
             Language::Zh.labels(),
             Labels {
                 settings: "\u{8bbe}\u{7f6e}…",
+                reload: "\u{91cd}\u{65b0}\u{8f7d}\u{5165}",
                 quit: "\u{9000}\u{51fa} Agent Neo",
                 full_quit: "完全退出",
                 quick_ask: "\u{5feb}\u{901f}\u{63d0}\u{95ee}",
