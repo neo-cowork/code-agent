@@ -28,6 +28,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { classifyToolName, humanizeToolStep } from '../../../utils/humanizeToolStep';
+import { approvalPreviewBasename } from '../../../utils/approvalPreviewBasename';
 import { toast } from '../../../hooks/useToast';
 import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
 import { UserRequestQuote } from '../../PermissionDialog/UserRequestQuote';
@@ -56,8 +57,7 @@ function findParkedApprovalForSession(
   const pending = (rows ?? []).find((item) => item.sessionId === sessionId && item.status === 'pending');
   if (!pending) return null;
   const category = classifyToolName(pending.tool);
-  const preview = pending.argsPreview?.trim();
-  const basename = preview && !/[\n\0]/.test(preview) ? preview.split(/[\\/]/).filter(Boolean).pop() : undefined;
+  const basename = approvalPreviewBasename(pending.argsPreview);
   const args = ['read', 'write', 'edit'].includes(category) && basename ? { file_path: basename } : undefined;
   const label = args ? humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval') : toolUserLabel(pending.tool, language);
   return {

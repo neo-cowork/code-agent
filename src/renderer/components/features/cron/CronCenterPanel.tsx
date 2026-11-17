@@ -3,7 +3,7 @@
 // 2026-07-27 批C4（WorkBuddy 式结构改造，产品负责人拍板）：pill 导航「定时任务 | 运行记录」。
 //   * 定时任务 tab：状态条 → 推荐模板（独立成块）→ 任务列表+详情工作台
 //   * 运行记录 tab：待过目收件箱（本质是运行结果的子集）→ 跨任务执行流（点击看详情）
-// 页首三格状态条是全页状态锚点：数据复用 cronStore.stats（运行中=jobsByStatus.running、
+// 页首四格状态条是全页状态锚点：数据复用 cronStore.stats（运行中=jobsByStatus.running、
 // 成功率=successRate）+ 收件箱回传的待过目数（与侧栏角标同一琥珀色视觉语言）。
 // 布局契约（2026-07-27 UX 收尾 1.4）：页级横向 padding 统一 px-6（PageContent 契约），
 // 状态条卡片走统一卡片语言（rounded-lg border-zinc-800 bg-zinc-900/70）；
@@ -83,7 +83,7 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
     <div className={`text-2xl font-semibold tabular-nums ${attention ? 'text-badge-warning' : 'text-zinc-100'}`}>
       {value}
     </div>
-    <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
+    <div className="mt-0.5 whitespace-nowrap text-xs text-zinc-500">{label}</div>
   </div>
 );
 
@@ -344,7 +344,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="cron-center-scroll">
-        <div className="grid shrink-0 grid-cols-3 gap-3 px-6 pt-4" data-testid="cron-status-bar">
+        <div className="grid shrink-0 grid-cols-4 gap-3 px-6 pt-4" data-testid="cron-status-bar">
           <StatusTile
             label={cc.statRunning}
             value={stats ? String(runningCount) : '—'}
@@ -352,9 +352,15 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           />
           <StatusTile
             label={cc.statPendingReview}
-            value={pendingTotal === null ? '—' : String(pendingTotal)}
-            attention={(pendingTotal ?? 0) > 0}
+            value={String(parkedPendingCount)}
+            attention={parkedPendingCount > 0}
             testId="cron-status-pending"
+          />
+          <StatusTile
+            label={cc.statResultsToView}
+            value={pendingReviewCount === null ? '—' : String(pendingReviewCount)}
+            attention={(pendingReviewCount ?? 0) > 0}
+            testId="cron-status-review"
           />
           <StatusTile
             label={cc.statRate}
