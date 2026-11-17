@@ -23,6 +23,7 @@ import type {
   SidebarProjectMeta,
 } from '../../../utils/sidebarProjectSummary';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import type { Translations } from '../../../i18n';
 import ipcService from '../../../services/ipcService';
 import {
@@ -119,6 +120,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
   onMetaChange,
 }) => {
   const { t, language } = useI18n();
+  const localizeRole = useLocalizeRole();
   const p = t.sidebarProject;
   const sessionCount = meta?.sessionCount ?? fallbackSessionCount;
   const goalFallback = meta ? interpolatePlural(p.goalCountFallback, meta.goalCount ?? 0) : p.detailLoading;
@@ -533,7 +535,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                     className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-zinc-800 disabled:opacity-50"
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] text-zinc-300">{role.roleId}</span>
+                      <span className="block truncate text-[11px] text-zinc-300">{localizeRole(role.roleId, { name: role.roleId }).name}</span>
                       {role.description?.trim() && (
                         <span className="block truncate text-[10px] text-zinc-600">{role.description}</span>
                       )}

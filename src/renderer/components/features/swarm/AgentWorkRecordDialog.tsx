@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, Wrench, Zap } from 'lucide-react';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
@@ -26,8 +27,10 @@ export const AgentWorkRecordDialog: React.FC<{
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
   // 副标题优先显示职业（「内容主理人」比裸角色 id 更像人话），查不到才回落角色 id
   const roleId = agent.role || agent.id;
-  const subtitle = useAgentRegistryStore((state) => state.entries).find((entry) => entry.id === roleId)?.profession
+  const localizeRole = useLocalizeRole();
+  const rawSubtitle = useAgentRegistryStore((state) => state.entries).find((entry) => entry.id === roleId)?.profession
     ?? agent.role;
+  const subtitle = rawSubtitle ? localizeRole(roleId, { name: agent.name || agent.id, profession: rawSubtitle }).profession : rawSubtitle;
   const output = record?.finalOutput ?? agent.finalOutput;
   const task = record?.dispatchedTask ?? agent.dispatchedTask;
   const tokens = record ? record.tokensIn + record.tokensOut : (agent.tokenUsage?.input ?? 0) + (agent.tokenUsage?.output ?? 0);
@@ -40,7 +43,7 @@ export const AgentWorkRecordDialog: React.FC<{
       <section data-testid="agent-work-record">
         <header className="flex items-center gap-3 border-b border-zinc-800 px-1 pb-3">
           <RoleInitialAvatar roleId={roleId} name={agent.name || agent.role} />
-          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold text-zinc-100">{agent.name || agent.id}</h2><p className="truncate text-xs text-zinc-400">{subtitle}</p></div>
+          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold text-zinc-100">{localizeRole(roleId, { name: agent.name || agent.id }).name}</h2><p className="truncate text-xs text-zinc-400">{subtitle}</p></div>
         </header>
         <div className="space-y-4 overflow-y-auto py-4 text-sm">
           {loading ? <p className="text-zinc-400">{t.expert.workRecord.loading}</p> : <>

@@ -16,6 +16,7 @@ import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../../../../services/nativeDesktop';
 import { useMeetingSessionStore } from '../../../../stores/meetingSessionStore';
 import {
@@ -45,6 +46,7 @@ export const InputAddMenu: React.FC<Props> = ({
   onSelectCapability,
 }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const [open, setOpen] = useState(false);
   const [submenu, setSubmenu] = useState<SubmenuKind | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -229,7 +231,7 @@ export const InputAddMenu: React.FC<Props> = ({
     id: item.id,
     label: item.label,
     sublabel: item.kind !== 'skill' && expertOptionalIds.has(item.id)
-      ? t.chatInput.connectorSource.menuRecommended.replace('{expert}', activeExpert?.displayName || activeExpert?.name || activeExpert?.id || '')
+      ? t.chatInput.connectorSource.menuRecommended.replace('{expert}', activeExpert ? localizeRole(activeExpert.id, { name: activeExpert.displayName || activeExpert.name || activeExpert.id }).name : '')
       : undefined,
     description: item.kind === 'skill'
       ? item.description
@@ -242,17 +244,20 @@ export const InputAddMenu: React.FC<Props> = ({
   const teamItems: InputAddSubmenuItem[] = recipes.map((recipe) => ({
     id: recipe.id,
     label: recipe.name,
-    sublabel: recipe.lead ? t.inputAddMenu.teamLeadPrefix.replace('{lead}', recipe.lead.roleId) : undefined,
+    sublabel: recipe.lead ? t.inputAddMenu.teamLeadPrefix.replace('{lead}', localizeRole(recipe.lead.roleId, { name: recipe.lead.roleId }).name) : undefined,
     description: recipe.description,
     selected: recipe.id === selectedTeamRecipeId,
   }));
-  const expertItems: InputAddSubmenuItem[] = expertEntries.map((entry) => ({
-    id: entry.id,
-    label: entry.displayName || entry.name || entry.id,
-    sublabel: entry.profession,
-    description: entry.description,
-    selected: entry.id === activeAgentId,
-  }));
+  const expertItems: InputAddSubmenuItem[] = expertEntries.map((entry) => {
+    const localized = localizeRole(entry.id, { name: entry.displayName || entry.name || entry.id, profession: entry.profession });
+    return {
+      id: entry.id,
+      label: localized.name,
+      sublabel: localized.profession,
+      description: entry.description,
+      selected: entry.id === activeAgentId,
+    };
+  });
   useEffect(() => {
     if (open && !recipesLoaded) void refreshRecipes();
   }, [open, recipesLoaded, refreshRecipes]);

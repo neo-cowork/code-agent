@@ -17,6 +17,7 @@ import { toast } from '../../../../hooks/useToast';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
+import { UploadFailureError, uploadFailureMessage } from '../../../../utils/httpFailureMessage';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatFileSize } from './formatFileSize';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
@@ -38,7 +39,7 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
  * 处理单个文件和文件夹的上传逻辑
  */
 export function useFileUpload() {
-  const { t } = useI18n();
+  const { t, language: uiLanguage } = useI18n();
   const showToast = toast.show;
 
   // 处理单个文件
@@ -49,10 +50,23 @@ export function useFileUpload() {
     const displayName = relativePath || file.name;
 
     let filePath: string | undefined;
+    let pathFailure: unknown;
     try {
       filePath = await ipcService.getPathForFile(file);
     } catch (e) {
+      pathFailure = e;
       logger.warn('processFile - failed to get path', { error: e });
+    }
+
+    // PDF / Word / Excel 只能靠服务端路径抽正文；没有路径又没有本地兜底，直说原因，不塞乱码附件
+    const needsServerPath = category === 'pdf' || category === 'excel'
+      || (category === 'document' && file.name.toLowerCase().endsWith('.docx'));
+    if (pathFailure !== undefined && needsServerPath) {
+      const reason = pathFailure instanceof UploadFailureError
+        ? pathFailure.userMessage
+        : uploadFailureMessage({ status: 0, language: uiLanguage });
+      showToast('error', t.chatInput.uploadServerFailed.replace('{name}', displayName).replace('{reason}', reason));
+      return null;
     }
 
     // PDF 大文件只传路径，不受 MAX_FILE_SIZE 限制

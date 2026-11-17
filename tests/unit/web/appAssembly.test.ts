@@ -113,6 +113,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/quit-guard'],
   ['post', '/quit-intent'],
   ['post', '/quit-guard/detach'],
+  ['post', '/api/upload/discard'],
   ['post', '/api/upload/temp'],
   ['post', '/api/upload/temp/batch'],
   ['get', '/api/screenshot'],

@@ -11,6 +11,7 @@ import React from 'react';
 import { AlertTriangle, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { RolePackListItem } from '../../../services/rolesClient';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
@@ -94,6 +95,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
 }) => {
   const { t } = useI18n();
   const text = t.rolePack;
+  const localizeRole = useLocalizeRole();
 
   if (hideWhenEmpty && !loading && !error && items.length === 0) return null;
 
@@ -120,15 +122,17 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
           {items.map((item) => {
             const { entry } = item;
             const busy = busyRoleId === entry.roleId;
+            const localized = localizeRole(entry.roleId, { name: entry.displayName ?? '', profession: entry.visual.profession });
+            const shownName = localized.name || entry.roleId;
             return (
               <article key={entry.roleId} data-testid={`role-pack-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <RoleAvatarTile roleId={entry.roleId} icon={entry.visual.icon} name={entry.displayName} />
+                      <RoleAvatarTile roleId={entry.roleId} icon={entry.visual.icon} name={localized.name} />
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-zinc-100">{entry.displayName || entry.roleId}</span>
-                        <span className="block truncate text-xs text-zinc-500">{entry.visual.profession}</span>
+                        <span className="block truncate text-sm font-medium text-zinc-100">{shownName}</span>
+                        <span className="block truncate text-xs text-zinc-500">{localized.profession}</span>
                       </span>
                     </div>
                     <span className="flex flex-shrink-0 items-center gap-1">

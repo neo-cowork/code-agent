@@ -57,6 +57,7 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
 import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
@@ -568,6 +569,7 @@ const VoiceDispatchCardHeader: React.FC<{
   onToggle: () => void;
 }> = ({ title, speaker, expanded, onToggle }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   return (
     <Button
       type="button"
@@ -586,7 +588,7 @@ const VoiceDispatchCardHeader: React.FC<{
           data-testid="voice-task-speaker"
           className="shrink-0 rounded-md border border-border-muted bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-400"
         >
-          {speaker.displayName}
+          {localizeRole(speaker.displayName, { name: speaker.displayName }).name}
         </span>
       )}
       {expanded ? (

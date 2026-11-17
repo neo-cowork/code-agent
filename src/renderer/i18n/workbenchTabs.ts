@@ -24,6 +24,8 @@ export const workbenchTabsZh = {
     expandPanel: '展开面板',
     // 专注模式（2026-08-01 工单①）：一个按钮一个位置两个状态，Esc 退出
     focusEnter: '专注模式：面板占满窗口',
+    pageOverflowHint: '这个网页比面板宽，右侧一部分被挡住了',
+    enlargePanel: '放大面板',
     overviewLabel: '任务',
     overviewTitle: '任务工作台',
     logsLabel: '日志',
@@ -233,6 +235,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     collapsePanel: 'Collapse panel',
     expandPanel: 'Expand panel',
     focusEnter: 'Focus mode: panel fills the window',
+    pageOverflowHint: 'This page is wider than the panel, so part of it is hidden.',
+    enlargePanel: 'Enlarge panel',
     overviewLabel: 'Task',
     overviewTitle: 'Task workspace',
     logsLabel: 'Logs',

@@ -20,6 +20,7 @@ import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { useConnectorOAuthStatuses } from '../../../../hooks/useConnectorOAuthStatuses';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import { useAppStore } from '../../../../stores/appStore';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
@@ -47,6 +48,7 @@ const STATUS_DOT: Record<ExpertConnectorStatus, string> = {
 
 export const MountedConnectorIcons: React.FC = () => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const text = t.chatInput.connectorSource;
   const hubText = t.expert.roleSkills;
   // MCP 状态看注册表的 mcpServers——它是**全量**（withMissingMcpServers 补齐了没进
@@ -132,7 +134,7 @@ export const MountedConnectorIcons: React.FC = () => {
 
   const visibleManual = manualExpanded ? manual : manual.slice(0, MAX_VISIBLE_MANUAL);
   const overflowCount = manual.length - Math.min(manual.length, MAX_VISIBLE_MANUAL);
-  const expertName = expert?.displayName || expert?.name || expert?.id || '';
+  const expertName = expert ? localizeRole(expert.id, { name: expert.displayName || expert.name || expert.id }).name : '';
 
   const statusLine = (item: Pick<ExpertConnectorSourceItem, 'status'>) => (
     <p className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-400">

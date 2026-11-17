@@ -3,6 +3,7 @@ import { UserPlus } from 'lucide-react';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import type { AgentCommandOption } from './agentCommand';
 import { interpolatePlural } from '../../../../i18n/interpolate';
 
@@ -21,6 +22,9 @@ export function AgentCommandAutocomplete({
   onDraftCleared: () => void;
 }): React.ReactElement {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
+  const shown = (option: AgentCommandOption) =>
+    localizeRole(option.id ?? '', { name: option.name, profession: option.profession });
   return (
     <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg elevation-l2 popover-enter">
       <div className="border-b border-zinc-800 px-3 py-1.5 text-[10px] uppercase tracking-wide text-zinc-500">
@@ -50,13 +54,13 @@ export function AgentCommandAutocomplete({
           >
             <div className="flex items-start gap-2.5">
               <span className="mt-0.5 shrink-0">
-                <RoleInitialAvatar roleId={option.id ?? 'default'} name={option.name} className="h-6 w-6 text-[11px]" />
+                <RoleInitialAvatar roleId={option.id ?? 'default'} name={shown(option).name} className="h-6 w-6 text-[11px]" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium truncate">{option.name}</span>
-                  {option.profession ? (
-                    <span className="shrink-0 truncate text-[10px] text-zinc-500">{option.profession}</span>
+                  <span className="text-sm font-medium truncate">{shown(option).name}</span>
+                  {shown(option).profession ? (
+                    <span className="shrink-0 truncate text-[10px] text-zinc-500">{shown(option).profession}</span>
                   ) : null}
                   <span className="ml-auto rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
                     {option.token}
