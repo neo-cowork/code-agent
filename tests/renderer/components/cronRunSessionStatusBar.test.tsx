@@ -638,3 +638,22 @@ it('renders file approval without a raw tool name or absolute path', async () =>
   expect(status.textContent).not.toContain('/tmp/example');
   expect(status.textContent).toContain('digest.md');
 });
+
+it.each([
+  { language: 'zh' as const, expected: '等你批准：请求写入 weekly-report.md' },
+  { language: 'en' as const, expected: 'Needs your approval: Request to write weekly-report.md' },
+])('shows the basename for a spaced CJK folder in $language file approvals', async ({ language, expected }) => {
+  useAppStore.setState({ language });
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  const argsPreview = '/tmp/任务 1116_每天 9 点/周报 草稿/weekly-report.md';
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: `write-approval-${language}`, kind: 'tool_approval', sessionId: 'session-1', tool: 'Write',
+    displayTool: 'Write', argsPreview, requestedAt: 1, status: 'pending',
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const status = await screen.findByTestId('cron-run-status-text');
+  expect(status.textContent).toBe(expected);
+  expect(status.textContent).not.toContain('Write');
+  expect(status.textContent).not.toContain(argsPreview);
+});
