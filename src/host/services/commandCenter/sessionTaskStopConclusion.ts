@@ -4,12 +4,14 @@
 // 真正会开浏览器的后台任务走完整 AgentLoop，终态只有 task_completed / task_error 两种事件：
 //   - 撞步数上限：主循环最后一轮由模型自己写收尾（措辞不固定），终态仍写「completed」；
 //   - 最后一轮只有工具调用没有文字：conclusion 为空，旧文案写「任务已完成。」——撒谎；
+//   - 结论只剩工具调用标记（剥掉后没有正文）：同样没有可用结果，不能因为标记非空就算完成；
 //   - 中途报错：detail 是原始（常为英文）异常文本。
 // 这里只做确定性改写，不多调一次模型；主循环 maxStepsFallback 不动。
 // ============================================================================
 
 import { AgentFailureCode, inferAgentFailureCode } from '../../../shared/contract/agentFailure';
 import type { MessageMetadata } from '../../../shared/contract';
+import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
 import { describeSubagentStopReason } from '../../agent/subagentFailureReason';
 import { formatSessionTaskDeliveryFailure } from '../../../shared/constants/sessionCommandCenter';
 
@@ -35,8 +37,10 @@ export function resolveStoppedTaskOutcome(input: {
   /** 主循环撞步数上限（结构化信号：error 事件 code=MAX_ITERATIONS_REACHED）；max 为该任务实际生效的上限。 */
   stepCap?: { max: number };
 }): StoppedTaskOutcome {
-  const detail = input.detail?.trim() ?? '';
+  const raw = input.detail?.trim() ?? '';
   if (input.status === 'completed') {
+    // 可用结论看剥掉工具调用标记之后的正文。只剩标记时与空结论同一句。
+    const detail = stripCardToolCallMarkup(raw);
     if (input.stepCap) {
       const max = input.stepCap.max;
       const head = `后台任务做到第 ${max} 步（上限 ${max} 步）就用完了步数，${pageClause(input.lastUrl)}还没有得出最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
@@ -48,6 +52,7 @@ export function resolveStoppedTaskOutcome(input: {
     }
     return { status: 'completed', detail };
   }
+  const detail = raw;
   const isTerminalDeliveryFailure = (['approval_timeout', 'repair_exhausted'] as const).some((reason) => (
     (['zh', 'en'] as const).some((locale) => formatSessionTaskDeliveryFailure(reason, locale) === detail)
   ));

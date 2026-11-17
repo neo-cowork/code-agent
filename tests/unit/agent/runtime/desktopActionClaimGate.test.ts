@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { backgroundWakePromptHead } from '../../../../src/host/agent/runtime/backgroundWakeMessage';
 import { applyDesktopActionClaimGate, collectRecentUserTexts } from '../../../../src/host/agent/runtime/desktopActionClaimGate';
 
 describe('applyDesktopActionClaimGate', () => {
@@ -229,5 +230,35 @@ describe('applyDesktopActionClaimGate', () => {
       iterations: 1,
     });
     expect(result.action).toBe('none');
+  });
+
+  const report = '后台已经打开了报销单页面，点击了上传框，invoice.pdf 已附加，页面显示已选择该文件，没有提交。';
+  const check = (history: Array<{ role: string; content: string; isMeta?: boolean; metadata?: { automation?: { automationId?: string } } }>) =>
+    applyDesktopActionClaimGate({ recentUserMessages: collectRecentUserTexts(history), assistantContent: report, toolCallCount: 0, iterations: 1 });
+
+  it('前台唤醒消息（wakePrompt 真格式）不算用户的桌面请求', () => {
+    const wake = `${backgroundWakePromptHead('报销附件', '完成')}已在浏览器里打开页面并点击上传框，截图确认 invoice.pdf 已附加。汇报时不要原样引用内部编号。`;
+    const history = [
+      { role: 'user', content: '请在后台打开报销单页面，把 invoice.pdf 附到上传框里' },
+      { role: 'user', content: wake, isMeta: true },
+    ];
+    expect(collectRecentUserTexts(history)).toEqual(['请在后台打开报销单页面，把 invoice.pdf 附到上传框里']);
+    expect(check(history).action).toBe('none');
+    // 对照：同样文本作为普通用户消息仍触发闸门
+    expect(applyDesktopActionClaimGate({ recentUserMessages: [wake], assistantContent: report, toolCallCount: 0, iterations: 1 }).action).toBe('retry');
+  });
+
+  it('空闲唤醒消息（automationId=background-subagent:*）不算用户的桌面请求', () => {
+    const history = [
+      { role: 'user', content: '帮我整理一下', isMeta: false },
+      { role: 'user', content: '后台任务已结束：点击了上传框并截图', isMeta: true, metadata: { automation: { automationId: 'background-subagent:s1' } } },
+    ];
+    expect(check(history).action).toBe('none');
+  });
+
+  it('后台任务的 isMeta 任务指令仍是桌面请求：零工具调用声称已附加照样 retry', () => {
+    const history = [{ role: 'user', content: '打开页面，点击上传框，把 invoice.pdf 附到上传框', isMeta: true }];
+    expect(collectRecentUserTexts(history)).toHaveLength(1);
+    expect(check(history).action).toBe('retry');
   });
 });
