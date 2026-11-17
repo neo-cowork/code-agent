@@ -325,7 +325,10 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="font-medium text-zinc-300">{labels.workflowBackground}</div>
             <div className="text-[10px] text-zinc-600">
-              {workflowRuns.length} workflow · {backgroundTasks.length} task · {evidence.length} evidence
+              {labels.dialog.workflowBackgroundCounts
+                .replace('{workflows}', String(workflowRuns.length))
+                .replace('{tasks}', String(backgroundTasks.length))
+                .replace('{evidence}', String(evidence.length))}
             </div>
           </div>
 
@@ -340,7 +343,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         ? focusedWorkflowRun.goal
                           ? `Workflow: ${focusedWorkflowRun.goal}`
                           : `Workflow ${focusedWorkflowRun.runId}`
-                        : focusedBackgroundTask?.title}
+                        : focusedBackgroundTask ? backgroundTaskLabel(focusedBackgroundTask, t) : undefined}
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-zinc-500">
                       {focusedWorkflowRun
@@ -578,12 +581,11 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     <div className="min-w-0">
                       <div className="truncate font-medium text-badge-info">{backgroundTaskLabel(task, t)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/60">{formatTaskStatus(task, labels)}</div>
-                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45">
+                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45" title={task.id}>
                         {formatBackgroundTaskMeta(task, labels, language)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] text-badge-info/60">
-                      <div>{task.source}</div>
                       {task.durationMs !== undefined && <div>{formatDuration(task.durationMs, labels)}</div>}
                       <button
                         type="button"

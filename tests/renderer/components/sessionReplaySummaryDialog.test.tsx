@@ -381,7 +381,7 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('工具失败 Bash');
     expect(html).toContain('失败 · 500 ms');
     expect(html).toContain('工作流 / 后台任务');
-    expect(html).toContain('4 workflow · 4 task · 5 evidence');
+    expect(html).toContain('4 个工作流 · 4 个任务 · 5 份证据');
     expect(html.indexOf('Workflow: Recent follow-up')).toBeLessThan(html.indexOf('Workflow: Recover project delivery'));
     expect(html).toContain('run workflow-run-new');
     expect(html).toContain('aria-label="聚焦 workflow workflow-run-new"');
@@ -406,7 +406,8 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('aria-label="Background task task-recent 证据"');
     expect(html).toContain('aria-label="打开证据 Trace · task-recent-trace.json"');
     expect(html).toContain('Background delivery');
-    expect(html).toContain('task task-1');
+    expect(html).not.toContain('>task task-1');
+    expect(html).not.toContain('>agent</div>');
     expect(html).toContain('aria-label="Background task task-1 证据"');
     expect(html).toContain('另有 1 个 background task');
     expect(html).toContain('Trace · trace.json');
