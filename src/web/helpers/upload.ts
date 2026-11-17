@@ -22,6 +22,8 @@ import {
   MAX_FOLDER_BATCH_BODY_SIZE,
 } from '../../shared/constants/chatUploads';
 
+import { MAX_UPLOAD_DISCARD_PATHS } from '../../shared/constants/uploadDiscard';
+
 const logger = createLogger('UploadReaper');
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
@@ -55,6 +57,76 @@ function collectReferencedUploadIds(db: BetterSqlite3.Database, candidates: Read
   for (const row of db.prepare('SELECT envelope_json FROM queued_inputs WHERE envelope_json LIKE ?')
     .iterate(marker)) collect(row as Record<string, unknown>);
   return referenced;
+}
+
+/** Discard only unreferenced UUID upload directories; never follow caller-supplied symlinks. */
+export function handleDiscardUpload(req: Request, res: Response, db: BetterSqlite3.Database | null): void {
+  const paths: unknown = (req.body as { paths?: unknown } | undefined)?.paths;
+  if (!Array.isArray(paths) || paths.length > MAX_UPLOAD_DISCARD_PATHS) {
+    res.status(400).json({ error: 'INVALID_UPLOAD_DISCARD_PATHS' });
+    return;
+  }
+  const candidates = new Map<string, { directory: string; filePath: string }>();
+  const ignore = (reason: string, filePath: unknown) => logger.warn('POST /api/upload/discard ignored', { reason, path: filePath });
+  for (const filePath of paths) {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+      ignore('not-absolute-path', filePath);
+      continue;
+    }
+    if (filePath.split(/[\\/]/).includes('..')) {
+      ignore('traversal', filePath);
+      continue;
+    }
+    const resolved = path.resolve(filePath);
+    const relative = path.relative(UPLOAD_ROOT_DIR, resolved);
+    if (!relative || !isPathWithinBase(resolved, UPLOAD_ROOT_DIR)) {
+      ignore('outside-upload-root', filePath);
+      continue;
+    }
+    const id = relative.split(path.sep)[0];
+    if (!UPLOAD_DIR_NAME_RE.test(id)) {
+      ignore('non-uuid-directory', filePath);
+      continue;
+    }
+    const directory = path.join(UPLOAD_ROOT_DIR, id);
+    try {
+      if (fs.existsSync(directory)) {
+        const stats = fs.lstatSync(directory);
+        if (!stats.isDirectory() || stats.isSymbolicLink()
+          || !isPathWithinBase(fs.realpathSync(directory), fs.realpathSync(UPLOAD_ROOT_DIR))
+          || (fs.existsSync(resolved) && !isPathWithinBase(fs.realpathSync(resolved), fs.realpathSync(directory)))) {
+          ignore('symlink-or-non-directory', filePath);
+          continue;
+        }
+      }
+      candidates.set(id.toLowerCase(), { directory, filePath });
+    } catch (error) {
+      logger.warn('POST /api/upload/discard ignored', { reason: 'path-check-failed', path: filePath, error });
+    }
+  }
+  try {
+    // Keep all uploads if the reference scan is unavailable or fails.
+    if (!db) {
+      for (const { filePath } of candidates.values()) ignore('database-unavailable', filePath);
+    } else {
+      const referenced = collectReferencedUploadIds(db, new Set(candidates.keys()));
+      for (const [id, { directory, filePath }] of candidates) {
+        if (referenced.has(id)) {
+          ignore('referenced-uuid', filePath);
+          continue;
+        }
+        try {
+          fs.rmSync(directory, { recursive: true, force: true });
+          logger.info('POST /api/upload/discard removed', { id, path: filePath });
+        } catch (error) {
+          logger.warn('POST /api/upload/discard ignored', { reason: 'remove-failed', path: filePath, error });
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn('POST /api/upload/discard ignored', { reason: 'reference-scan-failed', error });
+  }
+  res.json({ success: true });
 }
 
 /** 启动回收：只删「超过保留期」且「未被任何会话消息/排队消息引用」的上传子目录。库不可用 → 一律不删。 */
@@ -248,6 +320,7 @@ export async function handleTempUpload(req: Request, res: Response): Promise<voi
 
   fs.mkdirSync(path.dirname(resolvedDestination), { recursive: true });
   fs.writeFileSync(resolvedDestination, data);
+  logger.info('handleTempUpload stored', { path: resolvedDestination });
   res.json({ path: resolvedDestination });
 }
 

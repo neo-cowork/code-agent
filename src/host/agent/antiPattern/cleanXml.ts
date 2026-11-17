@@ -18,9 +18,9 @@ const XML_PROTOCOL_TAG = /<\/?\w+_\w+(?:_\w+)*\s*\/?>/g;
  */
 export function cleanXmlResidues(value: unknown): unknown {
   if (typeof value === 'string') {
-    return value
-      .replace(XML_PROTOCOL_TAG, '')
-      .trim();
+    const cleaned = value.replace(XML_PROTOCOL_TAG, '');
+    // Ordinary file bodies/edits must retain whitespace byte-for-byte for ledger replay.
+    return cleaned === value ? value : cleaned.trim();
   }
   if (Array.isArray(value)) {
     return value.map(v => cleanXmlResidues(v));
