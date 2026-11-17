@@ -29,7 +29,9 @@ const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 function toSlug(text: string | undefined): string {
   // 先剔除路径/URL 样的 token（含用户目录名），再取英文词
   const plain = (text ?? '').split(/\s+/).filter((t) => !/[/\\]/.test(t)).join(' ');
-  const words = plain.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  // 中文任务里夹的英文多是 git add / commit 之类命令碎片，不代表任务；只认文件名（README.md → readme-md）
+  const source = /[\u4e00-\u9fff]/.test(plain) ? (plain.match(/[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,5}\b/)?.[0] ?? '') : plain;
+  const words = source.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   const content = words.filter((w) => !STOP_WORDS.has(w));
   const verbAt = content.findIndex((w) => ACTION_VERBS.has(w));
   const picked: string[] = [];

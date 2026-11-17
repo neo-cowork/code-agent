@@ -106,6 +106,13 @@ describe('agent worktree branch naming (real git)', () => {
     expect(b.branchName).toBe('agent/replace-intro-paragraph-8929');
   });
 
+  it('Chinese sub-task text from the real run: file name only, no git-command fragments', async () => {
+    rnd.queue.push('84c0');
+    const info = await make(`agent_coder_${UUID.replace('3f2a', '3f23')}`,
+      '在工作区文件 README.md（相对当前工作目录）里，把开头的介绍段落改写成两句话。\n\n要求：\n4. 改完后在该 worktree 里 git add README.md 并 git commit（提交信息如 `docs: rewrite README intro`）。');
+    expect(info.branchName).toBe('agent/readme-md-84c0');
+  });
+
   it('non-internal ids without label keep the legacy name', async () => {
     const info = await make('agent-1');
     expect(info.branchName).toBe('agent/agent-1');
