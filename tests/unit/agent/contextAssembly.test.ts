@@ -2464,6 +2464,8 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       await new ContextAssembly(ctx as never).checkAndAutoCompress();
       expect(prompts.length).toBeGreaterThan(0);
       expect(prompts[0]).toContain(TELEMETRY_RECOVERY_NOTICE);
+      expect(prompts[0]).toContain('路径可能不完整');
+      expect(prompts[0]).not.toContain('由脱敏后的 telemetry 重建');
       expect(recovered.content.startsWith('写到')).toBe(true);
     } finally {
       summarize.mockReset();

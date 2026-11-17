@@ -4,7 +4,7 @@
     "src/host/agent/agentOrchestrator.ts": 3,
     "src/host/agent/agentTeamDurableLaunch.ts": 1,
     "src/host/agent/agentWorktree.ts": 7,
-    "src/host/agent/confirmationGate.ts": 6,
+    "src/host/agent/confirmationGate.ts": 5,
     "src/host/agent/deliveryCritic.ts": 4,
     "src/host/agent/goalModeController.ts": 4,
     "src/host/agent/goalReviewGate.ts": 3,

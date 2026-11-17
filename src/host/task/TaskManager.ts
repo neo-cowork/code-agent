@@ -39,6 +39,7 @@ import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import {
   SESSION_COMMAND_CENTER_TOOL_NAMES,
   formatSessionTaskDeliveryFailure,
+  formatSessionTaskUserDenied,
 } from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
@@ -373,6 +374,10 @@ export class TaskManager extends EventEmitter {
           return true;
         });
         const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
+        if (deliveryFailure === 'user_denied') {
+          this.emitEvent('task_cancelled', sessionId, { taskId, detail: formatSessionTaskUserDenied(resolveSessionTaskResultLocale()) });
+          return;
+        }
         this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
           taskId,
           ...(deliveryFailure

@@ -5,6 +5,7 @@ import { History, Loader2, X as XIcon } from 'lucide-react';
 import type { ConversationReplay } from '@shared/contract/conversationBranch';
 import type { TurnRedoResult } from '@shared/contract/turnCheckout';
 import { extractUserRequest } from '@shared/utils/turnScaffold';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
@@ -68,7 +69,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
 
     const anchor = [...replay.messages].reverse().find((entry) => entry.message.role === 'user');
     const projected = formatEditRoleUserPrompt(
-      extractUserRequest(anchor?.message.content ?? ''),
+      stripLegacyTeamRecipeSeed(extractUserRequest(anchor?.message.content ?? '')),
       t.roleEditReceipt.userPrompt,
       roleLabels,
     );
