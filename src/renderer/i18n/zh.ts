@@ -46,7 +46,7 @@ import { workbenchTabsZh } from './workbenchTabs';
 import { activityPanelZh, canvasActorZh } from './domains';
 import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
-import { voiceAuditZh } from './voiceAudit';
+import { voiceAuditZh } from './voiceAudit'; import { memorySourceZh } from './memorySource';
 import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
@@ -64,7 +64,7 @@ import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { 
 export const zh = {
   ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
   ...imageNarrationZh, ...mermaidZh,
-  ...voiceAuditZh,
+  ...voiceAuditZh, ...memorySourceZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,

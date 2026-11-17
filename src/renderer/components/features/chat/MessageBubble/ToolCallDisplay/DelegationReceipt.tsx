@@ -21,7 +21,7 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
   const [prefix, suffix] = template.split('{name}');
   const headline = template.replace('{name}', presentation.title);
   return (
-    <div className="min-w-0 flex-1 truncate text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
+    <div className="min-w-0 flex-1 truncate font-sans text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
       {prefix && <span className="text-zinc-500">{prefix}</span>}
       <span className="font-semibold" title={presentation.title}>{presentation.title}</span>
       {suffix && <span className="text-zinc-500">{suffix}</span>}

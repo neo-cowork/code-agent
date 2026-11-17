@@ -25,6 +25,7 @@ import {
   MediaAssetActionBar,
   MediaAssetLightbox,
 } from './MediaAssetControls';
+import { stripThinkMarkup } from '@shared/modelMarkupStrip';
 import {
   updateStreamingMarkdownBlockState,
   type StreamingMarkdownBlockState,
@@ -454,9 +455,8 @@ const SYSTEM_TAG_PATTERNS = [
   // 整段推理原文原样留在正文里、绕过思考折叠机制摊在转录里。兜底：把 <think> 到
   // 字符串结尾的全部内容都当推理一并删掉（宿主层 sseStream.ts 已修复不再产出这种
   // 数据，这里是渲染层兜底，防历史脏数据 / 未知泄漏路径）。
-  /<think>[\s\S]*?<\/think>/g,
-  /<\/think>/g,
-  /<think>[\s\S]*$/g,
+  // think 的三种形态（完整块 / 孤儿 </think> / 未闭合 <think>）在 filterSystemTags 里先由
+  // stripThinkMarkup 统一处理：孤儿闭标签之前的推理原文也要丢，不能只删标签。
   // 过滤 skill 加载状态标签（应由 SkillStatusMessage 组件渲染，此处作为兜底）
   /<command-message>[\s\S]*?<\/command-message>/g,
   /<command-name>[\s\S]*?<\/command-name>/g,
@@ -466,7 +466,7 @@ const SYSTEM_TAG_PATTERNS = [
  * Filter out system-injected tags that shouldn't be shown to users
  */
 export function filterSystemTags(text: string): string {
-  let filtered = text;
+  let filtered = stripThinkMarkup(text);
   for (const pattern of SYSTEM_TAG_PATTERNS) {
     filtered = filtered.replace(pattern, '');
   }
