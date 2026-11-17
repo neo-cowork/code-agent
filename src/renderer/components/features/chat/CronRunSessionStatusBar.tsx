@@ -12,6 +12,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobExecution } from '@shared/contract/cron';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
+import type { RoleWakeRunStatus } from '@shared/contract/sessionAutomation';
+import { resolveUnattendedRunIdentity } from '@shared/unattendedRunIdentity';
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
 import type { PermissionResponse } from '@shared/contract/permission';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Check, X } from 'lucide-react';
@@ -48,32 +51,34 @@ function findParkedApprovalForSession(
   rows: ParkedApprovalInboxItem[] | undefined,
   sessionId: string,
   t: Translations,
+  language: 'zh' | 'en',
 ): CronRunAwaitingApproval | null {
   const pending = (rows ?? []).find((item) => item.sessionId === sessionId && item.status === 'pending');
   if (!pending) return null;
   const category = classifyToolName(pending.tool);
   const preview = pending.argsPreview?.trim();
-  const basename = preview && /^(?:[^\s\0]*[\\/])?[^\s\/\\]+$/.test(preview)
-    ? preview.split(/[\\/]/).pop() : undefined;
+  const basename = preview && !/[\n\0]/.test(preview) ? preview.split(/[\\/]/).filter(Boolean).pop() : undefined;
   const args = ['read', 'write', 'edit'].includes(category) && basename ? { file_path: basename } : undefined;
+  const label = args ? humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval') : toolUserLabel(pending.tool, language);
   return {
     id: pending.id,
     requestedAt: pending.requestedAt,
-    label: category === 'bash' ? t.automationPresentation.runCommand : humanizeToolStep(pending.tool, args, t, undefined, 'pending-approval'),
+    label: category === 'bash' ? t.automationPresentation.runCommand : label,
     command: category === 'bash' ? pending.commandPreview ?? pending.argsPreview : undefined,
     origin: pending,
   };
 }
 
 export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessionId }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.cronRunRecord;
   const session = useSessionStore((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
-  const jobId = session?.origin?.kind === 'cron' || session?.origin?.kind === 'heartbeat'
-    ? session.origin.id?.trim() || undefined
-    : undefined;
+  const identity = resolveUnattendedRunIdentity(session);
+  const jobId = identity?.kind === 'cron' ? identity.jobId : undefined;
+  const isWake = identity?.kind === 'role_wake';
   const executionId = session?.sourceRunId;
   const [execution, setExecution] = useState<CronJobExecution | null>(null);
+  const [wakeRun, setWakeRun] = useState<RoleWakeRunStatus | null>(null);
   const [pendingApproval, setPendingApproval] = useState<CronRunAwaitingApproval | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [expandedApprovalId, setExpandedApprovalId] = useState<string | null>(null);
@@ -81,8 +86,8 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   const [isRerunning, setIsRerunning] = useState(false);
   // 终态后停轮询：completed/interrupted/failed/cancelled 不会自己变回来。
   const status = useMemo(
-    () => deriveCronRunStatusLine({ execution, pendingApproval }),
-    [execution, pendingApproval],
+    () => deriveCronRunStatusLine({ execution, pendingApproval, wakeRun }),
+    [execution, pendingApproval, wakeRun],
   );
   useEffect(() => {
     setObservedCronRunStatusForSession(sessionId, status);
@@ -96,8 +101,24 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   // 找不到执行记录的连续次数：老会话缺 sourceRunId/sessionId 关联时别无限轮询。
   const missingFetchesRef = useRef(0);
   const refresh = useCallback(async () => {
-    if (!jobId) return;
+    if (!jobId && !isWake) return;
     try {
+      if (isWake) {
+        const [nextWake, parked] = await Promise.all([
+          sessionAutomationClient.getRoleWakeRun(sessionId),
+          sessionAutomationClient.listParkedApprovals(),
+        ]);
+        setWakeRun(nextWake);
+        setPendingApproval(findParkedApprovalForSession(parked, sessionId, t, language));
+        if (nextWake) missingFetchesRef.current = 0;
+        else missingFetchesRef.current += 1;
+        const state = useSessionStore.getState();
+        if (window.domainAPI && state.currentSessionId === sessionId && !state.isHydratingSession) {
+          await state.switchSession(sessionId, { force: true });
+        }
+        return;
+      }
+      if (!jobId) return;
       const executions = await cronClient.getExecutions(jobId, 20);
       const nextExecution = findCronExecutionForSession(executions, { executionId, sessionId });
       useCronStore.setState((state) => ({ executionsByJobId: { ...state.executionsByJobId, [jobId]: executions } }));
@@ -107,7 +128,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
       // 等批准列表只为 running 期间服务（等批准的运行 execution 必是 running）。
       if (nextExecution?.status === 'running') {
         const parked = await sessionAutomationClient.listParkedApprovals();
-        setPendingApproval(findParkedApprovalForSession(parked, sessionId, t));
+        setPendingApproval(findParkedApprovalForSession(parked, sessionId, t, language));
       } else {
         setPendingApproval((previous) => (nextExecution ? null : previous));
       }
@@ -121,20 +142,22 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     } catch {
       // 拉不到就不改状态：宁可停在上一拍的真实值，也不显示编出来的状态。
     }
-  }, [t, executionId, jobId, sessionId]);
+  }, [t, language, executionId, isWake, jobId, sessionId]);
 
   const activeKind = status?.kind ?? null;
+  const pollingFinished = isTerminalCronRunStatusKind(activeKind)
+    || (activeKind === 'approval-expired' && wakeRun?.run.status !== 'running');
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId && !isWake) return;
     void refresh();
-    if (isTerminalCronRunStatusKind(activeKind)) return;
+    if (pollingFinished) return;
     const timer = window.setInterval(() => {
       if (statusRef.current === null && missingFetchesRef.current >= 5) return;
       void refresh();
     }, POLL_INTERVAL_MS);
     return () => { window.clearInterval(timer); };
     // activeKind 变化时重建定时器：进入终态撤轮询，回到运行态接上。
-  }, [activeKind, jobId, refresh]);
+  }, [pollingFinished, isWake, jobId, refresh]);
 
   // 运行中的流逝时间每秒跳动（终态不挂定时器）。
   const runningStartedAt = status?.kind === 'running' ? status.startedAt : null;
@@ -183,7 +206,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     }
   }, [copy.rerunFailed, isRerunning, jobId]);
 
-  if (!jobId) return null;
+  if (!identity) return null;
 
   if (status?.kind === 'awaiting') {
     // 冒号进模板（zh 全角 / en 半角），不在组件里拼硬编码标点（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU3）。
@@ -270,12 +293,13 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   }
 
   if (
-    status?.kind === 'interrupted'
+    status?.kind === 'approval-expired'
+    || status?.kind === 'interrupted'
     || status?.kind === 'failed-denied'
     || status?.kind === 'failed-generic'
     || status?.kind === 'cancelled'
   ) {
-    const label = status.kind === 'failed-denied'
+    const label = status.kind === 'approval-expired' ? copy.approvalExpired : status.kind === 'failed-denied'
       ? copy.failedDenied
       : status.kind === 'failed-generic'
         ? copy.failedGeneric
@@ -291,7 +315,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
       >
         <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-mark-neutral" aria-hidden="true" />
         <span data-testid="cron-run-status-text">{label}</span>
-        <button /* ds-allow:button: 状态行内超小次级按钮（h-6 px-2 text-xs） */
+        {jobId && <button /* ds-allow:button: 状态行内超小次级按钮（h-6 px-2 text-xs） */
           type="button"
           onClick={() => { void handleRerun(); }}
           disabled={isRerunning}
@@ -299,7 +323,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
           data-testid="cron-run-status-rerun"
         >
           {copy.rerun}
-        </button>
+        </button>}
       </div>
     );
   }

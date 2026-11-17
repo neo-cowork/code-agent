@@ -1,3 +1,4 @@
+import { resolveUnattendedRunIdentity } from '@shared/unattendedRunIdentity';
 // ============================================================================
 // SessionMemberBar - 输入框正上方的折叠 chip（N-L6-AGENTVIEW S1）
 // ============================================================================
@@ -195,8 +196,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const hasCronRunStatusLine = useSessionStore((state) => {
     if (!sessionId) return false;
     const session = state.sessions?.find((item) => item.id === sessionId);
-    const kind = session?.origin?.kind;
-    return (kind === 'cron' || kind === 'heartbeat') && Boolean(session?.origin?.id?.trim());
+    return resolveUnattendedRunIdentity(session) !== null;
   });
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个

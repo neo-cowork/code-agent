@@ -27,6 +27,7 @@ import { usePageReturnPosition } from '../../../hooks/usePageReturn';
 import { createLogger } from '../../../utils/logger';
 import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
+import { RoleWakeApprovalRuns } from './RoleWakeApprovalRuns';
 import { AutomationReviewInbox } from './AutomationReviewInbox';
 import { CronFeaturedTemplates } from './CronFeaturedTemplates';
 import { CronJobDetail } from './CronJobDetail';
@@ -164,10 +165,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     refreshPendingReviewCount();
     await Promise.all([loadAwaitingRuns(), syncRunningExecutions()]);
   }, [loadAwaitingRuns, refreshPendingReviewCount, syncRunningExecutions]);
-  // running 信号在两个 tab 来源不同：任务 tab 只有各 job 的最近一次执行
-  // （latestExecutions，refresh 时拉），运行记录 tab 才有跨任务 recentExecutions；
-  // 两个都看，否则默认任务 tab 永远不会开始轮询。
+  // A first/event wake may have a parked approval without any cron execution.
+  // The always-mounted inbox discovers those rows and supplies its pending count.
   const hasRunningExecution =
+    parkedPendingCount > 0 ||
     recentExecutions.some((execution) => execution.status === 'running') ||
     Object.values(latestExecutions).some((execution) => execution?.status === 'running');
   useEffect(() => {
@@ -189,7 +190,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   }, [hasRunningExecution, loadAwaitingRuns, syncRunningExecutions]);
   const awaitingByJobId = useMemo(() => {
     const map = new Map<string, AwaitingApprovalRun>();
-    for (const run of awaitingRuns) map.set(run.jobId, run);
+    for (const run of awaitingRuns) if (run.jobId) map.set(run.jobId, run);
     return map;
   }, [awaitingRuns]);
   // 等批准集合指纹（Rework r1）：轮询每 2s 换新数组，但内容不变时指纹不变。
@@ -411,6 +412,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
           />
         </div>
+
+        <RoleWakeApprovalRuns runs={awaitingRuns} onResolved={handleApprovalResolved} />
 
         {activeTab === 'jobs' ? (
           <>
