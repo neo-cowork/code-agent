@@ -20,6 +20,9 @@ import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedac
 import { isBashToolName } from '../tools/toolNames';
 import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 import { resolveAgent } from './agentRegistry';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('ConfirmationGate');
 
 // 子代理审批：角色是否带写/执行能力，按角色真实工具表判断；未知角色按“有写权限”展示（宁多勿少）。
 const SPAWN_WRITE_TOOL_PATTERN = /^(bash|write|edit|multiedit|append|notebookedit|write_file|edit_file|append_file)$/i;
@@ -321,10 +324,29 @@ export class ConfirmationGate {
       case 'AgentSpawn': {
         const toUserText = (text: string) =>
           redactCommandSecrets(relativizeWorkspacePaths(text, options.workspaceRoot)).slice(0, 200);
-        const label = toUserText(resolveSubagentUserLabel(params));
+        const taskText = (task: unknown, field: string) => {
+          const text = toUserText(normalizeString(task));
+          if (text) return text;
+          logger.warn('Spawn approval task not stated', { field });
+          return '未说明任务';
+        };
+        if (params.parallel === true && Array.isArray(params.agents) && params.agents.length > 0) {
+          const blocks = params.agents.map((agent: { name?: unknown; task?: unknown; role?: unknown }, index) => {
+            const task = taskText(agent.task, `params.agents[${index}].task`);
+            const label = toUserText(resolveSubagentUserLabel({ name: agent.name, task: agent.task })) || task;
+            return [label, `任务：${task}`, `权限：${describeSpawnPermission(agent.role)}`].join('\n');
+          });
+          return {
+            type: 'generic',
+            summary: `派出 ${params.agents.length} 个子代理`,
+            diff: blocks.join('\n\n'),
+          };
+        }
+        const task = taskText(params.task, 'params.task');
+        const label = toUserText(resolveSubagentUserLabel(params)) || task;
         // 审批必须独立于名字披露真实任务与权限，且不打印内部角色 id。
         const details = [
-          `任务：${toUserText(normalizeString(params.task))}`,
+          `任务：${task}`,
           `权限：${describeSpawnPermission(params.role)}`,
         ];
         return {
