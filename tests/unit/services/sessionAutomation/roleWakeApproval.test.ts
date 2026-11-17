@@ -190,13 +190,13 @@ describe('production role wake approval visibility and deadline', () => {
   it('malformed cron origins still warn once per pending session per service, then reset when resolved', async () => {
     state.sessions!.createSessionWithId('broken', { title: 'Morning notes', modelConfig: { provider: 'openai', model: 'test' }, origin: { kind: 'cron' } });
     const session = state.sessions!.getSession('broken')!;
-    state.approvals!.insert({ id: 'broken-request', kind: 'tool_approval', coordinatorId: session.id, payload: { sessionId: session.id, tool: 'Write' }, submittedAt: 1 });
+    state.approvals!.insert({ id: 'broken-request', kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: session.id, payload: { sessionId: session.id, tool: 'Write' }, submittedAt: 1 });
     service.listAwaitingApprovalRuns();
     service.listAwaitingApprovalRuns();
     expect(state.warn.mock.calls.filter(([message]) => message === 'Awaiting-approval run skipped: session origin has no job id')).toHaveLength(1);
-    state.approvals!.resolve({ id: 'broken-request', status: 'rejected', resolvedAt: Date.now() });
+    state.approvals!.resolve({ id: 'broken-request', status: 'rejected', feedback: null, resolvedAt: Date.now() });
     service.listAwaitingApprovalRuns();
-    state.approvals!.insert({ id: 'next-request', kind: 'tool_approval', coordinatorId: session.id, payload: { sessionId: session.id, tool: 'Write' }, submittedAt: 2 });
+    state.approvals!.insert({ id: 'next-request', kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: session.id, payload: { sessionId: session.id, tool: 'Write' }, submittedAt: 2 });
     service.listAwaitingApprovalRuns();
     expect(state.warn.mock.calls.filter(([message]) => message === 'Awaiting-approval run skipped: session origin has no job id')).toHaveLength(2);
   });
