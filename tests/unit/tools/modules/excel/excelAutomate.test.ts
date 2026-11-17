@@ -569,7 +569,11 @@ describe('Excel resolver parity at the actual handler boundary', () => {
         const forwarded = action === 'edit' ? executeExcelEditMock.mock.lastCall?.[0].file_path : excelGenerateExecuteMock.mock.lastCall?.[0].output_path;
         expect(forwarded).toBe(target);
         if (classified.decision === 'ask') {
-          expect(classified.hostReason?.metadata?.path).toBe(path.join(fs.realpathSync(path.dirname(target)), path.basename(target)));
+          // ~/Desktop may not exist (CI runner): canonicalize the nearest existing ancestor.
+          let existing = path.dirname(target);
+          while (!fs.existsSync(existing)) existing = path.dirname(existing);
+          const canonical = path.join(fs.realpathSync(existing), path.relative(existing, target));
+          expect(classified.hostReason?.metadata?.path).toBe(canonical);
         } else {
           expect(raw === 'summary.xlsx' || raw === undefined).toBe(true);
         }
