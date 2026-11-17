@@ -16,6 +16,7 @@ import { toast, useToastStore } from '../hooks/useToast';
 import { OS_NOTIFICATION_TIMEOUTS } from '@shared/constants';
 
 const FOREGROUND_FAILURE_TOAST_MS = 10_000;
+let lastFallbackToastId: string | undefined;
 
 type NotifModule = typeof import('@tauri-apps/plugin-notification');
 type OsNotificationPermission = 'granted' | 'denied' | 'unknown';
@@ -207,7 +208,10 @@ async function postOsNotificationInner(
       if (fallbackToast) {
         const { onOpen, openLabel } = flags;
         const action = onOpen && openLabel ? { label: openLabel, onClick: onOpen } : undefined;
-        useToastStore.getState().addToast(flags.failure === true ? 'error' : 'info', `${opts.title}: ${opts.body}`, 0, action); // 常驻到用户关掉：多半是离开窗口时触发的，定时消失就白发了
+        // 常驻到用户关掉（多半是离开窗口时触发，定时消失就白发了）；只留最新一条，循环任务不会堆满屏
+        const store = useToastStore.getState();
+        if (lastFallbackToastId) store.removeToast(lastFallbackToastId);
+        lastFallbackToastId = store.addToast(flags.failure === true ? 'error' : 'info', `${opts.title}: ${opts.body}`, 0, action);
       }
       reportDelivery({
         mode: 'tauri',

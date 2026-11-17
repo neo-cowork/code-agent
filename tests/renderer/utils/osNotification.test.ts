@@ -206,6 +206,21 @@ describe('osNotification', () => {
     }
   });
 
+  it('repeated UNC failures keep only the latest fallback toast', async () => {
+    tauriInvoke.mockResolvedValue({ backend: 'unc', ok: false, reason: 'authorization denied' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: '任务完成', body: '第 1 轮' });
+      await postOsNotification({ title: '任务完成', body: '第 2 轮' });
+      await postOsNotification({ title: '任务完成', body: '第 3 轮' });
+      const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+      expect(useToastStore.getState().toasts).toEqual([expect.objectContaining({ message: '任务完成: 第 3 轮' })]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('UNC failure for an urgent failure already toasted in the foreground does not add a second toast', async () => {
     tauriInvoke.mockResolvedValue({ backend: 'unc', ok: false, reason: 'authorization denied' });
     (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
