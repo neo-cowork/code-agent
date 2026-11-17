@@ -95,6 +95,19 @@ describe('作废（从未执行）的步骤：标题与下方原因行同一状�
     expect(text).not.toContain('未成功');
   });
 
+  it.each(['zh', 'en'] as const)('组：全部作废 → 整组文本无 失败/failed 计数（%s）', (lang) => {
+    languageState.value = lang;
+    const view = render(<ToolStepGroup nodes={[node('h1', 'Bash', { command: 'a' }, VOID), node('h2', 'Bash', { command: 'b' }, VOID)]} />);
+    const text = view.container.textContent ?? '';
+    expect(text).not.toMatch(/失败|failed|Failed|未成功|Could not/);
+  });
+
+  it('组：混合 → 失败计数只算真失败（1 个）', () => {
+    languageState.value = 'zh';
+    const view = render(<ToolStepGroup nodes={[node('i1', 'Bash', { command: 'a' }, VOID), node('i2', 'Bash', { command: 'b' }, 'exit code 1')]} />);
+    expect(view.container.textContent).not.toContain('2 失败');
+  });
+
   it('组：混合（1 作废 + 1 真失败）→ 同时出现 未执行 与 未成功', () => {
     languageState.value = 'zh';
     const view = render(<ToolStepGroup nodes={[node('m1', 'Bash', { command: 'a' }, VOID), node('m2', 'Bash', { command: 'b' }, 'exit code 1')]} />);

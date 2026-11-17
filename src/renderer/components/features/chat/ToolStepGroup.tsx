@@ -397,12 +397,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const failureReason = useMemo(() => {
     // 与组头 label 同口径：已恢复/自动重试的失败不算数，否则会出现 label 说「1 条未成功」、
     // 原因行说「2 失败」这种自相矛盾。
-    const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false
+    const unsettled = toolCalls.filter((toolCall) => toolCall.result?.success === false
       && !isAutoLoadedRetry(toolCall.result?.metadata) && toolCall.result?.metadata?.recovered !== true);
-    if (failedCalls.length === 0) return null;
+    // 从未执行的作废步不是失败：不进失败计数；全是作废步时只读第一条「未执行 · 原因」。
+    const failedCalls = unsettled.filter((toolCall) => !terminalById.get(toolCall.id)?.notRun);
+    if (failedCalls.length === 0) return unsettled.length > 0 ? humanizeToolFailureReason(unsettled[0], t) : null;
     if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
     return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
-  }, [t, toolCalls]);
+  }, [t, toolCalls, terminalById]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
