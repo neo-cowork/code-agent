@@ -329,7 +329,7 @@ describe('成员对话页', () => {
     invokeMock.mockResolvedValue([]);
     const task: Task = {
       id: 'task-9', sessionId: 'session-1', source: 'delegate_task', title: '数 csv', summary: '完成', status: 'completed',
-      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [],
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
       progress: {
         lastToolStep: { tool: 'Bash', target: 'du -h /tmp/ws', description: '找出最大的 csv', at: 2 },
         bashSteps: [

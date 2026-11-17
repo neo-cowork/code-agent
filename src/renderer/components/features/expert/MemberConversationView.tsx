@@ -248,7 +248,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
               <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.recentActions}</h3>
               <ol className="space-y-1">
                 {stepRows.map((row) => (
-                  <li key={row.key} data-testid="member-bash-step" className="rounded-lg bg-zinc-950/60 px-3 py-1.5 text-xs text-zinc-300">{row.label}</li>
+                  <li key={row.key} data-testid="member-bash-step" className="rounded-lg bg-zinc-950/60 py-1.5 pl-3 pr-3 text-xs text-zinc-300">{row.label}</li>
                 ))}
               </ol>
             </section>
