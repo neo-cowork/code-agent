@@ -142,6 +142,19 @@ function getLegacyWorkspaceSnapshotRoot(workspace: string): string {
   return path.join(workspace, CONFIG_DIR_NEW, SNAPSHOT_DIRECTORY);
 }
 
+/**
+ * 「旧位置已被取代」标记目录（同在应用数据目录，与 owner 根并列，不混进快照根以免被当成恢复证据）。
+ * 某会话在新位置认领过 owner 后，旧版本留在工作文件夹里的同会话快照不再提供：
+ * 新 run 的 clear 只能清新位置，旧位置是用户夹里的东西，不许写/删，只能靠标记让它失效。
+ */
+function getLegacySupersededDirectory(workspace: string): string {
+  return `${getWorkspaceSnapshotRoot(workspace)}.legacy-superseded`;
+}
+
+function isLegacySuperseded(workspace: string, sessionSegment: string): boolean {
+  return fs.existsSync(path.join(getLegacySupersededDirectory(workspace), sessionSegment));
+}
+
 function getSessionSnapshotDirectory(selector: SnapshotScope): string {
   const sessionId = requireIdentityPart(selector.sessionId, 'sessionId');
   return path.join(getWorkspaceSnapshotRoot(resolveWorkspace(selector.workingDir)), encodeSnapshotSegment(sessionId));
@@ -218,6 +231,9 @@ function activateStreamSnapshot(identity: StreamSnapshotIdentity): SnapshotOwner
   };
   const sessionDir = getSessionSnapshotDirectory(identity);
   fs.mkdirSync(sessionDir, { recursive: true });
+  const supersededDir = getLegacySupersededDirectory(workspace);
+  fs.mkdirSync(supersededDir, { recursive: true });
+  fs.writeFileSync(path.join(supersededDir, encodeSnapshotSegment(sessionId)), '');
 
   // The owner marker selects the only recoverable run. Older run files remain
   // physically isolated until the current owner settles, which lets a stale
@@ -326,7 +342,7 @@ export function loadStreamSnapshot(selector: StreamSnapshotSelector): PersistedS
   try {
     let sessionDir = getSessionSnapshotDirectory(selector);
     let owner = readOwner(selector, sessionDir);
-    if (!owner) {
+    if (!owner && !isLegacySuperseded(resolveWorkspace(selector.workingDir), encodeSnapshotSegment(requireIdentityPart(selector.sessionId, 'sessionId')))) {
       // 只读回退：旧版本把快照写在工作文件夹的 .code-agent 里
       sessionDir = getLegacySessionSnapshotDirectory(selector);
       owner = readOwner(selector, sessionDir);
@@ -397,14 +413,25 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
  * 「继续上次中断回复」决策槽——删了它恢复链就断了。
  */
 export function hasUnclearedStreamSnapshots(workingDir: string): boolean {
-  let roots: string[];
   try {
     const workspace = resolveWorkspace(workingDir);
-    roots = [getWorkspaceSnapshotRoot(workspace), getLegacyWorkspaceSnapshotRoot(workspace)];
+    if (dirHoldsSnapshotFile(getWorkspaceSnapshotRoot(workspace))) return true;
+    // 旧位置逐会话判断：已被新 run 取代的会话不再算未清证据
+    const legacyRoot = getLegacyWorkspaceSnapshotRoot(workspace);
+    const entries = readSnapshotDirents(legacyRoot);
+    if (!entries) return true;
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        if (isLegacySuperseded(workspace, entry.name)) continue;
+        if (dirHoldsSnapshotFile(path.join(legacyRoot, entry.name))) return true;
+        continue;
+      }
+      return true;
+    }
+    return false;
   } catch {
     return true;
   }
-  return roots.some(dirHoldsSnapshotFile);
 }
 
 function readSnapshotDirents(dir: string): fs.Dirent[] | null {

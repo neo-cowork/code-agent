@@ -7,6 +7,7 @@ import {
   createSnapshotHandler,
   getIncompleteToolCallIds,
   getStreamSnapshotPath,
+  hasUnclearedStreamSnapshots,
   loadStreamSnapshot,
   markStreamSnapshotInterruptionReason,
   saveStreamSnapshot,
@@ -205,6 +206,32 @@ describe('stream snapshot run isolation', () => {
 
     expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' })).toMatchObject({ content: 'left by older build' });
     expect(fs.readFileSync(runFile).equals(snapshotBytes)).toBe(true);
+  });
+
+  it('stops offering a legacy snapshot once a new run of the session settled, without touching the folder', () => {
+    const legacyDir = path.join(tempDir, '.code-agent', 'stream-snapshots', Buffer.from('session-1').toString('base64url'));
+    const runFile = path.join(legacyDir, `${Buffer.from('run-old').toString('base64url')}.json`);
+    const ownerFile = path.join(legacyDir, 'current-run.json');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const workspace = fs.realpathSync(tempDir);
+    fs.writeFileSync(ownerFile, JSON.stringify({ schemaVersion: 2, workspace, sessionId: 'session-1', runId: 'run-old', claimedAt: 1 }));
+    fs.writeFileSync(runFile, JSON.stringify({
+      ...partialSnapshot('left by older build'),
+      schemaVersion: 2, workspace, sessionId: 'session-1', runId: 'run-old', turnId: 'turn-1',
+      updatedAt: 1, streamStatus: 'incomplete', stableForExecution: false, incompleteToolCallIds: [], executionToolCalls: [],
+    }));
+    const ownerBytes = fs.readFileSync(ownerFile);
+    const runBytes = fs.readFileSync(runFile);
+    expect(hasUnclearedStreamSnapshots(tempDir)).toBe(true);
+
+    const handler = createSnapshotHandler(identity({ runId: 'run-new' }));
+    handler(partialSnapshot('new run partial'));
+    handler({ ...partialSnapshot('new run done'), isFinal: true });
+
+    expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' })).toBeNull();
+    expect(hasUnclearedStreamSnapshots(tempDir)).toBe(false);
+    expect(fs.readFileSync(ownerFile).equals(ownerBytes)).toBe(true);
+    expect(fs.readFileSync(runFile).equals(runBytes)).toBe(true);
   });
 
   it('keeps the last valid snapshot readable when an orphan temp file is truncated', () => {
