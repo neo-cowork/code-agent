@@ -421,8 +421,14 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
 }
 
 export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): string {
-  const language = CJK_PATTERN.test(args[2].toolStepHumanize.writeFallback) ? 'zh' : 'en';
-  return humanizeInternalText(buildToolStep(...args), language).text;
+  const t = args[2];
+  const language = CJK_PATTERN.test(t.toolStepHumanize.writeFallback) ? 'zh' : 'en';
+  // 被自动收口、从未执行的步骤：用「请求…」词表加「未执行 ·」前缀，不走任何 failed 词表。
+  const notRun = args[4] === 'failed' && args[6]?.notRun === true;
+  const step = notRun
+    ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
+    : buildToolStep(...args);
+  return humanizeInternalText(step, language).text;
 }
 
 function buildToolStep(
@@ -432,7 +438,7 @@ function buildToolStep(
   shortDescription?: string,
   status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
-  renderContext: { connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
+  renderContext: { notRun?: boolean; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
@@ -670,7 +676,12 @@ export function humanizeToolGroupLabel(
   toolNames: string[],
   t: Translations,
   status: ToolStepStatus = 'completed',
+  notRun = false,
 ): string {
+  if (notRun && status === 'failed') {
+    const label = humanizeToolGroupLabel(toolNames, t, 'pending-approval');
+    return label ? `${t.toolStepHumanize.notRunPrefix} · ${label}` : '';
+  }
   const counts = new Map<GroupBucket, number>();
   const order: GroupBucket[] = [];
   for (const name of toolNames) {

@@ -136,7 +136,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
@@ -158,6 +158,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     let blockedCommands = 0;
     let blockedSteps = 0;
     let staleUnfinished = 0;
+    const notRunNames: string[] = [];
     let envWaiting: string | undefined;
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
@@ -188,9 +189,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         ? 'completed'
         : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
+      if (!benign && terminalById.get(tc.id)?.notRun) notRunNames.push(tc.name);
     }
     return [
-      ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
+      ...Array.from(byStatus, ([stepStatus, names]) => {
+        if (stepStatus !== 'failed' || notRunNames.length === 0) return humanizeToolGroupLabel(names, t, stepStatus);
+        const rest = [...names];
+        for (const name of notRunNames) rest.splice(rest.indexOf(name), 1);
+        return [humanizeToolGroupLabel(notRunNames, t, 'failed', true), humanizeToolGroupLabel(rest, t, 'failed')]
+          .filter(Boolean).join(t.deliveryExperience.labelSeparator);
+      }),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
       envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
