@@ -15,7 +15,7 @@ function Harness() {
   const [feedback, setFeedback] = useState<AssistantFeedbackState | null>(null);
   useAssistantFeedbackEvents(setFeedback);
   return <>
-    <button onClick={() => setFeedback(transitionAssistantFeedback(null, { type: 'send_started', startedAt: 1, clientMessageId: 'm', sessionId: 's' }))}>send</button>
+    <button onClick={() => setFeedback(transitionAssistantFeedback(null, { type: 'send_started', startedAt: Date.now(), clientMessageId: 'm', sessionId: 's' }))}>send</button>
     {feedback && <AssistantFeedbackIndicator feedback={feedback} />}
   </>;
 }
@@ -30,7 +30,7 @@ describe('pre-reply feedback', () => {
     expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
   });
   it('keeps queued copy until activation, then shows preparation', () => {
-    const base: AssistantFeedbackState = { phase: 'queued', startedAt: 1, clientMessageId: 'm', sessionId: 's' };
+    const base: AssistantFeedbackState = { phase: 'queued', startedAt: Date.now(), clientMessageId: 'm', sessionId: 's' };
     const { rerender } = render(<AssistantFeedbackIndicator feedback={base} />);
     expect(screen.getByTestId('streaming-preparation-indicator').textContent).toBe('已排队，正在启动…');
     rerender(<AssistantFeedbackIndicator feedback={{ ...base, phase: 'waiting_model' }} />);
