@@ -220,6 +220,7 @@ export class CLISessionManager {
     if (await this.ensureDbReady()) {
       try {
         this.getDb()!.updateSession(sessionId, updates);
+        this.pushTitleToCloud(sessionId, updates);
         await this.syncTelemetrySessionTitle(sessionId, updates);
       } catch (error) {
         console.warn('[SessionManager] Failed to update session:', (error as Error).message);
@@ -231,6 +232,15 @@ export class CLISessionManager {
       const cached = this.sessionCache.get(sessionId)!;
       Object.assign(cached, updates, { updatedAt: Date.now() });
     }
+  }
+
+  /** web 构建走本类而非 host SessionManager：标题变更同样回写云端行（懒加载，CLI 启动不拉起 supabase 栈）。 */
+  private pushTitleToCloud(sessionId: string, updates: Partial<Session>): void {
+    if (typeof updates.title !== 'string' || !updates.title.trim()) return;
+    const title = updates.title;
+    void import('../host/services/infra/sessionTitleCloudPush')
+      .then((m) => m.pushSessionTitleToCloud(sessionId, title))
+      .catch(() => { /* fail-open：回写失败不影响本地改名 */ });
   }
 
   /**
