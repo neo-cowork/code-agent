@@ -2,6 +2,8 @@ import type { RoleWakeResult, RoleWakeTrigger } from '../../../shared/contract/r
 import { getSessionAutomationService } from '../sessionAutomation';
 import type { RecordAutomationEventInput } from '../sessionAutomation/sessionAutomationService';
 import { createLogger } from '../infra/logger';
+import { getHostUiLocale } from '../../config/hostUiLocale';
+import { roleWakeNextStageTitle } from '../../../shared/i18n/roleWakeNextStage';
 
 const logger = createLogger('RoleProactivity');
 
@@ -14,7 +16,7 @@ export async function withRoleWakeAutomation(input: {
   const automationId = `role_wake:${input.sessionId}`;
   const handoff = input.handoffPrompt ? {
     handoffPrompt: input.handoffPrompt,
-    nextStage: { prompt: input.handoffPrompt, title: '角色唤醒后继续' },
+    nextStage: { prompt: input.handoffPrompt, title: roleWakeNextStageTitle(getHostUiLocale()) },
   } : {};
   try {
     await service.recordCreated({
