@@ -8,7 +8,7 @@
 
 import { useMemo } from 'react';
 import type { AgentTreeNode, AgentTreeOwnershipConflict } from '@shared/contract/agentTree';
-import { TASK_PANEL_DISMISSED_KEY } from '@shared/contract/backgroundTask';
+import { TASK_PANEL_DISMISSED_KEY, type Task } from '@shared/contract/backgroundTask';
 import type { PermissionRequest } from '@shared/contract/permission';
 import { useAgentTreeSnapshot } from './useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
@@ -25,6 +25,35 @@ function isSessionNode(
 ): boolean {
   if (anchors.has(node.id)) return true;
   return node.sources.some((source) => !UNANCHORED_SOURCES.has(source));
+}
+
+const REPLACEABLE_FAILED_STATUSES = new Set<string>(['failed', 'expired', 'orphaned']);
+
+function metaString(task: Task, key: string): string {
+  const value = task.metadata?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function finishedAt(task: Task): number {
+  return task.completedAt ?? task.updatedAt;
+}
+
+/** 终态失败任务被同会话里「之后」成功的任务取代：显式 retryOf → 同 laneKey → 同 shortName。 */
+function findReplacedFailedTasks(sessionTasks: Task[]): Task[] {
+  const completed = sessionTasks.filter((task) => task.status === 'completed');
+  if (completed.length === 0) return [];
+  return sessionTasks.filter((failed) => {
+    if (!REPLACEABLE_FAILED_STATUSES.has(failed.status)) return false;
+    const laneKey = metaString(failed, 'laneKey');
+    const shortName = metaString(failed, 'shortName');
+    return completed.some((done) => {
+      const retryOf = done.metadata?.retryOf as { taskId?: unknown } | undefined;
+      if (retryOf?.taskId === failed.id) return true;
+      if (finishedAt(done) <= finishedAt(failed)) return false;
+      if (laneKey && metaString(done, 'laneKey') === laneKey) return true;
+      return Boolean(shortName) && metaString(done, 'shortName') === shortName;
+    });
+  });
 }
 
 export interface SessionAgentRows {
@@ -70,9 +99,17 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
   const activeAgentId = useAppStore((state) => state.activeAgentId);
 
   return useMemo(() => {
-    const tasks = sessionId
-      ? allTasks.filter((task) => task.sessionId === sessionId && task.metadata?.[TASK_PANEL_DISMISSED_KEY] !== true)
-      : [];
+    const sessionTasks = sessionId ? allTasks.filter((task) => task.sessionId === sessionId) : [];
+    const replaced = findReplacedFailedTasks(sessionTasks);
+    const replacedIds = new Set<string>(replaced.flatMap((task) => {
+      const ids = [task.id];
+      if (task.runId) ids.push(task.runId);
+      const childRunId = task.metadata?.childRunId;
+      if (typeof childRunId === 'string') ids.push(childRunId);
+      return ids;
+    }));
+    const tasks = sessionTasks.filter((task) => task.metadata?.[TASK_PANEL_DISMISSED_KEY] !== true
+      && !replaced.includes(task));
     const anchors = new Set<string>([
       ...members.map((member) => member.key),
       ...tasks.flatMap((task) => {
@@ -84,11 +121,18 @@ export function useSessionAgentRows(sessionId: string | null): SessionAgentRows 
       }),
     ]);
     const nodes = (snapshot?.nodes ?? []).filter((node) => isSessionNode(node, anchors));
-    const rows = applyMemberHolds(buildAgentRows({
+    const builtRows = buildAgentRows({
       members,
       nodes,
       tasks,
-    }), approvalIdsForSession(
+    }).filter((row) => replacedIds.size === 0 || ![
+      row.key,
+      row.node?.id,
+      row.task?.id,
+      row.task?.runId,
+      row.task?.metadata?.childRunId,
+    ].some((id) => typeof id === 'string' && replacedIds.has(id)));
+    const rows = applyMemberHolds(builtRows, approvalIdsForSession(
       sessionId,
       pendingPermissionRequest,
       pendingPermissionSessionId,
