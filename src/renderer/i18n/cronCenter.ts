@@ -39,7 +39,8 @@ export const cronCenterZh = {
     close: '关闭自动化面板',
     // 页首三格状态条（数据：cronStore.stats + 收件箱待过目数）
     statRunning: '运行中',
-    statPendingReview: '待过目',
+    statPendingReview: '待审批',
+    statResultsToView: '结果待看',
     statRate: '成功率',
     budgetSummaryLabel: '无人值守预算',
     budgetSummaryUnlimited: '已用 {cost} · 未设上限',
@@ -525,7 +526,7 @@ export const cronCenterZh = {
       notAllowed: '不允许。需要保存文件时会停下来等你确认。',
       allow: '允许在 {folder} 里保存文件',
       revoke: '撤销',
-      noFolderHint: '先在对话里给这个任务选一个工作文件夹，才能授权它保存文件。',
+      noFolderHint: '先编辑任务，给它选一个工作文件夹，才能授权它保存文件。',
     },
     // 执行状态（键 = CronJobStatus + none）
     status: {
@@ -564,7 +565,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     tabRuns: 'Run history',
     close: 'Close automations',
     statRunning: 'Running',
-    statPendingReview: 'To review',
+    statPendingReview: 'To approve',
+    statResultsToView: 'Results to view',
     statRate: 'Success rate',
     budgetSummaryLabel: 'Unattended budget',
     budgetSummaryUnlimited: '{cost} used · no limit',
@@ -1030,7 +1032,7 @@ export const cronCenterEn: typeof cronCenterZh = {
       notAllowed: 'Not allowed. It will stop and wait for you when it needs to save a file.',
       allow: 'Allow saving files in {folder}',
       revoke: 'Revoke',
-      noFolderHint: 'Pick a working folder for this task in chat first.',
+      noFolderHint: 'Edit the task and pick a working folder first.',
     },
     status: {
       pending: 'Pending',

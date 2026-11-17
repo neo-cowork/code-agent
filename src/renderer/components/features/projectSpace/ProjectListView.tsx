@@ -4,20 +4,21 @@
 // verify-* 噪音与未分类桶天然不出现）。
 // 新建入口：「新建空间」Modal，两种来源二选一——a) 选择/输入工作目录走 createSpace；
 // b) 从现有未升级项目（排除 proj_unsorted）升级走 promoteToSpace。失败 toast（fail-loud）。
-// 编辑：rename / setDescription（均已有 IPC）；删除：deleteProject（后果见确认文案，照实写）。
+// 编辑：rename / setDescription（均已有 IPC）；归档：setProjectStatus(archived/active)——空间有过会话就删不掉
+// （PROJECT_BOUNDARY_IMMUTABLE），所以列表行动作是「归档」，已归档的在「已归档」视图里可恢复，会话原样保留。
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { FolderKanban, Pencil, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Archive, ArchiveRestore, FolderKanban, Pencil } from 'lucide-react';
 import { FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX, UNSORTED_PROJECT_ID, type ProjectWithActivity } from '@shared/contract/project';
 import { IPC_DOMAINS } from '@shared/ipc';
 import {
   createSpace,
-  deleteProject,
   listProjectsWithActivity,
   promoteToSpace,
   renameProject,
   setProjectDescription,
+  setProjectStatus,
 } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
 import { gatedItemsOf, type FolderTrustEvaluationView } from '../../FolderTrustDialog';
@@ -60,8 +61,12 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editSaving, setEditSaving] = useState(false);
-  const [deleting, setDeleting] = useState<ProjectWithActivity | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [archiving, setArchiving] = useState<ProjectWithActivity | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveFailed, setArchiveFailed] = useState(false);
+  const [archivedProjects, setArchivedProjects] = useState<ProjectWithActivity[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [restoreFailed, setRestoreFailed] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
@@ -73,17 +78,35 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
   // 创建即信任：目录含危险项时存评估结果，同一 Modal 切确认步（非 null 即确认步）
   const [trustConfirm, setTrustConfirm] = useState<FolderTrustEvaluationView | null>(null);
 
+  const listRequest = useRef(0);
   const loadList = useCallback(() => {
+    const request = ++listRequest.current;
     listProjectsWithActivity(false, true)
-      .then((list) => setProjects(list))
+      .then((list) => {
+        if (request !== listRequest.current) return;
+        setProjects(list);
+        setLoadFailed(false);
+      })
       .catch(() => {
+        if (request !== listRequest.current) return;
         setProjects([]);
         setLoadFailed(true);
+      });
+    // 已归档的空间默认不在主列表里，单独取一次（includeArchived）供「已归档」视图用
+    listProjectsWithActivity(true, true)
+      .then((list) => {
+        if (request !== listRequest.current) return;
+        setArchivedProjects(list.filter((item) => item.status === 'archived'));
+      })
+      .catch(() => {
+        if (request !== listRequest.current) return;
+        setArchivedProjects([]);
       });
   }, []);
 
   useEffect(() => {
     loadList();
+    return () => { listRequest.current += 1; };
   }, [loadList]);
 
   const openEdit = (project: ProjectWithActivity) => {
@@ -199,15 +222,28 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
     }
   };
 
-  const handleConfirmDelete = async () => {
-    if (!deleting || deleteBusy) return;
-    setDeleteBusy(true);
+  const handleConfirmArchive = async () => {
+    if (!archiving || archiveBusy) return;
+    setArchiveBusy(true);
+    setArchiveFailed(false);
     try {
-      await deleteProject(deleting.id);
-      setDeleting(null);
+      await setProjectStatus(archiving.id, 'archived');
+      setArchiving(null);
       loadList();
+    } catch {
+      setArchiveFailed(true);
     } finally {
-      setDeleteBusy(false);
+      setArchiveBusy(false);
+    }
+  };
+
+  const handleRestore = async (project: ProjectWithActivity) => {
+    setRestoreFailed(false);
+    try {
+      await setProjectStatus(project.id, 'active');
+      loadList();
+    } catch {
+      setRestoreFailed(true);
     }
   };
 
@@ -215,10 +251,13 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
     status === 'active' ? ps.statusActive : status === 'archived' ? ps.statusArchived : ps.statusIdle
   );
 
+  const viewingArchived = showArchived && archivedProjects.length > 0;
+  const visibleProjects = viewingArchived ? archivedProjects : projects;
+
   let content: React.ReactNode;
-  if (projects === null) {
+  if (visibleProjects === null) {
     content = <div className="py-10 text-center text-sm text-zinc-600">{t.common.loading}</div>;
-  } else if (projects.length === 0) {
+  } else if (visibleProjects.length === 0) {
     content = (
       <EmptyState
         variant="panel"
@@ -229,7 +268,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
   } else {
     content = (
       <div className="grid gap-1" data-testid="project-space-list">
-        {projects.map((project) => {
+        {visibleProjects.map((project) => {
           const activityStatus = deriveProjectActivityStatus(project);
           const isUnsorted = project.id === UNSORTED_PROJECT_ID;
           return (
@@ -290,15 +329,27 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
                   data-testid={`project-space-edit-${project.id}`}
                   onClick={() => openEdit(project)}
                 />
-                <IconButton
-                  size="sm"
-                  variant="danger"
-                  icon={<Trash2 className="h-3.5 w-3.5" />}
-                  aria-label={ps.deleteSpace}
-                  title={ps.deleteSpace}
-                  data-testid={`project-space-delete-${project.id}`}
-                  onClick={() => setDeleting(project)}
-                />
+                {viewingArchived ? (
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    icon={<ArchiveRestore className="h-3.5 w-3.5" />}
+                    aria-label={ps.restoreSpace}
+                    title={ps.restoreSpace}
+                    data-testid={`project-space-restore-${project.id}`}
+                    onClick={() => { void handleRestore(project); }}
+                  />
+                ) : (
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    icon={<Archive className="h-3.5 w-3.5" />}
+                    aria-label={ps.archiveSpace}
+                    title={ps.archiveSpace}
+                    data-testid={`project-space-archive-${project.id}`}
+                    onClick={() => { setArchiveFailed(false); setArchiving(project); }}
+                  />
+                )}
               </span>
             )}
           </div>
@@ -310,6 +361,20 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
 
   return (
     <div>
+      {archivedProjects.length > 0 && (
+        <div className="mb-2 flex justify-end">
+          <SecondaryButton
+            size="sm"
+            onClick={() => { setRestoreFailed(false); setShowArchived((value) => !value); }}
+            data-testid="project-space-archived-toggle"
+          >
+            {viewingArchived ? ps.archivedBack : ps.archivedToggle.replace('{count}', String(archivedProjects.length))}
+          </SecondaryButton>
+        </div>
+      )}
+      {restoreFailed && (
+        <p role="alert" className="mb-2 text-sm text-badge-danger" data-testid="project-space-restore-error">{ps.restoreFailed}</p>
+      )}
       {content}
       <Modal
         isOpen={createOpen}
@@ -450,23 +515,27 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
         </div>
       </Modal>
       <Modal
-        isOpen={deleting !== null}
-        onClose={() => setDeleting(null)}
-        title={ps.deleteTitle}
+        isOpen={archiving !== null}
+        onClose={() => { setArchiving(null); setArchiveFailed(false); }}
+        title={ps.archiveTitle}
         size="sm"
         footer={(
           <ModalFooter
-            onCancel={() => setDeleting(null)}
-            onConfirm={() => { void handleConfirmDelete(); }}
-            confirmText={ps.deleteSpace}
-            confirmDisabled={deleteBusy}
-            confirmColorClass="bg-red-600 hover:bg-red-500"
+            onCancel={() => { setArchiving(null); setArchiveFailed(false); }}
+            onConfirm={() => { void handleConfirmArchive(); }}
+            confirmText={ps.archiveSpace}
+            confirmDisabled={archiveBusy}
           />
         )}
       >
-        <p className="text-sm leading-6 text-zinc-400" data-testid="project-space-delete-modal">
-          {ps.deleteConfirm.replace('{name}', deleting?.name ?? '')}
+        <p className="text-sm leading-6 text-zinc-400" data-testid="project-space-archive-modal">
+          {ps.archiveConfirm.replace('{name}', archiving?.name ?? '')}
         </p>
+        {archiveFailed && (
+          <p role="alert" className="mt-3 text-sm text-badge-danger" data-testid="project-space-archive-error">
+            {ps.archiveFailed}
+          </p>
+        )}
       </Modal>
     </div>
   );

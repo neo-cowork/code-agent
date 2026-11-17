@@ -18,12 +18,12 @@ import { toGenerativeUIExportSnapshot } from '../generativeUI/generativeUIExport
 import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositoryAccess';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
-import {
-  resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource,
-} from '../../../shared/sessionTitlePlaceholder';
+import { resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource } from '../../../shared/sessionTitlePlaceholder';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
+import { initMemorySessionTitle } from './sessionFolderName';
+import { pushSessionTitleToCloud } from './sessionTitleCloudPush';
 import { isCloudSessionListSkipped } from './cloudSessionListGate';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
@@ -660,6 +660,7 @@ export class SessionManager implements Disposable {
       } catch (error) {
         logger.warn('[SessionManager] Telemetry title sync failed (ignored):', error);
       }
+      pushSessionTitleToCloud(sessionId, updates.title);
     }
 
     // 工作目录后补时，仅为未归桶/待整理会话重算项目归属；明确归属不覆盖。
@@ -1280,7 +1281,7 @@ export class SessionManager implements Disposable {
     const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
-    const title = await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
+    const title = await initMemorySessionTitle(titleSource, session.workingDirectory) ?? await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。

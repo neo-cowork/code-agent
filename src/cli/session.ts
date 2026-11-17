@@ -19,6 +19,7 @@ import {
 } from '../shared/sessionTitlePlaceholder';
 import crypto from 'crypto';
 import { createLogger } from '../host/services/infra/logger';
+import { initMemorySessionTitle } from '../host/services/infra/sessionFolderName';
 
 const logger = createLogger('CLI-Session');
 
@@ -220,6 +221,7 @@ export class CLISessionManager {
     if (await this.ensureDbReady()) {
       try {
         this.getDb()!.updateSession(sessionId, updates);
+        this.pushTitleToCloud(sessionId, updates);
         await this.syncTelemetrySessionTitle(sessionId, updates);
       } catch (error) {
         console.warn('[SessionManager] Failed to update session:', (error as Error).message);
@@ -231,6 +233,15 @@ export class CLISessionManager {
       const cached = this.sessionCache.get(sessionId)!;
       Object.assign(cached, updates, { updatedAt: Date.now() });
     }
+  }
+
+  /** web 构建走本类而非 host SessionManager：标题变更同样回写云端行（懒加载，CLI 启动不拉起 supabase 栈）。 */
+  private pushTitleToCloud(sessionId: string, updates: Partial<Session>): void {
+    if (typeof updates.title !== 'string' || !updates.title.trim()) return;
+    const title = updates.title;
+    void import('../host/services/infra/sessionTitleCloudPush')
+      .then((m) => m.pushSessionTitleToCloud(sessionId, title))
+      .catch(() => { /* fail-open：回写失败不影响本地改名 */ });
   }
 
   /**
@@ -527,7 +538,8 @@ export class CLISessionManager {
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
-    const title = await resolveSessionTitle(titleSource, uiLanguage, (strict) => this.generateSmartTitle(titleSource, strict), logger);
+    const title = await initMemorySessionTitle(titleSource, session.workingDirectory)
+      ?? await resolveSessionTitle(titleSource, uiLanguage, (strict) => this.generateSmartTitle(titleSource, strict), logger);
 
     const latest = await this.getSession(sessionId);
     if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;

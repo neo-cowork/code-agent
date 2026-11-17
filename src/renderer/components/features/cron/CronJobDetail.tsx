@@ -36,6 +36,7 @@ import { CronJobApprovalHint } from './CronJobApprovalHint';
 import { getJobDisplayName, getBuiltinJobDisplay, getVisibleJobTags } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
+import { CronJobWorkingFolderStatus } from './CronWorkingFolderStatus';
 import { formatDetailDuration } from './formatDetailDuration';
 
 interface CronJobDetailProps {
@@ -281,6 +282,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
         {job.runsOn === 'local' && job.action.type === 'agent' && (
           <CronWriteScopePanel job={job} />
         )}
+        <CronJobWorkingFolderStatus job={job} showHint />
 
         <details className="mt-4 group" data-testid="cron-detail-advanced">
           <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">

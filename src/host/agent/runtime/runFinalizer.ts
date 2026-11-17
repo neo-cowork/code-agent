@@ -125,18 +125,8 @@ function isMarkedBashForTaskAdvance(
 function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
   const trimmed = message.trim();
   if (!trimmed) return;
-  if (ctx.turn.currentTurnId) {
-    ctx.onEvent({
-      type: 'stream_reasoning',
-      data: {
-        content: `\n[runtime] ${trimmed}\n`,
-        turnId: ctx.turn.currentTurnId,
-        ...(ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
-      },
-    });
-    return;
-  }
-  ctx.stats.queueDiagnostic(trimmed);
+  // 仅写日志，不进 reasoning 流
+  logger.info(`[RuntimeDiagnostic] checklist: ${trimmed}`);
 }
 
 function hasCheckboxChecklist(content: string | undefined): boolean {
@@ -747,7 +737,7 @@ export class RunFinalizer {
   emitTaskProgress(
     phase: AgentTaskPhase,
     step?: string,
-    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; target?: string; parallel?: boolean }
+    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; target?: string; description?: string; parallel?: boolean }
   ): void {
     this.ctx.onEvent({
       type: 'task_progress',

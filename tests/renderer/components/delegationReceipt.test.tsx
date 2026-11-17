@@ -178,6 +178,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('delegation receipt', () => {
+  it.each([
+    ['Extract and summarize contract.pdf', '助手没有完成', false],
+    ['提炼合同关键条款', '提炼合同关键条款没有完成', true],
+    ['deepwiki', 'deepwiki没有完成', true],
+  ])('zh failed headline for task title %s is %s and uses the sans font', (title, headline, verbatim) => {
+    mocks.tasks = [task({ title, status: 'failed' })];
+    const { getByTestId, container } = renderCall();
+    const el = getByTestId('delegation-headline');
+    expect(el.textContent).toBe(headline);
+    expect(el.className).toContain('font-sans');
+    expect(el.className).not.toContain('font-mono');
+    if (!verbatim) expect(container.textContent).not.toContain(title);
+  });
+
   it('shows the background task activity from lastToolStep while running', () => {
     mocks.tasks = [task({
       progress: {

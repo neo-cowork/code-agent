@@ -35,9 +35,9 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh, '列出源码目录')).toBe('运行了一条命令');
   });
 
-  it('bash: schema description does not override localized narration', () => {
+  it('bash: usable arguments.description is the row text', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/', description: '列出源码目录' }, zh))
-      .toBe('运行了一条命令');
+      .toBe('列出源码目录');
   });
 
   // 2026-11-13 owner decision: command details belong in explicit inspection, not timeline labels.

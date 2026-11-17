@@ -16,3 +16,13 @@ export function extractToolStepTarget(
   }
   return undefined;
 }
+
+/** Bash 的 arguments.description 原样带给渲染端（过滤在渲染端做）；只读 description，不读 shortDescription。 */
+export function bashStepDescription(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+): string | undefined {
+  if (toolName !== 'Bash' && toolName !== 'bash') return undefined;
+  const value = args?.description;
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : undefined;
+}
