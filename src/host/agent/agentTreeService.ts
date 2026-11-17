@@ -12,6 +12,7 @@ import type {
   AgentWorktreeArtifact,
   AgentTreeWorktreeState,
 } from '../../shared/contract/agentTree';
+import type { BashStep } from '../../shared/contract/backgroundTask';
 import type { EvidenceRef } from '../../shared/contract/evidence';
 import type { ManagedAgentStatus } from './spawnGuard';
 import { getSpawnGuard } from './spawnGuard';
@@ -31,7 +32,7 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
-import { extractToolStepTarget } from './toolStepTarget';
+import { bashStepDescription, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 import { stripWorkdirPrefix } from './workdirPrefix';
 
@@ -305,9 +306,11 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
       const call = calls[callIndex];
       if (call.name !== tool) continue;
       const target = extractToolStepTarget(call.arguments);
+      const description = bashStepDescription(call.name, call.arguments);
       return {
         tool,
         ...(target ? { target } : {}),
+        ...(description ? { description } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
     }
@@ -317,6 +320,18 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
     tool,
     at: record.snapshot?.lastUpdated || record.updatedAt,
   };
+}
+
+function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
+  const steps: BashStep[] = [];
+  for (const message of record.messages) {
+    for (const call of message.toolCalls ?? []) {
+      if (call.name !== 'Bash' && call.name !== 'bash') continue;
+      const description = bashStepDescription(call.name, call.arguments);
+      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '' });
+    }
+  }
+  return steps.length > 0 ? steps.slice(-20) : undefined;
 }
 
 /** Executor observability lines ("Calling Read({...})") are replay data, not card copy. */
@@ -468,6 +483,8 @@ function mergeContextRecord(
   if (activeTool) node.activeTool = activeTool;
   const lastToolStep = lastToolStepFromContext(record);
   if (lastToolStep) node.lastToolStep = lastToolStep;
+  const bashSteps = bashStepsFromContext(record);
+  if (bashSteps) node.bashSteps = bashSteps;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));
 
   const progress = progressFromContext(record);
