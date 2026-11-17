@@ -2569,12 +2569,7 @@ fn spawn_quit_guard_flow_with<R: tauri::Runtime>(
                 }
             }
             quit_guard::QuitDecision::HideToBackground { language } => {
-                background_resident::minimize_and_hint(&app, language, hint_poster);
-                coordinator.finish();
-                #[cfg(target_os = "macos")]
-                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
-                    reply_to_mac_application_terminate(&app, false);
-                }
+                background_resident::hide_to_background(&app, &coordinator, origin, language, hint_poster);
             }
             quit_guard::QuitDecision::Confirm { prompt, language } => {
                 let offers_background_continue = matches!(
@@ -2587,6 +2582,7 @@ fn spawn_quit_guard_flow_with<R: tauri::Runtime>(
                     quit_guard::quit_prompt_text(prompt, offers_background_continue, language),
                     language,
                     origin,
+                    hint_poster,
                 );
             }
         }
@@ -2610,6 +2606,7 @@ fn show_quit_confirm_dialog<R: tauri::Runtime>(
     message: &str,
     language: quit_guard::QuitDialogLanguage,
     origin: QuitFlowOrigin,
+    hint_poster: impl FnOnce(quit_dialog_i18n::QuitDialogLanguage) -> Result<(), String> + Send + 'static,
 ) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
@@ -2659,43 +2656,15 @@ fn show_quit_confirm_dialog<R: tauri::Runtime>(
                 MessageDialogResult::Custom(label) => Some(label),
                 _ => None,
             };
-            let plan = quit_guard::quit_exit_plan(
-                // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
+            // 按钮组没提供「后台继续」时，该标签即使到达也按取消处理（防御）
+            background_resident::handle_quit_dialog_answer(
+                &app,
+                &coordinator,
+                origin,
                 button_set.dialog_answer_action(custom_label.as_deref()),
-                // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
-                cfg!(not(unix)),
+                language,
+                hint_poster,
             );
-            if plan.exit {
-                if plan.arm_detach {
-                    let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
-                        quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
-                    });
-                    if !quit_guard::arm_background_continue_detach(
-                        &server_url(),
-                        token.as_deref(),
-                        quit_guard::QUIT_GUARD_TIMEOUT,
-                    ) {
-                        // 通知没落地就退壳 = Windows 上 EOF 把任务停掉。留在 app 里。
-                        eprintln!(
-                            "background-continue: daemon did not accept detach; staying in the app"
-                        );
-                        coordinator.finish();
-                        #[cfg(target_os = "macos")]
-                        if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
-                            reply_to_mac_application_terminate(&app, false);
-                        }
-                        return;
-                    }
-                }
-                execute_quit_exit_plan(app, coordinator, origin, plan);
-            } else {
-                // 取消：什么都不清理（webServer 继续跑），app 继续运行
-                coordinator.finish();
-                #[cfg(target_os = "macos")]
-                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
-                    reply_to_mac_application_terminate(&app, false);
-                }
-            }
         });
 }
 
@@ -2706,36 +2675,25 @@ fn execute_quit_exit_plan<R: tauri::Runtime>(
     origin: QuitFlowOrigin,
     plan: quit_guard::QuitExitPlan,
 ) {
-    // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
-    // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
-    // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
-    let mode = if plan.cleanup_server {
-        "stop"
-    } else {
-        "background"
-    };
+    // 停止并退出：在退壳 / cleanup 之前声明意图。
+    // POST 失败不拦退出：没 token 和请求失败分开记一条警告。
     let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
         quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
     });
     if token.is_none() {
-        eprintln!("quit-intent: no token; continuing exit ({mode})");
+        eprintln!("quit-intent: no token; continuing exit (stop)");
     } else if !quit_guard::post_quit_intent(
         &server_url(),
         token.as_deref(),
-        mode,
+        "stop",
         quit_guard::QUIT_GUARD_TIMEOUT,
     ) {
-        eprintln!("quit-intent: request failed; continuing exit ({mode})");
+        eprintln!("quit-intent: request failed; continuing exit (stop)");
     } else if plan.cleanup_server {
         // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
         // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
         coordinator.set_stop_intent_landed();
         hide_windows_for_stop_wait(&app);
-    }
-    // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
-    // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
-    if !plan.cleanup_server {
-        coordinator.set_background_continue();
     }
     coordinator.allow_exit();
     coordinator.finish();
@@ -4939,7 +4897,7 @@ fn main() {
             thread::spawn(move || {
                 execute_quit_exit_plan(
                     app, coordinator, QuitFlowOrigin::TauriExit,
-                    quit_guard::quit_exit_plan(quit_guard::QuitAnswerAction::Quit, cfg!(not(unix))),
+                    quit_guard::quit_exit_plan(quit_guard::QuitAnswerAction::Quit),
                 )
             });
         }

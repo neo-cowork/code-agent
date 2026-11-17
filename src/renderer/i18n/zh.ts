@@ -9,7 +9,7 @@ import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
-import { voiceZh } from './voice';
+import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { deliveryExperienceZh } from './deliveryExperience';
@@ -952,7 +952,7 @@ export const zh = {
   ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
-  ...cronCenterZh,
+  ...cronCenterZh, ...cronWorkingFolderZh,
   ...previewWorkspaceZh,
   ...deliveryExperienceZh,
   ...modalPrimitivesZh,
