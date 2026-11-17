@@ -403,6 +403,26 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(text).not.toMatch(/rem-opaque-91|提醒 ID|Reminder ID|reminder_id/);
   });
 
+  it('editing a reminder time never sends the looked-up title back as a new title', async () => {
+    readReminder.mockResolvedValue({
+      data: { id: 'rem-opaque-91', list: '工作', title: '交电费', completed: false, remindAtMs: localMs(8) },
+    });
+    const params = { list: '工作', reminder_id: 'rem-opaque-91', remind_at_ms: localMs(20) };
+    const extra = await remindersApprovalDetails('reminders_update', params);
+    state.request = nativeRequest('permission-reminders-update-snapshot', 'reminders_update', { ...params, ...extra }, '提醒事项');
+    render(<PermissionCard />);
+    enterEdit();
+    changeDatetime('remind_at_ms', '2026-08-26T21:15');
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalled());
+    const sent = invoke.mock.calls[0][4] as Record<string, unknown>;
+    expect(sent).toEqual({ remind_at_ms: localMs(21, 15) });
+    expect(sent).not.toHaveProperty('title');
+    const edited = applyEditedArgs('reminders_update', params, sent);
+    expect(edited).toMatchObject({ ok: true });
+    if (edited.ok) expect(edited.params).not.toHaveProperty('title');
+  });
+
   it('a readonly internal id never renders, for reminders as well as calendar', () => {
     const marked: string[] = [];
     for (const [tool, fields] of Object.entries(EDITABLE_TOOL_FIELDS)) {

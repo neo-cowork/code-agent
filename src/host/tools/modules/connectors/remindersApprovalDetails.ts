@@ -39,6 +39,10 @@ export async function remindersApprovalDetails(
     ) {
       extra.remind_at_ms = data.remindAtMs;
     }
+    // 查到的标题只是展示快照：用户没改它，「修改后更新」就不能把它当成新 title 回传。
+    if (toolName === 'reminders_update' && Object.keys(extra).length > 0) {
+      extra.calendarApprovalSnapshotFields = Object.keys(extra);
+    }
     return extra;
   } catch {
     // 查不到就少一行标题，不另弹错误卡，也不改派发参数。

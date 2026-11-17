@@ -69,6 +69,7 @@ describe('ToolExecutor: reminder update/delete approval card', () => {
     expect(bridge.runAppleScript).toHaveBeenCalledTimes(1);
     const details = requestPermission.mock.calls[0][0].details;
     expect(details.title).toBe('交电费');
+    expect(details.calendarApprovalSnapshotFields).toEqual(['title']);
     expect(details.reminder_id).toBe('rem-opaque-91');
     expect(details.remind_at_ms).toBe(params.remind_at_ms);
     expect(JSON.stringify(details.preview)).not.toMatch(/Reminder ID|rem-opaque-91/);
