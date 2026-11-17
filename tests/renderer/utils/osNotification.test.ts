@@ -199,7 +199,7 @@ describe('osNotification', () => {
       // 系统通知发不出不静默：补一条应用内 toast
       const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
       expect(useToastStore.getState().toasts).toEqual([
-        expect.objectContaining({ type: 'info', message: '任务完成 - 循环: 已完成 1 轮' }),
+        expect.objectContaining({ type: 'info', message: '任务完成 - 循环: 已完成 1 轮', duration: 0 }),
       ]);
     } finally {
       warn.mockRestore();

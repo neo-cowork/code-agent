@@ -207,7 +207,7 @@ async function postOsNotificationInner(
       if (fallbackToast) {
         const { onOpen, openLabel } = flags;
         const action = onOpen && openLabel ? { label: openLabel, onClick: onOpen } : undefined;
-        useToastStore.getState().addToast(flags.failure === true ? 'error' : 'info', `${opts.title}: ${opts.body}`, FOREGROUND_FAILURE_TOAST_MS, action);
+        useToastStore.getState().addToast(flags.failure === true ? 'error' : 'info', `${opts.title}: ${opts.body}`, 0, action); // 常驻到用户关掉：多半是离开窗口时触发的，定时消失就白发了
       }
       reportDelivery({
         mode: 'tauri',
