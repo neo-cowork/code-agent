@@ -114,7 +114,7 @@ describe('终态行常驻（不自动删除）', () => {
   it('markFailed 后条目常驻（此前也不删，钉住防回归）', async () => {
     await backgroundSession('session-1');
 
-    getBackgroundTaskManager().markFailed('session-1', 'Provider auth failure');
+    await getBackgroundTaskManager().markFailed('session-1', 'Provider auth failure');
 
     const tasks = getBackgroundTaskManager().getAllTasks();
     expect(tasks).toHaveLength(1);
@@ -250,7 +250,44 @@ describe('background notification locale', () => {
     await getBackgroundTaskManager().markCompleted('english-complete');
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Task completed' }), { force: true });
     await backgroundSession('english-failure');
-    getBackgroundTaskManager().markFailed('english-failure');
+    await getBackgroundTaskManager().markFailed('english-failure');
     expect(getBackgroundTaskManager().getAllTasks().find((task) => task.sessionId === 'english-failure')?.completionMessage).toBe('Task failed');
+  });
+});
+
+describe('通知读实时会话标题（不吃 moveToBackground 时的快照）', () => {
+  it('后台后改名 → markCompleted 通知与终态更新都带新标题', async () => {
+    await backgroundSession('session-1');
+    const events = collectUpdates();
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-1', title: '服务合同要点' });
+
+    await getBackgroundTaskManager().markCompleted('session-1');
+
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete.mock.calls[0][0]).toMatchObject({ sessionTitle: '服务合同要点' });
+    expect(events.find((e) => e.type === 'completed')?.task.title).toBe('服务合同要点');
+  });
+
+  it('后台后改名 → markFailed 通知带新标题；取不到会话时回落快照', async () => {
+    await backgroundSession('session-1');
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-1', title: '服务合同要点' });
+    await getBackgroundTaskManager().markFailed('session-1', 'boom');
+    expect(notifyState.notifyTaskComplete.mock.calls[0][0]).toMatchObject({ sessionTitle: '服务合同要点', succeeded: false });
+
+    notifyState.notifyTaskComplete.mockClear();
+    sessionManagerState.getSession.mockResolvedValue({ id: 'session-1', title: '长任务' });
+    await backgroundSession('session-1');
+    sessionManagerState.getSession.mockResolvedValue(null);
+    await getBackgroundTaskManager().markFailed('session-1', 'boom');
+    expect(notifyState.notifyTaskComplete.mock.calls[0][0]).toMatchObject({ sessionTitle: '长任务' });
+  });
+
+  it('并发重复收线仍只通知一次', async () => {
+    await backgroundSession('session-1');
+    await Promise.all([
+      getBackgroundTaskManager().markCompleted('session-1'),
+      getBackgroundTaskManager().markCompleted('session-1'),
+    ]);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
   });
 });

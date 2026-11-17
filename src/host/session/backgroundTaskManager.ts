@@ -128,6 +128,8 @@ class BackgroundTaskManager extends EventEmitter {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
+    task.title = await this.resolveLiveTitle(sessionId, task.title);
+    if (task.status !== 'running') return;
     task.status = 'completed';
     task.progress = 100;
     task.completionMessage = message;
@@ -163,10 +165,12 @@ class BackgroundTaskManager extends EventEmitter {
    * 失败与完成同一档「默默长跑、终态才冒头」——焦点门不该吞掉失败提醒
    * （2026-10-11 验收：撞 max-step 上限的失败轮无任何提示）。
    */
-  markFailed(sessionId: string, error?: string, duration?: number): void {
+  async markFailed(sessionId: string, error?: string, duration?: number): Promise<void> {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
+    task.title = await this.resolveLiveTitle(sessionId, task.title);
+    if (task.status !== 'running') return;
     task.status = 'failed';
     task.completionMessage = error || (readUiLanguage() === 'en' ? 'Task failed' : '任务执行失败');
 
@@ -188,6 +192,16 @@ class BackgroundTaskManager extends EventEmitter {
       toolsUsed: [],
       succeeded: false,
     }, { force: true });
+  }
+
+  /** 终态时按实时会话标题取名（改名/智能标题后快照已过期）；取不到回落快照。 */
+  private async resolveLiveTitle(sessionId: string, fallback: string): Promise<string> {
+    try {
+      const session = await getSessionManager().getSession(sessionId);
+      return session?.title?.trim() || fallback;
+    } catch {
+      return fallback;
+    }
   }
 
   /**

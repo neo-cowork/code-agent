@@ -157,7 +157,7 @@ export async function settlePrimaryRunSessionStatus(
 export function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): void {
   const backgroundManager = getBackgroundTaskManager();
   if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
-  backgroundManager.markFailed(
+  void backgroundManager.markFailed(
     sessionId,
     resolveBackgroundRunSettlement({ status: 'error', errorMessage }).message,
   );
