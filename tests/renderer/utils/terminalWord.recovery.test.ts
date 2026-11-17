@@ -140,6 +140,17 @@ describe('failed foreground read recovered by a background delegate_task', () =>
     expect(run([failedRead, delegate('Read a.pdf')], [task({ toolCallId: 'other' })])).toBe('completed-with-warnings');
   });
 
+  it('completed task whose own tool calls failed keeps the warning', () => {
+    expect(run([failedRead, delegate('Read a.pdf')], [task({ progress: { failedToolCalls: 1 } })])).toBe('completed-with-warnings');
+  });
+
+  it('a bare route word or another non-ASCII file name does not name the failed target', () => {
+    const url = { name: 'WebFetch', arguments: { url: 'https://example.com/status' }, success: false };
+    expect(run([url, delegate('Check the status of the build')], [task()])).toBe('completed-with-warnings');
+    expect(run([read('合同.pdf', false), delegate('读取 备份合同.pdf')], [task()])).toBe('completed-with-warnings');
+    expect(run([read('合同.pdf', false), delegate('读取 /ws/合同.pdf')], [task()])).toBe('completed');
+  });
+
   it('a delegation that came before the failure recovers nothing', () => {
     expect(run([delegate('Read a.pdf'), failedRead], [task()])).toBe('completed-with-warnings');
   });

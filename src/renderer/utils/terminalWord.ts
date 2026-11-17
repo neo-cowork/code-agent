@@ -22,7 +22,7 @@ type FinishedToolStep = { id?: string; name?: string; arguments?: unknown; succe
 export type DelegationLedgerTask = {
   toolCallId?: string;
   status: string;
-  progress?: { lastToolFailure?: unknown };
+  progress?: { lastToolFailure?: unknown; failedToolCalls?: number };
 };
 
 function targetTokens(args: unknown): Set<string> {
@@ -72,7 +72,8 @@ function sameTarget(a: string, b: string): boolean {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-const FILE_LIKE_TARGET = /\/|\.[A-Za-z0-9]{1,8}$/;
+// A delegation can only vouch for a concrete file: the last segment needs an extension (not a URL route like /status).
+const FILE_LIKE_TARGET = /^(?![a-z][a-z0-9+.-]+:\/)(?:.*\/)?[^/]+\.[A-Za-z0-9]{1,8}$/i;
 const PATH_STOP = /[\s"'`<>()（）「」《》，。、：；,;]/;
 
 /** Does the delegation prompt name this failed target (file name or path, same-file rules as `sameTarget`)? */
@@ -88,8 +89,8 @@ function promptNamesTarget(prompt: string, target: string): boolean {
     let start = at;
     if (before === '/') {
       while (start > 0 && !PATH_STOP.test(text[start - 1])) start -= 1;
-    } else if (/[A-Za-z0-9_.-]/.test(before) && /^[A-Za-z0-9_.-]/.test(base)) {
-      continue;
+    } else if (/[\p{L}\p{N}_.-]/u.test(before)) {
+      continue; // `备份合同.pdf` must not name `合同.pdf`
     }
     const candidate = text.slice(start, at + base.length).replace(/^\.\//, '');
     if (sameTarget(candidate, target)) return true;
@@ -103,7 +104,8 @@ function completedDelegationPrompt(step: FinishedToolStep, tasks: readonly Deleg
   const prompt = (step.arguments as { prompt?: unknown } | null | undefined)?.prompt;
   if (typeof prompt !== 'string' || !prompt) return null;
   const done = tasks.some((task) =>
-    task.toolCallId === step.id && task.status === 'completed' && !task.progress?.lastToolFailure);
+    task.toolCallId === step.id && task.status === 'completed'
+    && !task.progress?.lastToolFailure && !task.progress?.failedToolCalls);
   return done ? prompt : null;
 }
 

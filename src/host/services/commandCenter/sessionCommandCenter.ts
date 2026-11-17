@@ -706,8 +706,13 @@ export class SessionCommandCenter {
       return;
     }
 
+    task.progress = { ...task.progress, failedToolCalls: (task.progress?.failedToolCalls ?? 0) + 1 };
+    task.updatedAt = Date.now();
     const code = result.metadata?.code;
-    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) return;
+    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) {
+      this.projectTask(task);
+      return;
+    }
     const alternatives = result.metadata?.alternatives;
     task.progress = {
       ...task.progress,
