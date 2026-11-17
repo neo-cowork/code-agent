@@ -301,7 +301,11 @@ describe('SubagentExecutor step cap conclusion', () => {
     ['zh', zh, '这次任务的额度已经用完', /额度|预算/u],
     ['en', en, 'This task used up its budget', /budget/i],
   ] as const)('token-budget failure card in %s still uses quota wording', async (_label, t, sentence, required) => {
-    mocks.pipeline.checkBudget.mockReturnValueOnce({ allowed: false, reason: 'max token budget exhausted' });
+    // Bind before mockReturnValueOnce: a fresh literal is checked against the
+    // mock return `{ allowed, warnings }`, which has no `reason`. The executor
+    // reads `reason` (`budgetCheck.reason || 'Budget exceeded'`).
+    const deniedBudget = { allowed: false, reason: 'max token budget exhausted', warnings: [] };
+    mocks.pipeline.checkBudget.mockReturnValueOnce(deniedBudget);
     const result = await new SubagentExecutor().execute(createRequest(1));
     expect(result.failureCode).toBe('budget-exhausted');
     const card = cardFromExecutor(result);
