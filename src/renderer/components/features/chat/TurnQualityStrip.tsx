@@ -8,6 +8,7 @@ import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 import { useSessionModels } from './sessionModelsContext';
 import { MemorySourceChip, hasUsedMemory } from './MemorySourceChip';
@@ -93,10 +94,12 @@ function blockLabel(blockType: string): string {
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
   const developerMode = useAppStore((state) => state.developerMode);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
+  const localizeRole = useLocalizeRole();
   // 与 composer 的 AgentChip 共用 agents:list 展示名；历史消息仍保留原始 agentId。
   const labelFor = (agentId?: string, name?: string): string | undefined => {
     const entry = agentEntries.find((candidate) => candidate.id === agentId);
-    return entry?.displayName || entry?.name || name || agentId;
+    const raw = entry?.displayName || entry?.name || name || agentId;
+    return raw && agentId ? localizeRole(agentId, { name: raw }).name : raw;
   };
   const agentName = labelFor(summary.capabilities?.agentId, summary.capabilities?.agentName);
   const sessionModels = useSessionModels();

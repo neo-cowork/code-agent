@@ -11,6 +11,7 @@ import type { CronJobDefinition } from '@shared/contract';
 import { cronJobBoundRoleId } from '@shared/cronRoleBinding';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { listRoles } from '../../../services/rolesClient';
 import { useChannelCatalog } from './useChannelCatalog';
 import {
@@ -39,14 +40,15 @@ export const SavedRoutineRestate: React.FC<SavedRoutineRestateProps> = ({ job, o
     listRoles()
       .then((roles) => {
         if (active) {
-          setRoleDisplayName(roles.find((role) => role.roleId === roleId)?.displayName || roleId);
+          const name = roles.find((role) => role.roleId === roleId)?.displayName;
+          setRoleDisplayName((name ? localizeBuiltinRole(roleId, { name }, language).name : '') || roleId);
         }
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [roleId]);
+  }, [roleId, language]);
 
   const { accounts, conversationsByAccount } = useChannelCatalog();
   const channelLabel = useMemo(

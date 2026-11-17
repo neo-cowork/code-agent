@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, type Dispatch, type SetStateAction } fro
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import type { StructuredReplay } from '@shared/contract/evaluation';
-import type { SessionWithMeta } from '../../../stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
 import type { ToastType } from '../../../hooks/useToast';
 import type { Translations } from '../../../i18n';
 import ipcService from '../../../services/ipcService';
@@ -238,12 +238,17 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
 
   // 提交重命名
   const handleRenameSubmit = useCallback(() => {
-    if (renamingId && renameValue.trim()) {
-      renameSession(renamingId, renameValue.trim());
+    const nextTitle = renameValue.trim();
+    if (renamingId && nextTitle) {
+      // The box is pre-filled with the *display* title; submitting it untouched must not write it back as the stored title.
+      const current = useSessionStore.getState().sessions?.find((item) => item.id === renamingId);
+      const unchanged = current !== undefined
+        && (nextTitle === getDisplaySessionTitle(current.title, language) || nextTitle === (current.title ?? '').trim());
+      if (!unchanged) renameSession(renamingId, nextTitle);
     }
     setRenamingId(null);
     setRenameValue('');
-  }, [renamingId, renameValue, renameSession, setRenamingId, setRenameValue]);
+  }, [renamingId, renameValue, renameSession, setRenamingId, setRenameValue, language]);
 
   // 重命名按键
   const handleRenameKeyDown = useCallback((e: React.KeyboardEvent) => {
