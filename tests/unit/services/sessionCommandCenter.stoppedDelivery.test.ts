@@ -65,6 +65,7 @@ function rows(): Message[] {
 }
 let center: SessionCommandCenter;
 let manager: TaskManager;
+const wakeForegroundBrain = vi.fn();
 beforeEach(() => {
   h.db = new Database(':memory:');
   applyTestSessionSchema(h.db);
@@ -81,7 +82,8 @@ beforeEach(() => {
   manager = new TaskManager();
   h.manager = manager;
   manager.initialize({ configService: {} as ConfigService, onAgentEvent: (_sessionId, event) => { h.events.push(event); } });
-  center = new SessionCommandCenter(manager, { wakeForegroundBrain: vi.fn() });
+  wakeForegroundBrain.mockClear();
+  center = new SessionCommandCenter(manager, { wakeForegroundBrain });
 });
 afterEach(() => { center?.dispose(); h.db?.close(); });
 
@@ -108,6 +110,13 @@ async function stop(variant: typeof h.variant) {
 describe('background stop delivery through SessionCommandCenter + TaskManager persistence', () => {
   it.each(['step_cap', 'error', 'no_conclusion'] as const)('%s persists one info note without overwriting an in-flight foreground reply', async (kind) => {
     const messages = await stop(kind);
+    if (kind === 'error') {
+      expect(wakeForegroundBrain).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ stopped: expect.objectContaining({ kind }) }), 'failed',
+      );
+    } else {
+      expect(wakeForegroundBrain).not.toHaveBeenCalled();
+    }
     expect(messages.find((m) => m.id === 'foreground-reply')?.content).toBe('正在整理你的周报，已保留第一部分。');
     expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
     const notes = messages.filter((m) => m.metadata?.backgroundTaskStopped);
@@ -159,8 +168,25 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     expect(rows().filter((m) => m.role === 'assistant')).toHaveLength(0);
   });
 
+  it('keeps the wake when the stop note could not be delivered', async () => {
+    const write = vi.spyOn(storage, 'addMessageToSession').mockImplementation(async (sessionId, message) => {
+      if (message.metadata?.backgroundTaskStopped) throw new Error('stop note write failed');
+      h.repository.addMessage(sessionId, message);
+    });
+    try {
+      await stop('step_cap');
+      expect(rows().filter((message) => message.metadata?.backgroundTaskStopped)).toHaveLength(0);
+      expect(wakeForegroundBrain).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: expect.any(String), status: 'failed' }), 'failed',
+      );
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('does not announce a normal completion as stopped', async () => {
     const messages = await stop('completed');
     expect(messages.filter((m) => m.metadata?.backgroundTaskStopped)).toHaveLength(0);
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
   });
 });

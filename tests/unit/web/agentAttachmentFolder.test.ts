@@ -14,6 +14,8 @@ import { inMemorySessionsProjection, seedSessionMessagesFromPersisted, sessionMe
 
 const mocks = vi.hoisted(() => ({
   language: 'zh',
+  quickTask: vi.fn(),
+  isQuickModelAvailable: vi.fn(() => false),
   run: vi.fn(async () => undefined),
   db: {
     getDb: vi.fn(() => ({})), getSession: vi.fn(), getMessages: vi.fn(() => []),
@@ -22,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     addMessage: vi.fn(), updateMessage: vi.fn(), updateSession: vi.fn(), createSessionWithId: vi.fn(),
   },
 }));
+vi.mock('../../../src/host/model/quickModel', () => ({ quickTask: mocks.quickTask, isQuickModelAvailable: mocks.isQuickModelAvailable }));
 vi.mock('../../../src/cli/adapter', () => ({
   createCLIAgent: vi.fn(async () => ({ getConfig: () => ({
     modelConfig: { provider: 'xiaomi', model: 'test-model', apiKey: 'mock-key' }, systemPrompt: '',
@@ -58,6 +61,8 @@ const attachment = { id: 'budget', name: 'sub/Q3-budget.xlsx', type: 'file', cat
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.language = 'zh';
+  mocks.isQuickModelAvailable.mockReset().mockReturnValue(false);
+  mocks.quickTask.mockReset();
   mocks.run.mockReset().mockResolvedValue(undefined);
   home = await mkdtemp(path.join(tmpdir(), 'route-attachment-folder-'));
   vi.stubEnv('CODE_AGENT_HOME', home);
@@ -133,9 +138,9 @@ describe('POST /api/run attachment-only folder naming', () => {
     expect(vi.mocked(createCLIAgent).mock.calls.at(-1)?.[0]).toMatchObject({ project: planned });
   });
 
-  it('preserves prompt naming when attachments are also present', async () => {
+  it('uses the cleaned rule summary when the prompt is long and attachments are also present', async () => {
     await run('Summarize this budget, please', [attachment]);
-    expect(session.workingDirectory).toMatch(/_Summarize this budget$/);
+    expect(session.workingDirectory).toMatch(/_Summarize this$/);
   });
 });
 
@@ -189,5 +194,32 @@ describe('follow-up folder replanning reads', () => {
       workingDirectory: expect.any(String),
     }));
     expect(mocks.run).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('POST /api/run first-turn task folder summary wiring', () => {
+  it('asks the quick model before persisting the first-turn directory', async () => {
+    mocks.isQuickModelAvailable.mockReturnValue(true);
+    mocks.quickTask.mockResolvedValue({ success: true, content: '合同文件夹逐份摘要' });
+    const prompt = '我把合同文件夹整个拖进来了（共 30 份：PDF、Excel 表、图片、文本都有），请逐份摘要';
+    session.title = prompt.slice(0, 30) + '...';
+    await run(prompt);
+    expect(mocks.quickTask).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(prompt), undefined, expect.any(AbortSignal));
+    expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_合同文件夹逐份摘要`));
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: session.workingDirectory }));
+  });
+
+  it('uses the rule summary when the quick model is unavailable', async () => {
+    await run('我把合同文件夹整个拖进来了（共 30 份：PDF、Excel 表、图片、文本都有），请逐份摘要');
+    expect(mocks.quickTask).not.toHaveBeenCalled();
+    expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_合同文件夹整个拖进来了`));
+  });
+
+  it('does not ask the quick model for a short clean clause', async () => {
+    mocks.isQuickModelAvailable.mockReturnValue(true);
+    await run('整理本周会议纪要');
+    expect(mocks.quickTask).not.toHaveBeenCalled();
+    expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_整理本周会议纪要`));
   });
 });
