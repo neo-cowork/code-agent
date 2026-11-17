@@ -122,6 +122,7 @@ fn parse_write(body: &[u8]) -> Result<WriteOp, ()> {
 fn item_err(detail: String) -> (u16, &'static str, serde_json::Value) {
     match detail.as_str() {
         "event_not_found" | "calendar_not_found" | "no_writable_calendar" => (404, "Not Found", serde_json::json!({ "error": detail })),
+        "event_end_not_after_start" => (400, "Bad Request", serde_json::json!({ "error": detail })),
         _ => native_err(detail),
     }
 }

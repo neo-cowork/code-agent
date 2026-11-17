@@ -32,14 +32,14 @@
         {
           "toolCallId": "e2e-snapshot-replay-write",
           "success": true,
-          "output": "Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)"
+          "output": "Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (34 chars)"
         }
       ]
     },
     {
       "id": "msg-04",
       "role": "assistant",
-      "content": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)",
+      "content": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (34 chars)",
       "timestamp": 0
     }
   ]

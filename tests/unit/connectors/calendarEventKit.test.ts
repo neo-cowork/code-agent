@@ -129,6 +129,31 @@ describe('calendar connector over EventKit', () => {
     expect((await calendarConnector.execute('default_calendar', {})).data).toBeNull();
   });
 
+  it('start-only update keeps the duration and sends only startMs', async () => {
+    fake.state.items.push({ id: 'e1', calendarId: 'c-work', calendar: 'Work', title: '周会', startMs: 10 * HOUR, endMs: 11 * HOUR });
+    const res = await calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e1', start_ms: 16 * HOUR });
+    expect(res.data).toMatchObject({ startAtMs: 16 * HOUR, endAtMs: 17 * HOUR });
+    const write = fake.state.calls.find((c) => c.path === '/v1/write/calendar-event')!;
+    expect(write.body.startMs).toBe(16 * HOUR);
+    expect('endMs' in write.body).toBe(false);
+  });
+
+  it('native event_end_not_after_start surfaces as a plain message, not WRITE_UNCONFIRMED', async () => {
+    const realPost = fake.client.post;
+    fake.client.post = async <T>(path: string, body?: Record<string, unknown>): Promise<T> => {
+      if (path === '/v1/write/calendar-event') throw Object.assign(new Error('env_assist_bridge:bridge_http_400'), { bridgeError: 'event_end_not_after_start' });
+      return realPost<T>(path, body);
+    };
+    try {
+      const error = await failureOf(calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e1', start_ms: 1, end_ms: 2 }));
+      expect(isCalendarFailure(error)).toBe(true);
+      expect((error as Error).message).toContain('must be later than the start');
+      expect((error as Error).message).not.toContain('result is unknown');
+    } finally {
+      fake.client.post = realPost;
+    }
+  });
+
   it('keeps the old argument validation messages', async () => {
     await expect(calendarConnector.execute('create_event', { start_ms: 1 })).rejects.toThrow('title is required for create_event');
     await expect(calendarConnector.execute('update_event', { calendar: 'Work', event_uid: 'e' })).rejects.toThrow('at least one field must be provided for update_event');
