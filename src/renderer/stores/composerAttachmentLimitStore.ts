@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 
-export interface AttachmentLimitNotice {
+interface AttachmentLimitNotice {
   added: number;
   dropped: number;
   max: number;
