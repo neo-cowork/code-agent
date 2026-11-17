@@ -132,7 +132,7 @@ export class WorkflowLaunchApprovalGate {
       notifyDecisionNeeded({
         sessionId: request.sessionId,
         title: '工作流等待启动确认',
-        body: request.goal ?? `预计调用 ${request.estimatedAgentCalls} 个 Agent`,
+        body: request.goal ?? `预计启动 ${request.estimatedAgentCalls} 个子任务`,
       });
       logger.info(`Workflow launch requested: ${request.id} (${request.estimatedAgentCalls} agent calls)`);
     } else {

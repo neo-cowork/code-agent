@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const cfg = vi.hoisted(() => ({ get: (): unknown => ({ ui: { language: 'zh' } }) }));
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => cfg.get() }),
+}));
+
 import {
   extractBrandFromImage,
   parseBrandDraftJson,
@@ -131,5 +137,37 @@ describe('extractBrandFromImage (mocked vision call)', () => {
     await expect(
       extractBrandFromImage({}, { visionCall: async () => cleanJson }),
     ).rejects.toThrow();
+  });
+
+  const CJK = /[\u3400-\u9fff]/;
+  const capture = async () => {
+    let prompt = '';
+    const draft = await extractBrandFromImage(
+      { dataUrl },
+      { visionCall: async (_b, _m, p) => { prompt = p; return cleanJson; } },
+    );
+    return { prompt, draft };
+  };
+
+  it('en UI: prompt is English with the English-output instruction and no CJK', async () => {
+    cfg.get = () => ({ ui: { language: 'en' } });
+    const { prompt } = await capture();
+    expect(prompt).toContain('must be short English sentences');
+    expect(prompt).toContain('only one JSON object');
+    expect(prompt).not.toMatch(CJK);
+  });
+
+  it('zh UI: prompt is the unchanged Chinese prompt', async () => {
+    cfg.get = () => ({ ui: { language: 'zh' } });
+    const { prompt } = await capture();
+    expect(prompt).toContain('keep/change/doNotCopy 用中文短句');
+    expect(prompt).toContain('只返回一个 JSON 对象');
+  });
+
+  it('locale read failure falls back to zh and still returns a draft', async () => {
+    cfg.get = () => { throw new Error('settings unavailable'); };
+    const { prompt, draft } = await capture();
+    expect(prompt).toContain('keep/change/doNotCopy 用中文短句');
+    expect(draft.tokens.palette.primary).toBe('#0b3d2e');
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeActionFingerprint, getDenialRegistry } from '../../../src/host/security/denialRegistry';
@@ -15,6 +15,7 @@ import {
 import { getSessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 import { createLogger } from '../../../src/host/services/infra/logger';
 import { getToolResolver } from '../../../src/host/tools/dispatch/toolResolver';
+import { userDeniedGoalStickyError } from '../../../src/host/tools/toolPermissionClassification';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { getToolLedgerSink, setToolLedgerSink, type ToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
@@ -30,11 +31,7 @@ vi.mock('../../../src/host/security/execPolicy', async (original) => ({
   getExecPolicyStore: () => ({ match: () => null, getRules: () => [], learnFromApproval: () => false }),
 }));
 
-const guidance = 'The user just declined this kind of action. Do not request approval for the same goal again '
-  + 'by rewording it or changing the command or arguments. First ask the user one short question '
-  + 'about how to proceed: use AskUserQuestion if available, otherwise your final message. '
-  + 'For unattended, scheduled or background runs, put that question in your final message. '
-  + 'Wait for a new user message before requesting approval for this kind of action again.';
+const guidance = userDeniedGoalStickyError('Bash').modelText;
 
 describe('same-goal denial at the ToolExecutor ask boundary', () => {
   let cwd: string;
@@ -97,7 +94,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     source: PermissionDenialSource = 'user',
     message?: string,
     readOnly = false,
-    opts: { unattended?: boolean; devMode?: () => boolean } = {},
+    opts: { unattended?: boolean; devMode?: () => boolean; allowAfterDenial?: boolean } = {},
   ) {
     if (opts.unattended ?? true) {
       getPermissionModeManager().markUnattendedSession('goal-session');
@@ -116,12 +113,13 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
         events.push(event);
         if (event.type === 'permission_request' && !event.data.resolved) {
           humanPrompts += 1;
+          const response = opts.allowAfterDenial && humanPrompts > 1 ? 'allow' : 'deny';
           const machineDenial = source === 'user' ? undefined : source;
           queueMicrotask(() => {
             if (opts.unattended ?? true) {
-              island.resolveParkedApproval(event.data.id, 'deny', message, machineDenial);
+              island.resolveParkedApproval(event.data.id, response, message, machineDenial);
             } else {
-              island.handlePermissionResponse(event.data.id, 'deny');
+              island.handlePermissionResponse(event.data.id, response);
             }
           });
         }
@@ -176,6 +174,33 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     expect(db.prepare('SELECT * FROM pending_approvals').all()).toHaveLength(2);
   });
 
+  it('denied write ends the turn without questions and a new user message asks then executes', async () => {
+    const { tool, getHumanPrompts } = executor('user', undefined, true, { allowAfterDenial: true });
+    const file = join(cwd, 'notes-summary.md');
+    const args = { file_path: file, content: '- Discussed plans\n- Assigned owners\n- Set next meeting\n' };
+    const denied = await tool.execute('Write', args, options);
+    expect(denied.success).toBe(false);
+    expect(denied.error).toContain('End this turn now with exactly one short final sentence: state that the declined action was not performed and, if anything was completed earlier in this turn, mention it in the same sentence.');
+    expect(denied.error).toContain('Do not add a second sentence, a list, or an offer to continue.');
+    expect(denied.error).toContain('Do not claim that nothing was changed.');
+    expect(denied.error).toContain('Do not ask a question or call a question tool.');
+    expect(denied.error).toContain('state in one final sentence that the action was declined and skipped.');
+    expect(denied.error).toContain('Wait for a new user message before requesting approval');
+    expect(denied.error).not.toMatch(/how to proceed|AskUserQuestion/);
+    await expect(readFile(file, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const retry = await tool.execute('Write', args, options);
+    expect(retry.success).toBe(false);
+    expect(getHumanPrompts()).toBe(1);
+
+    const allowed = await tool.execute('Write', args, { ...options, sourceMessageId: 'user-2' });
+    expect(allowed.success).toBe(true);
+    expect(getHumanPrompts()).toBe(2);
+    expect(db.prepare('SELECT status FROM pending_approvals ORDER BY submitted_at').all())
+      .toEqual([{ status: 'rejected' }, { status: 'approved' }]);
+    expect(await readFile(file, 'utf8')).toBe(args.content);
+  });
+
   it('tomorrow is a new run when no source message exists', async () => {
     const { tool, getHumanPrompts } = executor();
     await tool.execute('Bash', { command: 'find . -name draft -delete' }, { sessionId: 'goal-session', runId: 'night-1' });
@@ -215,7 +240,7 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
     expect(result.error).toBe(`Permission denied by user. ${guidance}`);
   });
 
-  it('responder messages cannot hide stop-and-ask guidance', async () => {
+  it('responder messages cannot hide end-the-turn guidance', async () => {
     const { tool } = executor('user', 'declined from inbox');
     const result = await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
     expect(result.error).toBe(`declined from inbox ${guidance}`);
@@ -366,5 +391,94 @@ describe('same-goal denial at the ToolExecutor ask boundary', () => {
       { finalOutcome: 'deny', historyOutcome: 'ask-denied', reason: 'user' },
       { finalOutcome: 'deny', historyOutcome: 'ask-denied', reason: 'goal-sticky-host' },
     ]);
+  });
+  // Tool double: the real sandbox cannot be made to fail on every CI machine, so the Bash handler is
+  // replaced for the magic command below and calls the executor-built context.requestPermission
+  // exactly like bash.ts' sandbox_escalate_once branch does (tool 'bash', forceConfirm, no sessionId).
+  describe('in-tool sandbox-widening ask joins the goal-sticky table', () => {
+    const ESCALATE = 'pwd # sandbox-escalate';
+    let handlerCalls: number;
+    let escalationResults: boolean[];
+    beforeEach(() => {
+      handlerCalls = 0;
+      escalationResults = [];
+      const resolver = getToolResolver();
+      const origExec = resolver.execute.bind(resolver);
+      vi.spyOn(resolver, 'execute').mockImplementation(async (name, args, ctx) => {
+        if (name === 'Bash' && (args as { command?: string }).command === ESCALATE) {
+          handlerCalls += 1;
+          const allowed = await ctx.requestPermission({
+            type: 'command',
+            tool: 'bash',
+            details: { command: ESCALATE, action: 'sandbox_escalate_once' },
+            reason: 'sandbox blocked this write',
+            forceConfirm: true,
+          } as never);
+          escalationResults.push(allowed);
+          return allowed ? { success: true, output: 'ok' } : { success: false, error: 'sandbox denied' };
+        }
+        return origExec(name, args, ctx);
+      });
+    });
+    const ledgerReasons = () => decisionRepo.getBySession('goal-session').map((d) => d.reason);
+
+    it('denied in-tool card refuses the next same-message in-tool ask before a card', async () => {
+      const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      expect(escalationResults).toEqual([false]);
+      expect(handlerCalls).toBe(1);
+      const promptsAfterFirst = getHumanPrompts();
+      expect(promptsAfterFirst).toBeGreaterThanOrEqual(1);
+      expect(getDenialRegistry().refuseIfGoalDenied(
+        { sessionId: 'goal-session', sourceMessageId: 'user-1', tool: 'Bash' }, { log: false },
+      )).toMatchObject({ approved: false, denialSource: 'goal-sticky-host' });
+
+      // reworded top-level ask in the same message: refused before any card, handler not invoked again
+      const retry = await tool.execute('Bash', { command: 'find . -name backup -delete' }, options);
+      expect(retry.success).toBe(false);
+      expect(retry.error).toBe(guidance);
+      // second in-tool ask in the same message: the (read-only) top-level call runs, the in-tool ask is refused, no card
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      expect(handlerCalls).toBe(2);
+      expect(escalationResults).toEqual([false, false]);
+      expect(getHumanPrompts()).toBe(promptsAfterFirst);
+      expect(ledgerReasons().filter((r) => r === 'user')).toHaveLength(1);
+      expect(ledgerReasons()).toContain('goal-sticky-host');
+    });
+
+    it('a new sourceMessageId asks again', async () => {
+      const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      const before = getHumanPrompts();
+      await tool.execute('Bash', { command: ESCALATE }, { ...options, sourceMessageId: 'user-2' });
+      expect(getHumanPrompts()).toBeGreaterThan(before);
+    });
+
+    it('read-only command still passes after an in-tool denial', async () => {
+      const { tool } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: ESCALATE }, options);
+      const result = await tool.execute('Bash', { command: 'pwd' }, options);
+      expect(result.success).toBe(true);
+    });
+
+    it('top-level denial first, then in-tool ask is refused without a card', async () => {
+      const { tool, getHumanPrompts } = executor('user', undefined, false, { unattended: false });
+      await tool.execute('Bash', { command: 'find . -name draft -delete' }, options);
+      const before = getHumanPrompts();
+      const r = await tool.execute('Bash', { command: ESCALATE }, options);
+      expect(r.success).toBe(false);
+      expect(escalationResults).toEqual([false]);
+      expect(getHumanPrompts()).toBe(before);
+    });
+
+    it('approving the in-tool card registers nothing', async () => {
+      const approving = new ToolExecutor({ workingDirectory: cwd, requestPermission: async () => ({ approved: true }) });
+      approving.setAuditEnabled(false);
+      await approving.execute('Bash', { command: ESCALATE }, options);
+      expect(escalationResults).toEqual([true]);
+      expect(getDenialRegistry().refuseIfGoalDenied(
+        { sessionId: 'goal-session', sourceMessageId: 'user-1', tool: 'Bash' }, { log: false },
+      )).toBeNull();
+    });
   });
 });

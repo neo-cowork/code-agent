@@ -279,19 +279,24 @@ describe('SessionAutomationService', () => {
       event: 'completed',
       status: 'completed',
       recordStatus: 'active',
-      resultSessionId: 'result-session-1',
+      resultSessionId: 'session_1793000000000_result',
       eventId: 'execution:exec-1',
       summary: '定时任务已完成。',
     });
 
     expect(state.rows.get('cron:job-1')?.status).toBe('active');
-    expect(state.rows.get('cron:job-1')?.result_session_id).toBe('result-session-1');
+    expect(state.rows.get('cron:job-1')?.result_session_id).toBe('session_1793000000000_result');
     expect(state.messages.at(-1)).toMatchObject({
       message: {
         id: 'automation:execution:exec-1',
         content: expect.stringContaining('自动化已完成'),
       },
     });
+    const content = state.messages.at(-1)?.message.content;
+    expect(content).not.toMatch(/session_[A-Za-z0-9]/);
+    expect(content).not.toContain('结果会话：');
+    expect(content).toContain('结果在单独的会话里。');
+    console.log('[automation-event-message]', content);
     expect(state.taskStarts).toHaveLength(0);
   });
 

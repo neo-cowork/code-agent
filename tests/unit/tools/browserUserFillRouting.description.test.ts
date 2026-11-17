@@ -1,20 +1,25 @@
-import { describe, it, expect } from 'vitest';
-import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
-import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { describe, expect, it } from 'vitest';
 import { browserActionTool } from '../../../src/host/tools/vision/browserAction';
 import { BrowserTool } from '../../../src/host/tools/vision/BrowserTool';
+import { browserActionSchema } from '../../../src/host/plugins/builtin/browserControl/browserAction.schema';
+import { browserSchema } from '../../../src/host/plugins/builtin/browserControl/browser.schema';
 
-// "我自己来填" 必须先走 Neo 浏览器面板（browser_action + wait_for_user），不走 Bash curl/open。
-// static-contract 档：钉住每份模型可见文案里都带这条分流。
-describe('user-fills-it-themselves routing guidance', () => {
-  const copies: Array<[string, string]> = [
-    ['browserActionTool', browserActionTool.description],
-    ['browserActionSchema', browserActionSchema.description],
-    ['browserSchema', browserSchema.description],
-    ['BrowserTool', BrowserTool.description],
-  ];
-  it.each(copies)('%s description routes self-fill to wait_for_user, not Bash', (_n, d) => {
-    expect(d).toContain('fill in, log in to, or operate a page themselves');
-    expect(d).toContain('never probe the URL with Bash curl');
+const tools = [browserActionTool, browserActionSchema, BrowserTool, browserSchema];
+const guidance = (description: string) => description.split('\n').find((line) => line.startsWith('User-operated pages:'));
+
+describe('user-operated browser task handoff descriptions', () => {
+  it.each(tools)('$name opens a managed page and resumes only when Neo has remaining work', (tool) => {
+    const text = guidance(tool.description);
+    expect(text).toContain('browser_action navigate and engine="managed", not a shell command or OS browser opener');
+    expect(text).toContain('If Neo must continue after the user acts');
+    expect(text).toContain('call wait_for_user, then get_dom_snapshot after Done and finish the remaining task');
+    expect(text).toContain('do not poll for login, ask for a chat reply or finish with keep_result_page');
+    expect(text).toContain('If opening the page is the whole task and Neo has no follow-up work, call keep_result_page and finish; do not call wait_for_user');
+  });
+
+  it('keeps the native, plugin and unified tool guidance identical', () => {
+    const descriptions = tools.map((tool) => guidance(tool.description));
+    expect(descriptions[0]).toBeDefined();
+    expect(new Set(descriptions).size).toBe(1);
   });
 });

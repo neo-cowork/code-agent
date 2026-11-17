@@ -36,10 +36,10 @@ describe('model capability matrix', () => {
     expect(getModelScaffoldTier('deepseek-flash')).toBe('standard');
   });
 
-  it('resolves relay deepseek-v4-flash-0731 to Responses protocol with web search', () => {
+  it('resolves relay deepseek-v4-flash-0731 to Responses protocol without built-in web_search (relay 400s on it, 2026-11-15)', () => {
     expect(resolveModelCapabilities('custom-tokenrhythm', 'deepseek-v4-flash-0731')).toMatchObject({
       protocol: 'responses',
-      search: { mode: 'deepseek-responses' },
+      search: { mode: 'none' },
     });
   });
 

@@ -8,8 +8,10 @@ import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 import { useSessionModels } from './sessionModelsContext';
+import { MemorySourceChip, hasUsedMemory } from './MemorySourceChip';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
@@ -92,10 +94,12 @@ function blockLabel(blockType: string): string {
 export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
   const developerMode = useAppStore((state) => state.developerMode);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
+  const localizeRole = useLocalizeRole();
   // 与 composer 的 AgentChip 共用 agents:list 展示名；历史消息仍保留原始 agentId。
   const labelFor = (agentId?: string, name?: string): string | undefined => {
     const entry = agentEntries.find((candidate) => candidate.id === agentId);
-    return entry?.displayName || entry?.name || name || agentId;
+    const raw = entry?.displayName || entry?.name || name || agentId;
+    return raw && agentId ? localizeRole(agentId, { name: raw }).name : raw;
   };
   const agentName = labelFor(summary.capabilities?.agentId, summary.capabilities?.agentName);
   const sessionModels = useSessionModels();
@@ -174,9 +178,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
       ? requestedAgentId
       : null;
-    if (!showModel && !showAgent && !degradedAgentId) return null;
+    const showMemory = hasUsedMemory(summary);
+    if (!showModel && !showAgent && !degradedAgentId && !showMemory) return null;
     return (
-      <div className="mb-2 flex items-center gap-1">
+      <div className="mb-2 flex min-w-0 flex-wrap items-start gap-1">
         {showModel && (
           <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] text-zinc-600">
             {modelName}
@@ -198,6 +203,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
             {t.agentCommand.badgeNotAppliedSuffix}
           </span>
         )}
+        {showMemory && <MemorySourceChip summary={summary} />}
       </div>
     );
   }

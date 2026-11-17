@@ -393,6 +393,7 @@ describe('readModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toContain('read_pdf');
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
       }
     });
 

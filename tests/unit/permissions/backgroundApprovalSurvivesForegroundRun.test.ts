@@ -66,6 +66,7 @@ vi.mock('../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { createSubagentToolRuntime } from '../../../src/host/agent/subagentToolRuntime';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
@@ -270,6 +271,7 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
 
   beforeEach(() => {
     vi.useFakeTimers();
+    getDenialRegistry().clearAll();
     resetPermissionModeManager();
     resolverState.getDefinition.mockReset();
     resolverState.execute.mockReset();

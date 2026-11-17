@@ -82,6 +82,13 @@ export const enSettingsModels = {
         unconfiguredPrefix: 'Needs Key · ',
       },
       header: {
+        apiKeyAccount: 'Provided by your account',
+        apiKeyEnvironment: 'Using the key from your environment',
+        apiKeyUnsaved: 'API Key not saved yet',
+        apiKeyAvailable: 'API Key available',
+        noKeyGuide: 'No API key yet? Add one here',
+        keyNeededSuffix: ' (Key needed)',
+
         unsetAddress: 'No address set',
         noApiKey: 'No API Key needed',
         apiKeySaved: 'API Key saved',
@@ -594,7 +601,7 @@ export const enSettingsModels = {
         discover: 'Discover connections',
       },
       toast: {
-        refreshSuccess: 'MCP configuration refreshed from cloud',
+        refreshSuccess: 'External tools configuration refreshed from cloud',
         refreshFailed: 'Refresh failed',
         reconnectSuccessSuffix: ' reconnected',
         reconnectFailedMiddle: ' reconnect failed: ',
@@ -623,7 +630,7 @@ export const enSettingsModels = {
         cancelling: 'Cancelling...',
         cancelInstall: 'Cancel connection',
         refreshing: 'Refreshing...',
-        refreshFromCloud: 'Refresh MCP config from cloud',
+        refreshFromCloud: 'Refresh external tools config from cloud',
         addServer: 'Add server',
         stats: {
           overview: { label: 'Overview', caption: 'Connected / total' },
@@ -917,7 +924,6 @@ export const enSettingsModels = {
         commands: 'Commands',
         pluginAsset: 'Plugin asset',
         trust: 'Trust',
-        none: 'None',
       },
       marketplace: {
         title: 'Plugin marketplace',

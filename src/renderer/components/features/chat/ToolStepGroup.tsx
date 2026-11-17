@@ -1,3 +1,4 @@
+import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
@@ -45,9 +46,12 @@ import { foldSessionTaskStatus } from '../../../utils/foldSessionTaskStatus';
 import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalResolver';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import { useEnvParkedStep } from '../../../hooks/useEnvParkedTarget';
+import { supersededEnvParkedCalls } from '../../../utils/envParkedTurn';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
+  /** Full turn context: a permission card or assistant text can separate continuation groups. */
+  turnNodes?: TraceNode[];
   sessionId?: string;
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
@@ -62,6 +66,7 @@ const EMPTY_RESOLVED_PERMISSION_REQUESTS: PermissionRequest[] = [];
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes: sourceNodes,
+  turnNodes = sourceNodes,
   sessionId,
   defaultExpanded = false,
   isStreamingTurn = false,
@@ -69,13 +74,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   receiptTimestamp,
 }) => {
   const { t } = useI18n();
-  const nodes = useMemo(() => sourceNodes.map((node) => {
+  const supersededCalls = useMemo(() => isStreamingTurn ? new Set<string>() : supersededEnvParkedCalls(turnNodes), [turnNodes, isStreamingTurn]);
+  const nodes = useMemo(() => sourceNodes.filter(node => !supersededCalls.has(node.toolCall?.id ?? '')).map((node) => {
     const tc = node.toolCall;
     if (!tc || getToolPreflightKind({ name: tc.name, result: tc.result === undefined ? undefined : {
       toolCallId: tc.id, success: tc.success ?? true, output: tc.result, metadata: tc.metadata,
     } }) !== 'question') return node;
     return { ...node, toolCall: { ...tc, success: false } };
-  }), [sourceNodes]);
+  }), [sourceNodes, supersededCalls]);
   const sendPrompt = useMessageActionStore((state) => state.sendPrompt);
   const resolvedPermissionRequests = useAppStore((state) => (
     sessionId ? state.resolvedPermissionRequests?.[sessionId] : undefined
@@ -130,7 +136,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
@@ -152,6 +158,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     let blockedCommands = 0;
     let blockedSteps = 0;
     let staleUnfinished = 0;
+    const notRunNames: string[] = [];
     let envWaiting: string | undefined;
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
@@ -182,9 +189,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         ? 'completed'
         : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
+      if (!benign && terminalById.get(tc.id)?.notRun) notRunNames.push(tc.name);
     }
     return [
-      ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
+      ...Array.from(byStatus, ([stepStatus, names]) => {
+        if (stepStatus !== 'failed' || notRunNames.length === 0) return humanizeToolGroupLabel(names, t, stepStatus);
+        const rest = [...names];
+        for (const name of notRunNames) rest.splice(rest.indexOf(name), 1);
+        return [humanizeToolGroupLabel(notRunNames, t, 'failed', true), humanizeToolGroupLabel(rest, t, 'failed')]
+          .filter(Boolean).join(t.deliveryExperience.labelSeparator);
+      }),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
       envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
@@ -383,12 +397,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const failureReason = useMemo(() => {
     // 与组头 label 同口径：已恢复/自动重试的失败不算数，否则会出现 label 说「1 条未成功」、
     // 原因行说「2 失败」这种自相矛盾。
-    const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false
+    const unsettled = toolCalls.filter((toolCall) => toolCall.result?.success === false
       && !isAutoLoadedRetry(toolCall.result?.metadata) && toolCall.result?.metadata?.recovered !== true);
-    if (failedCalls.length === 0) return null;
+    // 从未执行的作废步不是失败：不进失败计数；全是作废步时只读第一条「未执行 · 原因」。
+    const failedCalls = unsettled.filter((toolCall) => !terminalById.get(toolCall.id)?.notRun);
+    if (failedCalls.length === 0) return unsettled.length > 0 ? humanizeToolFailureReason(unsettled[0], t) : null;
     if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
     return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
-  }, [t, toolCalls]);
+  }, [t, toolCalls, terminalById]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
@@ -565,6 +581,13 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
               {t.decisionCard.permission.retry}
             </Button>
           )}
+        </div>
+      ))}
+
+      {/* 删一条日程后的「撤销」挂在组这一层：步骤组默认收起，挂在展开后的步骤里用户找不到（真机第四轮） */}
+      {toolCalls.filter(canUndoCalendarDelete).map((toolCall) => (
+        <div key={`undo-${toolCall.id}`} className="ml-4 pl-3">
+          <CalendarDeleteUndo toolCall={toolCall} sessionId={sessionId ?? undefined} />
         </div>
       ))}
 

@@ -191,7 +191,7 @@ describe('ProjectTrustConfirmCard 确认并重发', () => {
 describe('edit-role user bubble display projection and rewind/edit preservation', () => {
   it.each([
     ['zh', '修改专家：知微（数据分析师）'],
-    ['en', 'Edit expert: 知微 (数据分析师)'],
+    ['en', 'Edit expert: Zhiwei (Data Analyst)'],
   ] as const)('projects single-line /edit-role <roleId> in %s through TurnBasedTraceView and TraceNodeRenderer without showing /edit-role', async (language, expectedText) => {
     const { fireEvent } = await import('@testing-library/react');
     const { buildOverviewRunHeaderModel } = await import('../../../src/renderer/utils/overviewRunHeader');

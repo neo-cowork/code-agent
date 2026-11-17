@@ -29,7 +29,7 @@ import {
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 import { useAppStore } from '../stores/appStore';
-import { domainFailureMessage, httpFailureMessage } from '../utils/httpFailureMessage';
+import { domainFailureMessage, httpFailureMessage, readRetryAfterSeconds, UploadFailureError, uploadFailureMessage } from '../utils/httpFailureMessage';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -999,6 +999,7 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       }
     }) as CommandBridgeAPI['off'],
 
+    discardUploadedFiles: async (paths) => (await import('./discardTempUpload')).createDiscardTempUpload(baseUrl, getAuthHeaders)(paths),
     uploadFolderBatch: createFolderBatchUpload(baseUrl, getAuthHeaders),
 
     getPathForFile: async (_file: File) => {
@@ -1010,25 +1011,31 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         formData.append('relativePath', relativePath);
       }
 
-      const res = await fetch(`${baseUrl}/api/upload/temp`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders() },
-        body: formData,
-      });
+      const language = useAppStore.getState().language;
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl}/api/upload/temp`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders() },
+          body: formData,
+        });
+      } catch {
+        throw new UploadFailureError(uploadFailureMessage({ status: 0, language }));
+      }
 
       if (!res.ok) {
         const errorBody = await res.text();
         const errorMessage = parseHttpErrorMessage(errorBody);
         const authError = getRecoverableAuthTokenError(res.status, errorMessage);
         if (authError) {
-          throw new Error(authError.message);
+          throw new UploadFailureError(authError.message);
         }
-        throw new Error(`Upload failed: ${res.status}`);
+        throw new UploadFailureError(uploadFailureMessage({ status: res.status, retryAfterSeconds: readRetryAfterSeconds(res.headers.get('Retry-After'), errorBody), language }));
       }
 
       const uploadedPath = extractUploadedPath(await readJsonResponse(res));
       if (!uploadedPath) {
-        throw new Error('Upload response missing path');
+        throw new UploadFailureError(uploadFailureMessage({ status: 0, language }));
       }
 
       return uploadedPath;
@@ -1179,7 +1186,9 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
         // invokeDomain 把它包成 DomainInvokeError.message，各处 toast / 气泡会原样显示。
         logTransportErrorThrottled(`domain:${cleanDomain}:${action}:${res.status}`, `[HttpTransport] domain ${cleanDomain}:${action} failed:`, res.status, errorBody);
         const message = domainFailureMessage({ status: res.status, body: errorBody, language: useAppStore.getState().language });
-        return { success: false, error: { code: `HTTP_${res.status}`, message } };
+        // 会话被旧任务占着的 409 保留业务码：失败说明下要挂「放弃 / 重试」，靠 code 认。
+        const envelopeCode = parseHttpErrorCode(errorBody);
+        return { success: false, error: { code: envelopeCode === 'RUN_SESSION_CONFLICT' ? envelopeCode : `HTTP_${res.status}`, message } };
       } catch (err) {
         return {
           success: false,
