@@ -2908,29 +2908,31 @@ fn install_mac_application_terminate_guard(app: &tauri::App) {
 fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     install_mac_application_terminate_guard(app);
     let handle = app.handle();
-    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels();
+    let product = menu_i18n::product_name(handle);
+    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels(&product);
     let pkg_info = handle.package_info();
     let about_metadata = AboutMetadata {
-        name: Some(pkg_info.name.clone()),
+        name: Some(product.clone()),
         version: Some(pkg_info.version.to_string()),
         copyright: handle.config().bundle.copyright.clone(),
         authors: handle.config().bundle.publisher.clone().map(|p| vec![p]),
         ..Default::default()
     };
 
+    let predefined = menu_i18n::AppPredefinedItems::build(handle, &labels, about_metadata)?;
     let app_submenu = Submenu::with_items(
         handle,
-        pkg_info.name.clone(),
+        product.clone(),
         true,
         &[
-            &PredefinedMenuItem::about(handle, None, Some(about_metadata))?,
+            &predefined.about,
             &PredefinedMenuItem::separator(handle)?,
             &MenuItem::with_id(handle, "open_settings", labels.settings, true, Some("Cmd+,"))?,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::services(handle, None)?,
+            &predefined.services,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::hide(handle, None)?,
-            &PredefinedMenuItem::hide_others(handle, None)?,
+            &predefined.hide,
+            &predefined.hide_others,
             &PredefinedMenuItem::separator(handle)?,
             &MenuItem::with_id(handle, "quit_app", labels.quit, true, Some("Cmd+Q"))?,
             &MenuItem::with_id(handle, "full_quit", labels.full_quit, true, None::<&str>)?,
@@ -2989,6 +2991,7 @@ fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
+    app.manage(predefined);
     app.set_menu(menu)?;
     Ok(())
 }
@@ -4172,7 +4175,8 @@ mod update_url_tests {
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels();
+    let product = menu_i18n::product_name(app);
+    let labels = menu_i18n::read_language(real_data_dir().as_deref()).labels(&product);
     let menu = MenuBuilder::new(app)
         .text("quick_ask", labels.quick_ask)
         .text("new_chat", labels.new_chat)
@@ -4189,7 +4193,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let _tray = TrayIconBuilder::with_id(menu_i18n::TRAY_ID)
         .icon(TRAY_ICON)
         .icon_as_template(true)
-        .tooltip("Agent Neo")
+        .tooltip(&product)
         .menu(&menu)
         .on_menu_event(move |app_handle, event| {
             let activate_window = |handle: &tauri::AppHandle| {
