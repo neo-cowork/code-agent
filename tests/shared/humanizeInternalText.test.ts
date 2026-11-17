@@ -41,8 +41,8 @@ describe('humanizeInternalText', () => {
     {
       format: 'internal_tool_name',
       raw: '正在使用 memory_search 配合 mcp__feishu__send_message 和 AskUserQuestion',
-      expectedZhSubstring: '检索记忆',
-      expectedEnSubstring: 'Search memory',
+      expectedZhSubstring: '记忆检索',
+      expectedEnSubstring: 'Memory search',
       expectCollapse: false,
     },
     {

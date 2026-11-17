@@ -1,4 +1,5 @@
 import type { Translations } from '../../hooks/useI18n';
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
@@ -175,7 +176,7 @@ function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets,
   return '';
 }
 
-export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
+export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
@@ -223,7 +224,8 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'network' || request.type === 'mcp') {
-    const endpoint = request.details.connectorAccess?.connectorName
+    const connector = request.details.connectorAccess;
+    const endpoint = (connector && catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName))
       || request.details.url
       || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;
