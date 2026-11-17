@@ -1008,6 +1008,7 @@ export class AgentOrchestrator {
       historyVisibility: options?.historyVisibility,
       // ADR-068 D4 断流续接分档：调用方显式声明（loop 轮）或会话已标无人值守（cron/heartbeat/channel）
       unattendedTurn: options?.unattended === true || getPermissionModeManager().isUnattendedSession(sessionId ?? undefined),
+      auxiliaryRun: options?.runRegistration === 'auxiliary',
       deniedToolNames,
       allowedToolNames: boundaryAllowedToolNames,
       foregroundToolFace: options?.foregroundToolFace === true && !roleToolBoundary,
