@@ -49,6 +49,12 @@ const BINARY_REDIRECTS: Record<string, string> = {
   '.pptx': 'read_file 不支持此格式',
 };
 
+/** 图片按文本读会得到数十万字符乱码并永久留在历史里；改为短重定向。 */
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
+const IMAGE_READ_HINT =
+  'This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; ' +
+  'to understand a picture use image_analyze (a deferred tool: load it first with ToolSearch select:image_analyze).';
+
 const DEFAULT_OFFSET = 1;
 const DEFAULT_LIMIT = 2000;
 const MAX_LINE_WIDTH = 2000;
@@ -131,6 +137,13 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
     // 二进制/结构化格式拦截 — 防止读到乱码后幻觉
     const ext = path.extname(filePath).toLowerCase();
+    if (IMAGE_EXTENSIONS.has(ext)) {
+      return {
+        ok: false,
+        error: `Cannot read ${ext} file as text. ${IMAGE_READ_HINT}\nPath: ${filePath}`,
+        code: 'BINARY_FILE_NOT_TEXT',
+      };
+    }
     if (BINARY_REDIRECTS[ext]) {
       if (isChatUploadPath(filePath)) {
         try {
