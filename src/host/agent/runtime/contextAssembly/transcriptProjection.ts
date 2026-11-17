@@ -3,6 +3,7 @@ import type { ContextInterventionSnapshot } from '../../../../shared/contract/co
 import { compactModelSummarize } from '../../../context/compactModel';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger } from './shared';
+import { stripLongcatMarkup } from '../../../../shared/modelMarkupStrip';
 import { getProtocolToolSchemas } from '../../../tools/protocolToolRegistration';
 import {
   formatArtifactRepairToolResultContent,
@@ -172,22 +173,9 @@ export async function summarizeCollapsedContext(
  * 与 renderer 侧 messageContentParts.SYSTEM_TAG_PATTERNS 的 longcat 段对齐；
  * 未闭合的 <longcat_tool_call> 按 <think> 同款兜底剥到串尾。
  */
-const TOOL_CALL_PROTOCOL_MARKUP_PATTERNS = [
-  /<longcat_tool_call>[\s\S]*?<\/longcat_tool_call>/gi,
-  /<longcat_tool_call>[\s\S]*$/gi,
-  /<longcat_arg_key>[\s\S]*?<\/longcat_arg_key>/gi,
-  /<longcat_arg_value>[\s\S]*?<\/longcat_arg_value>/gi,
-  /<\/?longcat_(?:arg_key|arg_value|tool_call|tool_result)\s*\/?>/gi,
-];
-
-/** 剥离正文里的工具调用协议裸标记；无标记时原样返回。 */
+/** 剥离正文里的工具调用协议裸标记（issue #1991，实现见 shared/modelMarkupStrip）。刻意不剥 think：此路径落库，字面 think 标签可能是代码示例。 */
 function stripToolCallProtocolMarkup(content: string): string {
-  if (!content?.includes('longcat_')) return content;
-  let cleaned = content;
-  for (const pattern of TOOL_CALL_PROTOCOL_MARKUP_PATTERNS) {
-    cleaned = cleaned.replace(pattern, '');
-  }
-  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+  return stripLongcatMarkup(content);
 }
 
 export function stripInternalFormatMimicry(_ctx: ContextAssemblyCtx, content: string): string {

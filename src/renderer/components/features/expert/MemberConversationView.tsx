@@ -20,6 +20,7 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
   describeLastToolFailure,
@@ -95,6 +96,7 @@ const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const text = t.expert.workRecord;
   const memberText = t.expert.memberBar;
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
@@ -134,11 +136,18 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   // 经 task:progress → agentUpdated 一路活着送到 store。工具名对非程序员没意义，
   // 过一遍聊天流那套 humanizeToolStep；没有 args 时它落到各类目的人话兜底句。
   const recentActions = useMemo(() => {
-    const tools = (liveContextSnapshot ?? agent?.contextSnapshot)?.tools ?? [];
-    return [...tools].reverse().map((tool, index) => ({
-      key: `${tool}-${index}`,
-      label: humanizeToolStep(tool, undefined, t),
+    const snapshot = liveContextSnapshot ?? agent?.contextSnapshot;
+    // 去重后的 tools 会把多条 Bash 折成一个名字；每次 Bash 的 description 随快照带来，
+    // 逐条过 humanizeToolStep 的描述过滤（命令样/错语种退通用文案），连续命令才分得清。
+    const bashRows = [...(snapshot?.bashSteps ?? [])].reverse().map((step, index) => ({
+      key: `Bash-step-${index}`,
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
     }));
+    return [...(snapshot?.tools ?? [])].reverse().flatMap((tool, index) => (
+      (tool === 'Bash' || tool === 'bash') && bashRows.length > 0
+        ? bashRows
+        : [{ key: `${tool}-${index}`, label: humanizeToolStep(tool, undefined, t) }]
+    ));
   }, [liveContextSnapshot, agent?.contextSnapshot, t]);
 
   // D2 运行轨迹：粗粒度生命周期事件早就落库（SwarmRunEventRecord），此前全仓零消费。
@@ -188,6 +197,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       const currentAction = plainNode
         ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus)
         : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus);
+    // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
+    const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
+      key: `step-${index}`,
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+    }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
@@ -216,7 +230,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
             <Bot className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-zinc-100">{name}</h2>
+            <h2 className="truncate text-sm font-semibold text-zinc-100">{localizeRole(name, { name }).name}</h2>
           </div>
           <StopMemberButton target={plainTarget} sessionId={sessionId} runId={activeRunId} />
         </header>
@@ -228,6 +242,17 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
               <div className="rounded-lg border border-badge-accent/40 bg-violet-500/10 px-3 py-2 text-xs text-zinc-200">
                 {currentAction}
               </div>
+            </section>
+          )}
+
+          {stepRows.length > 0 && (
+            <section data-testid="member-bash-steps">
+              <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.recentActions}</h3>
+              <ol className="space-y-1">
+                {stepRows.map((row) => (
+                  <li key={row.key} data-testid="member-bash-step" className="rounded-lg bg-zinc-950/60 py-1.5 pl-3 pr-3 text-xs text-zinc-300">{row.label}</li>
+                ))}
+              </ol>
             </section>
           )}
 
@@ -287,10 +312,13 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
 
   // 专家团成员：投递要带 swarm run id（宿主 swarm:send-user-message 按 run 作用域解析）
   const memberRunId = durableDetail?.run.id ?? activeRunId;
+  const subtitle = member.profession ? member.displayName : member.roleId;
   const memberTarget: MemberInputTarget = {
     key: member.key,
     kind: 'expert',
+    // Raw value sent over IPC and persisted as memberName (unchanged from main).
     name: member.profession || member.name,
+    displayName: member.displayProfession || member.displayName,
     live: member.status === 'running',
   };
 
@@ -301,10 +329,10 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <BackToMainButton label={text.backToChat} />
       </div>
       <header className="mx-auto flex max-w-3xl items-center gap-3 border-b border-zinc-800 pb-3">
-        <RoleInitialAvatar roleId={member.roleId} name={member.name} className="h-8 w-8 text-xs" />
+        <RoleInitialAvatar roleId={member.roleId} name={member.displayName} className="h-8 w-8 text-xs" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-zinc-100">{member.profession || member.name}</h2>
-          <p className="truncate text-xs text-zinc-400">{member.profession ? member.name : member.roleId}</p>
+          <h2 className="truncate text-sm font-semibold text-zinc-100">{member.displayProfession || member.displayName}</h2>
+          <p className="truncate text-xs text-zinc-400">{subtitle}</p>
         </div>
         <StopMemberButton target={memberTarget} sessionId={sessionId} runId={memberRunId} />
       </header>

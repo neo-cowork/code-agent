@@ -2,7 +2,9 @@
 // SessionAutomationService — 会话级自动化状态与回流消息
 // ============================================================================
 
+import { UNATTENDED_APPROVAL_TIMEOUT } from '../../agent/unattendedApprovalTerminal';
 import { randomUUID } from 'node:crypto';
+import { approvalTaskTitle } from './parkedApprovalTaskTitle';
 import type BetterSqlite3 from 'better-sqlite3';
 import type {
   Message,
@@ -15,6 +17,7 @@ import type {
   SessionAutomationStatus,
   SessionAutomationSummaryItem,
   SessionAutomationType,
+  RoleWakeRunStatus,
   StandingGrant,
   UpsertSessionAutomationInput,
 } from '../../../shared/contract';
@@ -24,6 +27,7 @@ import {
   type CronRunGroupable,
 } from '../../../shared/cronRunDigest';
 import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
+import { AwaitingApprovalRunListing } from './awaitingApprovalRuns';
 import type { AwaitingApprovalRun } from '../../../shared/contract/sessionAutomation';
 import { PARKED_APPROVAL_VOIDED_RETENTION_MS } from '../../../shared/constants/pendingApproval';
 import { describeParkedApprovalClosure } from '../../agent/parkedApprovalSurvival';
@@ -34,6 +38,7 @@ import { createLogger } from '../infra/logger';
 import { pickApprovalOrigin } from '../../permissions/approvalOriginFields';
 import { broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('SessionAutomationService');
 
@@ -216,7 +221,7 @@ function buildEventMessage(record: SessionAutomationRecord, input: RecordAutomat
   const lines = [heading];
   if (input.summary?.trim()) lines.push(input.summary.trim());
   if (input.error?.trim()) lines.push(`错误：${input.error.trim()}`);
-  if (input.resultSessionId) lines.push(`结果会话：${input.resultSessionId}`);
+  if (input.resultSessionId) lines.push('结果在单独的会话里。');
   if (handoffPrompt) {
     lines.push(`下一步：已发送交接提示词${nextStage?.title ? `「${nextStage.title}」` : ''}`);
   }
@@ -582,6 +587,7 @@ export class SessionAutomationService {
         kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
         sessionTitle: resolveApprovalSessionTitle(payload.sessionId ?? row.coordinatorId, row.id),
+        taskTitle: approvalTaskTitle(payload.sessionId ?? row.coordinatorId, payload),
         ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
         tool: payload.tool ?? '',
         displayTool: payload.displayTool,
@@ -600,63 +606,25 @@ export class SessionAutomationService {
     }), ...voided];
   }
 
-  /**
-   * 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：pending 审批行 →
-   * 其会话 origin 是 cron/heartbeat 时，交出 jobId（origin.id）/executionId（sourceRunId）。
-   * 会话缺失或 origin 不可解析：跳过并 warn 留痕（不静默丢）。交互会话不在结果里。
-   */
-  listAwaitingApprovalRuns(): AwaitingApprovalRun[] {
-    let repo;
-    try {
-      repo = getDatabase().getPendingApprovalRepo();
-    } catch {
-      return [];
-    }
-    const rows = [
-      ...repo.listByKindAndStatus('tool_approval', 'pending'),
-      ...repo.listByKindAndStatus('directory_access', 'pending'),
-    ];
-    const out: AwaitingApprovalRun[] = [];
-    const seen = new Set<string>();
-    for (const row of rows) {
-      let payload: Partial<ToolApprovalPayload>;
+  getRoleWakeRun(sessionId: string): RoleWakeRunStatus | null {
+    const run = this.getById(roleWakeAutomationId(sessionId));
+    if (run?.type !== 'role_wake' || run.resultSessionId !== sessionId) return null;
+    const rows = getDatabase().getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'rejected');
+    const approvalTimedOut = rows.some((row) => {
+      if (!row.feedback?.startsWith(UNATTENDED_APPROVAL_TIMEOUT)) return false;
       try {
-        payload = JSON.parse(row.payloadJson) as Partial<ToolApprovalPayload>;
+        return (JSON.parse(row.payloadJson) as Partial<ToolApprovalPayload>).sessionId === sessionId;
       } catch {
-        logger.warn('Awaiting-approval run skipped: payload unreadable', { requestId: row.id });
-        continue;
+        return row.coordinatorId === sessionId;
       }
-      const sessionId = payload.sessionId ?? row.coordinatorId ?? null;
-      if (!sessionId) {
-        logger.warn('Awaiting-approval run skipped: no sessionId', { requestId: row.id });
-        continue;
-      }
-      if (seen.has(sessionId)) continue;
-      const session = getDatabase().getSession(sessionId);
-      if (!session) {
-        logger.warn('Awaiting-approval run skipped: session row missing', { requestId: row.id, sessionId });
-        continue;
-      }
-      const origin = session.origin;
-      if (!origin || (origin.kind !== 'cron' && origin.kind !== 'heartbeat')) {
-        continue;
-      }
-      if (!origin.id) {
-        logger.warn('Awaiting-approval run skipped: session origin has no job id', { requestId: row.id, sessionId, kind: origin.kind });
-        continue;
-      }
-      seen.add(sessionId);
-      out.push({
-        jobId: origin.id,
-        executionId: session.sourceRunId ?? null,
-        requestId: row.id,
-        sessionId,
-        requestedAt: payload.requestedAt ?? row.submittedAt,
-        ...(payload.tool ? { tool: payload.tool } : {}),
-        ...((payload.argsPreview ?? payload.argsSummary) ? { commandPreview: payload.argsPreview ?? payload.argsSummary } : {}),
-      });
-    }
-    return out;
+    });
+    return { run, approvalTimedOut };
+  }
+
+  private readonly awaitingRuns = new AwaitingApprovalRunListing();
+
+  listAwaitingApprovalRuns(): AwaitingApprovalRun[] {
+    return this.awaitingRuns.list();
   }
 
   /**
@@ -963,6 +931,7 @@ function toVoidedInboxItem(
     kind: 'tool_approval',
     sessionId,
     sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
+    taskTitle: approvalTaskTitle(sessionId, payload),
     argsPreview: toUserFacingArgsPreview(payload.argsPreview),
     ...pickApprovalOrigin(payload),
     tool: payload.tool ?? '',

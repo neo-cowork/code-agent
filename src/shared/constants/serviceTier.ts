@@ -14,6 +14,12 @@
  */
 export const UNATTENDED_SERVICE_TIER = 'flex';
 
+const SERVICE_TIER_ELIGIBLE_PROVIDER = 'openai';
+
+export function isServiceTierEligibleProvider(provider: string): boolean {
+  return provider === SERVICE_TIER_ELIGIBLE_PROVIDER;
+}
+
 /**
  * 档位 → 计费倍率（只作用于 computeUsageCostUsd 的 input/output 合计；cacheRead/
  * cacheWrite 不折价——缓存项随档折价同样无实测证据，宁可高估不让预算线晚触发）。
@@ -58,4 +64,17 @@ export const SERVICE_TIER_REJECTION = {
   codes: CODES,
   codeStatuses: CODE_STATUSES,
   unavailable: UNAVAILABLE,
+} as const;
+
+/**
+ * 中继拒绝 Responses 内置工具（如 web_search）的信号。
+ *
+ * 2026-11-15 真调用：tokenrhythm.studio/v1/responses，model=deepseek-v4-flash-0731，
+ * 带 tools:[{type:'web_search'}] 返回 HTTP 400 / error.code='RESPONSES_FEATURE_NOT_SUPPORTED'
+ * （message 为中文「当前模型或上游不支持 Responses 能力：web_search」，param=null）；
+ * 去掉该工具同请求 200。只认 status + code 令牌，不按自由文案枚举。
+ */
+export const RESPONSES_FEATURE_REJECTION = {
+  status: 400,
+  code: 'RESPONSES_FEATURE_NOT_SUPPORTED',
 } as const;

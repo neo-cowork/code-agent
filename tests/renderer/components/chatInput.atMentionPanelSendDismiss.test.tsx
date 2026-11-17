@@ -58,8 +58,8 @@ describe('@ 面板随发送关闭（FB-586）', () => {
   });
 
   function typeAtTrigger(container: HTMLElement): void {
-    // window.domainAPI 在 jsdom 下不存在 → listWorkspaceFiles 抛错 → catch 分支
-    // 仍 setIsOpen(true)：面板开着但 0 行，正是 FB-586 的可达状态。
+    // 草稿会话没有工作目录（appStore 与会话都为 null）→ hook 不发 listFiles，files 恒空：
+    // 面板仍 setIsOpen(true) 但 0 行，正是 FB-586 的可达状态。
     const editor = container.querySelector('[data-testid="chat-composer-textarea"]') as HTMLElement;
     editor.replaceChildren(document.createTextNode('@'));
     fireEvent.input(editor);

@@ -127,7 +127,7 @@ export function registerElicitationHandler(
     mainWindow.webContents.send(IPC_CHANNELS.MCP_ELICITATION_REQUEST, elicitationRequest);
 
     notifyDecisionNeeded({
-      title: 'MCP 服务器需要输入',
+      title: '外部工具需要输入',
       body: formParams.message,
     });
 

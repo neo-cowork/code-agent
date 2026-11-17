@@ -29,6 +29,7 @@ vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   }),
 }));
 
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
@@ -124,6 +125,16 @@ describe('语音派活任务卡（W6-5）', () => {
   });
 
   it('speaker 存在 → 卡头显示该专家显示名', () => {
+    render(<TurnCard turn={voiceTaskTurn({}, { agentId: 'muzhi', displayName: '牧之' })} sessionId="session-1" />);
+    expect(screen.getByTestId('voice-task-speaker').textContent).toBe('牧之');
+  });
+
+  it('speaker 是内置专家：英文界面卡头显示拼音名，中文不变', () => {
+    useAppStore.setState({ language: 'en' });
+    const view = render(<TurnCard turn={voiceTaskTurn({}, { agentId: 'muzhi', displayName: '牧之' })} sessionId="session-1" />);
+    expect(screen.getByTestId('voice-task-speaker').textContent).toBe('Muzhi');
+    view.unmount();
+    useAppStore.setState({ language: 'zh' });
     render(<TurnCard turn={voiceTaskTurn({}, { agentId: 'muzhi', displayName: '牧之' })} sessionId="session-1" />);
     expect(screen.getByTestId('voice-task-speaker').textContent).toBe('牧之');
   });

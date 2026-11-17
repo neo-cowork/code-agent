@@ -11,6 +11,7 @@
 import { AgentFailureCode, inferAgentFailureCode } from '../../../shared/contract/agentFailure';
 import type { MessageMetadata } from '../../../shared/contract';
 import { describeSubagentStopReason } from '../../agent/subagentFailureReason';
+import { formatSessionTaskDeliveryFailure } from '../../../shared/constants/sessionCommandCenter';
 
 type StoppedTaskStatus = 'completed' | 'failed';
 
@@ -47,6 +48,10 @@ export function resolveStoppedTaskOutcome(input: {
     }
     return { status: 'completed', detail };
   }
+  const isTerminalDeliveryFailure = (['approval_timeout', 'repair_exhausted'] as const).some((reason) => (
+    (['zh', 'en'] as const).some((locale) => formatSessionTaskDeliveryFailure(reason, locale) === detail)
+  ));
+  if (isTerminalDeliveryFailure) return { status: 'failed', detail, notice: detail, kind: 'error' };
   const code = inferAgentFailureCode({ error: detail, defaultCode: AgentFailureCode.Unknown });
   const reason = describeSubagentStopReason(detail || '执行失败', code);
   const failedDetail = input.lastUrl ? `${reason} 最后停留在页面${input.lastUrl}。` : reason;

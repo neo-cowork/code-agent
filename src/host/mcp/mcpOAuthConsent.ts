@@ -131,7 +131,7 @@ export async function requestMcpOAuthConsent(
     timeoutMs,
   });
   notifyDecisionNeeded({
-    title: isConnector ? 'SaaS 连接器请求授权' : 'MCP 服务器请求授权',
+    title: isConnector ? '连接器需要授权' : '外部工具需要授权',
     body: `${request.serverName} 请求打开授权页面`,
   });
 

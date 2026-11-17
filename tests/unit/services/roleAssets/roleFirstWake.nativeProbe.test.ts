@@ -1,6 +1,6 @@
 // ============================================================================
 // 已启用但未检查的 native 连接器：醒来前补一次 probe_access
-// 真实 calendar 连接器模块 + 真实 ConnectorRegistry + 真实能力中心；只把 osascript 层换掉。
+// 真实 calendar 连接器模块 + 真实 ConnectorRegistry + 真实能力中心；只把原生桥（EventKit）换成假桥。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -10,7 +10,6 @@ import os from 'os';
 
 const harness = vi.hoisted(() => ({
   configDir: '',
-  osascript: vi.fn(),
   registry: null as null | import('../../../../src/host/connectors/registry').ConnectorRegistry,
   logs: { info: [] as string[], warn: [] as string[] },
   runnerCalls: [] as Array<{ prompt: string }>,
@@ -79,11 +78,13 @@ vi.mock('../../../../src/host/services/capabilities/remoteCapabilityRegistryServ
   getRemoteCapabilityRegistryService: () => { throw new Error('单测不许落到真实远程注册表单例'); },
 }));
 
-// 只换 osascript 层：真实 calendar.ts 的 probe_access / readiness 全部照跑。
-vi.mock('../../../../src/host/connectors/native/osascript', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../../../../src/host/connectors/native/osascript')>(),
-  runAppleScript: (lines: string[]) => harness.osascript(lines),
+// 只换原生桥：真实 calendar.ts 的 probe_access / readiness 全部照跑（日历走 EventKit，N-CALENDAR-ONE-PERMISSION-EVENTKIT）。
+const { fake } = await vi.hoisted(async () => ({ fake: (await import('../../connectors/fakeCalendarBridge')).createFakeCalendarBridge() }));
+vi.mock('../../../../src/host/permissions/envAssist/shellBridge/client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../src/host/permissions/envAssist/shellBridge/client')>(),
+  resolveShellBridgeClientFromEnv: () => fake.client,
 }));
+const calendarReads = () => fake.paths().filter((p) => p === '/v1/read/calendars').length;
 
 // 注册表：真实 ConnectorRegistry（darwin 视角），由用例 configure。
 vi.mock('../../../../src/host/connectors', async (importOriginal) => ({
@@ -114,7 +115,8 @@ beforeEach(async () => {
   harness.logs.info.length = 0;
   harness.logs.warn.length = 0;
   harness.runnerCalls.length = 0;
-  harness.osascript.mockReset().mockResolvedValue('工作\n家庭');
+  fake.reset();
+  fake.state.calendars = [{ id: 'c1', title: '工作', writable: true }, { id: 'c2', title: '家庭', writable: true }];
   harness.registry = new ConnectorRegistry('darwin');
   resetCalendarConnectorReadiness();
   mockSettings.value = {};
@@ -150,42 +152,40 @@ describe('醒来前探测 unchecked 的 native 连接器', () => {
     expect(harness.registry!.get('calendar')!.getCachedStatus!().readiness).toBe('ready');
   });
 
-  it('(b) 探测失败（未授权）→ 不计入，warn 点名连接器', async () => {
+  it('(b) 未授权 → 不计入，也不弹框（被动探针，不缓存 failed）', async () => {
     enableCalendar(true);
-    harness.osascript.mockRejectedValue(new Error('Not authorized to send Apple events to Calendar'));
+    fake.state.status = 2;
 
     await expect(listConnectedSourceNames()).resolves.toEqual([]);
-    expect(harness.logs.warn.some((line) => line.includes('connector: calendar') && line.includes('Not authorized'))).toBe(true);
-    expect(harness.logs.info.some((line) => line.includes('probe-failed: [calendar]'))).toBe(true);
+    expect(calendarReads()).toBe(0);
+    expect(fake.state.grants).toBe(0);
+    expect(harness.registry!.get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
   });
 
-  it('(c) 未启用（不在注册表）→ 不计入，日志说明 not enabled，且不碰 osascript', async () => {
+  it('(c) 未启用（不在注册表）→ 不计入，日志说明 not enabled，且不碰原生桥', async () => {
     enableCalendar(false);
 
     await expect(listConnectedSourceNames()).resolves.toEqual([]);
-    expect(harness.osascript).not.toHaveBeenCalled();
+    expect(fake.state.calls).toEqual([]);
     expect(harness.logs.info.some((line) => /not enabled: \[calendar,/.test(line))).toBe(true);
   });
 
   it('(d) 已 ready 的连接器不再补探', async () => {
     enableCalendar(true);
     await harness.registry!.get('calendar')!.execute('probe_access', {});
-    expect(harness.osascript).toHaveBeenCalledTimes(1);
+    expect(calendarReads()).toBe(1);
 
     await expect(listConnectedSourceNames()).resolves.toEqual(['Calendar']);
-    expect(harness.osascript).toHaveBeenCalledTimes(1);
+    expect(calendarReads()).toBe(1);
   });
 
-  it('(e) failed 的连接器不重探，也不计入', async () => {
+  it('(e) 之前没授权、后来在任一入口允许了：下一次醒来被动重探就计入（不会卡在 failed）', async () => {
     enableCalendar(true);
-    harness.osascript.mockRejectedValue(new Error('denied'));
-    await expect(harness.registry!.get('calendar')!.execute('probe_access', {})).rejects.toThrow('denied');
-    expect(harness.registry!.get('calendar')!.getCachedStatus!().readiness).toBe('failed');
-    expect(harness.osascript).toHaveBeenCalledTimes(1);
-
-    harness.osascript.mockResolvedValue('工作');
+    fake.state.status = 2;
     await expect(listConnectedSourceNames()).resolves.toEqual([]);
-    expect(harness.osascript).toHaveBeenCalledTimes(1);
+    fake.state.status = 3;
+    await expect(listConnectedSourceNames()).resolves.toEqual(['Calendar']);
+    expect(fake.state.grants).toBe(0);
   });
 
   it('(f) 每日醒来 resolveWakeExternalDelta（不注入源名）也看到日历', async () => {
@@ -194,6 +194,6 @@ describe('醒来前探测 unchecked 的 native 连接器', () => {
     const delta = await resolveWakeExternalDelta({ roleId: 'cal-daily-role', hasProducts: false });
     expect(delta.sourceNames).toEqual(['Calendar']);
     expect(delta.section).toContain('Calendar');
-    expect(harness.osascript).toHaveBeenCalledTimes(1);
+    expect(calendarReads()).toBe(1);
   });
 });

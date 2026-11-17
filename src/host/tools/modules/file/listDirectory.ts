@@ -5,7 +5,7 @@
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 不 import services/infra/logger，走 ctx.logger
-// - 不 import resolvePath（生产 helper），用 path.resolve
+// - 输入路径统一走共享 resolveInputPath
 // - 输出格式保持和 legacy 一致（带 emoji 前缀），diff=true
 // ============================================================================
 
@@ -22,6 +22,7 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
 import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
@@ -226,7 +227,10 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
-    const inputPath = (args.path as string | undefined) ?? ctx.workingDir;
+    const requestedPath = args.path as string | undefined;
+    const noWorkingFolder = guardUnattendedInputPath(requestedPath, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
+    const inputPath = requestedPath ?? ctx.workingDir;
     const recursive = Boolean(args.recursive);
     const maxDepth = (args.max_depth as number | undefined) ?? 3;
     const offset = parsePositiveInteger(args.offset, 0, Number.MAX_SAFE_INTEGER);
@@ -244,9 +248,7 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
 
     onProgress?.({ stage: 'starting', detail: `list ${path.basename(inputPath)}` });
 
-    const dirPath = path.isAbsolute(inputPath)
-      ? inputPath
-      : path.resolve(ctx.workingDir, inputPath);
+    const dirPath = resolveInputPath(inputPath, ctx.workingDir);
 
     try {
       const gitignoreLines = respectGitignore ? await readGitignoreLines(dirPath) : [];

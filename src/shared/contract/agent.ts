@@ -51,6 +51,7 @@ export interface TaskProgressData {
   toolIndex?: number;      // 当前工具索引
   toolTotal?: number;      // 工具总数
   target?: string;         // 当前工具最像宾语的一个参数（已截断）
+  description?: string;    // Bash 调用的 arguments.description（模型自写人话；渲染端过滤后才上屏）
 }
 
 // 任务完成事件数据

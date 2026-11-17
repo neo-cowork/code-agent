@@ -46,6 +46,7 @@ import {
 } from '../../../security/slotDataDirGuard';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
 
 const execFileAsync = promisify(execFile);
 const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
@@ -568,6 +569,9 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: 'pattern is required and must be a string', code: 'INVALID_ARGS' };
     }
 
+    const noWorkingFolder = guardUnattendedInputPath(args.path as string | undefined, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
+
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
       return {
@@ -585,7 +589,7 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
 
     // 参数解析
     const rawPath = (args.path as string | undefined) ?? ctx.workingDir;
-    const searchPath = path.isAbsolute(rawPath) ? rawPath : path.join(ctx.workingDir, rawPath);
+    const searchPath = resolveInputPath(rawPath, ctx.workingDir);
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
     const include = args.include as string | undefined;
     const fileType = args.type as string | undefined;

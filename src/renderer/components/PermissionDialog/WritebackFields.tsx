@@ -85,11 +85,15 @@ function formattedDatetime(raw: unknown, language: string): string {
   return formatDateTime(date, language === 'en' ? 'en' : 'zh');
 }
 
-export function draftFromArgs(tool: string, args: Record<string, unknown>): WritebackDraft {
+export function draftFromArgs(tool: string, args: Record<string, unknown>, includeSnapshot = false): WritebackDraft {
   const draft: WritebackDraft = {};
+  const snapshotFields = !includeSnapshot && Array.isArray(args.calendarApprovalSnapshotFields)
+    ? args.calendarApprovalSnapshotFields : [];
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
     if (field.readonly) continue;
     const raw = args[field.key];
+    // 更新是局部补丁：缺失字段保持缺失，用户输入（包括主动清空）才加入草稿。
+    if (tool === 'calendar_update_event' && (!Object.hasOwn(args, field.key) || snapshotFields.includes(field.key))) continue;
     if (field.kind === 'string_list') {
       draft[field.key] = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '';
     } else if (field.kind === 'datetime') {
@@ -101,11 +105,16 @@ export function draftFromArgs(tool: string, args: Record<string, unknown>): Writ
   return draft;
 }
 
-/** 草稿 → 送回 host 的 updatedArgs（列表按逗号/分号/换行切开并去空）。 */
-export function draftToArgs(tool: string, draft: WritebackDraft): Record<string, unknown> {
+/**
+ * 草稿 → 送回 host 的 updatedArgs（列表按逗号/分号/换行切开并去空）。
+ * 传入 original 时，原参数里本来没有、且草稿仍为空的字符串字段不回传（可选字段如日程备注不凭空多出 `""`）；
+ * 原参数里有值而被用户清空的字段照常回传空串。
+ */
+export function draftToArgs(tool: string, draft: WritebackDraft, original?: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
     if (field.readonly) continue;
+    if (tool === 'calendar_update_event' && !Object.hasOwn(draft, field.key)) continue;
     const value = draft[field.key] ?? '';
     if (field.kind === 'string_list') {
       out[field.key] = value.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
@@ -118,6 +127,7 @@ export function draftToArgs(tool: string, draft: WritebackDraft): Record<string,
       }
       out[field.key] = field.key.endsWith('_ms') ? millis : localDatetimeToIso(value, millis);
     } else {
+      if (value === '' && original && original[field.key] === undefined) continue;
       out[field.key] = value;
     }
   }
@@ -186,7 +196,7 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
     : [];
 
   // 紧凑「标签｜值」行：决策选项在 DecisionCard 的 50vh 滚动区里，字段区每高一行，
-  // 「发送 / 改一改再发 / 不发」就更可能被顶出首屏。
+  // 「发送 / 修改后发送 / 取消」就更可能被顶出首屏。
   const row = (key: string, label: string, value: React.ReactNode) => (
     <div key={key} className="flex items-start gap-2 text-sm">
       <span className="w-14 shrink-0 text-xs text-zinc-500 pt-0.5">{label}</span>
@@ -197,14 +207,15 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
   return (
     <div className="space-y-1.5 rounded bg-zinc-800/60 p-2.5" data-testid="writeback-fields-view">
       {fields.map((field) => {
+        if (field.readonly && field.key === 'event_uid') return null;
         const raw = args[field.key];
         const text = field.kind === 'string_list'
           ? (Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '')
           : field.kind === 'datetime'
             ? formattedDatetime(raw, language)
             : (typeof raw === 'string' ? raw : '');
-        // 可选列表字段为空就不占一行（密送常年为空）
-        if (!text && !field.required && field.kind === 'string_list') return null;
+        // 空值整行不渲染：「日历：无」这类占位对用户没有信息量
+        if (!text) return null;
         if (field.multiline) {
           return (
             <div key={field.key} className="pt-1 border-t border-zinc-700/60">
@@ -215,7 +226,7 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
         return row(
           field.key,
           labels[field.key] ?? field.key,
-          <span data-testid={`writeback-view-${field.key}`}>{text || <span className="text-zinc-600">{w.none}</span>}</span>,
+          <span data-testid={`writeback-view-${field.key}`}>{text}</span>,
         );
       })}
       {attachments.length > 0 && row('attachments', w.fieldAttachments.replace(/（.*）|\(.*\)/, ''), (
@@ -271,14 +282,24 @@ export function WritebackEditForm({
   const w = t.decisionCard.permission.writeback;
   const labels = useFieldLabels();
   const fields = (EDITABLE_TOOL_FIELDS[tool] ?? []).filter((field) => !field.readonly);
-  const pristine = draftFromArgs(tool, original);
+  const pristine = draftFromArgs(tool, original, true);
   const invalid = new Map(validateWritebackDraft(tool, draft).map((issue) => [issue.fieldKey, issue.reason]));
   const attachments = Array.isArray(original.attachments)
     ? original.attachments.filter((v): v is string => typeof v === 'string')
     : [];
 
+  const changeField = (key: string, value: string) => {
+    const next = { ...draft, [key]: value };
+    // The update API requires a start when the user explicitly edits the end.
+    if (tool === 'calendar_update_event' && key === 'end_ms' && value !== ''
+      && !Object.hasOwn(next, 'start_ms') && pristine.start_ms) {
+      next.start_ms = pristine.start_ms;
+    }
+    onChange(next);
+  };
+
   const renderField = (field: EditableField) => {
-    const value = draft[field.key] ?? '';
+    const value = draft[field.key] ?? pristine[field.key] ?? '';
     const changed = value !== (pristine[field.key] ?? '');
     const invalidReason = invalid.get(field.key);
     const errorMessage = invalidReason === WritebackValidationReason.Required
@@ -311,7 +332,7 @@ export function WritebackEditForm({
             minRows={4}
             maxRows={14}
             autoResize
-            onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}
+            onChange={(e) => changeField(field.key, e.target.value)}
           />
         ) : field.kind === 'datetime' ? (
           <>
@@ -322,7 +343,7 @@ export function WritebackEditForm({
               hourLabel={t.cronCenter.simpleHourLabel}
               minuteLabel={t.cronCenter.simpleMinuteLabel}
               size="sm"
-              onChange={(next) => onChange({ ...draft, [field.key]: next })}
+              onChange={(next) => changeField(field.key, next)}
             />
             {errorMessage && <p className="mt-1 text-xs text-badge-danger">{errorMessage}</p>}
           </>
@@ -332,7 +353,7 @@ export function WritebackEditForm({
             type="text"
             inputSize="sm"
             placeholder={field.kind === 'string_list' ? w.listPlaceholder : undefined}
-            onChange={(e) => onChange({ ...draft, [field.key]: e.target.value })}
+            onChange={(e) => changeField(field.key, e.target.value)}
           />
         )}
       </div>

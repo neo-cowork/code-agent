@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 const sendMessageMock = vi.hoisted(() => vi.fn(async () => {}));
 const ipcInvokeMock = vi.hoisted(() => vi.fn(async () => undefined));
 const settingsInvokeMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>(async () => { throw new Error('test boundary'); }));
+const effectiveModelInvokeMock = vi.hoisted(() => vi.fn(async (_payload?: unknown): Promise<unknown> => null));
 
 const sessionState = {
   currentSessionId: 'session-1' as string | null,
@@ -99,7 +100,9 @@ vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => (
 vi.mock('../../../src/renderer/services/ipcService', () => {
   const ipc = {
     invoke: ipcInvokeMock,
-    invokeDomain: settingsInvokeMock,
+    invokeDomain: (_domain: string, action: string, payload?: unknown) => action === 'getEffectiveModel'
+      ? effectiveModelInvokeMock(payload)
+      : settingsInvokeMock(),
     on: vi.fn(() => () => {}),
   };
   return { default: ipc, ipcService: ipc };
@@ -298,6 +301,7 @@ beforeEach(() => {
   useToastStore.setState({ toasts: [] });
   window.domainAPI = { invoke: vi.fn(async () => ({ success: true, data: null })) } as typeof window.domainAPI;
   settingsInvokeMock.mockReset().mockRejectedValue(new Error('test boundary'));
+  effectiveModelInvokeMock.mockReset().mockResolvedValue(null);
 });
 afterEach(() => { cleanup(); window.domainAPI = undefined; });
 
@@ -598,9 +602,9 @@ describe('ChatView send authentication', () => {
 describe('ChatView missing API Key notice', () => {
   it.each([
     ['en', 'openai', 'No API Key for OpenAI yet. Settings is open — add one, then send again.'],
-    ['zh', 'openai', 'OpenAI 尚未配置 API Key。已打开设置，请添加后再发送。'],
+    ['zh', 'openai', 'OpenAI 尚未配置密钥。已打开设置，请添加后再发送。'],
     ['en', 'custom-meeting', 'No API Key for this model yet. Settings is open — add one, then send again.'],
-    ['zh', 'custom-meeting', '这个模型 尚未配置 API Key。已打开设置，请添加后再发送。'],
+    ['zh', 'custom-meeting', '这个模型 尚未配置密钥。已打开设置，请添加后再发送。'],
   ] as const)('toast copy and provider target %s/%s', async (language, provider, expected) => {
     locale.language = language;
     settingsInvokeMock.mockResolvedValue({ models: { default: provider, defaultProvider: 'deepseek', providers: {} } });
@@ -615,12 +619,103 @@ describe('ChatView missing API Key notice', () => {
     expect(useToastStore.getState().toasts.map((toast) => toast.message).join(' ')).not.toMatch(/Configure a model before sending|先配置一个模型后再发送/);
   });
 
-  it('keeps the configured alternative notice and ordinary settings branch unchanged', async () => {
-    settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: { deepseek: { enabled: true, apiKeyConfigured: true } } } });
+  it('without a session, names the unkeyed default and opens its provider settings', async () => {
+    const originalSessionId = sessionState.currentSessionId;
+    sessionState.currentSessionId = null;
+    try {
+      settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: { deepseek: { enabled: true, apiKeyConfigured: true } } } });
+      render(React.createElement(ChatView));
+      fireEvent.submit(screen.getByTestId('chat-input'));
+      await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(
+        zh.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', 'OpenAI'),
+      ));
+      expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('openai');
+      expect(appState.openSettingsTab).not.toHaveBeenCalled();
+      expect(effectiveModelInvokeMock).not.toHaveBeenCalled();
+      expect(sendMessageMock).not.toHaveBeenCalled();
+    } finally {
+      sessionState.currentSessionId = originalSessionId;
+    }
+  });
+});
+
+describe('ChatView effective session model gate', () => {
+  const prompt = 'Summarize these three notes into a weekly report';
+
+  function submitPrompt() {
     render(React.createElement(ChatView));
+    fireEvent.change(screen.getByLabelText('chat-input-field'), { target: { value: prompt } });
     fireEvent.submit(screen.getByTestId('chat-input'));
-    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(zh.chat.configureModelKeyFirst));
-    expect(appState.openSettingsTab).toHaveBeenCalledWith('model');
+  }
+
+  it('session override keyed + default unkeyed sends without a toast', async () => {
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: {
+      openai: { enabled: true }, xiaomi: { enabled: true, apiKeyConfigured: true },
+    } } });
+    effectiveModelInvokeMock.mockResolvedValue({ provider: 'xiaomi', model: 'mimo-v2.6-flash', adaptive: false });
+    submitPrompt();
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ content: prompt })));
+    expect(effectiveModelInvokeMock).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(useToastStore.getState().toasts).toEqual([]);
     expect(appState.openModelSettings).not.toHaveBeenCalled();
+  });
+
+  it('default keyed + override unkeyed blocks and names the override provider', async () => {
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'xiaomi', providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true }, openai: { enabled: true },
+    } } });
+    effectiveModelInvokeMock.mockResolvedValue({ provider: 'openai', model: 'gpt-5.5', adaptive: false });
+    submitPrompt();
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(
+      zh.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', 'OpenAI'),
+    ));
+    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('openai');
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('both models unkeyed names the effective override provider', async () => {
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: {
+      openai: { enabled: true }, claude: { enabled: true },
+    } } });
+    effectiveModelInvokeMock.mockResolvedValue({ provider: 'claude', model: 'claude-sonnet-4-6', adaptive: false });
+    submitPrompt();
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toBe(
+      zh.modelSetup.missingApiKey.replace('{provider}', 'Anthropic Claude'),
+    ));
+    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('claude');
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('adaptive override falls back to the keyed default and sends', async () => {
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'xiaomi', providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true }, openai: { enabled: true },
+    } } });
+    effectiveModelInvokeMock.mockResolvedValue({ provider: 'openai', model: 'gpt-5.5', adaptive: true });
+    submitPrompt();
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ content: prompt })));
+    expect(useToastStore.getState().toasts).toEqual([]);
+  });
+
+  it('effective-model IPC failure falls back to the unkeyed default', async () => {
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: {
+      openai: { enabled: true }, xiaomi: { enabled: true, apiKeyConfigured: true },
+    } } });
+    effectiveModelInvokeMock.mockRejectedValue(new Error('IPC unavailable'));
+    submitPrompt();
+    await waitFor(() => expect(useToastStore.getState().toasts.at(-1)?.message).toContain('OpenAI'));
+    expect(appState.openModelSettings).toHaveBeenCalledExactlyOnceWith('openai');
+    expect(sendMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('signed out + keyed session model sends without the login wall', async () => {
+    useAuthStore.setState({ isAuthenticated: false });
+    settingsInvokeMock.mockResolvedValue({ models: { default: 'openai', providers: {
+      openai: { enabled: true }, xiaomi: { enabled: true, apiKeyConfigured: true },
+    } } });
+    effectiveModelInvokeMock.mockResolvedValue({ provider: 'xiaomi', model: 'mimo-v2.6-flash', adaptive: false });
+    submitPrompt();
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ content: prompt })));
+    expect(useAuthStore.getState().showAuthModal).toBe(false);
+    expect((screen.getByLabelText('chat-input-field') as HTMLInputElement).value).toBe('');
   });
 });

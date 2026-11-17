@@ -233,16 +233,24 @@ export function buildCanUseToolFromLegacy(
             ? 'network'
             : 'command');
 
+    // 只有工具开头那次授权（无 reason / 无 hint / 非危险）且不在「一律走审批处理器」的运行里，
+    // 才允许被已记住的工具级授权放行；体内的二次确认（如 git push、删工作树）永远问人。
+    // 消费与记账在 toolExecutor 的体内 requestPermission 包装器里（那里有账本与 forcePermissionHandler）。
+    const grantable = !isDangerous && !reason && !requestHint && legacyCtx.forcePermissionHandler !== true;
+    const sessionId = requestHint?.sessionId ?? legacyCtx.sessionId;
+
     try {
       const permissionRequest: PermissionRequestData = {
-        sessionId: requestHint?.sessionId,
+        // 工具体内的审批也要归到本会话（真机第四轮：没传 hint 时 sessionId 为空，停车 / 无人值守 / 收件箱都认不出是谁的）
+        sessionId,
         agentId: requestHint?.agentId,
-        runId: requestHint?.runId,
+        runId: requestHint?.runId ?? legacyCtx.runId,
         parentToolUseId: requestHint?.parentToolUseId,
         forceConfirm: requestHint?.forceConfirm,
         type,
         tool: requestedToolName,
-        details,
+        // grantEligible 只由 host 写：覆盖参数里同名键，防模型自报。
+        details: { ...details, grantEligible: grantable },
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
         ...(requestHint?.reasonCode ? { reasonCode: requestHint.reasonCode } : {}),
         dangerLevel: requestHint?.dangerLevel,

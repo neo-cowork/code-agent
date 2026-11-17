@@ -8,9 +8,11 @@
 //   用真实 Apple Events 拒绝文本 -1743 拒绝），code 由被测代码真实产出。
 // 唯一手工保留的是 toolResolver 的 proto 失败映射（3 行，见 protoFailure）。
 // ============================================================================
+import { vi } from 'vitest';
 import type { CanUseToolFn, Logger, ToolContext, ToolResult } from '../../../../src/host/protocol/tools';
+import * as shellBridgeClient from '../../../../src/host/permissions/envAssist/shellBridge/client';
 import { getConnectorRegistry } from '../../../../src/host/connectors/registry';
-import { calendarConnector } from '../../../../src/host/connectors/native/calendar';
+import { calendarConnector, resetCalendarConnectorReadiness } from '../../../../src/host/connectors/native/calendar';
 import { mailConnector } from '../../../../src/host/connectors/native/mail';
 import { remindersConnector } from '../../../../src/host/connectors/native/reminders';
 import { calendarModule } from '../../../../src/host/tools/modules/connectors/calendar';
@@ -43,14 +45,17 @@ const CONNECTOR_IDS: Record<AutomationConnectorTool, 'calendar' | 'mail' | 'remi
   reminders_create: 'reminders',
 };
 
-/** 每个工具触发 Apple Events 拒绝所需的最小入参与目标 app 名。 */
-export const AUTOMATION_FAILURE_CASES: Record<AutomationConnectorTool, { args: Record<string, unknown>; app: string; target: string }> = {
-  calendar: { args: { action: 'list_events' }, app: 'Calendar', target: 'calendar' },
-  mail: { args: { action: 'list_accounts' }, app: 'Mail', target: 'mail' },
-  reminders: { args: { action: 'list_reminders' }, app: 'Reminders', target: 'reminders' },
+/**
+ * 每个工具触发授权拒绝所需的最小入参、目标 app 名与卡片类别。
+ * 日历走 EventKit（N-CALENDAR-ONE-PERMISSION-EVENTKIT）：原生桥 403 calendar_not_authorized → perm_calendars，不经 osascript。
+ */
+export const AUTOMATION_FAILURE_CASES: Record<AutomationConnectorTool, { args: Record<string, unknown>; app: string; target: string; blocker: 'perm_automation' | 'perm_calendars' }> = {
+  calendar: { args: { action: 'list_events' }, app: 'Calendar', target: 'calendar', blocker: 'perm_calendars' },
+  mail: { args: { action: 'list_accounts' }, app: 'Mail', target: 'mail', blocker: 'perm_automation' },
+  reminders: { args: { action: 'list_reminders' }, app: 'Reminders', target: 'reminders', blocker: 'perm_automation' },
   // create 先失败、reconcile 的 list_reminders 再失败：runAppleScript 持续拒绝即可走进
   // 「reconcile list 失败」分支，返回带 not_authorized 的失败结果。
-  reminders_create: { args: { title: '测试提醒' }, app: 'Reminders', target: 'reminders' },
+  reminders_create: { args: { title: '测试提醒' }, app: 'Reminders', target: 'reminders', blocker: 'perm_automation' },
 };
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
@@ -80,6 +85,15 @@ export async function runConnectorToolFailure(
       : remindersConnector;
   registry.unregister(connectorId);
   registry.register(native);
+  // 日历：真连接器 + 假原生桥（被动探针读到「已拒绝」，读路由按 Rust 行为回 403 calendar_not_authorized）
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const bridgeSpy = connectorId === 'calendar' ? vi.spyOn(shellBridgeClient, 'resolveShellBridgeClientFromEnv').mockReturnValue({
+    post: async <T,>(path: string): Promise<T> => {
+      if (path === '/v1/passive/calendar') return { status: 2 } as T;
+      throw Object.assign(new Error('env_assist_bridge:bridge_auth_rejected'), { bridgeError: 'calendar_not_authorized' });
+    },
+  }) : null;
+  if (bridgeSpy) { Object.defineProperty(process, 'platform', { value: 'darwin' }); resetCalendarConnectorReadiness(); }
   try {
     const handler = await TOOL_MODULES[tool].createHandler();
     return await handler.execute(
@@ -89,6 +103,7 @@ export async function runConnectorToolFailure(
     );
   } finally {
     registry.unregister(connectorId);
+    if (bridgeSpy) { bridgeSpy.mockRestore(); Object.defineProperty(process, 'platform', platform); resetCalendarConnectorReadiness(); }
   }
 }
 

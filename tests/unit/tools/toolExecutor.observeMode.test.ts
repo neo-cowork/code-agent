@@ -348,3 +348,23 @@ describe('ToolExecutor observe-mode interception (N-TRIGGER-OBSERVE-MODE ②)', 
     expect(rows).toEqual([]);
   });
 });
+
+describe('ToolExecutor schema validation code', () => {
+  it('reports ARG_VALIDATION_FAILED in metadata.code for a bad-typed argument', async () => {
+    resolverState.getDefinition.mockReset();
+    resolverState.getDefinition.mockImplementation(() => ({
+      name: 'Bash',
+      description: 'shell command test tool',
+      inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+      requiresPermission: false,
+      permissionLevel: 'read',
+    }));
+    resolverState.execute.mockReset();
+    const executor = new ToolExecutor({ requestPermission: vi.fn(async () => true), workingDirectory: '/tmp/workbench' });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('Bash', { command: 42 }, { sessionId: 'schema-code' });
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('ARG_VALIDATION_FAILED');
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+});

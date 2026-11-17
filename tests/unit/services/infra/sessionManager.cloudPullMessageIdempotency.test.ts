@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { DatabaseService } from '../../../../src/host/services/core/databaseService';
 import { applySchema } from '../../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../../src/host/services/core/database/migrations';
+import { NEEDS_INPUT_NATIVE_FALLBACK } from '../../../../src/shared/constants/timeouts';
 import { SessionRepository } from '../../../../src/host/services/core/repositories/SessionRepository';
 
 // T6: getSnapshot -> SessionManager.getSession() 的懒加载云端回填分支曾经在
@@ -17,7 +18,7 @@ import { SessionRepository } from '../../../../src/host/services/core/repositori
 // 钉死：读路径不再因为回填触发的重复写入而报错，且本地既有状态不被云端覆盖。
 
 const currentUser = vi.hoisted(() => ({ value: { id: 'user-1' } as { id: string } | null }));
-const supabaseRows = vi.hoisted(() => ({ value: [] as Array<Record<string, unknown>> }));
+const supabaseRows = vi.hoisted(() => ({ value: [] as Array<Record<string, unknown>>, from: vi.fn() }));
 
 vi.mock('../../../../src/host/services/infra/toolCache', () => ({
   getToolCache: () => ({ clearSession: vi.fn() }),
@@ -30,19 +31,41 @@ vi.mock('../../../../src/host/services/auth/authService', () => ({
 vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   isSupabaseInitialized: () => true,
   getSupabase: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
+    from: (...args: unknown[]) => {
+      supabaseRows.from(...args);
+      return {
+        select: () => ({
           eq: () => ({
-            order: () => Promise.resolve({ data: supabaseRows.value, error: null }),
+            eq: () => ({
+              order: () => Promise.resolve({ data: supabaseRows.value, error: null }),
+            }),
           }),
         }),
-      }),
-    }),
+      };
+    },
   }),
 }));
 
 const coreDatabase = vi.hoisted(() => ({ current: null as DatabaseService | null }));
+
+vi.mock('../../../../src/host/services/core/databaseService', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../src/host/services/core/databaseService')>(),
+  getDatabase: () => {
+    if (!coreDatabase.current) throw new Error('core database unavailable');
+    return coreDatabase.current;
+  },
+}));
+vi.mock('../../../../src/host/platform', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../src/host/platform')>(),
+  Notification: { isSupported: () => true },
+  broadcastToRenderer: vi.fn(),
+}));
+vi.mock('../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'en' } }) }),
+}));
+vi.mock('../../../../src/host/services/infra/notificationHeldStore', () => ({
+  readHeldFile: () => [], writeHeldFile: vi.fn(),
+}));
 
 vi.mock('../../../../src/host/services/core', () => ({
   getDatabase: () => {
@@ -51,7 +74,9 @@ vi.mock('../../../../src/host/services/core', () => ({
   },
 }));
 
-import { SessionManager } from '../../../../src/host/services/infra/sessionManager';
+import { notificationService } from '../../../../src/host/services/infra/notificationService';
+import { setDaemonQuitIntent } from '../../../../src/host/services/daemon/quitIntent';
+import { getSessionManager, SessionManager } from '../../../../src/host/services/infra/sessionManager';
 
 const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
@@ -84,6 +109,12 @@ describe('SessionManager.getSession 云端回填幂等（T6 messages.id UNIQUE�
   });
 
   afterEach(async () => {
+    notificationService.clearRecentNotifications();
+    notificationService.setNativeNotificationSender(null);
+    notificationService.setNotificationSessionTitleResolver(null);
+    getSessionManager().clearCache();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     await sessionManager?.dispose();
     coreDatabase.current = null;
@@ -155,4 +186,111 @@ describe('SessionManager.getSession 云端回填幂等（T6 messages.id UNIQUE�
     expect(coreConnection.prepare('SELECT content FROM messages WHERE id = ?').get('m-new'))
       .toEqual({ content: 'hydrated from cloud' });
   });
+
+  it('CLI metadata and title reads never hydrate or write an empty local conversation', async () => {
+    coreDb.createSessionWithId('cli-read-only', {
+      title: 'CLI session title', userId: 'user-1',
+      metadata: { expertThread: { roleId: 'expert-1', setAt: 42 } },
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    coreDb.createSessionWithId('cli-other-owner', {
+      title: 'Other user title', userId: 'user-2',
+      metadata: { private: true },
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    const baseline = await sessionManager.getSession('cli-read-only', 0);
+    sessionManager.clearCache();
+    supabaseRows.from.mockClear();
+    supabaseRows.value = [{
+      id: 'cloud-only-message', role: 'user', content: 'Must not be restored', timestamp: 1,
+      visibility: 'active', is_deleted: false,
+    }];
+    const addMessage = vi.spyOn(coreDb, 'addMessage');
+    const rows = () => coreConnection.prepare('SELECT * FROM messages ORDER BY id').all();
+    const changes = () => coreConnection.prepare('SELECT total_changes() AS count').get();
+    const beforeRows = rows();
+    const beforeChanges = changes();
+
+    expect(sessionManager.getSessionMetadata('cli-read-only')).toEqual(baseline?.metadata);
+    expect(sessionManager.getSessionTitle('cli-read-only')).toBe(baseline?.title);
+    expect(sessionManager.getSessionMetadata('cli-other-owner')).toBeUndefined();
+    expect(sessionManager.getSessionTitle('cli-other-owner')).toBeUndefined();
+    expect(supabaseRows.from, 'read-only accessors must not query Supabase').toHaveBeenCalledTimes(0);
+    expect(addMessage, 'read-only accessors must not write messages').toHaveBeenCalledTimes(0);
+    expect(rows(), 'read-only accessors must preserve SQLite rows').toEqual(beforeRows);
+    expect(changes(), 'read-only accessors must not change SQLite').toEqual(beforeChanges);
+    console.info(`ASSERT cli-read-only accessors: cloudQueries=${supabaseRows.from.mock.calls.length}, addMessageCalls=${addMessage.mock.calls.length}, rows=${beforeRows.length}, sqliteWrites=0`);
+  });
+
+  it.each([false, true])('native title lookup never hydrates or rewrites an uncached conversation (local history cleared=%s)', async (clearHistory) => {
+    coreDb.createSessionWithId('notification-title', {
+      title: 'Meeting summary', userId: 'user-1',
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    coreConnection.prepare(`INSERT INTO messages (id, session_id, role, content, timestamp)
+      VALUES ('removed-cloud-message', 'notification-title', 'user', 'Old conversation', 1)`).run();
+    await sessionManager.replaceMessages('notification-title', clearHistory ? [] : [{
+      id: 'retained-local-message', role: 'user', content: 'Current conversation', timestamp: 2,
+    }], 3);
+    // This old message was removed locally but is still in the logged-in user's cloud history.
+    supabaseRows.value = [{
+      id: 'removed-cloud-message', role: 'user', content: 'Old conversation', timestamp: 1,
+      visibility: 'active', is_deleted: false,
+    }];
+    const rows = () => coreConnection.prepare('SELECT * FROM messages ORDER BY id').all();
+    const changes = () => coreConnection.prepare('SELECT total_changes() AS count').get();
+    const beforeRows = rows();
+    const beforeChanges = changes();
+    const nativeSender = vi.fn();
+    const hydrate = vi.spyOn(getSessionManager(), 'getSession');
+    getSessionManager().clearCache();
+    vi.useFakeTimers();
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '');
+    setDaemonQuitIntent('background');
+    notificationService.clearRecentNotifications();
+    notificationService.setNativeNotificationSender(nativeSender);
+    notificationService.setNotificationSessionTitleResolver(null); // Exercise the production resolver.
+
+    notificationService.notifyNeedsInput({
+      sessionId: 'notification-title', title: 'Ignored caller title', body: 'Ignored arguments',
+      tool: 'Write', dedupeKey: 'pending-title-only',
+    });
+    await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      title: 'Meeting summary', body: 'Waiting for your OK: Write file', sessionId: 'notification-title',
+    }));
+    expect(rows(), 'native title lookup must not restore a removed cloud message').toEqual(beforeRows);
+    expect(changes(), 'native title lookup must not write to SQLite').toEqual(beforeChanges);
+    expect(supabaseRows.from, 'native title lookup must not query Supabase').not.toHaveBeenCalled();
+    expect(hydrate, 'native title lookup must not load conversation history').not.toHaveBeenCalled();
+    console.info(`ASSERT native-title read-only: cleared=${clearHistory}, cloudQueries=${supabaseRows.from.mock.calls.length}, messagesUnchanged=true, sqliteWrites=0`);
+  });
+
+  it.each([
+    ['user-2', 'user-1', 'Untitled task'],
+    [null, 'user-1', 'Untitled task'],
+    [null, null, 'Meeting summary'],
+  ])('native title lookup preserves the owner boundary (viewer=%s, owner=%s)', async (viewer, owner, expectedTitle) => {
+    coreDb.createSessionWithId('notification-owner', {
+      title: 'Meeting summary', userId: owner,
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    currentUser.value = viewer ? { id: viewer } : null;
+    const nativeSender = vi.fn();
+    getSessionManager().clearCache();
+    vi.useFakeTimers();
+    vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '');
+    setDaemonQuitIntent('background');
+    notificationService.clearRecentNotifications();
+    notificationService.setNativeNotificationSender(nativeSender);
+    notificationService.setNotificationSessionTitleResolver(null);
+    notificationService.notifyNeedsInput({
+      sessionId: 'notification-owner', title: 'Ignored', body: 'Ignored', tool: 'Write',
+    });
+    await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: expectedTitle }));
+    expect(supabaseRows.from).not.toHaveBeenCalled();
+  });
+
 });

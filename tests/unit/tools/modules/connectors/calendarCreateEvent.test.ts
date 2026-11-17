@@ -19,6 +19,7 @@ vi.mock('../../../../../src/host/connectors', () => ({
 }));
 
 import { calendarCreateEventModule } from '../../../../../src/host/tools/modules/connectors/calendarCreateEvent';
+import { CalendarFailure } from '../../../../../src/host/connectors/native/calendar';
 import { formatConnectorTime } from '../../../../../src/host/tools/modules/connectors/connectorTime';
 
 function makeLogger(): Logger {
@@ -66,10 +67,7 @@ describe('calendarCreateEventModule (native)', () => {
       expect(calendarCreateEventModule.schema.permissionLevel).toBe('write');
       expect(calendarCreateEventModule.schema.readOnly).toBe(false);
       expect(calendarCreateEventModule.schema.allowInPlanMode).toBe(false);
-      expect(calendarCreateEventModule.schema.inputSchema.required).toEqual([
-        'title',
-        'start_ms',
-      ]);
+      expect(calendarCreateEventModule.schema.inputSchema.required).toEqual(['title']);
     });
   });
 
@@ -87,6 +85,16 @@ describe('calendarCreateEventModule (native)', () => {
       const result = await run({ title: 'x', start_ms: 1 });
       expect(result.ok).toBe(true);
       expect(execMock).toHaveBeenCalledWith('create_event', { title: 'x', start_ms: 1 });
+    });
+
+    it('without a calendar, the handler asks with the exact model args (the default calendar name is added to the single pre-execution approval card instead, see calendarApprovalDetails)', async () => {
+      execMock.mockResolvedValue({ data: { uid: 'e', calendar: '家庭', title: 'x', startAtMs: 1, endAtMs: 2 } });
+      const seen: Array<Record<string, unknown>> = [];
+      const result = await run({ title: 'x', start_ms: 1 }, makeCtx(), async (_tool, args) => { seen.push(args as Record<string, unknown>); return { allow: true }; });
+      expect(result.ok).toBe(true);
+      expect(seen).toEqual([{ title: 'x', start_ms: 1 }]);
+      expect(execMock).toHaveBeenCalledWith('create_event', { title: 'x', start_ms: 1 });
+      if (result.ok) expect(result.output).toContain('- uid: e');
     });
 
     it('rejects missing title', async () => {
@@ -143,50 +151,47 @@ describe('calendarCreateEventModule (native)', () => {
       }
     });
 
-    it('sanitizes osascript failures and preserves the raw detail only in the warning', async () => {
+    it('passes the EventKit not_authorized code through (permission card) with plain copy only', async () => {
       const ctx = makeCtx();
-      const rawError = Object.assign(
-        new Error("Command failed: osascript -e 'tell application \"Calendar\" to get every item'\n1: execution error: denied"),
-        { stderr: 'Not authorized to send Apple events to Calendar.', code: 1 },
-      );
-      execMock.mockRejectedValue(rawError);
+      execMock.mockRejectedValue(new CalendarFailure('not_authorized'));
       const result = await run(validArgs, ctx);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).not.toContain('osascript -e');
-        expect(result.error).not.toContain('tell application');
-        expect(result.error).toContain('Do not work around this by running osascript or AppleScript through Bash or any script; tell the user what failed.');
-        const failed = result as typeof result & { meta?: { failureReason?: string; artifact?: { preview?: string; metadata?: { failureReason?: string } } } };
+        expect(result.code).toBe('not_authorized');
+        expect(result.error).toBe(new CalendarFailure('not_authorized').message);
+        const failed = result as typeof result & { meta?: { failureReason?: string; artifact?: { metadata?: { failureReason?: string } } } };
         expect(failed.meta?.failureReason).toBe(result.error);
-        expect(failed.meta?.artifact?.preview).not.toContain('osascript -e');
-        expect(failed.meta?.artifact?.preview).not.toContain('tell application');
         expect(failed.meta?.artifact?.metadata?.failureReason).toBe(result.error);
       }
-      expect(ctx.logger.warn).toHaveBeenCalledWith(
-        'calendar_create_event osascript failed',
-        { connector: 'calendar', code: 'not_authorized', detail: 'Not authorized to send Apple events to Calendar.' },
-      );
+      expect(ctx.logger.warn).toHaveBeenCalledWith('calendar_create_event failed', { connector: 'calendar', code: 'not_authorized' });
     });
 
-    it('treats a timeout as an unconfirmed write instead of recommending a retry', async () => {
-      const ctx = makeCtx();
-      const rawError = Object.assign(
-        new Error("Command failed: osascript -e 'tell application \"Calendar\" to make new event'"),
-        { killed: true, signal: 'SIGTERM' },
-      );
-      execMock.mockRejectedValue(rawError);
-      const result = await run(validArgs, ctx);
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toMatch(/结果无法确认|could not be confirmed/i);
-        expect(result.error).toMatch(/不要直接重试|do not retry/i);
-        expect(result.error).not.toMatch(/请稍后重试|Please try again later/i);
-        expect(result.error).not.toContain('osascript -e');
+    it('treats a bridge timeout as an unconfirmed write instead of recommending a retry', async () => {
+      const { calendarConnector, resetCalendarConnectorReadiness } = await import('../../../../../src/host/connectors/native/calendar');
+      const client = await import('../../../../../src/host/permissions/envAssist/shellBridge/client');
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const spy = vi.spyOn(client, 'resolveShellBridgeClientFromEnv').mockReturnValue({
+        post: async <T,>(path: string): Promise<T> => {
+          if (path === '/v1/read/calendars') return { calendars: [{ id: 'c1', title: 'Work', writable: true }] } as T;
+          throw new Error('env_assist_bridge:bridge_unreachable'); // 写到一半桥超时
+        },
+      });
+      try {
+        resetCalendarConnectorReadiness();
+        execMock.mockImplementation((action: string, args: Record<string, unknown>) => calendarConnector.execute(action, args));
+        const result = await run(validArgs, makeCtx());
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toMatch(/结果无法确认|result is unknown/i);
+          expect(result.error).toMatch(/不要直接重试|do not retry/i);
+          expect(result.error).not.toMatch(/请稍后再试|try again later/i);
+        }
+      } finally {
+        spy.mockRestore();
+        Object.defineProperty(process, 'platform', platform);
+        resetCalendarConnectorReadiness();
       }
-      expect(ctx.logger.warn).toHaveBeenCalledWith(
-        'calendar_create_event osascript failed',
-        expect.objectContaining({ connector: 'calendar', code: 'timeout' }),
-      );
     });
 
     it('passes through a non-AppleScript connector error unchanged', async () => {

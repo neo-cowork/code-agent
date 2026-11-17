@@ -13,6 +13,7 @@ const invokeMock = vi.hoisted(() => vi.fn());
 const getExecutionsMock = vi.hoisted(() => vi.fn());
 const listParkedApprovalsMock = vi.hoisted(() => vi.fn());
 const triggerJobMock = vi.hoisted(() => vi.fn());
+const getRoleWakeRunMock = vi.hoisted(() => vi.fn());
 const toastInfoMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 
@@ -31,7 +32,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: { getExecutions: getExecutionsMock, getRecentExecutions: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
-  sessionAutomationClient: { listParkedApprovals: listParkedApprovalsMock },
+  sessionAutomationClient: { listParkedApprovals: listParkedApprovalsMock, getRoleWakeRun: getRoleWakeRunMock },
 }));
 
 import { CronRunSessionStatusBar } from '../../../src/renderer/components/features/chat/CronRunSessionStatusBar';
@@ -46,6 +47,8 @@ import {
 } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
@@ -98,6 +101,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useAppStore.setState({ language: 'zh' });
   clearObservedCronRunStatusForSession('session-1');
   // 撤掉定时器相关的挂载残留
   vi.restoreAllMocks();
@@ -267,7 +271,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
     expect(screen.getByTestId('cron-run-status-text').textContent).toContain('等你批准');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行一条命令');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行命令');
     expect(screen.queryByTestId('cron-run-command')).toBeNull();
     const toggle = screen.getByTestId('cron-run-command-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -286,6 +290,46 @@ describe('CronRunSessionStatusBar（组件）', () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-1', 'deny', 'session-1');
     });
+  });
+
+  it('等批准：en 用半角冒号模板，整行无 CJK 字符或全角标点（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU3）', async () => {
+    useAppStore.setState({ language: 'en' });
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    listParkedApprovalsMock.mockResolvedValue([{
+      id: 'req-en',
+      kind: 'tool_approval',
+      sessionId: 'session-1',
+      tool: 'bash',
+      requestedAt: Date.now() - 5_000,
+      status: 'pending',
+      argsPreview: 'echo BG-PARKED-EN',
+    }]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('awaiting');
+    const text = screen.getByTestId('cron-run-status-text').textContent ?? '';
+    expect(text).toBe('Needs your approval: Run command');
+    // 全角冒号 / CJK 一律不许出现在 en 状态行
+    expect(text).not.toMatch(/[\u3000-\u303f\uff00-\uffef]|[\u4e00-\u9fff]/);
+  });
+
+  it('等批准：zh 保持全角冒号模板「等你批准：<label>」（半角化回归闸）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+    listParkedApprovalsMock.mockResolvedValue([{
+      id: 'req-zh',
+      kind: 'tool_approval',
+      sessionId: 'session-1',
+      tool: 'bash',
+      requestedAt: Date.now() - 5_000,
+      status: 'pending',
+      argsPreview: 'echo BG-PARKED-ZH',
+    }]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('awaiting');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行命令');
   });
 
   // review r6：AGENT_PERMISSION_RESPONSE 的注册类型是 Promise<void>，但真实写点各不相同
@@ -577,7 +621,7 @@ it('reveals the identical complete multi-line shell preview without trimming or 
   }]);
   render(<CronRunSessionStatusBar sessionId="session-1" />);
   const toggle = await screen.findByTestId('cron-run-command-toggle');
-  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行一条命令');
+  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行命令');
   expect(screen.queryByTestId('cron-run-command')).toBeNull();
   fireEvent.click(toggle);
   expect(screen.getByTestId('cron-run-command').textContent).toBe(command);
@@ -595,4 +639,82 @@ it('renders file approval without a raw tool name or absolute path', async () =>
   expect(status.textContent).not.toContain('Write');
   expect(status.textContent).not.toContain('/tmp/example');
   expect(status.textContent).toContain('digest.md');
+});
+
+describe('角色唤醒会话：轮询不无故强刷会话', () => {
+  const wakeSession: Partial<SessionWithMeta> & { id: string } = {
+    id: 'session-1',
+    title: 'wake',
+    origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'r', trigger: 'cadence' } },
+    createdAt: 1, updatedAt: 1, messageCount: 2, turnCount: 1,
+  };
+  const wakeRun = (status: string) => ({
+    approvalTimedOut: false,
+    run: { id: 'run-1', status, createdAt: 1, updatedAt: 2, lastRunAt: 2 },
+  });
+  let switchSessionMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    switchSessionMock = vi.fn().mockResolvedValue(undefined);
+    (window as unknown as { domainAPI?: unknown }).domainAPI = {};
+    useSessionStore.setState({ switchSession: switchSessionMock as never, isHydratingSession: false });
+  });
+  afterEach(() => { delete (window as unknown as { domainAPI?: unknown }).domainAPI; });
+
+  it('没有 role_wake 记录（首次唤醒/会议纪要）：不强刷会话', async () => {
+    getRoleWakeRunMock.mockResolvedValue(null);
+    showSession(wakeSession);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await waitFor(() => expect(getRoleWakeRunMock).toHaveBeenCalled());
+    expect(switchSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('wake 已完成：不强刷会话', async () => {
+    getRoleWakeRunMock.mockResolvedValue(wakeRun('completed'));
+    showSession(wakeSession);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await waitFor(() => expect(getRoleWakeRunMock).toHaveBeenCalled());
+    expect(switchSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('wake 运行中：仍强刷以拉到新步骤', async () => {
+    getRoleWakeRunMock.mockResolvedValue(wakeRun('running'));
+    showSession(wakeSession);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await waitFor(() => expect(switchSessionMock).toHaveBeenCalledWith('session-1', { force: true }));
+  });
+});
+
+it.each([
+  { language: 'zh' as const, expected: '等你批准：请求写入 weekly-report.md' },
+  { language: 'en' as const, expected: 'Needs your approval: Request to write weekly-report.md' },
+])('shows the basename for a spaced CJK folder in $language file approvals', async ({ language, expected }) => {
+  useAppStore.setState({ language });
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  const argsPreview = '/tmp/任务 1116_每天 9 点/周报 草稿/weekly-report.md';
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: `write-approval-${language}`, kind: 'tool_approval', sessionId: 'session-1', tool: 'Write',
+    displayTool: 'Write', argsPreview, requestedAt: 1, status: 'pending',
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const status = await screen.findByTestId('cron-run-status-text');
+  expect(status.textContent).toBe(expected);
+  expect(status.textContent).not.toContain('Write');
+  expect(status.textContent).not.toContain(argsPreview);
+});
+
+it.each([
+  { language: 'zh' as const, expected: '等你批准：请求写入 weekly-report.md' },
+  { language: 'en' as const, expected: 'Needs your approval: Request to write weekly-report.md' },
+])('shows a bare relative file name in $language file approvals', async ({ language, expected }) => {
+  useAppStore.setState({ language });
+  showSession(cronRunSession);
+  getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+  listParkedApprovalsMock.mockResolvedValue([{
+    id: `write-approval-bare-${language}`, kind: 'tool_approval', sessionId: 'session-1', tool: 'Write',
+    displayTool: 'Write', argsPreview: 'weekly-report.md', requestedAt: 1, status: 'pending',
+  }]);
+  render(<CronRunSessionStatusBar sessionId="session-1" />);
+  const status = await screen.findByTestId('cron-run-status-text');
+  expect(status.textContent).toBe(expected);
 });

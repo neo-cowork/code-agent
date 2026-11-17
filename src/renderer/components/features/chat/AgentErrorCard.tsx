@@ -35,6 +35,7 @@ const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'usage_limit',
   'concurrency',
   'network',
+  'request_feature_rejected',
 ]);
 
 const NEW_SESSION_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
