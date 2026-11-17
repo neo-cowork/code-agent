@@ -2204,6 +2204,17 @@ export class ToolExecutor {
           return { success: false, error: error instanceof Error ? error.message : String(error), metadata: { code: 'CALENDAR_EVENT_NOT_FOUND' } };
         }
       }
+      // 提醒改 / 删：标题（删除再加时间）只补进这一次审批的卡片，不改 params。查不到就少一行标题。
+      if (executionToolName === 'reminders_update' || executionToolName === 'reminders_delete') {
+        try {
+          const { remindersApprovalDetails, applyRemindersDeletePreview } = await import('./modules/connectors/remindersApprovalDetails');
+          const extra = await remindersApprovalDetails(executionToolName, params);
+          Object.assign(permissionRequest.details, extra);
+          if (executionToolName === 'reminders_delete') applyRemindersDeletePreview(confirmationPreview, extra);
+        } catch (error) {
+          logger.debug('Reminder approval lookup failed', error);
+        }
+      }
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;
       if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;
