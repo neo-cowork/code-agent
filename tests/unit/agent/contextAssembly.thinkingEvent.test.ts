@@ -19,7 +19,8 @@ describe('ContextAssembly.maybeInjectThinking', () => {
       const onEvent = vi.fn();
       const runtime = { onEvent, turn, scaffoldProfile: undefined };
       const assembly = new ContextAssembly(runtime as never);
-      const inject = vi.spyOn(assembly as never, 'injectAdvisoryTailMessage' as never).mockImplementation((() => {}) as never);
+      const inject = vi.fn();
+      (assembly as unknown as { injectAdvisoryTailMessage: typeof inject }).injectAdvisoryTailMessage = inject;
 
       // high 档每隔一次才注入：跑两轮保证命中
       for (let i = 0; i < 2; i++) await assembly.maybeInjectThinking([], []);
