@@ -234,7 +234,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     });
   });
 
-  it('(d) renders spawn_agent with generic approval title and visible task+permission details, not 执行命令 or bare 执行工具 spawn_agent', () => {
+  it('(d) renders spawn_agent with generic approval title and visible task+permission details, not the command question or bare 执行工具 spawn_agent', () => {
     const gate = new ConfirmationGate();
     const params = {
       name: '每周销售汇总',
@@ -256,7 +256,7 @@ describe('PermissionCard command de-dup, spawn_agent summary, and long script co
     const { container, unmount } = render(<PermissionCard />);
     const textZh = container.textContent || '';
     expect(textZh).toContain('启动子任务');
-    expect(textZh).not.toContain('执行命令');
+    expect(textZh).not.toContain('允许执行这条命令？');
     expect(textZh).toContain('派出子代理：每周销售汇总');
     expect(textZh).toContain('任务：汇总本周销售日报并输出关键异常指标');
     expect(textZh).toContain('权限：可修改文件、运行命令');

@@ -340,7 +340,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
       for (const language of LANGUAGES) {
         const { text } = renderCard(c.request, language);
         lines.push(`${label} ${language}: ${text}`);
-        expect(text).not.toMatch(/创建文件|Create file/u);
+        expect(text).not.toMatch(/写入文件|Write file/u);
         expect(text).toContain(language === 'zh' ? '访问其他文件夹' : 'Access another folder');
         expect(text).not.toMatch(/path:|requestedAccess:/u);
         if (label === 'read_write') {
@@ -465,7 +465,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
         const { html, text } = renderCard(c.request, language);
         expect(text, `${c.origin} ${language}`).toContain(title);
         expect(html).not.toContain('lucide-terminal');
-        expect(stripUserValues(text, c.request)).not.toMatch(/命令|command|创建文件|Create file|Read file|读取文件|写入|write/iu);
+        expect(stripUserValues(text, c.request)).not.toMatch(/命令|command|写入文件|Write file|Read file|读取文件|写入|write/iu);
       }
     }
   });
@@ -506,7 +506,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     });
 
     it('zh cards keep the same Chinese titles', () => {
-      for (const [type, title] of [['command', '执行命令'], ['dangerous_command', '危险命令'], ['network', '网络请求'], ['mcp', 'MCP 工具'], ['future_type', '需要你确认']] as const) {
+      for (const [type, title] of [['command', '运行命令'], ['dangerous_command', '危险命令'], ['network', '网络请求'], ['mcp', 'MCP 工具'], ['future_type', '需要你确认']] as const) {
         const request = build(type);
         expect(describeApproval(request as never, zh, 'zh').title, `${type} zh title`).toBe(title);
         if (type !== 'dangerous_command') expect(renderCard(request, 'zh').text, `${type} zh card`).toContain(title);

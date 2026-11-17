@@ -52,6 +52,15 @@ function findLiveCounterpart(
   snapshotById: Map<string, Message>,
 ): Message | undefined {
   if (snapshotMessage.role !== 'assistant') return undefined;
+  // 同一个 tool call id 只能属于一条 assistant 消息：配对证据比正文/轮次键都强，先认它。
+  // 纯工具轮落库那条正文为空、直播草稿却可能带前言，正文判据配不上，同一调用就会画两行。
+  const sharedToolCallLive = live.find((liveMessage) => (
+    liveById.has(liveMessage.id)
+    && !snapshotById.has(liveMessage.id)
+    && liveMessage.role === 'assistant'
+    && sharesToolCallId(snapshotMessage, liveMessage)
+  ));
+  if (sharedToolCallLive) return sharedToolCallLive;
   const snapshotKey = correlationTurnId(snapshotMessage);
   if (snapshotKey) {
     for (const liveMessage of live) {
@@ -79,6 +88,16 @@ function findLiveCounterpart(
     return liveMessage;
   }
   return undefined;
+}
+
+/**
+ * 两条消息携带的 tool call id 集合完全相同（且非空）：就是同一条 assistant 的两份副本。
+ * 只部分重叠的（直播聚合草稿 vs 多条落库）不在此列，由合并末段的逐 id 去重收口。
+ */
+function sharesToolCallId(a: Message, b: Message): boolean {
+  const left = new Set((a.toolCalls ?? []).map((call) => call.id).filter(Boolean));
+  const right = new Set((b.toolCalls ?? []).map((call) => call.id).filter(Boolean));
+  return left.size > 0 && left.size === right.size && [...left].every((id) => right.has(id));
 }
 
 /**
@@ -223,6 +242,54 @@ function mergeMetadata(snapshotMessage: Message, liveMessage: Message): Message[
   return stripStreamRecoveryMarker({ metadata: merged }).metadata;
 }
 
+/** Unpaired tool drafts still belong to their preceding user, even after later turns loaded. */
+function mergeLiveToolMessages(merged: Message[], tail: Message[], live: Message[]): Message[] {
+  const messages = [...merged];
+  for (const message of tail) {
+    const userId = message.role === 'assistant' && message.toolCalls?.length
+      ? precedingUserId(live, message) : undefined;
+    const userIndex = userId === undefined ? -1 : messages.findIndex(item => item.id === userId);
+    const nextUserIndex = userIndex < 0 ? -1
+      : messages.findIndex((item, index) => index > userIndex && item.role === 'user');
+    if (nextUserIndex < 0) messages.push(message);
+    else messages.splice(nextUserIndex, 0, message);
+  }
+
+  // A single draft may overlap several persisted tool messages, so pairing whole
+  // messages cannot deduplicate it. Keep the first carrier and retain live results.
+  const callsById = new Map<string, NonNullable<Message['toolCalls']>[number]>();
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+    for (const call of message.toolCalls ?? []) {
+      const previous = callsById.get(call.id);
+      callsById.set(call.id, previous
+        ? { ...previous, ...call, result: call.result ?? previous.result }
+        : call);
+    }
+  }
+  const seen = new Set<string>();
+  return messages.map(message => {
+    if (message.role !== 'assistant' || !message.toolCalls?.length) return message;
+    const toolCalls = message.toolCalls.filter(call => {
+      if (seen.has(call.id)) return false;
+      seen.add(call.id);
+      return true;
+    }).map(call => callsById.get(call.id) ?? call);
+    const retained = new Set(toolCalls.map(call => call.id));
+    const referenced = new Set<string>();
+    const contentParts = message.contentParts?.filter(part => {
+      if (part.type !== 'tool_call') return true;
+      if (!retained.has(part.toolCallId) || referenced.has(part.toolCallId)) return false;
+      referenced.add(part.toolCallId);
+      return true;
+    });
+    return {
+      ...message, toolCalls,
+      contentParts: contentParts?.length === message.contentParts?.length ? message.contentParts : contentParts,
+    };
+  });
+}
+
 export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) {
   const snapshotById = new Map(snapshot.map((message) => [message.id, message]));
   const hasLiveTail = live.some((message) => liveMessageExtendsSnapshot(snapshotById.get(message.id), message));
@@ -236,7 +303,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
     // 在先、最终回复 B 在后，messageProcessor :783 vs :956），分叉正文就是「这两条
     // 不是同一条」的信号——合并会让较早落库者覆盖用户已看到的最终回复
     // （ai-review #1706 第三轮），不配对则两条都保留，宁可多一条草稿也不少一条终版。
-    if (!sameIdLive && correlationTurnId(message) !== undefined) {
+    if (!sameIdLive && correlationTurnId(message) !== undefined && !sharesToolCallId(message, liveMessage)) {
       const snapshotBody = message.content ?? '';
       const liveBody = liveMessage.content ?? '';
       // 空正文快照（工具消息这类占位落库）不抢非空 live：'' 是任何正文的前缀，
@@ -253,7 +320,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
     return mergeAssistantPair(message, liveMessage);
   });
   return {
-    messages: hydrateToolCallResults([...merged, ...liveById.values()]),
+    messages: hydrateToolCallResults(mergeLiveToolMessages(merged, [...liveById.values()], live)),
     hasLiveTail,
   };
 }

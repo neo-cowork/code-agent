@@ -141,6 +141,7 @@ describe('team recipe lead orchestrator', () => {
     await eventually(() => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(expect.stringContaining('agents JSON'), undefined, {
         mode: 'normal', agentOverrideId: '牧之', turnSystemContext: ['角色上下文'],
+        inputHistoryVisibility: 'meta',
       });
       expect(mocks.archiveText).toHaveBeenCalledWith({
         projectId: 'project-1', title: '主理人配方·会员增长', text: '成员汇报后的主理人定稿',
@@ -148,8 +149,15 @@ describe('team recipe lead orchestrator', () => {
       });
     });
     expect(mocks.launchAgentTeam).not.toHaveBeenCalled();
-    // sendMessage 自己会落 user 消息；再补一条会让会话出现两条组队起点
-    expect(mocks.addMessageToSession).not.toHaveBeenCalled();
+    // 首条可见气泡只有用户原话；编排 brief 走 meta 通道，不落可见行
+    expect(mocks.addMessageToSession).toHaveBeenCalledTimes(1);
+    const visible = mocks.addMessageToSession.mock.calls.map((c) => c[1]);
+    expect(visible).toEqual([expect.objectContaining({ role: 'user', content: '会员增长' })]);
+    for (const row of visible) {
+      for (const bad of ['【组队 ·', '执行铁律', 'spawn_agent', 'agents JSON']) {
+        expect(row.content).not.toContain(bad);
+      }
+    }
   });
 
   it('常驻边界进入团队 lead 的实际 run tool allowlist', async () => {

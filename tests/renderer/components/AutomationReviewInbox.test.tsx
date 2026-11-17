@@ -798,7 +798,7 @@ describe('AutomationReviewInbox', () => {
     listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
     render(<AutomationReviewInbox />);
     const card = await screen.findByTestId('parked-approval-item');
-    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run command');
     expect(card.textContent).not.toContain('Bash');
     const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
     expect(summary.closest('details')?.open).toBe(false);

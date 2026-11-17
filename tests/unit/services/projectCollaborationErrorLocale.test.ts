@@ -15,17 +15,17 @@ import {
 } from '../../../src/host/services/project/projectCollaborationService';
 
 const ZH: Record<ProjectCollaborationErrorCode, string> = {
-  COLLAB_AUTH_REQUIRED: '请先登录后再使用协同空间。',
+  COLLAB_AUTH_REQUIRED: '请先登录后再使用协作空间。',
   COLLAB_LOCAL_USER_FORBIDDEN: '本地访客身份不能写入云端，请先登录正式账号。',
   COLLAB_OFFLINE: '协同服务当前不可用，请检查网络后重试。',
   COLLAB_FORBIDDEN: '只有空间所有者可以执行此操作。',
   COLLAB_PROJECT_NOT_FOUND: '本地项目不存在或已被删除。',
-  COLLAB_NOT_CLOUD_SPACE: '该项目尚未升级或加入云协同空间。',
+  COLLAB_NOT_CLOUD_SPACE: '该项目尚未升级或加入云协作空间。',
   COLLAB_INVITE_NOT_FOUND: '邀请码不存在。',
   COLLAB_INVITE_REVOKED: '邀请码已被撤销。',
   COLLAB_INVITE_EXPIRED: '邀请码已过期。',
   COLLAB_INVITE_EXHAUSTED: '邀请码使用次数已达上限。',
-  COLLAB_INVALID_ARGS: '协同空间参数无效。',
+  COLLAB_INVALID_ARGS: '协作空间参数无效。',
   COLLAB_SERVICE_ERROR: '协同服务暂时出错，请稍后重试。',
 };
 const CODES = Object.keys(ZH) as ProjectCollaborationErrorCode[];
@@ -57,7 +57,7 @@ describe('ProjectCollaborationError locale', () => {
     language.value = 'zh';
     const zh = new ProjectCollaborationError('COLLAB_AUTH_REQUIRED').message;
     expect(en).toBe('Please sign in before using a collaboration space.');
-    expect(zh).toBe('请先登录后再使用协同空间。');
+    expect(zh).toBe('请先登录后再使用协作空间。');
   });
 
   it('falls back to zh when ui.language is missing', () => {
