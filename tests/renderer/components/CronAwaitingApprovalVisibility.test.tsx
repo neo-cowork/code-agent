@@ -326,6 +326,8 @@ describe.each(['zh', 'en'] as const)('shared approval labels (%s)', (language) =
     it.each([
       { tool: 'Write', preview: '/Users/example/Documents/morning-notes/today-plan.md', name: 'today-plan.md' },
       { tool: 'Write', preview: 'C:\\Users\\example\\Documents\\reading-list.md', name: 'reading-list.md' },
+      { tool: 'Write', preview: 'weekly-report.md', name: 'weekly-report.md' },
+      { tool: 'Write', preview: '周报.md', name: '周报.md' },
       { tool: 'Bash', preview: 'ls -la /Users/example/Documents && echo ready', name: null },
       { tool: 'Bash', preview: '/usr/bin/id', name: null },
     ])('does not expose raw $tool preview: $preview', (item) => {
@@ -342,7 +344,7 @@ describe.each(['zh', 'en'] as const)('shared approval labels (%s)', (language) =
       const id = surface === 'list' ? 'cron-exec-awaiting-approval' : surface === 'detail' ? 'cron-exec-detail-awaiting-approval-hint' : 'cron-detail-awaiting-approval-hint';
       const element = screen.getByTestId(id);
       expect(element.textContent).toContain(expected);
-      expect(element.textContent).not.toContain(item.preview);
+      if (item.preview !== item.name) expect(element.textContent).not.toContain(item.preview);
       expect(element.textContent).not.toMatch(/\/Users\/|C:\\|ls -la|echo ready/);
       if (surface === 'list') expect(element.getAttribute('title')).toBe(expected);
     });
