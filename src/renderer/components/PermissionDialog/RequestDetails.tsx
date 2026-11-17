@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
+import { formatDateTime } from '../../utils/formatDateTime';
 import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
@@ -110,7 +111,7 @@ function reminderDeleteDetailRows(
     {
       label: w.fieldRemindAt,
       value: typeof at === 'number' && Number.isFinite(at)
-        ? new Date(at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')
+        ? formatDateTime(at, language === 'en' ? 'en' : 'zh')
         : '',
     },
   ];
