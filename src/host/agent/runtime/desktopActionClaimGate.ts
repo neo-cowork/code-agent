@@ -51,6 +51,11 @@ export interface DesktopActionClaimGateInput {
   toolCallCount: number;
   iterations: number;
   hasDesktopEvidence?: boolean;
+  /**
+   * 后台任务完成汇报轮（completionReportOnly）：本轮按设计没有桌面/浏览器工具，正文是对已结束任务结果的转述；
+   * 要求本轮自带工具证据只会把「已附加」这类如实汇报判成无证据，单步预算下重试直接耗尽成「自动汇报没能完成」。
+   */
+  completionReportOnly?: boolean;
 }
 
 export type DesktopActionClaimGateResult =
@@ -66,7 +71,7 @@ export function applyDesktopActionClaimGate(
     return { action: 'none', content };
   }
 
-  if (input.toolCallCount > 0 || input.hasDesktopEvidence) {
+  if (input.toolCallCount > 0 || input.hasDesktopEvidence || input.completionReportOnly) {
     return { action: 'none', content };
   }
 

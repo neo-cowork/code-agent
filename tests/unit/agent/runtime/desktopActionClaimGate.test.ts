@@ -230,4 +230,14 @@ describe('applyDesktopActionClaimGate', () => {
     });
     expect(result.action).toBe('none');
   });
+
+  it('后台任务汇报轮转述「已附加文件」不被当成无证据的桌面声明', () => {
+    const wakeContent = '<background_task_hidden_wake>后台任务「报销附件」已结束：已在浏览器里打开页面并点击上传框，附上 invoice.pdf</background_task_hidden_wake>';
+    const report = '后台已经打开了报销单页面，点击了上传框，invoice.pdf 已附加，页面显示已选择该文件，没有提交。';
+    const base = { recentUserMessages: [wakeContent], assistantContent: report, toolCallCount: 0, iterations: 1 };
+    expect(applyDesktopActionClaimGate(base).action).toBe('retry');
+    const reportOnly = applyDesktopActionClaimGate({ ...base, completionReportOnly: true });
+    expect(reportOnly.action).toBe('none');
+    expect(reportOnly.content).toBe(report);
+  });
 });
