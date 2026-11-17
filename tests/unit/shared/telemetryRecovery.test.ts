@@ -65,7 +65,7 @@ describe('telemetryRecovery', () => {
     const legacy = msg({ content: `${LEGACY_NOTICE}\n\n写周报` });
     const out = withTelemetryRecoveryNoticeForModel([legacy])[0].content;
     expect(out).toBe(`${noticeOf()}\n\n写周报`);
-    expect(out).not.toContain('telemetry');
+    expect(out).not.toContain('由脱敏后的');
     expect(out.split('【历史恢复提示】')).toHaveLength(2);
   });
 
