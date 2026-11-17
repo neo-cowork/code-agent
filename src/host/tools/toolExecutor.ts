@@ -1074,8 +1074,8 @@ export class ToolExecutor {
         );
       } else {
         const confirmation = await requestDirectiveMemoryConfirmation({
-          category: `Persistent memory write: ${executionToolName}`,
-          content: directiveMemoryAssessment.preview,
+          category: '',
+          content: directiveMemoryAssessment.plainText,
         });
         if (!confirmation.confirmed) {
           return {

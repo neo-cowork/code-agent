@@ -46,7 +46,7 @@ import { workbenchTabsEn } from './workbenchTabs';
 import { activityPanelEn, canvasActorEn } from './domains';
 import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
-import { voiceAuditEn } from './voiceAudit'; import { memorySourceEn } from './memorySource';
+import { voiceAuditEn } from './voiceAudit'; import { memorySourceEn } from './memorySource'; import { memoryConfirmEn } from './memoryConfirm';
 import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
@@ -66,7 +66,7 @@ import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { 
 export const en = {
   ...authModalEn, ...toolCreateConfirmEn, ...modelSetupEn, ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
-  ...voiceAuditEn, ...memorySourceEn,
+  ...voiceAuditEn, ...memorySourceEn, ...memoryConfirmEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,

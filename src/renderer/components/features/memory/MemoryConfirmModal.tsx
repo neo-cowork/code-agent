@@ -44,19 +44,23 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
 
         {/* Content */}
         <div className="p-4">
-          <p className="text-sm text-zinc-400 mb-3 whitespace-pre-wrap break-words">
-            {pending.content}
+          <p className="text-sm text-zinc-400 mb-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto" data-testid="memory-confirm-body">
+            {isDirective
+              ? (pending.content ? `${t.memoryConfirm.remember}${pending.content}` : t.memoryConfirm.generic)
+              : pending.content}
           </p>
 
           {/* Meta info */}
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mb-4">
-            <span className="px-1.5 py-0.5 rounded bg-zinc-700">
-              {getCategoryLabel(pending.category)}
-            </span>
-            <span className="px-1.5 py-0.5 rounded bg-zinc-700">
-              {getTypeLabel(pending.type)}
-            </span>
-          </div>
+          {!isDirective && (
+            <div className="flex items-center gap-2 text-xs text-zinc-500 mb-4">
+              <span className="px-1.5 py-0.5 rounded bg-zinc-700">
+                {getCategoryLabel(pending.category)}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-700">
+                {getTypeLabel(pending.type)}
+              </span>
+            </div>
+          )}
 
           <p className="text-xs text-zinc-500 mb-4">
             {isDirective ? t.memory.confirmDirectiveBody : t.memory.confirmMemoryBody}

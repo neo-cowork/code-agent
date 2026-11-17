@@ -143,7 +143,7 @@ export const RoleRoutinesSection: React.FC<RoleRoutinesSectionProps> = ({
               <div key={job.id} data-testid={`role-bound-automation-${job.id}`} className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm text-zinc-200">{job.name}</div>
+                    <div className="truncate text-sm text-zinc-200">{job.actionType === 'role_wake' ? text.automationRoleWakeName : job.name}</div>
                     <div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text, language)} · {nextRun}</div>
                     <div data-testid={`role-bound-automation-last-${job.id}`} className={`mt-1 text-xs ${failed ? 'text-badge-danger' : 'text-zinc-500'}`}>{lastRunLine(job, text, statusWords, recordWords, language)}</div>
                   </div>

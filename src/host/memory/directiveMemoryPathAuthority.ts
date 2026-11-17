@@ -13,6 +13,8 @@ export interface DirectiveMemoryWriteAssessment {
   fingerprint: string;
   targets: readonly string[];
   preview: string;
+  /** 给用户看的纯文本：MemoryWrite 的记忆正文；其它工具为空串（由 renderer 用通用句子兜底）。 */
+  plainText: string;
 }
 
 interface AssessInput {
@@ -143,6 +145,9 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
     fingerprint,
     targets: uniqueTargets,
     preview: JSON.stringify(input.params).slice(0, 4_000),
+    plainText: input.definition.name === 'MemoryWrite' && typeof input.params.content === 'string'
+      ? input.params.content.slice(0, 4_000)
+      : '',
   };
 }
 

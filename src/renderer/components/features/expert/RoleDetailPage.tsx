@@ -52,6 +52,7 @@ import { RoleRecordsTab } from './RoleRecordsTab';
 import { RoleRoutinesSection } from './RoleRoutinesSection';
 import { RoleDeleteControl, shouldMountRoleDeleteControl } from './RoleDeleteControl';
 import { formatRoleHistoryLine } from "./roleHistoryPresentation";
+import { plainMemoryDescription } from "./plainMemoryDescription";
 
 const logger = createLogger("RoleDetailPage");
 
@@ -396,10 +397,7 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             ) : null}
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">
-            {memory.description}
-          </div>
-          <div className="mt-0.5 text-[10px] text-zinc-600">
-            {memory.filename}
+            {plainMemoryDescription(memory.description)}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
