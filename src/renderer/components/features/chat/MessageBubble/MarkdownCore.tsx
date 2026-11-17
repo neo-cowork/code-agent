@@ -11,6 +11,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
+import { remarkCurrencyDollarGuard } from './remarkCurrencyDollarGuard';
 import { remarkTrimCjkAutolink } from './remarkTrimCjkAutolink';
 
 export interface MarkdownCoreProps {
@@ -36,7 +37,7 @@ const MarkdownCore = ({
   const remarkPlugins = [
     // 紧跟在 gfm 之后：它负责把 autolink 尾部被吞进 URL 的全角标点退回正文。
     ...(gfm ? [remarkGfm, remarkTrimCjkAutolink] : []),
-    ...(math ? [remarkMath] : []),
+    ...(math ? [remarkMath, remarkCurrencyDollarGuard] : []),
     ...(breaks ? [remarkBreaks] : []),
   ];
   const rehypePlugins = math ? [rehypeKatex] : [];
