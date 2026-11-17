@@ -104,10 +104,10 @@ describe('SessionMemberBar（折叠 chip）', () => {
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     const t = language === 'zh' ? zh : en;
     const reason = t.toolStepHumanize.failureCodes['tool-unavailable'];
-    const first = language === 'zh' ? t.agentRoleLabels.roles.background : 'Budget review';
-    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · 助手' : '2 agents · Failed · Budget review');
+    const first = language === 'zh' ? `${t.agentRoleLabels.roles.background} 1` : 'Budget review';
+    expect(chip.textContent).toContain(language === 'zh' ? '2 个代理 · 失败 · 助手 1' : '2 agents · Failed · Budget review');
     expect(chip.getAttribute('title')).toBe(
-      t.chat.delegationReceipt.failureDetail.replace('{status}', first).replace('{reason}', reason) + '\n' + (language === 'zh' ? t.agentRoleLabels.roles.background : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
+      t.chat.delegationReceipt.failureDetail.replace('{status}', first).replace('{reason}', reason) + '\n' + (language === 'zh' ? `${t.agentRoleLabels.roles.background} 2` : t.chat.delegationReceipt.failureDetail.replace('{status}', 'Notes review').replace('{reason}', t.toolStepHumanize.agentFailureReasons.unknown)),
     );
     expect(chip.getAttribute('title')).not.toContain('tool-unavailable');
     fireEvent.click(chip);
@@ -129,6 +129,19 @@ describe('SessionMemberBar（折叠 chip）', () => {
     const chip = await screen.findByTestId('session-member-bar-collapsed');
     expect(chip.textContent).toContain(expected);
     if (language === 'zh' && title.includes(' ')) expect(chip.textContent).not.toContain(title);
+  });
+
+  it('zh chip with two English-titled agents keeps them distinguishable by number', async () => {
+    appState.language = 'zh';
+    useBackgroundTaskStore.setState({ tasks: [
+      { id: 'a', sessionId: 'session-1', source: 'delegate_task', title: 'Compare supplier pricing', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+      { id: 'b', sessionId: 'session-1', source: 'delegate_task', title: 'Summarize meeting notes', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [] },
+    ] });
+    render(<SessionMemberBar sessionId="session-1" />);
+    const chip = await screen.findByTestId('session-member-bar-collapsed');
+    expect(chip.textContent).toContain('2 个代理 · 失败 · 助手 1');
+    expect(chip.getAttribute('title')).toContain('助手 1');
+    expect(chip.getAttribute('title')).toContain('助手 2');
   });
 
   it.each(['zh', 'en'] as const)('restart-interrupted failed chip localizes a Chinese background task title and reason (%s)', async (language) => {

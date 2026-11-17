@@ -228,7 +228,7 @@ describe('SessionAgentsPanel', () => {
       expect(screen.getByTestId('agents-panel-status-task-1').textContent).toBe(prefix + reason);
     });
 
-    it('keeps English task titles in the en UI but falls back to the generic name in the zh UI', async () => {
+    it('keeps two English background tasks distinguishable: verbatim in en, numbered generic names in zh', async () => {
       mockTree(snapshotOf([]));
       useBackgroundTaskStore.setState({ tasks: [
         backgroundTask({ title: 'Compare supplier pricing', status: 'failed', failure: { message: 'Original task reason' } }),
@@ -241,6 +241,8 @@ describe('SessionAgentsPanel', () => {
       if (uiLanguage === 'zh') {
         expect(panelText).not.toContain('Compare supplier pricing');
         expect(panelText).not.toContain('Summarize meeting notes');
+        expect(panelText).toContain('助手 1');
+        expect(panelText).toContain('助手 2');
       } else {
         expect(panelText).toContain('Compare supplier pricing');
         expect(panelText).toContain('Summarize meeting notes');
