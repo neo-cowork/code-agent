@@ -87,6 +87,10 @@ export interface PermissionRequestDetails {
   /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
   requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
   access?: string;
+  /** set_role_proactivity：目标角色与改前/改后配置（宿主结构化数据，卡片按界面语言拼行）。 */
+  roleId?: string;
+  before?: unknown;
+  after?: unknown;
   // E2: 确认门控预览
   preview?: {
     type: 'diff' | 'command' | 'network' | 'generic';

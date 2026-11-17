@@ -20,6 +20,7 @@ import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
 import { describeApproval } from './describeApproval';
+import { describeRoleSettingChange } from './roleSettingRows';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -284,7 +285,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic')
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
-            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
+            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">
+              {(kind === 'role_setting' && describeRoleSettingChange(details as unknown as Record<string, unknown>, t, language)) || details.preview.summary}
+            </div>
           )}
           {kind === 'web_action' && webActionRows(details.preview.diff).map((row, index) => (
             <DetailItem
