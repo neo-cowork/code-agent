@@ -13,6 +13,7 @@ import {
   groupRuntimeModelOptionsByProvider,
   hasConfiguredDefaultRuntimeModel,
   hasConfiguredRuntimeModels,
+  hasConfiguredRuntimeProvider,
   inferModelCapabilities,
   isProviderIconAssetRef,
   isProviderImageIcon,
@@ -293,6 +294,9 @@ describe('modelRuntime', () => {
     expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: true })).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false })).toBe(false);
+    expect(hasConfiguredRuntimeProvider(settings, 'custom-team-relay')).toBe(true);
+    expect(hasConfiguredRuntimeProvider(settings, 'custom-team-relay', { allowCloudManaged: false })).toBe(false);
+    expect(hasConfiguredRuntimeProvider(settings, 'xiaomi', { allowCloudManaged: false })).toBe(true);
   });
 
   it('requires the active default provider to be configured before send', () => {
@@ -506,18 +510,12 @@ describe('modelRuntime', () => {
 
     expect(options.map((option) => option.provider)).toEqual([
       'custom-commonstack-claude',
-      'custom-commonstack-claude',
     ]);
     expect(options).toEqual([
       expect.objectContaining({
         providerGroup: 'claude',
         providerSourceLabel: 'CommonStack',
         model: 'anthropic/claude-opus-4-8',
-      }),
-      expect.objectContaining({
-        providerGroup: 'claude',
-        providerSourceLabel: 'CommonStack',
-        model: 'anthropic/claude-sonnet-4-6',
       }),
     ]);
   });

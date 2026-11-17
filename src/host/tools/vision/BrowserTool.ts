@@ -105,6 +105,7 @@ Routing contract:
 - wait: Wait for elements or timeout
 - fill_form: Fill multiple form fields
 - get_logs: Get recent browser operation logs
+User-operated pages: open a new page for the user with browser_action navigate and engine="managed", not a shell command or OS browser opener. If Neo must continue after the user acts (for example, read a price after sign-in), call wait_for_user, then get_dom_snapshot after Done and finish the remaining task; do not poll for login, ask for a chat reply or finish with keep_result_page. If opening the page is the whole task and Neo has no follow-up work, call keep_result_page and finish; do not call wait_for_user.
 - keep_result_page: Keep the active page open for the user after the run ends (closes other tabs; not for relay/unattended runs or the shared personal profile)
 - wait_for_user: When a step in the page can only be done by the user (captcha, sign-in, payment confirmation), call this instead of asking in chat and ending the turn; it shows the user a Done button and blocks until they press it; needs reason (one plain sentence in the user's language, <=120 chars, no URLs/paths/tool names/button names). After Done call get_dom_snapshot before acting; on WAIT_FOR_USER_TIMEOUT end the turn with one plain sentence
 ${browserJevStepDescriptionSuffix()}

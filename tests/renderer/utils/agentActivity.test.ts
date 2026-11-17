@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   describeLastToolStep,
+  isAgentNodeTerminalStatus,
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../src/renderer/utils/agentActivity';
@@ -17,6 +18,15 @@ describe('describeLastToolStep', () => {
       target: '/repo/spec.md',
       at: 1,
     }, zh)).toBe('读取了 /repo/spec.md');
+  });
+
+  it('Bash step shows its usable description, never the command', () => {
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls -la /tmp/ws', description: '列出工作区目录内容', at: 1 }, zh))
+      .toBe('列出工作区目录内容');
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls -la /tmp/ws', description: 'ls -la /tmp/ws', at: 1 }, zh))
+      .toBe(zh.toolStepHumanize.bashFallback);
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls -la /tmp/ws', at: 1 }, zh))
+      .toBe(zh.toolStepHumanize.bashFallback);
   });
 
   it('does not invent activity when no tool step exists', () => {
@@ -253,5 +263,15 @@ describe('resolveAgentActivityStepStatus', () => {
     const task = taskFixture({ id: 'task-1', runId: 'run-9', metadata: { childRunId: 'child-7' } });
     expect(taskActivityIds(task)).toEqual(['task-1', 'run-9', 'child-7']);
     expect(taskActivityIds(taskFixture({ id: 'task-2' }))).toEqual(['task-2']);
+  });
+});
+
+describe('agent lifecycle activity guard', () => {
+  it('keeps an unmarked current-process context active', () => {
+    expect(isAgentNodeTerminalStatus('unknown')).toBe(false);
+  });
+
+  it.each(['cancelled', 'dead-log-only', 'failed'] as const)('keeps %s inactive after restart', (status) => {
+    expect(isAgentNodeTerminalStatus(status)).toBe(true);
   });
 });

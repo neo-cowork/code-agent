@@ -37,7 +37,7 @@ sequenceDiagram
   Note over Shell,Daemon: 壳启动时若 daemon 不在跑则拉起，之后壳只是客户端
   Shell->>Daemon: spawn（若未在跑）
   Daemon->>Kernel: 认领 run（owner_epoch = N）
-  Shell--xDaemon: 用户关窗 / Quit（确认后台继续）
+  Shell--xDaemon: 用户关窗（Quit 选「后台继续」只收起窗口，壳与托盘仍在）
   Note over Daemon,Kernel: run 不中断：owner 不变，epoch 不加
   Daemon--xKernel: daemon 崩溃 / 升级排空
   Shell->>Daemon: 重启后接管（ADR-075 原语，owner_epoch = N+1）
@@ -78,7 +78,7 @@ sequenceDiagram
 | 情形 | 今天：正在跑的任务 | 落地后：正在跑的任务 | 用户看到什么 |
 |---|---|---|---|
 | 关窗（点关闭按钮） | 不中断。`CloseRequested` 被 `prevent_close()` 拦下并最小化（锚点 1），壳与 webServer 都活着 | 不中断，且壳从此可有可无：run 由 daemon 持有，重开窗口即续看 | 与今天一致：窗口收起、任务继续、托盘还在；差别在重开窗口不再依赖原壳进程活着 |
-| Quit（Cmd+Q / 托盘退出） | 直接杀：`ExitRequested → cleanup_server` 停 webServer（锚点 2），run 被终止，无任何确认 | **有任务在跑必须先弹确认对话框**（对齐 N-QUIT-RUNNING-CONFIRM）。方案 A 下确认框给两个出口：「后台继续」（只关壳，run 转 daemon 继续跑）与「停止并退出」（先取消在跑 run、数秒内真停；不再 60s 排空）；无任务在跑时 Quit 直接退、不弹框 | 今天：有任务也被无声杀掉。落地后：先见确认框，说清「还有 N 个任务在跑」及两个出口的后果，不会无声丢活 |
+| Quit（Cmd+Q / 托盘退出） | 直接杀：`ExitRequested → cleanup_server` 停 webServer（锚点 2），run 被终止，无任何确认 | **有任务在跑必须先弹确认对话框**（对齐 N-QUIT-RUNNING-CONFIRM）。方案 A 下确认框给两个出口：「后台继续」（窗口收起、壳与托盘留着、run 继续跑，唯一出口是托盘「完全退出」；与只剩定时任务时的 Quit 同一条收起路径，无平台分支）与「停止并退出」（先取消在跑 run、数秒内真停；不再 60s 排空）；无任务在跑时 Quit 直接退、不弹框 | 今天：有任务也被无声杀掉。落地后：先见确认框，说清「还有 N 个任务在跑」及两个出口的后果，不会无声丢活 |
 | 合盖 | OS-owned：宿主只防闲睡不防合盖（锚点 4），合盖睡眠由操作系统决定，本机执行体全部暂停 | 不变，仍 OS-owned——常驻宿主**不**试图阻止合盖睡眠，本机环境随睡眠离线 | 本机离线；已升到云端的轮继续由云端工人跑完（ADR-081 §断线、心跳、会话保留）。合盖后的本机续跑属 N-CLOUD-HANDOFF，本 ADR 不做 |
 | 升级（自动更新） | 计划内中断：安装前显式优雅停 webServer（锚点 3）；Windows 上 updater 内部 `exit(0)`，优雅停只能靠渲染器先行调用那条命令 | 仍计划内中断，但停机窗口收窄：daemon 优雅排空（未决 op 收口，语义同 ADR-075）后停，新壳首启拉起新 daemon，run 按既有 sweep 语义接回 | 「更新装完会接着跑」而不是「更新杀了我的任务」；等待期间 run 显示暂停/续跑信号，不显示失败 |
 
@@ -94,7 +94,7 @@ sequenceDiagram
 
 **范围**
 
-1. daemon 存活性：壳退出（含 Quit 确认「后台继续」）不杀 webServer 进程；pid 文件 + 单实例锁；空闲去留与自启按下述 Decision needed 的拍板结果
+1. daemon 存活性：壳退出不杀 webServer 进程（Quit 确认「后台继续」本身不退壳，只收起窗口）；pid 文件 + 单实例锁；空闲去留与自启按下述 Decision needed 的拍板结果
 2. Quit 确认：有任务在跑时弹确认（交互与文案对齐 N-QUIT-RUNNING-CONFIRM，那张单定稿）
 3. attach 与观测：壳重启后 attach 回同一 `runId` 的 live 流（复用 ADR-075 接管原语）；`neo daemon status` 列在跑的 run（读 `durable_runs` 名册）、`neo daemon stop` 走优雅排空
 
@@ -102,7 +102,7 @@ sequenceDiagram
 
 **验收**
 
-- 关窗 + Quit「后台继续」后，任务仍在跑且继续写账本；`neo daemon status` 可见
+- 关窗 + Quit「后台继续」（窗口收起、托盘仍在）后，任务仍在跑且继续写账本；`neo daemon status` 可见
 - 杀 daemon，壳重启后 run 被 sweep 按 `crash_or_quit` 接回，`owner_epoch` 加一，账本无 stale owner 写入
 - 有任务在跑时 Quit 不弹框直接停 = 红；daemon 停止时不收口未决 op = 红
 - 合盖行为与今天完全一致（不新增任何抑制逻辑）
@@ -143,8 +143,8 @@ sequenceDiagram
 
 上一节的拍板（2026-10-06）不动；本节只追加三条，均由本单落地：
 
-1. **退出意图通道**：壳在退进程之前 `POST /api/quit-intent` 声明本次退出意图——`background`（后台继续）或 `stop`（停止并退出）；旧 `POST /api/quit-guard/detach` 保留为 background 的别名（Rust 壳仍在调用，切换见 N-RESIDENT-QUIT-THREE-BUTTONS）。`stop` 把下一次 stdin EOF 变成**全平台**停机指令：**不再排空在跑 run**（N-FIX-STOP-AND-QUIT-TASKS-KEEP-RUNNING-60S 修订：原先照常 60s 排空，实测任务在等待期继续调工具写文件）：shutdown 开头按停止按钮同款路径对每个 run `cancel('user')`，最多等 `WEB_DAEMON.STOP_INTENT_CANCEL_GRACE_MS`（3s）收口，再补一次空闲浏览器清理，随后走既有 reap → park（`user_stop`，重开可「继续」）→ 关库。60s 排空只留给无 stop 意图的 SIGTERM / `neo daemon stop`。
-2. **armed-schedule 留守规则**：空闲去留快照（daemonIdle）新增第四信号 `armedSchedules`（已启用定时任务数），与退出确认弹窗的 quit-guard 计数**同源同口径**。留守判据 = 老三信号（在跑 run / 配对伴侣 / 等审批）任一在忙，**或**（意图=background 且 armedSchedules>0）。无声明（壳崩了/被杀）时 armed 单独**永不**留守——不留隐形 daemon，拍板记录 2 的「空闲随壳退出」不被推翻。任务增/删/改/启停会触发去留重查（CronService.onJobsChanged → recheck）：删掉最后一个已启用任务，纯为任务留守的 daemon 随之退出。用户预期锚点：竞品的定时任务跑在云端、不依赖桌面 app 存活（Claude Cowork help center）；Neo 只能靠本机常驻兑现同一预期。
+1. **退出意图通道**：壳在退进程之前 `POST /api/quit-intent` 声明本次退出意图——`background`（后台继续）或 `stop`（停止并退出）；旧 `POST /api/quit-guard/detach` 保留为 background 的别名（Rust 壳不再调用：「后台继续」改为壳不退出）。`stop` 把下一次 stdin EOF 变成**全平台**停机指令：**不再排空在跑 run**（N-FIX-STOP-AND-QUIT-TASKS-KEEP-RUNNING-60S 修订：原先照常 60s 排空，实测任务在等待期继续调工具写文件）：shutdown 开头按停止按钮同款路径对每个 run `cancel('user')`，最多等 `WEB_DAEMON.STOP_INTENT_CANCEL_GRACE_MS`（3s）收口，再补一次空闲浏览器清理，随后走既有 reap → park（`user_stop`，重开可「继续」）→ 关库。60s 排空只留给无 stop 意图的 SIGTERM / `neo daemon stop`。
+2. **armed-schedule 留守规则**：空闲去留快照（daemonIdle）新增第四信号 `armedSchedules`（已启用定时任务数），与退出确认弹窗的 quit-guard 计数**同源同口径**。内置维护任务（Light Memory、Dream、Distill）按共享 tag 常量排除：它们不是用户创建的定时任务，不构成后台留守理由。留守判据 = 老三信号（在跑 run / 配对伴侣 / 等审批）任一在忙，**或**（意图=background 且 armedSchedules>0）。无声明（壳崩了/被杀）时 armed 单独**永不**留守——不留隐形 daemon，拍板记录 2 的「空闲随壳退出」不被推翻。任务增/删/改/启停会触发去留重查（CronService.onJobsChanged → recheck）：删掉最后一个已启用任务，纯为任务留守的 daemon 随之退出。用户预期锚点：竞品的定时任务跑在云端、不依赖桌面 app 存活（Claude Cowork help center）；Neo 只能靠本机常驻兑现同一预期。
 3. **`neo daemon status` 留守原因**：daemon 在 pid 文件旁原子维护 `daemon-state.json`（退出意图 + 留守原因清单，快照/意图/任务变化时重写，写失败仅 warn 不挡运行）。status 在 pid 状态为 owned 时于 pid 行下多打一行：`Staying alive because: <running runs | N armed schedule(s) | paired companion | pending approval>`；无留守原因时明说 `No reason to stay alive: exits once the shell is gone`。陈旧文件（pid 不吻合 / 解析失败）忽略，按无留守原因口径打印。
 
 ## 拍板记录（2026-10-24 append，N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1，只增不改）
@@ -159,3 +159,12 @@ sequenceDiagram
 2026-10-24 的历史记录保留；停车审批的 stage-B（fallback B）现已改为启动 Agent Neo 壳并传入 `--notify-only`，通知横幅归属 Agent Neo，点击打开对应会话或 Automation 运行记录。退出意图为 `background` 时仍经生产 `notificationService.notifyNeedsInput` 入口投递，通知策略与预算不变。
 
 旧 osascript 通知通道及 `src/host/platform/notifications.ts` 中的发送器已删除；该模块仅保留 `Notification.isSupported()` 的 macOS 支持检测。`tests/unit/host/notificationOsascriptGate.test.ts` 的两项静态门白名单均已清空，禁止重新引入旧通知发送文本或 host/web 原生通知构造调用。壳的实际横幅与点击行为由编排方在设备上验收。
+
+## 拍板记录（2026-11-16 append，--notify-only 机制已知局限，只增不改）
+
+2026-10-24 节第 2 项（原第 155 行）的 osascript 机制描述由 2026-11-12 节及本节取代；历史原文保留。fallback B 现在启动 Agent Neo 壳的 `--notify-only`，横幅归属 Agent Neo。以下局限均以退出意图仍为 `background`、通知进入原生投递分支为前提（`notificationService.notifyNeedsInput` 入队及 `canDeliver` 均检查该意图）：
+
+1. **缺少壳可执行文件路径**：`CODE_AGENT_SHELL_EXE` 由 Tauri 壳启动 webServer 时设置；非壳启动的 host（例如终端 / CLI 启动且未提供该变量）没有该值时，macOS 上不弹原生横幅，仅 warn `notify-only-executable-missing`（`src-tauri/src/main.rs`、`src/host/services/infra/notificationService.ts`）。
+2. **非 macOS**：host 在检查可执行文件路径之前即返回，不弹原生横幅，仅 warn `notify-only-platform-unsupported`（`src/host/services/infra/notificationService.ts`）。
+3. **壳重新接上不复位退出意图**：`src/host/services/daemon/quitIntent.ts` 没有壳重新接上时的复位事件；沿用 2026-10-24 第 2 项的已知局限，重开壳后同一条 `needs_input` 仍可能在应用内 toast 与原生横幅各弹一次——接受，漏报贵过重复提醒。
+4. **壳二进制不在 .app bundle 内**：`exe_is_in_app_bundle` 以可执行文件路径包含 `.app/Contents/MacOS/` 为判据；不满足时（例如直接运行开发二进制），`decide_backend` 不选 UNC，`dispatch_notify_only` 向 stderr 输出 `notify-only-backend-unavailable` 并以 3 退出，不投递横幅（`src-tauri/src/native_notification.rs`）。host 随后 warn `notify-only-exit-failed`，附 `code`（此处为 3）及 `signal`；壳子进程的 stdio 为 `ignore`，排查时以 host 的退出失败记录为线索（`src/host/services/infra/notificationService.ts`）。

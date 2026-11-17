@@ -28,6 +28,11 @@ export function isCronPermissionDeniedMarker(value: unknown): value is CronPermi
   });
 }
 
+/** 每一步都是用户亲手拒绝：host 据此把紧急档封顶为 fyi，renderer 据此以落库档为准。 */
+export function isUserOnlyCronDenial(value: unknown): value is CronPermissionDeniedMarker {
+  return isCronPermissionDeniedMarker(value) && value.steps.every((step) => step.reason === 'user');
+}
+
 // ----------------------------------------------------------------------------
 // 被拒原因的大白话（zh/en 各四条，单一真源 · Rework r2）：host 完成通知
 // （cron/cronFailurePolicy）与 renderer 详情句（i18n/cronCenter 的

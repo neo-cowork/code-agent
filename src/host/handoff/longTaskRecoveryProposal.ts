@@ -3,6 +3,7 @@ import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { getHandoffProposalService } from './handoffProposalService';
 import { buildPriorRunProjection } from './priorRunProjection';
+import { stripWorkdirPrefix } from '../agent/workdirPrefix';
 
 const logger = createLogger('LongTaskRecoveryProposal');
 
@@ -44,7 +45,7 @@ function compact(value: string | undefined, fallback: string): string {
 }
 
 function stripWorkspacePrefix(task: string): string {
-  return task.replace(/^\[工作目录:[^\]]+\]\s*所有文件路径基于此目录。\n\n/, '').trim();
+  return stripWorkdirPrefix(task).trim();
 }
 
 export interface WorkflowFailureRecoveryInput {

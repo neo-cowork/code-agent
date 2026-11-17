@@ -114,3 +114,21 @@ describe('non-voided task names through the production inbox', () => {
     if (language === 'en') expect(screen.getByTestId('parked-approval-group').textContent).not.toMatch(/[\u3400-\u9fff]|\[Scheduled\]/u);
   });
 });
+
+describe('channel approval task title parity', () => {
+  it.each(['zh', 'en'] as const)('pending and voided use the same task title without channel or session identifiers (%s)', async (language) => {
+    state.language = language;
+    state.rows = ['pending', 'voided'].map((status) => ({
+      id: status, sessionId: 'session_channel', sessionTitle: '[Channel] Feishu test · oc_example',
+      taskTitle: '新建 weekly', tool: 'Write', displayTool: '重启前发起 · Write',
+      requestedAt: Date.now(), status: status as 'pending' | 'voided',
+      voidReason: '这一步的内容在重启后无法恢复，已自动作废，没有执行。',
+    }));
+    render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getAllByTestId('parked-session-title')).toHaveLength(2));
+    for (const title of screen.getAllByTestId('parked-session-title')) {
+      expect(title.textContent).toBe('新建 weekly');
+      expect(title.textContent).not.toMatch(/session_|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}|oc_|\[Channel\]/i);
+    }
+  });
+});

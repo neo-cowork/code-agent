@@ -6,6 +6,7 @@
 // （投影为 interrupted）。只收口，不续跑、不派发（A′ 不变）。
 // ============================================================================
 
+import { randomUUID } from 'node:crypto';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import type { DurableRunRepository } from '../services/core/repositories/DurableRunRepository';
 import { createLogger } from '../services/infra/logger';
@@ -14,6 +15,8 @@ import { parseParkedApprovalPayload } from './parkedApprovalSurvival';
 const logger = createLogger('ParkedApprovalRunClosure');
 
 const PARKED_APPROVAL_RUN_CLOSE_REASON = 'parked_approval_closed';
+const LOST_APPROVAL_REASON = 'approval_lost_on_restart';
+const closureProcessInstanceId = `restart-approval-closure:${randomUUID()}`;
 
 /** 该会话是否还有 pending 的 tool_approval 行（还有就说明 run 仍要停靠等人）。 */
 export function sessionHasPendingToolApproval(
@@ -33,6 +36,12 @@ export function sessionHasPendingToolApproval(
  * recoverOnStartup 回收成 waiting 之前把它收掉。只登记「审批已被收口」的会话，幸存会话不会进来。
  */
 const deferredCloses = new Map<string, { repository: DurableRunRepository; approvalRequestedAt: number }>();
+
+const deferredChildCloses = new Map<string, {
+  repository: DurableRunRepository;
+  pendingApprovals: PendingApprovalRepository;
+  sessionId: string;
+}>();
 
 /** 在每次 durable 恢复认领之前调用：重试此前因租约未过期而跳过的收口。绝不抛。 */
 export async function retryDeferredParkedRunCloses(now: number): Promise<void> {
@@ -57,6 +66,9 @@ export async function retryDeferredParkedRunCloses(now: number): Promise<void> {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+  for (const [runId, entry] of [...deferredChildCloses]) {
+    await closeInterruptedCommandTaskChild(entry.repository, entry.pendingApprovals, entry.sessionId, runId, now);
   }
 }
 
@@ -86,6 +98,69 @@ export async function closeSessionParkedRun(
   } catch (error) {
     logger.warn('Failed to close parked durable run after approval closure', {
       sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/** Only the child identified by an interrupted command-task marker may be closed. No replay. */
+export async function closeInterruptedCommandTaskChild(
+  repository: DurableRunRepository,
+  pendingApprovals: PendingApprovalRepository,
+  sessionId: string,
+  runId: string,
+  now: number,
+): Promise<boolean> {
+  const context = { sessionId, runId, reason: LOST_APPROVAL_REASON };
+  const skip = (skippedReason: string): false => {
+    if (skippedReason !== 'child_run_lease_live') deferredChildCloses.delete(runId);
+    logger.warn('Interrupted command child run not closed', { ...context, skippedReason });
+    return false;
+  };
+  try {
+    const run = await repository.get(runId);
+    if (run?.sessionId !== sessionId || !run.parentRunId) return skip('child_run_identity_mismatch');
+    if (run.status !== 'running' && run.status !== 'waiting' && run.status !== 'recovering') {
+      return skip(`child_run_${run.status}`);
+    }
+    if (sessionHasPendingToolApproval(pendingApprovals, sessionId)) return skip('pending_tool_approval');
+    if (!run.owner) return skip('child_run_owner_missing');
+    deferredChildCloses.set(runId, { repository, pendingApprovals, sessionId });
+    if (run.owner.leaseExpiresAt > now) return skip('child_run_lease_live');
+    const claimed = await repository.claimAbandonedLease({
+      runId,
+      expectedEpoch: run.owner.epoch,
+      abandonedProcessInstanceId: run.owner.processInstanceId,
+      requireExpiredLease: true,
+      ownerId: run.owner.ownerId,
+      processInstanceId: closureProcessInstanceId,
+      now,
+      // Closure owns no continuing execution lease: commit the terminal immediately.
+      leaseDurationMs: 0,
+    });
+    if (!claimed) {
+      const current = await repository.get(runId);
+      const leaseExpiresAt = current?.owner?.leaseExpiresAt;
+      return skip(leaseExpiresAt !== undefined && leaseExpiresAt > now
+        ? 'child_run_lease_live' : 'child_run_claim_fenced');
+    }
+    await repository.commitTerminal({
+      runId,
+      attempt: claimed.attempt.attempt,
+      expectedOwnerEpoch: claimed.owner.epoch,
+      expectedNextEventSeq: claimed.envelope.cursor.nextEventSeq,
+      status: 'cancelled',
+      reason: LOST_APPROVAL_REASON,
+      terminalAt: now,
+      event: { type: 'run_cancelled', payload: context, recordedAt: now },
+    });
+    deferredChildCloses.delete(runId);
+    logger.warn('Closed interrupted command child run', context);
+    return true;
+  } catch (error) {
+    logger.warn('Interrupted command child run closure failed', {
+      ...context, skippedReason: 'child_run_close_failed',
       error: error instanceof Error ? error.message : String(error),
     });
     return false;

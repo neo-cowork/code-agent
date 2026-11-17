@@ -12,6 +12,7 @@ import type {
   AgentWorktreeArtifact,
   AgentTreeWorktreeState,
 } from '../../shared/contract/agentTree';
+import type { BashStep } from '../../shared/contract/backgroundTask';
 import type { EvidenceRef } from '../../shared/contract/evidence';
 import type { ManagedAgentStatus } from './spawnGuard';
 import { getSpawnGuard } from './spawnGuard';
@@ -31,8 +32,9 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
-import { extractToolStepTarget } from './toolStepTarget';
+import { bashStepDescription, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
+import { stripWorkdirPrefix } from './workdirPrefix';
 
 export interface AgentTreeSpawnAgentSource {
   background?: boolean;
@@ -304,9 +306,11 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
       const call = calls[callIndex];
       if (call.name !== tool) continue;
       const target = extractToolStepTarget(call.arguments);
+      const description = bashStepDescription(call.name, call.arguments);
       return {
         tool,
         ...(target ? { target } : {}),
+        ...(description ? { description } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
     }
@@ -318,13 +322,41 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
   };
 }
 
+function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
+  const steps: BashStep[] = [];
+  for (const message of record.messages) {
+    for (const call of message.toolCalls ?? []) {
+      if (call.name !== 'Bash' && call.name !== 'bash') continue;
+      const description = bashStepDescription(call.name, call.arguments);
+      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '' });
+    }
+  }
+  return steps.length > 0 ? steps.slice(-20) : undefined;
+}
+
+/** Executor observability lines ("Calling Read({...})") are replay data, not card copy. */
+function isToolCallObservation(text: string | undefined): boolean {
+  if (!text) return false;
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every((line) => /^Calling \S+\(/.test(line));
+}
+
 function progressFromContext(record: SubagentContextRecord): string | undefined {
   const previews = record.snapshot?.previews;
   if (previews && previews.length > 0) {
-    return truncate(previews[previews.length - 1]?.contentPreview);
+    for (let i = previews.length - 1; i >= 0; i -= 1) {
+      const text = previews[i]?.contentPreview;
+      if (!isToolCallObservation(text)) return truncate(text);
+    }
+    return undefined;
   }
-  const lastMessage = record.messages[record.messages.length - 1];
-  return truncate(typeof lastMessage?.content === 'string' ? lastMessage.content : undefined);
+  for (let i = record.messages.length - 1; i >= 0; i -= 1) {
+    const message = record.messages[i];
+    const text = typeof message?.content === 'string' ? message.content : undefined;
+    if (isToolCallObservation(text)) continue;
+    return truncate(text);
+  }
+  return undefined;
 }
 
 function resultProgress(result?: SubagentResult | AgentTaskResult): string | undefined {
@@ -351,7 +383,7 @@ function mergeSpawnAgent(
   node.background = agent.background ?? false;
   node.role = agent.role;
   node.displayName = agent.completion?.title ?? node.displayName;
-  node.task = agent.task;
+  node.task = stripWorkdirPrefix(agent.task);
   if (agent.parentId) node.parentId = agent.parentId;
   if (agent.createdAt) node.createdAt = agent.createdAt;
   if (agent.completedAt) node.completedAt = agent.completedAt;
@@ -373,7 +405,7 @@ function mergeSpawnAgent(
     : undefined;
   applyFailure(node, code);
 
-  const progress = resultProgress(agent.result) ?? truncate(agent.task);
+  const progress = resultProgress(agent.result) ?? truncate(stripWorkdirPrefix(agent.task));
   if (progress) node.progress = progress;
   setLastEvent(node, {
     summary: agent.status === 'completed'
@@ -382,7 +414,7 @@ function mergeSpawnAgent(
         ? `遇到问题：${progress ?? agent.error ?? agent.role}`
         : agent.status === 'cancelled'
           ? `已取消：${progress ?? agent.role}`
-          : `正在处理：${truncate(agent.task) ?? agent.role}`,
+          : `正在处理：${truncate(stripWorkdirPrefix(agent.task)) ?? agent.role}`,
     at: agent.completedAt ?? agent.createdAt,
     source: 'spawnGuard',
   });
@@ -395,7 +427,7 @@ function mergeParallelTask(
 ): void {
   const node = ensureNode(nodes, task.taskId, task.role);
   addSource(node, 'parallelCoordinator');
-  if (!node.task && task.task) node.task = task.task;
+  if (!node.task && task.task) node.task = stripWorkdirPrefix(task.task);
   if (task.startedAt && !node.createdAt) node.createdAt = task.startedAt;
   if (task.completedAt) node.completedAt = task.completedAt;
   node.updatedAt = task.completedAt ?? task.startedAt ?? node.updatedAt;
@@ -408,13 +440,13 @@ function mergeParallelTask(
   const progress = resultProgress(task.result)
     ?? (task.dependsOn && task.dependsOn.length > 0
       ? truncate(`等待这些任务完成：${task.dependsOn.join(', ')}`)
-      : truncate(task.task));
+      : truncate(stripWorkdirPrefix(task.task)));
   if (progress) node.progress = progress;
   setLastEvent(node, {
     summary: task.error
       ? `遇到问题：${truncate(task.error) ?? task.role}`
       : task.status === 'pending'
-        ? `等待开始：${truncate(task.task) ?? task.role}`
+        ? `等待开始：${truncate(stripWorkdirPrefix(task.task)) ?? task.role}`
         : `${statusLabel(parallelStatusToTree(task.status))}：${progress ?? task.role}`,
     at: task.completedAt ?? task.startedAt,
     source: 'parallelCoordinator',
@@ -441,7 +473,7 @@ function mergeContextRecord(
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
     node.background = lifecycle.background || node.background;
-    node.task ??= lifecycle.task;
+    node.task ??= stripWorkdirPrefix(lifecycle.task);
     node.createdAt ??= lifecycle.startedAt;
     node.completedAt ??= lifecycle.finishedAt;
   }
@@ -451,6 +483,8 @@ function mergeContextRecord(
   if (activeTool) node.activeTool = activeTool;
   const lastToolStep = lastToolStepFromContext(record);
   if (lastToolStep) node.lastToolStep = lastToolStep;
+  const bashSteps = bashStepsFromContext(record);
+  if (bashSteps) node.bashSteps = bashSteps;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));
 
   const progress = progressFromContext(record);

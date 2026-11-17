@@ -1,3 +1,5 @@
+import { presentReplyBody } from '@shared/replyBodyPresentation';
+import { HumanizedText } from '../../HumanizedText';
 // ============================================================================
 // TraceNodeRenderer - Render individual trace nodes by type
 // Reuses existing MessageContent, ToolCallDisplay components; UserNode below
@@ -30,10 +32,12 @@ import { TurnQualityStrip } from './TurnQualityStrip';
 import { EnvAssistCard } from './EnvAssistCard';
 import { AgentErrorPresentation } from './AgentErrorCard';
 import { ProjectTrustConfirmCard } from './ProjectTrustConfirmCard';
+import { SessionConflictCard } from './SessionConflictCard';
 import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
 import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, RefreshCw, RotateCcw } from 'lucide-react';
 import { UI } from '@shared/constants';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 import { getRoleToolCapabilities } from '../../../utils/roleToolCapabilities';
@@ -338,7 +342,7 @@ const AssistantTextNode: React.FC<{
   inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
 }> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasReportingStreamingDisplayRef = useRef(false);
@@ -356,7 +360,7 @@ const AssistantTextNode: React.FC<{
   const sessionLive = useAppStore((state) => (sessionId ? state.processingSessionIds.has(sessionId) : false));
   const resumeNote = sessionLive ? node.metadata?.streamResumeNote : undefined;
   const keptBreakSegment = node.metadata?.streamInterruptionReason === 'stream-break';
-  const wakeFields = wakeRationaleFromMetadata(node.metadata);
+  const metadataWakeFields = wakeRationaleFromMetadata(node.metadata);
 
   const preannounce = node.metadata?.backgroundTaskPreannounce;
   const preannounceCopy = preannounce?.title
@@ -364,8 +368,15 @@ const AssistantTextNode: React.FC<{
     : t.backgroundPanel.preannounce.generic;
   const localizedContent = preannounce?.text && node.content.startsWith(preannounce.text)
     ? preannounceCopy + node.content.slice(preannounce.text.length) : node.content;
+  const automationType = node.metadata?.automation?.automationType;
+  const protocol = node.metadata?.wakeRationale || automationType === 'role_wake'
+    ? 'wake' : automationType === 'cron' ? 'cron' : undefined;
+  const reply = presentReplyBody(localizedContent, language, { protocol, isStreaming: Boolean(turnStreaming) });
+  const wakeFields = metadataWakeFields ?? (reply.rationale || reply.evidence
+    ? { rationale: reply.rationale, evidence: reply.evidence, missing: !reply.rationale }
+    : null);
   const { displayContent, isAnimating, tailStartIndex } = useSmoothStreamingText({
-    content: localizedContent || '',
+    content: reply.text || '',
     isStreaming: Boolean(turnStreaming),
   });
 
@@ -458,7 +469,7 @@ const AssistantTextNode: React.FC<{
   return (
     <div
       ref={rootRef}
-      aria-label="助手消息"
+      aria-label={t.assistantMessageAria}
       className="relative group/msg"
       onMouseUp={updateSelectionCopy}
       onKeyUp={updateSelectionCopy}
@@ -571,7 +582,18 @@ const AssistantTextNode: React.FC<{
         <ProjectTrustConfirmCard node={node} sessionId={sessionId} />
       )}
 
+      {/* 会话被没结束的旧任务占着：说明句点名的「放弃 / 重试」在这里真有按钮 */}
+      {node.metadata?.sendFailureCode === 'RUN_SESSION_CONFLICT' && (
+        <SessionConflictCard node={node} sessionId={sessionId} />
+      )}
+
       {wakeFields ? <WakeRationaleNote fields={wakeFields} /> : null}
+      {reply.technicalDetails && (
+        <details className="mt-2 text-xs text-zinc-500" data-testid="reply-technical-details">
+          <summary className="cursor-pointer">{t.agentError.details.technical}</summary>
+          <pre className="whitespace-pre-wrap break-words">{reply.technicalDetails}</pre>
+        </details>
+      )}
 
     </div>
   );
@@ -655,7 +677,7 @@ const SystemErrorNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 // ---- System Node ----
 const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, sessionId }) => {
   const [expanded, setExpanded] = useState(false);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   if (node.metadata?.backgroundWakeFailed) {
     return (
@@ -673,7 +695,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
     const unchanged = !receipt.addedTools.length && !receipt.removedTools.length
       && !receipt.descriptionChanged && !receipt.promptChanged;
     const title = (receipt.diffAvailable === false ? copy.unavailable : unchanged ? copy.unchanged : copy.updated)
-      .replace('{role}', receipt.roleId);
+      .replace('{role}', localizeBuiltinRole(receipt.roleId, { name: receipt.roleId }, language).name);
     const capabilities = (toolNames: string[]) => getRoleToolCapabilities({
       toolNames,
       capabilityLabels: t.receiptPresentation.roleCapabilityLabels,
@@ -801,7 +823,7 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
   // generic system
   return (
     <div className="px-3 py-1.5 text-xs text-zinc-500 italic">
-      {node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content}
+      <HumanizedText text={node.metadata?.backgroundTaskInterrupted ? t.backgroundPanel.interrupted : node.content} />
     </div>
   );
 };

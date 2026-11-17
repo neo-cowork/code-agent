@@ -1,3 +1,4 @@
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 // ============================================================================
 // builtinJobDisplay —— 内置维护定时任务在 UI 层的本地化名称、描述与动作文案映射。
 //
@@ -6,15 +7,11 @@
 // ============================================================================
 
 import type { CronJobDefinition } from '@shared/contract';
-import { MEMORY_CONSOLIDATION } from '@shared/constants';
+import { MEMORY_CONSOLIDATION, BUILTIN_MAINTENANCE_JOB_TAGS } from '@shared/constants/memory';
 import type { Language } from '../../../i18n';
 
-// Light Memory 的 tag 来自前后端共享常量 MEMORY_CONSOLIDATION.JOB_TAG；
-// Dream 与 Distill 两个定时任务有意未接线（定义在 src/host/services/memory/dreamScheduler.ts
-// 与 src/host/services/skills/distillScheduler.ts，不在 @shared/constants 中，且 renderer
-// 不能跨边界 import src/host），因此这里保留字面量作防御性展示覆盖。
-const DREAM_CRON_JOB_TAG = 'dream-memory-consolidation';
-const DISTILL_CRON_JOB_TAG = 'distill-workflow-packaging';
+const DREAM_CRON_JOB_TAG = BUILTIN_MAINTENANCE_JOB_TAGS.DREAM_MEMORY;
+const DISTILL_CRON_JOB_TAG = BUILTIN_MAINTENANCE_JOB_TAGS.DISTILL_WORKFLOW;
 
 export interface BuiltinJobDisplay {
   name: string;
@@ -90,4 +87,9 @@ export function getBuiltinJobDisplay(
   }
 
   return BUILTIN_ZH_COPY[tag];
+}
+
+/** Names are display projections; keep the original identity in storage and edit forms. */
+export function getJobDisplayName(job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>, language: Language = 'zh'): string {
+  return humanizeInternalText(getBuiltinJobDisplay(job, language)?.name ?? job.name, language, { omitIds: true }).text;
 }

@@ -182,6 +182,7 @@ export async function handleSubagentAbort(
     error: errorMsg,
     toolsUsed: [...new Set(toolsUsed)],
     toolCallCount: turnObservability.getToolCallCount(),
+    filesChanged: turnObservability.getFilesChanged(),
     iterations,
     tokensUsed: getTotalTokens(),
     cost: getTotalCost(),
@@ -275,6 +276,7 @@ export function finalizeSubagentSuccess(
     ),
     toolsUsed: [...new Set(toolsUsed)],
     toolCallCount: turnObservability.getToolCallCount(),
+    filesChanged: turnObservability.getFilesChanged(),
     iterations,
     tokensUsed: getTotalTokens(),
     cost: getTotalCost(),
@@ -371,6 +373,7 @@ export function handleSubagentFailure(
   if (preservedExit) {
     return {
       ...preservedExit,
+      filesChanged: turnObservability.getFilesChanged(),
       output: appendSubagentLeftoverShellReport(preservedExit.output, leftoverReport),
     };
   }

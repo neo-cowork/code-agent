@@ -37,9 +37,11 @@ import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
 import { useToolCallTerminalResolver } from '../../../../../hooks/useToolCallTerminalResolver';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useBackgroundTaskStore } from '../../../../../stores/backgroundTaskStore';
+import { useDurableSwarmRunDetail } from '../../../../../hooks/useDurableSwarmRunDetail';
 import { useAgentTreeSnapshot } from '../../../../../hooks/useAgentTreeSnapshot';
 import { isDelegationTool } from '../../../../../utils/agentActivity';
 import { DelegationHeader, DelegationReceipt } from './DelegationReceipt';
+import { projectSupersededDelegationFailures } from './delegationFailureRuns';
 import {
   deriveDelegationPresentation,
   resolveAgentActivityTarget,
@@ -179,6 +181,9 @@ export function ToolCallDisplay({
     sessionId ?? null,
     delegationTool && toolCall.name === 'spawn_agent',
   );
+  const memberDetail = useDurableSwarmRunDetail(
+    delegationTool && agentTree?.nodes.some((node) => node.status === 'unknown') ? sessionId ?? null : null,
+  );
   const delegationPresentation = useMemo(() => {
     if (!delegationTool) return null;
     const presentation = deriveDelegationPresentation(
@@ -186,6 +191,7 @@ export function ToolCallDisplay({
       backgroundTasks,
       agentTree?.nodes ?? [],
       t,
+      sessionId && memberDetail?.run.sessionId === sessionId ? memberDetail.agents : [],
     );
     if (!presentation) return null;
     return {
@@ -195,7 +201,16 @@ export function ToolCallDisplay({
         agentTree?.nodes ?? [],
       ),
     };
-  }, [agentTree?.nodes, backgroundTasks, delegationTool, toolCall, t]);
+  }, [agentTree?.nodes, backgroundTasks, delegationTool, memberDetail, sessionId, toolCall, t]);
+
+  const sessionMessages = useSessionStore((state) => state.messages);
+  const failureSuperseded = useMemo(() => {
+    if (delegationPresentation?.state !== 'failed' || !sessionMessages || sessionId !== currentSessionId) return false;
+    return projectSupersededDelegationFailures(
+      sessionMessages,
+      (call) => deriveDelegationPresentation(call, backgroundTasks, [], t),
+    ).has(toolCall.id);
+  }, [delegationPresentation?.state, sessionMessages, sessionId, currentSessionId, backgroundTasks, t, toolCall.id]);
 
   const displayToolCall = useMemo(
     () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
@@ -358,7 +373,7 @@ export function ToolCallDisplay({
           }}>{t.deliveryExperience.continueQuestion}</Button>
       )}
 
-      {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} />}
+      {delegationPresentation && <DelegationReceipt presentation={delegationPresentation} superseded={failureSuperseded} />}
 
       {!delegationPresentation && actionPreview && (
         <BrowserComputerActionPreviewLine preview={actionPreview} />

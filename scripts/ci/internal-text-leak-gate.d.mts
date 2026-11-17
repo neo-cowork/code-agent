@@ -9,15 +9,21 @@ type AllowlistEntry = {
 };
 type LeakHit = Omit<AllowlistEntry, 'reason'> & { line: number };
 
-export function detectStaticStringLeaks(text: string): InternalTextFormat[];
+export function detectStaticStringLeaks(text: string, language?: 'zh' | 'en'): InternalTextFormat[];
 export function scanRendererStatic(options?: ScanOptions): {
   filesScanned: number;
+  rendererFilesScanned: number;
+  hostCopyFilesScanned: number;
+  hostCopyRoots: string[];
   hits: LeakHit[];
 };
 export function loadAndValidateAllowlist(allowlistPath?: string): AllowlistEntry[];
 export function loadAndValidateDynamicAllowlist(allowlistPath?: string): AllowlistEntry[];
 export function evaluateGate(options?: ScanOptions & { allowlistPath?: string }): {
   filesScanned: number;
+  rendererFilesScanned: number;
+  hostCopyFilesScanned: number;
+  hostCopyRoots: string[];
   totalHits: number;
   allowlistCount: number;
   unexpectedHits: LeakHit[];

@@ -54,7 +54,7 @@ import {
   claimSendInflight,
   type ChatSendDelivery,
 } from '../../utils/chatSendState';
-import { isProjectSourceTrustFailure } from '../../utils/httpFailureMessage';
+import { isProjectSourceTrustFailure, isSessionConflictFailure } from '../../utils/httpFailureMessage';
 import {
   buildSendFailureRetryAnchor,
   markOptimisticUserSendFailed,
@@ -546,12 +546,29 @@ export function useAgentIPC({
           return outcome;
         } catch (error) {
           logger.error('Foreground input delivery failed', error);
-          addMessage({
+          // 没送达：用户气泡留在时间线上标失败，错误卡带重试锚点（与主发送失败同一出口）。
+          const failedUser: Message = {
+            id: messageId,
+            role: 'user',
+            content: runtimeEnvelope.content,
+            attachments: runtimeEnvelope.attachments,
+            timestamp: Date.now(),
+            metadata: toMessageMetadata(runtimeContext),
+          };
+          upsertOptimisticUserMessage(failedUser, addMessage);
+          markOptimisticUserSendFailed(messageId);
+          const errorMessage: Message = {
             id: generateMessageId(),
             role: 'assistant',
             content: getAgentSendFailureMessage(error),
             timestamp: Date.now(),
-          });
+            metadata: {
+              ...buildSendFailureRetryAnchor(failedUser, effectiveSessionId),
+              sendFailureCode: isSessionConflictFailure(error) ? 'RUN_SESSION_CONFLICT' : SEND_REJECTED_FAILURE_CODE,
+            },
+          };
+          if (effectiveSessionId) recordFailedSend(effectiveSessionId, failedUser, errorMessage);
+          addMessage(errorMessage);
           return { outcome: 'failed' as const };
         }
       };
@@ -697,7 +714,9 @@ export function useAgentIPC({
         // PROJECT_SOURCE_TRUST 保留专属码供气泡挂「确认并重发」入口。
         const sendFailureCode = isProjectSourceTrustFailure(sendFailure)
           ? 'PROJECT_SOURCE_TRUST'
-          : SEND_REJECTED_FAILURE_CODE;
+          : isSessionConflictFailure(sendFailure)
+            ? 'RUN_SESSION_CONFLICT'
+            : SEND_REJECTED_FAILURE_CODE;
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),

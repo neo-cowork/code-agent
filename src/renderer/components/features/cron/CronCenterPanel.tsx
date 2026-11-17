@@ -3,7 +3,7 @@
 // 2026-07-27 批C4（WorkBuddy 式结构改造，产品负责人拍板）：pill 导航「定时任务 | 运行记录」。
 //   * 定时任务 tab：状态条 → 推荐模板（独立成块）→ 任务列表+详情工作台
 //   * 运行记录 tab：待过目收件箱（本质是运行结果的子集）→ 跨任务执行流（点击看详情）
-// 页首三格状态条是全页状态锚点：数据复用 cronStore.stats（运行中=jobsByStatus.running、
+// 页首四格状态条是全页状态锚点：数据复用 cronStore.stats（运行中=jobsByStatus.running、
 // 成功率=successRate）+ 收件箱回传的待过目数（与侧栏角标同一琥珀色视觉语言）。
 // 布局契约（2026-07-27 UX 收尾 1.4）：页级横向 padding 统一 px-6（PageContent 契约），
 // 状态条卡片走统一卡片语言（rounded-lg border-zinc-800 bg-zinc-900/70）；
@@ -27,6 +27,7 @@ import { usePageReturnPosition } from '../../../hooks/usePageReturn';
 import { createLogger } from '../../../utils/logger';
 import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
+import { RoleWakeApprovalRuns } from './RoleWakeApprovalRuns';
 import { AutomationReviewInbox } from './AutomationReviewInbox';
 import { CronFeaturedTemplates } from './CronFeaturedTemplates';
 import { CronJobDetail } from './CronJobDetail';
@@ -35,7 +36,7 @@ import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { getJobDisplayName } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -82,7 +83,7 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
     <div className={`text-2xl font-semibold tabular-nums ${attention ? 'text-badge-warning' : 'text-zinc-100'}`}>
       {value}
     </div>
-    <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
+    <div className="mt-0.5 whitespace-nowrap text-xs text-zinc-500">{label}</div>
   </div>
 );
 
@@ -164,10 +165,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     refreshPendingReviewCount();
     await Promise.all([loadAwaitingRuns(), syncRunningExecutions()]);
   }, [loadAwaitingRuns, refreshPendingReviewCount, syncRunningExecutions]);
-  // running 信号在两个 tab 来源不同：任务 tab 只有各 job 的最近一次执行
-  // （latestExecutions，refresh 时拉），运行记录 tab 才有跨任务 recentExecutions；
-  // 两个都看，否则默认任务 tab 永远不会开始轮询。
+  // A first/event wake may have a parked approval without any cron execution.
+  // The always-mounted inbox discovers those rows and supplies its pending count.
   const hasRunningExecution =
+    parkedPendingCount > 0 ||
     recentExecutions.some((execution) => execution.status === 'running') ||
     Object.values(latestExecutions).some((execution) => execution?.status === 'running');
   useEffect(() => {
@@ -189,7 +190,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   }, [hasRunningExecution, loadAwaitingRuns, syncRunningExecutions]);
   const awaitingByJobId = useMemo(() => {
     const map = new Map<string, AwaitingApprovalRun>();
-    for (const run of awaitingRuns) map.set(run.jobId, run);
+    for (const run of awaitingRuns) if (run.jobId) map.set(run.jobId, run);
     return map;
   }, [awaitingRuns]);
   // 等批准集合指纹（Rework r1）：轮询每 2s 换新数组，但内容不变时指纹不变。
@@ -270,7 +271,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
 
   const jobNameById = useMemo(
     () => Object.fromEntries(
-      [...allJobs, ...jobs].map((job) => [job.id, getBuiltinJobDisplay(job, language)?.name ?? job.name]),
+      [...allJobs, ...jobs].map((job) => [job.id, getJobDisplayName(job, language)]),
     ),
     [allJobs, jobs, language]
   );
@@ -343,7 +344,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="cron-center-scroll">
-        <div className="grid shrink-0 grid-cols-3 gap-3 px-6 pt-4" data-testid="cron-status-bar">
+        <div className="grid shrink-0 grid-cols-4 gap-3 px-6 pt-4" data-testid="cron-status-bar">
           <StatusTile
             label={cc.statRunning}
             value={stats ? String(runningCount) : '—'}
@@ -351,9 +352,15 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           />
           <StatusTile
             label={cc.statPendingReview}
-            value={pendingTotal === null ? '—' : String(pendingTotal)}
-            attention={(pendingTotal ?? 0) > 0}
+            value={String(parkedPendingCount)}
+            attention={parkedPendingCount > 0}
             testId="cron-status-pending"
+          />
+          <StatusTile
+            label={cc.statResultsToView}
+            value={pendingReviewCount === null ? '—' : String(pendingReviewCount)}
+            attention={(pendingReviewCount ?? 0) > 0}
+            testId="cron-status-review"
           />
           <StatusTile
             label={cc.statRate}
@@ -411,6 +418,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
           />
         </div>
+
+        <RoleWakeApprovalRuns runs={awaitingRuns} onResolved={handleApprovalResolved} />
 
         {activeTab === 'jobs' ? (
           <>

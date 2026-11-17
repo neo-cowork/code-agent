@@ -1,3 +1,5 @@
+import type { AgentTreeNodeStatus } from '@shared/contract/agentTree';
+import { resolveAgentNodeOutcomeKey } from '../i18n/outcomeWords';
 import type { LastToolFailure, LastToolStep, Task } from '@shared/contract/backgroundTask';
 import type { ToolStepStatus } from '@shared/contract';
 import type { PermissionRequest } from '@shared/contract/permission';
@@ -28,15 +30,6 @@ const TASK_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'orphaned',
 ]);
 
-/** agentTree 节点的失败/强停档（delegationPresentation 同表唯一源；completed 另判）。 */
-const AGENT_NODE_FAILED_STATUSES: ReadonlySet<string> = new Set([
-  'failed',
-  'cancelled',
-  'killed',
-  'blocked',
-  'dead-log-only',
-]);
-
 export function isLastToolFailureVisible(status: string | undefined): boolean {
   return status !== undefined && LAST_TOOL_FAILURE_VISIBLE_STATUSES.has(status);
 }
@@ -64,6 +57,7 @@ export function describeLastToolStep(
   if (!step) return undefined;
   const targetArgs = step.target
     ? {
+      ...(step.description ? { description: step.description } : {}),
       file_path: step.target,
       path: step.target,
       notebook_path: step.target,
@@ -95,8 +89,8 @@ export function isTaskTerminalStatus(status: string | undefined): boolean {
 }
 
 /** 终态判定（agentTree 节点）：completed 或各失败/强停档。 */
-export function isAgentNodeTerminalStatus(status: string | undefined): boolean {
-  return status === 'completed' || AGENT_NODE_FAILED_STATUSES.has(status ?? '');
+export function isAgentNodeTerminalStatus(status: AgentTreeNodeStatus | undefined): boolean {
+  return status !== undefined && resolveAgentNodeOutcomeKey(status) !== 'working';
 }
 
 /** 任务 id / runId / metadata.childRunId：审批请求 agentId/runId 命中任一即同一个代理。 */

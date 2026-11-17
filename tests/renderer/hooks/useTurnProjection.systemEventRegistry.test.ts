@@ -291,9 +291,9 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
     expect(nodes.filter((node) => node.id === 'sys-roleFlowStalled')).toHaveLength(1);
   });
 
-  it('backgroundWakeFailed 两种原因（wake_failed / owner_missing）都投出平实 system 节点，不生成 agentError 失败卡', () => {
+  it('backgroundWakeFailed 所有原因都投出平实 system 节点，不生成 agentError 失败卡', () => {
     const spec: UserVisibleSystemEventSpec = USER_VISIBLE_SYSTEM_EVENT_REGISTRY.backgroundWakeFailed;
-    for (const reason of ['wake_failed', 'owner_missing'] as const) {
+    for (const reason of ['wake_failed', 'owner_missing', 'rate_limited', 'max_iterations', 'turn_error'] as const) {
       const turns = project([
         ...plainTurn(),
         {

@@ -7,6 +7,7 @@ import { createLogger } from '../../../services/infra/logger';
 import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
 import { needsArtifactTaskBrief } from '../../../prompts/builder';
 import { getNativeConnectorToolNamesForIntent } from '../../../connectors/nativeConnectorIntent';
+import { isScheduleTaskChatIntent } from '../../../app/scheduleTaskChatIntent';
 import { isRoleProactivityChatIntent } from '../../../app/roleProactivityChatIntent';
 
 const logger = createLogger('ContextAssembly');
@@ -14,7 +15,7 @@ const logger = createLogger('ContextAssembly');
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
   'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
-  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundToolFace' | 'agentId'
+  | 'deniedToolNames' | 'allowedToolNames' | 'toolScope' | 'foregroundToolFace' | 'agentId' | 'unattendedTurn'
 > & { sessionId?: string };
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -124,6 +125,8 @@ export function getDeferredToolsToPreloadForTurn(
     tools.add('set_role_proactivity');
   }
 
+  if (isScheduleTaskChatIntent(userText)) tools.add('schedule_task');
+
   for (const connectorId of runtime.toolScope?.allowedConnectorIds ?? []) {
     for (const toolName of CONNECTOR_TOOL_NAMES[connectorId] ?? []) {
       if (!isCoreToolName(toolName)) tools.add(toolName);
@@ -133,6 +136,9 @@ export function getDeferredToolsToPreloadForTurn(
   for (const toolName of getNativeConnectorToolNamesForIntent({
     userText,
     allowedConnectorIds: runtime.toolScope?.allowedConnectorIds,
+    priorMessages: runtime.foregroundToolFace && !runtime.unattendedTurn
+      ? runtime.messages.slice(0, runtime.messages.findLastIndex((message) => message.role === 'user' && message.visibility !== 'rewound'))
+      : undefined,
   })) {
     tools.add(toolName);
   }

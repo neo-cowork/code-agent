@@ -25,7 +25,12 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
   const waiting = available && notice.phase === 'needs_user' && Boolean(notice.action);
   useEffect(() => {
     if (!waiting) return;
-    const recheck = () => { void invokeDomain(IPC_DOMAINS.ENV_ASSIST, 'recheck', { noticeId: notice.id }).catch(() => undefined); };
+    // The host also returns the resolved copy, so a broadcast missed while another page was open can't leave the card stale.
+    const recheck = () => {
+      void invokeDomain<EnvAssistActResult>(IPC_DOMAINS.ENV_ASSIST, 'recheck', { noticeId: notice.id })
+        .then((result) => { if (result?.notice) useEnvAssistStore.getState().report(result.notice); })
+        .catch(() => undefined);
+    };
     recheck();
     window.addEventListener('focus', recheck);
     return () => window.removeEventListener('focus', recheck);
@@ -45,6 +50,7 @@ export function EnvAssistCard({ notice: snapshot }: { notice: EnvAssistNotice })
     try {
       const request: EnvAssistActRequest = { noticeId: notice.id, actionKind: notice.action.kind, payload: notice.action.payload };
       const result = await invokeDomain<EnvAssistActResult>(IPC_DOMAINS.ENV_ASSIST, 'act', request);
+      if (result.notice) useEnvAssistStore.getState().report(result.notice);
       if (result.status !== 'opened') setAvailable(false);
     } catch { setAvailable(false); }
     finally { setBusy(false); }

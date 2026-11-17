@@ -35,13 +35,15 @@ const repoRoot = path.resolve(scriptDir, '..');
 function usage() {
   return [
     'Usage:',
-    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account] [--copy-login-session]',
+    '  node scripts/verify-slotless.mjs <ticket> [--reuse-dist] [--native <ids>] [--source-config <path>] [--clean-account] [--copy-login-session] [--skip-model-check]',
     '  node scripts/verify-slotless.mjs --stop <NEO_VERIFY_DATA_DIR>',
     '',
     'Starts the worktree webServer on an isolated port and signs in with the dogfood account.',
     'Copies NO login session by default; model credentials come from the staged config.json.',
     'Use --copy-login-session to explicitly copy the source secure-storage.json + .secure-key (WARNING: live login session).',
     'By default, native connectors keep the source config and no system apps are probed.',
+    'Before handing out NEO_VERIFY_URL it sends one tiny chat request with the dogfood key and exits non-zero on non-2xx.',
+    'Use --skip-model-check (or NEO_VERIFY_SKIP_MODEL_CHECK=1) only for presentation-only checks that need no model reply.',
     'Use --clean-account to skip the cloud session-list pull so the sidebar starts truly empty (sign-in is unchanged).',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
     `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
@@ -461,6 +463,39 @@ async function assertConfiguredModel(url, token) {
   }
 }
 
+/**
+ * 真调一次模型（max_tokens 极小）：/v1/models 通不代表能对话（基元实名宽限过期后 models 200、chat 全 403）。
+ * 非 2xx 直接 fail-closed，报 HTTP 状态和响应 code，不打印 key。
+ */
+export async function probeModelChat({ baseUrl, apiKey, model, fetchImpl = fetch, timeoutMs = 30_000 }) {
+  const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
+  let response;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 5, messages: [{ role: 'user', content: 'ping' }] }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    fail(`model chat self-check failed: ${PROVIDER_ID}/${model} unreachable (${error instanceof Error ? error.message : String(error)})`);
+  }
+  if (response.ok) return;
+  const text = await response.text().catch(() => '');
+  let code;
+  try {
+    const body = JSON.parse(text);
+    code = body?.error?.code ?? body?.code ?? body?.error?.type;
+  } catch {
+    /* 非 JSON 响应：只报状态 */
+  }
+  fail(
+    `model chat self-check failed: ${PROVIDER_ID}/${model} HTTP ${response.status}`
+    + (code ? ` code=${code}` : '')
+    + ' (verification environment unavailable; pass --skip-model-check only for presentation-only checks)',
+  );
+}
+
 async function assertConfiguredNativeConnectors(url, token, nativeConnectorIds) {
   if (process.platform !== 'darwin') {
     fail('native Calendar/Reminders verification requires a real macOS host');
@@ -786,7 +821,7 @@ function runPreStartHook(dataDir) {
   if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false, copyLoginSession = false) {
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false, copyLoginSession = false, skipModelCheck = false) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
@@ -835,6 +870,13 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     const token = await readServerToken(dataDir);
     await signInDogfood(url, token, credentials);
     await assertConfiguredModel(url, token);
+    const configuredProvider = config.models.providers[PROVIDER_ID];
+    if (skipModelCheck) {
+      console.log('NEO_VERIFY_MODEL_CHECK=skipped');
+    } else {
+      await probeModelChat({ baseUrl: configuredProvider.baseUrl, apiKey: credentials.tokenRhythmKey, model: configuredProvider.model });
+      console.log('NEO_VERIFY_MODEL_CHECK=ok');
+    }
     if (nativeConnectorIds !== undefined) {
       await assertConfiguredNativeConnectors(url, token, nativeConnectorIds);
     }
@@ -882,10 +924,15 @@ export function parseStartArgs(args) {
   let sourceConfigArg;
   let cleanAccount = false;
   let copyLoginSession = false;
+  let skipModelCheck = process.env.NEO_VERIFY_SKIP_MODEL_CHECK === '1';
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--reuse-dist') {
       reuseDist = true;
+      continue;
+    }
+    if (arg === '--skip-model-check') {
+      skipModelCheck = true;
       continue;
     }
     if (arg === '--copy-login-session') {
@@ -922,7 +969,7 @@ export function parseStartArgs(args) {
     ticket = arg;
   }
   if (!ticket) fail(usage());
-  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession };
+  return { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession, skipModelCheck };
 }
 
 async function main(args = process.argv.slice(2)) {
@@ -934,8 +981,8 @@ async function main(args = process.argv.slice(2)) {
     await stopRun(args[1]);
     return;
   }
-  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession } = parseStartArgs(args);
-  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession);
+  const { ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession, skipModelCheck } = parseStartArgs(args);
+  await startRun(ticket, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount, copyLoginSession, skipModelCheck);
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;

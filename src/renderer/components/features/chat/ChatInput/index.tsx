@@ -100,11 +100,12 @@ import { useChatInputSubmit } from './useChatInputSubmit';
 import { useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
+import { useScheduleDraftRequest } from './useScheduleDraftRequest';
 import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
 import { mergeAttachments } from './attachmentDedupe';
-import { notifyAttachmentMerge } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -1077,6 +1078,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
+  useScheduleDraftRequest(currentSessionId, creatingSchedule, runScheduleCreation);
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 
@@ -1133,6 +1135,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     processFile,
     inputAreaRef,
     setIsUploading: handleUploadStateChange,
+    attachmentCount: attachments.length,
     setAttachments,
     setValue,
     setVoiceInputContext,
@@ -1487,7 +1490,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             preview={composerDraft.notice.preview}
             attachmentNames={composerDraft.notice.attachmentNames}
             droppedNames={composerDraft.notice.droppedNames}
-            onPutBack={composerDraft.putBack}
+            onPutBack={() => {
+              composerDraft.putBack();
+              // 点按钮把焦点留在随即卸载的提示条上，回车到不了编辑区；跟发送失败回滚一样把光标还给输入框
+              inputAreaRef.current?.focus();
+            }}
             onDiscard={composerDraft.discard}
           />
         )}

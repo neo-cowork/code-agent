@@ -5,7 +5,7 @@
 // 改造点：
 // - 4 参数签名 (args, ctx, canUseTool, onProgress)
 // - 不 import services/infra/logger，走 ctx.logger
-// - 不 import resolvePath（生产 helper），用 path.resolve
+// - 输入路径统一走共享 resolveInputPath
 // - 输出格式保持和 legacy 一致（带 emoji 前缀），diff=true
 // ============================================================================
 
@@ -20,8 +20,9 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
+import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
+import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
 import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
 import { listDirectorySchema as schema } from './listDirectory.schema';
 
@@ -49,6 +50,8 @@ const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
 const NEXT_READ_HINT =
   '\n[next-read] Before Edit or overwrite Write on any listed file path, call Read on that exact file first.';
 const PLANNED_EMPTY_FOLDER_OUTPUT = '(empty — this task folder has no files yet)';
+// 默认工作根本身（懒创建、尚未落盘）：中性措辞，不把它说成任务文件夹
+const EMPTY_WORK_ROOT_OUTPUT = '(empty — this folder has no files yet)';
 
 const IGNORED_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__',
@@ -224,7 +227,10 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
-    const inputPath = (args.path as string | undefined) ?? ctx.workingDir;
+    const requestedPath = args.path as string | undefined;
+    const noWorkingFolder = guardUnattendedInputPath(requestedPath, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
+    const inputPath = requestedPath ?? ctx.workingDir;
     const recursive = Boolean(args.recursive);
     const maxDepth = (args.max_depth as number | undefined) ?? 3;
     const offset = parsePositiveInteger(args.offset, 0, Number.MAX_SAFE_INTEGER);
@@ -242,9 +248,7 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
 
     onProgress?.({ stage: 'starting', detail: `list ${path.basename(inputPath)}` });
 
-    const dirPath = path.isAbsolute(inputPath)
-      ? inputPath
-      : path.resolve(ctx.workingDir, inputPath);
+    const dirPath = resolveInputPath(inputPath, ctx.workingDir);
 
     try {
       const gitignoreLines = respectGitignore ? await readGitignoreLines(dirPath) : [];
@@ -315,10 +319,14 @@ class ListDirectoryHandler implements ToolHandler<Record<string, unknown>, strin
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {
-        if (isPlannedSessionWorkDirectory(dirPath)) {
-          const output = `${PLANNED_EMPTY_FOLDER_OUTPUT}\n\nnextOffset: null`;
+        // 计划中的会话产出目录（任务_/Task_ 形状，懒创建、尚未落盘）与尚未落盘的默认
+        // 工作根本身（懒创建，新数据目录上首轮之前不存在）都按空目录处理，不建目录
+        // （与 Glob/Grep 的 planned-empty 分支同一策略）；其余缺失路径报 ENOENT。
+        const isWorkRoot = isDefaultWorkDirectory(dirPath);
+        if (isWorkRoot || isPlannedSessionWorkDirectory(dirPath)) {
+          const output = `${isWorkRoot ? EMPTY_WORK_ROOT_OUTPUT : PLANNED_EMPTY_FOLDER_OUTPUT}\n\nnextOffset: null`;
           onProgress?.({ stage: 'completing', percent: 100 });
-          ctx.logger.info('ListDirectory done (planned empty session work directory)', { dirPath, recursive });
+          ctx.logger.info(`ListDirectory done (planned empty ${isWorkRoot ? 'default work root' : 'session work directory'})`, { dirPath, recursive });
           return {
             ok: true,
             output,

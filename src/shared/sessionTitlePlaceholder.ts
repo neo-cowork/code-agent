@@ -9,6 +9,22 @@ import { stripAppshotBlocks } from './contract/appshot';
 const APPSHOT_SESSION_TITLE = { zh: 'Appshot 会话', en: 'Appshot conversation' } as const;
 type TitleLanguage = keyof typeof APPSHOT_SESSION_TITLE;
 
+/** `/init-memory` 会话的确定性标题（斜杠展开只在模型面，小模型只看得到字面命令，会编出像内部提示名的标题）。 */
+const INIT_MEMORY_SESSION_TITLE = { zh: '初始化项目记忆', en: 'Set up project memory' } as const;
+const INIT_MEMORY_COMMAND = /^\/init-memory(?:\s|$)/;
+
+/** 首条消息是 `/init-memory`（可带参数）时返回确定性标题，否则 null。folderName 缺省则不带文件夹部分。 */
+export function deriveInitMemorySessionTitle(
+  message: string,
+  language: TitleLanguage,
+  folderName?: string,
+): string | null {
+  if (!INIT_MEMORY_COMMAND.test(message.trim())) return null;
+  const base = INIT_MEMORY_SESSION_TITLE[language];
+  const folder = folderName?.trim();
+  return folder ? `${base} · ${folder}` : base;
+}
+
 /** 英文 UI 下把存量/新写入的 Appshot 固定名显示成英文；其它标题原样返回。 */
 export function localizeAppshotSessionTitle(title: string, language: TitleLanguage): string {
   return title === APPSHOT_SESSION_TITLE.zh || title === APPSHOT_SESSION_TITLE.en

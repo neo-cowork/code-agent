@@ -24,6 +24,7 @@ import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { Project, ProjectCapabilitySelection, ProjectDetail } from '@shared/contract/project';
 import type { CronJobDefinition } from '@shared/contract';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
 import * as projectClient from '../../../services/projectClient';
 import * as rolesClient from '../../../services/rolesClient';
@@ -70,6 +71,7 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
   membersContent,
 }) => {
   const { t, language } = useI18n();
+  const localizeRole = useLocalizeRole();
   const ps = t.projectSpace;
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -108,15 +110,18 @@ export const ProjectConfigRail: React.FC<ProjectConfigRailProps> = ({
 
   const loadRoles = useCallback(() => {
     rolesClient.listRoles()
-      .then((entries) => setRoleOptions(entries.map((entry) => ({
-        id: entry.roleId,
-        label: entry.displayName ?? entry.roleId,
-        description: entry.description || undefined,
-        icon: entry.icon,
-        profession: entry.profession || undefined,
-      }))))
+      .then((entries) => setRoleOptions(entries.map((entry) => {
+        const localized = localizeRole(entry.roleId, { name: entry.displayName ?? '', profession: entry.profession });
+        return {
+          id: entry.roleId,
+          label: entry.displayName ? localized.name : entry.roleId,
+          description: entry.description || undefined,
+          icon: entry.icon,
+          profession: localized.profession || undefined,
+        };
+      })))
       .catch(() => setRoleOptions([]));
-  }, []);
+  }, [localizeRole]);
 
   const nativeConnectorDescriptions = ps.nativeConnectorDescriptions as Record<string, string | undefined>;
   const loadConnectors = useCallback(() => {

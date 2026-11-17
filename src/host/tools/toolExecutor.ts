@@ -1,5 +1,6 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { normalizeReminderCreateTime } from './reminderCreateTime';
+import { normalizeCalendarEventTime } from './calendarEventTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
 import { getLocale } from '../platform/appPaths';
@@ -106,6 +107,7 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { skillBoundaryAllowsTool } from './skillBoundaryScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
+import { observeInToolApproval } from './inToolApprovalObserve';
 import { annotateToolExecution, beginApprovalWait, endApprovalWait, getApprovalWaitMs, reportUndeclaredToolParams, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { recordCachedToolReplay } from './cachedToolReplay';
@@ -673,6 +675,11 @@ export class ToolExecutor {
       return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
     }
     params = reminderTime.args;
+    const calendarTime = normalizeCalendarEventTime(executionToolName, params);
+    if (!calendarTime.ok) {
+      return { success: false, error: calendarTime.error, metadata: { code: calendarTime.code } };
+    }
+    params = calendarTime.args;
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
@@ -810,7 +817,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
-        metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
+        metadata: { code: 'TOOL_DISABLED_FOR_RUN', bounced: true },
       };
     }
 
@@ -843,6 +850,7 @@ export class ToolExecutor {
       return {
         success: false,
         error: formatToolSchemaValidationError(executionToolName, blockingIssues),
+        metadata: { code: 'ARG_VALIDATION_FAILED' },
       };
     }
     // 未声明字段不硬拒：剥离后放行 + 上报（生产档），开发档额外 fail-loud。
@@ -1308,10 +1316,32 @@ export class ToolExecutor {
       permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
         if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
+        // 工具体内的开头授权（shadowAdapter 标 grantEligible）先消费已记住的工具级授权：
+        // 此前这条路直接弹卡，点了「本次任务内允许」下一次照问（11-17 真机：读日程连弹三张）。
+        if (
+          request.details?.grantEligible === true && !this.forcePermissionHandler
+          && request.forceConfirm !== true && !request.reasonCode
+        ) {
+          const grantStartedAt = Date.now();
+          const hit = resolvePreAskGrant({
+            toolName: request.tool, sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId,
+            runId: effectiveRunId, turnOrigin: options.turnOrigin,
+            standingGrantTarget: null, computerApp: null, blocked: false,
+          });
+          if (hit) {
+            const ask = { approved: true, approvalSource: 'session-allowlist' as const, denialSource: undefined };
+            context.permissionAskResults?.set(request, ask);
+            if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(request, ask, grantStartedAt, effectiveSessionId, this.ledgerOrigin, 0);
+            return true;
+          }
+        }
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
-          const ask = normalizePermissionAskResult(await this.requestPermission(request));
+          const ask = await observeInToolApproval({
+            sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, request,
+            ask: async () => normalizePermissionAskResult(await this.requestPermission(request)),
+          });
           context.permissionAskResults?.set(request, ask);
           if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(
             request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
@@ -2122,13 +2152,7 @@ export class ToolExecutor {
         shouldForceConfirm = false;
         logger.debug('ConfirmationGate preview error:', error);
       }
-      const preAsk = needsUserApproval ? resolvePreAskGrant({
-        toolName: executionToolName,
-        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
-        standingGrantTarget,
-        browserSessionTarget: browserSessionGrant?.target,
-        computerApp,
-        blocked: Boolean(commandAnalysisFailedReason)
+      const preAskBlocked = Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
@@ -2136,7 +2160,14 @@ export class ToolExecutor {
           || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
           || scheduleWriteGrantRequired
-          || shouldForceConfirm,
+          || shouldForceConfirm;
+      const preAsk = needsUserApproval ? resolvePreAskGrant({
+        toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
+        standingGrantTarget,
+        browserSessionTarget: browserSessionGrant?.target,
+        computerApp,
+        blocked: preAskBlocked,
       }) : null;
       if (preAsk) {
         if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
@@ -2153,6 +2184,18 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // 日历写回：批准卡的补充信息（默认日历名 / 要改或删那条的标题时间）只在这唯一一次审批里补，不改 params
+      // Only the host enrichment may label display-only calendar snapshot fields.
+      delete permissionRequest.details.calendarApprovalSnapshotFields;
+      if (executionToolName.startsWith('calendar_')) {
+        const { calendarApprovalDetails } = await import('./modules/connectors/calendarApprovalDetails');
+        try {
+          Object.assign(permissionRequest.details, await calendarApprovalDetails(executionToolName, params));
+        } catch (error) {
+          // 要改 / 删的日程找不到：不弹一张说不清是哪条的卡，直接让模型重新 list_events
+          return { success: false, error: error instanceof Error ? error.message : String(error), metadata: { code: 'CALENDAR_EVENT_NOT_FOUND' } };
+        }
+      }
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;
       if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;
@@ -2247,6 +2290,8 @@ export class ToolExecutor {
       }
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      // 与 preAsk 同一判据：没有任何强制确认、也不是按应用/浏览器站点授权的请求，才允许被同任务后点的授权顺带放行。
+      permissionRequest.details.grantEligible = !preAskBlocked && !computerApp && !browserSessionGrant;
       if (browserSessionGrant) {
         delete permissionRequest.details.targetApp;
         permissionRequest.details.browserSessionGrant = browserSessionGrant;
@@ -2362,14 +2407,14 @@ export class ToolExecutor {
 
       const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
-        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep && !commandAnalysisFailedReason,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, analysisFailed: Boolean(commandAnalysisFailedReason), request: permissionRequest,
         ask: () => requestPermissionWithTelemetry({
           request: permissionRequest,
           toolCallId: options.currentToolCallId,
           requestPermission: this.requestPermission,
         }),
       });
-      if (commandAnalysisFailedReason) {
+      if (commandAnalysisFailedReason && ask.denialSource !== 'goal-sticky-host') {
         ask.approved = false;
         ask.denialSource = 'fail-closed';
         ask.message = commandAnalysisDenialError(executionToolName).modelText;

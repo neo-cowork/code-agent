@@ -60,7 +60,7 @@ import {
   storedMemoryToEntry,
 } from '../../../src/host/memory/memoryEntryRuntime';
 import { memoryInjectionPauses, resumeMemoryInjection } from '../../../src/host/memory/memoryUsageEviction';
-import { buildPackedSeedMemory } from '../../../src/host/utils/seedMemoryInjector';
+import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
 import { memoryReadModule } from '../../../src/host/tools/modules/lightMemory/memoryRead';
 import { memorySearchModule } from '../../../src/host/tools/modules/lightMemory/memorySearch';
 import { MEMORY } from '../../../src/shared/constants';
@@ -112,24 +112,29 @@ function wrapRepo(repository: MemoryRepository): DbWrapper {
   };
 }
 
-function lightFile(title: string, body: string): string {
-  return `---
-name: ${title}
-description: fixture ${title}
-type: user
----
-
-${body}
-`;
+function lightFile(title: string, body: string, projectPath?: string): string {
+  const frontmatter = [
+    '---',
+    `name: ${title}`,
+    `description: fixture ${title}`,
+    'type: user',
+    ...(projectPath ? [`project_path: ${projectPath}`] : []),
+    '---',
+  ];
+  return `${frontmatter.join('\n')}\n\n${body}\n`;
 }
 
 let dataDir = '';
 let memDir = '';
 
-async function mirrorEntry(prefix: string, token: string): Promise<{ filename: string; rowId: string; entryId: string }> {
+async function mirrorEntry(
+  prefix: string,
+  token: string,
+  projectPath?: string,
+): Promise<{ filename: string; rowId: string; entryId: string }> {
   seq += 1;
   const filename = `${prefix}-${seq}.md`;
-  await fs.writeFile(path.join(memDir, filename), lightFile(filename, `${prefix} body ${token}`), 'utf8');
+  await fs.writeFile(path.join(memDir, filename), lightFile(filename, `${prefix} body ${token}`, projectPath), 'utf8');
   const rebuilt = await rebuildMemoryMirrorFromLightFiles(currentDb());
   expect(rebuilt.skipped).toEqual([]);
   const row = currentDb()
@@ -397,5 +402,69 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     expect(memoryInjectionPauses(currentDb(), later).has(paused.entryId)).toBe(false);
     expect(await injectedEntryIds()).toContain(paused.entryId);
     expect(resumeMemoryInjection(currentDb(), 'no-such-entry')).toBe(false);
+  });
+
+  // ---- N-MEM-EVICT-NEVER-READ-FU1：fallback buildSeedMemoryBlock 同口径排除已暂停记忆 ----
+  // bootstrap（conversationRuntimeContextBootstrap.injectSeedMemory）顺序：packed 返回 null
+  // 时落到 buildSeedMemoryBlock(projectPath)。项目级记忆经 light 文件 frontmatter 的
+  // project_path 落库，断言全走真实 DB + 两条注入通道。
+  const PROJ = '/repo/paused-fu1-proj';
+
+  it('fallback ①：项目记忆全部暂停时 packed 与 fallback 都返回 null（按 bootstrap 先后顺序断言）', async () => {
+    const later = LAUNCH + GRACE + DAY_MS;
+    vi.useFakeTimers({ now: later });
+    const stale = await mirrorEntry('fb-stale', 'zircgfbstale', PROJ);
+    const never = await mirrorEntry('fb-never', 'zircgfbnever', PROJ);
+    setUsage(stale.rowId, 3, later - 40 * DAY_MS);
+    setUsage(never.rowId, 0, null);
+    backdate(never.rowId, LAUNCH - 400 * DAY_MS);
+
+    // 两条确实都在暂停集合（一 stale_used 一 never_used），排除「整体为空」的假绿
+    const pauses = memoryInjectionPauses(currentDb(), later);
+    expect(pauses.get(stale.entryId)?.reason).toBe('stale_used');
+    expect(pauses.get(never.entryId)?.reason).toBe('never_used');
+
+    // bootstrap 先 packed（全排除 → null），再 fallback（不得把暂停记忆回流 → null）
+    await expect(buildPackedSeedMemory({ projectPath: PROJ })).resolves.toBeNull();
+    expect(buildSeedMemoryBlock(PROJ)).toBeNull();
+  });
+
+  it('fallback ②：混合时块非空——含未暂停的新鲜记忆、不含暂停记忆', async () => {
+    const later = LAUNCH + GRACE + DAY_MS;
+    vi.useFakeTimers({ now: later });
+    const paused = await mirrorEntry('fb-paused', 'zircgfbpaused', PROJ);
+    const fresh = await mirrorEntry('fb-fresh', 'zircgfbfresh', PROJ);
+    setUsage(paused.rowId, 0, null);
+    backdate(paused.rowId, LAUNCH - 400 * DAY_MS);
+    setUsage(fresh.rowId, 1, later - 2 * DAY_MS);
+    backdate(fresh.rowId, LAUNCH - 400 * DAY_MS);
+
+    const block = buildSeedMemoryBlock(PROJ);
+    expect(block).not.toBeNull();
+    expect(block).toContain('## Stored Memories');
+    // [#行id] 是 fallback 每条记忆的稳定句柄（formatMemoryEntry），用它区分「注入了谁」
+    expect(block).toContain(`[#${fresh.rowId}]`);
+    expect(block).not.toContain(`[#${paused.rowId}]`);
+  });
+
+  it('fallback ③：resumeMemoryInjection 后该记忆重新回到 fallback 块', async () => {
+    const later = LAUNCH + GRACE + DAY_MS;
+    vi.useFakeTimers({ now: later });
+    const paused = await mirrorEntry('fb-resume', 'zircgfbresume', PROJ);
+    const keeper = await mirrorEntry('fb-keeper', 'zircgfbkeeper', PROJ);
+    setUsage(paused.rowId, 0, null);
+    backdate(paused.rowId, LAUNCH - 400 * DAY_MS);
+    setUsage(keeper.rowId, 1, later - DAY_MS);
+    backdate(keeper.rowId, LAUNCH - 400 * DAY_MS);
+
+    const before = buildSeedMemoryBlock(PROJ);
+    expect(before).not.toBeNull();
+    expect(before).toContain(`[#${keeper.rowId}]`);
+    expect(before).not.toContain(`[#${paused.rowId}]`);
+
+    expect(resumeMemoryInjection(currentDb(), paused.entryId)).toBe(true);
+    const after = buildSeedMemoryBlock(PROJ);
+    expect(after).not.toBeNull();
+    expect(after).toContain(`[#${paused.rowId}]`);
   });
 });

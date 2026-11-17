@@ -1,9 +1,3 @@
-// ModelSettings - Model Configuration Tab
-//
-// Master-Detail 布局：左侧 Provider 列表（已可用 / 待添加 Key 分组）+ 右侧详情面板。
-// 详情面板三段式：① 连接 → ② 模型 → ③ 高级（折叠）。
-// 所有保存 / 测试 / 发现 / 新增 handler 与重构前完全一致，仅 UI 结构重组。
-//
 // 保存语义契约（2026-07 设置页 P0）：
 // - TaskStrategySettingsPanel（顶部「按任务自动切换」）改动即存，UI 标注「自动保存」，
 //   不参与 dirty 追踪。
@@ -18,7 +12,7 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { resolveProviderText } from '../../../../i18n/providerDisplay';
-import { Button, Toggle } from '../../../primitives';
+import { Button } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
 import { MODEL, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
@@ -26,7 +20,6 @@ import {
   buildProviderInfoFromSettings,
   getProviderIconPresets,
   getProviderRuntimeModels,
-  isProviderImageIcon,
   isDynamicCustomProviderId,
   normalizeProviderIcon,
   resolveProviderProtocol,
@@ -35,7 +28,7 @@ import {
 } from '@shared/modelRuntime';
 import { createLogger } from '../../../../utils/logger';
 import { toast } from '../../../../hooks/useToast';
-import { saveProviderIconAssetFromDataUrl, useProviderIconImageSource } from '../../../../utils/providerIconAssets';
+import { saveProviderIconAssetFromDataUrl } from '../../../../utils/providerIconAssets';
 import { getModelTemperatureControl } from '@shared/modelSampling';
 import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
 
@@ -60,7 +53,6 @@ import {
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeProviderIconValidationError,
-  getProtocolLabel,
   hasCustomEndpointOverride,
   isProviderIdentityManaged,
   mergeDiscoveredModelEntry,
@@ -78,6 +70,8 @@ import {
   ProviderConnectionSection,
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
+import { ModelKeyGuide } from './ModelKeyGuide';
+import { ProviderSettingsHeader } from './ProviderSettingsHeader';
 import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
@@ -228,8 +222,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     );
   }, [currentModels, modelSearch]);
   const providerRows = useMemo(
-    () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers }),
-    [providers, config, providerConfigs, modelText.helpers],
+    () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers, language }),
+    [providers, config, providerConfigs, modelText.helpers, language],
   );
   const orderedProviderRows = useMemo(() => orderProviderManagementRows(providerRows, defaultSelection.provider), [providerRows, defaultSelection.provider]);
   const selectedProviderRow = providerRows.find((provider) => provider.selected);
@@ -291,10 +285,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     markDirty();
     patchCurrentProviderConfig({
       apiKey: value,
-      apiKeyConfigured: value.trim() ? true : currentProviderConfig?.apiKeyConfigured,
+      apiKeyConfigured: value.trim() ? true : appSettings?.models.providers[config.provider]?.apiKeyConfigured,
     });
     onChange({ ...config, apiKey: value });
-  }, [config, currentProviderConfig?.apiKeyConfigured, markDirty, onChange, patchCurrentProviderConfig]);
+  }, [appSettings, config, markDirty, onChange, patchCurrentProviderConfig]);
 
   const handleBaseUrlChange = useCallback((value: string) => {
     markDirty();
@@ -489,6 +483,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       } : prev);
       try {
         const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+        setProviderConfigs(latestSettings.models.providers);
+        setAppSettings(latestSettings);
         if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
           await ipcService.invokeDomain(
             IPC_DOMAINS.SETTINGS,
@@ -497,7 +493,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           );
           const promotedModel = providerConfigForSave.model || config.model;
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          toast.success(`${modelText.toast.defaultPromotedPrefix}${providerConfigForSave.displayName || currentProviderInfo?.name || config.provider} / ${promotedModel}`);
+          toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedModel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {
@@ -852,10 +848,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     toast.success(modelText.toast.modelAdded);
   }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, markDirty, modelText.toast.modelAdded, modelText.toast.modelIdRequired, onChange]);
 
-  const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
-  const providerIcon = normalizeProviderIcon(currentProviderConfig?.icon) || providerTitle.slice(0, 1).toUpperCase();
-  const providerIconIsImage = isProviderImageIcon(providerIcon);
-  const providerIconImageSource = useProviderIconImageSource(providerIcon);
+  const providerTitle = selectedProviderRow?.name || config.provider;
   const providerIconPresets = getProviderIconPresets(config.provider);
   const providerIdentityManaged = isProviderIdentityManaged(currentProviderConfig);
 
@@ -864,6 +857,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
       title={modelText.title}
       description={modelText.description}
     >
+      <ModelKeyGuide settings={appSettings} defaultProvider={defaultSelection.provider} />
       <WebModeBanner />
 
       {/* ── 按任务自动切换（置顶，默认关闭；改动即存）── */}
@@ -878,7 +872,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         onMemoryRouteChange={persistMemoryRouting}
       />
 
-      <ServiceTierCostNote />
+      <ServiceTierCostNote provider={defaultSelection.provider} />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
       <SettingsSection
@@ -923,44 +917,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
             />
           ) : (
             <>
-              {/* ── 详情 Header ── */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-base font-bold text-zinc-200">
-                    {providerIconIsImage ? (
-                      providerIconImageSource ? (
-                        <img src={providerIconImageSource} alt="" className="h-full w-full rounded-lg object-cover" />
-                      ) : (
-                        providerTitle.slice(0, 1).toUpperCase()
-                      )
-                    ) : (
-                      providerIcon
-                    )}
-                  </span>
-                  <div>
-                    <h4 className="text-base font-semibold text-zinc-100">{providerTitle}</h4>
-                    <p className="mt-0.5 max-w-[420px] truncate text-xs text-zinc-500" title={effectiveBaseUrl}>
-                      {getProtocolLabel(effectiveProtocol, modelText.helpers)} · {effectiveBaseUrl || modelText.header.unsetAddress}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className={`text-xs ${hasApiKey ? 'text-badge-success' : 'text-badge-warning'}`}>
-                    {!needsApiKey ? modelText.header.noApiKey : hasApiKey ? modelText.header.apiKeySaved : modelText.header.waitingApiKey}
-                  </span>
-                  <label className="flex items-center gap-2 text-xs text-zinc-400" title={modelText.header.selectableTitle}>
-                    <span>{modelText.header.selectableLabel}</span>
-                    <Toggle
-                      checked={currentProviderConfig?.enabled !== false}
-                      onChange={(checked) => {
-                        markDirty();
-                        patchCurrentProviderConfig({ enabled: checked });
-                      }}
-                      aria-label={modelText.header.selectableAriaLabel}
-                    />
-                  </label>
-                </div>
-              </div>
+              <ProviderSettingsHeader
+                title={providerTitle} providerConfig={currentProviderConfig}
+                protocol={effectiveProtocol} baseUrl={effectiveBaseUrl}
+                needsApiKey={needsApiKey} hasApiKey={hasApiKey}
+                onEnabledChange={(enabled) => { markDirty(); patchCurrentProviderConfig({ enabled }); }}
+              />
 
               {/* ── ① 连接 ── */}
               <ProviderConnectionSection

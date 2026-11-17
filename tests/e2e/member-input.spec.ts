@@ -165,10 +165,10 @@ test('成员视图底部输入框给运行中的后台任务补一句：回执�
 
   // 6. 答掉子 run 的那个问题（拒绝 = 任务收尾）→ 浮卡消失，折叠记录露出来；任务终态唤醒团长的
   //    那条 meta 消息要带「期间用户直接给它补了 1 句」（N-TASKWAKE 摘要接上本单的计数）
-  // 「回答 · 拒绝」= UserQuestionCard 的 skip（declined:true）；别用宽正则——选项「拒绝」也是 button，会先被匹上
+  // 「跳过」= UserQuestionCard 的 skip（declined:true）；别用宽正则——选项「拒绝」也是 button，会先被匹上
   const card = page.getByTestId('user-question-card').first();
   await expect(card).toBeVisible({ timeout: 10_000 });
-  await card.getByRole('button', { name: '回答 · 拒绝', exact: true }).click();
+  await card.getByRole('button', { name: '跳过', exact: true }).click();
   await expect(page.getByText('允许后台任务继续完成验收吗')).toBeHidden({ timeout: 20_000 });
   await expect(page.getByTestId('member-input-note').first()).toBeVisible({ timeout: 10_000 });
   if (shotDir) await page.screenshot({ path: `${shotDir}/member-input-main-record.png`, fullPage: false });

@@ -549,7 +549,11 @@ describe('background task settlement wake with a real RunRegistry', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       expect(persistedNotes).toHaveLength(2);
-      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(2); // dispatch policy + one failure
+      expect(warn).toHaveBeenCalledWith(
+        'Foreground wake dispatch tools denied by run tool policy',
+        expect.objectContaining({ sessionId: SESSION, taskId: 'task-real-2' }),
+      );
       expect(warn).toHaveBeenCalledWith(
         'Foreground wake failed: wake turn failed',
         expect.objectContaining({ sessionId: SESSION, taskId: 'task-real-2', message: 'network connection reset' }),

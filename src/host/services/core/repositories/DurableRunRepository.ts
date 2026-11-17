@@ -271,7 +271,7 @@ export class DurableRunRepository implements DurableRunStores {
   }
 
   private takeOwnerLease(
-    claim: RunLeaseClaim & { abandonedProcessInstanceId?: string },
+    claim: RunLeaseClaim & { abandonedProcessInstanceId?: string; requireExpiredLease?: true },
     recoveryReason: 'lease_expired' | 'process_exit',
   ): RunLeaseClaimResult | null {
     return runWithSqliteBusyRetry(() => this.db.transaction(() => {
@@ -285,6 +285,8 @@ export class DurableRunRepository implements DurableRunStores {
       } else if (String(row.process_instance_id) !== claim.abandonedProcessInstanceId) {
         return null;
       }
+
+      if (claim.requireExpiredLease && expiry > claim.now) return null;
 
       const previous = rowToEnvelope(row);
       const nextEpoch = epoch + 1;
@@ -331,9 +333,10 @@ export class DurableRunRepository implements DurableRunStores {
             stringify(envelope), claim.now, claim.runId, epoch, claim.now)
         : this.db.prepare(`UPDATE durable_runs SET status = 'recovering', attempt = ?,
             owner_id = ?, process_instance_id = ?, owner_epoch = ?, lease_expires_at = ?,
-            envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ? AND process_instance_id = ?`)
+            envelope_json = ?, updated_at = ? WHERE run_id = ? AND owner_epoch = ? AND process_instance_id = ?
+              AND (? = 0 OR lease_expires_at <= ?)`)
           .run(nextAttempt, owner.ownerId, owner.processInstanceId, nextEpoch, owner.leaseExpiresAt,
-            stringify(envelope), claim.now, claim.runId, epoch, claim.abandonedProcessInstanceId);
+            stringify(envelope), claim.now, claim.runId, epoch, claim.abandonedProcessInstanceId, claim.requireExpiredLease ? 1 : 0, claim.now);
       if (changed.changes !== 1) return null;
       this.insertAttempt(attempt);
       return { envelope, owner, attempt };

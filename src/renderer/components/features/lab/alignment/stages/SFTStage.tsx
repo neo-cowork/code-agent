@@ -19,45 +19,12 @@ interface SFTStageProps {
   onComplete: () => void;
 }
 
-// 指令数据集示例 - 用对话形式展示
-const instructionExamples = [
-  {
-    question: '帮我把这句英文翻译成中文：Hello, how are you today?',
-    answer: '你好，你今天怎么样？',
-    category: '翻译任务',
-  },
-  {
-    question: '写一首关于春天的诗',
-    answer: '春风拂面暖阳照，\n桃花盛开蝶飞舞。\n万物复苏生机显，\n大地换上新衣裳。',
-    category: '创作任务',
-  },
-  {
-    question: '用简单的话解释什么是 AI',
-    answer: 'AI 就像是一个会学习的程序。你给它看很多例子，它就能从中找规律，然后自己做类似的事情。就像小朋友看多了猫的照片，以后见到新的猫也能认出来！',
-    category: '解释任务',
-  },
-  {
-    question: '把「把文件给我」改写得更礼貌一点',
-    answer: '请问您方便把文件发给我吗？谢谢！',
-    category: '改写任务',
-  },
-];
-
-// 训练前后对比 - 用更直观的例子
-const beforeAfterExamples = [
-  {
-    question: '今天天气怎么样？',
-    before: '天气是大气状态的表现，包括温度、湿度、气压等因素。气象学是研究天气的科学。在中国，中央气象台负责天气预报…',
-    after: '我没有实时查看天气的能力，不过你可以打开手机的天气 App 看看！如果你告诉我你在哪个城市，我可以给你一些穿衣建议哦～',
-    beforeComment: '像在背百科全书，没回答问题',
-    afterComment: '承认不能做的事，还给了实用建议',
-  },
-];
-
 export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
   const { t } = useI18n();
   const s = t.labAlignment.sft;
   const common = t.labAlignment.common;
+  const instructionExamples = s.instructionExamples;
+  const beforeAfterExamples = s.beforeAfterExamples;
   const [selectedExample, setSelectedExample] = useState(0);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStep, setTrainingStep] = useState(0);
@@ -316,8 +283,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-badge-success">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.meaning}</span>
+                {term.meaning && term.meaning !== term.en && (
+                  <>
+                    <span className="text-xs text-zinc-500">|</span>
+                    <span className="text-sm text-zinc-400">{term.meaning}</span>
+                  </>
+                )}
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
