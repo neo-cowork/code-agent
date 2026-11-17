@@ -10,6 +10,7 @@
 // import 任何 agent/* 或 ipc/*，确保不引入新循环。
 // ============================================================================
 
+import { stripWorkdirPrefix } from './workdirPrefix';
 import { randomUUID } from 'crypto';
 import type {
   SwarmEvent,
@@ -120,7 +121,7 @@ export class SwarmEventEmitter {
           role: agent.role,
           status: 'pending',
           iterations: 0,
-          dispatchedTask: agent.dispatchedTask,
+          dispatchedTask: stripWorkdirPrefix(agent.dispatchedTask),
         },
       },
     });
