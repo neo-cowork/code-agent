@@ -9,6 +9,32 @@ import type { PendingMemoryConfirm } from '../../../hooks/useMemoryLearning';
 import { getCategoryLabel, getTypeLabel } from '../../../hooks/useMemoryLearning';
 import { useI18n } from '../../../hooks/useI18n';
 import { Z_LAYERS } from '../../../styles/zLayers';
+import { getMemoryConfirmWords } from '../../../i18n/memoryConfirm';
+import type { MemoryConfirmView } from '@shared/contract/memory';
+
+const LINE_CLASS = 'whitespace-pre-wrap break-words';
+
+function ConfirmView({ view, language }: { view: MemoryConfirmView; language: 'zh' | 'en' }) {
+  const w = getMemoryConfirmWords(language);
+  return (
+    <div className="space-y-2" data-testid="memory-confirm-view">
+      {view.items.map((item, index) => {
+        switch (item.kind) {
+          case 'remember': return <p key={index} className={LINE_CLASS}>{w.remember}{item.text}</p>;
+          case 'description': return <p key={index} className={LINE_CLASS}>{w.description}{item.text}</p>;
+          case 'name': return <p key={index} className={LINE_CLASS}>{w.name}{item.text}</p>;
+          case 'replaces': return <p key={index} className={`${LINE_CLASS} text-badge-warning`}>{w.replaces}</p>;
+          case 'delete': return <p key={index} className={LINE_CLASS}>{w.deleteMemory}{item.title}</p>;
+          case 'command': return <p key={index} className={LINE_CLASS}>{w.command}{item.text}</p>;
+          case 'path': return <p key={index} className={LINE_CLASS}>{w.path}{item.text}</p>;
+          case 'change': return <p key={index} className={LINE_CLASS}>{w.changeFromTo(item.from, item.to)}</p>;
+          case 'body':
+          case 'line': return <p key={index} className={LINE_CLASS}>{item.text}</p>;
+        }
+      })}
+    </div>
+  );
+}
 
 interface MemoryConfirmModalProps {
   pending: PendingMemoryConfirm | null;
@@ -21,7 +47,7 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
   onConfirm,
   onDecline,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   if (!pending) return null;
   const isDirective = pending.authority === 'directive';
 
@@ -44,19 +70,23 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
 
         {/* Content */}
         <div className="p-4">
-          <p className="text-sm text-zinc-400 mb-3 whitespace-pre-wrap break-words">
-            {pending.content}
-          </p>
-
-          {/* Meta info */}
-          <div className="flex items-center gap-2 text-xs text-zinc-500 mb-4">
-            <span className="px-1.5 py-0.5 rounded bg-zinc-700">
-              {getCategoryLabel(pending.category)}
-            </span>
-            <span className="px-1.5 py-0.5 rounded bg-zinc-700">
-              {getTypeLabel(pending.type)}
-            </span>
+          <div className="text-sm text-zinc-400 mb-3 max-h-64 overflow-y-auto break-words">
+            {isDirective && pending.view
+              ? <ConfirmView view={pending.view} language={language} />
+              : <p className="whitespace-pre-wrap">{pending.content}</p>}
           </div>
+
+          {/* Meta info：directive 是用户规则，没有分类/类型这类内部标签 */}
+          {!isDirective && (
+            <div className="flex items-center gap-2 text-xs text-zinc-500 mb-4">
+              <span className="px-1.5 py-0.5 rounded bg-zinc-700">
+                {getCategoryLabel(pending.category)}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-zinc-700">
+                {getTypeLabel(pending.type)}
+              </span>
+            </div>
+          )}
 
           <p className="text-xs text-zinc-500 mb-4">
             {isDirective ? t.memory.confirmDirectiveBody : t.memory.confirmMemoryBody}

@@ -40,7 +40,7 @@ import {
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from '../cron/types';
-import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
+import { getJobDisplayName } from '../cron/builtinJobDisplay';
 import { CronJobEditor } from '../cron/CronJobEditor';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
@@ -367,7 +367,7 @@ const TimeCapabilityPanel: React.FC = () => {
     const latest = latestExecutions[job.id];
     const latestMeta = getLatestExecutionStatus(latest, t.cronCenter);
     const isTriggering = triggeringJobId === job.id;
-    const displayName = getBuiltinJobDisplay(job, language)?.name ?? job.name;
+    const displayName = getJobDisplayName(job, language);
     const scheduleSummary = job.schedule.type === 'cron'
       ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
       : formatScheduleSummary(job, language);
