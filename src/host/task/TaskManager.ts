@@ -36,12 +36,17 @@ import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
-import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
+import {
+  SESSION_COMMAND_CENTER_TOOL_NAMES,
+  formatSessionTaskDeliveryFailure,
+  formatSessionTaskUserDenied,
+} from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
 import { stopSessionBackgroundWork } from './sessionBackgroundStop';
 import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
-import { isTaskDeliveryFailed } from './taskDeliveryVerdict';
+import { getTaskDeliveryFailure } from './taskDeliveryVerdict';
+import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
 import {
   DEFAULT_CONFIG,
   SESSION_STOP_REQUESTED_EVENT,
@@ -368,11 +373,18 @@ export class TaskManager extends EventEmitter {
           seenArtifactLocations.add(location);
           return true;
         });
-        const deliveryFailed = isTaskDeliveryFailed(messages, artifacts.length);
-        this.emitEvent(deliveryFailed ? 'task_error' : 'task_completed', sessionId, {
+        const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
+        if (deliveryFailure === 'user_denied') {
+          this.emitEvent('task_cancelled', sessionId, { taskId, detail: formatSessionTaskUserDenied(resolveSessionTaskResultLocale()) });
+          return;
+        }
+        this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
           taskId,
-          ...(deliveryFailed
-            ? { error: finalMessage?.content?.trim() || 'Task delivery failed.' }
+          ...(deliveryFailure
+            ? {
+              error: formatSessionTaskDeliveryFailure(deliveryFailure, resolveSessionTaskResultLocale())
+                ?? (finalMessage?.content?.trim() || 'Task delivery failed.'),
+            }
             : { conclusion: finalMessage?.content?.trim() }),
           ...(artifacts.length ? { artifacts } : {}),
         });
@@ -805,6 +817,18 @@ export class TaskManager extends EventEmitter {
    * routing_resolved 降级信号。
    */
   emitAgentEventForSession(sessionId: string, event: AgentEvent): void {
+    if (!this.onAgentEvent) {
+      // N-FIX-FLAKY-TERMINAL-RESULT-PROJECTION-LATE-SETTLE：initialize() 之前的迟到
+      // emit（如后台停止说明经投影重试在宿主未起/已拆窗口补投）不能走 handleAgentEvent
+      // —— 里面的 this.onAgentEvent! 抛 TypeError，又因上面的 void 无人接，变成
+      // unhandled rejection 把整轮 vitest 假红。这里安静丢弃并留一条可区分的 warn。
+      logger.warn('Agent event emitted before TaskManager initialize(); event dropped', {
+        reason: 'emit_agent_event_before_initialize',
+        sessionId,
+        eventType: event.type,
+      });
+      return;
+    }
     void this.handleAgentEvent(sessionId, event);
   }
 
@@ -867,13 +891,13 @@ export class TaskManager extends EventEmitter {
     const backgroundTaskId = this.backgroundPermissionOwners.get(requestId);
     if (backgroundTaskId) {
       const background = this.backgroundRuns.get(backgroundTaskId);
-      if (background?.sessionId !== sessionId) return 'no_orchestrator';
-      // 后台 lane 的审批应答路由留痕（N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1）：应答进了
-      // lane 的 orchestrator 还是前台会话的，此前只能从下游日志反推。
+      if (!background) return 'no_orchestrator';
+      // 属主以 requestId 为准（FB-1408：调用方会话 id 可能缺省或是 web「最后触碰会话」兜底），不一致只留痕不拒收；同时留应答路由痕迹。
+      if (background.sessionId !== sessionId) logger.warn('Background permission response session mismatch; routing by requestId owner', { requestId, callerSessionId: sessionId, ownerSessionId: background.sessionId });
       logger.info('Permission response routed to background task orchestrator', {
         requestId,
         backgroundTaskId,
-        sessionId,
+        sessionId: background.sessionId,
       });
       const outcome = background.orchestrator.handlePermissionResponse(requestId, response, updatedArgs);
       // 'storage_unavailable' 是台账瞬时写失败、可重试：跟 'unknown_request' 一样不能

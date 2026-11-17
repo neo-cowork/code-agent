@@ -82,4 +82,22 @@ describe('managed background spawn lifecycle ownership', () => {
     expect(events.filter((event) => event.type === 'swarm:completed')).toHaveLength(1);
     expect(registry.drainCompletionNotifications({ sessionId })).toHaveLength(1);
   });
+
+  it('carries the child\'s real changed files into the swarm:agent:completed event (background single-spawn branch)', async () => {
+    harness.executorExecute.mockResolvedValue({
+      success: true, output: '清单已写好', iterations: 2, toolsUsed: ['Write'], filesChanged: ['/tmp/test/release.md'],
+    });
+    const events: SwarmEvent[] = [];
+    getEventBus().subscribe<SwarmEvent>('swarm', (event) => { events.push(event.data); });
+    const ctx = { sessionId: 'session-bg-files', workingDir: '/tmp/test', abortSignal: new AbortController().signal,
+      logger, emit: () => undefined, modelConfig: { provider: 'kimi', model: 'kimi-k2.5' },
+      resolver: { getDefinition: vi.fn() } } as unknown as ToolContext;
+    const handler = await spawnAgentModule.createHandler();
+    const started = await handler.execute({ role: 'coder', task: '写一份发布清单到 release.md', run_in_background: true }, ctx, allowAll);
+    expect(started.ok).toBe(true);
+    await vi.advanceTimersByTimeAsync(100);
+    const completed = events.filter((event) => event.type === 'swarm:agent:completed');
+    expect(completed).toHaveLength(1);
+    expect(completed[0].data?.agentState?.filesChanged).toEqual(['/tmp/test/release.md']);
+  });
 });

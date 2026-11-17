@@ -1,3 +1,4 @@
+import { hooksLoadStateEn } from './hooksLoadState';
 // Settings namespace translations (en/Work) — 纯平移拆分（债务门）
 import { enAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsEn } from './permissionGrants';
@@ -510,8 +511,8 @@ export const enSettingsWork = {
         daysAgoSuffix: ' days ago',
       },
       sourceLabels: {
-        light_file: 'Light file',
-        db_memory: 'DB memory',
+        light_file: 'Memory file',
+        db_memory: 'In-app memory',
         unknown: 'Unknown source',
       },
       typeLabels: {
@@ -564,7 +565,6 @@ export const enSettingsWork = {
         receiptCreatedMiddle: ', updated ',
         receiptUpdatedMiddle: ', skipped ',
         writtenFilesPrefix: 'Written files: ',
-        none: 'None',
         extraFilesPrefix: ' and ',
         extraFilesSuffix: ' total',
         mirrorPrefix: 'Mirror rebuild: ',
@@ -626,7 +626,7 @@ export const enSettingsWork = {
       },
       entries: {
         sectionTitle: 'All Memory',
-        description: 'View Light Memory and DB memory together. Edits sync back to the matching source of truth.',
+        description: 'View, edit and archive everything Neo remembers in one place. Changes take effect right away.',
         loadFailed: 'Failed to load unified memory',
         updateSuccess: 'Memory updated',
         updateFailed: 'Update failed',
@@ -659,6 +659,7 @@ export const enSettingsWork = {
         stats: {
           total: 'Total',
           currentMatched: 'Current matches',
+          totalCaption: '{files} from memory files · {db} from in-app memory',
           filteredCaption: 'Affected by search and filters',
           active: 'Active',
           activeCaption: 'Included in injection candidates',
@@ -699,7 +700,7 @@ export const enSettingsWork = {
         confirmDelete: 'Confirm delete',
         delete: 'Delete',
         evidence: 'Evidence',
-        noEvidence: 'No evidence records',
+        noEvidence: 'No evidence records', evidenceCount: '{count} source record(s)',
         sourceSession: {
           open: 'Open source session',
           missing: 'Source session no longer exists',
@@ -975,7 +976,7 @@ export const enSettingsWork = {
       refresh: 'Refresh',
       globalConfig: 'Global config',
       projectConfig: 'Project config',
-      loadFailedPrefix: 'Load failed: ',
+      ...hooksLoadStateEn,
       enabledTitle: 'Enabled',
       emptyEnabled: 'No Hooks are registered. Click the "Open" button above to create a config.',
       unusedTitle: 'Unused',

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { NeedsInputNativeFallback } from './needsInputNativeFallback';
 import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 // Notification Service
@@ -20,6 +21,7 @@ import { getConfigService } from '../core/configService';
 import { getDaemonQuitIntent } from '../daemon/quitIntent';
 import { desktopPresence } from '../companion/desktopPresence';
 import { getDurableResumeNotificationText } from '../../../shared/i18n/durableResumeNotification';
+import { getMeetingReminderNotificationText } from '../../../shared/i18n/meetingReminderNotification';
 import {
   getNotificationDigestText,
   type NotificationDigestLocale,
@@ -58,6 +60,14 @@ function sendNativeNotification(payload: NativeNotificationPayload): void {
   }
 }
 
+async function resolveNotificationSessionTitle(sessionId: string): Promise<string | undefined> {
+  const { getDatabase } = await import('../core/databaseService');
+  const { getAuthService } = await import('../auth/authService');
+  // Read only the local session row; loading a conversation can restore cloud history.
+  const userId = getAuthService().getCurrentUser()?.id ?? null;
+  return getDatabase().getSession(sessionId, { userId })?.title;
+}
+
 /**
  * needs-input 去重键容量：同一 dedupeKey 只投递一次，超限丢最旧（Set 保持插入序，
  * 首元素即最旧）。有界内存，防长跑进程无限膨胀。
@@ -79,7 +89,7 @@ export interface TaskNotificationData {
   /** Source cron job for explicit login-wall consent from the notification. */
   jobId?: string;
   summary?: string;
-  duration: number;
+  duration?: number;
   toolsUsed: string[];
   /** false 表示任务失败——通知标题用「任务失败」而非「任务完成」。缺省视为成功。 */
   succeeded?: boolean;
@@ -195,6 +205,23 @@ class NotificationService implements Disposable {
   }
 
   private nativeNotificationSender = sendNativeNotification;
+  private sessionTitleResolver = resolveNotificationSessionTitle;
+  private readonly nativeNeedsInput = new NeedsInputNativeFallback({
+    locale: readNotificationLocale,
+    sessionTitle: (sessionId) => this.sessionTitleResolver(sessionId),
+    canDeliver: () => this.enabled && getDaemonQuitIntent() === 'background',
+    folded: (sessionId) => logger.info('Native needs-input notification skipped', { reason: 'native-folded', sessionId }),
+    failed: () => logger.warn('Native needs-input notification failed', { reason: 'native-sender-threw' }),
+    deliver: (payload) => {
+      if (this.isDryRun()) logger.info('Native needs-input notification skipped', { reason: 'dry-run', ...payload });
+      else this.nativeNotificationSender(payload);
+    },
+  });
+
+  /** Inject a title lookup; null restores the lazy session-manager lookup. */
+  setNotificationSessionTitleResolver(resolver: ((sessionId: string) => Promise<string | undefined>) | null): void {
+    this.sessionTitleResolver = resolver ?? resolveNotificationSessionTitle;
+  }
 
   /** Inject a native sender; null restores the bundled shell launch path. */
   setNativeNotificationSender(sender: ((payload: NativeNotificationPayload) => void) | null): void {
@@ -208,7 +235,7 @@ class NotificationService implements Disposable {
   private record(notification: Omit<RecordedNotification, 'createdAt' | 'delivery'>): RecordedNotification {
     const entry: RecordedNotification = {
       ...notification,
-      title: sanitizeNotificationText(notification.title, 120),
+      title: sanitizeNotificationText(notification.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(notification.body, 320),
       createdAt: Date.now(),
       delivery: this.isDryRun() ? 'dry_run' : 'sent',
@@ -227,6 +254,7 @@ class NotificationService implements Disposable {
   clearRecentNotifications(): void {
     this.recentNotifications = [];
     this.deliveredNeedsInputKeys.clear();
+    this.nativeNeedsInput.clear();
     this.carriedOver = [];
     this.carriedOverLoaded = true;
     this.logDropped(this.budget.clear(), 'budget-cleared');
@@ -318,7 +346,7 @@ class NotificationService implements Disposable {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
       ...payload,
-      title: sanitizeNotificationText(payload.title, 120),
+      title: sanitizeNotificationText(payload.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(payload.body, 320),
     });
   }
@@ -392,7 +420,7 @@ class NotificationService implements Disposable {
    * dedupeKey：同一条逻辑请求可能从两个发送口到达（停车通知 + 事件落库通知），
    * 携带同一键的第二次调用在门后、投递前被丢弃；无键 = 行为不变。
    */
-  notifyNeedsInput(data: { sessionId: string; title: string; body: string; dedupeKey?: string }): void {
+  notifyNeedsInput(data: { sessionId: string; title: string; body: string; dedupeKey?: string; tool?: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify(true)) return;
 
@@ -421,27 +449,9 @@ class NotificationService implements Disposable {
         ...(data.dedupeKey ? { dedupeKey: data.dedupeKey } : {}),
       },
     }, id);
-    // Fallback B（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：deliver 只广播给 renderer，
-    // 渲染端没了（壳声明「后台继续」退出，ADR-083）时 toast 没有落点——再弹一条 host 侧
-    // 原生通知兜底。文案不复制调用方的 title/body（那可能带工具名），用固定人话。
-    // 已知局限：意图声明后没有「壳重新接上」的复位事件，重开后 needs_input 会
-    // renderer toast + 原生通知双弹（见证据档）；放着不修是刻意的——漏报比重复打扰贵。
-    if (getDaemonQuitIntent() === 'background') {
-      if (this.isDryRun()) {
-        logger.info('Native needs-input notification skipped', { reason: 'dry-run' });
-      } else {
-        try {
-          this.nativeNotificationSender({
-            id,
-            sessionId: data.sessionId,
-            title: '有事项需要你确认',
-            body: '后台任务在等你确认，打开 Agent Neo 处理。',
-          });
-        } catch (error) {
-          logger.warn('Native needs-input notification failed', { error });
-        }
-      }
-    }
+    // Fallback B: the shell declared background continuation; fold native banners per session.
+    // Caller copy stays on the renderer path; native copy uses the session title and action label.
+    if (getDaemonQuitIntent() === 'background') this.nativeNeedsInput.enqueue({ ...data, id });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
@@ -454,6 +464,7 @@ class NotificationService implements Disposable {
    * remove_active），只收回 renderer 侧的补提醒队列。
    */
   retractNeedsInput(dedupeKey: string): void {
+    this.nativeNeedsInput.retract(dedupeKey);
     if (!this.deliveredNeedsInputKeys.has(dedupeKey)) {
       logger.debug('Skip retract for a needs-input key that was never delivered', { dedupeKey });
       return;
@@ -495,9 +506,11 @@ class NotificationService implements Disposable {
         ? `Used ${toolsUsed.length} ${toolsUsed.length === 1 ? 'tool' : 'tools'}`
         : `使用了 ${toolsUsed.length} 个工具`;
     }
-    body += en
-      ? `\nDuration: ${this.formatDuration(duration, 'en')}`
-      : `\n耗时: ${this.formatDuration(duration)}`;
+    if (duration !== undefined && Number.isFinite(duration) && duration > 0) {
+      body += en
+        ? `\nDuration: ${this.formatDuration(duration, 'en')}`
+        : `\n耗时: ${this.formatDuration(duration)}`;
+    }
 
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
@@ -556,7 +569,7 @@ class NotificationService implements Disposable {
       intent: 'task_complete',
       type: 'task_complete',
       sessionId: data.sessionId,
-      title: sanitizeNotificationText(data.title, 120),
+      title: sanitizeNotificationText(data.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(body, 320),
       delivery: {},
     });
@@ -569,15 +582,17 @@ class NotificationService implements Disposable {
    * 会前提醒（N-MEETING-SESSION）：日历上的会快开始了，问用户要不要记这场会。
    * 要用户决定，按 needs_input 放行、绕过焦点门；没有目标会话，点击只唤起应用（录制条上点开始）。
    */
-  notifyMeetingStarting(data: { title: string; body: string }): void {
+  notifyMeetingStarting(data: { meetingTitle: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify(true)) return;
+    // 文案跟随 ui.language；没标题的会用同语言兜底（调用方传原始标题）
+    const text = getMeetingReminderNotificationText(readNotificationLocale(), data.meetingTitle);
     this.enqueueBudgeted({
       intent: 'needs_input',
       type: 'plugin',
       sessionId: '',
-      title: data.title,
-      body: data.body,
+      title: text.title,
+      body: text.body,
       delivery: { urgent: true },
     });
   }
@@ -656,6 +671,7 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
+    this.nativeNeedsInput.clear();
     // 暂存队列每次暂存时已落盘；退出不是丢弃，留给下次启动补发（见 replayPersistedHeld）。
     for (const item of this.budget.dispose()) {
       logger.info('Notification persisted for next start', { notificationId: item.id, reason: 'service-disposed' });

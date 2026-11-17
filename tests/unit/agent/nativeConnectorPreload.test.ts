@@ -5,6 +5,12 @@ const mocks = vi.hoisted(() => ({
   enabledNative: [] as string[],
   runAppleScript: vi.fn(async () => 'Work\nPersonal'),
 }));
+// 日历自 #3483 走原生 EventKit 桥（不再走 osascript），在桥边界放假桥。
+const { fake } = await vi.hoisted(async () => ({ fake: (await import('../connectors/fakeCalendarBridge')).createFakeCalendarBridge() }));
+vi.mock('../../../src/host/permissions/envAssist/shellBridge/client', async (orig) => ({
+  ...(await orig<object>()),
+  resolveShellBridgeClientFromEnv: () => fake.client,
+}));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mocks.warn, error: vi.fn() }),
@@ -15,8 +21,9 @@ vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({ connectors: { enabledNative: mocks.enabledNative } }) }),
 }));
 
-// 只在 osascript 边界替身：连接器对象、registry、tool-search 都是真实的。
-vi.mock('../../../src/host/connectors/native/osascript', () => ({
+// 只在 osascript / 原生桥边界替身：连接器对象、registry、tool-search 都是真实的。
+vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/connectors/native/osascript')>(),
   runAppleScript: mocks.runAppleScript,
   escapeAppleScriptString: (value: string) => value,
   parseAppleScriptDate: () => null,
@@ -30,6 +37,7 @@ import {
 } from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { getConnectorRegistry } from '../../../src/host/connectors/registry';
+import { resetCalendarConnectorReadiness } from '../../../src/host/connectors/native/calendar';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import type { ToolModule } from '../../../src/host/protocol/tools';
@@ -60,6 +68,8 @@ const darwin = process.platform === 'darwin';
 describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
   beforeEach(() => {
     mocks.warn.mockClear();
+    fake.reset();
+    resetCalendarConnectorReadiness();
     resetProtocolRegistry();
     for (const schema of [remindersCreateSchema, mailDraftSchema, calendarCreateEventSchema]) {
       const module: ToolModule = {
@@ -96,18 +106,27 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(mocks.warn).not.toHaveBeenCalled();
   });
 
-  it('enabled + failed probe: not preloaded, warns readiness-failed', async () => {
+  it('enabled + failed probe: reminders/mail not preloaded (readiness-failed); unauthorized calendar keeps its tools', async () => {
     enable(ALL);
     mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
     await expect(getConnectorRegistry().get('reminders')!.execute('probe_access', {})).rejects.toThrow();
     mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
     await expect(getConnectorRegistry().get('mail')!.execute('probe_access', {})).rejects.toThrow();
-    mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
-    await expect(getConnectorRegistry().get('calendar')!.execute('probe_access', {})).rejects.toThrow();
-    for (const id of ALL) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
+    // 日历未授权不算「坏了」：保持 unchecked、工具照常预载，调用时出授权卡（#3483）
+    fake.state.status = 2;
+    await getConnectorRegistry().get('calendar')!.execute('probe_access', {});
+    for (const id of ['reminders', 'mail']) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
+    expect(getConnectorRegistry().get('calendar')!.getCachedStatus!().readiness).toBe('unchecked');
 
-    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
-    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(3);
+    const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names).toHaveLength(4);
+    expect(names).toEqual(expect.arrayContaining([
+      'calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event',
+    ]));
+    expect(names).toContain('calendar_create_event');
+    expect(names).not.toContain('reminders_create');
+    expect(names).not.toContain('mail_draft');
+    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(2);
   });
 
   it('enabled but platform unavailable: not preloaded, warns readiness-unavailable', () => {
@@ -126,20 +145,20 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     }
   });
 
-  it('enabled in config but absent from the registry: warns with not-registered', () => {
+  it('enabled in config but absent from the registry: exposes only the read tool, warns with not-registered', () => {
     mocks.enabledNative = ['reminders'];
     getConnectorRegistry().configure([]);
 
-    expect(getDeferredToolsToPreloadForTurn(turn('加个提醒'))).toEqual([]);
+    expect(getDeferredToolsToPreloadForTurn(turn('加个提醒'))).toEqual(['reminders']);
     const warns = mocks.warn.mock.calls.map((call) => String(call[0]));
-    expect(warns.some((w) => w.includes('reason: not-registered'))).toBe(true);
+    expect(warns.some((w) => w.includes('reason: not-registered') && w.includes('read tool'))).toBe(true);
   });
 
   it('registry configured after the first turn: the next turn gets all three connectors write tools', () => {
     mocks.enabledNative = ALL;
     getConnectorRegistry().configure([]);
 
-    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
+    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT)).sort()).toEqual(['calendar', 'mail', 'reminders']);
     expect(warnReasons().filter((w) => w.includes('reason: not-registered'))).toHaveLength(3);
 
     getConnectorRegistry().configure(ALL);
@@ -151,11 +170,47 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(mocks.warn).not.toHaveBeenCalled();
   });
 
-  it('not enabled: nothing preloaded, warns not-enabled', () => {
+  it('not enabled: only the read tool of each matched connector is preloaded, warns not-enabled', () => {
     enable([]);
 
-    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
+    const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names.sort()).toEqual(['calendar', 'mail', 'reminders']);
+    for (const w of WRITE_TOOLS) expect(names).not.toContain(w);
     expect(warnReasons().filter((w) => w.includes('reason: not-enabled'))).toHaveLength(3);
+  });
+
+  it('calendar off + schedule question: calendar read tool reaches both consumers, tool returns the not-connected text', async () => {
+    enable([]);
+    const prompt = '我今天有什么日程';
+    expect(getDeferredToolsToPreloadForTurn(turn(prompt))).toEqual(['calendar']);
+
+    const { getTextForegroundToolNamesForPrompt } = await import('../../../src/host/app/sessionCommandCenterBrain');
+    const foreground = getTextForegroundToolNamesForPrompt(prompt);
+    expect(foreground).toContain('calendar');
+    expect(foreground).not.toContain('calendar_create_event');
+    expect(getTextForegroundToolNamesForPrompt("what's on my calendar today?")).toContain('calendar');
+
+    // 真实 registry 为空 → 真实 calendar 工具走 NOT_INITIALIZED。
+    const { calendarModule } = await import('../../../src/host/tools/modules/connectors/calendar');
+    const handler = await calendarModule.createHandler();
+    const ctx = {
+      sessionId: 's', workingDir: process.cwd(), abortSignal: new AbortController().signal,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }, emit: () => undefined,
+    } as never;
+    const result = await handler.execute({ action: 'list_events' }, ctx, async () => ({ allow: true }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('NOT_INITIALIZED');
+      expect(result.error).toContain('Calendar is not connected');
+      expect(result.error).toContain('never state that there are no events');
+      expect(result.error).toContain('能力中心 > 连接器');
+      expect(result.error).not.toContain('设置 > 连接器');
+    }
+  });
+
+  it('not enabled + composer selected another connector: calendar read tool is not added', () => {
+    enable([]);
+    expect(getDeferredToolsToPreloadForTurn(turn('我今天有什么日程', { allowedConnectorIds: ['feishu'] }))).not.toContain('calendar');
   });
 
   it('enabled + ready but the prompt has no reminder/mail/calendar wording: not preloaded', async () => {

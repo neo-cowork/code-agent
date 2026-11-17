@@ -24,7 +24,7 @@ import { buildCronAgentRunOptions } from './cronAgentRoleContext';
 import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import type { AgentRunOptions } from '../research/types';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
-import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
+import { buildCronAgentPrompt, CRON_NO_WORKING_FOLDER_NOTICE, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
 import { attachCronRunCost, createCronRunCostMeterForExecution } from './cronRunCostMeter';
@@ -157,7 +157,10 @@ export async function executeCronAgentAction(
     eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
     toolScope: { optInPersonalSkillIds },
   };
-  agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
+  agentRunOptions.systemInstructions = [
+    UNATTENDED_TRUST_NOTICE,
+    ...(cronSession.workingDirectory ? [] : [CRON_NO_WORKING_FOLDER_NOTICE]),
+  ];
 
   let result: unknown; let finalAssistantText = '';
   let runError: unknown; let runFailed = false;

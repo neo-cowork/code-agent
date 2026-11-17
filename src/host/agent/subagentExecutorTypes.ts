@@ -59,6 +59,8 @@ export interface SubagentResult {
   /** Terminal tool events, including rejected and failed attempts. */
   toolCallCount?: number;
   iterations: number;
+  /** Files this subagent really changed (successful file-mutation tools / workspace diff), de-duplicated across turns. */
+  filesChanged?: string[];
   /** Cost incurred by this subagent */
   cost?: number;
   /** 本次 subagent 跨迭代累计的 outputTokens（dynamic-workflow BudgetTracker 计费用）。 */

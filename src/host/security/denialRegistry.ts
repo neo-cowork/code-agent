@@ -15,7 +15,10 @@
 // - 文件路径类：path.resolve(cwd, raw) 归一；cwd 不同的相对路径天然不同指纹
 //   （保守方向：漏匹配 > 误伤）。
 //
-// 用户拒绝 sticky 的作用域（refuseIfGoalDenied）：(sessionId, `message:<sourceMessageId>`, 工具族)。
+// 用户拒绝 sticky 的作用域（refuseIfGoalDenied）：(sessionId, `message:<sourceMessageId>`, 工具族)，
+// 外加一个「改文件」效果类（Write/Edit/删除请求 + 非已知只读的 Bash，fail-closed）：同一条消息里
+// 用户拒绝过任一改文件动作，换工具（Write→Bash 重定向/rm）也同样拦；只读 Bash 与新用户消息照常出卡。
+// 静态不可解析的命令（analysisFailed）只拒不登记——用户没拒绝过它。
 // 子代理（含后台/workflow/skill）沿 spawn 链继承父的 sourceMessageId，所以主聊天里的一次
 // 拒绝同样拦同一条用户消息派出的子代理；无用户消息起点的 run（cron/心跳/恢复）退回
 // `run:<runId>`，只在该 run 内生效。新用户消息即新作用域。
@@ -27,7 +30,8 @@ import type { PermissionAskResult, PermissionDenialSource } from '../../shared/c
 import { permissionDenialError, userDeniedGoalStickyError } from '../tools/toolPermissionClassification';
 import { createLogger } from '../services/infra/logger';
 import { canonicalizeCommand } from './canonicalizeCommand';
-import { isBashToolName } from '../tools/toolNames';
+import { canonicalToolName, isBashToolName } from '../tools/toolNames';
+import { isKnownSafeCommand } from './commandSafety';
 import { extractStandingGrantTarget } from '../tools/externalSideEffect';
 
 /** 计算动作指纹；无法规范化的工具形状返回 null（不进登记、不进匹配）。 */
@@ -82,7 +86,31 @@ interface GoalApprovalScope {
   sessionId?: string;
   sourceMessageId?: string;
   runId?: string;
+  /** false = CUA 敏感步骤：既不登记也不拒绝。 */
   enabled: boolean;
+  /** 命令静态不可解析：照常被 sticky 拒绝，但绝不登记为用户拒绝。 */
+  analysisFailed?: boolean;
+}
+
+interface EffectRequest {
+  tool: string;
+  type?: string;
+  details?: { command?: unknown };
+}
+
+const FILE_CHANGING_TYPES = new Set(['file_write', 'file_edit', 'file_delete']);
+const FILE_CHANGING_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const EFFECT_FILE_CHANGING = '@effect:file-changing';
+
+/** 「会改文件」效果类。拿不准一律算改文件（fail-closed）：Bash 只有已知只读白名单才排除。 */
+function isFileChanging(request: EffectRequest, analysisFailed?: boolean): boolean {
+  if (analysisFailed) return true;
+  if (request.type && FILE_CHANGING_TYPES.has(request.type)) return true;
+  if (isBashToolName(request.tool)) {
+    const command = request.details?.command;
+    return !(typeof command === 'string' && isKnownSafeCommand(command));
+  }
+  return FILE_CHANGING_TOOLS.has(canonicalToolName(request.tool));
 }
 
 class DenialRegistry {
@@ -99,7 +127,7 @@ class DenialRegistry {
       turnOrigin?: ReadonlyArray<{ runId?: string }>;
       details?: { sensitiveStep?: unknown };
     },
-  ): { sessionId: string; scope: string; toolFamily: string; key: string } | null {
+  ): { sessionId: string; scope: string; toolFamily: string; key: string; effectKey: string } | null {
     const active = this.goalScope.getStore();
     const enabled = active ? active.enabled : !fallback?.details?.sensitiveStep;
     if (!enabled) return null;
@@ -109,7 +137,11 @@ class DenialRegistry {
     if (!scope) return null;
     const sessionId = (active?.sessionId ?? fallback?.sessionId) ?? `scope:${scope}`;
     const toolFamily = isBashToolName(toolName) ? 'Bash' : toolName;
-    return { sessionId, scope, toolFamily, key: JSON.stringify([scope, toolFamily]) };
+    return {
+      sessionId, scope, toolFamily,
+      key: JSON.stringify([scope, toolFamily]),
+      effectKey: JSON.stringify([scope, EFFECT_FILE_CHANGING]),
+    };
   }
 
   /**
@@ -124,17 +156,25 @@ class DenialRegistry {
       runId?: string;
       turnOrigin?: ReadonlyArray<{ runId?: string }>;
       tool: string;
-      details?: { sensitiveStep?: unknown };
+      type?: string;
+      details?: { sensitiveStep?: unknown; command?: unknown };
     },
     options?: { log?: boolean },
   ): (PermissionAskResult & { denialSource: 'goal-sticky-host' }) | null {
     const entry = this.resolveGoalEntry(request.tool, request);
-    if (!entry || !this.goals.get(entry.sessionId)?.has(entry.key)) return null;
+    if (!entry) return null;
+    const bucket = this.goals.get(entry.sessionId);
+    if (!bucket) return null;
+    const analysisFailed = this.goalScope.getStore()?.analysisFailed;
+    const sameTool = bucket.has(entry.key);
+    const crossTool = !sameTool && bucket.has(entry.effectKey) && isFileChanging(request, analysisFailed);
+    if (!sameTool && !crossTool) return null;
     if (options?.log !== false) {
       createLogger('DenialRegistry').warn('user-denied-goal-sticky: refusing approval before ask/park', {
         sessionId: entry.sessionId,
         scope: entry.scope,
         toolFamily: entry.toolFamily,
+        reason: analysisFailed ? 'analysis-failed' : crossTool ? 'cross-tool' : 'same-tool',
       });
     }
     return {
@@ -151,7 +191,8 @@ class DenialRegistry {
    */
   async observeApproval(input: {
     sessionId?: string; sourceMessageId?: string; runId?: string;
-    toolName: string; enabled: boolean; app?: { name: string } | null;
+    toolName: string; enabled: boolean; analysisFailed?: boolean; request?: EffectRequest;
+    app?: { name: string } | null;
     ask: () => Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }>;
   }): Promise<PermissionAskResult & { denialSource: PermissionDenialSource | undefined }> {
     const scopeState: GoalApprovalScope = {
@@ -159,9 +200,10 @@ class DenialRegistry {
       sourceMessageId: input.sourceMessageId,
       runId: input.runId,
       enabled: input.enabled,
+      analysisFailed: input.analysisFailed,
     };
     const result = await this.goalScope.run(scopeState, input.ask);
-    if (input.enabled && !result.approved && result.denialSource === 'user') {
+    if (input.enabled && !input.analysisFailed && !result.approved && result.denialSource === 'user') {
       const entry = this.resolveGoalEntry(input.toolName, scopeState);
       if (entry) {
         let bucket = this.goals.get(entry.sessionId);
@@ -173,15 +215,19 @@ class DenialRegistry {
             if (oldest !== undefined) this.goals.delete(oldest);
           }
         }
-        bucket.delete(entry.key);
-        bucket.add(entry.key);
-        if (bucket.size > MAX_PER_SESSION) {
-          const oldest = bucket.values().next().value;
-          if (oldest !== undefined) bucket.delete(oldest);
+        const keys = [entry.key];
+        if (isFileChanging(input.request ?? { tool: input.toolName })) keys.push(entry.effectKey);
+        for (const key of keys) {
+          bucket.delete(key);
+          bucket.add(key);
+          if (bucket.size > MAX_PER_SESSION) {
+            const oldest = bucket.values().next().value;
+            if (oldest !== undefined) bucket.delete(oldest);
+          }
         }
       }
       const guidance = userDeniedGoalStickyError(input.toolName).modelText;
-      // A responder-supplied reason must not hide the instruction to stop and ask;
+      // A responder-supplied reason must not hide the instruction to end the turn without a question;
       // an in-handler sticky refusal already carries `guidance` verbatim.
       result.message = !result.message
         ? permissionDenialError(input.toolName, 'user', input.app).modelText

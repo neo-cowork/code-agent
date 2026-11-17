@@ -228,6 +228,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'lark',
     name: '飞书',
+    displayNameEn: 'Feishu',
     logo: 'feishu',
     description: `飞书多维表格与日历（只读）。需先在飞书开放平台建自建应用、开多维表格与日历的只读权限、启用机器人能力（日历接口的必要条件）、创建版本并发布，再把应用加进目标表格的协作者。日历要监听哪一本需自己提供日历 ID（应用身份列不出你新建的日历），取日程时每次至少取 ${FEISHU_CALENDAR_MIN_PAGE_SIZE} 条。`,
     category: 'office-collab',

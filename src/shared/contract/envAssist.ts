@@ -1,6 +1,6 @@
 /** Environment notices carry translation keys, never operating-system diagnostics. */
 export type EnvBlockerClass =
-  | 'perm_automation' | 'perm_accessibility' | 'perm_screen_recording'
+  | 'perm_automation' | 'perm_calendars' | 'perm_accessibility' | 'perm_screen_recording'
   | 'perm_input_monitoring' | 'perm_notifications' | 'perm_files'
   | 'runtime_missing' | 'login_expired'
   | 'quota_exhausted' | 'model_capability' | 'offline' | 'first_launch';
@@ -29,11 +29,13 @@ export interface EnvAssistNotice {
     kind: EnvAssistActionKind;
     labelKey: string;
     payload?:
-      | { pane: 'automation' | 'accessibility' | 'screenCapture' | 'inputMonitoring' | 'notifications' | 'filesAndFolders' | 'fullDiskAccess' | 'network' }
+      | { pane: 'automation' | 'calendars' | 'accessibility' | 'screenCapture' | 'inputMonitoring' | 'notifications' | 'filesAndFolders' | 'fullDiskAccess' | 'network' }
       | { serverName: string; requiredScope?: string }
       | { route: string };
   };
   resume: { mode: 'auto' | 'manual'; parkId?: string };
+  /** Exact call that parked this run; absent for notices from ordinary tool failures. */
+  parkedToolCallId?: string;
   doneKey?: string;
   updatedAt: number;
   devDiagnostic?: { rawRef: string };
@@ -48,6 +50,8 @@ export interface EnvAssistActRequest {
 export interface EnvAssistActResult {
   status: 'opened' | 'not_available' | 'rejected' | 'checked';
   outcome?: { status: 'granted' | 'denied' | 'undecided' | 'not_running' } | { status: 'unavailable'; reason: string };
+  /** The card's persisted copy once it is resolved: the card applies it itself, so a missed broadcast can't leave it stale. */
+  notice?: EnvAssistNotice;
 }
 
 /** Result of a permission-gated settings switch (ADR-090 perm_calendars). The host writes the setting, never the renderer. */
@@ -62,7 +66,7 @@ export interface CalendarSettingResult {
 /** Runtime validation for durable environment checkpoints. */
 export function isEnvBlockerClass(value: unknown): value is EnvBlockerClass {
   return typeof value === 'string' && Object.hasOwn({
-    perm_automation: true, perm_accessibility: true, perm_screen_recording: true,
+    perm_automation: true, perm_calendars: true, perm_accessibility: true, perm_screen_recording: true,
     perm_input_monitoring: true, perm_notifications: true, perm_files: true,
     runtime_missing: true, login_expired: true, quota_exhausted: true,
     model_capability: true, offline: true, first_launch: true,

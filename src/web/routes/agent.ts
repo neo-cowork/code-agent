@@ -3,6 +3,8 @@ import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
+import { existsSync } from 'node:fs';
+import { resolveWorkspacePath } from '../../host/runtime/workspaceScope';
 import { randomUUID } from 'node:crypto';
 import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
@@ -34,6 +36,7 @@ import { resolveForegroundMcpToolScope } from '../../host/mcp/foregroundMcpServe
 import { getSessionCommandCenterBrainContextForPrompt, getSessionCommandCenterTurnRulesForPrompt, getTextForegroundToolNamesForPrompt, resolveForegroundBrainTurnBudget } from '../../host/app/sessionCommandCenterBrain';
 import { resolveRoleChatToolFace } from '../../host/app/morningBriefSaveDraftTools';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
+import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';
@@ -809,6 +812,26 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // context and the legacy session cwd are only source provenance here.
       resolvedProject = runWorkspaceScope.primaryRoot;
     }
+    if (runWorkspaceScope && !runWorkspaceScope.version.startsWith('isolated-v1:')) {
+      // A saved Source replacement can leave both the session row and a mounted
+      // client's request pointing at the removed folder. Repair only absent paths
+      // outside the verified scope; valid project subdirectories keep their cwd.
+      const verifiedScope = runWorkspaceScope;
+      const isRemovedProjectDirectory = (directory: string): boolean =>
+        !resolveWorkspacePath(verifiedScope, directory, 'read') && !existsSync(directory);
+      if (persistedSession?.workingDirectory && isRemovedProjectDirectory(persistedSession.workingDirectory)) {
+        if (!sessionManagerForRun?.updateSession) throw new Error('SESSION_WORKSPACE_RECOVERY_UNAVAILABLE');
+        await sessionManagerForRun.updateSession(sessionId, {
+          workingDirectory: runWorkspaceScope.primaryRoot,
+          updatedAt: Date.now(),
+        });
+        persistedSession = { ...persistedSession, workingDirectory: runWorkspaceScope.primaryRoot };
+      }
+      if (isRemovedProjectDirectory(resolvedProject)) {
+        resolvedProject = runWorkspaceScope.primaryRoot;
+        logger.info('[AgentRouter] Using verified primary Source after folder replacement', { sessionId, projectId: runWorkspaceScope.projectId });
+      }
+    }
     // 外部引擎把 resolvedProject 当子进程 cwd，缺失会被 assertWorkspaceCwd 硬拒
     // （"must exist"）——懒开目录对它们没有「等首个写工具」的余地，preflight 落盘。
     if (isExternalAgentEngine(selectedEngine.kind) && resolvedProject) {
@@ -1338,6 +1361,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       config.thinkingEnabled = body.thinkingEnabled ?? true;
       if (body.effortLevel !== undefined) config.effortLevel = body.effortLevel;
 
+      const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
       const commandCenterBrain = isSessionCommandCenterTurn({ prompt, hasGoal: Boolean(body.goal) });
       if (commandCenterBrain) {
         config.toolScope = await resolveForegroundMcpToolScope(config.toolScope);
@@ -1350,7 +1374,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds, {
             attachments: body.attachments,
             model: config.modelConfig,
-          }),
+          }, config.originKind === 'headless' ? undefined : cachedHistory),
           config.agentOverride?.tools, config.agentOverride?.id, true,
         );
         config.foregroundToolFace = true;
@@ -1437,7 +1461,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       };
 
       // 加载历史消息 + 当前用户消息
-      const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
       // The web-native route hydrates the shared session projection directly. Background
       // child prompts are persisted there as meta messages, but they must never enter the
       // foreground model transcript: doing so can split an assistant tool call from its
@@ -1750,7 +1773,6 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             provider: runModelConfig.provider,
             model: runModelConfig.model,
           });
-          const sessionsTable = sb.supabase.from('sessions');
           // Insert user message (skip if pre-persisted)
           if (!userMsgPrePersistedSupabase) {
             await sb.supabase.from('messages').insert({
@@ -1779,13 +1801,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               source_device_id: 'web',
             });
           }
-          // 更新会话标题（第一轮消息时）
-          if (isNewSession) {
-            await sessionsTable.update({
-              title: buildSessionTitle(titleSource),
-              updated_at: Date.now(),
-            }).eq('id', sessionId);
-          }
+          // 首轮标题只在 syncSupabaseSessionRow 以 insert-if-absent 写入；这里不再用截断档覆盖已回写的智能标题。
         }
       } catch (sbErr) {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
@@ -1988,14 +2004,38 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         attachments,
         context,
       };
-      res.json({ success: true, data: { outcome: 'steered' } });
-      void runAgentTurn(
-        buildQueuedAgentRunBody(envelope),
-        createOfflineAgentRunResponseSink(),
-        { connectedClient: false },
-      ).catch((error) => {
-        logger.error(`[AgentRouter] Failed to start foreground continuation for ${sessionId}:`, error);
+      // 等新一轮真登记起跑再回执：先答 steered 再只写日志，起跑失败（会话被旧 run 占着等）时
+      // 界面永远停在「正在发送消息…」（N-FIX-SEND-HANGS-WHEN-PARKED-RUN-SUPERSEDE-FAILS）。
+      const started = await new Promise<{ ok: true } | { ok: false; status: number; code: string }>((resolve) => {
+        const timer = setTimeout(
+          () => resolve({ ok: false, status: 504, code: 'RUN_START_TIMEOUT' }),
+          INTERACTION_TIMEOUTS.FOREGROUND_TURN_START,
+        );
+        const settle = (outcome: { ok: true } | { ok: false; status: number; code: string }) => {
+          clearTimeout(timer);
+          resolve(outcome);
+        };
+        runAgentTurn(
+          buildQueuedAgentRunBody(envelope),
+          createOfflineAgentRunResponseSink(),
+          { connectedClient: false, onDurableActivated: () => settle({ ok: true }) },
+        ).then(
+          // 轮次结束都没走到起跑 = 预检就被拒了（离线 sink 吞掉了 4xx 回执）。
+          () => settle({ ok: false, status: 500, code: 'RUN_NOT_STARTED' }),
+          (error: unknown) => {
+            logger.error(`[AgentRouter] Failed to start foreground continuation for ${sessionId}:`, error);
+            settle(error instanceof RunSessionConflictError
+              ? { ok: false, status: 409, code: error.code }
+              : { ok: false, status: 500, code: 'RUN_START_FAILED' });
+          },
+        );
       });
+      if (started.ok) {
+        res.json({ success: true, data: { outcome: 'steered' } });
+      } else {
+        // 不带 message：界面按 status/code 出人话，内部报错只进日志。
+        res.status(started.status).json({ success: false, error: { code: started.code } });
+      }
       return;
     }
 

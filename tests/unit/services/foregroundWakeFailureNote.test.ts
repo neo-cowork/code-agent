@@ -64,6 +64,8 @@ import {
   createForegroundWake,
   formatBackgroundWakeFailureNote,
 } from '../../../src/host/services/commandCenter/foregroundWake';
+import { backgroundPanelZh, backgroundPanelEn } from '../../../src/renderer/i18n/backgroundPanel';
+import { interpolate } from '../../../src/renderer/i18n/interpolate';
 import { recordBackgroundWakeFailureNoteWithOwnerRetry } from '../../../src/host/services/commandCenter/backgroundWakeNoteRetry';
 
 const task: SessionCommandTask = {
@@ -93,7 +95,7 @@ describe('foreground wake failure note (default dependencies)', () => {
     expect(message.role).toBe('system');
     const registered = findRegisteredSystemEvent(message.metadata);
     expect(registered?.key).toBe('backgroundWakeFailed');
-    expect(message.content).toBe(formatBackgroundWakeFailureNote(task.shortName));
+    expect(message.content).toBe(formatBackgroundWakeFailureNote(task.shortName, 'owner_missing'));
     expect(message.content).toBe('后台任务「报告」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。');
     expect(message.metadata?.backgroundWakeFailed).toEqual({ taskId: 'task-n', reason: 'owner_missing', title: '报告' });
     expect(h.emitted).toEqual([{ sessionId: 'session-n', event: { type: 'message', data: message } }]);
@@ -143,10 +145,10 @@ describe('foreground wake failure note (default dependencies)', () => {
 
     const failedNotes = h.added.filter((entry) => entry.message.metadata?.backgroundWakeFailed);
     expect(failedNotes).toHaveLength(1);
-    expect(failedNotes[0].message.content).toBe(formatBackgroundWakeFailureNote(task.shortName));
+    expect(failedNotes[0].message.content).toBe(formatBackgroundWakeFailureNote(task.shortName, 'owner_missing'));
     expect(failedNotes[0].message.metadata?.backgroundWakeFailed).toEqual({
       taskId: 'task-n',
-      reason: 'wake_failed',
+      reason: 'owner_missing',
       title: '报告',
     });
 
@@ -159,7 +161,7 @@ describe('foreground wake failure note (default dependencies)', () => {
 
     const retried = h.added.at(-1)!;
     expect(retried.message.content).toBe(
-      '后台任务「Compare three note-taking apps」已结束；自动汇报这一步没能完成，恢复原账号登录后可查看任务结果，也可以直接问我。',
+      '后台任务「Compare three note-taking apps」已结束；自动汇报没能完成。任务结果在后台任务面板里可以查看，也可以直接问我。',
     );
     expect(retried.message.metadata?.backgroundWakeFailed).toEqual({
       taskId: 'session-work-retry',
@@ -167,4 +169,61 @@ describe('foreground wake failure note (default dependencies)', () => {
       title: 'Compare three note-taking apps',
     });
   });
+  it.each([
+    ['owner_missing', 'wakeFailedOwnerMissing'],
+    ['rate_limited', 'wakeFailedRateLimited'],
+    ['max_iterations', 'wakeFailedMaxIterations'],
+    ['wake_failed', 'wakeFailedGeneric'],
+    ['turn_error', 'wakeFailedGeneric'],
+  ] as const)('persists %s copy matching zh i18n and has the right login guidance in both languages', async (reason, key) => {
+    await recordBackgroundWakeFailureNoteWithOwnerRetry({
+      sessionId: task.sessionId, taskId: task.id, shortName: task.shortName, reason,
+    });
+    const note = h.added[0].message;
+    expect(note.content).toBe(interpolate(backgroundPanelZh.backgroundPanel[key], { title: task.shortName }));
+    expect(note.metadata?.backgroundWakeFailed?.reason).toBe(reason);
+    const english = backgroundPanelEn.backgroundPanel[key];
+    if (reason === 'owner_missing') {
+      expect(note.content).toContain('恢复原账号登录');
+      expect(english).toContain('sign back in');
+    } else {
+      expect(note.content).not.toMatch(/登录|sign back in|sign in/i);
+      expect(english).not.toMatch(/登录|sign back in|sign in/i);
+      expect(note.content).toContain('任务结果在后台任务面板里可以查看');
+      expect(english).toContain('view the result in the background task panel');
+    }
+    if (reason === 'rate_limited') {
+      expect(note.content).toContain('模型服务暂时限流');
+      expect(english).toContain('model service is temporarily rate-limited');
+    }
+    if (reason === 'max_iterations') {
+      expect(note.content).toContain('自动汇报用完了可用步骤');
+      expect(english).toContain('automatic report ran out of steps');
+    }
+  });
+
+  it.each([
+    { source: 'sink', error: { status: 429, message: 'Request rejected' } },
+    { source: 'throw', error: Object.assign(new Error('Request rejected'), { statusCode: 429 }) },
+    { source: 'sink', error: { message: 'Rate limit exceeded' } },
+    { source: 'throw', error: new Error('too many requests') },
+  ])('classifies a $source rate limit from structured HTTP status or text through createForegroundWake', async ({ source, error }) => {
+    orchestrator.sendMessage.mockImplementationOnce(async (_prompt, _attachments, options) => {
+      if (source === 'throw') throw error;
+      options?.terminalErrorSink?.(error);
+    });
+    await createForegroundWake()(task, 'completed');
+    expect(h.added).toHaveLength(1);
+    expect(h.added[0].message.metadata?.backgroundWakeFailed?.reason).toBe('rate_limited');
+    expect(h.added[0].message.content).toBe('后台任务「报告」已结束；模型服务暂时限流，自动汇报没能完成。任务结果在后台任务面板里可以查看，稍后也可以直接问我。');
+    expect(h.added[0].message.content).not.toMatch(/登录|sign back in|sign in/i);
+  });
+
+  it('keeps login guidance when sendMessage cannot access the owner session', async () => {
+    orchestrator.sendMessage.mockRejectedValueOnce(new Error('Session session-n not found'));
+    await createForegroundWake()(task, 'completed');
+    expect(h.added[0].message.metadata?.backgroundWakeFailed?.reason).toBe('owner_missing');
+    expect(h.added[0].message.content).toContain('恢复原账号登录');
+  });
+
 });

@@ -47,11 +47,13 @@ describe('formatDateTime (detail time, language-aware)', () => {
     expect(formatDateTime(PM, 'en')).toBe('2026/11/09 16:05');
   });
 
-  it('兜底文案保留：未设置 / 无效时间', () => {
+  it('兜底文案随语言：zh 未设置/无效时间，en Not set/Invalid time（N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC-FU3）', () => {
     expect(formatDateTime(undefined, 'zh')).toBe('未设置');
     expect(formatDateTime('not-a-date', 'zh')).toBe('无效时间');
-    expect(formatDateTime(undefined, 'en')).toBe('未设置');
-    expect(formatDateTime('not-a-date', 'en')).toBe('无效时间');
+    expect(formatDateTime(undefined, 'en')).toBe('Not set');
+    expect(formatDateTime('not-a-date', 'en')).toBe('Invalid time');
+    // 缺省 lang = zh：老调用方（不传 lang）行为零变化
+    expect(formatDateTime(undefined)).toBe('未设置');
   });
 
   it('formatScheduleSummary 一次性档把 lang 传进时间（zh/en 各自口径）', () => {

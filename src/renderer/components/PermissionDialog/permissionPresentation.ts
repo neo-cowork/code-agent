@@ -1,4 +1,5 @@
 import type { Translations } from '../../hooks/useI18n';
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
@@ -78,7 +79,7 @@ export function isDangerousRequestShape(request: PermissionRequest): boolean {
     || (request.type === 'command' && isDangerousCommand(request.details.command));
 }
 
-export function isGenericCommandRequest(request: PermissionRequest): boolean {
+function isGenericCommandRequest(request: PermissionRequest): boolean {
   return request.type === 'command'
     && request.tool.trim().toLowerCase() !== 'bash'
     // App-specific consent keeps its existing force-confirm command warning.
@@ -89,7 +90,9 @@ export function isGenericCommandRequest(request: PermissionRequest): boolean {
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
   if (request.details.browserSessionGrant) return 'expanded';
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
-  return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
+  // 没有文件目标的「文件类」请求是中性卡（describeApproval 归 generic），要展开才看得到范围。
+  return (request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit')
+    && fileTarget(request)
     ? 'compact'
     : 'expanded';
 }
@@ -173,7 +176,7 @@ function deletionCountText(request: PermissionRequest, parsed: RmCommandTargets,
   return '';
 }
 
-export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
+export function permissionConsequence(request: PermissionRequest, t: Translations, language: 'zh' | 'en' = 'zh'): string | undefined {
   // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
   if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
@@ -212,13 +215,17 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
   if (request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny) {
     return p.consequenceUncertainWriteTarget;
   }
+  if (request.boundary?.id === 'file.external_read') {
+    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target) : p.targetFallback);
+  }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside
       .replace('{target}', safeTarget ?? p.targetFallback)
       .replace('{count}', fileCountText(writeCount, t));
   }
   if (request.type === 'network' || request.type === 'mcp') {
-    const endpoint = request.details.connectorAccess?.connectorName
+    const connector = request.details.connectorAccess;
+    const endpoint = (connector && catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName))
       || request.details.url
       || [request.details.server, request.details.toolName].filter(Boolean).join(' / ')
       || p.externalServiceFallback;

@@ -75,7 +75,7 @@ export const ProjectSpaceView: React.FC<ProjectSpaceViewProps> = ({ projectId, o
 
   // 邀请码 Modal：页头「邀请」按钮与右栏成员卡「邀请」入口共用同一实例（别复制两份逻辑）
   const inviteModal = useProjectSpaceInvite();
-  // 升级确认弹层（cloudProjectId 为空时页头按钮文案「升级为协同空间」）
+  // 升级确认弹层（cloudProjectId 为空时页头按钮文案「升级为协作空间」）
   const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false);
   const [promoteBusy, setPromoteBusy] = useState(false);
   const handlePromoteToCloud = async () => {

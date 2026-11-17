@@ -1,3 +1,4 @@
+import { hooksLoadStateZh } from './hooksLoadState';
 import { outcomeWordsZh } from './outcomeWords';
 import { zhAppshotsSettingsBase } from './appshotsSettingsBase';
 import { permissionGrantsZh } from './permissionGrants';
@@ -327,7 +328,7 @@ export const zhSettingsWork = {
         cancel: '取消',
         save: '保存',
         add: '添加',
-        copyApiKey: '复制 API Key',
+        copyApiKey: '复制密钥',
         copy: '复制',
         disconnect: '断开',
         connect: '连接',
@@ -341,7 +342,7 @@ export const zhSettingsWork = {
         deleteConfirm: '确定要删除这个通道吗？',
         deleted: '通道已删除',
         deleteFailed: '删除失败',
-        apiKeyCopied: 'API Key 已复制到剪贴板',
+        apiKeyCopied: '密钥已复制到剪贴板',
       },
       status: {
         error: '错误',
@@ -511,8 +512,8 @@ export const zhSettingsWork = {
         daysAgoSuffix: '天前',
       },
       sourceLabels: {
-        light_file: 'Light 文件',
-        db_memory: 'DB memory',
+        light_file: '记忆文件',
+        db_memory: '应用内记忆',
         unknown: '未知来源',
       },
       typeLabels: {
@@ -565,7 +566,6 @@ export const zhSettingsWork = {
         receiptCreatedMiddle: '，更新 ',
         receiptUpdatedMiddle: '，跳过 ',
         writtenFilesPrefix: '写入文件：',
-        none: '无',
         extraFilesPrefix: ' 等 ',
         extraFilesSuffix: ' 个',
         mirrorPrefix: 'mirror 重建：',
@@ -627,7 +627,7 @@ export const zhSettingsWork = {
       },
       entries: {
         sectionTitle: '全部记忆',
-        description: '统一查看 Light Memory 和 DB memory，编辑后会同步对应 source of truth。',
+        description: '在这里统一查看、编辑和归档 Neo 记住的内容，修改后立即生效。',
         loadFailed: '加载统一记忆失败',
         updateSuccess: '记忆已更新',
         updateFailed: '更新失败',
@@ -660,6 +660,7 @@ export const zhSettingsWork = {
         stats: {
           total: '总数',
           currentMatched: '当前匹配',
+          totalCaption: '{files} 条来自记忆文件 · {db} 条来自应用内记忆',
           filteredCaption: '受搜索和筛选影响',
           active: '启用',
           activeCaption: '会进入注入候选',
@@ -701,6 +702,7 @@ export const zhSettingsWork = {
         delete: '删除',
         evidence: '证据',
         noEvidence: '无证据记录',
+        evidenceCount: '共 {count} 条来源记录',
         sourceSession: {
           open: '打开来源会话',
           missing: '来源会话已不存在，无法跳转',
@@ -874,7 +876,7 @@ export const zhSettingsWork = {
       },
       auth: {
         title: '凭证库存',
-        description: 'API key、OAuth、channel token、MCP env/header、browser relay token 分开管理和展示。',
+        description: '模型服务密钥、OAuth、channel token、MCP env/header、browser relay token 分开管理和展示。',
         examplesLabel: '例子: ',
         displayLabel: '展示: ',
         diagnosticsLabel: '诊断: ',
@@ -976,7 +978,7 @@ export const zhSettingsWork = {
       refresh: '刷新',
       globalConfig: '全局配置',
       projectConfig: '项目配置',
-      loadFailedPrefix: '加载失败：',
+      ...hooksLoadStateZh,
       enabledTitle: '已启用',
       emptyEnabled: '没有任何 Hook 注册。点击上方"打开"按钮新建配置。',
       unusedTitle: '未启用',
@@ -986,11 +988,7 @@ export const zhSettingsWork = {
         revealTitle: '在访达中显示',
         locate: '定位',
       },
-      toggle: {
-        enable: '启用',
-        disable: '停用',
-        disabledBadge: '已停用',
-      },
+      toggle: { enable: '启用', disable: '停用', disabledBadge: '已停用' },
       typeLabels: {
         command: '命令',
         prompt: 'Prompt',

@@ -193,3 +193,62 @@ describe('Modal Escape handled marker', () => {
     }
   });
 });
+
+describe('Modal keyboard scrolling', () => {
+  const setup = () => {
+    render(
+      <Modal isOpen title="Scroll test">
+        <input aria-label="field" />
+        <button>inner</button>
+      </Modal>,
+    );
+    const dialog = screen.getByRole('dialog');
+    const content = screen.getByLabelText('field').parentElement as HTMLElement;
+    Object.defineProperty(content, 'clientHeight', { value: 400, configurable: true });
+    Object.defineProperty(content, 'scrollHeight', { value: 2000, configurable: true });
+    const scrollBy = vi.fn();
+    const scrollTo = vi.fn();
+    content.scrollBy = scrollBy as unknown as typeof content.scrollBy;
+    content.scrollTo = scrollTo as unknown as typeof content.scrollTo;
+    return { dialog, content, scrollBy, scrollTo };
+  };
+
+  it('dialog container keys scroll the content layer and are default-prevented', () => {
+    const { dialog, scrollBy, scrollTo } = setup();
+    expect(fireEvent.keyDown(dialog, { key: 'PageDown' })).toBe(false);
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 360 });
+    fireEvent.keyDown(dialog, { key: 'PageUp' });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -360 });
+    fireEvent.keyDown(dialog, { key: ' ' });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 360 });
+    fireEvent.keyDown(dialog, { key: ' ', shiftKey: true });
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -360 });
+    const arrow = scrollBy.mock.calls.length;
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    fireEvent.keyDown(dialog, { key: 'ArrowUp' });
+    expect(scrollBy.mock.calls[arrow][0].top).toBeGreaterThan(0);
+    expect(scrollBy.mock.calls[arrow + 1][0].top).toBeLessThan(0);
+    fireEvent.keyDown(dialog, { key: 'Home' });
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0 });
+    fireEvent.keyDown(dialog, { key: 'End' });
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 2000 });
+  });
+
+  it('keys targeting controls inside the content are not intercepted', () => {
+    const { scrollBy, scrollTo } = setup();
+    expect(fireEvent.keyDown(screen.getByLabelText('field'), { key: ' ' })).toBe(true);
+    expect(fireEvent.keyDown(screen.getByText('inner'), { key: 'PageDown' })).toBe(true);
+    expect(scrollBy).not.toHaveBeenCalled();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('modifier keys are not intercepted', () => {
+    const { dialog, scrollBy, scrollTo } = setup();
+    for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(fireEvent.keyDown(dialog, { key: 'PageDown', ...mod })).toBe(true);
+      expect(fireEvent.keyDown(dialog, { key: 'End', ...mod })).toBe(true);
+    }
+    expect(scrollBy).not.toHaveBeenCalled();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+});

@@ -127,6 +127,8 @@ interface AuthState {
   // Auth state
   isAuthenticated: boolean;
   statusLoadFailed: boolean;
+  /** consecutive failed getStatus reads; reset by setUser */
+  statusLoadFailureCount: number;
   user: AuthUser | null;
   isLoading: boolean;
   /** false until the first host getStatus settles (ok or failed): identity is unknown, not signed out */
@@ -180,6 +182,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   // Initial state
   isAuthenticated: false,
   statusLoadFailed: false,
+  statusLoadFailureCount: 0,
   user: null,
   isLoading: true,
   hasResolvedStatus: false,
@@ -203,6 +206,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       user,
       isAuthenticated: !!user,
       statusLoadFailed: false,
+      statusLoadFailureCount: 0,
       error: null,
     }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -458,7 +462,10 @@ export async function initializeAuthStore(): Promise<void> {
       }
     }
   } catch (error) {
-    useAuthStore.setState({ statusLoadFailed: true });
+    useAuthStore.setState((state) => ({
+      statusLoadFailed: true,
+      statusLoadFailureCount: state.statusLoadFailureCount + 1,
+    }));
     logger.error('Failed to load auth status', error);
   } finally {
     store.setLoading(false);

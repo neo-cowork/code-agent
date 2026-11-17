@@ -69,6 +69,8 @@ on:
       - 'scripts/check-token-integrity.mjs'
       - 'scripts/check-copy.mjs'
       - 'scripts/host-chinese-error-ratchet.mjs'
+      - 'scripts/ci/host-user-copy-cjk-ratchet.mjs'
+      - 'scripts/ci/host-user-copy-cjk-baseline.json'
       - 'scripts/renderer-cjk-literal-ratchet.mjs'
       - 'scripts/renderer-cjk-literal-baseline.json'
       - 'scripts/ci/internal-text-leak-gate.mjs'
@@ -282,11 +284,19 @@ jobs:
           node scripts/check-design-system.mjs
           node scripts/check-token-integrity.mjs
           node scripts/check-copy.mjs
+          node scripts/ci/check-settings-jargon.mjs
+          npx vitest run tests/renderer/components/settingsRenderedJargon.test.tsx
 
       - name: Host Chinese error literal ratchet
         # P2 工具错误文案分层保护门：只扫描 host/tools + host/memory 的 error 属性，
         # 含中文字符串字面量的存量只降不升。脚本对 0 文件、0 目标和 TS 解析失败 fail loud。
         run: node scripts/host-chinese-error-ratchet.mjs
+
+      - name: Host user-copy CJK ratchet
+        # N-FIX-EN-HOST-ZH-COPY-SYSTEMIC：src/host（不含 prompts/）用户可见属性
+        # （error/message/summary/title/label/body/reason/description/text/hint）与
+        # throw new XxxError(...) 实参里的中文字面量按文件棘轮，只降不升。
+        run: node scripts/ci/host-user-copy-cjk-ratchet.mjs
 
       - name: Renderer CJK literal ratchet
         # N-FIX-EN-UI-HARDCODED-ZH-SYSTEMIC：按文件棘轮拦截 renderer（JSX 文本 + JSX 属性字符串，
@@ -394,7 +404,7 @@ jobs:
   # Full: merge gate，smoke + Playwright e2e（含 webServer 构建）
   # ---------------------------------------------------------------------------
   # ---------------------------------------------------------------------------
-  # Unit: 全部 unit + renderer，4 路分片并行
+  # Unit: PR Vitest 目录，4 路分片并行
   #
   # 2026-09-05 从 smoke job 里拆出来。动机是实测账：smoke job 一轮 1134s，其中这一步
   # 独占 782s（69%），整条 PR 门 wall clock 22min 大半卡在它一个人身上，且它跟前面
@@ -466,11 +476,11 @@ jobs:
         run: node -e "require('node-pty')"
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
-        # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
+        # 2026-09-05 全收 tests/unit + tests/renderer；2026-11-16 补齐其余未选目录。
         # main-full-gate 是合入后检测门，红了不挡合并（#668）；不能让未点名目录继续漏门。
         # Vitest 位置参数是路径子串，tests/unit 会递归包含根级及所有子目录。
         # ROOT_UNIT_TESTS 的 glob 展开及空展开自检因此移除：已没有可能空展开的 glob；
-        # tests/scripts 合同要求两个整目录参数，并分别检查实际目录有测试文件，防退回子集或单侧空转。
+        # tests/scripts 合同要求整目录参数，并分别检查实际目录有测试文件，防退回子集或单侧空转。
         #
         # 平台性排除（保留既有两条，逐文件）：
         # - webSearch.test.ts：PR #691 Ubuntu 真跑 `401 Unauthorized: invalid API key`，需要真 key。
@@ -484,6 +494,9 @@ jobs:
         #   （:58）；夹具把 os.tmpdir() 下的根当作系统目录。darwin 的 /var/folders 命中
         #   system_dir_delete，Linux 的 /tmp 只评为 high；同路径只读判定探针已复现差异。
         #
+        # #3526：delegateRemindersCreateFaultInjection 依赖仅 Darwin 注册的 reminders_create，
+        # 移至 darwin；bubblewrapWrap 需真实 Linux user namespaces，移至 linux-sandbox 宿主。
+        # 两文件均仍是合并前必需门，不是欠条或静默跳过。
         # 真 bug 欠条（同一 Ubuntu run，修复后必须摘除；不算平台豁免）：当前无。
         #   已偿还：folderTrustService（#1657）、runtimeAssetInstaller（N-RUNTIME-ASSET-RETENTION-ORDER-0905）。
         #
@@ -491,12 +504,16 @@ jobs:
         # 排除必须绑定实测失败文件，不能用平台理由整目录一刀切。
         run: |
           node scripts/ci/vitest-with-flake-ledger.mjs --job "Unit + renderer vitest shard ${{ matrix.shard }}" -- npx vitest run tests/unit tests/renderer \
+            tests/shared tests/agent tests/main tests/wrappers tests/services tests/channels \
+            tests/tools tests/web tests/artifacts tests/utils tests/integration \
             --shard=${{ matrix.shard }}/4 --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts' \
             --exclude 'tests/unit/permissions/writebackEdit.test.ts' \
             --exclude 'tests/unit/runtime/runtimeAssetStatus.test.ts' \
-            --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts'
+            --exclude 'tests/unit/security/commandSafety.approvalDecisionGaps.test.ts' \
+            --exclude 'tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts' \
+            --exclude 'tests/integration/sandbox/bubblewrapWrap.test.ts'
 
   # Playwright 镜像没有 lsof / ps 等且容器内不许 apt：在宿主 runner（自带这些工具）上连库打包，容器 job 下载。
   container-tools:
@@ -742,6 +759,70 @@ jobs:
         # node scripts/perf-journey-ratchet.mjs --tighten
         run: node scripts/perf-journey-ratchet.mjs
 
+  linux-sandbox:
+    name: Linux bubblewrap integration
+    # Ubuntu 22.04 permits unprivileged user namespaces; the Playwright container
+    # lacks bwrap and cannot exercise nested network namespaces. Keep the real jail.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Expose only Node.js to the sandbox
+        # Keep setup-node on PATH and the runner's existing npm tree intact.
+        run: sudo install -m 0755 "$(command -v node)" /usr/local/bin/node
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Linux bubblewrap integration
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Linux bubblewrap integration" -- npx vitest run tests/integration/sandbox/bubblewrapWrap.test.ts --retry=1
+
+  darwin:
+    name: Darwin-gated vitest (merge group)
+    if: github.event_name == 'merge_group'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Darwin-gated vitest (merge group)
+        run: |
+          node scripts/ci/vitest-with-flake-ledger.mjs --job "Darwin-gated vitest" -- npx vitest run \
+            tests/agent/agentOrchestrator.test.ts \
+            tests/integration/delegate-reminders/delegateRemindersCreateFaultInjection.test.ts \
+            tests/scripts/tauriInstallSignAnchor.test.ts \
+            tests/unit/connectors/nativeConnectorStatus.test.ts \
+            tests/unit/connectors/appleScriptFailure.test.ts \
+            tests/unit/connectors/remindersBulkRead.test.ts \
+            tests/unit/app/sessionCommandCenterBrain.test.ts \
+            tests/unit/tools/toolExecutor.safeCommandPermission.test.ts \
+            tests/unit/tools/modules/shell/bash.test.ts \
+            tests/unit/host/sandbox/managerNpmEnv.test.ts \
+            tests/unit/host/permissions/envAssist/shellBridgeProduction.test.ts \
+            tests/unit/host/permissions/envAssist/shellBridgeBuiltBundle.test.ts \
+            tests/unit/host/permissions/envAssist/shellBridgeHandshake.test.ts \
+            tests/unit/web/webShutdownFinalizers.test.ts \
+            tests/unit/ipc/workspacePreviewFormats.test.ts \
+            tests/unit/services/core/keytarAdapter.test.ts \
+            tests/unit/agent/nativeConnectorPreload.test.ts \
+            --retry=1
+
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，
   # 用 scripts/ci/swarm-streak.sh 按需查询，避免 [skip ci] commit + 1-commit
   # lag 的 trade-off。详见 docs/decisions/010-swarm-road-to-10.md #1。
@@ -749,18 +830,20 @@ jobs:
   # ---------------------------------------------------------------------------
   # 合并队列总闸（11-07 仓库迁到 neo-cowork 组织开 merge queue）：
   # 分支规则的必需检查只有 ai-review。PR 上它是 ship 写的人审判决状态；
-  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full 全部 success。
+  # 合并队列的临时合并提交上没有那个状态，由这个任务产出同名检查，并要求 smoke/unit/full/darwin/linux-sandbox 全部 success。
   # always()：上游失败时本任务照跑并失败——若被跳过，GitHub 会把跳过的必需检查当通过。
   # ---------------------------------------------------------------------------
   merge-queue-gate:
     name: ai-review
     if: ${{ always() && github.event_name == 'merge_group' }}
-    needs: [smoke, unit, full]
+    needs: [smoke, unit, full, darwin, linux-sandbox]
     runs-on: ubuntu-24.04
     steps:
-      - name: Swarm smoke/unit/full 全部通过
+      - name: Swarm smoke/unit/full/darwin/linux-sandbox 全部通过
         run: |
-          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }}"
+          echo "smoke=${{ needs.smoke.result }} unit=${{ needs.unit.result }} full=${{ needs.full.result }} darwin=${{ needs.darwin.result }} linux-sandbox=${{ needs.linux-sandbox.result }}"
           test "${{ needs.smoke.result }}" = success
           test "${{ needs.unit.result }}" = success
           test "${{ needs.full.result }}" = success
+          test "${{ needs.darwin.result }}" = success
+          test "${{ needs.linux-sandbox.result }}" = success

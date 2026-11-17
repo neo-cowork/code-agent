@@ -10,6 +10,8 @@ import {
 const I18N_DIR = path.resolve(process.cwd(), 'src/renderer/i18n');
 
 const OUTCOME_KEYS = [
+  'working',
+  'waiting-input',
   'cancelled-by-user',
   'interrupted-session-switch',
   'interrupted-restart',
@@ -32,7 +34,7 @@ const OUTCOME_KEYS = [
   'goal-met',
 ] as const;
 
-const OUTCOME_AUDIENCES = ['timeline', 'badge', 'detail', 'notification'] as const;
+const OUTCOME_AUDIENCES = ['timeline', 'badge', 'detail', 'notification', 'assistant'] as const;
 
 const LEGACY_DICTIONARIES = [
   'chatTranscript.ts',
@@ -106,6 +108,13 @@ describe('outcomeWords contract', () => {
         expect(en[audience].reason.trim(), `en ${outcome}/${audience} reason`).not.toBe('');
       }
     }
+  });
+
+  it.each(OUTCOME_AUDIENCES)('completed-with-warnings/%s describes an unsuccessful step in zh and en', (audience) => {
+    expect(outcomeWordsZh.outcomeWords['completed-with-warnings'][audience].reason)
+      .toBe('有步骤没有成功，结果可能不完整');
+    expect(outcomeWordsEn.outcomeWords['completed-with-warnings'][audience].reason)
+      .toBe('A step did not succeed, so the result may be incomplete');
   });
 
   it('gives every badge outcome a reason phrase', () => {

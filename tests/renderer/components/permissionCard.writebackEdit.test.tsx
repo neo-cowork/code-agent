@@ -12,20 +12,26 @@ import type { PermissionRequest } from '../../../src/shared/contract';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { decisionCardEn } from '../../../src/renderer/i18n/decisionCard';
 
-const state = vi.hoisted(() => ({ request: null as PermissionRequest | null, sessionId: null as string | null }));
+const state = vi.hoisted(() => ({ request: null as PermissionRequest | null, sessionId: null as string | null, language: 'zh' as 'zh' | 'en' }));
+const readCalendarEvent = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/connectors', () => ({
+  getConnectorRegistry: () => ({ get: () => ({ execute: readCalendarEvent }) }),
+}));
+
 const invoke = vi.hoisted(() => vi.fn());
 const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ t: state.language === 'en' ? en : zh, language: state.language }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
     pendingPermissionRequest: state.request,
     pendingPermissionSessionId: state.sessionId,
     setPendingPermissionRequest,
-    language: 'zh',
+    language: state.language,
     setLanguage: () => {},
     cloudUIStrings: undefined,
   }),
@@ -43,6 +49,8 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: { error: vi.fn()
 
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
 import { validateWritebackDraft } from '../../../src/renderer/components/PermissionDialog/WritebackFields';
+import { calendarApprovalDetails } from '../../../src/host/tools/modules/connectors/calendarApprovalDetails';
+import { applyEditedArgs } from '../../../src/shared/contract/permissionEdit';
 import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 
 // host 默认分支：details = {...params} + 透传字段；mail_send 是 write 级 ⇒ type file_write、risk high ⇒ danger
@@ -120,6 +128,9 @@ function nativeRequest(
   };
 }
 
+/** Button primitive 的 primary 变体标记（主按钮渐变底） */
+const PRIMARY_MARK = 'from-primary-800';
+
 const calendarCreateRequest = nativeRequest('permission-calendar-create', 'calendar_create_event', {
   calendar: '工作',
   title: '季度评审会',
@@ -150,15 +161,16 @@ const remindersUpdateRequest = nativeRequest('permission-reminders-update', 'rem
 }, '提醒事项');
 
 function enterEdit() {
-  fireEvent.click(screen.getByRole('button', { name: /改一改再/ }));
+  fireEvent.click(screen.getByRole('button', { name: /修改后/ }));
 }
 const toInput = () => screen.getByTestId('writeback-edit-to') as HTMLInputElement;
-const sendEdited = () => screen.getByRole('button', { name: '邮件发送 · 修改后允许' });
+const sendEdited = () => screen.getByRole('button', { name: '按修改后的内容发送' });
 
 describe('PermissionCard · mail_send 改一改再发', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     invoke.mockResolvedValue(undefined);
+    state.language = 'zh';
     state.request = request;
     state.sessionId = 'session-current';
   });
@@ -179,7 +191,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.queryByText('危险操作')).toBeNull();
     expect(screen.getByTestId('writeback-view-content').textContent).toContain('请在周五前确认');
     expect(screen.getByText('发这封邮件给 li.wei@acme.com？')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /改一改再发/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /修改后发送/ })).toBeTruthy();
   });
 
   it('改收件人 → 按修改后发送 → IPC 带改后的 updatedArgs，response 是一次性 allow', async () => {
@@ -250,22 +262,22 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect(screen.getByTestId('writeback-view-start').textContent).toContain('2026');
     expect(screen.getByTestId('writeback-view-end').textContent).toContain('2026');
     expect(screen.getByText('数据与隐私详情')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /改一改再创建/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /修改后创建/ })).toBeTruthy();
   });
 
   it('默认值可改提示有中英文卡面文案', () => {
     expect(decisionCardEn.decisionCard.permission.writeback.tmeetWriteWarning)
-      .toContain('default subject or times filled by the model');
+      .toContain('“Edit, then create”');
   });
 
   it('腾讯会议改主题和本地时间后把 ISO updatedArgs 直达一次性 allow 通道', async () => {
     state.request = meetingRequest;
     render(<PermissionCard />);
-    fireEvent.click(screen.getByRole('button', { name: /改一改再创建/ }));
+    fireEvent.click(screen.getByRole('button', { name: /修改后创建/ }));
     fireEvent.change(screen.getByTestId('writeback-edit-subject'), { target: { value: 'product sync' } });
     const editedStart = new Date('2026-08-26T09:15:00+08:00');
     changeDatetime('start', `${editedStart.getFullYear()}-${pad(editedStart.getMonth() + 1)}-${pad(editedStart.getDate())}T${pad(editedStart.getHours())}:${pad(editedStart.getMinutes())}`);
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -284,7 +296,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
 
   it.each([
     [calendarCreateRequest, '创建日历事件', ['calendar', 'title', 'start_ms', 'end_ms', 'location'], ['calendar']],
-    [calendarUpdateRequest, '更新日历事件', ['calendar', 'event_uid', 'title', 'start_ms', 'end_ms', 'location'], ['calendar', 'event_uid']],
+    [calendarUpdateRequest, '更新日历事件', ['calendar', 'title', 'start_ms', 'end_ms', 'location'], ['calendar', 'event_uid']],
     [remindersCreateRequest, '新建提醒', ['list', 'title', 'notes', 'remind_at_ms'], ['list']],
     [remindersUpdateRequest, '更新提醒', ['list', 'reminder_id', 'title', 'notes', 'remind_at_ms'], ['list', 'reminder_id']],
   ] as const)('%s：查看态字段齐全，标识只展示不出编辑控件', (native, expectedTitle, viewFields, readonlyFields) => {
@@ -312,12 +324,176 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     }
   });
 
+  it.each(['zh', 'en'] as const)('%s: update names the event, labels calendar/title correctly, hides the ID, and allows the original args', async (language) => {
+    state.language = language;
+    state.request = calendarUpdateRequest;
+    render(<PermissionCard />);
+    const card = screen.getByTestId('permission-card');
+    expect(card.textContent).toContain(language === 'zh' ? '更新日历事件「季度评审会」？' : 'Update calendar event “季度评审会”?');
+    expect(screen.getByTestId('writeback-view-calendar').parentElement?.parentElement?.textContent)
+      .toBe(`${language === 'zh' ? '日历' : 'Calendar'}工作`);
+    expect(screen.getByTestId('writeback-view-title').parentElement?.parentElement?.textContent)
+      .toBe(`${language === 'zh' ? '标题' : 'Title'}季度评审会`);
+    expect(card.textContent).not.toMatch(/Event ID|事件 ID|event-uid-1/);
+    expect(screen.queryByTestId('writeback-view-event_uid')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh' ? /^更新/ : /^Update/ }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+    ));
+    expect(invoke.mock.calls[0]).toHaveLength(4);
+  });
+
+  it('failed enrichment still renders a sparse update; editing time does not clear untouched title/location', async () => {
+    state.request = { ...calendarUpdateRequest, details: {
+      calendar: '工作', event_uid: 'event-uid-1', start_ms: localMs(10),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.getByText('更新这个日历事件？')).toBeTruthy();
+    expect(screen.getByTestId('permission-card').textContent).not.toMatch(/事件 ID|event-uid-1/);
+    enterEdit();
+    expect((screen.getByTestId('writeback-edit-title') as HTMLInputElement).value).toBe('');
+    changeDatetime('start_ms', '2026-08-26T10:15');
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { start_ms: localMs(10, 15) },
+    ));
+  });
+
+  it('update form is prefilled and an explicitly cleared location is sent', async () => {
+    state.request = calendarUpdateRequest;
+    render(<PermissionCard />);
+    enterEdit();
+    expect((screen.getByTestId('writeback-edit-title') as HTMLInputElement).value).toBe('季度评审会');
+    expect((screen.getByTestId('writeback-edit-start_ms-time-hour') as HTMLSelectElement).value).toBe('10');
+    fireEvent.change(screen.getByTestId('writeback-edit-location'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { title: '季度评审会', start_ms: localMs(10), end_ms: localMs(10, 30), location: '' },
+    ));
+  });
+
+  it.each(['zh', 'en'] as const)('%s: start-only outcome never renders a snapshot End before the proposed Start', async (language) => {
+    state.language = language;
+    const proposed = { calendar: 'Work', event_uid: 'event-uid-1', start_ms: localMs(16) };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: 'Work', title: 'Quarterly review', startAtMs: localMs(9), endAtMs: localMs(9, 30),
+    } });
+    state.request = { ...calendarUpdateRequest, details: {
+      ...proposed, ...await calendarApprovalDetails('calendar_update_event', proposed),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('writeback-view-start_ms').textContent).toContain('16:00');
+    expect(screen.queryByTestId('writeback-view-end_ms')).toBeNull();
+    expect(screen.getByTestId('permission-card').textContent).not.toMatch(/Event ID|事件 ID|event-uid-1/);
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh' ? /修改后更新/ : /Edit, then update/ }));
+    expect((screen.getByTestId('writeback-edit-end_ms-date') as HTMLInputElement).value).toBe('');
+    fireEvent.change(screen.getByTestId('writeback-edit-title'), { target: { value: 'Revised review' } });
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh' ? '按修改后的内容更新' : 'Update edited version' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { start_ms: localMs(16), title: 'Revised review' },
+    ));
+  });
+
+  it.each([8, 10])('end-only proposal at %s:30 requires an explicit start in the edit form', async (hour) => {
+    const proposed = { calendar: 'Work', event_uid: 'event-uid-1', end_ms: localMs(hour, 30) };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: 'Work', title: 'Quarterly review', startAtMs: localMs(9), endAtMs: localMs(9, 30),
+    } });
+    state.request = { ...calendarUpdateRequest, details: {
+      ...proposed, ...await calendarApprovalDetails('calendar_update_event', proposed),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.queryByTestId('writeback-view-start_ms')).toBeNull();
+    expect(screen.getByTestId('writeback-view-end_ms')).toBeTruthy();
+    enterEdit();
+    expect((screen.getByTestId('writeback-edit-start_ms-date') as HTMLInputElement).value).toBe('');
+    changeDatetime('start_ms', '2026-08-26T08:00');
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { start_ms: localMs(8), end_ms: localMs(hour, 30) },
+    ));
+  });
+
+  it.each([8, 16])('snapshot context: start-only move to %s:00 plus a title edit never sends the old end/location', async (hour) => {
+    const proposed = { calendar: '工作', event_uid: 'event-uid-1', start_ms: localMs(hour) };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: '工作', title: '季度评审会', startAtMs: localMs(9), endAtMs: localMs(9, 30), location: 'Room 3',
+    } });
+    const snapshot = await calendarApprovalDetails('calendar_update_event', proposed);
+    state.request = { ...calendarUpdateRequest, details: { ...proposed, ...snapshot } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('writeback-view-title').textContent).toBe('季度评审会');
+    expect(screen.queryByTestId('writeback-view-end_ms')).toBeNull();
+    enterEdit();
+    expect((screen.getByTestId('writeback-edit-title') as HTMLInputElement).value).toBe('季度评审会');
+    expect((screen.getByTestId('writeback-edit-end_ms-date') as HTMLInputElement).value)
+      .toBe('');
+    fireEvent.change(screen.getByTestId('writeback-edit-title'), { target: { value: '改后的评审会' } });
+    const submit = screen.getByRole('button', { name: '按修改后的内容更新' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { start_ms: localMs(hour), title: '改后的评审会' },
+    ));
+    const edited = applyEditedArgs('calendar_update_event', proposed, invoke.mock.calls[0][4]);
+    expect(edited).toMatchObject({ ok: true, params: { ...proposed, title: '改后的评审会' } });
+    if (edited.ok) {
+      expect(edited.params).not.toHaveProperty('end_ms');
+      expect(edited.params).not.toHaveProperty('location');
+    }
+  });
+
+  it('snapshot context: untouched prefilled title/times/location are omitted while explicit clearing is preserved', async () => {
+    const proposed = { calendar: '工作', event_uid: 'event-uid-1', title: '新标题' };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: '工作', title: '旧标题', startAtMs: localMs(9), endAtMs: localMs(9, 30), location: 'Room 3',
+    } });
+    state.request = { ...calendarUpdateRequest, details: {
+      ...proposed, ...await calendarApprovalDetails('calendar_update_event', proposed),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    enterEdit();
+    fireEvent.change(screen.getByTestId('writeback-edit-location'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { title: '新标题', location: '' },
+    ));
+  });
+
+  it('snapshot context: editing the displayed end explicitly supplies its current start and still validates the range', async () => {
+    const proposed = { calendar: '工作', event_uid: 'event-uid-1', title: '新标题' };
+    readCalendarEvent.mockResolvedValue({ data: {
+      calendar: '工作', title: '旧标题', startAtMs: localMs(9), endAtMs: localMs(9, 30), location: 'Room 3',
+    } });
+    state.request = { ...calendarUpdateRequest, details: {
+      ...proposed, ...await calendarApprovalDetails('calendar_update_event', proposed),
+    } as PermissionRequest['details'] };
+    render(<PermissionCard />);
+    enterEdit();
+    changeDatetime('end_ms', '2026-08-26T08:45');
+    expect((screen.getByRole('button', { name: '按修改后的内容更新' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('结束时间不能早于开始时间')).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalled();
+    changeDatetime('end_ms', '2026-08-26T10:15');
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, calendarUpdateRequest.id, 'allow', calendarUpdateRequest.sessionId,
+      { title: '新标题', start_ms: localMs(9), end_ms: localMs(10, 15) },
+    ));
+  });
+
   it('日历创建改本地时间后回传 Unix ms，calendar 标识不进入 updatedArgs', async () => {
     state.request = calendarCreateRequest;
     render(<PermissionCard />);
     enterEdit();
     changeDatetime('start_ms', '2026-08-26T09:15');
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -340,7 +516,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime('remind_at_ms', '2026-08-26T17:45');
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -365,7 +541,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime(field, value);
-    fireEvent.click(screen.getByRole('button', { name: '更新 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -387,7 +563,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     expect((screen.getByTestId('writeback-edit-remind_at_ms-date') as HTMLInputElement).value).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -405,7 +581,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     render(<PermissionCard />);
     enterEdit();
     changeDatetime('end_ms', '2026-08-26T08:59');
-    const submit = screen.getByRole('button', { name: '创建 · 修改后允许' }) as HTMLButtonElement;
+    const submit = screen.getByRole('button', { name: '按修改后的内容创建' }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(screen.getByText('结束时间不能早于开始时间')).toBeTruthy();
     expect(screen.queryByText('必填')).toBeNull();
@@ -432,12 +608,50 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     expect((screen.getByTestId(`writeback-edit-${field}-time-hour`) as HTMLSelectElement).value).toBe('23');
     expect((screen.getByTestId(`writeback-edit-${field}-time-minute`) as HTMLSelectElement).value).toBe('45');
     expect(screen.getByTestId('writeback-edit-form').textContent).not.toMatch(/AM|PM/);
-    fireEvent.click(screen.getByRole('button', { name: '创建 · 修改后允许' }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容创建' }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(
       IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, `precision-${tool}`, 'allow', 'request-session',
       expect.objectContaining({ [field]: millis }),
     ));
     vi.restoreAllMocks();
+  });
+
+  it('删除单条日程：同一套中性写回卡（不是红色危险卡），写清标题/时间/日历，只有「删除 / 取消」，提示可撤销', async () => {
+    // 真机第五轮：host 给删除请求带 dangerLevel=warning，卡片曾因此走「默认突出取消 + 删除红框」的安全默认样式
+    state.request = { ...nativeRequest('permission-calendar-delete', 'calendar_delete_event', {
+      calendar: '日历', event_uid: 'cal:EV1', title: 'F 真机测试', start_ms: localMs(9), end_ms: localMs(10), location: '三楼',
+    }, '日历'), dangerLevel: 'warning' };
+    render(<PermissionCard />);
+    const deleteButton = screen.getByRole('button', { name: /^删除/ });
+    const cancelButton = screen.getByRole('button', { name: /^取消/ });
+    expect(deleteButton.className).not.toContain('border-red-500');
+    expect(deleteButton.className).toContain(PRIMARY_MARK);
+    expect(cancelButton.className).not.toContain(PRIMARY_MARK);
+    expect(screen.getByText('删除日历事件')).toBeTruthy();
+    expect(screen.getByText('删除日历事件「F 真机测试」？')).toBeTruthy();
+    expect(screen.queryByText('危险操作')).toBeNull();
+    expect(screen.queryByText(/仍然执行/)).toBeNull();
+    expect(screen.getByTestId('writeback-view-calendar').textContent).toBe('日历');
+    expect(screen.getByTestId('writeback-view-title').textContent).toBe('F 真机测试');
+    expect(screen.getByTestId('writeback-view-start_ms').textContent).not.toBe('');
+    expect(screen.getByTestId('calendar-delete-note')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /修改后/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^删除/ }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'permission-calendar-delete', 'allow', 'request-session',
+    ));
+    releaseApprovalResponse('permission-calendar-delete');
+  });
+
+  it('改日程只改地点：没改的标题 / 开始 / 结束整行不显示，不写「无」', () => {
+    state.request = nativeRequest('permission-calendar-update-location', 'calendar_update_event', {
+      calendar: '日历', event_uid: 'cal:EV1', location: '五楼会议室',
+    }, '日历');
+    render(<PermissionCard />);
+    expect(screen.getByTestId('writeback-view-location').textContent).toBe('五楼会议室');
+    for (const key of ['title', 'start_ms', 'end_ms']) expect(screen.queryByTestId(`writeback-view-${key}`)).toBeNull();
+    expect(screen.getByTestId('writeback-fields-view').textContent).not.toContain('无');
+    releaseApprovalResponse('permission-calendar-update-location');
   });
 
   it('日期时间格式无效时保留独立原因码', () => {

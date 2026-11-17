@@ -17,6 +17,13 @@ const mocks = vi.hoisted(() => ({
   tasks: [] as Task[],
   snapshot: null as AgentTreeSnapshot | null,
   language: 'zh' as 'zh' | 'en',
+  currentSessionId: 'session-1' as string | null,
+  running: new Set<string>(),
+  sendPrompt: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
+  useMessageActionStore: { getState: () => ({ sendPrompt: mocks.sendPrompt }) },
 }));
 
 vi.mock('../../../src/renderer/stores/backgroundTaskStore', () => ({
@@ -27,8 +34,11 @@ vi.mock('../../../src/renderer/hooks/useAgentTreeSnapshot', () => ({
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: Object.assign(
-    (selector: (state: { currentSessionId: string }) => unknown) => selector({ currentSessionId: 'session-1' }),
-    { getState: () => ({ currentSessionId: 'session-1', switchSession: vi.fn() }) },
+    (selector: (state: Record<string, unknown>) => unknown) => selector({
+      currentSessionId: mocks.currentSessionId,
+      runningSessionIds: mocks.running,
+    }),
+    { getState: () => ({ currentSessionId: mocks.currentSessionId, switchSession: vi.fn() }) },
   ),
 }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -99,6 +109,9 @@ beforeEach(() => {
   mocks.tasks = [];
   mocks.snapshot = null;
   mocks.language = 'zh';
+  mocks.currentSessionId = 'session-1';
+  mocks.running = new Set();
+  mocks.sendPrompt.mockClear();
   useMemberViewStore.getState().setViewingMemberId(null);
 });
 afterEach(cleanup);
@@ -136,24 +149,64 @@ describe.each([['zh', '已完成', '代理工作中'], ['en', 'Completed', 'Agen
       expect(view.getByTestId('delegation-retry')).toBeTruthy();
     });
 
-    it('Retry only fills the composer with the task title; View details opens the member view', () => {
+    it('Retry sends the redo sentence once as a user message; a second click sends nothing; View details opens the member view', () => {
       mocks.snapshot = withNodes(node({ failureCode: AgentFailureCode.ModelError }));
-      const drafts: string[] = [];
-      const onDraft = (event: Event) => drafts.push((event as CustomEvent<string>).detail);
-      window.addEventListener('iact:add', onDraft);
-      try {
-        const view = renderRow();
-        fireEvent.click(view.getByTestId('delegation-retry'));
-        expect(drafts).toHaveLength(1);
-        expect(drafts[0]).toContain('对比两份报价单中同类物料的单价，找出差异并给出结论。');
-        expect(drafts[0]).not.toContain('输入文件');
-        expect(useMemberViewStore.getState().viewingMemberId).toBeNull();
+      const view = renderRow();
+      fireEvent.click(view.getByTestId('delegation-retry'));
+      expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+      const [sentence, context] = mocks.sendPrompt.mock.calls[0] as unknown as [string, { clientMessageId: string }];
+      const expected = language === 'zh'
+        ? '请重新做一下刚才失败的任务：对比两份报价单中同类物料的单价，找出差异并给出结论。'
+        : 'Please redo the task that just failed: 对比两份报价单中同类物料的单价，找出差异并给出结论。';
+      expect(sentence).toBe(expected);
+      expect(context.clientMessageId).toContain(CHILD_ID);
+      expect(sentence).not.toContain('输入文件');
+      expect((view.getByTestId('delegation-retry') as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(view.getByTestId('delegation-retry'));
+      expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+      expect(useMemberViewStore.getState().viewingMemberId).toBeNull();
 
-        fireEvent.click(view.getByTestId('delegation-view-details'));
-        expect(useMemberViewStore.getState().viewingMemberId).toBe(CHILD_ID);
-      } finally {
-        window.removeEventListener('iact:add', onDraft);
-      }
+      fireEvent.click(view.getByTestId('delegation-view-details'));
+      expect(useMemberViewStore.getState().viewingMemberId).toBe(CHILD_ID);
+    });
+
+    it('Retry is disabled with a plain hint and sends nothing while the session is running', () => {
+      mocks.snapshot = withNodes(node({ failureCode: AgentFailureCode.ModelError }));
+      mocks.running = new Set(['session-1']);
+      const view = renderRow();
+      const retry = view.getByTestId('delegation-retry') as HTMLButtonElement;
+      expect(retry.disabled).toBe(true);
+      expect(retry.title).toBe(language === 'zh' ? '请等当前任务完成后再重试' : 'Wait for the current task to finish');
+      fireEvent.click(retry);
+      expect(mocks.sendPrompt).not.toHaveBeenCalled();
+    });
+
+    it('Retry is disabled and sends nothing when the failed task belongs to another session', () => {
+      mocks.tasks = [{
+        id: 'task-other', sessionId: 'session-other', toolCallId: 'delegate-1', source: 'delegate_task',
+        title: '整理报价单', status: 'failed', createdAt: 1, updatedAt: 2, events: [], outputRefs: [],
+      } as unknown as Task];
+      const call: ToolCall = {
+        id: 'delegate-1', name: 'delegate_task', arguments: { task: '整理报价单' },
+        result: { toolCallId: 'delegate-1', success: true, output: '', metadata: { sessionTask: { tasks: [{ taskId: 'task-other' }] } } },
+      };
+      const view = render(<ToolCallDisplay toolCall={call} index={0} total={1} />);
+      const retry = view.getByTestId('delegation-retry') as HTMLButtonElement;
+      expect(retry.disabled).toBe(true);
+      fireEvent.click(retry);
+      expect(mocks.sendPrompt).not.toHaveBeenCalled();
+    });
+
+    it('a blank task text never produces an empty redo sentence: the sent text carries the receipt label instead', () => {
+      mocks.snapshot = withNodes(node({ failureCode: AgentFailureCode.ModelError, task: '   ' }));
+      const call = backgroundSpawn();
+      call.arguments = { ...call.arguments, task: '   ' };
+      const view = render(<ToolCallDisplay toolCall={call} index={0} total={1} />);
+      fireEvent.click(view.getByTestId('delegation-retry'));
+      expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
+      const [sentence] = mocks.sendPrompt.mock.calls[0] as unknown as [string];
+      expect(sentence).not.toContain('{task}');
+      expect(sentence.trim().length).toBeGreaterThan(language === 'zh' ? '请重新做一下刚才失败的任务：'.length : 'Please redo the task that just failed:'.length);
     });
 
     it('after a restart (failure code lost) the reason is never the raw tool dump', () => {

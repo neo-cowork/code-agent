@@ -11,6 +11,7 @@
 
 import type { Language } from '../i18n';
 import { projectSourceTrustCopy } from '../i18n/agentRunErrors';
+import { sessionConflictLabels } from '../i18n/projectTrust';
 
 const genericFailure: Record<Language, string> = {
   zh: 'Neo 暂时没能完成这次请求，请稍后再试。',
@@ -27,10 +28,72 @@ const busy: Record<Language, string> = {
   en: 'The previous turn is still finishing. Try again in a moment.',
 };
 
+// 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
+const sessionHeldByOldRun: Record<Language, string> = {
+  zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
+  en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
+};
+
 const tooManyRequests: Record<Language, string> = {
   zh: '发送太频繁了，请稍等片刻再重试。',
   en: 'Too many requests in a short time. Wait a moment and try again.',
 };
+
+const uploadCopy = {
+  rateLimitedSeconds: {
+    zh: (n: number) => `上传太频繁了，请约 ${n} 秒后再试。`,
+    en: (n: number) => `Too many uploads in a short time. Try again in about ${n} seconds.`,
+  },
+  rateLimited: {
+    zh: '上传太频繁了，请稍等片刻再试。',
+    en: 'Too many uploads in a short time. Wait a moment and try again.',
+  },
+  tooLarge: {
+    zh: '文件太大，无法上传，请换一个小一点的文件。',
+    en: 'This file is too large to upload. Try a smaller file.',
+  },
+  generic: {
+    zh: '没能上传这个文件，请稍后再试。',
+    en: 'Could not upload this file. Please try again.',
+  },
+} as const;
+
+/** 上传通道非 2xx → 一句话人话；retryAfterSeconds 来自 Retry-After 头或 429 响应体（跨域读不到头时兜底）。 */
+export function uploadFailureMessage(input: { status: number; retryAfterSeconds?: number; language: Language }): string {
+  const { status, retryAfterSeconds, language } = input;
+  const lang: Language = language === 'en' ? 'en' : 'zh';
+  if (status === 429) {
+    if (retryAfterSeconds !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return uploadCopy.rateLimitedSeconds[lang](Math.ceil(retryAfterSeconds));
+    }
+    return uploadCopy.rateLimited[lang];
+  }
+  if (status === 413) return uploadCopy.tooLarge[lang];
+  return uploadCopy.generic[lang];
+}
+
+/** getPathForFile 上传失败：userMessage 永远是人话一句，调用方直接展示，不要展示 err.message 以外的底层文本。 */
+export class UploadFailureError extends Error {
+  readonly userMessage: string;
+  constructor(userMessage: string) {
+    super(userMessage);
+    this.name = 'UploadFailureError';
+    this.userMessage = userMessage;
+  }
+}
+
+/** 读 Retry-After：优先响应头，其次 JSON 体的 retryAfterSeconds；都没有返回 undefined。 */
+export function readRetryAfterSeconds(headerValue: string | null | undefined, body: string): number | undefined {
+  const fromHeader = Number(headerValue);
+  if (headerValue && Number.isFinite(fromHeader) && fromHeader > 0) return fromHeader;
+  try {
+    const parsed = JSON.parse(body) as { retryAfterSeconds?: unknown };
+    const n = parsed?.retryAfterSeconds;
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface HttpFailureMessageInput {
   status: number;
@@ -43,6 +106,7 @@ export function httpFailureMessage(input: HttpFailureMessageInput): string {
   const { status, code, language } = input;
   const pick = (copy: Record<Language, string>): string => copy[language] ?? copy.zh;
   if (code === 'PROJECT_SOURCE_TRUST') return pick(projectSourceTrustCopy);
+  if (code === 'RUN_SESSION_CONFLICT') return pick(sessionHeldByOldRun);
   if (status === 401 || status === 403) return pick(accessDenied);
   if (status === 409) return pick(busy);
   if (status === 429) return pick(tooManyRequests);
@@ -88,4 +152,10 @@ export function domainFailureMessage(input: { status: number; body: string; lang
 export function isProjectSourceTrustFailure(error: unknown): boolean {
   return typeof error === 'object' && error !== null
     && (error as { code?: unknown }).code === 'PROJECT_SOURCE_TRUST';
+}
+
+/** 发送失败是不是会话被没结束的旧任务占着（失败说明下挂「放弃 / 重试」两个按钮）。 */
+export function isSessionConflictFailure(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && (error as { code?: unknown }).code === 'RUN_SESSION_CONFLICT';
 }

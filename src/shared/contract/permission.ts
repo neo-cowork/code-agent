@@ -168,6 +168,8 @@ export interface PermissionRequest {
     pluginId?: string;
     /** Host-resolved display name of the plugin that registered this tool. */
     pluginName?: string;
+    /** Host-only snapshot field names: prefilled context, not proposed calendar update arguments. */
+    calendarApprovalSnapshotFields?: string[];
     /** Host-resolved only; true when outbound sensitive data was masked. */
     outboundMasked?: boolean;
     path?: string;
@@ -207,6 +209,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** Host-only：这次询问时已记住的授权本可放行（没有任何强制确认）。同任务后来点的授权覆盖到它时自动放行。 */
+    grantEligible?: boolean;
     /** Host-only action + exact origin; null means one-time permission only. */
     browserSessionGrant?: { target: string | null; previousOrigins: string[] };
     /**

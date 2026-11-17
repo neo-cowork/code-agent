@@ -15,7 +15,8 @@ export type PermissionType =
   | 'command'
   | 'dangerous_command'
   | 'network'
-  | 'mcp';
+  | 'mcp'
+  | 'directory_access';
 
 // 审批级别
 export type ApprovalLevel =

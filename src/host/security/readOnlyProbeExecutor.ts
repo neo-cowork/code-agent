@@ -14,11 +14,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { getShellPath } from '../services/infra/shellEnvironment';
 import { isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
-import type { ProbeCommand, ProbeRedirect, PyExpr, PyStmt, ReadOnlyProbePlan } from './readOnlyProbePlan';
+import { PROBE_EXIT_STATUS, type ProbeCommand, type ProbeRedirect, type PyExpr, type PyStmt, type ReadOnlyProbePlan } from './readOnlyProbePlan';
 
 export interface ProbeAuthority {
   workingDirectory: string;
   workspaceRoot?: string;
+  /** Explicit cron grant: replaces ambient cwd/workspace read authority. */
+  readRoots?: string[];
   /** 本会话更早的用户消息原文（路径逐字出现即视为用户点名）。 */
   userTexts: string[];
   /** 本会话附件的本体路径。 */
@@ -37,7 +39,7 @@ class ProbeAbort extends Error {}
 const MAX_OUTPUT_CHARS = 256 * 1024;
 const EXEC_TIMEOUT_MS = 5000;
 const SHELL_BUILTINS = new Set(['echo', 'printf', 'test', 'command', 'cd', 'pwd', 'type', 'read', 'true', 'false', 'export', 'unset', 'set', 'exit']);
-const FIXED_BINARIES = { ls: '/bin/ls', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
+const FIXED_BINARIES = { ls: '/bin/ls', cat: '/bin/cat', wc: '/usr/bin/wc', head: '/usr/bin/head', xattr: '/usr/bin/xattr', id: '/usr/bin/id', whoami: '/usr/bin/whoami' } as const;
 
 // ----------------------------------------------------------------------------
 // 路径授权
@@ -103,13 +105,13 @@ function namedVerbatim(candidates: string[], texts: string[]): boolean {
 }
 
 /** 返回规范化绝对路径；未授权返回 null。 */
-function authorizeProbePath(raw: string, auth: ProbeAuthority): string | null {
+export function authorizeProbePath(raw: string, auth: ProbeAuthority): string | null {
   if (!raw || raw.includes('\0')) return null;
   const abs = path.resolve(auth.workingDirectory, raw);
   const real = realpathOfPrefix(abs);
   if (isSensitive(abs, auth) || isSensitive(real, auth)) return null;
 
-  const roots = [auth.workingDirectory, auth.workspaceRoot]
+  const roots = (auth.readRoots ?? [auth.workingDirectory, auth.workspaceRoot])
     .filter((r): r is string => Boolean(r) && path.resolve(r as string) !== path.parse(path.resolve(r as string)).root);
   if (roots.some((root) => isInside(abs, path.resolve(root)) && isInside(real, safeRealpath(path.resolve(root))))) return abs;
 
@@ -183,10 +185,10 @@ function scrubbedEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunResult> {
+function runFixed(bin: string, args: string[], cwd: string, input?: Buffer): Promise<ProbeRunResult> {
   return new Promise((resolve, reject) => {
     // argv0：GNU 工具用 argv[0] 作错误前缀（"ls: …"），与经 shell 以裸命令名执行时一致。execFile 不转发 argv0，必须直接 spawn。
-    const child = spawn(bin, args, { cwd, env: scrubbedEnv(), argv0: path.basename(bin), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, args, { cwd, env: scrubbedEnv(), argv0: path.basename(bin), stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -205,13 +207,17 @@ function runFixed(bin: string, args: string[], cwd: string): Promise<ProbeRunRes
       if (kind === 'out') stdout += chunk.toString('utf8'); else stderr += chunk.toString('utf8');
       if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) abort(`exec ${path.basename(bin)} output too large`);
     };
-    child.stdout.on('data', collect('out'));
-    child.stderr.on('data', collect('err'));
+    child.stdout?.on('data', collect('out'));
+    child.stderr?.on('data', collect('err'));
     child.on('error', () => settle(() => reject(new ProbeAbort(`exec ${path.basename(bin)} failed`))));
     child.on('close', (code) => {
       if (code === null) { settle(() => reject(new ProbeAbort(`exec ${path.basename(bin)} killed by signal`))); return; }
       settle(() => resolve({ stdout, stderr, exitCode: code }));
     });
+    if (input) {
+      child.stdin?.on('error', () => abort('fixed program stdin failed'));
+      child.stdin?.end(input);
+    }
   });
 }
 
@@ -230,10 +236,20 @@ function lookupOnPath(name: string): string | null {
 class Runner {
   stdout = '';
   stderr = '';
-  constructor(private readonly auth: ProbeAuthority) {}
+  private readonly auth: ProbeAuthority;
+  private currentDirectory: string;
+
+  constructor(auth: ProbeAuthority) {
+    this.currentDirectory = auth.workingDirectory;
+    // Path mentions and attachment directories authorize individual paths, not
+    // new subtree roots. Keep authority fixed while cd changes path resolution.
+    this.auth = { ...auth, readRoots: (auth.readRoots ?? [auth.workingDirectory, auth.workspaceRoot])
+      .filter((root): root is string => Boolean(root))
+      .map((root) => path.resolve(root)) };
+  }
 
   private need(raw: string): string {
-    const abs = authorizeProbePath(raw, this.auth);
+    const abs = authorizeProbePath(path.resolve(this.currentDirectory, raw), this.auth);
     if (abs === null) throw new ProbeAbort('path not authorized');
     return abs;
   }
@@ -251,6 +267,56 @@ class Runner {
 
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
+      case 'cd': {
+        const directory = this.need(cmd.path);
+        if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('cd directory unavailable');
+        this.currentDirectory = directory;
+        return 0;
+      }
+      case 'file-read': {
+        for (const operand of cmd.paths) {
+          const target = this.need(operand);
+          const stat = fs.statSync(target);
+          if (!stat.isFile() || stat.size > MAX_OUTPUT_CHARS) throw new ProbeAbort('read file unavailable or too large');
+        }
+        const result = await runFixed(FIXED_BINARIES[cmd.program], [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
+        this.emit(redirect, result.stdout, result.stderr);
+        return result.exitCode;
+      }
+      case 'file-loop': {
+        const directory = this.need(cmd.directory);
+        if (!fs.statSync(directory).isDirectory()) throw new ProbeAbort('loop directory unavailable');
+        for (const file of cmd.files) {
+          const target = this.need(file.path);
+          let stat: fs.Stats;
+          try { stat = fs.statSync(target); } catch (error) {
+            if (cmd.regularFilesOnly && ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
+            throw error;
+          }
+          if (cmd.regularFilesOnly && !stat.isFile()) continue;
+          if (!stat.isFile() || stat.size > MAX_OUTPUT_CHARS) throw new ProbeAbort('loop file unavailable or too large');
+          const content = fs.readFileSync(target);
+          let bytes: string | undefined;
+          for (const statement of cmd.body) {
+            if (statement.kind === 'cat') { this.emit(redirect, content.toString('utf8'), ''); continue; }
+            let text = '';
+            for (const part of statement.parts) {
+              if ('text' in part) text += part.text;
+              else if (part.value === 'file') text += file.label;
+              else {
+                if (bytes === undefined) {
+                  const result = await runFixed(FIXED_BINARIES.wc, ['-c'], directory, content);
+                  if (result.exitCode !== 0 || result.stderr) throw new ProbeAbort('loop byte count failed');
+                  bytes = result.stdout.replace(/\n+$/, '');
+                }
+                text += bytes;
+              }
+            }
+            this.emit(redirect, `${text}\n`, '');
+          }
+        }
+        return 0;
+      }
       case 'noop': return 0;
       case 'test': {
         const abs = this.need(cmd.path);
@@ -274,24 +340,31 @@ class Runner {
       case 'ls': {
         const targets = cmd.paths.length > 0 ? cmd.paths : ['.'];
         for (const p of targets) this.need(p);
-        const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
+        if (cmd.headLines !== undefined) {
+          const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
+          const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+          const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
+          this.emit({ out: 'out', err: 'err' }, lines.slice(0, cmd.headLines).join(''), stderr);
+          return 0; // The last program is a literal head, with no pipefail.
+        }
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
       case 'xattr': {
         if (process.platform !== 'darwin') throw new ProbeAbort('xattr unavailable');
         for (const p of cmd.paths) this.need(p);
-        const res = await runFixed(FIXED_BINARIES.xattr, ['-l', ...cmd.paths], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.xattr, ['-l', ...cmd.paths], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
       case 'id-un': {
-        const res = await runFixed(FIXED_BINARIES.id, ['-un'], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.id, ['-un'], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
       case 'whoami': {
-        const res = await runFixed(FIXED_BINARIES.whoami, [], this.auth.workingDirectory);
+        const res = await runFixed(FIXED_BINARIES.whoami, [], this.currentDirectory);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }
@@ -367,7 +440,10 @@ export async function executeReadOnlyProbePlan(plan: ReadOnlyProbePlan, auth: Pr
     for (const step of plan.steps) {
       if (step.op === '&&' && status !== 0) continue;
       if (step.op === '||' && status === 0) continue;
-      status = await runner.run(step.cmd, step.redirect);
+      const cmd = step.cmd.kind === 'echo'
+        ? { ...step.cmd, text: step.cmd.text.replaceAll(PROBE_EXIT_STATUS, String(status)) }
+        : step.cmd;
+      status = await runner.run(cmd, step.redirect);
     }
   } catch (err) {
     // PyException 逃出 try 块 = 脚本会以 traceback 退出；ProbeAbort = 无法证明。其余意外同样交回审批链。

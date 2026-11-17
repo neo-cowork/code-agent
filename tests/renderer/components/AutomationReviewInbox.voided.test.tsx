@@ -50,7 +50,7 @@ describe('voided approval history through the real inbox', () => {
     expect(toggle.textContent).toBe(language === 'zh' ? '收起' : 'Collapse');
     const expanded = screen.getAllByTestId('parked-approval-voided');
     expect(expanded).toHaveLength(11);
-    expect(expanded[0].textContent).toContain(language === 'zh' ? '重启前发起 · 运行命令' : 'Started before restart · Run a command');
+    expect(expanded[0].textContent).toContain(language === 'zh' ? '重启前发起 · 运行命令' : 'Started before restart · Run command');
     expect(expanded[10].textContent).toContain(language === 'zh' ? '一项操作' : 'An action');
     for (const item of expanded) {
       expect(item.textContent).not.toMatch(/Bash|mcp__/);
@@ -66,7 +66,7 @@ describe('voided approval history through the real inbox', () => {
   it.each([
     ['bAsH', '运行命令'], ['WRITE', '写入文件'], ['Edit', '编辑文件'], ['Read', '读取文件'],
     ['Glob', '查找文件'], ['Grep', '搜索内容'], ['ListDirectory', '查看目录'],
-    ['WebFetch', '读取网页'], ['WebSearch', '搜索网页'], ['mail_send', '发送邮件'],
+    ['WebFetch', '网页抓取'], ['WebSearch', '联网搜索'], ['mail_send', '发送邮件'],
     ['mail_draft', '起草邮件'], ['mail', '邮件操作'], ['mcp__plugin__send', '一项操作'],
     ['UnrecognizedTool', '一项操作'], ['目录访问：项目资料', '目录访问：项目资料'],
     ['Read the weekly report', 'Read the weekly report'],
@@ -103,7 +103,7 @@ describe('non-voided task names through the production inbox', () => {
       const line = within(cards[index]).getByTestId('parked-session-title');
       expect(line.textContent).toBe(name);
       expect(line.className).toBe('truncate text-xs text-zinc-400');
-      expect(line.previousElementSibling?.textContent).toBe(language === 'zh' ? '写入文件' : 'Write a file');
+      expect(line.previousElementSibling?.textContent).toBe(language === 'zh' ? '写入文件' : 'Write file');
     }
     expect(within(cards[3]).getByTestId('sensitive-step-parked-row')).toBeTruthy();
     expect(cards[2].className).toContain('opacity-50');
@@ -112,5 +112,23 @@ describe('non-voided task names through the production inbox', () => {
       expect(Array.from(card.querySelectorAll('div')).some((el) => el.childElementCount === 0 && !el.textContent?.trim())).toBe(false);
     }
     if (language === 'en') expect(screen.getByTestId('parked-approval-group').textContent).not.toMatch(/[\u3400-\u9fff]|\[Scheduled\]/u);
+  });
+});
+
+describe('channel approval task title parity', () => {
+  it.each(['zh', 'en'] as const)('pending and voided use the same task title without channel or session identifiers (%s)', async (language) => {
+    state.language = language;
+    state.rows = ['pending', 'voided'].map((status) => ({
+      id: status, sessionId: 'session_channel', sessionTitle: '[Channel] Feishu test · oc_example',
+      taskTitle: '新建 weekly', tool: 'Write', displayTool: '重启前发起 · Write',
+      requestedAt: Date.now(), status: status as 'pending' | 'voided',
+      voidReason: '这一步的内容在重启后无法恢复，已自动作废，没有执行。',
+    }));
+    render(<AutomationReviewInbox />);
+    await waitFor(() => expect(screen.getAllByTestId('parked-session-title')).toHaveLength(2));
+    for (const title of screen.getAllByTestId('parked-session-title')) {
+      expect(title.textContent).toBe('新建 weekly');
+      expect(title.textContent).not.toMatch(/session_|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}|oc_|\[Channel\]/i);
+    }
   });
 });

@@ -400,6 +400,8 @@ export interface SurfaceLiveFrameV1 {
   width: number;
   height: number;
   capturedAtMs: number;
+  /** Absent when CSS layout metrics could not be read. */
+  pageOverflowX?: boolean;
 }
 
 /**
@@ -727,7 +729,8 @@ export function isSurfaceLiveFrameV1(value: unknown): value is SurfaceLiveFrameV
     && /^data:image\/jpeg;base64,/.test(frame.dataUrl)
     && Number.isSafeInteger(frame.width) && Number(frame.width) > 0
     && Number.isSafeInteger(frame.height) && Number(frame.height) > 0
-    && Number.isFinite(frame.capturedAtMs);
+    && Number.isFinite(frame.capturedAtMs)
+    && (frame.pageOverflowX === undefined || typeof frame.pageOverflowX === 'boolean');
 }
 
 export function isSurfaceLiveStreamStateV1(value: unknown): value is SurfaceLiveStreamStateV1 {

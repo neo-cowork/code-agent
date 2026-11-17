@@ -36,7 +36,7 @@ export interface RunUiState {
   completionSignal?: string;
   /** 系统回收（长时间无进展）而非用户停止；仅 status='cancelled' 时出现 */
   terminalReason?: 'idle_reaped' | 'client_disconnect';
-  /** 本轮已收尾工具步骤里失败的条数 / 总数（success===false 才算失败）；终态词的唯一输入 */
+  /** 本轮已收尾工具步骤里未恢复失败的条数 / 总数；后续同目标成功会恢复失败，终态词的唯一输入 */
   toolStepOutcome?: { failed: number; total: number };
   /** 当前轮起止时间（来自 TraceTurn），Overview Run header 的用时来源 */
   startedAt?: number;

@@ -13,7 +13,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { calendarFailureCode, describeCalendarWriteFailure } from './appleScriptWriteFailure';
 import { calendarDeleteEventSchema as schema } from './calendarDeleteEvent.schema';
 import { captureCalendarBefore } from './undoMetadata';
 
@@ -30,6 +30,14 @@ async function executeCalendarDeleteEvent(
     return { ok: false, error: 'event_uid must be a non-empty string', code: 'INVALID_ARGS' };
   }
 
+  const connector = getConnectorRegistry().get('calendar');
+  if (!connector) {
+    return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'change'), code: 'NOT_INITIALIZED' };
+  }
+
+  // 删前留快照，删后「撤销」用它重建。批准卡上的标题 / 时间由执行前那唯一一次审批补（calendarApprovalDetails）；
+  // 这里给 canUseTool 的必须是原参数，否则和已批准的那份不一致会再弹一张卡（真机第四轮）。
+  const undoMetadata = await captureCalendarBefore(connector, args);
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
@@ -40,13 +48,7 @@ async function executeCalendarDeleteEvent(
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
-  const connector = getConnectorRegistry().get('calendar');
-  if (!connector) {
-    return { ok: false, error: formatConnectorUnavailableMessage('calendar', 'change'), code: 'NOT_INITIALIZED' };
-  }
-
   try {
-    const undoMetadata = await captureCalendarBefore(connector, args);
     const result = await connector.execute('delete_event', args);
     const event = result.data as {
       uid: string;
@@ -88,8 +90,7 @@ async function executeCalendarDeleteEvent(
       },
     };
   } catch (error) {
-    const failure = describeAppleScriptWriteFailure(
-      'Calendar',
+    const failure = describeCalendarWriteFailure(
       'Calendar delete failed',
       error,
       ctx.logger,
@@ -98,6 +99,7 @@ async function executeCalendarDeleteEvent(
     return {
       ok: false,
       error: failure,
+      ...calendarFailureCode(error),
       meta: {
         action: 'delete_event',
         connector: 'calendar',

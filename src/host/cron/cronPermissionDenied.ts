@@ -19,6 +19,7 @@ import type {
 import type { Message } from '../../shared/contract/message';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
 import { redactCommandSecrets } from '../security/secretRedaction';
+import { READ_ONLY_TOOLS } from '../tools/permissionClassifier';
 
 /** 摘要上限：与 toolExecutor 拒绝登记（denialRegistry.summary）同一档。 */
 const SUMMARY_MAX_CHARS = 80;
@@ -52,7 +53,7 @@ function buildStepSummary(toolName: string, args: Record<string, unknown> | unde
  * 推导「需处理」标记（纯函数）。只在三条件同时成立时返回标记，否则 undefined：
  *   1. 被拒的 ask 级调用 ≥ 1；
  *   2. 没有任何**非只读**工具的成功结果（只读放行工具的成功不抵消——它们本来
- *      就免审批，成功不代表产出了东西；isUnattendedAllowedReadOnlyTool 同源）；
+ *      就免审批，成功不代表产出了东西；复用内置分类集合与 MCP 只读判定）；
  *   3. digest 没有产物（有产物说明别的活干成了，运行仍是普通成功）。
  * 这是最小判据（设计选项 B）：部分被拒但有产出的运行保持绿色「成功」。
  */
@@ -85,7 +86,9 @@ export function deriveCronPermissionDenied(
       }
       // 名字对不回的成功结果按「有产出」处理：证不了它只读，就不该把运行
       // 说成「没有产出」（标记宁缺勿滥，最小判据）。
-      if (result.success && !(call?.name && isUnattendedAllowedReadOnlyTool(call.name))) {
+      if (result.success && !(call?.name && (
+        READ_ONLY_TOOLS.has(call.name) || isUnattendedAllowedReadOnlyTool(call.name)
+      ))) {
         hasProductiveSuccess = true;
       }
     }

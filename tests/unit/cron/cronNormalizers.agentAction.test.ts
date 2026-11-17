@@ -6,6 +6,7 @@ import {
   normalizeAction,
   readCronAlertReason,
 } from '../../../src/host/cron/cronNormalizers';
+import type { CronPermissionDeniedMarker, CronPermissionDeniedReason } from '../../../src/shared/contract/sessionAutomation';
 import { CRON_URGENCY_CRITERIA } from '../../../src/shared/constants';
 
 // A6-1: AgentAction 新增 roleId / libraryProjectId 必须穿过归一化边界（落库/读取往返），
@@ -361,5 +362,34 @@ describe.each([['first line', ''], ['after the preview cap', `${'正文'.repeat(
     const result = buildCronAgentActionResult({ agentType: 'default', prompt: 'report' }, {}, 'session', text, false);
     expect(result.urgency).toBe(value === 'maybe' ? 'fyi' : value);
     expect(result.urgencyRaw).toBe(value === 'maybe' ? 'urgency: maybe' : undefined);
+  });
+});
+
+
+describe('buildCronAgentActionResult — declined run urgency', () => {
+  const action = { agentType: 'default', prompt: 'Sort Downloads' };
+  const marker = (reasons: CronPermissionDeniedReason[]): CronPermissionDeniedMarker => ({
+    count: reasons.length,
+    steps: reasons.map((reason) => ({ tool: 'Bash', summary: 'Move downloaded files', reason })),
+  });
+  it.each(['must_today', 'can_wait', 'fyi'])('caps user-only denial urgency %s to fyi', (urgency) => {
+    const denied = marker(['user', 'user']);
+    const result = buildCronAgentActionResult(action, undefined, 'run',
+      `<cron_summary>urgency: ${urgency}\nNo files moved</cron_summary>`, false, false, denied);
+    expect(result.urgency).toBe('fyi');
+    expect(result.permissionDenied).toEqual(denied);
+  });
+  it.each(['timeout', 'cancelled', 'other'] as const)('keeps declared urgency for %s and mixed denials', (reason) => {
+    for (const reasons of [[reason], ['user', reason]] as CronPermissionDeniedReason[][]) {
+      const result = buildCronAgentActionResult(action, undefined, 'run',
+        '<cron_summary>urgency: must_today\nNo files moved</cron_summary>', false, false, marker(reasons));
+      expect(result.urgency).toBe('must_today');
+    }
+  });
+  it('keeps declared urgency when there is no denied marker or no denied steps', () => {
+    for (const denied of [undefined, marker([])]) {
+      expect(buildCronAgentActionResult(action, undefined, 'run', 'urgency: must_today\nReview report',
+        false, false, denied).urgency).toBe('must_today');
+    }
   });
 });
