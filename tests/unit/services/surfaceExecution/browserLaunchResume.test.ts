@@ -37,9 +37,9 @@ function arm(service: BrowserService): Fake {
   vi.spyOn(s, 'launchSystemChromeCdp').mockImplementation(launch);
   vi.spyOn(s, 'launchPlaywrightBundled').mockImplementation(launch);
   vi.spyOn(s, 'installContextGuards').mockResolvedValue(undefined);
-  vi.spyOn(s, 'newTab').mockImplementation(async (next?: string) => { hasTab = true; if (next) url = next; return 'tab-1'; });
+  vi.spyOn(s, 'newTab').mockImplementation(async (...args: unknown[]) => { hasTab = true; if (typeof args[0] === 'string') url = args[0]; return 'tab-1'; });
   vi.spyOn(s, 'getActiveTab').mockImplementation(() => (hasTab ? { id: 'tab-1', url, title: '' } : null));
-  vi.spyOn(s, 'navigate').mockImplementation(async (next: string) => { url = next; fake.navigations.push(next); s.emitSessionChanged('navigate'); });
+  vi.spyOn(s, 'navigate').mockImplementation(async (...args: unknown[]) => { url = String(args[0]); fake.navigations.push(url); s.emitSessionChanged('navigate'); });
   vi.spyOn(s, 'close').mockImplementation(async () => { s.context = null; s.browser = null; hasTab = false; url = 'about:blank'; });
   vi.spyOn(s, 'getDomSnapshot').mockImplementation(async () => ({ snapshotId: 's', tabId: 'tab-1', url, title: '', capturedAtMs: Date.now(), headings: [], interactiveElements: [] }));
   service.onSessionChanged((reason) => fake.emitted.push(reason));
