@@ -88,4 +88,17 @@ describe('TurnCard 重开运行中会话的合成「正在思考」行', () => {
     render(<TurnCard turn={makeTurn([], 'completed')} />);
     expect(screen.queryByTestId('thinking-digest')).toBeNull();
   });
+
+  for (const tool of ['Write', 'Edit']) {
+    it(`思考段之后跟着已完成的独立 ${tool} 节点、等模型继续时，底部仍显示「正在整理回复」`, () => {
+      const reasoning = { id: 'r1', type: 'assistant_text', content: '', timestamp: baseTime - 8_000, reasoning: '先改文件。' } as TraceTurn['nodes'][number];
+      const done = {
+        id: 'tool-done', type: 'tool_call', content: '', timestamp: baseTime - 5_000,
+        toolCall: { id: 'c-done', name: tool, args: { file_path: 'a.md' }, result: 'ok', success: true },
+      } as TraceTurn['nodes'][number];
+      render(<TurnCard turn={makeTurn([reasoning, done])} />);
+      expect(screen.getByTestId('thinking-digest').getAttribute('data-synthetic')).toBeNull();
+      expect(screen.getByTestId('streaming-preparation-indicator').textContent).toContain('正在整理回复');
+    });
+  }
 });

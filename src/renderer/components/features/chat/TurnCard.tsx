@@ -226,8 +226,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const preparationPhase = busySignal === 'text-caret' && !lastNodeIsStreamingText
     ? hasTimelineActivity ? 'organizing' : undefined
     : undefined;
+  // 合成行仅在无任何思考文本时渲染；有思考段时底部指示器照常（活跃思考时它本就让位）。
   const pendingThinkingSince = isStreaming && !suppressBusySignal && !waitingForApproval
-    && busySignal === 'text-caret' && !lastNodeIsStreamingText && !displayNodes.some((d) => d.kind === 'tool_group')
+    && busySignal === 'text-caret' && !lastNodeIsStreamingText && thinkingSegments.length === 0
+    && !displayNodes.some((d) => d.kind === 'tool_group')
     ? turn.startTime : undefined;
   const streamingIndicator = isStreaming && !suppressBusySignal && pendingThinkingSince === undefined ? (
     <StreamingIndicator
