@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-// @ts-expect-error —— 纯 JS 静态门脚本，无类型声明
 import { extractStrings } from '../../../scripts/check-copy.mjs';
 
 // 中文「协作空间」功能只有一个名字。别名由拼接构造，别让门匹配到自己。
