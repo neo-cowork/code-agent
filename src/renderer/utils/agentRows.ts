@@ -36,6 +36,9 @@ export interface MemberRowSource {
   roleId: string;
   name: string;
   profession?: string;
+  /** Render-time localized copies (display only). */
+  displayName?: string;
+  displayProfession?: string;
   icon?: string;
   status: 'standby' | 'running' | 'completed' | 'failed' | 'cancelled';
   isLead: boolean;
@@ -56,6 +59,9 @@ export interface AgentRow {
   roleId?: string;
   name: string;
   profession?: string;
+  /** Render-time localized name/profession; render with `displayName ?? name`. Never send or store these. */
+  displayName?: string;
+  displayProfession?: string;
   icon?: string;
   isLead: boolean;
   status: AgentRowStatus;
@@ -164,13 +170,16 @@ export function buildAgentRows(input: {
   const memberById = new Map(members.map((member) => [member.key, member]));
 
   for (const member of members) {
+    const name = member.status !== 'standby' && member.name === member.roleId
+      ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name;
     rows.push({
       key: member.key,
       kind: 'expert',
       roleId: member.roleId,
-      name: member.status !== 'standby' && member.name === member.roleId
-        ? agentRoleLabel(member.roleId, t.agentRoleLabels) : member.name,
+      name,
       profession: member.profession,
+      displayName: member.displayName !== undefined && member.displayName !== member.name ? member.displayName : undefined,
+      displayProfession: member.displayProfession !== member.profession ? member.displayProfession : undefined,
       icon: member.icon,
       isLead: member.isLead,
       status: memberRowStatus(member.status),
@@ -193,7 +202,10 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = candidate;
         row.outcomeKey = outcome;
-        if (node.background && t === languages.en) row.name = agentNodeLabel(node, t.agentRoleLabels);
+        if (node.background && t === languages.en) {
+          row.name = agentNodeLabel(node, t.agentRoleLabels);
+          row.displayName = undefined;
+        }
         // Explicit lifecycle wins; weak unknown contexts retain the member terminal above.
         row.status = nodeRowStatus(outcome);
         row.stoppable = row.status === 'working';
