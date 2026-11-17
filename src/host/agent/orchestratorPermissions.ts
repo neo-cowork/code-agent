@@ -28,7 +28,6 @@ import {
   noteUnattendedApprovalTimeout,
   UNATTENDED_APPROVAL_TIMEOUT,
 } from './unattendedApprovalTerminal';
-import { recordHumanGrant } from '../permissions/humanGrantPolicy';
 import { connectorApprovalDetails } from '../permissions/connectorApprovalDetails';
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
@@ -40,6 +39,9 @@ import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompan
 import { holdStallClock } from './stallObserver';
 import { buildApprovalNotification } from '../services/infra/approvalNotification';
 
+// 放在其余 import 之后：humanGrantPolicy 的依赖链经环路回到本模块，靠前会让依赖本模块的
+// 通知链测试（parkedApprovalBannerClickRoute）装载顺序错乱。
+import { recordHumanGrant } from '../permissions/humanGrantPolicy';
 const logger = createLogger('AgentOrchestrator');
 
 /** 交互审批只提醒、不裁决；运行取消/会话切换负责最终清理。 */
