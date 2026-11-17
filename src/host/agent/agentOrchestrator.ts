@@ -1045,7 +1045,7 @@ export class AgentOrchestrator {
       logger.info('========== Starting agent loop ==========');
       // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了
       // turnSystemContext 的 effectiveContent（backfill 会把那一列写回消息流）。
-      const runPromise = runLoop.run(effectiveContent, content);
+      const runPromise = runLoop.run(effectiveContent, options?.displayContent ?? content);
       this.activeRunPromise = runPromise;
       await runPromise;
       runCompletedNormally = true;
