@@ -68,8 +68,8 @@ function read(sessionId: string): FailedTurn[] | undefined {
   }
 }
 
-// 整图 data URL 动辄数 MB，直接 JSON 进 localStorage 会超配额，刷新后整条失败轮次连图带字一起丢。
-// 落盘只存与 DB 同口径的瘦身附件（大图去掉内联数据、保留文件名卡片）；内存里仍是完整副本。
+// 先原样落盘（刷新后重试仍带完整图）；只有超配额写不下时才退到与 DB 同口径的瘦身附件
+// （大图去掉内联数据、保留文件名卡片），免得整条失败轮次连图带字一起丢。内存里始终是完整副本。
 function toStorable(entry: FailedTurn): FailedTurn {
   const retryAttachments = entry.error.metadata?.retryAttachments;
   return {
@@ -87,8 +87,16 @@ function write(sessionId: string, entries: FailedTurn[]): void {
   if (entries.length) memory.set(sessionId, entries);
   else memory.delete(sessionId);
   try {
-    if (entries.length) localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries.map(toStorable)));
-    else localStorage.removeItem(keyPrefix + sessionId);
+    if (!entries.length) {
+      localStorage.removeItem(keyPrefix + sessionId);
+      return;
+    }
+    try {
+      localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries));
+    } catch (fullError) {
+      if (!(fullError && typeof fullError === 'object' && 'name' in fullError && fullError.name === 'QuotaExceededError')) throw fullError;
+      localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries.map(toStorable)));
+    }
   } catch (error) {
     memory.set(sessionId, entries);
     storageFailure(error);

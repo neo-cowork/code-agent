@@ -61,4 +61,15 @@ describe('failed send outbox keeps attachments across a page refresh', () => {
       expect.objectContaining({ name: 'data.csv', rowCount: 12 }),
     ]));
   });
+
+  it('keeps full image data when it exceeds 512K chars but still fits the quota', async () => {
+    const mid = `data:image/png;base64,${'B'.repeat(900 * 1024)}`;
+    const att: MessageAttachment = { id: 'm1', type: 'image', category: 'image', name: 'mid.png', size: 700_000, mimeType: 'image/png', data: mid };
+    const { recordFailedSend } = await import('../../../src/renderer/stores/failedSendOutbox');
+    const { user, error } = turn('', [att]);
+    recordFailedSend(SESSION, user, error);
+
+    const restoredUser = (await reloadAndMerge()).find((message) => message.role === 'user');
+    expect(restoredUser?.attachments?.[0]?.data).toBe(mid);
+  });
 });
