@@ -62,6 +62,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
   const [editSaving, setEditSaving] = useState(false);
   const [deleting, setDeleting] = useState<ProjectWithActivity | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteFailure, setDeleteFailure] = useState<'generic' | 'history' | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
@@ -210,10 +211,19 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
   const handleConfirmDelete = async () => {
     if (!deleting || deleteBusy) return;
     setDeleteBusy(true);
+    setDeleteFailure(null);
     try {
-      await deleteProject(deleting.id);
+      const result = await deleteProject(deleting.id);
+      if (!result.deleted) {
+        setDeleteFailure('generic');
+        return;
+      }
       setDeleting(null);
       loadList();
+    } catch (error) {
+      setDeleteFailure(error instanceof Error && error.message.includes('PROJECT_BOUNDARY_IMMUTABLE')
+        ? 'history'
+        : 'generic');
     } finally {
       setDeleteBusy(false);
     }
@@ -305,7 +315,7 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
                   aria-label={ps.deleteSpace}
                   title={ps.deleteSpace}
                   data-testid={`project-space-delete-${project.id}`}
-                  onClick={() => setDeleting(project)}
+                  onClick={() => { setDeleteFailure(null); setDeleting(project); }}
                 />
               </span>
             )}
@@ -459,12 +469,12 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
       </Modal>
       <Modal
         isOpen={deleting !== null}
-        onClose={() => setDeleting(null)}
+        onClose={() => { setDeleting(null); setDeleteFailure(null); }}
         title={ps.deleteTitle}
         size="sm"
         footer={(
           <ModalFooter
-            onCancel={() => setDeleting(null)}
+            onCancel={() => { setDeleting(null); setDeleteFailure(null); }}
             onConfirm={() => { void handleConfirmDelete(); }}
             confirmText={ps.deleteSpace}
             confirmDisabled={deleteBusy}
@@ -475,6 +485,11 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
         <p className="text-sm leading-6 text-zinc-400" data-testid="project-space-delete-modal">
           {ps.deleteConfirm.replace('{name}', deleting?.name ?? '')}
         </p>
+        {deleteFailure && (
+          <p role="alert" className="mt-3 text-sm text-badge-danger" data-testid="project-space-delete-error">
+            {deleteFailure === 'history' ? ps.deleteHistoryBlocked : ps.deleteFailed}
+          </p>
+        )}
       </Modal>
     </div>
   );
