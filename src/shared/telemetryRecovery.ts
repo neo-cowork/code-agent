@@ -35,16 +35,15 @@ export function isTelemetryRecoveredMessage(
 }
 
 function withTelemetryRecoveryNotice(content: string): string {
-  return hasLegacyTelemetryRecoveryPrefix(content) ? content : `${NOTICE_PREFIX}${content}`;
+  if (content.startsWith(NOTICE_PREFIX)) return content;
+  // 旧前缀行：换成新提示，模型请求里不再出现旧口径。
+  if (content.startsWith(LEGACY_NOTICE_PREFIX)) return `${NOTICE_PREFIX}${content.slice(LEGACY_NOTICE_PREFIX.length)}`;
+  return `${NOTICE_PREFIX}${content}`;
 }
 
-/** 装配入口：仅对带标记的 user 消息补回声明，其余消息原对象返回（字节不变）。 */
+/** 装配入口：仅对「由运行记录还原」的 user 消息（新标记或旧前缀）补回声明，其余消息原对象返回（字节不变）。 */
 export function withTelemetryRecoveryNoticeForModel(messages: readonly Message[]): Message[] {
-  if (!messages.some((m) => m.role === 'user' && m.metadata?.telemetryRecovered === true)) {
-    return messages as Message[];
-  }
+  if (!messages.some(isTelemetryRecoveredMessage)) return messages as Message[];
   return messages.map((m) =>
-    m.role === 'user' && m.metadata?.telemetryRecovered === true
-      ? { ...m, content: withTelemetryRecoveryNotice(m.content) }
-      : m);
+    isTelemetryRecoveredMessage(m) ? { ...m, content: withTelemetryRecoveryNotice(m.content) } : m);
 }

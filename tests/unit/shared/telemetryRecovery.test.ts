@@ -53,12 +53,20 @@ describe('telemetryRecovery', () => {
     expect(withTelemetryRecoveryNoticeForModel([prefixed])[0].content).toBe(prefixed.content);
   });
 
-  it('does not double-prefix rows that begin with the old notice', () => {
+  it('swaps the old notice for the new one on flagged rows that begin with the old text', () => {
     const legacy = msg({
       content: `${LEGACY_NOTICE}\n\n写周报`,
       metadata: { telemetryRecovered: true },
     });
-    expect(withTelemetryRecoveryNoticeForModel([legacy])[0].content).toBe(legacy.content);
+    expect(withTelemetryRecoveryNoticeForModel([legacy])[0].content).toBe(`${noticeOf()}\n\n写周报`);
+  });
+
+  it('swaps the old notice for the new one on unflagged legacy rows too, once', () => {
+    const legacy = msg({ content: `${LEGACY_NOTICE}\n\n写周报` });
+    const out = withTelemetryRecoveryNoticeForModel([legacy])[0].content;
+    expect(out).toBe(`${noticeOf()}\n\n写周报`);
+    expect(out).not.toContain('telemetry');
+    expect(out.split('【历史恢复提示】')).toHaveLength(2);
   });
 
   it('returns the same array (bytes unchanged) when nothing is recovered', () => {
