@@ -32,18 +32,24 @@ pub(crate) fn minimize_and_hint<R: Runtime>(
     // Match CloseRequested: minimize rather than exit, keeping the tray and host alive.
     for window in app.webview_windows().values() {
         if let Err(error) = window.minimize() {
-            eprintln!("background-resident: window minimize failed: {error}");
+            crate::log_shell_line(app, "warn", "background-window-minimize-failed", &format!("background-resident: window minimize failed: {error}"));
         }
     }
-    eprintln!("background-resident: scheduled-only quit; shell stays alive");
+    crate::log_shell_line(app, "info", "background-resident", "background-resident: scheduled-only quit; shell stays alive");
     let Some(data_dir) = crate::real_data_dir() else {
-        eprintln!("background-resident: hint skipped; data directory unavailable");
+        crate::log_shell_line(app, "warn", "background-hint-skipped", "background-resident: hint skipped; data directory unavailable");
         return;
     };
     match post_hint_once(&data_dir, || poster(language)) {
-        Ok(true) => eprintln!("background-resident: first-time hint posted"),
-        Ok(false) => eprintln!("background-resident: hint already shown"),
-        Err(error) => eprintln!("background-resident: hint not recorded: {error}"),
+        Ok(true) => crate::log_shell_line(app, "info", "background-hint-posted", "background-resident: first-time hint posted"),
+        Ok(false) => crate::log_shell_line(app, "info", "background-hint-shown", "background-resident: hint already shown"),
+        Err(error) => {
+            #[cfg(not(target_os = "macos"))]
+            if error.starts_with("background-resident: native hint unsupported: ") {
+                crate::log_shell_line(app, "warn", "background-native-hint-unsupported", &error);
+            }
+            crate::log_shell_line(app, "warn", "background-hint-not-recorded", &format!("background-resident: hint not recorded: {error}"));
+        },
     }
 }
 
@@ -103,11 +109,8 @@ pub(crate) fn post_native_hint(language: QuitDialogLanguage) -> Result<(), Strin
     }
     #[cfg(not(target_os = "macos"))]
     {
-        eprintln!(
-            "background-resident: native hint unsupported: {}",
-            background_hint(language)
-        );
-        Err("native hint skipped on this platform".into())
+        // The caller owns the app handle and persists this diagnostic through the sink.
+        Err(format!("background-resident: native hint unsupported: {}", background_hint(language)))
     }
 }
 
@@ -124,6 +127,81 @@ mod tests {
             std::process::id(),
             NEXT_DIR.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    // A subprocess isolates HOME and the app-data resolver from other Rust tests.
+    #[test]
+    fn background_resident_disk_logging_and_rotation() {
+        const CHILD: &str = "NEO_BACKGROUND_LOG_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let dir = temp_dir();
+            fs::create_dir_all(&dir).unwrap();
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "background_resident::tests::background_resident_disk_logging_and_rotation", "--nocapture"])
+                .env(CHILD, "1")
+                .env("HOME", &dir)
+                .env("USERPROFILE", &dir)
+                .env("XDG_DATA_HOME", dir.join("data"))
+                .env("CODE_AGENT_DATA_DIR", dir.join("hint-data"))
+                .status().unwrap();
+            fs::remove_dir_all(dir).unwrap();
+            assert!(status.success(), "isolated background-resident disk test failed");
+            return;
+        }
+        let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
+        let app = tauri::test::mock_app();
+        let path = crate::shell_events_path(app.handle()).unwrap();
+        assert!(path.starts_with(&home), "must never write outside redirected HOME");
+        minimize_and_hint(app.handle(), QuitDialogLanguage::En, |_| Ok(()));
+        minimize_and_hint(app.handle(), QuitDialogLanguage::En, |_| panic!("already posted"));
+        fs::remove_file(crate::real_data_dir().unwrap().join(HINT_MARKER)).unwrap();
+        minimize_and_hint(app.handle(), QuitDialogLanguage::En, |_| Err("injected post failure".into()));
+        let raw = fs::read_to_string(&path).unwrap();
+        let lines: Vec<serde_json::Value> = raw.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        for message in [
+            "background-resident: scheduled-only quit; shell stays alive",
+            "background-resident: first-time hint posted",
+            "background-resident: hint already shown",
+            "background-resident: hint not recorded: injected post failure",
+        ] {
+            let line = lines.iter().find(|line| line["message"] == message).expect(message);
+            assert_eq!(line["schemaVersion"], 1);
+            assert_eq!(line["source"], "tauri-shell");
+            assert_eq!(line["pid"], std::process::id());
+            assert!(line["generatedAt"].as_str().unwrap().parse::<u128>().unwrap() > 0);
+            println!("disk readback: {line}");
+        }
+        // Fill the actual production path to the cap, then cross it via the production entry.
+        let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_len(crate::SHELL_EVENTS_MAX_BYTES).unwrap();
+        drop(file);
+        minimize_and_hint(app.handle(), QuitDialogLanguage::En, |_| Ok(()));
+        let rotated = path.with_file_name(format!("{}.1", crate::SHELL_EVENTS_FILE));
+        assert!(rotated.exists(), "rotation must preserve the previous generation");
+        assert_eq!(fs::metadata(&rotated).unwrap().len(), crate::SHELL_EVENTS_MAX_BYTES);
+        assert!(fs::metadata(&path).unwrap().len() < 4096, "live log must be small after rotation");
+        assert!(fs::read_to_string(&path).unwrap().contains("scheduled-only quit; shell stays alive"));
+        // Another rotation replaces the sole generation, rather than accumulating files.
+        fs::OpenOptions::new().write(true).open(&path).unwrap().set_len(crate::SHELL_EVENTS_MAX_BYTES).unwrap();
+        minimize_and_hint(app.handle(), QuitDialogLanguage::En, |_| Ok(()));
+        assert!(!path.with_file_name(format!("{}.2", crate::SHELL_EVENTS_FILE)).exists());
+        let slot_path = |slot: u8| {
+            let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+            context.config_mut().identifier = format!("com.codeagent.dev{slot}");
+            let app = tauri::test::mock_builder().build(context).unwrap();
+            let path = crate::shell_events_path(app.handle()).unwrap();
+            crate::log_shell_line(app.handle(), "info", "slot-probe", &format!("slot {slot}"));
+            path
+        };
+        let dev2 = slot_path(2);
+        let dev3 = slot_path(3);
+        assert_ne!(dev2, dev3);
+        assert!(dev2.starts_with(&home) && dev3.starts_with(&home));
+        assert!(dev2.to_string_lossy().contains("com.codeagent.dev2"));
+        assert!(dev3.to_string_lossy().contains("com.codeagent.dev3"));
+        assert!(!fs::read_to_string(dev2).unwrap().contains("slot 3"));
+        assert!(!fs::read_to_string(dev3).unwrap().contains("slot 2"));
+        println!("background_resident rotation: .1 exists, live <4096 bytes; dev2/dev3 paths and contents isolated");
     }
 
     #[test]
