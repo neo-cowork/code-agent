@@ -106,6 +106,8 @@ export interface ManagedBrowserLaunchOptions {
   leaseOwner?: string;
   leaseTtlMs?: number;
   proxy?: ManagedBrowserProxyInput | null;
+  /** Entry's conversation: lets the launch layer restore its last page + login state. */
+  conversationId?: string;
 }
 
 export interface ManagedBrowserProxyInput {

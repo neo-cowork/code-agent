@@ -1,6 +1,7 @@
 import type { ConversationExecutionIntent } from '../../../shared/contract/conversationEnvelope';
 import type { ToolExecutionResult } from '../types';
 import { getBrowserService } from '../../services/infra/browserPool.js';
+import { getManagedBrowserProviderAdapter } from '../../services/surfaceExecution/ManagedBrowserProviderAdapter.js';
 
 const BROWSER_OS_ACTIONS = new Set([
   'open',
@@ -151,6 +152,7 @@ export async function ensureManagedBrowserSessionForWorkbench(args: {
   url?: string;
   executionIntent?: ConversationExecutionIntent;
   agentId?: string;
+  conversationId?: string;
 } = {}): Promise<string | null> {
   const browserService = getBrowserService(args.agentId);
   const before = browserService.getSessionState();
@@ -158,11 +160,8 @@ export async function ensureManagedBrowserSessionForWorkbench(args: {
     return null;
   }
 
-  if (args.url) {
-    await browserService.ensureSession(args.url, { leaseOwner: 'browser_workbench' });
-  } else {
-    await browserService.ensureSession('about:blank', { leaseOwner: 'browser_workbench' });
-  }
+  getManagedBrowserProviderAdapter();
+  await browserService.ensureSession(args.url || 'about:blank', { leaseOwner: 'browser_workbench', conversationId: args.conversationId });
 
   const notes: string[] = [];
   if (!before.running) {

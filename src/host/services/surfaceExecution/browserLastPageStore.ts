@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getSecureStorage } from '../core/secureStorage';
 import type { BrowserService } from '../infra/browserService';
+import { markBrowserLaunchResumeOwner } from '../infra/browser/launchResumeHook';
 
 const LAST_PAGE_SLOT_PREFIX = 'browser-last-page:';
 const MIN_TOKEN_SEGMENT_LENGTH = 24;
@@ -145,13 +146,16 @@ export async function restoreManagedBrowserLastPage(input: {
   browserService: Pick<BrowserService, 'navigate'>;
   store: BrowserLastPageStore;
   logger?: BrowserLastPageLogger;
+  phase?: 'cold' | 'reuse';
 }): Promise<boolean> {
+  markBrowserLaunchResumeOwner(input.browserService, input.conversationId);
   let targetUrl: string | null;
   try {
     targetUrl = await input.store.getForConversation(input.conversationId);
   } catch (error) {
     input.logger?.warn?.('Failed to read managed browser last page; continuing on blank page', {
       reason: 'last_page_read_failed',
+      phase: input.phase,
       conversationIdHash: input.conversationIdHash,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -162,6 +166,7 @@ export async function restoreManagedBrowserLastPage(input: {
     await input.browserService.navigate(targetUrl);
     input.logger?.info?.('Restored managed browser last page', {
       reason: 'last_page_restored',
+      phase: input.phase,
       conversationIdHash: input.conversationIdHash,
       url: targetUrl,
     });
@@ -169,6 +174,7 @@ export async function restoreManagedBrowserLastPage(input: {
   } catch (error) {
     input.logger?.warn?.('Failed to navigate to managed browser last page; continuing on blank page', {
       reason: 'last_page_navigation_failed',
+      phase: input.phase,
       conversationIdHash: input.conversationIdHash,
       url: targetUrl,
       error: error instanceof Error ? error.message : String(error),

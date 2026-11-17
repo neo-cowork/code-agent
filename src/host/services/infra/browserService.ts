@@ -28,6 +28,7 @@ import {
 } from './browserProvider';
 import { BrowserLogger } from './browser/logger';
 import { PostResultReloadGuard } from './browser/postResultReloadGuard';
+import { runBrowserLaunchResume } from './browser/launchResumeHook';
 import { refreshBrowserTabMetadata as refreshBrowserTabMetadataFields } from './browser/tabHistoryMetadata';
 import { browserRelayService } from './browserRelayService';
 import {
@@ -248,11 +249,9 @@ export class BrowserService implements Disposable {
           throw new Error('Managed browser is already running with a different proxy config; close it before switching proxy.');
         }
       }
-      this.leaseController.renew({
-        owner: options.leaseOwner || 'managed-browser',
-        ttlMs: options.leaseTtlMs,
-      });
+      this.leaseController.renew({ owner: options.leaseOwner || 'managed-browser', ttlMs: options.leaseTtlMs });
       this.logger.log('WARN', 'Browser already running, skipping launch');
+      await runBrowserLaunchResume(this, options, 'reuse');
       this.emitSessionChanged('launch');
       return;
     }
@@ -305,10 +304,8 @@ export class BrowserService implements Disposable {
       'INFO',
       `Browser launched successfully via ${this.providerDiagnostics.provider} (viewport: ${this.viewport.width}x${this.viewport.height}, profile=${this.profileMode})`,
     );
-    this.leaseController.renew({
-      owner: options.leaseOwner || 'managed-browser',
-      ttlMs: options.leaseTtlMs,
-    });
+    this.leaseController.renew({ owner: options.leaseOwner || 'managed-browser', ttlMs: options.leaseTtlMs });
+    await runBrowserLaunchResume(this, options, 'cold');
     this.emitSessionChanged('launch');
   }
 
@@ -545,11 +542,10 @@ export class BrowserService implements Disposable {
   }
 
   private async prepareSession(url: string, options: ManagedBrowserLaunchOptions): Promise<ManagedBrowserSessionState> {
+    const wasRunning = this.isRunning();
     await this.ensureBrowser(options);
-    this.leaseController.renew({
-      owner: options.leaseOwner || 'managed-browser',
-      ttlMs: options.leaseTtlMs,
-    });
+    this.leaseController.renew({ owner: options.leaseOwner || 'managed-browser', ttlMs: options.leaseTtlMs });
+    if (wasRunning) await runBrowserLaunchResume(this, options, 'reuse');
     if (!this.getActiveTab()) {
       await this.newTab(url === 'about:blank' ? undefined : url);
     }

@@ -445,7 +445,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
 
     if (!useManagedSurface && workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
-      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
+      workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId, conversationId: context.sessionId }));
     }
 
     const trace = browserService.beginTrace({
@@ -482,7 +482,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         switch (action) {
         // Browser lifecycle
         case 'launch':
-          await browserService.launch({ leaseOwner: 'browser_action' });
+          await browserService.launch({ leaseOwner: 'browser_action', conversationId: context.sessionId });
           return { success: true, output: 'Browser launched successfully' };
 
         case 'close':

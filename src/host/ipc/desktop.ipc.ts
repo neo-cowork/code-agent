@@ -166,6 +166,7 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       leaseOwner?: string;
       leaseTtlMs?: number;
       proxy?: ManagedBrowserProxyInput | null;
+      conversationId?: string;
     } | undefined;
     const launchOptions = {
       mode: payload?.mode,
@@ -174,7 +175,9 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       leaseOwner: payload?.leaseOwner || 'desktop-ipc',
       leaseTtlMs: payload?.leaseTtlMs,
       proxy: payload?.proxy,
+      conversationId: payload?.conversationId,
     };
+    getManagedBrowserProviderAdapter();
     return {
       success: true,
       data: await browserService.ensureSession(payload?.url || 'about:blank', launchOptions),
@@ -189,6 +192,7 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       leaseOwner?: string;
       leaseTtlMs?: number;
       proxy?: ManagedBrowserProxyInput | null;
+      conversationId?: string;
     } | undefined;
     const url = normalizeBrowserUrl(payload?.url);
     const launchOptions = {
@@ -198,7 +202,9 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       leaseOwner: payload?.leaseOwner || 'browser-surface',
       leaseTtlMs: payload?.leaseTtlMs,
       proxy: payload?.proxy,
+      conversationId: payload?.conversationId,
     };
+    getManagedBrowserProviderAdapter();
     const current = browserService.getSessionState();
     if (current.running && launchOptions.mode === 'visible' && current.mode === 'headless') {
       await browserService.close();

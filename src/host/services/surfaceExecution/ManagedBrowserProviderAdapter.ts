@@ -23,6 +23,8 @@ import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import { SecureBrowserResumeStateStore, type BrowserResumeStateStore } from './BrowserResumeStateStore';
 import { restoreManagedBrowserLastPage, SecureBrowserLastPageStore, type BrowserLastPageStore } from './browserLastPageStore';
+import { setBrowserLaunchResumeHook } from '../infra/browser/launchResumeHook';
+import { createBrowserLaunchResumeHook } from './browserLaunchResume';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
 import { getKeptBrowserRegistry, type KeptBrowserRegistry } from './keptBrowserRegistry';
@@ -236,7 +238,7 @@ export class ManagedBrowserProviderAdapter {
     private readonly lastPageStore: BrowserLastPageStore = new SecureBrowserLastPageStore({
       ephemeral: !(resumeStateStore instanceof SecureBrowserResumeStateStore),
     }),
-  ) {}
+  ) { setBrowserLaunchResumeHook(createBrowserLaunchResumeHook({ resumeStateStore, lastPageStore: this.lastPageStore, logger: resumeLogger })); }
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
     // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: when this run's action will run on a
@@ -573,9 +575,7 @@ export class ManagedBrowserProviderAdapter {
       try {
         // Kept-window adoption skips the resume import: the adopted window already
         // carries this conversation's freshest login state from the agent run.
-        if (!keptService) {
-          await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
-        }
+        if (!keptService) await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
       } catch (error) {
         this.resumeLogger.error('Failed to restore managed browser login state', {
           conversationIdHash: hashIdentity([identity.conversationId]),
