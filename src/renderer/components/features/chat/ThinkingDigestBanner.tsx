@@ -71,6 +71,8 @@ interface ThinkingDigestBannerProps {
   activeSegmentId: string | null;
   hasNonThinkingContentAfterThinking: boolean;
   turnEndTime?: number;
+  /** 回合在等模型但没有任何思考文本（重开运行中会话、后台会话无 reasoning 帧）：渲染不可展开的合成收起行，计时从该时刻起。 */
+  pendingSinceMs?: number;
 }
 
 export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
@@ -78,7 +80,9 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   activeSegmentId,
   hasNonThinkingContentAfterThinking,
   turnEndTime,
+  pendingSinceMs,
 }) => {
+  const isPending = segments.length === 0 && pendingSinceMs !== undefined;
   const { t, language } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
@@ -105,11 +109,11 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   }, [activeSegmentId, hasNonThinkingContentAfterThinking]);
 
   useEffect(() => {
-    if (!activeSegmentId) return;
+    if (!activeSegmentId && !isPending) return;
     setNow(Date.now());
     const interval = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(interval);
-  }, [activeSegmentId]);
+  }, [activeSegmentId, isPending]);
 
   const reasoningTextRevision = segments.map((segment) => segment.text).join('\u0000');
   useLayoutEffect(() => {
@@ -118,7 +122,21 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
     scroller.scrollTop = scroller.scrollHeight;
   }, [expanded, reasoningTextRevision]);
 
-  if (segments.length === 0) return null;
+  if (segments.length === 0) {
+    if (pendingSinceMs === undefined) return null;
+    const pendingSeconds = Math.max(1, Math.ceil(Math.max(0, now - pendingSinceMs) / 1000));
+    const pendingDuration = t.chat.thinkingDurationSeconds.replace('{seconds}', String(pendingSeconds));
+    return (
+      <div className="py-0.5 text-sm text-zinc-500" data-testid="thinking-digest" data-synthetic="true">
+        <div className="flex min-w-0 items-center gap-2 py-0.5 text-zinc-500">
+          <Brain className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 truncate font-medium streaming-thinking-shimmer">
+            {t.chat.thinkingActiveWithDuration.replace('{duration}', pendingDuration)}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const durationMs = segments.reduce((total, segment) => {
     const endedAt = segment.id === activeSegmentId

@@ -225,7 +225,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const preparationPhase = busySignal === 'text-caret' && !lastNodeIsStreamingText
     ? hasTimelineActivity ? 'organizing' : undefined
     : undefined;
-  const streamingIndicator = isStreaming && !suppressBusySignal ? (
+  const pendingThinkingSince = isStreaming && !suppressBusySignal && !waitingForApproval
+    && busySignal === 'text-caret' && !lastNodeIsStreamingText && !hasTimelineActivity
+    ? turn.startTime : undefined;
+  const streamingIndicator = isStreaming && !suppressBusySignal && pendingThinkingSince === undefined ? (
     <StreamingIndicator
       startTime={turn.startTime}
       runningToolStartTime={!waitingForApproval && busySignal === 'text-caret' ? runningToolStartTime : undefined}
@@ -401,6 +404,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               activeSegmentId={activeThinkingSegmentId}
               hasNonThinkingContentAfterThinking={hasNonThinkingContentAfterThinking}
               turnEndTime={turn.endTime}
+              pendingSinceMs={pendingThinkingSince}
             />}
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {

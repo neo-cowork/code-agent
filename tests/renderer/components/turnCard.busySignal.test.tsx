@@ -115,10 +115,11 @@ describe('TurnCard busy signal', () => {
     expect(getStreamingCarets()).toHaveLength(0);
   });
 
-  it('durable 回合已启动且尚无首 token 时，轮头如实显示等待模型', () => {
+  it('durable 回合已启动且尚无首 token 时，由单行「正在思考」独占信号', () => {
     render(<TurnCard turn={makeTurn([])} />);
 
-    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · \d+s$/);
+    expect(screen.queryByText('信号传输中，正在等待模型回响…')).toBeNull();
     expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
     expect(screen.queryByTestId('tool-running')).toBeNull();
     expect(getStreamingCarets()).toHaveLength(0);
@@ -254,7 +255,7 @@ describe('TurnCard failed phase fallback', () => {
   it('does not display a completed header while waiting for the first token', () => {
     render(<TurnCard turn={makeTurn([])} />);
     expect(screen.queryByTestId('turn-run-header')).toBeNull();
-    expect(screen.getByText('信号传输中，正在等待模型回响…')).toBeTruthy();
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · \d+s$/);
   });
 });
 
