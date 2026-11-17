@@ -339,7 +339,7 @@ describe.each(['zh', 'en'] as const)('shared approval labels (%s)', (language) =
         : surface === 'detail'
           ? <CronExecutionDetail execution={execution} awaitingRun={run} />
           : <CronJobApprovalHint run={run} />);
-      const name = item.name ?? (language === 'zh' ? '运行命令' : 'Run a command');
+      const name = item.name ?? (language === 'zh' ? '运行命令' : 'Run command');
       const expected = `${language === 'zh' ? '等你确认：' : 'Needs your approval: '}${name}`;
       const id = surface === 'list' ? 'cron-exec-awaiting-approval' : surface === 'detail' ? 'cron-exec-detail-awaiting-approval-hint' : 'cron-detail-awaiting-approval-hint';
       const element = screen.getByTestId(id);

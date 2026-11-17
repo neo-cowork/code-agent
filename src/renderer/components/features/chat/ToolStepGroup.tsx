@@ -136,7 +136,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
@@ -158,6 +158,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     let blockedCommands = 0;
     let blockedSteps = 0;
     let staleUnfinished = 0;
+    const notRunNames: string[] = [];
     let envWaiting: string | undefined;
     for (const node of streamVisibleNodes) {
       const tc = node.toolCall;
@@ -188,9 +189,16 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         ? 'completed'
         : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
+      if (!benign && terminalById.get(tc.id)?.notRun) notRunNames.push(tc.name);
     }
     return [
-      ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
+      ...Array.from(byStatus, ([stepStatus, names]) => {
+        if (stepStatus !== 'failed' || notRunNames.length === 0) return humanizeToolGroupLabel(names, t, stepStatus);
+        const rest = [...names];
+        for (const name of notRunNames) rest.splice(rest.indexOf(name), 1);
+        return [humanizeToolGroupLabel(notRunNames, t, 'failed', true), humanizeToolGroupLabel(rest, t, 'failed')]
+          .filter(Boolean).join(t.deliveryExperience.labelSeparator);
+      }),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
       envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
       blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
@@ -389,12 +397,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const failureReason = useMemo(() => {
     // 与组头 label 同口径：已恢复/自动重试的失败不算数，否则会出现 label 说「1 条未成功」、
     // 原因行说「2 失败」这种自相矛盾。
-    const failedCalls = toolCalls.filter((toolCall) => toolCall.result?.success === false
+    const unsettled = toolCalls.filter((toolCall) => toolCall.result?.success === false
       && !isAutoLoadedRetry(toolCall.result?.metadata) && toolCall.result?.metadata?.recovered !== true);
-    if (failedCalls.length === 0) return null;
+    // 从未执行的作废步不是失败：不进失败计数；全是作废步时只读第一条「未执行 · 原因」。
+    const failedCalls = unsettled.filter((toolCall) => !terminalById.get(toolCall.id)?.notRun);
+    if (failedCalls.length === 0) return unsettled.length > 0 ? humanizeToolFailureReason(unsettled[0], t) : null;
     if (failedCalls.length === 1) return humanizeToolFailureReason(failedCalls[0], t);
     return t.toolGroup.summaryFailed.replace('{count}', String(failedCalls.length));
-  }, [t, toolCalls]);
+  }, [t, toolCalls, terminalById]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);

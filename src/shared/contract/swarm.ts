@@ -208,6 +208,8 @@ export interface SwarmAgentContextSnapshot {
   warningLevel: ContextHealthWarningLevel;
   lastUpdated: number;
   tools: string[];
+  /** 成员每次 Bash 调用的 arguments.description 与命令（最近 6 条，按调用序）；渲染端过滤后才可上屏。 */
+  bashSteps?: Array<{ description?: string; command: string }>;
   attachments: string[];
   previews: SwarmAgentContextPreview[];
   truncatedMessages: number;
