@@ -12,6 +12,7 @@ const INTERNAL_ID_RE = /^agent_(.+)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const STOP_WORDS = new Set([
   'a', 'an', 'the', 'in', 'on', 'of', 'to', 'for', 'and', 'into', 'with', 'then', 'me', 'my', 'it', 'is',
   'please', 'have', 'do', 'this', 'that', 'not', 'your', 'you', 'can', 'should',
+  'are', 'given', 'at', 'by', 'as', 'or', 'be', 'will', 'from', 'repo', 'repository', 'working', 'directory',
   'isolated', 'isolation', 'worktree', 'git', 'copy', 'sub', 'agent', 'subagent', 'checkout', 'project',
 ]);
 

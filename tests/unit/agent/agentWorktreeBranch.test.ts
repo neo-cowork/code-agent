@@ -89,6 +89,13 @@ describe('agent worktree branch naming (real git)', () => {
     expect(path.basename(info.worktreePath)).toBe('rewrite-readme-md-intro-1234');
   });
 
+  it('skips filler words of model-written task prompts', async () => {
+    rnd.queue.push('0001');
+    const info = await make(`agent_coder_${UUID.replace('3f2a', '3f20')}`,
+      'You are given a git repo at the working directory. Rewrite the intro in README.md');
+    expect(info.branchName).toBe('agent/rewrite-intro-readme-md-0001');
+  });
+
   it('non-internal ids without label keep the legacy name', async () => {
     const info = await make('agent-1');
     expect(info.branchName).toBe('agent/agent-1');
