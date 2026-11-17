@@ -24,6 +24,18 @@ describe('generateContextSuggestions', () => {
     expect(prompt).toContain('TAIL_MARK'); // beyond old 300-char cut
   });
 
+  it('does not feed the old restore notice to the suggestion model', async () => {
+    reply('把完整路径发给我');
+    const legacy = '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    await generateContextSuggestions([
+      { role: 'user', content: `${legacy}\n\n总结 Q3 数字` },
+      { role: 'assistant', content: '已处理' },
+    ]);
+    const prompt = quickTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('用户: 总结 Q3 数字');
+    expect(prompt).not.toContain('telemetry');
+  });
+
   it('drops suggestions that contain a term the user banned', async () => {
     reply('重新执行该 curl 命令\n把页面内容贴给我\n告诉我这个地址是做什么的');
     const out = await generateContextSuggestions([
