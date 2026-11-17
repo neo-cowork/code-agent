@@ -30,6 +30,23 @@ function isPathLikeParameter(key: string): boolean {
   return PATH_LIKE_SUFFIXES.has(normalized.split('_').at(-1) ?? '');
 }
 
+/**
+ * cleanXmlResidues returns untagged strings byte-for-byte (file bodies must keep their trailing
+ * newline), so identifier arguments (path-like keys and `command`) are trimmed once here, before any
+ * consumer (write fence, boundary check, ledger, executor) reads them. Bodies are never touched.
+ */
+export function trimIdentifierArgs<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => trimIdentifierArgs(item)) as unknown as T;
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = typeof item === 'string' && (key === 'command' || isPathLikeParameter(key))
+      ? item.trim()
+      : trimIdentifierArgs(item);
+  }
+  return out as T;
+}
+
 export function resolveToolPath(rawPath: string, workingDirectory: string): string {
   const expanded = rawPath === '~'
     ? os.homedir()

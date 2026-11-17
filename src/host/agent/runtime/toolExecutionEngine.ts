@@ -99,6 +99,7 @@ import { planContextTag } from './planApprovalRunBoundary';
 import { bashStepDescription, extractToolStepTarget } from '../toolStepTarget';
 import { computerUseObservedTarget } from '../../plugins/builtin/computerUse/computerUseObservedTarget';
 import { decodeUtf8 } from '../../utils/decodeText';
+import { trimIdentifierArgs } from '../../tools/writeTargets';
 
 const logger = createLogger('AgentLoop');
 
@@ -615,7 +616,7 @@ export class ToolExecutionEngine {
     }
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
-    toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
+    toolCall.arguments = trimIdentifierArgs(cleanXmlResidues(toolCall.arguments)) as Record<string, unknown>;
 
     // Schema validation gate — 在真实 dispatch 前用工具自身 inputSchema 校验
     // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
