@@ -133,6 +133,9 @@ describe('foreground admission during per-minute cron execution', () => {
         for (const name of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) {
           delete (env as NodeJS.ProcessEnv)[name];
         }
+        for (const name of Object.keys(env)) {
+          if (name.endsWith('_API_KEY') && name !== 'CUSTOM_PROVIDER_API_KEY') delete (env as NodeJS.ProcessEnv)[name];
+        }
         child = spawn(process.execPath, [path.join(bundleRoot, 'webServer.cjs')], {
           cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
         });
