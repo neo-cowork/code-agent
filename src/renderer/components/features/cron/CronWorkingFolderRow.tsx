@@ -81,7 +81,10 @@ export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runs
         <Input
           data-testid="cron-working-folder-input"
           value={typeof rawFolder === 'string' ? rawFolder : ''}
-          onChange={(event) => setFolder(event.target.value.trim() || undefined)}
+          // 输入中保留原文（含空格，如「My Notes」）；只在失焦时去首尾空白提交，
+          // 空白串等于没选（保存载荷在 buildCronJobInput 里再规整一次）。
+          onChange={(event) => setFolder(event.target.value || undefined)}
+          onBlur={(event) => setFolder(event.target.value.trim() || undefined)}
           placeholder={copy.pathPlaceholder}
         />
       )}

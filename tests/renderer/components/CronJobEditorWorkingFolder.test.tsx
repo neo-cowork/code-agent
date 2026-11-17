@@ -26,6 +26,9 @@ vi.mock('../../../src/renderer/utils/platform', async (importOriginal) => ({
 
 import { CronJobEditor } from '../../../src/renderer/components/features/cron/CronJobEditor';
 import { CronJobWorkingFolderStatus, CronRunWorkingFolderStatus } from '../../../src/renderer/components/features/cron/CronWorkingFolderStatus';
+import { CronWorkingFolderRow } from '../../../src/renderer/components/features/cron/CronWorkingFolderRow';
+import { buildSimpleDraft } from '../../../src/renderer/components/features/cron/CronSimpleCreate';
+import { buildCronJobInput } from '../../../src/renderer/components/features/cron/types';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
@@ -157,5 +160,53 @@ describe('工作文件夹状态展示', () => {
     unmount();
     render(<CronRunWorkingFolderStatus sessionId="run-2" runsOn="local" />);
     expect(screen.getByTestId('cron-run-working-folder').textContent).toContain('notes');
+  });
+});
+
+describe('web 路径输入：输入中保留原文，失焦/保存才去空白', () => {
+  let latest: Record<string, unknown> | undefined;
+  const Harness: React.FC = () => {
+    const [metadata, setMetadata] = React.useState<Record<string, unknown> | undefined>(undefined);
+    latest = metadata;
+    return <CronWorkingFolderRow runsOn="local" metadata={metadata} onMetadataChange={setMetadata} />;
+  };
+  const savedMetadata = () => buildCronJobInput({
+    ...buildSimpleDraft('summarize notes', 'notes', { scheduleType: 'every', everyInterval: '1', everyUnit: 'hours' }),
+    metadata: latest,
+  }).metadata;
+  // 环境里没有 user-event：逐字符 fireEvent.change，等价于 userEvent.type 的受控输入序列。
+  const typeChars = (input: HTMLElement, text: string) => {
+    for (const char of text) fireEvent.change(input, { target: { value: (input as HTMLInputElement).value + char } });
+  };
+
+  beforeEach(() => { platform.tauri = false; latest = undefined; });
+
+  it('(a) 逐字输入 /Users/me/My Notes：空格不被吞，提交值保持原样', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    typeChars(input, '/Users/me/My Notes');
+    expect(input.value).toBe('/Users/me/My Notes');
+    expect(latest).toEqual({ workingDirectory: '/Users/me/My Notes' });
+    fireEvent.blur(input);
+    expect(latest).toEqual({ workingDirectory: '/Users/me/My Notes' });
+  });
+
+  it('(b) 首尾空白：失焦提交 /tmp/notes；未失焦直接保存也被规整', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    typeChars(input, '  /tmp/notes  ');
+    expect(savedMetadata())
+      .toEqual({ workingDirectory: '/tmp/notes' });
+    fireEvent.blur(input);
+    expect(latest).toEqual({ workingDirectory: '/tmp/notes' });
+  });
+
+  it('(c) 只有空格：视为没选文件夹（失焦清键，保存载荷不带该键）', () => {
+    render(<Harness />);
+    const input = screen.getByTestId('cron-working-folder-input') as HTMLInputElement;
+    typeChars(input, '   ');
+    expect(savedMetadata()).toEqual({});
+    fireEvent.blur(input);
+    expect(latest).toBeUndefined();
   });
 });
