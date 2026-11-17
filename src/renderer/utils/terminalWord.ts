@@ -16,31 +16,95 @@ function resolveCompletedKey(steps: ToolStepOutcome | undefined): OutcomeKey {
 
 type ToolStepOutcome = NonNullable<RunUiState['toolStepOutcome']>;
 
-/**
- * 会话消息里收尾工具步骤的失败数/总数（success===false 才算失败），与 buildRunUiState 同口径。
- * 兼容两种形状：落库原始消息（工具结果在 tool 消息的 toolResults 里）与已合并结果的 toolCalls[].result；
- * 按调用 id 去重，两种同时出现不会重复计数。
- */
+type FinishedToolStep = { name?: string; arguments?: unknown; success?: boolean };
+
+function targetTokens(args: unknown): Set<string> {
+  const targets = new Set<string>();
+  const add = (raw: string) => {
+    const value = raw.trim().replace(/\\/g, '/');
+    if (!value) return;
+    const parts: string[] = [];
+    for (const part of value.split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..' && parts.length && parts.at(-1) !== '..') parts.pop();
+      else parts.push(part);
+    }
+    if (!parts.length) return;
+    targets.add(parts.join('/'));
+    targets.add(parts.at(-1)!);
+  };
+  const visit = (value: unknown, key = '') => {
+    if (typeof value === 'string') {
+      if (/^(file_?path|path|url|pattern)$/i.test(key)) add(value);
+      if (key === 'command') {
+        // Keep quoted paths with spaces; also inspect filenames inside quoted scripts.
+        const scan = (command: string) => {
+          for (const match of command.matchAll(/"([^"\n]*)"|'([^'\n]*)'|[^\s|&;<>()[\]`'"=]+/g)) {
+            const token = match[1] ?? match[2] ?? match[0];
+            if (/["']/.test(token)) scan(token);
+            else if (token.includes('/') || /\.[\p{L}\p{N}]+$/u.test(token)) add(token);
+          }
+        };
+        scan(value);
+      }
+    } else if (Array.isArray(value)) {
+      for (const item of value) visit(item, key);
+    } else if (value && typeof value === 'object') {
+      for (const [childKey, child] of Object.entries(value)) visit(child, childKey);
+    }
+  };
+  visit(args);
+  return targets;
+}
+
+/** Finished steps in call order; only failures without a later matching success remain. */
+export function classifyToolSteps(steps: readonly FinishedToolStep[]): ToolStepOutcome | undefined {
+  if (!steps.length) return undefined;
+  const successfulTargets = new Set<string>();
+  const successfulUntargetedTools = new Set<string>();
+  let failed = 0;
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const step = steps[index];
+    const targets = targetTokens(step.arguments);
+    if (step.success !== false) {
+      for (const target of targets) successfulTargets.add(target);
+      if (!targets.size && step.name) successfulUntargetedTools.add(step.name);
+    } else {
+      const recovered = targets.size
+        ? [...targets].some((target) => successfulTargets.has(target))
+        : Boolean(step.name && successfulUntargetedTools.has(step.name));
+      if (!recovered) failed += 1;
+    }
+  }
+  return { failed, total: steps.length };
+}
+
+/** Join stored results to call arguments by id, preserving call order and deduplicating results. */
 export function countToolSteps(
   messages: ReadonlyArray<{
-    toolCalls?: ReadonlyArray<{ id?: string; result?: { success?: boolean } }>;
+    toolCalls?: ReadonlyArray<{
+      id?: string; name?: string; arguments?: unknown; _streaming?: boolean;
+      result?: { success?: boolean };
+    }>;
     toolResults?: ReadonlyArray<{ toolCallId?: string; success?: boolean }>;
   }>,
 ): ToolStepOutcome | undefined {
-  const outcomes = new Map<string, boolean>();
-  let anonymous = 0;
-  const record = (id: string | undefined, success: boolean | undefined) => {
-    outcomes.set(id ?? `anonymous-${anonymous++}`, success !== false);
-  };
+  const calls = new Map<string | symbol, FinishedToolStep & { finished?: boolean; streaming?: boolean }>();
   for (const message of messages) {
     for (const call of message.toolCalls ?? []) {
-      if (call.result) record(call.id, call.result.success);
+      const id = call.id ?? Symbol();
+      const previous = calls.get(id);
+      calls.set(id, {
+        ...previous, name: call.name, arguments: call.arguments, streaming: call._streaming,
+        ...(call.result ? { finished: true, success: call.result.success } : {}),
+      });
     }
-    for (const result of message.toolResults ?? []) record(result.toolCallId, result.success);
+    for (const result of message.toolResults ?? []) {
+      const id = result.toolCallId ?? Symbol();
+      calls.set(id, { ...calls.get(id), finished: true, success: result.success });
+    }
   }
-  const total = outcomes.size;
-  const failed = [...outcomes.values()].filter((ok) => !ok).length;
-  return total > 0 ? { failed, total } : undefined;
+  return classifyToolSteps([...calls.values()].filter((call) => call.finished && !call.streaming));
 }
 
 /** 前台 run → 终态词键；活跃/等确认返回 null（没有终态可说），干净完成返回 'completed'。 */
