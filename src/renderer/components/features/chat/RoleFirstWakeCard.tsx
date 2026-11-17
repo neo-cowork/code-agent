@@ -13,6 +13,7 @@ import type { RoleFirstWakeSnapshot } from '@shared/contract/roleAssets';
 import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { interpolate } from '../../../i18n/interpolate';
 import { consumeFirstWakeSuggestion, getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
 import { useAppStore } from '../../../stores/appStore';
@@ -60,12 +61,12 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     void listRoles().then((entries) => {
       if (cancelled) return;
       const name = entries.find((entry) => entry.roleId === roleId)?.displayName?.trim();
-      if (name) setDisplayName(name);
+      if (name) setDisplayName(localizeBuiltinRole(roleId, { name }, language).name);
     }).catch(() => {
       // 展示名只用于头像与无障碍标签，失败就用 roleId
     });
     return () => { cancelled = true; };
-  }, [roleId]);
+  }, [roleId, language]);
 
   useEffect(() => {
     let cancelled = false;
