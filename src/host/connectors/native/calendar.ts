@@ -61,6 +61,8 @@ function failureFromBridge(error: unknown, write: boolean): CalendarFailure {
   switch (bridgeErrorCode(error)) {
     case 'calendar_not_authorized': return new CalendarFailure('not_authorized');
     case 'event_not_found': case 'calendar_not_found': return new CalendarFailure('not_found');
+    case 'event_end_not_after_start':
+      return new CalendarFailure('read_failed', 'The new end time must be later than the start time. Nothing was changed. （新的结束时间必须晚于开始时间，日程没有被修改。）');
     case 'no_writable_calendar':
       return new CalendarFailure('not_found', 'No writable calendar is available. Omit calendar to use the first writable calendar.');
     // 写操作超时 / 桥断开：改没改成不知道，不能劝模型重试
@@ -219,7 +221,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   const startMs = finite(payload.start_ms);
   const endMs = finite(payload.end_ms) ?? (startMs !== undefined ? startMs + 30 * 60 * 1000 : undefined);
   const location = str(payload.location);
-  // notes：只有撤销删除时用快照重建会带（聊天工具的 schema 没有这个字段）
+  // notes：聊天建日程的可选备注，以及撤销删除时用快照重建都会带；非空才下发给 EventKit
   const notes = str(payload.notes);
   if (!title) throw new Error('title is required for create_event');
   if (startMs === undefined) throw new Error('start_ms is required for create_event');
@@ -233,6 +235,7 @@ async function createEvent(payload: Record<string, unknown>): Promise<CalendarEv
   }));
 }
 
+// Start only: the native layer keeps the event's duration (end moves with it). To change the length give both.
 async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEventItem> {
   const { uid } = requireEventArgs(payload, 'update_event');
   const title = typeof payload.title === 'string' ? payload.title.trim() : undefined;

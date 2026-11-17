@@ -78,6 +78,11 @@ function parkedToolTitle(item: ParkedApprovalInboxItem, copy: InboxCopy, languag
   return `${restarted ? copy.parkedVoided.restartPrefix : ''}${displayName}`;
 }
 
+function ParkedSessionTitle({ item, language }: { item: ParkedApprovalInboxItem; language: 'zh' | 'en' }) {
+  const title = item.taskTitle ?? item.sessionTitle;
+  return title ? <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{getDisplaySessionTitle(title, language)}</div> : null;
+}
+
 function formatWaiting(requestedAt: number, copy: InboxCopy): string {
   const mins = Math.max(0, Math.floor((Date.now() - requestedAt) / 60_000));
   if (mins < 1) return copy.parkedWaitingLessThanMinute;
@@ -343,7 +348,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-zinc-200">{parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh')}</div>
-                          {item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
+                          <ParkedSessionTitle item={item} language={language} />
                           <SensitiveStepParkedRow
                             step={item.sensitiveStep}
                             onRespond={(response) => { void handleResolveParked(item, response); }}
@@ -379,7 +384,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             </span>
                           )}
                         </div>
-                        {!isPairing && item.sessionTitle && <div className="truncate text-xs text-zinc-400" data-testid="parked-session-title">{item.sessionTitle}</div>}
+                        {!isPairing && <ParkedSessionTitle item={item} language={language} />}
                         {!isPairing && <UserRequestQuote details={item} labels={t.decisionCard.permission} />}
                         {isPairing && item.pairingCode && (
                           <div className="text-xs font-medium text-badge-warning" data-testid="pairing-code">
@@ -508,7 +513,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 {(!foldVoided || voidedExpanded) && voided.map((item) => (
                   <div key={item.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50" data-testid="parked-approval-voided">
                     <div className="truncate text-sm text-zinc-200">{voidedToolTitle(item.displayTool ?? item.tool, cc.parkedVoided)}</div>
-                    {item.sessionTitle && <div className="text-xs text-zinc-400">{getDisplaySessionTitle(item.sessionTitle, language)}</div>}
+                    <ParkedSessionTitle item={item} language={language} />
                     <div className="text-[11px] text-zinc-500">
                       {cc.parkedVoided.startedAt.replace('{time}', formatDateTime(item.requestedAt, language))}
                     </div>

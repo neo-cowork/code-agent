@@ -1,3 +1,4 @@
+import { cronRunRecordZh, cronRunRecordEn } from './cronRunRecord';
 import { turnDiffEn, turnDiffZh } from './turnDiff';
 import { turnCheckoutChatEn, turnCheckoutChatZh } from './turnCheckout';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
@@ -11,7 +12,7 @@ chat: {
   thinking: '正在思考…',
   // 回响信号（等模型）
   waitingModel: '信号传输中，正在等待模型回响…',
-  waitingApproval: '任务在等你确认，请处理审批卡…',
+  waitingApproval: '等你批准，请处理审批卡…',
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
@@ -40,6 +41,7 @@ chat: {
   // 巡航信号旁的强制停止按钮
   longToolStop: '停止',
   sendingMessage: '正在发送消息…', queuedStarting: '已排队，正在启动…', preparingReply: '正在准备…', organizingStreamingReply: '正在整理回复…',
+  slowStarting: '启动比平时慢，请稍候…',
   organizingReply: '正在组织回答…',
   thinkingDigest: '思考',
   thinkingSegments: { one: ' · {count} 段', other: ' · {count} 段' },
@@ -465,27 +467,7 @@ forkSourceHint: { source: '由此分支 · {parentTitle}', imported: '续接自 
 // 定时任务运行记录会话（origin cron/heartbeat）：首气泡上方的来源小标 + 气泡下方的
 // 状态行（N-UI-CRON-RUN-RECORD-CLEAR）。四种状态一眼可分：运行中（呼吸点+流逝时间）、
 // 等批准（带批准/拒绝）、已中断（带再跑一次）、已完成（带用时）。
-cronRunRecord: {
-  kindLabel: '定时任务自动运行',
-  running: '正在运行 · 已 {elapsed}',
-  elapsedHm: '{h} 时 {m} 分',
-  elapsedMs: '{m} 分 {s} 秒',
-  elapsedS: '{s} 秒',
-  awaiting: '等你批准',
-  awaitingWithLabel: '等你批准：{label}',
-  awaitingBashPrefix: '运行 ',
-  approve: '批准',
-  reject: '拒绝',
-  approvalStale: '这条批准已经失效（发起它的运行已结束），已标记过期',
-  approvalFailed: '操作没有生效，请重试',
-  interrupted: `${outcomeWordsZh.outcomeWords['interrupted-restart'].timeline.label}，没有结果`,
-  failedDenied: '没跑成：命令被拒绝',
-  failedGeneric: '没跑成',
-  cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
-  rerun: '再跑一次',
-  rerunFailed: '没能重新运行，请稍后再试',
-  finished: '已完成 · 用时 {duration}',
-},
+cronRunRecord: cronRunRecordZh,
 
 // 工具调用展示（LiveToolOutput / ToolDetails / ToolResultMediaDisplays / CodeBlock / AbilityMenu）的零碎 UI 文案。
 toolDisplay: {
@@ -509,7 +491,7 @@ chat: {
   thinking: 'Thinking…',
   // Echo signal (waiting on the model)
   waitingModel: 'Signal sent, awaiting model echo…',
-  waitingApproval: 'This task is waiting for you to confirm. Please review the approval card…',
+  waitingApproval: 'Waiting for your approval — please review the approval card…',
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
@@ -538,6 +520,7 @@ chat: {
   // Force-stop button next to the cruise signal
   longToolStop: 'Stop',
   sendingMessage: 'Sending message…', queuedStarting: 'Queued, starting…', preparingReply: 'Preparing…', organizingStreamingReply: 'Organizing the reply…',
+  slowStarting: 'Taking longer than usual to start…',
   organizingReply: 'Organizing the reply…',
   thinkingDigest: 'Thinking',
   thinkingSegments: { one: ' · {count} segment', other: ' · {count} segments' },
@@ -972,27 +955,7 @@ forkSourceHint: { source: 'Branched from · {parentTitle}', imported: 'Continued
 // label above the first bubble + the status line under it. Four visually
 // distinct states: running (pulsing dot + elapsed), awaiting approval (with
 // approve/reject), interrupted (with run-again), finished (with duration).
-cronRunRecord: {
-  kindLabel: 'Ran automatically by a scheduled task',
-  running: 'Running · {elapsed} elapsed',
-  elapsedHm: '{h}h {m}m',
-  elapsedMs: '{m}m {s}s',
-  elapsedS: '{s}s',
-  awaiting: 'Needs your approval',
-  awaitingWithLabel: 'Needs your approval: {label}',
-  awaitingBashPrefix: 'Run ',
-  approve: 'Approve',
-  reject: 'Reject',
-  approvalStale: 'This approval is stale (its run has ended) and was marked expired',
-  approvalFailed: 'That did not go through — please retry',
-  interrupted: `${outcomeWordsEn.outcomeWords['interrupted-restart'].timeline.label} — no result`,
-  failedDenied: "Didn't run: command was denied",
-  failedGeneric: "Didn't finish",
-  cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
-  rerun: 'Run again',
-  rerunFailed: 'Could not start another run — try again later',
-  finished: 'Finished · took {duration}',
-},
+cronRunRecord: cronRunRecordEn,
 
 toolDisplay: {
   liveOutput: 'Live output',

@@ -5,6 +5,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 
@@ -39,13 +40,16 @@ export const TeamRecipeDraftNotifications: React.FC = () => {
 };
 
 /** 花名 + 职业；查不到职业就只显示花名，不留分隔符。 */
-const RoleLabel: React.FC<{ roleId: string; profession?: string }> = ({ roleId, profession }) => (
-  <span className="inline-flex min-w-0 items-center gap-1 align-middle">
-    <RoleInitialAvatar roleId={roleId} name={roleId} className="h-4 w-4 text-[8px]" />
-    <span className="text-zinc-300">{roleId}</span>
-    {profession ? <span className="truncate text-zinc-500">{profession}</span> : null}
-  </span>
-);
+const RoleLabel: React.FC<{ roleId: string; profession?: string }> = ({ roleId, profession }) => {
+  const shown = useLocalizeRole()(roleId, { name: roleId, profession });
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 align-middle">
+      <RoleInitialAvatar roleId={roleId} name={shown.name} className="h-4 w-4 text-[8px]" />
+      <span className="text-zinc-300">{shown.name}</span>
+      {shown.profession ? <span className="truncate text-zinc-500">{shown.profession}</span> : null}
+    </span>
+  );
+};
 
 export const TeamRecipeDraftCard: React.FC<{ drafts: TeamRecipeDraftSummary[]; onResolved: (id: string) => void; onDismiss: () => void }> = ({ drafts, onResolved, onDismiss }) => {
   const { t } = useI18n();

@@ -20,7 +20,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
-import { stripToolCallProtocolMarkup } from '../../agent/runtime/contextAssembly/transcriptProjection';
+import { stripModelMarkup } from '../../../shared/modelMarkupStrip';
 
 const logger = createLogger('SessionCommandRestartRecovery');
 
@@ -150,7 +150,7 @@ export function settleSessionCommandTaskMarkerForDeferredProjection(task: {
 
 /** 结果卡专用：先剥 longcat 协议标记，再剥 Hermes/Qwen 式 <tool_call>（未闭合到串尾）。只作用于卡片，不改主链路正文。 */
 function stripCardToolCallMarkup(text: string): string {
-  const cleaned = stripToolCallProtocolMarkup(text)
+  const cleaned = stripModelMarkup(text)
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
     .replace(/<tool_call>[\s\S]*$/g, '')
     .replace(/<\/tool_call>/g, '');

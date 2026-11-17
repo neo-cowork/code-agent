@@ -1,4 +1,5 @@
 import { getSubagentContextStore } from '../context/subagentContextStore';
+import { stripWorkdirPrefix } from './workdirPrefix';
 import type { SubagentExecutionRequest, SubagentResult } from './subagentExecutorTypes';
 
 /** Every executor exit records the same lifecycle facts used by the panel and task_status. */
@@ -16,7 +17,7 @@ export async function withPersistedSubagentLifecycle(
     status: 'running' as const,
     displayName: config.name,
     role: config.roleId,
-    task: prompt,
+    task: stripWorkdirPrefix(prompt),
     background: Boolean(context.events.detached),
     backgroundAgentId: context.events.backgroundDurableAgentId,
     startedAt,

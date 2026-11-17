@@ -92,6 +92,12 @@ export const NOTIFICATION_BUDGET = {
   HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
+/** Shell-absent needs-input banners: fold a burst, then wait for resolution or quiet. */
+export const NEEDS_INPUT_NATIVE_FALLBACK = {
+  FOLD_WINDOW_MS: 3_000,
+  QUIET_PERIOD_MS: 600_000,
+} as const;
+
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
   /** 无交互 renderer 时的用户问题等待超时 */
@@ -304,6 +310,8 @@ export const TEST_TIMEOUTS = {
 
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Replace unchanged send/startup feedback with an honest, static slow-start notice. */
+  SLOW_START_NOTICE_MS: 10_000,
   /** Warn once when an accepted send has not dispatched its first main-model request. */
   FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,

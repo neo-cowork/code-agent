@@ -18,8 +18,7 @@ import {
   stripWakeMarkup,
   topicExcludeHits,
 } from './wakeRationale';
-import { getSessionAutomationService } from '../sessionAutomation';
-import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../../shared/contract/sessionAutomation';
+import { withRoleWakeAutomation } from './roleWakeAutomation';
 import { getKnownToolNames } from '../../tools/knownToolNames';
 import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import { resolveTurnToolFace } from '../../agent/runtime/turnToolFace';
@@ -339,257 +338,195 @@ export async function wakeRole(
     },
   });
 
-  if (options?.sourceSessionId) {
-    try {
-      await getSessionAutomationService().recordCreated({
-        id: `role_wake:${session.id}`,
-        sourceSessionId: options.sourceSessionId,
-        type: 'role_wake',
-        status: 'running',
-        title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-        cadenceLabel: trigger === 'event' ? '任务完成后唤醒' : '定时醒来',
-        sourceRefId: session.id,
-        resultSessionId: session.id,
-        config: {
+  return withRoleWakeAutomation({
+    sessionId: session.id, roleId, trigger, sourceSessionId: options?.sourceSessionId,
+    title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`, handoffPrompt: options?.handoffPrompt,
+  }, async () => {
+    // ---- 步骤 5：跑实例（角色 agent 定义 + 记忆注入 + 迭代数硬约束）----
+    // 双路径：Electron main 走 TaskManager orchestrator（UI 事件路由 / 权限弹窗）；
+    // webServer/headless（发行版后端）走 cli/bootstrap createAgentLoop（与 /api/run 同源）。
+    // 无人值守必须套墙钟超时（D3）：run 挂死时取消底层 run 并抛错，cron 执行行标 failed。
+    const wakePrompt = buildWakePrompt(trigger, options?.runSummary, config, externalDelta?.section);
+    const { getTaskManager } = await import('../../task');
+    const tm = getTaskManager();
+    const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
+    const wakeTimeoutMs = options?.wakeTimeoutMs ?? ROLE_PROACTIVITY.WAKE_TIMEOUT_MS;
+
+    if (orchestrator) {
+      if (workspacePath) {
+        tm.setWorkingDirectory(session.id, workspacePath);
+      }
+      const wakeTools = await resolveWakeRunToolScope(roleId);
+      try {
+        await withWakeRunTimeout(() => orchestrator.sendMessage(wakePrompt, undefined, {
+          mode: 'normal',
+          inputSource: 'automation',
+          systemInstructions: [UNATTENDED_TRUST_NOTICE],
+          disableAutoAgent: true,
+          agentOverrideId: roleId,
+          turnSystemContext: instantiation.contextBlock ? [instantiation.contextBlock] : undefined,
+          maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
+          ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
+          ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
+        }), {
           roleId,
-          trigger,
-          ...(options.handoffPrompt ? {
-            handoffPrompt: options.handoffPrompt,
-            nextStage: { prompt: options.handoffPrompt, title: '角色唤醒后继续' },
-          } : {}),
-        },
-      });
-    } catch (err) {
-      logger.warn('Role wake automation creation feedback failed', { roleId, sessionId: session.id, error: String(err) });
-    }
-  }
-
-  // ---- 步骤 5：跑实例（角色 agent 定义 + 记忆注入 + 迭代数硬约束）----
-  // 双路径：Electron main 走 TaskManager orchestrator（UI 事件路由 / 权限弹窗）；
-  // webServer/headless（发行版后端）走 cli/bootstrap createAgentLoop（与 /api/run 同源）。
-  // 无人值守必须套墙钟超时（D3）：run 挂死时取消底层 run 并抛错，cron 执行行标 failed。
-  const wakePrompt = buildWakePrompt(trigger, options?.runSummary, config, externalDelta?.section);
-  const { getTaskManager } = await import('../../task');
-  const tm = getTaskManager();
-  const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
-  const wakeTimeoutMs = options?.wakeTimeoutMs ?? ROLE_PROACTIVITY.WAKE_TIMEOUT_MS;
-
-  if (orchestrator) {
-    if (workspacePath) {
-      tm.setWorkingDirectory(session.id, workspacePath);
-    }
-    const wakeTools = await resolveWakeRunToolScope(roleId);
-    try {
-      await withWakeRunTimeout(() => orchestrator.sendMessage(wakePrompt, undefined, {
-        mode: 'normal',
-        inputSource: 'automation',
-        systemInstructions: [UNATTENDED_TRUST_NOTICE],
-        disableAutoAgent: true,
-        agentOverrideId: roleId,
-        turnSystemContext: instantiation.contextBlock ? [instantiation.contextBlock] : undefined,
-        maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
-        ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
-        ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
-      }), {
-        roleId,
-        sessionId: session.id,
-        phase: 'wake-run', timeoutMs: wakeTimeoutMs,
-        cancel: () => orchestrator.cancel(),
-        settled: () => tm.whenAgentEventsSettled(session.id),
-      });
-    } finally {
-      tm.cleanup(session.id);
-    }
-  } else {
-    await runWakeViaCliLoop({
-      sessionId: session.id,
-      roleId,
-      wakePrompt,
-      contextBlock: instantiation.contextBlock,
-      workspacePath,
-      timeoutMs: wakeTimeoutMs,
-    });
-  }
-
-  // ---- 步骤 6：读最终产出，解析四选一决策 ----
-  // 两条路径都把消息持久化进会话（orchestrator / CLI），统一从会话读最后一条 assistant 消息。
-  const sessionWithMessages = await sessionManager.getSession(session.id);
-  const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
-  const finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
-
-  const parsedDecision = parseWakeDecision(finalOutput);
-  const inferredAdvanceProposal = parsedDecision === 'advance'
-    ? null
-    : inferAdvanceGoalProposalFromWake(finalOutput, instantiation.contextBlock);
-  let decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
-  const parsedRationale = parseWakeRationale(finalOutput);
-  // exclude 是硬约束：命中则压成 silence。rationale 解析失败不影响原决策。
-  const excludeSource = [finalOutput, parsedRationale.rationale ?? ''].join('\n');
-  const excluded = topicExcludeHits(excludeSource, config.topicsExclude);
-  if (excluded) {
-    logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
-    decision = 'silence';
-  }
-  if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
-  await storeWakeProposalsFromWake({ roleId, finalOutput, config });
-  const wakeText = stripWakeMarkup(finalOutput);
-  let summary = wakeText.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
-  if (inferredAdvanceProposal && !excluded) {
-    logger.info('Wake decision inferred as advance from verifiable next-step signals', {
-      roleId,
-      trigger,
-      parsedDecision,
-      hasVerify: !!inferredAdvanceProposal.verify,
-    });
-  }
-
-  // ---- 步骤 6.5：advance 合流（P4）——多步推进升级为带完成判定的 goal run ----
-  // 醒来实例是侦察兵（便宜，判断要不要推进/推进什么）；goal run 是执行者（带闸，干完过验证）。
-  // 仅当 advance 且模型给出 <goal> 提案时升级；提案缺省 → 按普通 advance（侦察兵已自己做完）处理。
-  let advanceGoalStatus: 'met' | 'aborted' | undefined;
-  if (decision === 'advance' && !excluded) {
-    const proposal = parseAdvanceGoalProposal(finalOutput) ?? inferredAdvanceProposal;
-    if (proposal) {
-      logger.info('Advance → goal run', { roleId, goal: proposal.goal, hasVerify: !!proposal.verify });
-      advanceGoalStatus = await launchAdvanceGoalRun({
+          sessionId: session.id,
+          phase: 'wake-run', timeoutMs: wakeTimeoutMs,
+          cancel: () => orchestrator.cancel(),
+          settled: () => tm.whenAgentEventsSettled(session.id),
+        });
+      } finally {
+        tm.cleanup(session.id);
+      }
+    } else {
+      await runWakeViaCliLoop({
         sessionId: session.id,
         roleId,
-        proposal,
+        wakePrompt,
         contextBlock: instantiation.contextBlock,
         workspacePath,
-        orchestrator: tm.getOrCreateCurrentOrchestrator(session.id),
-        taskManager: tm,
         timeoutMs: wakeTimeoutMs,
       });
-      summary = `[goal:${advanceGoalStatus}] ${proposal.goal}`.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     }
-  }
 
-  // ---- 步骤 7：沉默处理（归档会话，不打扰用户）----
-  if (decision === 'silence') {
-    await sessionManager.archiveSession(session.id);
-    logger.info('Wake completed silently, session archived', { roleId, trigger, sessionId: session.id });
-  } else {
-    // ---- 步骤 8：非沉默推送（会话留在列表；realtime 档加桌面通知）----
-    if (config.level === 'realtime') {
-      const { notificationService } = await import('../infra/notificationService');
-      notificationService.notifyRoleWakeOutput({
-        sessionId: session.id,
-        title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-        body: (advanceGoalStatus ? summary : wakeText) || `角色 ${roleId} 醒来产出了新内容`,
+    // ---- 步骤 6：读最终产出，解析四选一决策 ----
+    // 两条路径都把消息持久化进会话（orchestrator / CLI），统一从会话读最后一条 assistant 消息。
+    const sessionWithMessages = await sessionManager.getSession(session.id);
+    const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
+    const finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
+
+    const parsedDecision = parseWakeDecision(finalOutput);
+    const inferredAdvanceProposal = parsedDecision === 'advance'
+      ? null
+      : inferAdvanceGoalProposalFromWake(finalOutput, instantiation.contextBlock);
+    let decision = inferredAdvanceProposal ? 'advance' : parsedDecision;
+    const parsedRationale = parseWakeRationale(finalOutput);
+    // exclude 是硬约束：命中则压成 silence。rationale 解析失败不影响原决策。
+    const excludeSource = [finalOutput, parsedRationale.rationale ?? ''].join('\n');
+    const excluded = topicExcludeHits(excludeSource, config.topicsExclude);
+    if (excluded) {
+      logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
+      decision = 'silence';
+    }
+    if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
+    await storeWakeProposalsFromWake({ roleId, finalOutput, config });
+    const wakeText = stripWakeMarkup(finalOutput);
+    let summary = wakeText.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    if (inferredAdvanceProposal && !excluded) {
+      logger.info('Wake decision inferred as advance from verifiable next-step signals', {
+        roleId,
+        trigger,
+        parsedDecision,
+        hasVerify: !!inferredAdvanceProposal.verify,
       });
     }
-    logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });
-  }
 
-  // ---- 步骤 8.5：suggest/report 才把 rationale 写进助手消息（沉默/推进不展示「没有记录理由」）----
-  const recordWhy = decision === 'suggest' || decision === 'report';
-  const lastAssistant = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : undefined;
-  if (recordWhy && lastAssistant?.id) {
-    try {
-      await sessionManager.updateMessage(lastAssistant.id, {
-        metadata: {
-          ...(lastAssistant.metadata ?? {}),
-          wakeRationale: {
-            ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
-            ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
-            missing: parsedRationale.missing,
+    // ---- 步骤 6.5：advance 合流（P4）——多步推进升级为带完成判定的 goal run ----
+    // 醒来实例是侦察兵（便宜，判断要不要推进/推进什么）；goal run 是执行者（带闸，干完过验证）。
+    // 仅当 advance 且模型给出 <goal> 提案时升级；提案缺省 → 按普通 advance（侦察兵已自己做完）处理。
+    let advanceGoalStatus: 'met' | 'aborted' | undefined;
+    if (decision === 'advance' && !excluded) {
+      const proposal = parseAdvanceGoalProposal(finalOutput) ?? inferredAdvanceProposal;
+      if (proposal) {
+        logger.info('Advance → goal run', { roleId, goal: proposal.goal, hasVerify: !!proposal.verify });
+        advanceGoalStatus = await launchAdvanceGoalRun({
+          sessionId: session.id,
+          roleId,
+          proposal,
+          contextBlock: instantiation.contextBlock,
+          workspacePath,
+          orchestrator: tm.getOrCreateCurrentOrchestrator(session.id),
+          taskManager: tm,
+          timeoutMs: wakeTimeoutMs,
+        });
+        summary = `[goal:${advanceGoalStatus}] ${proposal.goal}`.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+      }
+    }
+
+    // ---- 步骤 7：沉默处理（归档会话，不打扰用户）----
+    if (decision === 'silence') {
+      await sessionManager.archiveSession(session.id);
+      logger.info('Wake completed silently, session archived', { roleId, trigger, sessionId: session.id });
+    } else {
+      // ---- 步骤 8：非沉默推送（会话留在列表；realtime 档加桌面通知）----
+      if (config.level === 'realtime') {
+        const { notificationService } = await import('../infra/notificationService');
+        notificationService.notifyRoleWakeOutput({
+          sessionId: session.id,
+          title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
+          body: (advanceGoalStatus ? summary : wakeText) || `角色 ${roleId} 醒来产出了新内容`,
+        });
+      }
+      logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });
+    }
+
+    // ---- 步骤 8.5：suggest/report 才把 rationale 写进助手消息（沉默/推进不展示「没有记录理由」）----
+    const recordWhy = decision === 'suggest' || decision === 'report';
+    const lastAssistant = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1] : undefined;
+    if (recordWhy && lastAssistant?.id) {
+      try {
+        await sessionManager.updateMessage(lastAssistant.id, {
+          metadata: {
+            ...(lastAssistant.metadata ?? {}),
+            wakeRationale: {
+              ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+              ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+              missing: parsedRationale.missing,
+            },
           },
-        },
-      });
-    } catch (err) {
-      logger.warn('Wake rationale metadata persist failed', { roleId, error: String(err) });
+        });
+      } catch (err) {
+        logger.warn('Wake rationale metadata persist failed', { roleId, error: String(err) });
+      }
     }
-  }
 
-  // ---- 步骤 9：写回履历（含沉默；决策入履历便于统计沉默率）+ 记忆写回 ----
-  // why 是履历独立字段，不拼进 summary 尾巴，也不走 summary 截断。
-  const today = now.toISOString().slice(0, 10);
-  const historySummary = decision === 'silence'
-    ? (excluded ? '命中排除话题，已停止汇报' : '巡检无需行动')
-    : `[${decision}] ${summary || '（无摘要）'}`;
-  await appendRoleHistory(roleId, {
-    date: today,
-    artifactLabel: wakeHistoryLabel(trigger),
-    artifactRef: '-',
-    summary: historySummary,
-    ...(recordWhy ? {
-      why: parsedRationale.missing ? '(missing)' : parsedRationale.rationale,
-      ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
-    } : {}),
-  });
+    // ---- 步骤 9：写回履历（含沉默；决策入履历便于统计沉默率）+ 记忆写回 ----
+    // why 是履历独立字段，不拼进 summary 尾巴，也不走 summary 截断。
+    const today = now.toISOString().slice(0, 10);
+    const historySummary = decision === 'silence'
+      ? (excluded ? '命中排除话题，已停止汇报' : '巡检无需行动')
+      : `[${decision}] ${summary || '（无摘要）'}`;
+    await appendRoleHistory(roleId, {
+      date: today,
+      artifactLabel: wakeHistoryLabel(trigger),
+      artifactRef: '-',
+      summary: historySummary,
+      ...(recordWhy ? {
+        why: parsedRationale.missing ? '(missing)' : parsedRationale.rationale,
+        ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+      } : {}),
+    });
 
-  if (decision !== 'silence') {
-    // 记忆写回异步执行（quick model 判断 + write gate），失败只记日志
-    runRoleWriteBack({
+    if (decision !== 'silence') {
+      // 记忆写回异步执行（quick model 判断 + write gate），失败只记日志
+      runRoleWriteBack({
+        roleId,
+        workspacePath,
+        taskPrompt: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}（${trigger} 触发）`,
+        finalOutput,
+      }).catch((err) => logger.warn('Wake write-back failed', { roleId, error: String(err) }));
+    }
+
+    // RoleWake hook 事件（可扩展性：用户可挂自己的 command/http hook 转发）
+    fireRoleWakeHook(roleId, trigger, decision, session.id, workspacePath).catch(
+      (err) => logger.warn('RoleWake hook failed', { roleId, error: String(err) }),
+    );
+
+    return {
       roleId,
-      workspacePath,
-      taskPrompt: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}（${trigger} 触发）`,
-      finalOutput,
-    }).catch((err) => logger.warn('Wake write-back failed', { roleId, error: String(err) }));
-  }
-
-  // RoleWake hook 事件（可扩展性：用户可挂自己的 command/http hook 转发）
-  fireRoleWakeHook(roleId, trigger, decision, session.id, workspacePath).catch(
-    (err) => logger.warn('RoleWake hook failed', { roleId, error: String(err) }),
-  );
-
-  if (options?.sourceSessionId) {
-    const event: SessionAutomationEventKind = decision === 'silence'
-      ? 'skipped'
-      : decision === 'advance' && advanceGoalStatus === 'met'
-        ? 'stage_ready'
-        : 'completed';
-    const status: SessionAutomationStatus = decision === 'silence'
-      ? 'skipped'
-      : decision === 'advance' && advanceGoalStatus === 'aborted'
-        ? 'failed'
-        : 'completed';
-    try {
-      await getSessionAutomationService().recordEvent({
-        automationId: `role_wake:${session.id}`,
-        event,
-        status,
-        recordStatus: status,
-        resultSessionId: session.id,
-        summary: decision === 'silence'
-          ? '巡检无需行动。'
-          : `[${decision}] ${summary || '角色醒来产出了新内容'}`,
-        eventId: `role_wake:${session.id}:${decision}:${advanceGoalStatus ?? 'none'}`,
-        lastRunAt: Date.now(),
-        configPatch: {
-          decision,
-          advanceGoalStatus,
-          ...(recordWhy ? {
-            ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
-            ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
-            rationaleMissing: parsedRationale.missing,
-          } : {}),
-          ...(options.handoffPrompt ? {
-            handoffPrompt: options.handoffPrompt,
-            nextStage: { prompt: options.handoffPrompt, title: '角色唤醒后继续' },
-          } : {}),
-        },
-      });
-    } catch (err) {
-      logger.warn('Role wake automation result feedback failed', { roleId, sessionId: session.id, error: String(err) });
-    }
-  }
-
-  return {
-    roleId,
-    trigger,
-    status: 'completed',
-    decision,
-    sessionId: session.id,
-    summary,
-    advanceGoalStatus,
-    ...(recordWhy ? {
-      ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
-      ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
-      rationaleMissing: parsedRationale.missing,
-    } : {}),
-  };
+      trigger,
+      status: 'completed',
+      decision,
+      sessionId: session.id,
+      summary,
+      advanceGoalStatus,
+      ...(recordWhy ? {
+        ...(parsedRationale.rationale ? { rationale: parsedRationale.rationale } : {}),
+        ...(parsedRationale.evidence ? { evidence: parsedRationale.evidence } : {}),
+        rationaleMissing: parsedRationale.missing,
+      } : {}),
+    };
+  });
 }
 
 // event 入口：长任务跑完触发（设计 §2.2）

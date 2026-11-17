@@ -12,6 +12,7 @@ describe('RouteTraceChip', () => {
     const html = renderToStaticMarkup(
       React.createElement(RouteTraceChip, {
         defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
         decision: {
           requestedProvider: 'moonshot',
           requestedModel: 'kimi-k2.5',
@@ -93,6 +94,7 @@ describe('RouteTraceChip', () => {
 	    const html = renderToStaticMarkup(
 	      React.createElement(RouteTraceChip, {
 	        defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
 	        decision: {
 	          requestedProvider: 'moonshot',
 	          requestedModel: 'kimi-k2.5',
@@ -150,6 +152,7 @@ describe('RouteTraceChip', () => {
 	    const html = renderToStaticMarkup(
 	      React.createElement(RouteTraceChip, {
 	        defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
 	        decision: {
 	          requestedProvider: 'custom-commonstack',
 	          requestedModel: 'anthropic/claude-opus-4-8',
@@ -185,6 +188,7 @@ describe('RouteTraceChip', () => {
     const planHtml = renderToStaticMarkup(
       React.createElement(RouteTraceChip, {
         defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
         decision: {
           requestedProvider: 'claude',
           requestedModel: 'sonnet-4',
@@ -205,6 +209,7 @@ describe('RouteTraceChip', () => {
     const unknownHtml = renderToStaticMarkup(
       React.createElement(RouteTraceChip, {
         defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
         decision: {
           requestedProvider: 'custom',
           requestedModel: 'local-heavy',
@@ -239,6 +244,7 @@ describe('RouteTraceChip', () => {
     const html = renderToStaticMarkup(
       React.createElement(RouteTraceChip, {
         defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
         decision: {
           requestedProvider: 'claude_code',
           requestedModel: 'sonnet',
@@ -305,6 +311,7 @@ describe('RouteTraceChip', () => {
     const html = renderToStaticMarkup(
       React.createElement(RouteTraceChip, {
         defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
         decision: {
           requestedProvider: 'moonshot',
           requestedModel: 'kimi-k2.5',
@@ -343,6 +350,7 @@ describe('RouteTraceChip', () => {
     const html = renderToStaticMarkup(
       React.createElement(RouteTraceChip, {
         defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
         decision: {
           requestedProvider: 'mock',
           requestedModel: 'text-only',

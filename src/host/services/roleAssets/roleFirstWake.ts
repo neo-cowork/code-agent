@@ -34,6 +34,7 @@ import { getBuiltinRoleVisual } from './builtinRoles';
 import { readRolePersonalization, toRoleBoundaryRunAllowlist } from './rolePersonalization';
 import { resolveWakeRunToolScope } from './roleProactivity';
 import { probeUncheckedNativeConnectors } from './nativeSourceProbe';
+import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('RoleFirstWake');
 
@@ -692,7 +693,7 @@ async function recordFirstWakeResult(
 ): Promise<void> {
   try {
     await getSessionAutomationService().recordEvent({
-      automationId: `role_wake:${sessionId}`,
+      automationId: roleWakeAutomationId(sessionId),
       event,
       status: event,
       recordStatus: event,
@@ -803,7 +804,7 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     // 可见的自动化记录（run list 里能看到这次首次醒来）
     try {
       await getSessionAutomationService().recordCreated({
-        id: `role_wake:${session.id}`,
+        id: roleWakeAutomationId(session.id),
         sourceSessionId: null,
         type: 'role_wake',
         status: 'running',

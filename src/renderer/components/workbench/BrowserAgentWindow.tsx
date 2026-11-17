@@ -1,3 +1,4 @@
+import { BrowserPageOverflowHint } from './BrowserPageOverflowHint';
 import { resolveBrowserEmptyText } from './browserAgentWindowEmptyText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -966,6 +967,7 @@ export const BrowserAgentWindow: React.FC = () => {
         )}
         <BrowserHumanTakeoverBar />
       </div>
+      <BrowserPageOverflowHint frame={liveStream.frame} surfaceSessionId={browserSurfaceSessionId} conversationId={currentSessionId} />
 
       <ConfirmDialog
         isOpen={pendingInterruptUrl !== null || stageInput.pendingPreemptInput !== null}

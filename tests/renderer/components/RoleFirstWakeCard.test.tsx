@@ -279,27 +279,38 @@ describe('RoleFirstWakeCard', () => {
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
   });
 
-  it('进行中显示熟悉数据，没有建议按钮，「先不用」同排右对齐且有生命体征动画（C & F 钉）', async () => {
+  it('进行中只显示单行收起的「正在思考… · Ns」，不再叠加等待句；「先不用」同排右对齐', async () => {
     getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'connected', suggestions: [] });
     render(<RoleFirstWakeCard roleId="role-1" />);
-    const runningText = await screen.findByText('正在熟悉你已连接的数据…');
-    expect(runningText).toBeTruthy();
+    const line = await screen.findByTestId('thinking-digest');
+    expect(line.textContent).toMatch(/^正在思考… · \d+s$/);
+    expect(line.querySelector('button')).toBeNull();
+    expect(line.querySelector('svg.lucide-chevron-right, svg.lucide-chevron-down')).toBeNull();
+    expect(screen.queryByText(/正在熟悉你已连接的数据|正在准备开场/)).toBeNull();
     expect(screen.queryByRole('button', { name: '去连接' })).toBeNull();
     const skipBtn = screen.getByRole('button', { name: '先不用' });
-    expect(skipBtn).toBeTruthy();
-    // 同排右对齐：runningText 与 skipBtn 同属一个 flex 行容器，且有 pulse 动效点（支持 motion-reduce）
-    expect(runningText.parentElement).toBe(skipBtn.parentElement);
+    expect(line.parentElement).toBe(skipBtn.parentElement);
     expect(skipBtn.className).toContain('ml-auto');
-    const pulseDot = screen.getByTestId('role-first-wake-pulse');
-    expect(pulseDot.className).toContain('animate-pulse');
-    expect(pulseDot.className).toContain('motion-reduce:animate-none');
   });
 
-  it('进行中没有已连接源时不说「熟悉已连接的数据」，改说准备开场', async () => {
+  it('卡片重挂（切会话再回来）后计时不归零', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'connected', suggestions: [] });
+    const first = render(<RoleFirstWakeCard roleId="role-remount" />);
+    await act(async () => { await Promise.resolve(); });
+    act(() => { vi.advanceTimersByTime(9_000); });
+    first.unmount();
+    render(<RoleFirstWakeCard roleId="role-remount" />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · (9|10)s$/);
+    vi.useRealTimers();
+  });
+
+  it('进行中没有已连接源时同样只显示合成思考行，不说「准备开场」', async () => {
     getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'none', suggestions: [] });
     render(<RoleFirstWakeCard roleId="role-1" />);
-    expect(await screen.findByText('正在准备开场…')).toBeTruthy();
-    expect(screen.queryByText(/正在熟悉你已连接的数据/)).toBeNull();
+    expect((await screen.findByTestId('thinking-digest')).textContent).toMatch(/^正在思考… · \d+s$/);
+    expect(screen.queryByText(/正在准备开场|正在熟悉你已连接的数据/)).toBeNull();
     // 无源进行中同样保留「先不用」出路
     expect(screen.getByRole('button', { name: '先不用' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '去连接' })).toBeNull();
@@ -569,6 +580,17 @@ describe('RoleFirstWakeCard 返修 r2', () => {
     }
   });
 
+  it.each([['en', 'Muzhi'], ['zh', '牧之']] as const)('built-in expert avatar label follows the UI language (%s)', async (language, expected) => {
+    useAppStore.setState({ language });
+    listRoles.mockResolvedValue([{ ...ROLE, roleId: '牧之', displayName: '牧之', source: 'builtin' }]);
+    getFirstWake.mockResolvedValue(COMPLETED);
+    render(<RoleFirstWakeCard roleId="牧之" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('role-first-wake-card').querySelector(`[aria-label="${expected}"]`)).toBeTruthy();
+    });
+    useAppStore.setState({ language: 'zh' });
+  });
+
   it('B：failed 原始错误普通用户不可见，使用短原因词条（auth / 余额 / 网络 / generic），开发者模式原样露出', async () => {
     getFirstWake.mockResolvedValue({
       state: 'failed',
@@ -691,7 +713,7 @@ describe('RoleFirstWakeCard 返修 r2', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新查看' }));
     await waitFor(() => expect(retryFirstWake).toHaveBeenCalledWith('role-1'));
     await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('running'));
-    expect(screen.getByText('正在熟悉你已连接的数据…')).toBeTruthy();
+    expect(await screen.findByTestId('thinking-digest')).toBeTruthy();
   });
 
   it('C：framed（角色自己的会话顶部）不出现「进入会话」，原位卡有', async () => {

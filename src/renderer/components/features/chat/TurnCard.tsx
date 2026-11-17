@@ -57,6 +57,7 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import type { Translations } from '../../../i18n';
 import { turnPhaseFallbackLabel } from '../../../utils/turnPhaseFallback';
@@ -225,13 +226,18 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const preparationPhase = busySignal === 'text-caret' && !lastNodeIsStreamingText
     ? hasTimelineActivity ? 'organizing' : undefined
     : undefined;
-  const streamingIndicator = isStreaming && !suppressBusySignal ? (
+  // 合成行仅在无任何思考文本时渲染；有思考段时底部指示器照常（活跃思考时它本就让位）。
+  const pendingThinkingSince = isStreaming && !suppressBusySignal && !waitingForApproval
+    && busySignal === 'text-caret' && !lastNodeIsStreamingText && thinkingSegments.length === 0
+    && !displayNodes.some((d) => d.kind === 'tool_group')
+    ? turn.startTime : undefined;
+  const streamingIndicator = isStreaming && !suppressBusySignal && pendingThinkingSince === undefined ? (
     <StreamingIndicator
       startTime={turn.startTime}
-      runningToolStartTime={busySignal === 'text-caret' ? runningToolStartTime : undefined}
-      showCaret={busySignal === 'text-caret'}
-      preparationPhase={preparationPhase}
-      waitingReason={busySignal === 'text-caret'
+      runningToolStartTime={!waitingForApproval && busySignal === 'text-caret' ? runningToolStartTime : undefined}
+      showCaret={waitingForApproval || busySignal === 'text-caret'}
+      preparationPhase={waitingForApproval ? undefined : preparationPhase}
+      waitingReason={waitingForApproval ? 'approval' : busySignal === 'text-caret'
         ? !lastNodeIsStreamingText && !hasTimelineActivity ? 'model' : undefined
         : getStreamingWaitingReason(turn.nodes, streamingState.status, waitingForApproval)}
       subagentCount={getRunningSubagentCount(turn.nodes)}
@@ -401,6 +407,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               activeSegmentId={activeThinkingSegmentId}
               hasNonThinkingContentAfterThinking={hasNonThinkingContentAfterThinking}
               turnEndTime={turn.endTime}
+              pendingSinceMs={pendingThinkingSince}
             />}
             {displayNodes.map((d, i) => {
               if (d.kind === 'tool_group') {
@@ -437,7 +444,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
@@ -567,6 +574,7 @@ const VoiceDispatchCardHeader: React.FC<{
   onToggle: () => void;
 }> = ({ title, speaker, expanded, onToggle }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   return (
     <Button
       type="button"
@@ -585,7 +593,7 @@ const VoiceDispatchCardHeader: React.FC<{
           data-testid="voice-task-speaker"
           className="shrink-0 rounded-md border border-border-muted bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-400"
         >
-          {speaker.displayName}
+          {localizeRole(speaker.displayName, { name: speaker.displayName }).name}
         </span>
       )}
       {expanded ? (
@@ -606,6 +614,7 @@ const TurnCopyAction: React.FC<{ content: string }> = ({ content }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
     } catch {
+      // clipboard unavailable (permission/insecure context): the copied tick simply stays off
     }
   };
   return (

@@ -406,14 +406,14 @@ export function isStickyUserDenial(
 
 /**
  * ADR-067 D4 sticky 拒绝文案：一句话告诉模型用户已拒绝该动作、下一条用户消息前
- * 不会再被询问，别重试，要在聊天里向用户确认（审批疲劳会把用户逼向 always-allow；
+ * 不会再被询问，别重试，用一句结论结束本轮（审批疲劳会把用户逼向 always-allow；
  * 竞品 Grok v0.75.5 同款语义）。复用 PERMISSION_DENIED_BY_USER，不新造契约码。
  */
 export function userDeniedStickyError(toolName: string, deniedSummary?: string): HostReasonPayload {
   const prior = deniedSummary ? ` (${deniedSummary})` : '';
   const modelText = `${toolName} was not executed: the user already declined this exact action${prior} `
     + 'earlier in this conversation turn. It will not run and will not be asked again until the user '
-    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat. '
+    + 'sends another message, so do not retry it or rephrase it. '
     + userDeniedGoalStickyError(toolName).modelText;
   return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, { toolName });
 }
@@ -422,9 +422,12 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
 export function userDeniedGoalStickyError(toolName: string): HostReasonPayload {
   return createHostReason(HostReasonCode.PermissionDeniedByUser,
     'The user just declined this kind of action. Do not request approval for the same goal again '
-      + 'by rewording it or changing the command or arguments. First ask the user one short question '
-      + 'about how to proceed: use AskUserQuestion if available, otherwise your final message. '
-      + 'For unattended, scheduled or background runs, put that question in your final message. '
+      + 'by rewording it or changing the command or arguments. End this turn now with exactly one short final '
+      + 'sentence: state that the declined action was not performed and, if anything was completed earlier '
+      + 'in this turn, mention it in the same sentence. Do not add a second sentence, a list, or an offer to continue. '
+      + 'Do not claim that nothing was changed. Do not ask a question or call a question tool. '
+      + 'For unattended, scheduled or background runs, state in one final sentence that the action '
+      + 'was declined and skipped. '
       + 'Wait for a new user message before requesting approval for this kind of action again.',
     { toolName });
 }

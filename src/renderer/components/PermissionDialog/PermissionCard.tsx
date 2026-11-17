@@ -21,7 +21,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionConfig } from './utils';
+import { getPermissionTitle } from './utils';
 import { describeApproval } from './describeApproval';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
@@ -44,6 +44,10 @@ import { logPermissionClickExit } from '../../services/permissionClickLog';
 function stringField(source: object, key: string): string | undefined {
   const value = (source as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function unknownField(source: object, key: string): unknown {
+  return (source as Record<string, unknown>)[key];
 }
 
 // 将共享类型的 PermissionRequest 转换为本地类型
@@ -96,6 +100,9 @@ function normalizeRequest(
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
+      from_ms: unknownField(request.details, 'from_ms'),
+      to_ms: unknownField(request.details, 'to_ms'),
+      calendar: unknownField(request.details, 'calendar'),
       sensitiveStep: request.details.sensitiveStep,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
@@ -504,7 +511,7 @@ export function PermissionCard({
             : editable
               ? w.mailSendTitle
               : isDangerous && described.kind === 'shell'
-                ? getPermissionConfig('command').title
+                ? getPermissionTitle('command', p)
                 : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
@@ -606,7 +613,7 @@ export function PermissionCard({
         selectedId={invalid.length === 0 ? 'edit' : null}
         onSelect={() => {}}
         onConfirm={() => {
-          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
+          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft, request.rawArgs));
         }}
         onCollapse={onCollapse}
         enterDisabled
