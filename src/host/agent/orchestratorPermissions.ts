@@ -855,6 +855,7 @@ export class OrchestratorPermissionIsland {
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
+        ...(fullRequest.details.targetApp ? { targetApp: fullRequest.details.targetApp } : {}),
         ...(fullRequest.details.browserSessionGrant ? { browserSessionGrant: fullRequest.details.browserSessionGrant, displayAction: fullRequest.reason } : {}),
       };
       try {

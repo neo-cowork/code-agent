@@ -139,6 +139,9 @@ describe('restart resume mints the tier grant', () => {
     ['untargeted external', { tool: 'mcp__lark__send_message', args: { text: 'hi' } }, 'editable/forceConfirm/untargeted-external'],
     ['sensitiveStep', { payload: { sensitiveStep: { kind: 'password' as const } } }, 'Sensitive step'],
     ['browser tool', { tool: 'browser_action', args: { action: 'open', url: 'https://example.com' } }, 'browser tools'],
+    ['cua-driver click without persisted app identity', { tool: 'mcp__cua-driver__click', args: { pid: 4242, x: 10, y: 20 } }, 'computer-use app target'],
+    ['cua-driver launch_app without persisted app identity', { tool: 'mcp__cua-driver__launch_app', args: { bundle_id: 'com.apple.finder' } }, 'computer-use app target'],
+    ['cua-driver with persisted app identity', { tool: 'mcp__cua-driver__type_text', args: { pid: 1, text: 'x' }, payload: { targetApp: { name: 'Notes' } } }, 'computer-use app target'],
     ['computer-use targetApp', { tool: 'computer_use', args: { action: 'click', targetApp: 'Finder' } }, 'computer-use app target'],
   ] as const)('%s: executes once, mints nothing, distinguishable warn', async (_name, input, warnPart) => {
     seed(input as Parameters<typeof seed>[0]);

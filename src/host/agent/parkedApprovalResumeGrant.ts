@@ -7,6 +7,7 @@
 import type { PermissionRequest, PermissionResponse } from '../../shared/contract';
 import type { ToolApprovalPayload } from '../../shared/contract/pendingApproval';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
+import { cuaToolNeedsAppGrant } from '../permissions/cuaAppTarget';
 import { recordHumanGrant } from '../permissions/humanGrantPolicy';
 import { createLogger } from '../services/infra/logger';
 
@@ -30,7 +31,11 @@ export function applyGrantAfterRestartClaim(input: {
     return;
   }
   if (response !== 'allow_24h') return;
-  const targetApp = extractComputerTargetApp(payload.tool, ledgerArgs);
+  // 应用身份只认停车时 host 落盘的那份；cua-driver 的身份不在台账参数里，pid 也不能点击时再反查
+  // （会复用）。需要应用授权的工具缺落盘身份 → 按“有应用目标”处理：只放行这一次，不铸工具级 24h。
+  const targetApp = payload.targetApp
+    ?? extractComputerTargetApp(payload.tool, ledgerArgs)
+    ?? (cuaToolNeedsAppGrant(payload.tool) ? { name: '(unresolved)' } : null);
   const request = {
     id: requestId,
     sessionId,
