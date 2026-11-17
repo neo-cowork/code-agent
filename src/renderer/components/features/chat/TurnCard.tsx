@@ -226,7 +226,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     ? hasTimelineActivity ? 'organizing' : undefined
     : undefined;
   const pendingThinkingSince = isStreaming && !suppressBusySignal && !waitingForApproval
-    && busySignal === 'text-caret' && !lastNodeIsStreamingText && !hasTimelineActivity
+    && busySignal === 'text-caret' && !lastNodeIsStreamingText && !displayNodes.some((d) => d.kind === 'tool_group')
     ? turn.startTime : undefined;
   const streamingIndicator = isStreaming && !suppressBusySignal && pendingThinkingSince === undefined ? (
     <StreamingIndicator

@@ -276,8 +276,10 @@ describe('TurnCard live approval status', () => {
       expect(screen.queryByText(/正在发送消息|Sending message|深空巡航/)).toBeNull();
       act(() => useAppStore.setState({ pendingPermissionRequest: null, pendingPermissionSessionId: null }));
       expect(screen.queryByLabelText(languages[language].chat.waitingApproval)).toBeNull();
-      if (completed) expect(screen.getByTestId('streaming-preparation-indicator')).not.toBeNull();
-      else expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+      // 审批结束后回合在等模型：已完成工具无可见步骤行时，由单行「正在思考」独占信号，不再叠加「正在整理回复」。
+      expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+      if (completed) expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考|^Thinking/);
+      else expect(screen.queryByTestId('thinking-digest')).toBeNull();
     });
   }
 });
