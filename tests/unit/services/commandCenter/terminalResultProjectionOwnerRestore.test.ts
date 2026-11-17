@@ -121,7 +121,7 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
   let coreDb: DatabaseService;
   let connection: Database.Database;
 
-  async function spawnAndComplete(manager: ControllableTaskManager, center: SessionCommandCenter): Promise<string> {
+  async function spawnAndComplete(manager: ControllableTaskManager, center: SessionCommandCenter, conclusion = '周报已写好'): Promise<string> {
     const spawned = await center.spawn({
       sessionId: SESSION,
       title: '周报',
@@ -132,7 +132,7 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
       workspaceScope: createWorkspaceScope('p', [{ sourceId: 's', path: tmpDir, role: 'primary', access: 'read_write' }]),
     });
     if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
-    manager.emit('task_completed', { type: 'task_completed', sessionId: SESSION, data: { taskId: spawned.task.id, conclusion: '周报已写好' } });
+    manager.emit('task_completed', { type: 'task_completed', sessionId: SESSION, data: { taskId: spawned.task.id, conclusion } });
     return spawned.task.id;
   }
 
@@ -344,5 +344,19 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
     expect(projection).toHaveBeenCalledTimes(1);
     expect(logsOf('warn').some((entry) => entry.details?.reason === 'terminal_projection_not_accessible_for_current_owner')).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, 'session-command-running', `${encodeURIComponent(taskId)}.json`))).toBe(false);
+  });
+
+  it('结论开头承认没做成：task_completed 落的结果行写已失败而不是已完成', async () => {
+    harness.user = { id: 'u1' };
+    const manager = new ControllableTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {});
+    const taskId = await spawnAndComplete(manager, center, '任务未完成——页面打不开，没有任何定价表内容。');
+
+    await vi.waitFor(() => expect(messageRows().some((row) => row.id === `session-task-result-${taskId}`)).toBe(true));
+    const row = messageRows().find((r) => r.id === `session-task-result-${taskId}`)!;
+    expect(row.content).toContain('周报｜已失败｜');
+    expect(row.content).not.toContain('已完成');
+    expect(row.content).toContain('任务未完成——页面打不开');
+    expect((row.metadata as { backgroundTaskResult?: { status?: string } }).backgroundTaskResult?.status).toBe('failed');
   });
 });

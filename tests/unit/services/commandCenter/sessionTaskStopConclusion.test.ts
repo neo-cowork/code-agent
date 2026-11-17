@@ -50,3 +50,39 @@ describe('resolveStoppedTaskOutcome markup-only browser conclusion', () => {
     expect(outcome.notice).toBe(outcome.detail);
   });
 });
+
+const REAL_FAILED_ROWS = [
+  '**任务未完成——页面打不开，没有任何定价表内容。**\n原因：域名无法解析。',
+  '没能取到显示名称',
+];
+
+describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
+  it.each([
+    '执行失败：连接超时',
+    '未能完成：页面需要登录',
+    '无法打开页面 https://x.invalid',
+    '结论：任务未完成，页面打不开',
+    '- **任务失败**',
+    'Unable to open the page.',
+    'Failed to fetch the pricing table',
+    ...REAL_FAILED_ROWS,
+  ])('failure prose with completed status becomes failed: %s', (detail) => {
+    const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail });
+    expect(outcome).toMatchObject({ status: 'failed', kind: 'error' });
+    expect(outcome.notice).toBe(outcome.detail);
+    expect(outcome.detail).toContain('这个后台任务没有完成你交代的事');
+    expect(outcome.detail).toContain(detail.trim());
+  });
+
+  it.each([
+    '页面标题是 Example Domain。',
+    '三条要点已整理好。其中一个子页面打不开，已跳过；任务未完成的只有附录。',
+    '\n\n已完成。\n无法打开的链接有 1 个。',
+  ])('success prose stays completed: %s', (detail) => {
+    expect(resolveStoppedTaskOutcome({ status: 'completed', detail }).status).toBe('completed');
+  });
+
+  it('markup-only stays failed/no_conclusion', () => {
+    expect(resolveStoppedTaskOutcome({ status: 'completed', detail: CLOSED })).toMatchObject({ status: 'failed', kind: 'no_conclusion' });
+  });
+});
