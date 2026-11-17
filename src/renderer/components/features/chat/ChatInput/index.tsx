@@ -105,7 +105,7 @@ import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
 import { mergeAttachments } from './attachmentDedupe';
-import { notifyAttachmentMerge } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
