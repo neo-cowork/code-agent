@@ -37,7 +37,6 @@ import {
   type ProjectRoleLink,
   type ProjectSource,
   type ProjectSourceInput,
-  type ProjectSourceTrustFailureKind,
   type ProjectStatus,
   type ProjectWithActivity,
   type UpdateProjectInput,
@@ -53,20 +52,11 @@ import {
 } from '../../runtime/workspaceScope';
 import { resolveBackgroundWorkspaceAuthority } from '../../runtime/workspaceAuthority';
 import { ProjectSourceTrustError } from './projectSourceTrustError';
+import { ProjectUpdateError, healthyRemovedGitScope, sourceTrustFailureKind } from './projectUpdateError';
 import { evaluateFolderTrust, setFolderTrust } from '../../security/folderTrustService';
 import { getProjectSourceGitStates } from '../git/gitStatusService';
 
 const logger = createLogger('ProjectService');
-
-function sourceTrustFailureKind(
-  source: Pick<ProjectSource, 'trustState' | 'identityDev' | 'identityIno' | 'identityBirthtimeNs'>,
-  identity: ReturnType<typeof workspacePathIdentity>,
-): ProjectSourceTrustFailureKind | undefined {
-  if (identity.dev === null || identity.ino === null) return 'source_missing';
-  if (!workspaceIdentityMatches(source, identity)) return 'identity_changed';
-  if (source.trustState !== 'trusted') return 'not_trusted';
-  return undefined;
-}
 
 const FILE_METADATA_KEYS = [
   'filePath',
@@ -754,33 +744,33 @@ export class ProjectService {
       if (!isUnchangedTrustedSource) {
         const trust = await evaluateFolderTrust(source.canonicalPath);
         if (trust.state !== 'trusted' || trust.identityChanged) {
-          throw new Error(`Folder Trust is required for Source: ${source.path}`);
+          throw new ProjectUpdateError('PROJECT_UPDATE_FOLDER_TRUST', `Folder Trust is required for Source: ${source.path}`);
         }
       }
       source.trustState = 'trusted';
       sources.push(source);
     }
     if (new Set(sources.map((source) => source.canonicalPath)).size !== sources.length) {
-      throw new Error('Duplicate Project Source path.');
+      throw new ProjectUpdateError('PROJECT_UPDATE_DUPLICATE_PATH', 'Duplicate Project Source path.');
     }
     assertNonOverlappingRoots(sources.map((source) => ({ sourceId: source.id, path: source.canonicalPath })));
     if (sources.some((source) => !resolveBackgroundWorkspaceAuthority({ workspace: source.canonicalPath }))) {
-      throw new Error('Unsafe Project Source path cannot be trusted for a Project.');
+      throw new ProjectUpdateError('PROJECT_UPDATE_UNSAFE_PATH', 'Unsafe Project Source path cannot be trusted for a Project.');
     }
     const retainedIds = new Set(sources.map((source) => source.id));
     const removed = Array.from(existingById.values()).filter((source) => !retainedIds.has(source.id));
     if (removed.length > 0) {
       if (repo.hasRunningSessions(input.projectId)) {
-        throw new Error('Cannot remove a Project Source while this Project has a running task.');
+        throw new ProjectUpdateError('PROJECT_UPDATE_RUNNING_TASK', 'Cannot remove a Project Source while this Project has a running task.');
       }
-      const currentScope = this.getWorkspaceScope(input.projectId);
-      const gitStates = currentScope ? await getProjectSourceGitStates(currentScope) : [];
+      const removedScope = healthyRemovedGitScope(input.projectId, removed);
+      const gitStates = removedScope ? await getProjectSourceGitStates(removedScope) : [];
       const dirtyRemoved = removed.find((source) =>
         gitStates.find((state) => state.sourceId === source.id)?.dirtyFiles?.length
         && !input.confirmedDirtySourceIds?.includes(source.id)
       );
       if (dirtyRemoved) {
-        throw new Error(`Cannot remove Source with uncommitted changes: ${dirtyRemoved.path}`);
+        throw new ProjectUpdateError('PROJECT_UPDATE_DIRTY_SOURCE', `Cannot remove Source with uncommitted changes: ${dirtyRemoved.path}`);
       }
     }
     const primary = sources.find((source) => source.role === 'primary');
@@ -790,16 +780,24 @@ export class ProjectService {
     try {
       accessSync(primary.canonicalPath, fsConstants.R_OK | fsConstants.W_OK);
     } catch {
-      throw new Error(`Primary Source must exist and be writable: ${primary.path}`);
+      throw new ProjectUpdateError('PROJECT_UPDATE_PRIMARY_UNWRITABLE', `Primary Source must exist and be writable: ${primary.path}`);
     }
-    const updated = repo.replaceProjectSources({
-      ...current,
-      name: input.name.trim(),
-      description: input.description?.trim() || undefined,
-      workspacePath: primary.canonicalPath,
-      workspaceKey: getProjectKey(primary.canonicalPath),
-      updatedAt: now,
-    }, sources, input.revision);
+    let updated: Project;
+    try {
+      updated = repo.replaceProjectSources({
+        ...current,
+        name: input.name.trim(),
+        description: input.description?.trim() || undefined,
+        workspacePath: primary.canonicalPath,
+        workspaceKey: getProjectKey(primary.canonicalPath),
+        updatedAt: now,
+      }, sources, input.revision);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Project Sources changed')) {
+        throw new ProjectUpdateError('PROJECT_UPDATE_REVISION_CONFLICT', error.message);
+      }
+      throw error;
+    }
     await linkProjectIdToMeta(primary.canonicalPath, current.id).catch((error) =>
       logger.warn('[ProjectService] linkProjectIdToMeta after Primary switch failed:', error),
     );
