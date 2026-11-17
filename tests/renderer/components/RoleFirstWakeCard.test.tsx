@@ -580,6 +580,17 @@ describe('RoleFirstWakeCard 返修 r2', () => {
     }
   });
 
+  it.each([['en', 'Muzhi'], ['zh', '牧之']] as const)('built-in expert avatar label follows the UI language (%s)', async (language, expected) => {
+    useAppStore.setState({ language });
+    listRoles.mockResolvedValue([{ ...ROLE, roleId: '牧之', displayName: '牧之', source: 'builtin' }]);
+    getFirstWake.mockResolvedValue(COMPLETED);
+    render(<RoleFirstWakeCard roleId="牧之" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('role-first-wake-card').querySelector(`[aria-label="${expected}"]`)).toBeTruthy();
+    });
+    useAppStore.setState({ language: 'zh' });
+  });
+
   it('B：failed 原始错误普通用户不可见，使用短原因词条（auth / 余额 / 网络 / generic），开发者模式原样露出', async () => {
     getFirstWake.mockResolvedValue({
       state: 'failed',

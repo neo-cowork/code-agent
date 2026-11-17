@@ -10,6 +10,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { normalizeCalendarListWindow } from '../../calendarEventTime';
 import { getConnectorRegistry } from '../../../connectors';
 import { isCalendarFailure } from '../../../connectors/native/calendar';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -76,6 +77,12 @@ async function executeCalendar(
   const allowed: CalendarAction[] = ['get_status', 'list_calendars', 'list_events'];
   if (!allowed.includes(action as CalendarAction)) {
     return { ok: false, error: `Unsupported calendar action: ${action}`, code: 'INVALID_ARGS' };
+  }
+
+  if (action === 'list_events') {
+    const window = normalizeCalendarListWindow(args);
+    if (!window.ok) return window;
+    args = window.args;
   }
 
   const permit = await canUseTool(schema.name, args);

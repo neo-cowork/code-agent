@@ -3,7 +3,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentTrajectorySessionQualitySummary } from '@shared/contract/agentTrajectory';
 import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
-import type { CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
+import type { CrossSessionSearchProjectScope, CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
 import { useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
 import { useSessionUIStore, type TrajectoryReviewFilter } from '../../../stores/sessionUIStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -209,9 +209,19 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [],
   );
 
-  // 只有「本项目」范围才把搜索限制在已加载会话 id 内；「全部」交给主机搜整个历史。
-  const restrictedSearchKey =
-    effectiveSearchScope === 'current-project' ? Array.from(allowedSearchSessionIds).sort().join('\n') : null;
+  // 「本项目」范围发项目描述符，由主机在 SQL 层按整库过滤；不再用侧栏已加载（最新 50 条）的会话 id 限定。
+  const currentSession = sessions.find((session) => session.id === currentSessionId);
+  const scopeProjectId = currentSession?.projectId?.trim() || '';
+  const scopeWorkingDirectory = currentSession?.workingDirectory?.trim() || '';
+  const projectScopeKey =
+    effectiveSearchScope === 'current-project'
+      ? JSON.stringify(scopeProjectId ? { projectId: scopeProjectId } : { workingDirectory: scopeWorkingDirectory })
+      : null;
+
+  // 切范围时先丢掉上一个范围的远端行，避免新结果回来前短暂混入另一个项目的会话
+  useEffect(() => {
+    setRemoteSearchSessions([]);
+  }, [projectScopeKey]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -223,15 +233,14 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       return undefined;
     }
 
-    const restrictedIds = restrictedSearchKey === null ? null : restrictedSearchKey.split('\n').filter(Boolean);
-    const restrictedSet = restrictedIds ? new Set(restrictedIds) : undefined;
+    const projectScope = projectScopeKey === null ? null : (JSON.parse(projectScopeKey) as CrossSessionSearchProjectScope);
     let cancelled = false;
     const timer = setTimeout(() => {
       setMessageSearchLoading(true);
       void ipcService
         .invoke(IPC_CHANNELS.SESSION_SEARCH, {
           query,
-          options: restrictedIds ? { limit: 80, sessionIds: restrictedIds } : { limit: 80 },
+          options: projectScope ? { limit: 80, projectScope } : { limit: 80 },
         })
         .then((results) => {
           if (cancelled) return;
@@ -242,11 +251,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             throw new Error('SESSION_SEARCH returned no result payload');
           }
           const messageHits = typedResults.results.filter((item) => item.sessionArchived !== true);
-          setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(messageHits, restrictedSet));
-          if (restrictedSet) {
-            setRemoteSearchSessions([]);
-            return;
-          }
+          setMessageSearchHitsBySessionId(buildSidebarMessageSearchHitGroups(messageHits));
           const remote = new Map<string, SessionWithMeta>();
           for (const item of messageHits) {
             if (item.sessionTitle === undefined || remote.has(item.sessionId)) continue;
@@ -283,7 +288,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [restrictedSearchKey, searchQuery]);
+  }, [projectScopeKey, searchQuery]);
 
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
@@ -381,10 +386,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const searchResultSessions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const loadedIds = new Set(sessions.map((session) => session.id));
-    const remoteRows =
-      query && effectiveSearchScope === 'all'
-        ? remoteSearchSessions.filter((session) => !loadedIds.has(session.id))
-        : [];
+    const remoteRows = query ? remoteSearchSessions.filter((session) => !loadedIds.has(session.id)) : [];
     return [...searchableSessions
       .filter((session) => allowedSearchSessionIds.has(session.id))
       .filter((session) => {
@@ -411,7 +413,6 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   }, [
     allowedSearchSessionIds,
     language,
-    effectiveSearchScope,
     remoteSearchSessions,
     sessions,
     backgroundSessionMap,

@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDetail } from '../../../src/shared/contract/project';
 import { en } from '../../../src/renderer/i18n/en';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 const mocks = vi.hoisted(() => ({
   getProjectDetail: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   isWebMode: vi.fn(),
   isTauriMode: vi.fn(),
   dialogOpen: vi.fn(),
+  language: { value: 'en' as 'en' | 'zh' },
 }));
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
@@ -33,7 +35,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: en, language: 'en' }),
+  useI18n: () => ({ t: mocks.language.value === 'zh' ? zh : en, language: mocks.language.value }),
 }));
 
 vi.mock('../../../src/renderer/utils/platform', () => ({
@@ -78,6 +80,7 @@ function detail(): ProjectDetail {
 
 describe('ProjectSettingsDialog', () => {
   beforeEach(() => {
+    mocks.language.value = 'en';
     vi.clearAllMocks();
     mocks.isWebMode.mockReturnValue(false);
     mocks.isTauriMode.mockReturnValue(true);
@@ -126,18 +129,63 @@ describe('ProjectSettingsDialog', () => {
     expect(access.value).toBe('read_write');
   });
 
-  it('keeps edits open and visible when the atomic save fails', async () => {
-    mocks.updateProject.mockRejectedValueOnce(new Error('revision conflict'));
+  async function failSave(rejection: unknown) {
+    mocks.updateProject.mockRejectedValueOnce(rejection);
+    const onClose = vi.fn();
+    render(<ProjectSettingsDialog projectId="project-1" open onClose={onClose} />);
+    await screen.findByRole('dialog', { name: en.sidebarProject.settings.title }).catch(
+      () => screen.findByRole('dialog', { name: zh.sidebarProject.settings.title }),
+    );
+    const name = screen.getByLabelText(mocks.language.value === 'zh' ? zh.sidebarProject.settings.name : 'Project name') as HTMLInputElement;
+    fireEvent.change(name, { target: { value: 'Neo changed' } });
+    fireEvent.click(screen.getByRole('button', { name: mocks.language.value === 'zh' ? zh.sidebarProject.settings.save : 'Save' }));
+    const alert = await screen.findByRole('alert');
+    return { alert, name, onClose };
+  }
+
+  it.each(['en', 'zh'] as const)('keeps edits open and shows localized plain text when a coded save fails (%s)', async (lang) => {
+    mocks.language.value = lang;
+    const hostMessage = 'Project Source is missing: /gone/old';
+    const { alert, name, onClose } = await failSave(
+      Object.assign(new Error(hostMessage), { code: 'PROJECT_UPDATE_PRIMARY_UNWRITABLE' }),
+    );
+    const copy = (lang === 'zh' ? zh : en).sidebarProject.settings;
+    expect(alert.textContent).toContain(copy.saveErrors.PROJECT_UPDATE_PRIMARY_UNWRITABLE);
+    expect(alert.textContent).not.toContain(hostMessage);
+    expect(alert.textContent).not.toContain('/gone/old');
+    expect(name.value).toBe('Neo changed');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mocks.updateProject).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['en', 'zh'] as const)('unknown save error shows one localized sentence, never the raw message (%s)', async (lang) => {
+    mocks.language.value = lang;
+    const { alert } = await failSave(new Error('revision conflict: raw English'));
+    const copy = (lang === 'zh' ? zh : en).sidebarProject.settings;
+    expect(alert.textContent).toContain(copy.saveErrors.fallback);
+    expect(alert.textContent).not.toContain('raw English');
+  });
+
+  it('every host update error code has zh and en copy, and zh copy has no ASCII internal terms', () => {
+    const codes = [
+      'PROJECT_UPDATE_RUNNING_TASK', 'PROJECT_UPDATE_DIRTY_SOURCE', 'PROJECT_UPDATE_FOLDER_TRUST',
+      'PROJECT_UPDATE_DUPLICATE_PATH', 'PROJECT_UPDATE_UNSAFE_PATH', 'PROJECT_UPDATE_PRIMARY_UNWRITABLE',
+      'PROJECT_UPDATE_REVISION_CONFLICT', 'fallback',
+    ] as const;
+    for (const code of codes) {
+      expect(zh.sidebarProject.settings.saveErrors[code]).toMatch(/[\u4e00-\u9fff]/);
+      expect(zh.sidebarProject.settings.saveErrors[code]).not.toMatch(/Source|Primary|Folder Trust/);
+      expect(en.sidebarProject.settings.saveErrors[code].length).toBeGreaterThan(10);
+    }
+  });
+
+  it('saves with exactly one updateProject call (no separate Source writes before Save)', async () => {
+    mocks.updateProject.mockResolvedValueOnce(detail());
     render(<ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} />);
     await screen.findByRole('dialog', { name: 'Edit project' });
-
-    const name = screen.getByLabelText('Project name') as HTMLInputElement;
-    fireEvent.change(name, { target: { value: 'Neo changed' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect((await screen.findByRole('alert')).textContent).toContain('revision conflict');
-    expect(name.value).toBe('Neo changed');
-    expect(screen.getByRole('dialog', { name: 'Edit project' })).toBeTruthy();
+    await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledTimes(1));
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
   });
 
   it('accepts an explicit Source path in web mode', async () => {
