@@ -295,6 +295,13 @@ export class OrchestratorPermissionIsland {
         },
       });
     }
+    // 前台卡被人答了也要撤回已投递的「需要授权」补提醒：否则 renderer 离开期间的提醒队列
+    // 留着已处理的条目，用户回来看到「有 N 条提醒」点进去什么都没有（11-17 真机）。
+    try {
+      notificationService.retractNeedsInput(requestId);
+    } catch (err) {
+      logger.warn('Answered approval notification retract failed', err);
+    }
     pending.resolve(response, undefined, updatedArgs);
     return 'delivered';
   }
@@ -901,10 +908,16 @@ export class OrchestratorPermissionIsland {
       }
 
       if (fullRequest.sessionId) {
+        // 用户自己的聊天只是页面断线（detached）：卡仍在聊天原位，点通知回该会话（#3585），
+        // 不能再写「到运行记录处理」把人指错地方（11-17 mini 真机）。无人值守/语音照旧。
+        const modes = getPermissionModeManager();
+        const ownChat = this.isDetachedRun()
+          && !modes.isUnattendedSession(fullRequest.sessionId)
+          && !modes.isLiveVoiceSession(fullRequest.sessionId);
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            ...buildApprovalNotification(fullRequest.tool, 'parked'),
+            ...buildApprovalNotification(fullRequest.tool, ownChat ? 'approval' : 'parked'),
             tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。
