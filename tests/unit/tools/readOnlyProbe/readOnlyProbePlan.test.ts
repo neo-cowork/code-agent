@@ -373,6 +373,90 @@ describe('只读探测免卡（ReadOnlyProbePlan）', () => {
     }
   });
 
+  describe('main-session $(wc -c) file loop (canonical tokenizer fails; probe must not widen fail-closed)', () => {
+    const loop = (dir: string, files = 'secret.txt') =>
+      `cd "${dir}" && for f in ${files}; do echo "$f $(wc -c < "$f") bytes"; cat "$f"; done`;
+    function bypassExecutor(): ToolExecutor {
+      const ex = new ToolExecutor({
+        requestPermission: async (req) => { permissionAsks.push(String((req as { details?: { command?: string } }).details?.command ?? 'ask')); return false; },
+        workingDirectory: fx,
+        permissionModeOverride: 'bypassPermissions',
+      });
+      ex.setAuditEnabled(false);
+      return ex;
+    }
+    function approvingExecutor(asks: string[]): ToolExecutor {
+      const ex = new ToolExecutor({
+        requestPermission: async (req) => { asks.push(String((req as { details?: { command?: string } }).details?.command ?? 'ask')); return true; },
+        workingDirectory: fx,
+      });
+      ex.setAuditEnabled(false);
+      return ex;
+    }
+
+    it('workspace-internal loop -> probe runs in-process, zero cards', async () => {
+      await fs.writeFile(path.join(fx, 'note.txt'), 'hello');
+      const command = loop(fx, 'note.txt');
+      const result = await run(command);
+      expect(result.success).toBe(true);
+      expect(result.metadata?.readonlyProbePlan).toBe(true);
+      expect(result.output).toBe(realBash(command));
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('workspace-internal loop run twice -> still no card (repeat guard does not deny a probe success)', async () => {
+      await fs.writeFile(path.join(fx, 'note.txt'), 'hello');
+      const command = loop(fx, 'note.txt');
+      expect((await run(command)).success).toBe(true);
+      const second = await run(command);
+      expect(second.success).toBe(true);
+      expect(second.metadata?.readonlyProbePlan).toBe(true);
+      expect(permissionAsks).toEqual([]);
+    });
+
+    it('outside workspace, strict + user approves -> still denied, file not read', async () => {
+      const asks: string[] = [];
+      const result = await approvingExecutor(asks).execute('Bash', { command: loop(elsewhere) }, { sessionId: SESSION });
+      expect(result.success).toBe(false);
+      expect(String(result.output ?? '')).not.toContain('secret');
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('outside workspace, bypassPermissions -> still denied or carded, file not read', async () => {
+      const result = await bypassExecutor().execute('Bash', { command: loop(elsewhere) }, { sessionId: SESSION });
+      expect(result.success).toBe(false);
+      expect(String(result.output ?? '')).not.toContain('secret');
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    it('workspace .env, bypassPermissions -> still denied', async () => {
+      await fs.writeFile(path.join(fx, '.env'), 'EXAMPLE=fixture');
+      const result = await bypassExecutor().execute('Bash', { command: loop(fx, '.env') }, { sessionId: SESSION });
+      expect(result.success).toBe(false);
+      expect(String(result.output ?? '')).not.toContain('EXAMPLE');
+      expect(probeRows()).toHaveLength(0);
+    });
+
+    const base = () => `cd "${fx}" && for f in x; do echo "$f $(wc -c < "$f") bytes"; cat "$f"; done`;
+    for (const [name, build] of [
+      ['newline smuggling', () => `cd "${fx}" && for f in x; do echo "$f $(wc -c < "$f") bytes"; cat "$f"; done\nrm -f x`],
+      ['done redirect', () => `${base()} > out`],
+      ['done pipe sh', () => `${base()} | sh`],
+      ['done then rm', () => `${base()}; rm -f x`],
+      ['glob', () => `cd "${fx}" && for f in *; do echo "$f $(wc -c < "$f") bytes"; cat "$f"; done`],
+      ['brace expansion', () => `cd "${fx}" && for f in {x,rr79-a.txt}; do echo "$f $(wc -c < "$f") bytes"; cat "$f"; done`],
+    ] as Array<[string, () => string]>) {
+      it(`adversarial ${name} -> never probe-executed`, async () => {
+        const command = build().replace('\\n', '\n');
+        const result = await run(command);
+        expect(probeRows()).toHaveLength(0);
+        expect(result.metadata?.readonlyProbePlan).not.toBe(true);
+        expect(existsSync(path.join(fx, 'out'))).toBe(false);
+        expect(await fs.readFile(path.join(fx, 'x'), 'utf8')).toBe('keep');
+      });
+    }
+  });
+
   /** 真实 shell 的期望输出：Bash 工具的结果格式 = [cwd] + stdout (+ [stderr])。 */
   function realBash(command: string): string {
     const r = spawnSync('/bin/sh', ['-c', command], { cwd: fx, encoding: 'utf8' });

@@ -118,6 +118,7 @@ import { connectorWritePermissionRequest, findConnectorTokenWrite } from './conn
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { tryReadOnlyProbe } from './readOnlyProbeHook';
+import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -917,6 +918,7 @@ export class ToolExecutor {
     // Security: Pre-execution validation for bash commands
     let commandValidation: ValidationResult | undefined;
     let commandAnalysisFailedReason: string | undefined;
+    let deferredRepeatedAnalysisDenial: (() => ToolExecutionResult) | undefined;
     if (isBashToolName(policyToolName) && params.command) {
       commandValidation = validateCommand(params.command as string, undefined, {
         workingDirectory: bashWorkingDirectory,
@@ -967,7 +969,9 @@ export class ToolExecutor {
         const repeated = effectiveSessionId
           ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
           : false;
-        if (repeated) {
+        // 重复的不可拆词命令照旧硬拒；但若它能编译成只读计划，先交给进程内探测，探测没成功再补这次拒绝。
+        const probeMayRescue = repeated && compileReadOnlyProbePlan(params.command as string, { homeDir: nodeOs.homedir(), platform: process.platform }) !== null;
+        const denyRepeatedAnalysis = (): ToolExecutionResult => {
           const hostReason = commandAnalysisRepeatDenialError(executionToolName);
           const error = hostReason.modelText;
           logger.warn('Repeated unanalyzable command denied before permission request', {
@@ -997,7 +1001,9 @@ export class ToolExecutor {
               hostReason,
             },
           };
-        }
+        };
+        if (repeated && !probeMayRescue) return denyRepeatedAnalysis();
+        if (probeMayRescue) deferredRepeatedAnalysisDenial = denyRepeatedAnalysis;
       }
 
       // Warn about high-risk commands but allow them
@@ -1760,11 +1766,12 @@ export class ToolExecutor {
     // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
     // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
+    if (isBashToolName(policyToolName) && params.command && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
-      try {
+      // 命令拆词失败时只允许下方的进程内只读探测（它真执行成功才放行），其余放行路径一律不走。
+      if (!commandAnalysisFailedReason) try {
         const policyDecision = matchEffectiveExecPolicy(cmd, effectiveSessionId);
         if (policyDecision === 'forbidden') {
           recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1783,7 +1790,7 @@ export class ToolExecutor {
       }
 
       // 2. 检查安全命令白名单
-      if (!this.forcePermissionHandler && !isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
+      if (!commandAnalysisFailedReason && !this.forcePermissionHandler && !isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1804,7 +1811,7 @@ export class ToolExecutor {
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
       if (
-        !this.forcePermissionHandler && !isSafeCommand
+        !commandAnalysisFailedReason && !this.forcePermissionHandler && !isSafeCommand
         && !argumentForcesClassification
         && !protectedWriteForcesConfirmation
         && getShellSafetyMode() === 'lenient'
@@ -1817,6 +1824,7 @@ export class ToolExecutor {
         }
       }
     }
+    if (deferredRepeatedAnalysisDenial) return deferredRepeatedAnalysisDenial();
     // N-ROLE-WAKE-OWN-MEMORY-NO-APPROVAL：无人值守醒来写「自己的」角色层记忆的窄
     // 放行（owner 裁定 11-12：发起者就是角色本人，用户可在记忆面板看见并删除）。
     // 判定集中在 roleOwnMemoryAllow.ts，这里只留一个调用点；放行 = 落一条

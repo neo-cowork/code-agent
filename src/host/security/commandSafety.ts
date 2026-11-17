@@ -31,8 +31,6 @@ import {
   type RecursiveRmPathContext,
 } from './recursiveRmPathSafety';
 import { assessEgressPrecheck } from './egressPrecheck';
-import { compileReadOnlyProbePlan } from './readOnlyProbePlan';
-import { homedir } from 'os';
 
 const logger = createLogger('CommandSafety');
 
@@ -484,15 +482,10 @@ export function validateCommand(
 ): ValidationResult {
   const canonical = canonicalizeCommand(command ?? '');
   const normalized = canonical.command;
-  // The generic shell tokenizer cannot represent for-loops. This closed, finite
-  // read-only grammar has its own parser; permissions/path authority are still
-  // checked by GuardFabric and the in-process probe before any execution.
-  const parsedReadLoop = shell === 'posix' && canonical.parsingFailed
-    && compileReadOnlyProbePlan(command ?? '', { homeDir: homedir(), platform: process.platform })?.steps.some((step) => step.cmd.kind === 'file-loop');
   const analysis = {
     canonicalCommand: normalized,
-    parsingFailed: canonical.parsingFailed && !parsedReadLoop,
-    ...(canonical.failureReason && !parsedReadLoop ? { parsingFailureReason: canonical.failureReason } : {}),
+    parsingFailed: canonical.parsingFailed,
+    ...(canonical.failureReason ? { parsingFailureReason: canonical.failureReason } : {}),
   };
   if (!normalized) {
     return { ...analysis, allowed: true, riskLevel: 'safe', securityFlags: [] };
