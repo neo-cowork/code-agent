@@ -228,6 +228,7 @@ export class AgentLoop {
       historyVisibility: config.historyVisibility,
       publishContextHealth: config.publishContextHealth,
       unattendedTurn: config.unattendedTurn,
+      auxiliaryRun: config.auxiliaryRun,
       deniedToolNames: config.deniedToolNames,
       allowedToolNames: config.allowedToolNames,
       foregroundToolFace: config.foregroundToolFace,
