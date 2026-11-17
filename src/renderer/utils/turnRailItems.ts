@@ -7,6 +7,7 @@
 import type { RoleLabels } from '../stores/roleLabelsStore';
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import { extractUserRequest } from '@shared/utils/turnScaffold';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 import { roleEditReceiptZh } from '../i18n/roleEditReceipt';
 import { formatEditRoleUserPrompt } from './formatEditRoleUserPrompt';
 
@@ -66,9 +67,14 @@ export function buildTurnRailItems(
   roleLabels?: RoleLabels,
 ): TurnRailItem[] {
   const projectPrompt = (raw: string | undefined) => (
-    raw ? formatEditRoleUserPrompt(extractUserRequest(raw), editRolePromptTemplate, roleLabels) : raw
+    raw ? formatEditRoleUserPrompt(stripLegacyTeamRecipeSeed(extractUserRequest(raw)), editRolePromptTemplate, roleLabels) : raw
   );
-  return turns.filter((turn) => !turn.standalone).map((turn) => ({
+  // 旧主理人 brief 行展示为空：该轮没有可预览的用户原话，从轨道里去掉（原文非空才算，空 prompt 的语音/附件轮照旧保留）
+  const isLegacySeedTurn = (turn: TraceTurn) => {
+    const raw = getTurnUserNode(turn)?.content;
+    return Boolean(raw) && stripLegacyTeamRecipeSeed(extractUserRequest(raw as string)) === '';
+  };
+  return turns.filter((turn) => !turn.standalone && !isLegacySeedTurn(turn)).map((turn) => ({
     turnId: turn.turnId,
     turnNumber: turn.turnNumber,
     prompt: previewText(projectPrompt(getTurnUserNode(turn)?.content), PROMPT_PREVIEW_MAX),
