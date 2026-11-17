@@ -3243,6 +3243,7 @@ describe('createAgentRouter', () => {
     const sessionEq = vi.fn(async () => ({ error: null }));
     const sessionsTable = {
       upsert: vi.fn(async () => ({ error: null })),
+      select: vi.fn(() => ({ eq: vi.fn(async () => ({ data: [{ title: '云同步问题' }], error: null })) })),
       update: vi.fn(() => ({ eq: sessionEq })),
     };
     const messagesTable = {

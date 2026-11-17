@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { SupabaseAgentBinding } from '../routes/agentRouteTypes';
+import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 
 export async function syncSupabaseSessionRow(
   sb: SupabaseAgentBinding,
@@ -29,6 +30,12 @@ export async function syncSupabaseSessionRow(
       updated_at: Date.now(),
       source_device_id: 'web',
     }, { onConflict: 'id', ignoreDuplicates: true });
+    // 行已存在（如 POST /sessions 降级路径先建的 'New Session'）时 upsert 被跳过：
+    // 仅当云端标题仍是占位才补写首条消息标题；已回写的智能标题 / 手动名不动。
+    const { data } = await sb.supabase.from('sessions').select('title').eq('id', args.sessionId);
+    if (isPlaceholderSessionTitle((data?.[0] as { title?: string } | undefined)?.title)) {
+      await sb.supabase.from('sessions').update({ title: args.title }).eq('id', args.sessionId);
+    }
   }
   await sb.supabase.from('sessions').update({
     model_provider: args.provider,

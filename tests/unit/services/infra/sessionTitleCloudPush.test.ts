@@ -147,6 +147,16 @@ describe('session title cloud write-back', () => {
     expect(cloud.rows.get(SID)).toMatchObject({ user_id: 'user-1', title: TRUNCATED, source_device_id: 'web' });
   });
 
+  it('fills the first-message title when the cloud row was pre-created with a placeholder (no-SessionManager fallback)', async () => {
+    cloud.rows.set(SID, { id: SID, user_id: 'user-1', title: 'New Session' });
+    await syncSupabaseSessionRow(sb, syncArgs);
+    expect(cloudTitle()).toBe(TRUNCATED);
+    // 已回写智能标题后，再调一次不得回滚
+    cloud.rows.get(SID)!.title = SMART;
+    await syncSupabaseSessionRow(sb, syncArgs);
+    expect(cloudTitle()).toBe(SMART);
+  });
+
   it('pushes a manual rename and a second device pull takes it without flipping back', async () => {
     await syncSupabaseSessionRow(sb, syncArgs);
     const manager = await createManager();
