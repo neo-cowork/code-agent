@@ -5,6 +5,8 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { SESSION_SEARCH } from '../../../../shared/constants';
+import type { CrossSessionSearchProjectScope } from '../../../../shared/ipc/types';
+import { pushProjectScopeCondition } from './sessionProjectScope';
 import { TRANSCRIPT_FTS_BODY_COLUMN_INDEX, type TranscriptKind } from '../../../../shared/transcriptFts.sql';
 import { createLogger } from '../../infra/logger';
 import { isFtsSearchDegraded, markFtsTableRepairFailed, probeFtsTable, repairFtsTable, type FtsTableName } from '../database/ftsRepair';
@@ -62,7 +64,7 @@ export interface SessionMessagesFtsSearchOptions {
    * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
    * 不传 = 不过滤（agent 记忆侧语义不变）。
    */
-  activeSessionScope?: { userId: string | null };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
 }
 
 /** session_messages_fts 命中计数选项 */
@@ -78,7 +80,7 @@ export interface SessionMessagesFtsCountOptions {
    * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
    * 不传 = 不过滤（agent 记忆侧语义不变）。
    */
-  activeSessionScope?: { userId: string | null };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
 }
 
 function normalizeFtsQuery(raw: string): string {
@@ -93,14 +95,19 @@ function pushActiveSessionScope(
   conditions: string[],
   params: unknown[],
   sessionColumn: string,
-  scope: { userId: string | null } | undefined,
+  scope: { userId: string | null; projectScope?: CrossSessionSearchProjectScope } | undefined,
 ): void {
   if (!scope) return;
   const owner = scope.userId === null ? 'AND s.user_id IS NULL' : 'AND s.user_id = ?';
+  const ownerParams: unknown[] = scope.userId === null ? [] : [scope.userId];
+  const projectConditions: string[] = [];
+  const projectParams: unknown[] = [];
+  pushProjectScopeCondition(projectConditions, projectParams, scope.projectScope);
+  const project = projectConditions.map((c) => ` AND ${c}`).join('');
   conditions.push(
-    `${sessionColumn} IN (SELECT s.id FROM sessions s WHERE s.is_deleted = 0 AND COALESCE(s.status, '') != 'archived' ${owner})`,
+    `${sessionColumn} IN (SELECT s.id FROM sessions s WHERE s.is_deleted = 0 AND COALESCE(s.status, '') != 'archived' ${owner}${project})`,
   );
-  if (scope.userId !== null) params.push(scope.userId);
+  params.push(...ownerParams, ...projectParams);
 }
 
 /**
