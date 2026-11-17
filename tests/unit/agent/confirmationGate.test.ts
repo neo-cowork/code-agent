@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
   ConfirmationGate,
   getConfirmationGate,
@@ -339,6 +340,41 @@ describe('ConfirmationGate', () => {
       });
       expect(preview?.summary).toBe('派出子代理：整理销售笔记');
       expect(preview?.diff).toBe('任务：整理销售笔记\n权限：只读查看');
+    });
+
+    it.each(['spawn_agent', 'AgentSpawn'])('%s: English parallel copy keeps every task and permission visible', (tool) => {
+      const locale = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue('en');
+      try {
+        const preview = getConfirmationGate().buildPreview(tool, {
+          parallel: true,
+          agents: [
+            { name: 'Sales notes', task: `Read ${WS}/sales.txt`, role: 'explore' },
+            { task: `Write ${WS}/summary.md`, role: 'coder' },
+            { task: ' ', role: 'explore' },
+          ],
+        }, { workspaceRoot: WS });
+        expect(preview).toEqual({
+          type: 'generic', summary: 'Spawn 3 sub-agents',
+          diff: 'Sales notes\nTask: Read ./sales.txt\nPermission: Read-only\n\nWrite ./summary.md\nTask: Write ./summary.md\nPermission: Can modify files and run commands\n\nTask not stated\nTask: Task not stated\nPermission: Read-only',
+        });
+        const tasks = preview?.diff?.split('\n').filter(line => line.startsWith('Task: '));
+        expect(tasks).toHaveLength(3);
+        expect(tasks?.every(line => line.slice('Task: '.length).trim().length > 0)).toBe(true);
+        expect(`${preview?.summary}\n${preview?.diff}`).not.toMatch(/explore|coder|任务|权限/);
+      } finally { locale.mockRestore(); }
+    });
+
+    it('English missing single task remains explicit in summary and details and still warns', () => {
+      const locale = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue('en');
+      const warn = vi.spyOn(console, 'error');
+      try {
+        const preview = getConfirmationGate().buildPreview('spawn_agent', { parallel: true, agents: [] });
+        expect(preview?.summary).toContain('Task not stated');
+        expect(preview?.diff).toBe('Task: Task not stated\nPermission: Can modify files and run commands');
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('WARN [ConfirmationGate] Spawn approval task not stated'), { field: 'params.task' },
+        );
+      } finally { warn.mockRestore(); locale.mockRestore(); }
     });
 
     it('should return generic preview with up to 3 redacted string param diff lines for default tools', () => {
