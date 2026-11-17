@@ -68,3 +68,13 @@ describe('MessageContent protocol residue filtering', () => {
     expect(html).toContain('请保留这段用户原文');
   });
 });
+
+describe('MessageContent lone </think> (orphan closer)', () => {
+  it('drops the reasoning before a lone closer and the tag, keeps the answer', () => {
+    const content = '先分析一下合同条款再整理。</think>合同摘要：甲方按期付款。';
+    const html = renderToStaticMarkup(<MessageContent content={content} isUser={false} />);
+    expect(html).toContain('合同摘要：甲方按期付款。');
+    expect(html).not.toContain('先分析一下合同条款');
+    expect(html).not.toContain('think');
+  });
+});
