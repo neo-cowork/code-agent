@@ -71,3 +71,16 @@ export function stripModelMarkup(text: string): string {
   if (!text) return text;
   return stripLongcatMarkup(stripThinkMarkup(text));
 }
+
+/**
+ * 后台任务结果卡与「有没有可用结论」共用的剥除。
+ * 先剥 think / LongCat，再剥 Hermes/Qwen 式 <tool_call>（闭合块、未闭合到串尾、残留闭标签）。
+ * 主链路转录不走这里：讲解性的 <tool_call> 字面量要留在正文里。
+ */
+export function stripCardToolCallMarkup(text: string): string {
+  const cleaned = stripModelMarkup(text)
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<tool_call>[\s\S]*$/g, '')
+    .replace(/<\/tool_call>/g, '');
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+}
