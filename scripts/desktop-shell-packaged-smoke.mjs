@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /* global AbortController, clearTimeout, fetch, setTimeout, URL */
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { launchApp, reclaimLaunchedApp } from './lib/desktop-shell-app-launch.mjs';
 import {
   assertNoSensitiveDesktopShellDiagnostics,
   classifyDesktopShellDiagnostics,
@@ -77,24 +78,6 @@ function defaultAppPath() {
     path.resolve('src-tauri', 'target', 'release', 'bundle', 'macos', 'Agent Neo Dev.app'),
   ];
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
-}
-
-function findMacosExecutable(appPath) {
-  const macosDir = path.join(appPath, 'Contents', 'MacOS');
-  const entries = fs.readdirSync(macosDir)
-    .map((entry) => path.join(macosDir, entry))
-    .filter((entry) => {
-      try {
-        const stat = fs.statSync(entry);
-        return stat.isFile() && (stat.mode & 0o111) !== 0;
-      } catch {
-        return false;
-      }
-    });
-  if (entries.length === 0) {
-    throw new Error(`No executable found in ${macosDir}`);
-  }
-  return entries[0];
 }
 
 function readBundleIdentifier(appPath) {
@@ -846,39 +829,6 @@ function usage() {
   ].join('\n');
 }
 
-function launchApp(appPath, dataDir, port) {
-  if (process.platform !== 'darwin') {
-    throw new Error('desktop-shell packaged smoke can only launch a .app on macOS');
-  }
-  if (!fs.existsSync(appPath)) {
-    throw new Error(`Packaged app not found: ${appPath}`);
-  }
-  const executable = findMacosExecutable(appPath);
-  const child = spawn(executable, [], {
-    cwd: path.join(appPath, 'Contents', 'Resources'),
-    env: {
-      ...process.env,
-      CODE_AGENT_DATA_DIR: dataDir,
-      CODE_AGENT_WEB_PORT: String(port),
-      WEB_PORT: String(port),
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let output = '';
-  child.stdout.on('data', (chunk) => {
-    output += chunk.toString();
-    output = output.slice(-10_000);
-  });
-  child.stderr.on('data', (chunk) => {
-    output += chunk.toString();
-    output = output.slice(-10_000);
-  });
-  child.on('error', (error) => {
-    output += `\n[spawn error] ${error.message}`;
-  });
-  return { child, executable, getOutput: () => output };
-}
-
 function printHuman(result) {
   process.stdout.write(`[desktop-shell-smoke] ${result.ok ? 'ok' : 'failed'} ${JSON.stringify(result.summary)}\n`);
   for (const failure of result.failures) {
@@ -928,11 +878,8 @@ async function main() {
         for (const warning of companion.warnings) result.warnings.push(warning);
         if (!companion.ok) result.ok = false;
       }
-      if (launched && launched.getOutput() && result.failures.length > 0) {
-        result.launch = {
-          executable: launched.executable,
-          outputSample: launched.getOutput().slice(-4000),
-        };
+      if (launched && result.failures.length > 0) {
+        result.launch = launched.launch;
         assertNoSensitiveDesktopShellDiagnostics(result);
       }
     }
@@ -973,18 +920,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     if (launched && !options.keepRunning) {
-      try {
-        launched.child.kill('SIGTERM');
-      } catch {
-        // best effort
-      }
-      setTimeout(() => {
-        try {
-          if (!launched.child.killed) launched.child.kill('SIGKILL');
-        } catch {
-          // best effort
-        }
-      }, 1000).unref();
+      await reclaimLaunchedApp(launched);
     }
   }
 }
