@@ -1316,6 +1316,25 @@ export class ToolExecutor {
       permissionAskResults: new WeakMap(),
       requestPermission: async (request) => {
         if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
+        // 工具体内的开头授权（shadowAdapter 标 grantEligible）先消费已记住的工具级授权：
+        // 此前这条路直接弹卡，点了「本次任务内允许」下一次照问（11-17 真机：读日程连弹三张）。
+        if (
+          request.details?.grantEligible === true && !this.forcePermissionHandler
+          && request.forceConfirm !== true && !request.reasonCode
+        ) {
+          const grantStartedAt = Date.now();
+          const hit = resolvePreAskGrant({
+            toolName: request.tool, sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId,
+            runId: effectiveRunId, turnOrigin: options.turnOrigin,
+            standingGrantTarget: null, computerApp: null, blocked: false,
+          });
+          if (hit) {
+            const ask = { approved: true, approvalSource: 'session-allowlist' as const, denialSource: undefined };
+            context.permissionAskResults?.set(request, ask);
+            if (!request.ledgerRecordedByChild) recordInToolPermissionAsk(request, ask, grantStartedAt, effectiveSessionId, this.ledgerOrigin, 0);
+            return true;
+          }
+        }
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
           const askStartedAt = Date.now();
