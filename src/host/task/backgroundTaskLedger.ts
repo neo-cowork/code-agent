@@ -412,6 +412,7 @@ function cloneProgress(progress?: TaskProgress): TaskProgress | undefined {
     ? {
       ...progress,
       lastToolStep: progress.lastToolStep ? { ...progress.lastToolStep } : undefined,
+      bashSteps: progress.bashSteps ? progress.bashSteps.map((step) => ({ ...step })) : undefined,
       lastToolFailure: progress.lastToolFailure ? { ...progress.lastToolFailure } : undefined,
     }
     : undefined;

@@ -271,7 +271,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
     expect(screen.getByTestId('cron-run-status-text').textContent).toContain('等你批准');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行一条命令');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行命令');
     expect(screen.queryByTestId('cron-run-command')).toBeNull();
     const toggle = screen.getByTestId('cron-run-command-toggle');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -309,7 +309,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
     const text = screen.getByTestId('cron-run-status-text').textContent ?? '';
-    expect(text).toBe('Needs your approval: Run a command');
+    expect(text).toBe('Needs your approval: Run command');
     // 全角冒号 / CJK 一律不许出现在 en 状态行
     expect(text).not.toMatch(/[\u3000-\u303f\uff00-\uffef]|[\u4e00-\u9fff]/);
   });
@@ -329,7 +329,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     render(<CronRunSessionStatusBar sessionId="session-1" />);
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行一条命令');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行命令');
   });
 
   // review r6：AGENT_PERMISSION_RESPONSE 的注册类型是 Promise<void>，但真实写点各不相同
@@ -621,7 +621,7 @@ it('reveals the identical complete multi-line shell preview without trimming or 
   }]);
   render(<CronRunSessionStatusBar sessionId="session-1" />);
   const toggle = await screen.findByTestId('cron-run-command-toggle');
-  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行一条命令');
+  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行命令');
   expect(screen.queryByTestId('cron-run-command')).toBeNull();
   fireEvent.click(toggle);
   expect(screen.getByTestId('cron-run-command').textContent).toBe(command);

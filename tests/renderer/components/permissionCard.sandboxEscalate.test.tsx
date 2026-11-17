@@ -261,7 +261,7 @@ describe('other approval cards stay word-for-word', () => {
       details: { command: 'echo hi' },
     }));
     expect(html).toContain('data-view-mode="expanded"');
-    expect(html).toContain('执行命令');
+    expect(html).toContain('运行命令');
     expect(html).toContain('允许执行这条命令？');
     expect(html).toContain(GENERIC_CONSEQUENCE);
     expect(html).toContain('>echo hi<');
@@ -283,7 +283,7 @@ describe('other approval cards stay word-for-word', () => {
       details: { command: 'rm -rf /tmp/x' },
     }));
     expect(html).toContain('data-view-mode="expanded"');
-    expect(html).toContain('执行命令');
+    expect(html).toContain('运行命令');
     expect(html).toContain('危险');
     expect(html).toContain('允许执行这条命令？');
     // N-FIX-APPROVAL-CARD-DELETE-COUNT-UNDERSTATED：无宿主盘点的递归目标数不出确切
