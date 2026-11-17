@@ -250,7 +250,7 @@ afterEach(() => {
 });
 
 describe('ProjectSpacePage 列表视图', () => {
-  it('渲染项目行：状态 chip + 活跃 topic 徽标', async () => {
+  it('渲染项目行：状态 chip + 活跃工作卡徽标', async () => {
     render(<ProjectSpacePage onClose={() => undefined} />);
     await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
     expect(screen.getByTestId(`project-space-status-${PROJECT_ID}`).textContent).toBe(ps.statusActive);
