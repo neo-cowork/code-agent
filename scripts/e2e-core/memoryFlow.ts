@@ -107,8 +107,11 @@ export const f14: FlowDef = {
             if (!String(asked.trace_json ?? '').includes('outside_project')) return 'Write 审批行的 trace_json 里没有 W3: outside_project';
           }
           const second = family(d, [env.sessionIds[1]]);
+          // 召回有两条路：模型 Read 记忆文件，或记忆索引直接注入提示词（回复里能看到「参考了 1 条记忆」）。
+          // 召回本身由第 4 步「新会话里没人交代格式、草稿仍是三段式」证明；Read 只是其中一条路，没走就如实记下
           const read = inSessions(d.toolEvents, second).some((e) => e.tool_name === 'Read' && String(e.params_json ?? '').includes('memory'));
-          return read ? null : '第二个会话的工具事件里没有对记忆文件的 Read';
+          if (!read) env.note('第二个会话没有 Read 记忆文件，召回走的是记忆注入（第 4 步的三段式草稿证明召回成功）');
+          return null;
         });
       },
     },

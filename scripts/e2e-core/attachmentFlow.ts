@@ -34,7 +34,7 @@ export const f10: FlowDef = {
       run: async (env) => {
         const { data } = await env.readDb();
         const ids = family(data, env.sessionIds);
-        const reply = inSessions(data.messages, ids).filter((m) => m.role === 'assistant').map((m) => String(m.content ?? '')).join('\n');
+        const reply = inSessions(data.messages, ids).filter((m) => m.role === 'assistant').map((m) => String(m.content ?? '')).join('\n').replace(/\s+/g, ' ').trim();
         if (/审批请求超时|超时了，重新发起/.test(reply)) throw new Error(`回复是审批超时：${reply.slice(0, 100)}`);
         const read = inSessions(data.toolEvents, ids).some((e) => e.phase === 'complete' && e.status === 'success' && READ_TOOLS.includes(String(e.tool_name)));
         if (!read && !env.scratch.clicks) env.note('模型没有去读表，只回了反问/说明（模型分支）');
