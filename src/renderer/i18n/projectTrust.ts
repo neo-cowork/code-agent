@@ -34,6 +34,21 @@ export const projectTrustTurnCardZh = {
   },
   projectTrustConfirm: {
     button: '确认并重发',
+    reselect: '重新选择文件夹',
+    folder: '此文件夹',
+    reasons: {
+      source_missing: '找不到项目文件夹“{name}”。它可能已被移动或删除。',
+      identity_changed: '项目文件夹“{name}”已被替换，请重新选择并确认。',
+      not_trusted: '此项目文件夹尚未获得信任，请在项目设置中确认。',
+      folder_trust_blocked: '此文件夹已被禁止访问，请在文件夹信任设置中检查。',
+      folder_trust_review_required: '此文件夹有需要你审阅的配置，请先完成文件夹信任审阅。',
+      folder_trust_record_failed: '未能保存文件夹信任记录，请重新确认。',
+      update_rejected: '项目设置已发生变化，请检查最新设置后重新确认。',
+      verification_failed: '未能核实项目文件夹，请检查文件夹后重新确认。',
+      project_not_found: '此项目已不存在，请选择其他项目。',
+      nothing_to_confirm: '此项目没有需要确认的文件夹，请检查项目设置。',
+    },
+
     failed: 'Neo 暂时没能完成这次请求，请稍后再试。',
   },
 };
@@ -47,6 +62,21 @@ export const projectTrustTurnCardEn = {
   },
   projectTrustConfirm: {
     button: 'Confirm and resend',
+    reselect: 'Re-select folder',
+    folder: 'this folder',
+    reasons: {
+      source_missing: 'Cannot find project folder “{name}”. It may have been moved or deleted.',
+      identity_changed: 'Project folder “{name}” has been replaced. Re-select and confirm it.',
+      not_trusted: 'This project folder is not trusted. Confirm it in project settings.',
+      folder_trust_blocked: 'Access to this folder has been blocked. Check folder trust settings.',
+      folder_trust_review_required: 'This folder has settings that need your review. Complete the folder trust review first.',
+      folder_trust_record_failed: 'Could not save the folder trust decision. Please confirm it again.',
+      update_rejected: 'Project settings have changed. Check the latest settings and confirm again.',
+      verification_failed: 'Could not verify the project folder. Check the folder and confirm again.',
+      project_not_found: 'This project no longer exists. Choose another project.',
+      nothing_to_confirm: 'This project has no folders to confirm. Check project settings.',
+    },
+
     failed: 'Neo could not complete the request; please try again in a moment.',
   },
 };
