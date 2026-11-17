@@ -328,6 +328,129 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     expect(screen.getByText('选哪个方案？')).toBeTruthy();
   });
 
+  it('数字键 2 选中第二项，主按钮聚焦后 Enter 提交', async () => {
+    const request = makeRequest();
+    useSessionStore.getState().addPendingUserQuestion(request);
+    render(<UserQuestionCard request={request} />);
+
+    expect(screen.getByTestId('user-question-key-hint').textContent).toBe(zh.userQuestion.keyboardHint(3));
+    expect(screen.getByTestId('user-question-digit-2').textContent).toBe('2');
+
+    fireEvent.keyDown(document, { key: '2' });
+    expect(screen.getByRole('button', { name: /B/ }).className).toContain('ring-1');
+    expect(screen.getByRole('button', { name: /A/ }).className).not.toContain('ring-1');
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: zh.userQuestion.submit }));
+    });
+    fireEvent.keyDown(document, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.USER_QUESTION_RESPONSE, {
+        requestId: 'q-1',
+        answers: { 方案: 'B' },
+      });
+    });
+  });
+
+  it('焦点在「其他」输入框时按 1-N 不改选中', () => {
+    render(<UserQuestionCard request={makeRequest()} />);
+
+    fireEvent.click(screen.getByTestId('user-question-other-row'));
+    const input = screen.getByPlaceholderText(zh.userQuestion.otherPlaceholder);
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    for (const key of ['1', '2', '3']) {
+      fireEvent.keyDown(input, { key });
+    }
+
+    expect(screen.getByRole('button', { name: /A/ }).className).not.toContain('ring-1');
+    expect(screen.getByRole('button', { name: /B/ }).className).not.toContain('ring-1');
+    expect(screen.getByTestId('user-question-other-row').className).toContain('ring-1');
+    expect(input).toBe(document.activeElement);
+  });
+
+  it('多选时数字键切换同一项，输入法组合期间不选中', () => {
+    const request = makeRequest({
+      questions: [{
+        question: '需要哪些能力？',
+        header: '能力',
+        multiSelect: true,
+        options: [
+          { label: 'A', description: 'a' },
+          { label: 'B', description: 'b' },
+        ],
+      }],
+    });
+    render(<UserQuestionCard request={request} />);
+
+    fireEvent.keyDown(document, { key: '1' });
+    expect(screen.getByRole('button', { name: /A/ }).className).toContain('ring-1');
+    fireEvent.keyDown(document, { key: '1' });
+    expect(screen.getByRole('button', { name: /A/ }).className).not.toContain('ring-1');
+
+    const composing = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
+    Object.defineProperty(composing, 'isComposing', { get: () => true });
+    window.dispatchEvent(composing);
+    expect(screen.getByRole('button', { name: /B/ }).className).not.toContain('ring-1');
+  });
+
+  it('↑↓ 在选项行与「其他」之间移动焦点且到头停止，选项上的 Enter 不提交', () => {
+    render(<UserQuestionCard request={makeRequest()} />);
+    const optionA = screen.getByRole('button', { name: /A/ });
+    const optionB = screen.getByRole('button', { name: /B/ });
+    const other = screen.getByTestId('user-question-other-row');
+
+    optionA.focus();
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(optionA.className).not.toContain('ring-1');
+    expect(invokeMock).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(optionB);
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(other);
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(other);
+
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(optionB);
+    optionA.focus();
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(optionA);
+  });
+
+  it('「其他」只在下一个数字不超过 9 时占用数字键', () => {
+    const eight = Array.from({ length: 8 }, (_, index) => ({
+      label: `八项${index + 1}`,
+      description: `说明${index + 1}`,
+    }));
+    const eightView = render(<UserQuestionCard request={makeRequest({
+      questions: [{ question: '选哪个？', header: '选项', options: eight }],
+    })} />);
+
+    expect(screen.getByTestId('user-question-digit-9').textContent).toBe('9');
+    fireEvent.keyDown(document, { key: '9' });
+    expect(screen.getByTestId('user-question-other-row').className).toContain('ring-1');
+    expect(screen.getByRole('button', { name: /八项8/ }).className).not.toContain('ring-1');
+
+    eightView.unmount();
+    const nine = Array.from({ length: 9 }, (_, index) => ({
+      label: `九项${index + 1}`,
+      description: `说明${index + 1}`,
+    }));
+    render(<UserQuestionCard request={makeRequest({
+      questions: [{ question: '选哪个？', header: '选项', options: nine }],
+    })} />);
+
+    expect(screen.queryByTestId('user-question-digit-10')).toBeNull();
+    expect(screen.getByTestId('user-question-key-hint').textContent).toBe(zh.userQuestion.keyboardHint(9));
+    fireEvent.keyDown(document, { key: '9' });
+    expect(screen.getByRole('button', { name: /九项9/ }).className).toContain('ring-1');
+    expect(screen.getByTestId('user-question-other-row').className).not.toContain('ring-1');
+  });
+
   it('IPC 失败不清队列（卡片留在原地可重试）', async () => {
     invokeMock.mockRejectedValue(new Error('ipc down'));
     const request = makeRequest();
