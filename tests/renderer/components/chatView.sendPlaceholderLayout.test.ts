@@ -20,4 +20,11 @@ describe('发送中占位行不与消息区重叠', () => {
     expect(footerAt).toBeGreaterThan(messagesAreaAt);
     expect(placeholderAt).toBeGreaterThan(footerAt);
   });
+
+  it('每次点发送都把发送时刻交给消息列表，列表据此立刻落底（N-FIX-CHAT-BOTTOM-CARD-HIDDEN-UNDER-COMPOSER）', () => {
+    const viewAt = source.indexOf('<TurnBasedTraceView');
+    expect(viewAt).toBeGreaterThan(-1);
+    const viewTag = source.slice(viewAt, source.indexOf('/>', viewAt));
+    expect(viewTag).toMatch(/userSendAt=\{pendingAssistantFeedback\?\.startedAt \?\? null\}/);
+  });
 });

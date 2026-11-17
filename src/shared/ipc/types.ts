@@ -242,6 +242,8 @@ export interface ConnectorStatusSummary {
   checkedAt?: number;
   /** 授权通过但账号/日历/列表为空（mail/calendar/reminders），见 host ConnectorStatus 同名字段 */
   noAccessibleItems?: boolean;
+  /** failed 时的结构化原因：not_authorized = macOS 自动化授权被拒 */
+  errorCode?: 'not_authorized';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
@@ -395,11 +397,19 @@ export interface AxialCodingEntryIpc {
 // Cross-session search types (跨会话搜索)
 // ----------------------------------------------------------------------------
 
+/** 「本项目」范围描述符：主机在 SQL 层按它过滤整库（语义同侧栏 getProjectSearchKey）。 */
+export interface CrossSessionSearchProjectScope {
+  projectId?: string | null;
+  workingDirectory?: string | null;
+}
+
 export interface CrossSessionSearchOptions {
   /** Maximum results to return */
   limit?: number;
   /** Search only in specific sessions */
   sessionIds?: string[];
+  /** Search only sessions of one project (whole history, filtered in SQL before LIMIT) */
+  projectScope?: CrossSessionSearchProjectScope;
   /** Filter by message role */
   role?: 'user' | 'assistant' | 'system';
   /** Case-sensitive search */

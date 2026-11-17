@@ -3,7 +3,13 @@
 // ============================================================================
 
 import type { ReactNode } from 'react';
-import type { FileTargetKind, PermissionBoundaryRef, PermissionDecision, PermissionRequestReason } from '@shared/contract';
+import type {
+  FileTargetKind,
+  PermissionBoundaryRef,
+  PermissionDecision,
+  PermissionRequest as ContractPermissionRequest,
+  PermissionRequestReason,
+} from '@shared/contract';
 
 // 权限类型
 export type PermissionType =
@@ -14,7 +20,9 @@ export type PermissionType =
   | 'command'
   | 'dangerous_command'
   | 'network'
-  | 'mcp';
+  | 'mcp'
+  /** request_directory：申请访问工作区外的文件夹（与 shared/contract 同口径）。 */
+  | 'directory_access';
 
 // 审批级别
 export type ApprovalLevel =
@@ -67,6 +75,13 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** calendar 读取卡的时间窗与日历名（host 原参数透传，缺省走默认窗口）。 */
+  from_ms?: unknown;
+  to_ms?: unknown;
+  calendar?: unknown;
+  /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
+  requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
+  access?: string;
   // E2: 确认门控预览
   preview?: {
     type: 'diff' | 'command' | 'network' | 'generic';
@@ -122,7 +137,6 @@ export interface PermissionRequest {
 // 权限配置
 export interface PermissionConfig {
   icon: ReactNode;
-  title: string;
   color: string;
   bgColor: string;
   borderColor: string;

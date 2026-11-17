@@ -12,21 +12,28 @@ import type {
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
 import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
+import { getDelegateSessionPreviewMessages } from '../../shared/i18n/delegateSessionPreview';
+import { getSpawnAgentPreviewMessages } from '../../shared/i18n/spawnAgentPreview';
+import { buildMemoryDraftPreview } from './memoryDraftPreview';
+import { getHostUiLocale } from '../config/hostUiLocale';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
 import { isBashToolName } from '../tools/toolNames';
 import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 import { resolveAgent } from './agentRegistry';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('ConfirmationGate');
 
 // 子代理审批：角色是否带写/执行能力，按角色真实工具表判断；未知角色按“有写权限”展示（宁多勿少）。
 const SPAWN_WRITE_TOOL_PATTERN = /^(bash|write|edit|multiedit|append|notebookedit|write_file|edit_file|append_file)$/i;
 
-function describeSpawnPermission(role: unknown): string {
+function describeSpawnPermission(role: unknown, messages: ReturnType<typeof getSpawnAgentPreviewMessages>): string {
   const roleId = typeof role === 'string' ? role.trim() : '';
   const agent = roleId ? resolveAgent(roleId) : undefined;
   const readOnly = agent?.readonly === true
     && !(agent.tools ?? []).some(tool => SPAWN_WRITE_TOOL_PATTERN.test(tool));
-  return readOnly ? '只读查看' : '可修改文件、运行命令';
+  return readOnly ? messages.readOnlyPermission : messages.writePermission;
 }
 
 // 工作区内的绝对路径显示为相对路径；工作区外的路径原样保留（不得隐藏真实目标）。
@@ -253,6 +260,7 @@ export class ConfirmationGate {
         pushDetail(details, 'Start', formatTimestamp(params.start_ms));
         pushDetail(details, 'End', formatTimestamp(params.end_ms));
         pushDetail(details, 'Location', normalizeString(params.location));
+        pushDetail(details, 'Notes', normalizeString(params.notes));
         return {
           type: 'generic',
           summary,
@@ -287,33 +295,61 @@ export class ConfirmationGate {
       case 'delegate_session': {
         const toUserText = (text: string) =>
           redactCommandSecrets(relativizeWorkspacePaths(text, options.workspaceRoot)).slice(0, 200);
+        const messages = getDelegateSessionPreviewMessages(getHostUiLocale());
         const title = toUserText(normalizeString(options.delegationTargetTitle));
-        const target = title ? `会话「${title}」` : '另一个会话';
+        const target = title ? messages.target(title) : messages.fallbackTarget;
         let summary: string;
         switch (params.action) {
-          case 'delegate_existing': summary = `把这句话转给${target}`; break;
-          case 'create_new': summary = '新建一个会话来处理这句话'; break;
-          case 'correct': summary = `更正转给${target}的任务`; break;
-          case 'stop': summary = `停止转给${target}的任务`; break;
-          case 'resume': summary = `继续转给${target}的任务`; break;
-          default: summary = `更新转给${target}的任务`;
+          case 'delegate_existing': summary = messages.delegateExisting(target); break;
+          case 'create_new': summary = messages.createNew; break;
+          case 'correct': summary = messages.correct(target); break;
+          case 'stop': summary = messages.stop(target); break;
+          case 'resume': summary = messages.resume(target); break;
+          default: summary = messages.update(target);
         }
         const text = toUserText(normalizeString(params.text));
         return {
           type: 'generic', summary,
-          ...(text ? { diff: `内容：${text}` } : {}),
+          ...(text ? { diff: messages.detail(text) } : {}),
         };
+      }
+
+      case 'ProposeProjectMemory': {
+        const content = redactCommandSecrets(
+          relativizeWorkspacePaths(normalizeString(params.content), options.workspaceRoot),
+        );
+        return { type: 'generic', ...buildMemoryDraftPreview(params, content, getHostUiLocale()) };
       }
 
       case 'spawn_agent':
       case 'AgentSpawn': {
+        const messages = getSpawnAgentPreviewMessages(getHostUiLocale());
         const toUserText = (text: string) =>
           redactCommandSecrets(relativizeWorkspacePaths(text, options.workspaceRoot)).slice(0, 200);
-        const label = toUserText(resolveSubagentUserLabel(params));
+        const taskText = (task: unknown, field: string) => {
+          const text = toUserText(normalizeString(task));
+          if (text) return text;
+          logger.warn('Spawn approval task not stated', { field });
+          return messages.unspecifiedTask;
+        };
+        if (params.parallel === true && Array.isArray(params.agents) && params.agents.length > 0) {
+          const blocks = params.agents.map((agent: { name?: unknown; task?: unknown; role?: unknown }, index) => {
+            const task = taskText(agent.task, `params.agents[${index}].task`);
+            const label = toUserText(resolveSubagentUserLabel({ name: agent.name, task: agent.task })) || task;
+            return [label, messages.taskLine(task), messages.permissionLine(describeSpawnPermission(agent.role, messages))].join('\n');
+          });
+          return {
+            type: 'generic',
+            summary: messages.parallelSummary(params.agents.length),
+            diff: blocks.join('\n\n'),
+          };
+        }
+        const task = taskText(params.task, 'params.task');
+        const label = toUserText(resolveSubagentUserLabel(params)) || task;
         // 审批必须独立于名字披露真实任务与权限，且不打印内部角色 id。
         const details = [
-          `任务：${toUserText(normalizeString(params.task))}`,
-          `权限：${describeSpawnPermission(params.role)}`,
+          messages.taskLine(task),
+          messages.permissionLine(describeSpawnPermission(params.role, messages)),
         ];
         return {
           type: 'generic',

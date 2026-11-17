@@ -10,6 +10,7 @@
 // import 任何 agent/* 或 ipc/*，确保不引入新循环。
 // ============================================================================
 
+import { stripWorkdirPrefix } from './workdirPrefix';
 import { randomUUID } from 'crypto';
 import type {
   SwarmEvent,
@@ -120,7 +121,7 @@ export class SwarmEventEmitter {
           role: agent.role,
           status: 'pending',
           iterations: 0,
-          dispatchedTask: agent.dispatchedTask,
+          dispatchedTask: stripWorkdirPrefix(agent.dispatchedTask),
         },
       },
     });
@@ -160,7 +161,7 @@ export class SwarmEventEmitter {
     });
   }
 
-  agentCompleted(scope: SwarmRunScope, agentId: string, output?: string): void {
+  agentCompleted(scope: SwarmRunScope, agentId: string, output?: string, filesChanged?: string[]): void {
     this.publish(scope, {
       type: 'swarm:agent:completed',
       timestamp: Date.now(),
@@ -175,6 +176,7 @@ export class SwarmEventEmitter {
           endTime: Date.now(),
           lastReport: output?.slice(0, 100),
           finalOutput: output,
+          ...(filesChanged && filesChanged.length > 0 ? { filesChanged } : {}),
         },
       },
     });

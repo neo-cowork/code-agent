@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -8,7 +8,8 @@ import { describeLastToolFailure, describeLastToolStep, resolveAgentActivityStep
 import { agentFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { openExternalLink } from '../../../../../utils/platform';
 import { useMemberViewStore } from '../../../../../stores/memberViewStore';
-import { neoUIActionRouter } from '../../../../../services/neoUIActionRouter';
+import { useMessageActionStore } from '../../../../../stores/messageActionStore';
+import { useSessionTurnActive } from '../../../../../hooks/useSessionTurnActive';
 import type { DelegationPresentation } from './delegationPresentation';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
@@ -19,7 +20,7 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
   const [prefix, suffix] = template.split('{name}');
   const headline = template.replace('{name}', presentation.title);
   return (
-    <div className="min-w-0 flex-1 truncate text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
+    <div className="min-w-0 flex-1 truncate font-sans text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
       {prefix && <span className="text-zinc-500">{prefix}</span>}
       <span className="font-semibold" title={presentation.title}>{presentation.title}</span>
       {suffix && <span className="text-zinc-500">{suffix}</span>}
@@ -35,7 +36,7 @@ function useTargetSessionAvailable(targetSessionId: string | undefined): boolean
   return Boolean(targetSessionId) && (listed || hasOlder || !settled);
 }
 
-export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
+export function DelegationReceipt({ presentation, superseded = false }: { presentation: DelegationPresentation; superseded?: boolean }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   // 审批未决时活动行不得谎报完成态（N-APPROVAL-PENDING-STATUS-COPY）：连接器写
@@ -50,6 +51,14 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   const toolFailure = presentation.state === 'working' || presentation.state === 'cancelled'
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
+
+  if (superseded && presentation.state === 'failed') {
+    return (
+      <div className="ml-6 mt-0.5 text-xs text-zinc-500" data-testid="delegation-failure-superseded">
+        {t.delegationFailedActions.superseded}
+      </div>
+    );
+  }
 
   if (presentation.state === 'working') {
     const status = resolveAgentActivityStepStatus({
@@ -121,11 +130,28 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
   );
 }
 
-/** 失败回执的两个出口：看成员详情（同成员条 chip 的视图）、把重做句放进输入框（不自动发送）。 */
+/** 失败回执的两个出口：看成员详情（同成员条 chip 的视图）、一键把重做句作为普通用户消息发出。 */
 function DelegationFailedActions({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const text = t.delegationFailedActions;
   const { memberId } = presentation;
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  // 后台任务回执带归属会话；agentTree 节点回执没有，它只会渲染在当前会话的聊天里。
+  const sessionId = presentation.sessionId ?? currentSessionId;
+  const active = useSessionTurnActive(sessionId);
+  const [sent, setSent] = useState(false);
+  const task = (presentation.retryTitle ?? presentation.title).trim();
+  const retryKey = memberId ?? presentation.activityIds[0];
+  const wrongSession = !currentSessionId || sessionId !== currentSessionId;
+  const disabled = sent || active || wrongSession || !task;
+  const retry = () => {
+    if (disabled) return;
+    setSent(true);
+    void useMessageActionStore.getState().sendPrompt(text.retryDraft.replace('{task}', task), {
+      // 同一张回执的重复点击共用一个幂等 id。
+      clientMessageId: `delegation-retry-${retryKey ?? task}`,
+    });
+  };
   return (
     <div className="flex items-center gap-1.5" data-testid="delegation-failed-actions">
       {memberId && (
@@ -142,7 +168,9 @@ function DelegationFailedActions({ presentation }: { presentation: DelegationPre
         variant="ghost"
         size="sm"
         data-testid="delegation-retry"
-        onClick={() => neoUIActionRouter.fillComposer(text.retryDraft.replace('{task}', presentation.retryTitle ?? presentation.title))}
+        disabled={disabled}
+        title={disabled && !sent ? text.retryBusy : undefined}
+        onClick={retry}
       >
         {text.retry}
       </Button>

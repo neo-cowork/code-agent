@@ -254,6 +254,8 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
     expect(note.role).toBe('system');
     expect(note.content).toContain('后台任务「周报」已结束');
     expect(note.content).toContain('自动汇报这一步没能完成');
+    expect(note.content).toContain('恢复原账号登录');
+    expect((note.metadata as { backgroundWakeFailed?: { reason?: string } }).backgroundWakeFailed?.reason).toBe('owner_missing');
     expect((note.metadata as { backgroundWakeFailed?: { taskId?: string } }).backgroundWakeFailed?.taskId).toBe(taskId);
 
     await vi.advanceTimersByTimeAsync(BACKGROUND_WAKE_OWNER_RETRY_INTERVAL_MS * 2);

@@ -147,7 +147,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useImeCompositionRef();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { keybindings, platform } = useKeybindingsSettings();
   const getShortcutLabel = useMemo(() => (actionId: KeybindingActionId): string | undefined => {
     const accelerator = getKeybindingAccelerator(keybindings, actionId, platform);
@@ -733,7 +733,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         action: () => {},
       }));
 
-    const fromAgents: SlashCommand[] = createAgentCandidates(agents, sc.picker).map((candidate) => ({
+    const fromAgents: SlashCommand[] = createAgentCandidates(agents, sc.picker, language).map((candidate) => ({
       ...candidate,
       icon: <Bot className="w-4 h-4" />,
       action: () => {},
@@ -762,6 +762,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     return [...guiOnlyCommands, ...fromRegistry, ...fromPrompts, ...fromAgents, ...fromSkills, ...fromWorkbenchCapabilities];
   }, [
     agents,
+    language,
     availableSkills,
     capabilityItems,
     capabilitySuggestions,

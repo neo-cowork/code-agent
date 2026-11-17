@@ -92,12 +92,20 @@ export const NOTIFICATION_BUDGET = {
   HELD_FILE_NAME: 'held-notifications.json',
 } as const;
 
+/** Shell-absent needs-input banners: fold a burst, then wait for resolution or quiet. */
+export const NEEDS_INPUT_NATIVE_FALLBACK = {
+  FOLD_WINDOW_MS: 3_000,
+  QUIET_PERIOD_MS: 600_000,
+} as const;
+
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
   /** 无交互 renderer 时的用户问题等待超时 */
   USER_QUESTION: 300_000,
   /** 确认操作超时 */
   CONFIRM_ACTION: 60_000,
+  /** 空闲会话补发消息（/interrupt 无活跃轮）等新一轮登记起跑的上限；超了按发送失败回给界面 */
+  FOREGROUND_TURN_START: 30_000,
   /** 权限请求超时 */
   PERMISSION: 60_000,
   /** SaaS 连接器知情确认等待超时 */
@@ -302,6 +310,8 @@ export const TEST_TIMEOUTS = {
 
 /** Startup gates must not remain blocked forever when the renderer signal is lost. */
 export const STARTUP_TIMEOUTS = {
+  /** Replace unchanged send/startup feedback with an honest, static slow-start notice. */
+  SLOW_START_NOTICE_MS: 10_000,
   /** Warn once when an accepted send has not dispatched its first main-model request. */
   FIRST_MODEL_REQUEST_WARN_MS: 30_000,
   RENDERER_WINDOW_READY: 5_000,
@@ -661,6 +671,13 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
    * `min(STEP_MS, 总预算剩余)`，给关库留下至少 1s（N-DSH-STOP2，2026-08-14）。
    */
   PRE_DB_BUDGET_MS: 2_000,
+  /**
+   * computer-use helper 守护进程回收（cua reap）的保底窗口 (ms)。stop 意图下取消在跑 run 的
+   * 等待会先吃掉 PRE_DB_BUDGET_MS，runShutdownFinalizers 拿到 capMs=0，reap 被 0ms 定时器
+   * 抢先、随后 process.exit 把它半截杀掉，helper 成孤儿（2026-11-15 真机）。reap 因此不再
+   * 依赖关库前剩余预算，至少有这么长；远小于关库预留的 1s（实测真实耗时见 webShutdownFinalizers 测试）。
+   */
+  CUA_REAP_MIN_WINDOW_MS: 400,
 } as const;
 
 /**

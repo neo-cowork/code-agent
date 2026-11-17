@@ -105,7 +105,7 @@ import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import { clearDebugDraftParamsFromCurrentUrl, readDebugDraftFromLocation } from './debugDraftUrl';
 import { mergeAttachments } from './attachmentDedupe';
-import { notifyAttachmentMerge } from './attachmentMergeToast';
+import { notifyAttachmentMerge } from './attachmentDiscard';
 import { getTrailingSlashToken } from './slashPickerModel';
 import type { InlineChipRef } from './composerRichTextModel';
 import type { InlineChipView } from './InlineComposerChip';
@@ -1490,7 +1490,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             preview={composerDraft.notice.preview}
             attachmentNames={composerDraft.notice.attachmentNames}
             droppedNames={composerDraft.notice.droppedNames}
-            onPutBack={composerDraft.putBack}
+            onPutBack={() => {
+              composerDraft.putBack();
+              // 点按钮把焦点留在随即卸载的提示条上，回车到不了编辑区；跟发送失败回滚一样把光标还给输入框
+              inputAreaRef.current?.focus();
+            }}
             onDiscard={composerDraft.discard}
           />
         )}

@@ -27,9 +27,20 @@ import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestrat
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { getConnectorRegistry } from '../../../src/host/connectors';
+import { calendarConnector } from '../../../src/host/connectors/native/calendar';
+import { AgentEventSchema } from '../../../src/shared/contract/agentEventSchemas';
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 
 const ORIGINAL = { subject: 'Q3 对账单', to: ['li.wei@acme.com'], content: '周五前确认', attachments: ['/tmp/q3.pdf'] };
+
+it('calendar snapshot marker survives the shared permission event schema', () => {
+  const event = { type: 'permission_request', data: {
+    id: 'calendar-snapshot-schema', type: 'file_write', tool: 'calendar_update_event', timestamp: 1,
+    details: { calendarApprovalSnapshotFields: ['title', 'end_ms', 'location'] },
+  } };
+  expect(AgentEventSchema.parse(event)).toEqual(event);
+});
 
 describe('applyEditedArgs（共享合同）', () => {
   it('表内字段合并、附件原样带回、changedKeys 只记真改了的', () => {
@@ -196,6 +207,52 @@ describe('toolExecutor：编辑后放行 → 派发的就是编辑后的参数',
     expect(dispatched[0].params.subject).toBe('Q3 对账单（改）');
     expect(dispatched[0].params.attachments).toEqual(['/tmp/q3.pdf']);
     expect(dispatched[0].approved?.to).toEqual(['zhang.min@acme.com']);
+  });
+
+  it('calendar unedited Update: one enriched approval, original args reach dispatch and the handler grant', async () => {
+    const lookup = vi.spyOn(getConnectorRegistry(), 'get').mockReturnValue(calendarConnector);
+    const execute = vi.spyOn(calendarConnector, 'execute').mockResolvedValue({ data: {
+      calendar: 'Work', title: 'Quarterly review', startAtMs: 1000, endAtMs: 2000, location: 'Room 3',
+    } });
+    try {
+      const { executor, dispatched, requests } = build({ approved: true });
+      const original = { calendar: 'Work', event_uid: 'calendar-event-1', start_ms: 3000, end_ms: 4000 };
+      const result = await executor.execute('calendar_update_event', original, { sessionId: 'edit-calendar-session' });
+      expect(result.success).toBe(true);
+      expect(execute).toHaveBeenCalledExactlyOnceWith('get_event', original);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ tool: 'calendar_update_event', details: {
+        ...original, title: 'Quarterly review', location: 'Room 3',
+        calendarApprovalSnapshotFields: ['title', 'location'],
+      } });
+      expect(dispatched).toEqual([{ tool: 'calendar_update_event', params: original, approved: original }]);
+      expect(dispatched[0].params).toEqual({ calendar: 'Work', event_uid: 'calendar-event-1', start_ms: 3000, end_ms: 4000 });
+      expect(original).not.toHaveProperty('title');
+      expect(original).not.toHaveProperty('location');
+    } finally {
+      execute.mockRestore();
+      lookup.mockRestore();
+    }
+  });
+
+  it.each([false, true])('calendar snapshot provenance is host-owned even when get_event fails (%s)', async (lookupFails) => {
+    const lookup = vi.spyOn(getConnectorRegistry(), 'get').mockReturnValue(calendarConnector);
+    const execute = vi.spyOn(calendarConnector, 'execute');
+    if (lookupFails) execute.mockRejectedValue(new Error('calendar unavailable'));
+    else execute.mockResolvedValue({ data: { title: 'Review', startAtMs: 1000, endAtMs: 2000 } });
+    try {
+      const { executor, dispatched, requests } = build({ approved: true });
+      const original = { calendar: 'Work', event_uid: 'event-1', start_ms: 3000, calendarApprovalSnapshotFields: ['start_ms'] };
+      expect((await executor.execute('calendar_update_event', original, { sessionId: 'calendar-provenance-session' })).success).toBe(true);
+      expect(requests).toHaveLength(1);
+      const details = (requests[0] as { details: Record<string, unknown> }).details;
+      if (lookupFails) expect(details).not.toHaveProperty('calendarApprovalSnapshotFields');
+      else expect(details.calendarApprovalSnapshotFields).toEqual(['title']);
+      expect(dispatched[0].params).toEqual(original);
+    } finally {
+      execute.mockRestore();
+      lookup.mockRestore();
+    }
   });
 
   it('fail-closed：updatedArgs 带表外字段 → 工具不被调用', async () => {

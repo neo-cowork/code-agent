@@ -36,6 +36,7 @@ function includesAll(text: string, values: string[]): boolean {
 function renderDecision(decision: React.ComponentProps<typeof RouteTraceChip>['decision']): string {
   return renderToStaticMarkup(React.createElement(RouteTraceChip, {
     defaultExpanded: true,
+    defaultDiagnosticsExpanded: true,
     decision,
   }));
 }
@@ -164,7 +165,7 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
     routeTraceShowsProviderIdentity: includesAll(identityHtml, [
       '来源 CommonStack',
       '协议 OpenAI-compatible',
-      'endpoint https://commonstack.example/v1',
+      '地址 https://commonstack.example/v1',
     ]),
     modelSwitcherShowsBillingBadge: includesAll(billingBadgeHtml, [
       'data-provider-billing-mode="unknown"',

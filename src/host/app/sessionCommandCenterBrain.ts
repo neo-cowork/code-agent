@@ -4,7 +4,7 @@ import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { resolveForegroundBrainMaxIterations, SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
-import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
+import { getNativeConnectorToolNamesForIntent, type NativeConnectorIntentInput } from '../connectors/nativeConnectorIntent';
 import { isScheduleTaskChatIntent } from './scheduleTaskChatIntent';
 import { isRoleProactivityChatIntent } from './roleProactivityChatIntent';
 import { createLogger } from '../services/infra/logger';
@@ -173,6 +173,7 @@ export function getTextForegroundToolNamesForPrompt(
   prompt: string,
   allowedConnectorIds?: readonly string[],
   imageTurn?: ForegroundImageTurn,
+  priorMessages?: NativeConnectorIntentInput['priorMessages'],
 ): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
@@ -187,7 +188,7 @@ export function getTextForegroundToolNamesForPrompt(
   if (isRoleProactivityChatIntent(prompt)) extras.push('set_role_proactivity');
   if (isScheduleTaskChatIntent(prompt)) extras.push('schedule_task');
   // 无意图命中时零副作用（不触 configService/registry）。
-  extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
+  extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds, priorMessages }));
   extras.push(...getImageAnalyzeToolNamesForTurn(imageTurn));
   return resolveTurnToolFace({ baseToolNames: base, requiredToolNames: extras, prompt, foreground: true }) ?? base;
 }
@@ -212,6 +213,7 @@ export function withSessionCommandCenterBrain(
   prompt?: string,
   imageTurn?: ForegroundImageTurn,
   lastAssistantStoppedByStepLimit = false,
+  priorMessages?: NativeConnectorIntentInput['priorMessages'],
 ): AppServiceRunOptions {
   const text = prompt ?? '';
   const turnSystemContext = [
@@ -222,7 +224,7 @@ export function withSessionCommandCenterBrain(
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
     maxIterations: resolveForegroundBrainTurnBudget(text, lastAssistantStoppedByStepLimit, options?.maxIterations),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds, imageTurn, priorMessages),
     foregroundToolFace: true,
     turnSystemContext,
   };
