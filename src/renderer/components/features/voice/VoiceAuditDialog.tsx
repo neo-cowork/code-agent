@@ -18,6 +18,7 @@ import { formatDateTime } from '../../../utils/formatDateTime';
 import { toast } from '../../../hooks/useToast';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { Modal } from '../../primitives';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 type VoiceAuditStatus = 'ok' | 'none' | 'unavailable';
 
@@ -183,7 +184,7 @@ const Section: React.FC<{
         <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
         <StatusBadge status={status} />
         {status === 'ok' && count !== undefined && (
-          <span className="text-[11px] text-zinc-500">{t.voiceAudit.eventCount.replace('{count}', String(count))}</span>
+          <span className="text-[11px] text-zinc-500">{interpolatePlural(t.voiceAudit.eventCount, count)}</span>
         )}
       </div>
       {note && (
@@ -342,7 +343,7 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
           <aside className="overflow-y-auto border-r border-white/[0.08] bg-zinc-950/30 p-3">
             <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-xs font-semibold text-zinc-300">{labels.callList}</h3>
-              <span className="text-[11px] text-zinc-500">{labels.callCount.replace('{count}', String(calls.length))}</span>
+              <span className="text-[11px] text-zinc-500">{interpolatePlural(labels.callCount, calls.length)}</span>
             </div>
             <div className="space-y-2">
               {calls.map((call) => {

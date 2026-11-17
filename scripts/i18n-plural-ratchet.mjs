@@ -40,7 +40,83 @@ function pairProperty(node) {
 const i18nRoot = path.join(repoRoot, 'src/renderer/i18n');
 const files = sourceFiles(i18nRoot);
 const findings = [];
-const hardPlural = /\{(?:count|n)\}\s+(?:agents|segments)\b/i;
+// Count placeholder, up to two modifier words, then a plural-looking English noun
+// ("{count} files", "{count} more steps") or "times". Words that merely end in "s"
+// are listed in notPlural. Only the `other` of a { one, other } pair may match.
+const countPlaceholder = /\{(?:count|n|total)\}((?:\s+[A-Za-z][A-Za-z-]*){1,3})/g;
+const notPlural = new Set([
+  'is', 'was', 'has', 'does', 'its', 'this', 'as', 'us', 'plus', 'less', 'status', 'across', 'access', 'process',
+  'always', 'yes', 'various', 'suspicious', 'previous', 'unless', 'during', 'business', 'address', 'progress', 'success', 'class',
+  'canvas', 'bus', 'focus', 'analysis', 'axis', 'basis', 'alias', 'bias', 'gas', 'lens', 'news', 'perhaps', 'thus', 'needs', 'exists', 'leaves',
+]);
+const irregularPlural = new Set(['children', 'people', 'men', 'women', 'times']);
+// In a pair's `one` slot only the first two words are checked: a singular noun can be followed by a
+// verb or relative clause ("{count} script that runs by itself").
+function pluralWordAfterCount(value, wordLimit = 3) {
+  if (/[\u3400-\u9fff]/.test(value)) return null; // Chinese copy: out of scope
+  for (const match of value.matchAll(countPlaceholder)) {
+    const words = match[1].trim().split(/\s+/).slice(0, wordLimit);
+    for (const word of words) {
+      const lower = word.toLowerCase().replace(/[^a-z-]/g, '');
+      if (irregularPlural.has(lower)) return word;
+      if (lower.length > 2 && lower.endsWith('s') && !lower.endsWith('ss') && !notPlural.has(lower)) return word;
+      // a verb/preposition ends the noun phrase; stop scanning further words
+      if (/^(?:in|of|on|to|for|from|by|with|and|or|are|were|have|had|will|can|need|need)$/.test(lower)) break;
+    }
+  }
+  return null;
+}
+// Exemptions: { file, text, reason }. Allowed only when the count is provably >= 2 at
+// that site (cite the code). Stale entries fail the gate.
+const groupPluralReason = 'humanizeToolGroupLabel (src/renderer/utils/humanizeToolStep.ts) picks groupSingular[status][bucket] when count === 1 and only falls back to this group map when count >= 2';
+const groupPluralTexts = {
+  'src/renderer/i18n/chatTranscript.ts': [
+    'Looked at content {count} times',
+    'Ran {count} commands',
+    'Searched the web {count} times',
+    'Called tools {count} times',
+    'Dispatched {count} agent tasks',
+    'Updated tasks {count} times',
+    'Used skills {count} times',
+    'Ran {count} steps',
+  ],
+  'src/renderer/i18n/toolStepVerbs.ts': [
+    'Request to inspect content {count} times',
+    'Request to run {count} commands',
+    'Request to search the web {count} times',
+    'Request to call tools {count} times',
+    'Request to dispatch {count} agent tasks',
+    'Request to update tasks {count} times',
+    'Request to use skills {count} times',
+    'Request to run {count} steps',
+    'Inspecting content {count} times',
+    'Running {count} commands',
+    'Searching the web {count} times',
+    'Calling tools {count} times',
+    'Dispatching {count} agent tasks',
+    'Updating tasks {count} times',
+    'Using skills {count} times',
+    'Running {count} steps',
+    'Could not inspect content {count} times',
+    'Could not run {count} commands',
+    'Could not search the web {count} times',
+    'Could not call tools {count} times',
+    'Could not dispatch {count} agent tasks',
+    'Could not update tasks {count} times',
+    'Could not use skills {count} times',
+    'Could not run {count} steps',
+  ],
+};
+const pluralExceptions = [
+  ...Object.entries(groupPluralTexts).flatMap(([file, texts]) => texts.map((text) => ({ file, text, reason: groupPluralReason }))),
+  { file: 'src/renderer/i18n/receiptPresentation.ts', text: 'Sent to {first} and others ({count} recipients)', reason: 'formatReceiptSummary (src/renderer/utils/receiptPresentation.ts) uses recipientMultiple only when recipient.count > 1; count 1 uses recipientSingle' },
+  { file: 'src/renderer/i18n/receiptPresentation.ts', text: '{count} other abilities', reason: 'roleToolCapabilities.ts picks otherAbility when unknownToolNames.size === 1 and otherAbilities only for size >= 2 (size > 0 guard)' },
+  { file: 'src/renderer/i18n/chatInput.ts', text: '{count} files are already attached (including {name})', reason: 'attachmentMergeToast.ts:27 uses attachmentAlreadyAddedMany only when result.skippedCount > 1; count 1 uses attachmentAlreadyAdded' },
+  { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There is still text from the input box: "{preview}", plus {count} attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftNoticeWithOneAttachment when safeAttachments.length === 1; this key only for >= 2' },
+  { file: 'src/renderer/i18n/unsentDraft.ts', text: 'There are still {count} unsent attachments: {names}', reason: 'UnsentDraftNotice.tsx picks unsentDraftOneAttachmentOnly when safeAttachments.length === 1; this key only for >= 2' },
+];
+const usedPluralExceptions = new Set();
+let pluralHits = 0;
 
 for (const file of files) {
   const sourceText = fs.readFileSync(file, 'utf8');
@@ -52,15 +128,27 @@ for (const file of files) {
       if (/\b[A-Za-z]+\(s\)/.test(value)) {
         findings.push(`${point} contains forbidden literal "(s)": ${value}`);
       }
-      const match = value.match(hardPlural);
-      if (match && pairProperty(node.parent) !== 'other') {
-        findings.push(`${point} uses hard plural after a count placeholder: ${value}`);
+      const plural = pluralWordAfterCount(value, pairProperty(node.parent) === 'one' ? 2 : 3);
+      if (plural && pairProperty(node.parent) !== 'other') {
+        pluralHits++;
+        const relativeFile = path.relative(repoRoot, file).split(path.sep).join('/');
+        const exception = pluralExceptions.find((entry) => entry.file === relativeFile && entry.text === value && entry.reason);
+        if (exception) usedPluralExceptions.add(exception);
+        else findings.push(`${point} uses hard plural "${plural}" after a count placeholder (needs { one, other }): ${value}`);
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
 }
+
+for (const entry of pluralExceptions) {
+  // Entries for files absent from the scanned root (test fixtures) cannot be stale.
+  if (!usedPluralExceptions.has(entry) && fs.existsSync(path.join(repoRoot, entry.file))) {
+    findings.push(`stale plural exception: ${entry.file} "${entry.text}" (${entry.reason})`);
+  }
+}
+console.log(`[i18n-plural-ratchet] plural hits=${pluralHits}; allowed=${usedPluralExceptions.size}`);
 
 // Component copy must use the shared translations too. Match syntax nodes rather
 // than source lines so multiline JSX/templates are checked and comments are not.

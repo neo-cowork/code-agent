@@ -11,6 +11,7 @@ import { useMemberViewStore } from '../../../../../stores/memberViewStore';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { useSessionTurnActive } from '../../../../../hooks/useSessionTurnActive';
 import type { DelegationPresentation } from './delegationPresentation';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
@@ -78,7 +79,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
   return (
     <div className="ml-6 mt-0.5 space-y-0.5 text-xs text-zinc-500" data-testid="delegation-receipt">
       {presentation.stepCount !== undefined && (
-        <div>{t.chat.delegationReceipt.steps.replace('{count}', String(presentation.stepCount))}</div>
+        <div>{interpolatePlural(t.chat.delegationReceipt.steps, presentation.stepCount)}</div>
       )}
       {presentation.outputs.length > 0 && (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">

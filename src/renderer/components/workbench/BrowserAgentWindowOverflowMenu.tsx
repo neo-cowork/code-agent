@@ -8,6 +8,7 @@ import {
 import { humanizeBrowserCookieImportFailure } from '../../utils/browserCookieImportMessages';
 import { ConfirmDialog } from '../composites/ConfirmDialog';
 import { GhostButton, IconButton } from '../primitives';
+import { interpolatePlural, type PluralTemplates } from '../../i18n/interpolate';
 
 export type BrowserAgentWindowCopy = {
   moreActions: string;
@@ -24,7 +25,7 @@ export type BrowserAgentWindowCopy = {
   importCookiesScanning: string;
   importCookiesEmpty: string;
   importCookiesBusy: string;
-  importCookiesSuccess: string;
+  importCookiesSuccess: PluralTemplates;
   importCookiesFailed: string;
   importCookiesCookieDbLocked: string;
   importCookiesKeychainDenied: string;
@@ -147,8 +148,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
       }
       setImportOpen(false);
       onImportNotice(
-        formatTemplate(copy.importCookiesSuccess, {
-          count: result.importedCookieCount,
+        interpolatePlural(copy.importCookiesSuccess, result.importedCookieCount, {
           domains: result.domainCount,
         }),
         'success',

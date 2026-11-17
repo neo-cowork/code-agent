@@ -29,6 +29,7 @@ import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import type { Language, Translations } from '../../../i18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export interface SidebarProjectDrawerSession {
   id: string;
@@ -483,7 +484,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     </div>
                     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-zinc-600">
                       <span className="min-w-0 flex-1 truncate">
-                        {session.summary || session.workingDirectory || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
+                        {session.summary || session.workingDirectory || interpolatePlural(p.messageCount, session.messageCount ?? 0)}
                       </span>
                     </div>
                     <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
@@ -518,7 +519,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   </button>
                 ))}
                 {sessions.length > 12 && (
-                  <div className="px-1 text-[10px] text-zinc-600">{p.moreSessionsHidden.replace('{count}', String(sessions.length - 12))}</div>
+                  <div className="px-1 text-[10px] text-zinc-600">{interpolatePlural(p.moreSessionsHidden, sessions.length - 12)}</div>
                 )}
               </div>
             ) : (

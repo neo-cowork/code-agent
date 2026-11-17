@@ -10,6 +10,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { isWebMode } from '../../../../utils/platform';
 import { zh, type Translations } from '../../../../i18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 interface LightMemoryFile {
   filename: string;
@@ -371,7 +372,7 @@ export function countLightMemoryHealthIssues(health: LightMemoryHealthReport | n
 export function buildLightMemoryIssuePreview(health: LightMemoryHealthReport, t: Translations = zh): string[] {
   const issues: string[] = [];
   if (!health.indexExists && health.totalFiles > 0) issues.push(t.knowledgeMemory.healthIssueIndexMissing);
-  if (health.indexTooLong) issues.push(t.knowledgeMemory.healthIssueIndexTooLong.replace('{count}', String(health.indexLineCount)));
+  if (health.indexTooLong) issues.push(interpolatePlural(t.knowledgeMemory.healthIssueIndexTooLong, health.indexLineCount));
   for (const filename of health.missingInIndex.slice(0, 3)) issues.push(t.knowledgeMemory.healthIssueMissingInIndex.replace('{filename}', filename));
   for (const filename of health.orphanInIndex.slice(0, 3)) issues.push(t.knowledgeMemory.healthIssueOrphanInIndex.replace('{filename}', filename));
   for (const item of health.invalidFrontmatter.slice(0, 3)) issues.push(`${item.filename}: ${item.reason}`);

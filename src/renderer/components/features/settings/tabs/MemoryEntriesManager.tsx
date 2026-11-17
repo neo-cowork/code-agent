@@ -43,6 +43,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 type EntryStatusFilter = MemoryEntryStatus | 'all';
 type EntryKindFilter = MemoryEntryKind | 'all';
@@ -862,7 +863,7 @@ export const MemoryEntriesManager: React.FC<{
                 <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500">
                   <div className="mb-2 font-medium text-zinc-400">{memoryText.entries.evidence}</div>
                   {selectedEntry.evidence.length > 0 ? (
-                    <div>{memoryText.entries.evidenceCount.replace('{count}', String(selectedEntry.evidence.length))}</div>
+                    <div>{interpolatePlural(memoryText.entries.evidenceCount, selectedEntry.evidence.length)}</div>
                   ) : (
                     <div>{memoryText.entries.noEvidence}</div>
                   )}

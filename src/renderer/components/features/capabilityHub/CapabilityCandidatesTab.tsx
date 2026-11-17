@@ -27,6 +27,7 @@ import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
 import { IconButton } from '../../primitives/IconButton';
 import { HubTabHeader } from './HubTabHeader';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 const invokeCandidate = async <T,>(channel: string, payload?: unknown): Promise<T | undefined> =>
   (ipcService.invoke as (...a: unknown[]) => Promise<T>)(channel, payload);
@@ -98,9 +99,7 @@ const CandidateRow: React.FC<CandidateRowProps> = ({ candidate, text, busy, onIg
         <p className="mt-1 text-xs text-zinc-500">{evidenceLine(candidate, text)}</p>
         {/* 「凭什么把这几次归成一条」——聚类必须能解释，不能只给个分数 */}
         <p className="mt-0.5 text-[11px] text-zinc-600">
-          {text.whyGrouped
-            .replace('{count}', String(candidate.occurrences))
-            .replace('{variants}', String(candidate.variants.length))}
+          {interpolatePlural(text.whyGrouped, candidate.occurrences, { variants: String(candidate.variants.length) })}
         </p>
         {(candidate.signals.degraded || candidate.signals.missingDependency) ? (
           <div className="mt-1.5 flex flex-wrap gap-1.5">

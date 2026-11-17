@@ -12,6 +12,7 @@ import { summarizeEdit, summarizeWrite } from './editSummarizer';
 import { summarizeDefault } from './defaultSummarizer';
 import { formatSessionTaskOutput } from '../../../../../../utils/sessionTaskPresentation';
 import { summarizeBrowserComputerActionResult } from '../../../../../../utils/browserComputerActionPreview';
+import { interpolatePlural } from '../../../../../../i18n/interpolate';
 
 /**
  * Generate a smart summary for a tool call result
@@ -238,7 +239,7 @@ function summarizeWebFetch(toolCall: ToolCall, t: Translations): string | null {
   if (chars > 5000) {
     return `~${Math.round(chars / 1024)}KB`;
   }
-  return t.toolResultSummary.lineCount.replace('{count}', String(lines));
+  return interpolatePlural(t.toolResultSummary.lineCount, lines);
 }
 
 function summarizeAskUser(toolCall: ToolCall): string | null {

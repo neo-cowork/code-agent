@@ -792,23 +792,17 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             <p className="text-xs text-zinc-400" data-testid="call-recording-status">
               {recording.count === 0
                 ? text.recordCallsEmpty
-                : text.recordCallsStatus
-                  .replace('{count}', String(recording.count))
-                  .replace('{size}', formatMb(recording.totalBytes))}
+                : interpolatePlural(text.recordCallsStatus, recording.count, { size: formatMb(recording.totalBytes) })}
             </p>
             {/* 判据 5：清理必须对用户可见。台账在这里显示，不是静默删除。 */}
             <p className="text-xs text-zinc-500" data-testid="call-recording-cleanup">
               {recording.lastCleanup === null
                 ? text.recordCallsNeverCleaned
-                : text.recordCallsLastCleanup
-                  .replace('{time}', formatDateTime(recording.lastCleanup.at, uiLanguage))
-                  .replace('{count}', String(recording.lastCleanup.deleted))
-                  .replace('{size}', formatMb(recording.lastCleanup.freedBytes))
-                  .replace('{rule}', [
+                : interpolatePlural(text.recordCallsLastCleanup, recording.lastCleanup.deleted, { time: formatDateTime(recording.lastCleanup.at, uiLanguage), size: formatMb(recording.lastCleanup.freedBytes), rule: [
                     recording.lastCleanup.byRule.age > 0 ? text.recordCallsRuleAge : null,
                     recording.lastCleanup.byRule.count > 0 ? text.recordCallsRuleCount : null,
                     recording.lastCleanup.byRule.bytes > 0 ? text.recordCallsRuleBytes : null,
-                  ].filter((rule): rule is string => rule !== null).join('、'))}
+                  ].filter((rule): rule is string => rule !== null).join('、') })}
             </p>
             <button
               type="button"

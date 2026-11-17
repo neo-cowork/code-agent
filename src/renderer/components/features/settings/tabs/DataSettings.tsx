@@ -43,6 +43,7 @@ import {
   CacheRetentionFailureLine,
   type CacheRetentionStatus,
 } from '../sections/cacheRetentionFailure';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 const logger = createLogger('DataSettings');
 type DataSettingsText = typeof zh.settings.data;
@@ -684,9 +685,7 @@ export const DataSettings: React.FC = () => {
                   className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-badge-danger"
                   title={telemetrySummary.lastUploadError}
                 >
-                  {dataText.telemetry.uploadFailedSummary
-                    .replace('{count}', String(telemetrySummary.uploadFailureCount))
-                    .replace('{time}', formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time, language))}
+                  {interpolatePlural(dataText.telemetry.uploadFailedSummary, telemetrySummary.uploadFailureCount, { time: formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time, language) })}
                 </span>
               )}
             </div>

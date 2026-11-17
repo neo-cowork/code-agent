@@ -47,6 +47,7 @@ import { useToolCallTerminalResolver } from '../../../hooks/useToolCallTerminalR
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import { useEnvParkedStep } from '../../../hooks/useEnvParkedTarget';
 import { supersededEnvParkedCalls } from '../../../utils/envParkedTurn';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -193,8 +194,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       ...Array.from(byStatus, ([stepStatus, names]) => humanizeToolGroupLabel(names, t, stepStatus)),
       staleUnfinished ? t.outcomeWords[resolveStreamInterruptionOutcomeKey(undefined)].timeline.label : '',
       envWaiting ? t.durableStopped.envWaitingStep.replace('{target}', envWaiting) : '',
-      blockedCommands ? t.deliveryExperience.blockedCommands.replace('{count}', String(blockedCommands)) : '',
-      blockedSteps ? t.deliveryExperience.blockedSteps.replace('{count}', String(blockedSteps)) : '',
+      blockedCommands ? interpolatePlural(t.deliveryExperience.blockedCommands, blockedCommands) : '',
+      blockedSteps ? interpolatePlural(t.deliveryExperience.blockedSteps, blockedSteps) : '',
     ].filter(Boolean).join(t.deliveryExperience.labelSeparator);
   }, [terminalById, streamVisibleNodes, t, envParkedStep]);
 
@@ -530,7 +531,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           </span>
         )}
         {status !== 'ok' && outputCount > 0 && (
-          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
+          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{interpolatePlural(t.toolGroup.outputCount, outputCount)}</span>
         )}
         {totalDuration && (
           <span
@@ -600,7 +601,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           )}
           {completedStepsCount > 0 && (
             <div className="pl-1 text-[10px] text-zinc-600">
-              {t.toolGroup.completedSteps.replace('{count}', String(completedStepsCount))}
+              {interpolatePlural(t.toolGroup.completedSteps, completedStepsCount)}
             </div>
           )}
         </div>

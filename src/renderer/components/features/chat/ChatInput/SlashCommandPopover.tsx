@@ -53,6 +53,7 @@ import { btwQuestionArgs } from './parseBtwCommand';
 import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -622,7 +623,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         try {
           const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined);
           if (result?.success) {
-            writeAssistant(t.slashDiagnostics.compactedSuccess.replace('{n}', result.savedTokens.toLocaleString('en-US')));
+            writeAssistant(interpolatePlural(t.slashDiagnostics.compactedSuccess, result.savedTokens, { n: result.savedTokens.toLocaleString('en-US') }));
           } else {
             writeAssistant(t.slashDiagnostics.compactNotExecuted + (result?.reason ? t.slashDiagnostics.compactNotExecutedReasonWrap.replace('{reason}', result.reason) : ''));
           }

@@ -22,6 +22,7 @@ import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
 import { deferRendererReadyUntil } from '../utils/rendererReady';
+import { interpolatePlural } from '../i18n/interpolate';
 
 const MISSED_ALERT_TOAST_MS = 10_000;
 const RECENT_EVENT_LIMIT = 50;
@@ -163,7 +164,7 @@ export function useCronOsNotification(
       const c = copyRef.current;
       const notice = translateCronOsNotification(spec.latest, c, useAppStore.getState().language);
       const message = spec.count > 1
-        ? c.missedAlertsMerged.replace('{count}', String(spec.count))
+        ? interpolatePlural(c.missedAlertsMerged, spec.count)
         : notificationToastText(notice.title, notice.body);
       const action = { label: c.failureToastView, onClick: () => { void routeClick(spec.latest); } };
       if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);

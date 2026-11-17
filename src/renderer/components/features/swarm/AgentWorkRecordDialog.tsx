@@ -8,6 +8,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { RoleInitialAvatar } from '../expert/RoleInitialAvatar';
 import { Modal } from '../../primitives/Modal';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 type RecordData = Pick<SwarmRunAgentRecord, 'dispatchedTask' | 'finalOutput' | 'finalOutputTruncated' | 'finalOutputArchiveItemId' | 'durationMs' | 'tokensIn' | 'tokensOut' | 'toolCalls' | 'costUsd'>;
 
@@ -47,7 +48,7 @@ export const AgentWorkRecordDialog: React.FC<{
         <div className="space-y-4 overflow-y-auto py-4 text-sm">
           {loading ? <p className="text-zinc-400">{t.expert.workRecord.loading}</p> : <>
             <RecordSection title={t.expert.workRecord.receivedTask} testId="agent-work-task">{task || t.expert.workRecord.noTask}</RecordSection>
-            <RecordSection title={t.expert.workRecord.activity} testId="agent-work-activity"><span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{t.expert.workRecord.tools.replace('{count}', String(toolCalls))}</span><span className="ml-3 inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{duration(elapsed)}</span><span className="ml-3">{t.expert.workRecord.iterations.replace('{count}', String(agent.iterations))}</span></RecordSection>
+            <RecordSection title={t.expert.workRecord.activity} testId="agent-work-activity"><span className="inline-flex items-center gap-1"><Wrench className="h-3.5 w-3.5" />{interpolatePlural(t.expert.workRecord.tools, toolCalls)}</span><span className="ml-3 inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{duration(elapsed)}</span><span className="ml-3">{interpolatePlural(t.expert.workRecord.iterations, agent.iterations)}</span></RecordSection>
             <RecordSection title={t.expert.workRecord.output} testId="agent-work-output"><pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{output || t.expert.workRecord.noOutput}</pre>{record?.finalOutputTruncated && record.finalOutputArchiveItemId ? <div className="mt-2 flex items-center gap-2 text-xs text-badge-warning"><span>{t.expert.workRecord.archived}</span><button /* ds-allow:button: 归档入口与截断提示同一紧凑行 */ type="button" onClick={() => openWorkspacePreview()} className="text-badge-accent hover:text-badge-accent">{t.expert.workRecord.openArchive}</button></div> : null}</RecordSection>
             <RecordSection title={t.expert.workRecord.usage} testId="agent-work-usage"><span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5" />{tokens}</span><span className="ml-3">${cost.toFixed(4)}</span></RecordSection>
           </>}

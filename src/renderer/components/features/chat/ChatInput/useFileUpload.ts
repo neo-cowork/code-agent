@@ -21,6 +21,7 @@ import { UploadFailureError, uploadFailureMessage } from '../../../../utils/http
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatFileSize } from './formatFileSize';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 const logger = createLogger('useFileUpload');
 
@@ -359,7 +360,7 @@ export function useFileUpload() {
       .slice(0, 5)
       .map(([ext, count]) => `${ext}(${count})`)
       .join(', ');
-    const summary = `${t.chatInput.folderSummaryCount.replace('{count}', String(files.length))}${files.length > MAX_FOLDER_FILES ? t.chatInput.folderSummaryTruncated.replace('{max}', String(MAX_FOLDER_FILES)) : ''}: ${typeStats}${folderPath ? '' : `\n${t.chatInput.folderPathUnresolved}`}`;
+    const summary = `${interpolatePlural(t.chatInput.folderSummaryCount, files.length)}${files.length > MAX_FOLDER_FILES ? t.chatInput.folderSummaryTruncated.replace('{max}', String(MAX_FOLDER_FILES)) : ''}: ${typeStats}${folderPath ? '' : `\n${t.chatInput.folderPathUnresolved}`}`;
 
     return {
       id, type: 'file', category: 'folder', name: folderName, size: totalSize,

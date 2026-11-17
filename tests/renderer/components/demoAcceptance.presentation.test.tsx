@@ -10,6 +10,7 @@ import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecu
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
 import { runHref } from './encodeRunCommand';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
 
 const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
@@ -160,7 +161,7 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(nodes.find((node) => node.toolCall?.id === 'x')?.toolCall?.recovered).toBe(true);
     const html = renderToStaticMarkup(<ToolStepGroup nodes={nodes.filter((node) => node.toolCall)} defaultExpanded={false} />);
     expect(html).not.toContain('未成功');
-    expect(html).not.toContain(zh.deliveryExperience.blockedSteps.replace('{count}', '1'));
+    expect(html).not.toContain(interpolatePlural(zh.deliveryExperience.blockedSteps, 1));
   });
 
   // ai-review #1741 Important：组内节点**全部**被判为 recovered 时，分桶不能把它们一个不剩地

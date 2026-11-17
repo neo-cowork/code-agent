@@ -56,6 +56,7 @@ import {
   PreviewFallbackCard,
   TextPreviewView,
 } from './previewFormatViews';
+import { interpolatePlural } from '../i18n/interpolate';
 
 // 模块级常量：写成内联字面量的话每次渲染都是新引用，ReactMarkdown 整棵重建。
 const REPORT_MARKDOWN_COMPONENTS = {
@@ -104,7 +105,7 @@ function ArchivePreview({ content, onOpenDefault }: { content: string; onOpenDef
           <Archive className="h-3.5 w-3.5" />
           {pv.archiveKind.replace('{format}', inspection.format.toUpperCase())}
         </span>
-        <span>{pv.entries.replace('{count}', String(inspection.entryCount))}</span>
+        <span>{interpolatePlural(pv.entries, inspection.entryCount)}</span>
         {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
       </div>
       <div className="overflow-hidden rounded-lg border border-white/[0.08]">
@@ -173,7 +174,7 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
           <Presentation className="h-3.5 w-3.5" />
           {pv.pptPreview}
         </span>
-        <span>{pv.slides.replace('{count}', String(artifact.slidesCount || screenshots.length))}</span>
+        <span>{interpolatePlural(pv.slides, artifact.slidesCount || screenshots.length)}</span>
       </div>
       <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950">
         <img src={resolveFileUrl(active)} alt={pv.slideN.replace('{n}', String(selected + 1))} className="w-full bg-zinc-950 object-contain" />
@@ -270,7 +271,7 @@ export function PresentationPreview({ content }: { content: string }) {
           <Presentation className="h-3.5 w-3.5" />
           {pv.pptxOutline}
         </span>
-        <span>{pv.slides.replace('{count}', String(inspection.slideCount))}</span>
+        <span>{interpolatePlural(pv.slides, inspection.slideCount)}</span>
         {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
       </div>
       <div className="space-y-2">

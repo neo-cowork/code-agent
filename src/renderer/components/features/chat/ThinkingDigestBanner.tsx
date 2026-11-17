@@ -3,7 +3,7 @@ import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { TraceTurn } from '@shared/contract/trace';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { useI18n } from '../../../hooks/useI18n';
-import { interpolate, interpolatePlural } from '../../../i18n/interpolate';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { sanitizeThinkingForDisplay } from '../../../utils/toolGrouping';
 
 export interface TurnThinkingSegment {
@@ -132,7 +132,7 @@ export const ThinkingDigestBanner: React.FC<ThinkingDigestBannerProps> = ({
   );
   const digestLabel = activeSegmentId
     ? t.chat.thinkingActiveWithDuration.replace('{duration}', duration)
-    : interpolate(interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length), { duration });
+    : interpolatePlural(t.chat.thinkingDigestWithDuration, segments.length, { duration });
 
   return (
     <div

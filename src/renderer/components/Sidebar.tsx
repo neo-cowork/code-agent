@@ -66,6 +66,7 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
+import { interpolatePlural } from '../i18n/interpolate';
 export { resolveRuntimeLogsDir };
 const logger = createLogger('Sidebar');
 const VoiceAuditDialog = React.lazy(() => import('./features/voice/VoiceAuditDialog').then((module) => ({
@@ -988,7 +989,7 @@ export const Sidebar: React.FC = () => {
       {/* 撤销删除 Toast */}
       {pendingDelete && (
         <UndoToast
-          message={sb.deletedCount.replace('{count}', String(pendingDelete.ids.length))}
+          message={interpolatePlural(sb.deletedCount, pendingDelete.ids.length)}
           onUndo={undoDelete}
           onDismiss={() => {
             // timer 已经在 softDelete 中设置了，这里是视觉消失后的回调

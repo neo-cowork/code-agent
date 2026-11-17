@@ -78,7 +78,7 @@ describe('AttachmentDisplay en labels (N-FIX-ATTACHMENT-ONLY-SEND-MISSING-PROMPT
     // archive 卡：计数串走 en 文案（同一行内相邻文本节点，用子串断言）
     expect(screen.getByText('zip · 4 files')).toBeTruthy();
     expect(screen.getByText(/4 entries listed/)).toBeTruthy();
-    expect(screen.getByText(/1 suspicious paths/)).toBeTruthy();
+    expect(screen.getByText(/1 suspicious path\b(?!s)/)).toBeTruthy();
     // code / data 卡：类型标签走 en 文案
     expect(screen.getByText('Code')).toBeTruthy();
     expect(screen.getByText('Data')).toBeTruthy();
@@ -87,6 +87,32 @@ describe('AttachmentDisplay en labels (N-FIX-ATTACHMENT-ONLY-SEND-MISSING-PROMPT
 
     // 只查可见文本：MediaAssetActionBar 的 title 提示（复制引用/更多）是另一组件的 i18n 债，不在本单范围
     expect(container.textContent).not.toMatch(/[一-鿿]/);
+  });
+
+  it('archive manifest keeps the truncation marker and agrees in number', () => {
+    const archive = (totalFiles: number, entryCount: number, truncated?: boolean): MessageAttachment => ({
+      id: `zip-${totalFiles}-${entryCount}`,
+      name: 'bundle.zip',
+      type: 'file',
+      category: 'archive',
+      mimeType: 'application/zip',
+      size: 4096,
+      archiveManifest: {
+        format: 'zip',
+        supported: true,
+        totalFiles,
+        truncated,
+        entries: Array.from({ length: entryCount }, (_, i) => ({ path: `f${i}.txt` })),
+        dangerousEntries: [],
+      },
+    } as MessageAttachment);
+    const truncated = render(<AttachmentDisplay attachments={[archive(500, 50, true)]} />);
+    expect(truncated.container.textContent).toContain('50+ entries listed');
+    truncated.unmount();
+    const single = render(<AttachmentDisplay attachments={[archive(1, 1)]} />);
+    expect(single.container.textContent).toContain('zip · 1 file');
+    expect(single.container.textContent).toContain('1 entry listed');
+    expect(single.container.textContent).not.toMatch(/1 (files|entries)/);
   });
 
   it('renders text/other cards with English type labels', () => {

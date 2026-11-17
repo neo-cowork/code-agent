@@ -12,6 +12,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { formatNextRun } from '../../../utils/formatNextRun';
 import { getBuiltinJobDisplay } from '../cron/builtinJobDisplay';
 import { SidebarDoctorAlert } from './SidebarDoctorAlert';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
@@ -64,7 +65,7 @@ export const SidebarCapabilityZone: React.FC = () => {
       formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US', nextJob.timeZone),
     ).replace('{name}', nextJob.name)
     : enabledJobs.length > 0
-      ? cz.automationCount.replace('{count}', String(enabledJobs.length))
+      ? interpolatePlural(cz.automationCount, enabledJobs.length)
       : cz.automationEmpty;
 
   // pb-2 = 入口区 ‖ 会话列表的区间断点（8px）；会话列表内三分区之间沿用同一 8px

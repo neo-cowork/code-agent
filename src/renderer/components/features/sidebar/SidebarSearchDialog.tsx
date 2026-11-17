@@ -10,6 +10,7 @@ import type {
   SidebarSearchScope,
 } from '../../../utils/sidebarMessageSearch';
 import { Input, Modal } from '../../primitives';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 interface SidebarSearchDialogProps {
   isOpen: boolean;
@@ -195,7 +196,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                         {hitGroup && (
                           <>
                             <span aria-hidden="true"> · </span>
-                            <span>{sb.messageHits.replace('{count}', String(hitGroup.totalHitCount))}</span>
+                            <span>{interpolatePlural(sb.messageHits, hitGroup.totalHitCount)}</span>
                           </>
                         )}
                       </span>

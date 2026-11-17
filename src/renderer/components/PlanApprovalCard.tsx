@@ -27,6 +27,7 @@ import {
   type PendingPlanApprovalTarget,
   updateMessageWithPlanApproval,
 } from '../utils/planApprovalView';
+import { interpolatePlural } from '../i18n/interpolate';
 
 type EditorMode = 'steps' | 'feedback';
 type ConflictChoice = 'local' | 'latest';
@@ -130,7 +131,7 @@ export const PlanApprovalEvidence: React.FC<{ approval: PlanApprovalRecord }> = 
   const [expanded, setExpanded] = useState(false);
   const approved = approval.status === 'approved';
   const summary = approved
-    ? t.planApproval.approvedSummary.replace('{count}', String(approval.steps.length))
+    ? interpolatePlural(t.planApproval.approvedSummary, approval.steps.length)
     : approval.status === 'revision_requested'
       ? t.planApproval.revisionSummary
       : approval.status === 'starting'
@@ -414,7 +415,7 @@ export const PlanApprovalCard: React.FC<{
         <div className="flex items-center gap-2 rounded-t-lg border-b border-zinc-800 bg-blue-500/10 px-4 py-2.5">
           <ListChecks className="h-4 w-4 shrink-0 text-badge-info" />
           <span className="text-sm font-medium text-badge-info">{t.planApproval.title}</span>
-          <span className="text-xs text-zinc-500">{t.planApproval.stepCount.replace('{count}', String(steps.length))}</span>
+          <span className="text-xs text-zinc-500">{interpolatePlural(t.planApproval.stepCount, steps.length)}</span>
           {version > 1 && (
             <span className="text-xs text-zinc-500" data-testid="plan-approval-version">
               {t.planApproval.version.replace('{version}', String(version))}

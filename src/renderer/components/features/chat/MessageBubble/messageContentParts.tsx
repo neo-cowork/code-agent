@@ -10,7 +10,7 @@ import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
-import { interpolate, interpolatePlural } from '../../../../i18n/interpolate';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import { SETTINGS_TAB_IDS, type SettingsTab } from '../../../../utils/settingsTabs';
 import {
   recordStreamingPerformanceCounter,
@@ -301,7 +301,7 @@ export const CodeBlock = memo(function CodeBlock({
           onClick={() => setCollapsed(!collapsed)}
           className="w-full py-1.5 text-xs text-zinc-500 hover:text-zinc-300 bg-zinc-800/50 border-t border-zinc-700 transition-colors"
         >
-          {collapsed ? interpolate(t.codeBlock.expandAll, { count: lines.length }) : t.codeBlock.collapse}
+          {collapsed ? interpolatePlural(t.codeBlock.expandAll, lines.length) : t.codeBlock.collapse}
         </button>
       )}
     </div>

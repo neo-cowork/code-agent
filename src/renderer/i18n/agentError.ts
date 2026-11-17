@@ -128,8 +128,8 @@ export const agentErrorZh = {
       generic: '运行失败',
     },
     repeat: {
-      noRetry: '同样的问题已连续出现 {n} 次。可以先换个模型继续，或按上面的提示处理好再发。',
-      retryable: '同样的问题已连续出现 {n} 次。',
+      noRetry: { one: '同样的问题已连续出现 {n} 次。可以先换个模型继续，或按上面的提示处理好再发。', other: '同样的问题已连续出现 {n} 次。可以先换个模型继续，或按上面的提示处理好再发。' },
+      retryable: { one: '同样的问题已连续出现 {n} 次。', other: '同样的问题已连续出现 {n} 次。' },
     },
     categories: {
       auth: {
@@ -248,8 +248,8 @@ export const agentErrorEn: typeof agentErrorZh = {
       generic: 'run failed',
     },
     repeat: {
-      noRetry: 'This has happened {n} times in a row. Switch to another model to keep going, or fix the issue above before sending again.',
-      retryable: 'This has happened {n} times in a row.',
+      noRetry: { one: 'This has happened {n} time in a row. Switch to another model to keep going, or fix the issue above before sending again.', other: 'This has happened {n} times in a row. Switch to another model to keep going, or fix the issue above before sending again.' },
+      retryable: { one: 'This has happened {n} time in a row.', other: 'This has happened {n} times in a row.' },
     },
     categories: {
       auth: {

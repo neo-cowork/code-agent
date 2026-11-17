@@ -702,7 +702,7 @@ export const zhSettingsWork = {
         delete: '删除',
         evidence: '证据',
         noEvidence: '无证据记录',
-        evidenceCount: '共 {count} 条来源记录',
+        evidenceCount: { one: '共 {count} 条来源记录', other: '共 {count} 条来源记录' },
         sourceSession: {
           open: '打开来源会话',
           missing: '来源会话已不存在，无法跳转',

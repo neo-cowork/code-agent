@@ -11,6 +11,7 @@ import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { formatDateTime } from '../../../../utils/formatDateTime';
 import { Button, Toggle } from '../../../primitives';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 interface SkillsSyncState {
   mode: 'off' | 'on' | 'paused';
@@ -73,7 +74,7 @@ export const ExternalSkillsSyncSection: React.FC = () => {
           <div className="mt-1 text-xs text-zinc-400" data-testid="external-skills-sync-status">{status}</div>
           {keptNeo > 0 && (
             <div className="mt-1 text-xs text-zinc-500" data-testid="external-skills-sync-kept-neo">
-              {copy.keptNeoLine.replace('{count}', String(keptNeo))}
+              {interpolatePlural(copy.keptNeoLine, keptNeo)}
             </div>
           )}
         </div>

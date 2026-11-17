@@ -10,6 +10,7 @@ import type { CronStoredArtifact } from '@shared/cronArtifactPath';
 import { useI18n } from '../../../hooks/useI18n';
 import { GhostButton } from '../../primitives';
 import { CronArtifactRows } from './CronArtifactRows';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 type ReviewDigest = NonNullable<NonNullable<SessionAutomationConfig['pendingReview']>['digest']>;
 
@@ -43,7 +44,7 @@ export const CronReviewDigest: React.FC<{
   const summary = visibleSummary(digest.summaryText ?? digest.summaryLine);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [open, setOpen] = useState(false);
-  const label = cc.inboxDigestArtifacts.replace('{count}', String(digest.artifactCount));
+  const label = interpolatePlural(cc.inboxDigestArtifacts, digest.artifactCount);
 
   return (
     <div data-testid="automation-review-digest">

@@ -2,7 +2,7 @@
 export const parkedApprovalVoidedZh = {
   restartPrefix: '重启前发起 · ',
   startedAt: '开始于 {time}',
-  summary: '{count} 条已作废的审批，没有执行',
+  summary: { one: '{count} 条已作废的审批，没有执行', other: '{count} 条已作废的审批，没有执行' },
   expand: '展开',
   collapse: '收起',
   action: '一项操作',
@@ -17,7 +17,7 @@ export const parkedApprovalVoidedZh = {
 export const parkedApprovalVoidedEn = {
   restartPrefix: 'Started before restart · ',
   startedAt: 'Started {time}',
-  summary: '{count} approvals were voided and did not run',
+  summary: { one: '{count} approval was voided and did not run', other: '{count} approvals were voided and did not run' },
   expand: 'Expand',
   collapse: 'Collapse',
   action: 'An action',

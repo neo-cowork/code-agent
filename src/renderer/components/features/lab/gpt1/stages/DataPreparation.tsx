@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { ChevronRight, Plus, Database, BarChart3, FileText } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 // 示例对话数据
 const sampleDialogues = [
@@ -89,7 +90,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                 <span className="text-xl">📚</span>
                 <div>
                   <span className="text-zinc-400 font-medium">{dp.augmentRepeatLabel}</span>
-                  {dp.augmentRepeatDesc.replace('{count}', String(dataStats.repetitions))}
+                  {interpolatePlural(dp.augmentRepeatDesc, dataStats.repetitions)}
                 </div>
               </div>
               <div className="flex items-start gap-2">
@@ -111,11 +112,11 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
                 <span className="w-6 h-6 rounded-full bg-blue-500/20 text-badge-info text-xs flex items-center justify-center font-bold">1</span>
-                <span className="text-zinc-400">{dp.processStep1.replace('{count}', String(dataStats.dialoguePatterns))}</span>
+                <span className="text-zinc-400">{interpolatePlural(dp.processStep1, dataStats.dialoguePatterns)}</span>
               </div>
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
                 <span className="w-6 h-6 rounded-full bg-blue-500/20 text-badge-info text-xs flex items-center justify-center font-bold">2</span>
-                <span className="text-zinc-400">{dp.processStep2.replace('{count}', String(dataStats.repetitions))}</span>
+                <span className="text-zinc-400">{interpolatePlural(dp.processStep2, dataStats.repetitions)}</span>
               </div>
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
                 <span className="w-6 h-6 rounded-full bg-blue-500/20 text-badge-info text-xs flex items-center justify-center font-bold">3</span>

@@ -260,7 +260,7 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     : mergeState === 'reported'
       ? text.mergeState.chipReported
       : mergeState === 'conflict'
-        ? text.mergeState.chipConflict.replace('{count}', String(conflicts.length))
+        ? interpolatePlural(text.mergeState.chipConflict, conflicts.length)
         : mergeState === 'waiting'
           ? text.mergeState.chipWaiting
           : null;

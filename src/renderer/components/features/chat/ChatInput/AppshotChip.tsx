@@ -12,6 +12,7 @@ import { Modal } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppIcon } from '../../../../hooks/useAppIcon';
 import type { Translations } from '../../../../i18n/zh';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 // 与 Rust 侧 AX_TEXT_MAX_CHARS 对齐：axText 达到该长度即视为被截断。
 const APPSHOT_TEXT_LIMIT = 4000;
@@ -202,7 +203,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove, res
               <div className="mt-2 flex items-center gap-1.5 text-2xs text-zinc-500">
                 <span className={source.className}>{source.label}</span>
                 <span>·</span>
-                <span>{t.appshotChip.textChars.replace('{count}', String(textChars))}</span>
+                <span>{interpolatePlural(t.appshotChip.textChars, textChars)}</span>
                 {textTruncated && (
                   <>
                     <span>·</span>

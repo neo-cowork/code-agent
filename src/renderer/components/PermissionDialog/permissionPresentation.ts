@@ -9,6 +9,7 @@ import type { RmCommandTargets } from '@shared/rmCommandTargets';
 import { parseRmTargets } from '@shared/rmCommandTargets';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
+import { interpolatePlural } from '../../i18n/interpolate';
 
 function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
@@ -151,7 +152,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
 
 function fileCountText(count: number | undefined, t: Translations): string {
   if (count === undefined) return '';
-  return t.decisionCard.permission.fileCount.replace('{count}', String(count));
+  return interpolatePlural(t.decisionCard.permission.fileCount, count);
 }
 
 /**

@@ -28,6 +28,7 @@ import ipcService from '../../../../services/ipcService';
 import { Toggle } from '../../../primitives/Toggle';
 import { Badge } from '../../../primitives/Badge';
 import { InputAddSubmenu, type InputAddSubmenuItem } from './InputAddSubmenu';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 
 interface Props {
   onFileSelect: (files: FileList) => void;
@@ -237,7 +238,7 @@ export const InputAddMenu: React.FC<Props> = ({
       : item.kind === 'connector'
         ? item.detail || item.capabilities.join(' · ')
         // MCP server：优先展示与能力中心「连接器」页同源的目录描述，没有才回退工具数
-        : item.description || item.error || (item.toolCount > 0 ? t.inputAddMenu.submenuMcpTools.replace('{count}', String(item.toolCount)) : undefined),
+        : item.description || item.error || (item.toolCount > 0 ? interpolatePlural(t.inputAddMenu.submenuMcpTools, item.toolCount) : undefined),
     selected: item.selected,
   }));
   const teamItems: InputAddSubmenuItem[] = recipes.map((recipe) => ({

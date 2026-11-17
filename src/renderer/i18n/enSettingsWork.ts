@@ -700,7 +700,7 @@ export const enSettingsWork = {
         confirmDelete: 'Confirm delete',
         delete: 'Delete',
         evidence: 'Evidence',
-        noEvidence: 'No evidence records', evidenceCount: '{count} source record(s)',
+        noEvidence: 'No evidence records', evidenceCount: { one: '{count} source record', other: '{count} source records' },
         sourceSession: {
           open: 'Open source session',
           missing: 'Source session no longer exists',

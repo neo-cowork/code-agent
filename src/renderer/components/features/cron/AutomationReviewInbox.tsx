@@ -376,7 +376,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           {isPairing
                             ? cc.pairingTitle.replace('{channel}', item.pairingChannel === 'lark' ? 'Lark' : 'Feishu')
                             : item.groupIds && item.groupIds.length > 1 && item.writeGrantFolder
-                              ? cc.parkedWriteGroupTitle.replace('{count}', String(item.groupIds.length)).replace('{folder}', folderDisplayName(item.writeGrantFolder))
+                              ? interpolatePlural(cc.parkedWriteGroupTitle, item.groupIds.length, { folder: folderDisplayName(item.writeGrantFolder) })
                               : (parkedToolTitle(item, cc, language === 'en' ? 'en' : 'zh'))}
                           {isExternal && (
                             <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-badge-warning">
@@ -504,7 +504,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 })}
                 {foldVoided && (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-1 text-xs text-zinc-500" data-testid="parked-approval-voided-summary">
-                    <span>{cc.parkedVoided.summary.replace('{count}', String(voided.length))}</span>
+                    <span>{interpolatePlural(cc.parkedVoided.summary, voided.length)}</span>
                     <Button variant="ghost" size="sm" aria-expanded={voidedExpanded} data-testid="parked-approval-voided-toggle" onClick={() => setVoidedExpanded((expanded) => !expanded)}>
                       {voidedExpanded ? cc.parkedVoided.collapse : cc.parkedVoided.expand}
                     </Button>
@@ -611,7 +611,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             )}
                             {maxRunsReached && (
                               <div className="whitespace-pre-wrap break-words text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
-                                {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
+                                {maxRunsReached.summary ?? interpolatePlural(cc.inboxMaxRunsReached, maxRunsReached.maxRuns)}
                               </div>
                             )}
                             {record.config?.pendingReview?.connectorLost?.summary && (
@@ -627,10 +627,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             {record.config?.missedNotice ? (
                               <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
                                 {record.config.missedNotice.reason === 'webhook-expired'
-                                  ? cc.inboxWebhookExpired.replace(
-                                    '{count}',
-                                    String(record.config.missedNotice.count ?? 0),
-                                  )
+                                  ? interpolatePlural(cc.inboxWebhookExpired, record.config.missedNotice.count ?? 0)
                                   : cc.inboxMissedAt.replace(
                                     '{time}',
                                     formatDateTime(record.config.missedNotice.scheduledAt, language),

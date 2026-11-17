@@ -9,7 +9,7 @@ import type {
 import type { ComputerUseTarget } from '../../../utils/computerUseWorkbench';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
-import { interpolate } from '../../../i18n/interpolate';
+import { interpolatePlural } from '../../../i18n/interpolate';
 
 export type StatusTone = 'ready' | 'blocked' | 'warning' | 'neutral';
 
@@ -222,7 +222,7 @@ export const ComputerUseDiagnostics: React.FC<ComputerUseDiagnosticsProps> = ({
                 <AppWindow className="h-4 w-4 text-badge-info" />
                 <h3 className="text-sm font-medium text-zinc-200">{diag.targetsTitle}</h3>
               </div>
-              <span className="text-[11px] text-zinc-500">{interpolate(diag.targetsCount, { count: targets.length })}</span>
+              <span className="text-[11px] text-zinc-500">{interpolatePlural(diag.targetsCount, targets.length)}</span>
             </div>
             {targets.length === 0 ? (
               <div className="p-6 text-sm text-zinc-500">{diag.targetsEmpty}</div>
@@ -293,7 +293,7 @@ export const ComputerUseDiagnostics: React.FC<ComputerUseDiagnosticsProps> = ({
                   />
                 )}
                 <StatusPill
-                  label={interpolate(diag.elementsPill, { count: elementCount })}
+                  label={interpolatePlural(diag.elementsPill, elementCount)}
                   tone={elementCandidates.length > 0 ? 'ready' : elementsError ? 'blocked' : 'neutral'}
                 />
               </div>

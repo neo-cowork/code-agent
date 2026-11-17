@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { ChevronLeft, Send, Sparkles, BarChart3, Settings2 } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../../i18n/interpolate';
 
 // 模拟回复生成
 const simulatedResponses: Record<string, string[]> = {
@@ -164,7 +165,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-xs text-zinc-400">{it.topKLabel}</label>
-                  <span className="text-xs font-bold text-badge-info">{it.topKValue.replace('{count}', String(topK))}</span>
+                  <span className="text-xs font-bold text-badge-info">{interpolatePlural(it.topKValue, topK)}</span>
                 </div>
                 <input
                   type="range"
