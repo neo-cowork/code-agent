@@ -14,6 +14,10 @@ export const toolErrorCodesZh = {
     summary: '这一步没有执行，这一轮对话里没有开放这个操作',
     detail: '请在新消息里再告诉 Neo 你想做什么（比如具体的时间或内容），它会重新发起。',
   },
+  TOOL_BATCH_SKIPPED: {
+    summary: '这一步没有执行，同一批里的另一个操作没有开放',
+    detail: '不需要处理；如果还需要这一步，请在新消息里告诉 Neo。',
+  },
   WORKBENCH_SCOPE_DENIED: {
     summary: '当前工作台范围不允许使用这个工具',
     detail: '工具被工作台范围拦截；调整范围或改用范围内的工具。',
@@ -120,6 +124,10 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   TOOL_DISABLED_FOR_RUN: {
     summary: 'This step did not run: that action was not available in this turn',
     detail: 'Tell Neo again in a new message what you want (for example the exact time or details) and it will retry.',
+  },
+  TOOL_BATCH_SKIPPED: {
+    summary: 'This step did not run: another action in the same batch was not available',
+    detail: 'Nothing to do; if you still need this step, tell Neo in a new message.',
   },
   WORKBENCH_SCOPE_DENIED: {
     summary: 'This tool is not allowed in the current workbench scope',
