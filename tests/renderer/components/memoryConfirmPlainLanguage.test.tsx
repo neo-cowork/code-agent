@@ -52,6 +52,7 @@ const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
 const { resetToolResolver } = await import('../../../src/host/tools/dispatch/toolResolver');
 const { respondToDirectiveMemoryConfirmation, clearDirectiveMemoryConfirmationsForTest } =
   await import('../../../src/host/memory/directiveMemoryConfirmation');
+const { useAppStore } = await import('../../../src/renderer/stores/appStore');
 const { MemoryConfirmModal } = await import('../../../src/renderer/components/features/memory/MemoryConfirmModal');
 
 const schemas = [
@@ -89,7 +90,7 @@ async function captureCard(tool: string, params: Record<string, unknown>): Promi
 
 function expectPlain(text: string) {
   for (const raw of ['{"', 'MemoryWrite', 'Bash', 'directive', 'Persistent memory']) {
-    expect(text).not.toContain(raw);
+    expect(text.toLowerCase()).not.toContain(raw.toLowerCase());
   }
 }
 
@@ -123,6 +124,23 @@ describe('全局记忆确认卡用人话', () => {
     expect(document.body.textContent).not.toContain('Persistent memory write');
     respondToDirectiveMemoryConfirmation(request.id, false);
     await done;
+  });
+
+  it('英文界面：标题与正文同样无 Directive / 工具名 / JSON（大小写不敏感）', async () => {
+    useAppStore.setState({ language: 'en' });
+    try {
+      const { request, done } = await captureCard('MemoryWrite', {
+        action: 'write', scope: 'global', filename: 'report_style.md', name: 'report', type: 'directive', content: 'Conclusion first, then process.',
+      });
+      render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
+      expect(screen.getByTestId('memory-confirm-body').textContent).toBe('Remember: Conclusion first, then process.');
+      expect(screen.getByText('Confirm user rule')).toBeTruthy();
+      expectPlain((document.body.textContent ?? '').replace('100% 置信度', ''));
+      respondToDirectiveMemoryConfirmation(request.id, false);
+      await done;
+    } finally {
+      useAppStore.setState({ language: 'zh' });
+    }
   });
 
   it('Bash 写记忆目录：内容为空 → 通用一句人话，不露命令或工具名', async () => {
