@@ -1,4 +1,5 @@
 import { createLogger } from '../infra/logger';
+import { stallClockHeld } from '../../agent/stallObserver';
 import { ROLE_PROACTIVITY } from '../../../shared/constants';
 
 // ============================================================================
@@ -47,15 +48,21 @@ export async function withWakeRunTimeout<T>(run: () => Promise<T>, options: Wake
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   activeWakeRuns.set(options.sessionId, (activeWakeRuns.get(options.sessionId) ?? 0) + 1);
-  const runPromise = run();
+  let remainingMs = options.timeoutMs;
+  let lastTick = Date.now();
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
+    timer = setInterval(() => {
+      const now = Date.now();
+      if (!stallClockHeld(options.sessionId)) remainingMs -= now - lastTick;
+      lastTick = now;
+      if (remainingMs > 0) return;
       timedOut = true;
       reject(new Error(
         `Role wake timed out after ${options.timeoutMs}ms (${options.phase}, role=${options.roleId}, session=${options.sessionId})`,
       ));
-    }, options.timeoutMs);
+    }, Math.min(options.timeoutMs, ROLE_PROACTIVITY.WAKE_PAUSE_POLL_MS));
   });
+  const runPromise = Promise.resolve().then(run);
   try {
     return await Promise.race([runPromise, timeoutPromise]);
   } catch (error) {

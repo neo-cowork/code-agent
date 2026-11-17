@@ -543,6 +543,7 @@ export class SessionCommandCenter {
       taskId?: unknown;
       error?: unknown;
       conclusion?: unknown;
+      detail?: unknown;
       artifacts?: unknown;
     } | undefined;
     const id = typeof data?.taskId === 'string' ? data.taskId : undefined;
@@ -596,7 +597,7 @@ export class SessionCommandCenter {
       return;
     }
     if (event.type === 'task_cancelled') {
-      await this.settle(task, 'cancelled', '任务已取消。');
+      await this.settle(task, 'cancelled', typeof data?.detail === 'string' ? data.detail : '任务已取消。');
     }
   }
 
@@ -660,6 +661,9 @@ export class SessionCommandCenter {
       ...task.progress,
       ...(current === undefined ? {} : { current }),
       ...(data.toolTotal === undefined ? {} : { total: data.toolTotal }),
+      ...(data.tool === 'Bash' || data.tool === 'bash'
+        ? { bashSteps: [...(task.progress?.bashSteps ?? []), { ...(data.description ? { description: data.description } : {}), command: data.target ?? '' }].slice(-20) }
+        : {}),
       ...(data.progress === undefined ? {} : { percent: data.progress }),
       ...(data.step ? { label: data.step } : {}),
       lastToolStep: {
@@ -667,6 +671,7 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        ...(data.description ? { description: data.description } : {}),
         at: Date.now(),
       },
     };

@@ -170,15 +170,6 @@ export async function maybeInjectThinking(
     const thinkingPrompt = ctx.generateThinkingPrompt(toolCalls, toolResults);
     ctx.injectAdvisoryTailMessage(thinkingPrompt, 'adaptive-thinking', 'adaptive-thinking');
 
-    // 发送思考事件到 UI（可折叠显示）
-    ctx.runtime.onEvent({
-      type: 'agent_thinking',
-      data: {
-        message: `[Thinking Step ${ctx.runtime.turn.thinkingStepCount}] Effort: ${ctx.runtime.turn.effortLevel}`,
-        progress: undefined,
-      },
-    });
-
     logger.debug(`[AgentLoop] Thinking step ${ctx.runtime.turn.thinkingStepCount} injected (effort: ${ctx.runtime.turn.effortLevel})`);
   } catch (error) {
     logger.warn('[AgentLoop] Failed to inject thinking step:', error);

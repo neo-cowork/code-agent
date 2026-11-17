@@ -9,6 +9,8 @@
 // - 本文件只做「语法 → 计划」，不碰文件系统；路径授权与执行在 readOnlyProbeExecutor.ts。
 // ============================================================================
 
+import { compileReadOnlyFileLoop, type ProbeFileLoop } from './readOnlyProbeFileLoop';
+
 type ProbeStream = 'out' | 'err' | 'null';
 
 /** 一条简单命令的 fd1 / fd2 最终去向（按 shell 从左到右的重定向语义折叠）。 */
@@ -29,12 +31,15 @@ export type PyStmt =
   | { t: 'try'; body: PyStmt[]; excName: string | null; handler: PyStmt[] };
 
 export type ProbeCommand =
+  | ProbeFileLoop
   | { kind: 'noop' }
   | { kind: 'test'; flag: '-e' | '-f' | '-d'; path: string }
   | { kind: 'echo'; text: string; newline: boolean }
   | { kind: 'printf'; text: string }
   | { kind: 'command-v'; name: string }
-  | { kind: 'ls'; flags: string[]; paths: string[] }
+  | { kind: 'ls'; flags: string[]; paths: string[]; headLines?: number }
+  | { kind: 'cd'; path: string }
+  | { kind: 'file-read'; program: 'cat' | 'wc' | 'head'; flags: string[]; paths: string[] }
   | { kind: 'xattr'; paths: string[] }
   | { kind: 'id-un' }
   | { kind: 'whoami' }
@@ -49,6 +54,8 @@ interface ProbeStep {
   program: string;
   /** 该步对应的原文片段，供用户规则逐段匹配。 */
   source: string;
+  /** Additional literal pipeline programs, each checked against user rules. */
+  extraSources?: string[];
 }
 
 export interface ReadOnlyProbePlan {
@@ -60,6 +67,8 @@ const RESERVED_VAR_NAMES = new Set([
 ]);
 const LS_FLAG_CHARS = 'lahAFdtrSpOi@e1ns';
 const MAX_COMMAND_LENGTH = 8000;
+// A typed echo-only placeholder: never passed to a shell or interpreted as a path.
+export const PROBE_EXIT_STATUS = '\u0001probe-status\u0001';
 
 interface Word {
   value: string;
@@ -70,6 +79,7 @@ interface Word {
 type Token =
   | { type: 'word'; word: Word; start: number; end: number }
   | { type: 'op'; op: ';' | '&&' | '||'; start: number; end: number }
+  | { type: 'pipe'; start: number; end: number }
   | { type: 'redir'; fd: 1 | 2; target: 'null' | 1 | 2; start: number; end: number };
 
 const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -97,6 +107,7 @@ function tokenize(src: string, vars: Map<string, string>, home: string): Token[]
         if (src[i + 2] === ch || src[i + 2] === '&' || src[i + 2] === '|') return null;
         tokens.push({ type: 'op', op: ch === '&' ? '&&' : '||', start: i, end: i + 2 }); atStart = true; i += 2; continue;
       }
+      if (ch === '|') { tokens.push({ type: 'pipe', start: i, end: i + 1 }); i++; atStart = true; continue; }
       return null;
     }
     // 重定向只在 token 起点识别，且只认 2>&1 / >/dev/null / 2>/dev/null / 1>/dev/null / 1>&2
@@ -140,6 +151,11 @@ function tokenize(src: string, vars: Map<string, string>, home: string): Token[]
             return null;
           }
           if (d === '$') {
+            if (src.slice(i, i + 2) === '$?') {
+              value += PROBE_EXIT_STATUS;
+              i += 2;
+              continue;
+            }
             const braced = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(src.slice(i));
             const plain = /^\$([A-Za-z_][A-Za-z0-9_]*)/.exec(src.slice(i));
             const m = braced ?? plain;
@@ -390,7 +406,30 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
   if (!head.bare) return null;
   const argv = rest.map((w) => w.value);
   const program = head.value;
+  if (program !== 'echo' && argv.some((word) => word.includes(PROBE_EXIT_STATUS))) return null;
   switch (program) {
+    case 'cd':
+      return argv.length === 1 && argv[0] !== '' && !argv[0].startsWith('-') ? { program, cmd: { kind: 'cd', path: argv[0] } } : null;
+    case 'cat':
+    case 'wc':
+    case 'head': {
+      let rest = [...argv];
+      const flags: string[] = [];
+      if (program === 'wc') {
+        if (!['-c', '-l'].includes(rest[0])) return null;
+        flags.push(rest.shift() as string);
+      } else if (program === 'head') {
+        let count = '10';
+        if (/^-\d+$/.test(rest[0] ?? '')) count = (rest.shift() as string).slice(1);
+        else if (rest[0] === '-n') { rest.shift(); count = rest.shift() ?? ''; }
+        if (!/^\d+$/.test(count) || Number(count) < 1 || Number(count) > 10000) return null;
+        flags.push('-n', String(Number(count)));
+      }
+      const endOfFlags = rest[0] === '--';
+      if (endOfFlags) rest = rest.slice(1);
+      if (!rest.length || rest.some((operand) => !operand || operand === '-' || (!endOfFlags && operand.startsWith('-')))) return null;
+      return { program, cmd: { kind: 'file-read', program, flags, paths: rest } };
+    }
     case 'test': {
       if (argv.length !== 2 || !['-e', '-f', '-d'].includes(argv[0]) || argv[1] === '') return null;
       return { program, cmd: { kind: 'test', flag: argv[0] as '-e' | '-f' | '-d', path: argv[1] } };
@@ -449,7 +488,15 @@ export interface ProbeCompileContext {
 /** 编译；任何一处不能证明只读就返回 null（调用方原样走审批）。 */
 export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileContext): ReadOnlyProbePlan | null {
   if (ctx.platform === 'win32') return null;
-  if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0')) return null;
+  if (!command || command.length > MAX_COMMAND_LENGTH || command.includes('\0') || command.includes('\u0001')) return null;
+  const loop = compileReadOnlyFileLoop(command, ctx.homeDir);
+  if (loop) {
+    const prefix = loop.prefix ? compileReadOnlyProbePlan(loop.prefix, ctx) : undefined;
+    if (loop.prefix && !prefix) return null;
+    return { steps: [...prefix?.steps ?? [], { op: ';', cmd: loop, redirect: { out: 'out', err: 'err' }, program: 'file-loop', source: command,
+    extraSources: [...loop.sources, ...(loop.body.some((statement) => statement.kind === 'echo' && statement.parts.some((part) => 'value' in part && part.value === 'bytes')) ? ['wc -c'] : []), ...loop.files.map((file) => `cat ${JSON.stringify(file.path)}`)],
+    }] };
+  }
   const tokens = tokenize(command, new Map(), ctx.homeDir);
   if (!tokens) return null;
 
@@ -458,6 +505,27 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
   let group: Token[] = [];
   const flush = (): boolean => {
     if (group.length === 0) return false;
+    const pipe = group.findIndex((token) => token.type === 'pipe');
+    if (pipe >= 0) {
+      const left = group.slice(0, pipe);
+      const right = group.slice(pipe + 1);
+      if (!left.length || right.some((token) => token.type !== 'word') || right.length < 2) return false;
+      const words = right.map((token) => (token as Extract<Token, { type: 'word' }>).word);
+      const [head, ...args] = words;
+      if (!head.bare || head.value !== 'head' || words.some((word) => word.assignName !== undefined)) return false;
+      const count = args.length === 1 && /^-\d+$/.test(args[0].value) ? args[0].value.slice(1)
+        : args.length === 2 && args[0].value === '-n' && /^\d+$/.test(args[1].value) ? args[1].value : undefined;
+      if (count === undefined || Number(count) < 1 || Number(count) > 10000) return false;
+      if (left.some((token) => token.type !== 'word' && token.type !== 'redir')) return false;
+      const compiled = compileSimple(left.filter((token) => token.type === 'word').map((token) => token.word));
+      if (compiled?.cmd.kind !== 'ls') return false;
+      const source = command.slice(group[0].start, group[group.length - 1].end).trim();
+      const headSource = command.slice(right[0].start, right[right.length - 1].end).trim();
+      const redirs = left.filter((token) => token.type === 'redir');
+      steps.push({ op, cmd: { ...compiled.cmd, headLines: Number(count) }, redirect: foldRedirect(redirs), program: 'ls', source, extraSources: [headSource] });
+      group = [];
+      return true;
+    }
     const words: Word[] = [];
     const redirs: Extract<Token, { type: 'redir' }>[] = [];
     for (const t of group) {
@@ -471,6 +539,7 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
     if (head.assignName !== undefined) {
       const name = head.assignName;
       if (words.length !== 1 || redirs.length > 0 || op !== ';') return false;
+      if (head.value.includes(PROBE_EXIT_STATUS)) return false;
       if (RESERVED_VAR_NAMES.has(name) || /^(LD_|DYLD_|LC_)/.test(name)) return false;
       steps.push({ op, cmd: { kind: 'noop' }, redirect: { out: 'out', err: 'err' }, program: 'assign', source });
       return true;
