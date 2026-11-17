@@ -52,6 +52,13 @@ for (const language of ['zh', 'en'] as const) {
         }
       });
     }
+    it('browser_action approvals keep their own web titles (not overridden by the shared table)', () => {
+      const p = t.decisionCard.permission;
+      const base = { id: 'b', tool: 'browser_action', type: 'command' as const };
+      expect(describeApproval({ ...base, details: { action: 'navigate', url: 'https://example.com' } }, t, language).title).toBe(p.titleWebOpen);
+      expect(describeApproval({ ...base, details: { action: 'click' } }, t, language).title).toBe(p.titleWebAction);
+      expect(describeApproval({ ...base, details: { action: 'write_clipboard' } }, t, language).title).toBe(p.titleWebClipboard);
+    });
     it('pending-approval status bar command label matches', () => {
       expect(t.automationPresentation.runCommand).toBe(CANONICAL.Bash[language]);
     });
