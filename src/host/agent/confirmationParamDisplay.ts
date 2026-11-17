@@ -7,8 +7,8 @@ import path from 'path';
 // eslint-disable-next-line no-restricted-imports -- 复用聊天上传目录判定的单一真源（纯路径判断，不执行工具）
 import { isChatUploadPath } from '../tools/file/pathUtils';
 
-// 对用户无意义的内部开关，无论取值类型一律不展示。
-const INTERNAL_SWITCH_KEYS = new Set(['dry_run', 'dryRun', 'debug', 'verbose']);
+// 对用户无意义的内部开关/样式参数（取值是内部枚举，如 theme: professional），无论取值类型一律不展示。
+const INTERNAL_SWITCH_KEYS = new Set(['dry_run', 'dryRun', 'debug', 'verbose', 'theme']);
 
 const PARAM_LABELS: Record<string, { zh: string; en: string }> = {
   sheet_name: { zh: '工作表', en: 'Sheet' },
@@ -19,6 +19,17 @@ const PARAM_LABELS: Record<string, { zh: string; en: string }> = {
 };
 
 const TEMP_DIR_PREFIXES = ['/tmp', '/private/tmp', '/var/folders', '/private/var/folders'];
+
+const PATH_KEYS = ['output_path', 'file_path', 'path'];
+
+/** 预览取 3 行名额时的排序：保存位置/文件路径优先，其次有标签的键，最后未知键；同级保持原顺序。 */
+export function orderParamEntries<T>(entries: Array<[string, T]>): Array<[string, T]> {
+  const rank = (key: string): number => (PATH_KEYS.includes(key) ? 0 : key in PARAM_LABELS ? 1 : 2);
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => rank(a.entry[0]) - rank(b.entry[0]) || a.index - b.index)
+    .map(item => item.entry);
+}
 
 export function isInternalSwitchParam(key: string): boolean {
   return INTERNAL_SWITCH_KEYS.has(key);

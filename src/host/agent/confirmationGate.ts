@@ -22,7 +22,7 @@ import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedac
 import { isBashToolName } from '../tools/toolNames';
 import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 import { resolveAgent } from './agentRegistry';
-import { displayPathValue, isInternalSwitchParam, isStructuredDataText, localizeParamKey } from './confirmationParamDisplay';
+import { displayPathValue, isInternalSwitchParam, isStructuredDataText, orderParamEntries, localizeParamKey } from './confirmationParamDisplay';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ConfirmationGate');
@@ -363,7 +363,7 @@ export class ConfirmationGate {
       default: {
         const lines: string[] = [];
         const locale = getHostUiLocale();
-        for (const [key, rawValue] of Object.entries(params)) {
+        for (const [key, rawValue] of orderParamEntries(Object.entries(params))) {
           if (lines.length >= 3) break;
           if (isInternalSwitchParam(key)) continue;
           if (typeof rawValue !== 'string') continue;

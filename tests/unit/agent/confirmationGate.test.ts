@@ -420,13 +420,13 @@ describe('ConfirmationGate', () => {
 
       it('zh: localized labels, no dry_run, temp path reduced to file name', () => {
         const p = build('zh', { output_path: '/var/folders/ab/xyz/T/sales.xlsx' });
-        expect(p?.diff).toBe('标题: Sales\n工作表: Sales\n保存到: sales.xlsx');
+        expect(p?.diff).toBe('保存到: sales.xlsx\n标题: Sales\n工作表: Sales');
         expect(p?.diff).not.toMatch(/sheet name|output path|dry run|dry_run/);
       });
 
       it('en: English labels', () => {
         const p = build('en', { output_path: '/tmp/sales.xlsx' });
-        expect(p?.diff).toBe('Title: Sales\nSheet: Sales\nSave to: sales.xlsx');
+        expect(p?.diff).toBe('Save to: sales.xlsx\nTitle: Sales\nSheet: Sales');
       });
 
       it('drops internal switches regardless of value type', () => {
@@ -453,7 +453,22 @@ describe('ConfirmationGate', () => {
 
       it('skips JSON-looking data payload so it does not use up the 3-line cap', () => {
         const p = build('en', { data: '[{"month":"Jan","amount":1200}]', output_path: '/Users/other/a.xlsx' });
-        expect(p?.diff).toBe('Title: Sales\nSheet: Sales\nSave to: /Users/other/a.xlsx');
+        expect(p?.diff).toBe('Save to: /Users/other/a.xlsx\nTitle: Sales\nSheet: Sales');
+      });
+
+      it.each([
+        ['zh', '保存到: /Users/other/Documents/sales.xlsx\n标题: Sales\n工作表: Sales'],
+        ['en', 'Save to: /Users/other/Documents/sales.xlsx\nTitle: Sales\nSheet: Sales'],
+      ] as const)('%s: real model arg order keeps save location, drops theme', (locale, expected) => {
+        const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(locale);
+        try {
+          const p = new ConfirmationGate().buildPreview('excel_generate', {
+            title: 'Sales', sheet_name: 'Sales', theme: 'professional',
+            data: '[{"month":"Jan"}]', output_path: '/Users/other/Documents/sales.xlsx',
+          }, { workspaceRoot: WSR });
+          expect(p?.diff).toBe(expected);
+          expect(p?.diff).not.toMatch(/theme/i);
+        } finally { spy.mockRestore(); }
       });
 
       it('unknown keys unchanged', () => {
