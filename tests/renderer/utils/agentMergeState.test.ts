@@ -85,4 +85,20 @@ describe('deriveAgentMergeState', () => {
     expect(deriveAgentMergeState(rows('done', 'failed'), [])).toBeNull(); // 有失败不算合
     expect(deriveAgentMergeState([], [])).toBeNull();
   });
+
+  it('账本回填的 filesChanged：写文件角色 => merged，只读研究角色没有路径 => reported，失败/取消 => null', () => {
+    const ledgerPaths = ['/work/kickoff.md'];
+    expect(deriveAgentMergeState([
+      { status: 'done', roleId: 'coder', filesChanged: ledgerPaths },
+      { status: 'done', roleId: 'coder', filesChanged: ['/work/risks.md'] },
+    ], [])).toBe('merged');
+    expect(deriveAgentMergeState([
+      { status: 'done', roleId: 'explore', filesChanged: [] },
+      { status: 'done', roleId: 'explore', filesChanged: [] },
+    ], [])).toBe('reported');
+    expect(deriveAgentMergeState([
+      { status: 'done', roleId: 'coder', filesChanged: ledgerPaths },
+      { status: 'failed', roleId: 'coder', filesChanged: ledgerPaths },
+    ], [])).toBeNull();
+  });
 });

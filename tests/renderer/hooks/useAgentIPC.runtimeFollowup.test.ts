@@ -5,6 +5,7 @@ import {
   isRuntimeBusyStatus,
 } from '../../../src/renderer/hooks/agent/agentRuntimeFollowup';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { httpFailureMessage } from '../../../src/renderer/utils/httpFailureMessage';
 import { getRuntimeFollowupFailureMessage } from '../../../src/renderer/hooks/agent/useAgentIPC';
 
 describe('runtime follow-up helpers', () => {
@@ -139,5 +140,13 @@ describe('runtime follow-up helpers', () => {
     } finally {
       useAppStore.setState({ language: original });
     }
+  });
+
+  // 域通道（/api/interrupt）非 2xx 的 message 已由 transport 换成人话，直接采用，不落回通用句。
+  it('keeps the transport-humanized message of a domain HTTP failure', () => {
+    const copy = '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。';
+    expect(getAgentSendFailureMessage(Object.assign(new Error(copy), { code: 'HTTP_409' }))).toBe(copy);
+    expect(httpFailureMessage({ status: 409, code: 'RUN_SESSION_CONFLICT', language: 'zh' })).toBe(copy);
+    expect(httpFailureMessage({ status: 409, language: 'zh' })).toBe('上一轮还没结束，请稍候再发送。');
   });
 });

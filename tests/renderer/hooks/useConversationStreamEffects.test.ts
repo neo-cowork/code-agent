@@ -478,7 +478,7 @@ describe('applyConversationStreamEvent model_decision', () => {
             tokenSavings: {
               status: 'estimated',
               savedTokens: 64,
-              detail: '估算值，真实账单以 provider usage 为准。',
+              detail: '估算值，真实账单以服务商用量为准。',
               basis: {
                 source: 'tool-spec-local-estimate',
                 toolCount: 3,
@@ -1662,6 +1662,13 @@ describe('turn cost stream wiring', () => {
       actions as never,
     );
     expect(useStatusStore.getState().currentTurnModel).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' });
+    // 输入框模型名的真源（N-FIX-MODEL-PICKER-SHOWS-WRONG-MODEL）：按会话记下 host 这一轮的决策
+    expect(useStatusStore.getState().lastModelDecision).toEqual({
+      sessionId: 's1',
+      requestedProvider: 'deepseek', requestedModel: 'deepseek-v4-pro',
+      resolvedProvider: 'deepseek', resolvedModel: 'deepseek-v4-pro',
+      reason: 'user-selected',
+    });
 
     applyConversationStreamEvent(
       { type: 'stream_usage', sessionId: 's1', data: { inputTokens: 1_000_000, outputTokens: 0 } } as never,

@@ -1,5 +1,7 @@
+import { resolveSkillName } from './resolveSkillName';
+import { toolUserLabel } from './utils/toolUserLabel';
 import {
-  detectInternalTextLeaks,
+  detectInternalTextLeaks, CATALOG_SLUG_GLOBAL_RE,
   ENGLISH_STATE_REGEXES,
   type InternalTextFormat,
   CALL_ID_EXACT_RE, CALL_ID_GLOBAL_RE, INLINE_RAW_JSON_RE, INTERNAL_TOOL_GLOBAL_RE,
@@ -22,11 +24,11 @@ export interface HumanizedInternalTextResult {
 }
 
 const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
-  read_file: { zh: '读取文件', en: 'Read file' },
-  write_file: { zh: '写入文件', en: 'Write file' },
-  edit_file: { zh: '编辑文件', en: 'Edit file' },
+  read_file: { zh: toolUserLabel('read', 'zh'), en: toolUserLabel('read', 'en') },
+  write_file: { zh: toolUserLabel('write', 'zh'), en: toolUserLabel('write', 'en') },
+  edit_file: { zh: toolUserLabel('edit', 'zh'), en: toolUserLabel('edit', 'en') },
   list_directory: { zh: '查看目录', en: 'List directory' },
-  web_fetch: { zh: '读取网页', en: 'Fetch web page' },
+  web_fetch: { zh: toolUserLabel('webfetch', 'zh'), en: toolUserLabel('webfetch', 'en') },
   todo_write: { zh: '更新待办清单', en: 'Update checklist' },
   spawn_agent: { zh: '启动协作助手', en: 'Start helper' },
   agent_message: { zh: '发送协作消息', en: 'Send helper message' },
@@ -35,7 +37,7 @@ const INTERNAL_TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   steer_task: { zh: '调整任务方向', en: 'Steer task' },
   cancel_task: { zh: '停止任务', en: 'Stop task' },
   memory_store: { zh: '保存记忆', en: 'Save memory' },
-  memory_search: { zh: '检索记忆', en: 'Search memory' },
+  memory_search: { zh: toolUserLabel('memorysearch', 'zh'), en: toolUserLabel('memorysearch', 'en') },
   tool_search: { zh: '查找可用工具', en: 'Find available tools' },
   computer_use: { zh: '操作桌面界面', en: 'Control desktop screen' },
   browser_action: { zh: '操作浏览器', en: 'Control browser' },
@@ -188,9 +190,23 @@ function summarizeParsedJson(
 export function humanizeInternalText(
   input: string,
   lang: InternalTextLanguage = 'zh',
+  options: { omitIds?: boolean } = {},
 ): HumanizedInternalTextResult {
   if (!input) {
     return { text: input, detectedFormats: [] };
+  }
+
+  if (input.trim() === 'Done' && lang === 'zh') {
+    return { text: '已完成', detectedFormats: ['english_state_word'] };
+  }
+
+  if (options.omitIds) {
+    const withoutIds = input.replace(UUID_GLOBAL_RE, '').replace(SESSION_ID_GLOBAL_RE, '')
+      .replace(CALL_ID_GLOBAL_RE, '').replace(OU_ID_GLOBAL_RE, '');
+    const cleanName = withoutIds === input ? input : withoutIds
+      .replace(/[（(]\s*(?:工单|ID|record|ticket|issue)?\s*[）)]/gi, '')
+      .replace(/(?:\s*[·:：,，;；|—-]\s*)+$/g, '').replace(/\s{2,}/g, ' ').trim();
+    return humanizeInternalText(cleanName, lang);
   }
 
   const leaks = detectInternalTextLeaks(input);
@@ -288,7 +304,7 @@ export function humanizeInternalText(
     }
   }
 
-  let next = input;
+  let next = input.replace(CATALOG_SLUG_GLOBAL_RE, (name) => resolveSkillName(name, lang, lang === 'en' ? 'skill' : '技能'));
   let shouldCollapseDetails = false;
 
   // 1. Replace English state phrases first (some include `id=...` or colons)

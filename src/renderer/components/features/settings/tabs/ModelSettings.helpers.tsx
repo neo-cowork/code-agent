@@ -1,3 +1,4 @@
+import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import type {
   AppSettings,
   ModelConfig,
@@ -222,8 +223,10 @@ export function buildProviderManagementRows({
   config,
   providerConfigs,
   labels = zh.settings.model.helpers,
+  language = 'zh',
 }: {
   providers: ProviderDisplayInfo[];
+  language?: 'zh' | 'en';
   config: ModelConfig;
   providerConfigs?: ProviderConfigMap;
   labels?: ModelSettingsHelperLabels;
@@ -236,7 +239,7 @@ export function buildProviderManagementRows({
     const rowDefaultModel = providerConfig?.model || registryInfo?.defaultModel || runtimeModels[0]?.id || '-';
     return {
       id: provider.id,
-      name: providerConfig?.displayName || provider.name,
+      name: getProviderDisplayName(provider.id, providerConfig?.displayName, provider.name, language),
       ...(normalizeProviderIcon(providerConfig?.icon) ? { icon: normalizeProviderIcon(providerConfig?.icon) } : {}),
       favorite: providerConfig?.favorite === true,
       description: `${provider.description}${providerConfig?.protocol === 'claude' ? labels.claudeProtocolSuffix : ''}`,

@@ -73,6 +73,16 @@ export function deriveFileDir(path: string, name: string): string {
   return path.slice(0, path.length - name.length).replace(/[\\/]$/, '');
 }
 
+/** 展示用目录：位于工作目录内 → 相对工作目录（根下文件为空串，子目录 'src'）；工作目录外保持绝对路径。选中/附件仍用 row.path（绝对）。 */
+function deriveDisplayDir(path: string, name: string, baseDir: string | null | undefined): string {
+  const dir = deriveFileDir(path, name);
+  if (!baseDir) return dir;
+  const base = baseDir.replace(/[\\/]+$/, '');
+  if (dir === base) return '';
+  if (dir.startsWith(`${base}/`) || dir.startsWith(`${base}\\`)) return dir.slice(base.length + 1);
+  return dir;
+}
+
 /** 资料库组：pin 候选（本项目 ∪ 全局）按 query 过滤（空 query 全量），封顶 limit 条。 */
 export function buildLibraryRows(
   items: LibraryItem[],
@@ -98,6 +108,7 @@ export function buildFileRows(
   files: AtMentionFileMatch[],
   query: string,
   limit = AT_MENTION_GROUP_LIMIT,
+  baseDir?: string | null,
 ): AtMentionFileRow[] {
   const normalized = query.trim().toLowerCase();
   return files
@@ -107,7 +118,7 @@ export function buildFileRows(
       kind: 'file',
       path: file.path,
       name: file.name,
-      dir: deriveFileDir(file.path, file.name),
+      dir: deriveDisplayDir(file.path, file.name, baseDir),
       isDirectory: file.isDirectory,
     }));
 }

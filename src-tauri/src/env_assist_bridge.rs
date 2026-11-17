@@ -5,6 +5,9 @@
 //! `CODE_AGENT_ENV_ASSIST_BRIDGE_URL` and `CODE_AGENT_ENV_ASSIST_BRIDGE_TOKEN`.
 
 #[cfg(target_os = "macos")]
+mod calendar;
+
+#[cfg(target_os = "macos")]
 mod imp {
     use serde::Deserialize;
     use std::io::{Read, Write};
@@ -15,7 +18,10 @@ mod imp {
     use std::time::Duration;
 
     const BRIDGE_TOKEN_BYTES: usize = 32;
-    const MAX_BODY_BYTES: usize = 1024;
+    // Room for a calendar write: undo re-creates a deleted event with its notes, and meeting invites carry long
+    // notes (dial-ins, multi-language text). 64 KiB covers that; the host also caps restored notes below it.
+    // Every other route takes an empty or tiny body; the bearer token + loopback check run first either way.
+    const MAX_BODY_BYTES: usize = 64 * 1024;
     const MAX_HEADER_BYTES: usize = 8192;
     const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -28,6 +34,32 @@ mod imp {
         fn grant_screen(&self) -> Result<bool, String>;
         fn grant_input(&self) -> Result<bool, String>;
         fn grant_automation(&self, target_bundle_id: &str) -> Result<i32, String>;
+        // EventKit calendar routes live in env_assist_bridge_calendar.rs; defaults are the real native calls.
+        fn passive_calendar(&self) -> Result<i64, String> {
+            crate::env_assist_calendar::authorization_status()
+        }
+        fn grant_calendar(&self) -> Result<(), String> {
+            crate::env_assist_calendar::request_full_access()
+        }
+        fn calendar_request_answer(&self) -> Option<bool> {
+            crate::env_assist_calendar::last_request_answer()
+        }
+        fn read_calendar_events(&self, from_ms: i64, to_ms: i64) -> Result<Vec<crate::env_assist_calendar::CalendarEvent>, String> {
+            crate::env_assist_calendar::list_events(from_ms, to_ms)
+        }
+        // Chat calendar tool (env_assist_calendar_items.rs): same full-access re-check in the route, then these.
+        fn list_calendars(&self) -> Result<Vec<crate::env_assist_calendar_items::CalendarInfo>, String> {
+            crate::env_assist_calendar_items::list_calendars()
+        }
+        fn read_calendar_items(&self, from_ms: i64, to_ms: i64, calendar_id: Option<&str>, limit: usize) -> Result<Vec<crate::env_assist_calendar_items::CalendarItem>, String> {
+            crate::env_assist_calendar_items::list_items(from_ms, to_ms, calendar_id, limit)
+        }
+        fn get_calendar_item(&self, event_id: &str, occurrence_ms: Option<i64>) -> Result<crate::env_assist_calendar_items::CalendarItem, String> {
+            crate::env_assist_calendar_items::get_item(event_id, occurrence_ms)
+        }
+        fn write_calendar_event(&self, op: crate::env_assist_calendar_items::WriteOp) -> Result<crate::env_assist_calendar_items::WriteOutcome, String> {
+            crate::env_assist_calendar_items::write(op)
+        }
     }
 
     struct RealBridgeHandlers;
@@ -134,7 +166,7 @@ mod imp {
         buf.windows(4).position(|window| window == b"\r\n\r\n")
     }
 
-    fn parse_empty_or_empty_object(body: &[u8]) -> Result<(), ()> {
+    pub(super) fn parse_empty_or_empty_object(body: &[u8]) -> Result<(), ()> {
         if body.iter().all(|b| b.is_ascii_whitespace()) {
             return Ok(());
         }
@@ -502,6 +534,10 @@ mod imp {
                         .map(|code| serde_json::json!({ "requested": true, "code": code }))
                         .map_err(native_err)
                 }),
+            "/v1/passive/calendar" | "/v1/grant/calendar" | "/v1/read/calendar-events" | "/v1/read/calendars"
+            | "/v1/read/calendar-items" | "/v1/read/calendar-event" | "/v1/write/calendar-event" => {
+                super::calendar::route(path, &body, handlers)
+            }
             _ => Err((
                 404,
                 "Not Found",
@@ -517,7 +553,7 @@ mod imp {
         }
     }
 
-    fn bad_body() -> (u16, &'static str, serde_json::Value) {
+    pub(super) fn bad_body() -> (u16, &'static str, serde_json::Value) {
         (
             400,
             "Bad Request",
@@ -525,7 +561,7 @@ mod imp {
         )
     }
 
-    fn native_err(detail: String) -> (u16, &'static str, serde_json::Value) {
+    pub(super) fn native_err(detail: String) -> (u16, &'static str, serde_json::Value) {
         (
             500,
             "Internal Server Error",
@@ -675,6 +711,10 @@ mod imp {
             (code, resp)
         }
 
+        mod node_chain {
+            include!("env_assist_bridge_chain_tests.rs");
+        }
+
         #[test]
         fn token_is_64_hex_chars_and_random_per_launch() {
             let first = make_bridge_token().expect("first token");
@@ -758,13 +798,12 @@ mod imp {
             let server = start_bridge_server(token.clone(), fake.clone()).expect("start bridge");
             let host = format!("127.0.0.1:{}", server.port);
 
-            let oversize = format!(
-                "{{\"targetBundleId\":\"{}\"}}",
-                "a".repeat(MAX_BODY_BYTES + 1)
-            );
+            // Declared length over the limit is refused before the body is read. (The body itself is not sent:
+            // with a 64 KiB limit a real oversize body would outrun the socket buffer and the early 413 + close
+            // would surface as a client-side connection reset instead of a readable status.)
             let req = format!(
-                "POST /v1/passive/automation HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{oversize}",
-                oversize.len()
+                "POST /v1/passive/automation HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{{}}",
+                MAX_BODY_BYTES + 1
             );
             let (status, _) = send_raw_http(server.port, &req);
             assert_eq!(status, 413);
@@ -914,13 +953,15 @@ pub fn handshake_line(url: &str, token: &str) -> String {
 }
 
 /// Writes the single handshake line to the child's stdin and flushes; keeps the handle open.
-pub fn write_handshake(stdin: Option<&mut std::process::ChildStdin>, url: &str, token: &str) {
+/// A failure is returned (never swallowed) so the caller can leave a trace in the shell event log.
+pub fn write_handshake(stdin: Option<&mut std::process::ChildStdin>, url: &str, token: &str) -> Result<(), String> {
     use std::io::Write;
-    if let Some(pipe) = stdin {
-        let _ = pipe
-            .write_all(handshake_line(url, token).as_bytes())
-            .and_then(|_| pipe.flush());
-    }
+    let Some(pipe) = stdin else {
+        return Err("child stdin pipe missing".to_string());
+    };
+    pipe.write_all(handshake_line(url, token).as_bytes())
+        .and_then(|_| pipe.flush())
+        .map_err(|error| format!("handshake write failed: {error}"))
 }
 
 #[cfg(test)]

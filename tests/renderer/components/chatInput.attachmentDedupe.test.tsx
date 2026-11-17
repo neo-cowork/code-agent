@@ -21,7 +21,10 @@ const i18nState = vi.hoisted(() => ({
 }));
 const readWorkspaceFile = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: toastSpy }));
+vi.mock('../../../src/renderer/hooks/useToast', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/renderer/hooks/useToast')>()),
+  toast: toastSpy,
+}));
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: i18nState.language === 'en' ? en : zh, language: i18nState.language }),
 }));
@@ -39,6 +42,7 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
 import { ChatInput, type ChatInputHandle } from '../../../src/renderer/components/features/chat/ChatInput';
 import { useChatInputComposerActions } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputComposerActions';
 import { useDragAndDrop } from '../../../src/renderer/components/features/chat/ChatInput/useDragAndDrop';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
 import ipcService from '../../../src/renderer/services/ipcService';
 
@@ -74,6 +78,7 @@ function useComposerActionsHarness() {
     processFile,
     inputAreaRef: { current: null },
     setIsUploading: vi.fn(),
+    attachmentCount: attachments.length,
     setAttachments,
     setValue: vi.fn(),
     setVoiceInputContext: vi.fn(),
@@ -172,6 +177,8 @@ describe('ChatInput attachment dedupe', () => {
     attachmentId = 0;
     i18nState.language = 'zh';
     resetCapabilityStore();
+    // FB-1531 后 @ 面板文件列表以工作目录为基目录；本夹具靠 listFiles 返回 sales.csv
+    useAppStore.setState({ workingDirectory: '/tmp/dedupe-proj' });
     Element.prototype.scrollIntoView = vi.fn();
     readWorkspaceFile.mockResolvedValue('region,sales\nNorth,10');
     vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain, action) => {
@@ -196,6 +203,7 @@ describe('ChatInput attachment dedupe', () => {
     cleanup();
     vi.restoreAllMocks();
     delete (window as { domainAPI?: unknown }).domainAPI;
+    useAppStore.setState({ workingDirectory: null });
     resetCapabilityStore();
   });
 
@@ -328,7 +336,8 @@ describe('ChatInput attachment dedupe', () => {
     expect(toastSpy.show).toHaveBeenCalledTimes(1);
     expect(toastSpy.show).toHaveBeenCalledWith(
       'warning',
-      `已添加 ${cap} 个，其余 ${dropped} 个未添加（每条消息最多 ${cap} 个）。请先发送这一批，再继续添加。`,
+      `附件已满（${cap} 个）：这次加进了 ${cap} 个，另 ${dropped} 个没加进来。发送这条消息后，就能继续添加剩下的。`,
+      UI.TOAST_PERSISTENT_DURATION,
     );
   });
 
@@ -366,7 +375,7 @@ describe('ChatInput attachment dedupe', () => {
 
     expect(result.current.attachments).toHaveLength(cap);
     expect(toastSpy.show).toHaveBeenCalledTimes(1);
-    expect(toastSpy.show).toHaveBeenCalledWith('warning', 'contract-01.txt 已添加，无需重复添加');
+    expect(toastSpy.show).toHaveBeenCalledWith('warning', 'contract-01.txt 等 2 个文件已添加，无需重复添加');
   });
 
   it('existing chips + incoming mix: counts only unique files dropped by the cap', async () => {
@@ -392,7 +401,8 @@ describe('ChatInput attachment dedupe', () => {
     expect(toastSpy.show).toHaveBeenNthCalledWith(
       2,
       'warning',
-      `已添加 2 个，其余 3 个未添加（每条消息最多 ${cap} 个）。请先发送这一批，再继续添加。`,
+      `附件已满（${cap} 个）：这次加进了 2 个，另 3 个没加进来。发送这条消息后，就能继续添加剩下的。`,
+      UI.TOAST_PERSISTENT_DURATION,
     );
   });
 
@@ -400,12 +410,12 @@ describe('ChatInput attachment dedupe', () => {
     {
       language: 'zh' as const,
       expectedZeroAdded: (cap: number) =>
-        `已添加 0 个，其余 1 个未添加（每条消息最多 ${cap} 个）。请先发送这一批，再继续添加。`,
+        `附件已满（${cap} 个）：这次没有加进任何文件，1 个都没加进来。发送这条消息后，就能继续添加。`,
     },
     {
       language: 'en' as const,
       expectedZeroAdded: (cap: number) =>
-        `Added 0; 1 more were not added (limit ${cap} per message). Send this batch, then add the rest.`,
+        `Attachments are full (${cap}): none were added this time, 1 were not added. You can add them after sending this message.`,
     },
   ])('picker, paste, drop and addAttachments use identical $language overflow copy', async ({ language, expectedZeroAdded }) => {
     i18nState.language = language;
@@ -423,7 +433,7 @@ describe('ChatInput attachment dedupe', () => {
       await composerResult.current.handleFileSelect(asFileList(uniqueFiles(1, cap + 1)));
     });
     const pickerMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage);
+    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
 
     toastSpy.show.mockClear();
     await act(async () => {
@@ -432,7 +442,7 @@ describe('ChatInput attachment dedupe', () => {
       );
     });
     const pasteMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage);
+    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
     unmountComposer();
 
     // 3. Drop via useDragAndDrop
@@ -447,7 +457,7 @@ describe('ChatInput attachment dedupe', () => {
       await dropResult.current.handleDrop(dropFilesEvent(uniqueFiles(1, cap + 1)));
     });
     const dropMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage);
+    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
     unmountDrop();
 
     // 4. Imperative addAttachments via exported ChatInput handle (global drop zone)
@@ -464,7 +474,7 @@ describe('ChatInput attachment dedupe', () => {
       ref.current!.addAttachments([uniqueAttachment(cap + 1)]);
     });
     const handleMessage = toastSpy.show.mock.calls[0]?.[1];
-    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage);
+    expect(toastSpy.show).toHaveBeenLastCalledWith('warning', expectedMessage, UI.TOAST_PERSISTENT_DURATION);
     expect(screen.getAllByRole('group')).toHaveLength(cap);
 
     expect(pickerMessage).toBe(expectedMessage);

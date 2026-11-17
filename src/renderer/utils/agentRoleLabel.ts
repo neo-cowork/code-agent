@@ -3,6 +3,7 @@ import { containsCjk } from './containsCjk';
 import type { AgentTreeNode } from '@shared/contract/agentTree';
 import { languages, type Translations } from '../i18n';
 import { useAppStore } from '../stores/appStore';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 
 /** Resolve at render time so persisted sessions keep their original role ids. */
 export function agentRoleLabel(
@@ -11,7 +12,7 @@ export function agentRoleLabel(
 ): string {
   const name = role.trim();
   if (Object.hasOwn(labels.roles, name)) return labels.roles[name as keyof typeof labels.roles];
-  if (/\p{Script=Han}/u.test(name)) return name;
+  if (/\p{Script=Han}/u.test(name)) return localizeBuiltinRole(name, { name }, labels === languages.en.agentRoleLabels ? 'en' : 'zh').name;
   return labels.assistant;
 }
 
@@ -25,10 +26,11 @@ export function agentNodeLabel(
     : agentRoleLabel(node.displayName || node.role, labels);
 }
 
-/** Model-generated background titles may be Chinese even in an English UI. */
+/** Model-generated background titles may be in the other language than the UI. */
 export function backgroundTaskLabel(task: Pick<Task, 'source' | 'title'>, t: Translations): string {
-  return t === languages.en
-    && (task.source === 'delegate_task' || task.source === 'session_command_center')
-    && containsCjk(task.title)
-    ? t.agentRoleLabels.roles.background : task.title;
+  if (task.source !== 'delegate_task' && task.source !== 'session_command_center') return task.title;
+  const foreign = t === languages.en
+    ? containsCjk(task.title)
+    : t === languages.zh && !containsCjk(task.title) && /[A-Za-z]{2,}\s+[A-Za-z]/.test(task.title);
+  return foreign ? t.agentRoleLabels.roles.background : task.title;
 }

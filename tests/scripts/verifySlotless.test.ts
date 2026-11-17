@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildWebServerEnv, parseStartArgs, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildWebServerEnv, parseStartArgs, probeModelChat, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -31,6 +31,37 @@ describe('slotless verification scripts', () => {
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  describe('model chat self-check', () => {
+    const KEY = 'sk_tr_secretvalue1234567890';
+    const fetchReturning = (status: number, body: string) => async (_url: string, _init: RequestInit) =>
+      new Response(body, { status, headers: { 'Content-Type': 'application/json' } });
+
+    it('fails closed on 403 IDENTITY_VERIFICATION_REQUIRED with status and code, never the key', async () => {
+      const fetchImpl = fetchReturning(403, JSON.stringify({ error: { code: 'IDENTITY_VERIFICATION_REQUIRED', message: 'verify first' } }));
+      const error = await probeModelChat({ baseUrl: 'https://tr.example/v1/', apiKey: KEY, model: 'glm-5.3-flash', fetchImpl }).catch((e: Error) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/HTTP 403 code=IDENTITY_VERIFICATION_REQUIRED/);
+      expect((error as Error).message).not.toContain(KEY);
+    });
+
+    it('sends one tiny chat request and passes on 2xx', async () => {
+      const calls: Array<[string, RequestInit]> = [];
+      const fetchImpl = async (url: string, init: RequestInit) => {
+        calls.push([url, init]);
+        return new Response('{}', { status: 200 });
+      };
+      await probeModelChat({ baseUrl: 'https://tr.example/v1/', apiKey: KEY, model: 'glm-5.3-flash', fetchImpl });
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toBe('https://tr.example/v1/chat/completions');
+      expect(JSON.parse(String(calls[0][1].body))).toMatchObject({ model: 'glm-5.3-flash', max_tokens: 5 });
+    });
+
+    it('is on by default and skippable only explicitly', () => {
+      expect(parseStartArgs(['T']).skipModelCheck).toBe(false);
+      expect(parseStartArgs(['T', '--skip-model-check']).skipModelCheck).toBe(true);
+    });
   });
 
   it('copies only TokenRhythm deepseek-v4-flash and routes every role to it', () => {

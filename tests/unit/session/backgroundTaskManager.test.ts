@@ -16,6 +16,9 @@ const sessionManagerState = vi.hoisted(() => ({
   getSession: vi.fn(),
 }));
 
+const locale = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/host/session/sessionTitleHostPrompt', () => ({ readUiLanguage: () => locale.language }));
+
 const notifyState = vi.hoisted(() => ({
   notifyTaskComplete: vi.fn(),
   notifyNeedsInput: vi.fn(),
@@ -62,6 +65,7 @@ function collectUpdates(): BackgroundTaskUpdateEvent[] {
 
 beforeEach(() => {
   resetBackgroundTaskManager();
+  locale.language = 'zh';
   sessionManagerState.getSession.mockReset().mockResolvedValue({
     id: 'session-1',
     title: '长任务',
@@ -235,5 +239,18 @@ describe('终态残留条目再次转后台（重置回 running）', () => {
     await backgroundSession('session-1');
 
     expect(getBackgroundTaskManager().getAllTasks()[0]).toBe(before);
+  });
+});
+
+
+describe('background notification locale', () => {
+  it('uses English for default completion and failure messages', async () => {
+    locale.language = 'en';
+    await backgroundSession('english-complete');
+    await getBackgroundTaskManager().markCompleted('english-complete');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Task completed' }), { force: true });
+    await backgroundSession('english-failure');
+    getBackgroundTaskManager().markFailed('english-failure');
+    expect(getBackgroundTaskManager().getAllTasks().find((task) => task.sessionId === 'english-failure')?.completionMessage).toBe('Task failed');
   });
 });

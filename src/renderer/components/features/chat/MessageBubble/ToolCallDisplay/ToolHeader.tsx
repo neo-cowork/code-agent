@@ -1,3 +1,4 @@
+import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { toolPreflightCopy } from '../../../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolHeader - Humanized step sentence (shortDescription, or humanizeToolStep
@@ -19,6 +20,7 @@ import {
   isInternalStreamTool,
   toolNameForDetail,
 } from '../../../../../utils/humanizeToolStep';
+import { resolveToolCallTerminalState } from '../../../../../utils/toolCallTerminalState';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
@@ -36,6 +38,8 @@ interface Props {
   showDetailName?: boolean;
   /** 回执行把成败统一放到右侧元信息，主动作前不重复状态词。 */
   hideStatusLabel?: boolean;
+  /** 这一步停在等环境授权上：人话授权目标（「日历」），状态说在等什么而不是「已中断」。 */
+  envWaitingTarget?: string;
 }
 
 /**
@@ -58,9 +62,6 @@ function buildToolHeaderTitle(
   if (typeof filePath === 'string' && filePath && !displayName.includes(filePath)) {
     return `${displayName}\n${filePath}`;
   }
-  if (typeof args.command === 'string' && args.command && !displayName.includes(args.command)) {
-    return `${displayName}\n${args.command}`;
-  }
   return displayName;
 }
 
@@ -81,15 +82,16 @@ export function ToolHeader({
   interruptionReason,
   showDetailName = false,
   hideStatusLabel = false,
+  envWaitingTarget,
 }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const openPreview = useAppStore((s) => s.openPreview);
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
   // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
   // 而不是裸露 "Read"/"Bash" 这类工具名——两条路径都已经是完整句子，不再需要
   // 单独的 params 副标题（避免语义重复）。
   const assembled = status === 'interrupted'
-    ? buildToolStatusLineCopy({ status, interruptionReason, toolCall }, t)
+    ? buildToolStatusLineCopy({ status, interruptionReason, toolCall, envWaitingTarget }, t)
     : null;
   const preflight = toolPreflightCopy(toolCall, t);
   const rawArgs = toolCall.arguments as Record<string, unknown> | undefined;
@@ -112,7 +114,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
-        { delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
+        { notRun: resolveToolCallTerminalState({ toolCall }).notRun, delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
   const statusLabel = assembled
     ? assembled.terminal
@@ -143,7 +145,7 @@ export function ToolHeader({
   const interruptionOutcome = t.outcomeWords[
     resolveStreamInterruptionOutcomeKey(interruptionReason)
   ].timeline;
-  const title = buildToolHeaderTitle(toolCall, displayName, interruptionOutcome.label);
+  const title = humanizeInternalText(buildToolHeaderTitle(toolCall, displayName, assembled?.terminalKey === 'env-waiting' ? assembled.terminal : interruptionOutcome.label), language).text;
   const pluginOriginDisplayName = getPluginOriginDisplayName(toolCall);
 
   return (
@@ -193,7 +195,7 @@ export function ToolHeader({
 
       {showSecondaryName && (
         <span className="flex-shrink-0 text-[10px] text-zinc-600 font-normal">
-          {toolNameForDetail(toolCall.name)}
+          {humanizeInternalText(toolNameForDetail(toolCall.name), language).text}
         </span>
       )}
 

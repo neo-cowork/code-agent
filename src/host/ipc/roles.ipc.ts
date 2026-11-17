@@ -427,6 +427,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin,
+    ...(parsed?.description ? { description: parsed.description } : {}),
     personalization: readRolePersonalization(roleId),
     ...(parsed?.connectors?.length
       ? {

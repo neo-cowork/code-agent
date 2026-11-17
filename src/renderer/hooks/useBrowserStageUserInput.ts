@@ -255,6 +255,8 @@ export function useBrowserStageUserInput(
     const mapped = mapPoint(event);
     if (!mapped) return;
     event.preventDefault();
+    // 清掉聊天框残留的选区/光标：WebKit 的原生粘贴/全选认选区持有者，不认 activeElement
+    window.getSelection?.()?.removeAllRanges();
     event.currentTarget.focus();
     setStageFocused(true);
     try {
@@ -391,6 +393,19 @@ export function useBrowserStageUserInput(
       route({ kind: 'insertText', text: event.key });
       return;
     }
+    // 仅放行全选（Cmd/Ctrl+A）；Cmd+C/X 等其它组合键保持不转发
+    if (
+      (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+      && event.key.toLowerCase() === 'a'
+    ) {
+      event.preventDefault();
+      route({
+        kind: 'key',
+        key: 'a',
+        modifiers: { alt: false, ctrl: event.ctrlKey, meta: event.metaKey, shift: false },
+      });
+      return;
+    }
     const allowed = new Set([
       'Enter', 'Tab', 'Backspace', 'Delete',
       'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
@@ -410,18 +425,30 @@ export function useBrowserStageUserInput(
     });
   }, [annotateMode, interactive, route]);
 
-  const onStagePaste = useCallback((event: ClipboardEvent<HTMLElement>) => {
-    if (event.target !== event.currentTarget || annotateMode || !interactive) return;
+  const handlePasteEvent = useCallback((event: Event & { clipboardData?: DataTransfer | null }) => {
     event.preventDefault();
     event.stopPropagation();
-    const text = event.clipboardData.getData('text/plain');
+    const text = event.clipboardData?.getData('text/plain') ?? '';
     const validated = validateUserBrowserInputPayload({ kind: 'insertText', text });
     if (!validated.ok) {
       logger.warn('Browser stage paste rejected', { reason: validated.error, textLength: text.length });
       return;
     }
     route(validated.payload);
-  }, [annotateMode, interactive, route]);
+  }, [route]);
+
+  const onStagePaste = useCallback((event: ClipboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget || annotateMode || !interactive) return;
+    handlePasteEvent(event.nativeEvent);
+  }, [annotateMode, handlePasteEvent, interactive]);
+
+  // stage 持有键盘焦点期间，原生粘贴可能落在聊天框（它保有选区）：文档级捕获接管，失焦即卸载。
+  const capturePaste = stageFocused && interactive && !annotateMode;
+  useEffect(() => {
+    if (!capturePaste) return undefined;
+    document.addEventListener('paste', handlePasteEvent, true);
+    return () => document.removeEventListener('paste', handlePasteEvent, true);
+  }, [capturePaste, handlePasteEvent]);
 
   const onStageCompositionEnd = useCallback((event: React.CompositionEvent<HTMLElement>) => {
     if (annotateMode || !interactive) return;

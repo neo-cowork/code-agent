@@ -2,7 +2,8 @@
 /**
  * N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE — Internal Text Leak Gate
  *
- * Scans user-visible renderer surfaces for the 9 internal format categories:
+ * Scans user-visible renderer surfaces and the explicit host-copy roots below.
+ * Shared format categories:
  *   1. uuid               ([0-9a-f]{8}-[0-9a-f]{4}-...)
  *   2. session_id         (session_..., session-work-...)
  *   3. call_id            (call_..., toolu_...)
@@ -15,7 +16,11 @@
  *
  * Combines:
  *   (a) Static TypeScript AST scan over src/renderer (JSX text, JSX expressions,
- *       user-facing JSX attributes, toast/notification arguments, and i18n catalogs).
+ *       user-facing JSX attributes, toast/notification arguments, and i18n catalogs),
+ *       plus src/shared/i18n/**, backgroundTaskPreannounce.ts,
+ *       sessionAutomationService.ts and sessionCommandCenterPreannounce.ts.
+ *       Host-copy strings also reject raw_id_interpolation and injected_prompt tags;
+ *       non-display literals need the same reasoned allowlist as renderer copy.
  *   (b) Dynamic render scan over the 4 key surfaces (via vitest on
  *       tests/renderer/components/internalTextLeakDynamicScan.test.tsx unless --static-only).
  *
@@ -38,6 +43,12 @@ import ts from 'typescript';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const DEFAULT_RENDERER_DIR = path.join(REPO_ROOT, 'src/renderer');
+const HOST_COPY_ROOTS = [
+  'src/shared/i18n',
+  'src/shared/constants/backgroundTaskPreannounce.ts',
+  'src/host/services/sessionAutomation/sessionAutomationService.ts',
+  'src/host/agent/runtime/contextAssembly/sessionCommandCenterPreannounce.ts',
+];
 const DEFAULT_ALLOWLIST_PATH = path.join(
   REPO_ROOT,
   'scripts/lib/internal-text-leak-allowlist.json',
@@ -63,6 +74,10 @@ const VALID_RULES = new Set([
   'sandbox_exec',
   'temp_path',
   'raw_json',
+  'cjk_in_en_ui',
+  'catalog_slug',
+  'raw_id_interpolation',
+  'injected_prompt',
 ]);
 
 const USER_FACING_JSX_ATTRS = new Set([
@@ -81,6 +96,20 @@ const USER_FACING_JSX_ATTRS = new Set([
 const INTERNAL_TOOL_NAMES = [...SHARED_PATTERNS.internalToolNames].sort(
   (a, b) => b.length - a.length,
 );
+
+const catalogSource = ts.createSourceFile('skillCatalog.ts', fs.readFileSync(
+  path.join(REPO_ROOT, 'src/shared/constants/skillCatalog.ts'), 'utf8',
+), ts.ScriptTarget.Latest, true);
+const catalogNames = new Set();
+function collectCatalogNames(node) {
+  if (ts.isPropertyAssignment(node) && node.name.getText(catalogSource) === 'name'
+    && ts.isStringLiteral(node.initializer) && node.initializer.text.includes('-')) {
+    catalogNames.add(node.initializer.text);
+  }
+  ts.forEachChild(node, collectCatalogNames);
+}
+collectCatalogNames(catalogSource);
+const CATALOG_SLUG_RE = new RegExp(`(?<![A-Za-z0-9_./-])(?:${[...catalogNames].join('|')})(?![A-Za-z0-9_/-]|\\.[A-Za-z0-9])`);
 
 const UUID_RE = new RegExp(SHARED_PATTERNS.uuid, 'i');
 const SESSION_ID_RE = new RegExp(SHARED_PATTERNS.sessionId);
@@ -101,13 +130,15 @@ const RAW_JSON_RE =
   );
 const RAW_JSON_STRINGIFY_RE = /\bJSON\.stringify\s*\(/;
 
-export function detectStaticStringLeaks(text) {
+export function detectStaticStringLeaks(text, language) {
   if (!text || !text.trim()) return [];
   const rules = [];
   const push = (rule) => {
     if (!rules.includes(rule)) rules.push(rule);
   };
 
+  if (language === 'en' && /[\u3400-\u9fff\uf900-\ufaff]/.test(text)) push('cjk_in_en_ui');
+  if (CATALOG_SLUG_RE.test(text)) push('catalog_slug');
   if (UUID_RE.test(text)) push('uuid');
   if (SESSION_ID_RE.test(text) || SESSION_PREFIX_RE.test(text)) push('session_id');
   if (CALL_ID_RE.test(text) || CALL_PREFIX_RE.test(text)) push('call_id');
@@ -161,7 +192,7 @@ function rawIdentifierRuleForPropertyAccess(expr, sourceFile) {
 function isKnownLabelLookupCall(expr, sourceFile) {
   if (!ts.isCallExpression(expr)) return false;
   const callee = expr.expression.getText(sourceFile);
-  return /(?:^|\.)(?:labelFor|descriptionFor|getRowIcon|getPermissionIcon|formatRequesterLabel|roleName|scopeIcon|getHumanToolLabel)$/.test(callee);
+  return /(?:^|\.)(?:labelFor|descriptionFor|getRowIcon|getPermissionIcon|formatRequesterLabel|roleName|scopeIcon|getHumanToolLabel|resolveSkillName)$/.test(callee);
 }
 
 function inspectRenderedExpression(expr, sourceFile, recordHit) {
@@ -282,8 +313,14 @@ export function scanRendererStatic({
   rendererDir = DEFAULT_RENDERER_DIR,
   repoRoot = REPO_ROOT,
 } = {}) {
-  const files = collectSourceFiles(rendererDir).sort();
-  if (files.length === 0) {
+  const rendererFiles = collectSourceFiles(rendererDir).sort();
+  const hostFiles = HOST_COPY_ROOTS.flatMap((root) => {
+    const full = path.join(repoRoot, root);
+    if (!fs.existsSync(full)) return [];
+    return fs.statSync(full).isDirectory() ? collectSourceFiles(full) : [full];
+  });
+  const files = [...new Set([...rendererFiles, ...hostFiles])].sort();
+  if (rendererFiles.length === 0) {
     throw new Error(
       `[internal-text-leak-gate] 0 files scanned under ${rendererDir} — refusing to pass silently.`,
     );
@@ -330,8 +367,47 @@ export function scanRendererStatic({
     };
 
     const isI18nFile = relFile.startsWith('src/renderer/i18n/');
+    const isHostCopyFile = hostFiles.includes(absPath);
 
     const visit = (node) => {
+      // The small host-copy root list deliberately excludes the general prompt corpus.
+      // Scan string values (including function-returned templates), not regexes/comments.
+      if (isHostCopyFile && (ts.isStringLiteral(node)
+        || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateExpression(node))) {
+        const parts = ts.isTemplateExpression(node)
+          ? [node.head.text, ...node.templateSpans.map((span) => span.literal.text)]
+          : [node.text];
+        // A tool name used as a discriminator is not presented to the user.
+        const isDiscriminator = ts.isBinaryExpression(node.parent)
+          && [ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken]
+            .includes(node.parent.operatorToken.kind);
+        const isSql = ts.isCallExpression(node.parent)
+          && ts.isPropertyAccessExpression(node.parent.expression)
+          && node.parent.expression.name.text === 'prepare'
+          && node.parent.arguments[0] === node;
+        if (!isDiscriminator && !isSql) {
+          for (const part of parts) {
+            for (const rule of detectStaticStringLeaks(part)) {
+              recordHit(rule, node.getText(sourceFile), node.getStart(sourceFile));
+            }
+            if (/<\/?[a-z][\w-]*>/i.test(part)) {
+              recordHit('injected_prompt', node.getText(sourceFile), node.getStart(sourceFile));
+            }
+          }
+        }
+        if (ts.isTemplateExpression(node)) {
+          for (const span of node.templateSpans) {
+            const inspectIdentifier = (child) => {
+              if (ts.isIdentifier(child) && /^(?:[\w$]*SessionId|sessionId|runId|taskId|laneKey)$/.test(child.text)) {
+                recordHit('raw_id_interpolation', node.getText(sourceFile), node.getStart(sourceFile));
+              }
+              ts.forEachChild(child, inspectIdentifier);
+            };
+            inspectIdentifier(span.expression);
+          }
+        }
+      }
+
       // 1. JSX visible text
       if (ts.isJsxText(node)) {
         const text = node.getText(sourceFile).trim();
@@ -413,7 +489,8 @@ export function scanRendererStatic({
     visit(sourceFile);
   }
 
-  return { filesScanned: files.length, hits };
+  return { filesScanned: files.length, rendererFilesScanned: rendererFiles.length,
+    hostCopyFilesScanned: hostFiles.length, hostCopyRoots: HOST_COPY_ROOTS, hits };
 }
 
 function loadAndValidateEntries(allowlistPath, label) {
@@ -485,7 +562,7 @@ export function evaluateGate({
   repoRoot = REPO_ROOT,
 } = {}) {
   const allowlist = loadAndValidateAllowlist(allowlistPath);
-  const { filesScanned, hits } = scanRendererStatic({ rendererDir, repoRoot });
+  const { hits, ...scanSummary } = scanRendererStatic({ rendererDir, repoRoot });
 
   const matchedAllowlistIndices = new Set();
   const unexpectedHits = [];
@@ -509,7 +586,7 @@ export function evaluateGate({
   );
 
   return {
-    filesScanned,
+    ...scanSummary,
     totalHits: hits.length,
     allowlistCount: allowlist.length,
     unexpectedHits,
@@ -520,8 +597,9 @@ export function evaluateGate({
 function runDynamicSurfaceScan() {
   const vitestBin = path.join(REPO_ROOT, 'node_modules/.bin/vitest');
   const testFile =
-    'tests/renderer/components/internalTextLeakDynamicScan.test.tsx';
-  const res = spawnSync(vitestBin, ['run', testFile], {
+    ['tests/renderer/components/internalTextLeakDynamicScan.test.tsx',
+      'tests/renderer/components/internalTextExitMatrix.test.tsx'];
+  const res = spawnSync(vitestBin, ['run', ...testFile], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     env: { ...process.env, CI: 'true' },
@@ -557,7 +635,7 @@ function main() {
 
   if (result.unexpectedHits.length > 0) {
     console.error(
-      `[internal-text-leak-gate] ✗ ${result.unexpectedHits.length} un-allowlisted internal-text leak(s) detected in renderer surfaces:`,
+      `[internal-text-leak-gate] ✗ ${result.unexpectedHits.length} un-allowlisted internal-text leak(s) detected in renderer/host-copy surfaces:`,
     );
     for (const hit of result.unexpectedHits) {
       console.error(
@@ -575,7 +653,7 @@ function main() {
   }
 
   console.log(
-    `[internal-text-leak-gate] ✓ scanned ${result.filesScanned} renderer files (${result.totalHits} allowlisted hit(s), 0 new leaks)${staticOnly ? ' [static-only]' : ' + 4 dynamic surfaces passed'}.`,
+    `[internal-text-leak-gate] ✓ scanned ${result.rendererFilesScanned} renderer files + ${result.hostCopyFilesScanned} host-copy files; added roots: ${result.hostCopyRoots.join(", ")} (${result.totalHits} allowlisted hit(s), 0 new leaks)${staticOnly ? ' [static-only]' : ' + 4 legacy dynamic surfaces + 7 exits × zh/en passed'}.`,
   );
 }
 

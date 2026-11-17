@@ -87,6 +87,8 @@ function executor(requestPermission: ConstructorParameters<typeof ToolExecutor>[
 
 describe('reminder wall-clock normalization before executor approval', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-08T15:30:00Z'));
     resetToolResolver();
     vi.stubEnv('TZ', 'Asia/Shanghai');
     mocks.getSchemas.mockReturnValue([remindersCreateModule.schema]);
@@ -107,7 +109,7 @@ describe('reminder wall-clock normalization before executor approval', () => {
     mocks.connectorExecute.mockResolvedValue({ data: { id: 'actual', list: '提醒事项', title: 'Report', completed: false, remindAtMs: ms } });
     const args = { title: 'Report', remind_at_local: '2026-11-09 09:00' };
     const result = await executor(requestPermission).execute('reminders_create', args, { sessionId: `local-${++session}` });
-    expect(result).toMatchObject({ success: true, output: expect.stringContaining('提醒时间：2026-11-09 09:00 (UTC+8)（周一，Asia/Shanghai）') });
+    expect(result).toMatchObject({ success: true, output: expect.stringContaining('提醒时间：2026-11-09 09:00 (UTC+8)（明天，周一，Asia/Shanghai）') });
     expect(requestPermission).toHaveBeenCalledOnce();
     expect(mocks.connectorExecute).toHaveBeenCalledWith('create_reminder', { title: 'Report', remind_at_ms: ms });
     expect(args).not.toHaveProperty('remind_at_ms');
@@ -149,6 +151,39 @@ describe('reminder wall-clock normalization before executor approval', () => {
     const requestPermission = vi.fn(async () => false);
     expect(await executor(requestPermission).execute('reminders_create', { title: 'Denied', remind_at_local: '2026-11-09 09:00' }, { sessionId: `deny-${++session}` })).toMatchObject({ success: false });
     expect(requestPermission).toHaveBeenCalledOnce();
+    expect(mocks.connectorExecute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a past local time before any approval card is requested', async () => {
+    vi.setSystemTime(new Date('2026-11-09T15:17:00Z'));
+    const requestPermission = vi.fn(async () => true);
+    const result = await executor(requestPermission).execute('reminders_create', { title: 'groceries', remind_at_local: '2026-11-09 20:30' }, { sessionId: `past-${++session}` });
+    expect(result).toMatchObject({ success: false, metadata: { code: 'REMINDER_TIME_IN_PAST' }, error: expect.stringContaining('Do not create this reminder') });
+    expect(result.error).toContain('Asia/Shanghai');
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(mocks.connectorExecute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a past remind_at_ms passed directly', async () => {
+    vi.setSystemTime(new Date('2026-11-09T15:17:00Z'));
+    const requestPermission = vi.fn(async () => true);
+    const result = await executor(requestPermission).execute('reminders_create', { title: 'x', remind_at_ms: Date.parse('2026-11-09T01:00:00Z') }, { sessionId: `pastms-${++session}` });
+    expect(result).toMatchObject({ success: false, metadata: { code: 'REMINDER_TIME_IN_PAST' } });
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
+  it('time within the 60s grace proceeds to approval', async () => {
+    vi.setSystemTime(new Date('2026-11-09T01:00:30Z'));
+    const requestPermission = vi.fn(async () => false);
+    await executor(requestPermission).execute('reminders_create', { title: 'x', remind_at_local: '2026-11-09 09:00' }, { sessionId: `grace-${++session}` });
+    expect(requestPermission).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an approval-card edit to a past instant at dispatch', async () => {
+    const requestPermission = vi.fn(async () => ({ approved: true, updatedArgs: { remind_at_ms: Date.parse('2026-10-01T00:00:00Z') } }));
+    const result = await executor(requestPermission).execute('reminders_create', { list: 'Work', title: 'x', remind_at_local: '2026-11-09 09:00' }, { sessionId: `editpast-${++session}` });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result)).toContain('REMINDER_TIME_IN_PAST');
     expect(mocks.connectorExecute).not.toHaveBeenCalled();
   });
 });

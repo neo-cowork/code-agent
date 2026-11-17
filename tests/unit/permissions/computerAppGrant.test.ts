@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type { AppSettings, PermissionAskResult, PermissionRequest } from '../../../src/shared/contract';
-import { permissionDenialError } from '../../../src/host/tools/toolPermissionClassification';
+import { permissionDenialError, userDeniedGoalStickyError } from '../../../src/host/tools/toolPermissionClassification';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applyAppGrantsSchema } from '../../../src/host/services/core/database/schemaAppGrants';
 import {
@@ -205,8 +205,8 @@ describe('pre-ask grant does not beat a hard gate', () => {
 });
 
 describe('permission denial names the app only for a user denial', () => {
-  it('adds stop-and-ask guidance for user denials and keeps machine denial text byte-identical', () => {
-    expect(permissionDenialError('Write', 'user').modelText).toBe('Permission denied by user. The user just declined this kind of action. Do not request approval for the same goal again by rewording it or changing the command or arguments. First ask the user one short question about how to proceed: use AskUserQuestion if available, otherwise your final message. For unattended, scheduled or background runs, put that question in your final message. Wait for a new user message before requesting approval for this kind of action again.');
+  it('adds end-the-turn guidance for user denials and keeps machine denial text byte-identical', () => {
+    expect(permissionDenialError('Write', 'user').modelText).toBe(`Permission denied by user. ${userDeniedGoalStickyError('Write').modelText}`);
     expect(permissionDenialError('computer_use', 'timeout', { name: 'Notes' }).modelText)
       .toBe(permissionDenialError('computer_use', 'timeout').modelText);
     expect(permissionDenialError('computer_use', 'fail-closed', { name: 'Notes' }).modelText)

@@ -30,7 +30,7 @@ import type {
 import { makeEvidenceRef } from '../../../../shared/contract/evidence';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { buildExpiredChatUploadResult, confineEvalPath, isChatUploadPath } from '../../file/pathUtils';
-import { parseEmbeddedParams, resolveInputPath } from '../../utils/resolveInputPath';
+import { guardUnattendedInputPath, parseEmbeddedParams, resolveInputPath } from '../../utils/resolveInputPath';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
@@ -111,6 +111,9 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: "encoding must be 'utf-8' or 'gbk'", code: 'INVALID_ARGS' };
     }
 
+    const noWorkingFolder = guardUnattendedInputPath(parsed.inputPath, ctx);
+    if (noWorkingFolder) return noWorkingFolder;
+
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {
       return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
@@ -142,7 +145,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
       return {
         ok: false,
         error: `Cannot read ${ext} file as text — binary content will be garbled. Use ${hint} tool instead.\nPath: ${filePath}`,
-        code: 'INVALID_ARGS',
+        code: 'BINARY_FILE_NOT_TEXT',
       };
     }
 
@@ -159,7 +162,7 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error: `Cannot read ${filePath} as GBK: ${err.message}. Try without encoding, or the file may be binary.`,
-            code: 'INVALID_ARGS',
+            code: 'BINARY_FILE_NOT_TEXT',
           };
         }
       } else {

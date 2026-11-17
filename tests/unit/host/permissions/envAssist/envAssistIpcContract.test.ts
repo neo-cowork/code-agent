@@ -16,7 +16,8 @@ const fixtures: ReadonlyArray<{ code: Code; status: string }> = [
   { code: 0, status: 'granted' }, { code: -1743, status: 'denied' },
   { code: -1744, status: 'undecided' }, { code: -600, status: 'not_running' },
 ];
-const TARGET = 'calendar';
+// 日历已不是 Apple-events 目标（改走 EventKit perm_calendars），自动化用例以邮件为代表
+const TARGET = 'mail';
 type Pane = 'accessibility' | 'screenCapture' | 'automation';
 const panes: ReadonlyArray<{ pane: Pane; klass: EnvAssistNotice['class']; probe: (b: PassiveBridge) => () => Promise<{ status: string }> }> = [
   { pane: 'accessibility', klass: 'perm_accessibility', probe: accessibilityProbe },
@@ -26,8 +27,8 @@ const panes: ReadonlyArray<{ pane: Pane; klass: EnvAssistNotice['class']; probe:
 
 /** One native state: passive reads and prompting calls are counted per method. */
 class NativeFake {
-  prompting: Record<'CGRequestScreenCaptureAccess' | 'requestAccessibility' | 'AEDeterminePermissionToAutomateTarget' | 'IOHIDRequestAccess', number> =
-    { CGRequestScreenCaptureAccess: 0, requestAccessibility: 0, AEDeterminePermissionToAutomateTarget: 0, IOHIDRequestAccess: 0 };
+  prompting: Record<'CGRequestScreenCaptureAccess' | 'requestAccessibility' | 'AEDeterminePermissionToAutomateTarget' | 'IOHIDRequestAccess' | 'requestFullAccessToEvents', number> =
+    { CGRequestScreenCaptureAccess: 0, requestAccessibility: 0, AEDeterminePermissionToAutomateTarget: 0, IOHIDRequestAccess: 0, requestFullAccessToEvents: 0 };
   constructor(public code: Code) {}
   /** Real IOHIDAccessType shape (Granted=0 / Denied=1 / Unknown=2), mapped from the Apple-event fixture. */
   get iohid(): 0 | 1 | 2 { return this.code === 0 ? 0 : this.code === -1744 ? 2 : 1; }
@@ -40,6 +41,7 @@ class NativeFake {
       if ((ask as boolean) === true) this.prompting.AEDeterminePermissionToAutomateTarget++;
       return this.code;
     },
+    EKAuthorizationStatusForEvents: async () => 0,
   };
   grant: PromptingBridge = {
     requestAccessibility: async () => { this.prompting.requestAccessibility++; },
@@ -48,6 +50,7 @@ class NativeFake {
     AEDeterminePermissionToAutomateTarget: async (_t, ask) => {
       if (ask) this.prompting.AEDeterminePermissionToAutomateTarget++;
     },
+    requestFullAccessToEvents: async () => { this.prompting.requestFullAccessToEvents++; },
   };
 }
 
@@ -122,11 +125,11 @@ describe('envAssist IPC contract (hermetic-protocol, fake bridges)', () => {
     const grant = { ...fake.grant, AEDeterminePermissionToAutomateTarget: async (t: string, ask: true) => { seen.push(`grant:${t}`); return fake.grant.AEDeterminePermissionToAutomateTarget(t, ask); } };
     registerEnvAssistHandlers({
       available: () => true, open: vi.fn(async () => true), passiveBridge: passive, grantBridge: grant,
-      findNotice: async () => notice('automation', 'perm_automation', 'request_grant', { target: { id: 'calendar', labelKey: 'env.target.calendar' } }),
+      findNotice: async () => notice('automation', 'perm_automation', 'request_grant', { target: { id: 'mail', labelKey: 'env.target.mail' } }),
     });
     const res = await handler!({} as never, { action: 'act', payload: { noticeId: 'n-automation-request_grant', actionKind: 'request_grant', payload: { pane: 'automation' } } });
     expect(res).toMatchObject({ data: { status: 'checked', outcome: { status: 'undecided' } } });
-    expect(seen).toEqual(['passive:com.apple.iCal', 'grant:com.apple.iCal', 'passive:com.apple.iCal']);
+    expect(seen).toEqual(['passive:com.apple.mail', 'grant:com.apple.mail', 'passive:com.apple.mail']);
     expect(fake.total).toBe(1);
   });
 

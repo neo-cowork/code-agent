@@ -408,7 +408,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
               </FormField>
               <div>
                 <label className="block text-sm text-zinc-400 mb-1">
-                  API Key
+                  {t.settings.model.connection.apiKey}
                   <button
                     type="button"
                     onClick={() => setShowSecrets(!showSecrets)}
@@ -949,7 +949,7 @@ export const ChannelsSettings: React.FC = () => {
                         {account.type === 'http-api' && (
                           <div className="mt-1 flex items-center gap-2">
                             <span className="truncate font-mono text-zinc-500">
-                              Key {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
+                              {t.settings.model.connection.apiKey} {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
                             </span>
                             <button
                               onClick={(event) => {

@@ -3,6 +3,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSurfaceExecutionStore } from '../../../src/renderer/stores/surfaceExecutionStore';
 import { BrowserKeptResultBar } from '../../../src/renderer/components/workbench/BrowserKeptResultBar';
 
 const { getKeptResultPage, adoptKeptResultPage, openHttpLinkInRailAsync } = vi.hoisted(() => ({
@@ -11,13 +12,17 @@ const { getKeptResultPage, adoptKeptResultPage, openHttpLinkInRailAsync } = vi.h
   openHttpLinkInRailAsync: vi.fn(),
 }));
 
-vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
+vi.mock('../../../src/renderer/services/keptResultPage', () => ({
   getKeptResultPage: (conversationId: string) => getKeptResultPage(conversationId),
   adoptKeptResultPage: (input: unknown) => adoptKeptResultPage(input),
+}));
+
+vi.mock('../../../src/renderer/services/userBrowserLink', () => ({
   openHttpLinkInRailAsync: (input: unknown) => openHttpLinkInRailAsync(input),
 }));
 
 beforeEach(() => {
+  useSurfaceExecutionStore.getState().reset();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   getKeptResultPage.mockReset();
   adoptKeptResultPage.mockReset();

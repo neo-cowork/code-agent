@@ -33,6 +33,8 @@ export interface RunLeaseClaim {
 
 export interface RunAbandonedLeaseClaim extends RunLeaseClaim {
   abandonedProcessInstanceId: string;
+  /** Restart approval closure also requires expiry, checked atomically with the claim. */
+  requireExpiredLease?: true;
 }
 
 export interface RunTransition {

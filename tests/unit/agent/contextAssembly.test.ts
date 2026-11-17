@@ -559,6 +559,17 @@ beforeEach(() => {
 });
 
 describe('ContextAssembly.buildModelMessages()', () => {
+  it.each([
+    ['foreground', 'Run commands and online checks through delegate_task. Reply with a plain handoff.'],
+    ['role-wake', 'You are the morning patrol expert. Read the calendar and mail, then report.'],
+  ])('preserves the configured %s identity in the actual model-facing system message', async (_kind, configuredPrompt) => {
+    const ctx = buildRuntimeContext({ systemPrompt: configuredPrompt });
+    const messages = await new ContextAssembly(ctx as never).buildModelMessages();
+    expect(messages[0].role).toBe('system');
+    expect(messages[0].content).toContain(configuredPrompt);
+    expect(getPromptForTask).not.toHaveBeenCalled();
+  });
+
   const sessionId = `session-${Date.now()}`;
   const agentId = 'agent-runtime-test';
 
@@ -2453,6 +2464,8 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       await new ContextAssembly(ctx as never).checkAndAutoCompress();
       expect(prompts.length).toBeGreaterThan(0);
       expect(prompts[0]).toContain(TELEMETRY_RECOVERY_NOTICE);
+      expect(prompts[0]).toContain('路径可能不完整');
+      expect(prompts[0]).not.toContain('由脱敏后的 telemetry 重建');
       expect(recovered.content.startsWith('写到')).toBe(true);
     } finally {
       summarize.mockReset();

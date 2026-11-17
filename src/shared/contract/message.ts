@@ -276,6 +276,8 @@ export type AgentErrorCategory =
   | 'network'
   | 'context_length'
   | 'image_payload'
+  /** 中继/上游拒绝了请求里的某项能力（如 Responses 内置工具），换模型即可。 */
+  | 'request_feature_rejected'
   /** headless run 在任何 assistant 回复前被 SIGTERM/SIGINT 打断。 */
   | 'interrupted'
   | 'generic';
@@ -465,7 +467,7 @@ export interface MessageMetadata {
    */
   backgroundWakeFailed?: {
     taskId: string;
-    reason: 'owner_missing' | 'wake_failed' | 'max_iterations' | 'turn_error';
+    reason: 'owner_missing' | 'rate_limited' | 'wake_failed' | 'max_iterations' | 'turn_error';
     title?: string;
   };
   /**

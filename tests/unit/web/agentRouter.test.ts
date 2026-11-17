@@ -31,7 +31,7 @@ import {
   seedSessionMessagesFromPersisted,
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
-import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import { RunRegistry, RunSessionConflictError } from '../../../src/host/runtime/runRegistry';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resolveRunUserRuleContext } from '../../../src/host/permissions/runPolicySnapshot';
 import { resolveUserRuleOutcomeForTool } from '../../../src/host/permissions/userRuleOutcome';
@@ -1404,6 +1404,53 @@ describe('createAgentRouter', () => {
     } finally {
       projectServiceMocks.getWorkspaceScope.mockReset();
       await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('repairs a removed project cwd from the trusted replacement Source on resend and the next turn', async () => {
+    await closeServer();
+    const root = await mkdtemp(join(tmpdir(), 'agent-repicked-source-'));
+    const replacement = join(root, 'replacement-notes');
+    mkdirSync(replacement);
+    const removed = join(root, 'removed-notes');
+    const scope = Object.freeze({
+      projectId: 'project-repicked', primaryRoot: replacement,
+      roots: Object.freeze([Object.freeze({ sourceId: 'replacement-source', path: replacement,
+        role: 'primary' as const, access: 'read_write' as const })]),
+      version: 'repicked-scope-v1',
+    });
+    const session = { id: 'session-repicked', title: 'Meeting notes',
+      projectId: scope.projectId, workingDirectory: removed };
+    const updateSession = vi.fn(async (_id: string, updates: { workingDirectory?: string }) => {
+      if (updates.workingDirectory) session.workingDirectory = updates.workingDirectory;
+    });
+    projectServiceMocks.getWorkspaceScope.mockReturnValue(scope);
+    try {
+      await startAgentApi({ tryGetSessionManager: async () => ({
+        getSession: async () => ({ ...session }), updateSession,
+      }) });
+      for (const clientMessageId of ['original-failed-message', 'next-message']) {
+        mockCreateAgentLoop.mockImplementationOnce(() => ({
+          run: vi.fn(async () => undefined), cancel: mockCancel,
+        }));
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: 'Read the updated meeting notes in notes.txt',
+            sessionId: session.id, clientMessageId, context: { workingDirectory: removed } }),
+        });
+        expect(response.status).toBe(200);
+        await response.text();
+        expect(createCLIAgent).toHaveBeenLastCalledWith(expect.objectContaining({ project: replacement }));
+        expect(mockCreateRunToolExecutor.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({
+          workspace: replacement, workspaceScope: scope,
+        }));
+        expect(session.workingDirectory).toBe(replacement);
+        expect(existsSync(removed)).toBe(false);
+      }
+      expect(updateSession).toHaveBeenCalledWith(session.id, expect.objectContaining({ workingDirectory: replacement }));
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(root, { recursive: true, force: true });
     }
   });
 
@@ -3367,6 +3414,7 @@ describe('createAgentRouter', () => {
     const sessionEq = vi.fn(async () => ({ error: null }));
     const sessionsTable = {
       upsert: vi.fn(async () => ({ error: null })),
+      select: vi.fn(() => ({ eq: vi.fn(async () => ({ data: [{ title: '云同步问题' }], error: null })) })),
       update: vi.fn(() => ({ eq: sessionEq })),
     };
     const messagesTable = {
@@ -3400,9 +3448,13 @@ describe('createAgentRouter', () => {
       expect.objectContaining({ role: 'assistant', content: '云同步回答' }),
     ]);
     expect(sessionsTable.upsert).toHaveBeenCalledTimes(2);
-    expect(sessionsTable.update).toHaveBeenCalledWith(expect.objectContaining({
-      title: '云同步问题',
-    }));
+    // 首轮标题只在 upsert（insert-if-absent）写入；after-run update 不得再带截断标题，
+    // 否则会把已回写云端的智能标题顶回去（N-FIX-SESSION-TITLE-REVERTS-TO-RAW-MESSAGE-FU1）。
+    expect(sessionsTable.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '云同步问题' }),
+      expect.objectContaining({ ignoreDuplicates: true }),
+    );
+    for (const call of sessionsTable.update.mock.calls as unknown[][]) expect(call[0]).not.toHaveProperty('title');
   });
 
   it('does not overwrite the Supabase session title on later turns', async () => {
@@ -3755,6 +3807,29 @@ describe('createAgentRouter', () => {
     const messages = mockCreateAgentLoop.mock.calls[0]?.[2] as Array<{ role: string; content: string }>;
     expect(messages.at(-1)).toMatchObject({ role: 'user', content: '补一句' });
     expect(mockSteer).not.toHaveBeenCalled();
+  });
+
+  // N-FIX-SEND-HANGS-WHEN-PARKED-RUN-SUPERSEDE-FAILS：空闲会话补发的新一轮起跑失败（会话被旧 run 占着）
+  // 必须回给发送方，不能先答 steered 再只写日志——那样界面永远停在「正在发送消息…」。
+  it('returns the start failure of an idle-session foreground turn instead of acknowledging it', async () => {
+    const conflict = () => { throw new RunSessionConflictError('session-held-by-parked-run'); };
+    const startSpy = vi.spyOn(runRegistry, 'start').mockImplementationOnce(conflict);
+    const startDurableSpy = vi.spyOn(runRegistry, 'startDurable').mockImplementationOnce(async () => conflict());
+    try {
+      const response = await fetch(`${baseUrl}/api/interrupt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content: '再看一下大后天的日程', sessionId: 'session-held-by-parked-run' }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(body).toEqual({ success: false, error: { code: 'RUN_SESSION_CONFLICT' } });
+      expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+    } finally {
+      startSpy.mockRestore();
+      startDurableSpy.mockRestore();
+    }
   });
 
   it('rejects invalid /api/tool-result bodies before resolving local tool results', async () => {

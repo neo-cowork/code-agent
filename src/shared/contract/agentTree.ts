@@ -1,5 +1,5 @@
 import type { AgentFailureCode } from './agentFailure';
-import type { LastToolStep } from './backgroundTask';
+import type { BashStep, LastToolStep } from './backgroundTask';
 import type { EvidenceRef } from './evidence';
 
 export type AgentTreeNodeStatus =
@@ -91,6 +91,7 @@ export interface AgentTreeNode {
   lastEvent?: AgentTreeEventSummary;
   activeTool?: string;
   lastToolStep?: LastToolStep;
+  bashSteps?: BashStep[];
   failureCode?: AgentFailureCode;
   failureReason?: string;
   worktreeState: AgentTreeWorktreeState;

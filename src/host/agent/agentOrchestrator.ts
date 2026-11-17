@@ -16,7 +16,7 @@ import type {
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { CHANNEL_REPLY_STYLE_INSTRUCTION } from '../channels/channelReplyBrevity';
 import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
-import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
+import { consumeSystemRunTerminalError } from './runtime/systemInitiatedRun';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
 import { SYSTEM_PROMPT } from '../prompts/builder';
@@ -63,8 +63,8 @@ import {
   initRunDag,
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
-import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
-import { applyMorningBriefSaveDraftRoleTools } from '../app/morningBriefSaveDraftTools';
+import { resolveRoleToolBoundary } from '../services/roleAssets/rolePersonalization';
+import { resolveRoleChatToolFace } from '../app/morningBriefSaveDraftTools';
 import { withMissingAttachmentTurnSystemContext } from '../app/missingAttachmentTurnContext';
 import { type AgentOrchestratorConfig, type PendingSteerMessage } from './orchestrator/types';
 import {
@@ -261,9 +261,7 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      if (options?.terminalErrorSink && event.type === 'error' && isTerminalAgentError(event.data)) {
-        options.terminalErrorSink(event.data);
-      } else if (shouldDeliverAgentEvent(event, options?.eventFilter)) {
+      if (!consumeSystemRunTerminalError(options, event) && shouldDeliverAgentEvent(event, options?.eventFilter)) {
         this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
       }
       if (sessionId) {
@@ -903,15 +901,9 @@ export class AgentOrchestrator {
       : null;
     // 局部变量让 TS 自己收窄，不用非空断言（eslint 棘轮把 no-non-null-assertion 记成 warning，
     // 新增一处就顶破基线）。
-    const requestedToolNames = applyMorningBriefSaveDraftRoleTools(content, options?.allowedToolNames, routedRole?.tools);
-    const intersectedBoundaryTools = roleToolBoundary
-      ? (requestedToolNames
-          ? roleToolBoundary.allowedTools.filter((tool) => requestedToolNames.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))
-          : roleToolBoundary.allowedTools)
-      : requestedToolNames;
-    const boundaryAllowedToolNames = roleToolBoundary
-      ? toRoleBoundaryRunAllowlist(intersectedBoundaryTools ?? [])
-      : intersectedBoundaryTools;
+    const boundaryAllowedToolNames = resolveRoleChatToolFace(
+      content, options?.allowedToolNames, routedRole?.tools, routedRole?.id, options?.foregroundToolFace === true,
+    );
     if (roleToolBoundary) {
       logger.info('[RoleBoundary] foreground role tool allowlist applied', {
         roleId: routedRole?.id,

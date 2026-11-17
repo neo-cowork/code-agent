@@ -398,7 +398,7 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
     const ancestorPaste = vi.fn();
     render(<div onPaste={ancestorPaste}><BrowserAgentWindow /><textarea aria-label="chat sibling" onPaste={siblingPaste} /></div>);
     const stage = screen.getByTestId('browser-agent-window-stage');
-    stage.focus();
+    act(() => stage.focus());
     const text = '报名时请携带身份证，谢谢。';
     const getData = vi.fn(() => text);
     expect(fireEvent.paste(stage, { clipboardData: { getData } })).toBe(false);
@@ -433,6 +433,58 @@ describe('BrowserAgentWindow 画面交互透传（P1）', () => {
     await act(async () => undefined);
     expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Browser stage paste rejected'), { reason, textLength: text.length });
+  });
+
+  it('stage focused: paste landing on the chat textarea becomes one insertText and chat stays empty', async () => {
+    render(<><BrowserAgentWindow /><textarea aria-label="chat sibling" /></>);
+    const chat = screen.getByLabelText('chat sibling') as HTMLTextAreaElement;
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    chat.focus();
+    act(() => stage.focus());
+    const text = '13800138000';
+    expect(fireEvent.paste(chat, { clipboardData: { getData: () => text } })).toBe(false);
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1));
+    expect(dispatchUserBrowserInput).toHaveBeenCalledWith(expect.objectContaining({ input: { kind: 'insertText', text } }));
+    expect(chat.value).toBe('');
+  });
+
+  it('after stage blur the paste reaches the chat textarea and nothing is dispatched', async () => {
+    const chatPaste = vi.fn();
+    render(<><BrowserAgentWindow /><textarea aria-label="chat sibling" onPaste={chatPaste} /></>);
+    const chat = screen.getByLabelText('chat sibling');
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    act(() => stage.focus());
+    act(() => chat.focus());
+    expect(fireEvent.paste(chat, { clipboardData: { getData: () => '聊天内容' } })).toBe(true);
+    await act(async () => undefined);
+    expect(chatPaste).toHaveBeenCalledTimes(1);
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+  });
+
+  it('forwards Cmd+A / Ctrl+A as a key payload but not Cmd+C / Cmd+X', async () => {
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    act(() => stage.focus());
+    expect(fireEvent.keyDown(stage, { key: 'a', metaKey: true })).toBe(false);
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1));
+    expect(dispatchUserBrowserInput).toHaveBeenLastCalledWith(expect.objectContaining({
+      input: { kind: 'key', key: 'a', modifiers: { alt: false, ctrl: false, meta: true, shift: false } },
+    }));
+    fireEvent.keyDown(stage, { key: 'a', ctrlKey: true });
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(2));
+    fireEvent.keyDown(stage, { key: 'c', metaKey: true });
+    fireEvent.keyDown(stage, { key: 'x', metaKey: true });
+    await act(async () => undefined);
+    expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(2);
+  });
+
+  it('IME composition still inserts the composed text once', async () => {
+    render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    act(() => stage.focus());
+    fireEvent.compositionEnd(stage, { data: '你好' });
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1));
+    expect(dispatchUserBrowserInput).toHaveBeenCalledWith(expect.objectContaining({ input: { kind: 'insertText', text: '你好' } }));
   });
 
 });

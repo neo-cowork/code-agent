@@ -705,7 +705,7 @@ describe('AutomationReviewInbox', () => {
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
     });
     expect(screen.getAllByTestId('parked-args-preview')).toHaveLength(2);
-    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Arguments: ' : '参数：'}invoice-export --token=***REDACTED***`);
+    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Details: ' : '操作内容：'}invoice-export --token=***REDACTED***`);
     // Same tool, reason and session; only requestedAt differs (indices 0 and 3).
     expect(cards[0].textContent).not.toBe(cards[3].textContent);
   });
@@ -799,7 +799,7 @@ describe('AutomationReviewInbox', () => {
       expect(screen.getByTestId('parked-args-preview')).toBeTruthy();
     });
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
-      '参数：curl https://api.example.com/v1 · Bearer ***REDACTED***',
+      '操作内容：curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
   });
 
@@ -813,7 +813,7 @@ describe('AutomationReviewInbox', () => {
       expect(screen.getByTestId('parked-args-preview')).toBeTruthy();
     });
     expect(screen.getByTestId('parked-args-preview').textContent).toBe(
-      'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
+      'Details: curl https://api.example.com/v1 · Bearer ***REDACTED***',
     );
   });
 
@@ -822,7 +822,7 @@ describe('AutomationReviewInbox', () => {
     listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
     render(<AutomationReviewInbox />);
     const card = await screen.findByTestId('parked-approval-item');
-    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run command');
     expect(card.textContent).not.toContain('Bash');
     const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
     expect(summary.closest('details')?.open).toBe(false);
@@ -1078,7 +1078,7 @@ describe('pending review count parity', () => {
     expect(countPendingReviewByTask(parityRecords, paritySessionsById)).toBe(1);
     render(<CronCenterPanel onClose={() => undefined} />);
     await waitFor(() => {
-      expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('1');
+      expect(screen.getByTestId('cron-status-review').querySelector('.text-2xl')?.textContent).toBe('1');
       expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1 条待过目');
     });
     expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);

@@ -199,6 +199,8 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
     ...snapshotMessage,
     ...liveMessage,
     content: mergedContentOf(snapshotMessage, liveMessage),
+    // live 草稿的时间戳是开轮时刻，落库那条是写入时刻；取晚的，轮次用时才覆盖到最终回复。
+    timestamp: Math.max(snapshotMessage.timestamp, liveMessage.timestamp),
     reasoning: pickBody(snapshotMessage.reasoning, liveMessage.reasoning),
     // live 草稿的 metadata 可能只有 correlation 一个键（turn_start 建的草稿就是），
     // 整体铺开会把 snapshot 落库的 agentError / turnQuality 等键抹掉——按键合并，
@@ -219,6 +221,54 @@ function mergeMetadata(snapshotMessage: Message, liveMessage: Message): Message[
   const merged = { ...snapshotMessage.metadata, ...liveMessage.metadata };
   if (!isStreamRecoveryMessage(snapshotMessage)) return merged;
   return stripStreamRecoveryMarker({ metadata: merged }).metadata;
+}
+
+/** Unpaired tool drafts still belong to their preceding user, even after later turns loaded. */
+function mergeLiveToolMessages(merged: Message[], tail: Message[], live: Message[]): Message[] {
+  const messages = [...merged];
+  for (const message of tail) {
+    const userId = message.role === 'assistant' && message.toolCalls?.length
+      ? precedingUserId(live, message) : undefined;
+    const userIndex = userId === undefined ? -1 : messages.findIndex(item => item.id === userId);
+    const nextUserIndex = userIndex < 0 ? -1
+      : messages.findIndex((item, index) => index > userIndex && item.role === 'user');
+    if (nextUserIndex < 0) messages.push(message);
+    else messages.splice(nextUserIndex, 0, message);
+  }
+
+  // A single draft may overlap several persisted tool messages, so pairing whole
+  // messages cannot deduplicate it. Keep the first carrier and retain live results.
+  const callsById = new Map<string, NonNullable<Message['toolCalls']>[number]>();
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+    for (const call of message.toolCalls ?? []) {
+      const previous = callsById.get(call.id);
+      callsById.set(call.id, previous
+        ? { ...previous, ...call, result: call.result ?? previous.result }
+        : call);
+    }
+  }
+  const seen = new Set<string>();
+  return messages.map(message => {
+    if (message.role !== 'assistant' || !message.toolCalls?.length) return message;
+    const toolCalls = message.toolCalls.filter(call => {
+      if (seen.has(call.id)) return false;
+      seen.add(call.id);
+      return true;
+    }).map(call => callsById.get(call.id) ?? call);
+    const retained = new Set(toolCalls.map(call => call.id));
+    const referenced = new Set<string>();
+    const contentParts = message.contentParts?.filter(part => {
+      if (part.type !== 'tool_call') return true;
+      if (!retained.has(part.toolCallId) || referenced.has(part.toolCallId)) return false;
+      referenced.add(part.toolCallId);
+      return true;
+    });
+    return {
+      ...message, toolCalls,
+      contentParts: contentParts?.length === message.contentParts?.length ? message.contentParts : contentParts,
+    };
+  });
 }
 
 export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) {
@@ -251,7 +301,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
     return mergeAssistantPair(message, liveMessage);
   });
   return {
-    messages: hydrateToolCallResults([...merged, ...liveById.values()]),
+    messages: hydrateToolCallResults(mergeLiveToolMessages(merged, [...liveById.values()], live)),
     hasLiveTail,
   };
 }

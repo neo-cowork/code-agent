@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { ENV_ASSIST_BRIDGE_TIMEOUT_MS } from '../../../../shared/constants/envAssist';
+import { ENV_ASSIST_BRIDGE_PROBE_TIMEOUT_MS, ENV_ASSIST_BRIDGE_TIMEOUT_MS } from '../../../../shared/constants/envAssist';
 import { createLogger } from '../../../services/infra/logger';
 
 const BRIDGE_URL_ENV = 'CODE_AGENT_ENV_ASSIST_BRIDGE_URL';
@@ -10,13 +10,21 @@ const HANDSHAKE_MAX_BYTES = 4096;
 
 const logger = createLogger('EnvAssistShellBridge');
 
+/** A non-2xx bridge answer carries the route's machine code when it sent one. */
+export function bridgeErrorCode(error: unknown): string | undefined {
+  const code = (error as { bridgeError?: unknown } | null)?.bridgeError;
+  return typeof code === 'string' ? code : undefined;
+}
+
 export interface ShellBridgeClient {
-  post<TResponse>(path: string, body?: Record<string, unknown>): Promise<TResponse>;
+  post<TResponse>(path: string, body?: Record<string, unknown>, timeoutMs?: number): Promise<TResponse>;
 }
 
 interface CapturedBridgeEnv {
   rawUrl: string | undefined;
   token: string | undefined;
+  /** Why the capture produced no credentials (flag missing / stdin EOF / bad line ...); only set on failure. */
+  failure?: string;
 }
 
 let capturedBridgeEnv: CapturedBridgeEnv | null = null;
@@ -31,10 +39,9 @@ export function captureShellBridgeEnv(): void {
     if (process.env[HANDSHAKE_FLAG_ENV] === '1') {
       capturedBridgeEnv = readHandshakeFromStdin();
     } else {
-      capturedBridgeEnv = {
-        rawUrl: process.env[BRIDGE_URL_ENV],
-        token: process.env[BRIDGE_TOKEN_ENV],
-      };
+      const rawUrl = process.env[BRIDGE_URL_ENV];
+      const token = process.env[BRIDGE_TOKEN_ENV];
+      capturedBridgeEnv = { rawUrl, token, ...(rawUrl || token ? {} : { failure: 'handshake_flag_missing' }) };
     }
   }
   delete process.env[HANDSHAKE_FLAG_ENV];
@@ -48,15 +55,15 @@ export function captureShellBridgeEnv(): void {
  * newline so the later stdin EOF watcher is unaffected.
  */
 function readHandshakeFromStdin(): CapturedBridgeEnv {
-  const invalid = (): CapturedBridgeEnv => {
-    logger.warn('env_assist_bridge:handshake_invalid');
-    return { rawUrl: undefined, token: undefined };
+  const invalid = (failure: string): CapturedBridgeEnv => {
+    logger.warn('env_assist_bridge:handshake_invalid', { reason: failure });
+    return { rawUrl: undefined, token: undefined, failure };
   };
   const byte = Buffer.alloc(1);
   const bytes: number[] = [];
   try {
     for (;;) {
-      if (bytes.length >= HANDSHAKE_MAX_BYTES) return invalid();
+      if (bytes.length >= HANDSHAKE_MAX_BYTES) return invalid('line_too_long');
       let n: number;
       try {
         n = fs.readSync(0, byte, 0, 1, null);
@@ -64,16 +71,17 @@ function readHandshakeFromStdin(): CapturedBridgeEnv {
         if ((error as NodeJS.ErrnoException).code === 'EAGAIN') continue;
         throw error;
       }
-      if (n === 0) return invalid();
+      if (n === 0) return invalid(bytes.length ? 'stdin_eof_mid_line' : 'stdin_eof');
       if (byte[0] === 0x0a) break;
       bytes.push(byte[0]);
     }
-  } catch {
-    return invalid();
+  } catch (error) {
+    return invalid(`stdin_read_error:${(error as NodeJS.ErrnoException).code ?? 'unknown'}`);
   }
   const line = Buffer.from(bytes).toString('utf8').replace(/\r$/, '');
-  const parts = line.startsWith(HANDSHAKE_PREFIX) ? line.slice(HANDSHAKE_PREFIX.length).split(' ') : [];
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return invalid();
+  if (!line.startsWith(HANDSHAKE_PREFIX)) return invalid('bad_prefix');
+  const parts = line.slice(HANDSHAKE_PREFIX.length).split(' ');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return invalid('bad_field_count');
   return { rawUrl: parts[0], token: parts[1] };
 }
 
@@ -106,20 +114,25 @@ export function resolveShellBridgeClientFromEnv(
     rawUrl = env[BRIDGE_URL_ENV]?.trim();
     token = env[BRIDGE_TOKEN_ENV]?.trim();
   }
-  if (platform !== 'darwin') {
-    logger.warn('env_assist_bridge:no_shell');
-    return null;
-  }
   const baseUrl = rawUrl ? parseLoopbackOrigin(rawUrl) : null;
-  if (!baseUrl || !token) {
+  if (platform !== 'darwin' || !baseUrl || !token) {
+    // Distinguishable degrade trace: which prerequisite is missing (the bare no_shell line alone cannot tell).
+    const reason = platform !== 'darwin' ? 'non_darwin'
+      : capturedBridgeEnv?.failure && (env === undefined || env === process.env) ? capturedBridgeEnv.failure
+      : !rawUrl ? 'url_missing' : !baseUrl ? 'url_invalid' : 'token_missing';
     logger.warn('env_assist_bridge:no_shell');
+    logger.warn('env_assist_bridge:no_shell_reason', { reason });
     return null;
   }
 
   return {
-    async post<TResponse>(path: string, body: Record<string, unknown> = {}): Promise<TResponse> {
+    async post<TResponse>(
+      path: string,
+      body: Record<string, unknown> = {},
+      timeoutMs = ENV_ASSIST_BRIDGE_TIMEOUT_MS,
+    ): Promise<TResponse> {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), ENV_ASSIST_BRIDGE_TIMEOUT_MS);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       let response: Response;
       try {
         response = await fetch(`${baseUrl}${path}`, {
@@ -134,21 +147,19 @@ export function resolveShellBridgeClientFromEnv(
       } catch {
         const reason = 'env_assist_bridge:bridge_unreachable';
         logger.warn(reason);
-        throw new Error(reason);
+        throw Object.assign(new Error(reason), { bridgeFailure: controller.signal.aborted ? 'timeout' : 'unreachable' });
       } finally {
         clearTimeout(timer);
       }
 
-      if (response.status === 401 || response.status === 403) {
-        const reason = 'env_assist_bridge:bridge_auth_rejected';
-        logger.warn(reason);
-        throw new Error(reason);
-      }
-
       if (!response.ok) {
-        const reason = `env_assist_bridge:bridge_http_${response.status}`;
+        const reason = response.status === 401 || response.status === 403
+          ? 'env_assist_bridge:bridge_auth_rejected'
+          : `env_assist_bridge:bridge_http_${response.status}`;
         logger.warn(reason);
-        throw new Error(reason);
+        // The bridge's own machine code (e.g. calendar_not_authorized, event_not_found), never its detail text.
+        const code = await response.json().then((json: { error?: unknown }) => json?.error, () => undefined);
+        throw Object.assign(new Error(reason), typeof code === 'string' ? { bridgeError: code } : {});
       }
 
       try {
@@ -162,10 +173,18 @@ export function resolveShellBridgeClientFromEnv(
   };
 }
 
-/** Cards only offer the prompting button when the desktop shell bridge can actually show the system dialog. */
-let grantBridgeAvailable: boolean | undefined;
-export function canRequestEnvGrant(): boolean {
-  // The shell hands credentials over once per process, so the answer never changes; resolve (and warn) once.
-  grantBridgeAvailable ??= resolveShellBridgeClientFromEnv() !== null;
-  return grantBridgeAvailable;
+/** Cards only offer the prompting button when a fresh passive probe reaches the desktop shell bridge. */
+export async function canRequestEnvGrant(): Promise<boolean> {
+  const client = resolveShellBridgeClientFromEnv();
+  if (!client) return false;
+  try {
+    await client.post('/v1/passive/accessibility', {}, ENV_ASSIST_BRIDGE_PROBE_TIMEOUT_MS);
+    return true;
+  } catch (error) {
+    const reason = (error as { bridgeFailure?: unknown } | null)?.bridgeFailure === 'timeout' ? 'timeout'
+      : error instanceof Error && error.message === 'env_assist_bridge:bridge_auth_rejected' ? 'auth_rejected'
+      : 'unreachable';
+    logger.warn('env_assist_bridge:grant_button_withheld', { reason });
+    return false;
+  }
 }

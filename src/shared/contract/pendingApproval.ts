@@ -101,6 +101,8 @@ export interface ParkedApprovalInboxItem {
   /** 原始 assistant tool_call id；渲染端据此把「等批准」精确对到会话里那一步。老行没有。 */
   toolCallId?: string;
   sessionTitle?: string;
+  /** Channel label sessions: task name from the last user message preceding this approval’s tool call. */
+  taskTitle?: string;
   tool: string;
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */

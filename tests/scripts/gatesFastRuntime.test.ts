@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../..');
 // Run the unchanged production runner in a committed fixture repository. The
 // other gates are tiny passing commands; Git, selection, receipts and Vitest
 // (including its manifest/config/report checks) execute for real.
-function runFixture(count: number, failing = false, dirOf: (index: number) => string = () => 'tests/unit') {
+function runFixture(count: number, failing = false, dirOf: (index: number) => string = () => 'tests/unit', opts: { ratchet?: string; ttBudgetMs?: number; env?: Record<string, string> } = {}) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fast-runner-contract-')));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: 'pipe' }).trim();
   const write = (name: string, content: string) => {
@@ -35,14 +35,14 @@ function runFixture(count: number, failing = false, dirOf: (index: number) => st
       write(`scripts/${name}`, 'exit 0\n');
     }
     for (const name of ['shell-fail-loud-lint.mjs', 'tsc-tests-ratchet.mjs', 'ci/check-casebank-answers.mjs', 'ci/shared-host-boundary.mjs', 'ci/user-visible-leak.mjs']) {
-      write(`scripts/${name}`, 'process.exit(0);\n');
+      write(`scripts/${name}`, name === 'tsc-tests-ratchet.mjs' && opts.ratchet ? opts.ratchet : 'process.exit(0);\n');
     }
     // commit-checks runs ESLint too, using a fixture config without repo rules.
     write('eslint.config.js', 'export default [{ files: ["tests/**/*.ts"] }];\n');
     const files = Array.from({ length: count }, (_, index) => `${dirOf(index)}/selected${String(index).padStart(3, '0')}.test.ts`);
     for (const file of files) write(file, "import { test, expect } from 'vitest'; test('selected test', () => expect(1).toBe(1));\n");
     write('scripts/lib/gates-fast-policy.json', JSON.stringify({
-      ...policy, baseline: files, rules: [], packages: ['packages/fixture'],
+      ...policy, budgetsMs: { ...policy.budgetsMs, ...(opts.ttBudgetMs ? { 'tests-typecheck': opts.ttBudgetMs } : {}) }, baseline: files, rules: [], packages: ['packages/fixture'],
       sharedPackageInputs: ['tests/**'], testsTypecheckInputs: ['tests/**'],
     }));
     git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
@@ -52,7 +52,7 @@ function runFixture(count: number, failing = false, dirOf: (index: number) => st
     git('add', '.'); git('commit', '-qm', 'selected change');
     const result = spawnSync(process.execPath, ['scripts/gates-fast.mjs', '--base', base, '--receipt', '.reports/gates-fast/result.json'], {
       cwd: dir, encoding: 'utf8', timeout: 60000,
-      env: { ...process.env, NEO_EVAL_ANSWERS_DIR: path.join(dir, 'private'), GATES_FAST_CACHE_DIR: path.join(dir, '.reports/cache'), GATES_FAST_BUDGET_SCALE: '1', SHIP_FASTGATE_TIMEOUT_S: '180' },
+      env: { ...process.env, NEO_EVAL_ANSWERS_DIR: path.join(dir, 'private'), GATES_FAST_CACHE_DIR: path.join(dir, '.reports/cache'), GATES_FAST_BUDGET_SCALE: '1', SHIP_FASTGATE_TIMEOUT_S: '180', CI: '', ...opts.env },
     });
     expect(result.error).toBeUndefined();
     const receipt = JSON.parse(fs.readFileSync(path.join(dir, '.reports/gates-fast/result.json'), 'utf8'));
@@ -77,6 +77,31 @@ describe('fast gate runner deferral', () => {
     expect(receipt.report).toBeNull();
     expect(result.stdout).toContain('gates:fast vitest deferred to PR CI: selected 17 files > 16');
     expect(receipt.ci.status).toBe('pending');
+  }, 30000);
+
+  const hang = "setTimeout(() => {}, 60000);\n";
+  const over = "console.error('[tsc-tests-ratchet] ✗ 超基线 3 处'); process.exit(1);\n";
+  it('tests-typecheck over local budget with no error count: deferred-to-ci, exit zero, receipt says so', () => {
+    const { result, receipt } = runFixture(1, false, () => 'tests/unit', { ratchet: hang, ttBudgetMs: 1500 });
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(receipt.status).toBe('passed');
+    expect(receipt.gates.find((gate: { id: string }) => gate.id === 'tests-typecheck')).toMatchObject({ status: 'deferred-to-ci' });
+    expect(receipt.testsTypecheckDeferred).toMatchObject({ reason: 'local-over-budget', budgetMs: 1500 });
+    expect(result.stdout).toContain('交 PR CI');
+  }, 30000);
+
+  it('tests-typecheck with new errors over baseline: failed, not deferred', () => {
+    const { result, receipt } = runFixture(1, false, () => 'tests/unit', { ratchet: over, ttBudgetMs: 1500 });
+    expect(result.status).toBe(1);
+    expect(receipt.gates.find((gate: { id: string }) => gate.id === 'tests-typecheck').status).toBe('failed');
+    expect(receipt.testsTypecheckDeferred).toBeUndefined();
+  }, 30000);
+
+  it('tests-typecheck over budget under CI=true: failed, deferral not allowed', () => {
+    const { result, receipt } = runFixture(1, false, () => 'tests/unit', { ratchet: hang, ttBudgetMs: 1500, env: { CI: 'true' } });
+    expect(result.status).toBe(1);
+    expect(receipt.error).toContain('gate budget 1500ms exceeded');
+    expect(receipt.gates.find((gate: { id: string }) => gate.id === 'tests-typecheck').status).toBe('failed');
   }, 30000);
 
   it('18 mixed files: only the 3 tests/wrappers files run locally, the 15 CI-covered ones defer', () => {

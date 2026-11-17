@@ -6,6 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent, AppSettings } from '../../../src/shared/contract';
 import { PARKED_APPROVAL_ENTRY_PATH } from '../../../src/shared/parkedApprovalLocation';
+import { NEEDS_INPUT_NATIVE_FALLBACK } from '../../../src/shared/constants/timeouts';
+import { setDaemonQuitIntent } from '../../../src/host/services/daemon/quitIntent';
 import { sidebarZh } from '../../../src/renderer/i18n/sidebar';
 import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
@@ -90,10 +92,17 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     vi.useRealTimers();
     resetPermissionModeManager();
     notificationService.clearRecentNotifications();
+    notificationService.setNativeNotificationSender(null);
+    notificationService.setNotificationSessionTitleResolver(null);
   });
 
   it('parked approval body names the real approval screen without inbox and deduplicates the persistence notification', async () => {
     const sessionId = 'parked-dedupe-chain';
+    setDaemonQuitIntent('background');
+    const nativeSender = vi.fn();
+    notificationService.setNativeNotificationSender(nativeSender);
+    notificationService.setNotificationSessionTitleResolver(async () => '会议纪要');
+    const notify = vi.spyOn(notificationService, 'notifyNeedsInput');
     getPermissionModeManager().markUnattendedSession(sessionId);
     const deps = makeDeps();
     const persistence: Array<Promise<void>> = [];
@@ -122,6 +131,11 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     for (let i = 0; i < 200 && onEvents.length === 0; i += 1) await Promise.resolve();
     await Promise.all(persistence);
 
+    await vi.advanceTimersByTimeAsync(NEEDS_INPUT_NATIVE_FALLBACK.FOLD_WINDOW_MS);
+    expect(nativeSender).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sessionId, title: '会议纪要', body: '等你确认：写入文件' }));
+    expect(notify).toHaveBeenCalledTimes(2);
+    for (const [data] of notify.mock.calls) expect(data.tool).toBe('write_file');
+    notify.mockRestore();
     expect(onEvents).toHaveLength(1);
     expect(onEvents[0]).toMatchObject({ type: 'permission_request' });
     // 两个发送口只放出一条：先到的停车口文案（更具体的「到自动化的运行记录处理」）。
@@ -129,8 +143,8 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     expect(platformMocks.broadcast).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       expect.objectContaining({
-        title: '有操作等你确认', sessionId, urgent: true,
-        body: `无人值守任务请求执行 write_file，已暂停等你批准，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
+        title: '需要授权', sessionId, urgent: true,
+        body: `需要授权：写入文件。任务已暂停，到${PARKED_APPROVAL_ENTRY_PATH}处理。`,
       }),
     );
 
@@ -161,7 +175,7 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
     expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
     expect(platformMocks.broadcast).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
-      expect.objectContaining({ title: '需要授权', sessionId, urgent: true }),
+      expect.objectContaining({ title: '需要授权', body: '需要授权：写入文件', sessionId, urgent: true }),
     );
 
     await persistTaskManagerEvent(deps, sessionId, {

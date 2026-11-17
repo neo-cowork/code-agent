@@ -8,26 +8,19 @@
 // settle 只等首次尝试，重试全部离开关键路径（不能推迟 startable 的下一轮 launch）。
 import type { SessionCommandTask } from './sessionCommandCenter';
 import { buildSessionTaskResultMessage } from './sessionCommandTaskRestartRecovery';
-import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError, type SessionAccessRetryOutcome } from './sessionAccessRetry';
 import { recordBackgroundWakeFailureNoteWithOwnerRetry } from './backgroundWakeNoteRetry';
 import { recordBackgroundTaskStopNote } from './backgroundTaskStopNote';
 import { getSessionManager } from '../infra/sessionManager';
-import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 import { getAuthService } from '../auth/authService';
+import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
 
 const logger = createLogger('TerminalResultProjection');
 
 export type TerminalResultStatus = 'completed' | 'failed' | 'cancelled';
 
-function resolveLocale(): SessionTaskResultStatusWordLocale {
-  try {
-    return getConfigService().getSettings().ui.language;
-  } catch {
-    return 'zh';
-  }
-}
+const resolveLocale = resolveSessionTaskResultLocale;
 
 /**
  * 正常终态的 [任务结果] 行。消息 id 由 taskId 派生：迟到的重试与正常写撞同一 id 时
@@ -37,8 +30,7 @@ export async function projectTerminalResult(
   task: SessionCommandTask,
   status: TerminalResultStatus,
 ): Promise<void> {
-  // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
-  // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
+  // 模型读 resultText，卡片读 backgroundTaskResult.summary；共用构造器负责净化。
   const resultText = task.resultText ?? task.summary;
   await getSessionManager().addMessageToSession(
     task.sessionId,
@@ -80,7 +72,7 @@ export function deferTerminalResultProjectionUntilAccessible(input: {
         sessionId: task.sessionId,
         taskId: task.id,
         shortName: task.shortName,
-        reason: 'wake_failed',
+        reason: 'owner_missing',
       });
     },
     onSettled: input.onSettled,

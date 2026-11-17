@@ -12,6 +12,8 @@ import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { modelKeyOptionLabel } from './modelKeyOptionLabel';
+import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
 // 它不跟随默认模型，藏起来就是一个看不见、改不了却在生效的配置。
@@ -62,7 +64,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   onChange,
   onMemoryRouteChange,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const strategyText = t.settings.model.taskStrategy;
   const effectiveSettings = useMemo<AppSettings | null>(() => {
     if (!settings) return null;
@@ -79,6 +81,9 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     };
   }, [providerConfigs, settings, strategy]);
 
+  const optionLabel = (provider: ModelProvider, label: string) => modelKeyOptionLabel(
+    label, provider, providerConfigs[provider], t.settings.model.header.keyNeededSuffix,
+  );
   const memoryRoute = settings?.models.routing.memory;
   const effectiveMemoryRoute = memoryRoute ?? settings?.models.routing.fast;
   const profileProviders = useMemo(
@@ -92,8 +97,11 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   const runtimeModelOptions = useMemo(() => buildRuntimeModelOptions(
     effectiveSettings,
     PROVIDER_MODELS.map((provider) => provider.id),
-    { includeDisabledProviders: Array.from(new Set([...profileProviders, config.provider])), dedupeProviderGroups: false },
-  ), [config.provider, effectiveSettings, profileProviders]);
+    { includeDisabledProviders: Array.from(new Set([
+      ...profileProviders, config.provider,
+      ...Object.keys(providerConfigs).filter((id) => providerConfigs[id]?.enabled !== false) as ModelProvider[],
+    ])), dedupeProviderGroups: false },
+  ), [config.provider, effectiveSettings, profileProviders, providerConfigs]);
 
   const modelOptions = useMemo(() => {
     const options = [...runtimeModelOptions];
@@ -121,13 +129,13 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
   const groupedOptions = useMemo(() => {
     const groups = new Map<string, { label: string; options: typeof modelOptions }>();
     for (const option of modelOptions) {
-      const key = option.providerLabel || option.provider;
+      const key = resolveProviderLabel(option.provider, option.providerLabel, language);
       const group = groups.get(key) ?? { label: key, options: [] as typeof modelOptions };
       group.options.push(option);
       groups.set(key, group);
     }
     return Array.from(groups.values());
-  }, [modelOptions]);
+  }, [language, modelOptions]);
 
   // 自愈目标必须来自运行时可选列表；展示豁免不授权把其他档位改写成该模型。
   useEffect(() => {
@@ -218,12 +226,12 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                   disabled={disabled}
                   className="w-full"
                 >
-                  {unavailable ? <option value={value}>{modelLabel(slot.provider, slot.model)}{strategyText.unavailableSuffix}</option> : null}
+                  {unavailable ? <option value={value}>{optionLabel(slot.provider, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
                   {groupedOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (
                         <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                          {option.label}
+                          {optionLabel(option.provider, option.label)}
                         </option>
                       ))}
                     </optgroup>
@@ -259,14 +267,14 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
             <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
             {memoryRoute && memoryRouteUnavailable ? (
               <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
-                {modelLabel(memoryRoute.provider, memoryRoute.model)}{strategyText.unavailableSuffix}
+                {optionLabel(memoryRoute.provider, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
               </option>
             ) : null}
             {groupedOptions.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.options.map((option) => (
                   <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                    {option.label}
+                    {optionLabel(option.provider, option.label)}
                   </option>
                 ))}
               </optgroup>

@@ -1,4 +1,7 @@
+import { withConnectorReconnectGuidance } from './connectorReconnectGuidance';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
+import { envBlockForToolFailure } from '../../agent/runtime/envBlockedTurn';
+import { getPermissionModeManager } from '../../permissions/modes';
 // ============================================================================
 // Tool Resolver — subagent 使用的工具解析 + dispatch 接口
 //
@@ -173,7 +176,23 @@ class ProtocolToolResolver implements ToolResolver {
       });
       const canUseTool = buildCanUseToolFromLegacy(ctx, dispatchName);
 
-      const protoResult = await handler.execute(args, protoCtx, canUseTool);
+      // 记下本次调用已拿到的放行：前台直接弹框授权后重做同一次调用时沿用，不再让用户点第二次「允许一次」
+      let firstPermit: Awaited<ReturnType<typeof canUseTool>> | undefined;
+      const recordingCanUseTool: typeof canUseTool = async (...callArgs) => (firstPermit = await canUseTool(...callArgs));
+      let protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, recordingCanUseTool));
+      // ADR-090 修订：用户本人前台这一轮碰到日历「未决定」→ 直接弹一次系统框；允许了就当轮重做这次调用，不出卡
+      if (!protoResult.ok && protoResult.code === 'not_authorized' && CALENDAR_TOOLS.has(dispatchName) && isUserPresentForegroundTurn(ctx)) {
+        const { grantCalendarForForegroundRequest } = await import('../../ipc/envAssist.ipc');
+        const access = await grantCalendarForForegroundRequest(ctx.currentToolCallId ?? dispatchName, ctx.abortSignal);
+        if (access === 'aborted') {
+          return { success: false, error: 'Tool execution aborted', metadata: { code: 'ABORTED' } };
+        }
+        if (access === 'granted') {
+          const permit = firstPermit;
+          const reuseCanUseTool: typeof canUseTool = permit?.allow ? async () => permit : canUseTool;
+          protoResult = withConnectorReconnectGuidance(dispatchName, await handler.execute(args, protoCtx, reuseCanUseTool));
+        }
+      }
       if (protoResult.ok) {
         const output = typeof protoResult.output === 'string'
           ? protoResult.output
@@ -185,6 +204,8 @@ class ProtocolToolResolver implements ToolResolver {
           metadata: protoResult.meta,
         };
       }
+      const envBlock = envBlockForToolFailure({ toolName: dispatchName, code: protoResult.code, runId: ctx.runId, toolCallId: ctx.currentToolCallId });
+      if (envBlock) throw envBlock;
       return {
         success: false,
         error: protoResult.error,
@@ -198,6 +219,13 @@ class ProtocolToolResolver implements ToolResolver {
       };
     }
   }
+}
+
+const CALENDAR_TOOLS = new Set(['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']);
+
+/** 用户在场：本轮来自用户自己的前台消息（前台工具面），且不是无人值守会话（定时/渠道/心跳）；子代理不继承前台工具面。 */
+export function isUserPresentForegroundTurn(ctx: Pick<ToolContext, 'foregroundToolFace' | 'sessionId'>): boolean {
+  return ctx.foregroundToolFace === true && !getPermissionModeManager().isUnattendedSession(ctx.sessionId);
 }
 
 let singleton: ToolResolver | null = null;

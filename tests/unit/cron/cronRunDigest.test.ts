@@ -136,9 +136,10 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   const deliveryDigest =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
     + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+  const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
-  const expectedEnabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
-  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', deliveryDigest].join('\n');
+  const expectedEnabled = ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', denialInstruction, '', deliveryDigest].join('\n');
 
   afterEach(() => {
     vi.doUnmock('../../../src/shared/todayAnchor');
@@ -154,7 +155,7 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
     return build(...args);
   }
 
-  it('缺省 urgencyCriteria 时两种模式的产出与改动前逐字节相同', async () => {
+  it('缺省 urgencyCriteria 时两种模式逐字节匹配含拒绝归因规则的固定模板', async () => {
     expect(await buildWithFrozenAnchor('检查', null, true, NOW)).toBe(expectedEnabled);
     expect(await buildWithFrozenAnchor('检查', null, false, NOW)).toBe(expectedDisabled);
   });
@@ -162,7 +163,7 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   it('带上旧快照时缺省判据的产出同样逐字节相同', async () => {
     const withSnapshot = await buildWithFrozenAnchor('检查', '旧快照内容', true, NOW);
     expect(withSnapshot).toBe(
-      ['检查', '', timeAnchor, '', personalChatSourceRule, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
+      ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
         '请把上面的快照和本次看到的内容对比，这次只需要说明变化。', '', snapshotGuidance, '', deliveryDigest].join('\n'),
     );
   });
@@ -216,9 +217,10 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
   const deliveryDigest =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
     + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+  const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
-  const expectedEnabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
-  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', deliveryDigest].join('\n');
+  const expectedEnabled = ['检查', '', timeAnchor, '', denialInstruction, '', personalChatSourceRule, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查', '', timeAnchor, '', personalChatSourceRule, '', denialInstruction, '', deliveryDigest].join('\n');
   const RULE = '只有需要今天处理的紧急事项';
 
   afterEach(() => {
@@ -233,7 +235,7 @@ describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () =>
     return build(...args);
   }
 
-  it('无 notifyWhen 时两种模式（含快照路径）的产出与改动前逐字节相同', async () => {
+  it('无 notifyWhen 时两种模式逐字节匹配含拒绝归因规则的固定模板', async () => {
     expect(await buildWithFrozenAnchor('检查', null, true, NOW, undefined, undefined)).toBe(expectedEnabled);
     expect(await buildWithFrozenAnchor('检查', null, false, NOW, undefined, undefined)).toBe(expectedDisabled);
   });

@@ -27,6 +27,35 @@ import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutom
 import { isBashToolName } from './toolNames';
 import type { BrowserService } from '../services/infra/browserService';
 import { createLogger } from '../services/infra/logger';
+import * as os from 'os';
+import * as path from 'path';
+import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
+import { authorizeProbePath } from '../security/readOnlyProbeExecutor';
+
+/** Successful authorized probes return before classification. A fallback must not
+ * turn a cd to a single authorized path into authority to read its whole subtree.
+ * Keep this at the effective tool boundary: the syntax classifier alone has no
+ * session/attachment authority and is also used outside actual tool execution.
+ */
+function probeChangesReadRoot(command: unknown, workingDirectory: string, workspaceRoot?: string): boolean {
+  if (typeof command !== 'string') return false;
+  const plan = compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform });
+  if (!plan) return false;
+  const auth = { workingDirectory, workspaceRoot, homeDir: os.homedir(), userTexts: [], attachmentPaths: [] };
+  let directory = workingDirectory;
+  let outside = false;
+  for (const { cmd } of plan.steps) {
+    if (cmd.kind === 'cd') {
+      directory = path.resolve(directory, cmd.path);
+      // Conditional cd steps may be skipped. Once a branch can leave the roots,
+      // a later syntactic cd cannot prove that every read has returned inside.
+      outside ||= authorizeProbePath(directory, auth) === null;
+    } else if (outside && ['file-read', 'file-loop', 'ls', 'xattr', 'test', 'python'].includes(cmd.kind)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 type ToolPermissionLevel = Parameters<typeof permissionModeAutoApproves>[1];
 
@@ -405,14 +434,14 @@ export function isStickyUserDenial(
 
 /**
  * ADR-067 D4 sticky 拒绝文案：一句话告诉模型用户已拒绝该动作、下一条用户消息前
- * 不会再被询问，别重试，要在聊天里向用户确认（审批疲劳会把用户逼向 always-allow；
+ * 不会再被询问，别重试，用一句结论结束本轮（审批疲劳会把用户逼向 always-allow；
  * 竞品 Grok v0.75.5 同款语义）。复用 PERMISSION_DENIED_BY_USER，不新造契约码。
  */
 export function userDeniedStickyError(toolName: string, deniedSummary?: string): HostReasonPayload {
   const prior = deniedSummary ? ` (${deniedSummary})` : '';
   const modelText = `${toolName} was not executed: the user already declined this exact action${prior} `
     + 'earlier in this conversation turn. It will not run and will not be asked again until the user '
-    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat. '
+    + 'sends another message, so do not retry it or rephrase it. '
     + userDeniedGoalStickyError(toolName).modelText;
   return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, { toolName });
 }
@@ -421,9 +450,12 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
 export function userDeniedGoalStickyError(toolName: string): HostReasonPayload {
   return createHostReason(HostReasonCode.PermissionDeniedByUser,
     'The user just declined this kind of action. Do not request approval for the same goal again '
-      + 'by rewording it or changing the command or arguments. First ask the user one short question '
-      + 'about how to proceed: use AskUserQuestion if available, otherwise your final message. '
-      + 'For unattended, scheduled or background runs, put that question in your final message. '
+      + 'by rewording it or changing the command or arguments. End this turn now with exactly one short final '
+      + 'sentence: state that the declined action was not performed and, if anything was completed earlier '
+      + 'in this turn, mention it in the same sentence. Do not add a second sentence, a list, or an offer to continue. '
+      + 'Do not claim that nothing was changed. Do not ask a question or call a question tool. '
+      + 'For unattended, scheduled or background runs, state in one final sentence that the action '
+      + 'was declined and skipped. '
       + 'Wait for a new user message before requesting approval for this kind of action again.',
     { toolName });
 }
@@ -666,6 +698,17 @@ export async function resolveToolPermissionClassification(input: {
         reason,
         input.permStartTime,
       ),
+    };
+  }
+  // A grammar-only approval cannot overrule the probe's read-authority boundary.
+  // Run after permission-mode conveniences; hard denies retain their precedence.
+  if (classification.decision === 'approve' && isBashToolName(input.policyToolName)
+    && probeChangesReadRoot(input.params.command, input.workingDirectory, input.workspaceRoot)) {
+    const reason = 'Changing directory outside the read workspace requires confirmation';
+    classification = {
+      decision: 'ask', reason, confidence: 1, cached: false, trustBoundary: true,
+      hostReason: createHostReason(HostReasonCode.PermissionClassifierConfirmationRequired, reason, { toolName: input.executionToolName }),
+      traceStep: createTraceStep('permission_classifier', 'probe_read_root_change', 'ask', reason, input.permStartTime),
     };
   }
   return enforceWriteFenceObligation({ ...classification, external });

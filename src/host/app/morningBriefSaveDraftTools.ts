@@ -1,3 +1,6 @@
+import { resolveTurnToolFace } from '../agent/runtime/turnToolFace';
+import { resolveToolAlias } from '../services/toolSearch/deferredTools';
+import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { isMorningBriefSaveDraftReply } from './sessionCommandCenterBrain';
 
 // 存草稿轮、角色又没开邮件（未声明 mail/mail_draft）时整批撤下的工具名（FB-726）：
@@ -10,12 +13,45 @@ import { isMorningBriefSaveDraftReply } from './sessionCommandCenterBrain';
 // 组成里（当前基面未声明它，撤它是防御性的）；Grep 是只读搜索不在撤单之列。
 const SAVE_DRAFT_NO_MAIL_REMOVE = new Set(['mail', 'mail_send', 'mail_draft', 'delegate_task', 'Bash']);
 
-export function applyMorningBriefSaveDraftRoleTools(
+function applyMorningBriefSaveDraftRoleTools(
   prompt: string,
   allowedToolNames: string[] | undefined,
   roleTools: readonly string[] | undefined,
 ): string[] | undefined {
   if (!allowedToolNames || !isMorningBriefSaveDraftReply(prompt) || !roleTools?.length) return allowedToolNames;
   if (roleTools.some((tool) => tool === 'mail' || tool === 'mail_draft')) return allowedToolNames;
-  return allowedToolNames.filter((tool) => !SAVE_DRAFT_NO_MAIL_REMOVE.has(tool));
+  return resolveTurnToolFace({ baseToolNames: allowedToolNames, hardBoundary: (tool) => !SAVE_DRAFT_NO_MAIL_REMOVE.has(tool) });
+}
+
+/**
+ * Both role-chat entry points resolve here. A role that declares tools gets
+ * - on a command-center foreground turn: its declaration plus what this turn added on
+ *   top of the standing foreground face (save-draft, image reading, proactivity, office
+ *   files, scoped connector intent). The standing face itself is not inherited.
+ * - under any other caller allowlist (an unattended wake): only declared tools that the
+ *   caller also allows, so a narrower caller scope is never widened back.
+ * The role boundary and the save-draft subtraction come last in every case.
+ */
+export function resolveRoleChatToolFace(
+  prompt: string,
+  baseToolNames: string[] | undefined,
+  declaredToolNames: readonly string[] | undefined,
+  roleId?: string,
+  foregroundFace = false,
+): string[] | undefined {
+  const key = (name: string) => resolveToolAlias(name).toLowerCase();
+  const declared = declaredToolNames?.length ? declaredToolNames : undefined;
+  if (!declared || !baseToolNames) {
+    return applyMorningBriefSaveDraftRoleTools(prompt, resolveTurnToolFace({
+      baseToolNames, declaredToolNames, roleId,
+    }), declaredToolNames);
+  }
+  const standing = new Set((foregroundFace ? getTextForegroundToolNames() : []).map(key));
+  const callerAllowed = new Set(baseToolNames.map(key));
+  return applyMorningBriefSaveDraftRoleTools(prompt, resolveTurnToolFace({
+    declaredToolNames: declared, roleId,
+    ...(foregroundFace
+      ? { turnExtraToolNames: baseToolNames.filter((name) => !standing.has(key(name))) }
+      : { hardBoundary: (name: string) => callerAllowed.has(key(name)) }),
+  }), declaredToolNames);
 }

@@ -4,6 +4,7 @@ import { ArrowRight, CalendarCheck, ClipboardList, FileSpreadsheet, Radar } from
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
@@ -122,13 +123,15 @@ function buildExpertRoleCards(
 export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   /**
-   * FB-580（2026-11-05 真机复现）：composer 已有内容（文本/附件/chip）时点示例卡
-   **不**直接发送——改走 onFillDraft 把模板追加进输入框，发送时机留给用户。
-   * 缺省（不传）按空 composer 处理，保持一键直发。
+   * 仅专家起手卡 / 醒来提议卡使用：composer 已有内容（文本/附件/chip）时改走 onFillDraft
+   * 而不是直发（FB-580）。缺省按空 composer 处理，保持一键直发。
    */
   isComposerOccupied?: () => boolean;
-  /** FB-580：把示例模板填进 composer（不发送、不动附件与 chip）。 */
-  onFillDraft?: (prompt: string) => void;
+  /**
+   * 通用示例卡一律只走这里：把模板追加进 composer（不发送、不动附件与 chip），
+   * 发送时机留给用户（FB-1091：点示例是预览，不是下单）。
+   */
+  onFillDraft: (prompt: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
   session?: ResumableSession | null;
@@ -163,7 +166,7 @@ export const NewSessionWelcome: React.FC<{
         if (cancelled) return;
         const entry = entries.find((candidate) => candidate.roleId === expertRoleId);
         setExpert({
-          name: entry?.displayName?.trim() || expertRoleId,
+          name: (entry?.displayName?.trim() ? localizeBuiltinRole(expertRoleId, { name: entry.displayName.trim() }, language).name : '') || expertRoleId,
           cards: buildExpertRoleCards(entry?.icon, entry?.quickPrompts ?? [], proposals),
         });
       })
@@ -172,7 +175,7 @@ export const NewSessionWelcome: React.FC<{
         if (!cancelled) setExpert({ name: expertRoleId, cards: [] });
       });
     return () => { cancelled = true; };
-  }, [expertRoleId]);
+  }, [expertRoleId, language]);
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
@@ -192,7 +195,7 @@ export const NewSessionWelcome: React.FC<{
   // 的立规理由），不会被一次误删接线静默退回「点卡即重活开跑」的事故行为。
   const activatePrompt = (prompt: string) => {
     if (isComposerOccupied?.()) {
-      onFillDraft?.(prompt);
+      onFillDraft(prompt);
       return;
     }
     onSend(prompt);
@@ -204,7 +207,12 @@ export const NewSessionWelcome: React.FC<{
     } : current);
   };
   const handleSuggestionActivate = (prompt: string, wakeProposalTitle?: string) => {
-    if (!expertRoleId || !wakeProposalTitle) {
+    if (!expertRoleId) {
+      // 通用示例卡：永远只填 composer，不发送（FB-1091）。
+      onFillDraft(prompt);
+      return;
+    }
+    if (!wakeProposalTitle) {
       activatePrompt(prompt);
       return;
     }

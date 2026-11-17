@@ -47,7 +47,9 @@ describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () =>
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('Tool not allowed: Bash (disabled by --tools/--disallowed-tools)');
+    expect(result.error).toBe("Bash is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.");
+    expect(result.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    expect(result.metadata?.bounced).toBe(true);
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
@@ -63,7 +65,7 @@ describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () =>
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Tool not allowed: Bash');
+    expect(result.error).toContain("Bash is not in this turn's tool list.");
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
@@ -79,7 +81,8 @@ describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () =>
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBe('Tool not allowed: Bash (disabled by --tools/--disallowed-tools)');
+    expect(result.error).toBe("Bash is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.");
+    expect(result.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 

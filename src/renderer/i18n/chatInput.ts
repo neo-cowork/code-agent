@@ -12,7 +12,10 @@ import { unsentDraftCopyEn, unsentDraftCopyZh } from './unsentDraft';
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatTranscript.ts 先例）。
 // ============================================================================
 
+import { meetingBarEn, meetingBarZh } from './meetingBar';
+
 export const chatInputZh = {
+  ...meetingBarZh,
   ...evalBridgeZh,
   ...turnFeedbackWhyZh,
   ...wakeRationaleZh,
@@ -40,7 +43,9 @@ export const chatInputZh = {
     attachPages: '{count} 页',
     attachRemoveAria: '移除附件 {name}',
     attachmentAlreadyAdded: '{name} 已添加，无需重复添加',
-    attachmentLimitReached: '已添加 {added} 个，其余 {dropped} 个未添加（每条消息最多 {max} 个）。请先发送这一批，再继续添加。',
+    attachmentAlreadyAddedMany: '{name} 等 {count} 个文件已添加，无需重复添加',
+    attachmentLimitReached: '附件已满（{max} 个）：这次加进了 {added} 个，另 {dropped} 个没加进来。发送这条消息后，就能继续添加剩下的。',
+    attachmentLimitReachedNone: '附件已满（{max} 个）：这次没有加进任何文件，{dropped} 个都没加进来。发送这条消息后，就能继续添加。',
     connectorIconRemoveAria: '取消挂载 {name}',
     // 底栏图标 / 框内胶囊的「来源三态」小卡：回答「这是啥、谁放的、为什么在」。
     // 状态词（已连接 / 未连接 / 去能力中心连接）逐字复用 expert.roleSkills，不给用户第二套说法。
@@ -67,6 +72,7 @@ export const chatInputZh = {
     rejectedUploadMore: '另有 {count} 个文件未添加',
     rejectedUploadDismiss: '关闭提示',
     uploadFileTooLarge: '文件 "{name}" 太大（{size}），最大支持 10MB',
+    uploadServerFailed: '{name}：{reason}',
     uploadDocxFailed: '文件 "{name}" 处理失败：无法解析 Word 文档。请确认文件未损坏后重试',
     uploadXlsxFailed: '文件 "{name}" 处理失败：无法解析 Excel 文件。请确认文件未损坏后重试',
     uploadPptFailed: '文件 "{name}" 读取失败：无法读取演示文稿内容。请检查文件是否损坏或重新选择',
@@ -152,7 +158,7 @@ export const chatInputZh = {
   },
   roleDraft: {
     createdLabel: '已创建',
-    editCreated: '改一改',
+    editCreated: '修改',
     canDoLabel: '能做',
     willNotDoLabel: '不会',
     pendingEditBanner: '专家改动待确认：确认后才会更新这位专家（已有记忆和工作记录会保留）',
@@ -199,25 +205,6 @@ export const chatInputZh = {
     saveAsSuffix: '"',
     save: '保存',
     ignore: '忽略',
-  },
-  meetingBar: {
-    recording: '记录中',
-    paused: '已暂停',
-    pause: '暂停',
-    resume: '继续',
-    stop: '结束',
-    silenceWarning: '已经 {minutes} 分钟没人说话，{remain} 分钟后自动结束',
-    ended: {
-      manual: '这场会已结束',
-      silence: '{minutes} 分钟没人说话，这场会已自动结束',
-      max_duration: '已录满 {hours} 小时，这场会已自动结束',
-      sleep: '电脑睡眠了，这场会已结束',
-      capture_stopped: '录音停了，这场会已结束',
-      interrupted: '上次 Neo 退出时这场会被中断',
-    },
-    startFailed: '录音没开起来',
-    openSettings: '去设置看看',
-    dismiss: '知道了',
   },
   loopStatusBar: {
     runningPrefix: '循环中 · 第 ',
@@ -513,6 +500,7 @@ export const chatInputZh = {
 };
 
 export const chatInputEn: typeof chatInputZh = {
+  ...meetingBarEn,
   ...evalBridgeEn,
   ...turnFeedbackWhyEn,
   ...wakeRationaleEn,
@@ -540,7 +528,9 @@ export const chatInputEn: typeof chatInputZh = {
     attachPages: '{count} pages',
     attachRemoveAria: 'Remove attachment {name}',
     attachmentAlreadyAdded: '{name} is already attached',
-    attachmentLimitReached: 'Added {added}; {dropped} more were not added (limit {max} per message). Send this batch, then add the rest.',
+    attachmentAlreadyAddedMany: '{count} files are already attached (including {name})',
+    attachmentLimitReached: 'Attachments are full ({max}): {added} added this time, {dropped} more were not added. You can add the rest after sending this message.',
+    attachmentLimitReachedNone: 'Attachments are full ({max}): none were added this time, {dropped} were not added. You can add them after sending this message.',
     connectorIconRemoveAria: 'Unmount {name}',
     connectorSource: {
       expertNeeds: 'Needed by {expert}',
@@ -564,6 +554,7 @@ export const chatInputEn: typeof chatInputZh = {
     rejectedUploadMore: 'and {count} more not added',
     rejectedUploadDismiss: 'Dismiss notice',
     uploadFileTooLarge: 'File "{name}" is too large ({size}); the limit is 10MB',
+    uploadServerFailed: '{name}: {reason}',
     uploadDocxFailed: 'Failed to process "{name}": could not parse the Word document. Check the file and retry',
     uploadXlsxFailed: 'Failed to process "{name}": could not parse the Excel file. Check the file and retry',
     uploadPptFailed: 'Failed to read "{name}": could not read the presentation. Check the file or pick another',
@@ -696,25 +687,6 @@ export const chatInputEn: typeof chatInputZh = {
     saveAsSuffix: '"',
     save: 'Save',
     ignore: 'Dismiss',
-  },
-  meetingBar: {
-    recording: 'Recording',
-    paused: 'Paused',
-    pause: 'Pause',
-    resume: 'Resume',
-    stop: 'End',
-    silenceWarning: 'No one has spoken for {minutes} min — ending automatically in {remain} min',
-    ended: {
-      manual: 'This meeting has ended',
-      silence: 'No one spoke for {minutes} min, so the meeting was ended',
-      max_duration: 'Reached the {hours}-hour limit, so the meeting was ended',
-      sleep: 'Your computer went to sleep, so the meeting was ended',
-      capture_stopped: 'Recording stopped, so the meeting was ended',
-      interrupted: 'This meeting was interrupted when Neo last quit',
-    },
-    startFailed: "Recording didn't start",
-    openSettings: 'Check settings',
-    dismiss: 'Got it',
   },
   loopStatusBar: {
     runningPrefix: 'Looping · turn ',

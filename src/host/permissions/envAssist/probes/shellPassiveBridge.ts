@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/naming-convention -- Preserve native macOS API names at the PassiveBridge boundary. */
 import type { ShellBridgeClient } from '../shellBridge/client';
 import type { PassiveBridge } from './types';
+import { createLogger } from '../../../services/infra/logger';
+
+const logger = createLogger('EnvAssistPassive');
+// ponytail: logs each change of the calendar reading once per process, not every 1s poll.
+let lastCalendarReading = '';
 
 interface TrustedResponse {
   trusted: boolean;
@@ -46,6 +51,19 @@ export function createShellPassiveBridge(client: ShellBridgeClient): PassiveBrid
         throw new Error('env_assist_bridge:invalid_passive_automation_response');
       }
       return res.code;
+    },
+    async EKAuthorizationStatusForEvents(): Promise<0 | 1 | 2 | 3 | 4> {
+      const res = await client.post<{ status: number; raw?: number; answer?: boolean | null }>('/v1/passive/calendar');
+      // Diagnosis (11-15 real run): the class status and our own dialog's answer can disagree in-process.
+      const reading = `${res?.status}|${res?.raw}|${res?.answer}`;
+      if (reading !== lastCalendarReading) {
+        lastCalendarReading = reading;
+        logger.info('Calendar access reading changed', { status: res?.status, raw: res?.raw, answer: res?.answer });
+      }
+      if (res?.status !== 0 && res?.status !== 1 && res?.status !== 2 && res?.status !== 3 && res?.status !== 4) {
+        throw new Error('env_assist_bridge:invalid_passive_calendar_response');
+      }
+      return res.status;
     },
   };
 }

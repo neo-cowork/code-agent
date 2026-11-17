@@ -8,6 +8,7 @@
 // Shift+N=永不允许 作为隐藏直发保留；授权记忆命中仍 100ms 自动执行、不弹卡。
 // ============================================================================
 
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarPlus, ListTodo, Mail } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
@@ -22,7 +23,8 @@ import type { PermissionRequest as ContractPermissionRequest, PermissionResponse
 import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { NL_RULE_K2_TEXT } from '@shared/nlRuleRestate';
-import { getPermissionConfig } from './utils';
+import { getPermissionTitle } from './utils';
+import { describeApproval } from './describeApproval';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
@@ -34,12 +36,21 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isGenericCommandRequest, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 import { classifyPermissionDelivery } from './permissionDelivery';
 import { logPermissionClickExit } from '../../services/permissionClickLog';
+
+function stringField(source: object, key: string): string | undefined {
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function unknownField(source: object, key: string): unknown {
+  return (source as Record<string, unknown>)[key];
+}
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -86,10 +97,15 @@ function normalizeRequest(
       body: request.details.body,
       connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
+      requestedAccess: request.details.requestedAccess,
+      access: stringField(request.details, 'access'),
       preview: request.details.preview,
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
+      from_ms: unknownField(request.details, 'from_ms'),
+      to_ms: unknownField(request.details, 'to_ms'),
+      calendar: unknownField(request.details, 'calendar'),
       sensitiveStep: request.details.sensitiveStep,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
@@ -163,7 +179,9 @@ export function PermissionCard({
     && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
       || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
-  const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
+  // 删一条日程可撤销（删前留快照），和建 / 改同配色：主按钮「删除」，不默认突出「取消」、不给红框
+  // （爸 11-16：删一条日程不至于红色警示；红色只留给删整个系列 / 一次删多条这类收不回的操作）。
+  const safeDefaultDeny = request !== null && request.tool !== 'calendar_delete_event' && isSafeDefaultDeny(request);
   // N-PERM-NL-RULES-K2：handback（交回我亲手做）卡——两键（我做完了 / 让 Neo 做这一次），
   // 不出会话/始终常驻授权，不走记忆直发（host 侧已 forceConfirm）。
   const handback = request !== null && request.handback === true && !settled;
@@ -176,10 +194,13 @@ export function PermissionCard({
     setDraft(null);
   }, [requestId, appGrantCard]);
 
-  // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
+  // 可编辑写回工具：三选一（原样写回 / 修改后写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
   const isMeetingCreate = request?.tool === 'tmeetMeetingCreate';
-  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event';
+  const isCalendarWrite = request?.tool === 'calendar_create_event' || request?.tool === 'calendar_update_event'
+    || request?.tool === 'calendar_delete_event';
+  // 单条日程删除：中性写回卡 +「删除 / 取消」，没有「改一改」（见 permissionEdit 里 calendar_delete_event 的说明）
+  const isNativeDelete = request?.tool === 'calendar_delete_event';
   const isRemindersWrite = request?.tool === 'reminders_create' || request?.tool === 'reminders_update';
   const isNativeCreate = request?.tool === 'calendar_create_event' || request?.tool === 'reminders_create';
   const isNativeUpdate = request?.tool === 'calendar_update_event' || request?.tool === 'reminders_update';
@@ -407,22 +428,26 @@ export function PermissionCard({
   if (!request) return null;
 
   const sandboxPath = sandboxEscalation ? sandboxEscalationDeniedPath(request) : undefined;
-  const config = getPermissionConfig(request.type);
+  const described = describeApproval(request, t, language);
 
   const p = t.decisionCard.permission;
   const w = p.writeback;
   const connector = request.details.connectorAccess;
+  const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';
   const connectorQuestion = connector
-    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connector.connectorName)
+    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
     : undefined;
   const connectorScope = connector
-    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connector.connectorName)
+    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connectorName)
     : undefined;
   const pendingHeaderEnd = remainingCount > 0
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>
     : undefined;
   const browserCopy = language === 'en' ? browserSessionGrantEn : browserSessionGrantZh;
-  const options: DecisionOption[] = editable ? [
+  const options: DecisionOption[] = editable && isNativeDelete ? [
+    { id: 'once', label: w.optionDelete, description: w.optionDeleteDesc, shortcut: 'y' },
+    { id: 'deny', label: w.optionDenyDelete, description: w.optionDenyDeleteDesc, shortcut: 'n' },
+  ] : editable ? [
     {
       id: 'once',
       label: isMeetingCreate ? w.optionCreate : isNativeCreate ? w.optionCreateItem : isNativeUpdate ? w.optionUpdate : w.optionSend,
@@ -466,7 +491,6 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
-  const isGenericCommandCard = isGenericCommandRequest(request);
   const hasDetailFields = Boolean(
     request.details.command ||
     request.details.path ||
@@ -478,7 +502,7 @@ export function PermissionCard({
     ? NL_RULE_K2_TEXT.card.title
     : connectorQuestion ?? (sandboxEscalation
     ? p.sandboxEscalationTitle
-    : request.details.browserSessionGrant
+    : described.dedicatedBrowserCard
     ? browserCopy.title
     : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
@@ -488,22 +512,22 @@ export function PermissionCard({
       ? w.calendarCreateTitle
       : request.tool === 'calendar_update_event'
         ? w.calendarUpdateTitle
+        : isNativeDelete
+        ? w.calendarDeleteTitle
         : request.tool === 'reminders_create'
           ? w.remindersCreateTitle
           : request.tool === 'reminders_update'
             ? w.remindersUpdateTitle
             : editable
               ? w.mailSendTitle
-              : isDangerous
-                ? getPermissionConfig('command').title
-                : isGenericCommandCard
-                  ? p.genericApprovalTitle
-                  : config.title);
+              : isDangerous && described.kind === 'shell'
+                ? getPermissionTitle('command', p)
+                : described.title);
   const icon = isMeetingCreate || isCalendarWrite
     ? <CalendarPlus size={20} />
     : isRemindersWrite
       ? <ListTodo size={20} />
-      : editable ? <Mail size={20} /> : config.icon;
+      : editable ? <Mail size={20} /> : described.icon;
   const question = handback
     ? NL_RULE_K2_TEXT.card.question
     : connectorQuestion ?? (sandboxEscalation
@@ -516,13 +540,15 @@ export function PermissionCard({
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)
       : request.tool === 'calendar_update_event'
         ? (contentTitle ? w.calendarUpdateQuestion.replace('{title}', contentTitle) : w.calendarUpdateQuestionFallback)
+        : isNativeDelete
+        ? (contentTitle ? w.calendarDeleteQuestion.replace('{title}', contentTitle) : w.calendarDeleteQuestionFallback)
         : request.tool === 'reminders_create'
           ? (contentTitle ? w.remindersCreateQuestion.replace('{title}', contentTitle) : w.remindersCreateQuestionFallback)
           : request.tool === 'reminders_update'
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionSummary(request, t, language));
+    : described.question);
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);
@@ -604,7 +630,7 @@ export function PermissionCard({
         selectedId={invalid.length === 0 ? 'edit' : null}
         onSelect={() => {}}
         onConfirm={() => {
-          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft));
+          if (invalid.length === 0) void handleApproval('once', draftToArgs(request.tool, draft, request.rawArgs));
         }}
         onCollapse={onCollapse}
         enterDisabled
@@ -656,7 +682,8 @@ export function PermissionCard({
               {p.connectorPurpose.replace('{purpose}', request.details.purpose)}
             </p>
           ) : null}
-          <UserRequestQuote details={request.details} labels={p} />
+          {/* 写回卡已逐项列出要写的字段，再引述用户原话是重复（N-FIX-APPROVAL-CARD-COPY-ODD 决策 B）；定时任务来源照常显示 */}
+          <UserRequestQuote details={editable ? { ...request.details, userRequest: undefined } : request.details} labels={p} />
           <RequestDetails request={request} />
         </>
       }

@@ -11,7 +11,7 @@
 
 1. **一个统一出口**：所有环境类失败（失败卡、停车卡）共用同一张「环境提示卡」——一句人话 + 一个直达按钮，不出现错误码、不出现 TCC / osascript 原文。同一任务里同一类问题只出现一次。（§4）
 2. **Neo 能自己修的绝不打扰用户**：缺运行时自己装并显示进度、额度用完先挑好一个能用的模型、**问用户一句再换**（爸 11-09 定：换模型一律先问），断网自己等并重试。用户只做「只有用户的手能做的那一步」。（§3、§6）
-3. **诊断绝不弹系统授权框**：诊断只用「被动探针」（只读状态 API），弹框的动作只在用户点按钮之后才会发生。靠代码结构 + 静态门 + 故障注入测试三层保证。（§5）
+3. **诊断绝不弹系统授权框**：诊断只用「被动探针」（只读状态 API）。弹框只在**用户在场、且由用户自己的请求触发**时发生：用户点卡片按钮 / 开关，或用户本人在前台发起的这一轮里工具碰到「未决定」（11-17 修订，见 §5.1）。后台 / 定时 / 子代理 / 无人值守、以及已拒绝 / 受限，仍只出卡。靠代码结构 + 静态门 + 故障注入测试三层保证。（§5）
 4. **修完自动续做**：失败的那次工具调用被「停车」成可恢复状态，探针确认修好后沿用同一个 run 接着干，用户不用再说一遍。（§7）
 5. **确认不了怎么办**：超时 / 用户拒绝时，老实说「还没检测到」，给一个不依赖该修复的替代路径，仍然不出现原文。（§8）
 6. **范围**：先做 macOS（桌面包 + web 构建里同一宿主）；Windows 只做「老实说不支持 + 替代路径」，不做深链。
@@ -77,6 +77,7 @@
 | 10 | `model_capability`（模型不支持图片/工具/温度） | `classifyModelErrorMessage` 的 `unsupported_temperature`、`fallback_not_configured`；`image_payload`；`model_not_found` | 自动降参重试（温度 1，同一模型，不算换模型）；需要换到能力够的模型时同 9：挑好后问一句再换 | 同 9 的「没有可用模型」分支 | 同 9 | 自动续做 |
 | 11 | `offline`（无网 / 代理失效 / 上游 5xx） | 引擎侧 `network` 分类（`ECONNREFUSED/ENOTFOUND/fetch failed/502-504`）；`upstream_unavailable`；两点探测（目标 provider 端点 + 一个中立端点）区分「全断网」与「仅该服务」；国际 API 需 `HTTPS_PROXY`（见 `.claude/rules/security.md`） | 指数退避重试 3 次；仅该服务不可达 → 走 9 的换模型；全断网 → 停车等待恢复 | 全断网：**无按钮**，卡片只说「网络断了，恢复后我会自动继续」；仅当判断为代理问题：「打开网络设置」→ `…?Network`（待真机验证） | 每 5s 两点探测，最长 10 分钟（超时 → §8） | 恢复后自动续做 |
 | 12 | `first_launch`（全新安装：无 key、无数据目录、权限全空） | `getRuntimeAssetsStatus`、`NativePermissionSnapshot.summary`、`resolveModelConfig` 日志里的「未配置 API Key」 | 建目录、解包随包资产、预热 optional 资产（不弹任何系统框） | 仅「没有任何模型 key」时一次：「添加模型」→ App 内设置；**权限一律不在首启预先要**（E1：用到才要） | 读 `configService.getApiKey` | 无原任务时不适用；有则自动续做 |
+| 13 | `perm_calendars`（EventKit 日程数据，会前提醒开关，N-MEETING-CALENDAR-REMINDER 11-15） | 原生桥 `/v1/passive/calendar` → `+[EKEventStore authorizationStatusForEntityType:]`（类方法，**不弹框**，`src-tauri/src/env_assist_calendar.rs`）。macOS 14+ 状态：3 完全访问=可读；0 未决定；2 拒绝；**4 只写、1 受限都当不可读**；宿主映射在 `probes/passiveProbes.ts` `calendarAccess` | — | 设置「会前提醒我记这场会」开关的点击 → `envAssist.enableSettingGrant`（白名单只有 `meetingCalendarReminder`）→ 未决定才签发点击凭证 → `requestGrant(calendars)` → `/v1/grant/calendar`（`requestFullAccessToEventsWithCompletion:`，**发起即返回**，不在桥线程等回调）；拒绝/只写 → 打开 `…?Privacy_Calendars`，只写的文案让用户改成「完全访问」；受限不打开（打开也改不了） | 每 1s 被动探针、60s 窗口；**只有宿主在探针读到完全访问后才写开关**（渲染层 `settings.set` 写不了 true）。窗口过后才点「允许」：开关停在关，设置页挂载 / 窗口重新聚焦时 `recheckSettingGrant` 被动复查，**仅当有未完成的开启请求**才补成开 | 不涉及（功能开关，不停车）。读日程走 `/v1/read/calendar-events`：同一套本机令牌鉴权，**原生层每次读前自己重查授权**，不是完全访问一律 403，不信宿主；不打开「日历」app、主机零新增 osascript。**聊天日历工具（N-CALENDAR-ONE-PERMISSION-EVENTKIT 11-15）同一项授权**：`calendar` / `calendar_*_event` 改走 `/v1/read/calendars`、`/v1/read/calendar-items`（与区间重叠，≤400 天、≤200 条）、`/v1/read/calendar-event`、`/v1/write/calendar-event`（create/update/delete，重复日程按 `eventId@发生开始时间` 只改那一次，span=ThisEvent）；**四条都不弹框，原生层每次先重查完全访问，否则 403**，只读写已授权数据；不再用 AppleScript「控制日历」。未授权 → 卡片 `perm_calendars`/`pane: calendars`/`request_grant`；卡片按钮、本开关、连接器页「修复权限」共用 `askCalendarOnce`（点击凭证只在 `envAssist.ipc.ts` 签发）；任何入口探针读到完全访问 → `calendarGrant.settleCalendarGranted` 收口所有会话的日历卡并武装续做（老 `perm_automation\|calendar` 卡/停车同样改读 EventKit） |
 
 ## 4. 统一出口：`EnvAssistNotice`（一句话 + 一个按钮）
 
@@ -182,6 +183,17 @@ export interface EnvAssistNotice {
 **自动化权限的已知缺口**：E4 记录显示「未决定」与「已拒绝」在被动模式下可能不可区分。设计上**不依赖区分**：二者都进入 `needs_user`，点击后先试 `askUserIfNeeded=true`（未决定会弹框；已拒绝会直接返回 -1743 不弹），-1743 立即落到打开 Automation 设置页。目标 App 未运行时探针返回 ApplicationNotRunning，Neo 先 `open -a`（不弹授权框）再探。
 
 **降级留痕**（错题本 2026-08-14）：探针不可用（非 macOS、web 构建里宿主没有原生桥、缺 entitlement）时，一律 `phase` 保守置 `needs_user` 并 `logger.warn` 带**可区分原因**（`probe_unavailable:no_native_bridge` / `…:missing_entitlement` / `…:target_not_running`），不得静默当作「已授权」或「无问题」。
+
+### 5.1 修订（11-17，N-ENV-ASSIST-FOREGROUND-DIRECT-PROMPT）：前台用户请求直接弹一次
+
+原规则「弹框只在点击之后」把用户自己刚发起的请求也挡成「先出卡再点按钮」，多一步无意义的点击。修订为**弹框只在用户在场且由用户自己的请求触发时**：
+
+- **判定「在场」**（`isUserPresentForegroundTurn @ src/host/tools/dispatch/toolResolver.ts`）：本轮是用户自己的前台消息（`foregroundToolFace === true`，子代理不继承）且会话不是无人值守（`isUnattendedSession`：定时 / 渠道 / 心跳）。
+- **只在「未决定」时弹**：工具失败码 `not_authorized` → `grantCalendarForForegroundRequest @ src/host/ipc/envAssist.ipc.ts`（凭证仍只在本文件签发）→ 共用 `askCalendarOnce`：被动看一眼，未决定才弹一次框并轮询答复；已拒绝 / 只写 / 受限不弹。
+- **结果**：允许 → 收口所有日历卡（`settleCalendarGranted('foreground_request')`），**同一次工具调用当轮重做**，界面无授权卡；拒绝 / 超时 → 照旧失败，走原卡片（去系统设置）与停车续做。
+- **诊断路径不变**：被动探针仍绝不弹框，§5 的静态门与故障注入测试照旧成立。
+- **范围**：先做日历（EventKit）；其他 `perm_*` 类别按同一机制逐类核 macOS 是否允许未决定时由进程直接请求后再接（后续单）。
+- **测试**：`tests/unit/host/permissions/envAssist/foregroundDirectPrompt.test.ts`（真 toolResolver + 真日历工具 + 假原生桥）：前台未决定弹一次并当轮成功；非前台、无人值守不弹；拒绝照旧失败。
 
 ## 6. 自修（不打扰用户）及其挂接点
 

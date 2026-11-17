@@ -27,7 +27,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
-import { Toggle } from '../../../primitives';
+import { Button, Toggle } from '../../../primitives';
 
 const logger = createLogger('NativeConnectorsSection');
 
@@ -252,17 +252,17 @@ function formatCheckedAt(checkedAt: number | undefined, locale: string): string 
 }
 
 function formatActionLabels(actions: NativeConnectorUiAction[], text: NativeConnectorsText): string {
-  if (actions.length === 0) return text.empty;
+  if (actions.length === 0) return '';
   return actions.map((action) => text.actions[action].label).join(text.separator);
 }
 
 function formatRuntimeActionLabels(actions: RuntimeConnectorUiAction[], text: NativeConnectorsText): string {
-  if (actions.length === 0) return text.empty;
+  if (actions.length === 0) return '';
   return actions.map((action) => text.actions[action].label).join(text.separator);
 }
 
 function formatCapabilities(capabilities: string[], text: NativeConnectorsText): string {
-  if (capabilities.length === 0) return text.empty;
+  if (capabilities.length === 0) return '';
   return capabilities.join(text.separator);
 }
 
@@ -310,10 +310,12 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">
-                {text.availableActionsPrefix}{formatActionLabels(lifecycleActions, text)}
-                {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
-              </div>
+              {(lifecycleActions.length > 0 || checkedAt) && (
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  {lifecycleActions.length > 0 ? `${text.availableActionsPrefix}${formatActionLabels(lifecycleActions, text)}` : ''}
+                  {checkedAt ? (lifecycleActions.length > 0 ? text.lastCheckedPrefix : text.lastCheckedPrefix.replace(/^ · /, '')) + checkedAt : ''}
+                </div>
+              )}
               {detail && (
                 <div className={`mt-1 text-xs ${row.status?.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                   {detail}
@@ -411,13 +413,17 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
                 </span>
               )}
             </div>
-            <div className="mt-1 text-[11px] text-zinc-500">
-              {text.capabilitiesPrefix}{formatCapabilities(row.capabilities, text)}
-              {checkedAt ? `${text.lastCheckedPrefix}${checkedAt}` : ''}
-            </div>
-            <div className="mt-1 text-[11px] text-zinc-500">
-              {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
-            </div>
+            {(row.capabilities.length > 0 || checkedAt) && (
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {row.capabilities.length > 0 ? `${text.capabilitiesPrefix}${formatCapabilities(row.capabilities, text)}` : ''}
+                {checkedAt ? (row.capabilities.length > 0 ? text.lastCheckedPrefix : text.lastCheckedPrefix.replace(/^ · /, '')) + checkedAt : ''}
+              </div>
+            )}
+            {lifecycleActions.length > 0 && (
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {text.availableActionsPrefix}{formatRuntimeActionLabels(lifecycleActions, text)}
+              </div>
+            )}
             {detail && (
               <div className={`mt-1 text-xs ${row.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
                 {detail}
@@ -462,6 +468,22 @@ interface NativeConnectorsSectionProps {
   presentation?: 'diagnostic' | 'grid';
 }
 
+const OperationError: React.FC<{
+  className: string;
+  prefix: string;
+  error: string;
+  showOpenSettings: boolean;
+  openSettingsLabel: string;
+  onOpenSettings: () => void;
+}> = ({ className, prefix, error, showOpenSettings, openSettingsLabel, onOpenSettings }) => (
+  <div className={`${className} flex flex-wrap items-center gap-2`}>
+    <span>{prefix}{error}</span>
+    {showOpenSettings && (
+      <Button size="sm" variant="secondary" onClick={onOpenSettings}>{openSettingsLabel}</Button>
+    )}
+  </div>
+);
+
 export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = ({
   presentation = 'diagnostic',
 }) => {
@@ -472,6 +494,15 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 只认 host 的结构化 errorCode，不做文案匹配
+  const needsAutomationSettings = statuses.some((status) => status.errorCode === 'not_authorized');
+  const openAutomationSettings = useCallback(async () => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'openAutomationSettings');
+    } catch (err) {
+      logger.error('Failed to open Automation settings', err);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -518,6 +549,16 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
     }
   }, [refresh]);
 
+  // 失败后只静默更新状态（拿 errorCode），不清 error
+  const refreshStatusesQuietly = useCallback(async () => {
+    try {
+      const next = await ipcService.invokeDomain<ConnectorStatusSummary[]>(IPC_DOMAINS.CONNECTOR, 'listStatuses');
+      if (Array.isArray(next)) setStatuses(next);
+    } catch (err) {
+      logger.warn('Failed to refresh connector statuses after failure', { err });
+    }
+  }, []);
+
   const runLifecycleAction = useCallback(async (id: string, action: NativeConnectorUiAction) => {
     setBusyKey(`${id}:${action}`);
     setError(null);
@@ -532,10 +573,11 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
     } catch (err) {
       logger.error('Failed to run native connector lifecycle action', { id, action, err });
       setError(err instanceof Error ? err.message : String(err));
+      await refreshStatusesQuietly();
     } finally {
       setBusyKey(null);
     }
-  }, [refresh]);
+  }, [refresh, refreshStatusesQuietly]);
 
   const rows = useMemo(
     () => buildNativeConnectorRows(items, statuses),
@@ -585,7 +627,9 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           const label = connectorText.grid.labels[row.id as keyof typeof connectorText.grid.labels] ?? row.label;
           const description = connectorText.grid.descriptions[
             row.id as keyof typeof connectorText.grid.descriptions
-          ] ?? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`;
+          ] ?? ((row.status?.capabilities ?? []).length > 0
+            ? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`
+            : '');
           const statusDetail = row.enabled && row.status?.readiness
             ? connectorText.grid.statusDetail[row.status.readiness]
             : description;
@@ -655,9 +699,14 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           );
         })}
         {error && (
-          <div className="col-span-full text-xs text-badge-danger">
-            {connectorText.operationFailedPrefix}{error}
-          </div>
+          <OperationError
+            className="col-span-full text-xs text-badge-danger"
+            prefix={connectorText.operationFailedPrefix}
+            error={error}
+            showOpenSettings={needsAutomationSettings}
+            openSettingsLabel={connectorText.openAutomationSettings}
+            onOpenSettings={() => void openAutomationSettings()}
+          />
         )}
       </div>
     );
@@ -706,7 +755,14 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       )}
 
       {error && (
-        <div className="mt-3 text-xs text-badge-danger">{connectorText.operationFailedPrefix}{error}</div>
+        <OperationError
+          className="mt-3 text-xs text-badge-danger"
+          prefix={connectorText.operationFailedPrefix}
+          error={error}
+          showOpenSettings={needsAutomationSettings}
+          openSettingsLabel={connectorText.openAutomationSettings}
+          onOpenSettings={() => void openAutomationSettings()}
+        />
       )}
     </div>
   );

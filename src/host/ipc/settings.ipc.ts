@@ -2,6 +2,7 @@
 // Settings IPC Handlers - settings:* 通道
 // ============================================================================
 
+import { countPdfTextPages } from './pdfPageCount';
 import type { IpcMain } from '../platform';
 import { app, broadcastToRenderer } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -240,14 +241,13 @@ function extractSettingsUpdate(
 }
 
 /**
- * permissions 里本地用户可自助保存的键（N-PERMRULES-LOCAL-OWNER）：只开 deny/ask/allow
- * 三张规则表与 K2 的结构化 nlRules（一句话规则的新档/角色域落这里，形状校验见
- * assertValidNlPermissionRules）——admin 门是 Neo 云平台的管理员标记，不是「这台电脑的
- * 本人」，普通账号应能管自己的规则；其余键（permissionMode / devModeAutoApprove /
- * blockedCommands / inheritance …）仍 admin-only，能放开它们就等于放开 bypass 档，
- * 超出「规则」的范畴。
+ * permissions 里本地用户可自助保存的键：deny/ask/allow 三张规则表、K2 的结构化 nlRules
+ * （一句话规则的新档/角色域落这里，形状校验见 assertValidNlPermissionRules）与只读查询开关。
+ * admin 门是 Neo 云平台的管理员标记，不是「这台电脑的本人」，普通账号应能管
+ * 自己的规则；其余键（permissionMode / devModeAutoApprove / blockedCommands / inheritance …）
+ * 仍 admin-only，能放开它们就等于放开 bypass 档，超出「规则」的范畴。
  */
-const USER_SELF_MANAGED_RULE_KEYS: ReadonlySet<string> = new Set(['deny', 'ask', 'allow', 'nlRules']);
+const USER_SELF_MANAGED_RULE_KEYS: ReadonlySet<string> = new Set(['deny', 'ask', 'allow', 'nlRules', 'readOnlyProbePlan']);
 
 function permissionsUpdateRequiresAdmin(permissions: unknown): boolean {
   // 数组不是「规则表更新」：`{permissions: []}` 的 Object.keys 是空集，曾被当成纯
@@ -255,7 +255,9 @@ function permissionsUpdateRequiresAdmin(permissions: unknown): boolean {
   // [] 落盘，admin 配置（permissionMode/blockedCommands/inheritance…）全部丢失。
   // 非普通对象形状一律走 admin 门（r2）。
   if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) return true;
-  return Object.keys(permissions).some((key) => !USER_SELF_MANAGED_RULE_KEYS.has(key));
+  return Object.entries(permissions).some(([key, value]) =>
+    !USER_SELF_MANAGED_RULE_KEYS.has(key)
+    || (key === 'readOnlyProbePlan' && typeof value !== 'boolean'));
 }
 
 function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
@@ -276,7 +278,7 @@ function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
   if (adminOnlyKeys.some((key) => Object.prototype.hasOwnProperty.call(updates, key))) {
     return true;
   }
-  // permissions 按键拆开判：仅 deny/ask/allow 的更新放行给非 admin，其余键仍门控。
+  // permissions 按键拆开判：用户规则与布尔只读查询开关放行，其余键仍门控。
   if (Object.prototype.hasOwnProperty.call(updates, 'permissions')) {
     return permissionsUpdateRequiresAdmin(updates.permissions);
   }
@@ -302,6 +304,8 @@ async function handleSet(
   const configService = getConfigService();
   if (!configService) throw new Error('Config service not initialized');
   const updates = extractSettingsUpdate(payload);
+  // 会前提醒只能由宿主在日历授权确认后打开（envAssist.enableSettingGrant，ADR-090）；这里只许关
+  if (updates?.meeting?.calendarReminder === true) delete updates.meeting.calendarReminder;
   await configService.updateSettings((updates ?? {}) as Partial<AppSettings>);
   const liveUpdates = updates.voice?.live;
   if (liveUpdates && Object.prototype.hasOwnProperty.call(liveUpdates, 'speechRate')) {
@@ -675,7 +679,7 @@ export function registerSettingsHandlers(
     for (const bin of ['/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext']) {
       try {
         const { stdout } = await execFileAsync(bin, [filePath, '-'], { maxBuffer: 50 * 1024 * 1024 });
-        const pageCount = (stdout.match(/\f/g) || []).length + 1;
+        const pageCount = countPdfTextPages(stdout);
         return { text: stdout, pageCount };
       } catch { /* 未安装，继续尝试 */ }
     }

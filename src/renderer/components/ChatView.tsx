@@ -70,16 +70,16 @@ import { useMessageActionStore } from '../stores/messageActionStore';
 import { useModeStore } from '../stores/modeStore';
 import { isWebMode } from '../utils/platform';
 import { toast } from '../hooks/useToast';
-import { DEFAULT_PROVIDER, getProviderInfo } from '@shared/constants';
-import { resolveConfiguredDefaultProvider } from '@shared/modelDefaults';
-import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
+import {
+  ensureModelConfigured as checkModelConfigured,
+  hasConfiguredSessionRuntimeModel,
+} from '../utils/ensureModelConfigured';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
 import type {
-  AppSettings,
   Message,
   MessageAttachment,
   StreamRecoverySnapshot,
@@ -118,7 +118,7 @@ import { isChatSendAccepted } from '../utils/chatSendState';
 import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
 import { useCronRunFollowUpSend } from '../hooks/useCronRunFollowUpSend';
 import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
-import { DurableParkedNotice, DurableResumeNotice, shouldShowParkedNotice, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
+import { DurableParkedNotice, DurableResumeNotice, isParkedForUser, shouldShowParkedNotice, useParkedNoticeYields, suppressLegacyInterruptionDecision, useAbandonParkedRun, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
@@ -126,7 +126,7 @@ import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
 const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
 
 export const ChatView: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const searchEnabled = useModeStore((state) => state.searchEnabled);
   const thinkingEnabled = useModeStore((state) => state.thinkingEnabled);
   const effortLevel = useModeStore((state) => state.effortLevel);
@@ -138,7 +138,6 @@ export const ChatView: React.FC = () => {
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
-  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const {
     currentSessionId,
     sessions,
@@ -588,25 +587,7 @@ export const ChatView: React.FC = () => {
     onDropStart: clearGlobalDragState,
     onAttachments: (attachments) => chatInputRef.current?.addAttachments(attachments),
   });
-  const ensureModelConfigured = useCallback(async (): Promise<boolean> => {
-    try {
-      const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
-      if (hasConfiguredDefaultRuntimeModel(settings)) {
-        return true;
-      }
-      if (hasConfiguredRuntimeModels(settings)) {
-        toast.info(t.chat.configureModelKeyFirst);
-        openSettingsTab('model');
-        return false;
-      }
-      const provider = resolveConfiguredDefaultProvider(settings?.models, DEFAULT_PROVIDER);
-      toast.info(t.modelSetup.missingApiKey.replace('{provider}', getProviderInfo(provider)?.displayName || t.modelSetup.thisModel));
-      useAppStore.getState().openModelSettings(provider);
-      return false;
-    } catch {
-      return true;
-    }
-  }, [openSettingsTab, t]);
+  const ensureModelConfigured = useCallback((sessionId: string | null) => checkModelConfigured(t, language, { currentSessionId: sessionId }), [t, language]);
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
     const clientMessageId = envelope.clientMessageId ?? generateMessageId();
     const feedbackSessionId = envelope.sessionId ?? currentSessionId;
@@ -628,7 +609,7 @@ export const ChatView: React.FC = () => {
       })),
       send: async () => {
         const sendConfiguredMessage = async () => {
-          const modelReady = await ensureModelConfigured();
+          const modelReady = await ensureModelConfigured(feedbackSessionId);
           if (!modelReady) return false;
           const delivery = await sendMessage(outboundEnvelope);
           if (delivery?.outcome === 'queued' && feedbackSessionId) {
@@ -659,8 +640,7 @@ export const ChatView: React.FC = () => {
           // 照旧回滚，那条路改前就在，行为不变。
           return true;
         };
-        const localModelReady = !isAuthenticated && await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get')
-          .then((settings) => hasConfiguredDefaultRuntimeModel(settings, { allowCloudManaged: false }), () => false);
+        const localModelReady = !isAuthenticated && await hasConfiguredSessionRuntimeModel(feedbackSessionId, { allowCloudManaged: false });
         return (await (localModelReady ? sendConfiguredMessage() : requireAuthAsync(sendConfiguredMessage))) === true;
       },
     });
@@ -710,6 +690,7 @@ export const ChatView: React.FC = () => {
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
   const durableAbandon = useAbandonParkedRun(currentSessionId, durableResume?.runId);
+  const parkedNoticeYields = useParkedNoticeYields(durableResume);
 
   // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
@@ -976,14 +957,18 @@ export const ChatView: React.FC = () => {
                 afterFirstUserMessage={cronRunStatusBar}
                 onInterruptionPointVisibilityChange={setInterruptionPointInViewport}
                 suppressActiveBusySignal={pendingAssistantFeedback !== null}
+                userSendAt={pendingAssistantFeedback?.startedAt ?? null}
               />
             </ErrorBoundary>
           )}
+        </div>
+
+        <div className="shrink-0">
+          {/* 发送中占位行占自己的高度，排在消息区之下：叠在消息区上的绝对定位会压住
+              最后一张卡片（「正在发送消息…」压在「查询日程未成功」那行上，
+              N-FIX-TURN-DURATION-ZERO-AND-SENDING-OVERLAP）。 */}
           {pendingAssistantFeedback !== null && (
-            <div
-              className="pointer-events-none absolute inset-x-0 bottom-4 chat-col-pad"
-              data-testid="assistant-send-placeholder"
-            >
+            <div className="w-full chat-col-pad" data-testid="assistant-send-placeholder">
               <div className="mx-auto max-w-3xl px-4">
                 <StreamingIndicator
                   startTime={pendingAssistantFeedback.startedAt}
@@ -995,9 +980,6 @@ export const ChatView: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="shrink-0">
           {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
           {researchDetected && (
             <div className="w-full chat-col-pad">
@@ -1059,9 +1041,7 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-          {shouldShowParkedNotice(showDurableContinue, durableResume) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} actions={
-            <button /* ds-allow:button: 停靠行的放弃按钮沿用 DoomLoopHandbackBar 紧凑文本按钮样式 */ type="button" className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-200" onClick={durableAbandon.onAbandon}>{t.chat.durableAbandon}</button>
-          } />}
+          {shouldShowParkedNotice(durableResume, effectiveIsProcessing, parkedNoticeYields) && <DurableParkedNotice interruptCause={durableResume?.interruptCause} envBlocked={durableResume?.envBlocked} />}
           <ConnectorRequiredCards />
           {durableResume?.quotaWait && <QuotaWaitNotice dueAt={durableResume.quotaWait.dueAt} duePassed={durableResume.quotaWait.duePassed} onCancel={() => { cancel(); }} onRetryNow={() => { durableContinue.onContinue(); }} />}
 
@@ -1089,7 +1069,7 @@ export const ChatView: React.FC = () => {
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableBackgroundWork} isInterrupting={isInterrupting} isStopping={isStopping}
             onStop={handleStop} hasContinuation={showDurableContinue}
-            onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
+            onContinue={durableContinue.onContinue} onAbandonContinuation={durableAbandon.onAbandon} canAbandonParked={isParkedForUser(durableResume, effectiveIsProcessing)} hasPlan={false} placeholder={currentSessionId !== null && currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />
         </div>
       </div>
 

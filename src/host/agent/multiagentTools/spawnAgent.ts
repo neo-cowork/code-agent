@@ -1,4 +1,5 @@
 import { executeSingleSpawnAgent } from './spawnSingleAgent';
+import { withWorkdirPrefix } from '../workdirPrefix';
 // ============================================================================
 // Spawn Agent — execute helpers
 // Gen 7: Multi-Agent capability
@@ -296,7 +297,7 @@ async function executeParallelAgents(
       id: taskId,
       role: agent.role,
       name: displayNames[index],
-      task: `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${agent.task}`,
+      task: withWorkdirPrefix(cwd, agent.task),
       systemPrompt,
       tools,
       maxIterations: getAgentMaxIterations(agentConfig),
@@ -458,9 +459,9 @@ async function executeParallelAgents(
       toolCalls: evt.snapshot.tools.length,
     });
   };
-  const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string } }) => {
+  const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string; filesChanged?: string[] } }) => {
     if (evt.result.success) {
-      emitter.agentCompleted(runScope, evt.taskId, evt.result.output);
+      emitter.agentCompleted(runScope, evt.taskId, evt.result.output, evt.result.filesChanged);
       coordSession?.complete(evt.taskId, evt.result.output ?? '');
       // 协作可见性（P1-3）：解析子代理自报的人话状态 / 决策 → 讨论流
       const report = parseStatusReport(evt.result.output ?? '');

@@ -1,4 +1,4 @@
-import { authModalEn } from './authModal'; import { modelSetupEn } from './modelSetup'; import { agentRoleLabelsEn } from './agentRoleLabels';
+import { toolCreateConfirmEn } from './toolCreateConfirm'; import { authModalEn } from './authModal'; import { modelSetupEn } from './modelSetup'; import { agentRoleLabelsEn } from './agentRoleLabels';
 // ============================================================================
 // English Translations
 // ============================================================================
@@ -9,7 +9,7 @@ import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
 import { backgroundPanelEn } from './backgroundPanel';
-import { voiceEn } from './voice';
+import { voiceEn } from './voice'; import { cronWorkingFolderEn } from './cronWorkingFolder';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { deliveryExperienceEn } from './deliveryExperience';
@@ -46,7 +46,7 @@ import { workbenchTabsEn } from './workbenchTabs';
 import { activityPanelEn, canvasActorEn } from './domains';
 import { imageNarrationEn } from './imageNarration';
 import { mermaidEn } from './mermaid';
-import { voiceAuditEn } from './voiceAudit';
+import { voiceAuditEn } from './voiceAudit'; import { memorySourceEn } from './memorySource';
 import { sessionInspectorEn } from './sessionInspector';
 import { artifactShareEn } from './artifactShare';
 import { receiptPresentationEn } from './receiptPresentation';
@@ -64,9 +64,9 @@ import { sessionTaskPresentationEn } from './sessionTaskPresentation'; import { 
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
 export const en = {
-  ...authModalEn, ...modelSetupEn, ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
+  ...authModalEn, ...toolCreateConfirmEn, ...modelSetupEn, ...agentRoleLabelsEn, ...canvasActorEn, ...activityPanelEn,
   ...imageNarrationEn, ...mermaidEn,
-  ...voiceAuditEn,
+  ...voiceAuditEn, ...memorySourceEn,
   ...capabilityHubEn,
   ...neoTopicsEn,
   ...projectSpaceEn,
@@ -945,7 +945,7 @@ export const en = {
   ...backgroundPanelEn,
   ...voiceEn,
   ...sidebarEn,
-  ...cronCenterEn,
+  ...cronCenterEn, ...cronWorkingFolderEn,
   ...previewWorkspaceEn,
   ...deliveryExperienceEn,
   ...modalPrimitivesEn,

@@ -96,7 +96,7 @@ import { materializeRunWorkDirectoryOnce, shouldMaterializeWorkDirectoryForTool 
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
-import { extractToolStepTarget } from '../toolStepTarget';
+import { bashStepDescription, extractToolStepTarget } from '../toolStepTarget';
 import { computerUseObservedTarget } from '../../plugins/builtin/computerUse/computerUseObservedTarget';
 import { decodeUtf8 } from '../../utils/decodeText';
 
@@ -278,6 +278,7 @@ export class ToolExecutionEngine {
             turnId: this.ctx.turn.currentTurnId,
             agentId: this.ctx.agentId,
           }) ?? extractToolStepTarget(entry.toolCall.arguments),
+          description: bashStepDescription(entry.toolCall.name, entry.toolCall.arguments),
           ...(parallel
             ? { parallel: true }
             : { progress: Math.round((entry.index / toolCalls.length) * 100) }),
@@ -1171,7 +1172,12 @@ export class ToolExecutionEngine {
       return preservedToolResult;
     } catch (error) {
       watchdog.stop();
-      settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled() });
+      if (settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled() })) {
+        // The run parks with no tool result, so the card is the only thing the user sees: publish it from the blocker.
+        // ponytail: synthetic not_authorized result — only Apple-events blockers park today (envBlockForToolFailure).
+        await publishEnvAssistToolNotice({ toolName: toolCall.name, result: { success: false, metadata: { code: 'not_authorized' } }, sessionId: this.ctx.sessionId, runId: this.ctx.runId, parkedToolCallId: peekEnvBlockedNote(this.ctx.runId)?.toolCallId, onEvent: this.ctx.onEvent })
+          .catch((cardError: unknown) => logger.warn('Env-assist card for a parked run failed to publish', { toolCallId: toolCall.id, error: cardError instanceof Error ? cardError.message : String(cardError) }));
+      }
       // catch 错误处理已抽取为 handleToolExecutionError（行为不变）；watchdog.stop()
       // 幂等，与成功路径的重复调用安全。其余逻辑全部委托给 helper。
       return await handleToolExecutionError({
