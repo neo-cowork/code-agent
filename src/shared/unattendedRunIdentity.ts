@@ -12,3 +12,8 @@ export function resolveUnattendedRunIdentity(session: Pick<Session, 'id' | 'orig
   const jobId = origin.id?.trim();
   return jobId ? { kind: 'cron', jobId, runKey: session.sourceRunId || session.id } : null;
 }
+
+/** Run-record id for a role wake; the session id is the run key when there is no cron job id. */
+export function roleWakeAutomationId(sessionId: string): string {
+  return ['role_wake', sessionId].join(':');
+}

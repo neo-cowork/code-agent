@@ -4,6 +4,7 @@ import type { RecordAutomationEventInput } from '../sessionAutomation/sessionAut
 import { createLogger } from '../infra/logger';
 import { getHostUiLocale } from '../../config/hostUiLocale';
 import { roleWakeNextStageTitle } from '../../../shared/i18n/roleWakeNextStage';
+import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('RoleProactivity');
 
@@ -13,7 +14,7 @@ export async function withRoleWakeAutomation(input: {
   sourceSessionId?: string; handoffPrompt?: string;
 }, run: () => Promise<RoleWakeResult>): Promise<RoleWakeResult> {
   const service = getSessionAutomationService();
-  const automationId = `role_wake:${input.sessionId}`;
+  const automationId = roleWakeAutomationId(input.sessionId);
   const handoff = input.handoffPrompt ? {
     handoffPrompt: input.handoffPrompt,
     nextStage: { prompt: input.handoffPrompt, title: roleWakeNextStageTitle(getHostUiLocale()) },

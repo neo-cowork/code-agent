@@ -38,6 +38,7 @@ import { createLogger } from '../infra/logger';
 import { pickApprovalOrigin } from '../../permissions/approvalOriginFields';
 import { broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('SessionAutomationService');
 
@@ -606,7 +607,7 @@ export class SessionAutomationService {
   }
 
   getRoleWakeRun(sessionId: string): RoleWakeRunStatus | null {
-    const run = this.getById(`role_wake:${sessionId}`);
+    const run = this.getById(roleWakeAutomationId(sessionId));
     if (run?.type !== 'role_wake' || run.resultSessionId !== sessionId) return null;
     const rows = getDatabase().getPendingApprovalRepo().listByKindAndStatus('tool_approval', 'rejected');
     const approvalTimedOut = rows.some((row) => {
