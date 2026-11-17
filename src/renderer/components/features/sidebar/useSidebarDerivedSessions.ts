@@ -125,8 +125,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   );
 
   const replayEvidenceBySessionId = useMemo(
-    () => buildSessionReplayEvidenceMap(workflowRuns, durableBackgroundTasks),
-    [durableBackgroundTasks, workflowRuns],
+    () => buildSessionReplayEvidenceMap(workflowRuns, durableBackgroundTasks, t),
+    [durableBackgroundTasks, workflowRuns, t],
   );
 
   const durableWaitingApprovalSessionIds = useMemo(

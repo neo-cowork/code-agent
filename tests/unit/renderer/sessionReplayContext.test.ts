@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { languages } from '../../../src/renderer/i18n';
 import { buildSessionReplayContext } from '../../../src/renderer/utils/sessionReplayContext';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '../../../src/shared/contract/scriptRun';
@@ -63,7 +64,7 @@ describe('buildSessionReplayContext', () => {
       },
     ];
 
-    const context = buildSessionReplayContext('session-1', workflowRuns, tasks);
+    const context = buildSessionReplayContext('session-1', workflowRuns, tasks, languages.zh);
 
     expect(context.workflowRuns.map((run) => run.runId)).toEqual(['run-1']);
     expect(context.backgroundTasks.map((task) => task.id)).toEqual(['task-1']);
@@ -74,7 +75,7 @@ describe('buildSessionReplayContext', () => {
   });
 
   it('returns an empty context without a session id', () => {
-    expect(buildSessionReplayContext(null, {}, [])).toEqual({
+    expect(buildSessionReplayContext(null, {}, [], languages.zh)).toEqual({
       workflowRuns: [],
       backgroundTasks: [],
       evidence: [],

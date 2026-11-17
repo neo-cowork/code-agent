@@ -27,7 +27,7 @@ export function agentNodeLabel(
 }
 
 /** Model-generated background titles may be in the other language than the UI. */
-export function backgroundTaskLabel(task: Pick<Task, 'source' | 'title'>, t: Translations): string {
+export function backgroundTaskLabel(task: { source?: Task['source']; title: string }, t: Translations): string {
   if (task.source !== 'delegate_task' && task.source !== 'session_command_center') return task.title;
   const foreign = t === languages.en
     ? containsCjk(task.title)

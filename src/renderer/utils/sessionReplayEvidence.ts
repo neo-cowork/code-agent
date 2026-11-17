@@ -1,5 +1,7 @@
 import type { Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
+import type { Translations } from '../i18n';
+import { backgroundTaskLabel } from './agentRoleLabel';
 
 type SessionReplayEvidenceType = 'replay' | 'trace';
 type SessionReplayEvidenceActionKind = 'sessionReplay' | 'file' | 'url' | 'copy';
@@ -108,6 +110,7 @@ function buildWorkflowReplayEvidence(snapshot: ScriptRunSnapshot): SessionReplay
 function buildTaskOutputEvidence(
   task: Task,
   ref: TaskOutputRef,
+  t: Translations,
 ): SessionReplayEvidence | null {
   if (!task.sessionId || (ref.type !== 'replay' && ref.type !== 'trace')) {
     return null;
@@ -117,7 +120,8 @@ function buildTaskOutputEvidence(
   const fallbackLabel = lastPathSegment(pathOrUrl) || evidenceTypeLabel(ref.type);
   const label = truncateLabel(ref.label || fallbackLabel);
   const typeLabel = evidenceTypeLabel(ref.type);
-  const sourceLabel = truncateLabel(task.title || 'Background task');
+  const displayTitle = backgroundTaskLabel(task, t);
+  const sourceLabel = truncateLabel(displayTitle || 'Background task');
   const pathSuffix = pathOrUrl ? ` · ${pathOrUrl}` : '';
 
   return {
@@ -128,13 +132,14 @@ function buildTaskOutputEvidence(
     sourceLabel,
     actionKind,
     pathOrUrl,
-    title: `${typeLabel} · ${label} · ${task.title || task.id}${pathSuffix}`,
+    title: `${typeLabel} · ${label} · ${displayTitle || task.id}${pathSuffix}`,
   };
 }
 
 export function buildSessionReplayEvidenceMap(
   workflowRuns: Record<string, ScriptRunSnapshot>,
   tasks: Task[],
+  t: Translations,
 ): Map<string, SessionReplayEvidence[]> {
   const map = new Map<string, SessionReplayEvidence[]>();
 
@@ -147,7 +152,7 @@ export function buildSessionReplayEvidenceMap(
 
   for (const task of tasks) {
     for (const ref of task.outputRefs) {
-      const evidence = buildTaskOutputEvidence(task, ref);
+      const evidence = buildTaskOutputEvidence(task, ref, t);
       if (evidence) {
         pushEvidence(map, evidence);
       }

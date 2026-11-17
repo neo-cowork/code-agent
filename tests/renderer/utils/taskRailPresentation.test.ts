@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveTaskRailView } from '../../../src/renderer/utils/taskRailPresentation';
+import { deriveTaskRailView as derive, foldTaskRailTitles } from '../../../src/renderer/utils/taskRailPresentation';
+import { languages } from '../../../src/renderer/i18n';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
+
+import type { RunUiState } from '../../../src/renderer/types/runWorkbench';
+const deriveTaskRailView = (task: TaskRecord, run?: RunUiState | null) => derive(task, run, languages.zh);
 
 function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
@@ -198,5 +202,36 @@ describe('deriveTaskRailView', () => {
     expect(view.completed).toBe(1);
     expect(view.total).toBe(2);
     expect(view.taskCount).toBe(3);
+  });
+});
+
+describe('background task title localisation', () => {
+  const bg = (id: string, title: string, source: TaskRecord['source'] = 'delegate_task'): TaskRecord =>
+    makeTask({ id, title, source, scope: 'global', steps: [{ title: '运行中', status: 'in_progress' }] });
+
+  it('zh: English delegate_task title becomes 助手 in simple mode and checklist mode', () => {
+    const task = bg('a', 'Summarize contract_q3.pdf into a weekly report');
+    expect(derive(task, null, languages.zh).title).toBe('助手');
+    const checklist = makeTask({
+      title: 'Summarize contract_q3.pdf into a report', source: 'delegate_task', scope: 'session',
+      steps: [{ title: 's1', status: 'pending' }, { title: 's2', status: 'pending' }],
+    });
+    const view = derive(checklist, null, languages.zh);
+    expect(view.mode).toBe('checklist');
+    expect(view.title).toBe('助手');
+  });
+
+  it('zh: two folded tasks are numbered, a single one is plain', () => {
+    const tasks = [bg('a', 'Summarize the first report now'), bg('b', 'Summarize the second report now')];
+    const titles = foldTaskRailTitles(tasks, languages.zh);
+    expect(derive(tasks[0], null, languages.zh, titles.get('a')).title).toBe('助手 1');
+    expect(derive(tasks[1], null, languages.zh, titles.get('b')).title).toBe('助手 2');
+    expect(foldTaskRailTitles([tasks[0]], languages.zh).get('a')).toBe('助手');
+  });
+
+  it('en: Chinese delegate_task title becomes Background assistant; other sources keep title', () => {
+    expect(derive(bg('a', '提炼合同关键条款'), null, languages.en).title).toBe('Background assistant');
+    expect(derive(bg('a', 'Summarize the report now', 'user'), null, languages.zh).title).toBe('Summarize the report now');
+    expect(derive(bg('a', '提炼合同关键条款', 'user'), null, languages.en).title).toBe('提炼合同关键条款');
   });
 });

@@ -367,6 +367,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         id: `background:${task.id}`,
         scope: 'global' as const,
         title: task.title,
+        source: task.source,
         status,
         ...(status === 'blocked' ? { failed: true } : {}),
         steps: [

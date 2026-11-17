@@ -15,6 +15,7 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import type { Task } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
+import { backgroundTaskLabel } from '../../../utils/agentRoleLabel';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatDateTime } from '../../../utils/formatDateTime';
@@ -575,7 +576,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-badge-info">{task.title}</div>
+                      <div className="truncate font-medium text-badge-info">{backgroundTaskLabel(task, t)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/60">{formatTaskStatus(task, labels)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/45">
                         {formatBackgroundTaskMeta(task, labels, language)}
