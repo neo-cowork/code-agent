@@ -96,6 +96,16 @@ describe('agent worktree branch naming (real git)', () => {
     expect(info.branchName).toBe('agent/rewrite-intro-readme-md-0001');
   });
 
+  it('real model-written sub-task texts from the real run give task-related slugs', async () => {
+    rnd.queue.push('b7a2', '8929');
+    const a = await make(`agent_coder_${UUID.replace('3f2a', '3f21')}`,
+      "Work ONLY inside the isolated git worktree you were given (NOT the user's main checkout at /Users/leo/work/wt/x).\n\nTask:\n1. Confirm your current working directory / worktree root path and the branch name it is on. Report both.\n2. Read README.md in that worktree.\n3. Rewrite ONLY the intro section (the opening paragraph(s) right after the title) so that it is exactly two sentences.");
+    expect(a.branchName).toBe('agent/rewrite-intro-section-b7a2');
+    const b = await make(`agent_coder_${UUID.replace('3f2a', '3f22')}`,
+      "You are working in an isolated git worktree. Do NOT touch the user's main checkout working tree.\n\nSteps, in order:\n1. Print and report your worktree root (`pwd`) and branch.\n2. Read README.md. Its intro (line 3) currently reads: \"Notes App is a tool.\"\n3. Replace ONLY that intro paragraph with exactly two sentences.");
+    expect(b.branchName).toBe('agent/replace-intro-paragraph-8929');
+  });
+
   it('non-internal ids without label keep the legacy name', async () => {
     const info = await make('agent-1');
     expect(info.branchName).toBe('agent/agent-1');

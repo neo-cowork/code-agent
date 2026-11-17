@@ -13,7 +13,15 @@ const STOP_WORDS = new Set([
   'a', 'an', 'the', 'in', 'on', 'of', 'to', 'for', 'and', 'into', 'with', 'then', 'me', 'my', 'it', 'is',
   'please', 'have', 'do', 'this', 'that', 'not', 'your', 'you', 'can', 'should',
   'are', 'given', 'at', 'by', 'as', 'or', 'be', 'will', 'from', 'repo', 'repository', 'working', 'directory',
+  'only', 'inside', 'were', 'was', 'user', 'users', 's', 'main',
   'isolated', 'isolation', 'worktree', 'git', 'copy', 'sub', 'agent', 'subagent', 'checkout', 'project',
+]);
+
+// 模型写的子任务常以「只在 worktree 里干活、别碰主检出」之类约束开头；slug 从第一个动作词起取，才像任务本身
+const ACTION_VERBS = new Set([
+  'rewrite', 'replace', 'update', 'fix', 'add', 'refactor', 'write', 'create', 'edit', 'change', 'remove', 'implement',
+  'rename', 'delete', 'translate', 'summarize', 'improve', 'tighten', 'document', 'review', 'migrate', 'convert',
+  'move', 'merge', 'split', 'generate', 'build', 'polish', 'shorten', 'clean',
 ]);
 
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -22,9 +30,11 @@ function toSlug(text: string | undefined): string {
   // 先剔除路径/URL 样的 token（含用户目录名），再取英文词
   const plain = (text ?? '').split(/\s+/).filter((t) => !/[/\\]/.test(t)).join(' ');
   const words = plain.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const content = words.filter((w) => !STOP_WORDS.has(w));
+  const verbAt = content.findIndex((w) => ACTION_VERBS.has(w));
   const picked: string[] = [];
   let len = 0;
-  for (const word of words.filter((w) => !STOP_WORDS.has(w))) {
+  for (const word of content.slice(Math.max(verbAt, 0))) {
     if (picked.length >= MAX_SLUG_WORDS) break;
     const next = len + word.length + (picked.length ? 1 : 0);
     if (next > MAX_SLUG_CHARS) break;
