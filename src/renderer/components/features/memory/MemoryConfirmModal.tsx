@@ -19,7 +19,14 @@ interface MemoryConfirmModalProps {
 function directiveBody(pending: PendingMemoryConfirm, words: ReturnType<typeof useI18n>['t']['memoryConfirm']): string {
   const op = pending.operation;
   if (op?.kind === 'delete') return `${words.delete}${op.target ?? ''}`;
-  if (op?.kind === 'other') return pending.content ? `${words.other}${pending.content}` : words.generic;
+  if (op?.kind === 'other') {
+    const parts = [
+      pending.content,
+      ...(op.edits ?? []).map((e) => `${words.replace}${e.oldText}\n${words.replaceWith}${e.newText}`),
+      op.extra ? `${words.extra}${op.extra}` : '',
+    ].filter(Boolean);
+    return parts.length > 0 ? `${words.other}${parts.join('\n\n')}` : words.generic;
+  }
   if (!pending.content) return words.generic;
   const file = op?.target ? `\n\n${words.file}${op.target}${op.overwrites ? words.overwrites : ''}` : '';
   return `${words.remember}${pending.content}${file}`;

@@ -8,6 +8,7 @@ import type {
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets, shellScopedUncertainRedirects } from '../tools/writeTargets';
+import { normalizeEditArgs } from '../../shared/utils/editToolArgs';
 import type { DirectiveMemoryConfirmationResult } from './directiveMemoryConfirmation';
 
 export interface DirectiveMemoryWriteAssessment {
@@ -22,7 +23,20 @@ export interface DirectiveMemoryWriteAssessment {
   confirmView: { category: string; content: string; operation: DirectiveMemoryOperation };
 }
 
+/** 原样展示的字符串参数（new_string 在 Edit 归一成功时由 edits 展示，不重复）。 */
 const SHOWN_STRING_PARAMS = ['command', 'file_path', 'path', 'output_path', 'destination', 'content', 'new_string'] as const;
+/** 只控制行为、不携带写入内容的参数名；其余任何非空字段都要让用户看见。 */
+const NON_CONTENT_PARAMS = new Set(['replace_all', 'force', 'force_reason', 'dry_run', 'overwrite', 'timeout', 'description', 'working_directory', 'cwd', 'run_in_background']);
+
+/** 未被上面专门展示的非空字段（operations[]、未知键…）：读得懂的 `键: 值` 行，不丢任何会改文件的字段。 */
+function unrenderedFieldsDump(params: Record<string, unknown>, rendered: ReadonlySet<string>): string {
+  return Object.entries(params)
+    .filter(([key, value]) => !rendered.has(key) && !NON_CONTENT_PARAMS.has(key)
+      && (typeof value === 'string' ? value.trim() !== '' : typeof value === 'object' && value !== null
+        && (!Array.isArray(value) || value.length > 0)))
+    .map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`)
+    .join('\n');
+}
 
 function buildConfirmView(input: AssessInput, preview: string): DirectiveMemoryWriteAssessment['confirmView'] {
   const { params } = input;
@@ -39,11 +53,24 @@ function buildConfirmView(input: AssessInput, preview: string): DirectiveMemoryW
     };
   }
   // 其它工具：把真正会执行/落盘的命令与内容原样给人看，不能折成固定一句话
+  const normalized = normalizeEditArgs(params);
+  const rendered = new Set<string>(SHOWN_STRING_PARAMS);
+  if (normalized) ['edits', 'old_string', 'new_string', 'old_text', 'new_text'].forEach((key) => rendered.add(key));
   const shown = SHOWN_STRING_PARAMS
+    .filter((key) => !(normalized && key === 'new_string'))
     .map((key) => params[key])
     .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
     .join('\n');
-  return { category: '', content: (shown || preview).slice(0, 4_000), operation: { kind: 'other' } };
+  const extra = unrenderedFieldsDump(params, rendered);
+  return {
+    category: '',
+    content: (shown || (extra ? '' : preview)).slice(0, 4_000),
+    operation: {
+      kind: 'other',
+      ...(normalized ? { edits: normalized.edits.map((e) => ({ oldText: e.oldText.slice(0, 4_000), newText: e.newText.slice(0, 4_000) })) } : {}),
+      ...(extra ? { extra: extra.slice(0, 4_000) } : {}),
+    },
+  };
 }
 
 interface AssessInput {

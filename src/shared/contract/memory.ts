@@ -505,9 +505,6 @@ export interface MemoryLearnedEvent {
   timestamp: number;
 }
 
-/**
- * 记忆确认请求（用于用户确认学习到的记忆）
- */
 /** 全局记忆确认卡要让用户看清的真实操作。 */
 export interface DirectiveMemoryOperation {
   /** write = MemoryWrite 写入；delete = MemoryWrite 归档；other = Bash/Write/Edit 等落进记忆目录的写入 */
@@ -516,8 +513,15 @@ export interface DirectiveMemoryOperation {
   target?: string;
   /** write 且同名文件已存在：这是覆盖，不是新增 */
   overwrites?: boolean;
+  /** other：Edit 的逐项替换（旧文本 → 新文本），会改文件的内容必须让用户看见 */
+  edits?: Array<{ oldText: string; newText: string }>;
+  /** other：未被专门展示的其余非空参数的可读转储，兜底不隐藏 */
+  extra?: string;
 }
 
+/**
+ * 记忆确认请求（用于用户确认学习到的记忆）
+ */
 export interface MemoryConfirmRequest {
   /** 请求 ID */
   id: string;

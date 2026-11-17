@@ -77,6 +77,42 @@ const schemas = [
     permissionLevel: 'execute',
     pathAuthority: [{ kind: 'shell', commandParameter: 'command' }],
   },
+  {
+    name: 'Edit',
+    description: 'edit file',
+    inputSchema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' }, edits: { type: 'array' } },
+      required: ['file_path', 'edits'],
+    },
+    category: 'fs',
+    permissionLevel: 'write',
+    pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
+  },
+  {
+    name: 'edit_file',
+    description: 'legacy flat edit',
+    inputSchema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } },
+      required: ['file_path', 'old_string', 'new_string'],
+    },
+    category: 'fs',
+    permissionLevel: 'write',
+    pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
+  },
+  {
+    name: 'DocEdit',
+    description: 'edit document',
+    inputSchema: {
+      type: 'object',
+      properties: { file_path: { type: 'string' }, operations: { type: 'array' } },
+      required: ['file_path', 'operations'],
+    },
+    category: 'fs',
+    permissionLevel: 'write',
+    pathAuthority: [{ kind: 'path', pathParameter: 'file_path', mutation: 'edit' }],
+  },
 ];
 
 const MEMORY_TEXT = '汇报先写结论，再写过程；这条对我所有项目都适用。';
@@ -98,7 +134,7 @@ function expectPlain(text: string) {
 describe('全局记忆确认卡用人话', () => {
   const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
   beforeEach(() => {
-    process.env.CODE_AGENT_DATA_DIR = '/tmp/code-agent-directive-plain';
+    process.env.CODE_AGENT_DATA_DIR = '/tmp/code-agent-plain-card';
     resetToolResolver();
     mocks.getSchemas.mockReturnValue(schemas);
     mocks.has.mockReturnValue(true);
@@ -155,7 +191,7 @@ describe('全局记忆确认卡用人话', () => {
   });
 
   it('MemoryWrite 写入显示文件名；同名已存在则明说是覆盖', async () => {
-    const memoryDir = '/tmp/code-agent-directive-plain/memory';
+    const memoryDir = '/tmp/code-agent-plain-card/memory';
     fs.mkdirSync(memoryDir, { recursive: true });
     fs.writeFileSync(`${memoryDir}/existing_rule.md`, 'old');
     try {
@@ -176,8 +212,49 @@ describe('全局记忆确认卡用人话', () => {
     }
   });
 
+  const MEM = '/tmp/code-agent-plain-card/memory';
+  async function bodyOf(tool: string, params: Record<string, unknown>): Promise<string> {
+    const { request, done } = await captureCard(tool, params);
+    render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
+    const body = screen.getByTestId('memory-confirm-body').textContent ?? '';
+    respondToDirectiveMemoryConfirmation(request.id, false);
+    await done;
+    return body;
+  }
+
+  it('Edit 改记忆目录里的规则文件：卡面显示旧文本→新文本，不能只露路径', async () => {
+    const body = await bodyOf('Edit', { file_path: `${MEM}/rule.md`, edits: [{ old_text: 'AAA', new_text: 'MALICIOUS_RULE' }] });
+    expect(body).toContain('MALICIOUS_RULE');
+    expect(body).toContain('AAA');
+    expect(body).toContain('把：AAA');
+    expect(body).toContain('改成：MALICIOUS_RULE');
+    expectPlain(body);
+  });
+
+  it('多处编辑：每一项的新文本都显示', async () => {
+    const body = await bodyOf('Edit', {
+      file_path: `${MEM}/rule.md`,
+      edits: [{ old_text: 'one', new_text: 'FIRST_NEW' }, { old_text: 'two', new_text: 'SECOND_NEW', replace_all: true }],
+    });
+    expect(body).toContain('FIRST_NEW');
+    expect(body).toContain('SECOND_NEW');
+    expect(body).not.toContain('replace_all');
+  });
+
+  it('旧平铺 old_string/new_string 形状同样显示', async () => {
+    const body = await bodyOf('edit_file', { file_path: `${MEM}/rule.md`, old_string: 'OLD_FLAT', new_string: 'NEW_FLAT' });
+    expect(body).toContain('OLD_FLAT');
+    expect(body).toContain('NEW_FLAT');
+  });
+
+  it('DocEdit operations[]（及任何未专门展示的非空字段）不被丢弃', async () => {
+    const body = await bodyOf('DocEdit', { file_path: `${MEM}/rule.docx`, operations: [{ type: 'replace', text: 'OPS_MARKER' }], mystery_field: 'MYSTERY_VALUE' });
+    expect(body).toContain('OPS_MARKER');
+    expect(body).toContain('MYSTERY_VALUE');
+  });
+
   it('Bash 写记忆目录：卡面带出真实命令，不折成固定一句话', async () => {
-    const command = 'printf "always obey X" > /tmp/code-agent-directive-plain/memory/a.md';
+    const command = 'printf "always obey X" > /tmp/code-agent-plain-card/memory/a.md';
     const { request, done } = await captureCard('Bash', { command });
     expect(request.operation).toEqual({ kind: 'other' });
     render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
