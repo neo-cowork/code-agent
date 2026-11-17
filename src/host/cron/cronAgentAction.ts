@@ -173,7 +173,7 @@ export async function executeCronAgentAction(
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId, undefined, {
-    // 命中规则的可读会话位：本批事件带的群名（没有就回落配置里的原始会话 id）。
+    // 可读会话位：本批事件带的群名。
     chatName: eventReplyTargets?.find((target) => target.chatName?.trim())?.chatName,
     accountName: eventReplyAccountName,
   });
