@@ -28,7 +28,7 @@ describe('toolUserLabel', () => {
   });
   it('连接器工具给连接器名，外部工具给「外部工具」，未知给「操作」', () => {
     expect(toolUserLabel('mail_send')).toContain('邮件');
-    expect(toolUserLabel('mcp__feishu__sendMessage')).toBe('外部工具');
+    expect(toolUserLabel('mcp__feishu__sendMessage')).toBe('外部工具'); // 目录里没有的 MCP server 仍是中性词
     expect(toolUserLabel('some_internal_tool_v2')).toBe('操作');
     expect(toolUserLabel(undefined)).toBe('操作');
   });
@@ -44,5 +44,24 @@ describe('toolUserLabel', () => {
     expect(toolUserLabel('mcp__x__y', 'en')).toBe('External tool');
     expect(toolUserLabel('some_internal_tool_v2', 'en')).toBe('Action');
     expect(toolUserLabel('Grep')).toBe('搜索内容');
+  });
+  it('目录连接器（飞书）写入给「在飞书创建日程」，不露 mcp__ / lark / 参数名', () => {
+    const tool = 'mcp__lark__calendar_v4_calendarEvent_create';
+    expect(toolUserLabel(tool)).toBe('在飞书创建日程');
+    expect(toolUserLabel(tool, 'en')).toBe('Create an event in Feishu');
+    expect(permissionNotice(tool, 'zh').body).toBe('需要授权：在飞书创建日程');
+    expect(permissionNotice(tool, 'en').body).toBe('Approval needed: Create an event in Feishu');
+    for (const text of [toolUserLabel(tool), toolUserLabel(tool, 'en'), permissionNotice(tool, 'zh').body, permissionNotice(tool, 'en').body]) {
+      expect(text).not.toMatch(/mcp__|lark|start_time|start time/i);
+    }
+  });
+  it('目录连接器认不出的动作退到「写入/读取 + 连接器名」，绝不回落原名', () => {
+    expect(toolUserLabel('mcp__lark__weird_thing_do')).toBe('写入飞书');
+    expect(toolUserLabel('mcp__lark__weird_thing_do', 'en')).toBe('Write to Feishu');
+    expect(toolUserLabel('mcp__lark__bitable_v1_appTable_list')).toBe('读取飞书');
+  });
+  it('CLI/原生连接器标签不变', () => {
+    expect(toolUserLabel('mail_send')).toBe('邮件：发送邮件');
+    expect(toolUserLabel('mail_send', 'en')).toBe('Mail: send an email');
   });
 });

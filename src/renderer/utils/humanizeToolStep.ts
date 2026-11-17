@@ -1,4 +1,5 @@
 import { resolveSkillName } from '@shared/resolveSkillName';
+import { catalogConnectorToolPhrase } from '@shared/utils/catalogConnectorToolLabel';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
 import { agentRoleLabel } from './agentRoleLabel';
 // ============================================================================
@@ -278,6 +279,16 @@ function buildDomainActionSentence(
 
 const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿]/;
 
+/** 目录连接器（飞书等）的步骤句：「正在飞书创建日程」而不是「通过 lark 创建内容」。 */
+function catalogConnectorStepPhrase(name: string, status: ToolStepStatus, language: 'zh' | 'en'): string | undefined {
+  const tense = status === 'running' ? 'progressive' : status === 'completed' ? 'past' : 'imperative';
+  const phrase = catalogConnectorToolPhrase(name, language, tense);
+  if (!phrase) return undefined;
+  const lowered = `${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`;
+  if (language === 'en') return status === 'pending-approval' ? `Request to ${lowered}` : status === 'failed' ? `Could not ${lowered}` : phrase;
+  return status === 'pending-approval' ? `请求${phrase}` : status === 'failed' ? `${phrase}未成功` : phrase;
+}
+
 // 失败/中断行统一改成「准备做什么」的意图式。中文不能裸删任意一个「了」：
 // 参数或目标名里也可能带这个字，只允许改写词表里审过的句首动词；英文同理只改
 // 已登记的过去式首词。新增模板若不命中，保持原文，测试会要求为反例补 intent 键。
@@ -458,8 +469,14 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
 }
 
 export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): string {
-  const language = CJK_PATTERN.test(args[2].toolStepHumanize.writeFallback) ? 'zh' : 'en';
-  return humanizeInternalText(buildToolStep(...args), language).text;
+  const t = args[2];
+  const language = CJK_PATTERN.test(t.toolStepHumanize.writeFallback) ? 'zh' : 'en';
+  // 被自动收口、从未执行的步骤：用「请求…」词表加「未执行 ·」前缀，不走任何 failed 词表。
+  const notRun = args[4] === 'failed' && args[6]?.notRun === true;
+  const step = notRun
+    ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
+    : buildToolStep(...args);
+  return humanizeInternalText(step, language).text;
 }
 
 function buildToolStep(
@@ -469,7 +486,7 @@ function buildToolStep(
   shortDescription?: string,
   status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
-  renderContext: { connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
+  renderContext: { notRun?: boolean; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
@@ -571,6 +588,8 @@ function buildToolStep(
     case 'mcp': {
       const mcp = parseMcpName(name);
       if (!mcp) return h.fallbackNeutral;
+      const catalogPhrase = catalogConnectorStepPhrase(name, status, CJK_PATTERN.test(h.writeFallback) ? 'zh' : 'en');
+      if (catalogPhrase) return catalogPhrase;
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
@@ -710,7 +729,12 @@ export function humanizeToolGroupLabel(
   toolNames: string[],
   t: Translations,
   status: ToolStepStatus = 'completed',
+  notRun = false,
 ): string {
+  if (notRun && status === 'failed') {
+    const label = humanizeToolGroupLabel(toolNames, t, 'pending-approval');
+    return label ? `${t.toolStepHumanize.notRunPrefix} · ${label}` : '';
+  }
   const counts = new Map<GroupBucket, number>();
   const order: GroupBucket[] = [];
   for (const name of toolNames) {
