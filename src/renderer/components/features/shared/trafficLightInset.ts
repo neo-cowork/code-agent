@@ -5,7 +5,7 @@
 // traffic_lights.rs 摆，见那里的常量），再留呼吸位 ⇒ 92。
 // ⚠️ 灯的横向位置一改，这个数就要跟着改——它不在 CSS 节奏里，不会自己动。
 // 同源消费方：TitleBar 展开按钮、FullScreenPageHeader bar 页头（两按钮左缘对齐，
-// 批P 审美关 2026-07-30，禁止各页面各自特判）。
+// 批P 审美关 2026-07-30，禁止各页面各自特判）、ServerConnectionBanner 顶部横幅。
 // ============================================================================
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 
