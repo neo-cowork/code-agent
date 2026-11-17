@@ -2,6 +2,7 @@
 // ConfirmationGate Tests [E2]
 // ============================================================================
 
+import { tmpdir } from 'os';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
@@ -404,6 +405,56 @@ describe('ConfirmationGate', () => {
       if (preview) {
         expect(preview.type).toBe('generic');
       }
+    });
+
+    describe('generic details in plain language (excel_generate shape)', () => {
+      const WSR = '/Users/me/proj';
+      const build = (locale: 'zh' | 'en', extra: Record<string, unknown>) => {
+        const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(locale);
+        try {
+          return new ConfirmationGate().buildPreview('excel_generate', {
+            data: [{ a: 1 }], dry_run: false, title: 'Sales', sheet_name: 'Sales', ...extra,
+          }, { workspaceRoot: WSR });
+        } finally { spy.mockRestore(); }
+      };
+
+      it('zh: localized labels, no dry_run, temp path reduced to file name', () => {
+        const p = build('zh', { output_path: '/var/folders/ab/xyz/T/sales.xlsx' });
+        expect(p?.diff).toBe('标题: Sales\n工作表: Sales\n保存到: sales.xlsx');
+        expect(p?.diff).not.toMatch(/sheet name|output path|dry run|dry_run/);
+      });
+
+      it('en: English labels', () => {
+        const p = build('en', { output_path: '/tmp/sales.xlsx' });
+        expect(p?.diff).toBe('Title: Sales\nSheet: Sales\nSave to: sales.xlsx');
+      });
+
+      it('drops internal switches regardless of value type', () => {
+        const p = build('en', { dryRun: 'false', debug: 'true', verbose: 'yes', output_path: 'a.xlsx' });
+        expect(p?.diff).not.toMatch(/dry|debug|verbose/i);
+      });
+
+      it('chat upload dir path shows file name only', () => {
+        const upload = `${tmpdir()}/code-agent-uploads/x/sales.csv`;
+        const p = build('en', { file_path: upload });
+        expect(p?.diff).toContain('File: sales.csv');
+        expect(p?.diff).not.toContain('uploads');
+      });
+
+      it('workspace path becomes relative', () => {
+        const p = build('en', { output_path: `${WSR}/exports/sales.xlsx` });
+        expect(p?.diff).toContain('Save to: ./exports/sales.xlsx');
+      });
+
+      it('outside-workspace non-temp path stays verbatim', () => {
+        const p = build('en', { output_path: '/Users/other/Documents/sales.xlsx' });
+        expect(p?.diff).toContain('Save to: /Users/other/Documents/sales.xlsx');
+      });
+
+      it('unknown keys unchanged', () => {
+        const p = build('en', { custom_key: 'v' });
+        expect(p?.diff).toContain('custom_key: v');
+      });
     });
   });
 

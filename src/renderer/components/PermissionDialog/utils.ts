@@ -155,8 +155,16 @@ export function isDangerousCommand(command?: string): boolean {
   return DANGEROUS_PATTERNS.some((pattern) => pattern.test(command));
 }
 
+// 聊天上传目录（新旧两个根）与系统临时目录：路径对用户无意义，只显示文件名。
+const UPLOAD_OR_TEMP_PATH =
+  /^(?:\/(?:private\/)?(?:tmp|var\/folders)\/|.*\/(?:code-agent-uploads|uploads\/[0-9a-f]{8}-[0-9a-f-]{20,})\/)/i;
+
 // 格式化文件路径（缩短显示）
 export function formatFilePath(path: string, maxLength = 60): string {
+  if (UPLOAD_OR_TEMP_PATH.test(path)) {
+    const name = path.split('/').filter(Boolean).pop();
+    if (name) return name;
+  }
   if (path.length <= maxLength) return path;
 
   const parts = path.split('/');
