@@ -13,6 +13,7 @@ const invokeMock = vi.hoisted(() => vi.fn());
 const getExecutionsMock = vi.hoisted(() => vi.fn());
 const listParkedApprovalsMock = vi.hoisted(() => vi.fn());
 const triggerJobMock = vi.hoisted(() => vi.fn());
+const getRoleWakeRunMock = vi.hoisted(() => vi.fn());
 const toastInfoMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 
@@ -31,7 +32,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: { getExecutions: getExecutionsMock, getRecentExecutions: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
-  sessionAutomationClient: { listParkedApprovals: listParkedApprovalsMock },
+  sessionAutomationClient: { listParkedApprovals: listParkedApprovalsMock, getRoleWakeRun: getRoleWakeRunMock },
 }));
 
 import { CronRunSessionStatusBar } from '../../../src/renderer/components/features/chat/CronRunSessionStatusBar';
@@ -47,6 +48,7 @@ import {
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
@@ -637,4 +639,47 @@ it('renders file approval without a raw tool name or absolute path', async () =>
   expect(status.textContent).not.toContain('Write');
   expect(status.textContent).not.toContain('/tmp/example');
   expect(status.textContent).toContain('digest.md');
+});
+
+describe('角色唤醒会话：轮询不无故强刷会话', () => {
+  const wakeSession: Partial<SessionWithMeta> & { id: string } = {
+    id: 'session-1',
+    title: 'wake',
+    origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'r', trigger: 'cadence' } },
+    createdAt: 1, updatedAt: 1, messageCount: 2, turnCount: 1,
+  };
+  const wakeRun = (status: string) => ({
+    approvalTimedOut: false,
+    run: { id: 'run-1', status, createdAt: 1, updatedAt: 2, lastRunAt: 2 },
+  });
+  let switchSessionMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    switchSessionMock = vi.fn().mockResolvedValue(undefined);
+    (window as unknown as { domainAPI?: unknown }).domainAPI = {};
+    useSessionStore.setState({ switchSession: switchSessionMock as never, isHydratingSession: false });
+  });
+  afterEach(() => { delete (window as unknown as { domainAPI?: unknown }).domainAPI; });
+
+  it('没有 role_wake 记录（首次唤醒/会议纪要）：不强刷会话', async () => {
+    getRoleWakeRunMock.mockResolvedValue(null);
+    showSession(wakeSession);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await waitFor(() => expect(getRoleWakeRunMock).toHaveBeenCalled());
+    expect(switchSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('wake 已完成：不强刷会话', async () => {
+    getRoleWakeRunMock.mockResolvedValue(wakeRun('completed'));
+    showSession(wakeSession);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await waitFor(() => expect(getRoleWakeRunMock).toHaveBeenCalled());
+    expect(switchSessionMock).not.toHaveBeenCalled();
+  });
+
+  it('wake 运行中：仍强刷以拉到新步骤', async () => {
+    getRoleWakeRunMock.mockResolvedValue(wakeRun('running'));
+    showSession(wakeSession);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await waitFor(() => expect(switchSessionMock).toHaveBeenCalledWith('session-1', { force: true }));
+  });
 });

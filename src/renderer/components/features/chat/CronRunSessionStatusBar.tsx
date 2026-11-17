@@ -112,8 +112,12 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
         setPendingApproval(findParkedApprovalForSession(parked, sessionId, t, language));
         if (nextWake) missingFetchesRef.current = 0;
         else missingFetchesRef.current += 1;
+        // 只在确有 role_wake 运行记录且仍在跑/等批准时强刷：首次唤醒/会议纪要同打
+        // cadence 标签但没有记录，终态也不再新增步骤——强刷会翻 isLoading、冲掉往上翻的历史。
+        const parkedForWake = findParkedApprovalForSession(parked, sessionId, t, language);
+        const wakeKind = nextWake ? deriveCronRunStatusLine({ execution: null, pendingApproval: parkedForWake, wakeRun: nextWake })?.kind : undefined;
         const state = useSessionStore.getState();
-        if (window.domainAPI && state.currentSessionId === sessionId && !state.isHydratingSession) {
+        if (window.domainAPI && isLiveCronRunStatusKind(wakeKind) && state.currentSessionId === sessionId && !state.isHydratingSession) {
           await state.switchSession(sessionId, { force: true });
         }
         return;
