@@ -14,6 +14,7 @@ export type AssistantFeedbackEvent =
   | { type: 'send_started'; startedAt: number; clientMessageId: string; sessionId: string }
   | { type: 'enqueue_succeeded'; clientMessageId: string; sessionId: string }
   | { type: 'durable_activated'; clientMessageId: string; sessionId: string }
+  | { type: 'run_started'; sessionId: string }
   | { type: 'model_delta' | 'run_live'; sessionId: string }
   | { type: 'run_finished'; sessionId: string }
   | { type: 'send_failed'; clientMessageId?: string; sessionId?: string };
@@ -47,6 +48,9 @@ export function transitionAssistantFeedback(
   if (event.type === 'send_failed' || event.type === 'run_finished') return null;
   // 模型文字、工具执行或审批请求都证明发送已被接收，让回合自身的状态接管。
   if (event.type === 'model_delta' || event.type === 'run_live') return null;
+  // 直投流的 task_start 无 streamEpoch/seq，被序列化分发器丢弃；首个带序号的 turn_start 才是
+  // 直投路径唯一可见的「已受理」信号。排队中的输入不吃它（只有 submitting 才前进）。
+  if (event.type === 'run_started' && current.phase !== 'submitting') return current;
   const nextPhase: AssistantFeedbackPhase = event.type === 'enqueue_succeeded'
     ? 'queued'
     : 'waiting_model';

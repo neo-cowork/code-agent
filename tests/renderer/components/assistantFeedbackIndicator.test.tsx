@@ -53,4 +53,25 @@ describe('pre-reply feedback', () => {
     render(<AssistantFeedbackIndicator feedback={base} />);
     expect(screen.getByTestId('streaming-preparation-indicator').textContent).toBe('启动比平时慢，请稍候…');
   });
+  it('direct delivery: the first sequenced turn_start moves submitting to preparing before the first delta', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('send'));
+    const indicator = () => screen.getByTestId('streaming-preparation-indicator');
+    expect(indicator().getAttribute('data-preparation-phase')).toBe('submitting');
+    act(() => listeners.get('agent:event')?.({ type: 'turn_start', sessionId: 's', data: { iteration: 1 } } as never));
+    expect(indicator().getAttribute('data-preparation-phase')).toBe('preparing');
+    expect(indicator().textContent).toBe('正在准备…');
+    act(() => listeners.get('agent:event')?.({ type: 'message_delta', sessionId: 's' } as never));
+    expect(screen.queryByTestId('streaming-preparation-indicator')).toBeNull();
+  });
+  it('turn_start of another session, or while queued, does not advance the placeholder', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('send'));
+    act(() => listeners.get('agent:event')?.({ type: 'turn_start', sessionId: 'other' } as never));
+    expect(screen.getByTestId('streaming-preparation-indicator').textContent).toBe('正在发送消息…');
+    expect(transitionAssistantFeedback(
+      { phase: 'queued', startedAt: Date.now(), clientMessageId: 'm', sessionId: 's' },
+      { type: 'run_started', sessionId: 's' },
+    )?.phase).toBe('queued');
+  });
 });

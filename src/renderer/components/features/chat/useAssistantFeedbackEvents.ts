@@ -50,6 +50,13 @@ export function useAssistantFeedbackEvents(
         }));
         return;
       }
+      if (eventType === 'turn_start') {
+        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
+          type: 'run_started',
+          sessionId: eventSessionId,
+        }));
+        return;
+      }
       if (eventType === 'message_delta' || eventType === 'stream_chunk' || eventType === 'stream_tool_call_start'
         || eventType === 'tool_call_start' || eventType === 'tool_call_end' || eventType === 'permission_request') {
         setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
