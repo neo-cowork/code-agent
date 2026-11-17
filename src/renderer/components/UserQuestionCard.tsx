@@ -44,6 +44,16 @@ function maxVisibleDigit(optionCount: number): number {
   return otherDigit(optionCount) ?? Math.min(optionCount, MAX_OPTION_DIGIT);
 }
 
+// ↑↓ 只属于提问卡自己的焦点。窗口捕获阶段若无条件 preventDefault，
+// 聊天记录（Virtuoso scroller）的原生滚动和冒泡监听都会被吃掉，焦点还会被拽进选项行。
+function verticalArrowBelongsToQuestionCard(card: HTMLElement | null, event: KeyboardEvent): boolean {
+  if (!card) return false;
+  const target = event.target;
+  if (target instanceof Node && card.contains(target)) return true;
+  const active = document.activeElement;
+  return active instanceof Node && card.contains(active);
+}
+
 interface Props {
   request: UserQuestionRequest;
   /** DecisionSlot 控制全族共用的 Esc 迷你条；独立渲染时仍使用组件内状态。 */
@@ -270,7 +280,8 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
 
   // Esc 收起；多题向导的 ←/→ 只负责上一题/下一题；Enter 只执行当前聚焦的主按钮。
   // 数字键 1-9 走与点击相同的选择路径（多选切换；「其他」只在下一个数字 ≤ 9 时占用）。
-  // ↑/↓ 在选项行与「其他」之间移动焦点，到头停止。可编辑目标与输入法组合期间不拦截。
+  // ↑/↓ 只在焦点已在卡片内时于选项行与「其他」之间移动，到头停止；卡片外不拦截。
+  // 可编辑目标与输入法组合期间不拦截。
   useEffect(() => {
     if (collapsed) return;
     const question = request.questions[stepIndex];
@@ -311,6 +322,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
       }
       if (e.isComposing) return;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (!verticalArrowBelongsToQuestionCard(cardRef.current, e)) return;
         const rows: HTMLElement[] = [];
         for (let index = 0; index < options.length; index += 1) {
           const row = optionRefs.current[index];

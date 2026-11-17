@@ -3,6 +3,7 @@
 // UserQuestionCard（G2 打断式选项卡）行为门：
 // - 未作答时提交禁用；单选/多选/「其他」自由文本的回答回传形状与旧 Modal 一致；
 // - 跳过只由按钮回传 declined；Esc 收起、←/→ 在多题向导切题；
+// - 焦点在卡片外时 ↑/↓ 不阻止默认滚动、不拦冒泡、不把焦点拽进选项行；
 // - 回答/跳过成功后从 pending 队列清除（composer 恢复）；IPC 失败不清除（可重试）。
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -419,6 +420,31 @@ describe('UserQuestionCard（G2 打断式选项卡）', () => {
     optionA.focus();
     fireEvent.keyDown(document, { key: 'ArrowUp' });
     expect(document.activeElement).toBe(optionA);
+  });
+
+  it('焦点在聊天记录上时 ↑↓ 不拦滚动、不把焦点拽进选项', () => {
+    render(
+      <div>
+        <div data-testid="chat-log" tabIndex={0}>聊天记录</div>
+        <UserQuestionCard request={makeRequest()} />
+      </div>,
+    );
+    const log = screen.getByTestId('chat-log');
+    const heard: string[] = [];
+    log.addEventListener('keydown', (event) => {
+      heard.push(`${event.key}:${event.defaultPrevented}`);
+    });
+    log.focus();
+
+    const up = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    log.dispatchEvent(up);
+    const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    log.dispatchEvent(down);
+
+    expect(up.defaultPrevented).toBe(false);
+    expect(down.defaultPrevented).toBe(false);
+    expect(heard).toEqual(['ArrowUp:false', 'ArrowDown:false']);
+    expect(document.activeElement).toBe(log);
   });
 
   it('「其他」只在下一个数字不超过 9 时占用数字键', () => {
