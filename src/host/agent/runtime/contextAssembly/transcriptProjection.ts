@@ -174,7 +174,7 @@ export async function summarizeCollapsedContext(
  * 未闭合的 <longcat_tool_call> 按 <think> 同款兜底剥到串尾。
  */
 /** 剥离正文里的工具调用协议裸标记（issue #1991，实现见 shared/modelMarkupStrip）。刻意不剥 think：此路径落库，字面 think 标签可能是代码示例。 */
-export function stripToolCallProtocolMarkup(content: string): string {
+function stripToolCallProtocolMarkup(content: string): string {
   return stripLongcatMarkup(content);
 }
 
