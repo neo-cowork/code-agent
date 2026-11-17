@@ -12,6 +12,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useServerConnectionStore } from '../stores/serverConnectionStore';
 import { retryNow } from '../utils/serverConnectionMonitor';
 import { isTauriMode } from '../utils/platform';
+import { COLLAPSED_TRAFFIC_LIGHT_INSET } from './features/shared/trafficLightInset';
 import { Button } from './primitives';
 
 /** 顶部细条；ok 态整条不渲染。视觉范式对齐 ModelSetupPendingBanner（琥珀=降级非致命）。 */
@@ -23,16 +24,18 @@ export const ServerConnectionBanner: React.FC = () => {
 
   const text = t.serverConnection;
   const unavailable = status === 'unavailable';
+  const tauriMode = isTauriMode();
 
   return (
     <div
       role="status"
       data-testid="server-connection-banner"
-      className={`flex items-center gap-2 border-b px-3 py-1.5 text-xs text-zinc-300 ${
-        unavailable ? 'border-red-500/30 bg-red-500/10' : 'border-amber-500/30 bg-amber-500/10'
-      }`}
+      data-tauri-drag-region={tauriMode ? 'deep' : undefined}
+      className={`flex flex-wrap items-center gap-2 border-b px-3 py-1.5 text-xs text-zinc-300 ${
+        tauriMode ? `min-h-12 ${COLLAPSED_TRAFFIC_LIGHT_INSET}` : ''
+      } ${unavailable ? 'border-red-500/30 bg-red-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}
     >
-      <div className="min-w-0 flex-1">
+      <div className="whitespace-nowrap">
         <span>{unavailable ? text.unavailable : text.recovering}</span>
         {unavailable && retryState === 'failed' && (
           <div>{text.retryFailed}</div>
@@ -43,7 +46,7 @@ export const ServerConnectionBanner: React.FC = () => {
           {/* Tauri 模式页面未必能自愈（服务由壳拉起），重试检查连接，退出再重开才启动服务；
               web 模式刷新页面即可。 */}
           <span className="min-w-0 flex-1">
-            {isTauriMode() ? text.unavailableHintTauri : text.unavailableHintWeb}
+            {tauriMode ? text.unavailableHintTauri : text.unavailableHintWeb}
           </span>
           <Button size="sm" variant="secondary" onClick={retryNow} loading={retryState === 'checking'}>
             {retryState === 'checking' ? text.checking : text.retry}
