@@ -3,6 +3,7 @@ import type { Task } from '@shared/contract/backgroundTask';
 import type { TraceNode } from '@shared/contract/trace';
 import type { AgentRow } from './agentRows';
 import { isToolInterruptionPlaceholder } from './toolExecutionPresentation';
+import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
 import { isDelegationTool, isTaskTerminalStatus } from './agentActivity';
 
 type TerminalState = 'running' | 'completed' | 'failed' | 'interrupted' | 'hidden';
@@ -67,7 +68,10 @@ export function resolveToolCallTerminalState(input: {
     : state === 'failed' ? 'error' as const : state === 'interrupted' ? 'interrupted' as const : 'success' as const;
   const stepStatus: ToolStepStatus = awaitingApproval && !result ? 'pending-approval'
     : state === 'running' ? 'running' : state === 'failed' ? 'failed' : 'completed';
-  return { state, displayStatus, stepStatus };
+  // 停车审批被自动收口：命令从未执行，标题不能说「未成功」。
+  const notRun = result?.success === false && result.metadata?.recovered !== true
+    && isParkedApprovalClosureSentence(result.error);
+  return { state, displayStatus, stepStatus, notRun };
 }
 
 /** Preserve even empty tool results when adapting the trace's flattened representation. */

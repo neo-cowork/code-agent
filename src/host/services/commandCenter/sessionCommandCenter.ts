@@ -660,6 +660,9 @@ export class SessionCommandCenter {
       ...task.progress,
       ...(current === undefined ? {} : { current }),
       ...(data.toolTotal === undefined ? {} : { total: data.toolTotal }),
+      ...(data.tool === 'Bash' || data.tool === 'bash'
+        ? { bashSteps: [...(task.progress?.bashSteps ?? []), { ...(data.description ? { description: data.description } : {}), command: data.target ?? '' }].slice(-20) }
+        : {}),
       ...(data.progress === undefined ? {} : { percent: data.progress }),
       ...(data.step ? { label: data.step } : {}),
       lastToolStep: {
@@ -667,6 +670,7 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        ...(data.description ? { description: data.description } : {}),
         at: Date.now(),
       },
     };

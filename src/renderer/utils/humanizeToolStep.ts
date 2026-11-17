@@ -386,6 +386,43 @@ export function mentionsRawToolName(text: string, toolName: string): boolean {
 }
 
 /**
+ * Bash 行的"人话描述"：只读 arguments.description（shortDescription 在缺省时会被宿主
+ * 兜成 `Run: <命令首行>`，绝不能用）。过滤规则见 docs/tasks/2026-11-16-bash-row-description-decision.md：
+ * 单行、汉字≤40 / 拉丁≤60 字符、语种与界面一致、不含路径/变量/管道/重定向/URL/反引号/--flag、不含命令首词、
+ * 不是命令本身（或其片段）、不含原始工具名。任何一条不满足 → undefined，调用方退回通用文案。
+ */
+// 汉字 40 字、拉丁文 60 字符：英文动词短语天然更长，真跑中 41~49 字符的英文描述都很干净。
+const BASH_DESCRIPTION_MAX_LENGTH_CJK = 40;
+const BASH_DESCRIPTION_MAX_LENGTH_LATIN = 60;
+const BASH_DESCRIPTION_COMMAND_LIKE = /[\\/~$`|&;<>·\r\n]|(^|\s)-{1,2}[A-Za-z]/;
+
+export function usableBashDescription(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  t: Translations,
+): string | undefined {
+  if (name !== 'Bash' && name !== 'bash') return undefined;
+  const raw = args?.description;
+  if (typeof raw !== 'string') return undefined;
+  const text = raw.trim();
+  const maxLength = CJK_PATTERN.test(text) ? BASH_DESCRIPTION_MAX_LENGTH_CJK : BASH_DESCRIPTION_MAX_LENGTH_LATIN;
+  if (!text || text.length > maxLength) return undefined;
+  if (BASH_DESCRIPTION_COMMAND_LIKE.test(text)) return undefined;
+  if (!matchesUiScript(text, t)) return undefined;
+  if ([...BASH_TOOLS].some((tool) => mentionsRawToolName(text, tool))) return undefined;
+  const command = typeof args?.command === 'string' ? args.command.trim() : '';
+  if (command) {
+    const lowered = text.toLowerCase();
+    const loweredCommand = command.toLowerCase();
+    if (lowered.length >= 3 && loweredCommand.includes(lowered)) return undefined;
+    if (loweredCommand.length >= 3 && lowered.includes(loweredCommand)) return undefined;
+    const firstWord = command.split(/\s+/)[0];
+    if (firstWord && mentionsRawToolName(text, firstWord.replace(/^.*[\\/]/, ''))) return undefined;
+  }
+  return text;
+}
+
+/**
  * 把单个工具调用合成一句步骤人话。模型自写的 shortDescription（产品视角语义标签）
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
  * 类目落到对应模板。
@@ -421,8 +458,14 @@ export function parseDelegateSessionReceipt(result?: { success?: boolean; output
 }
 
 export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): string {
-  const language = CJK_PATTERN.test(args[2].toolStepHumanize.writeFallback) ? 'zh' : 'en';
-  return humanizeInternalText(buildToolStep(...args), language).text;
+  const t = args[2];
+  const language = CJK_PATTERN.test(t.toolStepHumanize.writeFallback) ? 'zh' : 'en';
+  // 被自动收口、从未执行的步骤：用「请求…」词表加「未执行 ·」前缀，不走任何 failed 词表。
+  const notRun = args[4] === 'failed' && args[6]?.notRun === true;
+  const step = notRun
+    ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
+    : buildToolStep(...args);
+  return humanizeInternalText(step, language).text;
 }
 
 function buildToolStep(
@@ -432,7 +475,7 @@ function buildToolStep(
   shortDescription?: string,
   status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
-  renderContext: { connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
+  renderContext: { notRun?: boolean; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
@@ -471,7 +514,10 @@ function buildToolStep(
   }
 
   if (toolKind === 'bash') {
-    return status === 'completed' ? t.toolStepHumanize.bashFallback : t.toolStepHumanize.statusForms[status].bashFallback;
+    const fallback = status === 'completed' ? t.toolStepHumanize.bashFallback : t.toolStepHumanize.statusForms[status].bashFallback;
+    const description = usableBashDescription(name, args, t);
+    if (!description) return fallback;
+    return status === 'completed' || status === 'running' ? description : `${fallback} · ${description}`;
   }
 
   const schemaDescription = '';
@@ -670,7 +716,12 @@ export function humanizeToolGroupLabel(
   toolNames: string[],
   t: Translations,
   status: ToolStepStatus = 'completed',
+  notRun = false,
 ): string {
+  if (notRun && status === 'failed') {
+    const label = humanizeToolGroupLabel(toolNames, t, 'pending-approval');
+    return label ? `${t.toolStepHumanize.notRunPrefix} · ${label}` : '';
+  }
   const counts = new Map<GroupBucket, number>();
   const order: GroupBucket[] = [];
   for (const name of toolNames) {

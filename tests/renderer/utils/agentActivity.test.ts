@@ -20,6 +20,15 @@ describe('describeLastToolStep', () => {
     }, zh)).toBe('读取了 /repo/spec.md');
   });
 
+  it('Bash step shows its usable description, never the command', () => {
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls -la /tmp/ws', description: '列出工作区目录内容', at: 1 }, zh))
+      .toBe('列出工作区目录内容');
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls -la /tmp/ws', description: 'ls -la /tmp/ws', at: 1 }, zh))
+      .toBe(zh.toolStepHumanize.bashFallback);
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls -la /tmp/ws', at: 1 }, zh))
+      .toBe(zh.toolStepHumanize.bashFallback);
+  });
+
   it('does not invent activity when no tool step exists', () => {
     expect(describeLastToolStep(undefined, zh)).toBeUndefined();
   });
