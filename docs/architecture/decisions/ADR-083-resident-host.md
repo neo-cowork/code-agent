@@ -159,3 +159,12 @@ sequenceDiagram
 2026-10-24 的历史记录保留；停车审批的 stage-B（fallback B）现已改为启动 Agent Neo 壳并传入 `--notify-only`，通知横幅归属 Agent Neo，点击打开对应会话或 Automation 运行记录。退出意图为 `background` 时仍经生产 `notificationService.notifyNeedsInput` 入口投递，通知策略与预算不变。
 
 旧 osascript 通知通道及 `src/host/platform/notifications.ts` 中的发送器已删除；该模块仅保留 `Notification.isSupported()` 的 macOS 支持检测。`tests/unit/host/notificationOsascriptGate.test.ts` 的两项静态门白名单均已清空，禁止重新引入旧通知发送文本或 host/web 原生通知构造调用。壳的实际横幅与点击行为由编排方在设备上验收。
+
+## 拍板记录（2026-11-16 append，--notify-only 机制已知局限，只增不改）
+
+2026-10-24 节第 2 项（原第 155 行）的 osascript 机制描述由 2026-11-12 节及本节取代；历史原文保留。fallback B 现在启动 Agent Neo 壳的 `--notify-only`，横幅归属 Agent Neo。以下局限均以退出意图仍为 `background`、通知进入原生投递分支为前提（`notificationService.notifyNeedsInput` 入队及 `canDeliver` 均检查该意图）：
+
+1. **缺少壳可执行文件路径**：`CODE_AGENT_SHELL_EXE` 由 Tauri 壳启动 webServer 时设置；非壳启动的 host（例如终端 / CLI 启动且未提供该变量）没有该值时，macOS 上不弹原生横幅，仅 warn `notify-only-executable-missing`（`src-tauri/src/main.rs`、`src/host/services/infra/notificationService.ts`）。
+2. **非 macOS**：host 在检查可执行文件路径之前即返回，不弹原生横幅，仅 warn `notify-only-platform-unsupported`（`src/host/services/infra/notificationService.ts`）。
+3. **壳重新接上不复位退出意图**：`src/host/services/daemon/quitIntent.ts` 没有壳重新接上时的复位事件；沿用 2026-10-24 第 2 项的已知局限，重开壳后同一条 `needs_input` 仍可能在应用内 toast 与原生横幅各弹一次——接受，漏报贵过重复提醒。
+4. **壳二进制不在 .app bundle 内**：`exe_is_in_app_bundle` 以可执行文件路径包含 `.app/Contents/MacOS/` 为判据；不满足时（例如直接运行开发二进制），`decide_backend` 不选 UNC，`dispatch_notify_only` 向 stderr 输出 `notify-only-backend-unavailable` 并以 3 退出，不投递横幅（`src-tauri/src/native_notification.rs`）。host 随后 warn `notify-only-exit-failed`，附 `code`（此处为 3）及 `signal`；壳子进程的 stdio 为 `ignore`，排查时以 host 的退出失败记录为线索（`src/host/services/infra/notificationService.ts`）。
