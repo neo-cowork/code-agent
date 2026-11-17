@@ -527,8 +527,8 @@ export const MemoryEntriesManager: React.FC<{
                 await onChanged?.();
               }}
             />
-            <div className="grid gap-2 border-b border-zinc-800 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto]">
-              <div className="relative">
+            <div className="flex flex-wrap gap-2 border-b border-zinc-800 px-3 py-3">
+              <div className="relative min-w-[200px] flex-1 basis-full sm:basis-[200px]">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                 <Input
                   value={searchQuery}
@@ -545,7 +545,7 @@ export const MemoryEntriesManager: React.FC<{
                   setStatusFilter(nextStatus);
                   if (nextStatus === 'archived') setShowArchived(true);
                 }}
-                className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
+                className="min-w-[120px] rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allStatus}</option>
                 {STATUS_OPTIONS.map((status) => (
@@ -570,7 +570,7 @@ export const MemoryEntriesManager: React.FC<{
               <select
                 value={kindFilter}
                 onChange={(event) => setKindFilter(event.target.value as EntryKindFilter)}
-                className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
+                className="min-w-[120px] rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allKind}</option>
                 {KIND_OPTIONS.map((kind) => (
@@ -580,7 +580,7 @@ export const MemoryEntriesManager: React.FC<{
               <select
                 value={sourceFilter}
                 onChange={(event) => setSourceFilter(event.target.value as EntrySourceFilter)}
-                className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
+                className="min-w-[120px] rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
               >
                 <option value="all">{memoryText.entries.filters.allSource}</option>
                 <option value="light_file">{getMemoryEntrySourceLabel('light_file', memoryText.sourceLabels)}</option>

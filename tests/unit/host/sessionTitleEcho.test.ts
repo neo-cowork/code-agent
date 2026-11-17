@@ -33,6 +33,11 @@ vi.mock('../../../src/host/model/quickModel', () => ({
     return reply ? { success: true, content: reply } : { success: false, content: '' };
   },
 }));
+const ui = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../src/host/session/sessionTitleHostPrompt', async (orig) => ({
+  ...(await orig<object>()),
+  readUiLanguage: () => ui.language,
+}));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -147,5 +152,42 @@ describe('SessionManager.addMessage -> title update', () => {
     quick.available = false;
     const text = '请帮我分析这个 sales.csv，按地区汇总金额并告诉我哪个地区最高，最好再给出同比变化';
     expect(await sendFirst(text.slice(0, 30) + '...', text)).toBe('分析这个 sales.csv');
+  });
+
+  describe('/init-memory deterministic title', () => {
+    async function sendInit(workingDirectory: string | undefined, preTitle = '/init-memory', text = '/init-memory'): Promise<string> {
+      coreDb.createSessionWithId('init-session', { title: preTitle, workingDirectory, modelConfig: { provider: 'zhipu', model: 'glm-5' } });
+      manager.setCurrentSession('init-session');
+      await manager.addMessage({ id: 'm1', role: 'user', content: text, timestamp: Date.now() });
+      await vi.waitFor(async () => {
+        expect((await manager.getSession('init-session'))?.title).not.toBe(preTitle);
+      }, { timeout: 3000 });
+      return (await manager.getSession('init-session'))!.title;
+    }
+
+    beforeEach(() => { ui.language = 'zh'; quick.replies = ['会话记忆初始化指令说明']; });
+
+    it('user-chosen folder: zh title carries the folder name, small model skipped', async () => {
+      expect(await sendInit('/tmp/家庭账本项目')).toBe('初始化项目记忆 · 家庭账本项目');
+      expect(quick.prompts).toHaveLength(0);
+    });
+
+    it('en UI uses the English template', async () => {
+      ui.language = 'en';
+      expect(await sendInit('/tmp/Family Ledger', '/init-memory --force', '/init-memory --force')).toBe('Set up project memory · Family Ledger');
+    });
+
+    it('system-assigned directory omits the folder part', async () => {
+      const { getDefaultWorkDirectory } = await import('../../../src/host/config/configPaths');
+      expect(await sendInit(getDefaultWorkDirectory())).toBe('初始化项目记忆');
+    });
+
+    it('a user-renamed session is never overwritten', async () => {
+      coreDb.createSessionWithId('init-session', { title: '我的记忆', workingDirectory: '/tmp/家庭账本项目', modelConfig: { provider: 'zhipu', model: 'glm-5' } });
+      manager.setCurrentSession('init-session');
+      await manager.addMessage({ id: 'm1', role: 'user', content: '/init-memory', timestamp: Date.now() });
+      await new Promise((r) => setTimeout(r, 300));
+      expect((await manager.getSession('init-session'))!.title).toBe('我的记忆');
+    });
   });
 });
