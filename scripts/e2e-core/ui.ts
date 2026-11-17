@@ -3,6 +3,7 @@ import type { Page } from 'playwright';
 const POLL_MS = 500;
 const TURN_START_TIMEOUT_MS = 45_000;
 const IDLE_POLLS = 4;
+const CARD_COLLAPSE_TIMEOUT_MS = 30_000;
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -73,6 +74,10 @@ export async function driveTurn(page: Page, handlers: TurnHandlers, timeoutMs: n
     const cardUp = await card.first().isVisible().catch(() => false);
     if (memoryUp && handlers.onMemoryModal) { await handlers.onMemoryModal(page); idle = 0; continue; }
     if (cardUp && handlers.onPermissionCard) { await handlers.onPermissionCard(page); idle = 0; continue; }
+    // 模型没动手而是用「需要你的回答」面板反问用户：这是模型分支，别空等到超时
+    if (await page.getByText('需要你的回答', { exact: true }).first().isVisible().catch(() => false)) {
+      throw new Error('模型没有继续做事，而是弹出「需要你的回答」反问用户（AskUserQuestion，模型分支）');
+    }
     if (handlers.until && await handlers.until().catch(() => false)) return;
     // 前台停止键或后台任务的停止键任一在，就还没收尾（后台任务里的审批卡也会在这段时间冒出来）
     const running = (await stop.count().catch(() => 0)) > 0
@@ -91,13 +96,13 @@ export async function clickCardButton(page: Page, label: string): Promise<void> 
   const countBefore = await page.getByTestId('permission-card').count();
   await card.getByRole('button', { name: label }).click({ timeout: 10_000 });
   // 点完这张卡应当收起（或换成下一张不同的卡）；原样还在就是「点了没反应」。快速轮询，别漏掉短暂的收起
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + CARD_COLLAPSE_TIMEOUT_MS;
   for (;;) {
     if (!(await card.isVisible().catch(() => false))) return;
     // 排队的两张卡文字可能一样（路径被截断），所以数量减少也算收起
     if ((await page.getByTestId('permission-card').count()) < countBefore) return;
     if ((await card.innerText().catch(() => before)) !== before) return;
-    if (Date.now() > deadline) throw new Error(`点「${label}」后审批卡 15 秒内没有收起（原样还在）`);
+    if (Date.now() > deadline) throw new Error(`点「${label}」后审批卡 ${CARD_COLLAPSE_TIMEOUT_MS / 1000} 秒内没有收起（原样还在）`);
     await sleep(100);
   }
 }
@@ -115,6 +120,7 @@ export async function openFolderSession(env: { page: Page; server: { port: numbe
   const origin = `http://127.0.0.1:${server.port}`;
   const res = await fetch(`${origin}/api/sessions`, {
     method: 'POST',
+    signal: AbortSignal.timeout(30_000),
     headers: { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, workingDirectory: server.workspace }),
   });

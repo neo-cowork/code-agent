@@ -7,7 +7,7 @@ import type { AttemptEnv, FlowDef } from './types';
 import { approveCard, clickCardButton, driveTurn, openFolderSession, openNewSession, pageText, sendMessage, sleep } from './ui';
 
 const REMEMBER = '记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万';
-const TURN_TIMEOUT_MS = 300_000;
+const TURN_TIMEOUT_MS = 240_000;
 const CONFIRM_TIMEOUT_MS = 180_000;
 
 function memoryFiles(env: AttemptEnv): Array<{ file: string; text: string }> {

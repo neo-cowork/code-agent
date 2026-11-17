@@ -11,6 +11,7 @@ import { assertRealrunBin, captureEvents, dumpDb, ensureServerAlive, startServer
 import type { AttemptEnv, FlowDef, ServerInfo } from './types';
 import { dismissFirstRunLayers } from './ui';
 
+const ATTEMPT_CAP_MS = 12 * 60_000;
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; server: ServerInfo; bin: string; out: string }): Promise<AttemptResult> {
@@ -72,7 +73,10 @@ async function runIsolated(flow: FlowDef, n: number, ctx: { headed: boolean; ser
   let browser: Browser | null = null;
   try {
     browser = await chromium.launch({ headless: !ctx.headed });
-    return await runAttempt(flow, n, { browser, server: ctx.server, bin: ctx.bin, out: ctx.out });
+    return await Promise.race([
+      runAttempt(flow, n, { browser, server: ctx.server, bin: ctx.bin, out: ctx.out }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`单次尝试超过 ${ATTEMPT_CAP_MS / 60_000} 分钟，强制结束`)), ATTEMPT_CAP_MS)),
+    ]);
   } catch (e) {
     return buildAttempt({
       n, failedStep: { n: 0, text: '浏览器或脚本异常中断' }, durationMs: Date.now() - started,

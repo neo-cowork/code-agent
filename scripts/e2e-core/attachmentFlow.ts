@@ -3,7 +3,7 @@ import { writeSalesXlsx } from './fixtures';
 import type { FlowDef } from './types';
 import { approveCard, driveTurn, openFolderSession, sendMessage } from './ui';
 
-const TURN_TIMEOUT_MS = 420_000;
+const TURN_TIMEOUT_MS = 300_000;
 const READ_TOOLS = ['ExcelAutomate', 'Bash', 'Read', 'Glob'];
 
 export const f10: FlowDef = {

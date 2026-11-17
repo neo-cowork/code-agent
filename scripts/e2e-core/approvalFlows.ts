@@ -95,7 +95,7 @@ export const f06: FlowDef = {
         const reply = lastAssistantText(d, env.sessionIds);
         if (!reply) return '回合结束后没有助手回复文字';
         if (/失败|出错|报错/.test(reply)) return `回复把拒绝说成了失败/出错：${reply.slice(0, 120)}`;
-        if (!/没有执行|未执行|没执行|没有运行|不会执行|已取消|取消了|拒绝/.test(reply)) return `回复没有说明没执行：${reply.slice(0, 120)}`;
+        if (!/没有执行|未执行|没执行|没有运行|不会执行|已取消|取消了|拒绝|没有被批准|未获批准|没有获得批准|没有下载|没下载|没有生成|没做成|没有做成/.test(reply)) return `回复没有说明没执行：${reply.slice(0, 120)}`;
         return null;
       }),
     },
