@@ -10,7 +10,7 @@ import { calendarAccess } from '../../../../../src/host/permissions/envAssist/pr
 import { createShellPassiveBridge } from '../../../../../src/host/permissions/envAssist/probes/shellPassiveBridge';
 import * as calendarGrant from '../../../../../src/host/permissions/envAssist/calendarGrant';
 import * as grantBoundary from '../../../../../src/host/permissions/envAssist/grants/requestGrant';
-import * as logging from '../../../../../src/host/services/infra/logger';
+import { logger } from '../../../../../src/host/services/infra/logger';
 import { ENV_ASSIST_CALENDAR_POLL_MS } from '../../../../../src/shared/constants/envAssist';
 
 const { fake } = await vi.hoisted(async () => ({ fake: (await import('../../../connectors/fakeCalendarBridge')).createFakeCalendarBridge() }));
@@ -40,7 +40,7 @@ afterEach(() => { vi.restoreAllMocks(); });
 describe('foreground dialog Stop through the real resolver, grant and shared poll', () => {
   it('① Stop resolves ABORTED in <1000ms; ② late grant settles once without another dialog; ③ a surviving waiter gets granted', async () => {
     // All spies call through. Only the native shell boundary is replaced.
-    const info = vi.spyOn(Object.getPrototypeOf(logging.logger) as typeof logging.logger, 'info');
+    const info = vi.spyOn(Object.getPrototypeOf(logger) as typeof logger, 'info');
     const settle = vi.spyOn(calendarGrant, 'settleCalendarGranted');
     const request = vi.spyOn(grantBoundary, 'requestGrant');
     const controller = new AbortController();
