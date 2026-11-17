@@ -35,6 +35,7 @@ import {
   type KeybindingActionId,
 } from '@shared/keybindings';
 import { useAppStore, type WorkbenchViewId } from '../stores/appStore';
+import { WorkbenchFocusAvailability } from './workbench/workbenchFocusAvailability';
 import { useWorkbenchFocusStore } from '../stores/workbenchFocusStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
@@ -430,7 +431,7 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
   };
 
   return (
-    <>
+    <WorkbenchFocusAvailability.Provider value={focusable}>
       <RailTabShell
         tabs={metas.map((meta) => ({
           id: meta.id,
@@ -537,6 +538,6 @@ export const WorkbenchTabs: React.FC<{ children?: React.ReactNode; focusable?: b
           setPendingClose(null);
         }}
       />
-    </>
+    </WorkbenchFocusAvailability.Provider>
   );
 };
