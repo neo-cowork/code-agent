@@ -84,6 +84,8 @@ import type {
   ExternalSkillsApplyRequest,
   ExternalSkillsPreviewRequest,
 } from '../../shared/contract/externalImport';
+import type { MemoryEntryCreateRequest } from '../../shared/contract/memory';
+import { createManualMemoryEntry } from '../memory/memoryEntryCreate';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
 const logger = createLogger('MemoryIPC');
@@ -902,6 +904,7 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryInboxResolve: (_ctx, payload) => handleMemoryInboxResolve(payload as MemoryInboxResolveRequest),
     memoryEntries: () => handleListMemoryEntries(),
     memoryRebuildMirror: () => handleRebuildMemoryMirror(),
+    memoryEntryCreate: (_ctx, payload) => createManualMemoryEntry(getDatabase(), payload as MemoryEntryCreateRequest, PANEL_JOURNAL),
     memoryEntryUpdate: (_ctx, payload) => handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest),
     memoryEntryDelete: (_ctx, payload) => handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest),
     memoryEntryJournal: (_ctx, payload) => handleMemoryEntryJournal(payload as MemoryChangeJournalRequest),
@@ -993,6 +996,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryRebuildMirror':
           data = await handleRebuildMemoryMirror();
+          break;
+        case 'memoryEntryCreate':
+          data = await createManualMemoryEntry(getDatabase(), request as MemoryEntryCreateRequest, PANEL_JOURNAL);
           break;
         case 'memoryEntryUpdate':
           data = await handleMemoryEntryUpdate(request as unknown as MemoryEntryUpdateRequest);
