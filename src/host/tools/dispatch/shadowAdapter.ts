@@ -233,17 +233,40 @@ export function buildCanUseToolFromLegacy(
             ? 'network'
             : 'command');
 
+    // 工具体内审批也先消费已记住的工具级授权（本次任务内 / 24 小时）：此前这条路直接弹卡，
+    // 用户点了「本次任务内允许」下一次照问（11-17 真机：读日程连弹三张）。强制确认 / 敏感交回 /
+    // 危险命令不消费；target 一律 null，绝不采信模型参数里的任何授权目标。
+    const grantable = !isDangerous && requestHint?.forceConfirm !== true && !requestHint?.reasonCode;
+    const sessionId = requestHint?.sessionId ?? legacyCtx.sessionId;
+    if (grantable) {
+      try {
+        const { resolvePreAskGrant } = await import('../../permissions/preAskGrant');
+        const hit = resolvePreAskGrant({
+          toolName: requestedToolName, sessionId, runId: requestHint?.runId ?? legacyCtx.runId,
+          standingGrantTarget: null, computerApp: null, blocked: false,
+        });
+        if (hit) {
+          createLogger('ToolProtocol').info('In-tool approval satisfied by remembered grant', { tool: requestedToolName, rule: hit.traceRule });
+          return { allow: true, approvalSource: 'session-allowlist' };
+        }
+      } catch (err) {
+        // 授权库读不了就照常问人：宁可多弹一张卡，不能因查授权失败把工具弄挂。
+        createLogger('ToolProtocol').warn('In-tool grant lookup failed; asking the user', err);
+      }
+    }
+
     try {
       const permissionRequest: PermissionRequestData = {
         // 工具体内的审批也要归到本会话（真机第四轮：没传 hint 时 sessionId 为空，停车 / 无人值守 / 收件箱都认不出是谁的）
-        sessionId: requestHint?.sessionId ?? legacyCtx.sessionId,
+        sessionId,
         agentId: requestHint?.agentId,
         runId: requestHint?.runId ?? legacyCtx.runId,
         parentToolUseId: requestHint?.parentToolUseId,
         forceConfirm: requestHint?.forceConfirm,
         type,
         tool: requestedToolName,
-        details,
+        // grantEligible 只由 host 写：覆盖参数里同名键，防模型自报。
+        details: { ...details, grantEligible: grantable },
         reason: requestHint?.reason ?? cleanReason ?? `protocol tool ${requestedToolName}`,
         ...(requestHint?.reasonCode ? { reasonCode: requestHint.reasonCode } : {}),
         dangerLevel: requestHint?.dangerLevel,

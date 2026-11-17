@@ -2133,13 +2133,7 @@ export class ToolExecutor {
         shouldForceConfirm = false;
         logger.debug('ConfirmationGate preview error:', error);
       }
-      const preAsk = needsUserApproval ? resolvePreAskGrant({
-        toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
-        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
-        standingGrantTarget,
-        browserSessionTarget: browserSessionGrant?.target,
-        computerApp,
-        blocked: Boolean(commandAnalysisFailedReason)
+      const preAskBlocked = Boolean(commandAnalysisFailedReason)
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
@@ -2147,7 +2141,14 @@ export class ToolExecutor {
           || Boolean(cuaSensitiveStep) || boundaryAskForcesConfirmation
           || Boolean(deterministicAskReason) || this.forcePermissionHandler
           || scheduleWriteGrantRequired
-          || shouldForceConfirm,
+          || shouldForceConfirm;
+      const preAsk = needsUserApproval ? resolvePreAskGrant({
+        toolName: executionToolName, command: typeof params.command === 'string' ? params.command : undefined,
+        sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId, turnOrigin: options.turnOrigin,
+        standingGrantTarget,
+        browserSessionTarget: browserSessionGrant?.target,
+        computerApp,
+        blocked: preAskBlocked,
       }) : null;
       if (preAsk) {
         if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;
@@ -2270,6 +2271,8 @@ export class ToolExecutor {
       }
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      // 与 preAsk 同一判据：没有任何强制确认、也不是按应用/浏览器站点授权的请求，才允许被同任务后点的授权顺带放行。
+      permissionRequest.details.grantEligible = !preAskBlocked && !computerApp && !browserSessionGrant;
       if (browserSessionGrant) {
         delete permissionRequest.details.targetApp;
         permissionRequest.details.browserSessionGrant = browserSessionGrant;
