@@ -35,6 +35,14 @@ describe('系统关卡封口行在最终答案后降级', () => {
     expect(rows.map((r) => r.toolCall?.recovered)).toEqual([true, true]);
   });
 
+  it('修复步骤收窄的合成结果（narrowedBy + bounced）与执行器兜底闸同样降级', () => {
+    const msgs = turn({ bounced: true });
+    const results = msgs[1].toolCalls!.map((tc) => tc.result!);
+    results[0].metadata = { skipped: false, bounced: true, narrowedBy: 'artifact_repair' };
+    results[1].metadata = { code: 'TOOL_DISABLED_FOR_RUN', bounced: true };
+    expect(failedRows(msgs).map((r) => r.toolCall?.recovered)).toEqual([true, true]);
+  });
+
   it('真实 Bash 失败（无 bounced）不降级', () => {
     const rows = failedRows(turn({ bounced: false }));
     expect(rows).toHaveLength(2);
