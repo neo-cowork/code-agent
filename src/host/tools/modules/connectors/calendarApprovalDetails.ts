@@ -3,8 +3,10 @@
 // （真机第四轮：建 / 删各弹了两张，第二张 sessionId 还是空的）。
 // - 建日程没指定日历：补上实际会写进的系统默认日历名；
 // - 改 / 删日程：补上那条的标题、时间、地点、所在日历；更新只补模型未传的字段。
-// 取不到（未授权、桥不通、找不到）就什么都不补，卡片照常出，只是少几行。
+// 取不到（未授权、桥不通）就什么都不补，卡片照常出，只是少几行；
+// 改 / 删的目标日程找不到（not_found）则抛出该 CalendarFailure，调用方据此不弹卡、直接把失败还给模型。
 import { getConnectorRegistry } from '../../../connectors';
+import { isCalendarFailure } from '../../../connectors/native/calendar';
 
 export async function calendarApprovalDetails(toolName: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
   const connector = toolName === 'calendar_create_event' || toolName === 'calendar_delete_event' || toolName === 'calendar_update_event'
@@ -41,7 +43,8 @@ export async function calendarApprovalDetails(toolName: string, params: Record<s
       if (snapshotFields.length > 0) details.calendarApprovalSnapshotFields = snapshotFields;
     }
     return details;
-  } catch {
+  } catch (error) {
+    if (isCalendarFailure(error) && error.code === 'not_found' && toolName !== 'calendar_create_event') throw error;
     return {};
   }
 }

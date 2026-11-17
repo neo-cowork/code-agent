@@ -206,6 +206,26 @@ describe('osNotification', () => {
     }
   });
 
+  it('away from the window an urgent UNC failure adds no fallback toast (the missed-alert merge on return owns it)', async () => {
+    tauriInvoke.mockResolvedValue({ backend: 'unc', ok: false, reason: 'authorization denied' });
+    (globalThis as Record<string, unknown>).document = { hasFocus: () => false, hidden: false };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: '需要授权', body: '需要授权：日历' }, { urgent: true });
+      const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+      expect(useToastStore.getState().toasts).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('toast text does not repeat a title the body already starts with', async () => {
+    const { notificationToastText } = await import('../../../src/renderer/utils/notificationToastText');
+    expect(notificationToastText('需要授权', '需要授权：日历')).toBe('需要授权：日历');
+    expect(notificationToastText('任务完成', '已完成 1 轮')).toBe('任务完成: 已完成 1 轮');
+  });
+
   it('repeated UNC failures keep only the latest fallback toast', async () => {
     tauriInvoke.mockResolvedValue({ backend: 'unc', ok: false, reason: 'authorization denied' });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
