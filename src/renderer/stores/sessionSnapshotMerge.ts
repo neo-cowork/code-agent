@@ -52,6 +52,15 @@ function findLiveCounterpart(
   snapshotById: Map<string, Message>,
 ): Message | undefined {
   if (snapshotMessage.role !== 'assistant') return undefined;
+  // 同一个 tool call id 只能属于一条 assistant 消息：配对证据比正文/轮次键都强，先认它。
+  // 纯工具轮落库那条正文为空、直播草稿却可能带前言，正文判据配不上，同一调用就会画两行。
+  const sharedToolCallLive = live.find((liveMessage) => (
+    liveById.has(liveMessage.id)
+    && !snapshotById.has(liveMessage.id)
+    && liveMessage.role === 'assistant'
+    && sharesToolCallId(snapshotMessage, liveMessage)
+  ));
+  if (sharedToolCallLive) return sharedToolCallLive;
   const snapshotKey = correlationTurnId(snapshotMessage);
   if (snapshotKey) {
     for (const liveMessage of live) {
@@ -79,6 +88,16 @@ function findLiveCounterpart(
     return liveMessage;
   }
   return undefined;
+}
+
+/**
+ * 两条消息携带的 tool call id 集合完全相同（且非空）：就是同一条 assistant 的两份副本。
+ * 只部分重叠的（直播聚合草稿 vs 多条落库）不在此列，由合并末段的逐 id 去重收口。
+ */
+function sharesToolCallId(a: Message, b: Message): boolean {
+  const left = new Set((a.toolCalls ?? []).map((call) => call.id).filter(Boolean));
+  const right = new Set((b.toolCalls ?? []).map((call) => call.id).filter(Boolean));
+  return left.size > 0 && left.size === right.size && [...left].every((id) => right.has(id));
 }
 
 /**
@@ -284,7 +303,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
     // 在先、最终回复 B 在后，messageProcessor :783 vs :956），分叉正文就是「这两条
     // 不是同一条」的信号——合并会让较早落库者覆盖用户已看到的最终回复
     // （ai-review #1706 第三轮），不配对则两条都保留，宁可多一条草稿也不少一条终版。
-    if (!sameIdLive && correlationTurnId(message) !== undefined) {
+    if (!sameIdLive && correlationTurnId(message) !== undefined && !sharesToolCallId(message, liveMessage)) {
       const snapshotBody = message.content ?? '';
       const liveBody = liveMessage.content ?? '';
       // 空正文快照（工具消息这类占位落库）不抢非空 live：'' 是任何正文的前缀，
