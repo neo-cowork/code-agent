@@ -172,3 +172,21 @@ export async function resolveNaturalLanguageCreateRoleInvocation(
   });
   return invocation;
 }
+
+/**
+ * A skill's allowed-tools boundary constrains only the run started under that skill.
+ * The one proven false hit: the machine-built delegated-task prompt contains the word "scope",
+ * which aliases task-brief-builder; in a background run nobody can approve the resulting forced asks.
+ * Everything else (strict skills, other aliases, /slash) keeps its boundary on auxiliary runs too.
+ */
+export function skillBoundaryAppliesToRun(
+  run: Pick<RuntimeContext, 'auxiliaryRun'>,
+  invocation: { matchKind: string; matchedText?: string; skill: { name: string } },
+): boolean {
+  return !(
+    run.auxiliaryRun === true
+    && invocation.matchKind === 'alias'
+    && invocation.skill.name === 'task-brief-builder'
+    && invocation.matchedText?.toLowerCase() === 'scope'
+  );
+}

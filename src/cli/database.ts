@@ -441,8 +441,8 @@ export class CLIDatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, user_id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, user_id, title, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, project_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -456,7 +456,8 @@ export class CLIDatabaseService {
       session.updatedAt,
       session.workspace || null,
       session.status || 'idle',
-      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null
+      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null,
+      session.projectId ?? null
     );
   }
 
@@ -566,6 +567,7 @@ export class CLIDatabaseService {
       updatedAt: row.updated_at as number,
       messageCount: (row.message_count as number) || 0,
       workspace: row.workspace as string | undefined,
+      ...(row.project_id ? { projectId: row.project_id as string } : {}),
       status: (row.status as SessionStatus) || 'idle',
       lastTokenUsage,
       prLink,
