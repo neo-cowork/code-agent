@@ -1054,7 +1054,7 @@ describe('pending review count parity', () => {
     expect(countPendingReviewByTask(parityRecords, paritySessionsById)).toBe(1);
     render(<CronCenterPanel onClose={() => undefined} />);
     await waitFor(() => {
-      expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('1');
+      expect(screen.getByTestId('cron-status-review').querySelector('.text-2xl')?.textContent).toBe('1');
       expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1 条待过目');
     });
     expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);

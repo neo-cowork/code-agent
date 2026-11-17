@@ -263,13 +263,22 @@ export async function grantCalendarFromConnectorClick(): Promise<void> {
  * 用户就在跟前、请求是他自己的，直接弹一次系统框并等答复，不先出卡。凭证仍只在本文件签发；
  * 只有「未决定」才弹（已拒绝/只写/受限不弹，调用方照旧出卡）。调用方负责只在前台、非无人值守、非子代理时调用。
  */
-export async function grantCalendarForForegroundRequest(toolCallId: string): Promise<CalendarAccess> {
+export async function grantCalendarForForegroundRequest(toolCallId: string, signal?: AbortSignal): Promise<CalendarAccess | 'aborted'> {
   const deps = buildDefaultDependencies();
   const asked = await askCalendarOnce({
     access: () => calendarAccess(deps.passiveBridge ?? null),
     prompt: () => requestGrant(mintClickToken(`foreground:${toolCallId}`), { pane: 'calendars' }, deps.grantBridge ?? null)
       .catch(() => 'not_available' as const),
-  });
+  }, undefined, signal);
+  if (asked?.aborted) {
+    logger.info('Calendar foreground request: stopped while waiting', { prompted: asked.prompted });
+    void asked.completion?.then(async (answer) => {
+      if (answer?.access === 'granted') await settleCalendarGranted('foreground_request');
+    }).catch((error: unknown) => {
+      logger.warn('Calendar foreground request: completion failed', { error: error instanceof Error ? error.message : String(error) });
+    });
+    return 'aborted';
+  }
   const access = asked?.access ?? 'unavailable';
   logger.info('Calendar foreground request: direct dialog', { prompted: asked?.prompted === true, access });
   if (access === 'granted') await settleCalendarGranted('foreground_request');

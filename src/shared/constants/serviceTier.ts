@@ -14,6 +14,12 @@
  */
 export const UNATTENDED_SERVICE_TIER = 'flex';
 
+const SERVICE_TIER_ELIGIBLE_PROVIDER = 'openai';
+
+export function isServiceTierEligibleProvider(provider: string): boolean {
+  return provider === SERVICE_TIER_ELIGIBLE_PROVIDER;
+}
+
 /**
  * 档位 → 计费倍率（只作用于 computeUsageCostUsd 的 input/output 合计；cacheRead/
  * cacheWrite 不折价——缓存项随档折价同样无实测证据，宁可高估不让预算线晚触发）。
