@@ -288,6 +288,16 @@ describe('skillInvocationResolver', () => {
     );
   });
 
+  // 11-17 真机：日程标题「neo-drive 测试」把用户的 neo 技能整段注入，模型把「查完删掉」做成了「再建一条」。
+  it('a skill name inside a hyphenated word is not an alias match', () => {
+    const neo = skill({ name: 'neo', description: 'switch to the neo project.' });
+
+    expect(resolveSkillInvocationFromSkills('删除日程「neo-drive 测试 123」', [neo])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('看一下 agent-neo 的进度', [neo])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('切到 neo 项目', [neo])?.skill.name).toBe('neo');
+    expect(resolveSkillInvocationFromSkills('切到 neo-项目', [neo])?.skill.name).toBe('neo');
+  });
+
   // 常设刷新真跑：prompt 里的目标路径 status.docx 被当成名为 docx 的 skill 别名。
   // 命中后 allowed-tools 边界把 DocEdit 挡成人工审批，无人值守停车 24h，版本不落盘。
   it('a file extension is not a latin alias match', () => {

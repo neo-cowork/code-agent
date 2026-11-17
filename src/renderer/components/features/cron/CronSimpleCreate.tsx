@@ -21,6 +21,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { interpolate } from '../../../i18n/interpolate';
 import { useI18n } from '../../../hooks/useI18n';
 import { listProjects } from '../../../services/projectClient';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
@@ -122,6 +123,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
   const [urgencyCriteria, setUrgencyCriteria] = useState('');
   const [maxRunBudget, setMaxRunBudget] = useState('');
   const [roles, setRoles] = useState<RolePanelEntry[]>([]);
+  const localizeRole = useLocalizeRole();
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [cloudUnconfigured, setCloudUnconfigured] = useState(false);
@@ -298,7 +300,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
             onChange={(e) => setRoleId(e.target.value)}
             options={[
               { value: '', label: cc.simpleRoleNone },
-              ...roles.map((role) => ({ value: role.roleId, label: role.displayName || role.roleId })),
+              ...roles.map((role) => ({ value: role.roleId, label: localizeRole(role.roleId, { name: role.displayName ?? '' }).name || role.roleId })),
             ]}
           />
         </FormField>

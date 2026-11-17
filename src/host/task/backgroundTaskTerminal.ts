@@ -43,7 +43,7 @@ export async function settleBackgroundOnTaskComplete(
 ): Promise<void> {
   const backgroundManager = getBackgroundTaskManager();
   if (eventKey === sessionId && backgroundManager.isInBackground(sessionId)) {
-    await backgroundManager.markCompleted(sessionId, data.summary);
+    await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
     return;
   }
   // A running role wake publishes its own summary; do not spend its notice budget here.
@@ -54,7 +54,7 @@ export async function settleBackgroundOnTaskComplete(
       sessionId: session.id,
       sessionTitle: session.title,
       summary: data.summary,
-      duration: data.duration ?? 0,
+      duration: data.duration,
       toolsUsed: data.toolsUsed || [],
     });
   }

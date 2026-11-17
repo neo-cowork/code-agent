@@ -89,7 +89,7 @@ export interface TaskNotificationData {
   /** Source cron job for explicit login-wall consent from the notification. */
   jobId?: string;
   summary?: string;
-  duration: number;
+  duration?: number;
   toolsUsed: string[];
   /** false 表示任务失败——通知标题用「任务失败」而非「任务完成」。缺省视为成功。 */
   succeeded?: boolean;
@@ -506,9 +506,11 @@ class NotificationService implements Disposable {
         ? `Used ${toolsUsed.length} ${toolsUsed.length === 1 ? 'tool' : 'tools'}`
         : `使用了 ${toolsUsed.length} 个工具`;
     }
-    body += en
-      ? `\nDuration: ${this.formatDuration(duration, 'en')}`
-      : `\n耗时: ${this.formatDuration(duration)}`;
+    if (duration !== undefined && Number.isFinite(duration) && duration > 0) {
+      body += en
+        ? `\nDuration: ${this.formatDuration(duration, 'en')}`
+        : `\n耗时: ${this.formatDuration(duration)}`;
+    }
 
     const failed = data.succeeded === false;
     const shell = en ? (failed ? 'Task failed' : 'Task completed') : (failed ? '任务失败' : '任务完成');
