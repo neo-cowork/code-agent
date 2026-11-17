@@ -25,6 +25,7 @@ import { generateBashDescription } from '../../shell/dynamicDescription';
 import {
   diagnoseBashFailure,
   appendFailureDiagnostics,
+  diagnoseCompletedBashTcc,
   sandboxDeniedWriteCreatesDirectory,
   sandboxDeniedWritePath,
 } from '../../shell/sandboxFailureDiagnostics';
@@ -961,6 +962,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
       });
+      // exit 0 can still hide a macOS privacy refusal (`screencapture …; echo`): name the Settings page.
+      output = appendFailureDiagnostics(output, diagnoseCompletedBashTcc({ command: normalizedCommand, stdout, stderr }));
 
       const dynamicDesc = await descriptionPromise;
 
