@@ -3,13 +3,16 @@
 import React from 'react';
 import type { TraceNode } from '@shared/contract/trace';
 import { useI18n } from '../../../hooks/useI18n';
+import { localizeStoredMemberName } from '@shared/localizeBuiltinRole';
 
 export const MemberInputNote: React.FC<{ node: TraceNode }> = ({ node }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const record = node.metadata?.memberInput;
   if (!record) return null;
+  // Stored memberName stays raw; localize only for display.
+  const shownName = localizeStoredMemberName(record.memberName, language);
   const label = (record.mode === 'redirect' ? t.expert.memberBar.mainRecordRedirect : t.expert.memberBar.mainRecordSupplement)
-    .replace('{name}', record.memberName);
+    .replace('{name}', shownName);
   return (
     <p data-testid="member-input-note" className="truncate text-xs text-zinc-500" title={node.content}>
       {label}：{node.content}

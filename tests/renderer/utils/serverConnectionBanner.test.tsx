@@ -15,6 +15,21 @@ async function advance(ms: number) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 }
 
+async function renderBannerAtPlatform(
+  platform: 'darwin' | 'linux',
+  status: 'recovering' | 'unavailable',
+) {
+  vi.resetModules();
+  vi.doMock('@shared/keybindings/defaults', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../src/shared/keybindings/defaults')>();
+    return { ...actual, getCurrentKeybindingPlatform: () => platform };
+  });
+  const { ServerConnectionBanner: Banner } = await import('../../../src/renderer/components/ServerConnectionBanner');
+  const { useServerConnectionStore: platformStore } = await import('../../../src/renderer/stores/serverConnectionStore');
+  act(() => platformStore.getState().setStatus(status));
+  render(<Banner />);
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal('fetch', fetchMock);
@@ -30,6 +45,8 @@ afterEach(async () => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  vi.doUnmock('@shared/keybindings/defaults');
+  vi.resetModules();
   Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
 });
 
@@ -90,5 +107,32 @@ describe('Retry feedback through the real banner and monitor', () => {
 
   it('new keys have zh/en parity', () => {
     expect(Object.keys(serverConnectionZh.serverConnection).sort()).toEqual(Object.keys(serverConnectionEn.serverConnection).sort());
+  });
+});
+
+describe('macOS traffic light safe area', () => {
+  it.each(['recovering', 'unavailable'] as const)('Tauri %s: inset, minimum height and drag region', async (status) => {
+    await renderBannerAtPlatform('darwin', status);
+    const banner = screen.getByTestId('server-connection-banner');
+    expect(banner.classList.contains('pl-[92px]')).toBe(true);
+    expect(banner.classList.contains('min-h-12')).toBe(true);
+    expect(banner.getAttribute('data-tauri-drag-region')).toBe('deep');
+  });
+
+  it.each(['recovering', 'unavailable'] as const)('web %s: no inset, Tauri minimum height or drag region', async (status) => {
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+    await renderBannerAtPlatform('darwin', status);
+    const banner = screen.getByTestId('server-connection-banner');
+    expect(banner.classList.contains('pl-[92px]')).toBe(false);
+    expect(banner.classList.contains('min-h-12')).toBe(false);
+    expect(banner.hasAttribute('data-tauri-drag-region')).toBe(false);
+  });
+
+  it('non-darwin Tauri keeps the minimum height without the macOS inset', async () => {
+    await renderBannerAtPlatform('linux', 'recovering');
+    const banner = screen.getByTestId('server-connection-banner');
+    expect(banner.classList.contains('min-h-12')).toBe(true);
+    expect(banner.classList.contains('pl-[92px]')).toBe(false);
+    expect(banner.getAttribute('data-tauri-drag-region')).toBe('deep');
   });
 });

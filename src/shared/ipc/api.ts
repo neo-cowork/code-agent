@@ -32,6 +32,7 @@ export interface ElectronAPI {
   ) => void;
 
   // Electron 33+ 获取文件的本地路径
+  discardUploadedFiles?: (paths: string[]) => Promise<void>;
   getPathForFile: (file: File) => string | Promise<string>;
 
   /** Browser transports only; native bridges retain their real file paths. */
