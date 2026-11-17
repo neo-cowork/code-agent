@@ -65,6 +65,14 @@ describe('signed-out settings entries', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
+  it('renders the skip-sign-in exit as a secondary (filled) button, not ghost', () => {
+    useAuthStore.setState({ showAuthModal: true });
+    render(<AuthModal />);
+    const skip = screen.getByRole('button', { name: languages.zh.sidebar.skipSignInSetup });
+    expect(skip.className).toContain('bg-btn-secondary');
+    expect(skip.className).not.toContain('bg-transparent');
+  });
+
   it.each(['default', 'other'] as const)('opens Model settings when a usable %s model exists', async (kind) => {
     vi.mocked(ipcService.invokeDomain).mockResolvedValue({
       models: { default: kind === 'default' ? DEFAULT_PROVIDER : 'zhipu', providers: { [DEFAULT_PROVIDER]: { enabled: true, apiKeyConfigured: true } } },
