@@ -5,9 +5,29 @@
 // 本文件保留 accessor 逻辑并按原路径 re-export，消费方 import 路径不变。
 
 import type { DeferredToolMeta } from '../../../shared/contract/toolSearch';
-import { CORE_TOOLS, DEFERRED_TOOLS_META, TOOL_ALIASES } from './deferredToolsData';
+import { CORE_TOOLS, DEFERRED_TOOLS_META as BASE_DEFERRED_TOOLS_META, TOOL_ALIASES } from './deferredToolsData';
 
-export { CORE_TOOLS, DEFERRED_TOOLS_META, TOOL_ALIASES };
+export { CORE_TOOLS, TOOL_ALIASES };
+
+// Native session progress tools must be selectable by the foreground allowlist
+// preloader as well as discoverable through the TaskManager facade.
+export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
+  ...BASE_DEFERRED_TOOLS_META,
+  {
+    name: 'task_create',
+    shortDescription: 'Create a session work-unit task for progress tracking',
+    tags: ['planning'],
+    aliases: [],
+    source: 'builtin',
+  },
+  {
+    name: 'task_update',
+    shortDescription: 'Update a session task status, details or dependencies',
+    tags: ['planning'],
+    aliases: [],
+    source: 'builtin',
+  },
+];
 
 /**
  * Resolve a tool name through alias mapping.

@@ -135,6 +135,41 @@ describe('isSessionCommandCenterTurn', () => {
 });
 
 describe('ADR-059 声明式文字前台边界', () => {
+  it.each([
+    'Rename the 6 photos in this folder by date and write a changelog.md, plan it step by step first, then do it',
+    '把这个文件夹里的六张照片按日期重命名，并写一份 changelog.md，先分步计划再执行',
+  ])('keeps task_create and task_update after foreground preload and run-policy narrowing: %s', async (prompt) => {
+    const { getCoreToolDefinitions, getLoadedDeferredToolDefinitions } = await import('../../../src/host/tools/dispatch/toolDefinitions');
+    const { resetToolSearchService } = await import('../../../src/host/services/toolSearch');
+    const { preloadDeferredToolsForTurn } = await import('../../../src/host/agent/runtime/contextAssembly/deferredToolPreload');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+    const { TurnState } = await import('../../../src/host/agent/runtime/turnState');
+    type RuntimeContext = import('../../../src/host/agent/runtime/runtimeContext').RuntimeContext;
+
+    resetToolSearchService();
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt);
+    const runtime = {
+      allowedToolNames,
+      foregroundToolFace: true,
+      enableToolDeferredLoading: true,
+      messages: [{ id: 'planning', role: 'user', content: prompt, timestamp: 1 }],
+      turn: TurnState.forTest(),
+    } as RuntimeContext;
+    const loaded = preloadDeferredToolsForTurn(runtime);
+    expect(loaded).toEqual(expect.arrayContaining(['task_create', 'task_update']));
+    const surface = filterToolsByRunPolicy(
+      [...getCoreToolDefinitions({}), ...getLoadedDeferredToolDefinitions()], runtime,
+    ).map((tool) => tool.name);
+
+    expect(allowedToolNames).toEqual(expect.arrayContaining(['task_create', 'task_update']));
+    expect(surface).toEqual(expect.arrayContaining([
+      'task_create', 'task_update', 'Read', 'Write', 'Edit', 'AskUserQuestion', 'delegate_task',
+    ]));
+    for (const name of ['task_list', 'TaskManager', 'ToolSearch', 'Bash', 'Append', 'WebSearch']) {
+      expect(surface).not.toContain(name);
+    }
+  });
+
   it('带上只读工具（用户问文件内容不该被逼着派活）', () => {
     const names = getTextForegroundToolNames();
     for (const name of ['Read', 'Grep', 'Glob', 'ListDirectory']) {
