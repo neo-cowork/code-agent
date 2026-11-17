@@ -17,6 +17,7 @@ import {
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
 import { postOsNotification, registerNotificationClick, reportNotificationHandled } from '../utils/osNotification';
+import { notificationToastText } from '../utils/notificationToastText';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { isTauriMode } from '../utils/platform';
@@ -163,7 +164,7 @@ export function useCronOsNotification(
       const notice = translateCronOsNotification(spec.latest, c, useAppStore.getState().language);
       const message = spec.count > 1
         ? c.missedAlertsMerged.replace('{count}', String(spec.count))
-        : `${notice.title}: ${notice.body}`;
+        : notificationToastText(notice.title, notice.body);
       const action = { label: c.failureToastView, onClick: () => { void routeClick(spec.latest); } };
       if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);
       else toast.warning(message, action, MISSED_ALERT_TOAST_MS);

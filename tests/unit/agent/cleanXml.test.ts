@@ -64,6 +64,11 @@ describe('cleanXmlResidues', () => {
       expect(cleanXmlResidues('hello world')).toBe('hello world');
     });
 
+    it('preserves whitespace in ordinary file content and edit anchors', () => {
+      const input = { content: '  - a\n- b\n- c\n', edits: [{ old_text: '  before\n', new_text: '  after\n' }] };
+      expect(cleanXmlResidues(input)).toEqual(input);
+    });
+
     it('should handle empty string', () => {
       expect(cleanXmlResidues('')).toBe('');
     });
