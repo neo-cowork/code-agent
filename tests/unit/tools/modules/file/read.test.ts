@@ -376,6 +376,17 @@ describe('readModule (native)', () => {
       }
     });
 
+    it('ENOENT on an expired chat-upload image yields UploadExpired, not the image hint', async () => {
+      const missing = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME, 'uuid-gone', 'photo.png');
+      const handler = await readModule.createHandler();
+      const result = await handler.execute({ file_path: missing }, makeCtx(), allowAll);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.meta?.hostReason).toMatchObject({ code: HostReasonCode.UploadExpired });
+      }
+    });
+
     it('rejects .xlsx with redirect hint', async () => {
       const file = path.join(tmpDir, 'data.xlsx');
       const handler = await readModule.createHandler();

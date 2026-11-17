@@ -137,14 +137,8 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
 
     // 二进制/结构化格式拦截 — 防止读到乱码后幻觉
     const ext = path.extname(filePath).toLowerCase();
-    if (IMAGE_EXTENSIONS.has(ext)) {
-      return {
-        ok: false,
-        error: `Cannot read ${ext} file as text. ${IMAGE_READ_HINT}\nPath: ${filePath}`,
-        code: 'BINARY_FILE_NOT_TEXT',
-      };
-    }
-    if (BINARY_REDIRECTS[ext]) {
+    const isImage = IMAGE_EXTENSIONS.has(ext);
+    if (isImage || BINARY_REDIRECTS[ext]) {
       if (isChatUploadPath(filePath)) {
         try {
           await fs.access(filePath);
@@ -153,6 +147,13 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
             return buildExpiredChatUploadResult(filePath);
           }
         }
+      }
+      if (isImage) {
+        return {
+          ok: false,
+          error: `Cannot read ${ext} file as text. ${IMAGE_READ_HINT}\nPath: ${filePath}`,
+          code: 'BINARY_FILE_NOT_TEXT',
+        };
       }
       const hint = BINARY_REDIRECTS[ext];
       return {
