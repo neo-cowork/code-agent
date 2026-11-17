@@ -39,9 +39,7 @@ import { BUILTIN_SKILLS } from '../../../src/host/services/skills/builtinSkillsD
  * 每条的门面工具名会被断言「自身可发现」——门面若被删/改名/挪出索引，本门立刻红。
  */
 const REACHABLE_VIA_FACADE: Record<string, string> = {
-  // TaskManager 门面（taskManager.ts 直接 import 这四个的 execute*）
-  task_create: 'TaskManager',
-  task_update: 'TaskManager',
+  // TaskManager 查询门面；task_create / task_update 已单独进入发现索引。
   task_get: 'TaskManager',
   task_list: 'TaskManager',
   // Plan 门面（planFacade.ts）

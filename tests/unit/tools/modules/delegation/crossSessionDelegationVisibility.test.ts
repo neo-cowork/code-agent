@@ -22,8 +22,8 @@ vi.mock('../../../../../src/host/mcp', () => ({
 
 const DELEGATION_TOOL_NAMES = ['delegate_session', 'list_session_candidates'] as const;
 
-// 本单之前（origin/main e6067f5f9）的文字前台 12 工具：flag 关时前台面必须原样，
-// 模型可见字节零变化。
+// 跨会话委派之前（origin/main e6067f5f9）的基础面；后续独立的前台扩展
+// 在精确名单断言中显式追加，不允许委派开关引入其他名字。
 const PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES = [
   'spawn_agent',
   'ListDirectory',
@@ -122,13 +122,15 @@ describe('crossSessionDelegation visibility', () => {
     expect(kept).toContain('list_session_candidates');
   });
 
-  it('flag off: foreground allowlist unchanged — neither delegation name present and the list equals the pre-change 12', () => {
+  it('flag off: only native task progress extends the prior foreground face, with neither delegation name present', () => {
     expect(isCrossSessionDelegationEnabled()).toBe(false);
     resetProtocolRegistry();
     const names = getTextForegroundToolNamesForPrompt(FOREGROUND_ALLOWLIST_PROMPT);
     expect(names).not.toContain('delegate_session');
     expect(names).not.toContain('list_session_candidates');
-    expect([...names].sort()).toEqual([...PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES].sort());
+    expect([...names].sort()).toEqual([
+      ...PRE_CHANGE_TEXT_FOREGROUND_TOOL_NAMES, 'task_create', 'task_update',
+    ].sort());
   });
 
   it('force-registered while off: both handlers reject FEATURE_DISABLED and write zero rows', async () => {
