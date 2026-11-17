@@ -34,6 +34,10 @@ const cases: { name: string; steps: Step[]; outcome: string; failed: number }[] 
   { name: 'cd directory shared by two commands does not recover a different file', steps: [bash('cd "/ws/合同" && pdftotext 合同A.pdf -', false), bash('cd "/ws/合同" && pdftotext 合同B.pdf -', true)], outcome: 'completed-with-warnings', failed: 1 },
   { name: '/dev/null redirection sink does not link commands', steps: [bash('pdftotext /ws/合同A.pdf - 2>/dev/null', false), bash('ls /ws/x 2>/dev/null', true)], outcome: 'completed-with-warnings', failed: 1 },
   { name: 'cd command failure recovered by Read of the same file', steps: [bash('cd "/ws/合同" && pdftotext 合同A.pdf -', false), read('/ws/合同/合同A.pdf', true)], outcome: 'completed', failed: 0 },
+  { name: 'failed npm test is not recovered by an unrelated later Bash command', steps: [bash('npm test', false), bash('git status', true)], outcome: 'completed-with-warnings', failed: 1 },
+  { name: 'failed npm test is recovered by the identical command rerun', steps: [bash('npm test', false), bash('npm test', true)], outcome: 'completed', failed: 0 },
+  { name: 'same file name in different directories does not recover', steps: [{ name: 'Edit', arguments: { file_path: 'src/a/index.ts' }, success: false }, { name: 'Edit', arguments: { file_path: 'src/b/index.ts' }, success: true }], outcome: 'completed-with-warnings', failed: 1 },
+  { name: 'relative path recovered by absolute path of the same file', steps: [read('src/a/index.ts', false), read('/ws/src/a/index.ts', true)], outcome: 'completed', failed: 0 },
   { name: 'differently spelled typo stays unresolved', steps: [read('aa.pdf', false), read('a.pdf', true)], outcome: 'completed-with-warnings', failed: 1 },
 ];
 

@@ -31,7 +31,6 @@ function targetTokens(args: unknown): Set<string> {
     }
     if (!parts.length) return;
     targets.add(parts.join('/'));
-    targets.add(parts.at(-1)!);
   };
   const visit = (value: unknown, key = '') => {
     if (typeof value === 'string') {
@@ -61,22 +60,29 @@ function targetTokens(args: unknown): Set<string> {
   return targets;
 }
 
+/** Same file: equal paths, or one is a segment-aligned suffix of the other (a.pdf vs /ws/a.pdf; not src/a/x.ts vs src/b/x.ts). */
+function sameTarget(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
 /** Finished steps in call order; only failures without a later matching success remain. */
 export function classifyToolSteps(steps: readonly FinishedToolStep[]): ToolStepOutcome | undefined {
   if (!steps.length) return undefined;
   const successfulTargets = new Set<string>();
-  const successfulUntargetedTools = new Set<string>();
+  // Untargeted steps (npm test, List): only an identical later call (same tool + same arguments) is a retry.
+  const successfulUntargetedCalls = new Set<string>();
+  const callKey = (step: FinishedToolStep) => `${step.name}\u0000${JSON.stringify(step.arguments ?? null)}`;
   let failed = 0;
   for (let index = steps.length - 1; index >= 0; index--) {
     const step = steps[index];
     const targets = targetTokens(step.arguments);
     if (step.success !== false) {
       for (const target of targets) successfulTargets.add(target);
-      if (!targets.size && step.name) successfulUntargetedTools.add(step.name);
+      if (!targets.size && step.name) successfulUntargetedCalls.add(callKey(step));
     } else {
       const recovered = targets.size
-        ? [...targets].some((target) => successfulTargets.has(target))
-        : Boolean(step.name && successfulUntargetedTools.has(step.name));
+        ? [...targets].some((target) => [...successfulTargets].some((done) => sameTarget(target, done)))
+        : Boolean(step.name && successfulUntargetedCalls.has(callKey(step)));
       if (!recovered) failed += 1;
     }
   }
