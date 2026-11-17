@@ -136,7 +136,7 @@ describe('审批响应投递链路（web 路径）', () => {
 
     const result = await invoke('no-such-request', 'allow', sessionId);
     expect(result.success).toBe(false);
-    expect(['PENDING_PERMISSION_NOT_FOUND', 'NO_ACTIVE_ORCHESTRATOR']).toContain(result.error?.code);
+    expect(result.error?.code).toBe('PENDING_PERMISSION_NOT_FOUND');
     expect(warnText()).toContain('no-such-request');
   });
 
