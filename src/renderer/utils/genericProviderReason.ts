@@ -26,6 +26,9 @@ const DISALLOWED_PATTERNS: readonly RegExp[] = [
   /\b[A-Za-z0-9_-]{24,}\b/,
 ];
 
+/** 没有任何可纠正信息的空泛短语（statusText 回显）：不当作「服务商返回」展示。 */
+const EMPTY_PHRASE_RE = /^(?:bad request|invalid request)\.?$/i;
+
 export function extractReadableProviderReason(
   rawMessage: string | undefined | null,
   language: 'zh' | 'en',
@@ -40,6 +43,8 @@ export function extractReadableProviderReason(
   if (redacted !== trimmed || redacted.includes('[REDACTED]') || redacted.includes('redacted]')) {
     return null;
   }
+
+  if (EMPTY_PHRASE_RE.test(trimmed)) return null;
 
   for (const pattern of DISALLOWED_PATTERNS) {
     if (pattern.test(trimmed)) return null;
