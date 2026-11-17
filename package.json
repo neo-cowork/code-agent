@@ -62,6 +62,7 @@
     "test:swarm:full": "npm run test:swarm:smoke && npm run test:swarm:e2e",
     "visual:triptych": "node scripts/visual-review/generate-triptych.mjs",
     "visual:review": "node scripts/visual-review/review-images-with-codex.mjs",
+    "test:e2e:core": "npx tsx scripts/e2e-core/run.ts",
     "test:e2e:new-session": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/new-session.e2e.spec.ts",
     "test:e2e:design-canvas": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/design-canvas-conversational.e2e.spec.ts",
     "test:e2e:workbench-overview": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/workbench-overview-preview-first.spec.ts",
