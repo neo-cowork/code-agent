@@ -1,4 +1,4 @@
-import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels';
+import { toolCreateConfirmZh } from './toolCreateConfirm'; import { authModalZh } from './authModal'; import { modelSetupZh } from './modelSetup'; import { agentRoleLabelsZh } from './agentRoleLabels'; import { authZh } from './auth';
 // ============================================================================
 // Chinese (Simplified) Translations - 简体中文
 // ============================================================================
@@ -62,7 +62,7 @@ import { permissionRuleNlZh } from './permissionRuleNl';
 import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { toolResultSummaryZh } from './toolResultSummary'; import { codeBlockZh } from './codeBlock';
 
 export const zh = {
-  ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
+  ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh, ...authZh,
   ...imageNarrationZh, ...mermaidZh,
   ...voiceAuditZh, ...memorySourceZh, ...memoryConfirmZh,
   ...capabilityHubZh,
