@@ -3332,15 +3332,24 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.unarchiveSession(sessionId);
   }
-  getSessionSearchMeta(sessionIds: string[], userId: string | null): SessionSearchMetaRow[] {
+  getSessionSearchMeta(
+    sessionIds: string[],
+    userId: string | null,
+    projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope,
+  ): SessionSearchMetaRow[] {
     this.ensureDb();
     if (!this.db) throw new Error('Database not opened');
-    return getSessionSearchMetaRows(this.db, sessionIds, userId);
+    return getSessionSearchMetaRows(this.db, sessionIds, userId, projectScope);
   }
-  searchSessionTitles(query: string, userId: string | null, limit: number): SessionSearchMetaRow[] {
+  searchSessionTitles(
+    query: string,
+    userId: string | null,
+    limit: number,
+    projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope,
+  ): SessionSearchMetaRow[] {
     this.ensureDb();
     if (!this.db) throw new Error('Database not opened');
-    return searchSessionTitleRows(this.db, query, userId, limit);
+    return searchSessionTitleRows(this.db, query, userId, limit, projectScope);
   }
   searchSessionMessagesFts(
     query: string,
