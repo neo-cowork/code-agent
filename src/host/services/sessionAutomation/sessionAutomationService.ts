@@ -4,6 +4,7 @@
 
 import { UNATTENDED_APPROVAL_TIMEOUT } from '../../agent/unattendedApprovalTerminal';
 import { randomUUID } from 'node:crypto';
+import { approvalTaskTitle } from './parkedApprovalTaskTitle';
 import type BetterSqlite3 from 'better-sqlite3';
 import type {
   Message,
@@ -585,6 +586,7 @@ export class SessionAutomationService {
         kind: row.kind === 'directory_access' ? 'directory_access' : 'tool_approval',
         sessionId: payload.sessionId ?? row.coordinatorId,
         sessionTitle: resolveApprovalSessionTitle(payload.sessionId ?? row.coordinatorId, row.id),
+        taskTitle: approvalTaskTitle(payload.sessionId ?? row.coordinatorId, payload),
         ...((payload.toolCallId ?? payload.argsRef?.toolCallId) ? { toolCallId: payload.toolCallId ?? payload.argsRef?.toolCallId } : {}),
         tool: payload.tool ?? '',
         displayTool: payload.displayTool,
@@ -928,6 +930,7 @@ function toVoidedInboxItem(
     kind: 'tool_approval',
     sessionId,
     sessionTitle: resolveApprovalSessionTitle(sessionId, row.id),
+    taskTitle: approvalTaskTitle(sessionId, payload),
     argsPreview: toUserFacingArgsPreview(payload.argsPreview),
     ...pickApprovalOrigin(payload),
     tool: payload.tool ?? '',

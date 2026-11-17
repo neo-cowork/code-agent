@@ -36,6 +36,9 @@ function parentDirectoryOf(value: string): string {
 /** 授权目标文件夹在任务 metadata 上的键；只有专用授权 IPC 能写（updateJob 会剥掉）。 */
 export const CRON_WRITE_GRANT_METADATA_KEY = 'writeGrantRoot';
 
+/** 任务自带的工作文件夹（绝对路径）在 metadata 上的键；只决定运行会话的 cwd，不是授权字段。 */
+export const CRON_WORKING_DIRECTORY_METADATA_KEY = 'workingDirectory';
+
 /** 授权失败（解析不出工作文件夹）的稳定错误码；面板据此切「先去对话里选工作文件夹」态。 */
 export const CRON_WRITE_SCOPE_NO_FOLDER = 'CRON_WRITE_SCOPE_NO_FOLDER';
 
@@ -48,11 +51,20 @@ export function cronWriteScopeFolder(
   definition: Pick<CronJobDefinition, 'metadata'>,
   sourceSessionWorkingDirectory: string | undefined,
 ): string | undefined {
+  const fallback = cronWorkingDirectoryFromMetadata(definition.metadata) ?? sourceSessionWorkingDirectory;
   const refresh = getArtifactRefreshMetadata(definition.metadata);
-  if (!refresh || !isAbsolutePath(refresh.path)) return sourceSessionWorkingDirectory;
+  if (!refresh || !isAbsolutePath(refresh.path)) return fallback;
   const parent = parentDirectoryOf(refresh.path);
-  if (!parent || parent === refresh.path) return sourceSessionWorkingDirectory;
+  if (!parent || parent === refresh.path) return fallback;
   return parent;
+}
+
+/** 读出任务自带的工作文件夹（绝对路径字符串才算数）。 */
+export function cronWorkingDirectoryFromMetadata(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  const candidate = metadata?.[CRON_WORKING_DIRECTORY_METADATA_KEY];
+  return typeof candidate === 'string' && isAbsolutePath(candidate) ? candidate : undefined;
 }
 
 /**

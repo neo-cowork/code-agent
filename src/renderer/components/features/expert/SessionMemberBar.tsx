@@ -19,6 +19,7 @@ import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
@@ -60,8 +61,12 @@ export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAg
 export interface MemberPill {
   key: string;
   roleId: string;
+  /** Raw (stored) name/profession: send/store/compare with these only. */
   name: string;
   profession?: string;
+  /** Render-time localized copies of name/profession (English UI: pinyin + English profession). Display only. */
+  displayName: string;
+  displayProfession?: string;
   /** 角色 lucide 图标名（与 profession 同取自 agentRegistry entries）：头像 asset → icon → 首字 三级回落的中间档 */
   icon?: string;
   status: 'standby' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -121,14 +126,20 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     return (roleId: string) => map.get(roleId);
   }, [agentEntries]);
 
+  const localizeRole = useLocalizeRole();
   const pills = useMemo<MemberPill[]>(() => {
     const fromAgents = (list: SwarmAgentState[], records?: SwarmRunAgentRecord[]) => list.map((agent, index) => {
       const roleId = agent.role || agent.id;
+      const name = agent.name || roleId;
+      const profession = professionOf(roleId);
+      const shown = localizeRole(roleId, { name, profession });
       return {
         key: agent.id,
         roleId,
-        name: agent.name || roleId,
-        profession: professionOf(roleId),
+        name,
+        profession,
+        displayName: shown.name,
+        displayProfession: shown.profession,
         icon: iconOf(roleId),
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
@@ -151,17 +162,23 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     ];
     return standbyEntries
       .filter((entry) => !standbyExcludedMemberKeys.includes(entry.standbyKey))
-      .map((entry, index) => ({
-        key: `${entry.roleId}-${index}`,
-        roleId: entry.roleId,
-        name: entry.roleId,
-        profession: professionOf(entry.roleId),
-        icon: iconOf(entry.roleId),
-        status: 'standby' as const,
-        isLead: entry.roleId === teamLeadRoleId,
-        standbyKey: entry.standbyKey,
-      }));
-  }, [persistedAgents, liveAgentById, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
+      .map((entry, index) => {
+        const profession = professionOf(entry.roleId);
+        const shown = localizeRole(entry.roleId, { name: entry.roleId, profession });
+        return {
+          key: `${entry.roleId}-${index}`,
+          roleId: entry.roleId,
+          name: entry.roleId,
+          profession,
+          displayName: shown.name,
+          displayProfession: shown.profession,
+          icon: iconOf(entry.roleId),
+          status: 'standby' as const,
+          isLead: entry.roleId === teamLeadRoleId,
+          standbyKey: entry.standbyKey,
+        };
+      });
+  }, [persistedAgents, liveAgentById, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId, localizeRole]);
 
   return pills;
 }
@@ -172,7 +189,7 @@ const ChipAvatar: React.FC<{ row: AgentRow }> = ({ row }) => {
     return (
       <RoleInitialAvatar
         roleId={row.roleId ?? row.name}
-        name={row.name}
+        name={row.displayName ?? row.name}
         icon={row.icon}
         className="h-4 w-4 border border-zinc-900 text-[8px]"
       />
@@ -225,19 +242,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const summary = standby
     ? interpolatePlural(text.collapsedStandby, rows.length)
     : outcomeSummary
-      ? `${outcomeSummary} · ${outcomeRow?.name}`
+      ? `${outcomeSummary} · ${outcomeRow ? outcomeRow.displayName ?? outcomeRow.name : ''}`
       : firstWorking
-        ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.name}`
+        ? `${interpolatePlural(text.collapsedWorking, working.length)} · ${firstWorking.displayName ?? firstWorking.name}`
         : waiting.length > 0
           ? interpolatePlural(text.collapsedWaiting, waiting.length)
           : failed.length > 0
-            ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].name}`
+            ? `${interpolatePlural(text.collapsedFailed, failed.length)} · ${failed[0].displayName ?? failed[0].name}`
             : cancelled.length > 0
-              ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].name}`
+              ? `${interpolatePlural(text.collapsedCancelled, cancelled.length)} · ${cancelled[0].displayName ?? cancelled[0].name}`
               : interpolatePlural(text.collapsedDone, rows.length);
   const failureTitle = [...failed, ...cancelled].map((row) => row.failureReason
-    ? t.chat.delegationReceipt.failureDetail.replace('{status}', row.name).replace('{reason}', row.failureReason)
-    : row.name).join('\n') || undefined;
+    ? t.chat.delegationReceipt.failureDetail.replace('{status}', row.displayName ?? row.name).replace('{reason}', row.failureReason)
+    : row.displayName ?? row.name).join('\n') || undefined;
   const mergeLabel = mergeState === 'merged'
     ? text.mergeState.chipMerged
     : mergeState === 'reported'

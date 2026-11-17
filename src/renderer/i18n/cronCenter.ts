@@ -525,7 +525,7 @@ export const cronCenterZh = {
       notAllowed: '不允许。需要保存文件时会停下来等你确认。',
       allow: '允许在 {folder} 里保存文件',
       revoke: '撤销',
-      noFolderHint: '先在对话里给这个任务选一个工作文件夹，才能授权它保存文件。',
+      noFolderHint: '先编辑任务，给它选一个工作文件夹，才能授权它保存文件。',
     },
     // 执行状态（键 = CronJobStatus + none）
     status: {
@@ -1030,7 +1030,7 @@ export const cronCenterEn: typeof cronCenterZh = {
       notAllowed: 'Not allowed. It will stop and wait for you when it needs to save a file.',
       allow: 'Allow saving files in {folder}',
       revoke: 'Revoke',
-      noFolderHint: 'Pick a working folder for this task in chat first.',
+      noFolderHint: 'Edit the task and pick a working folder first.',
     },
     status: {
       pending: 'Pending',

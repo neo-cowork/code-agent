@@ -12,7 +12,8 @@ export function memoryEntryMetadata(memory: MemoryRecord): Record<string, unknow
 }
 
 export function sourceKindForLightFile(file: LightMemoryFile): MemoryEntrySourceKind {
-  return file.source === 'import' ? 'import' : 'light_file';
+  if (file.source === 'import' || file.source === 'manual') return file.source;
+  return 'light_file';
 }
 
 export function metadataForImportedEntry(
