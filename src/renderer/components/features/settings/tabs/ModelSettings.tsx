@@ -872,7 +872,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         onMemoryRouteChange={persistMemoryRouting}
       />
 
-      <ServiceTierCostNote />
+      <ServiceTierCostNote provider={config.provider} />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
       <SettingsSection

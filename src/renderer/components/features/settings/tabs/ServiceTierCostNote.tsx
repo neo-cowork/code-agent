@@ -2,11 +2,16 @@
 // 纯展示：无开关、无状态。倍率数字必须来自 SERVICE_TIER_COST_MULTIPLIER 常量，
 // 文案（zhSettingsModels / enSettingsModels）只留 {multiplier} 占位符。
 import React from 'react';
-import { SERVICE_TIER_COST_MULTIPLIER, UNATTENDED_SERVICE_TIER } from '@shared/constants';
+import {
+  isServiceTierEligibleProvider,
+  SERVICE_TIER_COST_MULTIPLIER,
+  UNATTENDED_SERVICE_TIER,
+} from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 
-export const ServiceTierCostNote: React.FC = () => {
+export const ServiceTierCostNote: React.FC<{ provider: string }> = ({ provider }) => {
   const { t } = useI18n();
+  if (!isServiceTierEligibleProvider(provider)) return null;
   const multiplier = SERVICE_TIER_COST_MULTIPLIER[UNATTENDED_SERVICE_TIER] ?? 1;
   return (
     <p className="text-xs text-zinc-500">
