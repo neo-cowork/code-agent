@@ -40,6 +40,7 @@ vi.mock('../../../src/renderer/utils/osNotification', () => ({
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const flush = () => new Promise((r) => setTimeout(r, 20));
 const done = { id: 'a', title: 'done', body: 'ok', sessionId: 'sess-a' };
@@ -85,6 +86,25 @@ describe('notification-clicked 路由', () => {
     expect(open).not.toHaveBeenCalled();
     expect(useAppStore.getState().showCronCenter).toBe(true);
     expect(useAppStore.getState().cronCenterRunsRequested).toBe(true);
+  });
+
+  it.each([
+    ['用户自己发起的会话 → 回该会话（卡在聊天里原位）', { id: 'sess-b' }, 'session'],
+    ['定时运行会话 → 运行记录页', { id: 'sess-b', origin: { kind: 'cron' } }, 'runs'],
+  ])('needs-input 有 pending 停车行：%s', async (_n, session, dest) => {
+    h.parked = [{ sessionId: 'sess-b', status: 'pending' }];
+    const prev = useSessionStore.getState().sessions;
+    useSessionStore.setState({ sessions: [session] as never });
+    try {
+      await mount();
+      h.show!(ask);
+      await click('b');
+      if (dest === 'session') expect(open).toHaveBeenCalledWith('sess-b');
+      else expect(open).not.toHaveBeenCalled();
+      expect(useAppStore.getState().cronCenterRunsRequested).toBe(dest === 'runs');
+    } finally {
+      useSessionStore.setState({ sessions: prev });
+    }
   });
 
   it('needs-input 无待审批项（或仅 orphaned）→ 会话', async () => {
