@@ -90,9 +90,14 @@ function findLiveCounterpart(
   return undefined;
 }
 
+/**
+ * 两条消息携带的 tool call id 集合完全相同（且非空）：就是同一条 assistant 的两份副本。
+ * 只部分重叠的（直播聚合草稿 vs 多条落库）不在此列，由合并末段的逐 id 去重收口。
+ */
 function sharesToolCallId(a: Message, b: Message): boolean {
-  const ids = new Set((a.toolCalls ?? []).map((call) => call.id).filter(Boolean));
-  return (b.toolCalls ?? []).some((call) => call.id && ids.has(call.id));
+  const left = new Set((a.toolCalls ?? []).map((call) => call.id).filter(Boolean));
+  const right = new Set((b.toolCalls ?? []).map((call) => call.id).filter(Boolean));
+  return left.size > 0 && left.size === right.size && [...left].every((id) => right.has(id));
 }
 
 /**
