@@ -4,6 +4,8 @@
 // 新增文案集中在这里——独立文件避免 zh.ts/en.ts 撞 max-lines(1000) 门。
 // ============================================================================
 
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
+
 export const decisionCardZh = {
   decisionCard: {
     confirm: '允许',
@@ -31,9 +33,9 @@ export const decisionCardZh = {
       questionMcp: '允许调用 {target}？',
       questionMcpGeneric: '允许调用这个外部工具？',
       questionFallback: '允许这次操作？',
-      titleFileRead: '读取文件',
-      titleFileWrite: '创建文件',
-      titleFileEdit: '编辑文件',
+      titleFileRead: toolUserLabel('read', 'zh'),
+      titleFileWrite: toolUserLabel('write', 'zh'),
+      titleFileEdit: toolUserLabel('edit', 'zh'),
       titleFileDelete: '删除文件',
       titleFolderAccess: '访问其他文件夹',
       questionFolderAccess: '允许访问这个文件夹？',
@@ -115,7 +117,7 @@ export const decisionCardZh = {
       genericApprovalTitle: '需要你确认',
       genericApprovalQuestion: '允许进行以下操作？',
       genericApprovalDescription: '请确认下面的任务和操作范围。',
-      titleCommand: '执行命令',
+      titleCommand: toolUserLabel('bash', 'zh'),
       titleDangerousCommand: '危险命令',
       titleNetwork: '网络请求',
       titleMcp: 'MCP 工具',
@@ -360,9 +362,9 @@ export const decisionCardEn: typeof decisionCardZh = {
       questionMcp: 'Allow calling {target}?',
       questionMcpGeneric: 'Allow calling this MCP tool?',
       questionFallback: 'Allow this operation?',
-      titleFileRead: 'Read file',
-      titleFileWrite: 'Create file',
-      titleFileEdit: 'Edit file',
+      titleFileRead: toolUserLabel('read', 'en'),
+      titleFileWrite: toolUserLabel('write', 'en'),
+      titleFileEdit: toolUserLabel('edit', 'en'),
       titleFileDelete: 'Delete file',
       titleFolderAccess: 'Access another folder',
       questionFolderAccess: 'Allow access to this folder?',
@@ -444,7 +446,7 @@ export const decisionCardEn: typeof decisionCardZh = {
       genericApprovalTitle: 'Needs your approval',
       genericApprovalQuestion: 'Allow the following operation?',
       genericApprovalDescription: 'Review the task and scope below before approving.',
-      titleCommand: 'Run a command',
+      titleCommand: toolUserLabel('bash', 'en'),
       titleDangerousCommand: 'Dangerous command',
       titleNetwork: 'Network request',
       titleMcp: 'MCP tool',

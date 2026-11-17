@@ -96,7 +96,7 @@ import { materializeRunWorkDirectoryOnce, shouldMaterializeWorkDirectoryForTool 
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
-import { extractToolStepAction, extractToolStepTarget } from '../toolStepTarget';
+import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from '../toolStepTarget';
 import { computerUseObservedTarget } from '../../plugins/builtin/computerUse/computerUseObservedTarget';
 import { decodeUtf8 } from '../../utils/decodeText';
 
@@ -279,6 +279,7 @@ export class ToolExecutionEngine {
             agentId: this.ctx.agentId,
           }) ?? extractToolStepTarget(entry.toolCall.arguments, entry.toolCall.name),
           action: extractToolStepAction(entry.toolCall.arguments),
+          description: bashStepDescription(entry.toolCall.name, entry.toolCall.arguments),
           ...(parallel
             ? { parallel: true }
             : { progress: Math.round((entry.index / toolCalls.length) * 100) }),

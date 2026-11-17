@@ -5,6 +5,7 @@
 // 写操作前展示 before/after 预览 + 确认对话框，策略可配置。
 // 复用现有 requestPermission 回调，扩展 PermissionRequest 类型。
 
+import { catalogConnectorToolPhrase } from '../../shared/utils/catalogConnectorToolLabel';
 import * as Diff from 'diff';
 import type {
   ConfirmationPreview,
@@ -368,11 +369,11 @@ export class ConfirmationGate {
           const safeVal = isSensitiveLogKey(key)
             ? '***REDACTED***'
             : redactCommandSecrets(trimmed).slice(0, 120);
-          lines.push(`${key}: ${safeVal}`);
+          lines.push(`${key}: ${safeVal.replace(/\r?\n/g, '\n  ')}`);
         }
         return {
           type: 'generic',
-          summary: `执行工具 ${toolName}`,
+          summary: catalogConnectorToolPhrase(toolName) ?? `执行工具 ${toolName}`,
           ...(lines.length > 0 ? { diff: lines.join('\n') } : {}),
         };
       }
