@@ -1,4 +1,5 @@
 import type { Message } from '@shared/contract';
+import { sanitizeAttachmentsForPersistence } from '@shared/utils/messageAttachments';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('FailedSendOutbox');
@@ -67,11 +68,26 @@ function read(sessionId: string): FailedTurn[] | undefined {
   }
 }
 
+// 整图 data URL 动辄数 MB，直接 JSON 进 localStorage 会超配额，刷新后整条失败轮次连图带字一起丢。
+// 落盘只存与 DB 同口径的瘦身附件（大图去掉内联数据、保留文件名卡片）；内存里仍是完整副本。
+function toStorable(entry: FailedTurn): FailedTurn {
+  const retryAttachments = entry.error.metadata?.retryAttachments;
+  return {
+    ...entry,
+    user: entry.user.attachments
+      ? { ...entry.user, attachments: sanitizeAttachmentsForPersistence(entry.user.attachments) }
+      : entry.user,
+    error: retryAttachments
+      ? { ...entry.error, metadata: { ...entry.error.metadata, retryAttachments: sanitizeAttachmentsForPersistence(retryAttachments) } }
+      : entry.error,
+  };
+}
+
 function write(sessionId: string, entries: FailedTurn[]): void {
   if (entries.length) memory.set(sessionId, entries);
   else memory.delete(sessionId);
   try {
-    if (entries.length) localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries));
+    if (entries.length) localStorage.setItem(keyPrefix + sessionId, JSON.stringify(entries.map(toStorable)));
     else localStorage.removeItem(keyPrefix + sessionId);
   } catch (error) {
     memory.set(sessionId, entries);
