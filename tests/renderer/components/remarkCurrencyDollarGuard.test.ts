@@ -8,8 +8,8 @@ import { updateStreamingMarkdownBlockState } from '../../../src/renderer/compone
 import { dedupeCodeCopyLinks } from '../../../src/renderer/components/features/chat/MessageBubble/dedupeCodeCopyLinks';
 
 function parse(source: string, guarded = true): Root {
-  const processor = unified().use(remarkParse).use(remarkMath);
-  if (guarded) processor.use(remarkCurrencyDollarGuard);
+  const processor = unified().use(remarkParse).use(remarkMath)
+    .use(remarkCurrencyDollarGuard, guarded);
   return processor.runSync(processor.parse(source), { value: source });
 }
 
