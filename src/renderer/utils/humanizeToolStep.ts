@@ -386,6 +386,40 @@ export function mentionsRawToolName(text: string, toolName: string): boolean {
 }
 
 /**
+ * Bash 行的"人话描述"：只读 arguments.description（shortDescription 在缺省时会被宿主
+ * 兜成 `Run: <命令首行>`，绝不能用）。过滤规则见 docs/tasks/2026-11-16-bash-row-description-decision.md：
+ * 单行、≤40 字、语种与界面一致、不含路径/变量/管道/重定向/URL/反引号/--flag、不含命令首词、
+ * 不是命令本身（或其片段）、不含原始工具名。任何一条不满足 → undefined，调用方退回通用文案。
+ */
+const BASH_DESCRIPTION_MAX_LENGTH = 40;
+const BASH_DESCRIPTION_COMMAND_LIKE = /[\\/~$`|&;<>·\r\n]|(^|\s)-{1,2}[A-Za-z]/;
+
+export function usableBashDescription(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  t: Translations,
+): string | undefined {
+  if (name !== 'Bash' && name !== 'bash') return undefined;
+  const raw = args?.description;
+  if (typeof raw !== 'string') return undefined;
+  const text = raw.trim();
+  if (!text || text.length > BASH_DESCRIPTION_MAX_LENGTH) return undefined;
+  if (BASH_DESCRIPTION_COMMAND_LIKE.test(text)) return undefined;
+  if (!matchesUiScript(text, t)) return undefined;
+  if ([...BASH_TOOLS].some((tool) => mentionsRawToolName(text, tool))) return undefined;
+  const command = typeof args?.command === 'string' ? args.command.trim() : '';
+  if (command) {
+    const lowered = text.toLowerCase();
+    const loweredCommand = command.toLowerCase();
+    if (lowered.length >= 3 && loweredCommand.includes(lowered)) return undefined;
+    if (loweredCommand.length >= 3 && lowered.includes(loweredCommand)) return undefined;
+    const firstWord = command.split(/\s+/)[0];
+    if (firstWord && mentionsRawToolName(text, firstWord.replace(/^.*[\\/]/, ''))) return undefined;
+  }
+  return text;
+}
+
+/**
  * 把单个工具调用合成一句步骤人话。模型自写的 shortDescription（产品视角语义标签）
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
  * 类目落到对应模板。
@@ -471,7 +505,10 @@ function buildToolStep(
   }
 
   if (toolKind === 'bash') {
-    return status === 'completed' ? t.toolStepHumanize.bashFallback : t.toolStepHumanize.statusForms[status].bashFallback;
+    const fallback = status === 'completed' ? t.toolStepHumanize.bashFallback : t.toolStepHumanize.statusForms[status].bashFallback;
+    const description = usableBashDescription(name, args, t);
+    if (!description) return fallback;
+    return status === 'completed' || status === 'running' ? description : `${fallback} · ${description}`;
   }
 
   const schemaDescription = '';
