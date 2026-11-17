@@ -93,3 +93,15 @@ export async function ensureServerAlive(bin: string, server: ServerInfo): Promis
   }
   return `服务在上一轮里退出过，已用 neo-realrun restart 拉起（日志见 ${path.join(server.dir, 'server-1.log')}）`;
 }
+
+/** 一次尝试结束后停掉它留下的会话（等批准 / 后台还在跑），免得下一次尝试的页面还看见「运行中」。 */
+export async function cancelSessions(server: ServerInfo, sessionIds: string[]): Promise<void> {
+  for (const sessionId of sessionIds) {
+    await fetch(`http://127.0.0.1:${server.port}/api/agent/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, abandonParked: true }),
+      signal: AbortSignal.timeout(15_000),
+    }).catch(() => undefined);
+  }
+}

@@ -7,7 +7,7 @@ import { chromium, type Browser } from 'playwright';
 import { parseArgs } from './args';
 import { CORE_FLOWS, CORE_FLOW_IDS } from './flows';
 import { buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure, type AttemptResult, type FlowResult } from './result';
-import { assertRealrunBin, captureEvents, dumpDb, ensureServerAlive, startServer, stopServer } from './server';
+import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, ensureServerAlive, startServer, stopServer } from './server';
 import type { AttemptEnv, FlowDef, ServerInfo } from './types';
 import { dismissFirstRunLayers } from './ui';
 
@@ -60,6 +60,7 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
   await page.screenshot({ path: screenshot }).catch(() => { screenshot = null; });
   stopCapture();
   if (!lastDb) { try { await env.readDb(); } catch { /* 快照失败不掩盖原失败 */ } }
+  await cancelSessions(server, env.sessionIds);
   await context.close();
   const reasonText = [reason && `${reason}`, ...notes].filter(Boolean).join('；');
   return buildAttempt({
