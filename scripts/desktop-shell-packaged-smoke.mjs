@@ -878,7 +878,7 @@ async function main() {
         for (const warning of companion.warnings) result.warnings.push(warning);
         if (!companion.ok) result.ok = false;
       }
-      if (launched && result.failures.length > 0) {
+      if (launched) {
         result.launch = launched.launch;
         assertNoSensitiveDesktopShellDiagnostics(result);
       }
