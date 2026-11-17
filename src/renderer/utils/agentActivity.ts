@@ -57,6 +57,7 @@ export function describeLastToolStep(
   if (!step) return undefined;
   const targetArgs = step.target
     ? {
+      ...(step.description ? { description: step.description } : {}),
       file_path: step.target,
       path: step.target,
       notebook_path: step.target,
