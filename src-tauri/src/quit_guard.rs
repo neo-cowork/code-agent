@@ -245,6 +245,11 @@ pub struct QuitCoordinator {
     /// （owned 子进程 = 关 stdin 写端；附着守护 = 不发信号），预算
     /// `resident_host::STOP_INTENT_WAIT`。非消费语义：置位后进程即将退出。
     stop_intent_landed: AtomicBool,
+    /// macOS `applicationShouldTerminate` 已返回 TerminateLater、尚未回复（退出看门狗
+    /// 任务：任何退出路径提交前必须先回复，否则 AppKit 永远在等）。
+    terminate_reply_pending: AtomicBool,
+    /// 退出看门狗（见 exit_watchdog.rs）。
+    pub(crate) watchdog: crate::exit_watchdog::ExitWatchdog,
 }
 
 impl QuitCoordinator {
@@ -294,6 +299,19 @@ impl QuitCoordinator {
     /// 决定走哪条停止通道。POST 失败/无 token 不置位 → 旧 SIGTERM+3s 兜底。
     pub fn set_stop_intent_landed(&self) {
         self.stop_intent_landed.store(true, Ordering::Release);
+    }
+
+    pub fn mark_terminate_reply_pending(&self) {
+        self.terminate_reply_pending.store(true, Ordering::SeqCst);
+    }
+
+    pub fn terminate_reply_pending(&self) -> bool {
+        self.terminate_reply_pending.load(Ordering::SeqCst)
+    }
+
+    /// 取走待回复标记；返回 true = 调用方负责发出这次回复。
+    pub fn take_terminate_reply_pending(&self) -> bool {
+        self.terminate_reply_pending.swap(false, Ordering::SeqCst)
     }
 
     pub fn stop_intent_landed(&self) -> bool {
