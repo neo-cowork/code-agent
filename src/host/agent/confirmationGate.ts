@@ -13,6 +13,7 @@ import type {
 } from '../../shared/contract/confirmation';
 import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import { getDelegateSessionPreviewMessages } from '../../shared/i18n/delegateSessionPreview';
+import { buildMemoryDraftPreview } from './memoryDraftPreview';
 import { getHostUiLocale } from '../config/hostUiLocale';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedaction';
@@ -307,6 +308,13 @@ export class ConfirmationGate {
           type: 'generic', summary,
           ...(text ? { diff: messages.detail(text) } : {}),
         };
+      }
+
+      case 'ProposeProjectMemory': {
+        const content = redactCommandSecrets(
+          relativizeWorkspacePaths(normalizeString(params.content), options.workspaceRoot),
+        );
+        return { type: 'generic', ...buildMemoryDraftPreview(params, content, getHostUiLocale()) };
       }
 
       case 'spawn_agent':
