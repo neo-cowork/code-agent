@@ -4,6 +4,7 @@ import type { SessionSkillMount } from '@shared/contract/skillRepository';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { getAgentCommandOptions } from './agentCommand';
 import { zh } from '../../../../i18n/zh';
+import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 
 export type SlashCandidateKind = 'command' | 'prompt' | 'agent' | 'skill' | 'connector' | 'mcp';
 
@@ -245,15 +246,18 @@ export function createPromptCandidate(
 export function createAgentCandidates(
   agents: AgentListEntry[],
   labels?: SlashPickerLabels,
+  language = 'zh',
 ): SlashPickerCandidate[] {
   // 与 /agent 面板同源：无 Default 项（2026-07-29 起，去掉专家 chip 即恢复默认路由）
-  return getAgentCommandOptions(agents).map((option) => ({
+  return getAgentCommandOptions(agents).map((option) => {
+    const shown = localizeBuiltinRole(option.id ?? '', { name: option.name, profession: option.profession }, language);
+    return {
     id: `agent:${option.id ?? 'default'}`,
     kind: 'agent',
     group: 'agent',
     actionKind: 'select-agent',
-    label: option.name,
-    sublabel: option.profession,
+    label: shown.name,
+    sublabel: shown.profession,
     description: option.description,
     slashText: `/agent ${option.token}`,
     effectLabel: labels?.setAgentForTurn ?? zh.slashCommands.picker.setAgentForTurn,
@@ -262,11 +266,13 @@ export function createAgentCandidates(
     searchText: buildSearchText([
       option.id || '',
       option.name,
+      shown.name,
       option.description,
       option.token,
       `/agent ${option.token}`,
     ]),
-  }));
+    };
+  });
 }
 
 export function deriveSkillLibraryId(skill: ParsedSkill): string {

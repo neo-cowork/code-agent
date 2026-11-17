@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useLocalizeRole } from '../../../../hooks/useLocalizeRole';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 
 interface AgentChipProps {
@@ -16,6 +17,7 @@ function isChipRemoveKey(event: React.KeyboardEvent): boolean {
 
 export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
   const { t } = useI18n();
+  const localizeRole = useLocalizeRole();
   const entries = useAgentRegistryStore((s) => s.entries);
   const isLoaded = useAgentRegistryStore((s) => s.isLoaded);
   const refresh = useAgentRegistryStore((s) => s.refresh);
@@ -39,7 +41,9 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
     return null;
   }
 
-  const label = activeEntry.displayName || activeEntry.name;
+  const localized = localizeRole(activeEntry.id, { name: activeEntry.displayName || activeEntry.name, profession: activeEntry.profession });
+  const label = localized.name;
+  const profession = localized.profession;
   // 删除 = 恢复默认路由（setActiveAgentId(null)），与能力 chip 的 × 同一语义
   const removeAgent = () => setActiveAgentId(null);
 
@@ -67,7 +71,7 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
         // 权限档、上下文环、模型芯片都比它弱一档。之前四样东西同权重并排，
         // 用户读不出哪个是人、哪个是设置。
         className="inline-flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg px-1.5 text-sm font-medium text-zinc-100"
-        title={`${t.agentCommand.chipTitlePrefix}${activeEntry.profession ? `${label}（${activeEntry.profession}）` : label}${t.agentCommand.chipTitleSuffix}`}
+        title={`${t.agentCommand.chipTitlePrefix}${profession ? `${label}（${profession}）` : label}${t.agentCommand.chipTitleSuffix}`}
       >
         <RoleInitialAvatar
           roleId={activeEntry.id}
@@ -76,8 +80,8 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
         />
         {/* 花名是主体不许被挤没，职业先 truncate——用户只看花名不知道这专家是干什么的 */}
         <span className="shrink-0">{label}</span>
-        {activeEntry.profession && (
-          <span className="min-w-0 truncate text-[10px] font-normal text-zinc-500">{activeEntry.profession}</span>
+        {profession && (
+          <span className="min-w-0 truncate text-[10px] font-normal text-zinc-500">{profession}</span>
         )}
       </button>
       <button /* ds-allow:button: chip 删除是图标级小按钮，Button primitive 无此紧凑图标变体 */

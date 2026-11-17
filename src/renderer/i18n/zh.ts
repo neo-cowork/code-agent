@@ -9,7 +9,7 @@ import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
-import { voiceZh } from './voice';
+import { voiceZh } from './voice'; import { cronWorkingFolderZh } from './cronWorkingFolder';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { deliveryExperienceZh } from './deliveryExperience';
@@ -46,7 +46,7 @@ import { workbenchTabsZh } from './workbenchTabs';
 import { activityPanelZh, canvasActorZh } from './domains';
 import { imageNarrationZh } from './imageNarration';
 import { mermaidZh } from './mermaid';
-import { voiceAuditZh } from './voiceAudit';
+import { voiceAuditZh } from './voiceAudit'; import { memorySourceZh } from './memorySource';
 import { sessionInspectorZh } from './sessionInspector';
 import { artifactShareZh } from './artifactShare';
 import { receiptPresentationZh } from './receiptPresentation';
@@ -64,7 +64,7 @@ import { sessionTaskPresentationZh } from './sessionTaskPresentation'; import { 
 export const zh = {
   ...authModalZh, ...toolCreateConfirmZh, ...modelSetupZh, ...agentRoleLabelsZh, ...canvasActorZh, ...activityPanelZh,
   ...imageNarrationZh, ...mermaidZh,
-  ...voiceAuditZh,
+  ...voiceAuditZh, ...memorySourceZh,
   ...capabilityHubZh,
   ...neoTopicsZh,
   ...projectSpaceZh,
@@ -952,7 +952,7 @@ export const zh = {
   ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
-  ...cronCenterZh,
+  ...cronCenterZh, ...cronWorkingFolderZh,
   ...previewWorkspaceZh,
   ...deliveryExperienceZh,
   ...modalPrimitivesZh,

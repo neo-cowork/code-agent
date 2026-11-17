@@ -11,6 +11,7 @@
 // 客户端只给 sessionId；Source 集合从服务端台账现读，不接受任何路径输入。
 // ============================================================================
 
+import { basename } from 'node:path';
 import type { ProjectSource } from '../../../shared/contract/project';
 import {
   workspaceIdentityMatches,
@@ -32,9 +33,14 @@ export type ProjectTrustConfirmFailureReason =
   | 'verification_failed';
 
 export class ProjectTrustConfirmError extends Error {
-  constructor(readonly reason: ProjectTrustConfirmFailureReason) {
+  readonly folderName?: string;
+
+  constructor(readonly reason: ProjectTrustConfirmFailureReason, sourcePath?: string) {
     super(`Project trust confirmation rejected: ${reason}`);
     this.name = 'ProjectTrustConfirmError';
+    if (sourcePath && (reason === 'source_missing' || reason === 'identity_changed')) {
+      this.folderName = basename(sourcePath);
+    }
   }
 }
 
@@ -86,10 +92,10 @@ export async function confirmSessionProjectSources(
   for (const source of failing) {
     const failure = trustFailureOf(source);
     if (failure === 'source_missing' || failure === 'not_trusted') {
-      throw new ProjectTrustConfirmError(failure);
+      throw new ProjectTrustConfirmError(failure, source.canonicalPath);
     }
     if (!missingSnapshot(source)) {
-      throw new ProjectTrustConfirmError('identity_changed');
+      throw new ProjectTrustConfirmError('identity_changed', source.canonicalPath);
     }
     // Folder Trust 门先于任何写入：显式吊销绝不放松（buildEvaluation「never relax an
     // explicit denial」）；带 gated 项（hooks/MCP 等会自己动的配置）的未信任目录必须走
