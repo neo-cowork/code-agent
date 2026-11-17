@@ -172,3 +172,15 @@ export async function resolveNaturalLanguageCreateRoleInvocation(
   });
   return invocation;
 }
+
+/**
+ * A skill's allowed-tools boundary constrains only the run started under that skill.
+ * An auxiliary (delegated background) run has no human to approve anything and its prompt is
+ * machine-built text, so a bare-word alias hit there must not narrow its tools. `/slash` still applies.
+ */
+export function skillBoundaryAppliesToRun(
+  run: Pick<RuntimeContext, 'auxiliaryRun'>,
+  invocation: { matchKind: string },
+): boolean {
+  return !(run.auxiliaryRun === true && invocation.matchKind === 'alias');
+}
