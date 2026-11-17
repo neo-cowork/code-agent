@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
+import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
 import { redactCredentialText } from '@shared/security/secretPatterns';
@@ -263,7 +264,11 @@ export function RequestDetails({ request }: RequestDetailsProps) {
                 : row.value}
             />
           ))}
-          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action' && (
+          {details.connectorAccess && details.preview.type === 'generic' && catalogConnectorParamRows(details.preview.diff, language).map((row, index) => (
+            <DetailItem key={`${index}-${row.label ?? ''}`} label={row.label ?? ''} value={row.value} />
+          ))}
+          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action'
+            && !(details.connectorAccess && details.preview.type === 'generic') && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>

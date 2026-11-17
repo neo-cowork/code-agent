@@ -110,6 +110,13 @@ describe('outcomeWords contract', () => {
     }
   });
 
+  it.each(OUTCOME_AUDIENCES)('completed-with-warnings/%s describes an unsuccessful step in zh and en', (audience) => {
+    expect(outcomeWordsZh.outcomeWords['completed-with-warnings'][audience].reason)
+      .toBe('有步骤没有成功，结果可能不完整');
+    expect(outcomeWordsEn.outcomeWords['completed-with-warnings'][audience].reason)
+      .toBe('A step did not succeed, so the result may be incomplete');
+  });
+
   it('gives every badge outcome a reason phrase', () => {
     for (const outcome of OUTCOME_KEYS) {
       expect(outcomeWordsZh.outcomeWords[outcome].badge.reason.trim(), `zh ${outcome}`).not.toBe('');
