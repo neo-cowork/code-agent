@@ -30,6 +30,7 @@ mod appshots_hotkey_gate;
 mod background_resident;
 mod env_assist_bridge;
 mod env_assist_calendar;
+mod exit_watchdog;
 mod env_assist_calendar_items;
 mod env_assist_grant;
 mod env_assist_passive;
@@ -2525,10 +2526,17 @@ fn install_signal_handler(app: &tauri::AppHandle) {
         // SIGINT/SIGTERM 是系统/用户在进程层面的退出指令，不弹框
         //（QuitSkip::SignalExit 豁免对应这里，随 handle.exit(0) 重入的
         // ExitRequested 会经 current_skip() 放行）。
-        coordinator.set_signal_exit();
-        cleanup_server(&handle);
-        handle.exit(0);
+        run_signal_exit(&handle, &coordinator);
     });
+}
+
+/// 信号处理线程的函数体（ctrlc 的 handler 跑在它自己的线程上，主线程卡死也会被调到；
+/// 但 cleanup_server 可能阻塞，所以看门狗必须在它之前武装）。
+fn run_signal_exit<R: tauri::Runtime>(handle: &AppHandle<R>, coordinator: &Arc<quit_guard::QuitCoordinator>) {
+    coordinator.set_signal_exit();
+    exit_watchdog::commit_exit(handle, coordinator, exit_watchdog::ExitReason::Signal);
+    cleanup_server(handle);
+    handle.exit(0);
 }
 
 // ============================================================================
@@ -2557,6 +2565,7 @@ fn handle_exit_requested<R: tauri::Runtime>(
         // 「后台继续」（N-RESIDENT-HOST-SHELL-RUST）：壳退出但常驻宿主留着跑，
         // 跳过 cleanup_server。豁免（关机/更新重启/信号）不置此标志，照旧清理。
         if !coordinator.background_continue() {
+            exit_watchdog::commit_exit(app_handle, coordinator.inner(), exit_watchdog::ExitReason::ExitRequested);
             cleanup_server(app_handle);
         }
     } else {
@@ -2611,6 +2620,7 @@ fn spawn_quit_guard_flow_with<R: tauri::Runtime>(
                     QuitFlowOrigin::TauriExit => app.exit(0),
                     #[cfg(target_os = "macos")]
                     QuitFlowOrigin::MacApplicationTerminate => {
+                        exit_watchdog::arm(&app, &coordinator, exit_watchdog::ExitReason::MacTerminatePending);
                         reply_to_mac_application_terminate(&app, true);
                     }
                 }
@@ -2745,9 +2755,14 @@ fn execute_quit_exit_plan<R: tauri::Runtime>(
     coordinator.allow_exit();
     coordinator.finish();
     match origin {
-        QuitFlowOrigin::TauriExit => app.exit(0),
+        QuitFlowOrigin::TauriExit => {
+            // 可能还有更早的 ⌘Q / osascript terminate 请求悬在 AppKit 手里：先回复再退。
+            exit_watchdog::commit_exit(&app, &coordinator, exit_watchdog::ExitReason::FullQuit);
+            app.exit(0)
+        }
         #[cfg(target_os = "macos")]
         QuitFlowOrigin::MacApplicationTerminate => {
+            exit_watchdog::arm(&app, &coordinator, exit_watchdog::ExitReason::MacTerminatePending);
             if plan.cleanup_server {
                 // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
                 // 保持相同的优雅停止约定。
@@ -2763,6 +2778,13 @@ static MAC_QUIT_GUARD_APP: OnceLock<AppHandle> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 fn reply_to_mac_application_terminate<R: tauri::Runtime>(app: &AppHandle<R>, should_terminate: bool) {
+    if let Some(coordinator) = app.try_state::<Arc<quit_guard::QuitCoordinator>>() {
+        coordinator.take_terminate_reply_pending();
+        if let Some(reply) = coordinator.watchdog.reply_override() {
+            reply(should_terminate);
+            return;
+        }
+    }
     if let Err(error) = app.run_on_main_thread(move || {
         use objc2::MainThreadMarker;
         use objc2_app_kit::NSApplication;
@@ -2806,6 +2828,7 @@ unsafe extern "C-unwind" fn mac_application_should_terminate(
         // 已有退出流程代表同一个用户决定；不能再挂起一个无人回复的请求。
         return NSApplicationTerminateReply::TerminateCancel;
     }
+    coordinator.mark_terminate_reply_pending();
     spawn_quit_guard_flow(
         app,
         coordinator,
@@ -4933,6 +4956,7 @@ fn main() {
                 .state::<Arc<quit_guard::QuitCoordinator>>()
                 .background_continue()
             {
+                exit_watchdog::commit_exit_from_state(app_handle, exit_watchdog::ExitReason::ExitRequested);
                 cleanup_server(app_handle);
             }
         }
