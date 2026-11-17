@@ -18,12 +18,11 @@ import { toGenerativeUIExportSnapshot } from '../generativeUI/generativeUIExport
 import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositoryAccess';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
-import {
-  resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource,
-} from '../../../shared/sessionTitlePlaceholder';
+import { resolveSessionTitle, type SessionTitleModelAnswer, isProvisionalAutoTitle, sessionTitleSource } from '../../../shared/sessionTitlePlaceholder';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
+import { pushSessionTitleToCloud } from './sessionTitleCloudPush';
 import { isCloudSessionListSkipped } from './cloudSessionListGate';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 import { stripLegacyForkClaims } from '../sessionFork/portability';
@@ -660,6 +659,7 @@ export class SessionManager implements Disposable {
       } catch (error) {
         logger.warn('[SessionManager] Telemetry title sync failed (ignored):', error);
       }
+      pushSessionTitleToCloud(sessionId, updates.title);
     }
 
     // 工作目录后补时，仅为未归桶/待整理会话重算项目归属；明确归属不覆盖。

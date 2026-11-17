@@ -105,6 +105,7 @@ export const sidebarZh = {
     signedOutSettings: '设置',
     accountUnreachable: '暂时无法连接，账号状态尚未确认',
     connectionRetry: '重试',
+    reSignIn: '重新登录',
     modelLoading: '正在加载模型…',
     skipSignInSetup: '先不登录，去配置模型/通道',
     // 数据集标记 toast
@@ -503,6 +504,7 @@ export const sidebarEn: typeof sidebarZh = {
     signedOutSettings: 'Settings',
     accountUnreachable: "Can’t reach the service right now. Account status is unconfirmed.",
     connectionRetry: 'Retry',
+    reSignIn: 'Sign in again',
     modelLoading: 'Loading model…',
     skipSignInSetup: 'Skip sign-in and set up a model or channel',
     markedAsDataset: 'Marked as {role}',
