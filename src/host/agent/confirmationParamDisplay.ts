@@ -51,3 +51,8 @@ export function displayPathValue(
   }
   return value;
 }
+
+/** 以 JSON 数组/对象形式塞进字符串的载荷（如表格 data）不是人话，也会挤占 3 行预览名额。 */
+export function isStructuredDataText(value: string): boolean {
+  return /^[[{]/.test(value) && /[\]}]$/.test(value);
+}

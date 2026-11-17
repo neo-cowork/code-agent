@@ -451,6 +451,11 @@ describe('ConfirmationGate', () => {
         expect(p?.diff).toContain('Save to: /Users/other/Documents/sales.xlsx');
       });
 
+      it('skips JSON-looking data payload so it does not use up the 3-line cap', () => {
+        const p = build('en', { data: '[{"month":"Jan","amount":1200}]', output_path: '/Users/other/a.xlsx' });
+        expect(p?.diff).toBe('Title: Sales\nSheet: Sales\nSave to: /Users/other/a.xlsx');
+      });
+
       it('unknown keys unchanged', () => {
         const p = build('en', { custom_key: 'v' });
         expect(p?.diff).toContain('custom_key: v');
