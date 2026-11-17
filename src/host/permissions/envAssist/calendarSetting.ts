@@ -28,41 +28,64 @@ export type CalendarAskDeps = Pick<CalendarSettingDeps, 'access' | 'prompt' | 's
  * 再每秒被动轮询到有答复（≤ ENV_ASSIST_CALENDAR_CONFIRM_MS）。null = 没能发起系统框。
  */
 // 同一时刻只有一次「弹框 + 等答复」：卡片、开关、连接器页谁先点谁发起，后点的直接等同一个答复，不再弹第二个框
-let waiting: Promise<{ access: CalendarAccess; prompted: boolean } | null> | null = null;
+interface CalendarAskResult {
+  access: CalendarAccess;
+  prompted: boolean;
+  aborted?: boolean;
+  /** The same request continues after this caller stops waiting; observing it never prompts again. */
+  completion?: Promise<CalendarAskResult | null>;
+}
 
-export async function askCalendarOnce(deps: CalendarAskDeps, onPrompt?: () => void): Promise<{ access: CalendarAccess; prompted: boolean } | null> {
-  const before = await deps.access();
-  if (before !== 'undecided') {
-    logger.info('Calendar ask: already decided, no dialog', { access: before });
-    return { access: before, prompted: false };
-  }
-  onPrompt?.();
-  if (waiting) {
-    logger.info('Calendar ask: joining the dialog already waiting for an answer');
-    return waiting;
-  }
-  waiting = (async () => {
-    const prompt = await deps.prompt();
-    logger.info('Calendar ask: dialog requested', { prompt });
-    if (prompt !== 'requested') return null;
-    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-    const now = deps.now ?? Date.now;
-    const started = now();
-    const deadline = started + ENV_ASSIST_CALENDAR_CONFIRM_MS;
-    let polls = 0;
-    while (now() < deadline) {
-      await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
-      polls += 1;
-      const access = await deps.access();
-      if (settled(access)) {
-        logger.info('Calendar ask: answered', { access, polls, waitedMs: now() - started });
-        return { access, prompted: true };
-      }
+let waiting: Promise<CalendarAskResult | null> | null = null;
+
+export async function askCalendarOnce(deps: CalendarAskDeps, onPrompt?: () => void, signal?: AbortSignal): Promise<CalendarAskResult | null> {
+  if (signal?.aborted) return { access: 'undecided', prompted: false, aborted: true };
+  let prompted = false;
+  const completion = (async (): Promise<CalendarAskResult | null> => {
+    const before = await deps.access();
+    if (signal?.aborted) return { access: 'undecided', prompted: false, aborted: true };
+    if (before !== 'undecided') {
+      logger.info('Calendar ask: already decided, no dialog', { access: before });
+      return { access: before, prompted: false };
     }
-    logger.warn('Calendar ask: no answer within the confirm window', { polls });
-    return { access: 'undecided' as const, prompted: true }; // 还在系统框里没作答
+    prompted = true;
+    onPrompt?.();
+    if (waiting) {
+      logger.info('Calendar ask: joining the dialog already waiting for an answer');
+      return waiting;
+    }
+    waiting = (async () => {
+      const prompt = await deps.prompt();
+      logger.info('Calendar ask: dialog requested', { prompt });
+      if (prompt !== 'requested') return null;
+      const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+      const now = deps.now ?? Date.now;
+      const started = now();
+      const deadline = started + ENV_ASSIST_CALENDAR_CONFIRM_MS;
+      let polls = 0;
+      while (now() < deadline) {
+        await sleep(ENV_ASSIST_CALENDAR_POLL_MS);
+        polls += 1;
+        const access = await deps.access();
+        if (settled(access)) {
+          logger.info('Calendar ask: answered', { access, polls, waitedMs: now() - started });
+          return { access, prompted: true };
+        }
+      }
+      logger.warn('Calendar ask: no answer within the confirm window', { polls });
+      return { access: 'undecided' as const, prompted: true }; // 还在系统框里没作答
+    })().finally(() => { waiting = null; });
+    return waiting;
   })();
-  try { return await waiting; } finally { waiting = null; }
+  if (!signal) return completion;
+  let stop: () => void = () => {};
+  const aborted = new Promise<CalendarAskResult>((resolve) => {
+    stop = () => resolve({ access: 'undecided', prompted, aborted: true, completion });
+    signal.addEventListener('abort', stop, { once: true });
+    if (signal.aborted) stop();
+  });
+  try { return await Promise.race([completion, aborted]); }
+  finally { signal.removeEventListener('abort', stop); }
 }
 
 /**

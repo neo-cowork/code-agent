@@ -36,7 +36,7 @@ import { connectorApprovalDetails } from '../permissions/connectorApprovalDetail
 import { withUserRequestQuote } from '../permissions/approvalUserRequest';
 import { pickApprovalOrigin } from '../permissions/approvalOriginFields';
 import { connectorToolGrantIdentity } from '../permissions/connectorToolAccess';
-import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
+import { matchToolGrant, mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
@@ -303,7 +303,38 @@ export class OrchestratorPermissionIsland {
       logger.warn('Answered approval notification retract failed', err);
     }
     pending.resolve(response, undefined, updatedArgs);
+    if (response === 'allow_run' || response === 'allow_24h' || response === 'allow_session') {
+      this.settleSiblingsCoveredByGrant(pending.request);
+    }
     return 'delivered';
+  }
+
+  /**
+   * 模型一次并发发出几个同类调用时，卡是同时弹的：用户在第一张上点「本次任务内允许」，
+   * 其余几张已在授权之前问出，preAsk 碰不到它们（11-17 真机：连弹三张查看日程）。
+   * 只放行 host 标过 grantEligible（询问时无任何强制确认）且现在确能命中授权的同会话请求，
+   * 按一次性 allow 结、不再铸权，并告诉界面这张已在别处裁决。
+   */
+  private settleSiblingsCoveredByGrant(answered: PermissionRequest): void {
+    const sessionId = answered.sessionId;
+    if (!sessionId) return;
+    for (const [id, sibling] of [...this.pendingPermissions]) {
+      const req = sibling.request;
+      if (sibling.parked || req?.sessionId !== sessionId || req.details?.grantEligible !== true || req.forceConfirm || req.reasonCode) continue;
+      const identity = connectorToolGrantIdentity(req.tool, req.details?.standingGrantTarget ?? null);
+      if (!identity || !matchToolGrant(sessionId, identity.tool, identity.target)) continue;
+      // 与 preAsk 同判据：本会话刚被拒过的同目标动作不因授权顺带放行。
+      if (getDenialRegistry().refuseIfGoalDenied(req, { log: false })) continue;
+      logger.info('Pending approval settled by a grant answered on a sibling card', { requestId: id, tool: req.tool, via: answered.id });
+      this.pendingPermissions.delete(id);
+      try {
+        notificationService.retractNeedsInput(id);
+      } catch (err) {
+        logger.warn('Sibling approval notification retract failed', err);
+      }
+      this.onEvent({ type: 'permission_request', data: { ...req, resolved: true } });
+      sibling.resolve('allow');
+    }
   }
 
   /**
@@ -908,10 +939,16 @@ export class OrchestratorPermissionIsland {
       }
 
       if (fullRequest.sessionId) {
+        // 用户自己的聊天只是页面断线（detached）：卡仍在聊天原位，点通知回该会话（#3585），
+        // 不能再写「到运行记录处理」把人指错地方（11-17 mini 真机）。无人值守/语音照旧。
+        const modes = getPermissionModeManager();
+        const ownChat = this.isDetachedRun()
+          && !modes.isUnattendedSession(fullRequest.sessionId)
+          && !modes.isLiveVoiceSession(fullRequest.sessionId);
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            ...buildApprovalNotification(fullRequest.tool, 'parked'),
+            ...buildApprovalNotification(fullRequest.tool, ownChat ? 'approval' : 'parked'),
             tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。

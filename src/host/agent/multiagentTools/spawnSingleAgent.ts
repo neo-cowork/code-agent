@@ -45,6 +45,7 @@ import { resolveSubagentParentContext } from '../subagentProtocolContext';
 import { resolveSpawnAgentEngine } from './spawnAgentEngine';
 import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, publishBackgroundSubagentVisibility, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, resolveSingleSpawnRunScope, validateForegroundBlockingBudget, withBackgroundWorktreeNote } from './spawnAgentForegroundBackground';
 import { prepareSpawnAgentWorktree } from './spawnAgentWorktree';
+import { withWorkdirPrefix } from '../workdirPrefix';
 
 export async function executeSingleSpawnAgent(
   params: Record<string, unknown>,
@@ -290,7 +291,7 @@ export async function executeSingleSpawnAgent(
         worktreeInfo = prepared.worktreeInfo; cwd = worktreeInfo.worktreePath;
       }
 
-      const enrichedTask = `[工作目录: ${cwd}] 所有文件路径基于此目录。\n\n${task}`;
+      const enrichedTask = withWorkdirPrefix(cwd, task);
 
       // Build executor context.
       // 注入 agentId，让子 agent 走 BrowserPool / ComputerSurface 的 per-agent 实例。

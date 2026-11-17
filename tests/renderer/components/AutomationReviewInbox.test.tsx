@@ -798,7 +798,7 @@ describe('AutomationReviewInbox', () => {
     listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
     render(<AutomationReviewInbox />);
     const card = await screen.findByTestId('parked-approval-item');
-    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run command');
     expect(card.textContent).not.toContain('Bash');
     const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
     expect(summary.closest('details')?.open).toBe(false);
@@ -1054,7 +1054,7 @@ describe('pending review count parity', () => {
     expect(countPendingReviewByTask(parityRecords, paritySessionsById)).toBe(1);
     render(<CronCenterPanel onClose={() => undefined} />);
     await waitFor(() => {
-      expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('1');
+      expect(screen.getByTestId('cron-status-review').querySelector('.text-2xl')?.textContent).toBe('1');
       expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1 条待过目');
     });
     expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);

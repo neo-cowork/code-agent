@@ -3,7 +3,7 @@ import { HostReasonCode } from '../../shared/contract/permission';
 import type { SessionTaskDeliveryFailure } from '../../shared/constants/sessionCommandCenter';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 
-export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed';
+export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed' | 'user_denied';
 
 function terminalDeliveryFailure(messages: readonly Message[]): SessionTaskDeliveryFailure | undefined {
   let lastResult: ToolResult | undefined;
@@ -32,15 +32,21 @@ export function getTaskDeliveryFailure(
 
   let outputSucceeded = false;
   let outputFailed = false;
+  let outputDeniedByUser = false;
   const resolver = getToolResolver();
   for (const message of messages) {
     for (const result of message.toolResults ?? []) {
       const toolName = toolNamesByCallId.get(result.toolCallId);
       if (!toolName || resolver.getDefinition(toolName)?.permissionLevel !== 'write') continue;
       if (result.success) outputSucceeded = true;
-      else outputFailed = true;
+      else {
+        outputFailed = true;
+        const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
+        if (hostReason?.code === HostReasonCode.PermissionDeniedByUser) outputDeniedByUser = true;
+      }
     }
   }
 
-  return outputFailed && !outputSucceeded && deliverableArtifactCount === 0 ? 'write_failed' : undefined;
+  if (!outputFailed || outputSucceeded || deliverableArtifactCount > 0) return undefined;
+  return outputDeniedByUser ? 'user_denied' : 'write_failed';
 }

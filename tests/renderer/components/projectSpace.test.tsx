@@ -16,6 +16,7 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
   renameProject: vi.fn(),
   setProjectDescription: vi.fn(),
   deleteProject: vi.fn(),
+  setProjectStatus: vi.fn(),
   createSpace: vi.fn(),
   promoteToSpace: vi.fn(),
   promoteToCloudSpace: vi.fn(),
@@ -168,7 +169,7 @@ function setupHappyPathMocks() {
   ]);
   vi.mocked(projectClient.renameProject).mockResolvedValue({ ...projectFixture, name: '新名字' } as never);
   vi.mocked(projectClient.setProjectDescription).mockResolvedValue(projectFixture as never);
-  vi.mocked(projectClient.deleteProject).mockResolvedValue({ deleted: true });
+  vi.mocked(projectClient.setProjectStatus).mockResolvedValue(projectFixture as never);
   vi.mocked(projectClient.createSpace).mockResolvedValue(projectFixture as never);
   vi.mocked(projectClient.promoteToSpace).mockResolvedValue(projectFixture as never);
   vi.mocked(projectClient.promoteToCloudSpace).mockResolvedValue({
@@ -250,7 +251,7 @@ afterEach(() => {
 });
 
 describe('ProjectSpacePage 列表视图', () => {
-  it('渲染项目行：状态 chip + 活跃 topic 徽标', async () => {
+  it('渲染项目行：状态 chip + 活跃工作卡徽标', async () => {
     render(<ProjectSpacePage onClose={() => undefined} />);
     await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
     expect(screen.getByTestId(`project-space-status-${PROJECT_ID}`).textContent).toBe(ps.statusActive);
@@ -282,97 +283,72 @@ describe('ProjectSpacePage 列表视图', () => {
     await waitFor(() => expect(projectClient.setProjectDescription).toHaveBeenCalledWith(PROJECT_ID, '新描述'));
   });
 
-  it('删除走确认对话框，确认后调 deleteProject；文案照实写会话/topic 归入「未分类」', async () => {
+  it('归档走确认对话框，确认后调 setProjectStatus(archived)；文案不提「未分类」也不说删除', async () => {
     render(<ProjectSpacePage onClose={() => undefined} />);
     await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
 
-    fireEvent.click(screen.getByTestId(`project-space-delete-${PROJECT_ID}`));
-    const dialog = await screen.findByTestId('project-space-delete-modal');
-    expect(dialog.textContent).toContain('未分类');
+    fireEvent.click(screen.getByTestId(`project-space-archive-${PROJECT_ID}`));
+    const dialog = await screen.findByTestId('project-space-archive-modal');
+    expect(dialog.textContent).not.toContain('未分类');
     expect(dialog.textContent).toContain(projectFixture.name);
 
-    fireEvent.click(screen.getByText(ps.deleteSpace));
-    await waitFor(() => expect(projectClient.deleteProject).toHaveBeenCalledWith(PROJECT_ID));
-    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
-    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(2);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: ps.archiveSpace }));
+    await waitFor(() => expect(projectClient.setProjectStatus).toHaveBeenCalledWith(PROJECT_ID, 'archived'));
+    await waitFor(() => expect(screen.queryByTestId('project-space-archive-modal')).toBeNull());
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(4);
   });
 
   it.each([
     ['zh', ps],
     ['en', projectSpaceEn.projectSpace],
-  ] as const)('delete rejection keeps the modal open with a retryable plain sentence (%s)', async (language, copy) => {
+  ] as const)('archive rejection keeps the modal open with a retryable plain sentence (%s)', async (language, copy) => {
     useAppStore.setState({ language });
-    vi.mocked(projectClient.deleteProject).mockRejectedValueOnce(new Error('DISK_WRITE_FAILED: /private/workspace'));
+    vi.mocked(projectClient.setProjectStatus).mockRejectedValueOnce(new Error('DISK_WRITE_FAILED: /private/workspace'));
     render(<ProjectSpacePage onClose={() => undefined} />);
-    fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
+    fireEvent.click(await screen.findByTestId(`project-space-archive-${PROJECT_ID}`));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.archiveSpace }));
 
-    const error = await screen.findByTestId('project-space-delete-error');
-    expect(error.textContent).toBe(copy.deleteFailed);
-    expect(screen.getByTestId('project-space-delete-modal')).toBeTruthy();
-    expect((within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }) as HTMLButtonElement).disabled).toBe(false);
-    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(1);
-
-    // Retrying uses the same modal and the successful response closes it.
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
-    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
-    expect(projectClient.deleteProject).toHaveBeenCalledTimes(2);
-    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([
-    ['zh', ps],
-    ['en', projectSpaceEn.projectSpace],
-  ] as const)('immutable history explains why deletion is blocked without exposing internal details (%s)', async (language, copy) => {
-    useAppStore.setState({ language });
-    vi.mocked(projectClient.deleteProject).mockRejectedValueOnce(
-      new Error('PROJECT_BOUNDARY_IMMUTABLE: session session-private already has immutable conversation history at /private/workspace'),
-    );
-    render(<ProjectSpacePage onClose={() => undefined} />);
-    fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }));
-
-    const error = await screen.findByTestId('project-space-delete-error');
-    expect(error.textContent).toBe(copy.deleteHistoryBlocked);
-    expect(error.textContent).not.toContain(copy.deleteFailed);
-    expect(error.textContent).not.toContain('PROJECT_BOUNDARY_IMMUTABLE');
-    expect(error.textContent).not.toContain('session-private');
+    const error = await screen.findByTestId('project-space-archive-error');
+    expect(error.textContent).toBe(copy.archiveFailed);
     expect(error.textContent).not.toContain('/private/workspace');
-    expect(screen.getByTestId('project-space-delete-modal')).toBeTruthy();
-    expect((within(screen.getByRole('dialog')).getByRole('button', { name: copy.deleteSpace }) as HTMLButtonElement).disabled).toBe(false);
-    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('project-space-archive-modal')).toBeTruthy();
+    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: language === 'zh' ? '取消' : 'Cancel' }));
-    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
-    fireEvent.click(screen.getByTestId(`project-space-delete-${PROJECT_ID}`));
-    expect(screen.queryByTestId('project-space-delete-error')).toBeNull();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: copy.archiveSpace }));
+    await waitFor(() => expect(screen.queryByTestId('project-space-archive-modal')).toBeNull());
+    expect(projectClient.setProjectStatus).toHaveBeenCalledTimes(2);
   });
 
-  it('deleted:false keeps the modal open and clears the sentence when cancelled and reopened', async () => {
-    vi.mocked(projectClient.deleteProject).mockResolvedValueOnce({ deleted: false });
+  it('已归档视图：有归档才出现入口，列出归档空间，恢复后调 setProjectStatus(active) 并重载', async () => {
+    const archived = { ...projectFixture, status: 'archived' };
+    vi.mocked(projectClient.listProjectsWithActivity).mockImplementation(async (includeArchived) => (
+      (includeArchived ? [archived] : []) as never
+    ));
     render(<ProjectSpacePage onClose={() => undefined} />);
-    fireEvent.click(await screen.findByTestId(`project-space-delete-${PROJECT_ID}`));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: ps.deleteSpace }));
+    const toggle = await screen.findByTestId('project-space-archived-toggle');
+    expect(toggle.textContent).toBe(ps.archivedToggle.replace('{count}', '1'));
 
-    expect((await screen.findByTestId('project-space-delete-error')).textContent).toBe(ps.deleteFailed);
-    expect(screen.getByTestId('project-space-delete-modal')).toBeTruthy();
-    expect((within(screen.getByRole('dialog')).getByRole('button', { name: ps.deleteSpace }) as HTMLButtonElement).disabled).toBe(false);
-    expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
-    await waitFor(() => expect(screen.queryByTestId('project-space-delete-modal')).toBeNull());
-    fireEvent.click(screen.getByTestId(`project-space-delete-${PROJECT_ID}`));
-    expect(screen.queryByTestId('project-space-delete-error')).toBeNull();
+    fireEvent.click(toggle);
+    expect((await screen.findByTestId(`project-space-status-${PROJECT_ID}`)).textContent).toBe(ps.statusArchived);
+    fireEvent.click(screen.getByTestId(`project-space-restore-${PROJECT_ID}`));
+    await waitFor(() => expect(projectClient.setProjectStatus).toHaveBeenCalledWith(PROJECT_ID, 'active'));
+    await waitFor(() => expect(projectClient.listProjectsWithActivity).toHaveBeenCalledTimes(4));
   });
 
-  it('proj_unsorted 保留桶：不显示编辑/删除，也不显示描述占位', async () => {
+  it('没有归档空间时不显示「已归档」入口', async () => {
+    render(<ProjectSpacePage onClose={() => undefined} />);
+    await screen.findByTestId(`project-space-list-item-${PROJECT_ID}`);
+    expect(screen.queryByTestId('project-space-archived-toggle')).toBeNull();
+  });
+
+  it('proj_unsorted 保留桶：不显示编辑/归档，也不显示描述占位', async () => {
     vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([
       { ...projectFixture, id: 'proj_unsorted', name: '未分类', description: null },
     ] as never);
     render(<ProjectSpacePage onClose={() => undefined} />);
     await screen.findByTestId('project-space-list-item-proj_unsorted');
     expect(screen.queryByTestId('project-space-edit-proj_unsorted')).toBeNull();
-    expect(screen.queryByTestId('project-space-delete-proj_unsorted')).toBeNull();
+    expect(screen.queryByTestId('project-space-archive-proj_unsorted')).toBeNull();
     expect(screen.queryByTestId('project-space-description-placeholder-proj_unsorted')).toBeNull();
   });
 
@@ -937,7 +913,7 @@ describe('ProjectComposer 底部输入框', () => {
   });
 });
 
-// ---- P1-C0：云协同空间（邀请按钮 / 成员卡 / 云标） ----
+// ---- P1-C0：云协作空间（邀请按钮 / 成员卡 / 云标） ----
 const cloudFixture = { ...projectFixture, cloudProjectId: 'cloud-1' };
 const cloudDetailFixture = { ...detailFixture, project: { ...cloudFixture } };
 
@@ -966,7 +942,7 @@ function setupCloudSpace() {
 }
 
 describe('空间页头邀请按钮（两态）', () => {
-  it('cloudProjectId 为空：文案「升级为协同空间」，确认后调 promoteToCloudSpace 并刷新 detail', async () => {
+  it('cloudProjectId 为空：文案「升级为协作空间」，确认后调 promoteToCloudSpace 并刷新 detail', async () => {
     await enterSpaceView();
     const button = await screen.findByTestId('project-space-invite-open');
     expect(button.textContent).toContain(ps.promoteToCloud);
@@ -984,7 +960,7 @@ describe('空间页头邀请按钮（两态）', () => {
   });
 
   it('promoteToCloudSpace 失败：toast 真因，detail 不刷新', async () => {
-    vi.mocked(projectClient.promoteToCloudSpace).mockRejectedValue(new Error('请先登录后再使用协同空间。'));
+    vi.mocked(projectClient.promoteToCloudSpace).mockRejectedValue(new Error('请先登录后再使用协作空间。'));
     await enterSpaceView();
     fireEvent.click(await screen.findByTestId('project-space-invite-open'));
     await screen.findByTestId('project-space-invite-promote-modal');
@@ -1029,7 +1005,7 @@ describe('右栏成员卡（四卡形态的第五卡：云空间直渲染，无�
     return screen.findByTestId('project-space-members-card');
   }
 
-  it('云协同空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
+  it('云协作空间：渲染成员行（首字母圆片 + 显示名 + role chip），无显示名回落 userId', async () => {
     setupCloudSpace();
     vi.mocked(projectClient.listMembers).mockResolvedValue(membersFixture);
     const card = await openMembersCard();
@@ -1089,7 +1065,7 @@ describe('云标', () => {
     expect(screen.queryByTestId(`project-space-cloud-badge-${PROJECT_ID}`)).toBeNull();
   });
 
-  it('空间页头：云协同空间状态 chip 旁出现云标', async () => {
+  it('空间页头：云协作空间状态 chip 旁出现云标', async () => {
     setupCloudSpace();
     await enterSpaceView();
     await screen.findByTestId('project-space-header-cloud-badge');
@@ -1104,7 +1080,7 @@ describe('云标', () => {
 
 // ---- P1-C1：任务 tab 云端成员卡只读区（组件行为详见 cloudCollabCardsSection.test） ----
 describe('任务 tab 云端成员卡只读区（挂载条件）', () => {
-  it('云协同空间：切任务 tab 渲染只读区（在本地 topic 面板之上）', async () => {
+  it('云协作空间：切任务 tab 渲染只读区（在本地 topic 面板之上）', async () => {
     setupCloudSpace();
     await enterSpaceView();
     fireEvent.click(screen.getByTestId('project-space-tab-tasks'));

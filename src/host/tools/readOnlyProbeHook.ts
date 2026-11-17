@@ -15,6 +15,7 @@ import { getPolicyEngine } from '../permissions/policyEngine';
 import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { executeReadOnlyProbePlan } from '../security/readOnlyProbeExecutor';
+import { scheduleReadOnlyProbeRoot } from './scheduleReadOnlyProbe';
 
 const logger = createLogger('ReadOnlyProbe');
 const BASH_SPELLINGS = ['Bash', 'bash'] as const;
@@ -27,7 +28,7 @@ export interface ReadOnlyProbeInput {
   currentAttachments?: Array<{ path?: string }>;
 }
 
-function isReadOnlyProbeEnabled(): boolean {
+export function isReadOnlyProbeEnabled(): boolean {
   if (/^(off|0|false)$/i.test(process.env.CODE_AGENT_READONLY_PROBE ?? '')) return false;
   try {
     return getConfigService().getSettings().permissions?.readOnlyProbePlan !== false;
@@ -70,15 +71,16 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
   const plan = compileReadOnlyProbePlan(input.command, { homeDir: os.homedir(), platform: process.platform });
   if (!plan) return null;
   const programs = [...new Set(plan.steps.map((s) => s.program))];
-  if (!userRulesAllow([input.command, ...plan.steps.map((s) => s.source)], input.sessionId)) {
+  if (!userRulesAllow([input.command, ...plan.steps.flatMap((s) => [s.source, ...s.extraSources ?? []])], input.sessionId)) {
     logger.info('readonly_probe_plan_miss', { cause: 'user-or-builtin-rule', programs });
     return null;
   }
+  const scheduleRoot = scheduleReadOnlyProbeRoot(input.sessionId, input.command);
   const result = await executeReadOnlyProbePlan(plan, {
     workingDirectory: input.workingDirectory,
-    workspaceRoot: input.workspaceRoot,
+    workspaceRoot: scheduleRoot ?? input.workspaceRoot,
     homeDir: os.homedir(),
-    ...sessionAuthority(input),
+    ...(scheduleRoot ? { readRoots: [scheduleRoot], userTexts: [], attachmentPaths: [] } : sessionAuthority(input)),
   });
   // 非零退出码的失败呈现（Command exited with code N）由真 Bash 路径负责：放弃，让原链处理。
   if ('aborted' in result) {

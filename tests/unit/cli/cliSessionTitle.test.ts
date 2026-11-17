@@ -158,6 +158,23 @@ describe('CLI session titles', () => {
     expect(readTitle(zh)).toBe('会议纪要周报');
   });
 
+  it('/init-memory gets the deterministic folder title on the CLI/web session path, small model skipped', async () => {
+    quick.available = true;
+    quick.reply = '会话记忆初始化指令说明';
+    const sessionId = 'cli_session_init_memory_1';
+    const folder = path.join(tempDir, '家庭账本项目');
+    fs.mkdirSync(folder, { recursive: true });
+    await persistAgentLoopMessageToSession(manager, userMessage('msg-init-memory', '/init-memory'), {
+      sessionId,
+      modelConfig,
+      workingDirectory: folder,
+    });
+    await settle();
+
+    expect(readTitle(sessionId)).toBe('初始化项目记忆 · 家庭账本项目');
+    expect(quick.prompts).toHaveLength(0);
+  });
+
   it('strips appshot blocks before the fallback title', async () => {
     const sessionId = 'cli_session_appshot_1';
     const content = [
