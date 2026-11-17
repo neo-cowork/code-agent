@@ -35,9 +35,9 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, zh, '列出源码目录')).toBe('运行了一条命令');
   });
 
-  it('bash: schema description does not override localized narration', () => {
+  it('bash: usable arguments.description is the row text', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/', description: '列出源码目录' }, zh))
-      .toBe('运行了一条命令');
+      .toBe('列出源码目录');
   });
 
   // 2026-11-13 owner decision: command details belong in explicit inspection, not timeline labels.
@@ -82,9 +82,9 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
       .toBe('在飞书发了一条消息');
   });
 
-  it('mcp channel: non-messaging lark tool stays generic', () => {
+  it('mcp channel: non-messaging lark tool names the catalog connector, never the raw id', () => {
     expect(humanizeToolStep('mcp__lark__calendar_v4_event_list', {}, zh))
-      .toBe('通过 lark 查询了信息');
+      .toBe('已读取飞书');
   });
 
   it('subagent spawn: with description', () => {

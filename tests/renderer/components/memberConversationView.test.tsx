@@ -177,6 +177,32 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-current-action').textContent).toBe(zh.toolStepHumanize.bashFallback);
   });
 
+  it('成员的多条 Bash 各自一行（带人话描述），命令样描述退通用文案、命令不外露', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 100, maxTokens: 1000, usagePercent: 10, messageCount: 3,
+          warningLevel: 'normal', lastUpdated: 1, attachments: [], previews: [], truncatedMessages: 0,
+          tools: ['Bash'],
+          bashSteps: [
+            { description: '列出工作区目录内容', command: 'ls -la /tmp/ws' },
+            { description: '统计 csv 文件个数', command: 'find /tmp/ws -name "*.csv" | wc -l' },
+            { description: 'find /tmp/ws -name x', command: 'find /tmp/ws -name x' },
+          ],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+
+    const texts = screen.getAllByTestId('member-recent-action').map((node) => node.textContent);
+    expect(texts).toEqual([zh.toolStepHumanize.bashFallback, '统计 csv 文件个数', '列出工作区目录内容']);
+    expect(screen.getByTestId('member-recent-actions').textContent).not.toContain('/tmp/ws');
+  });
+
   it('还没动手时给空态文案，不留一个空壳区块', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });
 
@@ -296,6 +322,49 @@ describe('成员对话页', () => {
     cleanup();
     await renderPlainAgent(mailAgentNode('completed'));
     expect(screen.getByTestId('member-current-action').textContent).toContain('发送了邮件');
+  });
+
+  it('已完成的委派任务页逐条列出 Bash 步骤：两条人话 + 一条缺描述退通用文案，命令不外露', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-9', sessionId: 'session-1', source: 'delegate_task', title: '数 csv', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        lastToolStep: { tool: 'Bash', target: 'du -h /tmp/ws', description: '找出最大的 csv', at: 2 },
+        bashSteps: [
+          { description: '列出工作区目录内容', command: 'ls -la /tmp/ws' },
+          { command: 'find /tmp/ws -name "*.csv" | wc -l' },
+          { description: '找出最大的 csv', command: 'du -h /tmp/ws' },
+        ],
+      },
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-9' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-bash-steps')).toBeTruthy());
+    const rows = screen.getAllByTestId('member-bash-step').map((node) => node.textContent);
+    expect(rows).toEqual(['列出工作区目录内容', zh.toolStepHumanize.bashFallback, '找出最大的 csv']);
+    expect(screen.getByTestId('member-bash-steps').textContent).not.toContain('/tmp/ws');
+  });
+
+  it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 1, maxTokens: 10, usagePercent: 1, messageCount: 1, warningLevel: 'normal', lastUpdated: 1,
+          attachments: [], previews: [], truncatedMessages: 0, tools: ['Bash'],
+          bashSteps: [{ description: '列出工作区目录内容', command: 'ls' }, { command: 'wc -l x' }],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+    expect(screen.getAllByTestId('member-recent-action').map((node) => node.textContent))
+      .toEqual([zh.toolStepHumanize.bashFallback, '列出工作区目录内容']);
   });
 
   it('普通代理按 delegate_task 后台任务渲染：标题 / 摘要 / 产出引用 / 耗时', async () => {

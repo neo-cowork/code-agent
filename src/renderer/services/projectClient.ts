@@ -56,7 +56,7 @@ export async function promoteToSpace(
   });
 }
 
-/** 升级为云协同空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */
+/** 升级为云协作空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */
 export async function promoteToCloudSpace(projectId: string): Promise<CloudSpacePromotion> {
   return ipcService.invokeDomain<CloudSpacePromotion>(IPC_DOMAINS.PROJECT, 'promoteToCloudSpace', { projectId });
 }
@@ -73,7 +73,7 @@ export async function createInvite(
   });
 }
 
-/** 读取云协同空间成员卡（仅 cloudProjectId 非空的空间可用） */
+/** 读取云协作空间成员卡（仅 cloudProjectId 非空的空间可用） */
 export async function listMembers(projectId: string): Promise<ProjectMember[]> {
   return ipcService.invokeDomain<ProjectMember[]>(IPC_DOMAINS.PROJECT, 'listMembers', { projectId });
 }

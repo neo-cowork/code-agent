@@ -1,7 +1,7 @@
 import { AgentFailureCode, HostReasonCode, type ToolCall } from '@shared/contract';
 import { ASK_USER_QUESTION_UNANSWERED_PREFIX } from '@shared/contract/askUserQuestion';
 import type { Translations } from '../i18n';
-import { classifyToolName } from './humanizeToolStep';
+import { classifyToolName, usableBashDescription } from './humanizeToolStep';
 
 type PreflightKind = 'question' | 'repair' | 'approvalUnavailable' | 'approvalRequired' | 'readRequired';
 
@@ -103,6 +103,8 @@ export function toolPreflightCopy(tool: Pick<ToolCall, 'name' | 'result'> & Part
   const path = tool.arguments?.file_path ?? tool.arguments?.path;
   const subject = category !== 'bash' && typeof path === 'string'
     ? path.split(/[\\/]/).pop() : undefined;
-  return { action: subject ? `${verb} · ${subject}` : verb,
+  const bashDescription = category === 'bash'
+    ? usableBashDescription(tool.name, tool.arguments as Record<string, unknown> | undefined, t) : undefined;
+  return { action: subject || bashDescription ? `${verb} · ${subject ?? bashDescription}` : verb,
     reason: kind === 'repair' ? c.repairReason : c[kind] };
 }
