@@ -51,6 +51,12 @@ describe('Bash row uses the filtered model description', () => {
     }
   });
 
+  it('en: a 49-char phrase is accepted, a 70-char one falls back', () => {
+    const ok = 'Count .csv files recursively including subfolders';
+    expect(humanizeToolStep('Bash', { command: 'ls', description: ok }, en)).toBe(ok);
+    expect(humanizeToolStep('Bash', { command: 'ls', description: `${ok} and then list each one with its size` }, en)).toBe('Ran a command');
+  });
+
   it('en UI rejects a Chinese description and the command first word', () => {
     expect(humanizeToolStep('Bash', { command: 'ls', description: '列出下载文件夹' }, en)).toBe('Ran a command');
     expect(humanizeToolStep('Bash', { command: 'git status', description: 'Run git' }, en)).toBe('Ran a command');

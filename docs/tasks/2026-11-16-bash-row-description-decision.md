@@ -9,7 +9,7 @@
 ## 过滤规则（`usableBashDescription`，humanizeToolStep.ts）
 1. 只读 `arguments.description`；`shortDescription` 不用（宿主缺省时会兜成 `Run: <命令首行>`）。
 2. 只对 `Bash` / `bash`；`terminal_write` / `Process` / `code_execute` 保持通用文案。
-3. 去首尾空白后非空、单行、≤40 字。
+3. 去首尾空白后非空、单行；含汉字 ≤40 字，纯拉丁文 ≤60 字符（真跑中英文描述 41~49 字符仍很干净，rework r1 放宽）。
 4. 不含 `\ / ~ $ ` | & ; < >`、`·`（会破坏「 · 」分段）、`-x` / `--flag` 形词（也就挡掉 URL 与路径）。
 5. 文字类型与界面语种一致（沿用 `matchesUiScript`）。
 6. 不含原始工具名（Bash/bash/Process/code_execute/terminal_write，独立词）。
@@ -24,3 +24,6 @@
 
 ## 不在范围
 审批卡片、cron 状态条命令标签、展开明细、host 侧、Bash schema 提示词、分组计数。
+
+## 返工 r1（2026-11-16）：专家面板
+主聊天前台没有 Bash（ADR-059），命令在委派任务里跑，用户看到的位置是专家面板。按验收要求把 host 侧也做了最小改动：成员的 `arguments.description` 随上下文快照（`bashSteps`）与最近工具步骤（`lastToolStep.description`）带给渲染端，渲染端仍走同一过滤。原稿「不改 host」被这条验收取代。

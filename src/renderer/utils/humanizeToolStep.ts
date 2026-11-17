@@ -388,10 +388,12 @@ export function mentionsRawToolName(text: string, toolName: string): boolean {
 /**
  * Bash 行的"人话描述"：只读 arguments.description（shortDescription 在缺省时会被宿主
  * 兜成 `Run: <命令首行>`，绝不能用）。过滤规则见 docs/tasks/2026-11-16-bash-row-description-decision.md：
- * 单行、≤40 字、语种与界面一致、不含路径/变量/管道/重定向/URL/反引号/--flag、不含命令首词、
+ * 单行、汉字≤40 / 拉丁≤60 字符、语种与界面一致、不含路径/变量/管道/重定向/URL/反引号/--flag、不含命令首词、
  * 不是命令本身（或其片段）、不含原始工具名。任何一条不满足 → undefined，调用方退回通用文案。
  */
-const BASH_DESCRIPTION_MAX_LENGTH = 40;
+// 汉字 40 字、拉丁文 60 字符：英文动词短语天然更长，真跑中 41~49 字符的英文描述都很干净。
+const BASH_DESCRIPTION_MAX_LENGTH_CJK = 40;
+const BASH_DESCRIPTION_MAX_LENGTH_LATIN = 60;
 const BASH_DESCRIPTION_COMMAND_LIKE = /[\\/~$`|&;<>·\r\n]|(^|\s)-{1,2}[A-Za-z]/;
 
 export function usableBashDescription(
@@ -403,7 +405,8 @@ export function usableBashDescription(
   const raw = args?.description;
   if (typeof raw !== 'string') return undefined;
   const text = raw.trim();
-  if (!text || text.length > BASH_DESCRIPTION_MAX_LENGTH) return undefined;
+  const maxLength = CJK_PATTERN.test(text) ? BASH_DESCRIPTION_MAX_LENGTH_CJK : BASH_DESCRIPTION_MAX_LENGTH_LATIN;
+  if (!text || text.length > maxLength) return undefined;
   if (BASH_DESCRIPTION_COMMAND_LIKE.test(text)) return undefined;
   if (!matchesUiScript(text, t)) return undefined;
   if ([...BASH_TOOLS].some((tool) => mentionsRawToolName(text, tool))) return undefined;
