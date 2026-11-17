@@ -4,10 +4,17 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDefaultWorkDirectory, getLegacyDefaultWorkDirectory } from '../../../src/host/config/configPaths';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
+import { containsCjk } from '../../../src/renderer/utils/containsCjk';
 import { CHOOSE_FOLDER_ENTRY_LABEL } from '../../../src/shared/i18n/chooseFolderEntry';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 import { expandSlashPromptForModel } from '../../../src/web/routes/agentSlashExpansion';
+
+const hostUi = vi.hoisted(() => ({ locale: 'zh' as 'zh' | 'en' }));
+
+vi.mock('../../../src/host/config/hostUiLocale', () => ({
+  getHostUiLocale: () => hostUi.locale,
+}));
 
 vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({ getPrompts: () => [] }),
@@ -17,7 +24,9 @@ vi.mock('../../../src/host/security/folderTrustService', () => ({
   isProjectConfigTrusted: async () => false,
 }));
 
-const NO_FOLDER_INSTRUCTION = `Call no tools. Reply with exactly one plain sentence in the user's language saying that no folder has been chosen yet and directing them to click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" (Chinese label: "${CHOOSE_FOLDER_ENTRY_LABEL.zh}") in the sidebar, then asking them to send /init-memory again.`;
+const noFolderInstruction = (locale: 'zh' | 'en') => `Call no tools. Reply with exactly the following text, character for character, and nothing else:\n${locale === 'en'
+  ? `No folder has been chosen yet; click "${CHOOSE_FOLDER_ENTRY_LABEL.en}" in the sidebar, then send /init-memory again.`
+  : `尚未选择文件夹，请在侧栏点击“${CHOOSE_FOLDER_ENTRY_LABEL.zh}”，然后再次发送 /init-memory。`}`;
 
 describe('expandSlashPromptForModel /init-memory working directory guard', () => {
   let tempRoot: string;
@@ -26,6 +35,7 @@ describe('expandSlashPromptForModel /init-memory working directory guard', () =>
   let originalDataDir: string | undefined;
 
   beforeEach(async () => {
+    hostUi.locale = 'zh';
     originalHome = process.env.CODE_AGENT_HOME;
     originalDataDir = process.env.CODE_AGENT_DATA_DIR;
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'slash-init-memory-'));
@@ -48,15 +58,31 @@ describe('expandSlashPromptForModel /init-memory working directory guard', () =>
     ['planned session folder', () => path.join(getDefaultWorkDirectory(), '任务_1109_init-memory')],
     ['default work root', () => getDefaultWorkDirectory()],
     ['legacy default work directory', () => getLegacyDefaultWorkDirectory(dataDir)],
-  ])('returns the no-folder instruction for a %s', async (_name, workingDirectory) => {
-    const result = await expandSlashPromptForModel('/init-memory', workingDirectory());
+  ])('returns a locale-locked no-folder instruction for a %s', async (_name, workingDirectory) => {
+    for (const locale of ['zh', 'en'] as const) {
+      hostUi.locale = locale;
+      const result = await expandSlashPromptForModel('/init-memory', workingDirectory());
 
-    expect(result).toBe(NO_FOLDER_INSTRUCTION);
-    // 提示词点名的入口必须与侧栏实际渲染的文案字面一致
-    expect(result).toContain(`"${zh.sidebarProject.chooseFolderEntry}"`);
-    expect(result).toContain(`"${en.sidebarProject.chooseFolderEntry}"`);
-    expect(result).not.toContain('ProposeProjectMemory');
-    expect(result).not.toContain('ListDirectory');
+      expect(result).toBe(noFolderInstruction(locale));
+      expect(result).toContain(CHOOSE_FOLDER_ENTRY_LABEL[locale]);
+      expect(result).not.toContain('ProposeProjectMemory');
+      expect(result).not.toContain('ListDirectory');
+      expect(result).not.toContain(workingDirectory());
+      expect(result).not.toMatch(/(?:^|\s)(?:\/(?:Users|home|tmp|var|private)\/|[A-Za-z]:[\\/])/);
+      if (locale === 'zh') expect(result).not.toContain(CHOOSE_FOLDER_ENTRY_LABEL.en);
+      else expect(containsCjk(result)).toBe(false);
+    }
+  });
+
+  it.each(['zh', 'en'] as const)('uses the exact %s sidebar row label in the no-folder hint', async (locale) => {
+    hostUi.locale = locale;
+    const result = await expandSlashPromptForModel('/init-memory', getDefaultWorkDirectory());
+    const sidebarLabel = locale === 'zh'
+      ? zh.sidebarProject.chooseFolderEntry
+      : en.sidebarProject.chooseFolderEntry;
+
+    expect(sidebarLabel).toBe(CHOOSE_FOLDER_ENTRY_LABEL[locale]);
+    expect(result).toContain(sidebarLabel);
   });
 
   it('keeps the resolved expansion byte for byte for a user-selected folder', async () => {

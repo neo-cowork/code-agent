@@ -163,7 +163,7 @@ describe('UNC real notification chain', () => {
     await deliver({ id: 'rejected', title: '任务完成', body: '完成了', sessionId: 'S2' });
     const reports = domainInvoke.mock.calls.filter(([, action]) => action === 'reportClientDelivery');
     expect(reports).toHaveLength(1);
-    expect(reports[0][2]).toEqual({ mode: 'tauri', backend: 'unc', error: 'UNC rejected request' });
+    expect(reports[0][2]).toEqual({ mode: 'tauri', backend: 'unc', error: 'UNC rejected request', fallbackToast: true });
     expect(reports[0][2]).not.toHaveProperty('dispatched', true);
     expect(invoke.mock.calls.some(([command]) => command === 'plugin:notification|notify')).toBe(false);
     trace('FB_928', onOpenSession);
