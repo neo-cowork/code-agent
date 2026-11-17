@@ -66,7 +66,7 @@ pub struct ExitWatchdog {
     /// 时钟倍率：测试把 70s 压成几十毫秒；生产恒为 1。
     time_scale: Mutex<u32>,
     reply_override: Mutex<Option<ReplyFn>>,
-    fired_reason: Mutex<Option<String>>,
+    fired_reason: Mutex<Option<(String, Duration)>>,
 }
 
 impl Default for ExitWatchdog {
@@ -101,8 +101,8 @@ impl ExitWatchdog {
     }
 
     #[cfg(test)]
-    pub(crate) fn fired_reason(&self) -> Option<String> {
-        self.fired_reason.lock().unwrap().clone()
+    pub(crate) fn fired_reason(&self) -> Option<(String, Duration)> {
+        self.fired_reason.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -138,11 +138,12 @@ pub(crate) fn arm<R: tauri::Runtime>(
                         deadline.as_secs(),
                         coordinator.stop_intent_landed(),
                     );
-                    *dog.fired_reason.lock().unwrap_or_else(|e| e.into_inner()) =
-                        Some(reason.as_str().to_string());
+                    let virtual_elapsed = started.elapsed() * scale;
                     crate::log_shell_line(&app, "error", "desktop-shell-exit-watchdog-fired", &message);
                     let exit_fn = dog.exit_fn.lock().unwrap_or_else(|e| e.into_inner()).clone();
                     exit_fn(FORCED_EXIT_CODE);
+                    *dog.fired_reason.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some((reason.as_str().to_string(), virtual_elapsed));
                     return;
                 }
                 thread::sleep(WATCHDOG_POLL);
