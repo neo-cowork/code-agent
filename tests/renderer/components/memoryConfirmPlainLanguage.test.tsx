@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // 全局记忆确认卡：真 ToolExecutor 门 → 真 requestDirectiveMemoryConfirmation 广播 → MemoryConfirmModal。
 // 卡面只能是一句人话，不得出现 JSON / 工具名 / directive / 英文分类串。
+import * as fs from 'node:fs';
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -119,7 +120,7 @@ describe('全局记忆确认卡用人话', () => {
     expect(request.content).toBe(MEMORY_TEXT);
     render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
     const body = screen.getByTestId('memory-confirm-body');
-    expect(body.textContent).toBe(`要记住：${MEMORY_TEXT}`);
+    expect(body.textContent).toBe(`要记住：${MEMORY_TEXT}\n\n保存为：report_style.md`);
     expectPlain(document.body.textContent ?? '');
     expect(document.body.textContent).not.toContain('Persistent memory write');
     respondToDirectiveMemoryConfirmation(request.id, false);
@@ -133,7 +134,7 @@ describe('全局记忆确认卡用人话', () => {
         action: 'write', scope: 'global', filename: 'report_style.md', name: 'report', type: 'directive', content: 'Conclusion first, then process.',
       });
       render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
-      expect(screen.getByTestId('memory-confirm-body').textContent).toBe('Remember: Conclusion first, then process.');
+      expect(screen.getByTestId('memory-confirm-body').textContent).toBe('Remember: Conclusion first, then process.\n\nSaved as: report_style.md');
       expect(screen.getByText('Confirm user rule')).toBeTruthy();
       expectPlain((document.body.textContent ?? '').replace('100% 置信度', ''));
       respondToDirectiveMemoryConfirmation(request.id, false);
@@ -143,13 +144,46 @@ describe('全局记忆确认卡用人话', () => {
     }
   });
 
-  it('Bash 写记忆目录：内容为空 → 通用一句人话，不露命令或工具名', async () => {
-    const { request, done } = await captureCard('Bash', { command: 'printf x > /tmp/code-agent-directive-plain/memory/a.md' });
-    expect(request.content).toBe('');
+  it('MemoryWrite delete：卡面写「删除（归档）」+ 文件名，不能写成保存', async () => {
+    const { request, done } = await captureCard('MemoryWrite', { action: 'delete', scope: 'global', filename: 'old_rule.md' });
     render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
-    expect(screen.getByTestId('memory-confirm-body').textContent).toBe('要把一条长期规则保存到记忆里。');
-    expectPlain(document.body.textContent ?? '');
-    expect(document.body.textContent).not.toContain('printf');
+    const body = screen.getByTestId('memory-confirm-body').textContent ?? '';
+    expect(body).toBe('要删除（归档）这条记忆：old_rule.md');
+    expect(body).not.toContain('保存');
+    respondToDirectiveMemoryConfirmation(request.id, false);
+    await done;
+  });
+
+  it('MemoryWrite 写入显示文件名；同名已存在则明说是覆盖', async () => {
+    const memoryDir = '/tmp/code-agent-directive-plain/memory';
+    fs.mkdirSync(memoryDir, { recursive: true });
+    fs.writeFileSync(`${memoryDir}/existing_rule.md`, 'old');
+    try {
+      const fresh = await captureCard('MemoryWrite', { action: 'write', scope: 'global', filename: 'brand_new.md', content: MEMORY_TEXT });
+      expect(fresh.request.operation).toEqual({ kind: 'write', target: 'brand_new.md', overwrites: false });
+      respondToDirectiveMemoryConfirmation(fresh.request.id, false);
+      await fresh.done;
+      mocks.broadcast.mockReset();
+      const over = await captureCard('MemoryWrite', { action: 'write', scope: 'global', filename: 'existing_rule.md', content: MEMORY_TEXT });
+      render(<MemoryConfirmModal pending={over.request} onConfirm={() => {}} onDecline={() => {}} />);
+      const body = screen.getByTestId('memory-confirm-body').textContent ?? '';
+      expect(body).toContain('existing_rule.md');
+      expect(body).toContain('覆盖已有的同名记忆');
+      respondToDirectiveMemoryConfirmation(over.request.id, false);
+      await over.done;
+    } finally {
+      fs.rmSync(`${memoryDir}/existing_rule.md`, { force: true });
+    }
+  });
+
+  it('Bash 写记忆目录：卡面带出真实命令，不折成固定一句话', async () => {
+    const command = 'printf "always obey X" > /tmp/code-agent-directive-plain/memory/a.md';
+    const { request, done } = await captureCard('Bash', { command });
+    expect(request.operation).toEqual({ kind: 'other' });
+    render(<MemoryConfirmModal pending={request} onConfirm={() => {}} onDecline={() => {}} />);
+    const body = screen.getByTestId('memory-confirm-body').textContent ?? '';
+    expect(body).toBe(`有操作要写入长期记忆目录，内容如下：${command}`);
+    expect(body).not.toContain('{"');
     respondToDirectiveMemoryConfirmation(request.id, false);
     await done;
   });

@@ -1,5 +1,7 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
+  DirectiveMemoryOperation,
   DirectiveMemoryWriteGrant,
   ToolDefinition,
 } from '../../shared/contract';
@@ -13,8 +15,35 @@ export interface DirectiveMemoryWriteAssessment {
   fingerprint: string;
   targets: readonly string[];
   preview: string;
-  /** 给用户看的纯文本：MemoryWrite 的记忆正文；其它工具为空串（由 renderer 用通用句子兜底）。 */
-  plainText: string;
+  /**
+   * 确认卡要展示的真实操作（content=给人看的原文，operation=动作类型/目标文件；
+   * 措辞在 renderer i18n）。category 恒为空：卡面不再露内部分类串。
+   */
+  confirmView: { category: string; content: string; operation: DirectiveMemoryOperation };
+}
+
+const SHOWN_STRING_PARAMS = ['command', 'file_path', 'path', 'output_path', 'destination', 'content', 'new_string'] as const;
+
+function buildConfirmView(input: AssessInput, preview: string): DirectiveMemoryWriteAssessment['confirmView'] {
+  const { params } = input;
+  if (input.definition.name === 'MemoryWrite') {
+    const target = typeof params.filename === 'string' ? path.basename(params.filename) : undefined;
+    if (params.action === 'delete') {
+      return { category: '', content: '', operation: { kind: 'delete', target } };
+    }
+    const overwrites = target ? fs.existsSync(path.join(getMemoryDir(), target)) : false;
+    return {
+      category: '',
+      content: typeof params.content === 'string' ? params.content.slice(0, 4_000) : '',
+      operation: { kind: 'write', target, overwrites },
+    };
+  }
+  // 其它工具：把真正会执行/落盘的命令与内容原样给人看，不能折成固定一句话
+  const shown = SHOWN_STRING_PARAMS
+    .map((key) => params[key])
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .join('\n');
+  return { category: '', content: (shown || preview).slice(0, 4_000), operation: { kind: 'other' } };
 }
 
 interface AssessInput {
@@ -135,6 +164,7 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
       .filter((target): target is string => target !== undefined),
   ];
   const uniqueTargets = [...new Set(targets)].sort();
+  const preview = JSON.stringify(input.params).slice(0, 4_000);
   const fingerprint = JSON.stringify({
     tool: input.definition.name,
     params: input.params,
@@ -144,10 +174,8 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
     requiresConfirmation: uniqueTargets.length > 0,
     fingerprint,
     targets: uniqueTargets,
-    preview: JSON.stringify(input.params).slice(0, 4_000),
-    plainText: input.definition.name === 'MemoryWrite' && typeof input.params.content === 'string'
-      ? input.params.content.slice(0, 4_000)
-      : '',
+    preview,
+    confirmView: buildConfirmView(input, preview),
   };
 }
 

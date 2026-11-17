@@ -16,6 +16,15 @@ interface MemoryConfirmModalProps {
   onDecline: (id: string) => void;
 }
 
+function directiveBody(pending: PendingMemoryConfirm, words: ReturnType<typeof useI18n>['t']['memoryConfirm']): string {
+  const op = pending.operation;
+  if (op?.kind === 'delete') return `${words.delete}${op.target ?? ''}`;
+  if (op?.kind === 'other') return pending.content ? `${words.other}${pending.content}` : words.generic;
+  if (!pending.content) return words.generic;
+  const file = op?.target ? `\n\n${words.file}${op.target}${op.overwrites ? words.overwrites : ''}` : '';
+  return `${words.remember}${pending.content}${file}`;
+}
+
 export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
   pending,
   onConfirm,
@@ -45,9 +54,7 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
         {/* Content */}
         <div className="p-4">
           <p className="text-sm text-zinc-400 mb-3 whitespace-pre-wrap break-words max-h-48 overflow-y-auto" data-testid="memory-confirm-body">
-            {isDirective
-              ? (pending.content ? `${t.memoryConfirm.remember}${pending.content}` : t.memoryConfirm.generic)
-              : pending.content}
+            {isDirective ? directiveBody(pending, t.memoryConfirm) : pending.content}
           </p>
 
           {/* Meta info */}

@@ -508,6 +508,16 @@ export interface MemoryLearnedEvent {
 /**
  * 记忆确认请求（用于用户确认学习到的记忆）
  */
+/** 全局记忆确认卡要让用户看清的真实操作。 */
+export interface DirectiveMemoryOperation {
+  /** write = MemoryWrite 写入；delete = MemoryWrite 归档；other = Bash/Write/Edit 等落进记忆目录的写入 */
+  kind: 'write' | 'delete' | 'other';
+  /** 被写/被归档的记忆文件名 */
+  target?: string;
+  /** write 且同名文件已存在：这是覆盖，不是新增 */
+  overwrites?: boolean;
+}
+
 export interface MemoryConfirmRequest {
   /** 请求 ID */
   id: string;
@@ -519,6 +529,8 @@ export interface MemoryConfirmRequest {
   type: string;
   /** directive = 用户明确拍板的规则；memory = 普通个性化记忆 */
   authority?: 'directive' | 'memory';
+  /** directive 请求的真实操作（renderer 用人话措辞；host 不写文案） */
+  operation?: DirectiveMemoryOperation;
   /** 置信度 */
   confidence: number;
   /** 时间戳 */

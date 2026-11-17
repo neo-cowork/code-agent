@@ -1080,8 +1080,7 @@ export class ToolExecutor {
         );
       } else {
         const confirmation = await requestDirectiveMemoryConfirmation({
-          category: '',
-          content: directiveMemoryAssessment.plainText,
+          ...directiveMemoryAssessment.confirmView,
         });
         if (!confirmation.confirmed) {
           return {

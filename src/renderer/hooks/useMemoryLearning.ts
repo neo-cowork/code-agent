@@ -23,6 +23,7 @@ export interface PendingMemoryConfirm {
   confidence: number;
   timestamp: number;
   authority?: 'directive' | 'memory';
+  operation?: MemoryConfirmRequest['operation'];
 }
 
 /**
@@ -95,6 +96,7 @@ export function useMemoryLearning() {
           confidence: request.confidence,
           timestamp: request.timestamp,
           authority: request.authority ?? 'memory',
+          operation: request.operation,
         },
       ]);
     },
