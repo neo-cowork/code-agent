@@ -14,6 +14,18 @@ const BANNED = [
   'Waiting for your confirmation',
 ];
 
+// utils 里「waiting_approval / 等待审批」状态标签不得写死「等你确认」（该词只能经共享源取，否则英文 UI 漏翻）
+const UTILS_DIR = 'src/renderer/utils/';
+const HARDCODED_CONFIRM = /(waiting_approval['"]?\s*:\s*|return\s+)['"]等你确认['"]/;
+
+function scanUtilsConfirm(text: string, file: string): string[] {
+  const hits: string[] = [];
+  text.split('\n').forEach((line, i) => {
+    if (HARDCODED_CONFIRM.test(line)) hits.push(`${file}:${i + 1} utils 里写死了等待审批标签「等你确认」，应取 WAITING_ON_USER_LABELS`);
+  });
+  return hits;
+}
+
 function scanText(text: string, file: string): string[] {
   const hits: string[] = [];
   text.split('\n').forEach((line, i) => {
@@ -41,6 +53,20 @@ describe('waiting-on-user label gate', () => {
       .filter((f) => f !== ALLOWED)
       .flatMap((f) => scanText(readFileSync(join(ROOT, f), 'utf-8'), f));
     expect(hits).toEqual([]);
+  });
+
+  it('src/renderer/utils 的等待审批标签不得写死「等你确认」', () => {
+    const files: string[] = [];
+    walk(join(ROOT, UTILS_DIR), files);
+    const hits = files
+      .map((f) => relative(ROOT, f).split(sep).join('/'))
+      .flatMap((f) => scanUtilsConfirm(readFileSync(join(ROOT, f), 'utf-8'), f));
+    expect(hits).toEqual([]);
+  });
+
+  it('反向：utils 夹具里写死的「等你确认」等待标签必须命中', () => {
+    const fixture = ["switch (s) {", "  case 'waiting_approval':", "      return '等你确认';", "}", "const m = { waiting_approval: '等你确认' };"].join('\n');
+    expect(scanUtilsConfirm(fixture, 'fixture.ts')).toHaveLength(2);
   });
 
   it('反向：含禁用字面量的夹具必须被同一扫描器命中', () => {
