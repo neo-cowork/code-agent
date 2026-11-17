@@ -95,6 +95,7 @@ function normalizeRequest(
       body: request.details.body,
       connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
+      file: request.details.file,
       requestedAccess: request.details.requestedAccess,
       access: stringField(request.details, 'access'),
       preview: request.details.preview,
