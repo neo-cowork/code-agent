@@ -177,7 +177,10 @@ function cleanRuleFolderTitle(message: string, language?: 'zh' | 'en'): string |
     .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s（）()【】[\]，。；：、]+/gi, ' ')
     .replace(/(?:[a-z]:\\|~?\/|\.{1,2}\/|\b[\w.-]+[/\\])[^\s（）()【】[\]，。；：、]*/gi, ' ')
     .trim();
-  const clause = prose.split(/[（）()［］[\]【】{}｛｝：:、]|[。！？.!?；;，,\n]/)[0]?.trim();
+  // 开头的【紧急】/（续）是标签不是任务：先剥掉再分句；整条只剩标签时取第一个非空段，不让首段空串吞掉全部兜底。
+  const untagged = prose.replace(/^[（(［[【{｛][^）)］\]】}｝]*[）)］\]】}｝]\s*/, '');
+  const segments = (untagged || prose).split(/[（）()［］[\]【】{}｛｝：:、]|[。！？.!?；;，,\n]/);
+  const clause = segments.find((segment) => segment.trim())?.trim();
   return clause ? sanitizeFolderTitle(deriveRuleSummaryTitle(clause, language)) : undefined;
 }
 
@@ -229,7 +232,7 @@ async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions):
     }
   }
   logDecision('rule', reason);
-  return cleanRuleFolderTitle(message, options.language);
+  return cleanRuleFolderTitle(message, options.language) ?? sanitizeFolderTitle(message);
 }
 
 /**

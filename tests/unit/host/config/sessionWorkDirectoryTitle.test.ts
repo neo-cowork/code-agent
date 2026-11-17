@@ -72,6 +72,17 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
     console.log(log.info.mock.calls[0][0]);
   });
 
+  it.each([
+    ['【紧急】帮我整理合同并逐份写摘要到 notes.md', '任务_1113_整理合同并逐份写摘要到 notes'],
+    ['（续）上次的报告再补充一下数据来源和图表说明', '任务_1113_上次的报告再补充一下数据来源和图表说明'],
+    ['【紧急】', '任务_1113_紧急'],
+  ] as const)('r1 leading-bracket message %s never degrades to untitled', async (userMessage, expected) => {
+    const result = await planSessionWorkDirectory({ userMessage, askTitle: async () => undefined, now, env });
+    expect(path.basename(result)).toBe(expected);
+    expect(path.basename(result)).not.toContain('untitled');
+    console.log(`r1 ${path.basename(result)}`);
+  });
+
   it('③ times out at exactly 3 s, aborts the call and ignores a late answer', async () => {
     vi.useFakeTimers();
     let signal: AbortSignal | undefined;
