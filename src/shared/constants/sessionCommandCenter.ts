@@ -152,6 +152,15 @@ const SESSION_TASK_DELIVERY_FAILURE_MESSAGES = {
   },
 } as const;
 
+const SESSION_TASK_USER_DENIED_MESSAGES = {
+  zh: '你拒绝了这一步，任务已停止。',
+  en: 'You declined this step, so the task was stopped.',
+} as const;
+
+export function formatSessionTaskUserDenied(locale: SessionTaskResultStatusWordLocale): string {
+  return SESSION_TASK_USER_DENIED_MESSAGES[locale];
+}
+
 export type SessionTaskDeliveryFailure = keyof typeof SESSION_TASK_DELIVERY_FAILURE_MESSAGES.zh;
 
 export function formatSessionTaskDeliveryFailure(

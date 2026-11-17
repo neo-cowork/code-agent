@@ -1,4 +1,5 @@
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
+import { classifyToolSteps } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
@@ -145,15 +146,12 @@ function completionSignal(turn: TraceTurn | null): string | undefined {
 
 function toolStepOutcome(turn: TraceTurn | null): { failed: number; total: number } | undefined {
   if (!turn) return undefined;
-  let failed = 0;
-  let total = 0;
-  for (const node of latestUserTurnItems(turn.nodes, (item) => item.type === 'user')) {
+  const steps = latestUserTurnItems(turn.nodes, (item) => item.type === 'user').flatMap((node) => {
     const call = node.toolCall;
-    if (!call || call._streaming || call.result === undefined) continue;
-    total += 1;
-    if (call.success === false) failed += 1;
-  }
-  return total > 0 ? { failed, total } : undefined;
+    if (!call || call._streaming || call.result === undefined) return [];
+    return [{ name: call.name, arguments: call.args, success: call.success }];
+  });
+  return classifyToolSteps(steps);
 }
 
 export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
