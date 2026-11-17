@@ -18,7 +18,7 @@ export interface CronRunAwaitingApproval {
   /** requestId；批准/拒绝走 IPC_CHANNELS.AGENT_PERMISSION_RESPONSE。 */
   id: string;
   requestedAt: number;
-  /** 工具名 / 脱敏参数预览（有才显示「等你批准：在干什么」）。 */
+  /** 工具名 / 脱敏参数预览（有才显示「等你确认：在干什么」）。 */
   label?: string;
   command?: string;
   /** Host-owned origin copied from the parked row (scheduled-task flag/name). */

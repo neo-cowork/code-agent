@@ -3,7 +3,7 @@ import { automationPresentationEn, automationPresentationZh } from './automation
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
-// ============================================================================
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
@@ -61,10 +61,10 @@ export const cronCenterZh = {
     enabled: '启用',
     disabled: '停用',
     latest: '最近: {label}',
-    awaitingApprovalBadge: '等你批准',
-    awaitingApprovalHint: '有一个运行中的任务正等你批准操作，处理前它会一直停在这里。',
+    awaitingApprovalBadge: WAITING_ON_USER_LABELS.zh.approval,
+    awaitingApprovalHint: '有一个运行中的任务正等你确认操作，处理前它会一直停在这里。',
     awaitingApprovalAction: '去处理',
-    awaitingApprovalWithPreview: '等你批准：{preview}',
+    awaitingApprovalWithPreview: WAITING_ON_USER_LABELS.zh.approvalWithLabel.replace('{label}', '{preview}'),
     nextRun: '下次 {time}',
     localNextRun: '你本机的时间 {time}',
     locationFilterAll: '全部',
@@ -585,10 +585,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     enabled: 'Enabled',
     disabled: 'Disabled',
     latest: 'Last: {label}',
-    awaitingApprovalBadge: 'Needs your approval',
+    awaitingApprovalBadge: WAITING_ON_USER_LABELS.en.approval,
     awaitingApprovalHint: 'A running task is waiting for your approval; it stays parked until you review it.',
     awaitingApprovalAction: 'Review',
-    awaitingApprovalWithPreview: 'Needs your approval: {preview}',
+    awaitingApprovalWithPreview: WAITING_ON_USER_LABELS.en.approvalWithLabel.replace('{label}', '{preview}'),
     nextRun: 'Next {time}',
     localNextRun: 'Your local time {time}',
     locationFilterAll: 'All',
