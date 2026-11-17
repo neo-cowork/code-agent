@@ -3290,6 +3290,7 @@ describe('createAgentRouter', () => {
     const sessionEq = vi.fn(async () => ({ error: null }));
     const sessionsTable = {
       upsert: vi.fn(async () => ({ error: null })),
+      select: vi.fn(() => ({ eq: vi.fn(async () => ({ data: [{ title: '云同步问题' }], error: null })) })),
       update: vi.fn(() => ({ eq: sessionEq })),
     };
     const messagesTable = {
@@ -3323,9 +3324,13 @@ describe('createAgentRouter', () => {
       expect.objectContaining({ role: 'assistant', content: '云同步回答' }),
     ]);
     expect(sessionsTable.upsert).toHaveBeenCalledTimes(2);
-    expect(sessionsTable.update).toHaveBeenCalledWith(expect.objectContaining({
-      title: '云同步问题',
-    }));
+    // 首轮标题只在 upsert（insert-if-absent）写入；after-run update 不得再带截断标题，
+    // 否则会把已回写云端的智能标题顶回去（N-FIX-SESSION-TITLE-REVERTS-TO-RAW-MESSAGE-FU1）。
+    expect(sessionsTable.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '云同步问题' }),
+      expect.objectContaining({ ignoreDuplicates: true }),
+    );
+    for (const call of sessionsTable.update.mock.calls as unknown[][]) expect(call[0]).not.toHaveProperty('title');
   });
 
   it('does not overwrite the Supabase session title on later turns', async () => {
