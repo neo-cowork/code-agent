@@ -38,6 +38,23 @@ interface CreatedReminder {
   remindAtMs?: number | null;
 }
 
+function relativeReminderDay(remindAtMs: number, timeZone: string, nowMs = Date.now()): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const calendarDate = (date: Date) => formatter.formatToParts(date)
+    .filter((part) => part.type === 'year' || part.type === 'month' || part.type === 'day')
+    .map((part) => part.value).join('-');
+  const target = calendarDate(new Date(remindAtMs));
+  for (const [days, label] of ['今天', '明天', '后天'].entries()) {
+    const candidate = new Date(nowMs);
+    // Advance calendar days in the process time zone, including DST transitions.
+    candidate.setDate(candidate.getDate() + days);
+    if (calendarDate(candidate) === target) return label;
+  }
+  return '';
+}
+
 function buildRemindersCreateSuccessResult(
   reminder: CreatedReminder,
   args: Record<string, unknown>,
@@ -63,7 +80,8 @@ function buildRemindersCreateSuccessResult(
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',
     }).formatToParts(new Date(remindAtMs));
     const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
-    remindAtText = `${formatConnectorTime(remindAtMs, timeZone)}（${part('weekday')}，${timeZone}）`;
+    const relativeDay = relativeReminderDay(remindAtMs, timeZone);
+    remindAtText = `${formatConnectorTime(remindAtMs, timeZone)}（${relativeDay ? `${relativeDay}，` : ''}${part('weekday')}，${timeZone}）`;
   } else {
     remindAtText = reminder.remindAtMs === null ? '未设置' : '无法确认，请在提醒事项中查看';
   }

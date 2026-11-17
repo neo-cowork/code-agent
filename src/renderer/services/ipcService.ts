@@ -254,21 +254,29 @@ async function invokeDomainRaw<T = unknown>(
  * 组件并发触发（如 settings get 13 次），共享同一 Promise 安全且显著减少请求。
  * 写操作（set / create / update / delete 等）返回 null，绝不去重。
  */
+const domainWriteGenerations = new Map<string, number>();
+
 function dedupeKeyForDomainInvoke(domain: string, action: string, payload?: unknown): string | null {
   if (!/^(get|list)/.test(action)) {
     return null;
   }
-  return `${domain}:${action}:${payload === undefined ? '' : JSON.stringify(payload)}`;
+  return `${domain}:${domainWriteGenerations.get(domain) ?? 0}:${action}:${payload === undefined ? '' : JSON.stringify(payload)}`;
 }
 
 const dedupedInvokeDomain = createInflightDedupe(invokeDomainRaw, dedupeKeyForDomainInvoke);
 
-export function invokeDomain<T = unknown>(
+export async function invokeDomain<T = unknown>(
   domain: string,
   action: string,
   payload?: unknown
 ): Promise<T> {
-  return dedupedInvokeDomain(domain, action, payload) as Promise<T>;
+  const result = await dedupedInvokeDomain(domain, action, payload) as T;
+  // A pre-write read can still be in flight when a mutation succeeds. Subsequent
+  // refreshes must start a new request rather than share that older snapshot.
+  if (!/^(get|list)/.test(action)) {
+    domainWriteGenerations.set(domain, (domainWriteGenerations.get(domain) ?? 0) + 1);
+  }
+  return result;
 }
 
 export const ipcService = {
