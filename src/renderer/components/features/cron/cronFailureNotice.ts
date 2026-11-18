@@ -24,6 +24,7 @@ interface CronFailureCopy {
   failureAuth: string;
   failureNetwork: string;
   failureCloudUnavailable: string;
+  failureRuntimeStarting: string;
   failureOther: string;
 }
 
@@ -74,6 +75,7 @@ export function cronFailureSentence(
   if (kind === 'auth') return copy.failureAuth;
   if (kind === 'network') return copy.failureNetwork;
   if (kind === 'cloud_unavailable') return copy.failureCloudUnavailable;
+  if (kind === 'runtime_starting') return copy.failureRuntimeStarting;
   return copy.failureOther;
 }
 

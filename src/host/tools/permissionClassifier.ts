@@ -45,6 +45,7 @@ import {
   recursivelyRemovesPath, resolveCandidatePath,
 } from './permissionClassifierShell';
 import { classifyFileWrite } from './fileWriteClassification';
+import { EXCEL_READ_ACTIONS } from '../../shared/constants/excelActions';
 import type { ToolDefinition } from '../../shared/contract';
 
 export { bashCommandRequiresPermission };
@@ -253,7 +254,7 @@ export class PermissionClassifier {
     // 1. 检查缓存
     const cacheKey = this.buildCacheKey(toolName, args, context);
     const cached = this.getFromCache(cacheKey);
-    if (cached && !context.sessionId) {
+    if (cached && !context.sessionId && toolName !== 'ExcelAutomate') {
       return { ...classificationHostReason(cached, toolName), cached: true };
     }
 
@@ -264,8 +265,13 @@ export class PermissionClassifier {
     };
     let ruleResult: ClassificationResult | null;
     try {
-      const fileWrite = await classifyFileWrite(toolName, args, classificationContext, startTime);
-      if (cached && !fileWrite?.bypassCache) return { ...classificationHostReason(cached, toolName), cached: true };
+      // ExcelAutomate read actions are write-level by declaration but read-level by policy: they must
+      // still pass the credential / private-memory read check that Read gets (file_path=~/.ssh/id_rsa).
+      const excelSensitiveRead = toolName === 'ExcelAutomate' && EXCEL_READ_ACTIONS.has(String(args.action ?? ''))
+        ? this.classifySensitiveMemoryRead(toolName, args, { ...classificationContext, permissionLevel: 'read' }, startTime)
+        : null;
+      const fileWrite = excelSensitiveRead ?? await classifyFileWrite(toolName, args, classificationContext, startTime);
+      if (cached && toolName !== 'ExcelAutomate' && !fileWrite?.bypassCache) return { ...classificationHostReason(cached, toolName), cached: true };
       ruleResult = fileWrite ?? this.classifyByRules(toolName, args, classificationContext, startTime);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);

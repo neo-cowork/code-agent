@@ -224,6 +224,11 @@ const gates = [
     args: ['scripts/shell-fail-loud-lint.mjs'],
   },
   {
+    ci: 'swarm repository-structure / Check no direct exec of app bundle binary',
+    command: 'node',
+    args: ['scripts/ci/check-no-direct-app-exec.mjs'],
+  },
+  {
     ci: 'swarm-ci / smoke / Script gates (vitest tests/scripts)',
     command: 'node',
     args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Script gates (vitest tests/scripts)', '--', 'npx', 'vitest', 'run', 'tests/scripts', '--retry=1'],

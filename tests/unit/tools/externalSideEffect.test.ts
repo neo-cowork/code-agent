@@ -128,8 +128,8 @@ describe('mustAskUnderAcceptEdits (acceptEdits 档仍必须询问清单)', () =>
     expect(mustAskUnderAcceptEdits('wake_on_event')).toBe(true);
   });
 
-  it('ExcelAutomate（可跑宏）仍在清单上', () => {
-    expect(mustAskUnderAcceptEdits('ExcelAutomate')).toBe(true);
+  it('ExcelAutomate uses action classification instead of a tool-wide exception', () => {
+    expect(mustAskUnderAcceptEdits('ExcelAutomate')).toBe(false);
   });
 
   it('既有清单成员仍命中（抽查 xlwings_execute / mcp_add_server）', () => {

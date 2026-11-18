@@ -138,6 +138,7 @@ interface ToolStepVerbBundle {
     'blocked-by-parent-role': string;
     'invalid-arguments': string;
     'budget-exhausted': string;
+    'step-cap-reached': string;
     'parent-gone': string;
     'cancelled-by-user': string;
     'cancelled-by-parent': string;
@@ -265,6 +266,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     'blocked-by-parent-role': '当前角色不允许这一步',
     'invalid-arguments': '助手设置的等待时间超过了允许的上限，需要缩短',
     'budget-exhausted': '这次任务的额度已经用完',
+    'step-cap-reached': '这次任务做到步数上限，已停下',
     'parent-gone': '上级任务已经结束',
     'cancelled-by-user': '已按你的操作取消',
     'cancelled-by-parent': '上级任务已取消这一步',
@@ -355,6 +357,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     'blocked-by-parent-role': 'This step is not allowed for the current role',
     'invalid-arguments': 'The wait time the assistant set exceeds the allowed limit and must be shortened.',
     'budget-exhausted': 'This task used up its budget',
+    'step-cap-reached': 'This task reached its step limit and stopped',
     'parent-gone': 'The parent task has already ended',
     'cancelled-by-user': 'Cancelled as requested',
     'cancelled-by-parent': 'The parent task cancelled this step',

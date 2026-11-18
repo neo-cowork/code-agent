@@ -2,6 +2,7 @@
 // 工具权限分类解析（从 toolExecutor.execute 收拢，god-file debt 门：>1000 有效行）
 // ============================================================================
 
+import { EXCEL_READ_ACTIONS } from '../../shared/constants/excelActions';
 import { classifyPermission, type ClassificationContext, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
@@ -501,6 +502,8 @@ export async function resolveToolPermissionClassification(input: {
   /** Resolve the run-owned managed browser lazily only for click target probing. */
   browserSubmitProbe?: BrowserSubmitProbeResolver;
 }): Promise<ClassificationResult> {
+  const excelRead = input.executionToolName === 'ExcelAutomate' && EXCEL_READ_ACTIONS.has(String(input.params.action ?? ''));
+  const permissionLevel = excelRead ? 'read' : input.permissionLevel;
   // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
   const external = isExternalSideEffectTool(input.executionToolName);
   if (input.policyForcesConfirmation) {
@@ -581,11 +584,11 @@ export async function resolveToolPermissionClassification(input: {
       toolDefinition: input.toolDefinition,
       workingDirectory: input.workingDirectory,
       workspaceRoot: input.workspaceRoot,
-      permissionLevel: input.permissionLevel,
+      permissionLevel,
       workingDirectoryFromToolCall: true,
     });
   }
-  if (input.readOnlyForcesConfirmation && classification.decision === 'approve') {
+  if (input.readOnlyForcesConfirmation && !excelRead && classification.decision === 'approve') {
     const opLabel = input.permissionLevel === 'write' ? '写入'
       : input.permissionLevel === 'network' ? '网络变更'
       : '执行';
@@ -608,8 +611,9 @@ export async function resolveToolPermissionClassification(input: {
     // retain their existing permission-mode behavior (including acceptEdits).
     && !(input.sessionPermissionMode === 'bypassPermissions'
       && classification.hostReason?.code === HostReasonCode.PermissionFileOutsideWorkspaceConfirmationRequired)
+    && !(input.executionToolName === 'ExcelAutomate' && classification.trustBoundary)
     && !classification.scheduleWriteTargets
-    && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
+    && permissionModeAutoApproves(input.sessionPermissionMode, permissionLevel)
     // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，
     // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。
     // bypassPermissions 不受此限，deny / policy / 边界照常生效。
@@ -632,7 +636,7 @@ export async function resolveToolPermissionClassification(input: {
   // ADR-067 D3：peer 消息触发的写/执行一律升 ask——放在档位自动放行之后改写，
   // bypassPermissions / acceptEdits / classifier approve 都不得静默放行机器转述的请求。
   // deny 保持原判（不弱化成可批卡），只读工具不进此旗标（调用方只给非只读置位）。
-  if (input.peerOriginForcesConfirmation && classification.decision === 'approve') {
+  if (input.peerOriginForcesConfirmation && !excelRead && classification.decision === 'approve') {
     const reason = '本轮输入来自其他 agent 的消息：写入/执行操作需要人工确认';
     classification = {
       decision: 'ask',
