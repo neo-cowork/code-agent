@@ -187,7 +187,15 @@ export async function executeSkillCreate(
 
     onProgress?.({ stage: 'completing', percent: 100 });
 
-    // 7. skillWatcher 会自动 reload（500ms 防抖），这里不需要主动调用
+    // 7. 项目级目录可能是这次才建出来的（skillWatcher 不再替用户预建），监听来不及挂上，
+    // 这里主动重扫一次，保证随后 skill({command}) 按名字能找到。
+    if (scope === 'project') {
+      try {
+        await getSkillDiscoveryService()?.reload();
+      } catch (error) {
+        ctx.logger.warn('Skill reload after project skill create failed', { error: String(error) });
+      }
+    }
     return {
       ok: true,
       output: [
