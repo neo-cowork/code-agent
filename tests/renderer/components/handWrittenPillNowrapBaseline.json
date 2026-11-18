@@ -19,7 +19,6 @@
     "src/renderer/components/PlanApprovalCard.tsx": 2,
     "src/renderer/components/PresentationPagePicker.tsx": 1,
     "src/renderer/components/PreviewPanel.tsx": 9,
-    "src/renderer/components/ProjectSettingsDialog.tsx": 1,
     "src/renderer/components/QuestionFormPreview.tsx": 2,
     "src/renderer/components/ReceiptRows.tsx": 1,
     "src/renderer/components/SessionActionsMenu.tsx": 1,
