@@ -157,7 +157,7 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
       '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
 
     it('folder title comes from the real text (model and rule paths)', async () => {
-      const askTitle = vi.fn(async () => ({ success: true, content: '会议纪要周报' }));
+      const askTitle = vi.fn(async (_prompt: string, _signal: AbortSignal) => ({ success: true, content: '会议纪要周报' }));
       const model = await planSessionWorkDirectory({
         userMessage: `${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报发给团队`,
         askTitle, now, env,
