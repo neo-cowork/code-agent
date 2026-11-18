@@ -7,6 +7,8 @@
 // 与 observeModeGate 同款形态：tools 层的会话键注册表，cron 层登记，执行层消费。
 // ============================================================================
 
+import { getHostUiLocale } from '../config/hostUiLocale';
+import { eventReplyBoundaryReason, eventReplyRequestReason } from '../../shared/i18n/eventReplyPermission';
 import type { CronEventReplyTarget } from '../../shared/contract/cron';
 import type { PermissionRequestData } from './types';
 
@@ -121,10 +123,11 @@ export function eventReplyPermissionRequest(
       ...(typeof params.event_id === 'string' ? { eventId: params.event_id } : {}),
       replyDestination: label,
     },
-    reason: `Event automation reply: send this message to ${label}.`,
+    reason: eventReplyRequestReason(getHostUiLocale(), label),
     boundary: {
       id: 'channel.connector',
-      reason: `回复会发送到触发本自动化的聊天会话（${label}）。`,
+      reason: eventReplyBoundaryReason('zh', label),
+      reasonEn: eventReplyBoundaryReason('en', label),
     },
   };
 }

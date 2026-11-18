@@ -312,4 +312,18 @@ describe('reply_to_event (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN)', () => {
       leaveBind();
     }
   });
+
+  it('approval card boundary carries an English variant with no CJK that still names the chat', () => {
+    const leaveBind = bindEventReplySession('reply-i18n', 'acc-1', [
+      { eventId: 'om_1', chatId: 'oc_group', chatName: 'RR51 group' },
+    ]);
+    try {
+      const request = eventReplyPermissionRequest({ name: EVENT_REPLY_TOOL_NAME, permissionLevel: 'write' }, { text: 'pong' }, 'reply-i18n');
+      expect(request?.boundary?.reasonEn).toContain('RR51 group');
+      expect(request?.boundary?.reasonEn).not.toMatch(/[\u4e00-\u9fff]/);
+      expect(request?.boundary?.reason).toContain('RR51 group');
+    } finally {
+      leaveBind();
+    }
+  });
 });
