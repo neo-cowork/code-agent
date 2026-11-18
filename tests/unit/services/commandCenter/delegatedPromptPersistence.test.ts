@@ -23,6 +23,8 @@ import { backfillMissingTelemetryUserPrompts } from '../../../../src/host/servic
 import { buildTranscriptReplay } from '../../../../src/host/telemetry/replay/transcriptReplayBuilder';
 import { AgentOrchestrator } from '../../../../src/host/agent/agentOrchestrator';
 import { DELEGATED_SCAFFOLDING_MARKERS } from '../../../utils/delegatedScaffoldingMarkers';
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../../src/host/permissions/modes';
+import { taskOutputDirectoryForShell } from '../../../../src/host/permissions/taskOutputDirectory';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
 
@@ -160,5 +162,31 @@ describe('delegate_task persists only the drafted plan as the background run use
     const rows = db.prepare("select content from messages where session_id = 'chat-session' and role = 'user'").all() as Array<{ content: string }>;
     expect(rows.map((row) => row.content)).toContain('Only look at page 1.');
     expect(rows.map((row) => row.content)).not.toContain(PLAN);
+  });
+  it.each([
+    ['plain run keeps the output-folder consent path (control)', false, true],
+    ['an approved task book shown as displayContent never becomes output-folder consent', true, false],
+  ])('%s', async (_name, directiveInDisplay, expectGrant) => {
+    const out = path.join(root, 'task-out');
+    const directive = `输出目录：${out}`;
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.models = { ...settings.models, default: 'xiaomi', providers: { xiaomi: { enabled: true, apiKey: 'fixture-key', model: 'mimo-v2.6-flash' } } };
+    const config = { getSettings: () => settings, getApiKey: () => 'fixture-key', getServiceApiKey: () => '', isDevModeAutoApproveEnabled: () => false } as unknown as ConfigService;
+    getPermissionModeManager().setSessionMode('chat-session', 'bypassPermissions', true);
+    let granted: string | undefined;
+    vi.spyOn(ModelRouter.prototype, 'inference').mockImplementation(async () => {
+      granted = taskOutputDirectoryForShell('chat-session', 'bypassPermissions', 'cp a.txt b.txt');
+      return { type: 'text', content: 'Done.', finishReason: 'stop' } as never;
+    });
+    const orchestrator = new AgentOrchestrator({ configService: config, hasApprovalUi: () => false, getHomeDir: () => root, onEvent: () => {} });
+    orchestrator.setSessionId('chat-session');
+    orchestrator.setWorkingDirectory(root, { syncWorkspaceServices: false });
+    try {
+      await orchestrator.sendMessage(directiveInDisplay ? 'Summarize the notes.' : `Summarize the notes.\n${directive}`, undefined, { mode: 'normal', disableAutoAgent: true, ...(directiveInDisplay ? { displayContent: `Summarize the notes.\n${directive}` } : {}) });
+      await orchestrator.drainWorkspaceServices();
+    } finally {
+      resetPermissionModeManager();
+    }
+    if (expectGrant) expect(granted).toBeDefined(); else expect(granted).toBeUndefined();
   });
 });
