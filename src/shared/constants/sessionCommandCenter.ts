@@ -145,7 +145,7 @@ export function composeSessionCommandTaskResultText(value: string | undefined): 
   return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
 }
 
-/** 成员页「完整产出」用的展示文本封顶（保留换行，供 markdown 渲染）；模型侧 resultText 另有 1500 字规范化版本。 */
+/** 成员页「完整产出」用的展示文本封顶（保留换行，供 markdown 渲染）；模型侧 resultText 另走 composeSessionCommandTaskResultText（8000 预算，超限落存档）。 */
 const SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS = 8000;
 
 /**
