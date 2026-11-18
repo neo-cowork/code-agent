@@ -121,6 +121,7 @@ describe('notifyCronAgentExecution 无会话云端失败', () => {
       sessionId: '',
       code: 'CRON_FAILURE',
       failureKind: 'runtime_starting',
+      jobId: definition().id,
       succeeded: false,
     }), { force: true, urgent: false });
   });
