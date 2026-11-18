@@ -5,13 +5,20 @@ import { Button } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 import { unescapeHtmlEntities } from '../../../utils/htmlEntities';
 
-// 白名单：memory_index 是每轮常驻的 MemoryRead 目录（无 items），不代表这轮用了记忆。
-const USED_MEMORY_BLOCK_TYPES = new Set<TurnQualityMemoryBlockType>(['seed-memory', 'user-memory', 'user-directives']);
+// 只计打包器按条目放进提示词的记忆。user-directives 每轮不带 query、全量注入；
+// 没有 items 的 database-seed 回退也没有条目粒度。这两类都不算「本条回复参考了记忆」。
+// memory_index 等常驻目录不在白名单里，同样排除。
+const USED_MEMORY_BLOCK_TYPES = new Set<TurnQualityMemoryBlockType>(['seed-memory', 'user-memory']);
 
-/** 本轮实际注入的记忆条目（按 entryId 去重）；mode=off 或无注入块时返回 null。只认真正把记忆内容放进提示词的块；常驻目录 memory_index、memory_hint、recent_conversations、failure_journal 都不算「本条回复参考了记忆」。 */
+/** 本轮按条目注入的记忆（按 entryId 去重）。无此类条目时返回 null，标签只用条数形式。 */
 function usedMemory(summary: TurnQualitySummary): { items: TurnQualityMemoryItem[] } | null {
   if (summary.memory.mode === 'off') return null;
-  const injected = summary.memory.blocks.filter((block) => block.injected && block.count > 0 && USED_MEMORY_BLOCK_TYPES.has(block.blockType));
+  const injected = summary.memory.blocks.filter((block) => (
+    block.injected
+    && block.count > 0
+    && USED_MEMORY_BLOCK_TYPES.has(block.blockType)
+    && (block.items?.length ?? 0) > 0
+  ));
   if (injected.length === 0) return null;
   const seen = new Set<string>();
   const items = injected.flatMap((block) => block.items || []).filter((item) => {
@@ -19,6 +26,7 @@ function usedMemory(summary: TurnQualitySummary): { items: TurnQualityMemoryItem
     seen.add(item.entryId);
     return true;
   });
+  if (items.length === 0) return null;
   return { items };
 }
 
@@ -32,9 +40,7 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
   const used = usedMemory(summary);
   if (!used) return null;
   const { items } = used;
-  const label = items.length > 0
-    ? t.memorySource.usedCount.replace('{count}', String(items.length))
-    : t.memorySource.usedGeneric;
+  const label = t.memorySource.usedCount.replace('{count}', String(items.length));
   return (
     <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
       <Button
