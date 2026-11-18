@@ -19,6 +19,7 @@ import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
+import { TaskManagerReadiness } from './taskManagerReadiness';
 import type { PlanningService } from '../planning';
 import { getPermissionModeManager } from '../permissions/modes';
 import { Semaphore } from './Semaphore';
@@ -134,6 +135,7 @@ export class TaskManager extends EventEmitter {
 
   // 依赖注入
   private configService: ConfigService | null = null;
+  private readonly readiness = new TaskManagerReadiness();
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
   /**
@@ -177,7 +179,12 @@ export class TaskManager extends EventEmitter {
     this.planningService = deps.planningService;
     this.runRegistry = deps.runRegistry;
     this.onAgentEvent = deps.onAgentEvent;
+    this.readiness.markReady();
     logger.info('TaskManager dependencies initialized');
+  }
+
+  waitUntilReady(timeoutMs: number): Promise<boolean> {
+    return this.readiness.wait(timeoutMs);
   }
 
   /**
@@ -291,7 +298,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -1057,7 +1064,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),

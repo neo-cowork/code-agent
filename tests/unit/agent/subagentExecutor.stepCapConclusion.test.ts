@@ -182,7 +182,25 @@ vi.mock('../../../src/host/agent/backgroundSubagentRegistry', () => ({
   }),
 }));
 
+import type { ToolCall } from '../../../src/shared/contract/tool';
 import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
+import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
+import { humanizeToolFailureReason, resolveToolTerminalOutcomeKey } from '../../../src/renderer/utils/toolExecutionPresentation';
+
+function cardFromExecutor(result: { error?: string; failureCode?: string }): ToolCall {
+  return {
+    id: 'helper-step',
+    name: 'Task',
+    arguments: { description: 'Open the example pages' },
+    result: {
+      toolCallId: 'helper-step',
+      success: false,
+      error: result.error,
+      metadata: { failureCode: result.failureCode },
+    },
+  };
+}
 
 function browserResponse(i: number) {
   return {
@@ -232,14 +250,14 @@ describe('SubagentExecutor step cap conclusion', () => {
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
 
-  it('keeps main\'s foreground cap-hit contract (failed, budget-exhausted, raw error) and only adds a Chinese stopHint', async () => {
+  it('keeps the cap-hit contract (failed, step-cap-reached, raw error) and only adds a Chinese stopHint', async () => {
     mocks.responses.push(browserResponse(1), browserResponse(2), browserResponse(3));
 
     const result = await new SubagentExecutor().execute(createRequest(3));
 
-    // 共享执行器不改 main 的判定（撞步数 = failed + BudgetExhausted + 原始错误），只多带只读 stopHint。
+    // 撞步数 = failed + StepCapReached + 原始错误；stopHint 仍只是只读提示。
     expect(result.success).toBe(false);
-    expect(result.failureCode).toBe('budget-exhausted');
+    expect(result.failureCode).toBe('step-cap-reached');
     expect(result.error).toBe('Max iterations reached');
     expect(result.iterations).toBe(3);
     expect(result.stopHint?.kind).toBe('step_cap');
@@ -262,6 +280,39 @@ describe('SubagentExecutor step cap conclusion', () => {
     mocks.pageInfo.value = null;
     expect(result.success).toBe(false);
     expect(result.stopHint?.conclusion).toContain('最后停留在页面http://www.sina.com.cn/p2');
+  });
+
+  it.each([
+    ['zh', zh, '这次任务做到步数上限，已停下', /额度|预算|quota|budget/iu],
+    ['en', en, 'This task reached its step limit and stopped', /额度|预算|quota|budget/iu],
+  ] as const)('step-cap failure card in %s contains neither quota nor budget wording', async (_label, t, sentence, banned) => {
+    mocks.responses.push(browserResponse(1));
+    const result = await new SubagentExecutor().execute(createRequest(1));
+    expect(result.failureCode).toBe('step-cap-reached');
+    expect(result.error).toBe('Max iterations reached');
+    const card = cardFromExecutor(result);
+    const text = humanizeToolFailureReason(card, t);
+    expect(text).toBe(sentence);
+    expect(text).not.toMatch(banned);
+    expect(resolveToolTerminalOutcomeKey(card)).toBe('failed-step-cap');
+  });
+
+  it.each([
+    ['zh', zh, '这次任务的额度已经用完', /额度|预算/u],
+    ['en', en, 'This task used up its budget', /budget/i],
+  ] as const)('token-budget failure card in %s still uses quota wording', async (_label, t, sentence, required) => {
+    // Bind before mockReturnValueOnce: a fresh literal is checked against the
+    // mock return `{ allowed, warnings }`, which has no `reason`. The executor
+    // reads `reason` (`budgetCheck.reason || 'Budget exceeded'`).
+    const deniedBudget = { allowed: false, reason: 'max token budget exhausted', warnings: [] };
+    mocks.pipeline.checkBudget.mockReturnValueOnce(deniedBudget);
+    const result = await new SubagentExecutor().execute(createRequest(1));
+    expect(result.failureCode).toBe('budget-exhausted');
+    const card = cardFromExecutor(result);
+    const text = humanizeToolFailureReason(card, t);
+    expect(text).toBe(sentence);
+    expect(text).toMatch(required);
+    expect(resolveToolTerminalOutcomeKey(card)).toBe('failed-budget');
   });
 
   it('still completes normally when the last round produced text', async () => {

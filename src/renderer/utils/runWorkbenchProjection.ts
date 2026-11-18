@@ -1,4 +1,5 @@
-import { classifyToolSteps } from './terminalWord';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
+import { classifyToolSteps, type DelegationLedgerTask } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
@@ -31,6 +32,10 @@ export interface BuildRunWorkbenchModelInput {
   taskProgress?: TaskProgressData | null;
   todos?: TodoItem[];
   pendingApprovalId?: string | null;
+  /** 只影响等待审批标签（取共享文案源）；缺省 zh。 */
+  language?: 'zh' | 'en';
+  /** Ledger tasks: a completed delegate_task naming a failed file recovers that failure. */
+  backgroundTasks?: readonly DelegationLedgerTask[];
 }
 
 function latestTurn(projection: TraceProjection): TraceTurn | null {
@@ -86,14 +91,14 @@ function statusFromInput(args: BuildRunWorkbenchModelInput, turn: TraceTurn | nu
   return 'planning';
 }
 
-function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null): string {
+function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string {
   if (taskProgress?.step?.trim()) return taskProgress.step.trim();
   if (taskProgress?.tool?.trim()) return `工具 ${taskProgress.tool.trim()}`;
 
   const labels: Record<RunUiStatus, string> = {
     planning: '规划任务',
     running: '执行中',
-    waiting_approval: '等你确认',
+    waiting_approval: WAITING_ON_USER_LABELS[language].approval,
     using_tools: '调用工具',
     verifying: '验证结果',
     completed: '已完成',
@@ -141,14 +146,14 @@ function completionSignal(turn: TraceTurn | null): string | undefined {
   return undefined;
 }
 
-function toolStepOutcome(turn: TraceTurn | null): { failed: number; total: number } | undefined {
+function toolStepOutcome(turn: TraceTurn | null, tasks?: readonly DelegationLedgerTask[]): { failed: number; total: number } | undefined {
   if (!turn) return undefined;
   const steps = latestUserTurnItems(turn.nodes, (item) => item.type === 'user').flatMap((node) => {
     const call = node.toolCall;
     if (!call || call._streaming || call.result === undefined) return [];
-    return [{ name: call.name, arguments: call.args, success: call.success }];
+    return [{ id: call.id, name: call.name, arguments: call.args, success: call.success }];
   });
-  return classifyToolSteps(steps);
+  return classifyToolSteps(steps, tasks);
 }
 
 export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
@@ -167,13 +172,13 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     },
     title: userInstructionTitle(turn),
     status,
-    phase: phaseFromStatus(status, args.taskProgress),
+    phase: phaseFromStatus(status, args.taskProgress, args.language),
     activeToolName: toolCall?.name,
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
     ...(status === 'cancelled' && turn ? { terminalReason: turn.nodes.some((node) => node.metadata?.workbench?.runCancellation?.reason === 'client_disconnect') ? 'client_disconnect' as const : isIdleReapedRun(turn) ? 'idle_reaped' as const : undefined } : {}),
-    toolStepOutcome: toolStepOutcome(turn),
+    toolStepOutcome: toolStepOutcome(turn, args.backgroundTasks),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };

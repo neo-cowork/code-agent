@@ -78,6 +78,7 @@ export interface LastToolStep {
   toolIndex?: number;
   toolTotal?: number;
   target?: string;
+  action?: string;
   /** Bash 的 arguments.description；渲染端过滤（usableBashDescription）后才上屏，不是 shortDescription。 */
   description?: string;
   at: number;
@@ -110,6 +111,8 @@ export interface TaskProgress {
   /** 按调用序的 Bash 步骤（最近 20 条），任务结束后仍在。 */
   bashSteps?: BashStep[];
   lastToolFailure?: LastToolFailure;
+  /** 委派任务内失败的工具调用累计数（不论 code，不随后续成功清零）；缺省 = 无失败记录。 */
+  failedToolCalls?: number;
 }
 
 export interface TaskNotification {

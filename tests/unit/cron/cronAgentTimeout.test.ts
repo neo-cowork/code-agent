@@ -59,6 +59,7 @@ vi.mock('../../../src/host/services', () => ({
 
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       sendMessage: agentState.sendMessage,
       getMessages: agentState.getMessages,
