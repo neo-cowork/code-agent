@@ -45,6 +45,8 @@ class SkillWatcher extends EventEmitter implements Disposable {
   private debounceMs: number;
   private reloadTimer: NodeJS.Timeout | null = null;
   private initialized = false;
+  /** stop() 自增：让过期的「等目录出现」回调失效 */
+  private watchGeneration = 0;
 
   constructor(config: SkillWatcherConfig = {}) {
     super();
@@ -74,8 +76,8 @@ class SkillWatcher extends EventEmitter implements Disposable {
     // 尚未落盘；这里不能用递归 mkdir 把它提前物化。等真实写入创建工作目录后，下一次
     // workspace service 更新再挂项目级监听即可。
     if (skillsDirs.project && this.projectDirectoryExists()) {
-      this.watchDirectory(skillsDirs.project.new, 'project');
-      this.watchDirectory(skillsDirs.project.legacy, 'project');
+      this.watchProjectDirectoryWhenAvailable(skillsDirs.project.new);
+      this.watchProjectDirectoryWhenAvailable(skillsDirs.project.legacy);
     }
 
     this.initialized = true;
@@ -83,6 +85,44 @@ class SkillWatcher extends EventEmitter implements Disposable {
       workingDirectory,
       watchCount: this.watchers.length,
     });
+  }
+
+  /**
+   * 项目级 skills 目录不存在时不替用户建，改为逐级等它出现（只对已存在的祖先做非递归监听），
+   * 出现后挂上原来的递归监听并补一次重扫——skill_create 一次性建好整条路径时，
+   * 新 SKILL.md 可能早于监听落盘，不补扫就会漏。
+   */
+  private watchProjectDirectoryWhenAvailable(target: string): void {
+    const root = this.workingDirectory;
+    const generation = this.watchGeneration;
+    const ensure = (dir: string, onReady: () => void): void => {
+      if (fs.existsSync(dir)) return onReady();
+      const parent = path.dirname(dir);
+      if (parent === dir || !dir.startsWith(root + path.sep)) return;
+      ensure(parent, () => awaitChild(parent, path.basename(dir), onReady));
+    };
+    const awaitChild = (parent: string, name: string, onReady: () => void): void => {
+      if (fs.existsSync(path.join(parent, name))) return onReady();
+      try {
+        const watcher = fs.watch(parent, (_event, filename) => {
+          if (filename && filename.toString() !== name) return;
+          if (!fs.existsSync(path.join(parent, name))) return;
+          try { watcher.close(); } catch { /* ignore */ }
+          this.watchers = this.watchers.filter((w) => w !== watcher);
+          if (generation === this.watchGeneration) onReady();
+        });
+        watcher.on('error', (error) => logger.debug('Pending project skills watcher error', { parent, error: String(error) }));
+        this.watchers.push(watcher);
+      } catch (error) {
+        logger.debug('Could not watch for project skills dir', { parent, error: String(error) });
+      }
+    };
+    let attachedSynchronously = true;
+    ensure(target, () => {
+      this.watchDirectory(target, 'project');
+      if (!attachedSynchronously) this.scheduleReload();
+    });
+    attachedSynchronously = false;
   }
 
   private projectDirectoryExists(): boolean {
@@ -114,12 +154,14 @@ class SkillWatcher extends EventEmitter implements Disposable {
    * 监听指定目录
    */
   private watchDirectory(dir: string, source: 'user' | 'project' | 'library'): void {
-    // 确保目录存在
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-    } catch (error) {
-      // 目录可能已存在或无权创建
-      logger.debug('Could not create directory', { dir, error: String(error) });
+    // 项目级目录属于用户文件夹：只监听已存在的，绝不替用户创建 .claude / .code-agent。
+    // 用户级/库级目录在应用自己的配置目录下，仍按需创建。
+    if (source !== 'project') {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (error) {
+        logger.debug('Could not create directory', { dir, error: String(error) });
+      }
     }
 
     // 检查目录是否存在且可访问
@@ -197,6 +239,7 @@ class SkillWatcher extends EventEmitter implements Disposable {
   }
 
   stop(): void {
+    this.watchGeneration++;
     if (this.reloadTimer) {
       clearTimeout(this.reloadTimer);
       this.reloadTimer = null;

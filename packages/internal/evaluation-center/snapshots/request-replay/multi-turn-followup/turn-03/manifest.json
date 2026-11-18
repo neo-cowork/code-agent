@@ -27,7 +27,7 @@
       "messageId": "msg-05"
     }
   ],
-  "toolSchemaHash": "98650b719a0fcce58afe3409d13e9aa11ca273087167ef2cec8e95ddcaf4e358",
+  "toolSchemaHash": "4040b63be473f712aa9b6d88f176f214a9325f383d3426a31d7fd23b07a99f15",
   "toolNames": [
     "AskUserQuestion",
     "Bash",

@@ -121,6 +121,7 @@ describe('RoleFirstWakeCard', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it('轮询 firstWakeGet，点建议只消费该项、刷新快照，再把 prompt 交给该专家', async () => {
@@ -295,15 +296,17 @@ describe('RoleFirstWakeCard', () => {
 
   it('卡片重挂（切会话再回来）后计时不归零', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'connected', suggestions: [] });
+    const startedAt = Date.now() - 42_000;
+    getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'connected', suggestions: [], startedAt });
     const first = render(<RoleFirstWakeCard roleId="role-remount" />);
     await act(async () => { await Promise.resolve(); });
+    expect(screen.getByTestId('thinking-digest').textContent).toBe('正在思考… · 42s');
     act(() => { vi.advanceTimersByTime(9_000); });
+    expect(screen.getByTestId('thinking-digest').textContent).toBe('正在思考… · 51s');
     first.unmount();
     render(<RoleFirstWakeCard roleId="role-remount" />);
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByTestId('thinking-digest').textContent).toMatch(/^正在思考… · (9|10)s$/);
-    vi.useRealTimers();
+    expect(screen.getByTestId('thinking-digest').textContent).toBe('正在思考… · 51s');
   });
 
   it('进行中没有已连接源时同样只显示合成思考行，不说「准备开场」', async () => {
