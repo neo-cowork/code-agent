@@ -39,6 +39,8 @@ const state = vi.hoisted(() => ({
 }));
 
 const projectClient = vi.hoisted(() => ({
+  SPACES_CHANGED_EVENT: 'neo:spaces-changed',
+  listProjectsWithActivity: vi.fn(async () => []),
   getProjectDetail: vi.fn(async (projectId: string) => ({
     project: { id: projectId, name: 'P', status: 'active', description: '', updatedAt: 1 },
     goals: [],
