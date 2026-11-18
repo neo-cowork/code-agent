@@ -178,7 +178,7 @@ describe('ToolExecutionEngine 标识类参数规范化', () => {
   });
 
   function makeEngine() {
-    const execute = vi.fn(async (): Promise<ToolResult> => ({
+    const execute = vi.fn(async (_name: string, _args: Record<string, unknown>): Promise<ToolResult> => ({
       toolCallId: '', success: true, output: 'ok', metadata: { executionStarted: true },
     }));
     const ctx = makeRuntimeContext({ toolExecutor: { execute } as never });
