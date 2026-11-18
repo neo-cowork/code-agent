@@ -27,6 +27,33 @@ import { DecisionCollapsedBar, isEditableTarget } from './DecisionCard';
 
 const logger = createLogger('UserQuestionCard');
 
+/** 数字键只到 9。第 10 个及以后的选项行不编号，「其他」只在下一个数字仍 ≤ 9 时占用。 */
+const MAX_OPTION_DIGIT = 9;
+
+function optionDigit(index: number): number | null {
+  const digit = index + 1;
+  return digit <= MAX_OPTION_DIGIT ? digit : null;
+}
+
+function otherDigit(optionCount: number): number | null {
+  const digit = optionCount + 1;
+  return digit <= MAX_OPTION_DIGIT ? digit : null;
+}
+
+function maxVisibleDigit(optionCount: number): number {
+  return otherDigit(optionCount) ?? Math.min(optionCount, MAX_OPTION_DIGIT);
+}
+
+// ↑↓ 只属于提问卡自己的焦点。窗口捕获阶段若无条件 preventDefault，
+// 聊天记录（Virtuoso scroller）的原生滚动和冒泡监听都会被吃掉，焦点还会被拽进选项行。
+function verticalArrowBelongsToQuestionCard(card: HTMLElement | null, event: KeyboardEvent): boolean {
+  if (!card) return false;
+  const target = event.target;
+  if (target instanceof Node && card.contains(target)) return true;
+  const active = document.activeElement;
+  return active instanceof Node && card.contains(active);
+}
+
 interface Props {
   request: UserQuestionRequest;
   /** DecisionSlot 控制全族共用的 Esc 迷你条；独立渲染时仍使用组件内状态。 */
@@ -52,6 +79,18 @@ const SelectionIndicator: React.FC<{ selected: boolean; multiSelect: boolean }> 
   </div>
 );
 
+const DigitLabel: React.FC<{ digit: number | null }> = ({ digit }) => {
+  if (digit === null) return null;
+  return (
+    <span
+      className="mt-0.5 w-4 shrink-0 text-center font-mono text-xs tabular-nums text-zinc-500"
+      data-testid={`user-question-digit-${digit}`}
+    >
+      {digit}
+    </span>
+  );
+};
+
 export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controlledCollapsed, onCollapse, onSkipped }) => {
   const { t } = useI18n();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -69,6 +108,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
   const collapsed = controlledCollapsed ?? internalCollapsed;
   const isCollapseControlled = controlledCollapsed !== undefined;
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const otherRowRef = useRef<HTMLDivElement>(null);
 
   const clearAutoAdvance = useCallback(() => {
     if (autoAdvanceTimerRef.current !== null) {
@@ -99,7 +139,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
     cardRef.current?.focus();
   }, [request.id]);
 
-  const handleSelect = (
+  const handleSelect = useCallback((
     questionIndex: number,
     header: string,
     label: string,
@@ -112,12 +152,10 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
         const current = prev[header] as string[];
         if (current.includes(label)) {
           return { ...prev, [header]: current.filter((l) => l !== label) };
-        } else {
-          return { ...prev, [header]: [...current, label] };
         }
-      } else {
-        return { ...prev, [header]: label };
+        return { ...prev, [header]: [...current, label] };
       }
+      return { ...prev, [header]: label };
     });
     if (!multiSelect && questionIndex < request.questions.length - 1) {
       autoAdvanceTimerRef.current = setTimeout(() => {
@@ -125,10 +163,10 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
         setStepIndex((current) => (current === questionIndex ? current + 1 : current));
       }, 250);
     }
-  };
+  }, [clearAutoAdvance, request.questions.length]);
 
   // "其他" 行被选中/取消选中：单选=覆盖当前答案；多选=把自由文本加入/移出数组
-  const handleToggleOther = (header: string, multiSelect?: boolean) => {
+  const handleToggleOther = useCallback((header: string, multiSelect?: boolean) => {
     clearAutoAdvance();
     const willActivate = !otherActive[header];
     setOtherActive((prev) => ({ ...prev, [header]: willActivate }));
@@ -141,7 +179,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
     } else {
       setAnswers((prev) => ({ ...prev, [header]: willActivate ? text : '' }));
     }
-  };
+  }, [clearAutoAdvance, otherActive, otherText]);
 
   // "其他" 输入框内容变化：仅当该行已激活才同步进 answers
   const handleOtherTextChange = (header: string, value: string, multiSelect?: boolean) => {
@@ -222,6 +260,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
 
   const currentQuestion = request.questions[stepIndex];
   const currentOptions = currentQuestion?.options.map(normalizeUserQuestionOption) ?? [];
+  const visibleDigitMax = maxVisibleDigit(currentOptions.length);
   const recommendedOptionIndex = currentOptions.findIndex((option) => option.recommended === true);
   const hasMultipleSteps = request.questions.length > 1;
   const isLastStep = stepIndex === request.questions.length - 1;
@@ -239,9 +278,15 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
     optionRefs.current[recommendedOptionIndex]?.focus();
   }, [collapsed, currentStepAnswered, recommendedOptionIndex, request.id, stepIndex]);
 
-  // Esc 收起；多题向导的 ←/→ 只负责上一题/下一题；Enter 执行当前聚焦的主按钮。
+  // Esc 收起；多题向导的 ←/→ 只负责上一题/下一题；Enter 只执行当前聚焦的主按钮。
+  // 数字键 1-9 走与点击相同的选择路径（多选切换；「其他」只在下一个数字 ≤ 9 时占用）。
+  // ↑/↓ 只在焦点已在卡片内时于选项行与「其他」之间移动，到头停止；卡片外不拦截。
+  // 可编辑目标与输入法组合期间不拦截。
   useEffect(() => {
     if (collapsed) return;
+    const question = request.questions[stepIndex];
+    if (!question) return;
+    const options = question.options.map(normalizeUserQuestionOption);
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -273,11 +318,68 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
         e.preventDefault();
         e.stopPropagation();
         primaryButton.click();
+        return;
+      }
+      if (e.isComposing) return;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (!verticalArrowBelongsToQuestionCard(cardRef.current, e)) return;
+        const rows: HTMLElement[] = [];
+        for (let index = 0; index < options.length; index += 1) {
+          const row = optionRefs.current[index];
+          if (row) rows.push(row);
+        }
+        if (otherRowRef.current) rows.push(otherRowRef.current);
+        if (rows.length === 0) return;
+        const active = document.activeElement;
+        const currentIndex = active instanceof HTMLElement
+          ? rows.findIndex((row) => row === active || row.contains(active))
+          : -1;
+        const movingDown = e.key === 'ArrowDown';
+        let nextIndex = -1;
+        if (currentIndex === -1) {
+          // 焦点在卡片或主按钮上时，↓ 进入第一行、↑ 进入最后一行，不在列表内循环。
+          nextIndex = movingDown ? 0 : rows.length - 1;
+        } else if (movingDown && currentIndex < rows.length - 1) {
+          nextIndex = currentIndex + 1;
+        } else if (!movingDown && currentIndex > 0) {
+          nextIndex = currentIndex - 1;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        if (nextIndex >= 0) rows[nextIndex]?.focus();
+        return;
+      }
+      const digit = Number.parseInt(e.key, 10);
+      if (!Number.isInteger(digit) || digit < 1 || digit > MAX_OPTION_DIGIT || String(digit) !== e.key) return;
+      const option = options[digit - 1];
+      if (option) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSelect(stepIndex, question.header, option.label, question.multiSelect);
+        return;
+      }
+      if (otherDigit(options.length) === digit) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToggleOther(question.header, question.multiSelect);
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [collapsed, currentStepAnswered, handleBack, handleNext, hasMultipleSteps, isLastStep, onCollapse, stepIndex, submitting]);
+  }, [
+    collapsed,
+    currentStepAnswered,
+    handleBack,
+    handleNext,
+    handleSelect,
+    handleToggleOther,
+    hasMultipleSteps,
+    isLastStep,
+    onCollapse,
+    request.questions,
+    stepIndex,
+    submitting,
+  ]);
 
   if (!currentQuestion) return null;
 
@@ -360,6 +462,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
                     }`}
                   >
                     <div className="flex items-start gap-3">
+                      <DigitLabel digit={optionDigit(oIndex)} />
                       <SelectionIndicator
                         selected={isSelected(currentQuestion.header, option.label)}
                         multiSelect={!!currentQuestion.multiSelect}
@@ -385,8 +488,10 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
 
                 {/* "其他" 自由文本行：选中即可直接输入，不用先选再改 */}
                 <div
+                  ref={otherRowRef}
                   role="button"
                   tabIndex={0}
+                  data-testid="user-question-other-row"
                   onClick={() => handleToggleOther(currentQuestion.header, currentQuestion.multiSelect)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -395,13 +500,14 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
                       handleToggleOther(currentQuestion.header, currentQuestion.multiSelect);
                     }
                   }}
-                  className={`w-full p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                  className={`w-full p-2.5 rounded-lg border text-left transition-all cursor-pointer focus:outline-hidden focus:border-badge-info focus:bg-blue-500/5 ${
                     otherActive[currentQuestion.header]
                       ? 'border-badge-info bg-blue-500/10 ring-1 ring-blue-500/50'
                       : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                   }`}
                 >
                   <div className="flex items-start gap-3">
+                    <DigitLabel digit={otherDigit(currentOptions.length)} />
                     <SelectionIndicator
                       selected={!!otherActive[currentQuestion.header]}
                       multiSelect={!!currentQuestion.multiSelect}
@@ -423,6 +529,9 @@ export const UserQuestionCard: React.FC<Props> = ({ request, collapsed: controll
                   </div>
                 </div>
               </div>
+              <p className="text-xs text-zinc-500" data-testid="user-question-key-hint">
+                {t.userQuestion.keyboardHint(visibleDigitMax)}
+              </p>
             </div>
         </div>
 
