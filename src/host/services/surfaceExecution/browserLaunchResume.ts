@@ -45,6 +45,8 @@ let deps: ManagedBrowserLaunchResumeDeps | null = null;
 
 /** Archive version each window last imported or exported; a newer archive means the window's cookies are stale. */
 const windowArchiveVersion = new WeakMap<object, number>();
+/** What the window held right after importing the archive; lets a stale swap export only the window's own changes. */
+const windowBaseline = new WeakMap<object, string>();
 
 export function installManagedBrowserLaunchResume(next: ManagedBrowserLaunchResumeDeps): void {
   deps = next;
@@ -127,6 +129,13 @@ async function seedFreshJar(
   }
   service.setResumeOwner(conversationId);
   windowArchiveVersion.set(service, (deps.resumeStateStore.archiveVersion?.(conversationId) ?? 0));
+  windowBaseline.delete(service);
+  try {
+    const baseline = await deps.resumeStateStore.captureBaseline?.(conversationId);
+    if (baseline) windowBaseline.set(service, baseline);
+  } catch {
+    // Without a baseline a stale swap falls back to leaving the archive untouched.
+  }
   let target: string | null;
   try {
     target = await readLastPage(conversationId);
@@ -214,10 +223,30 @@ async function replaceJar(service: BrowserService, conversationId: string, phase
   if (previous) {
     const stale = (store.archiveVersion?.(previous) ?? 0) !== (windowArchiveVersion.get(service) ?? 0);
     if (stale) {
-      // Another run wrote a newer login for the previous owner; this window's cookies must not overwrite it.
+      // Another run rewrote the archive after this window seeded. Apply only what
+      // this window changed since import; otherwise keep the archive as is.
+      const baseline = windowBaseline.get(service);
+      if (baseline && store.exportMergedForConversation) {
+        try {
+          await store.exportMergedForConversation(previous, service, baseline);
+        } catch (error) {
+          logResume('warn', {
+            phase: 'skipped',
+            reason: 'resume_skipped_export_failed',
+            conversationIdHash: conversationIdHash(conversationId),
+            url: readActiveUrl(service),
+            error: errorMessage(error),
+          });
+          throw new BrowserResumeStateError(
+            'BROWSER_RESUME_STATE_EXPORT_FAILED',
+            'Browser login state could not be saved before switching conversations. The browser was left unchanged.',
+            { cause: error },
+          );
+        }
+      }
       logResume('info', {
         phase,
-        reason: 'resume_export_skipped_stale',
+        reason: 'resume_export_merged_stale',
         conversationIdHash: conversationIdHash(previous),
         url: readActiveUrl(service),
       });

@@ -263,18 +263,36 @@ describe('BrowserService launch resume', () => {
     await service.close();
   });
 
-  it('does not overwrite a newer login archive with the window\'s stale cookies on swap', async () => {
+  it('does not overwrite a newer login archive with the window\'s untouched cookies on swap', async () => {
     const { service, secure, resume } = await boot();
+    await secure.setItem(resumeSlot('chat-a'), JSON.stringify({ cookies: [{ name: 'old_login' }], origins: [] }));
     await service.launch({ ...launchOptions, conversationId: 'chat-a' });
     state.cookies = [{ name: 'newer_login' }];
     await resume.exportForConversation('chat-a', service);
-    state.cookies = [{ name: 'stale_login' }];
+    state.cookies = [{ name: 'old_login' }];
 
     await service.ensureSession('about:blank', { ...launchOptions, conversationId: 'chat-b' });
 
     expect(service.getResumeOwner()).toBe('chat-b');
     expect(secure.values.get(resumeSlot('chat-a'))).toContain('newer_login');
-    expect(secure.values.get(resumeSlot('chat-a'))).not.toContain('stale_login');
+    expect(secure.values.get(resumeSlot('chat-a'))).not.toContain('old_login');
+    await service.close();
+  });
+
+  it('keeps a login made in this window when another run rewrote the archive meanwhile', async () => {
+    const { service, secure, resume } = await boot();
+    await secure.setItem(resumeSlot('chat-a'), JSON.stringify({ cookies: [{ name: 'old_login' }], origins: [] }));
+    await service.launch({ ...launchOptions, conversationId: 'chat-a' });
+    state.cookies = [{ name: 'agent_login' }];
+    await resume.exportForConversation('chat-a', service);
+    state.cookies = [{ name: 'old_login' }, { name: 'window_login' }];
+
+    await service.ensureSession('about:blank', { ...launchOptions, conversationId: 'chat-b' });
+
+    const archive = secure.values.get(resumeSlot('chat-a')) ?? '';
+    expect(archive).toContain('window_login');
+    expect(archive).toContain('agent_login');
+    expect(archive).not.toContain('old_login');
     await service.close();
   });
 

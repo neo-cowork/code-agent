@@ -19,7 +19,43 @@ export interface BrowserResumeImportOptions {
   consume?: boolean;
 }
 
+interface StorageStateLike {
+  cookies?: Array<Record<string, unknown>>;
+  origins?: Array<{ origin?: string; localStorage?: Array<{ name: string; value: string }> } & Record<string, unknown>>;
+}
+
+const cookieKey = (c: Record<string, unknown>): string => `${String(c.domain)}\u0000${String(c.path)}\u0000${String(c.name)}`;
+
+/**
+ * Three-way merge: keep the archive, and apply only what this window changed
+ * relative to what it imported (baseline). Entries the window did not touch
+ * keep the archive's (possibly newer) value.
+ */
+function mergeStorageState(archive: StorageStateLike, windowState: StorageStateLike, baseline: StorageStateLike): StorageStateLike {
+  const baseCookies = new Map((baseline.cookies ?? []).map((c) => [cookieKey(c), String(c.value)]));
+  const cookies = new Map((archive.cookies ?? []).map((c) => [cookieKey(c), c]));
+  for (const c of windowState.cookies ?? []) {
+    if (baseCookies.get(cookieKey(c)) !== String(c.value)) cookies.set(cookieKey(c), c);
+  }
+  const baseItems = new Map<string, string>();
+  for (const o of baseline.origins ?? []) for (const i of o.localStorage ?? []) baseItems.set(`${o.origin}\u0000${i.name}`, i.value);
+  const origins = new Map((archive.origins ?? []).map((o) => [String(o.origin), { ...o, localStorage: [...(o.localStorage ?? [])] }]));
+  for (const o of windowState.origins ?? []) {
+    for (const i of o.localStorage ?? []) {
+      if (baseItems.get(`${o.origin}\u0000${i.name}`) === i.value) continue;
+      const target = origins.get(String(o.origin)) ?? { ...o, localStorage: [] };
+      target.localStorage = [...target.localStorage.filter((x) => x.name !== i.name), i];
+      origins.set(String(o.origin), target);
+    }
+  }
+  return { cookies: [...cookies.values()], origins: [...origins.values()] };
+}
+
 export interface BrowserResumeStateStore {
+  /** The archive a window is about to import; the baseline for a later merged export. */
+  captureBaseline?(conversationId: string): Promise<string>;
+  /** Export only this window's changes since baseline on top of the current archive. */
+  exportMergedForConversation?(conversationId: string, browserService: BrowserService, baseline: string): Promise<void>;
   exportForConversation(conversationId: string, browserService: BrowserService): Promise<string>;
   importForConversation(
     conversationId: string,
@@ -85,6 +121,44 @@ export class SecureBrowserResumeStateStore implements BrowserResumeStateStore {
         this.archiveVersions.set(conversationId, this.archiveVersion(conversationId) + 1);
       }
       return temporaryPath;
+    } catch (error) {
+      primaryError = error;
+      throw error;
+    } finally {
+      await this.removeTemporaryPath(temporaryPath, primaryError);
+    }
+  }
+
+  async captureBaseline(conversationId: string): Promise<string> {
+    return (await this.secureStorage.getItem(this.slot(conversationId))) ?? '{}';
+  }
+
+  async exportMergedForConversation(
+    conversationId: string,
+    browserService: BrowserService,
+    baseline: string,
+  ): Promise<void> {
+    if (this.inactiveConversations.has(conversationId)) return;
+    const generation = this.generations.get(conversationId) || 0;
+    const windowState = JSON.parse(await this.readWindowState(conversationId, browserService)) as StorageStateLike;
+    const stored = await this.secureStorage.getItem(this.slot(conversationId));
+    const archive = (stored ? JSON.parse(stored) : {}) as StorageStateLike;
+    const merged = mergeStorageState(archive, windowState, JSON.parse(baseline) as StorageStateLike);
+    if ((this.generations.get(conversationId) || 0) === generation) {
+      await this.secureStorage.setItem(this.slot(conversationId), JSON.stringify(merged));
+      this.archiveVersions.set(conversationId, this.archiveVersion(conversationId) + 1);
+    }
+  }
+
+  private async readWindowState(conversationId: string, browserService: BrowserService): Promise<string> {
+    const temporaryPath = await this.createTemporaryPath(conversationId, 'export');
+    let primaryError: unknown;
+    try {
+      await browserService.exportStorageState(temporaryPath);
+      await fs.promises.chmod(temporaryPath, 0o600);
+      const serialized = await fs.promises.readFile(temporaryPath, 'utf8');
+      JSON.parse(serialized);
+      return serialized;
     } catch (error) {
       primaryError = error;
       throw error;
