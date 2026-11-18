@@ -151,6 +151,12 @@ function getLegacySupersededDirectory(workspace: string): string {
   return `${getWorkspaceSnapshotRoot(workspace)}.legacy-superseded`;
 }
 
+function markLegacySuperseded(identity: SnapshotScope): void {
+  const dir = getLegacySupersededDirectory(resolveWorkspace(identity.workingDir));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, encodeSnapshotSegment(requireIdentityPart(identity.sessionId, 'sessionId'))), '');
+}
+
 function isLegacySuperseded(workspace: string, sessionSegment: string): boolean {
   return fs.existsSync(path.join(getLegacySupersededDirectory(workspace), sessionSegment));
 }
@@ -231,9 +237,6 @@ function activateStreamSnapshot(identity: StreamSnapshotIdentity): SnapshotOwner
   };
   const sessionDir = getSessionSnapshotDirectory(identity);
   fs.mkdirSync(sessionDir, { recursive: true });
-  const supersededDir = getLegacySupersededDirectory(workspace);
-  fs.mkdirSync(supersededDir, { recursive: true });
-  fs.writeFileSync(path.join(supersededDir, encodeSnapshotSegment(sessionId)), '');
 
   // The owner marker selects the only recoverable run. Older run files remain
   // physically isolated until the current owner settles, which lets a stale
@@ -394,6 +397,9 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
     const owner = readOwner(identity);
     if (owner?.runId === identity.runId.trim()) {
       fs.rmSync(getSessionSnapshotDirectory(identity), { recursive: true, force: true });
+      // 新 run 干净收尾后，旧位置同会话的快照不再是未清证据；只在应用数据目录留标记，不碰用户夹。
+      // 必须在 clear 之后而非认领时写：认领到首包落盘之间旧快照仍是唯一证据。
+      markLegacySuperseded(identity);
     }
   } catch {
     // Snapshot cleanup is best effort and must not fail the run.

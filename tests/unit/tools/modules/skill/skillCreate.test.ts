@@ -18,6 +18,7 @@ import type { ParsedSkill } from '../../../../../src/shared/contract/agentSkill'
 // -----------------------------------------------------------------------------
 
 const ensureInitializedMock = vi.fn(async (_dir: string) => {});
+const reloadMock = vi.fn(async () => {});
 const getSkillMock = vi.fn<(name: string) => ParsedSkill | undefined>();
 let registryAvailable = true;
 
@@ -27,6 +28,7 @@ vi.mock('../../../../../src/host/services/skills', () => ({
       ? {
           ensureInitialized: ensureInitializedMock,
           getSkill: getSkillMock,
+          reload: reloadMock,
         }
       : undefined,
 }));
@@ -76,6 +78,7 @@ beforeEach(async () => {
   registryAvailable = true;
   ensureInitializedMock.mockReset();
   ensureInitializedMock.mockImplementation(async () => {});
+  reloadMock.mockClear();
   getSkillMock.mockReset();
   getSkillMock.mockReturnValue(undefined);
 
@@ -279,6 +282,8 @@ describe('skillCreateModule (native)', () => {
         const skillPath = path.join(tmpRoot, 'project-skills', 'proj-skill', 'SKILL.md');
         await expect(fs.stat(skillPath)).resolves.toBeDefined();
         expect(result.output).toContain('范围: project');
+        // 项目目录可能是这次才建出来的，监听来不及挂上：必须主动重扫
+        expect(reloadMock).toHaveBeenCalledTimes(1);
       }
     });
 

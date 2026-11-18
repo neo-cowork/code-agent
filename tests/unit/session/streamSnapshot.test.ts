@@ -225,7 +225,10 @@ describe('stream snapshot run isolation', () => {
     expect(hasUnclearedStreamSnapshots(tempDir)).toBe(true);
 
     const handler = createSnapshotHandler(identity({ runId: 'run-new' }));
+    // 认领 owner 后、首包落盘前：旧快照仍是唯一证据，不能被判成已清
+    expect(hasUnclearedStreamSnapshots(tempDir)).toBe(true);
     handler(partialSnapshot('new run partial'));
+    expect(hasUnclearedStreamSnapshots(tempDir)).toBe(true);
     handler({ ...partialSnapshot('new run done'), isFinal: true });
 
     expect(loadStreamSnapshot({ workingDir: tempDir, sessionId: 'session-1' })).toBeNull();
