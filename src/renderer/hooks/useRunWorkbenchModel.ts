@@ -420,6 +420,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
   const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const language = useAppStore((state) => state.language);
   const selectedSwarmAgentId = useAppStore((state) => state.selectedSwarmAgentId);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const workflowSnapshot = useWorkflowStore((state) => state.activeSnapshot(currentSessionId ?? undefined));
@@ -440,6 +441,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       taskProgress,
       todos: statusRail.todos.items,
       pendingApprovalId,
+      language: language === 'en' ? 'en' : 'zh',
       backgroundTasks,
     });
     const sessionTask = buildSessionTaskRecord({
@@ -475,6 +477,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     backgroundTasks,
     currentSessionId,
     durableSwarmDetail,
+    language,
     pendingApprovalId,
     projection,
     selectedSwarmAgentId,

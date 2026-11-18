@@ -1,5 +1,6 @@
 import { isClosedTaskStatus, statusRequiresWaitReason } from '@shared/contract/planning';
 import type { RunUiState, TaskRecord } from '../types/runWorkbench';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 
 type TaskRailMode = 'simple' | 'checklist';
 
@@ -77,7 +78,7 @@ function statusLabel(status: TaskRecord['status']): string {
   }
 }
 
-function runStatusLabel(run?: RunUiState | null): string | null {
+function runStatusLabel(run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): string | null {
   if (!run) return null;
   switch (run.status) {
     case 'completed':
@@ -85,7 +86,7 @@ function runStatusLabel(run?: RunUiState | null): string | null {
     case 'blocked':
       return '已阻塞';
     case 'waiting_approval':
-      return '等你确认';
+      return WAITING_ON_USER_LABELS[language].approval;
     case 'planning':
       return '正在分析';
     case 'using_tools':
@@ -99,14 +100,14 @@ function runStatusLabel(run?: RunUiState | null): string | null {
   }
 }
 
-function simpleTitle(task: TaskRecord, run?: RunUiState | null): string {
+function simpleTitle(task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): string {
   // 有明确标题优先显示标题（行内已单独展示状态标签，无需用状态词顶替标题）——
   // 否则终态的后台任务（如"循环 · …"失败）会丢掉名字、只剩"已阻塞/已取消"。
   if (task.title) return task.title;
   if (isClosedTaskStatus(task.status) || statusRequiresWaitReason(task.status)) {
     return statusLabel(task.status);
   }
-  return runStatusLabel(run) || statusLabel(task.status);
+  return runStatusLabel(run, language) || statusLabel(task.status);
 }
 
 function toStepViews(task: TaskRecord): TaskRailStepView[] {
@@ -123,7 +124,7 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
     .filter((step) => step.title && !isUtilityStepTitle(step.title));
 }
 
-export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): TaskRailView {
+export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): TaskRailView {
   const taskSteps = toStepViews(task);
   const waitingCount = taskSteps.filter((step) => (step.blockedByTitles?.length ?? 0) > 0).length;
   const unlockingCount = taskSteps.filter((step) => (step.blockedTaskTitles?.length ?? 0) > 0).length;
@@ -144,7 +145,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
   if (!isChecklist) {
     return {
       mode: 'simple',
-      title: simpleTitle(task, run),
+      title: simpleTitle(task, run, language),
       status: task.status,
       failed: task.failed,
       visibleSteps: [],
@@ -162,7 +163,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
 
   return {
     mode: 'checklist',
-    title: task.title || runStatusLabel(run) || statusLabel(task.status),
+    title: task.title || runStatusLabel(run, language) || statusLabel(task.status),
     status: task.status,
     failed: task.failed,
     visibleSteps: taskSteps,

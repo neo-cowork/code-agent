@@ -1,3 +1,4 @@
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 
 export const cronRunRecordZh = {
@@ -6,8 +7,8 @@ export const cronRunRecordZh = {
   elapsedHm: '{h} 时 {m} 分',
   elapsedMs: '{m} 分 {s} 秒',
   elapsedS: '{s} 秒',
-  awaiting: '等你批准',
-  awaitingWithLabel: '等你批准：{label}',
+  awaiting: WAITING_ON_USER_LABELS.zh.approval,
+  awaitingWithLabel: WAITING_ON_USER_LABELS.zh.approvalWithLabel,
   awaitingBashPrefix: '运行 ',
   approve: '批准',
   reject: '拒绝',
@@ -29,8 +30,8 @@ export const cronRunRecordEn = {
   elapsedHm: '{h}h {m}m',
   elapsedMs: '{m}m {s}s',
   elapsedS: '{s}s',
-  awaiting: 'Needs your approval',
-  awaitingWithLabel: 'Needs your approval: {label}',
+  awaiting: WAITING_ON_USER_LABELS.en.approval,
+  awaitingWithLabel: WAITING_ON_USER_LABELS.en.approvalWithLabel,
   awaitingBashPrefix: 'Run ',
   approve: 'Approve',
   reject: 'Reject',

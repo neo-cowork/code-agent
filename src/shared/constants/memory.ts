@@ -228,6 +228,13 @@ export const ROLE_ASSETS = {
   TRASH_AGENT_FILENAME: 'agent.md',
 } as const;
 
+/**
+ * 首次醒来「正在思考」最多回溯多久。
+ * 主机在 running 中重启不会重跑，状态文件会停在 running；更老的 enqueuedAt
+ * 不能当成还在跑的起点，否则重载后数字会一直涨。
+ */
+export const ROLE_FIRST_WAKE_THINKING_TIMER_MAX_AGE_MS = 10 * 60 * 1000;
+
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
 export const ROLE_PROACTIVITY = {
   /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations）。
