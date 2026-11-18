@@ -97,6 +97,14 @@ describe('applyReadLoopHardLimit', () => {
     expect(result.metadata).toMatchObject({ readLoopSeal: true, hardLimitPreflight: true });
   });
 
+  it('executed=true tags the replaced result without dropping skipped (failure counting unchanged)', () => {
+    const ctx = makeCtx();
+    const pre = applyReadLoopHardLimit(ctx, { id: 'a', name: 'Bash' }, Date.now(), vi.fn());
+    expect(pre.metadata?.executed).toBeUndefined();
+    const post = applyReadLoopHardLimit(makeCtx(), { id: 'b', name: 'Bash' }, Date.now(), vi.fn(), true);
+    expect(post.metadata).toMatchObject({ skipped: true, executed: true });
+  });
+
   it('escalates to full forceFinal after 3 extra blocked reads', () => {
     const ctx = makeCtx();
     const injectPrompt = vi.fn();
