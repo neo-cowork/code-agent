@@ -7,7 +7,7 @@ import { chromium, type Browser } from 'playwright';
 import { parseArgs } from './args';
 import { CORE_FLOWS, CORE_FLOW_IDS } from './flows';
 import { buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure, type AttemptResult, type FlowResult } from './result';
-import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, ensureServerAlive, startServer, stopServer } from './server';
+import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, quiesceServer, startServer, stopServer } from './server';
 import type { AttemptEnv, FlowDef, ServerInfo } from './types';
 import { dismissFirstRunLayers } from './ui';
 
@@ -34,7 +34,7 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
     readDb: async () => { const r = dumpDb(bin, server); lastDb = r.file; return r; },
   };
   const started = Date.now();
-  const restarted = await ensureServerAlive(bin, server);
+  const restarted = await quiesceServer(bin, server);
   if (restarted) env.note(restarted);
   await flow.prepare?.(server);
   let failedStep: AttemptResult['failedStep'] = null;

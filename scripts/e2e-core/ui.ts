@@ -78,6 +78,11 @@ export async function driveTurn(page: Page, handlers: TurnHandlers, timeoutMs: n
     if (await page.getByText('需要你的回答', { exact: true }).first().isVisible().catch(() => false)) {
       throw new Error('模型没有继续做事，而是弹出「需要你的回答」反问用户（AskUserQuestion，模型分支）');
     }
+    // 面板没渲染出来时只剩这句状态：AskUserQuestion 在等用户（SSE 里是 tool_progress 一直涨），同样是模型分支
+    if ((await pageText(page).catch(() => '')).includes('正在等待你的回答')) {
+      await sleep(3_000);
+      if ((await pageText(page).catch(() => '')).includes('正在等待你的回答')) throw new Error('模型调用了 AskUserQuestion 在等用户回答（页面只显示「正在等待你的回答」，模型分支）');
+    }
     if (handlers.until && await handlers.until().catch(() => false)) return;
     // 前台停止键或后台任务的停止键任一在，就还没收尾（后台任务里的审批卡也会在这段时间冒出来）
     const running = (await stop.count().catch(() => 0)) > 0

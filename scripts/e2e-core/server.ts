@@ -105,3 +105,30 @@ export async function cancelSessions(server: ServerInfo, sessionIds: string[]): 
     }).catch(() => undefined);
   }
 }
+
+const IDLE_CAP_MS = 45_000;
+
+function busySessions(data: DbSnapshot): string[] {
+  const pending = new Set(data.pendingApprovals.filter((a) => String(a.status ?? 'pending') === 'pending').map((a) => String(a.session_id)));
+  return data.sessions.filter((s) => s.status === 'running' || pending.has(String(s.id))).map((s) => String(s.id));
+}
+
+/**
+ * 每次尝试前：停掉所有还在跑 / 等批准的会话，等服务回到空闲；
+ * 限时内没空闲就 kill9 + restart（只对自己起的服务），返回要写进 reason 的说明。
+ */
+export async function quiesceServer(bin: string, server: ServerInfo): Promise<string | null> {
+  const restarted = await ensureServerAlive(bin, server);
+  if (restarted) return restarted;
+  const deadline = Date.now() + IDLE_CAP_MS;
+  let busy = busySessions(dumpDb(bin, server).data);
+  while (busy.length && Date.now() < deadline) {
+    await cancelSessions(server, busy);
+    await new Promise((r) => setTimeout(r, 3_000));
+    busy = busySessions(dumpDb(bin, server).data);
+  }
+  if (!busy.length) return null;
+  runRealrun(bin, ['kill9', '--out', server.dir]);
+  runRealrun(bin, ['restart', '--out', server.dir], START_TIMEOUT_MS);
+  return `上一次尝试留下 ${busy.length} 个停不下来的会话，${IDLE_CAP_MS / 1000}s 内没回到空闲，已 kill9 + restart 服务`;
+}
