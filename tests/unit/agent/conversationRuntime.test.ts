@@ -1305,6 +1305,24 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    it('does not fall back to database-seed when the packer matched nothing for the query', async () => {
+      vi.mocked(buildPackedSeedMemory).mockResolvedValue({
+        block: '',
+        packed: { items: [], selectedCount: 0, totalCandidates: 0, budget: 800 } as any,
+      });
+
+      await runtime.initializeRun('帮我把这三个网页总结成周报');
+
+      expect(buildSeedMemoryBlock).not.toHaveBeenCalled();
+      expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'user-memory',
+      );
+      const traces = listMemoryInjectionTraces({ sessionId: 'test-session-1' });
+      expect(traces).toContainEqual(expect.objectContaining({ blockType: 'user-memory', injected: false }));
+      expect(traces).not.toContainEqual(expect.objectContaining({ blockType: 'user-memory', source: 'database-seed' }));
+    });
+
     it('injects user directives and ordinary memory as separate historical-background blocks', async () => {
       vi.mocked(buildPackedUserDirectives).mockResolvedValue({
         block: '## User Directives\n<memory-pack>\n- [1] Keep PRs fail closed\n</memory-pack>',
