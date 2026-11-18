@@ -114,10 +114,11 @@ describe('DelegationReceipt — 终局工具失败出路', () => {
   });
 });
 
-// Pinned before changing the display edge: all 15 codes and the two raw fallbacks.
+// Pinned before changing the display edge: all 16 codes and the two raw fallbacks.
 const chineseReasons = [
   '当前角色不允许这一步', '需要的权限没有通过', '所需能力当前不可用',
   '助手设置的等待时间超过了允许的上限，需要缩短', '这次任务的额度已经用完',
+  '这次任务做到步数上限，已停下',
   '处理时间超过了限制', '上级任务已经结束', '已按你的操作取消', '上级任务已取消这一步',
   '前置步骤没有完成', '还缺少必要的前置条件', '这一阶段没有完成',
   '无法为这次任务准备运行环境', '模型没有给出可用结果', '失败原因还不明确',

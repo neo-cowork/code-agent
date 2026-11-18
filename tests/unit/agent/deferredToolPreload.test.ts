@@ -31,11 +31,13 @@ import { getTextForegroundToolNames } from '../../../src/host/tools/protocolRegi
 import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
 import { isToolDeniedByRunPolicy } from '../../../src/host/tools/runToolPolicy';
 
+const preloadLogger = vi.hoisted(() => ({ warn: vi.fn(), debug: vi.fn() }));
+
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
-    debug: vi.fn(),
+    debug: preloadLogger.debug,
     info: vi.fn(),
-    warn: vi.fn(),
+    warn: preloadLogger.warn,
     error: vi.fn(),
   }),
   logger: {
@@ -89,6 +91,9 @@ function registerProtocolToolForPreload(name: 'Browser' | 'computer_use' | 'work
 
 describe('deferred tool preload', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
+    preloadLogger.warn.mockClear();
+    preloadLogger.debug.mockClear();
     resetProtocolRegistry();
     registerProtocolToolForPreload('Browser');
     registerProtocolToolForPreload('computer_use');
@@ -96,6 +101,41 @@ describe('deferred tool preload', () => {
     registerProtocolToolForPreload('workflow_orchestrate');
     registerProtocolToolForPreload('MCPUnified');
     resetToolSearchService();
+  });
+
+  it('warns once per turn for an allowlisted preload failure and keeps retrying', () => {
+    const error = new Error('tool registry unavailable');
+    const select = vi.spyOn(getToolSearchService(), 'selectTool').mockImplementation(() => { throw error; });
+    const ctx = runtime({ allowedToolNames: ['Browser'] });
+    preloadLogger.debug.mockClear();
+
+    expect(preloadDeferredToolsForTurn(ctx)).toEqual([]);
+    expect(preloadDeferredToolsForTurn(ctx)).toEqual([]);
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(preloadLogger.warn).toHaveBeenCalledExactlyOnceWith(
+      '[ContextAssembly] Allowlisted deferred tool preload failed',
+      { toolName: 'Browser', cause: 'select_tool_failed', error: 'tool registry unavailable' },
+    );
+    expect(preloadLogger.debug).not.toHaveBeenCalled();
+
+    ctx.turn.beginTurn('next-turn', 'iteration');
+    preloadDeferredToolsForTurn(ctx);
+    expect(preloadLogger.warn).toHaveBeenCalledTimes(2);
+    ctx.turn.beginRun('next question');
+    preloadDeferredToolsForTurn(ctx);
+    expect(preloadLogger.warn).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps opportunistic preload failures at debug', () => {
+    vi.spyOn(getToolSearchService(), 'selectTool').mockImplementation(() => { throw new Error('tool registry unavailable'); });
+    expect(preloadDeferredToolsForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: 'Use browser automation', timestamp: 1 }],
+    }))).toEqual([]);
+    expect(preloadLogger.warn).not.toHaveBeenCalled();
+    expect(preloadLogger.debug).toHaveBeenCalledWith(
+      '[ContextAssembly] Deferred tool preload skipped',
+      { toolName: 'Browser', cause: 'select_tool_failed', error: 'tool registry unavailable' },
+    );
   });
 
   it('attributes a preloaded tool to the runtime session so that session can evict it', () => {
