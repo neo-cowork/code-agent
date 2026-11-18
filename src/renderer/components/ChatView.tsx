@@ -26,7 +26,7 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useSessionTurnActive } from '../hooks/useSessionTurnActive';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
-import { StreamingIndicator } from './features/chat/StreamingIndicator';
+import { AssistantFeedbackIndicator } from './features/chat/AssistantFeedbackIndicator';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
 import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
@@ -970,13 +970,7 @@ export const ChatView: React.FC = () => {
           {pendingAssistantFeedback !== null && (
             <div className="w-full chat-col-pad" data-testid="assistant-send-placeholder">
               <div className="mx-auto max-w-3xl px-4">
-                <StreamingIndicator
-                  startTime={pendingAssistantFeedback.startedAt}
-                  preparationPhase={pendingAssistantFeedback.phase === 'submitting'
-                    ? 'submitting'
-                    : pendingAssistantFeedback.phase === 'queued' ? 'queued' : undefined}
-                  waitingReason={pendingAssistantFeedback.phase === 'waiting_model' ? 'model' : undefined}
-                />
+                <AssistantFeedbackIndicator feedback={pendingAssistantFeedback} />
               </div>
             </div>
           )}

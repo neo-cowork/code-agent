@@ -279,8 +279,10 @@ export function notifyCronAgentExecution(
 ): void {
   // 无会话放行仅限 cloud_unavailable 失败：这类失败的执行没有本地 session（云端 FK
   // 约束），早退会把它静默吞掉；判据与载荷 failureKind 同源（同一个分类函数）。
-  const cloudDownNotice = execution.status === 'failed' && !execution.sessionId
-    && classifyCronFailurePresentation(execution.error).kind === 'cloud_unavailable';
+  // runtime_starting（启动期等运行时超时，会话尚未创建）同理放行，点击落点用 event.jobId。
+  const sessionlessKind = execution.status === 'failed' && !execution.sessionId
+    ? classifyCronFailurePresentation(execution.error).kind : undefined;
+  const cloudDownNotice = sessionlessKind === 'cloud_unavailable' || sessionlessKind === 'runtime_starting';
   if (definition.action.type !== 'agent' || (!execution.sessionId && !cloudDownNotice)) return;
   // cancelled = 等容量被中断，不是失败，不发失败告警
   if (execution.status !== 'completed' && execution.status !== 'failed') return;

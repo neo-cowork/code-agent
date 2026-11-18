@@ -55,15 +55,17 @@ export function describeLastToolStep(
   status: ToolStepStatus = 'completed',
 ): string | undefined {
   if (!step) return undefined;
-  const targetArgs = step.target
+  const targetArgs = step.target || step.action
     ? {
       ...(step.description ? { description: step.description } : {}),
       file_path: step.target,
+      output_path: step.target,
       path: step.target,
       notebook_path: step.target,
       command: step.target,
       agentId: step.target,
       target: step.target,
+      ...(step.action ? { action: step.action } : {}),
     }
     : undefined;
   return humanizeToolStep(step.tool, targetArgs, t, undefined, status);
