@@ -106,6 +106,33 @@ describe('ChatSearchBar — empty-query matches push (r3 ①)', () => {
     expect(onMatchesChange).not.toHaveBeenCalled();
   });
 
+  it('in-session search matches text that only exists in a tool call result', async () => {
+    const onMatchesChange = vi.fn();
+    const proj = projection();
+    proj.turns[1].nodes.push({
+      id: 'tool-1',
+      type: 'tool_call',
+      content: '',
+      timestamp: now + 1,
+      toolCall: { id: 'call-1', name: 'Read', args: {}, result: 'Supplier code: ZK-4471-QUARTZ' },
+    });
+    render(
+      <ChatSearchBar
+        visible
+        seedQuery="ZK-4471-QUARTZ"
+        projection={proj}
+        onClose={() => {}}
+        onMatchesChange={onMatchesChange}
+        onActiveMatchChange={() => {}}
+      />,
+    );
+    await flushFrames(80);
+    expect(onMatchesChange).toHaveBeenCalledWith(
+      [expect.objectContaining({ turnIndex: 1, nodeIndex: 1 })],
+      0,
+    );
+  });
+
   it('pushes matches when the user types, and clears them when the user empties the query', async () => {
     const onMatchesChange = vi.fn();
     renderBar(onMatchesChange, projection());

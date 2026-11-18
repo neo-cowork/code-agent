@@ -557,6 +557,7 @@ export const ChatView: React.FC = () => {
 
     const match = findSearchMatchForPendingJump(projection, pendingSearchJump);
     if (match) {
+      setSearchSeedQuery(pendingSearchJump.query);
       setShowSearch(true);
       setSearchMatches([match]);
       setActiveMatchIndex(0);

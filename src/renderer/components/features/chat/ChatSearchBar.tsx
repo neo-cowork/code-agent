@@ -12,7 +12,7 @@ import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
 import { ipcService } from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore } from '../../../stores/sessionUIStore';
-import { createPendingSearchJumpFromCrossSessionResult } from '../../../utils/sessionSearchJump';
+import { createPendingSearchJumpFromCrossSessionResult, getTraceNodeSearchText } from '../../../utils/sessionSearchJump';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
@@ -102,7 +102,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
 
     projection.turns.forEach((turn, turnIndex) => {
       turn.nodes.forEach((node, nodeIndex) => {
-        const content = node.content.toLowerCase();
+        const content = getTraceNodeSearchText(node).toLowerCase();
         let offset = 0;
         while (offset < content.length) {
           const idx = content.indexOf(lowerQuery, offset);
