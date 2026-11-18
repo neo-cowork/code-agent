@@ -217,10 +217,19 @@ export function preloadDeferredToolsForTurn(
         loaded.add(loadedTool);
       }
     } catch (error) {
-      logger.debug('[ContextAssembly] Deferred tool preload skipped', {
+      const detail = {
         toolName,
+        cause: 'select_tool_failed',
         error: error instanceof Error ? error.message : String(error),
-      });
+      };
+      const explicitlyAllowed = runtime.allowedToolNames?.some((name) => resolveToolAlias(name) === toolName);
+      if (explicitlyAllowed) {
+        if (runtime.turn.claimDeferredPreloadWarning(toolName)) {
+          logger.warn('[ContextAssembly] Allowlisted deferred tool preload failed', detail);
+        }
+      } else {
+        logger.debug('[ContextAssembly] Deferred tool preload skipped', detail);
+      }
     }
   }
 

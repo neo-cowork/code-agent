@@ -53,6 +53,7 @@ vi.mock('../../../src/host/cron/cronAgentSession', () => ({
 vi.mock('../../../src/host/cron/cronAgentRoleContext', () => ({ buildCronAgentRunOptions: async () => ({}) }));
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: vi.fn(),
       sendMessage: () => new Promise(() => undefined), // 永不返回：模拟被 kill -9

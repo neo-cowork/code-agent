@@ -259,15 +259,15 @@ describe('BackgroundSubagentRegistry', () => {
       expect(reg.getStatus(agentId)?.failureCode).not.toBe(AgentFailureCode.BudgetExhausted);
     });
 
-    it('keeps main\'s failed/budget-exhausted record for a cap hit while carrying the plain conclusion', async () => {
+    it('keeps the executor step-cap code for a cap hit while carrying the plain conclusion', async () => {
       const reg = new BackgroundSubagentRegistry();
       const agentId = reg.spawn(async () => ({
-        success: false, output: '', error: 'Max iterations reached', failureCode: AgentFailureCode.BudgetExhausted,
+        success: false, output: '', error: 'Max iterations reached', failureCode: AgentFailureCode.StepCapReached,
         toolsUsed: [], iterations: 3,
         stopHint: { kind: 'step_cap' as const, conclusion: '后台任务做到第 3 步（上限 3 步）就用完了步数。' },
       }));
       await reg.await(agentId);
-      expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: 'Max iterations reached', failureCode: AgentFailureCode.BudgetExhausted });
+      expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: 'Max iterations reached', failureCode: AgentFailureCode.StepCapReached });
     });
 
     it.each(['step_cap', 'no_conclusion'] as const)('keeps the leftover background shell report (with taskId) after the %s conclusion', async (kind) => {

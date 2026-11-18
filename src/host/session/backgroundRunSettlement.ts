@@ -45,7 +45,7 @@ export function resolveBackgroundRunSettlement(input: BackgroundRunSettlementInp
 
 interface BackgroundTaskManagerLike {
   markCompleted(sessionId: string, message?: string): Promise<void> | void;
-  markFailed(sessionId: string, error?: string): void;
+  markFailed(sessionId: string, error?: string): void | Promise<void>;
 }
 
 /** 按决策收线。markCompleted/markFailed 自带 running-guard，重复收线是幂等 no-op。 */
@@ -55,7 +55,7 @@ export async function settleBackgroundRun(
   settlement: BackgroundRunSettlement,
 ): Promise<void> {
   if (settlement.action === 'markFailed') {
-    backgroundManager.markFailed(sessionId, settlement.message);
+    await backgroundManager.markFailed(sessionId, settlement.message);
     return;
   }
   await backgroundManager.markCompleted(sessionId, settlement.message);
