@@ -18,6 +18,7 @@ vi.mock('../../../src/renderer/stores/composerRejectedUploadsStore', () => ({
 }));
 
 import { useChatInputSessionScope } from '../../../src/renderer/components/features/chat/ChatInput/useChatInputSessionScope';
+import { useComposerAttachmentLimitStore } from '../../../src/renderer/stores/composerAttachmentLimitStore';
 import {
   holdComposerDraftForNextSession,
   releaseComposerDraftHold,
@@ -41,6 +42,14 @@ describe('useChatInputSessionScope draft carry', () => {
     storeState.currentSessionId = 'b';
     act(() => view.rerender());
     expect(setValue).toHaveBeenCalledWith('');
+  });
+
+  it('clears the attachment-limit notice on a session switch', () => {
+    const { view } = mount();
+    useComposerAttachmentLimitStore.getState().show({ added: 10, dropped: 10, max: 10, kind: 'partial' });
+    storeState.currentSessionId = 'b';
+    act(() => view.rerender());
+    expect(useComposerAttachmentLimitStore.getState().notice).toBeNull();
   });
 
   it('keeps the typed text when the choose-folder entry holds the draft for the next switch', () => {
