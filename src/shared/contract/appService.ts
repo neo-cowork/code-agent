@@ -140,6 +140,8 @@ export interface CreateSessionConfig {
   metadata?: Record<string, unknown>;
   /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
   expertRoleId?: string;
+  /** 显式归属项目/协作空间；存在且未归档时优先于 workingDirectory 反查。 */
+  projectId?: string;
   /** 新任务级「不用记忆」档；缺省 = 'auto'（跟随后台记忆策略）。 */
   memoryMode?: SessionMemoryMode;
   /** 后台宿主流程建会话时可跳过前台激活；默认仍激活，保持交互式创建语义。 */

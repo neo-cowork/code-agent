@@ -79,6 +79,8 @@ export interface SessionCreateOptions {
 	  readOnly?: boolean;
   retryOfSessionId?: string;
   userId?: string | null; memoryMode?: Session['memoryMode'];
+  /** 显式归属项目（存在且未归档才采用，否则告警后回落目录反查）。 */
+  projectId?: string;
 }
 
 export interface SessionListOptions {
@@ -232,10 +234,9 @@ export class SessionManager implements Disposable {
     // a later Project assignment cannot invalidate the first message append.
     try {
       const { getProjectService } = await import('../project/projectService');
-      const project = await getProjectService().ensureProjectForWorkspace(
-        session.workingDirectory,
-        now,
-      );
+      const projectService = getProjectService();
+      const project = projectService.resolveExplicitProject(options.projectId)
+        ?? await projectService.ensureProjectForWorkspace(session.workingDirectory, now);
       session.projectId = project.id;
     } catch (err) {
       logger.error(

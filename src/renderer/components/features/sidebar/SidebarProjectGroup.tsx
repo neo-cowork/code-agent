@@ -344,7 +344,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             type="button"
             aria-label={p.newSessionIn.replace('{name}', summary.displayName)}
             title={p.newSessionIn.replace('{name}', summary.displayName)}
-            onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
+            onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path, group.projectId)}
             disabled={isCreatingSession || (creatingWorkspaceKey !== null && creatingWorkspaceKey !== group.key)}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:opacity-50"
           >
@@ -417,7 +417,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             setProjectDrawerKey(null);
           }}
           onNewSession={async () => {
-            await createWorkspaceChat(group.key, group.path);
+            await createWorkspaceChat(group.key, group.path, group.projectId);
             setProjectDrawerKey(null);
           }}
           onRenameProject={group.projectId

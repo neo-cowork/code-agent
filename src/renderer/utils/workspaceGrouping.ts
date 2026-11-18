@@ -100,6 +100,8 @@ export function groupByWorkspace(
   sessions: SessionWithMeta[],
   uncategorizedName: string,
   projectFallbackName: string,
+  /** 还没有任何会话的显式空间：补成空组（key project:<id>），让纯名字建出来的空间也出现在侧栏。 */
+  emptyProjects: ReadonlyArray<{ id: string; name: string; workspacePath?: string | null }> = [],
 ): WorkspaceGroup[] {
   const buckets = new Map<string, SessionBucket>();
 
@@ -150,6 +152,22 @@ export function groupByWorkspace(
         latestActivityAt,
       });
     }
+  }
+
+  for (const project of emptyProjects) {
+    const key = projectGroupKey(project.id);
+    if (buckets.has(key)) continue;
+    const path = project.workspacePath?.trim() || undefined;
+    categorized.push({
+      key,
+      name: project.name,
+      path,
+      paths: path ? [path] : [],
+      isUncategorized: false,
+      projectId: project.id,
+      sessions: [],
+      latestActivityAt: 0,
+    });
   }
 
   categorized.sort((a, b) => b.latestActivityAt - a.latestActivityAt);

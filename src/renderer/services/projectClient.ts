@@ -42,7 +42,16 @@ export async function listProjectsWithActivity(includeArchived = false, spacesOn
 
 /** 新建显式协作空间；撞已有 workspace 项目时 host 侧自动升级并返回该项目 */
 export async function createSpace(input: CreateSpaceInput): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'createSpace', input);
+  notifySpacesChanged();
+  return project;
+}
+
+/** 空间集合变化（新建/升级）：侧栏据此重拉「还没有会话的空间」。 */
+export const SPACES_CHANGED_EVENT = 'neo:spaces-changed';
+
+function notifySpacesChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SPACES_CHANGED_EVENT));
 }
 
 /** 将已有普通项目升级为显式协作空间；项目带目录且含危险项时需 trustAcknowledged 知情确认 */
@@ -50,10 +59,12 @@ export async function promoteToSpace(
   projectId: string,
   opts?: { trustAcknowledged?: boolean },
 ): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', {
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'promoteToSpace', {
     projectId,
     trustAcknowledged: opts?.trustAcknowledged,
   });
+  notifySpacesChanged();
+  return project;
 }
 
 /** 升级为云协作空间：创建云项目壳并写回本地映射；失败 error.message 已是人话（host 侧映射） */

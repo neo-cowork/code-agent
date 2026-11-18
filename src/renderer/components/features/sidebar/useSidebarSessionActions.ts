@@ -54,8 +54,8 @@ export interface SidebarSessionActions {
   handleToggleWorkspaceGroup: (workspaceKey: string, view: SidebarGroupExpansionView) => void;
   handleNewChat: () => Promise<void>;
   handleNewIndependentSpace: () => Promise<void>;
-  createWorkspaceChat: (workspaceKey: string, workingDirectory?: string) => Promise<void>;
-  handleNewWorkspaceChat: (e: React.MouseEvent, workspaceKey: string, workingDirectory?: string) => Promise<void>;
+  createWorkspaceChat: (workspaceKey: string, workingDirectory?: string, projectId?: string) => Promise<void>;
+  handleNewWorkspaceChat: (e: React.MouseEvent, workspaceKey: string, workingDirectory?: string, projectId?: string) => Promise<void>;
   handleSelectSession: (sessionId: string) => Promise<void>;
   handleArchiveSession: (id: string, isArchived: boolean, e: React.MouseEvent) => Promise<void>;
   handleOpenWorkspaceAssets: (e: React.MouseEvent) => void;
@@ -168,17 +168,21 @@ export function useSidebarSessionActions(
   const createWorkspaceChat = useCallback(async (
     workspaceKey: string,
     workingDirectory?: string,
+    projectId?: string,
   ) => {
     const directory = workingDirectory?.trim();
-    if (!directory || isCreatingSession || creatingWorkspaceKey) {
+    if ((!directory && !projectId) || isCreatingSession || creatingWorkspaceKey) {
       return;
     }
 
     setCreatingWorkspaceKey(workspaceKey);
     try {
-      const session = await createSession(t.sidebar.newSessionTitle, { workingDirectory: directory });
+      const session = await createSession(t.sidebar.newSessionTitle, {
+        workingDirectory: directory ?? null,
+        ...(projectId ? { projectId } : {}),
+      });
       if (session) {
-        setWorkingDirectory(directory);
+        if (directory) setWorkingDirectory(directory);
         setWorkspaceExpanded(workspaceKey, true);
         clearPlanningState();
       }
@@ -218,10 +222,11 @@ export function useSidebarSessionActions(
     e: React.MouseEvent,
     workspaceKey: string,
     workingDirectory?: string,
+    projectId?: string,
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    await createWorkspaceChat(workspaceKey, workingDirectory);
+    await createWorkspaceChat(workspaceKey, workingDirectory, projectId);
   };
 
   const handleSelectSession = async (sessionId: string) => {

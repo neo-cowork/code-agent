@@ -32,7 +32,13 @@ import {
   type SidebarSearchScope,
 } from '../../../utils/sidebarMessageSearch';
 import { buildSessionReplayEvidenceMap } from '../../../utils/sessionReplayEvidence';
-import { getProjectArtifacts, getProjectDetail } from '../../../services/projectClient';
+import {
+  getProjectArtifacts,
+  getProjectDetail,
+  listProjectsWithActivity,
+  SPACES_CHANGED_EVENT,
+} from '../../../services/projectClient';
+import type { ProjectWithActivity } from '@shared/contract/project';
 
 const logger = createLogger('Sidebar');
 
@@ -469,6 +475,31 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     };
   }, [canOpenSessionReplay, trajectoryQualityCandidateKey]);
 
+  // 只靠名字建出来、还没有会话的协作空间：groupByWorkspace 只从既有会话建组，不补就整个不出现在侧栏。
+  const [spaceList, setSpaceList] = useState<ProjectWithActivity[]>([]);
+  const [spaceListVersion, setSpaceListVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setSpaceListVersion((v) => v + 1);
+    window.addEventListener(SPACES_CHANGED_EVENT, bump);
+    return () => window.removeEventListener(SPACES_CHANGED_EVENT, bump);
+  }, []);
+  const sessionIdsKey = sessions.map((session) => session.id).join('\n');
+  useEffect(() => {
+    let cancelled = false;
+    listProjectsWithActivity(false, true)
+      .then((list) => { if (!cancelled) setSpaceList(list); })
+      .catch((error) => {
+        logger.warn('Failed to load sidebar spaces', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      });
+    return () => { cancelled = true; };
+  }, [sessionIdsKey, spaceListVersion]);
+  const emptySpaces = useMemo(() => {
+    const used = new Set(sessions.map((session) => session.projectId).filter(Boolean));
+    return spaceList.filter((space) => !used.has(space.id));
+  }, [sessions, spaceList]);
+
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,
   // sorted by latest activity; sessions without a workingDirectory go into a
   // trailing uncategorized bucket. No time sub-groups inside workspaces.
@@ -485,6 +516,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         }),
         t.sidebarProject.uncategorizedGroupName,
         t.sidebar.projectsSectionTitle,
+        // 搜索中不补空空间：命中即显的语义里没有「命中 0 条」的组。
+        searchQuery.trim() ? [] : emptySpaces,
       ).map((group) => ({
         ...group,
         sessions: sortSidebarSessionsForRecovery(
@@ -507,7 +540,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             ),
         ),
       })),
-    [backgroundSessionMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates, t],
+    [backgroundSessionMap, emptySpaces, filteredSessions, hasNeedsInputForSession, searchQuery, sessionRuntimes, sessionStates, t],
   );
   const visibleProjectIds = useMemo(
     () =>

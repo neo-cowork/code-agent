@@ -446,6 +446,21 @@ export class ProjectService {
     return project;
   }
 
+  /** 显式项目 id：存在且未归档才采用；否则 warn（区分未找到/已归档）并返回 undefined 让调用方回落。 */
+  resolveExplicitProject(projectId: string | undefined): Project | undefined {
+    if (!projectId) return undefined;
+    const project = this.repo().getProject(projectId);
+    if (!project) {
+      logger.warn('[ProjectService] explicit projectId not found, falling back to workspace lookup', { projectId });
+      return undefined;
+    }
+    if (project.status === 'archived' || project.archivedAt) {
+      logger.warn('[ProjectService] explicit projectId is archived, falling back to workspace lookup', { projectId });
+      return undefined;
+    }
+    return project;
+  }
+
   /**
    * 按 workspace 路径查既有项目，不铸造、不落未分类：与 ensureProjectForWorkspace
    * 同一道 trim/authority/workspaceKey 门，任一门不过或项目不存在都返回 undefined。
