@@ -40,8 +40,30 @@ test('排队发送只按真实事件推进发送、启动、等待模型和首 t
             providers: {
               openai: { enabled: true, apiKey: 'e2e-placeholder', model: 'gpt-4o' },
             },
+            // routing 四槽齐给（contract settings.ts 的必填槽）：设置面板会读
+            // routing.memory / routing.fast（TaskStrategySettingsPanel），缺槽时模型门
+            // 一打开就 TypeError 炸 ErrorBoundary。
+            routing: {
+              code: { provider: 'openai', model: 'gpt-4o' },
+              vision: { provider: 'openai', model: 'gpt-4o' },
+              fast: { provider: 'openai', model: 'gpt-4o' },
+              gui: { provider: 'openai', model: 'gpt-4o' },
+            },
           },
         },
+      }),
+    });
+  });
+  // #3533 后 readModelReadiness 会用会话级 getEffectiveModel 覆盖设置里的默认 provider；
+  // 不 mock 它时真实 host 按全新 e2e 数据目录答 longcat（无 key），而设置 mock 里只有
+  // openai，hasConfiguredRuntimeProvider 为 false，发送在模型门就被拦下，/api/run 永远不来。
+  await page.route('**/api/domain/session/getEffectiveModel', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { provider: 'openai', model: 'gpt-4o', adaptive: false },
       }),
     });
   });
@@ -49,6 +71,8 @@ test('排队发送只按真实事件推进发送、启动、等待模型和首 t
     const payload = route.request().postDataJSON() as { clientMessageId?: string };
     clientMessageId = payload.clientMessageId ?? '';
     heldRunRoute = route;
+    // 路径证据：这行出现在输出里 = 发送链真的 POST 到了 /api/run 并被本处理器截住。
+    console.log(`[first-turn-feedback] POST /api/run intercepted (clientMessageId=${clientMessageId})`);
   });
   await page.route('**/api/interrupt', async (route) => {
     const payload = route.request().postDataJSON() as { clientMessageId?: string };
@@ -86,7 +110,9 @@ test('排队发送只按真实事件推进发送、启动、等待模型和首 t
     });
   }
 
-  expect(heldRunRoute).not.toBeNull();
+  // 同步点：发送链（settings → getEffectiveModel → sendMessage → POST /api/run）真正走到
+  // /api/run 处理器后才放行；裸读 heldRunRoute 会在占位 paint 与 fetch 完成之间踩竞态。
+  await expect.poll(() => heldRunRoute !== null).toBe(true);
   await heldRunRoute!.fulfill({
     status: 409,
     contentType: 'application/json',
