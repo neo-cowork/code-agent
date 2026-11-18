@@ -32,7 +32,7 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
-import { bashStepDescription, extractToolStepTarget } from './toolStepTarget';
+import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 import { stripWorkdirPrefix } from './workdirPrefix';
 
@@ -307,11 +307,13 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
     for (let callIndex = calls.length - 1; callIndex >= 0; callIndex -= 1) {
       const call = calls[callIndex];
       if (call.name !== tool) continue;
-      const target = extractToolStepTarget(call.arguments);
+      const target = extractToolStepTarget(call.arguments, call.name);
+      const action = extractToolStepAction(call.arguments);
       const description = bashStepDescription(call.name, call.arguments);
       return {
         tool,
         ...(target ? { target } : {}),
+        ...(action ? { action } : {}),
         ...(description ? { description } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
