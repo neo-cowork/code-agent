@@ -29,6 +29,7 @@
     "lint:host-esm-cjs": "node scripts/ci/host-esm-cjs-lint.mjs",
     "lint:shared-host-boundary": "node scripts/ci/shared-host-boundary.mjs",
     "lint:shell-fail-loud": "node scripts/shell-fail-loud-lint.mjs",
+    "lint:no-direct-app-exec": "node scripts/ci/check-no-direct-app-exec.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
     "gates:fast": "node scripts/gates-fast.mjs",
     "gates:local": "node scripts/gates-local.mjs",

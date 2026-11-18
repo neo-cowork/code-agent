@@ -318,11 +318,93 @@ describe('TurnQualityStrip expert display name', () => {
       useAppStore.setState({ language: 'zh' } as never);
     });
 
-    it('shows a generic chip for an injected block without items', () => {
+    const entry = (entryId: string, title: string, kind: 'user' | 'directive') => ({
+      entryId,
+      title,
+      kind,
+      scope: 'global' as const,
+      status: 'active' as const,
+      preview: title,
+    });
+    const packedBlock = (
+      blockType: 'user-memory' | 'user-directives',
+      source: string,
+      items: ReturnType<typeof entry>[],
+    ) => ({
+      blockType,
+      trigger: 'session_start',
+      source,
+      injected: true,
+      chars: 80,
+      count: items.length,
+      items,
+    });
+
+    it('(a) only user-directives with items shows no chip', () => {
       useAppStore.setState({ language: 'zh' } as never);
-      const s = withItems({ blocks: [{ blockType: 'seed-memory', trigger: 'session_start', source: 'database-seed', injected: true, chars: 50, count: 3 }] });
+      const s = withItems({
+        blocks: [packedBlock('user-directives', 'directive-memory-packer', [
+          entry('dir-1', '周报用中文', 'directive'),
+          entry('dir-2', '不写套话', 'directive'),
+        ])],
+      });
       const { container } = render(<TurnQualityStrip summary={s} />);
-      expect(container.querySelector('button')?.textContent).toContain('参考了记忆');
+      expect(container.querySelector('button')).toBeNull();
+      expect(container.textContent).not.toContain('参考了');
+    });
+
+    it('(b) only user-memory with items shows a chip whose count equals those items', () => {
+      useAppStore.setState({ language: 'zh' } as never);
+      const s = withItems({
+        blocks: [packedBlock('user-memory', 'memory-packer', [
+          entry('mem-1', '周报分三段', 'user'),
+        ])],
+      });
+      const { container } = render(<TurnQualityStrip summary={s} />);
+      expect(container.querySelector('button')?.textContent).toContain('参考了 1 条记忆');
+    });
+
+    it('(c) directives plus user-memory counts only user-memory items, even when entry ids overlap', () => {
+      useAppStore.setState({ language: 'zh' } as never);
+      const s = withItems({
+        blocks: [
+          packedBlock('user-directives', 'directive-memory-packer', [
+            entry('overlap-1', '指令专属标题', 'directive'),
+            entry('dir-only', '不要出现的指令', 'directive'),
+          ]),
+          packedBlock('user-memory', 'memory-packer', [
+            entry('overlap-1', '周报结构', 'user'),
+            entry('mem-only', '受众是团队', 'user'),
+          ]),
+        ],
+      });
+      const { container } = render(<TurnQualityStrip summary={s} />);
+      const chip = container.querySelector('button') as HTMLButtonElement;
+      expect(chip.textContent).toContain('参考了 2 条记忆');
+      expect(chip.textContent).not.toContain('参考了 3');
+      fireEvent.click(chip);
+      const text = container.textContent || '';
+      expect(text).toContain('周报结构');
+      expect(text).toContain('受众是团队');
+      expect(text).not.toContain('指令专属标题');
+      expect(text).not.toContain('不要出现的指令');
+    });
+
+    it('(d) user-memory database-seed without items shows no chip', () => {
+      useAppStore.setState({ language: 'zh' } as never);
+      const s = withItems({
+        blocks: [{
+          blockType: 'user-memory',
+          trigger: 'session_start',
+          source: 'database-seed',
+          injected: true,
+          chars: 50,
+          count: 3,
+        }],
+      });
+      const { container } = render(<TurnQualityStrip summary={s} />);
+      expect(container.querySelector('button')).toBeNull();
+      expect(container.textContent).not.toContain('参考了');
     });
 
     it('shows no chip when only the always-on memory_index (and other non-content blocks) was injected', () => {
