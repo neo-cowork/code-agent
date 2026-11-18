@@ -26,7 +26,7 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useSessionTurnActive } from '../hooks/useSessionTurnActive';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
-import { StreamingIndicator } from './features/chat/StreamingIndicator';
+import { AssistantFeedbackIndicator } from './features/chat/AssistantFeedbackIndicator';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
 import { EmptySessionArea } from './features/chat/SessionSwitchSkeleton';
 import { MemberConversationView } from './features/expert/MemberConversationView';
@@ -277,6 +277,9 @@ export const ChatView: React.FC = () => {
   const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const pendingSearchJump = useSessionUIStore((state) => state.pendingSearchJump);
+  const [searchJumpTick, setSearchJumpTick] = useState(0);
+  const [searchSeedQuery, setSearchSeedQuery] = useState('');
+  const [searchSeedMatch, setSearchSeedMatch] = useState<SearchMatch | undefined>(undefined);
   const setPendingSearchJump = useSessionUIStore((state) => state.setPendingSearchJump);
   const [pendingPromptRewind, setPendingPromptRewind] = useState<{
     messageId: string;
@@ -555,6 +558,8 @@ export const ChatView: React.FC = () => {
 
     const match = findSearchMatchForPendingJump(projection, pendingSearchJump);
     if (match) {
+      setSearchSeedQuery(pendingSearchJump.query);
+      setSearchSeedMatch(match);
       setShowSearch(true);
       setSearchMatches([match]);
       setActiveMatchIndex(0);
@@ -562,11 +567,20 @@ export const ChatView: React.FC = () => {
       return;
     }
 
-    if (projection.turns.length > 0 && Date.now() - pendingSearchJump.createdAt > 3000) {
-      setShowSearch(true);
-      setPendingSearchJump(null);
+    if (projection.turns.length > 0) {
+      const remaining = 3000 - (Date.now() - pendingSearchJump.createdAt);
+      if (remaining <= 0) {
+        setSearchSeedQuery(pendingSearchJump.query);
+        setShowSearch(true);
+        setPendingSearchJump(null);
+        return;
+      }
+      // 投影不再变化时（如只命中工具输出、对话里没有对应节点），没有别的依赖会重跑本 effect：
+      // 到点自己重跑一次，才能真正落到「打开会话内搜索」兜底。
+      const timer = setTimeout(() => setSearchJumpTick((tick) => tick + 1), remaining);
+      return () => clearTimeout(timer);
     }
-  }, [currentSessionId, pendingSearchJump, projection, setPendingSearchJump]);
+  }, [currentSessionId, pendingSearchJump, projection, setPendingSearchJump, searchJumpTick]);
 
   // Global drop zone state（N-MAXLINES-MINEFIELD-2-FU1-S10 抽到 features/chat/useChatGlobalDragState，
   // 回调体与依赖数组逐字保留；drop 处理仍走 useChatGlobalFileDrop）
@@ -851,8 +865,10 @@ export const ChatView: React.FC = () => {
         {/* In-session search bar (Cmd+F) */}
         <ChatSearchBar
           visible={showSearch}
+          seedQuery={searchSeedQuery}
+          seedMatch={searchSeedMatch}
           projection={projection}
-          onClose={() => setShowSearch(false)}
+          onClose={() => { setShowSearch(false); setSearchSeedQuery(''); setSearchSeedMatch(undefined); }}
           onMatchesChange={handleSearchMatchesChange}
           onActiveMatchChange={handleActiveMatchChange}
         />
@@ -970,13 +986,7 @@ export const ChatView: React.FC = () => {
           {pendingAssistantFeedback !== null && (
             <div className="w-full chat-col-pad" data-testid="assistant-send-placeholder">
               <div className="mx-auto max-w-3xl px-4">
-                <StreamingIndicator
-                  startTime={pendingAssistantFeedback.startedAt}
-                  preparationPhase={pendingAssistantFeedback.phase === 'submitting'
-                    ? 'submitting'
-                    : pendingAssistantFeedback.phase === 'queued' ? 'queued' : undefined}
-                  waitingReason={pendingAssistantFeedback.phase === 'waiting_model' ? 'model' : undefined}
-                />
+                <AssistantFeedbackIndicator feedback={pendingAssistantFeedback} />
               </div>
             </div>
           )}

@@ -22,6 +22,7 @@ import type {
 } from '../../../shared/contract/agentEngine';
 import { PermissionRequestReason } from '../../../shared/contract/permission';
 import { createLogger } from '../infra/logger';
+import { guardBinaryNotText } from '../../tools/modules/file/binaryNotText';
 
 const logger = createLogger('AcpClientHostBridge');
 
@@ -127,6 +128,8 @@ export class AcpClientHostBridge {
       });
       if (!approved) throw new AcpPermissionDeniedError('file read');
     }
+    const refusal = await guardBinaryNotText(target);
+    if (refusal && !refusal.ok) throw new Error(refusal.error);
     const raw = await fs.readFile(target, 'utf8');
     if (typeof params.line !== 'number' && typeof params.limit !== 'number') {
       return { content: raw };

@@ -588,6 +588,28 @@ describe('SessionCommandCenter', () => {
     center.dispose();
   });
 
+  it('counts every failed tool call in progress.failedToolCalls, even without an allow-listed code', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-read-1', name: 'Read', arguments: { file_path: 'a.pdf' } },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', {
+      type: 'tool_call_end',
+      data: { toolCallId: 'call-read-1', success: false, error: 'cannot read' },
+    } as AgentEvent, spawned.task.id);
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })
+      .find((task) => task.id === spawned.task.id);
+    expect(projected?.progress?.failedToolCalls).toBe(1);
+    expect(projected?.progress?.lastToolFailure).toBeUndefined();
+    center.dispose();
+  });
+
   it('clears lastToolFailure when the same tool later succeeds, not when another tool does', async () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {

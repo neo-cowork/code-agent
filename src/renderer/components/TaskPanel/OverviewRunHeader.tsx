@@ -156,6 +156,15 @@ export const OverviewRunHeader: React.FC = () => {
           </GhostButton>
         )}
       </div>
+      {model.subtitle && (
+        <div
+          data-testid="overview-run-header-subtitle"
+          className="truncate px-0.5 pl-4 text-[11px] text-zinc-400"
+          title={model.subtitle}
+        >
+          {model.subtitle}
+        </div>
+      )}
       {phaseLine && (
         <div
           data-testid="overview-run-header-phase"

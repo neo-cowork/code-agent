@@ -185,6 +185,11 @@ export interface RoleFirstWakeSnapshot {
   intro?: string;
   /** 失败短因（无堆栈，仅在开发者模式原样展示；普通用户走 classifyAgentError 映射）。 */
   failureReason?: string;
+  /**
+   * 本次醒来入队时间（epoch ms），来自状态文件的 enqueuedAt。
+   * 缺字段或不是有限数时不带。重试会写成新的入队时间。
+   */
+  startedAt?: number;
 }
 
 /** 一次醒来的执行结果（cron 执行记录 / E2E 验收用） */

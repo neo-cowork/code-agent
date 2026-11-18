@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { MEMORY_TIMEOUTS } from '../../shared/constants';
-import type { MemoryConfirmRequest } from '../../shared/contract/memory';
+import type { MemoryConfirmRequest, MemoryConfirmView } from '../../shared/contract/memory';
 import type { PermissionRequestData } from '../tools/types';
 import type { RequestPermissionResult } from '../../shared/contract/permission';
 import { normalizePermissionAskResult } from '../../shared/contract/permission';
@@ -26,7 +26,8 @@ const pending = new Map<string, PendingDirectiveConfirmation>();
 
 export async function requestDirectiveMemoryConfirmation(input: {
   content: string;
-  category: string;
+  category?: string;
+  view?: MemoryConfirmView;
 }): Promise<DirectiveMemoryConfirmationResult> {
   const id = `directive-${randomUUID()}`;
 
@@ -40,9 +41,10 @@ export async function requestDirectiveMemoryConfirmation(input: {
   const request: MemoryConfirmRequest = {
     id,
     content: input.content,
-    category: input.category,
+    category: input.category ?? 'directive',
     type: 'directive',
     authority: 'directive',
+    view: input.view,
     confidence: 1,
     timestamp: Date.now(),
   };

@@ -22,6 +22,8 @@ export interface AgentOrchestratorConfig {
    * 按通道回答会取消超时，运行就永久挂在一个谁也没看见的 tool call 上。
    */
   hasApprovalUi: (request: PermissionRequest) => boolean;
+  /** 后台任务 lane：此刻没有页面可裁决时为 true，审批停车进收件箱而不是 60s 自动拒绝。缺省 = 不停车。 */
+  isDetachedRun?: () => boolean;
   planningService?: PlanningService;
   runRegistry?: RunRegistry;
   getHomeDir?: () => string;
