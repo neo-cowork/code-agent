@@ -235,7 +235,7 @@ export class SessionManager implements Disposable {
     try {
       const { getProjectService } = await import('../project/projectService');
       const projectService = getProjectService();
-      const project = projectService.resolveExplicitProject(options.projectId)
+      const project = (options.projectId ? projectService.resolveExplicitProject(options.projectId) : undefined)
         ?? await projectService.ensureProjectForWorkspace(session.workingDirectory, now);
       session.projectId = project.id;
     } catch (err) {
