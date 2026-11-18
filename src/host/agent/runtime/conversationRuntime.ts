@@ -81,7 +81,7 @@ import {
 } from './conversationRuntimeContextBootstrap';
 import { isStartupAborted, raceStartupStep, startupStepAbandoned } from './startupAssemblyGuard';
 import { watchFirstModelRequest, noteFirstModelRequestPhase } from './firstModelRequestWatch';
-import { resolveStickyStrictSkillInvocation, resolveNaturalLanguageCreateRoleInvocation, skillBoundaryAppliesToRun } from './conversationRuntimeStickySkill';
+import { resolveStickyStrictSkillInvocation, resolveNaturalLanguageCreateRoleInvocation, dropDelegatedPromptAliasHit } from './conversationRuntimeStickySkill';
 import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 import { extractUserRequest } from '../turnScaffold';
 import { TOOL_ARGS_REPAIR_MAX_ATTEMPTS } from '../../../shared/constants/repair';
@@ -886,15 +886,16 @@ export class ConversationRuntime {
       !startupTaskFeatures.isFuzzyTroubleshooting;
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
-      const resolvedSkill =
-        await raceStartupStep(
-          this.ctx,
-          resolveSkillInvocation(userRequest, this.ctx.workingDirectory, {
-            sessionId: this.ctx.sessionId,
-            toolScope: this.ctx.toolScope,
-          }),
-          'skill_discovery',
-        )
+      // 委派后台轮的裸词别名命中不是用户意图（首条消息是机器拼装的），见 dropDelegatedPromptAliasHit。
+      const directSkillHit = await raceStartupStep(
+        this.ctx,
+        resolveSkillInvocation(userRequest, this.ctx.workingDirectory, {
+          sessionId: this.ctx.sessionId,
+          toolScope: this.ctx.toolScope,
+        }),
+        'skill_discovery',
+      );
+      const resolvedSkill = dropDelegatedPromptAliasHit(this.ctx, directSkillHit)
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery')
         ?? await raceStartupStep(this.ctx, resolveNaturalLanguageCreateRoleInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;
@@ -924,8 +925,8 @@ export class ConversationRuntime {
             this.ctx.control.preApproveTool(tool);
           }
         }
-        // GAP-001: skill allowed-tools 限权边界
-        if (skillContext.contextModifier.toolBoundary && skillBoundaryAppliesToRun(this.ctx, skillInvocation)) {
+        // GAP-001: skill allowed-tools 限权边界（技能带边界即生效，不再有按技能名的豁免）
+        if (skillContext.contextModifier.toolBoundary) {
           this.ctx.turn.setSkillToolBoundary(skillContext.contextModifier.toolBoundary);
           // strict 收窄必须告诉模型原因和出路，否则它只会对用户说"环境受限"
           if (skillContext.contextModifier.toolBoundary.strict) {

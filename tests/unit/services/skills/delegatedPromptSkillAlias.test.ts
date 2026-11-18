@@ -3,12 +3,17 @@ import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkil
 import { resolveSkillInvocationFromSkills } from '../../../../src/host/services/skills/skillInvocationResolver';
 import { buildDelegatedTaskPrompt } from '../../../../src/host/services/commandCenter/delegationGuidance';
 
-describe('delegated task prompt vs builtin skill aliases (repro)', () => {
-  it('delegated prompt re-matches task-brief-builder via the bare alias scope', () => {
+describe('delegated task prompt vs builtin skill aliases', () => {
+  it('delegated prompt without an original request resolves to no skill', () => {
     const prompt = buildDelegatedTaskPrompt('open example.com and read the heading');
-    const hit = resolveSkillInvocationFromSkills(prompt, BUILTIN_SKILLS);
-    expect(hit?.skill.name).toBe('task-brief-builder');
-    expect(hit?.matchKind).toBe('alias');
-    expect(hit?.matchedText).toBe('scope');
+    expect(resolveSkillInvocationFromSkills(prompt, BUILTIN_SKILLS)).toBeNull();
+  });
+
+  it('delegated prompt embedding a neutral original request resolves to no skill', () => {
+    const prompt = buildDelegatedTaskPrompt(
+      'open example.com and read the heading',
+      'open example.com and tell me the page title',
+    );
+    expect(resolveSkillInvocationFromSkills(prompt, BUILTIN_SKILLS)).toBeNull();
   });
 });

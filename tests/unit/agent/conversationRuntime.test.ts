@@ -1464,31 +1464,38 @@ describe('ConversationRuntime', () => {
         vi.mocked(buildSkillInvocationContext).mockReset();
       });
 
-      it('foreground run keeps the task-brief-builder boundary (Bash stays outside it)', async () => {
+      it('foreground run with a hand-written "scope" message keeps the task-brief-builder boundary (Bash stays outside it)', async () => {
         await useRealBuiltinResolution();
-        const prompt = buildDelegatedTaskPrompt('open example.com and read the heading');
-        await runtime.initializeRun(prompt);
+        await runtime.initializeRun('help me scope this task before writing code');
         expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder', matchKind: 'alias' });
         expect(ctx.turn.skillToolBoundary?.skillName).toBe('task-brief-builder');
         expect(ctx.turn.skillToolBoundary?.allowedTools).not.toContain('Bash');
       });
 
-      it('delegated (auxiliary) run with the same text gets no skill boundary but keeps skill context', async () => {
+      it('delegated (auxiliary) run with the delegated prompt gets neither skill context nor boundary', async () => {
         await useRealBuiltinResolution();
         ctx.auxiliaryRun = true;
         await runtime.initializeRun(buildDelegatedTaskPrompt('open example.com and read the heading'));
-        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder' });
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+        expect(ctx.turn.activeSkillContextBlock).toBeUndefined();
         expect(ctx.turn.skillToolBoundary).toBeUndefined();
       });
 
-      it('auxiliary run keeps the strict boundary for an alias hit like "dream" / "distill"', async () => {
+      it('auxiliary run drops any bare-word alias hit; foreground keeps the strict boundary (dream / distill)', async () => {
         await useRealBuiltinResolution();
-        ctx.auxiliaryRun = true;
         for (const [text, name] of [['dream about this', 'dream'], ['distill this video', 'distill']]) {
+          ctx.auxiliaryRun = undefined;
           ctx.turn.setSkillToolBoundary(undefined);
           await runtime.initializeRun(text);
           expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: name, matchKind: 'alias' });
           expect(ctx.turn.skillToolBoundary).toMatchObject({ skillName: name, strict: true });
+
+          ctx.auxiliaryRun = true;
+          ctx.turn.setSkillToolBoundary(undefined);
+          await runtime.initializeRun(text);
+          expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+          expect(ctx.turn.activeSkillContextBlock).toBeUndefined();
+          expect(ctx.turn.skillToolBoundary).toBeUndefined();
         }
       });
 

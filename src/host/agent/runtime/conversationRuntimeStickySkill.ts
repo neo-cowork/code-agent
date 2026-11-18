@@ -174,19 +174,15 @@ export async function resolveNaturalLanguageCreateRoleInvocation(
 }
 
 /**
- * A skill's allowed-tools boundary constrains only the run started under that skill.
- * The one proven false hit: the machine-built delegated-task prompt contains the word "scope",
- * which aliases task-brief-builder; in a background run nobody can approve the resulting forced asks.
- * Everything else (strict skills, other aliases, /slash) keeps its boundary on auxiliary runs too.
+ * 委派后台轮（auxiliaryRun）首条消息由 buildDelegatedTaskPrompt 机器拼装，内嵌
+ * <original_user_request> 与 drafted plan：其中的裸词别名命中从来不是用户意图
+ * （首个实录：静态句里的 "scope" 命中 task-brief-builder），注入技能后其强制审批
+ * 在后台无人能答，任务停车。slash / inline-slash / sticky 调用不受影响。
  */
-export function skillBoundaryAppliesToRun(
+export function dropDelegatedPromptAliasHit(
   run: Pick<RuntimeContext, 'auxiliaryRun'>,
-  invocation: { matchKind: string; matchedText?: string; skill: { name: string } },
-): boolean {
-  return !(
-    run.auxiliaryRun === true
-    && invocation.matchKind === 'alias'
-    && invocation.skill.name === 'task-brief-builder'
-    && invocation.matchedText?.toLowerCase() === 'scope'
-  );
+  invocation: ResolvedSkillInvocation | null | undefined,
+): ResolvedSkillInvocation | null {
+  if (run.auxiliaryRun === true && invocation?.matchKind === 'alias') return null;
+  return invocation ?? null;
 }
