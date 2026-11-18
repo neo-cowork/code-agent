@@ -73,3 +73,25 @@ describe.each([
     ).toEqual({ matches: 1, sessions: 1 });
   });
 });
+
+describe.each([
+  ['FTS（≥3 字符）', 'zebra-quartz'],
+  ['短查询 LIKE（2 字符）', '斑马'],
+])('activeSessionScope.includeArchived — %s', (_label, word) => {
+  it('adds archived sessions to hits and counts, still excludes deleted and foreign sessions', () => {
+    seedCrowdedCorpus(word);
+    const ids = (includeArchived?: boolean) =>
+      runSessionMessagesFtsSearch(db, word, {
+        limit: 50,
+        shortQueryFallback: true,
+        activeSessionScope: { userId: null, includeArchived },
+      })
+        .map((h) => h.sessionId)
+        .sort();
+    expect(ids()).toEqual(['live']);
+    expect(ids(true)).toEqual(['arch-0', 'arch-1', 'arch-2', 'live']);
+    expect(
+      runSessionMessagesFtsCount(db, word, { shortQueryFallback: true, activeSessionScope: { userId: null, includeArchived: true } }),
+    ).toEqual({ matches: 4, sessions: 4 });
+  });
+});

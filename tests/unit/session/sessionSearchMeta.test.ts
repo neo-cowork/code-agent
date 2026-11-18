@@ -50,6 +50,17 @@ describe('searchSessionTitles', () => {
     expect(searchSessionTitles(db, 'needle', null, 1).map((r) => r.sessionId)).toEqual(['b']);
   });
 
+  it('includeArchived adds archived rows (flagged) but still skips deleted; default is unchanged', () => {
+    seed('a', 'Alpha Needle', { updated: 10 });
+    seed('c', 'needle archived', { status: 'archived', updated: 50 });
+    seed('d', 'needle deleted', { deleted: 1, updated: 60 });
+    expect(searchSessionTitles(db, 'needle', null, 20, undefined, true).map((r) => [r.sessionId, r.archived])).toEqual([
+      ['c', true],
+      ['a', false],
+    ]);
+    expect(searchSessionTitles(db, 'needle', null, 20, undefined, false).map((r) => r.sessionId)).toEqual(['a']);
+  });
+
   it('treats % and _ literally and filters by owner', () => {
     seed('p', '100% done', { user: 'u1' });
     seed('q', '1000 done', { user: 'u1' });

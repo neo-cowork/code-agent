@@ -292,7 +292,7 @@ export async function performCrossSessionSearch(
     try {
       const allowed = options?.sessionIds && options.sessionIds.length > 0 ? new Set(options.sessionIds) : undefined;
       titleMatches = database
-        .searchSessionTitles(query, ownerUserId, SESSION_SEARCH.TITLE_MATCH_LIMIT, options?.projectScope, options?.includeArchived)
+        .searchSessionTitles(query, ownerUserId, SESSION_SEARCH.TITLE_MATCH_LIMIT, options?.projectScope, ...(options?.includeArchived ? [true as const] : []))
         .filter((row) => !allowed || allowed.has(row.sessionId))
         .map((row) => ({ sessionId: row.sessionId, title: row.title, updatedAt: row.updatedAt, ...(row.archived ? { archived: true } : {}) }));
     } catch (error) {
