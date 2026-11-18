@@ -2,6 +2,7 @@
 // ConfirmationGate Tests [E2]
 // ============================================================================
 
+import { tmpdir } from 'os';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
@@ -404,6 +405,107 @@ describe('ConfirmationGate', () => {
       if (preview) {
         expect(preview.type).toBe('generic');
       }
+    });
+
+    describe('generic details in plain language (excel_generate shape)', () => {
+      const WSR = '/Users/me/proj';
+      const build = (locale: 'zh' | 'en', extra: Record<string, unknown>) => {
+        const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(locale);
+        try {
+          return new ConfirmationGate().buildPreview('excel_generate', {
+            data: [{ a: 1 }], dry_run: false, title: 'Sales', sheet_name: 'Sales', ...extra,
+          }, { workspaceRoot: WSR });
+        } finally { spy.mockRestore(); }
+      };
+
+      it('zh: localized labels, no dry_run, temp path reduced to file name', () => {
+        const p = build('zh', { output_path: '/var/folders/ab/xyz/T/sales.xlsx' });
+        expect(p?.diff).toBe('保存到: sales.xlsx\n标题: Sales\n工作表: Sales');
+        expect(p?.diff).not.toMatch(/sheet name|output path|dry run|dry_run/);
+      });
+
+      it('en: English labels', () => {
+        const p = build('en', { output_path: '/tmp/sales.xlsx' });
+        expect(p?.diff).toBe('Save to: sales.xlsx\nTitle: Sales\nSheet: Sales');
+      });
+
+      it('drops internal switches regardless of value type', () => {
+        const p = build('en', { dryRun: 'false', debug: 'true', verbose: 'yes', output_path: 'a.xlsx' });
+        expect(p?.diff).not.toMatch(/dry|debug|verbose/i);
+      });
+
+      it('chat upload dir path shows file name only', () => {
+        const upload = `${tmpdir()}/code-agent-uploads/x/sales.csv`;
+        const p = build('en', { file_path: upload });
+        expect(p?.diff).toContain('File: sales.csv');
+        expect(p?.diff).not.toContain('uploads');
+      });
+
+      it('workspace path becomes relative', () => {
+        const p = build('en', { output_path: `${WSR}/exports/sales.xlsx` });
+        expect(p?.diff).toContain('Save to: ./exports/sales.xlsx');
+      });
+
+      it('outside-workspace non-temp path stays verbatim', () => {
+        const p = build('en', { output_path: '/Users/other/Documents/sales.xlsx' });
+        expect(p?.diff).toContain('Save to: /Users/other/Documents/sales.xlsx');
+      });
+
+      it('JSON-looking data payload is ranked last so it does not use up the 3-line cap', () => {
+        const p = build('en', { data: '[{"month":"Jan","amount":1200}]', output_path: '/Users/other/a.xlsx' });
+        expect(p?.diff).toBe('Save to: /Users/other/a.xlsx\nTitle: Sales\nSheet: Sales');
+      });
+
+      it.each([
+        ['zh', '保存到: /Users/other/Documents/sales.xlsx\n标题: Sales\n工作表: Sales'],
+        ['en', 'Save to: /Users/other/Documents/sales.xlsx\nTitle: Sales\nSheet: Sales'],
+      ] as const)('%s: real model arg order keeps save location, drops theme', (locale, expected) => {
+        const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(locale);
+        try {
+          const p = new ConfirmationGate().buildPreview('excel_generate', {
+            title: 'Sales', sheet_name: 'Sales', theme: 'professional',
+            data: '[{"month":"Jan"}]', output_path: '/Users/other/Documents/sales.xlsx',
+          }, { workspaceRoot: WSR });
+          expect(p?.diff).toBe(expected);
+          expect(p?.diff).not.toMatch(/theme/i);
+        } finally { spy.mockRestore(); }
+      });
+
+      it('http_request JSON body stays visible when slots are free', () => {
+        const p = new ConfirmationGate().buildPreview('http_request', {
+          url: 'https://api.example.com/create', method: 'POST', body: '{"name":"test"}',
+        }, { workspaceRoot: WSR });
+        expect(p?.diff).toContain('url: https://api.example.com/create');
+        expect(p?.diff).toContain('method: POST');
+        expect(p?.diff).toContain('body: {"name":"test"}');
+      });
+
+      it.each([
+        ['/tmp/../etc/passwd', '/tmp/../etc/passwd'],
+        ['/private/tmp/../../Users/x/report.xlsx', '/private/tmp/../../Users/x/report.xlsx'],
+      ])('traversal out of temp/upload dir stays verbatim: %s', (outputPath, shown) => {
+        const p = build('en', { output_path: outputPath });
+        expect(p?.diff).toContain(`Save to: ${shown}`);
+      });
+
+      it('traversal out of the upload dir is not reduced to a file name (full path, `..` visible)', () => {
+        // 预览行截断在 120 字符，上传目录前缀本身很长，所以只断言开头仍是完整路径。
+        const upload = `${tmpdir()}/code-agent-uploads/u1${'/..'.repeat(20)}/etc/hosts`;
+        const p = build('en', { output_path: upload });
+        expect(p?.diff).not.toContain('Save to: hosts');
+        expect(p?.diff).toContain(`Save to: ${tmpdir()}/code-agent-uploads/u1/../..`);
+      });
+
+      it('traversal that stays inside the temp dir still shows the file name only', () => {
+        const p = build('en', { output_path: '/tmp/a/../sales.xlsx' });
+        expect(p?.diff).toContain('Save to: sales.xlsx');
+        expect(p?.diff).not.toContain('/tmp');
+      });
+
+      it('unknown keys unchanged', () => {
+        const p = build('en', { custom_key: 'v' });
+        expect(p?.diff).toContain('custom_key: v');
+      });
     });
   });
 
