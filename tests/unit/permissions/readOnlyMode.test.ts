@@ -17,6 +17,16 @@ afterAll(() => {
   fs.rmSync(tmpDataDir, { recursive: true, force: true });
 });
 
+// reminders_delete 的审批前会查一次 get_reminder（查不到就不弹卡），这里给一个最小假连接器。
+vi.mock('../../../src/host/connectors', async (orig) => ({
+  ...(await orig<object>()),
+  getConnectorRegistry: () => ({
+    get: (id: string) => (id === 'reminders'
+      ? { execute: async () => ({ data: { id: 'r1', list: 'Reminders', title: 'Pay electricity', remindAtMs: 1760000000000 } }) }
+      : undefined),
+  }),
+}));
+
 // Mock logger
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },

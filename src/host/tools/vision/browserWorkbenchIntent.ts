@@ -151,18 +151,24 @@ export async function ensureManagedBrowserSessionForWorkbench(args: {
   url?: string;
   executionIntent?: ConversationExecutionIntent;
   agentId?: string;
+  conversationId?: string;
 } = {}): Promise<string | null> {
   const browserService = getBrowserService(args.agentId);
   const before = browserService.getSessionState();
-  if (before.running && before.activeTab) {
+  if (before.running && before.activeTab && !args.conversationId) {
     return null;
   }
 
+  const launchOptions = {
+    leaseOwner: 'browser_workbench',
+    ...(args.conversationId ? { conversationId: args.conversationId } : {}),
+  };
   if (args.url) {
-    await browserService.ensureSession(args.url, { leaseOwner: 'browser_workbench' });
+    await browserService.ensureSession(args.url, launchOptions);
   } else {
-    await browserService.ensureSession('about:blank', { leaseOwner: 'browser_workbench' });
+    await browserService.ensureSession('about:blank', launchOptions);
   }
+  if (before.running && before.activeTab) return null;
 
   const notes: string[] = [];
   if (!before.running) {
