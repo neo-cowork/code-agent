@@ -484,6 +484,19 @@ describe('ConfirmationGate', () => {
       withLocale('zh', () => { expect(getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff).toBe(zh); });
     });
 
+    it('real run shape: excel_generate saving next to an upload (long data-dir path) shows no uuid and keeps the save line', () => {
+      const out = `/Users/x/work/out/T-1/r1/rr/neo/home/.code-agent/uploads/${UUID}/合同金额整理.xlsx`;
+      const params = { title: '合同金额整理', sheet_name: '金额明细', theme: 'professional', output_path: out, data: '[{"金额":12800}]' };
+      withLocale('zh', () => {
+        expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+          .toBe('保存到: 你上传的文件：合同金额整理.xlsx\n标题: 合同金额整理\n工作表: 金额明细');
+      });
+      withLocale('en', () => {
+        expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+          .toBe('Save to: Your uploaded file: 合同金额整理.xlsx\nTitle: 合同金额整理\nSheet: 金额明细');
+      });
+    });
+
     it('ancestor /var/folders itself and other paths are not shortened', () => {
       withLocale('en', () => {
         expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/var/folders/etc/passwd' })?.diff).toBe('Save to: /var/folders/etc/passwd');
