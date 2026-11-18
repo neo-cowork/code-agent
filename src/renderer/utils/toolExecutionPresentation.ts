@@ -200,6 +200,8 @@ export function resolveToolTerminalOutcomeKey(
       return 'failed-tool';
     case AgentFailureCode.BudgetExhausted:
       return 'failed-budget';
+    case AgentFailureCode.StepCapReached:
+      return 'failed-step-cap';
     case AgentFailureCode.DependencyFailed:
     case AgentFailureCode.DependencyMissing:
     case AgentFailureCode.ParentGone:
