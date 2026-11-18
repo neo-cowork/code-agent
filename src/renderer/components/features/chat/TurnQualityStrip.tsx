@@ -15,6 +15,8 @@ import { MemorySourceChip, hasUsedMemory } from './MemorySourceChip';
 
 interface TurnQualityStripProps {
   summary: TurnQualitySummary;
+  /** 同一 UI 轮只在 chip owner 上画记忆芯片。缺省 true，单独复用本条时行为不变。 */
+  showMemoryChip?: boolean;
 }
 
 function formatModel(summary: TurnQualitySummary): string {
@@ -91,7 +93,7 @@ function blockLabel(blockType: string): string {
   }
 }
 
-export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) => {
+export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary, showMemoryChip = true }) => {
   const developerMode = useAppStore((state) => state.developerMode);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const localizeRole = useLocalizeRole();
@@ -178,7 +180,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
     const degradedAgentId = requestedAgentId && requestedAgentId !== summary.capabilities?.agentId
       ? requestedAgentId
       : null;
-    const showMemory = hasUsedMemory(summary);
+    const showMemory = showMemoryChip && hasUsedMemory(summary);
     if (!showModel && !showAgent && !degradedAgentId && !showMemory) return null;
     return (
       <div className="mb-2 flex min-w-0 flex-wrap items-start gap-1">

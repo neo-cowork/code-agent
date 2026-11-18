@@ -33,7 +33,8 @@ import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
 import { isBareInterruptionNode } from '../../../utils/bareInterruptionNode';
 import { envParkedTurnDuration } from '../../../utils/envParkedTurn';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
+import { getTurnChipOwnerId, getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
+import { hasUsedMemory } from './MemorySourceChip';
 import { TurnFeedback } from './TurnFeedback';
 import { MessageContextMenu } from './MessageContextMenu';
 import { TurnCompactionMarker } from './TurnCompactionMarker';
@@ -171,6 +172,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const foldedView = useMemo(() => ({
     userNode: getTurnUserNode(turn),
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
+    chipOwnerId: getTurnChipOwnerId(turn, isVoiceTurn, (node) => Boolean(node.metadata?.turnQuality && hasUsedMemory(node.metadata.turnQuality))),
   }), [turn, isVoiceTurn]);
   const observedCronRunStatus = useSyncExternalStore(subscribeObservedCronRunStatus, () => getObservedCronRunStatusForSession(sessionId), () => null);
   const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn); const hasLiveExternalStatusLine = hasExternalStatusLine && isLiveCronRunStatusKind(observedCronRunStatus?.kind);
@@ -444,7 +446,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined} showMemoryChip={node.id === foldedView.chipOwnerId}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
@@ -481,7 +483,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.finalTextNode}
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
-            inVoiceDispatchCard={isVoiceTurn}
+            inVoiceDispatchCard={isVoiceTurn} showMemoryChip={foldedView.finalTextNode.id === foldedView.chipOwnerId}
             onStreamingDisplayUpdate={handleAnchorStreamingDisplayUpdate}
           />
         )}
