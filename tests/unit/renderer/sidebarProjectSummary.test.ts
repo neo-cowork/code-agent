@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { sidebarEn, sidebarZh } from '../../../src/renderer/i18n/sidebar';
 import {
   buildSidebarProjectSummary,
   formatSidebarProjectSummaryLine,
+  primarySourceFolderMissing,
 } from '../../../src/renderer/utils/sidebarProjectSummary';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import type { WorkspaceGroup } from '../../../src/renderer/utils/workspaceGrouping';
@@ -96,6 +98,45 @@ describe('buildSidebarProjectSummary', () => {
     });
 
     expect(summary.displayName).toBe('快速对话');
+  });
+
+  it('marks only a missing primary folder and leaves an idle rejected send out of the unfinished count', () => {
+    expect(primarySourceFolderMissing([
+      { role: 'additional', trustFailureKind: 'source_missing' },
+    ])).toBe(false);
+    expect(primarySourceFolderMissing([
+      { role: 'primary', trustFailureKind: 'identity_changed' },
+      { role: 'additional', trustFailureKind: 'source_missing' },
+    ])).toBe(false);
+    expect(primarySourceFolderMissing([
+      { role: 'primary', trustFailureKind: 'source_missing' },
+    ])).toBe(true);
+    expect(sidebarZh.sidebarProject.folderMissing).toBe('文件夹已不存在');
+    expect(sidebarEn.sidebarProject.folderMissing).toBe('Folder no longer exists');
+
+    const idleSend = buildSidebarProjectSummary({
+      group: makeGroup([makeSession({ id: 'missing-send', messageCount: 2, turnCount: 1, status: 'idle', updatedAt: 40 })]),
+      backgroundSessionMap: new Map(),
+      sessionRuntimes: new Map(),
+      sessionStates: { 'missing-send': { status: 'idle' } },
+      hasNeedsInputForSession: () => false,
+      projectMeta: { name: 'Weekly notes', folderMissing: true },
+    });
+    expect(idleSend.folderMissing).toBe(true);
+    expect(idleSend.attentionCount).toBe(0);
+    expect(idleSend.unfinishedCount).toBe(0);
+
+    const errored = buildSidebarProjectSummary({
+      group: makeGroup([makeSession({ id: 'still-error', messageCount: 2, turnCount: 1, status: 'error', updatedAt: 40 })]),
+      backgroundSessionMap: new Map(),
+      sessionRuntimes: new Map(),
+      sessionStates: { 'still-error': { status: 'error' } },
+      hasNeedsInputForSession: () => false,
+      projectMeta: { name: 'Weekly notes', folderMissing: false },
+    });
+    expect(errored.folderMissing).toBe(false);
+    expect(errored.attentionCount).toBe(1);
+    expect(errored.unfinishedCount).toBe(1);
   });
 
   it('formats a scan-friendly project header line with active goal and multiple workspaces', () => {

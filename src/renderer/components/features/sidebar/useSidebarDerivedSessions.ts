@@ -14,7 +14,7 @@ import ipcService from '../../../services/ipcService';
 import { createLogger } from '../../../utils/logger';
 import { groupByWorkspace } from '../../../utils/workspaceGrouping';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DESIGN_WORKSPACE } from '@shared/constants';
-import { type SidebarProjectMeta } from '../../../utils/sidebarProjectSummary';
+import { primarySourceFolderMissing, type SidebarProjectMeta } from '../../../utils/sidebarProjectSummary';
 import {
   buildSessionSearchText,
   getSessionStatusPresentation,
@@ -591,6 +591,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
               })),
               sessionCount: detail.sessionIds.length,
               updatedAt: detail.project.updatedAt,
+              folderMissing: primarySourceFolderMissing(detail.sources),
             },
           ];
         } catch (error) {

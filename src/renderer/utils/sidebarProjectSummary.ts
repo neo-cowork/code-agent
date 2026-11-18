@@ -49,6 +49,8 @@ export interface SidebarProjectMeta {
   recentArtifacts?: SidebarProjectArtifactMeta[];
   sessionCount?: number;
   updatedAt?: number;
+  /** Primary source's folder is gone. Additional sources do not set this. */
+  folderMissing?: boolean;
 }
 
 export interface SidebarProjectSummary {
@@ -64,6 +66,15 @@ export interface SidebarProjectSummary {
   goalCount?: number;
   activeGoalTitle?: string;
   latestActivityAt: number;
+  /** True when the primary project folder is gone. */
+  folderMissing?: boolean;
+}
+
+/** Only the primary source drives the sidebar "folder missing" mark. */
+export function primarySourceFolderMissing(
+  sources: readonly { role?: string; trustFailureKind?: string | null }[] | undefined,
+): boolean {
+  return sources?.some((source) => source.role === 'primary' && source.trustFailureKind === 'source_missing') === true;
 }
 
 export interface BuildSidebarProjectSummaryArgs {
@@ -141,6 +152,7 @@ export function buildSidebarProjectSummary({
     goalCount: projectMeta?.goalCount,
     activeGoalTitle: projectMeta?.activeGoalTitles?.find((title) => title.trim())?.trim(),
     latestActivityAt,
+    folderMissing: projectMeta?.folderMissing === true,
   };
 }
 

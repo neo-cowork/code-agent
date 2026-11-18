@@ -245,6 +245,7 @@ export const sidebarZh = {
     forceExpandedAria: '{name} 保持展开，{reason}',
     keepExpanded: '保持展开',
     unfinishedCount: '{count} 个未完成',
+    folderMissing: '文件夹已不存在',
     // ⋯ 菜单项不带项目名（2026-07-28 拍板）：244px 侧栏里带名字的长文案必折两行，
     // 菜单高度翻倍往下盖会话行。菜单容器自身 aria-label 已是「{name} 更多操作」，
     // 读屏进菜单先播项目名，逐项再重复一遍纯属冗余。
@@ -635,6 +636,7 @@ export const sidebarEn: typeof sidebarZh = {
     forceExpandedAria: '{name} stays expanded — {reason}',
     keepExpanded: 'Stay expanded',
     unfinishedCount: '{count} unfinished',
+    folderMissing: 'Folder no longer exists',
     openConsole: 'Open project console',
     collapseDetails: 'Collapse project details',
     expandDetails: 'Expand project details',
