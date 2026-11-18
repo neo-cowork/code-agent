@@ -2,6 +2,8 @@
 // ConfirmationGate Tests [E2]
 // ============================================================================
 
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as hostUiLocale from '../../../src/host/config/hostUiLocale';
 import {
@@ -493,26 +495,57 @@ describe('ConfirmationGate', () => {
       });
     });
 
-    it.each([
-      ['/tmp/a/sales.xlsx', 'Save to: Temporary file: a/sales.xlsx', '保存到: 临时文件：a/sales.xlsx'],
-      ['/var/folders/ab/cd/T/sales.csv', 'Save to: Temporary file: sales.csv', '保存到: 临时文件：sales.csv'],
-      [`/Users/x/Library/uploads/${UUID}/合同/合同.pdf`, 'Save to: Your uploaded file: 合同/合同.pdf', '保存到: 你上传的文件：合同/合同.pdf'],
-      [`/private/var/folders/ab/cd/T/code-agent-uploads/${UUID}/s.csv`, 'Save to: Your uploaded file: s.csv', '保存到: 你上传的文件：s.csv'],
-    ])('temp/upload root mapped: %s', (p, en, zh) => {
-      withLocale('en', () => { expect(getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff).toBe(en); });
-      withLocale('zh', () => { expect(getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff).toBe(zh); });
+    // 上传 / 临时位置词只认真实根：<dataDir>/uploads、os.tmpdir()/code-agent-uploads、os.tmpdir()、/tmp
+    const dataDir = path.join(os.tmpdir(), 'neo-gate-test-data');
+    const upload = (...rest: string[]) => path.join(dataDir, 'uploads', UUID, ...rest);
+    const preview = (p: string) => getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff;
+    const withDataDir = (fn: () => void) => {
+      const prev = process.env.CODE_AGENT_DATA_DIR;
+      process.env.CODE_AGENT_DATA_DIR = dataDir;
+      try { fn(); } finally { if (prev === undefined) delete process.env.CODE_AGENT_DATA_DIR; else process.env.CODE_AGENT_DATA_DIR = prev; }
+    };
+
+    it('real upload root, tmpdir and legacy code-agent-uploads root are mapped to place words', () => {
+      withDataDir(() => {
+        withLocale('en', () => {
+          expect(preview(upload('合同', '合同.pdf'))).toBe('Save to: Your uploaded file: 合同/合同.pdf');
+          expect(preview(path.join(os.tmpdir(), 'a', 'sales.xlsx'))).toBe('Save to: Temporary file: a/sales.xlsx');
+          expect(preview(path.join(os.tmpdir(), 'code-agent-uploads', UUID, 's.csv'))).toBe('Save to: Your uploaded file: s.csv');
+          if (process.platform !== 'win32') expect(preview('/tmp/a/sales.xlsx')).toBe('Save to: Temporary file: a/sales.xlsx');
+        });
+        withLocale('zh', () => {
+          expect(preview(upload('合同', '合同.pdf'))).toBe('保存到: 你上传的文件：合同/合同.pdf');
+          expect(preview(path.join(os.tmpdir(), 'sales.csv'))).toBe('保存到: 临时文件：sales.csv');
+        });
+      });
     });
 
-    it('real run shape: excel_generate saving next to an upload (long data-dir path) shows no uuid and keeps the save line', () => {
-      const out = `/Users/x/work/out/T-1/r1/rr/neo/home/.code-agent/uploads/${UUID}/合同金额整理.xlsx`;
-      const params = { title: '合同金额整理', sheet_name: '金额明细', theme: 'professional', output_path: out, data: '[{"金额":12800}]' };
-      withLocale('zh', () => {
-        expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
-          .toBe('保存到: 你上传的文件：合同金额整理.xlsx\n标题: 合同金额整理\n工作表: 金额明细');
-      });
+    it.runIf(process.platform === 'darwin')('/private/var alias of the real tmpdir still matches', () => {
       withLocale('en', () => {
-        expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
-          .toBe('Save to: Your uploaded file: 合同金额整理.xlsx\nTitle: 合同金额整理\nSheet: 金额明细');
+        expect(preview(`/private${path.join(os.tmpdir(), 'sales.csv')}`)).toBe('Save to: Temporary file: sales.csv');
+      });
+    });
+
+    it('project path that merely looks like uploads/<uuid>/ keeps its full path (not a chat upload)', () => {
+      withDataDir(() => {
+        for (const p of [`/Users/x/project/uploads/${UUID}/avatar.png`, `/Users/x/Library/uploads/${UUID}/a.png`, `/Users/x/code-agent-uploads/${UUID}/a.png`]) {
+          withLocale('en', () => { expect(preview(p)).toBe(`Save to: ${p}`); });
+          withLocale('zh', () => { expect(preview(p)).toBe(`保存到: ${p}`); });
+        }
+      });
+    });
+
+    it('real run shape: excel_generate saving next to an upload shows no uuid and keeps the save line', () => {
+      const params = { title: '合同金额整理', sheet_name: '金额明细', theme: 'professional', output_path: upload('合同金额整理.xlsx'), data: '[{"金额":12800}]' };
+      withDataDir(() => {
+        withLocale('zh', () => {
+          expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+            .toBe('保存到: 你上传的文件：合同金额整理.xlsx\n标题: 合同金额整理\n工作表: 金额明细');
+        });
+        withLocale('en', () => {
+          expect(getConfirmationGate().buildPreview('excel_generate', params)?.diff)
+            .toBe('Save to: Your uploaded file: 合同金额整理.xlsx\nTitle: 合同金额整理\nSheet: 金额明细');
+        });
       });
     });
 

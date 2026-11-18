@@ -195,7 +195,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
-      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath />}
+      {filePath && type !== 'directory_access' && <DetailItem label={labels.detailFile} value={filePath} isPath pathDisplay={details.pathDisplay} />}
 
       {/* 命令 */}
       {details.command && (
@@ -435,6 +435,7 @@ interface DetailItemProps {
   label: string;
   value: string;
   isPath?: boolean;
+  pathDisplay?: NonNullable<PermissionRequest['details']['pathDisplay']>;
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
@@ -482,7 +483,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   );
 }
 
-function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
+function DetailItem({ label, value, isPath, pathDisplay, isCode, isUrl, isDangerous, collapsible }: DetailItemProps) {
   const { t, language } = useI18n();
   const [revealed, setRevealed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -490,7 +491,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous, collapsi
   const redactedValue = redactCredentialText(value);
   const hasRedaction = redactedValue !== value;
   const visibleValue = revealed && isCode ? value : redactedValue;
-  const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh') : visibleValue;
+  const humanPath = isPath ? humanizeToolPath(visibleValue, language === 'en' ? 'en' : 'zh', pathDisplay) : visibleValue;
   const rawDisplayValue = isPath ? (humanPath !== visibleValue ? humanPath : formatFilePath(visibleValue)) : visibleValue;
 
   const lines = rawDisplayValue.split('\n');

@@ -16,7 +16,7 @@ import { CHAT_UPLOAD_DIR_NAME, CHAT_UPLOAD_SUBDIR_NAME } from '../../../shared/c
  * 这类软链别名），不存在的尾部原样拼回——文件被清理后 realpathSync 会抛，
  * 不能拿它整条解析。
  */
-function canonicalizePossiblyMissing(target: string): string {
+export function canonicalizePossiblyMissing(target: string): string {
   try {
     return realpathSync(target);
   } catch {
@@ -35,13 +35,18 @@ function canonicalizePossiblyMissing(target: string): string {
  * 词法不中时两侧都按「存在前缀 realpath、缺失尾部保留」规范化再比，
  * 文件与上传根目录都不在了也能对上。
  */
-export function isChatUploadPath(filePath: string): boolean {
+/** 聊天上传的真实根目录（与 isChatUploadPath 同源）。 */
+export function getChatUploadRoots(): string[] {
   const explicitDataDir = process.env.CODE_AGENT_DATA_DIR?.trim();
-  const uploadRoots = new Set<string>([
+  return [...new Set<string>([
     path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME),
     ...(explicitDataDir ? [path.join(path.resolve(explicitDataDir), CHAT_UPLOAD_SUBDIR_NAME)] : []),
     path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME),
-  ]);
+  ])];
+}
+
+export function isChatUploadPath(filePath: string): boolean {
+  const uploadRoots = getChatUploadRoots();
   for (const uploadRoot of uploadRoots) {
     if (filePath.startsWith(`${uploadRoot}${path.sep}`)) return true;
   }

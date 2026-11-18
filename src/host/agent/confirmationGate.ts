@@ -17,6 +17,7 @@ import { getDelegateSessionPreviewMessages } from '../../shared/i18n/delegateSes
 import { getSpawnAgentPreviewMessages } from '../../shared/i18n/spawnAgentPreview';
 import { getToolParamLabel, isHiddenParamEntry, isPathLikeParamKey } from '../../shared/i18n/toolParamLabels';
 import { humanizeToolPath } from '../../shared/utils/humanizeToolPath';
+import { classifyToolPath } from '../tools/utils/toolPathKind';
 import { buildMemoryDraftPreview } from './memoryDraftPreview';
 import { getHostUiLocale } from '../config/hostUiLocale';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
@@ -371,7 +372,12 @@ export class ConfirmationGate {
           if (!trimmed || isHiddenParamEntry(key, trimmed)) continue;
           const pathLike = isPathLikeParamKey(key);
           let value = redactCommandSecrets(trimmed);
-          if (pathLike) value = humanizeToolPath(relativizeWorkspacePaths(value, options.workspaceRoot), locale);
+          if (pathLike) {
+            const display = value === trimmed ? classifyToolPath(trimmed) : undefined;
+            value = display
+              ? humanizeToolPath(trimmed, locale, display)
+              : relativizeWorkspacePaths(value, options.workspaceRoot);
+          }
           const safeVal = isSensitiveLogKey(key) ? '***REDACTED***' : value.slice(0, 120);
           entries.push({
             pathLike,

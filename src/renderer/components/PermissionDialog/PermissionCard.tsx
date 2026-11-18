@@ -86,6 +86,7 @@ function normalizeRequest(
       commandSecurityFlags: request.details.commandSecurityFlags,
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
+      pathDisplay: request.details.pathDisplay,
       targetKind: request.details.targetKind,
       standingGrantTarget: request.details.standingGrantTarget,
       browserSessionGrant: request.details.browserSessionGrant,

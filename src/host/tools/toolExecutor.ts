@@ -35,6 +35,7 @@ import {
 import { resolveBrowserSessionGrant, stripBrowserGrantFields } from '../permissions/browserSessionGrant';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { classifyFileWrite } from './fileWriteClassification';
+import { classifyToolPath } from './utils/toolPathKind';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -2189,6 +2190,12 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      // 上传 / 临时路径的位置词只由 host 按真实根判定；details 含整份模型参数，先清掉同名键防伪造。
+      delete permissionRequest.details.pathDisplay;
+      const displayTarget = [permissionRequest.details.path, permissionRequest.details.filePath, params.file_path]
+        .find((v): v is string => typeof v === 'string' && v.length > 0);
+      const pathDisplay = displayTarget ? classifyToolPath(displayTarget) : undefined;
+      if (pathDisplay) permissionRequest.details.pathDisplay = pathDisplay;
       // 日历写回：批准卡的补充信息（默认日历名 / 要改或删那条的标题时间）只在这唯一一次审批里补，不改 params
       // Only the host enrichment may label display-only calendar snapshot fields.
       delete permissionRequest.details.calendarApprovalSnapshotFields;

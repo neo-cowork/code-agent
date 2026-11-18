@@ -194,7 +194,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     || parsedRmTargets.targets[0];
   const safeTarget = target ? formatFilePath(redactCredentialText(target)) : undefined;
   // 写入类后果句里的上传 / 临时目录路径用位置词显示（含 .. 的路径原样）；删除后果句保持原口径。
-  const humanTarget = target ? humanizeToolPath(redactCredentialText(target), language) : undefined;
+  const humanTarget = target ? humanizeToolPath(redactCredentialText(target), language, request.details.pathDisplay) : undefined;
   const writeTarget = humanTarget && safeTarget && humanTarget !== redactCredentialText(target ?? '') ? humanTarget : safeTarget;
   const deletion = isDeletionRequest(request);
   // 写入分支保持单文件口径：写类请求只动 path/filePath 指向的那一个文件。
