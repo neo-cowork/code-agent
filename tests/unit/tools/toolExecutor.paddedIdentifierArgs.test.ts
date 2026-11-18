@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // 模型输出的路径键 / command 带首尾空白：授权判定（写围栏 / 审批）与实际打开必须是同一个文件。
 // 走真 ToolExecutor.execute（含 PTC 嵌套再入口）；用户手打命令（!run 同路径）command 逐字节。
@@ -15,6 +18,8 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { ToolContext } from '../../../src/host/tools/types';
 import { resolveToolPath } from '../../../src/host/tools/writeTargets';
+import { createRunContext } from '../../../src/host/runtime/runContext';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 
 const WORKDIR = '/tmp/workbench';
@@ -93,5 +98,47 @@ describe('ToolExecutor 标识类参数规范化', () => {
     await contexts[0].executeTool!('Bash', { command: '  ls\n' });
     const bash = resolverState.execute.mock.calls.find((c) => c[0] === 'Bash')![1] as Record<string, unknown>;
     expect(bash.command).toBe('ls');
+  });
+
+  describe('run workspace boundary sees the trimmed working_directory', () => {
+    let root: string;
+    beforeEach(async () => {
+      root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'padded-wd-')));
+      // ws/link → 工作区外。旧顺序下 'link ' 不存在、能过边界检查，裁剪后才变成指向外部的 symlink
+      await fs.mkdir(path.join(root, 'ws', 'sub'), { recursive: true });
+      await fs.mkdir(path.join(root, 'outside'), { recursive: true });
+      await fs.symlink(path.join(root, 'outside'), path.join(root, 'ws', 'link'), 'dir');
+    });
+    afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+
+    function runExecutor() {
+      const workspace = path.join(root, 'ws');
+      const run = createRunContext({
+        runId: 'run-padded-wd',
+        sessionId: 'session-padded-wd',
+        workspaceScope: createWorkspaceScope('project-padded-wd', [{
+          sourceId: 'primary-padded-wd', path: workspace, role: 'primary', access: 'read_write',
+        }]),
+      });
+      const executor = new ToolExecutor({
+        requestPermission: async () => true,
+        workingDirectory: root,
+      }).forRun(run);
+      return { workspace, executor, options: { runId: run.runId, sessionId: run.sessionId, preApprovedTools: new Set(['Bash']) } };
+    }
+
+    it("working_directory '<ws>/link ' (link -> outside) is rejected, not trimmed into the symlink after the check", async () => {
+      const { workspace, executor, options } = runExecutor();
+      const result = await executor.execute('Bash', { command: 'pwd', working_directory: `${workspace}/link ` }, options);
+      expect(result).toMatchObject({ success: false, metadata: { code: 'RUN_WORKSPACE_BOUNDARY' } });
+      expect(resolverState.execute).not.toHaveBeenCalled();
+    });
+
+    it("working_directory ' <ws>/sub\n' reaches the resolver as '<ws>/sub'", async () => {
+      const { workspace, executor, options } = runExecutor();
+      await executor.execute('Bash', { command: 'pwd', working_directory: ` ${workspace}/sub\n` }, options);
+      const params = resolverState.execute.mock.calls[0][1] as Record<string, unknown>;
+      expect(params.working_directory).toBe(path.join(workspace, 'sub'));
+    });
   });
 });

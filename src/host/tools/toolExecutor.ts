@@ -621,7 +621,11 @@ export class ToolExecutor {
     }
     const requestedToolName = toolName;
     const normalizedRequestedToolName = normalizeToolName(requestedToolName);
-    const boundParams = this.bindRunScopedParams(normalizedRequestedToolName, rawParams);
+    const boundParams = this.bindRunScopedParams(
+      normalizedRequestedToolName,
+      // 先裁路径键再做 workspace 边界检查：判定、授权、执行看到同一个值（command 不裁，!run 逐字节）
+      trimIdentifierArgs(rawParams, { includeCommand: false }),
+    );
     if ('error' in boundParams) {
       return {
         success: false,
@@ -629,7 +633,7 @@ export class ToolExecutor {
         metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
       };
     }
-    let params = trimIdentifierArgs(stripBrowserGrantFields(boundParams.params), { includeCommand: false });
+    let params = stripBrowserGrantFields(boundParams.params);
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
