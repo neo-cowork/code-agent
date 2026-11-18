@@ -9,6 +9,7 @@ import {
   resetSessionCommandCenterForTest,
   type SessionCommandTask,
 } from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import { composeSessionCommandTaskDisplayText } from '../../../src/shared/constants/sessionCommandCenter';
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import {
   describeDelegateTaskResult,
@@ -1187,6 +1188,29 @@ describe('model-facing task result text', () => {
       addMessageToSession.mockRestore();
       center.dispose();
     }
+  });
+
+  it('keeps newlines of the conclusion in ledger metadata.resultMarkdown for the member page, and closes a fence cut by the cap', async () => {
+    const lsLines = Array.from({ length: 12 }, (_, n) => `-rw-r--r--  1 u  staff  2 Nov 17 22:58 报表${n}.xlsx`).join('\n');
+    const conclusion = `共 **9** 个表格。\n\n\`ls -la\` 原始输出：\n\n\`\`\`\n${lsLines}\n\`\`\`\n`;
+    const manager = new FakeTaskManager();
+    vi.spyOn(getSessionManager(), 'addMessageToSession').mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { wakeForegroundBrain: vi.fn() });
+    try {
+      await spawnAndSettle(center, manager, conclusion);
+      const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })[0];
+      // summary 仍是 240 字单行；resultMarkdown 保留换行与完整围栏
+      expect(ledgerTask?.summary).not.toContain('\n');
+      expect(ledgerTask?.metadata?.resultMarkdown).toBe(conclusion.trim());
+      expect(String(ledgerTask?.metadata?.resultMarkdown).split('\n')).toHaveLength(conclusion.trim().split('\n').length);
+    } finally {
+      center.dispose();
+    }
+
+    const long = `\`\`\`\n${'-rw-r--r-- 1 u staff 2 file.xlsx\n'.repeat(400)}`;
+    const display = composeSessionCommandTaskDisplayText(long) ?? '';
+    expect(display.length).toBeLessThan(long.length);
+    expect((display.match(/^\s*```/gm) ?? []).length % 2).toBe(0);
   });
 
   it('task_status lists the model-facing result text, not the 240-char summary', async () => {
