@@ -561,6 +561,8 @@ export class CLISessionManager {
     if (!session) return;
     const uiLanguage = await this.readUiLanguage();
     const titleSource = sessionTitleSource(firstMessage, uiLanguage);
+    // 只剩恢复提示（含截断残留）：不起标题也不落 Appshot 固定名，会话保留占位。
+    if (!titleSource.trim()) return;
     // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
     if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 

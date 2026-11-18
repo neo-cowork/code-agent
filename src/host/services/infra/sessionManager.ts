@@ -1279,7 +1279,8 @@ export class SessionManager implements Disposable {
     if (!session) return;
 
     const titleSource = sessionTitleSource(firstMessage, (await import('../../session/sessionTitleHostPrompt')).readUiLanguage());
-    if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
+    // titleSource 只剩恢复提示（含截断残留）时视为没有正文：不起标题也不落 Appshot 固定名，会话保留占位。
+    if (!titleSource.trim() || session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
 
     const title = await initMemorySessionTitle(titleSource, session.workingDirectory) ?? await resolveSessionTitle(titleSource, 'zh', (strict) => this.generateSmartTitle(titleSource, strict), logger);
 

@@ -250,4 +250,58 @@ describe('SessionManager 自动标题', () => {
 
     expect(dbMock.getSession(session.id)?.title).toBe('我自己起的名字');
   });
+
+  // N-FIX-TELEMETRY-RECOVERY-NOTICE-RESIDUE-SKILLDRAFT-TITLE：
+  // maybeUpdateTitleForSession 的来源经 sessionTitleSource 剥掉旧恢复提示；
+  // 只剩提示的消息不起标题（保留占位），也不落 Appshot 固定名。
+  describe('首条消息带旧恢复提示', () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    const LEAK = /历史恢复提示|telemetry|重建|脱敏/;
+
+    it('标题提示词只见真实正文，标题由真实正文派生', async () => {
+      quickTask.mockImplementationOnce(() => Promise.resolve({ success: true, content: '周报整理' }) as never);
+      const manager = await makeManager();
+      const session = await manager.createSession({
+        title: '新对话',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+      });
+      await manager.addMessageToSession(session.id, userMessage(`${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报`) as never);
+      await settle();
+
+      const prompt = String((quickTask.mock.calls[0] as unknown[])[0]);
+      expect(prompt).toContain('帮我把三页会议纪要整理成一份周报');
+      expect(prompt).not.toMatch(LEAK);
+      expect(dbMock.getSession(session.id)?.title).toBe('周报整理');
+    });
+
+    it('小模型失败：降级标题同样只含真实正文', async () => {
+      quickTask.mockImplementationOnce(() => Promise.resolve({ success: false, content: '' }) as never);
+      const manager = await makeManager();
+      const session = await manager.createSession({
+        title: '新对话',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+      });
+      await manager.addMessageToSession(session.id, userMessage(`${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报`) as never);
+      await settle();
+
+      const title = dbMock.getSession(session.id)?.title as string;
+      // 小模型失败 → resolveSessionTitle 降级到规则摘要：剥掉「帮我」套话，只剩真实正文
+      expect(title).toBe('把三页会议纪要整理成一份周报');
+      expect(title).not.toMatch(LEAK);
+    });
+
+    it('只剩提示的消息不起标题：不调小模型，占位标题原样保留', async () => {
+      const manager = await makeManager();
+      const session = await manager.createSession({
+        title: '新对话',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+      });
+      await manager.addMessageToSession(session.id, userMessage(`${LEGACY_NOTICE}\n\n`) as never);
+      for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(quickTask).not.toHaveBeenCalled();
+      expect(dbMock.getSession(session.id)?.title).toBe('新对话');
+    });
+  });
 });

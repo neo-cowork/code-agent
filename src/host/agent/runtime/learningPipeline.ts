@@ -31,6 +31,7 @@ import {
 } from '../../services/skills/distillSignalStore';
 import { broadcastToRenderer } from '../../platform/windowBridge';
 import { LEARNING_PIPELINE, SKILL_REVIEW } from '../../../shared/constants';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../../shared/telemetryRecovery';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('LearningPipeline');
@@ -149,9 +150,11 @@ export class LearningPipeline {
   async runConversationReviewDistillation(): Promise<void> {
     if (skipRunAutomaticMemory(this.ctx, 'skill_draft')) return;
     const messages = this.ctx.messages ?? [];
+    // 复盘共用入口先剥旧恢复提示：只剩提示的消息按没有正文处理，也不计入 MIN_USER_TURNS。
     const userMessages = messages
       .filter((m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0)
-      .map((m) => m.content as string);
+      .map((m) => stripTelemetryRecoveryNoticeOrResidue(m.content as string))
+      .filter((text) => text.trim().length > 0);
     if (userMessages.length < SKILL_REVIEW.MIN_USER_TURNS) return;
     if (hasDistillSuggestionForSession(this.ctx.sessionId)) return;
 

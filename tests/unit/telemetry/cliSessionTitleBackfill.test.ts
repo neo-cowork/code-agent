@@ -107,6 +107,25 @@ describe('backfillCliPlaceholderSessionTitles', () => {
     expect(titleOf(db, 'cli_session_1_ready')).toBe('first line of the task');
   });
 
+  // N-FIX-TELEMETRY-RECOVERY-NOTICE-RESIDUE-SKILLDRAFT-TITLE：回填的降级标题经
+  // deriveFallbackSessionTitle 继承 sessionTitleSource 的恢复提示清洗。
+  it('titles notice-prefixed rows from the real text and leaves notice-only rows on the placeholder', () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    db = new Database(':memory:');
+    applySchema(db, LOGGER);
+    insertSession(db, 'cli_session_notice_prefixed', 'CLI Session');
+    insertMessage(db, 'm-notice-prefixed', 'cli_session_notice_prefixed', `${LEGACY_NOTICE}\n\nfirst line of the restored task`, 1);
+    insertSession(db, 'cli_session_notice_only', 'CLI Session');
+    insertMessage(db, 'm-notice-only', 'cli_session_notice_only', `${LEGACY_NOTICE}\n\n`, 1);
+
+    expect(backfillCliPlaceholderSessionTitles(db, { apply: true })).toBe(1);
+    expect(titleOf(db, 'cli_session_notice_prefixed')).toBe('first line of the restored task');
+    expect(titleOf(db, 'cli_session_notice_only')).toBe('CLI Session');
+    const titles = [titleOf(db, 'cli_session_notice_prefixed'), titleOf(db, 'cli_session_notice_only')];
+    expect(titles.join('\n')).not.toMatch(/历史恢复提示|telemetry|重建|脱敏|Appshot 会话/);
+  });
+
   it('the script dry-run leaves the file alone and --apply is idempotent', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-title-backfill-script-'));
     const dbPath = path.join(dir, 'sessions.db');

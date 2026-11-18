@@ -149,4 +149,42 @@ describe('first-turn task folder title through planSessionWorkDirectory', () => 
     expect(path.basename(await planSessionWorkDirectory({ attachments: [{ name: 'budget.xlsx', category: 'data' }], askTitle, now, env }))).toBe('任务_1113_budget');
     expect(askTitle).not.toHaveBeenCalled();
   });
+
+  // N-FIX-TELEMETRY-RECOVERY-NOTICE-RESIDUE-SKILLDRAFT-TITLE：文件夹命名与标题
+  // 共用恢复提示清洗入口；只剩提示的消息按空消息处理（附件名/untitled 兜底）。
+  describe('first-turn message carries the legacy recovery notice', () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+
+    it('folder title comes from the real text (model and rule paths)', async () => {
+      const askTitle = vi.fn(async () => ({ success: true, content: '会议纪要周报' }));
+      const model = await planSessionWorkDirectory({
+        userMessage: `${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报发给团队`,
+        askTitle, now, env,
+      });
+      expect(path.basename(model)).toBe('任务_1113_会议纪要周报');
+      expect(askTitle).toHaveBeenCalledOnce();
+      expect(String(askTitle.mock.calls[0][0])).not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
+
+      const rule = await planSessionWorkDirectory({
+        userMessage: `${LEGACY_NOTICE}\n\n帮我把三页会议纪要整理成一份周报发给团队`,
+        now, env,
+      });
+      expect(path.basename(rule)).toBe('任务_1113_把三页会议纪要整理成一份周报发给团队');
+    });
+
+    it('a notice-only message behaves like an empty message: attachment name or untitled, never the notice', async () => {
+      const askTitle = vi.fn();
+      const withAttachment = await planSessionWorkDirectory({
+        userMessage: `${LEGACY_NOTICE}\n\n`,
+        attachments: [{ name: 'weekly-notes.xlsx', category: 'data' }],
+        askTitle, now, env,
+      });
+      expect(path.basename(withAttachment)).toBe('任务_1113_weekly-notes');
+      const bare = await planSessionWorkDirectory({ userMessage: LEGACY_NOTICE, askTitle, now, env });
+      expect(path.basename(bare)).toBe('任务_1113_untitled');
+      expect(askTitle).not.toHaveBeenCalled();
+      expect(`${path.basename(withAttachment)}${path.basename(bare)}`).not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
+    });
+  });
 });

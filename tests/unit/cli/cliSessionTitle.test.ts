@@ -193,6 +193,39 @@ describe('CLI session titles', () => {
     expect(readTitle(sessionId)).toBe(await ruleSummary('rename the export button'));
   });
 
+  // N-FIX-TELEMETRY-RECOVERY-NOTICE-RESIDUE-SKILLDRAFT-TITLE：CLI 标题来源经
+  // sessionTitleSource 剥掉旧恢复提示；只剩提示的消息保留占位，不起标题。
+  it('derives the title from the real text after the legacy recovery notice', async () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    const sessionId = 'cli_session_notice_1';
+    await persistAgentLoopMessageToSession(
+      manager,
+      userMessage('msg-notice', `${LEGACY_NOTICE}\n\nSummarize the three meeting notes into a weekly report`),
+      { sessionId, modelConfig, workingDirectory: tempDir },
+    );
+    await settle();
+
+    const title = readTitle(sessionId) ?? '';
+    expect(title).toBe(await ruleSummary('Summarize the three meeting notes into a weekly report'));
+    expect(title).not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
+  });
+
+  it('keeps the placeholder title when the first message is only the recovery notice', async () => {
+    const LEGACY_NOTICE =
+      '【历史恢复提示】原始 user 消息缺失；以下内容由脱敏后的 telemetry 重建，不是用户原话。路径、标识符、数字和敏感值可能已被缩写或替换，不要将它们当作可直接执行的精确文件或命令目标。';
+    const sessionId = 'cli_session_notice_2';
+    await persistAgentLoopMessageToSession(manager, userMessage('msg-notice-only', `${LEGACY_NOTICE}\n\n`), {
+      sessionId,
+      modelConfig,
+      workingDirectory: tempDir,
+    });
+    await settle();
+
+    expect(quick.prompts).toHaveLength(0);
+    expect(readTitle(sessionId)).toBe('CLI Session');
+  });
+
   it('does not overwrite a title the user set while the model call is in flight', async () => {
     quick.available = true;
     quick.hold = true;

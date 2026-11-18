@@ -16,6 +16,7 @@ import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { SKILL_REVIEW } from '../../shared/constants';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 
 const logger = createLogger('ConversationReview');
 
@@ -247,12 +248,13 @@ body 用 Markdown，针对这一类任务写【可复用指南】，按以下结
 
 若没有任何可沉淀的学习，返回 {"shouldCreate": false, "signal": "none", "name": "", "description": "", "applicability": {"semantic": "", "requires_tools": [], "platforms": [], "required_env": [], "requires_paths": []}, "body": ""}。`;
 
-/** 构造投喂给复盘器的会话片段（最近 N 轮用户消息 + 最后助手回复） */
+/** 构造投喂给复盘器的会话片段（最近 N 轮用户消息 + 最后助手回复）；用户消息先过恢复提示清洗入口。 */
 export function buildReviewSnippet(input: {
   userMessages: string[];
   lastAssistant?: string;
 }): string {
   const recent = input.userMessages
+    .map((m) => stripTelemetryRecoveryNoticeOrResidue(m))
     .filter((m) => m && m.trim().length > 0)
     .slice(-SKILL_REVIEW.RECENT_USER_TURNS);
   const lines = recent.map((msg, i) => `用户消息${i + 1}：${msg.trim()}`);
@@ -359,7 +361,10 @@ export async function reviewConversationForSkill(input: {
   userMessages: string[];
   lastAssistant?: string;
 }): Promise<ReviewedSkill | null> {
-  const userMessages = input.userMessages.filter((m) => m && m.trim().length > 0);
+  // 复盘共用入口：剥旧恢复提示、丢弃只剩提示的消息；清洗后不足门槛即视为没有可复盘的用户轮次。
+  const userMessages = input.userMessages
+    .map((m) => stripTelemetryRecoveryNoticeOrResidue(m))
+    .filter((m) => m && m.trim().length > 0);
   if (userMessages.length < SKILL_REVIEW.MIN_USER_TURNS) return null;
 
   try {
