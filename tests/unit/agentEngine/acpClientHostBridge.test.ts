@@ -88,6 +88,51 @@ describe('AcpClientHostBridge — 写文件闸', () => {
 });
 
 describe('AcpClientHostBridge — 读文件闸', () => {
+  it('图片/PDF（含改名、无后缀）不按文本读，抛短提示', async () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8192, 0xfe)]);
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(2048, 0xfe)]);
+    const bridge = bridgeWith(approve);
+    for (const [name, data] of [['a.png', png], ['a-noext', png], ['a.txt', png], ['d.pdf', pdf], ['d-noext', pdf]] as const) {
+      const target = path.join(workspace, name);
+      await fsp.writeFile(target, data);
+      const err = await bridge.readTextFile({ path: target }).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message.length).toBeLessThan(1024);
+      expect((err as Error).message).toContain(target);
+    }
+  });
+
+  it('压缩包/音视频/wasm/数据库（含改名、无后缀）不按文本读，抛短提示', async () => {
+    const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(4096, 0xfe)]);
+    const mp4 = Buffer.concat([
+      Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]),
+      Buffer.alloc(4096, 0xfe),
+    ]);
+    const wasm = Buffer.concat([Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]), Buffer.alloc(4096, 0xfe)]);
+    const sqlite = Buffer.concat([Buffer.from('SQLite format 3\0', 'latin1'), Buffer.alloc(4096, 0xfe)]);
+    const bridge = bridgeWith(approve);
+    for (const [name, data, hint] of [
+      ['b.zip', zip, 'unzip -l'],
+      ['b-noext', zip, 'unzip -l'],
+      ['b.txt', zip, 'unzip -l'],
+      ['v.mp4', mp4, 'ffprobe'],
+      ['v-noext', mp4, 'ffprobe'],
+      ['w.wasm', wasm, 'read_base64'],
+      ['w-noext', wasm, 'read_base64'],
+      ['db.sqlite', sqlite, 'sqlite3'],
+      ['db-noext', sqlite, 'sqlite3'],
+    ] as const) {
+      const target = path.join(workspace, name);
+      await fsp.writeFile(target, data);
+      const err = await bridge.readTextFile({ path: target }).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message.length).toBeLessThan(500);
+      expect((err as Error).message).toContain(hint);
+      expect((err as Error).message).toContain(target);
+      expect((err as Error).message).not.toContain('�');
+    }
+  });
+
   it('工作区内的读不打扰用户', async () => {
     const target = path.join(workspace, 'inside.txt');
     await fsp.writeFile(target, 'inside', 'utf8');

@@ -405,6 +405,25 @@ describe('ConfirmationGate', () => {
         expect(preview.type).toBe('generic');
       }
     });
+
+    it('reminder update and delete previews have no Reminder ID line, and calendar UID stays', () => {
+      const update = gate.buildPreview('reminders_update', {
+        list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'pay electricity', remind_at_ms: 1_763_337_600_000,
+      });
+      const deleted = gate.buildPreview('reminders_delete', {
+        list: 'Personal', reminder_id: 'x-apple-reminder://opaque-9f3c2a', title: 'wrong', remind_at_ms: 1,
+      });
+      const calendar = gate.buildPreview('calendar_delete_event', {
+        calendar: 'Work', event_uid: 'cal-opaque', title: 'Review',
+      });
+      expect(update?.diff).not.toContain('Reminder ID');
+      expect(update?.diff).toContain('Title: pay electricity');
+      expect(deleted?.diff).not.toContain('Reminder ID');
+      expect(deleted?.diff).not.toContain('wrong');
+      expect(deleted?.diff).not.toContain('Title:');
+      expect(deleted?.diff).not.toContain('Remind At:');
+      expect(calendar?.diff).toContain('UID: cal-opaque');
+    });
   });
 
   // --------------------------------------------------------------------------

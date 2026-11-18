@@ -8,7 +8,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { PermissionRequest } from '../../../src/shared/contract';
+import { EDITABLE_TOOL_FIELDS, type PermissionRequest } from '../../../src/shared/contract';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { decisionCardEn } from '../../../src/renderer/i18n/decisionCard';
 
@@ -298,7 +298,7 @@ describe('PermissionCard · mail_send 改一改再发', () => {
     [calendarCreateRequest, '创建日历事件', ['calendar', 'title', 'start_ms', 'end_ms', 'location'], ['calendar']],
     [calendarUpdateRequest, '更新日历事件', ['calendar', 'title', 'start_ms', 'end_ms', 'location'], ['calendar', 'event_uid']],
     [remindersCreateRequest, '新建提醒', ['list', 'title', 'notes', 'remind_at_ms'], ['list']],
-    [remindersUpdateRequest, '更新提醒', ['list', 'reminder_id', 'title', 'notes', 'remind_at_ms'], ['list', 'reminder_id']],
+    [remindersUpdateRequest, '更新提醒', ['list', 'title', 'notes', 'remind_at_ms'], ['list', 'reminder_id']],
   ] as const)('%s：查看态字段齐全，标识只展示不出编辑控件', (native, expectedTitle, viewFields, readonlyFields) => {
     state.request = native;
     render(<PermissionCard />);
@@ -661,6 +661,129 @@ describe('PermissionCard · mail_send 改一改再发', () => {
       end_ms: '',
       location: '',
     })).toEqual([{ fieldKey: 'start_ms', reason: 'invalid_datetime' }]);
+  });
+
+  const OPAQUE = 'x-apple-reminder://opaque-9f3c2a';
+  const reminderBoundary = {
+    id: 'connector.external_write' as const,
+    connectorName: '提醒事项',
+    connectorNameEn: 'Reminders',
+  };
+  const lookedUpUpdate = (id: string): PermissionRequest => ({
+    ...nativeRequest(id, 'reminders_update', {
+      list: 'Personal',
+      reminder_id: OPAQUE,
+      title: 'pay electricity',
+      remind_at_ms: localMs(16),
+      calendarApprovalSnapshotFields: ['title'],
+    }, '提醒事项'),
+    boundary: reminderBoundary,
+  });
+  const lookedUpDelete = (id: string): PermissionRequest => ({
+    ...nativeRequest(id, 'reminders_delete', {
+      list: 'Personal',
+      reminder_id: OPAQUE,
+      title: 'pay electricity',
+      remind_at_ms: localMs(16),
+    }, '提醒事项'),
+    boundary: reminderBoundary,
+    dangerLevel: 'danger',
+  });
+
+  it.each(['zh', 'en'] as const)('%s: reminder update card shows list, title and time only', (language) => {
+    state.language = language;
+    state.request = lookedUpUpdate(`permission-reminders-update-${language}`);
+    render(<PermissionCard />);
+    const text = screen.getByTestId('permission-card').textContent ?? '';
+    expect(text).toContain(language === 'zh' ? '更新提醒「pay electricity」？' : 'Update reminder “pay electricity”?');
+    expect(screen.getByTestId('writeback-view-list').textContent).toBe('Personal');
+    expect(screen.getByTestId('writeback-view-title').textContent).toBe('pay electricity');
+    expect(screen.getByTestId('writeback-view-remind_at_ms').textContent).toContain('16:00');
+    expect(text).not.toMatch(/reminder_id|Reminder ID|提醒 ID|x-apple-reminder:\/\/opaque-9f3c2a/);
+    expect(screen.queryByTestId('writeback-view-reminder_id')).toBeNull();
+    if (language === 'zh') {
+      expect(text).toContain('清单');
+      expect(text).toContain('标题');
+      expect(text).toContain('提醒时间');
+      expect(text).not.toMatch(/\b(List|Title|Reminder ID|Update reminder|Delete)\b/);
+    } else {
+      expect(text).toContain('List');
+      expect(text).toContain('Title');
+      expect(text).toContain('Reminder time');
+      expect(text).not.toMatch(/[\u4e00-\u9fff]/);
+    }
+    releaseApprovalResponse(`permission-reminders-update-${language}`);
+  });
+
+  it.each(['zh', 'en'] as const)('%s: reminder delete card names the looked-up title and offers Delete/Cancel', (language) => {
+    state.language = language;
+    state.request = lookedUpDelete(`permission-reminders-delete-${language}`);
+    render(<PermissionCard />);
+    const text = screen.getByTestId('permission-card').textContent ?? '';
+    expect(text).toContain(language === 'zh' ? '删除提醒「pay electricity」？' : 'Delete reminder “pay electricity”?');
+    expect(screen.getByTestId('writeback-view-title').textContent).toBe('pay electricity');
+    expect(text).not.toContain('wrong');
+    expect(text).not.toMatch(/reminder_id|Reminder ID|提醒 ID|x-apple-reminder:\/\/opaque-9f3c2a/);
+    expect(screen.getByTestId('reminders-delete-note').textContent).toBe(language === 'zh'
+      ? '删除后不能在 Neo 里撤销，请核对标题和时间。'
+      : 'This cannot be undone from Neo — check the title and time first.');
+    const deleteButton = screen.getByRole('button', { name: language === 'zh' ? /^删除/ : /^Delete/ });
+    const cancelButton = screen.getByRole('button', { name: language === 'zh' ? /^取消/ : /^Cancel/ });
+    expect(deleteButton.className).not.toContain('border-red-500');
+    expect(deleteButton.className).toContain(PRIMARY_MARK);
+    expect(cancelButton.className).not.toContain(PRIMARY_MARK);
+    expect(screen.queryByRole('button', { name: language === 'zh' ? /修改后/ : /Edit/ })).toBeNull();
+    expect(screen.queryByText(language === 'zh' ? '危险操作' : 'Dangerous operation')).toBeNull();
+    if (language === 'en') expect(text).not.toMatch(/[\u4e00-\u9fff]/);
+    releaseApprovalResponse(`permission-reminders-delete-${language}`);
+  });
+
+  it('edit-confirm on a reminder update sends no looked-up title', async () => {
+    state.request = lookedUpUpdate('permission-reminders-lookup-edit');
+    render(<PermissionCard />);
+    fireEvent.click(screen.getByRole('button', { name: /修改后更新/ }));
+    fireEvent.click(screen.getByRole('button', { name: '按修改后的内容更新' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+      'permission-reminders-lookup-edit',
+      'allow',
+      'request-session',
+      { remind_at_ms: localMs(16) },
+    ));
+    expect(invoke.mock.calls[0][4]).not.toHaveProperty('title');
+    releaseApprovalResponse('permission-reminders-lookup-edit');
+  });
+
+  it('internal fields never render on any editable tool card', () => {
+    const opaque = 'opaque-internal-9f3c2a';
+    const internalKeys = Object.entries(EDITABLE_TOOL_FIELDS).flatMap(([tool, fields]) =>
+      fields.filter((field) => field.internal).map((field) => `${tool}.${field.key}`),
+    );
+    expect(internalKeys).toEqual(expect.arrayContaining([
+      'calendar_update_event.event_uid',
+      'reminders_update.reminder_id',
+      'reminders_delete.reminder_id',
+    ]));
+    for (const [tool, fields] of Object.entries(EDITABLE_TOOL_FIELDS)) {
+      const internals = fields.filter((field) => field.internal);
+      if (internals.length === 0) continue;
+      const args: Record<string, unknown> = {};
+      for (const field of fields) {
+        if (field.internal) args[field.key] = opaque;
+        else if (field.kind === 'datetime') args[field.key] = localMs(9);
+        else if (field.kind === 'string_list') args[field.key] = ['a@b.c'];
+        else args[field.key] = 'Visible value';
+      }
+      const id = `internal-${tool}`;
+      state.request = nativeRequest(id, tool, args, 'connector');
+      const view = render(<PermissionCard />);
+      const text = screen.getByTestId('permission-card').textContent ?? '';
+      expect(text, tool).not.toContain(opaque);
+      for (const field of internals) expect(screen.queryByTestId(`writeback-view-${field.key}`)).toBeNull();
+      view.unmount();
+      cleanup();
+      releaseApprovalResponse(id);
+    }
   });
 
 });

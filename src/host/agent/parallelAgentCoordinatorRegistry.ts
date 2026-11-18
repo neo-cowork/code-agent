@@ -8,6 +8,7 @@ import {
   isLegacyCoordinatorScope,
   LEGACY_COORDINATOR_SCOPE,
   type CompletedParallelCoordinatorSnapshot,
+  type ParallelAgentTaskSnapshot,
   type CoordinatorConfig,
   type ParallelCoordinatorTerminalStatus,
 } from './parallelAgentCoordinatorTypes';
@@ -162,6 +163,32 @@ export class ParallelAgentCoordinatorRegistry {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Read-only: task snapshots of every live coordinator and every finalized run
+   * that belongs to `sessionId`. Never creates a coordinator (getOrCreate throws
+   * for finalized scopes), never touches other sessions.
+   */
+  listSessionTaskSnapshots(sessionId: string): ParallelAgentTaskSnapshot[] {
+    const tasks: ParallelAgentTaskSnapshot[] = [];
+    for (const coordinator of this.coordinators.values()) {
+      if (coordinator.getScope()?.sessionId !== sessionId) continue;
+      tasks.push(...coordinator.getTaskSnapshots());
+    }
+    for (const snapshot of this.completedSnapshots.values()) {
+      if (snapshot.scope.sessionId !== sessionId) continue;
+      // 取消/失败的运行可能在成员仍 pending/running 时就被 finalize（冻结后不会再更新），
+      // 读侧按运行终态收口，避免这些成员永远显示为排队/工作中。
+      const settled = snapshot.status === 'cancelled' || snapshot.status === 'failed'
+        ? snapshot.status
+        : undefined;
+      for (const task of snapshot.tasks) {
+        const open = task.status === 'pending' || task.status === 'running';
+        tasks.push({ ...task, status: settled && open ? settled : task.status, task: '', tools: [] });
+      }
+    }
+    return tasks;
   }
 
   /** Global shutdown only. Run/user cancellation must use abortRun/abortSession. */

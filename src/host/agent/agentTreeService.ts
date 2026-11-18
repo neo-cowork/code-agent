@@ -16,6 +16,7 @@ import type { BashStep } from '../../shared/contract/backgroundTask';
 import type { EvidenceRef } from '../../shared/contract/evidence';
 import type { ManagedAgentStatus } from './spawnGuard';
 import { getSpawnGuard } from './spawnGuard';
+import { getParallelAgentCoordinatorRegistry } from './parallelAgentCoordinatorRegistry';
 import {
   getParallelAgentCoordinator,
   type AgentTaskResult,
@@ -676,7 +677,10 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     sessionId,
     now: options.now,
     spawnAgents: getSpawnGuard().list(),
-    parallelTasks: getParallelAgentCoordinator().getTaskSnapshots(),
+    parallelTasks: [
+      ...getParallelAgentCoordinator().getTaskSnapshots(),
+      ...(sessionId ? getParallelAgentCoordinatorRegistry().listSessionTaskSnapshots(sessionId) : []),
+    ],
     contextRecords: getSubagentContextStore().list(sessionId),
     // 会话隔离：能归属到别的会话的后台代理不进本会话快照（无 sessionId 的保留原口径）
     backgroundAgents: getBackgroundSubagentRegistry().list()

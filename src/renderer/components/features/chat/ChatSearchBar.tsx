@@ -12,7 +12,7 @@ import { IPC_CHANNELS } from '@shared/ipc/legacy-channels';
 import { ipcService } from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore } from '../../../stores/sessionUIStore';
-import { createPendingSearchJumpFromCrossSessionResult } from '../../../utils/sessionSearchJump';
+import { createPendingSearchJumpFromCrossSessionResult, getTraceNodeSearchText } from '../../../utils/sessionSearchJump';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
@@ -29,6 +29,10 @@ type SearchTab = 'current' | 'cross';
 
 interface ChatSearchBarProps {
   visible: boolean;
+  /** 打开时预填的查询词（侧栏命中跳转的兜底：节点没找到时带着搜索词打开） */
+  seedQuery?: string;
+  /** 带词打开时已定位好的跳转目标：首次扫描的激活下标取它，而不是 0（否则会把跳转滚走） */
+  seedMatch?: SearchMatch;
   projection: TraceProjection;
   onClose: () => void;
   onMatchesChange: (matches: SearchMatch[], activeIndex: number) => void;
@@ -37,6 +41,8 @@ interface ChatSearchBarProps {
 
 export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   visible,
+  seedQuery,
+  seedMatch,
   projection,
   onClose,
   onMatchesChange,
@@ -55,6 +61,9 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   // pendingSearchJump 跳转刚种下的高亮在同一秒内抹掉（真跑诊断：MATCH branch 已
   // 执行、amber 始终 0）。关闭搜索栏的清空（visible effect else 分支）不受影响。
   const lastQueryRef = useRef('');
+  const seedMatchRef = useRef(seedMatch);
+  seedMatchRef.current = seedMatch;
+  const consumedSeedMatchRef = useRef<SearchMatch | undefined>(undefined);
 
   // Cross-session search state
   const [crossResults, setCrossResults] = useState<CrossSessionSearchResults | null>(null);
@@ -67,6 +76,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   // Focus input when opened
   useEffect(() => {
     if (visible) {
+      if (seedQuery) setQuery(seedQuery);
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setQuery('');
@@ -77,7 +87,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
       setCrossLoading(false);
       onMatchesChange([], 0);
     }
-  }, [visible, onMatchesChange]);
+  }, [visible, seedQuery, onMatchesChange]);
 
   // Current session search
   useEffect(() => {
@@ -98,7 +108,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
 
     projection.turns.forEach((turn, turnIndex) => {
       turn.nodes.forEach((node, nodeIndex) => {
-        const content = node.content.toLowerCase();
+        const content = getTraceNodeSearchText(node).toLowerCase();
         let offset = 0;
         while (offset < content.length) {
           const idx = content.indexOf(lowerQuery, offset);
@@ -109,9 +119,17 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
       });
     });
 
+    let initialIndex = 0;
+    const seed = seedMatchRef.current;
+    if (seed && consumedSeedMatchRef.current !== seed && newMatches.length > 0) {
+      consumedSeedMatchRef.current = seed;
+      const seeded = newMatches.findIndex((m) => m.turnIndex === seed.turnIndex && m.nodeIndex === seed.nodeIndex);
+      if (seeded >= 0) initialIndex = seeded;
+    }
+
     setMatches(newMatches);
-    setActiveIndex(0);
-    onMatchesChange(newMatches, 0);
+    setActiveIndex(initialIndex);
+    onMatchesChange(newMatches, initialIndex);
   }, [query, projection.turns, onMatchesChange, tab]);
 
   // Cross-session search (debounced)

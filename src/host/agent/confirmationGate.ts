@@ -282,12 +282,11 @@ export class ConfirmationGate {
         const summary = summaryMap[toolName];
         const details = [summary];
         pushDetail(details, 'List', normalizeString(params.list));
-        pushDetail(details, 'Title', normalizeString(params.title));
-        pushDetail(details, 'Reminder ID', normalizeString(params.reminder_id));
+        if (toolName !== 'reminders_delete') pushDetail(details, 'Title', normalizeString(params.title));
         if (typeof params.completed === 'boolean') {
           pushDetail(details, 'Completed', params.completed ? 'true' : 'false');
         }
-        pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms));
+        if (toolName !== 'reminders_delete') pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms));
         return {
           type: 'generic',
           summary,
