@@ -593,7 +593,7 @@ function buildToolStep(
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
-      const parallelEntries = Array.isArray(a.agents)
+      const parallelEntries = a.parallel === true && Array.isArray(a.agents)
         ? a.agents.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
         : [];
       if (name !== 'Task' && name !== 'Explore' && parallelEntries.length > 0) {

@@ -258,7 +258,7 @@ export function summarizeToolCall(toolCall: ToolCall): string {
         || (typeof args?.role === 'string' && args.role)
         || '';
       if (agentType) return `创建代理: ${agentType}`;
-      const parallelCount = Array.isArray(args?.agents) ? args.agents.length : 0;
+      const parallelCount = args?.parallel === true && Array.isArray(args?.agents) ? args.agents.length : 0;
       return parallelCount > 0 ? `创建 ${parallelCount} 个代理` : '创建代理';
     }
 

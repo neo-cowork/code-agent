@@ -62,4 +62,13 @@ describe('humanizeToolStep — spawn_agent parallel form', () => {
     expect(humanizeToolStep('Task', { subagent_type: 'general-purpose', description: '核对清单' }, zh)).toBe('启动了代理 — 核对清单');
     expect(humanizeToolStep('Explore', { description: 'x' }, en, undefined, 'running')).toMatch(/^Starting an agent — .+/);
   });
+
+  it('agents[] without parallel===true is ignored (host runs the top-level single form)', () => {
+    const args = { role: 'explore', task: 'x', agents: [{ role: 'coder', task: 'a' }, { role: 'coder', task: 'b' }] };
+    const single = humanizeToolStep('spawn_agent', { role: 'explore', task: 'x' }, zh);
+    expect(humanizeToolStep('spawn_agent', args, zh)).toBe(single);
+    expect(humanizeToolStep('spawn_agent', { ...args, parallel: false }, zh, undefined, 'pending-approval'))
+      .toBe(humanizeToolStep('spawn_agent', { role: 'explore', task: 'x' }, zh, undefined, 'pending-approval'));
+    expect(humanizeToolStep('spawn_agent', { agents: [{ name: 'a' }, { name: 'b' }] }, zh)).toBe('启动了一个代理');
+  });
 });

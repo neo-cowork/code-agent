@@ -76,6 +76,10 @@ describe('summarizeToolCall', () => {
     expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: {} }))).toBe('创建代理');
   });
 
+  it('spawn_agent: agents[] without parallel===true is not counted', () => {
+    expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: { agents: [{ name: 'a' }, { name: 'b' }] } }))).toBe('创建代理');
+  });
+
   it('agent_message: empty target has no colon tail', () => {
     expect(summarizeToolCall(makeToolCall({ name: 'agent_message', arguments: { target: 'bob' } }))).toBe('发送消息给: bob');
     expect(summarizeToolCall(makeToolCall({ name: 'agent_message', arguments: {} }))).toBe('发送消息给代理');
