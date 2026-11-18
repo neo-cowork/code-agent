@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs } from '../../../scripts/e2e-core/args';
-import { CORE_FLOWS, CORE_FLOW_IDS } from '../../../scripts/e2e-core/flows';
+import { CORE_FLOWS, CORE_FLOW_IDS, NOT_SCRIPTTABLE_FLOWS, SHELL_WEB_FLOWS } from '../../../scripts/e2e-core/flows';
 import {
   buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure,
 } from '../../../scripts/e2e-core/result';
@@ -59,8 +59,8 @@ describe('e2e-core result.json', () => {
 });
 
 describe('e2e-core runner config', () => {
-  it('runs exactly the five chosen flows, every map step sentence comes from the feature-map card', () => {
-    expect(CORE_FLOW_IDS).toEqual(['F05', 'F06', 'F08', 'F10', 'F14']);
+  it('runs exactly the ten chosen web flows, every map step sentence comes from the feature-map card', () => {
+    expect(CORE_FLOW_IDS).toEqual(['F05', 'F06', 'F07', 'F08', 'F09', 'F10', 'F14', 'F15', 'F16', 'F17']);
     expect(CORE_FLOWS.map((f) => f.id)).toEqual(CORE_FLOW_IDS);
     const map = fs.readFileSync(path.resolve(__dirname, '../../../docs/e2e/feature-map.md'), 'utf8');
     for (const flow of CORE_FLOWS) {
@@ -70,6 +70,34 @@ describe('e2e-core runner config', () => {
         expect(card, `${flow.id}: ${step.text}`).toContain(sentence);
       }
     }
+  });
+
+  it('every flow id in the map index is either scripted, shell-only, or explicitly not scriptable', () => {
+    const map = fs.readFileSync(path.resolve(__dirname, '../../../docs/e2e/feature-map.md'), 'utf8');
+    const index = map.slice(map.indexOf('## 索引'), map.indexOf('## 流程卡'));
+    const ids = [...index.matchAll(/^\| (F\d\d) \|/gm)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThanOrEqual(15);
+    const shellIds = SHELL_WEB_FLOWS.map((f) => f.id);
+    const notScriptableIds = NOT_SCRIPTTABLE_FLOWS.map((f) => f.id);
+    // 地图里每条流程必须有归属：本 runner 真跑 / shell 归真机批 / 显式不可脚本化，不许悄悄漏掉
+    for (const id of ids) {
+      expect(
+        CORE_FLOW_IDS.includes(id) || shellIds.includes(id) || notScriptableIds.includes(id),
+        `${id} must be in CORE_FLOW_IDS, SHELL_WEB_FLOWS or NOT_SCRIPTTABLE_FLOWS`,
+      ).toBe(true);
+    }
+    const all = [...CORE_FLOW_IDS, ...shellIds, ...notScriptableIds];
+    expect(new Set(all).size).toBe(all.length);
+    for (const id of all) expect(ids, `${id} not in map index`).toContain(id);
+  });
+
+  it('lists the seven shell flows each with a one-line reason, and only F18 as not scriptable', () => {
+    expect(SHELL_WEB_FLOWS.map((f) => f.id)).toEqual(['F01', 'F02', 'F03', 'F04', 'F11', 'F12', 'F13']);
+    for (const flow of SHELL_WEB_FLOWS) {
+      expect(flow.reason.trim().length, `${flow.id} needs a non-empty reason`).toBeGreaterThan(4);
+    }
+    expect(NOT_SCRIPTTABLE_FLOWS.map((f) => f.id)).toEqual(['F18']);
+    expect(NOT_SCRIPTTABLE_FLOWS[0].reason.trim().length).toBeGreaterThan(4);
   });
 
   it('parses defaults and overrides', () => {
