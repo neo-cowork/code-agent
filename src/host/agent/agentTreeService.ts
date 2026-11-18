@@ -33,7 +33,7 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
-import { bashStepDescription, extractToolStepTarget } from './toolStepTarget';
+import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 import { stripWorkdirPrefix } from './workdirPrefix';
 
@@ -127,6 +127,8 @@ function failureReason(code: AgentFailureCode): string {
       return '助手设置的等待时间超过了允许的上限，需要缩短';
     case AgentFailureCode.BudgetExhausted:
       return '可用预算已经用完';
+    case AgentFailureCode.StepCapReached:
+      return '执行步数已达上限';
     case AgentFailureCode.Timeout:
       return '处理时间超过了限制';
     case AgentFailureCode.ParentGone:
@@ -306,11 +308,13 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
     for (let callIndex = calls.length - 1; callIndex >= 0; callIndex -= 1) {
       const call = calls[callIndex];
       if (call.name !== tool) continue;
-      const target = extractToolStepTarget(call.arguments);
+      const target = extractToolStepTarget(call.arguments, call.name);
+      const action = extractToolStepAction(call.arguments);
       const description = bashStepDescription(call.name, call.arguments);
       return {
         tool,
         ...(target ? { target } : {}),
+        ...(action ? { action } : {}),
         ...(description ? { description } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
@@ -669,7 +673,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
 
 export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}): AgentTreeSnapshot {
   const sessionId = options.sessionId?.trim() || undefined;
-  return buildAgentTreeSnapshot({
+  const sources: AgentTreeSnapshotSources = {
     sessionId,
     now: options.now,
     spawnAgents: getSpawnGuard().list(),
@@ -681,11 +685,21 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
     // 会话隔离：能归属到别的会话的后台代理不进本会话快照（无 sessionId 的保留原口径）
     backgroundAgents: getBackgroundSubagentRegistry().list()
       .filter((handle) => !sessionId || !handle.sessionId || handle.sessionId === sessionId),
-    worktrees: options.worktrees ?? listAgentWorktreeArtifacts(),
     // 同一根脊柱：冲突从 fileOwnershipRegistry 拉（string scope = session:<id>），
     // 不给 renderer 新开 channel。
     ownershipConflicts: sessionId
       ? getFileOwnershipRegistry().listConflicts(sessionId)
       : [],
+  };
+  if (options.worktrees) return buildAgentTreeSnapshot({ ...sources, worktrees: options.worktrees });
+  const artifacts = listAgentWorktreeArtifacts();
+  if (artifacts.length === 0) return buildAgentTreeSnapshot(sources);
+  // Artifacts have no session or lifecycle; they may only decorate agents a lifecycle source
+  // already produced. Otherwise (hydrated after restart, record pruned / other session) they
+  // would create a phantom `unknown` node that reads as a still-working agent.
+  const known = new Set(buildAgentTreeSnapshot(sources).nodes.map((node) => node.id));
+  return buildAgentTreeSnapshot({
+    ...sources,
+    worktrees: artifacts.filter((artifact) => known.has(artifact.agentId)),
   });
 }

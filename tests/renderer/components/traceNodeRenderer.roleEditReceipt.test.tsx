@@ -236,8 +236,10 @@ describe('edit-role user bubble display projection and rewind/edit preservation'
       roleLabels: useRoleLabelsStore.getState().labels[language],
       now: 100,
     });
-    expect(headerModel?.title).toBe(expectedText);
-    console.log(`ASSERT overviewRunHeader: ${headerModel?.title}`);
+    // 会话标题是主名，用户指令（已投影成回执文案）是副标题
+    expect(headerModel?.subtitle).toBe(expectedText);
+    console.log(`ASSERT overviewRunHeader: ${headerModel?.subtitle}`);
+    expect(headerModel?.subtitle).not.toContain('/edit-role');
     expect(headerModel?.title).not.toContain('/edit-role');
 
     // Direct TraceNodeRenderer check with turnSystemContext scaffold wrapper
