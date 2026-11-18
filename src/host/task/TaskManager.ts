@@ -19,7 +19,9 @@ import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
+import { TaskManagerReadiness } from './taskManagerReadiness';
 import type { PlanningService } from '../planning';
+import { getPermissionModeManager } from '../permissions/modes';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
@@ -107,6 +109,13 @@ function isInferenceHistoryMessage(message: Message): boolean {
  * });
  * ```
  */
+function isBackgroundApprovalDetached(sessionId: string): boolean {
+  if (hasInteractiveUi()) return false;
+  const modes = getPermissionModeManager();
+  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
+    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
+}
+
 export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
@@ -126,6 +135,7 @@ export class TaskManager extends EventEmitter {
 
   // 依赖注入
   private configService: ConfigService | null = null;
+  private readonly readiness = new TaskManagerReadiness();
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
   /**
@@ -169,7 +179,12 @@ export class TaskManager extends EventEmitter {
     this.planningService = deps.planningService;
     this.runRegistry = deps.runRegistry;
     this.onAgentEvent = deps.onAgentEvent;
+    this.readiness.markReady();
     logger.info('TaskManager dependencies initialized');
+  }
+
+  waitUntilReady(timeoutMs: number): Promise<boolean> {
+    return this.readiness.wait(timeoutMs);
   }
 
   /**
@@ -283,7 +298,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -1049,7 +1064,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); await settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),
@@ -1212,6 +1227,9 @@ export class TaskManager extends EventEmitter {
       planningService: this.planningService,
       runRegistry: this.runRegistry,
       hasApprovalUi: () => hasInteractiveUi(),
+      // 后台 lane 没有页面时审批停车进收件箱（degrade），不再 60s 自动拒绝。
+      // cron/heartbeat/channel/语音会话保持它们自己的停车模式，这里恒 false。
+      ...(eventKey !== sessionId ? { isDetachedRun: () => isBackgroundApprovalDetached(sessionId) } : {}),
       onEvent: async (event: AgentEvent) => this.trackEventHandling(sessionId, this.handleAgentEvent(sessionId, event, eventKey)),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {
