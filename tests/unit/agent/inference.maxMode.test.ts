@@ -101,6 +101,7 @@ vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
   getAllToolDefinitions: vi.fn().mockReturnValue(mockToolDefinitions),
   withDesignCanvasTools: vi.fn((tools) => tools),
   withoutGenericMediaToolsInDesign: vi.fn((tools) => tools),
+  withEventReplyTools: vi.fn((tools) => tools),
 }));
 
 vi.mock('../../../src/host/tools/workbenchToolScope', () => ({

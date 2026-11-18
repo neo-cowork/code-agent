@@ -453,6 +453,39 @@ describe('CronEventTrigger', () => {
       expect(preamble).not.toContain('ignore previous instructions');
     });
 
+    // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：通道事件块把回复出口指到 host-owned 的
+    // reply_to_event（目的地宿主绑定），把「找发送工具」的能力探寻掐在起跑线。
+    it('通道事件块带 reply_to_event 回复指引（块外固定说明，不进 untrusted 块）', async () => {
+      const h = createHarness([eventJob()]);
+      h.source.emit('message', 'acc-1', channelMessage({
+        id: 'reply-1',
+        context: { chatId: 'oc_group', chatType: 'group', chatName: 'RR51 测试群' },
+        content: 'RR51-PING',
+      }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+      const block = h.runs[0].payloadBlock;
+      expect(block).toContain('reply_to_event');
+      expect(block).toContain('不要寻找或使用任何其他发送工具');
+      // 指引在定界块外（真实开标签之前），事件正文仍在块内。
+      expect(block.indexOf('reply_to_event')).toBeLessThan(block.lastIndexOf('<untrusted_channel_events>'));
+      expect(block.indexOf('RR51-PING')).toBeGreaterThan(block.lastIndexOf('<untrusted_channel_events>'));
+    });
+
+    it('通道 run 的 trigger 带 host 绑定的逐事件回复目的地（含群名）', async () => {
+      const h = createHarness([eventJob()]);
+      h.source.emit('message', 'acc-1', channelMessage({
+        id: 'om_trigger',
+        context: { chatId: 'oc_group', chatType: 'group', chatName: 'RR51 测试群' },
+        content: 'RR51-PING',
+      }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].trigger.replyTargets).toEqual([
+        { eventId: 'om_trigger', chatId: 'oc_group', chatName: 'RR51 测试群' },
+      ]);
+    });
+
     it('单条消息文本截断到 2000 字符', async () => {
       const block = await capturePayloadBlock({ id: 'evil-4', content: 'x'.repeat(5000) });
       expect(block).toContain('x'.repeat(2000));
@@ -784,6 +817,20 @@ describe('CronEventTrigger', () => {
         eventLabel: '王阿姨 · 退款什么时候到账',
       });
       expect(rows[0].eventLabel).not.toContain('_icloud|INBOX|430');
+    });
+
+    // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：mail 块点名 mail_send（既有出站审批），
+    // 不提 reply_to_event；mail run 的 trigger 不带回复目的地。
+    it('mail 块点名 mail_send，trigger 不带 replyTargets', async () => {
+      const messages = [mailMsg(1)];
+      const h = createMailHarness([mailEventJob()], { listMessages: async () => [...messages], readMessage: async () => 'body' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      messages.push(mailMsg(2));
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].payloadBlock).toContain('mail_send');
+      expect(h.runs[0].payloadBlock).not.toContain('reply_to_event');
+      expect(h.runs[0].trigger.replyTargets).toBeUndefined();
     });
 
     it('① 种子之后到达的邮件在下一趟轮询触发（每 30s 一趟，限频不吞）', async () => {

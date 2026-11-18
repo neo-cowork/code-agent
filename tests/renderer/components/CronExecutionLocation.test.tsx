@@ -113,3 +113,12 @@ describe('N-TRIGGER-CONNECTOR-MAIL run 记录的触发源标签', () => {
     expect(screen.queryByTestId('cron-exec-trigger-source')).toBeNull();
   });
 });
+
+describe('raw execution result view stays verbatim', () => {
+  it('does not rewrite ordinary words like observe / auto mode / mail_send in the result JSON', () => {
+    const result = { actionMode: 'observe', note: 'We will observe the market in auto mode', tool: 'mail_send' };
+    render(<CronExecutionDetail execution={{ ...execution, runsOn: 'local', status: 'completed', error: undefined, result }} />);
+    const pre = screen.getByText(/We will observe the market/);
+    expect(pre.textContent).toBe(JSON.stringify(result, null, 2));
+  });
+});

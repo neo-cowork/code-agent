@@ -8,7 +8,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Copy, Eye, Zap } from 'lucide-react';
 import type { CronEventDecision, CronJobDefinition } from '@shared/contract';
 import { resolveCronEventActionMode } from '@shared/cronEventActionMode';
-import { localizeDecisionText } from '@shared/cronEventDecisionText';
+import { localizeDecisionText, scrubInternalIdentifiers } from '@shared/cronEventDecisionText';
 import { cronClient } from '../../../services/cronClient';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -129,7 +129,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
               {copy.ruleLabel.replace('{rule}', rule)}
             </div>
           )}
-          {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
+          {row.summary && <div className="mt-1 truncate text-zinc-300">{scrubInternalIdentifiers(row.summary, language)}</div>}
         </div>
         <details className="mt-2 border-t border-zinc-800/80 pt-2" data-testid="cron-event-decision-details">
           <summary className="cursor-pointer select-none text-zinc-500 hover:text-zinc-300">{copy.details}</summary>

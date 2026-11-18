@@ -463,6 +463,23 @@ export interface CronExecutionTrigger {
   eventIds?: string[];
   /** True when any carried event arrived via a group listen binding (no @-mention needed). */
   listen?: boolean;
+  /**
+   * Host-bound reply destinations for channel events (N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN):
+   * one per carried channel event, mapping the event id to the chat it came from. The
+   * reply_to_event tool resolves its destination from this table only — never from model
+   * params. Absent for mail/webhook runs (they keep mail_send / no reply action).
+   */
+  replyTargets?: CronEventReplyTarget[];
+}
+
+/** Per-event reply destination carried by a channel-event run trigger. */
+export interface CronEventReplyTarget {
+  /** Carried event id (platform message id) this destination answers. */
+  eventId: string;
+  /** Chat the event came from (platform receive id, e.g. Feishu oc_/ou_). */
+  chatId: string;
+  /** Human-readable chat name when the platform provided one (group name). */
+  chatName?: string;
 }
 
 /**

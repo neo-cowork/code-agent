@@ -183,6 +183,8 @@ describe('② 观察档的通道结果回复：零发送 + 一条 would_act', ()
       reason: 'outbound action channel_reply intercepted in observe mode',
       target: 'feishu:oc_group',
       runId: 'run-obs-1',
+      // N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN：would_act 行也带「命中的规则」。
+      matchedRule: 'channel message · account acc-1 · chat oc_group',
       // 逐事件决策标签不进「本会发出」的正文
       summary: '好的，周五下午三点开会，我来订会议室。',
     });
