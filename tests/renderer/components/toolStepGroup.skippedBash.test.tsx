@@ -30,7 +30,7 @@ function header(nodes: TraceNode[]): string {
   return (screen.getByTestId('tool-group-head-label').textContent ?? '').trim();
 }
 
-describe.each([['zh', 'zh'], ['en', 'en']] as const)('skipped Bash in ToolStepGroup header (%s)', (lang) => {
+describe.each(['zh', 'en'] as const)('skipped Bash in ToolStepGroup header (%s)', (lang) => {
   beforeEach(() => useAppStore.setState({ language: lang }));
   afterEach(cleanup);
   const zhEn = <T,>(a: T, b: T) => (lang === 'zh' ? a : b);
