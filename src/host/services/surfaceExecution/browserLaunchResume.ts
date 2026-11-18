@@ -43,6 +43,9 @@ interface ResumeLogFields {
 
 let deps: ManagedBrowserLaunchResumeDeps | null = null;
 
+/** Archive version each window last imported or exported; a newer archive means the window's cookies are stale. */
+const windowArchiveVersion = new WeakMap<object, number>();
+
 export function installManagedBrowserLaunchResume(next: ManagedBrowserLaunchResumeDeps): void {
   deps = next;
   registerManagedBrowserLaunchResumeHook(resumeManagedBrowserOnLaunch);
@@ -123,6 +126,7 @@ async function seedFreshJar(
     );
   }
   service.setResumeOwner(conversationId);
+  windowArchiveVersion.set(service, (deps.resumeStateStore.archiveVersion?.(conversationId) ?? 0));
   let target: string | null;
   try {
     target = await readLastPage(conversationId);
@@ -208,17 +212,33 @@ async function replaceJar(service: BrowserService, conversationId: string, phase
   if (!store) return;
   const previous = service.getResumeOwner();
   if (previous) {
-    try {
-      await store.exportForConversation(previous, service);
-    } catch (error) {
-      logResume('warn', {
-        phase: 'skipped',
-        reason: 'resume_skipped_export_failed',
-        conversationIdHash: conversationIdHash(conversationId),
+    const stale = (store.archiveVersion?.(previous) ?? 0) !== (windowArchiveVersion.get(service) ?? 0);
+    if (stale) {
+      // Another run wrote a newer login for the previous owner; this window's cookies must not overwrite it.
+      logResume('info', {
+        phase,
+        reason: 'resume_export_skipped_stale',
+        conversationIdHash: conversationIdHash(previous),
         url: readActiveUrl(service),
-        error: errorMessage(error),
       });
-      return;
+    } else {
+      try {
+        await store.exportForConversation(previous, service);
+      } catch (error) {
+        logResume('warn', {
+          phase: 'skipped',
+          reason: 'resume_skipped_export_failed',
+          conversationIdHash: conversationIdHash(conversationId),
+          url: readActiveUrl(service),
+          error: errorMessage(error),
+        });
+        // Keep the window with its current owner; never hand it to another conversation.
+        throw new BrowserResumeStateError(
+          'BROWSER_RESUME_STATE_EXPORT_FAILED',
+          'Browser login state could not be saved before switching conversations. The browser was left unchanged.',
+          { cause: error },
+        );
+      }
     }
   }
   await service.close();

@@ -38,7 +38,10 @@ export async function finishManagedBrowserLaunchResume(
   launchedFresh: boolean,
 ): Promise<void> {
   if (service.isLaunchResumeSuppressed()) return;
-  const profileMode = options.profileMode ?? service.getSessionState().profileMode;
+  // A window that is already running keeps the profile it was opened with; the
+  // request's profileMode must not turn a persistent personal window into an isolated jar.
+  const liveProfileMode = service.getSessionState().profileMode;
+  const profileMode = launchedFresh ? (options.profileMode ?? liveProfileMode) : liveProfileMode;
   if (
     launchedFresh
     && options.conversationId

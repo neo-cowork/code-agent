@@ -26,6 +26,8 @@ export interface BrowserResumeStateStore {
     browserService: BrowserService,
     options?: BrowserResumeImportOptions,
   ): Promise<boolean>;
+  /** Bumps whenever the stored archive is rewritten or cleared; windows compare it to detect a stale jar. */
+  archiveVersion?(conversationId: string): number;
   clearConversation(conversationId: string): Promise<void>;
   activateConversation(conversationId: string): void;
 }
@@ -55,6 +57,7 @@ export class SecureBrowserResumeStateStore implements BrowserResumeStateStore {
   private readonly secureStorage: SecureKeyValueStore;
   private readonly workspaceRoot: string;
   private readonly generations = new Map<string, number>();
+  private readonly archiveVersions = new Map<string, number>();
   private readonly importClaims = new Set<string>();
   private readonly inactiveConversations = new Set<string>();
 
@@ -79,6 +82,7 @@ export class SecureBrowserResumeStateStore implements BrowserResumeStateStore {
       JSON.parse(serialized);
       if ((this.generations.get(conversationId) || 0) === generation) {
         await this.secureStorage.setItem(this.slot(conversationId), serialized);
+        this.archiveVersions.set(conversationId, this.archiveVersion(conversationId) + 1);
       }
       return temporaryPath;
     } catch (error) {
@@ -118,8 +122,13 @@ export class SecureBrowserResumeStateStore implements BrowserResumeStateStore {
     }
   }
 
+  archiveVersion(conversationId: string): number {
+    return this.archiveVersions.get(conversationId) || 0;
+  }
+
   async clearConversation(conversationId: string): Promise<void> {
     this.inactiveConversations.add(conversationId);
+    this.archiveVersions.set(conversationId, this.archiveVersion(conversationId) + 1);
     this.generations.set(conversationId, (this.generations.get(conversationId) || 0) + 1);
     await this.secureStorage.removeItem(this.slot(conversationId));
     const conversationDir = this.conversationDir(conversationId);

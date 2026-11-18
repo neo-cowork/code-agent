@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   ownerAtGoto: null as string | null,
   readOwner: null as (() => string | null) | null,
   importCount: 0,
+  storageError: null as Error | null,
 }));
 
 vi.mock('../../../../src/host/platform', () => ({
@@ -59,6 +60,7 @@ vi.mock('../../../../src/host/services/infra/browser/browserLaunchHelpers', () =
         state.cookies.push(...cookies);
       }),
       storageState: vi.fn(async (options?: { path?: string }) => {
+        if (state.storageError) throw state.storageError;
         const saved = { cookies: state.cookies, origins: [] };
         if (options?.path) await fs.writeFile(options.path, JSON.stringify(saved));
         return saved;
@@ -133,6 +135,7 @@ beforeEach(async () => {
   state.ownerAtGoto = null;
   state.readOwner = null;
   state.importCount = 0;
+  state.storageError = null;
 });
 
 afterEach(async () => {
@@ -243,6 +246,51 @@ describe('BrowserService launch resume', () => {
       reason: 'resume_skipped_unowned',
     });
     await unowned.service.close();
+  });
+
+  it('does not close a persistent personal window when an isolated launch reuses it', async () => {
+    const { service, secure, logger } = await boot();
+    await service.launch({ provider: 'playwright-bundled', mode: 'headless', profileMode: 'persistent' });
+    state.cookies = [{ name: 'personal_session' }];
+
+    await service.ensureSession('about:blank', { ...launchOptions, conversationId: 'chat-b' });
+
+    expect(service.isRunning()).toBe(true);
+    expect(service.getResumeOwner()).toBeNull();
+    expect(state.cookies.map((cookie) => cookie.name)).toEqual(['personal_session']);
+    expect(secure.values.size).toBe(0);
+    expect(resumeLogs(logger)).toEqual([]);
+    await service.close();
+  });
+
+  it('does not overwrite a newer login archive with the window\'s stale cookies on swap', async () => {
+    const { service, secure, resume } = await boot();
+    await service.launch({ ...launchOptions, conversationId: 'chat-a' });
+    state.cookies = [{ name: 'newer_login' }];
+    await resume.exportForConversation('chat-a', service);
+    state.cookies = [{ name: 'stale_login' }];
+
+    await service.ensureSession('about:blank', { ...launchOptions, conversationId: 'chat-b' });
+
+    expect(service.getResumeOwner()).toBe('chat-b');
+    expect(secure.values.get(resumeSlot('chat-a'))).toContain('newer_login');
+    expect(secure.values.get(resumeSlot('chat-a'))).not.toContain('stale_login');
+    await service.close();
+  });
+
+  it('fails the launch and keeps the window with its owner when the old login cannot be saved', async () => {
+    const { service } = await boot();
+    await service.launch({ ...launchOptions, conversationId: 'chat-a' });
+    state.storageError = new Error('storage state unavailable');
+
+    await expect(
+      service.ensureSession('about:blank', { ...launchOptions, conversationId: 'chat-b' }),
+    ).rejects.toMatchObject({ code: 'BROWSER_RESUME_STATE_EXPORT_FAILED' });
+
+    expect(service.getResumeOwner()).toBe('chat-a');
+    expect(service.isRunning()).toBe(true);
+    state.storageError = null;
+    await service.close();
   });
 
   it('keeps the owner when navigation fails and retries on the next launch', async () => {
