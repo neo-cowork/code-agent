@@ -1072,7 +1072,7 @@ export class SubagentExecutor {
       if (!exitedLoop) {
         return earlyFailure('Max iterations reached', {
           iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
-          failureCode: AgentFailureCode.BudgetExhausted,
+          failureCode: AgentFailureCode.StepCapReached,
           // 只读提示：前台照 main 按失败返回；后台注册表据此给用户一句白话（而不是「额度用完了」）。
           ...(answerLedger.settled() ? {} : { stopHint: { kind: 'step_cap' as const, conclusion: buildStepCapConclusion({ iterations, maxIterations, messages }) } }),
         });

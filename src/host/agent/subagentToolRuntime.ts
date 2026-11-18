@@ -1,3 +1,4 @@
+import { EXCEL_READ_ACTIONS } from '../../shared/constants/excelActions';
 import { createRunContext } from '../runtime/runContext';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
 import { createWorkspaceScope, isPathWithinRoot } from '../runtime/workspaceScope';
@@ -135,7 +136,7 @@ export function createSubagentToolRuntime(input: {
         )
         // acceptEdits 下连接器写以 type:'file_write' 进来，档位判据只看 type 会放过工具名——
         // 出站 / 不可逆 / 进程类工具（mustAskUnderAcceptEdits）仍要落到 permission.request。
-        && !(mode === 'acceptEdits' && mustAskUnderAcceptEdits(request.tool))
+        && !(mode === 'acceptEdits' && (mustAskUnderAcceptEdits(request.tool) || request.tool === 'ExcelAutomate'))
       ) return true;
       return context.permission.request({ ...request, sessionId: input.sessionId, ...input.identity });
     },
@@ -156,7 +157,7 @@ export function createSubagentToolRuntime(input: {
           workingDirectory: context.cwd,
         }),
         toolName,
-        permissionLevel: definition?.permissionLevel ?? 'read',
+        permissionLevel: toolName === 'ExcelAutomate' && EXCEL_READ_ACTIONS.has(String(params.action ?? '')) ? 'read' : definition?.permissionLevel ?? 'read',
         path: (params.path as string | undefined) ?? (params.file_path as string | undefined),
         command: params.command as string | undefined,
         url: params.url as string | undefined,

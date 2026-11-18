@@ -440,6 +440,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       taskProgress,
       todos: statusRail.todos.items,
       pendingApprovalId,
+      backgroundTasks,
     });
     const sessionTask = buildSessionTaskRecord({
       sessionId: currentSessionId,
