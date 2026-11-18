@@ -311,4 +311,31 @@ describe('tryForceExecuteTextToolCall', () => {
       expect(result!.name).toBe('custom_tool');
     });
   });
+
+  // 路径键 / command 首尾空白在模型输入边界裁一次；正文字段逐字节
+  describe('padded identifier args', () => {
+    it('regex-matched args: padded file_path trimmed once, content kept byte-exact', () => {
+      const match = { toolName: 'write_file', args: JSON.stringify({ file_path: '\n/tmp/a.txt ', content: '  body\n' }) };
+      const result = detector.tryForceExecuteTextToolCall(match, '');
+      expect(result!.arguments).toEqual({ file_path: '/tmp/a.txt', content: '  body\n' });
+    });
+
+    it('tagged strings are still cleaned and trimmed', () => {
+      const match = { toolName: 'write_file', args: JSON.stringify({ file_path: ' /tmp/a.txt</arg_value>\n', content: 'x' }) };
+      const result = detector.tryForceExecuteTextToolCall(match, '');
+      expect(result!.arguments.file_path).toBe('/tmp/a.txt');
+    });
+
+    it('content-extracted JSON args: padded file_path trimmed', () => {
+      const match = { toolName: 'write_file', args: '' };
+      const content = 'write_file({"file_path": " /tmp/b.txt  ", "content": "z "})';
+      const result = detector.tryForceExecuteTextToolCall(match, content);
+      expect(result!.arguments).toEqual({ file_path: '/tmp/b.txt', content: 'z ' });
+    });
+
+    it('bash command from text is trimmed', () => {
+      const match = { toolName: 'bash', args: JSON.stringify({ command: '  ls\n' }) };
+      expect(detector.tryForceExecuteTextToolCall(match, '')!.arguments.command).toBe('ls');
+    });
+  });
 });

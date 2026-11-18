@@ -266,6 +266,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 import { computeDeleteImpact } from './deleteImpact';
+import { trimIdentifierArgs } from './trimIdentifierArgs';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -628,7 +629,7 @@ export class ToolExecutor {
         metadata: { code: 'RUN_WORKSPACE_BOUNDARY' },
       };
     }
-    let params = stripBrowserGrantFields(boundParams.params);
+    let params = trimIdentifierArgs(stripBrowserGrantFields(boundParams.params), { includeCommand: false });
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
@@ -1285,7 +1286,7 @@ export class ToolExecutor {
       ? undefined
       : (nestedToolName: string, nestedParams: Record<string, unknown>) => this.execute(
         nestedToolName,
-        nestedParams,
+        trimIdentifierArgs(nestedParams, { includeCommand: true }),
         {
           ...options,
           nestedToolCall: true,

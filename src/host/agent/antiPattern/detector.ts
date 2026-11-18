@@ -6,6 +6,7 @@ import type { ToolCall } from '../../../shared/contract';
 import type { AntiPatternState, FailedToolCallMatch } from '../loopTypes';
 import { READ_ONLY_TOOLS, WRITE_TOOLS } from '../loopTypes';
 import { cleanXmlResidues } from './cleanXml';
+import { trimIdentifierArgs } from '../../tools/trimIdentifierArgs';
 import { isBashToolName } from '../../tools/toolNames';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
@@ -20,7 +21,7 @@ function parseJsonRecord(json: string): Record<string, unknown> | null {
 }
 
 const cleanToolArgs = (value: unknown): Record<string, unknown> | null =>
-  ((cleaned) => (isRecord(cleaned) ? cleaned : null))(cleanXmlResidues(value));
+  ((cleaned) => (isRecord(cleaned) ? trimIdentifierArgs(cleaned, { includeCommand: true }) : null))(cleanXmlResidues(value));
 const hasForceExecuteHints = (args: Record<string, unknown>): boolean => Boolean(args.server || args.tool || args.arguments || args.file_path || args.command);
 
 const SHELL_FILE_READ_PATTERN =

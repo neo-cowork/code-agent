@@ -9,6 +9,7 @@ import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { canonicalizeCommand, ANSI_C_ESCAPES } from '../security/canonicalizeCommand';
 import type { MCPToolAnnotations } from '../mcp/types';
+import { isPathLikeParameter } from './trimIdentifierArgs';
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -21,13 +22,6 @@ export interface ToolWriteTargets {
   targets: string[];
   uncertain: string[];
   mutations: Record<string, ToolPathMutationKind>;
-}
-
-const PATH_LIKE_SUFFIXES = new Set(['file', 'path', 'directory', 'destination', 'target']);
-
-function isPathLikeParameter(key: string): boolean {
-  const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
-  return PATH_LIKE_SUFFIXES.has(normalized.split('_').at(-1) ?? '');
 }
 
 export function resolveToolPath(rawPath: string, workingDirectory: string): string {

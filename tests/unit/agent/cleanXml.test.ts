@@ -181,4 +181,11 @@ describe('cleanXmlResidues', () => {
       expect(cleanXmlResidues(input)).toBe('<html><body>content</body></html>');
     });
   });
+
+  describe('identifier trimming stays out of cleanXmlResidues', () => {
+    it('keeps padded path and command values byte-exact (trim happens at the input boundary)', () => {
+      expect(cleanXmlResidues({ file_path: '\n/tmp/a.txt ', command: '  ls\n' }))
+        .toEqual({ file_path: '\n/tmp/a.txt ', command: '  ls\n' });
+    });
+  });
 });
