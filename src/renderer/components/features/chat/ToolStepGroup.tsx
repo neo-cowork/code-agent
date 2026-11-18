@@ -429,9 +429,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
   // 结局优先：这组里有多少次失败已被后续成功恢复——只用于安静地标个「已恢复」，不顶红。
+  // skipped（从未执行）的行虽会被投影层降级成 recovered，但不是「失败后恢复」，不计入。
   const recoveredCount = useMemo(
-    () => nodes.filter((n) => n.toolCall?.recovered).length,
-    [nodes],
+    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped).length,
+    [nodes, terminalById],
   );
   const totalDuration = useMemo(() => {
     const total = toolCalls.reduce((sum, toolCall) => sum + (toolCall.result?.duration ?? 0), 0);

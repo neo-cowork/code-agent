@@ -356,8 +356,9 @@ export function ToolCallDisplay({
       )}
 
       {/* 已恢复的失败行（recovered ⇒ 非 error）的安静脚注：替代上面那条失败原因行，
-          告诉用户这次失败已被后续成功收尾，不再顶红。 */}
-      {status !== 'error' && toolCall.result?.metadata?.recovered === true && !delegationPresentation && (
+          告诉用户这次失败已被后续成功收尾，不再顶红。skipped（从未执行，只是被系统
+          关卡拦下后降级）的行不是「失败后恢复」，不挂这条脚注。 */}
+      {status !== 'error' && toolCall.result?.metadata?.recovered === true && !terminal.skipped && !delegationPresentation && (
         <div className="ml-6 mt-1 text-xs leading-5 text-badge-success" data-testid="tool-call-recovered-note">
           {t.deliveryExperience.recovered}
         </div>
