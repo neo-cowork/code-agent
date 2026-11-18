@@ -154,13 +154,14 @@ describe('ToolExecutionEngine padded identifier arguments', () => {
 
     const content = '\n  body line\n\n';
     await engine.executeToolsWithHooks([
-      { id: 'call-write-padded', name: 'Write', arguments: { file_path: '\n/Users/x/.ssh/config ', content } } as ToolCall,
+      { id: 'call-write-padded', name: 'Write', arguments: { file_path: '\n/Users/x/.ssh/config ', content, command: '  ls\n' } } as ToolCall,
     ]);
 
     expect(execute).toHaveBeenCalled();
     const params = execute.mock.calls[0][1] as Record<string, unknown>;
     expect(params.file_path).toBe('/Users/x/.ssh/config');
     expect(params.content).toBe(content);
+    expect(params.command).toBe('ls');
     const definition = writeModule.schema as never;
     const seen = resolveToolWriteTargets({ definition, params, workingDirectory: '/tmp/code-agent-test' });
     const tidy = resolveToolWriteTargets({
