@@ -118,7 +118,7 @@ test('排队发送只按真实事件推进发送、启动、等待模型和首 t
     },
   });
   expect(activationResponse.ok()).toBe(true);
-  await expect(placeholder).toHaveText('信号传输中，正在等待模型回响…');
+  await expect(placeholder).toHaveText('正在准备…');
   await expect(page.locator('[data-testid="assistant-send-placeholder"]')).toHaveCount(1);
   if (screenshotDir) {
     await page.screenshot({

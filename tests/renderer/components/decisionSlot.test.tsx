@@ -544,6 +544,18 @@ describe('DecisionSlot', () => {
     expect(appSource).toContain('syncTaskWorkbenchForActivity(currentSessionId, taskWorkbenchActivityKey)');
   });
 
+  it('只有提问卡时数字键选中第二项', () => {
+    render(<DecisionSlot userQuestion={userQuestion} />);
+
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+    expect(screen.queryByTestId('permission-card')).toBeNull();
+    expect(screen.queryByTestId('plan-approval-card')).toBeNull();
+    expect(screen.getByTestId('user-question-key-hint').textContent).toContain('1-3');
+
+    fireEvent.keyDown(window, { key: '2' });
+    expect(screen.getByRole('button', { name: /方案 B/ }).className).toContain('ring-1');
+  });
+
   it('提问卡和计划卡进入同一槽位：提问优先，Esc 迷你条汇总数量且保留已选状态', () => {
     render(
       <DecisionSlot
