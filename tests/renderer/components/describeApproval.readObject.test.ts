@@ -48,6 +48,30 @@ describe('describeApproval: production request shape from shadowAdapter', () => 
     }
   });
 
+  it('SessionManager mutation approvals (built like requireMutationPermission) are never titled Read', async () => {
+    for (const action of ['create', 'fork', 'archive', 'unarchive', 'rename']) {
+      let captured: Record<string, unknown> | undefined;
+      const canUseTool = buildCanUseToolFromLegacy({
+        requestPermission: async (req: Record<string, unknown>) => { captured = req; return true; },
+      } as never, 'SessionManager');
+      await canUseTool('SessionManager', { action, sessionId: 's1', title: 'T' }, `${action} session s1`, {
+        sessionId: 'x', type: 'command', tool: 'SessionManager',
+        details: { action, targetSessionId: 's1', targetTitle: 'T' }, reason: `${action} session s1`, dangerLevel: 'normal',
+      });
+      const req = { id: 'r1', timestamp: 1, ...captured } as PermissionRequest;
+      for (const { language, t } of LANGS) {
+        const d = describeApproval(req, t, language);
+        expect(d.kind, `${action} ${language}`).not.toBe('read_generic');
+        expect(`${d.title}\n${d.question}`, `${action} ${language}`).not.toMatch(/读取|\bRead\b|\bread\b/);
+      }
+    }
+  });
+
+  it('tmeet create (write connector) never reads as a read', async () => {
+    const req = await bodyRequest('tmeetMeetingCreate', { subject: 'x' });
+    expect(describeApproval(req, en, 'en').kind).not.toBe('read_generic');
+  });
+
   it('bash command stays a shell card', async () => {
     const req = await bodyRequest('Bash', { command: 'ls' });
     expect(describeApproval(req, en, 'en').kind).toBe('shell');
@@ -111,6 +135,7 @@ const READ_ALLOWLIST: Record<string, string> = {
   read_tool_result_archive: '读本轮自己的工具结果归档，内部引用',
   memory_search: '已有「记忆搜索」动作标签与专属展示，不走读取卡',
   Blob: '参数含 file_path，走文件卡',
+  SessionManager: '读写混合（create/archive/rename 为变更）：不登记读取名，变更卡不得写成「读取…」',
 };
 const PATH_LIKE = /^(path|file_path|filePath|url|file)$/;
 
@@ -139,6 +164,21 @@ describe('gate: every read-level protocol tool without a path/url parameter name
       });
     }
   }
+
+  it('reverse gate: no non-read protocol tool body request is classified read_generic', async () => {
+    const offenders: string[] = [];
+    for (const schema of getProtocolToolSchemas().filter((s) => s.permissionLevel !== 'read')) {
+      const props = (schema.inputSchema as { properties?: Record<string, { enum?: string[] }> }).properties ?? {};
+      const actions = props.action?.enum;
+      for (const args of actions ? actions.map((a) => ({ action: a })) : [{}]) {
+        const req = await bodyRequest(schema.name, args);
+        for (const { language, t } of LANGS) {
+          if (describeApproval(req, t, language).kind === 'read_generic') offenders.push(`${schema.name}/${language}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 
   it('allowlist has no stale entries', () => {
     const known = new Set(getProtocolToolSchemas().map((s) => s.name));

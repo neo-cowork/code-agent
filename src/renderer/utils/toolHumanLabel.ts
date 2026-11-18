@@ -22,13 +22,13 @@ const TOOL_LABEL_KEYS: Record<string, keyof HumanToolLabels['tools']> = {
   memorysearch: 'memorySearch',
 };
 
+// 只登记「纯读取」的工具；混有变更动作的工具（如 SessionManager 的 create/archive/rename）不得登记，免得变更卡写成「读取…」。
 const READ_OBJECT_KEYS: Record<string, keyof HumanToolLabels['readObjects']> = {
   meetingrecords: 'meetingRecords',
   readclipboard: 'clipboard',
   memoryread: 'memory',
   episodicrecall: 'pastConversations',
   history: 'pastConversations',
-  sessionmanager: 'sessions',
 };
 
 function normalizedLabelKey(value: string | undefined): string {
