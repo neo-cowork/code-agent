@@ -151,13 +151,13 @@ export async function openFolderSession(env: { page: Page; server: { port: numbe
   return id;
 }
 
-/** 审批卡上的「同意」按钮：普通卡是「允许一次」，风险无法判定的命令卡是「仍然执行」。 */
+/** 审批卡上的「同意」按钮：普通卡是「允许一次」，沙盒拦截卡是「允许仅这一次」，风险无法判定的命令卡是「仍然执行」。 */
 export async function approveCard(page: Page): Promise<string> {
   const card = page.getByTestId('permission-card').first();
-  for (const label of ['允许一次', '仍然执行']) {
+  for (const label of ['允许一次', '允许仅这一次', '仍然执行']) {
     if (await card.getByRole('button', { name: label }).count()) { await clickCardButton(page, label); return label; }
   }
-  throw new Error('审批卡上没有「允许一次」或「仍然执行」按钮');
+  throw new Error('审批卡上没有「允许一次」/「允许仅这一次」/「仍然执行」按钮');
 }
 
 /**
