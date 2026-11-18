@@ -1,15 +1,38 @@
 import { expectDb } from './db';
-import type { AttemptEnv, FlowDef } from './types';
+import type { AttemptEnv, FlowDef, ServerInfo } from './types';
 import { sleep } from './ui';
 
 // 自动化页「新建」→ 简版创建表单：目标里写「每周一早上 9 点」，表单把频率（每周）/星期（周一）/时间（09:00）
 // 自动带出来。任务名不填时缺省取目标句（buildSimpleDraft），列表里就叫这句话。
-// 手动触发后的执行是无人值守 agent run：模型有时要往工作目录外写文件，权限请求会停车等审
+// 手动触发后的执行是真实 agent run：模型有时要往工作目录外写文件，权限请求会停车等审
 // （执行一直 running）。真用户的处理位是自动化页的「待过目」收件箱；脚本用同一入口背后的
 // /api/agent/permission-response 代点允许（与 neo-realrun --auto-approve 同一机制），让执行走到终态。
+// cleanup 会删掉本单建的同名任务：列表里同名行只剩本次尝试的这一条，「点这条任务」才不会点串。
 const GOAL = '每周一早上 9 点帮我整理周报';
 const CREATE_TIMEOUT_MS = 60_000;
 const RUN_TIMEOUT_MS = 600_000;
+
+async function cronDomain<T>(server: ServerInfo, action: string, payload: unknown): Promise<T> {
+  const res = await fetch(`http://127.0.0.1:${server.port}/api/domain/cron/${action}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await res.json().catch(() => null) as { success?: boolean; data?: T; error?: { message?: string } } | null;
+  if (!res.ok || !body?.success) throw new Error(`cron:${action} 失败：HTTP ${res.status} ${JSON.stringify(body).slice(0, 160)}`);
+  return body.data as T;
+}
+
+/** 收尾：删掉本单建的同名任务（用户在详情里点「删除」走的同一通道）。 */
+async function cleanup(server: ServerInfo): Promise<void> {
+  try {
+    const jobs = await cronDomain<Array<{ id: string; name?: string }>>(server, 'listJobs', {});
+    for (const job of jobs.filter((j) => j.name === GOAL)) {
+      await cronDomain(server, 'deleteJob', { jobId: job.id }).catch(() => undefined);
+    }
+  } catch { /* 收尾尽力而为：列表里多一条同名任务不挡下一次尝试的断言（db 按创建时间过滤） */ }
+}
 
 /** 无人值守执行里停车等审的权限请求：代用户点「允许」（只对本次执行关联的会话）。
  *  pending_approvals 表不带 session 列，会话与请求 id 都在 payload_json 里。 */
@@ -41,6 +64,7 @@ async function approveParkedPermissions(env: AttemptEnv): Promise<void> {
 export const f15: FlowDef = {
   id: 'F15',
   title: '「每周一早上 9 点帮我整理周报」',
+  cleanup,
   steps: [
     {
       text: '说「每周一早上 9 点帮我整理周报」或在自动化页新建。',
@@ -100,7 +124,8 @@ export const f15: FlowDef = {
         for (;;) {
           await approveParkedPermissions(env);
           const { data } = await env.readDb();
-          const mine = data.cronJobs.filter((j) => String(j.name ?? '') === GOAL && Number(j.created_at ?? 0) >= env.startedAtMs - 60_000);
+          const mine = data.cronJobs.filter((j) => String(j.name ?? '') === GOAL)
+            .sort((a, b) => Number(b.created_at ?? 0) - Number(a.created_at ?? 0));
           const execs = mine.length ? data.cronExecutions.filter((e) => String(e.job_id) === String(mine[0].id)) : [];
           const terminal = execs.find((e) => ['completed', 'failed', 'interrupted'].includes(String(e.status)));
           if (mine.length && terminal) break;
@@ -108,7 +133,9 @@ export const f15: FlowDef = {
           await sleep(5_000);
         }
         await expectDb(env, (d) => {
-          const mine = d.cronJobs.filter((j) => String(j.name ?? '') === GOAL && Number(j.created_at ?? 0) >= env.startedAtMs - 60_000);
+          // 同名任务取最新一条（cleanup 已删上一轮的，这里再按创建时间兜底）
+          const mine = d.cronJobs.filter((j) => String(j.name ?? '') === GOAL)
+            .sort((a, b) => Number(b.created_at ?? 0) - Number(a.created_at ?? 0));
           if (!mine.length) return `没有以目标句命名的 cron_jobs 新行：\n${d.cronJobs.map((j) => `${j.id}|${j.name}|enabled=${j.enabled}`).join('\n') || '（没有行）'}`;
           const job = mine[0];
           env.scratch.jobId = String(job.id);
