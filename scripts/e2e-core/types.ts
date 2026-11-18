@@ -17,6 +17,8 @@ export interface DbSnapshot {
   toolEvents: Array<Record<string, unknown>>;
   pendingApprovals: Array<Record<string, unknown>>;
   permissionDecisions: Array<Record<string, unknown>>;
+  cronJobs: Array<Record<string, unknown>>;
+  cronExecutions: Array<Record<string, unknown>>;
 }
 
 export interface AttemptEnv {
@@ -26,6 +28,8 @@ export interface AttemptEnv {
   sessionIds: string[];
   /** 在 db-N.json 里按会话过滤时用。 */
   startedAtMs: number;
+  /** run.ts 抓的本尝试事件流文件（/api/events 原始 SSE），核对回合终止 / 报错事件用。 */
+  sseFile: string;
   /** 记下已知的模型分支原因，会写进 result.json 的 reason。 */
   note: (text: string) => void;
   /** 存一份新的数据库快照并解析；返回文件路径与内容。 */
@@ -45,5 +49,9 @@ export interface FlowDef {
   title: string;
   /** 在 neo-realrun 起好的工作目录里放用户会交给 Neo 的文件。 */
   prepare?: (server: ServerInfo) => Promise<void>;
+  /** 步骤跑完后（无论成败）执行的收尾：F17 靠它把界面语言恢复成 zh，失败也不能漏。 */
+  cleanup?: (server: ServerInfo) => Promise<void>;
+  /** 首启流程（F18）要用首启弹层：true 时 run.ts 不点掉首启弹层（默认照旧点掉）。 */
+  requiresFirstRun?: boolean;
   steps: FlowStep[];
 }
