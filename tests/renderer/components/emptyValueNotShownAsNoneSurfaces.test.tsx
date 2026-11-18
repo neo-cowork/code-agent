@@ -114,9 +114,11 @@ describe.each(['zh', 'en'] as const)('空值整行不渲染（%s）', (lang) => 
     const text = document.body.textContent ?? '';
     expect(text).toContain(installed.runtime);
     expect(text).toContain(installed.trust);
-    expect(text).not.toContain(installed.skills);
-    expect(text).not.toContain(installed.commands);
-    expect(text).not.toContain(installed.pluginAsset);
+    // 按行标签 span 精确匹配：中文「技能/命令」同时是 trust 行单位，整页子串会误命中
+    const rowLabels = Array.from(document.querySelectorAll('span')).map((el) => el.textContent);
+    expect(rowLabels).not.toContain(installed.skills);
+    expect(rowLabels).not.toContain(installed.commands);
+    expect(rowLabels).not.toContain(installed.pluginAsset);
     expect(text).not.toMatch(new RegExp(`(${installed.skills}|${installed.commands}|${installed.pluginAsset})\\s*(无|None)`));
   });
 
