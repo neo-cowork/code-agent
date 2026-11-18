@@ -6,13 +6,13 @@ import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 export const chatTranscriptZh = {
   ...turnRailZh,
 chat: {
   thinking: '正在思考…',
-  // 回响信号（等模型）
   waitingModel: '信号传输中，正在等待模型回响…',
-  waitingApproval: '等你批准，请处理审批卡…',
+  waitingApproval: `${WAITING_ON_USER_LABELS.zh.approval}，请处理审批卡…`,
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
@@ -139,6 +139,9 @@ chatSearch: {
   roleUser: '用户',
   roleAssistant: '助手',
   roleSystem: '系统',
+  roleTool: '工具输出',
+  messageHitPrefix: '消息命中',
+  toolHitPrefix: '工具输出命中',
   turnNumber: '第 {n} 轮',
 },
 forkLineage: {
@@ -492,7 +495,7 @@ chat: {
   thinking: 'Thinking…',
   // Echo signal (waiting on the model)
   waitingModel: 'Signal sent, awaiting model echo…',
-  waitingApproval: 'Waiting for your approval — please review the approval card…',
+  waitingApproval: `${WAITING_ON_USER_LABELS.en.approval} — please review the approval card…`,
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
@@ -619,6 +622,9 @@ chatSearch: {
   roleUser: 'User',
   roleAssistant: 'Assistant',
   roleSystem: 'System',
+  roleTool: 'Tool output',
+  messageHitPrefix: 'Message match',
+  toolHitPrefix: 'Tool output match',
   turnNumber: 'Turn {n}',
 },
 forkLineage: {

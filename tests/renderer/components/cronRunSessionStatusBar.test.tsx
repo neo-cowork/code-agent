@@ -3,6 +3,7 @@
 // 判定纯函数逐状态钉死；组件用真 store + 打桩服务验证四种状态一眼可分、
 // 批准/拒绝走停车审批 IPC、再跑一次走 triggerJob、执行记录缺失不显示运行中。
 
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -270,7 +271,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     render(<CronRunSessionStatusBar sessionId="session-1" />);
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('等你批准');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toContain('等你确认');
     expect(screen.getByTestId('cron-run-status-text').textContent).toContain('运行命令');
     expect(screen.queryByTestId('cron-run-command')).toBeNull();
     const toggle = screen.getByTestId('cron-run-command-toggle');
@@ -314,7 +315,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     expect(text).not.toMatch(/[\u3000-\u303f\uff00-\uffef]|[\u4e00-\u9fff]/);
   });
 
-  it('等批准：zh 保持全角冒号模板「等你批准：<label>」（半角化回归闸）', async () => {
+  it('等批准：zh 保持全角冒号模板「等你确认：<label>」（半角化回归闸）', async () => {
     showSession(cronRunSession);
     getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
     listParkedApprovalsMock.mockResolvedValue([{
@@ -329,7 +330,7 @@ describe('CronRunSessionStatusBar（组件）', () => {
     render(<CronRunSessionStatusBar sessionId="session-1" />);
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('awaiting');
-    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行命令');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你确认：运行命令');
   });
 
   // review r6：AGENT_PERMISSION_RESPONSE 的注册类型是 Promise<void>，但真实写点各不相同
@@ -621,7 +622,7 @@ it('reveals the identical complete multi-line shell preview without trimming or 
   }]);
   render(<CronRunSessionStatusBar sessionId="session-1" />);
   const toggle = await screen.findByTestId('cron-run-command-toggle');
-  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你批准：运行命令');
+  expect(screen.getByTestId('cron-run-status-text').textContent).toBe('等你确认：运行命令');
   expect(screen.queryByTestId('cron-run-command')).toBeNull();
   fireEvent.click(toggle);
   expect(screen.getByTestId('cron-run-command').textContent).toBe(command);
@@ -685,7 +686,7 @@ describe('角色唤醒会话：轮询不无故强刷会话', () => {
 });
 
 it.each([
-  { language: 'zh' as const, expected: '等你批准：请求写入 weekly-report.md' },
+  { language: 'zh' as const, expected: `${WAITING_ON_USER_LABELS.zh.approval}：请求写入 weekly-report.md` },
   { language: 'en' as const, expected: 'Needs your approval: Request to write weekly-report.md' },
 ])('shows the basename for a spaced CJK folder in $language file approvals', async ({ language, expected }) => {
   useAppStore.setState({ language });
@@ -704,7 +705,7 @@ it.each([
 });
 
 it.each([
-  { language: 'zh' as const, expected: '等你批准：请求写入 weekly-report.md' },
+  { language: 'zh' as const, expected: `${WAITING_ON_USER_LABELS.zh.approval}：请求写入 weekly-report.md` },
   { language: 'en' as const, expected: 'Needs your approval: Request to write weekly-report.md' },
 ])('shows a bare relative file name in $language file approvals', async ({ language, expected }) => {
   useAppStore.setState({ language });

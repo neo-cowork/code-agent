@@ -27,7 +27,7 @@ import { useEventScheduleNames } from './useChannelCatalog';
 import { getJobDisplayName, getBuiltinJobDisplay } from './builtinJobDisplay';
 
 interface CronJobListProps {
-  /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：命中行的状态 chip 换成「等你批准」。 */
+  /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：命中行的状态 chip 换成「等你确认」。 */
   awaitingByJobId?: Map<string, unknown>;
 }
 
