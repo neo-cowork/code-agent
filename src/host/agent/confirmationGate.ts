@@ -15,6 +15,8 @@ import type {
 import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import { getDelegateSessionPreviewMessages } from '../../shared/i18n/delegateSessionPreview';
 import { getSpawnAgentPreviewMessages } from '../../shared/i18n/spawnAgentPreview';
+import { getToolParamLabel, isHiddenParamEntry, isPathLikeParamKey } from '../../shared/i18n/toolParamLabels';
+import { humanizeToolPath } from '../../shared/utils/humanizeToolPath';
 import { buildMemoryDraftPreview } from './memoryDraftPreview';
 import { getHostUiLocale } from '../config/hostUiLocale';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
@@ -360,17 +362,30 @@ export class ConfirmationGate {
       }
 
       default: {
-        const lines: string[] = [];
+        const locale = getHostUiLocale();
+        // 浏览器网页操作卡与目录连接器卡的渲染端按原始键名解析逐行预览，保持原格式（web_action 行归另一单）。
+        const keepRawKeys = /^browser(?:$|[_.])/iu.test(toolName) || catalogConnectorToolPhrase(toolName) !== undefined;
+        const entries: Array<{ pathLike: boolean; jsonLike: boolean; line: string }> = [];
         for (const [key, rawValue] of Object.entries(params)) {
-          if (lines.length >= 3) break;
           if (typeof rawValue !== 'string') continue;
           const trimmed = rawValue.trim();
-          if (!trimmed) continue;
-          const safeVal = isSensitiveLogKey(key)
-            ? '***REDACTED***'
-            : redactCommandSecrets(trimmed).slice(0, 120);
-          lines.push(`${key}: ${safeVal.replace(/\r?\n/g, '\n  ')}`);
+          if (!trimmed || isHiddenParamEntry(key, trimmed)) continue;
+          const pathLike = isPathLikeParamKey(key);
+          let value = redactCommandSecrets(trimmed);
+          if (pathLike) value = humanizeToolPath(relativizeWorkspacePaths(value, options.workspaceRoot), locale);
+          const safeVal = isSensitiveLogKey(key) ? '***REDACTED***' : value.slice(0, 120);
+          entries.push({
+            pathLike,
+            jsonLike: /^[{[]/.test(trimmed),
+            line: `${keepRawKeys ? key : getToolParamLabel(key, locale)}: ${safeVal.replace(/\r?\n/g, '\n  ')}`,
+          });
         }
+        const rank = (e: { pathLike: boolean; jsonLike: boolean }) => (e.pathLike ? 0 : e.jsonLike ? 2 : 1);
+        const lines = entries
+          .map((e, i) => ({ e, i }))
+          .sort((a, b) => rank(a.e) - rank(b.e) || a.i - b.i)
+          .slice(0, 3)
+          .map(x => x.e.line);
         return {
           type: 'generic',
           summary: catalogConnectorToolPhrase(toolName) ?? `执行工具 ${toolName}`,

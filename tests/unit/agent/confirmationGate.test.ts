@@ -391,10 +391,10 @@ describe('ConfirmationGate', () => {
       expect(preview!.diff).toBeDefined();
       const lines = preview!.diff!.split('\n');
       expect(lines).toHaveLength(3);
-      expect(lines[0]).toBe('query: search term');
-      expect(lines[1]).toBe('apiKey: ***REDACTED***');
+      expect(lines[0]).toBe('搜索内容: search term');
+      expect(lines[1]).toBe('详情: ***REDACTED***');
       expect(lines[1]).not.toContain('plain-secret-with-no-recognizable-token-shape');
-      expect(lines[2]).toBe(`longText: ${'a'.repeat(120)}`);
+      expect(lines[2]).toBe(`详情: ${'a'.repeat(120)}`);
       expect(preview!.diff).not.toContain('fourthParam');
     });
 
@@ -410,6 +410,88 @@ describe('ConfirmationGate', () => {
   // --------------------------------------------------------------------------
   // Singleton
   // --------------------------------------------------------------------------
+  describe('buildPreview generic card plain language', () => {
+    const UUID = '3ab3c0de-1111-4222-8333-444455556666';
+    const withLocale = (loc: 'zh' | 'en', fn: () => void) => {
+      const spy = vi.spyOn(hostUiLocale, 'getHostUiLocale').mockReturnValue(loc);
+      try { fn(); } finally { spy.mockRestore(); }
+    };
+    const excelArgs = {
+      title: 'Sales', sheet_name: 'Sales', theme: 'blue', dry_run: 'false',
+      data: '[["a",1],["b",2]]', output_path: 'exports/sales.xlsx',
+    };
+
+    it('excel_generate (model order): save location kept, no raw keys, zh', () => {
+      withLocale('zh', () => {
+        const diff = getConfirmationGate().buildPreview('excel_generate', excelArgs)?.diff ?? '';
+        expect(diff).toBe('保存到: exports/sales.xlsx\n标题: Sales\n工作表: Sales');
+        expect(diff).not.toMatch(/output_path|sheet_name|theme|dry_run|dry run/);
+      });
+    });
+
+    it('excel_generate: en labels', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('excel_generate', excelArgs)?.diff ?? '';
+        expect(diff).toBe('Save to: exports/sales.xlsx\nTitle: Sales\nSheet: Sales');
+      });
+    });
+
+    it('unknown key uses generic label and keeps value; *_id hidden; true/false hidden', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { dry_run: 'false', task_id: 'abc', flavor: 'mint' })?.diff;
+        expect(diff).toBe('Details: mint');
+      });
+    });
+
+    it('http_request JSON body is still shown (sorted last)', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('http_request', {
+          body: '{"to":"x@y.z"}', method: 'POST', url: 'https://api.example.com/v1',
+        })?.diff ?? '';
+        expect(diff).toContain('{"to":"x@y.z"}');
+        expect(diff.indexOf('Link: https://api.example.com/v1')).toBeLessThan(diff.indexOf('{"to"'));
+      });
+    });
+
+    it('keeps secret redaction', () => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { api_key: 'sk-secret' })?.diff ?? '';
+        expect(diff).not.toContain('sk-secret');
+        expect(diff).toContain('REDACTED');
+      });
+    });
+
+    it.each([
+      '/tmp/../etc/passwd',
+      '/var/folders/ab/cd/T/../../../etc/passwd',
+      '/private/var/folders/ab/cd/T/../../../etc/passwd',
+      `/Users/x/Library/uploads/${UUID}/../../../etc/hosts`,
+      `/tmp/${UUID}/../../etc/hosts`,
+    ])('traversal path shown unchanged: %s', (p) => {
+      withLocale('en', () => {
+        const diff = getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff;
+        expect(diff).toBe(`Save to: ${p}`);
+      });
+    });
+
+    it.each([
+      ['/tmp/a/sales.xlsx', 'Save to: Temporary file: a/sales.xlsx', '保存到: 临时文件：a/sales.xlsx'],
+      ['/var/folders/ab/cd/T/sales.csv', 'Save to: Temporary file: sales.csv', '保存到: 临时文件：sales.csv'],
+      [`/Users/x/Library/uploads/${UUID}/合同/合同.pdf`, 'Save to: Your uploaded file: 合同/合同.pdf', '保存到: 你上传的文件：合同/合同.pdf'],
+      [`/private/var/folders/ab/cd/T/code-agent-uploads/${UUID}/s.csv`, 'Save to: Your uploaded file: s.csv', '保存到: 你上传的文件：s.csv'],
+    ])('temp/upload root mapped: %s', (p, en, zh) => {
+      withLocale('en', () => { expect(getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff).toBe(en); });
+      withLocale('zh', () => { expect(getConfirmationGate().buildPreview('some_tool', { output_path: p })?.diff).toBe(zh); });
+    });
+
+    it('ancestor /var/folders itself and other paths are not shortened', () => {
+      withLocale('en', () => {
+        expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/var/folders/etc/passwd' })?.diff).toBe('Save to: /var/folders/etc/passwd');
+        expect(getConfirmationGate().buildPreview('some_tool', { output_path: '/etc/passwd' })?.diff).toBe('Save to: /etc/passwd');
+      });
+    });
+  });
+
   describe('Singleton', () => {
     it('should return same instance', () => {
       const a = getConfirmationGate();
