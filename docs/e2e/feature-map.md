@@ -185,7 +185,7 @@
 - **Expected UI**: 切换即时生效、不用重启；英文下无残留中文，中文下无残留英文内部状态词。
 - **Observable**: `GET /api/settings` 返回 `ui.language` 为 `en` / `zh`；重启后保持。
 - **Failure looks like**: 切了一半（侧栏还是中文）；重启后回到旧语言；审批卡按钮仍是另一种语言。
-- **Proof**: 审批卡 spec 用 `PUT /api/settings` 切语言（hermetic）；全界面扫描尚无。
+- **Proof**: 审批卡 spec 用 `PUT /api/settings` 切语言（hermetic）；全界面扫描尚无。Web 构建把「界面语言」选项禁用了（`AppearanceSettings.tsx` 的 `disabled={isWebMode()}`，网页版点不了）：核心跑批脚本核对设置页「界面语言」区块在场后，用按钮背后同一入口 `PUT /api/settings` 切换再整页断言（N-E2E-CORE-FLOWS-SUITE-PATHS-REST）。
 
 ### F18 — 首次打开配置模型
 - **Preconditions**: surface web；全新数据目录（无已配置模型）。
