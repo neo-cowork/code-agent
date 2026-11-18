@@ -89,6 +89,6 @@ export function expandLiteralForLoop<S extends WithOp>(
   for (const word of words) {
     if (!add(body.replace(ref, word))) return null;
   }
-  if (rest && rest.trim() && !add(rest)) return null;
+  if (rest?.trim() && !add(rest)) return null;
   return steps.length > 0 && steps.length <= MAX_LOOP_STEPS ? steps : null;
 }
