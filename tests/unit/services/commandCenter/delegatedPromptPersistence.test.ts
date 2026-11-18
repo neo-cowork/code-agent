@@ -22,10 +22,9 @@ import { executeDelegateTask } from '../../../../src/host/tools/modules/commandC
 import { backfillMissingTelemetryUserPrompts } from '../../../../src/host/services/infra/sessionManagerTelemetryBackfill';
 import { buildTranscriptReplay } from '../../../../src/host/telemetry/replay/transcriptReplayBuilder';
 import { AgentOrchestrator } from '../../../../src/host/agent/agentOrchestrator';
+import { DELEGATED_SCAFFOLDING_MARKERS } from '../../../helpers/delegatedScaffoldingMarkers';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
-// Internal scaffolding of the delegated prompt: it must reach the model, never a stored user row.
-const DELEGATED_SCAFFOLDING_MARKERS = ['<drafted_task_plan>', '<original_user_request', 'This task covers only'] as const;
 
 const repo = () => store.sessions as SessionRepository;
 const store = vi.hoisted(() => ({ db: undefined as unknown, sessions: undefined as unknown }));
