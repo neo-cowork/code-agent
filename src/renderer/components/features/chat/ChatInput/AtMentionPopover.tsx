@@ -21,6 +21,7 @@ import {
   type AtMentionRow,
   type AtMentionSessionRow,
   type AtMentionTab,
+  libraryRowSubtitle,
 } from './atMentionPanelModel';
 
 interface AtMentionPopoverProps {
@@ -116,7 +117,7 @@ export const AtMentionPopover: React.FC<AtMentionPopoverProps> = ({
                   </span>
                 </span>
                 <span className="block truncate text-[10px] text-zinc-500">
-                  {row.item.summary || row.item.pathOrUri}
+                  {libraryRowSubtitle(row.item, t)}
                 </span>
               </span>
               {row.pinned && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-badge-accent" aria-label={t.mentionPanel.pinnedBadge} />}
