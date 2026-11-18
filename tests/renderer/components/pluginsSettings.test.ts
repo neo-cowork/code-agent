@@ -296,8 +296,8 @@ describe('PluginsSettings helpers', () => {
   });
 
   it('summarizes plugin trust fields and treats missing declarations as unknown risk', () => {
-    expect(getPluginTrustSummary(catalog[0]!)).toContain('1 skills');
-    expect(getPluginTrustSummary(catalog[0]!)).toContain('1 commands');
+    expect(getPluginTrustSummary(catalog[0]!)).toContain(`1 ${pluginsText.trustSummary.skillsUnit}`);
+    expect(getPluginTrustSummary(catalog[0]!)).toContain(`1 ${pluginsText.trustSummary.commandsUnit}`);
     expect(getPluginTrustSummary(catalog[1]!)).toContain(`${pluginsText.trustSummary.undeclared} ${pluginsText.trustSummary.permissionsUnit}`);
     expect(getPluginTrustSummary(catalog[1]!)).toContain(pluginsText.trustSummary.unknownRiskNotice);
   });

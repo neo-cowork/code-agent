@@ -865,7 +865,7 @@ export const enSettingsModels = {
         uninstallSuccessPrefix: 'Uninstalled ',
       },
       trustSummary: {
-        prefix: 'Trust: ',
+        prefix: '',
         skillsUnit: 'skills',
         commandsUnit: 'commands',
         permissionsUnit: 'permissions',
