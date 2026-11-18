@@ -3,6 +3,7 @@ import { Loader2, MessageSquareText, Search } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatLocalDateTime } from '../../../utils/i18nTime';
+import { formatSidebarMessageSearchHitLabel } from '../../../utils/sidebarMessageSearch';
 import { resolveSearchRunLabels } from '../../../utils/sessionSearchRunLabel';
 import { getDisplaySessionTitle, getLocalizedSessionTitle } from '../../../utils/sessionPresentation';
 import type {
@@ -199,6 +200,11 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                           </>
                         )}
                       </span>
+                      {hitGroup?.bestHit.role === 'tool' && (
+                        <span data-testid="sidebar-search-tool-hit" className="block truncate text-[11px] text-zinc-500">
+                          {formatSidebarMessageSearchHitLabel(hitGroup.bestHit, t.chatSearch)}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );

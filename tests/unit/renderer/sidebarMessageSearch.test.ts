@@ -69,6 +69,14 @@ describe('sidebarMessageSearch', () => {
     expect(formatSidebarMessageSearchHitMeta(hits['session-1'], 90 + 5 * 60 * 1000)).toBe('第 2 轮 · 5分钟前');
   });
 
+  it('labels tool-output hits distinctly (zh default and en prefixes) and keeps user hits as message hits', () => {
+    const base = { sessionId: 's', messageId: 'm', messageIndex: -1, snippet: 'deadline ZK-1', timestamp: 1, matchCount: 1, relevance: 0.5, messagePositionLabel: '消息' } as const;
+    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'tool' })).toBe('工具输出命中 · deadline ZK-1');
+    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'user' })).toBe('消息命中 · deadline ZK-1');
+    const en = { messageHitPrefix: 'Message match', toolHitPrefix: 'Tool output match' };
+    expect(formatSidebarMessageSearchHitLabel({ ...base, role: 'tool' }, en)).toBe('Tool output match · deadline ZK-1');
+  });
+
   it('groups multiple message hits per session by relevance and limits extra context', () => {
     const groups = buildSidebarMessageSearchHitGroups([
       {

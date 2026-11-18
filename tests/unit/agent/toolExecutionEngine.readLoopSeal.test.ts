@@ -216,6 +216,21 @@ describe('ToolExecutionEngine read-loop seal (FB-253)', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
+  it('a Bash that already ran and then trips the hard limit is marked executed (not "skipped" in the UI)', async () => {
+    const execute = vi.fn(async (): Promise<ToolResult> => ({ toolCallId: '', success: true, output: 'tests passed' }));
+    const { ctx, engine } = makeEngine(execute, { priorReads: 0 });
+    // 预检按「非只读」放行并真实执行；执行后的只读壳计数（另一套判定）才触顶。
+    ctx.antiPatternDetector.isReadOnlyShellCommand = () => false;
+    ctx.antiPatternDetector.trackReadOnlyShellCommand = () => 'HARD_LIMIT';
+
+    const [result] = await engine.executeToolsWithHooks([
+      { id: 'bash-1', name: 'Bash', arguments: { command: 'npm test -- --grep foo' } } as ToolCall,
+    ]);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result.metadata).toMatchObject({ readLoopSeal: true, hardLimitPreflight: true, skipped: true, executed: true });
+  });
+
   it('keeps three five-read model rounds below the round hard limit', async () => {
     const execute = vi.fn(async (name: string): Promise<ToolResult> => ({
       toolCallId: '',

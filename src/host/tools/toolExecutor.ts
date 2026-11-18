@@ -2210,6 +2210,12 @@ export class ToolExecutor {
           return { success: false, error: error instanceof Error ? error.message : String(error), metadata: { code: 'CALENDAR_EVENT_NOT_FOUND' } };
         }
       }
+      if (executionToolName === 'reminders_update' || executionToolName === 'reminders_delete') {
+        if (executionToolName === 'reminders_delete') { delete permissionRequest.details.title; delete permissionRequest.details.remind_at_ms; }
+        const { remindersApprovalDetails } = await import('./modules/connectors/remindersApprovalDetails');
+        try { Object.assign(permissionRequest.details, await remindersApprovalDetails(executionToolName, params)); }
+        catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+      }
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;
       if (scheduleWriteGrantRequired) permissionRequest.details.scheduleWriteTargets = scheduledWrite?.scheduleWriteTargets;
