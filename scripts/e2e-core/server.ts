@@ -1,9 +1,25 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DbSnapshot, ServerInfo } from './types';
 
 const START_TIMEOUT_MS = 300_000;
+
+/** 独立进程组里跑 neo-realrun（kill9/restart 前后 runner 曾被整组 SIGKILL，退出码 137；隔开进程组以免连累 runner）。 */
+function runRealrunDetached(bin: string, args: string[], timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [bin, ...args], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += String(d); });
+    child.stderr.on('data', (d) => { out += String(d); });
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`neo-realrun ${args[0]} 超时`)); }, timeoutMs);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(out);
+      else reject(new Error(`neo-realrun ${args[0]} 退出码 ${code}\n${out}`));
+    });
+  });
+}
 
 function runRealrun(bin: string, args: string[], timeoutMs = 120_000): string {
   return execFileSync(process.execPath, [bin, ...args], { encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -130,7 +146,7 @@ export async function quiesceServer(bin: string, server: ServerInfo): Promise<st
   }
   if (!busy.length) return null;
   console.log('quiesce: still busy, kill9 + restart');
-  runRealrun(bin, ['kill9', '--out', server.dir]);
-  runRealrun(bin, ['restart', '--out', server.dir], START_TIMEOUT_MS);
+  await runRealrunDetached(bin, ['kill9', '--out', server.dir], 60_000);
+  await runRealrunDetached(bin, ['restart', '--out', server.dir], START_TIMEOUT_MS);
   return `上一次尝试留下 ${busy.length} 个停不下来的会话，${IDLE_CAP_MS / 1000}s 内没回到空闲，已 kill9 + restart 服务`;
 }
