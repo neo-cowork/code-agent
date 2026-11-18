@@ -1,3 +1,4 @@
+import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../../src/shared/utils/cronRuntimeNotReady';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/services/infra/notificationService', () => ({
@@ -111,6 +112,18 @@ describe('notifyCronAgentExecution 无会话云端失败', () => {
     notifyCronAgentExecution(definition(), sessionlessExecution('fetch failed'), new CronFailureNoticeGate());
     notifyCronAgentExecution(definition(), sessionlessExecution('429 Too Many Requests'), new CronFailureNoticeGate());
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('无 sessionId 的启动期运行时未就绪失败放行通知，带 runtime_starting 类别与 jobId', () => {
+    notifyCronAgentExecution(definition(), sessionlessExecution(CRON_RUNTIME_NOT_READY_MESSAGE_EN), new CronFailureNoticeGate());
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: '',
+      code: 'CRON_FAILURE',
+      failureKind: 'runtime_starting',
+      jobId: definition().id,
+      succeeded: false,
+    }), { force: true, urgent: false });
   });
 
   it('带 sessionId 的 cloud_unavailable 失败载荷不变（既有路径零扰动）', () => {
