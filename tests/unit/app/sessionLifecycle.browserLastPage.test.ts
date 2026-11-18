@@ -9,6 +9,7 @@ import { SecureBrowserResumeStateStore } from '../../../src/host/services/surfac
 import { SecureBrowserLastPageStore } from '../../../src/host/services/surfaceExecution/browserLastPageStore';
 import { KeptBrowserRegistry } from '../../../src/host/services/surfaceExecution/keptBrowserRegistry';
 import { ManagedBrowserProviderAdapter } from '../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
+import { runManagedBrowserLaunchResume } from '../../../src/host/services/infra/browser/launchResumeHook';
 import {
   SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
@@ -83,10 +84,27 @@ function memoryStorage() {
 
 function fakeWindow() {
   let running = false;
+  let resumeOwner: string | null = null;
   const tab = { id: 'tab-1', url: 'about:blank', title: 'Fixture' };
   const service = {
-    ensureSession: vi.fn(async (url = 'about:blank') => { if (!running) { running = true; tab.url = url; } return {}; }),
+    ensureSession: vi.fn(async (url = 'about:blank', options?: { conversationId?: string; profileMode?: 'isolated' | 'persistent' }) => {
+      const launchedFresh = !running;
+      if (!running) { running = true; tab.url = url; }
+      await runManagedBrowserLaunchResume(service, {
+        conversationId: options?.conversationId,
+        launchedFresh,
+        profileMode: options?.profileMode ?? (options?.conversationId ? 'isolated' : undefined),
+      });
+      return {};
+    }),
     isRunning: () => running,
+    isLaunchResumeSuppressed: () => false,
+    isLeaseInUse: () => false,
+    getResumeOwner: () => resumeOwner,
+    setResumeOwner: (conversationId: string) => { resumeOwner = conversationId; },
+    notifyLaunchResume: () => undefined,
+    getLiveTabUrl: () => tab.url,
+    relaunchIsolatedForResume: vi.fn(async () => { running = true; }),
     getActiveTab: () => (running ? { ...tab } : null),
     listTabs: () => (running ? [{ ...tab }] : []),
     navigate: vi.fn(async (url: string) => { tab.url = url; }),
@@ -196,7 +214,7 @@ describe('switching vs deleting a chat: managed browser last page', () => {
     await resumeStore.exportForConversation(conversationId, windows.get(key)!.service);
   };
 
-  it('loadSession away keeps the address, drops login state, and re-activation works', async () => {
+  it('loadSession away keeps the address and the login archive, and re-activation imports it', async () => {
     const svc = await webContext();
     current = 'chat-a';
     mocks.adapter = adapter;
@@ -210,7 +228,7 @@ describe('switching vs deleting a chat: managed browser last page', () => {
     await svc.loadSession('chat-b'); // leaves chat-a
     expect(current).toBe('chat-b');
     expect(mocks.taskManager.setCurrentSessionId).toHaveBeenCalledWith('chat-b');
-    expect(resumeStorage.values.size).toBe(0);
+    expect(resumeStorage.values.size).toBe(1);
     expect(await lastPageStore.getForConversation('chat-a')).toBe('https://host/pricing');
 
     await svc.loadSession('chat-a'); // back
@@ -218,12 +236,12 @@ describe('switching vs deleting a chat: managed browser last page', () => {
     const observed = await observe(turn2);
     expect(observed.output).toBe('URL: https://host/pricing');
     const win2 = windows.get(adapter.getBinding(turn2)!.serviceKey)!;
-    expect(win2.raw.importStorageState).not.toHaveBeenCalled(); // login state was dropped
-    expect(logger.info).toHaveBeenCalledWith('Restored managed browser last page', expect.objectContaining({ reason: 'last_page_restored', url: 'https://host/pricing' }));
+    expect(win2.raw.importStorageState).toHaveBeenCalledOnce();
+    expect(logger.info).toHaveBeenCalledWith('Managed browser launch resume', expect.objectContaining({ phase: 'cold', reason: 'last_page_restored', url: 'https://host/pricing' }));
     await runtime.endRun(turn2);
   });
 
-  it('web load advances currentSessionId so the next new chat clears B', async () => {
+  it('web load advances currentSessionId and the next new chat keeps B login', async () => {
     const ctx = await webContext();
     current = 'chat-a';
     await ctx.loadSession('chat-b');
@@ -235,7 +253,7 @@ describe('switching vs deleting a chat: managed browser last page', () => {
 
     await (await ctx.sessions()).createSession();
     expect(current).toBe('chat-new');
-    expect(resumeStorage.values.size).toBe(0);
+    expect(resumeStorage.values.size).toBe(1);
     expect(await lastPageStore.getForConversation('chat-b')).toBe('https://host/account');
   });
 
@@ -271,7 +289,7 @@ describe('switching vs deleting a chat: managed browser last page', () => {
     expect(await lastPageStore.getForConversation('chat-a')).toBe('https://host/pricing');
   });
 
-  it('web switching away leaves an in-flight browser usable without saving its login again', async () => {
+  it('web switching away leaves an in-flight browser usable and keeps its login archive', async () => {
     const ctx = await webContext();
     current = 'chat-a';
     const inflight = startRun('chat-a');
@@ -282,11 +300,11 @@ describe('switching vs deleting a chat: managed browser last page', () => {
     await ctx.loadSession('chat-b');
     expect(current).toBe('chat-b');
     expect(registry.get(inflight.runId)?.context.sessionId).toBe('chat-a');
-    expect(resumeStorage.values.size).toBe(0);
+    expect(resumeStorage.values.size).toBe(1);
     expect((await observe(inflight)).output).toBe('URL: https://host/pricing?plan=pro');
     expect(windows.get(serviceKey)!.raw.close).not.toHaveBeenCalled();
-    await seedLogin('chat-a', inflight); // a late export cannot resurrect the cleared login
-    expect(resumeStorage.values.size).toBe(0);
+    await seedLogin('chat-a', inflight);
+    expect(resumeStorage.values.size).toBe(1);
     await runtime.endRun(inflight);
     expect(await lastPageStore.getForConversation('chat-a')).toBe('https://host/pricing');
   });
