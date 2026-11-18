@@ -718,6 +718,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            askTitle: async (titlePrompt, signal) => {
+              const { quickTask, isQuickModelAvailable } = await import('../../host/model/quickModel');
+              return isQuickModelAvailable() ? quickTask(titlePrompt, undefined, signal) : undefined;
+            },
             attachments: body.attachments,
             reservedPaths: workDirReservations,
           })
@@ -1823,7 +1827,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       // try 路径没走到终态收线就抛出（引擎/落库异常）：后台条目同样要收线，否则
       // spinner 永挂。markFailed 自带 running-guard，与 try 路径的收线互为幂等。
-      getBackgroundTaskManager().markFailed(
+      await getBackgroundTaskManager().markFailed(
         sessionId,
         resolveBackgroundRunSettlement({ status: 'error', errorMessage: message }).message,
       );

@@ -66,14 +66,13 @@ import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
 import { evaluateSubagentPolicyDenial, type SubagentToolPolicy } from '../agent/subagentToolRuntime';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
-import { recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
+import { denyUnanalyzableCommand, recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import type { PermissionMode } from '../permissions/modes';
 import {
   browserComputerConsequenceForcesClassification,
   CLASSIFIER_ERROR_TRACE_RULE,
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
-  commandAnalysisDenialError,
   commandAnalysisRepeatDenialError,
   peerOriginUnattendedDenialError,
   peermsgLaunderDenialError,
@@ -1927,9 +1926,7 @@ export class ToolExecutor {
       let classifierFailedReason: string | undefined;
       // validateCommand 只描述已命中的危险形态：未识别 ask 才标 unknown；命中确定规则
       // 的 ask 提升为 medium，避免审批卡同时出现 ask + safe 的冲突标签。
-      let commandRiskUnknown = Boolean(
-        commandAnalysisFailedReason && commandValidation?.riskLevel === 'safe',
-      );
+      let commandRiskUnknown = false;
       let deterministicAskReason: string | undefined;
       let knownAskCommandRisk: 'medium' | undefined;
       if (guardFabricTraceStep) {
@@ -1949,12 +1946,12 @@ export class ToolExecutor {
         );
       }
       if (commandAnalysisFailedReason) {
-        traceBuilder.addStep(
-          'permission_classifier',
-          'command_analysis_failed',
-          'ask',
-          `命令无法可靠拆词，审批结果不能放行：${commandAnalysisFailedReason}`,
-        );
+        return denyUnanalyzableCommand({
+          toolName: executionToolName, params, reason: commandAnalysisFailedReason,
+          permStartTime, traceBuilder, sessionId: effectiveSessionId,
+          sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
+          ledgerOrigin: this.ledgerOrigin, auditEnabled: this.auditEnabled, hookManager: options.hookManager,
+        });
       } else if (!guardFabricForcesApproval || guardFabricAskRuleOnly) {
         try {
           // 三分支解析 + readOnly/档位改写规则见 toolPermissionClassification.ts
@@ -2417,18 +2414,13 @@ export class ToolExecutor {
 
       const ask = await getDenialRegistry().observeApproval({
         sessionId: effectiveSessionId, sourceMessageId: options.sourceMessageId, runId: effectiveRunId,
-        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, analysisFailed: Boolean(commandAnalysisFailedReason), request: permissionRequest,
+        toolName: executionToolName, app: computerApp, enabled: !cuaSensitiveStep, request: permissionRequest,
         ask: () => requestPermissionWithTelemetry({
           request: permissionRequest,
           toolCallId: options.currentToolCallId,
           requestPermission: this.requestPermission,
         }),
       });
-      if (commandAnalysisFailedReason && ask.denialSource !== 'goal-sticky-host') {
-        ask.approved = false;
-        ask.denialSource = 'fail-closed';
-        ask.message = commandAnalysisDenialError(executionToolName).modelText;
-      }
       // N-WRITEBACK-EDIT：用户在审批卡上改过的参数在这里、且只在这里替换。下游的
       // approvedToolCall（工具体内 canUseTool 的短路匹配）、账本、派发全部拿到改后的那份，
       // 8 个写回工具文件一行不动。表外工具/字段/必填为空 → fail-closed 当拒绝处理。
@@ -2524,9 +2516,7 @@ export class ToolExecutor {
         // 不按调用方名字枚举。ledger 的 reason 同时带上「为什么会走到问用户这一步」——
         // 分类器抛错回退是故障，不能和用户主动拒绝混成同一条记录。
         const denialSource = ask.denialSource ?? 'user';
-        const denialReason = commandAnalysisFailedReason
-          ? `command_analysis_failed/${denialSource}`
-          : classifierFailedReason
+        const denialReason = classifierFailedReason
           ? `${CLASSIFIER_ERROR_TRACE_RULE}/${denialSource}`
           : denialSource;
         // 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式）对

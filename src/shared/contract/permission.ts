@@ -174,6 +174,8 @@ export interface PermissionRequest {
     outboundMasked?: boolean;
     path?: string;
     filePath?: string;
+    /** Browser upload approval: host-built ".../<file name>" display string; never an absolute path. */
+    file?: string;
     command?: string;
     url?: string;
     changes?: string;

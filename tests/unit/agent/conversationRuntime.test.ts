@@ -5,7 +5,7 @@
 // control methods (cancel/interrupt/steer), plan mode, structured output
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createHookManager } from '../../../src/host/hooks';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -389,6 +389,7 @@ import {
   ConversationRuntime,
   SteerRejectedError,
 } from '../../../src/host/agent/runtime/conversationRuntime';
+import { buildDelegatedTaskPrompt } from '../../../src/host/services/commandCenter/delegationGuidance';
 import { MEMORY_OFF_NOTICE } from '../../../src/shared/constants';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
@@ -1444,6 +1445,60 @@ describe('ConversationRuntime', () => {
       });
       expect(ctx.turn.activeSkillContextBlock).toContain('required-skill-invocation');
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
+    });
+
+    describe('skill allowed-tools boundary vs delegated background run', () => {
+      // 真实 builtin skill + 真实 resolver/上下文构建，只把 discovery 的取 skill 一步换成内置目录
+      async function useRealBuiltinResolution(): Promise<void> {
+        const actual = await vi.importActual<
+          typeof import('../../../src/host/services/skills/skillInvocationResolver')
+        >('../../../src/host/services/skills/skillInvocationResolver');
+        const { BUILTIN_SKILLS } = await import('../../../src/host/services/skills/builtinSkills');
+        vi.mocked(resolveSkillInvocation).mockImplementation(async (message: string) =>
+          actual.resolveSkillInvocationFromSkills(message, BUILTIN_SKILLS));
+        vi.mocked(buildSkillInvocationContext).mockImplementation(actual.buildSkillInvocationContext);
+      }
+
+      afterEach(() => {
+        vi.mocked(resolveSkillInvocation).mockReset().mockResolvedValue(null);
+        vi.mocked(buildSkillInvocationContext).mockReset();
+      });
+
+      it('foreground run keeps the task-brief-builder boundary (Bash stays outside it)', async () => {
+        await useRealBuiltinResolution();
+        const prompt = buildDelegatedTaskPrompt('open example.com and read the heading');
+        await runtime.initializeRun(prompt);
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder', matchKind: 'alias' });
+        expect(ctx.turn.skillToolBoundary?.skillName).toBe('task-brief-builder');
+        expect(ctx.turn.skillToolBoundary?.allowedTools).not.toContain('Bash');
+      });
+
+      it('delegated (auxiliary) run with the same text gets no skill boundary but keeps skill context', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        await runtime.initializeRun(buildDelegatedTaskPrompt('open example.com and read the heading'));
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder' });
+        expect(ctx.turn.skillToolBoundary).toBeUndefined();
+      });
+
+      it('auxiliary run keeps the strict boundary for an alias hit like "dream" / "distill"', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        for (const [text, name] of [['dream about this', 'dream'], ['distill this video', 'distill']]) {
+          ctx.turn.setSkillToolBoundary(undefined);
+          await runtime.initializeRun(text);
+          expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: name, matchKind: 'alias' });
+          expect(ctx.turn.skillToolBoundary).toMatchObject({ skillName: name, strict: true });
+        }
+      });
+
+      it('delegated run still honours an explicit /slash skill boundary', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        await runtime.initializeRun('/task-brief-builder open example.com');
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ matchKind: 'slash' });
+        expect(ctx.turn.skillToolBoundary?.skillName).toBe('task-brief-builder');
+      });
     });
 
     it('drops a bare-word alias skill injection on a one-turn file-deliverable turn', async () => {

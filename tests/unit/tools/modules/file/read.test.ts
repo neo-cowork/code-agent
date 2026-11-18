@@ -376,6 +376,17 @@ describe('readModule (native)', () => {
       }
     });
 
+    it('ENOENT on an expired chat-upload image yields UploadExpired, not the image hint', async () => {
+      const missing = path.join(getUserDataPath(), CHAT_UPLOAD_SUBDIR_NAME, 'uuid-gone', 'photo.png');
+      const handler = await readModule.createHandler();
+      const result = await handler.execute({ file_path: missing }, makeCtx(), allowAll);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.meta?.hostReason).toMatchObject({ code: HostReasonCode.UploadExpired });
+      }
+    });
+
     it('rejects .xlsx with redirect hint', async () => {
       const file = path.join(tmpDir, 'data.xlsx');
       const handler = await readModule.createHandler();
@@ -394,6 +405,27 @@ describe('readModule (native)', () => {
       if (!result.ok) {
         expect(result.error).toContain('read_pdf');
         expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+      }
+    });
+
+    it('redirects a >=300KB PNG to a short hint instead of returning binary garbage as text', async () => {
+      const file = path.join(tmpDir, 'screenshot.png');
+      const body = Buffer.alloc(320 * 1024);
+      for (let i = 0; i < body.length; i++) body[i] = (i * 131 + 7) & 0xff;
+      await fs.writeFile(file, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), body]));
+      const handler = await readModule.createHandler();
+      for (const name of ['screenshot.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.bmp']) {
+        const target = path.join(tmpDir, name);
+        if (name !== 'screenshot.png') await fs.copyFile(file, target);
+        const result = await handler.execute({ file_path: target }, makeCtx(), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+          expect(result.error.length).toBeLessThan(1024);
+          expect(result.error).toContain('image_analyze');
+          expect(result.error).toContain('get_content');
+          expect(result.error).toContain(target);
+        }
       }
     });
 

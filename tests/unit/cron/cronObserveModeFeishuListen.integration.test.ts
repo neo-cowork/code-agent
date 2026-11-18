@@ -62,6 +62,7 @@ vi.mock('../../../src/host/cron/cronAgentSession', () => ({
 }));
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => state.orchestrator,
     setWorkingDirectory: vi.fn(), cleanup: vi.fn(),
   }),

@@ -25,6 +25,7 @@ const OUTCOME_KEYS = [
   'failed-timeout',
   'failed-idle-reaped',
   'failed-budget',
+  'failed-step-cap',
   'failed-dependency',
   'failed-unavailable',
   'failed-upstream',

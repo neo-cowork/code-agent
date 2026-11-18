@@ -11,6 +11,7 @@ import { filterReadOnlyCronArtifacts, type CronRunArtifactContext } from './cron
 
 import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
 import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH, isZeroPricedModel } from '../../shared/constants';
+import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../shared/utils/cronRuntimeNotReady';
 import { createLogger } from '../services/infra/logger';
 import type { AgentAction, CronJobDefinition, CronExecutionTrigger } from '../../shared/contract/cron';
 import { bindEventReplySession } from '../tools/eventReplySession';
@@ -116,11 +117,19 @@ export async function executeCronAgentAction(
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
+  // 启动期补跑早于 createAgentRuntime：先有上限地等运行时就绪，再建会话（失败不留孤儿会话）。
+  const waitStartedAt = Date.now();
+  if (!await tm.waitUntilReady(CRON_GUARDRAILS.RUNTIME_READY_WAIT_MS)) {
+    logger.warn('Cron run gave up waiting for agent runtime', { jobId: definition.id, waitedMs: Date.now() - waitStartedAt });
+    throw new Error(CRON_RUNTIME_NOT_READY_MESSAGE_EN);
+  }
+  const waitedMs = Date.now() - waitStartedAt;
+  if (waitedMs > 0) logger.info('Cron run waited for agent runtime', { jobId: definition.id, waitedMs });
   const cronSession = await createCronAgentSession(definition, action, executionId);
   if (executionId) await host.recordSessionId(executionId, cronSession.id);
   const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
   if (!orchestrator) {
-    throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
+    throw new Error(CRON_RUNTIME_NOT_READY_MESSAGE_EN);
   }
   // 回复目的地绑定（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）：把本批通道事件的逐事件
   // 目的地登记进会话——reply_to_event 只认这张表，且 withEventReplyTools 只给绑定的会话注入工具。

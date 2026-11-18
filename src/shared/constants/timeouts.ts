@@ -593,6 +593,8 @@ export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
  * 失败处置分档：transient → 指数退避重试 → 连败停用；permanent → 首次即停用并告知用户。
  */
 export const CRON_GUARDRAILS = {
+  /** 启动期 agent 运行时（TaskManager.initialize）就绪的最长等待 (ms)；超时按「Neo 仍在启动」失败。 */
+  RUNTIME_READY_WAIT_MS: 60_000,
   /** 跨 webServer 进程重新读取 cron_jobs 的周期；只对账，不创建第二套调度器。 */
   JOB_RECONCILE_TICK_MS: 5_000,
   /**
@@ -719,4 +721,9 @@ export const CRON_REVIEW_INBOX_TIMEOUTS = {
 export const OS_NOTIFICATION_TIMEOUTS = {
   /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
   PERMISSION_READ_MS: 3_000,
+} as const;
+
+/** 首轮任务目录命名：最多等待小模型 3 秒，再用规则名继续。 */
+export const SESSION_WORK_DIRECTORY_TIMEOUTS = {
+  TITLE_WAIT_MS: 3_000,
 } as const;
