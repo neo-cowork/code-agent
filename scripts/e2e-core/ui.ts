@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import type { Page } from 'playwright';
 
 const POLL_MS = 500;
@@ -115,9 +117,26 @@ let deliveryProbe: DeliveryProbe | null = null;
 /** 排队的几张卡文字可能完全一样、界面上看不出换了一张：超时后用数据库里「点击之后有没有新的审批决定」判断点击是否送达。 */
 export function setDeliveryProbe(probe: DeliveryProbe | null): void { deliveryProbe = probe; }
 
+export class RealHomeWriteError extends Error {
+  constructor(dir: string) { super(`审批卡指向真实主目录 ${dir}，已拒绝，没有批准（模型分支）`); }
+}
+
+const DENY_LABEL = '拒绝';
+
+/** 这台机器真实的数据目录（不是 neo-realrun 的隔离 HOME）。模型会从路径里的用户名猜出它。 */
+export const realDataDir = (): string => path.join(os.homedir(), '.code-agent');
+
+/**
+ * 所有「同意」点击的唯一出口都过这道护栏：卡片正文指向真实主目录的写入，一律改点「拒绝」并抛错，
+ * 不管是哪条流程、哪个会话（F14 第二个会话读写记忆文件的卡也走这里）。
+ */
 export async function clickCardButton(page: Page, label: string): Promise<void> {
   const card = page.getByTestId('permission-card').first();
   const before = await card.innerText();
+  if (label !== DENY_LABEL && before.includes(realDataDir())) {
+    await card.getByRole('button', { name: DENY_LABEL }).click({ timeout: 10_000 });
+    throw new RealHomeWriteError(realDataDir());
+  }
   const countBefore = await page.getByTestId('permission-card').count();
   const clickedAt = Date.now();
   await card.getByRole('button', { name: label }).click({ timeout: 10_000 });

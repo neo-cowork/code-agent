@@ -1,10 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describeRows, expectDb, family, inSessions } from './db';
 import type { Page } from 'playwright';
 import type { AttemptEnv, FlowDef } from './types';
-import { approveCard, clickCardButton, driveTurn, openFolderSession, openNewSession, pageText, sendMessage, settleBackground, sleep } from './ui';
+import { approveCard, RealHomeWriteError, driveTurn, openFolderSession, openNewSession, pageText, sendMessage, settleBackground, sleep } from './ui';
 
 const REMEMBER = '记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万';
 const TURN_TIMEOUT_MS = 240_000;
@@ -21,14 +20,12 @@ function memoryFiles(env: AttemptEnv): Array<{ file: string; text: string }> {
 
 // 模型有时把记忆写到真实主目录（/Users/<me>/.code-agent），那会污染这台机器的真数据：只批准隔离目录里的写入
 async function answerCard(env: AttemptEnv, page: Page): Promise<void> {
-  const text = await page.getByTestId('permission-card').first().innerText();
-  const realData = path.join(os.homedir(), '.code-agent');
-  if (text.includes(realData)) {
-    await clickCardButton(page, '拒绝');
-    env.note(`模型把记忆写到了真实主目录 ${realData}，脚本拒绝了（模型分支）`);
-    throw new Error(`审批卡要写真实主目录 ${realData}，已拒绝；模型会反复重试同一路径，这次尝试到此为止`);
+  try {
+    await approveCard(page);
+  } catch (e) {
+    if (e instanceof RealHomeWriteError) env.note(e.message);
+    throw e;
   }
-  await approveCard(page);
   env.scratch.cardClicks = Number(env.scratch.cardClicks ?? 0) + 1;
 }
 
@@ -83,7 +80,15 @@ export const f14: FlowDef = {
       run: async (env) => {
         env.sessionIds.push(await openNewSession(env.page));
         await sendMessage(env.page, '帮我起草这周周报');
-        const allow = async (page: Page) => { env.note('第二个会话读记忆文件时点了允许'); await approveCard(page); };
+        const allow = async (page: Page) => {
+          try {
+            await approveCard(page);
+            env.note('第二个会话读记忆文件时点了允许');
+          } catch (e) {
+            if (e instanceof RealHomeWriteError) env.note(e.message);
+            throw e;
+          }
+        };
         await driveTurn(env.page, { onPermissionCard: allow }, TURN_TIMEOUT_MS);
         await settleBackground(env.page, allow, TURN_TIMEOUT_MS);
         const { data } = await env.readDb();
