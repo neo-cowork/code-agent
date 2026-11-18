@@ -28,6 +28,13 @@ export const receiptPresentationZh = {
         findFiles: toolUserLabel('glob', 'zh'),
         memorySearch: toolUserLabel('memorysearch', 'zh'),
       },
+      // 只读工具读取的「对象」名词（审批卡「读取{对象}」用），区别于 tools 里的动作短语。
+      readObjects: {
+        meetingRecords: '会议记录',
+        clipboard: '剪贴板',
+        memory: '记忆',
+        pastConversations: '历史对话',
+      },
       unknownTool: '工具',
     },
     roleCapabilityLabels: {
@@ -70,6 +77,12 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         readFile: toolUserLabel('read', 'en'),
         findFiles: toolUserLabel('glob', 'en'),
         memorySearch: toolUserLabel('memorysearch', 'en'),
+      },
+      readObjects: {
+        meetingRecords: 'meeting records',
+        clipboard: 'clipboard',
+        memory: 'memory',
+        pastConversations: 'past conversations',
       },
       unknownTool: 'Tool',
     },

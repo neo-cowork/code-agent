@@ -63,6 +63,7 @@ import {
   launchSystemChromeCdpBrowser,
 } from './browser/browserLaunchHelpers';
 import { ManagedBrowserLeaseController } from './browser/managedBrowserLeaseController';
+import { finishManagedBrowserLaunchResume } from './browser/launchResumeHook';
 import { killManagedChromeProcesses } from './browser/browserProcessWatchdog';
 import { withManagedBrowserActivity } from './browser/managedBrowserActivity';
 import {
@@ -174,6 +175,9 @@ export class BrowserService implements Disposable {
   private workspaceScope: string;
   private lastAccountState: ManagedBrowserAccountStateSummary | null = null;
   private leaseController: ManagedBrowserLeaseController;
+  private launchResumeSuppressed = false;
+  private resumeOwner: string | null = null;
+  private lastLaunchOptions: ManagedBrowserLaunchOptions = {};
   private proxyConfig: ManagedBrowserProxyConfig;
   private mode: ManagedBrowserMode;
   private viewport = { width: 1280, height: 720 };
@@ -234,7 +238,44 @@ export class BrowserService implements Disposable {
   // --------------------------------------------------------------------------
 
   async launch(options: ManagedBrowserLaunchOptions = {}): Promise<void> {
-    return withManagedBrowserActivity(this, () => this.launchBrowser(options));
+    return withManagedBrowserActivity(this, async () => {
+      const launchedFresh = !this.isRunning();
+      await this.launchBrowser(options);
+      await finishManagedBrowserLaunchResume(this, options, launchedFresh);
+    });
+  }
+
+  isLaunchResumeSuppressed(): boolean {
+    return this.launchResumeSuppressed;
+  }
+
+  getResumeOwner(): string | null {
+    return this.resumeOwner;
+  }
+
+  setResumeOwner(conversationId: string): void {
+    this.resumeOwner = conversationId;
+  }
+
+  isLeaseInUse(): boolean {
+    return this.leaseController.isInUse();
+  }
+
+  notifyLaunchResume(): void {
+    this.emitSessionChanged('launch');
+  }
+
+  /** Close already happened. Relaunch the same provider without re-entering resume. */
+  async relaunchIsolatedForResume(): Promise<void> {
+    const options: ManagedBrowserLaunchOptions = { ...this.lastLaunchOptions, profileMode: 'isolated' };
+    delete options.conversationId;
+    this.launchResumeSuppressed = true;
+    try {
+      await this.launchBrowser(options);
+      if (!this.getActiveTab()) await this.newTab();
+    } finally {
+      this.launchResumeSuppressed = false;
+    }
   }
 
   private async launchBrowser(options: ManagedBrowserLaunchOptions): Promise<void> {
@@ -257,6 +298,7 @@ export class BrowserService implements Disposable {
       return;
     }
 
+    this.lastLaunchOptions = options;
     this.mode = options.mode || this.getDefaultMode();
     this.configureManagedBrowserSession(options.profileMode || 'persistent');
     if (this.profileMode === 'isolated') void import('./browser/isolatedProfileSweep').then(({ sweepStaleIsolatedBrowserProfiles }) => sweepStaleIsolatedBrowserProfiles({ currentProfileDir: this.isolatedProfileDir, logger: this.logger, oncePerProcess: true })).catch((error) => this.logger.log('WARN', `Isolated profile sweep failed: ${error}`));
@@ -313,6 +355,7 @@ export class BrowserService implements Disposable {
   }
 
   async close(): Promise<void> {
+    this.resumeOwner = null;
     if (this.browser || this.context || this.browserProcess) {
       this.logger.log('INFO', 'Closing browser...');
       this.closingBrowser = true;
@@ -545,13 +588,26 @@ export class BrowserService implements Disposable {
   }
 
   private async prepareSession(url: string, options: ManagedBrowserLaunchOptions): Promise<ManagedBrowserSessionState> {
+    const launchedFresh = !this.isRunning();
     await this.ensureBrowser(options);
     this.leaseController.renew({
       owner: options.leaseOwner || 'managed-browser',
       ttlMs: options.leaseTtlMs,
     });
-    if (!this.getActiveTab()) {
-      await this.newTab(url === 'about:blank' ? undefined : url);
+    if (!this.getActiveTab()) await this.newTab();
+    await finishManagedBrowserLaunchResume(this, options, launchedFresh);
+    if (url !== 'about:blank') {
+      const active = this.getActiveTab();
+      let current = '';
+      if (active) {
+        try {
+          current = this.getLiveTabUrl(active.id);
+        } catch {
+          current = active.url;
+        }
+      }
+      if (!active) await this.newTab(url);
+      else if (current !== url) await this.navigate(url);
     }
     return this.getSessionState();
   }
@@ -1214,7 +1270,7 @@ export class BrowserService implements Disposable {
 
   private async ensureBrowser(options: ManagedBrowserLaunchOptions = {}): Promise<void> {
     if (!this.isRunning()) {
-      await this.launch(options);
+      await withManagedBrowserActivity(this, () => this.launchBrowser(options));
     }
   }
 
@@ -1242,6 +1298,7 @@ export class BrowserService implements Disposable {
     this.pendingDialogs.clear();
     this.activeTabId = null;
     this.leaseController.markExpired();
+    this.resumeOwner = null;
     this.emitSessionChanged('crashed');
   }
 
