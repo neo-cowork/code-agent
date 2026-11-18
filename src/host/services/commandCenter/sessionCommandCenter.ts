@@ -39,6 +39,7 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  composeSessionCommandTaskDisplayText,
   composeSessionCommandTaskResultText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
@@ -944,6 +945,9 @@ export class SessionCommandCenter {
           retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
+          ...(TERMINAL.has(task.status) && task.detail
+            ? { resultMarkdown: composeSessionCommandTaskDisplayText(task.detail) }
+            : {}),
         },
       });
     } catch (error) {

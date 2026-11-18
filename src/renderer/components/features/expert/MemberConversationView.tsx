@@ -204,7 +204,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
     }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
-    const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
+    // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
+    const taskResultMarkdown = plainTask?.metadata?.resultMarkdown;
+    const finalOutput = plainNode?.progress
+      ?? (typeof taskResultMarkdown === 'string' && taskResultMarkdown ? taskResultMarkdown : plainTask?.summary)
+      ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
     // 终态工具失败出路（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：只在任务收尾后亮，运行中不亮
     const toolFailure = isLastToolFailureVisible(plainTask?.status)

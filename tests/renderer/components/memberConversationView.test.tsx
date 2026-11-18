@@ -770,6 +770,22 @@ describe('成员对话页', () => {
       await openPlain(rich);
       expectRendered();
     });
+    it('delegate_task 后台任务（真实载荷形状）：summary 是 240 字单行，完整结果在 metadata.resultMarkdown，页面不出现孤立 ``` 且 ls 折叠', async () => {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue([]);
+      const flat = rich.replace(/\s+/g, ' ').slice(0, 240);
+      const task: Task = {
+        id: 'task-8', sessionId: 'session-1', source: 'session_command_center', title: '清点 Downloads 里的表格文件',
+        summary: flat, status: 'completed', createdAt: 1, updatedAt: 2, durationMs: 5_000,
+        metadata: { resultMarkdown: rich.trim() }, events: [], outputRefs: [],
+      };
+      useBackgroundTaskStore.setState({ tasks: [task] });
+      useMemberViewStore.setState({ viewingMemberId: 'task-8' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+      expectRendered();
+      expect(screen.getByTestId('member-final-output').textContent).not.toContain('```');
+    });
     it('≤5 行的代码块保持展开', async () => {
       await openExpert(short);
       const box = screen.getByTestId('member-final-output');
