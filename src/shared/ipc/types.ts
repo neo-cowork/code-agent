@@ -432,7 +432,7 @@ export interface CrossSessionSearchResultItem {
   /** Conversation turn number containing the matched message */
   turnNumber?: number;
   /** Message role */
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   /** Message timestamp */
   timestamp: number;
   /** First match character offset within message content */

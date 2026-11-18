@@ -125,4 +125,22 @@ describe('sessionSearchJump', () => {
       createdAt: 10,
     })).toBeNull();
   });
+
+  it('finds a query that only exists in a tool call result (tool node content is empty)', () => {
+    const proj = projection();
+    proj.turns[1].nodes.push({
+      id: 'tool-1',
+      messageId: 'assistant-2',
+      type: 'tool_call',
+      content: '',
+      timestamp: 4,
+      toolCall: { id: 'call-1', name: 'Read', args: {}, result: 'Supplier code: ZK-4471-QUARTZ' },
+    });
+    expect(findSearchMatchForPendingJump(proj, {
+      sessionId: 'session-1',
+      messageId: 'tool-message-id-not-in-projection',
+      query: 'zk-4471-quartz',
+      createdAt: 10,
+    })).toMatchObject({ turnIndex: 1, nodeIndex: 1 });
+  });
 });

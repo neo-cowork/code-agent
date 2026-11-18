@@ -772,7 +772,7 @@ export const enSettingsModels = {
         uninstall: 'Uninstall',
         install: 'Install',
         installedPrefix: 'Installed; available from the next conversation turn: ',
-        approvalQueued: 'Waiting for your approval to run: ',
+        approvalQueued: 'Needs your approval to run: ',
         versionsTitle: 'Saved versions',
         runningVersion: 'Running',
         lastSuccessfulVersion: 'Last successful',

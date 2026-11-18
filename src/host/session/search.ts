@@ -24,6 +24,7 @@ import {
   CachedMessage,
   getDefaultCache,
 } from './localCache';
+import { extractToolOutputText, searchRoleRank } from './searchToolText';
 
 const logger = createLogger('SessionSearch');
 
@@ -116,13 +117,20 @@ export interface SearchMatch {
 }
 
 /**
+ * 命中消息：FTS 路径可返回 role:'tool' 的工具输出行（缓存里没有 tool 行）
+ */
+type SearchResultMessage = Omit<CachedMessage, 'role'> & {
+  role: CachedMessage['role'] | 'tool';
+};
+
+/**
  * Individual search result
  */
 export interface SearchResult {
   /** Session ID */
   sessionId: string;
   /** Message containing the match */
-  message: CachedMessage;
+  message: SearchResultMessage;
   /** Message index in session */
   messageIndex: number;
   /** Conversation turn number containing this message, when inferable */
@@ -160,7 +168,7 @@ function calculateRelevance(
   content: string,
   query: string,
   matches: SearchMatch[],
-  message: CachedMessage
+  message: SearchResultMessage
 ): number {
   let score = 0;
 
@@ -314,7 +322,7 @@ function findMatches(
 /**
  * Check if message passes date filter
  */
-function passesDateFilter(message: CachedMessage, options: SearchOptions): boolean {
+function passesDateFilter(message: SearchResultMessage, options: SearchOptions): boolean {
   if (options.startDate) {
     const startTime = typeof options.startDate === 'number'
       ? options.startDate
@@ -397,7 +405,10 @@ function compareSearchResults(
       comparison = a.relevance - b.relevance;
   }
 
-  return sortOrder === 'desc' ? -comparison : comparison;
+  const ordered = sortOrder === 'desc' ? -comparison : comparison;
+  // 同相关度：用户写的内容排在工具长输出之前
+  if (ordered === 0) return searchRoleRank(a.message.role) - searchRoleRank(b.message.role);
+  return ordered;
 }
 
 /**
@@ -521,17 +532,17 @@ function searchSessionsViaFts(
     // 命中消息超出回填窗口时，用 FTS 行兜底构造结果（跳转走 messageId，
     // messageIndex = -1 由 renderer 按「位置未知」展示），保证老消息可达。
     let messageIndex = session.messages.findIndex((m) => m.id === hit.messageId);
-    let message: CachedMessage;
+    let message: SearchResultMessage;
     let turnNumber: number | undefined;
     if (messageIndex >= 0) {
       message = session.messages[messageIndex];
       turnNumber = turnNumbers[messageIndex];
     } else {
-      if (hit.role !== 'user' && hit.role !== 'assistant' && hit.role !== 'system') continue;
+      if (hit.role !== 'user' && hit.role !== 'assistant' && hit.role !== 'system' && hit.role !== 'tool') continue;
       message = {
         id: hit.messageId,
         role: hit.role,
-        content: hit.content,
+        content: hit.role === 'tool' ? extractToolOutputText(hit.content) : hit.content,
         timestamp: hit.timestamp,
       };
       messageIndex = -1;

@@ -25,6 +25,11 @@ export function stripTelemetryRecoveryNotice(content: string): string {
   return content;
 }
 
+/** 记忆摘要里被截断过的旧提示残留：完整前缀已剥不掉，只能按开头识别并丢弃。 */
+export function isTelemetryRecoveryNoticeResidue(text: string): boolean {
+  return text.trim().startsWith('【历史恢复提示】');
+}
+
 /** 新标记或旧前缀任一成立即视为「由运行记录还原」。 */
 export function isTelemetryRecoveredMessage(
   message: Pick<Message, 'role' | 'content' | 'metadata'>,
