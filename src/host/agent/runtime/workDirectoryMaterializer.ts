@@ -188,6 +188,8 @@ function isOnlyCodeAgentMetadata(dir: string): boolean {
     return false;
   }
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return false;
+  // 快照现在落在应用数据目录而非工作夹内，空夹也可能对应着未清的恢复证据
+  if (hasUnclearedStreamSnapshots(dir)) return false;
   const top = readDirents(dir);
   if (!top) return false;
   if (top.length === 0) return true;
