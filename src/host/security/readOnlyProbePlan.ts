@@ -10,6 +10,7 @@
 // ============================================================================
 
 import { compileReadOnlyFileLoop, type ProbeFileLoop } from './readOnlyProbeFileLoop';
+import { compileToolCommand, expandLiteralForLoop, type ProbeToolCommand } from './readOnlyProbeTools';
 
 type ProbeStream = 'out' | 'err' | 'null';
 
@@ -32,6 +33,7 @@ export type PyStmt =
 
 export type ProbeCommand =
   | ProbeFileLoop
+  | ProbeToolCommand
   | { kind: 'noop' }
   | { kind: 'test'; flag: '-e' | '-f' | '-d'; path: string }
   | { kind: 'echo'; text: string; newline: boolean }
@@ -471,12 +473,13 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
     case 'whoami':
       return argv.length === 0 ? { program, cmd: { kind: 'whoami' } } : null;
     case 'python3': {
-      if (argv.length !== 2 || argv[0] !== '-c') return null;
+      if (argv[0] !== '-c') return compileToolCommand(program, argv);
+      if (argv.length !== 2) return null;
       const program2 = compilePython(argv[1]);
       return program2 ? { program, cmd: { kind: 'python', program: program2 } } : null;
     }
     default:
-      return null;
+      return compileToolCommand(program, argv);
   }
 }
 
@@ -497,6 +500,8 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
     extraSources: [...loop.sources, ...(loop.body.some((statement) => statement.kind === 'echo' && statement.parts.some((part) => 'value' in part && part.value === 'bytes')) ? ['wc -c'] : []), ...loop.files.map((file) => `cat ${JSON.stringify(file.path)}`)],
     }] };
   }
+  const looped = expandLiteralForLoop(command, (text) => compileReadOnlyProbePlan(text, ctx));
+  if (looped !== undefined) return looped ? { steps: looped } : null;
   const tokens = tokenize(command, new Map(), ctx.homeDir);
   if (!tokens) return null;
 

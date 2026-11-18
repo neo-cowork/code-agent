@@ -65,6 +65,16 @@ function userRulesAllow(texts: string[], sessionId?: string): boolean {
   }));
 }
 
+function readRulesAllow(absolutePath: string, sessionId?: string): boolean {
+  const rules = resolveEffectivePolicyRules(sessionId);
+  return ['Read', 'read'].every((tool) => {
+    const matched = getPolicyEngine().evaluate({
+      tool, level: 'read', description: `tool: ${tool}`, filePath: absolutePath, sessionId,
+    }, rules).matchedRule;
+    return !matched || matched.action === 'allow';
+  });
+}
+
 /** 命中返回可直接作为 Bash 结果的输出文本；未命中 / 无法证明返回 null。 */
 export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ output: string; programs: string[] } | null> {
   if (!isReadOnlyProbeEnabled()) return null;
@@ -80,6 +90,7 @@ export async function tryReadOnlyProbe(input: ReadOnlyProbeInput): Promise<{ out
     workingDirectory: input.workingDirectory,
     workspaceRoot: scheduleRoot ?? input.workspaceRoot,
     homeDir: os.homedir(),
+    readPathAllowed: (abs) => readRulesAllow(abs, input.sessionId),
     ...(scheduleRoot ? { readRoots: [scheduleRoot], userTexts: [], attachmentPaths: [] } : sessionAuthority(input)),
   });
   // 非零退出码的失败呈现（Command exited with code N）由真 Bash 路径负责：放弃，让原链处理。
