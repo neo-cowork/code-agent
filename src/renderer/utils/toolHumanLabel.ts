@@ -1,5 +1,5 @@
 import type { Translations } from '../i18n';
-import { findConnectorIdForToolName } from '@shared/contract/workbenchTools';
+import { findConnectorIdForToolName, findConnectorToolMetadata } from '@shared/contract/workbenchTools';
 import { getToolDisplayName } from '../components/features/chat/MessageBubble/ToolCallDisplay/utils';
 
 type HumanToolLabels = Translations['receiptPresentation']['humanToolLabels'];
@@ -42,6 +42,8 @@ function bareToolName(ownerLabel: string | undefined): string {
 /** 只读审批卡「读取{对象}」的对象名：只认连接器名与只读对象名词，没有登记就返回 undefined（不回落原名）。 */
 export function resolveReadObjectLabel(args: { toolName?: string; labels: HumanToolLabels }): string | undefined {
   const toolName = bareToolName(args.toolName);
+  // 写类连接器工具（mail_send / reminders_create …）不是「读取」，不借连接器名。
+  if (findConnectorToolMetadata(toolName)?.action) return undefined;
   const connectorKey = CONNECTOR_LABEL_KEYS[normalizedLabelKey(findConnectorIdForToolName(toolName))];
   if (connectorKey) return args.labels.connectors[connectorKey];
   const objectKey = READ_OBJECT_KEYS[normalizedLabelKey(toolName)];

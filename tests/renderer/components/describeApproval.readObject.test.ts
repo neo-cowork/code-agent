@@ -5,6 +5,7 @@ import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 import type { PermissionRequest } from '../../../src/shared/contract/permission';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { buildCanUseToolFromLegacy } from '../../../src/host/tools/dispatch/shadowAdapter';
 import { getProtocolToolSchemas } from '../../../src/host/tools/protocolToolRegistration';
 
 const LANGS = [
@@ -15,6 +16,43 @@ const LANGS = [
 function readRequest(tool: string, details: Record<string, unknown> = {}): PermissionRequest {
   return { id: 'r1', tool, type: 'file_read', details, timestamp: 1 } as PermissionRequest;
 }
+
+// 生产形状：协议工具体内 canUseTool(name, args) 经真实 shadowAdapter 写出的审批请求（无 path/url 时 type=command）。
+async function bodyRequest(tool: string, args: Record<string, unknown>): Promise<PermissionRequest> {
+  let captured: Record<string, unknown> | undefined;
+  const canUseTool = buildCanUseToolFromLegacy({
+    requestPermission: async (req: Record<string, unknown>) => { captured = req; return true; },
+  } as never, tool);
+  await canUseTool(tool, args);
+  return { id: 'r1', timestamp: 1, ...captured } as PermissionRequest;
+}
+
+describe('describeApproval: production request shape from shadowAdapter', () => {
+  it('body request for a path-less read tool is type command and still names the object', async () => {
+    const req = await bodyRequest('meeting_records', { action: 'search', query: 'budget' });
+    expect(req.type).toBe('command');
+    expect(describeApproval(req, zh, 'zh').title).toBe('读取会议记录');
+    expect(describeApproval(req, en, 'en').title).toBe('Read meeting records');
+  });
+
+  it('reminders body request names the object in both languages', async () => {
+    const req = await bodyRequest('reminders', { action: 'list_reminders' });
+    expect(describeApproval(req, zh, 'zh').title).toBe('读取提醒事项');
+    expect(describeApproval(req, en, 'en').title).toBe('Read Reminders');
+  });
+
+  it('write connector tools never get a "Read …" title', async () => {
+    for (const tool of ['mail_send', 'reminders_create', 'calendar_delete_event']) {
+      const req = await bodyRequest(tool, { title: 'x' });
+      expect(describeApproval(req, en, 'en').title, tool).toBe(en.decisionCard.permission.genericApprovalTitle);
+    }
+  });
+
+  it('bash command stays a shell card', async () => {
+    const req = await bodyRequest('Bash', { command: 'ls' });
+    expect(describeApproval(req, en, 'en').kind).toBe('shell');
+  });
+});
 
 describe('describeApproval: read-level protocol tools without a file target', () => {
   it('reminders names the object', () => {
@@ -91,10 +129,10 @@ describe('gate: every read-level protocol tool without a path/url parameter name
 
   for (const schema of schemas.filter((s) => !(s.name in READ_ALLOWLIST))) {
     for (const { language, t } of LANGS) {
-      it(`${schema.name} (${language}) is titled by object, not the generic title`, () => {
+      it(`${schema.name} (${language}) is titled by object, not the generic title`, async () => {
         const props = (schema.inputSchema as { properties?: Record<string, { enum?: string[] }> }).properties ?? {};
         const actions = props.action?.enum;
-        const d = describeApproval(readRequest(schema.name, actions ? { action: actions[0] } : {}), t, language);
+        const d = describeApproval(await bodyRequest(schema.name, actions ? { action: actions[0] } : {}), t, language);
         expect(d.title, `${schema.name} has no human label — add one to receiptPresentation.humanToolLabels`)
           .not.toBe(t.decisionCard.permission.genericApprovalTitle);
         expect(`${d.title}\n${d.question}`).not.toContain(schema.name);

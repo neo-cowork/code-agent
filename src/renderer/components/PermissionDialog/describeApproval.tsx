@@ -110,6 +110,9 @@ function classify(request: PermissionRequest, t: Translations): ApprovalKind {
       if (fileTarget(request)) return request.type;
       // 无文件目标的只读请求 = 只读协议工具（提醒/会议记录/邮件…）：有对象名就说读什么。
       return request.type === 'file_read' && readObjectLabel(request, t) ? 'read_generic' : 'generic';
+    case 'command':
+      // 协议工具体内的审批（shadowAdapter）对无 path/url 的只读工具写下 type=command：同样按对象名命名。
+      return !request.details.url && readObjectLabel(request, t) ? 'read_generic' : 'generic';
     case 'network':
     case 'mcp':
       return 'network';
