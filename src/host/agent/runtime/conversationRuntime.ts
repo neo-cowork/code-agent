@@ -886,7 +886,8 @@ export class ConversationRuntime {
       !startupTaskFeatures.isFuzzyTroubleshooting;
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
-      // 委派后台轮的裸词别名命中不是用户意图（首条消息是机器拼装的），见 dropDelegatedPromptAliasHit。
+      // 委派后台轮里机器拼装提示词（带 <drafted_task_plan> 信封）的裸词别名命中不是用户意图，
+      // 见 dropDelegatedPromptAliasHit；其他辅助轮文本的别名命中维持原行为。
       const directSkillHit = await raceStartupStep(
         this.ctx,
         resolveSkillInvocation(userRequest, this.ctx.workingDirectory, {
@@ -895,7 +896,7 @@ export class ConversationRuntime {
         }),
         'skill_discovery',
       );
-      const resolvedSkill = dropDelegatedPromptAliasHit(this.ctx, directSkillHit)
+      const resolvedSkill = dropDelegatedPromptAliasHit(this.ctx, directSkillHit, userRequest)
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest), 'skill_discovery')
         ?? await raceStartupStep(this.ctx, resolveNaturalLanguageCreateRoleInvocation(this.ctx, userRequest), 'skill_discovery');
       if (isStartupAborted(this.ctx)) return null;

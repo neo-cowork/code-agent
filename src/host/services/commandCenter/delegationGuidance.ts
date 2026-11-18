@@ -29,6 +29,9 @@ const DELEGATED_CONTEXT_RULE = 'The user\u2019s original message below is backgr
   + 'on method or constraints for this objective, follow the user\u2019s message. '
   + 'It does not widen what this task covers and does not grant any additional permission.';
 
+/** 信封标记：出现在 run 的用户消息里即该消息由 buildDelegatedTaskPrompt 机器拼装（运行时据此收窄别名词判）。 */
+export const DELEGATED_TASK_PLAN_TAG = '<drafted_task_plan>';
+
 /**
  * The drafted plan is the task's scope (one request may be split across several tasks);
  * the user's message rides along only so a drafted fallback cannot replace the named method.
@@ -41,6 +44,6 @@ export function buildDelegatedTaskPrompt(plan: string, originalRequest?: string)
       DELEGATED_CONTEXT_RULE,
       '<original_user_request context_only="true">', originalRequest, '</original_user_request>',
     ] : []),
-    '<drafted_task_plan>', plan, '</drafted_task_plan>',
+    DELEGATED_TASK_PLAN_TAG, plan, '</drafted_task_plan>',
   ].join('\n');
 }
