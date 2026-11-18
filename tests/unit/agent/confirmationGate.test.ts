@@ -480,6 +480,28 @@ describe('ConfirmationGate', () => {
         expect(p?.diff).toContain('body: {"name":"test"}');
       });
 
+      it.each([
+        ['/tmp/../etc/passwd', '/tmp/../etc/passwd'],
+        ['/private/tmp/../../Users/x/report.xlsx', '/private/tmp/../../Users/x/report.xlsx'],
+      ])('traversal out of temp/upload dir stays verbatim: %s', (outputPath, shown) => {
+        const p = build('en', { output_path: outputPath });
+        expect(p?.diff).toContain(`Save to: ${shown}`);
+      });
+
+      it('traversal out of the upload dir is not reduced to a file name (full path, `..` visible)', () => {
+        // 预览行截断在 120 字符，上传目录前缀本身很长，所以只断言开头仍是完整路径。
+        const upload = `${tmpdir()}/code-agent-uploads/u1${'/..'.repeat(20)}/etc/hosts`;
+        const p = build('en', { output_path: upload });
+        expect(p?.diff).not.toContain('Save to: hosts');
+        expect(p?.diff).toContain(`Save to: ${tmpdir()}/code-agent-uploads/u1/../..`);
+      });
+
+      it('traversal that stays inside the temp dir still shows the file name only', () => {
+        const p = build('en', { output_path: '/tmp/a/../sales.xlsx' });
+        expect(p?.diff).toContain('Save to: sales.xlsx');
+        expect(p?.diff).not.toContain('/tmp');
+      });
+
       it('unknown keys unchanged', () => {
         const p = build('en', { custom_key: 'v' });
         expect(p?.diff).toContain('custom_key: v');

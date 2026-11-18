@@ -62,9 +62,11 @@ export function displayPathValue(
   const relative = relativize(value);
   if (relative !== value) return relative;
   const normalized = value.replace(/\\/g, '/');
+  // 先解析 `..` 再判断目录归属；只有解析后真在临时/上传目录内才缩成文件名，否则保留原串（让用户看到 `..`）。
+  const resolved = path.posix.normalize(normalized);
   const tempDirs = [...TEMP_DIR_PREFIXES, os.tmpdir()];
-  if (isChatUploadPath(value) || tempDirs.some(dir => isUnder(normalized, dir))) {
-    return path.posix.basename(normalized) || value;
+  if (isChatUploadPath(resolved) || tempDirs.some(dir => isUnder(resolved, dir))) {
+    return path.posix.basename(resolved) || value;
   }
   return value;
 }
