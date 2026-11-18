@@ -35,25 +35,12 @@ import { getFileMutationActorId } from './fileMutationIdentity';
 import { extractFileFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { readSchema as schema } from './read.schema';
+import { binaryRefusalForExtension, guardBinaryNotText } from './binaryNotText';
 import { decodeGb18030, decodeUtf8, TextDecodeError } from '../../../utils/decodeText';
 
 /** 默认按 UTF-8 读；坏字节显示为 U+FFFD 时在结果顶部告知，由模型决定是否用 encoding: 'gbk' 重读（不做编码猜测） */
 const invalidUtf8ReadNotice = (count: number): string =>
   `[此文件有 ${count} 处不是合法 UTF-8 的字节（已显示为 \uFFFD）。如果它是 GBK/GB18030 编码（如国内 Excel 导出的 CSV、旧 Windows 文本），请用 encoding: 'gbk' 重新读取。]\n`;
-
-const BINARY_REDIRECTS: Record<string, string> = {
-  '.xlsx': 'read_xlsx',
-  '.xls': 'read_xlsx',
-  '.docx': 'read_docx',
-  '.pdf': 'read_pdf',
-  '.pptx': 'read_file 不支持此格式',
-};
-
-/** 图片按文本读会得到数十万字符乱码并永久留在历史里；改为短重定向。 */
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
-const IMAGE_READ_HINT =
-  'This is an image, not text. For what is on a web page use browser_action get_content / get_dom_snapshot; ' +
-  'to understand a picture use image_analyze (a deferred tool: load it first with ToolSearch select:image_analyze).';
 
 const DEFAULT_OFFSET = 1;
 const DEFAULT_LIMIT = 2000;
@@ -136,9 +123,8 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
     onProgress?.({ stage: 'starting', detail: `read ${path.basename(filePath)}` });
 
     // 二进制/结构化格式拦截 — 防止读到乱码后幻觉
-    const ext = path.extname(filePath).toLowerCase();
-    const isImage = IMAGE_EXTENSIONS.has(ext);
-    if (isImage || BINARY_REDIRECTS[ext]) {
+    const refusal = binaryRefusalForExtension(filePath);
+    if (refusal) {
       if (isChatUploadPath(filePath)) {
         try {
           await fs.access(filePath);
@@ -148,20 +134,11 @@ class ReadHandler implements ToolHandler<Record<string, unknown>, string> {
           }
         }
       }
-      if (isImage) {
-        return {
-          ok: false,
-          error: `Cannot read ${ext} file as text. ${IMAGE_READ_HINT}\nPath: ${filePath}`,
-          code: 'BINARY_FILE_NOT_TEXT',
-        };
-      }
-      const hint = BINARY_REDIRECTS[ext];
-      return {
-        ok: false,
-        error: `Cannot read ${ext} file as text — binary content will be garbled. Use ${hint} tool instead.\nPath: ${filePath}`,
-        code: 'BINARY_FILE_NOT_TEXT',
-      };
+      return refusal;
     }
+    // 无后缀/改名的图片、PDF：魔数兜底
+    const sniffed = await guardBinaryNotText(filePath);
+    if (sniffed) return sniffed;
 
     try {
       const stats = await fs.stat(filePath);
