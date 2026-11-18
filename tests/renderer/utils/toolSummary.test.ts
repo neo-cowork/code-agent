@@ -69,6 +69,22 @@ describe('getToolIcon', () => {
 // ============================================================================
 
 describe('summarizeToolCall', () => {
+  it('spawn_agent: single / parallel / missing never end with a bare colon', () => {
+    expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: { type: 'coder' } }))).toBe('创建代理: coder');
+    expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: { role: 'explore', task: 'x' } }))).toBe('创建代理: explore');
+    expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: { parallel: true, agents: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] } }))).toBe('创建 3 个代理');
+    expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: {} }))).toBe('创建代理');
+  });
+
+  it('spawn_agent: agents[] without parallel===true is not counted', () => {
+    expect(summarizeToolCall(makeToolCall({ name: 'spawn_agent', arguments: { agents: [{ name: 'a' }, { name: 'b' }] } }))).toBe('创建代理');
+  });
+
+  it('agent_message: empty target has no colon tail', () => {
+    expect(summarizeToolCall(makeToolCall({ name: 'agent_message', arguments: { target: 'bob' } }))).toBe('发送消息给: bob');
+    expect(summarizeToolCall(makeToolCall({ name: 'agent_message', arguments: {} }))).toBe('发送消息给代理');
+  });
+
   it('should summarize Bash tool', () => {
     const tc = makeToolCall({ name: 'Bash', arguments: { command: 'ls -la' } });
     expect(summarizeToolCall(tc)).toBe('执行命令: ls -la');

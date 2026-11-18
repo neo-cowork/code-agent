@@ -23,6 +23,11 @@ import type {
   AgentWorktreeArtifact,
   AgentWorktreeReview,
 } from '../../shared/contract/agentTree';
+import {
+  loadPersistedArtifacts,
+  persistPreservedArtifacts,
+  resetAgentWorktreeStoreForTest,
+} from './agentWorktreeStore';
 import { WORKTREE_BASE_DIR } from './agentWorktreePath';
 import { resolveAgentBranchName, readWorktreeBranch } from './agentWorktreeBranch';
 
@@ -265,6 +270,16 @@ export interface WorktreeCleanupResult {
 }
 
 const worktreeArtifacts = new Map<string, AgentWorktreeArtifact>();
+let hydrated = false;
+
+/** Lazily restore preserved artifacts persisted by a previous process. */
+function ensureHydrated(): void {
+  if (hydrated) return;
+  hydrated = true;
+  for (const artifact of loadPersistedArtifacts(WORKTREE_TIMEOUT)) {
+    if (!worktreeArtifacts.has(artifact.agentId)) worktreeArtifacts.set(artifact.agentId, artifact);
+  }
+}
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -339,6 +354,7 @@ function recordWorktreeArtifact(
   agentId: string,
   next: Omit<AgentWorktreeArtifact, 'agentId' | 'updatedAt'> & { updatedAt?: number },
 ): AgentWorktreeArtifact {
+  ensureHydrated();
   const existing = worktreeArtifacts.get(agentId);
   const artifact: AgentWorktreeArtifact = {
     agentId,
@@ -353,20 +369,25 @@ function recordWorktreeArtifact(
     ...(next.error ? { error: next.error } : {}),
   };
   worktreeArtifacts.set(agentId, artifact);
+  persistPreservedArtifacts(worktreeArtifacts.values());
   return cloneArtifact(artifact);
 }
 
 export function listAgentWorktreeArtifacts(): AgentWorktreeArtifact[] {
+  ensureHydrated();
   return Array.from(worktreeArtifacts.values()).map(cloneArtifact);
 }
 
 export function getAgentWorktreeArtifact(agentId: string): AgentWorktreeArtifact | undefined {
+  ensureHydrated();
   const artifact = worktreeArtifacts.get(agentId);
   return artifact ? cloneArtifact(artifact) : undefined;
 }
 
 export function resetAgentWorktreeArtifactsForTest(): void {
   worktreeArtifacts.clear();
+  hydrated = false;
+  resetAgentWorktreeStoreForTest();
 }
 
 export function parseGitStatusPorcelain(output: string): AgentTreeChangedFile[] {
@@ -432,6 +453,7 @@ async function readDiff(worktreePath: string): Promise<{ diff: string; truncated
 }
 
 export async function getAgentWorktreeReview(agentId: string): Promise<AgentWorktreeReview | undefined> {
+  ensureHydrated();
   const artifact = worktreeArtifacts.get(agentId);
   if (!artifact) return undefined;
   const worktreePath = artifact.path;

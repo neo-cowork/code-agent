@@ -3,8 +3,7 @@ import { automationPresentationEn, automationPresentationZh } from './automation
 import { cronCloudEn, cronCloudZh } from './cronCloud';
 import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
-import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
-import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels'; import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
@@ -122,6 +121,7 @@ export const cronCenterZh = {
     failureAuth: '模型账号没通过授权（密钥错误或已过期）',
     failureNetwork: '暂时连不上模型服务',
     failureCloudUnavailable: '云端定时服务暂时连不上，这次任务没有执行。',
+    failureRuntimeStarting: 'Neo 刚启动还没准备好，这次运行没能开始。',
     failureOther: '运行失败',
     failureActionSwitchModel: '换个模型',
     failureActionRunAgain: '立即重跑',
@@ -646,6 +646,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     failureAuth: 'The model account was not authorized (the key is wrong or expired).',
     failureNetwork: "The model service can't be reached right now.",
     failureCloudUnavailable: "The cloud scheduler can't be reached right now, so this run didn't happen.",
+    failureRuntimeStarting: "Neo was still starting up, so this run couldn't start.",
     failureOther: 'The run failed.',
     failureActionSwitchModel: 'Switch model',
     failureActionRunAgain: 'Run again now',

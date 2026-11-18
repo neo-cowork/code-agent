@@ -83,14 +83,47 @@ describe('deriveRunOverviewTone', () => {
 });
 
 describe('buildOverviewRunHeaderModel 步骤计数与结局', () => {
-  it('uses the current run instruction instead of the session first-message title', () => {
+  it('会话标题是主名，本轮用户指令降为副标题', () => {
     const model = buildOverviewRunHeaderModel({
       run: run({ status: 'completed', title: '第二轮任务' }),
       sessionTitle: '第一轮会话标题',
       now: START,
     });
 
-    expect(model?.title).toBe('第二轮任务');
+    expect(model?.title).toBe('第一轮会话标题');
+    expect(model?.subtitle).toBe('第二轮任务');
+  });
+
+  it('会话标题为空 → 回落本轮指令作主名，无副标题；指令也空则回落 phase', () => {
+    const withRun = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', title: '第二轮任务' }),
+      sessionTitle: '  ',
+      now: START,
+    });
+    expect(withRun).toMatchObject({ title: '第二轮任务', subtitle: null });
+
+    const phaseOnly = buildOverviewRunHeaderModel({ run: run({ status: 'completed' }), sessionTitle: null, now: START });
+    expect(phaseOnly).toMatchObject({ title: '调用工具', subtitle: null });
+  });
+
+  it('指令与会话标题相同时不重复出副标题', () => {
+    const model = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', title: '写周报' }),
+      sessionTitle: '写周报',
+      now: START,
+    });
+    expect(model).toMatchObject({ title: '写周报', subtitle: null });
+  });
+
+  it('定时会话标题分支不变：仍是本地化的 [定时] 名，指令作副标题', () => {
+    const model = buildOverviewRunHeaderModel({
+      run: run({ status: 'completed', title: '执行巡检' }),
+      sessionTitle: '[Schedule] 日报',
+      language: 'zh',
+      now: START,
+    });
+    expect(model?.title).toBe('[定时] 日报');
+    expect(model?.subtitle).toBe('执行巡检');
   });
 
   it('进行中且有 TODO：steps = 当前步/总步（当前步 = 已完成 + 1）', () => {
@@ -169,6 +202,14 @@ describe('OverviewRunHeader 细进度线', () => {
     useSessionStore.setState({ currentSessionId: 'session-a', sessions: [
       { id: 'session-a', title: '写周报' },
     ] as never });
+  });
+
+  it('主名与侧栏同为会话标题，副标题显示本轮指令', () => {
+    setRun(run({ status: 'running', startedAt: START, title: '帮我看看服务合同.pdf' }));
+    render(<OverviewRunHeader />);
+
+    expect(screen.getByTestId('overview-run-header-title').textContent).toBe('写周报');
+    expect(screen.getByTestId('overview-run-header-subtitle').textContent).toBe('帮我看看服务合同.pdf');
   });
 
   it('不再是带边框的卡片容器', () => {

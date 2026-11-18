@@ -325,6 +325,8 @@ describe.each(['zh', 'en'] as const)('shared approval labels (%s)', (language) =
   describe.each(['list', 'detail', 'hint'] as const)('%s surface', (surface) => {
     it.each([
       { tool: 'Write', preview: '/Users/example/Documents/morning-notes/today-plan.md', name: 'today-plan.md' },
+      { tool: 'Edit', preview: '/Users/example/Documents/morning-notes/today-plan.md', name: 'today-plan.md' },
+      { tool: 'Append', preview: '/Users/example/Documents/morning-notes/today-plan.md', name: 'today-plan.md' },
       { tool: 'Write', preview: 'C:\\Users\\example\\Documents\\reading-list.md', name: 'reading-list.md' },
       { tool: 'Write', preview: 'weekly-report.md', name: 'weekly-report.md' },
       { tool: 'Write', preview: '周报.md', name: '周报.md' },

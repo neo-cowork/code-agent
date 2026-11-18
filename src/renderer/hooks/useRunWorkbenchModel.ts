@@ -442,6 +442,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       todos: statusRail.todos.items,
       pendingApprovalId,
       language: language === 'en' ? 'en' : 'zh',
+      backgroundTasks,
     });
     const sessionTask = buildSessionTaskRecord({
       sessionId: currentSessionId,

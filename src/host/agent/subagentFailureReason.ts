@@ -12,6 +12,7 @@ const REASON_BY_CODE: Partial<Record<AgentFailureCode, string>> = {
   [AgentFailureCode.Timeout]: '运行时间太长，被自动停止了',
   [AgentFailureCode.ModelError]: '模型服务暂时出错或请求太频繁',
   [AgentFailureCode.BudgetExhausted]: '本次任务的额度用完了',
+  [AgentFailureCode.StepCapReached]: '本次任务做到了步数上限，已停下',
   [AgentFailureCode.PermissionDenied]: '需要的操作没有获得许可',
   [AgentFailureCode.ToolUnavailable]: '需要用的功能当前不可用',
   [AgentFailureCode.ParentGone]: '发起它的对话已经结束',

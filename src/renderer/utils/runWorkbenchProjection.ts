@@ -1,5 +1,5 @@
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
-import { classifyToolSteps } from './terminalWord';
+import { classifyToolSteps, type DelegationLedgerTask } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
@@ -34,6 +34,8 @@ export interface BuildRunWorkbenchModelInput {
   pendingApprovalId?: string | null;
   /** 只影响等待审批标签（取共享文案源）；缺省 zh。 */
   language?: 'zh' | 'en';
+  /** Ledger tasks: a completed delegate_task naming a failed file recovers that failure. */
+  backgroundTasks?: readonly DelegationLedgerTask[];
 }
 
 function latestTurn(projection: TraceProjection): TraceTurn | null {
@@ -144,14 +146,14 @@ function completionSignal(turn: TraceTurn | null): string | undefined {
   return undefined;
 }
 
-function toolStepOutcome(turn: TraceTurn | null): { failed: number; total: number } | undefined {
+function toolStepOutcome(turn: TraceTurn | null, tasks?: readonly DelegationLedgerTask[]): { failed: number; total: number } | undefined {
   if (!turn) return undefined;
   const steps = latestUserTurnItems(turn.nodes, (item) => item.type === 'user').flatMap((node) => {
     const call = node.toolCall;
     if (!call || call._streaming || call.result === undefined) return [];
-    return [{ name: call.name, arguments: call.args, success: call.success }];
+    return [{ id: call.id, name: call.name, arguments: call.args, success: call.success }];
   });
-  return classifyToolSteps(steps);
+  return classifyToolSteps(steps, tasks);
 }
 
 export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
@@ -176,7 +178,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
     ...(status === 'cancelled' && turn ? { terminalReason: turn.nodes.some((node) => node.metadata?.workbench?.runCancellation?.reason === 'client_disconnect') ? 'client_disconnect' as const : isIdleReapedRun(turn) ? 'idle_reaped' as const : undefined } : {}),
-    toolStepOutcome: toolStepOutcome(turn),
+    toolStepOutcome: toolStepOutcome(turn, args.backgroundTasks),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };
