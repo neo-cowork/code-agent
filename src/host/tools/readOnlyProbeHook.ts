@@ -13,6 +13,7 @@ import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
+import { resolveUserRuleOutcomeForTool } from '../permissions/userRuleOutcome';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { executeReadOnlyProbePlan } from '../security/readOnlyProbeExecutor';
 import { scheduleReadOnlyProbeRoot } from './scheduleReadOnlyProbe';
@@ -61,7 +62,11 @@ function userRulesAllow(texts: string[], sessionId?: string): boolean {
     const matched = getPolicyEngine().evaluate({
       tool, level: 'execute', description: `tool: ${tool}`, command, sessionId,
     }, rules).matchedRule;
-    return !matched || matched.action === 'allow';
+    if (matched && matched.action !== 'allow') return false;
+    // N-PERM-NL-RULES-K2：evaluate 不带角色、也不看触发短语——带角色范围的 ask/handback 与
+    // preapprove 未命中（= ask）由一句话规则的消费端判定，命中任一档都放弃探测、回审批链。
+    const nlKind = resolveUserRuleOutcomeForTool(sessionId, tool, { command }).kind;
+    return nlKind === 'none' || nlKind === 'preapproved';
   }));
 }
 

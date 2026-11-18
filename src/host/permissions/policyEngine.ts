@@ -13,7 +13,10 @@ import {
   MODE_CONFIGS,
 } from './modes';
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
-import { validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
+import { canonicalNlPhrases, validateUserPermissionRule, validateNlPermissionRuleEntry } from '../../shared/permissionRuleSyntax';
+import { isProtectedAllowRule } from './permissionRuleDraft';
+import type { NlRuleBehavior } from '../../shared/permissionRuleTranslate';
+import type { NlPermissionRuleEntry } from '../../shared/contract/settings';
 import { recordPolicyMutation, type PolicyMutationSource } from './policyMutationSource';
 import { normalizeToolName } from '../tools/toolNames';
 
@@ -57,6 +60,12 @@ export interface PolicyRequest extends PermissionRequest {
   timestamp?: number;
   /** Parent request (for delegation) */
   parentRequest?: PolicyRequest;
+  /**
+   * N-PERM-NL-RULES-K2：本 run 的角色 id（beginRunPolicy 盖章，run 结束清除）。
+   * 带 roleId 的 nl 规则用 matcher.custom 只在这个角色上命中；不传 = 主聊天，
+   * 角色域规则不匹配。
+   */
+  roleId?: string;
 }
 
 /**
@@ -81,6 +90,18 @@ export interface PolicyRule {
   overridable: boolean;
   /** Whether to audit when this rule is applied */
   audit: boolean;
+  /**
+   * N-PERM-NL-RULES-K2：permissions.nlRules 装载时附上的结构化元数据（行为档/角色域/
+   * 触发短语）。旧三表的 user-* 规则没有该字段——行为档按 action 推导（deny→deny、
+   * prompt→ask、allow→无新捷径）。运行时取舍在 permissions/userRuleOutcome.ts。
+   */
+  userNlRule?: {
+    behavior: NlRuleBehavior;
+    /** 规范化规则串（Tool(pattern) 或裸工具名），供消费端在结果里指名规则 */
+    rule: string;
+    roleId?: string;
+    phrases?: readonly string[];
+  };
 }
 
 /**
@@ -234,6 +255,15 @@ const BUILT_IN_RULES: PolicyRule[] = [
 // ----------------------------------------------------------------------------
 
 /**
+ * 用户「永不」规则：旧表（id 前缀 user-deny-）与 nlRules（user-nl:deny:，N-PERM-NL-RULES-K2）。
+ * 硬拒类消费端（工具调用口、shell 写路径口、不确定写目标的升档判据）共用这一个判据，
+ * 免得新增一种规则来源时只接上其中一个入口。
+ */
+export function isUserDenyRule(rule: PolicyRule): boolean {
+  return rule.action === 'deny' && (rule.id.startsWith('user-deny-') || rule.id.startsWith('user-nl:deny:'));
+}
+
+/**
  * Permission Policy Engine
  *
  * Evaluates permission requests using:
@@ -293,13 +323,14 @@ export class PolicyEngine {
    * Match a parsed write path against user Tool(path) denies, independent of tool spelling.
    * @param rules 覆盖规则列表（N-PERM-POLICYVERSION E2：传 run 有效视图；缺省活状态）。
    */
-  matchUserPathDeny(pathCandidates: readonly string[], rules?: readonly PolicyRule[]): PolicyRule | null {
+  matchUserPathDeny(pathCandidates: readonly string[], rules?: readonly PolicyRule[], roleId?: string): PolicyRule | null {
     for (const rule of rules ?? this.rules) {
       const specifier = rule.matcher.toolSpecifier;
-      if (!rule.id.startsWith('user-deny-') || rule.action !== 'deny'
-          || specifier?.specifierType !== 'path' || !specifier.specifier) {
+      if (!isUserDenyRule(rule) || specifier?.specifierType !== 'path' || !specifier.specifier) {
         continue;
       }
+      // 带角色范围的 nlRules deny 只在该角色的 run 上生效（roleId 由调用方传 run 盖章值）。
+      if (rule.userNlRule?.roleId && rule.userNlRule.roleId !== roleId) continue;
       if (pathCandidates.some((candidate) => matchSpecifier(specifier, candidate))) return rule;
     }
     return null;
@@ -316,7 +347,7 @@ export class PolicyEngine {
    */
   matchUserDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
     for (const rule of rules ?? this.rules) {
-      if (rule.id.startsWith('user-deny-') && rule.action === 'deny' && this.matchesRule(request, rule)) {
+      if (isUserDenyRule(rule) && this.matchesRule(request, rule)) {
         return rule;
       }
     }
@@ -446,7 +477,7 @@ export class PolicyEngine {
    * 生效），config 热重载走缺省 'external'（放宽冻结到下一个 run）。
    */
   loadUserRules(
-    rules: { allow?: string[]; deny?: string[]; ask?: string[] },
+    rules: { allow?: string[]; deny?: string[]; ask?: string[]; nlRules?: NlPermissionRuleEntry[] },
     source: PolicyMutationSource = 'external',
   ): void {
     const ruleEntries: Array<{ ruleStr: string; action: PermissionAction; priority: number }> = [];
@@ -478,11 +509,50 @@ export class PolicyEngine {
         return verdict.ok;
       });
 
+    // N-PERM-NL-RULES-K2：结构化 nlRules 与三张旧表走同一套「对齐」装载。引擎 action
+    // 按就近档映射（handback→prompt、preapprove→allow），真正的 K2 语义（停车交回/
+    // 短语命中才放行）由 userRuleOutcome 消费端按 userNlRule 元数据取舍；带 roleId 的
+    // 条目挂 matcher.custom 只在该角色的 run 上命中（roleId 由 runPolicySnapshot 盖章）。
+    const NL_ACTION: Record<NlRuleBehavior, PermissionAction> = {
+      deny: 'deny',
+      ask: 'prompt',
+      allow: 'allow',
+      handback: 'prompt',
+      preapprove: 'allow',
+    };
+    const nlEntries: Array<{
+      id: string;
+      entry: NlPermissionRuleEntry;
+      action: PermissionAction;
+    }> = [];
+    for (const raw of rules.nlRules ?? []) {
+      // 装载口与保存口同一个校验（含高危探针）：改配置文件/热重载写进来的
+      // preapprove Bash(sudo *) 在这里被跳过，不进引擎（PR #2911）。
+      const verdict = validateNlPermissionRuleEntry(raw, isProtectedAllowRule);
+      if (!verdict.ok) {
+        logger.warn(`Skipping invalid nl rule: ${JSON.stringify(raw)}`, { reason: verdict.reason });
+        continue;
+      }
+      const entry = { ...verdict.value, rule: verdict.value.rule.trim() };
+      // 短语进 id：id 是「对齐」装载判断规则变没变的唯一依据，短语不在里面时热重载
+      // 改短语会被当成同一条规则跳过，旧短语一直放行到重启（PR #2911）。改短语 = 卸旧
+      // 装新，也因此吃 run 冻结语义（外部来源加短语是放宽，对已开始的 run 冻结）。
+      const phrases = canonicalNlPhrases(entry.phrases);
+      nlEntries.push({
+        id: `user-nl:${entry.behavior}:${entry.roleId ?? 'global'}:${entry.rule}${phrases.length > 0 ? `#phrases=${JSON.stringify(phrases)}` : ''}`,
+        entry,
+        action: NL_ACTION[entry.behavior],
+      });
+    }
+
     // 装载是「对齐」不是「追加」（r2）：不在新列表里的旧 user-* 规则先卸载——用户删掉
     // 规则保存后必须立即不再生效，不能等重启。user- 前缀是本方法管理规则的 id 约定
     // （userConfigSource 同款），插件/hook 手工 addRule 的规则不归这里动。卸载走
     // removeRule：外部来源删 deny/prompt 对已开始的 run 仍冻结在起点（N-PERM-POLICYVERSION）。
-    const desiredIds = new Set(validEntries.map((entry) => `user-${entry.action}-${entry.ruleStr}`));
+    const desiredIds = new Set<string>([
+      ...validEntries.map((entry) => `user-${entry.action}-${entry.ruleStr}`),
+      ...nlEntries.map((nl) => nl.id),
+    ]);
     const presentIds = new Set<string>();
     for (const rule of this.getRules()) {
       if (!rule.id.startsWith('user-')) continue;
@@ -514,11 +584,55 @@ export class PolicyEngine {
       this.addRule(rule, source);
     }
 
+    for (const nl of nlEntries) {
+      if (presentIds.has(nl.id)) continue;
+      presentIds.add(nl.id);
+      const parsed = parseToolSpecifier(nl.entry.rule);
+      const rule: PolicyRule = {
+        id: nl.id,
+        name: `User nl ${nl.entry.behavior}: ${nl.entry.rule}`,
+        priority: nl.action === 'deny' ? 700 : nl.action === 'prompt' ? 600 : 500,
+        matcher: {
+          tool: parsed.toolName,
+          toolSpecifier: parsed.specifier ? parsed : undefined,
+          ...(nl.entry.roleId
+            ? { custom: (request: PolicyRequest) => request.roleId === nl.entry.roleId }
+            : {}),
+        },
+        action: nl.action,
+        overridable: true,
+        audit: nl.action === 'deny',
+        userNlRule: {
+          behavior: nl.entry.behavior,
+          rule: nl.entry.rule,
+          ...(nl.entry.roleId ? { roleId: nl.entry.roleId } : {}),
+          ...(nl.entry.phrases ? { phrases: nl.entry.phrases } : {}),
+        },
+      };
+      this.addRule(rule, source);
+    }
+
     logger.debug('User rules loaded', {
       allow: rules.allow?.length ?? 0,
       deny: rules.deny?.length ?? 0,
       ask: rules.ask?.length ?? 0,
+      nlRules: rules.nlRules?.length ?? 0,
     });
+  }
+
+  /**
+   * N-PERM-NL-RULES-K2：列出按优先级序全部命中的 user-* 规则（含 nlRules 装载的与三张
+   * 旧表的）。evaluate 只回一条最终赢家；K2 消费端要在 handback/ask/preapprove 之间按
+   * deny > handback > ask > preapprove 自行取舍，需要完整命中集。匹配语义与 evaluate
+   * 完全同源（matchesRule），传 rules 覆盖即吃 run 快照的有效视图。
+   */
+  matchUserRules(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule[] {
+    const matched: PolicyRule[] = [];
+    for (const rule of rules ?? this.rules) {
+      if (!rule.id.startsWith('user-')) continue;
+      if (this.matchesRule(request, rule)) matched.push(rule);
+    }
+    return matched;
   }
 
   /**
