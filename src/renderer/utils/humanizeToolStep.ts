@@ -613,6 +613,26 @@ function buildToolStep(
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
+      const parallelEntries = a.parallel === true && Array.isArray(a.agents)
+        ? a.agents.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
+        : [];
+      if (name !== 'Task' && name !== 'Explore' && parallelEntries.length > 0) {
+        const labels = parallelEntries.map((entry) => {
+          const given = typeof entry.name === 'string' ? entry.name.trim() : '';
+          if (given) return given;
+          const entryRole = typeof entry.role === 'string' ? entry.role.trim() : '';
+          return entryRole ? agentRoleLabel(entryRole, t.agentRoleLabels) : '';
+        }).filter(Boolean);
+        if (parallelEntries.length === 1) {
+          if (labels[0]) return h.subagentSpawn.replace('{description}', labels[0]);
+        } else if (labels.length > 0) {
+          const shown = labels.slice(0, 3).join(CJK_PATTERN.test(h.writeFallback) ? '、' : ', ');
+          const names = labels.length > 3 ? `${shown}…` : shown;
+          return h.subagentSpawnParallel
+            .replace('{count}', String(parallelEntries.length))
+            .replace('{names}', names);
+        }
+      }
       const roleArg = name === 'Task' ? a.subagent_type : a.role;
       const role = name === 'Explore' ? 'explore' : typeof roleArg === 'string' ? roleArg.trim() : '';
       const description = (name === 'Task' ? firstString(a, ['description']) : '')
