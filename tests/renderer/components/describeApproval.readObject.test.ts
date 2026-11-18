@@ -7,6 +7,8 @@ import type { PermissionRequest } from '../../../src/shared/contract/permission'
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { buildCanUseToolFromLegacy } from '../../../src/host/tools/dispatch/shadowAdapter';
 import { getProtocolToolSchemas } from '../../../src/host/tools/protocolToolRegistration';
+import { ToolRegistry } from '../../../src/host/tools/registry';
+import { registerMigratedTools } from '../../../src/host/tools/modules';
 
 const LANGS = [
   { language: 'zh' as const, t: zh },
@@ -141,15 +143,20 @@ const PATH_LIKE = /^(path|file_path|filePath|url|file)$/;
 
 describe('gate: every read-level protocol tool without a path/url parameter names its object', () => {
   getProtocolRegistry();
-  const schemas = getProtocolToolSchemas().filter((s) => {
+  const darwinRegistry = new ToolRegistry();
+  registerMigratedTools(darwinRegistry, 'darwin');
+  const allSchemas = [...new Map([...getProtocolToolSchemas(), ...darwinRegistry.getSchemas()].map((s) => [s.name, s])).values()];
+  const schemas = allSchemas.filter((s) => {
     if (s.permissionLevel !== 'read') return false;
     const props = Object.keys((s.inputSchema as { properties?: Record<string, unknown> }).properties ?? {});
     return !props.some((k) => PATH_LIKE.test(k));
   });
 
+  // mail / reminders / calendar are registered on darwin only (registerMigratedTools platform branch); Linux CI would silently
+  // drop them, so the gate always unions in the real darwin registration.
   it('enumerates a non-empty set including the known targets', () => {
     const names = schemas.map((s) => s.name);
-    expect(names).toEqual(expect.arrayContaining(['reminders', 'meeting_records', 'mail']));
+    expect(names).toEqual(expect.arrayContaining(['reminders', 'meeting_records', 'mail', 'tmeetMeetingList']));
   });
 
   for (const schema of schemas.filter((s) => !(s.name in READ_ALLOWLIST))) {
@@ -167,7 +174,7 @@ describe('gate: every read-level protocol tool without a path/url parameter name
 
   it('reverse gate: no non-read protocol tool body request is classified read_generic', async () => {
     const offenders: string[] = [];
-    for (const schema of getProtocolToolSchemas().filter((s) => s.permissionLevel !== 'read')) {
+    for (const schema of allSchemas.filter((s) => s.permissionLevel !== 'read')) {
       const props = (schema.inputSchema as { properties?: Record<string, { enum?: string[] }> }).properties ?? {};
       const actions = props.action?.enum;
       for (const args of actions ? actions.map((a) => ({ action: a })) : [{}]) {
@@ -181,7 +188,7 @@ describe('gate: every read-level protocol tool without a path/url parameter name
   });
 
   it('allowlist has no stale entries', () => {
-    const known = new Set(getProtocolToolSchemas().map((s) => s.name));
+    const known = new Set(allSchemas.map((s) => s.name));
     expect(Object.keys(READ_ALLOWLIST).filter((n) => !known.has(n))).toEqual([]);
   });
 });
