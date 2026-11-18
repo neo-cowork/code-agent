@@ -10,6 +10,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPersistedExpertThread } from '@shared/contract/expertThread';
 import type { RoleFirstWakeSnapshot } from '@shared/contract/roleAssets';
+import { ROLE_FIRST_WAKE_THINKING_TIMER_MAX_AGE_MS } from '@shared/constants';
 import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
@@ -27,8 +28,16 @@ import { PendingThinkingLine } from './ThinkingDigestBanner';
 
 const POLL_MS = 3000;
 
-// 快照不带开始时间：计时从本次应用会话里首次见到该专家在醒来的时刻起，卡片重挂（切会话再回来）不归零。
-const wakeFirstSeenAt = new Map<string, number>();
+/**
+ * 快照 startedAt 可用就用它（有限、不在未来、不老于上限）。
+ * 否则用本轮挂载里第一次画出进行中的时刻，避免负值和把卡死的 running 计成很长。
+ */
+function thinkingSinceMs(startedAt: number | undefined, now: number, fallbackSinceMs: number): number {
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return fallbackSinceMs;
+  if (startedAt > now) return fallbackSinceMs;
+  if (now - startedAt > ROLE_FIRST_WAKE_THINKING_TIMER_MAX_AGE_MS) return fallbackSinceMs;
+  return startedAt;
+}
 
 interface RoleFirstWakeCardProps {
   roleId: string;
@@ -59,6 +68,8 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const developerMode = useAppStore((state) => state.developerMode);
   const onDismissedRef = useRef(onDismissed);
   onDismissedRef.current = onDismissed;
+  // 本挂载、当前 roleId 第一次画出进行中的时刻。换专家就重记；不放模块级 Map，重载即丢。
+  const runningFallbackSinceMs = useRef<{ roleId: string; sinceMs: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,8 +199,14 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const suggestions = sourcesMode === 'connected' ? (snapshot?.suggestions ?? []).slice(0, 3) : [];
   const intro = snapshot?.intro?.trim() ?? '';
   const showRunning = isActiveState(state) || live === 'optimistic';
-  if (showRunning && !wakeFirstSeenAt.has(roleId)) wakeFirstSeenAt.set(roleId, Date.now());
-  if (!showRunning && state !== 'pending') wakeFirstSeenAt.delete(roleId);
+  if (showRunning && runningFallbackSinceMs.current?.roleId !== roleId) {
+    runningFallbackSinceMs.current = { roleId, sinceMs: Date.now() };
+  }
+  const sinceMs = thinkingSinceMs(
+    snapshot?.startedAt,
+    Date.now(),
+    runningFallbackSinceMs.current?.sinceMs ?? Date.now(),
+  );
   const showFailed = state === 'failed';
   const showNone = (state === 'completed' || showFailed) && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
@@ -250,7 +267,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       <div className="col-start-2 min-w-0 pt-[3px]">
         {showRunning && (
           <div className="flex items-center gap-2">
-            <PendingThinkingLine sinceMs={wakeFirstSeenAt.get(roleId) ?? Date.now()} />
+            <PendingThinkingLine sinceMs={sinceMs} />
             {skipButton}
           </div>
         )}

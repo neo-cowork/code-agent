@@ -11,6 +11,7 @@ import { formatEditRoleUserPrompt } from '../../../utils/formatEditRoleUserPromp
 function getRoleLabel(role: SidebarMessageSearchHit['role'], t: Translations): string {
   if (role === 'user') return t.chatSearch.roleUser;
   if (role === 'assistant') return t.chatSearch.roleAssistant;
+  if (role === 'tool') return t.chatSearch.roleTool;
   return t.chatSearch.roleSystem;
 }
 
