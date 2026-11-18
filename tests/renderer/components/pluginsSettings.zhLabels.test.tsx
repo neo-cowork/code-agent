@@ -10,7 +10,7 @@ import { en } from '../../../src/renderer/i18n/en';
 const invoke = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: zh }),
+  useI18n: () => ({ t: zh, language: 'zh' }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke },
@@ -28,6 +28,7 @@ const INSTALLED = {
   skills: ['skills/a'],
   commands: ['commands/b'],
   pluginRoot: '/opt/plugins/label-plugin',
+  types: ['skill', 'command'],
 };
 const ENTRY = { name: 'market-plugin', marketplace: 'official', source: './m', skills: ['s'] };
 
@@ -69,6 +70,13 @@ describe('PluginsSettings 中文行标签', () => {
     expect(text).not.toContain('Trust');
     const t = zh.settings.plugins.installed;
     expect(text.split(t.trust).length - 1).toBe(2); // 已装卡 + 市场卡各一次
+    // 已装卡头部 pill：中文标签，且不残留独立的 official/user/skill/command pill
+    const header = screen.getByRole('heading', { name: 'label-plugin' }).parentElement!;
+    const pillTexts = Array.from(header.querySelectorAll('span.rounded-md.border')).map((el) => el.textContent);
+    for (const zhPill of ['官方', '用户级', '技能', '命令']) expect(pillTexts).toContain(zhPill);
+    for (const raw of ['official', 'user', 'skill', 'command']) expect(pillTexts).not.toContain(raw);
+    // 「可见插件」列表里的 scope pill 同样中文化
+    expect(container.textContent).not.toMatch(/(^|[^a-z])user($|[^a-z])/);
     for (const label of [t.runtime, t.skills, t.commands, t.pluginAsset]) expect(text).toContain(label);
   });
 });
