@@ -402,7 +402,7 @@ const TaskRecordRow = ({
   showOutputRefs?: boolean;
 }) => {
   const { t, language } = useI18n();
-  const rail = deriveTaskRailView(task, run);
+  const rail = deriveTaskRailView(task, run, language === 'en' ? 'en' : 'zh');
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
   const rw = t.taskStatusPanels.runWorkbench;
   const detailLabel = task.status === 'blocked'

@@ -1,4 +1,5 @@
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 
 export const workbenchTabsZh = {
   workbenchTabs: {
@@ -60,7 +61,7 @@ export const workbenchTabsZh = {
     // 概览四模块（2026-08-04 拍板二/三）：细进度线三态 + 步骤计数 + 人话结局
     overviewRunStepProgress: '第 {current} 步 / 共 {total} 步',
     overviewRunStepsDone: '已完成 · 共 {total} 步',
-    overviewRunWaitingApproval: '等你确认',
+    overviewRunWaitingApproval: WAITING_ON_USER_LABELS.zh.approval,
     overviewRunOutcomeCancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
     overviewRunOutcomeError: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
     overviewRunDotLabel: '任务状态：{status}',
@@ -267,7 +268,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewRunInterrupt: 'Interrupt',
     overviewRunStepProgress: 'Step {current} of {total}',
     overviewRunStepsDone: 'Done · {total} steps',
-    overviewRunWaitingApproval: 'Waiting for your confirmation',
+    overviewRunWaitingApproval: WAITING_ON_USER_LABELS.en.approval,
     overviewRunOutcomeCancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
     overviewRunOutcomeError: outcomeWordsEn.outcomeWords['failed-unknown'].timeline.label,
     overviewRunDotLabel: 'Task status: {status}',
