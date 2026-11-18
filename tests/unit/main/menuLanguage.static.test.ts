@@ -36,10 +36,24 @@ describe('native menu language copy gate', () => {
   for (const name of ['setup_app_menu', 'setup_tray']) {
     it(`${name} gets copy from menu_i18n.rs without CJK literals or escapes`, () => {
       const body = functionBody(main, name);
-      expect(body).toContain('menu_i18n::read_language(real_data_dir().as_deref()).labels()');
+      expect(body).toContain('menu_i18n::read_language(real_data_dir().as_deref()).labels(&product)');
       expectNoCjk(body);
     });
   }
+
+  it('setup_app_menu passes localized text to the four predefined items', () => {
+    const body = functionBody(main, 'setup_app_menu');
+    expect(body).toContain('AppPredefinedItems::build(handle, &labels');
+    expect(body).not.toMatch(/PredefinedMenuItem::(about|services|hide|hide_others)\(/);
+  });
+
+  it('product name has one source in menu setup', () => {
+    for (const name of ['setup_app_menu', 'setup_tray']) {
+      const body = functionBody(main, name);
+      expect(body).toContain('menu_i18n::product_name(');
+      expect(body).not.toContain('"Agent Neo');
+    }
+  });
 
   it('ignores comments and braces inside string literals when extracting a function', () => {
     expectNoCjk(functionBody('fn menu() { // 中文\n /* 中文 */ let s = "}"; }', 'menu'));

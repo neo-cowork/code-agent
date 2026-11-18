@@ -25,6 +25,7 @@ export type OutcomeKey =
   | 'failed-timeout'
   | 'failed-idle-reaped'
   | 'failed-budget'
+  | 'failed-step-cap'
   | 'failed-dependency'
   | 'failed-unavailable'
   | 'failed-upstream'
@@ -205,6 +206,13 @@ export const outcomeWordsZh: OutcomeWordsBundle = {
       notification: { label: '任务未完成', reason: '执行达到预算上限' },
       assistant: { label: '{name}没有完成', reason: '执行达到预算上限' },
     },
+    'failed-step-cap': {
+      timeline: { label: '步数上限', reason: '执行达到步数上限' },
+      badge: { label: '步数上限', reason: '执行达到步数上限' },
+      detail: { label: '任务未完成', reason: '执行达到步数上限' },
+      notification: { label: '任务未完成', reason: '执行达到步数上限' },
+      assistant: { label: '{name}没有完成', reason: '执行达到步数上限' },
+    },
     'failed-dependency': {
       timeline: { label: '依赖失败', reason: '前置任务没有完成' },
       badge: { label: '依赖失败', reason: '前置任务没有完成' },
@@ -363,6 +371,13 @@ export const outcomeWordsEn: OutcomeWordsBundle = {
       detail: { label: 'Task incomplete', reason: 'The run reached its budget limit' },
       notification: { label: 'Task incomplete', reason: 'The run reached its budget limit' },
       assistant: { label: "{name} didn't finish", reason: 'The run reached its budget limit' },
+    },
+    'failed-step-cap': {
+      timeline: { label: 'Step limit', reason: 'The run reached its step limit' },
+      badge: { label: 'Step limit', reason: 'The run reached its step limit' },
+      detail: { label: 'Task incomplete', reason: 'The run reached its step limit' },
+      notification: { label: 'Task incomplete', reason: 'The run reached its step limit' },
+      assistant: { label: "{name} didn't finish", reason: 'The run reached its step limit' },
     },
     'failed-dependency': {
       timeline: { label: 'Dependency failed', reason: 'A prerequisite task did not finish' },

@@ -671,6 +671,7 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        ...(data.action ? { action: data.action } : {}),
         ...(data.description ? { description: data.description } : {}),
         at: Date.now(),
       },
@@ -862,8 +863,10 @@ export class SessionCommandCenter {
     // Session not found）绝不能把唤醒一起跳过——旧代码两者同一个 try，一抛就只剩
     // 一行 warn，结果行/唤醒/失败句全丢。settle 也只等投影的首次尝试，重试全部
     // 离线进行，不推迟下面 startable 的下一轮 launch。
+    let terminalResultDelivered = false;
     try {
       await this.projectTerminalResult(task, status);
+      terminalResultDelivered = true;
       clearSessionCommandTaskMarker(task.id);
     } catch (error) {
       logger.warn('Failed to project text command task result', {
@@ -890,12 +893,16 @@ export class SessionCommandCenter {
         clearSessionCommandTaskMarker(task.id);
       }
     }
-    void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
-      logger.warn('Failed to wake text foreground brain after task settlement', {
-        taskId: task.id,
-        message: error instanceof Error ? error.message : String(error),
+    if (terminalResultDelivered && (task.stopped?.kind === 'step_cap' || task.stopped?.kind === 'no_conclusion')) {
+      logger.info('foreground_wake_skipped_stop_note_delivered', { taskId: task.id, kind: task.stopped.kind });
+    } else {
+      void Promise.resolve(this.wakeForegroundBrain(task, status)).catch((error) => {
+        logger.warn('Failed to wake text foreground brain after task settlement', {
+          taskId: task.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+    }
 
     for (const slot of startable) {
       const next = this.tasks(task.sessionId).get(slot.workItemId);

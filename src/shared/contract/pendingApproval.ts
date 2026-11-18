@@ -56,6 +56,8 @@ export interface ToolApprovalPayload {
   scheduledTaskName?: string;
   userRequest?: { text: string; truncated: boolean };
   browserSessionGrant?: import('./permission').PermissionRequest['details']['browserSessionGrant'];
+  /** host 停车时已校验的应用目标（computer_use / cua-driver）；重启恢复只读这份落盘身份，不在点击时重推。 */
+  targetApp?: { bundleId?: string; name: string };
   /**
    * 「一键授权此任务写这个文件夹」候选（realpath 后的绝对路径）。仅无人值守 cron/heartbeat 的
    * file_write/file_edit 在守卫通过时由 host 写入；缺省 = 不出按钮、逐文件审批。

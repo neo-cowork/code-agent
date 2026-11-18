@@ -372,6 +372,8 @@ describe('后台子代理 Browser upload_file 审批：前台 run 结束后仍 p
     expect(request.agentId).toBe('bg-agent-1');
     expect(request.runId).toBe('bg-run-1');
     expect(request.details).toMatchObject({ action: 'upload_file', approvalMode: 'host_one_time_exact_file' });
+    // 审批卡只读这个展示串（取文件名上卡）：形如「.../invoice.pdf」，不带绝对路径。
+    expect((request.details as { file?: string }).file).toBe('.../invoice.pdf');
 
     // 前台 run 收线对 island 无操作；时钟越过一切看门狗后仍 pending。
     await vi.advanceTimersByTimeAsync(31 * 60_000);

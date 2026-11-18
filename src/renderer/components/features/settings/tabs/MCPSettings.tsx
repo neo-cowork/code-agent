@@ -54,6 +54,7 @@ import {
 } from '../../../../utils/workbenchPresentation';
 import {
   countConnectedMcpServers,
+  isConnectorCardConnected,
   getConnectorCardPresentation,
 } from '../../../../utils/connectorCardPresentation';
 import type { WorkbenchMcpRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
@@ -373,8 +374,9 @@ export const MCPSettings: React.FC = () => {
     const catalogEntry = mcpCatalog.servers.find((entry) => entry.id === server.id);
     const installing = serverInstallStates[server.id] === 'installing';
     const connectionState = installing ? 'connecting' : server.lifecycle.connectionState;
-    const statusClass = getStatusBadgeClass(connectionState);
-    const dotClass = connectionState === 'connected'
+    const connected = isConnectorCardConnected(server, connectionState);
+    const statusClass = getStatusBadgeClass(connected || connectionState !== 'connected' ? connectionState : 'disconnected');
+    const dotClass = connected
       ? 'bg-mark-success'
       : connectionState === 'connecting'
         ? 'animate-pulse bg-amber-400'
@@ -441,7 +443,7 @@ export const MCPSettings: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2" data-card-actions>
-            {connectionState === 'connected' ? (
+            {connected ? (
               <button /* ds-allow:button: 卡片右上角紧凑断开动作位 */
                 type="button"
                 aria-label={`${mcpText.management.disconnect} ${displayName}`}
@@ -469,7 +471,7 @@ export const MCPSettings: React.FC = () => {
         {cardPresentation.description && (
           <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-zinc-400">{cardPresentation.description}</p>
         )}
-        {connectionState === 'connected' && (
+        {connected && (
           <Button
             size="sm"
             variant="primary"

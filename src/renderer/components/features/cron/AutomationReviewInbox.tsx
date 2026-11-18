@@ -39,6 +39,7 @@ import { NL_RULE_K2_TEXT } from '@shared/nlRuleRestate';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+import { folderDisplayName, ParkedArgsDisclosure } from './parkedArgsDisclosure';
 
 const logger = createLogger('AutomationReviewInbox');
 
@@ -132,11 +133,6 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
     }
   }
   return out;
-}
-
-function folderDisplayName(folder: string): string {
-  const parts = folder.split(/[\\/]+/).filter(Boolean);
-  return parts[parts.length - 1] ?? folder;
 }
 
 export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
@@ -311,6 +307,18 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   };
   for (const record of items) urgencyGroups[recordUrgency(record)].push(record);
 
+  const parkedArgs = (item: { tool: string; argsPreview?: string; groupPaths?: string[] }) => (
+    <ParkedArgsDisclosure
+      tool={item.tool}
+      argsPreview={item.argsPreview}
+      groupPaths={item.groupPaths}
+      previewLabel={cc.parkedArgsPreviewLabel}
+      groupSeparator={cc.parkedGroupFileSep}
+      showCommand={t.automationPresentation.showCommand}
+      showLocation={cc.parkedShowLocation}
+    />
+  );
+
   return (
     <div className="shrink-0 px-5 pt-4" data-testid="automation-review-inbox">
       {!hasContent ? (
@@ -336,8 +344,6 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
-                  const isShell = item.tool.toLowerCase() === 'bash';
-                  const isFileWrite = item.tool.toLowerCase() === 'write';
                   // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
                   // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
                   if (item.sensitiveStep) {
@@ -410,30 +416,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             {scopeNote}
                           </div>
                         )}
-                        {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
-                        {!isPairing && item.argsPreview && isShell && (
-                          <details className="text-[11px] text-zinc-400">
-                            <summary className="cursor-pointer">{t.automationPresentation.showCommand}</summary>
-                            <div className="whitespace-pre-wrap break-words" data-testid="parked-shell-preview">{item.argsPreview}</div>
-                          </details>
-                        )}
-                        {!isPairing && item.argsPreview && !isShell && (
-                          <div
-                            className="whitespace-pre-wrap break-words text-[11px] text-zinc-400"
-                            data-testid="parked-args-preview"
-                            title={item.groupPaths ? item.groupPaths.join('\n') : item.argsPreview}
-                          >
-                            {cc.parkedArgsPreviewLabel}{item.groupPaths && item.groupPaths.length > 1
-                              ? item.groupPaths.map((p) => folderDisplayName(p)).join(cc.parkedGroupFileSep)
-                              : isFileWrite ? folderDisplayName(item.argsPreview) : item.argsPreview}
-                          </div>
-                        )}
-                        {!isPairing && isFileWrite && item.argsPreview && (!item.groupPaths || item.groupPaths.length === 1) && (
-                          <details className="text-[11px] text-zinc-400">
-                            <summary className="cursor-pointer">{cc.parkedShowLocation}</summary>
-                            <div className="whitespace-pre-wrap break-words" data-testid="parked-file-location">{item.argsPreview}</div>
-                          </details>
-                        )}
+                        {/* 参数预览（host 已脱敏 + 截断）：命令与完整路径折在披露里；老行没有该字段不渲染 */}
+                        {!isPairing && parkedArgs(item)}
                         <div className="text-[11px] text-zinc-500">
                           {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt, cc))}
                         </div>
@@ -550,11 +534,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     <div className="text-[11px] text-zinc-500">
                       {cc.parkedVoided.startedAt.replace('{time}', formatDateTime(item.requestedAt, language))}
                     </div>
-                    {item.argsPreview && (
-                      <div className="truncate text-[11px] text-zinc-400" data-testid="parked-args-preview">
-                        {cc.parkedArgsPreviewLabel}{item.argsPreview}
-                      </div>
-                    )}
+                    {parkedArgs(item)}
                     <div className="text-[11px] text-zinc-500">
                       {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                     </div>

@@ -75,6 +75,8 @@ export interface PermissionRequestDetails {
   body?: string;
   connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
+  /** Browser 上传审批：host 只给「.../<文件名>」的展示串，卡面只取文件名。 */
+  file?: string;
   /** calendar 读取卡的时间窗与日历名（host 原参数透传，缺省走默认窗口）。 */
   from_ms?: unknown;
   to_ms?: unknown;
@@ -82,6 +84,10 @@ export interface PermissionRequestDetails {
   /** request_directory 申请的访问档位（read_only / read_write）；旧形状可能写成 access。 */
   requestedAccess?: ContractPermissionRequest['details']['requestedAccess'];
   access?: string;
+  /** set_role_proactivity：目标角色与改前/改后配置（宿主结构化数据，卡片按界面语言拼行）。 */
+  roleId?: string;
+  before?: unknown;
+  after?: unknown;
   // E2: 确认门控预览
   preview?: {
     type: 'diff' | 'command' | 'network' | 'generic';

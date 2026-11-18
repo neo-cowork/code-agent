@@ -101,9 +101,16 @@ export function deriveFallbackSessionTitle(sourceText: string, language: TitleLa
 
 const TITLE_RULE_MAX_CHARS = 20;
 const TITLE_ECHO_EXEMPT_MAX_CHARS = 8;
+/** 会话标题在 20 字词边界之后继续补整词的上限（码点）。文件夹命名不走这条。 */
+const TITLE_FRAGMENT_MAX_CHARS = 40;
+/** 英文功能词。截在这些词上会留下 `Write the` 这种半截标题；中文无空格，不另做虚词表。 */
+const FUNCTION_WORDS = new Set([
+  'the', 'a', 'an', 'of', 'to', 'for', 'and', 'or', 'in', 'on', 'at',
+  'with', 'by', 'from', 'into', 'about', 'as', 'is', 'are', 'be',
+]);
 const CLAUSE_SPLIT = /[，。；：！？,;:!?\n]|\.(?=\s|$)/;
 const REQUEST_BOILERPLATE =
-  /^(?:请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
+  /^(?:我把|请你帮我|请帮我|请你|请|帮我|麻烦你|麻烦|能不能|可不可以|能否|可以|我想要|我想|我需要你|我需要|please|can you|could you|would you|help me|i need you to|i want you to|i'd like you to|i need|i want)(?![a-z])\s*/i;
 
 function firstLineOf(sourceText: string): string {
   return sourceText.trim().split('\n')[0]?.trim() ?? '';
@@ -120,8 +127,65 @@ function isEchoSessionTitle(title: string, sourceText: string): boolean {
   return [first, fun].some((f) => f.startsWith(tn) || (f.length >= 6 && tn.startsWith(f)));
 }
 
+function isFunctionWord(word: string): boolean {
+  return FUNCTION_WORDS.has(word.toLowerCase());
+}
+
+/** 无空格（中文）不算碎片。有空格时，停在功能词上或实词不足两个，侧栏读起来像半截。 */
+function isTitleFragment(title: string): boolean {
+  if (!title.includes(' ')) return false;
+  const words = title.split(' ').filter((word) => word.length > 0);
+  const last = words[words.length - 1];
+  if (!last) return false;
+  const contentWords = words.filter((word) => !isFunctionWord(word)).length;
+  return isFunctionWord(last) || contentWords < 2;
+}
+
+/**
+ * 20 字词边界之后：碎片且后面还有整词，就继续补，直到落在实词上且至少两个实词。
+ * 补完会超过 40 个码点则退回 50 字降级标题。
+ */
+function avoidFunctionWordFragment(
+  cut: string,
+  clause: string,
+  sourceText: string,
+  language: TitleLanguage,
+): string {
+  if (!isTitleFragment(cut)) return cut;
+  const clauseWords = clause.split(' ').filter((word) => word.length > 0);
+  let included = 0;
+  let prefix = '';
+  for (const word of clauseWords) {
+    const next = prefix ? `${prefix} ${word}` : word;
+    if (cut === next || cut.startsWith(`${next} `)) {
+      prefix = next;
+      included += 1;
+      continue;
+    }
+    break;
+  }
+  if (included >= clauseWords.length) return cut;
+
+  const words = clauseWords.slice(0, included);
+  for (let index = included; index < clauseWords.length; index += 1) {
+    const word = clauseWords[index];
+    if (word === undefined) break;
+    const candidate = [...words, word].join(' ');
+    if (Array.from(candidate).length > TITLE_FRAGMENT_MAX_CHARS) {
+      return deriveFallbackSessionTitle(sourceText, language);
+    }
+    words.push(word);
+    if (!isTitleFragment(candidate)) return candidate;
+  }
+  return words.join(' ');
+}
+
 /** 无模型 / 模型仍回声时的规则摘要：首行首个分句去掉请求套话，最多 20 字，不带 `...`。 */
-function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
+export function deriveRuleSummaryTitle(
+  sourceText: string,
+  language: TitleLanguage = 'zh',
+  options?: { avoidFragment?: boolean },
+): string {
   const first = firstLineOf(sessionTitleSource(sourceText, language)) || APPSHOT_SESSION_TITLE[language];
   let clause = (first.split(CLAUSE_SPLIT).find((part) => part.trim()) ?? first).trim();
   for (let i = 0; i < 3; i++) {
@@ -134,7 +198,9 @@ function deriveRuleSummaryTitle(sourceText: string, language: TitleLanguage = 'z
   const cut = chars.slice(0, TITLE_RULE_MAX_CHARS).join('');
   // 拉丁文按词截，不把单词劈在半截；中文无空格照字截。
   const lastSpace = cut.lastIndexOf(' ');
-  return chars[TITLE_RULE_MAX_CHARS] !== ' ' && lastSpace >= 8 ? cut.slice(0, lastSpace) : cut.trimEnd();
+  const bounded = chars[TITLE_RULE_MAX_CHARS] !== ' ' && lastSpace >= 8 ? cut.slice(0, lastSpace) : cut.trimEnd();
+  if (!options?.avoidFragment) return bounded;
+  return avoidFunctionWordFragment(bounded, clause || first, sourceText, language);
 }
 
 export interface SessionTitleModelAnswer {
@@ -158,7 +224,7 @@ export async function resolveSessionTitle(
   const first = await ask(false);
   if (first.unavailable) {
     log.warn('quick model unavailable -> rule summary');
-    return deriveRuleSummaryTitle(sourceText, language);
+    return deriveRuleSummaryTitle(sourceText, language, { avoidFragment: true });
   }
   if (first.title && !isEchoSessionTitle(first.title, sourceText)) {
     log.info('title from quick model', { title: first.title });
@@ -166,7 +232,7 @@ export async function resolveSessionTitle(
   }
   if (!first.title) {
     log.warn('quick model returned no title -> rule summary');
-    return deriveRuleSummaryTitle(sourceText, language);
+    return deriveRuleSummaryTitle(sourceText, language, { avoidFragment: true });
   }
   log.warn('title echo detected -> retry', { title: first.title });
   const retry = await ask(true);
@@ -175,5 +241,5 @@ export async function resolveSessionTitle(
     return retry.title;
   }
   log.warn('retry still echo -> rule summary', { title: retry.title });
-  return deriveRuleSummaryTitle(sourceText, language);
+  return deriveRuleSummaryTitle(sourceText, language, { avoidFragment: true });
 }
