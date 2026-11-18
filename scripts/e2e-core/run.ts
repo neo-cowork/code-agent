@@ -9,7 +9,7 @@ import { CORE_FLOWS, CORE_FLOW_IDS } from './flows';
 import { buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure, type AttemptResult, type FlowResult } from './result';
 import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, quiesceServer, startServer, stopServer } from './server';
 import type { AttemptEnv, FlowDef, ServerInfo } from './types';
-import { dismissFirstRunLayers, setDeliveryProbe } from './ui';
+import { dismissFirstRunLayers, setDeliveryProbe, setStallRecovery } from './ui';
 
 const ATTEMPT_CAP_MS = 12 * 60_000;
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -34,6 +34,13 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
     readDb: async () => { const r = dumpDb(bin, server); lastDb = r.file; return r; },
   };
   setDeliveryProbe(async (since) => (await env.readDb()).data.permissionDecisions.some((r) => Number(r.recorded_at) >= since - 2_000));
+  setStallRecovery(async () => {
+    env.note('页面 75 秒没有任何变化，刷新页面重新载入会话后继续（疑似页面漏掉了事件，见 sse）');
+    await page.reload();
+    await page.getByTestId('sidebar-new-task').waitFor({ timeout: 30_000 });
+    const id = env.sessionIds[env.sessionIds.length - 1];
+    if (id) await page.locator(`[data-session-id="${id}"]`).first().click({ timeout: 15_000 }).catch(() => {});
+  });
   const started = Date.now();
   const restarted = await quiesceServer(bin, server);
   if (restarted) env.note(restarted);

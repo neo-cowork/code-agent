@@ -61,6 +61,11 @@ export interface TurnHandlers {
 }
 
 /** 轮询驱动一轮对话直到回合收尾：遇到审批卡 / 记忆弹窗就交给 handler。 */
+const STALL_MS = 75_000;
+let stallRecovery: (() => Promise<void>) | null = null;
+/** 页面 75 秒毫无变化时的补救（刷新页面重新载入会话），每次 driveTurn 最多一次；由 run.ts 按尝试设置。 */
+export function setStallRecovery(fn: (() => Promise<void>) | null): void { stallRecovery = fn; }
+
 export async function driveTurn(page: Page, handlers: TurnHandlers, timeoutMs: number): Promise<void> {
   const stop = page.getByTestId('composer-stop-button');
   const card = page.getByTestId('permission-card');
@@ -69,7 +74,17 @@ export async function driveTurn(page: Page, handlers: TurnHandlers, timeoutMs: n
   const startDeadline = Date.now() + TURN_START_TIMEOUT_MS;
   let sawRunning = false;
   let idle = 0;
+  let lastText = '';
+  let lastChange = Date.now();
+  let recovered = false;
   while (Date.now() < deadline) {
+    const text = await pageText(page).catch(() => lastText);
+    if (text !== lastText) { lastText = text; lastChange = Date.now(); }
+    if (!recovered && stallRecovery && Date.now() - lastChange > STALL_MS) {
+      recovered = true;
+      await stallRecovery();
+      lastChange = Date.now();
+    }
     const memoryUp = await memoryTitle.first().isVisible().catch(() => false);
     const cardUp = await card.first().isVisible().catch(() => false);
     if (memoryUp && handlers.onMemoryModal) { await handlers.onMemoryModal(page); idle = 0; continue; }
