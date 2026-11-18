@@ -1,5 +1,5 @@
 // npm run test:e2e:core —— 一条命令跑全部核心 Web 路径（真实服务 + dogfood 模型），写 result.json。
-// 地图 18 条里 web 可跑的就这些：F05-F08 F10 F14-F17（首启 F18 见 flows.ts 的说明）。
+// 地图 18 条里 web 可跑的 11 条都在这（F05-F10 F14-F18）；其余 7 条 shell 流程见 flows.ts 的 SHELL_WEB_FLOWS。
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
