@@ -99,6 +99,8 @@ export interface AgentLoopConfig {
   publishContextHealth?: boolean;
   /** 无人值守轮（ADR-068 D4 断流续接分档）；缺省前台。 */
   unattendedTurn?: boolean;
+  /** runRegistration === auxiliary. */
+  auxiliaryRun?: boolean;
   /** 当前 run 禁用的工具名。 */
   deniedToolNames?: string[];
   /** 当前 run 的严格工具允许清单。 */

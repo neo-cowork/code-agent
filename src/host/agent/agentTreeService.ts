@@ -126,6 +126,8 @@ function failureReason(code: AgentFailureCode): string {
       return '助手设置的等待时间超过了允许的上限，需要缩短';
     case AgentFailureCode.BudgetExhausted:
       return '可用预算已经用完';
+    case AgentFailureCode.StepCapReached:
+      return '执行步数已达上限';
     case AgentFailureCode.Timeout:
       return '处理时间超过了限制';
     case AgentFailureCode.ParentGone:

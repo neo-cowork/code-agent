@@ -474,6 +474,17 @@ describe('workbenchTurnContext', () => {
     });
   });
 
+  it.each(['failed', 'unavailable'] as const)('logs the omitted connector readiness cause: %s', (readiness) => {
+    const status: ConnectorStatus = { connected: false, readiness, capabilities: ['get_status'] };
+    registerConnector('calendar', status);
+
+    expect(buildWorkbenchToolScope({ selectedConnectorIds: ['calendar'] })).toBeUndefined();
+    expect(loggerSpies.info).toHaveBeenCalledExactlyOnceWith(
+      '[WorkbenchTurnContext] Selected connector omitted from turn scope',
+      { connectorId: 'calendar', readiness, connected: false, cause: `readiness_${readiness}` },
+    );
+  });
+
   it('uses the cached CLI OAuth status without probing a subprocess each turn', () => {
     replaceCliConnectorConnectionStatusCache([{ id: 'tmeet', connected: true }]);
     expect(buildWorkbenchToolScope({ selectedConnectorIds: ['tmeet'] })).toEqual({
@@ -484,7 +495,7 @@ describe('workbenchTurnContext', () => {
     expect(buildWorkbenchToolScope({ selectedConnectorIds: ['tmeet'] })).toBeUndefined();
     expect(loggerSpies.info).toHaveBeenCalledWith(
       '[WorkbenchTurnContext] Selected connector omitted from turn scope',
-      { connectorId: 'tmeet' },
+      { connectorId: 'tmeet', connected: false, cause: 'not_connected' },
     );
   });
 
