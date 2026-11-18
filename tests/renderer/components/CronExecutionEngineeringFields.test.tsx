@@ -118,7 +118,7 @@ describe('CronExecutionDetail 默认层与技术折叠块（②④）', () => {
   it('④ zh：展开折叠块，两个字段值正确（重试次数 2 / 退出码 1）', () => {
     render(<CronExecutionDetail execution={execution()} />);
     const technical = screen.getByTestId('cron-exec-technical-fields');
-    technical.open = true; // jsdom 不实现 details 的点击激活，直接置 open 代表展开态
+    (technical as HTMLDetailsElement).open = true; // jsdom 不实现 details 的点击激活，直接置 open 代表展开态
     const retryCell = screen.getByText('重试次数').parentElement;
     const exitCell = screen.getByText('退出码').parentElement;
     console.log('[④ zh] expanded =', JSON.stringify(technical.textContent));
@@ -130,7 +130,7 @@ describe('CronExecutionDetail 默认层与技术折叠块（②④）', () => {
     useAppStore.setState({ language: 'en' });
     render(<CronExecutionDetail execution={execution()} />);
     const technical = screen.getByTestId('cron-exec-technical-fields');
-    technical.open = true;
+    (technical as HTMLDetailsElement).open = true;
     expect(screen.getByText('Retry count').parentElement?.textContent).toContain('2');
     expect(screen.getByText('Exit code').parentElement?.textContent).toContain('1');
     console.log('[④ en] expanded =', JSON.stringify(technical.textContent));
