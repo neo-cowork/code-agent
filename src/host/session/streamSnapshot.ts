@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { createLogger } from '../services/infra/logger';
-import { CONFIG_DIR_NEW } from '../config/configPaths';
+import { CONFIG_DIR_NEW, getUserConfigDir } from '../config/configPaths';
 import { redactSecrets, sanitizeLogValue } from '../security/secretRedaction';
 import type { StreamSnapshot } from '../model/providers/sseStream';
 import type { StreamInterruptionReason } from '../../shared/contract';
@@ -18,7 +18,6 @@ import type { StreamInterruptionReason } from '../../shared/contract';
 const logger = createLogger('StreamSnapshot');
 
 const SNAPSHOT_SCHEMA_VERSION = 2 as const;
-const LEGACY_SNAPSHOT_FILE = 'stream-snapshot.json';
 const SNAPSHOT_DIRECTORY = 'stream-snapshots';
 const OWNER_FILE = 'current-run.json';
 
@@ -127,13 +126,52 @@ function encodeSnapshotSegment(value: string): string {
   return `sha256-${createHash('sha256').update(value).digest('hex')}`;
 }
 
-function getSessionSnapshotDirectory(selector: Pick<StreamSnapshotSelector, 'workingDir' | 'sessionId'>): string {
-  const workspace = resolveWorkspace(selector.workingDir);
-  const sessionId = requireIdentityPart(selector.sessionId, 'sessionId');
-  return path.join(workspace, CONFIG_DIR_NEW, SNAPSHOT_DIRECTORY, encodeSnapshotSegment(sessionId));
+type SnapshotScope = Pick<StreamSnapshotSelector, 'workingDir' | 'sessionId'>;
+
+/**
+ * 快照放在应用数据目录（按工作区路径哈希分桶），不写进用户选的工作文件夹——
+ * 否则只读定时任务也会在用户的笔记夹里留下 .code-agent/stream-snapshots。
+ */
+function getWorkspaceSnapshotRoot(workspace: string): string {
+  const key = createHash('sha256').update(workspace).digest('hex').slice(0, 16);
+  return path.join(getUserConfigDir(), SNAPSHOT_DIRECTORY, key);
 }
 
-function getOwnerPath(selector: Pick<StreamSnapshotSelector, 'workingDir' | 'sessionId'>): string {
+/** 旧版本写在工作文件夹里的位置：只读回退，用于认出旧版崩溃留下的快照，绝不在此创建/删除。 */
+function getLegacyWorkspaceSnapshotRoot(workspace: string): string {
+  return path.join(workspace, CONFIG_DIR_NEW, SNAPSHOT_DIRECTORY);
+}
+
+/**
+ * 「旧位置已被取代」标记目录（同在应用数据目录，与 owner 根并列，不混进快照根以免被当成恢复证据）。
+ * 某会话在新位置认领过 owner 后，旧版本留在工作文件夹里的同会话快照不再提供：
+ * 新 run 的 clear 只能清新位置，旧位置是用户夹里的东西，不许写/删，只能靠标记让它失效。
+ */
+function getLegacySupersededDirectory(workspace: string): string {
+  return `${getWorkspaceSnapshotRoot(workspace)}.legacy-superseded`;
+}
+
+function markLegacySuperseded(identity: SnapshotScope): void {
+  const dir = getLegacySupersededDirectory(resolveWorkspace(identity.workingDir));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, encodeSnapshotSegment(requireIdentityPart(identity.sessionId, 'sessionId'))), '');
+}
+
+function isLegacySuperseded(workspace: string, sessionSegment: string): boolean {
+  return fs.existsSync(path.join(getLegacySupersededDirectory(workspace), sessionSegment));
+}
+
+function getSessionSnapshotDirectory(selector: SnapshotScope): string {
+  const sessionId = requireIdentityPart(selector.sessionId, 'sessionId');
+  return path.join(getWorkspaceSnapshotRoot(resolveWorkspace(selector.workingDir)), encodeSnapshotSegment(sessionId));
+}
+
+function getLegacySessionSnapshotDirectory(selector: SnapshotScope): string {
+  const sessionId = requireIdentityPart(selector.sessionId, 'sessionId');
+  return path.join(getLegacyWorkspaceSnapshotRoot(resolveWorkspace(selector.workingDir)), encodeSnapshotSegment(sessionId));
+}
+
+function getOwnerPath(selector: SnapshotScope): string {
   return path.join(getSessionSnapshotDirectory(selector), OWNER_FILE);
 }
 
@@ -161,8 +199,8 @@ function readJsonFile<T>(filePath: string): T | null {
   }
 }
 
-function readOwner(selector: Pick<StreamSnapshotSelector, 'workingDir' | 'sessionId'>): SnapshotOwner | null {
-  const owner = readJsonFile<SnapshotOwner>(getOwnerPath(selector));
+function readOwner(selector: SnapshotScope, sessionDir = getSessionSnapshotDirectory(selector)): SnapshotOwner | null {
+  const owner = readJsonFile<SnapshotOwner>(path.join(sessionDir, OWNER_FILE));
   if (
     owner?.schemaVersion !== SNAPSHOT_SCHEMA_VERSION
     || owner.workspace !== resolveWorkspace(selector.workingDir)
@@ -184,16 +222,6 @@ function removeSnapshotFile(filePath: string): void {
       fs.rmSync(path.join(dir, entry), { force: true });
     }
   }
-}
-
-function discardLegacySnapshot(workingDir?: string): void {
-  const workspace = resolveWorkspace(workingDir);
-  const legacyPath = path.join(workspace, CONFIG_DIR_NEW, LEGACY_SNAPSHOT_FILE);
-  const legacyTmpPath = `${legacyPath}.tmp`;
-  if (!fs.existsSync(legacyPath) && !fs.existsSync(legacyTmpPath)) return;
-  fs.rmSync(legacyPath, { force: true });
-  fs.rmSync(legacyTmpPath, { force: true });
-  logger.warn('Discarded legacy unscoped stream snapshot; run identity was unavailable');
 }
 
 function activateStreamSnapshot(identity: StreamSnapshotIdentity): SnapshotOwner {
@@ -304,7 +332,6 @@ function writeOwnedSnapshot(snapshot: StreamSnapshot, identity: StreamSnapshotId
 /** Save a snapshot and make this run the active recovery owner for direct callers. */
 export function saveStreamSnapshot(snapshot: StreamSnapshot, identity: StreamSnapshotIdentity): void {
   try {
-    discardLegacySnapshot(identity.workingDir);
     activateStreamSnapshot(identity);
     writeOwnedSnapshot(snapshot, identity);
   } catch (err: unknown) {
@@ -316,15 +343,16 @@ export function saveStreamSnapshot(snapshot: StreamSnapshot, identity: StreamSna
 /** Load evidence only for the currently owned run of a session. */
 export function loadStreamSnapshot(selector: StreamSnapshotSelector): PersistedSnapshot | null {
   try {
-    discardLegacySnapshot(selector.workingDir);
-    const owner = readOwner(selector);
+    let sessionDir = getSessionSnapshotDirectory(selector);
+    let owner = readOwner(selector, sessionDir);
+    if (!owner && !isLegacySuperseded(resolveWorkspace(selector.workingDir), encodeSnapshotSegment(requireIdentityPart(selector.sessionId, 'sessionId')))) {
+      // 只读回退：旧版本把快照写在工作文件夹的 .code-agent 里
+      sessionDir = getLegacySessionSnapshotDirectory(selector);
+      owner = readOwner(selector, sessionDir);
+    }
     if (!owner || (selector.runId && selector.runId.trim() !== owner.runId)) return null;
 
-    const filePath = getStreamSnapshotPath({
-      ...selector,
-      runId: owner.runId,
-      turnId: '__load__',
-    });
+    const filePath = path.join(sessionDir, `${encodeSnapshotSegment(owner.runId)}.json`);
     const data = readJsonFile<PersistedSnapshot>(filePath);
     if (
       data?.schemaVersion !== SNAPSHOT_SCHEMA_VERSION
@@ -369,6 +397,9 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
     const owner = readOwner(identity);
     if (owner?.runId === identity.runId.trim()) {
       fs.rmSync(getSessionSnapshotDirectory(identity), { recursive: true, force: true });
+      // 新 run 干净收尾后，旧位置同会话的快照不再是未清证据；只在应用数据目录留标记，不碰用户夹。
+      // 必须在 clear 之后而非认领时写：认领到首包落盘之间旧快照仍是唯一证据。
+      markLegacySuperseded(identity);
     }
   } catch {
     // Snapshot cleanup is best effort and must not fail the run.
@@ -388,13 +419,25 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
  * 「继续上次中断回复」决策槽——删了它恢复链就断了。
  */
 export function hasUnclearedStreamSnapshots(workingDir: string): boolean {
-  let root: string;
   try {
-    root = path.join(resolveWorkspace(workingDir), CONFIG_DIR_NEW, SNAPSHOT_DIRECTORY);
+    const workspace = resolveWorkspace(workingDir);
+    if (dirHoldsSnapshotFile(getWorkspaceSnapshotRoot(workspace))) return true;
+    // 旧位置逐会话判断：已被新 run 取代的会话不再算未清证据
+    const legacyRoot = getLegacyWorkspaceSnapshotRoot(workspace);
+    const entries = readSnapshotDirents(legacyRoot);
+    if (!entries) return true;
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        if (isLegacySuperseded(workspace, entry.name)) continue;
+        if (dirHoldsSnapshotFile(path.join(legacyRoot, entry.name))) return true;
+        continue;
+      }
+      return true;
+    }
+    return false;
   } catch {
     return true;
   }
-  return dirHoldsSnapshotFile(root);
 }
 
 function readSnapshotDirents(dir: string): fs.Dirent[] | null {
@@ -423,7 +466,6 @@ function dirHoldsSnapshotFile(dir: string): boolean {
 /** Create a callback permanently bound to one run owner. */
 export function createSnapshotHandler(identity: StreamSnapshotIdentity): (snapshot: StreamSnapshot) => void {
   try {
-    discardLegacySnapshot(identity.workingDir);
     activateStreamSnapshot(identity);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
