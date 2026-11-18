@@ -238,6 +238,11 @@ for (const theme of ['light', 'dark'] as const) {
     // 基线保留成员条的文本与布局，只通过 avatarRegions mask 遮住动态头像。
     await expect(sessionMemberBar).toBeVisible({ timeout: 5_000 });
 
+    // 侧栏会话行/分组计数取决于共享服务里其他 spec 留下的会话残留，截图时整体隐藏（保留布局）。
+    await page.getByTestId('sidebar-session-scroll').evaluate((element) => {
+      (element as HTMLElement).style.visibility = 'hidden';
+    });
+
     await expect(page.locator('.h-screen')).toHaveScreenshot(
       `dangerous-command-approval-${theme}.png`,
       {
