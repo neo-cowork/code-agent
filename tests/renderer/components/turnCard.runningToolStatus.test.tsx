@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEventEnvelope } from '../../../src/shared/contract';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
-import { StreamingIndicator } from '../../../src/renderer/components/features/chat/StreamingIndicator';
+import { AssistantFeedbackIndicator } from '../../../src/renderer/components/features/chat/AssistantFeedbackIndicator';
 import { useAssistantFeedbackEvents } from '../../../src/renderer/components/features/chat/useAssistantFeedbackEvents';
 import {
   transitionAssistantFeedback,
@@ -42,7 +42,7 @@ function LiveTurn({ turn }: { turn: TraceTurn }) {
       <TurnCard turn={turn} sessionId={sessionId} isActiveTurn isLastTurn isSessionProcessing suppressBusySignal={feedback !== null} />
       {feedback !== null && (
         <div data-testid="assistant-send-placeholder">
-          <StreamingIndicator startTime={feedback.startedAt} preparationPhase="submitting" />
+          <AssistantFeedbackIndicator feedback={feedback} />
         </div>
       )}
     </div>
