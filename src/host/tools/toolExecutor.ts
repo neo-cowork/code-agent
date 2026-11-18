@@ -677,10 +677,14 @@ export class ToolExecutor {
     }
     params = reminderTime.args;
     // The approval card is built from these params, before the tool handler runs.
-    const unrequestedNotes = omitUnrequestedReminderNotes(params);
-    if (unrequestedNotes.dropped) {
-      logger.debug('reminders_create dropped notes', { reason: unrequestedNotes.reason });
-      params = unrequestedNotes.args;
+    // Only reminders_create: calendar_create_event also has title+notes, and a
+    // note that repeats the title is still the user's event body.
+    if (executionToolName === 'reminders_create') {
+      const unrequestedNotes = omitUnrequestedReminderNotes(params);
+      if (unrequestedNotes.dropped) {
+        logger.debug('reminders_create dropped notes', { reason: unrequestedNotes.reason });
+        params = unrequestedNotes.args;
+      }
     }
     const calendarTime = normalizeCalendarEventTime(executionToolName, params);
     if (!calendarTime.ok) {
