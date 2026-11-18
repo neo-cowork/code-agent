@@ -166,6 +166,10 @@ async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
     currentToolCallId: `host-handoff:${turnId}`,
     foregroundToolFace: ctx.foregroundToolFace,
     allowedToolNames: ctx.allowedToolNames,
+    // 与 toolExecutionEngine 的生产调用同形：工作台收窄范围与结构化意图必须随交接下传，
+    // 否则后台任务拿到无限制工具面，能调用户没选的连接器 / MCP。
+    toolScope: ctx.toolScope,
+    executionIntent: ctx.executionIntent,
   };
   try {
     // Dynamic: TaskManager imports AgentOrchestrator, which must not cycle back while this module loads.

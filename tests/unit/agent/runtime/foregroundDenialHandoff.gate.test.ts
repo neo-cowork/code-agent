@@ -357,6 +357,27 @@ describe('foreground narrowing gate', () => {
     expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
   });
 
+  // 收窄范围与执行意图必须随交接下传（与 toolExecutionEngine 生产路径同形）：
+  // 用户把工作台收窄到某几个连接器 / MCP 后，主机派出的后台任务不能比模型自己调
+  // delegate_task 时拿到的范围更宽。
+  it('hands the workbench tool scope and execution intent to the background task', async () => {
+    const prompt = '明天上午 9 点提醒我交报告，请用 Bash 执行多行 osascript 建提醒';
+    const toolScope = { allowedConnectorIds: ['connector-a'], allowedMcpServerIds: ['mcp-a'] };
+    const executionIntent = { allowParallelPlanPreview: true };
+    const ctx = prepare(prompt, { toolScope, executionIntent });
+    const deps = buildDeps(ctx);
+    const toolEngine = { executeToolsWithHooks: vi.fn() };
+    const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+    const action = await processor.handleToolResponse(responseOf([
+      { id: 'bash-scope', name: 'Bash', arguments: { command: 'osascript' } },
+    ]), false, 1, EVENT_PROC);
+    expect(action).toBe('break');
+    const tasks = getSessionCommandCenter().list(ctx.sessionId);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.options?.toolScope).toEqual(toolScope);
+    expect(tasks[0]?.options?.executionIntent).toEqual(executionIntent);
+  });
+
   it('delegate handler failure keeps the guidance path and the pending reply', async () => {
     const prompt = '明天上午 9 点提醒我交报告，请用 Bash 执行多行 osascript 建提醒';
     const ctx = prepare(prompt, { workspaceScope: undefined, maxToolCallRetries: 0 });
