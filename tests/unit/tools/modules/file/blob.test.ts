@@ -75,4 +75,60 @@ describe('blobModule', () => {
       expect(result.meta?.artifact).toMatchObject({ kind: 'binary', sourceTool: 'Blob' });
     }
   });
+
+  describe('read_text refuses binary files (no garbage in context)', () => {
+    const PNG = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(70 * 1024, 0xfe),
+    ]);
+    const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4096, 0xfe)]);
+    const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(4096, 0xfe)]);
+
+    async function readText(name: string, data: Buffer) {
+      const file = path.join(tmpDir, name);
+      await fs.writeFile(file, data);
+      const handler = await blobModule.createHandler();
+      const result = await handler.execute({ action: 'read_text', file_path: file }, makeCtx(tmpDir), allowAll);
+      return { file, result };
+    }
+
+    it.each([
+      ['shot.png', PNG, 'image_analyze'],
+      ['shot-noext', PNG, 'image_analyze'],
+      ['shot-renamed.txt', PNG, 'image_analyze'],
+      ['photo.jpg', JPEG, 'image_analyze'],
+      ['photo-renamed.txt', JPEG, 'image_analyze'],
+      ['doc.pdf', PDF, 'read_pdf'],
+      ['doc-noext', PDF, 'read_pdf'],
+    ])('%s is refused with a short hint', async (name, data, tool) => {
+      const { file, result } = await readText(name, data);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error.length).toBeLessThan(1024);
+        expect(result.error).toContain(file);
+        expect(result.error).toContain(tool);
+        expect(result.error).not.toContain('\uFFFD');
+      }
+    });
+
+    it('still reads a normal UTF-8 text file', async () => {
+      const { result } = await readText('note.txt', Buffer.from('你好 blob', 'utf8'));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('你好 blob');
+    });
+
+    it('read_base64 of a PNG still works', async () => {
+      const file = path.join(tmpDir, 'b.png');
+      await fs.writeFile(file, PNG);
+      const handler = await blobModule.createHandler();
+      const result = await handler.execute(
+        { action: 'read_base64', file_path: file, max_bytes: 8 },
+        makeCtx(tmpDir),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('iVBORw0KGgo=');
+    });
+  });
 });

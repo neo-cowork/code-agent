@@ -508,6 +508,23 @@ export interface MemoryLearnedEvent {
 /**
  * 记忆确认请求（用于用户确认学习到的记忆）
  */
+/** 确认卡的一行内容：只带值与「已知形状」，不带任何工具名/参数名；措辞由 renderer 按语言出。 */
+export type MemoryConfirmViewItem =
+  | { kind: 'remember'; text: string }
+  | { kind: 'description'; text: string }
+  | { kind: 'name'; text: string }
+  | { kind: 'replaces' }
+  | { kind: 'delete'; title: string }
+  | { kind: 'command'; text: string }
+  | { kind: 'path'; text: string }
+  | { kind: 'body'; text: string }
+  | { kind: 'change'; from: string; to: string }
+  | { kind: 'line'; text: string };
+
+export interface MemoryConfirmView {
+  items: MemoryConfirmViewItem[];
+}
+
 export interface MemoryConfirmRequest {
   /** 请求 ID */
   id: string;
@@ -519,6 +536,8 @@ export interface MemoryConfirmRequest {
   type: string;
   /** directive = 用户明确拍板的规则；memory = 普通个性化记忆 */
   authority?: 'directive' | 'memory';
+  /** directive 确认卡的结构化内容（语言中立）；缺省时 renderer 回退显示 content */
+  view?: MemoryConfirmView;
   /** 置信度 */
   confidence: number;
   /** 时间戳 */
