@@ -73,6 +73,20 @@ function createSequencedAgentEventDispatcher(
       callback(event);
       return;
     }
+    // task_start 是 run 流里宿主直发的首帧，不带 streamEpoch/seq，却携带本次发送的
+    // clientMessageId——发送占位靠它确认「这一条已被受理」。只放行带身份的 task_start，
+    // 且不碰序列账（activeStreamEpoch/lastSeqBySession）、不触发快照补拉；其余缺
+    // epoch/seq 的事件照旧丢弃，已带 epoch/seq 的 task_start 走下面的正常序列路径。
+    if ((event.type as string) === 'task_start' && !event.streamEpoch && event.seq === undefined) {
+      const data: unknown = event.data;
+      const record = data && typeof data === 'object' ? data as Record<string, unknown> : undefined;
+      const taskSessionId = event.sessionId || record?.sessionId;
+      if (typeof taskSessionId === 'string' && taskSessionId.length > 0
+        && typeof record?.clientMessageId === 'string' && record.clientMessageId.length > 0) {
+        callback(event);
+        return;
+      }
+    }
     const { streamEpoch, sessionId, seq } = event;
     if (
       typeof streamEpoch !== 'string'

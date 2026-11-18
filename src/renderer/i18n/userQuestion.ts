@@ -22,6 +22,11 @@ export const userQuestionZh = {
     answeredSummary: (count: number) => `${count} 个问题已回答`,
     expandRecord: '展开查看',
     collapseRecord: '收起',
+    keyboardHint: (maxDigit: number) => (
+      maxDigit <= 1
+        ? '按 1 选择 · ↑↓ 移动 · Enter 确认 · Esc 收起'
+        : `按 1-${maxDigit} 选择 · ↑↓ 移动 · Enter 确认 · Esc 收起`
+    ),
   },
 };
 
@@ -44,5 +49,10 @@ export const userQuestionEn: typeof userQuestionZh = {
     answeredSummary: (count: number) => `${count} questions answered`,
     expandRecord: 'Expand to view',
     collapseRecord: 'Collapse',
+    keyboardHint: (maxDigit: number) => (
+      maxDigit <= 1
+        ? 'Press 1 to choose · ↑↓ move · Enter confirm · Esc collapse'
+        : `Press 1-${maxDigit} to choose · ↑↓ move · Enter confirm · Esc collapse`
+    ),
   },
 };
