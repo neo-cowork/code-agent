@@ -33,7 +33,6 @@
     "src/renderer/components/features/export/ExportModal.tsx": 7,
     "src/renderer/components/features/lab/nanogpt/stages/DataPreparation.tsx": 1,
     "src/renderer/components/features/memo/MemoFloater.tsx": 5,
-    "src/renderer/components/features/memory/MemoryConfirmModal.tsx": 1,
     "src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane.tsx": 20,
     "src/renderer/components/features/projectCollaboration/ProjectCollaborationPage.tsx": 1,
     "src/renderer/components/features/projectCollaboration/ProjectCollaborationPanel.tsx": 5,

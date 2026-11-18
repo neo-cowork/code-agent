@@ -269,6 +269,7 @@ toolStepHumanize: {
   channelNames: { lark: '飞书', feishu: '飞书', slack: 'Slack', telegram: 'Telegram' } as Record<string, string>,
   subagentSpawn: '启动了代理 — {description}',
   subagentSpawnFallback: '启动了一个代理',
+  subagentSpawnParallel: '启动了 {count} 个代理 — {names}',
   subagentMessage: '给代理发了条消息',
   agentConversation: '正在跟 {name} 说话',
   agentConversationFallback: '正在跟代理说话',
@@ -706,7 +707,7 @@ traceView: {
 
 // Tool step group (ToolStepGroup)
 toolGroup: {
-  statusRunning: 'running',
+  statusRunning: 'In progress',
   statusPartial: 'Some steps need attention',
   statusFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
   statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
@@ -752,6 +753,7 @@ toolStepHumanize: {
   channelNames: { lark: 'Lark', feishu: 'Feishu', slack: 'Slack', telegram: 'Telegram' } as Record<string, string>,
   subagentSpawn: 'Started an agent — {description}',
   subagentSpawnFallback: 'Started an agent',
+  subagentSpawnParallel: 'Started {count} agent tasks — {names}',
   subagentMessage: 'Sent a message to an agent',
   agentConversation: 'Talking to {name}',
   agentConversationFallback: 'Talking to an agent',
