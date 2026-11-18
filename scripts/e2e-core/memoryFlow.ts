@@ -58,19 +58,14 @@ export const f14: FlowDef = {
       },
     },
     {
-      text: '先出现第一个弹窗「确认用户规则」（不是审批卡），点「确认保存规则」。',
-      run: (env) => pump(env, () => Number(env.scratch.modalClicks) > 0, '「确认用户规则」弹窗出现并点了「确认保存规则」'),
-    },
-    {
-      text: '紧接着出现第二个确认：普通审批卡（`permission-card`，同 F05），因为记忆文件写在项目目录外；点「允许一次」。',
+      text: '出现一个弹窗「确认用户规则」（不是审批卡），点「确认保存规则」；2 分钟内不点会自动关闭、本次不写入。点了就直接写入，不会再出现「写入项目目录外」审批卡。',
       run: async (env) => {
+        await pump(env, () => Number(env.scratch.modalClicks) > 0, '「确认用户规则」弹窗出现并点了「确认保存规则」');
         await driveTurn(env.page, {
           mayBeIdle: true,
-          onMemoryModal: async (page) => { await page.getByRole('button', { name: '确认保存规则' }).click({ timeout: 5_000 }).catch(() => {}); },
-          onPermissionCard: (page) => answerCard(env, page),
+          onMemoryModal: async () => { throw new Error('确认保存规则之后又弹出了第二个「确认用户规则」弹窗'); },
+          onPermissionCard: async () => { throw new Error('确认保存规则之后又出现了审批卡（应只需确认一次）'); },
         }, TURN_TIMEOUT_MS);
-        // 模型写 `~/.code-agent/...` 时，权限分类把它当成项目目录内的相对路径，不会出现第二个确认——如实记下，不当作脚本失败
-        if (!Number(env.scratch.cardClicks)) env.note('没有出现第二个确认：Write 的目标是 ~/ 路径，被判成「写入项目目录内」自动放行（模型分支 / 权限分类对 ~ 的处理）');
         const text = await pageText(env.page);
         if (!/已记住|记住了|记好了|已记下|记下了|已保存|存好了|已写入/.test(text)) throw new Error('第一轮回复里没有明确说「已记住」');
       },
@@ -97,7 +92,7 @@ export const f14: FlowDef = {
       },
     },
     {
-      text: '核对可观测量：记忆文件落盘、Write success、W3: outside_project 的 ask-approved 审批、第二个会话 Read 了该文件。',
+      text: '核对可观测量：记忆文件落盘、Write success、没有 W3: outside_project 审批行、第二个会话召回了该规则。',
       run: async (env) => {
         const files = memoryFiles(env).filter((f) => /进展/.test(f.text));
         if (!files.length) throw new Error(`记忆目录里没有含「进展」的新 .md 文件（${path.join(env.server.dataDir, 'memory')}）`);
@@ -108,11 +103,7 @@ export const f14: FlowDef = {
           if (!wrote) return `第一个会话没有 Write complete success：\n${describeRows(inSessions(d.toolEvents, first), ['tool_name', 'phase', 'status'])}`;
           const writes = inSessions(d.permissionDecisions, first).filter((r) => r.tool_name === 'Write' && r.final_outcome === 'allow');
           if (!writes.length) return `没有 Write | allow 的审批行：\n${describeRows(inSessions(d.permissionDecisions, first), ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
-          if (Number(env.scratch.cardClicks)) {
-            const asked = writes.find((r) => r.history_outcome === 'ask-approved');
-            if (!asked) return `点过第二个确认，但没有 Write | allow | ask-approved 的审批行：\n${describeRows(writes, ['tool_name', 'final_outcome', 'history_outcome', 'reason'])}`;
-            if (!String(asked.trace_json ?? '').includes('outside_project')) return 'Write 审批行的 trace_json 里没有 W3: outside_project';
-          }
+          if (inSessions(d.permissionDecisions, first).some((r) => String(r.trace_json ?? '').includes('outside_project'))) return '确认过规则后仍有 W3: outside_project 审批行';
           const second = family(d, [env.sessionIds[1]]);
           // 召回有两条路：模型 Read 记忆文件，或记忆索引直接注入提示词（回复里能看到「参考了 1 条记忆」）。
           // 召回本身由第 4 步「新会话里没人交代格式、草稿仍是三段式」证明；Read 只是其中一条路，没走就如实记下

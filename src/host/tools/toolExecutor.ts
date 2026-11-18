@@ -1082,7 +1082,7 @@ export class ToolExecutor {
         );
       } else {
         const directiveRunKey = effectiveRunId && effectiveSessionId ? `${effectiveSessionId}|${effectiveRunId}` : undefined;
-        const confirmation = coveredIndexConfirmation(directiveRunKey, directiveMemoryAssessment, params)
+        const confirmation = coveredIndexConfirmation(directiveRunKey, directiveMemoryAssessment, params, toolDef)
           ?? await requestDirectiveMemoryConfirmation({
             content: directiveMemoryAssessment.preview,
             view: directiveMemoryAssessment.buildConfirmView(),

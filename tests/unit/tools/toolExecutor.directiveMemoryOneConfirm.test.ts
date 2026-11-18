@@ -91,6 +91,17 @@ const schemas = [{
   category: 'fs',
   permissionLevel: 'write',
   pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
+}, {
+  name: 'Edit',
+  description: 'edit file',
+  inputSchema: {
+    type: 'object',
+    properties: { file_path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } },
+    required: ['file_path', 'old_string', 'new_string'],
+  },
+  category: 'fs',
+  permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'file_path', mutation: 'edit' }],
 }] as const;
 
 // 记忆目录必须在 tmpdir 之外：tmpdir 本身是分类器的写入白名单，放里面测不出 W3。
@@ -260,5 +271,28 @@ describe('directive memory write: one confirmation, no outside-project card', ()
     expect(mocks.confirmation).toHaveBeenCalledTimes(2);
     expect(r).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
     expect(existsSync(path.join(memoryDir, 'INDEX.md'))).toBe(false);
+  });
+
+  it('non-normalized INDEX.md path (memory.md/../INDEX.md) is never covered by the earlier confirmation', async () => {
+    const executor = buildExecutor();
+    confirm(true);
+    await executor.execute('Write', { file_path: path.join(memoryDir, 'memory.md'), content: 'rule' }, { sessionId: 'mc-session' });
+    confirm(false);
+    const r = await executor.execute('Write',
+      { file_path: `${memoryDir}/memory.md/../INDEX.md`, content: 'memory.md is the pointer' }, { sessionId: 'mc-session' });
+    expect(mocks.confirmation).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
+    expect(existsSync(path.join(memoryDir, 'INDEX.md'))).toBe(false);
+  });
+
+  it('Edit of INDEX.md whose old_string (not new_string) names the confirmed rule still asks', async () => {
+    const executor = buildExecutor();
+    confirm(true);
+    await executor.execute('Write', { file_path: path.join(memoryDir, 'weekly.md'), content: 'rule' }, { sessionId: 'mc-session' });
+    confirm(false);
+    const r = await executor.execute('Edit',
+      { file_path: path.join(memoryDir, 'INDEX.md'), old_string: '- weekly.md', new_string: '- something else' }, { sessionId: 'mc-session' });
+    expect(mocks.confirmation).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
   });
 });
