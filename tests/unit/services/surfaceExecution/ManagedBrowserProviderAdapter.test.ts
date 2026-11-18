@@ -21,6 +21,7 @@ import {
   SecureBrowserResumeStateStore,
   type BrowserResumeStateStore,
 } from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
+import { runManagedBrowserLaunchResume } from '../../../../src/host/services/infra/browser/launchResumeHook';
 
 const cronMocks = vi.hoisted(() => ({
   getSession: vi.fn(async () => undefined),
@@ -65,10 +66,23 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
 }) {
   let running = false;
   let leaseOwner: string | undefined;
+  let resumeOwner: string | null = null;
+  let profileMode: 'isolated' | 'persistent' | undefined;
   let snapshot = 0;
-  const ensureSession = vi.fn(async (_url?: string, launchOptions?: { leaseOwner?: string }) => {
+  const ensureSession = vi.fn(async (_url?: string, launchOptions?: {
+    leaseOwner?: string;
+    profileMode?: 'isolated' | 'persistent';
+    conversationId?: string;
+  }) => {
+    const launchedFresh = !running;
     running = true;
-    leaseOwner = launchOptions?.leaseOwner || 'managed-browser';
+    leaseOwner = launchOptions?.leaseOwner || leaseOwner || 'managed-browser';
+    if (launchOptions?.profileMode) profileMode = launchOptions.profileMode;
+    await runManagedBrowserLaunchResume(service, {
+      conversationId: launchOptions?.conversationId,
+      launchedFresh,
+      profileMode: launchOptions?.profileMode ?? (launchOptions?.conversationId ? 'isolated' : profileMode),
+    });
     return {};
   });
   const setLeaseInUse = vi.fn();
@@ -97,7 +111,15 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
   const service = {
     ensureSession,
     isRunning: () => running,
-    getActiveTab: () => running ? { id: 'managed-tab-1' } : null,
+    getActiveTab: () => running ? { id: 'managed-tab-1', url: 'about:blank' } : null,
+    isLaunchResumeSuppressed: () => false,
+    isLeaseInUse: () => false,
+    getResumeOwner: () => resumeOwner,
+    setResumeOwner: (conversationId: string) => { resumeOwner = conversationId; },
+    notifyLaunchResume: () => undefined,
+    getLiveTabUrl: () => 'about:blank',
+    relaunchIsolatedForResume: vi.fn(async () => { running = true; }),
+    navigate: vi.fn(async () => undefined),
     getSessionState: () => ({
       sessionId: options?.sessionId || 'managed-provider-session',
       profileId: 'isolated-profile',
@@ -290,6 +312,7 @@ describe('ManagedBrowserProviderAdapter profile selection (P0 auth-state)', () =
       profileMode: 'persistent',
       leaseOwner: 'user-personal-browser',
     }));
+    expect(userFake.ensureSession.mock.calls[0]?.[1]).not.toHaveProperty('conversationId');
     expect(userAcquire).toHaveBeenCalledWith(null);
 
     const { identity, fake, acquire, adapter } = createHarness();
@@ -305,6 +328,7 @@ describe('ManagedBrowserProviderAdapter profile selection (P0 auth-state)', () =
     expect(fake.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({
       profileMode: 'isolated',
       leaseOwner: 'surface:run-a',
+      conversationId: identity.conversationId,
     }));
     expect(acquire.mock.calls[0][0]).toMatch(/^surface-/);
     expect(acquire.mock.calls[0][0]).not.toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
@@ -424,6 +448,7 @@ describe('ManagedBrowserProviderAdapter', () => {
     expect(fake.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({
       profileMode: 'isolated',
       leaseOwner: 'surface:run-a',
+      conversationId: identity.conversationId,
     }));
     expect(result.metadata).toMatchObject({
       engine: 'managed',
@@ -761,7 +786,11 @@ describe('ManagedBrowserProviderAdapter', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(resumeStore.importForConversation).toHaveBeenCalledWith(identity.conversationId, fake.service);
+    expect(resumeStore.importForConversation).toHaveBeenCalledWith(
+      identity.conversationId,
+      fake.service,
+      { consume: false },
+    );
     expect(fake.importStorageState).not.toHaveBeenCalled();
     expect(fake.ensureSession).toHaveBeenCalledOnce();
   });
