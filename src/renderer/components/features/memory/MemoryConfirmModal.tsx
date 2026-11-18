@@ -62,10 +62,12 @@ export const MemoryConfirmModal: React.FC<MemoryConfirmModalProps> = ({
           <span className="font-medium text-zinc-200">
             {isDirective ? t.memory.confirmDirectiveTitle : t.memory.confirmMemoryTitle}
           </span>
-          <span className="ml-auto flex items-center gap-1 text-xs text-badge-warning">
-            <AlertTriangle className="w-3 h-3" />
-            {confidencePercent}% 置信度
-          </span>
+          {!isDirective && (
+            <span className="ml-auto flex items-center gap-1 text-xs text-badge-warning">
+              <AlertTriangle className="w-3 h-3" />
+              {getMemoryConfirmWords(language).confidence(confidencePercent)}
+            </span>
+          )}
         </div>
 
         {/* Content */}

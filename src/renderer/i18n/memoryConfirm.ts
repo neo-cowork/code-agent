@@ -10,6 +10,7 @@ interface MemoryConfirmWords {
   deleteMemory: string;
   command: string;
   path: string;
+  confidence: (percent: number) => string;
   changeFromTo: (from: string, to: string) => string;
 }
 
@@ -21,6 +22,7 @@ const ZH: MemoryConfirmWords = {
   deleteMemory: '删除（归档）这条记忆：',
   command: '执行：',
   path: '文件：',
+  confidence: (percent) => `${percent}% 置信度`,
   changeFromTo: (from, to) => `把「${from}」改成「${to}」`,
 };
 
@@ -32,6 +34,7 @@ const EN: MemoryConfirmWords = {
   deleteMemory: 'Delete (archive) this memory: ',
   command: 'Run: ',
   path: 'File: ',
+  confidence: (percent) => `${percent}% confidence`,
   changeFromTo: (from, to) => `Change '${from}' to '${to}'`,
 };
 

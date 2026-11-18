@@ -292,6 +292,13 @@ describe('memory confirm card — production path property', () => {
           for (const re of [...FORBIDDEN_WORDS, ...FORBIDDEN_KEY_SYNTAX]) expect(text, `identifier on card: ${re}`).not.toMatch(re);
           expect(text).not.toMatch(/\b(description|name|content|command):\s*$/im);
           if (language === 'en') expect(text).toContain('Confirm user rule');
+          // 用户确认的规则没有「置信度」：无百分比 chip，en 卡不含任何中文标签
+          expect(text).not.toMatch(/\d+\s*%/);
+          expect(text).not.toContain('置信度');
+          if (language === 'en') {
+            const chrome = text.replace(/[\u4e00-\u9fff][^|]*/g, (m) => (leaves(params, new Set()).some((v) => v.includes(m.trim())) ? m : '<<CJK>>'));
+            expect(chrome, 'CJK outside param values on en card').not.toContain('<<CJK>>');
+          }
 
           fireEvent.click(screen.getByRole('button', { name: language === 'en' ? /Skip/ : /跳过/ }));
           await act(async () => { await run; });
