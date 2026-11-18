@@ -9,7 +9,7 @@ import { SecureBrowserResumeStateStore } from '../../../src/host/services/surfac
 import { SecureBrowserLastPageStore } from '../../../src/host/services/surfaceExecution/browserLastPageStore';
 import { KeptBrowserRegistry } from '../../../src/host/services/surfaceExecution/keptBrowserRegistry';
 import { ManagedBrowserProviderAdapter } from '../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
-import { runManagedBrowserLaunchResume } from '../../../src/host/services/infra/browser/launchResumeHook';
+import { finishManagedBrowserLaunchResume } from '../../../src/host/services/infra/browser/launchResumeHook';
 import {
   SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
@@ -90,11 +90,10 @@ function fakeWindow() {
     ensureSession: vi.fn(async (url = 'about:blank', options?: { conversationId?: string; profileMode?: 'isolated' | 'persistent' }) => {
       const launchedFresh = !running;
       if (!running) { running = true; tab.url = url; }
-      await runManagedBrowserLaunchResume(service, {
+      await finishManagedBrowserLaunchResume(service as never, {
         conversationId: options?.conversationId,
-        launchedFresh,
         profileMode: options?.profileMode ?? (options?.conversationId ? 'isolated' : undefined),
-      });
+      }, launchedFresh);
       return {};
     }),
     isRunning: () => running,

@@ -21,7 +21,7 @@ import {
   SecureBrowserResumeStateStore,
   type BrowserResumeStateStore,
 } from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
-import { runManagedBrowserLaunchResume } from '../../../../src/host/services/infra/browser/launchResumeHook';
+import { finishManagedBrowserLaunchResume } from '../../../../src/host/services/infra/browser/launchResumeHook';
 
 const cronMocks = vi.hoisted(() => ({
   getSession: vi.fn(async () => undefined),
@@ -78,11 +78,10 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
     running = true;
     leaseOwner = launchOptions?.leaseOwner || leaseOwner || 'managed-browser';
     if (launchOptions?.profileMode) profileMode = launchOptions.profileMode;
-    await runManagedBrowserLaunchResume(service, {
+    await finishManagedBrowserLaunchResume(service as never, {
       conversationId: launchOptions?.conversationId,
-      launchedFresh,
       profileMode: launchOptions?.profileMode ?? (launchOptions?.conversationId ? 'isolated' : profileMode),
-    });
+    }, launchedFresh);
     return {};
   });
   const setLeaseInUse = vi.fn();

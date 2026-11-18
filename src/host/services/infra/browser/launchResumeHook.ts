@@ -20,7 +20,7 @@ export function registerManagedBrowserLaunchResumeHook(next: ManagedBrowserLaunc
   hook = next;
 }
 
-export async function runManagedBrowserLaunchResume(
+async function runManagedBrowserLaunchResume(
   service: BrowserService,
   input: ManagedBrowserLaunchResumeInput,
 ): Promise<void> {

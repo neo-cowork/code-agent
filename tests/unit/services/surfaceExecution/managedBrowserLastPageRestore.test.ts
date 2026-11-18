@@ -17,7 +17,7 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
-import { runManagedBrowserLaunchResume } from '../../../../src/host/services/infra/browser/launchResumeHook';
+import { finishManagedBrowserLaunchResume } from '../../../../src/host/services/infra/browser/launchResumeHook';
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ getSession: async () => undefined }),
@@ -72,11 +72,10 @@ function createFakeWindow(initialUrl = 'about:blank') {
         running = true;
         tab.url = url;
       }
-      await runManagedBrowserLaunchResume(service, {
+      await finishManagedBrowserLaunchResume(service as never, {
         conversationId: options?.conversationId,
-        launchedFresh,
         profileMode: options?.profileMode ?? (options?.conversationId ? 'isolated' : undefined),
-      });
+      }, launchedFresh);
       return {};
     }),
     isRunning: () => running,
