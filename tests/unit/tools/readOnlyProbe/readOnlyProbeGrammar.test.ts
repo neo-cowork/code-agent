@@ -80,12 +80,12 @@ describe('只读探测文法扩展（后台任务执行器，async_agent）', ()
 
   describe('positive: no card, in-process', () => {
     const positives: Array<[string, () => string]> = [
-      ['which pdftotext pdfinfo', () => 'which pdftotext pdfinfo'],
+      ['which ls cat', () => 'which ls cat'],
       ['python3 --version', () => 'python3 --version'],
-      ['command -v with several names', () => 'command -v pdftotext pdfinfo python3'],
+      ['command -v with several names', () => 'command -v ls cat'],
       ['version probe piped to head', () => 'python3 --version 2>&1 | head -2'],
-      ['for-loop over literal words with command -v', () => 'for t in pdftotext pdfinfo python3; do command -v "$t"; done'],
-      ['echo prefix then for-loop', () => 'echo "=== tools ==="; for t in pdftotext pdfinfo; do command -v $t; done'],
+      ['for-loop over literal words with command -v', () => 'for t in ls cat; do command -v "$t"; done'],
+      ['echo prefix then for-loop', () => 'echo "=== tools ==="; for t in ls cat; do command -v $t; done'],
     ];
     for (const [name, build] of positives) {
       it(name, async () => {
@@ -161,7 +161,7 @@ describe('只读探测文法扩展（后台任务执行器，async_agent）', ()
       expectNotProbed(r);
     });
     it('command -v with a missing name is not silently accepted (non-zero exit goes to the card)', async () => {
-      const r = await run('command -v pdftotext no-such-tool-xyz');
+      const r = await run('command -v ls no-such-tool-xyz');
       expectNotProbed(r);
     });
     it('version probe piped to anything but head', async () => {
@@ -179,8 +179,23 @@ describe('只读探测文法扩展（后台任务执行器，async_agent）', ()
     });
     it('readOnly permission mode', async () => {
       getPermissionModeManager().setSessionMode(SESSION, 'readOnly', true, 'external');
-      const r = await run('which pdftotext pdfinfo');
+      const r = await run('which ls cat');
       expectNotProbed(r);
+    });
+  });
+
+  // 不依赖 poppler / 任何本机工具、不在 skipIf 后：CI 无 poppler 时这组仍然执行。
+  describe('version/help probe allowlist (compile level)', () => {
+    const ctx = { homeDir: os.homedir(), platform: 'darwin' as const };
+    it('programs off the allowlist never compile', () => {
+      for (const c of ['pbcopy --version', 'pbcopy -h', 'pbpaste --version', 'ps -h', 'ssh-keygen -h', 'rm -h', 'for t in rm; do $t -h; done', 'for t in pdftotext pbcopy; do $t --version; done']) {
+        expect(compileReadOnlyProbePlan(c, ctx), c).toBeNull();
+      }
+    });
+    it('allowlisted tools still compile', () => {
+      for (const c of ['pdftotext -v', 'pdfinfo --version', 'for t in pdftotext pdfinfo; do $t --version; done']) {
+        expect(compileReadOnlyProbePlan(c, ctx), c).not.toBeNull();
+      }
     });
   });
 

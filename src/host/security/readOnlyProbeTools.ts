@@ -13,10 +13,13 @@ const PROGRAM_NAME = /^[A-Za-z0-9._+][A-Za-z0-9._+-]*$/;
 const VERSION_FLAGS = new Set(['--version', '-V', '--help', '-h']);
 // `-v` 不是通用版本旗标（python3 -v 是 verbose），只对已知把它当版本的程序放行。
 const DASH_V_PROGRAMS = new Set(['pdftotext', 'pdfinfo', 'pdftoppm', 'pdfimages']);
-// -h/-V 在这些程序里另有含义或会再执行别的程序：不当作版本探测。
-const NOT_PROBEABLE = new Set([
-  'sh', 'bash', 'zsh', 'dash', 'ksh', 'csh', 'tcsh', 'fish', 'env', 'xargs', 'nohup', 'sudo', 'su', 'doas',
-  'time', 'timeout', 'nice', 'exec', 'eval', 'command', 'builtin', 'open', 'osascript', 'ssh', 'scp', 'sftp',
+// 只有这里列出的程序，其 --version/-V/--help/-h 才免卡：已知只打印版本/用法、无副作用。
+// 其余程序（pbcopy 会清空剪贴板、pbpaste 会输出剪贴板、ps -h 会列进程命令行、ssh-keygen -h 等）一律不认，走原审批链。
+// 刻意保持很小：只放账本关心的 PDF / 运行时工具，新增前先确认该程序的这几个旗标在所有平台上都只读。
+const PROBEABLE_PROGRAMS = new Set([
+  'pdftotext', 'pdfinfo', 'pdftoppm', 'pdfimages', 'pdftohtml', 'mutool', 'qpdf', 'gs', 'pdftk',
+  'tesseract', 'ocrmypdf', 'pandoc',
+  'python', 'python3', 'pip', 'pip3', 'node', 'npm', 'npx', 'git', 'uv', 'ruby', 'cargo', 'rustc',
 ]);
 const PAGE_NUMBER = /^\d{1,5}$/;
 
@@ -27,7 +30,7 @@ export function compileToolCommand(program: string, argv: string[]): { cmd: Prob
     return { program, cmd: { kind: 'which', names: argv } };
   }
   if (argv.length === 1 && (VERSION_FLAGS.has(argv[0]) || (argv[0] === '-v' && DASH_V_PROGRAMS.has(program)))) {
-    if (NOT_PROBEABLE.has(program)) return null;
+    if (!PROBEABLE_PROGRAMS.has(program)) return null;
     return { program, cmd: { kind: 'version-probe', name: program, flag: argv[0] } };
   }
   if (program === 'pdfinfo') {
