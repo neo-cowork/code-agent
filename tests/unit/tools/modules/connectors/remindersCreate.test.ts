@@ -617,3 +617,56 @@ describe('past reminder time guard through public execute', () => {
     expect(execMock).toHaveBeenCalledWith('create_reminder', { title: 'x', remind_at_ms: ms });
   });
 });
+
+const NOTES_POLICY = 'Omit notes unless the user explicitly asks for a note; never restate or paraphrase the title or the time in notes.';
+
+describe('unrequested reminder notes', () => {
+  it('states the notes policy in the tool description and the notes field', () => {
+    expect(remindersCreateModule.schema.description).toContain(NOTES_POLICY);
+    const notes = remindersCreateModule.schema.inputSchema.properties?.notes;
+    expect(notes && typeof notes === 'object' && 'description' in notes && notes.description).toBe(NOTES_POLICY);
+  });
+
+  it.each([
+    [{ title: '给牙医打电话', notes: '提醒：给牙医打电话' }, 'restates-title'],
+    [{ title: '买菜', notes: '提醒：买菜' }, 'restates-title'],
+    [{ title: '发周报', notes: '发周报' }, 'restates-title'],
+    [{ title: 'Buy milk', notes: 'buy   milk!' }, 'restates-title'],
+    [{ title: '买菜', notes: '  \n  ' }, 'empty'],
+  ])('canUseTool receives no notes for %j (%s)', async (input, reason) => {
+    execMock.mockResolvedValue({
+      data: { id: 'r-notes', list: '提醒事项', title: input.title, completed: false },
+    });
+    const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
+    const ctx = makeCtx();
+    const result = await run({ ...input }, ctx, canUseTool);
+    expect(canUseTool).toHaveBeenCalledWith('reminders_create', { title: input.title });
+    expect(ctx.logger.debug).toHaveBeenCalledWith('reminders_create dropped notes', { reason });
+    expect(execMock).toHaveBeenCalledWith('create_reminder', { title: input.title });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.meta?.notes).toBe('');
+    expect(result.meta?.previewItem).toMatchObject({
+      content: { text: expect.not.stringContaining('备注') },
+    });
+  });
+
+  it('keeps a note the user wrote and shows it on the receipt', async () => {
+    execMock.mockResolvedValue({
+      data: { id: 'r-real-note', list: '提醒事项', title: '发周报', completed: false },
+    });
+    const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
+    const ctx = makeCtx();
+    const args = { title: '发周报', notes: '带上Q3数据' };
+    const result = await run(args, ctx, canUseTool);
+    expect(canUseTool).toHaveBeenCalledWith('reminders_create', args);
+    expect(ctx.logger.debug).not.toHaveBeenCalledWith('reminders_create dropped notes', expect.anything());
+    expect(execMock).toHaveBeenCalledWith('create_reminder', args);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.meta?.notes).toBe('带上Q3数据');
+    expect(result.meta?.previewItem).toMatchObject({
+      content: { text: expect.stringContaining('备注：带上Q3数据') },
+    });
+  });
+});

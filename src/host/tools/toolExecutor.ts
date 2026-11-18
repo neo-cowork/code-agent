@@ -1,5 +1,6 @@
 import { EnvBlockedError } from '../permissions/envAssist/EnvBlockedError';
 import { normalizeReminderCreateTime } from './reminderCreateTime';
+import { omitUnrequestedReminderNotes } from './reminderUnrequestedNotes';
 import { normalizeCalendarEventTime } from './calendarEventTime';
 import { isEmergencyStopActive } from '../security/emergencyStop';
 import { emergencyStopMessage } from '../../shared/i18n/emergencyStop';
@@ -675,6 +676,12 @@ export class ToolExecutor {
       return { success: false, error: reminderTime.error, metadata: { code: reminderTime.code } };
     }
     params = reminderTime.args;
+    // The approval card is built from these params, before the tool handler runs.
+    const unrequestedNotes = omitUnrequestedReminderNotes(params);
+    if (unrequestedNotes.dropped) {
+      logger.debug('reminders_create dropped notes', { reason: unrequestedNotes.reason });
+      params = unrequestedNotes.args;
+    }
     const calendarTime = normalizeCalendarEventTime(executionToolName, params);
     if (!calendarTime.ok) {
       return { success: false, error: calendarTime.error, metadata: { code: calendarTime.code } };
