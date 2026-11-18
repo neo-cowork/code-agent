@@ -22,12 +22,18 @@ const TEMP_DIR_PREFIXES = ['/tmp', '/private/tmp', '/var/folders', '/private/var
 
 const PATH_KEYS = ['output_path', 'file_path', 'path'];
 
-/** 预览取 3 行名额时的排序：保存位置/文件路径优先，其次有标签的键，最后未知键；同级保持原顺序。 */
+/**
+ * 预览取 3 行名额时的排序：保存位置/文件路径优先，其次有标签的键，再是未知键，
+ * JSON 形态的载荷（表格 data、http body）垫底——名额有空时仍展示，不会被整段丢掉；同级保持原顺序。
+ */
 export function orderParamEntries<T>(entries: Array<[string, T]>): Array<[string, T]> {
-  const rank = (key: string): number => (PATH_KEYS.includes(key) ? 0 : key in PARAM_LABELS ? 1 : 2);
+  const rank = ([key, value]: [string, T]): number => {
+    if (typeof value === 'string' && isStructuredDataText(value.trim())) return 3;
+    return PATH_KEYS.includes(key) ? 0 : key in PARAM_LABELS ? 1 : 2;
+  };
   return entries
     .map((entry, index) => ({ entry, index }))
-    .sort((a, b) => rank(a.entry[0]) - rank(b.entry[0]) || a.index - b.index)
+    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
     .map(item => item.entry);
 }
 

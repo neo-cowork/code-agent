@@ -451,7 +451,7 @@ describe('ConfirmationGate', () => {
         expect(p?.diff).toContain('Save to: /Users/other/Documents/sales.xlsx');
       });
 
-      it('skips JSON-looking data payload so it does not use up the 3-line cap', () => {
+      it('JSON-looking data payload is ranked last so it does not use up the 3-line cap', () => {
         const p = build('en', { data: '[{"month":"Jan","amount":1200}]', output_path: '/Users/other/a.xlsx' });
         expect(p?.diff).toBe('Save to: /Users/other/a.xlsx\nTitle: Sales\nSheet: Sales');
       });
@@ -469,6 +469,15 @@ describe('ConfirmationGate', () => {
           expect(p?.diff).toBe(expected);
           expect(p?.diff).not.toMatch(/theme/i);
         } finally { spy.mockRestore(); }
+      });
+
+      it('http_request JSON body stays visible when slots are free', () => {
+        const p = new ConfirmationGate().buildPreview('http_request', {
+          url: 'https://api.example.com/create', method: 'POST', body: '{"name":"test"}',
+        }, { workspaceRoot: WSR });
+        expect(p?.diff).toContain('url: https://api.example.com/create');
+        expect(p?.diff).toContain('method: POST');
+        expect(p?.diff).toContain('body: {"name":"test"}');
       });
 
       it('unknown keys unchanged', () => {

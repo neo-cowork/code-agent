@@ -22,7 +22,7 @@ import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedac
 import { isBashToolName } from '../tools/toolNames';
 import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 import { resolveAgent } from './agentRegistry';
-import { displayPathValue, isInternalSwitchParam, isStructuredDataText, orderParamEntries, localizeParamKey } from './confirmationParamDisplay';
+import { displayPathValue, isInternalSwitchParam, orderParamEntries, localizeParamKey } from './confirmationParamDisplay';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ConfirmationGate');
@@ -368,7 +368,7 @@ export class ConfirmationGate {
           if (isInternalSwitchParam(key)) continue;
           if (typeof rawValue !== 'string') continue;
           const trimmed = rawValue.trim();
-          if (!trimmed || isStructuredDataText(trimmed)) continue;
+          if (!trimmed) continue;
           const safeVal = isSensitiveLogKey(key)
             ? '***REDACTED***'
             : redactCommandSecrets(

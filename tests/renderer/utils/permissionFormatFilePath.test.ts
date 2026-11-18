@@ -1,17 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { formatFilePath } from '../../../src/renderer/components/PermissionDialog/utils';
 
-describe('formatFilePath upload/temp paths', () => {
+// formatFilePath 同时服务删除后果句、沙箱放行路径、文件夹授权：目录部分不能被吞掉，
+// 否则用户按文件名确认时对不上真实目标。
+describe('formatFilePath keeps the real target (never reduces to a bare file name)', () => {
   it.each([
-    ['/var/folders/ab/cd/T/sales.csv', 'sales.csv'],
-    ['/tmp/x/y/sales.csv', 'sales.csv'],
-    ['/private/tmp/sales.csv', 'sales.csv'],
-    ['/tmp/code-agent-uploads/abc/sales.csv', 'sales.csv'],
-    ['/Users/me/Library/Application Support/x/uploads/123e4567-e89b-12d3-a456-426614174000/sales.csv', 'sales.csv'],
-  ])('%s -> file name', (input, out) => {
-    expect(formatFilePath(input)).toBe(out);
+    '/tmp/x',
+    '/tmp/neo-sandbox/neo-x.txt',
+    '/tmp/../etc/passwd',
+    '/var/folders/ab/cd/T/sales.csv',
+  ])('%s unchanged', (input) => {
+    expect(formatFilePath(input)).toBe(input);
   });
-  it('other paths unchanged', () => {
-    expect(formatFilePath('/Users/me/Documents/sales.csv')).toBe('/Users/me/Documents/sales.csv');
+  it('long paths are still shortened but keep the leading directories', () => {
+    const long = '/Users/me/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z/file.txt';
+    expect(formatFilePath(long).startsWith('/Users/')).toBe(true);
+    expect(formatFilePath(long).endsWith('/file.txt')).toBe(true);
   });
 });
