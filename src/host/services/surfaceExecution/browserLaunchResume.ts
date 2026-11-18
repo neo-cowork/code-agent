@@ -27,11 +27,10 @@ export function createBrowserLaunchResumeHook(deps: {
       if (getBrowserLaunchResumeOwner(service) === conversationId && !blank) return;
     }
     try {
-      // The import consumes the saved slot; put the state back from this window so a
-      // chat run of the same conversation (a different window) can still restore it.
-      if (await deps.resumeStateStore.importForConversation(conversationId, service)) {
-        await deps.resumeStateStore.exportForConversation(conversationId, service);
-      }
+      // Non-consuming: the saved archive stays exactly as stored, so a chat run of the
+      // same conversation (another window) can still restore it; nothing is re-exported
+      // from this window, whose context may hold other conversations' cookies.
+      await deps.resumeStateStore.importForConversation(conversationId, service, { consume: false });
     } catch (error) {
       deps.logger.warn?.('Failed to restore managed browser login state at launch; continuing signed out', {
         reason: 'login_state_import_failed',

@@ -148,7 +148,6 @@ export async function restoreManagedBrowserLastPage(input: {
   logger?: BrowserLastPageLogger;
   phase?: 'cold' | 'reuse';
 }): Promise<boolean> {
-  markBrowserLaunchResumeOwner(input.browserService, input.conversationId);
   let targetUrl: string | null;
   try {
     targetUrl = await input.store.getForConversation(input.conversationId);
@@ -161,9 +160,13 @@ export async function restoreManagedBrowserLastPage(input: {
     });
     return false;
   }
-  if (!targetUrl) return false;
+  if (!targetUrl) {
+    markBrowserLaunchResumeOwner(input.browserService, input.conversationId);
+    return false;
+  }
   try {
     await input.browserService.navigate(targetUrl);
+    markBrowserLaunchResumeOwner(input.browserService, input.conversationId);
     input.logger?.info?.('Restored managed browser last page', {
       reason: 'last_page_restored',
       phase: input.phase,

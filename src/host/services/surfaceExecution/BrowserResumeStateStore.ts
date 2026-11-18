@@ -16,7 +16,8 @@ interface SecureKeyValueStore {
 
 export interface BrowserResumeStateStore {
   exportForConversation(conversationId: string, browserService: BrowserService): Promise<string>;
-  importForConversation(conversationId: string, browserService: BrowserService): Promise<boolean>;
+  /** `consume: false` leaves the saved archive in place (launch-layer restore into a window that is not the run's own). */
+  importForConversation(conversationId: string, browserService: BrowserService, options?: { consume?: boolean }): Promise<boolean>;
   clearConversation(conversationId: string): Promise<void>;
   activateConversation(conversationId: string): void;
 }
@@ -83,6 +84,7 @@ export class SecureBrowserResumeStateStore implements BrowserResumeStateStore {
   async importForConversation(
     conversationId: string,
     browserService: BrowserService,
+    options: { consume?: boolean } = {},
   ): Promise<boolean> {
     const slot = this.slot(conversationId);
     if (this.importClaims.has(slot)) return false;
@@ -92,7 +94,7 @@ export class SecureBrowserResumeStateStore implements BrowserResumeStateStore {
     try {
       const serialized = await this.secureStorage.getItem(slot);
       if (!serialized) return false;
-      await this.secureStorage.removeItem(slot);
+      if (options.consume !== false) await this.secureStorage.removeItem(slot);
       JSON.parse(serialized);
       temporaryPath = await this.createTemporaryPath(conversationId, 'import');
       await fs.promises.writeFile(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
