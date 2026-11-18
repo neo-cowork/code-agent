@@ -213,6 +213,13 @@ describe('buildLedgerTaskRecords', () => {
     expect(tasks.map((task) => task.title)).not.toContain('Other session run');
   });
 
+  it('carries the ledger source through so the rail can localise model titles', () => {
+    const [record] = buildLedgerTaskRecords([
+      makeLedgerTask({ id: 'delegate:1', sessionId: 'session-1', title: 'Summarize the weekly report', source: 'delegate_task' }),
+    ], 'session-1');
+    expect(record.source).toBe('delegate_task');
+  });
+
   it('does not show ledger tasks without a current session', () => {
     expect(buildLedgerTaskRecords([
       makeLedgerTask({

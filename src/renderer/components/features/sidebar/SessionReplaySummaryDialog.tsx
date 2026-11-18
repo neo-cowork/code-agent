@@ -15,6 +15,7 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import type { Task } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
+import { backgroundTaskLabels } from '../../../utils/agentRoleLabel';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolatePlural } from '../../../i18n/interpolate';
 import { formatDateTime } from '../../../utils/formatDateTime';
@@ -131,6 +132,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
     (a, b) => getBackgroundTaskSortTime(b) - getBackgroundTaskSortTime(a),
   );
   const visibleWorkflowRuns = sortedWorkflowRuns.slice(0, 3);
+  const backgroundTaskDisplayLabels = React.useMemo(() => backgroundTaskLabels(backgroundTasks, t), [backgroundTasks, t]);
   const visibleBackgroundTasks = sortedBackgroundTasks.slice(0, 3);
   const attachedEvidenceIds = new Set<string>();
   for (const snapshot of visibleWorkflowRuns) {
@@ -324,7 +326,10 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="font-medium text-zinc-300">{labels.workflowBackground}</div>
             <div className="text-[10px] text-zinc-600">
-              {workflowRuns.length} workflow · {backgroundTasks.length} task · {evidence.length} evidence
+              {labels.dialog.workflowBackgroundCounts
+                .replace('{workflows}', String(workflowRuns.length))
+                .replace('{tasks}', String(backgroundTasks.length))
+                .replace('{evidence}', String(evidence.length))}
             </div>
           </div>
 
@@ -339,7 +344,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         ? focusedWorkflowRun.goal
                           ? `Workflow: ${focusedWorkflowRun.goal}`
                           : `Workflow ${focusedWorkflowRun.runId}`
-                        : focusedBackgroundTask?.title}
+                        : focusedBackgroundTask ? backgroundTaskDisplayLabels.get(focusedBackgroundTask.id) : undefined}
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-zinc-500">
                       {focusedWorkflowRun
@@ -575,14 +580,13 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-badge-info">{task.title}</div>
+                      <div className="truncate font-medium text-badge-info">{backgroundTaskDisplayLabels.get(task.id)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/60">{formatTaskStatus(task, labels)}</div>
-                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45">
+                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45" title={task.id}>
                         {formatBackgroundTaskMeta(task, labels, language)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] text-badge-info/60">
-                      <div>{task.source}</div>
                       {task.durationMs !== undefined && <div>{formatDuration(task.durationMs, labels)}</div>}
                       <button
                         type="button"

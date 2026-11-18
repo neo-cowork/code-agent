@@ -136,8 +136,8 @@ export const SessionActionsMenu: React.FC = () => {
   const showReopenWorkspace = Boolean(sessionWorkingDirectory)
     && sessionWorkingDirectory !== appWorkingDirectory;
   const replayDialogContext = useMemo(
-    () => buildSessionReplayContext(replayDialog?.sessionId, workflowRuns, durableBackgroundTasks),
-    [durableBackgroundTasks, replayDialog?.sessionId, workflowRuns],
+    () => buildSessionReplayContext(replayDialog?.sessionId, workflowRuns, durableBackgroundTasks, t),
+    [durableBackgroundTasks, replayDialog?.sessionId, workflowRuns, t],
   );
 
   const handleResume = useCallback(async () => {

@@ -240,7 +240,6 @@ function formatBackgroundTaskMeta(task: Task, labels: SessionReplayLabels, lang:
   const started = formatTimestamp(task.startedAt, lang);
   const updated = formatTimestamp(task.updatedAt, lang);
   return [
-    `task ${task.id}`,
     started ? labels.dialog.metaStarted.replace('{time}', started) : null,
     updated ? labels.dialog.metaUpdated.replace('{time}', updated) : null,
   ].filter(Boolean).join(' · ');
