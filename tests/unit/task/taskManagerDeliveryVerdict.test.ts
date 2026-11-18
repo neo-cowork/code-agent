@@ -334,6 +334,28 @@ describe('TaskManager background delivery verdict', () => {
     expect(event.type).toBe('task_completed');
   });
 
+  it('keeps a tool-error write failed even when a later Bash succeeded', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'write-1', name: 'Write', success: false },
+        { id: 'bash-1', name: 'Bash', success: true },
+      ],
+      conclusion: 'Checked the folder with ls.',
+    }));
+    expect(event.type).toBe('task_error');
+  });
+
+  it('keeps a tool-error write failed when a Bash was also declined', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'write-1', name: 'Write', success: false },
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser },
+      ],
+      conclusion: 'Could not save.',
+    }));
+    expect(event.type).toBe('task_error');
+  });
+
   it('keeps a Bash failure that is not a user denial completed', async () => {
     for (const hostCode of [HostReasonCode.PermissionDeniedSafetyRule, undefined]) {
       const event = await runBackgroundTask(messages({
