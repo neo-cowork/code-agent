@@ -34,6 +34,7 @@ import { executePythonScript } from '../../utils/pythonBridge';
 import { buildLegacyCtxFromProtocol, adaptLegacyResult } from '../_helpers/legacyAdapter';
 import { excelAutomateSchema as schema } from './excelAutomate.schema';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
+import { materializeExcelGenerateOutput, resolveExcelWriteTargets } from './resolveExcelWriteTargets';
 import { resolveInputPath } from '../../utils/resolveInputPath';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getFileMutationActorId } from '../file/fileMutationIdentity';
@@ -127,12 +128,17 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
+      materializeExcelGenerateOutput(args);
+      if (!resolveExcelWriteTargets(args, ctx.workingDir).length) {
+        return { ok: false, error: 'Invalid Excel write target', code: 'INVALID_ARGS' };
+      }
       const result = await executeExcelGenerate(
         {
           title: args.title,
           data: args.data,
           theme: args.theme,
-          output_path: args.output_path,
+          output_path: resolveExcelWriteTargets(args, ctx.workingDir)[0],
+          overwrite: args.overwrite,
           sheet_name: args.sheet_name,
         },
         ctx,
@@ -159,7 +165,8 @@ export async function executeExcelAutomate(
           code: 'INVALID_ARGS',
         };
       }
-      const resolvedPath = resolveInputPath(args.file_path as string, ctx.workingDir);
+      const [resolvedPath] = resolveExcelWriteTargets(args, ctx.workingDir);
+      if (!resolvedPath) return { ok: false, error: 'Invalid Excel write target', code: 'INVALID_ARGS' };
       const actorId = getFileMutationActorId(ctx);
       if (!actorId) {
         return {
