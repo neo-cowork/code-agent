@@ -715,4 +715,74 @@ describe('成员对话页', () => {
     expect(input.value).toBe('');
     expect(screen.getByTestId('member-input-receipt').getAttribute('data-state')).toBe('queued');
   });
+  describe('产出区渲染 markdown 并折叠长命令输出', () => {
+    const lsLines = Array.from({ length: 12 }, (_, n) => `-rw-r--r--  1 u  staff  ${n}00 Nov 1 报表${n}.xlsx`).join('\n');
+    const rich = `共找到 **3** 个表格，命令 \`ls -la\` 输出：\n\n\`\`\`\n${lsLines}\n\`\`\`\n`;
+    const short = '结果：\n\n```\na.xlsx\nb.xlsx\nc.xlsx\n```\n';
+
+    const plainNode = (progress: string): AgentTreeNode => ({
+      id: 'agent-9', role: '审阅代理', status: 'completed', statusLabel: '已完成',
+      task: '审阅改动', progress, children: [], worktreeState: { status: 'none' },
+      budgetSummary: { tokensUsed: 1, toolCalls: 1, costUsd: 0 }, evidenceRefs: [], sources: ['spawnGuard'],
+    });
+    const openPlain = async (progress: string) => {
+      invokeMock.mockReset();
+      invokeMock.mockResolvedValue([]);
+      invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+        if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(treeSnapshot(plainNode(progress)));
+        return Promise.resolve(null);
+      });
+      useMemberViewStore.setState({ viewingMemberId: 'agent-9' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    };
+    const openExpert = async (finalOutput: string) => {
+      const detail = { ...ledgerDetail, agents: [{ ...record, finalOutput }, writerRecord] };
+      invokeMock.mockImplementation((channel: unknown) => {
+        if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
+        if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve(detail);
+        return Promise.resolve(null);
+      });
+      useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+      render(<MemberConversationView sessionId="session-1" />);
+      await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    };
+    const expectRendered = () => {
+      const box = screen.getByTestId('member-final-output');
+      expect(box.textContent).not.toContain('**');
+      expect(box.querySelector('strong')?.textContent).toBe('3');
+      expect(box.querySelector('code')?.textContent).toBe('ls -la');
+      const block = box.querySelector('[data-code-block-lines]') as HTMLElement;
+      expect(block.getAttribute('data-code-block-lines')).toBe('12');
+      expect(block.getAttribute('data-code-highlighted-lines')).toBe('0');
+      expect(box.textContent).not.toContain('报表11.xlsx');
+      fireEvent.click(screen.getByText('展开全部 (12 行)'));
+      expect(box.textContent).toContain('报表11.xlsx');
+      fireEvent.click(screen.getByText('收起'));
+      expect(box.textContent).not.toContain('报表11.xlsx');
+    };
+
+    it('专家成员分支：markdown 渲染，12 行 ls 默认折叠、点击展开/收起', async () => {
+      await openExpert(rich);
+      expectRendered();
+    });
+    it('普通代理分支：markdown 渲染，12 行 ls 默认折叠、点击展开/收起', async () => {
+      await openPlain(rich);
+      expectRendered();
+    });
+    it('≤5 行的代码块保持展开', async () => {
+      await openExpert(short);
+      const box = screen.getByTestId('member-final-output');
+      expect(box.querySelector('[data-code-block-lines]')?.getAttribute('data-code-highlighted-lines')).toBe('3');
+      expect(box.textContent).toContain('c.xlsx');
+      expect(screen.queryByText(/展开全部/)).toBeNull();
+    });
+    it('空产出仍显示无产出文案（两个分支）', async () => {
+      await openExpert('');
+      expect(screen.getByTestId('member-final-output').textContent).toContain(zh.expert.workRecord.noOutput);
+      cleanup();
+      await openPlain('');
+      expect(screen.getByTestId('member-final-output').textContent).toContain(zh.expert.workRecord.noOutput);
+    });
+  });
 });
