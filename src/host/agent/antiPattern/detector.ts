@@ -21,7 +21,7 @@ function parseJsonRecord(json: string): Record<string, unknown> | null {
 }
 
 const cleanToolArgs = (value: unknown): Record<string, unknown> | null =>
-  ((cleaned) => (isRecord(cleaned) ? trimIdentifierArgs(cleaned, { includeCommand: true }) : null))(cleanXmlResidues(value));
+  ((cleaned) => (isRecord(cleaned) ? trimIdentifierArgs(cleaned, { includeCommand: false }) : null))(cleanXmlResidues(value));
 const hasForceExecuteHints = (args: Record<string, unknown>): boolean => Boolean(args.server || args.tool || args.arguments || args.file_path || args.command);
 
 const SHELL_FILE_READ_PATTERN =
@@ -908,6 +908,7 @@ export class AntiPatternDetector {
         if (!parsedArgs) throw new Error('Parsed args are not an object');
         const sanitizedArgs = cleanToolArgs(parsedArgs);
         if (!sanitizedArgs) throw new Error('Sanitized args are not an object');
+        trimIdentifierArgs(sanitizedArgs, { includeCommand: true });
         logger.debug(`Parsed tool args from content: ${JSON.stringify(sanitizedArgs)}`);
 
         if (!this._validateForceExecuteArgs(toolName, sanitizedArgs)) return null;
@@ -933,6 +934,7 @@ export class AntiPatternDetector {
         if (parsedArgs && hasForceExecuteHints(parsedArgs)) {
           const sanitizedArgs = cleanToolArgs(parsedArgs);
           if (!sanitizedArgs) return null;
+          trimIdentifierArgs(sanitizedArgs, { includeCommand: true });
           logger.debug(`Parsed tool args from code block: ${JSON.stringify(sanitizedArgs)}`);
 
           if (!this._validateForceExecuteArgs(toolName, sanitizedArgs)) return null;

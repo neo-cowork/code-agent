@@ -337,5 +337,16 @@ describe('tryForceExecuteTextToolCall', () => {
       const match = { toolName: 'bash', args: JSON.stringify({ command: '  ls\n' }) };
       expect(detector.tryForceExecuteTextToolCall(match, '')!.arguments.command).toBe('ls');
     });
+
+    it('bash command starting with blank+newline is rejected, not executed (truncation runs before trim)', () => {
+      const match = { toolName: 'bash', args: JSON.stringify({ command: ' \nrm -rf /tmp/data' }) };
+      expect(detector.tryForceExecuteTextToolCall(match, '')).toBeNull();
+    });
+
+    it('code-block JSON bash command is trimmed', () => {
+      const match = { toolName: 'bash', args: '' };
+      const content = '```json\n{"command": "  ls  ", "file_path": " /tmp/x "}\n```';
+      expect(detector.tryForceExecuteTextToolCall(match, content)!.arguments.command).toBe('ls');
+    });
   });
 });
