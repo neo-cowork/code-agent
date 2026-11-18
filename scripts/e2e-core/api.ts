@@ -16,9 +16,11 @@ async function call(server: Peer, method: string, path: string, body?: unknown):
   return data;
 }
 
-/** GET /api/settings（领域 settings.get 的直通返回）。 */
-export async function getSettings(server: Peer): Promise<{ ui?: { language?: string } }> {
-  return (await call(server, 'GET', '/api/settings')) as { ui?: { language?: string } };
+/** GET /api/settings（web 路由包了一层 {success, data}，这里拆出 AppSettings）。 */
+export async function getSettings(server: Peer): Promise<{ ui?: { language?: string }; onboarding?: { completedAt?: number } }> {
+  const body = (await call(server, 'GET', '/api/settings')) as { success?: boolean; data?: unknown };
+  const settings = body && typeof body === 'object' && 'data' in body ? body.data : body;
+  return (settings ?? {}) as { ui?: { language?: string }; onboarding?: { completedAt?: number } };
 }
 
 /** PUT /api/settings：设置页「界面语言」按钮最终调的同一入口（ui.language 局部即可）。 */

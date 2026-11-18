@@ -1,6 +1,6 @@
 import { expectDb } from './db';
 import type { FlowDef } from './types';
-import { sleep, waitFor } from './ui';
+import { sleep } from './ui';
 
 // 自动化页「新建」→ 简版创建表单：目标里写「每周一早上 9 点」，表单把频率（每周）/星期（周一）/时间（09:00）
 // 自动带出来。任务名不填时缺省取目标句（buildSimpleDraft），列表里就叫这句话。
@@ -31,21 +31,28 @@ export const f15: FlowDef = {
       run: async (env) => {
         const page = env.page;
         await page.getByRole('button', { name: '创建自动化' }).click();
-        // 无角色任务先出「保存前确认」复述卡，确认后才真正创建（任务摘要确认）
+        // 无角色任务先出「保存前确认」复述卡，确认后才真正创建（任务摘要确认）；
+        // 等复述卡和编辑器都收起，再等列表里这条任务的行出现
         const confirm = page.getByTestId('cron-pending-routine-confirm');
         await confirm.waitFor({ state: 'visible', timeout: CREATE_TIMEOUT_MS });
         await confirm.click();
-        await waitFor('自动化列表出现新任务', async () => (await page.getByText(GOAL, { exact: false }).count()) > 0, CREATE_TIMEOUT_MS);
-        // 列表要给人话的执行时间（不是裸 cron 表达式），下次执行时间非空
-        const nextRun = page.getByTestId('cron-job-next-run').first();
+        await page.getByTestId('cron-simple-create').waitFor({ state: 'hidden', timeout: CREATE_TIMEOUT_MS });
+        // 任务行 = 列表滚动区里含任务名的按钮（复述卡也含任务名，所以先等它收起）
+        const row = page.getByTestId('cron-center-scroll').getByRole('button').filter({ hasText: GOAL }).first();
+        await row.waitFor({ state: 'visible', timeout: CREATE_TIMEOUT_MS });
+        // 列表要给人话的执行时间（不是裸 cron 表达式），下次执行时间非空，且确实是「周一」
+        const nextRun = row.getByTestId('cron-job-next-run');
         await nextRun.waitFor({ state: 'visible', timeout: CREATE_TIMEOUT_MS });
         const text = (await nextRun.innerText()).trim();
-        if (!text) throw new Error('列表里「下次运行」是空的');
-        if (/\*|\d+\s+\d+\s+\*\s+\*/.test(text)) throw new Error(`下次运行暴露了原始 cron 表达式：${text}`);
-        if (!/周一|星期一|Monday/.test(text)) throw new Error(`下次运行时间不是人话的「周一」表述：${text}`);
+        if (!text) throw new Error('这条任务的「下次运行」是空的');
+        if (/\*/.test(text)) throw new Error(`下次运行暴露了原始 cron 表达式：${text}`);
+        const date = /(\d{4})\/(\d{1,2})\/(\d{1,2})/.exec(text);
+        if (!date) throw new Error(`下次运行不是人话的日期表述：${text}`);
+        const weekday = new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3])).getDay();
+        if (weekday !== 1) throw new Error(`下次运行日期 ${date[0]} 不是周一（周${'日一二三四五六'[weekday]}）：${text}`);
         env.note(`下次运行：${text}`);
         // 选中这条任务，右侧出详情（手动触发的入口在详情里）
-        await page.getByText(GOAL, { exact: false }).first().click();
+        await row.click();
         await page.getByTestId('cron-job-detail').waitFor({ state: 'visible', timeout: CREATE_TIMEOUT_MS });
       },
     },

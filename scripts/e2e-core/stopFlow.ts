@@ -83,11 +83,16 @@ export const f09: FlowDef = {
     {
       text: '核对可观测量：停止以回合终止事件（非 error）收尾，输入框恢复可发送，已有输出保留，再发一条能正常回复。',
       run: async (env) => {
-        // 事件流里应有该会话的 done（回合终止），且没有 error 事件
-        await waitFor('停止后的回合终止事件（done）出现在事件流里', async () => {
-          const events = sessionEvents(env.sseFile, env.sessionIds[0]);
-          return events.some((e) => e.type === 'done');
+        // 停止收尾在事件流里的形态：agent 通道出现 turn_end，或会话状态被置为 interrupted（两种都算非 error 的终止）
+        let sawTurnEnd = false;
+        await waitFor('停止后的回合终止事件（turn_end / interrupted）出现在事件流里', async () => {
+          sawTurnEnd = sessionEvents(env.sseFile, env.sessionIds[0]).some((e) => e.type === 'turn_end');
+          if (sawTurnEnd) return true;
+          // session:updated 不是 agent 事件，按本会话 id + interrupted 状态在原始文件里找
+          const sid = env.sessionIds[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`"sessionId":"${sid}"[^}]*,"updates":\\{"status":"interrupted"`).test(fs.readFileSync(env.sseFile, 'utf8'));
         }, 30_000);
+        if (!sawTurnEnd) env.note('停止的回合以 session:updated status=interrupted 收尾（没有 turn_end 事件）');
         const events = sessionEvents(env.sseFile, env.sessionIds[0]);
         const errors = events.filter((e) => e.type === 'error');
         if (errors.length) throw new Error(`停止收尾时事件流里有 error 事件（应为非 error 的回合终止）：${JSON.stringify(errors[0]).slice(0, 200)}`);
