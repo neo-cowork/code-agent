@@ -26,6 +26,7 @@ export const ComposerAttachmentLimitNotice: React.FC = () => {
           .replace('{max}', String(notice.max))}
       </span>
       <Button
+        type="button"
         variant="ghost"
         size="sm"
         aria-label={t.chatInput.rejectedUploadDismiss}
