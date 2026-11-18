@@ -215,8 +215,22 @@ export function coveredIndexConfirmation(
   const known = runKey ? confirmedRuleFilesByRun.get(runKey) : undefined;
   if (!known || !assessment.targets.length) return undefined;
   if (!assessment.targets.every((t) => path.basename(t) === INDEX_FILE_NAME)) return undefined;
-  const body = JSON.stringify(params);
-  const mentioned = [...known].some((name) => body.includes(name) || body.includes(name.replace(/\.md$/, '')));
+  // 只在真正的正文里找：丢掉路径/文件名类参数（含目标路径或就是 INDEX.md），
+  // 且要求整个文件名（含 .md、非空词干）作为独立词出现——路径里的 memory/code 之类不算。
+  const bodies = stringLeaves(params).filter((v) => v !== INDEX_FILE_NAME && !assessment.targets.some((t) => v.includes(t)));
+  const mentioned = [...known].some((name) => name.length > '.md'.length && bodies.some((b) => mentionsFileName(b, name)));
   if (!mentioned) return undefined;
   return { requestId: `covered-by-run-${runKey}`, confirmed: true, respondedAt: Date.now(), timedOut: false };
+}
+
+function stringLeaves(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringLeaves);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(stringLeaves);
+  return [];
+}
+
+function mentionsFileName(text: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\w.-])${escaped}($|[^\\w.-])`).test(text);
 }

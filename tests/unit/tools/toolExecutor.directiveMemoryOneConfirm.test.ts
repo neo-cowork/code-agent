@@ -246,4 +246,19 @@ describe('directive memory write: one confirmation, no outside-project card', ()
     expect(mocks.confirmation).toHaveBeenCalledTimes(2);
     expect(existsSync(path.join(memoryDir, 'INDEX.md'))).toBe(false);
   });
+
+  it.each([
+    ['memory.md', 'unrelated pointer text'],
+    ['code.md', '- [x](xcode.md) and code.md.bak'],
+  ])('INDEX.md body that does not really name the confirmed rule %s still asks', async (ruleName, body) => {
+    const executor = buildExecutor();
+    confirm(true);
+    await executor.execute('Write', { file_path: path.join(memoryDir, ruleName), content: 'rule' }, { sessionId: 'mc-session' });
+    confirm(false);
+    const r = await executor.execute('Write',
+      { file_path: path.join(memoryDir, 'INDEX.md'), content: body }, { sessionId: 'mc-session' });
+    expect(mocks.confirmation).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
+    expect(existsSync(path.join(memoryDir, 'INDEX.md'))).toBe(false);
+  });
 });
