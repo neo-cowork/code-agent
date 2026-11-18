@@ -130,6 +130,8 @@ export interface ClassificationContext {
   pathResolutionCache?: Map<string, string>;
   /** True when workingDirectory is this tool call's real cwd. Auto-mode process.cwd() re-run must omit it. */
   workingDirectoryFromToolCall?: boolean;
+  /** Memory-dir write targets the user already confirmed in the directive dialog (grant-gated W3 exemption). */
+  confirmedMemoryWriteTargets?: readonly string[];
 }
 
 interface CacheEntry {

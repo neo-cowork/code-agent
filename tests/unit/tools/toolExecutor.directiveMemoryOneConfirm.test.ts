@@ -1,0 +1,203 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as path from 'node:path';
+import { existsSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+
+const mocks = vi.hoisted(() => ({
+  confirmation: vi.fn(),
+  execute: vi.fn(),
+  getSchemas: vi.fn(),
+  has: vi.fn(),
+  loggerWarn: vi.fn(),
+  resolve: vi.fn(),
+  hasInteractiveUi: vi.fn(() => true),
+}));
+
+vi.mock('../../../src/host/memory/directiveMemoryConfirmation', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/memory/directiveMemoryConfirmation')>(),
+  requestDirectiveMemoryConfirmation: mocks.confirmation,
+}));
+
+vi.mock('../../../src/host/platform/windowBridge', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/platform/windowBridge')>(),
+  hasInteractiveUi: mocks.hasInteractiveUi,
+}));
+
+vi.mock('../../../src/host/tools/protocolRegistry', () => ({
+  getProtocolRegistry: () => ({
+    getSchemas: mocks.getSchemas,
+    has: mocks.has,
+    resolve: mocks.resolve,
+  }),
+  isProtocolToolName: vi.fn(() => false),
+  resetProtocolRegistry: vi.fn(),
+}));
+
+vi.mock('../../../src/host/tools/protocolToolRegistration', () => ({
+  getProtocolToolSchemas: mocks.getSchemas,
+  hasProtocolTool: mocks.has,
+  resolveProtocolTool: mocks.resolve,
+  registerProtocolTool: vi.fn(),
+  unregisterProtocolTool: vi.fn(),
+  setProtocolToolRegistryPort: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/cloud', () => ({
+  getCloudConfigService: () => ({ getAllToolMeta: () => ({}) }),
+}));
+
+vi.mock('../../../src/host/mcp', () => ({
+  getMCPClient: () => ({
+    getToolDefinitions: () => [],
+    parseMCPToolName: () => null,
+  }),
+}));
+
+vi.mock('../../../src/host/services/infra/toolCache', () => ({
+  getToolCache: () => ({
+    isCacheable: () => false,
+    get: () => null,
+    set: vi.fn(),
+    invalidateForPath: vi.fn(),
+    invalidateForWorkspace: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../src/host/tools/middleware/fileCheckpointMiddleware', () => ({
+  createFileCheckpointIfNeeded: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: mocks.loggerWarn, error: vi.fn() }),
+}));
+
+const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
+const { resetToolResolver } = await import('../../../src/host/tools/dispatch/toolResolver');
+const { getDecisionHistory } = await import('../../../src/host/security/decisionHistory');
+
+const { createRunContext } = await import('../../../src/host/runtime/runContext');
+const { createWorkspaceScope } = await import('../../../src/host/runtime/workspaceScope');
+
+const schemas = [{
+  name: 'Write',
+  description: 'write file',
+  inputSchema: {
+    type: 'object',
+    properties: { file_path: { type: 'string' }, content: { type: 'string' } },
+    required: ['file_path', 'content'],
+  },
+  category: 'fs',
+  permissionLevel: 'write',
+  pathAuthority: [{ kind: 'path', pathParameter: 'file_path' }],
+}] as const;
+
+// 记忆目录必须在 tmpdir 之外：tmpdir 本身是分类器的写入白名单，放里面测不出 W3。
+describe('directive memory write: one confirmation, no outside-project card', () => {
+  const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
+  let root: string;
+  let workspace: string;
+  let memoryDir: string;
+  let otherOutside: string;
+  const permission = vi.fn(async () => true);
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.homedir(), '.neo-memconfirm-test-'));
+    workspace = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neo-memconfirm-ws-')));
+    memoryDir = path.join(root, 'memory');
+    otherOutside = path.join(root, 'other');
+    await fs.mkdir(memoryDir, { recursive: true });
+    await fs.mkdir(otherOutside, { recursive: true });
+    process.env.CODE_AGENT_DATA_DIR = root;
+    resetToolResolver();
+    mocks.getSchemas.mockReturnValue(schemas);
+    mocks.has.mockReturnValue(true);
+    mocks.resolve.mockResolvedValue({
+      execute: mocks.execute.mockImplementation(async (params: { file_path: string; content: string }) => {
+        await fs.writeFile(params.file_path, params.content);
+        return { ok: true, output: 'written' };
+      }),
+    });
+    mocks.confirmation.mockReset();
+    mocks.hasInteractiveUi.mockReset().mockReturnValue(true);
+    permission.mockClear();
+    getDecisionHistory().clear();
+  });
+
+  afterEach(async () => {
+    if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  const confirm = (confirmed: boolean) => mocks.confirmation.mockResolvedValueOnce({
+    requestId: 'dir-1', confirmed, respondedAt: Date.now(), timedOut: false,
+  });
+
+  function buildExecutor() {
+    const executor = new ToolExecutor({
+      requestPermission: permission,
+      workingDirectory: workspace,
+      runContext: createRunContext({
+        runId: 'mc-run', sessionId: 'mc-session', cwd: workspace,
+        workspaceScope: createWorkspaceScope('mc-project', [{
+          sourceId: 'ws-root', path: workspace, access: 'read_write', role: 'primary',
+        }]),
+      }),
+    });
+    executor.setAuditEnabled(false);
+    return executor;
+  }
+
+  const write = (file: string) => buildExecutor().execute(
+    'Write', { file_path: file, content: 'rule' }, { sessionId: 'mc-session' },
+  );
+
+  it('confirmed rule dialog: written, no permission card, trace carries the new rule', async () => {
+    const target = path.join(memoryDir, 'weekly.md');
+    confirm(true);
+    const result = await write(target);
+    expect(result).toMatchObject({ success: true });
+    expect(existsSync(target)).toBe(true);
+    expect(permission).not.toHaveBeenCalled();
+    const rows = JSON.stringify(getDecisionHistory().getAll());
+    expect(rows).toContain('directive_memory_write_confirmed');
+    expect(rows).not.toContain('W3: outside_project');
+  });
+
+  it('declined dialog: nothing written, no card', async () => {
+    const target = path.join(memoryDir, 'declined.md');
+    confirm(false);
+    const result = await write(target);
+    expect(result).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
+    expect(existsSync(target)).toBe(false);
+    expect(permission).not.toHaveBeenCalled();
+  });
+
+  it('other outside-workspace path still asks', async () => {
+    const target = path.join(otherOutside, 'note.md');
+    const result = await write(target);
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    expect(permission).toHaveBeenCalledOnce();
+    expect(JSON.stringify(permission.mock.calls[0])).toContain('写入项目目录外');
+  });
+
+  it('../ escape out of the memory dir still asks', async () => {
+    const target = path.join(memoryDir, '..', 'other', 'esc.md');
+    const result = await write(target);
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    expect(permission).toHaveBeenCalledOnce();
+  });
+
+  it('symlink inside the memory dir pointing out still asks', async () => {
+    await fs.symlink(path.join(otherOutside, 'real.md'), path.join(memoryDir, 'link.md'));
+    confirm(true);
+    await write(path.join(memoryDir, 'link.md'));
+    expect(permission).toHaveBeenCalledOnce();
+    expect(JSON.stringify(permission.mock.calls[0])).toContain('写入项目目录外');
+  });
+});

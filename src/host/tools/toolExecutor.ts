@@ -132,6 +132,7 @@ import { hasInteractiveUi } from '../platform/windowBridge';
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import {
   assessDirectiveMemoryWrite,
+  confirmedDirectiveMemoryTargets,
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
 import { resolveToolWriteTargets } from './writeTargets';
@@ -1100,6 +1101,8 @@ export class ToolExecutor {
       }
     }
 
+    const confirmedMemoryWriteTargets = confirmedDirectiveMemoryTargets(directiveMemoryAssessment, directiveMemoryWriteGrant);
+
     const writeTargets = toolDef.permissionLevel !== 'read'
       ? resolveToolWriteTargets({
         definition: toolDef,
@@ -1762,7 +1765,7 @@ export class ToolExecutor {
     // Check permission if required
     const scheduledWrite = await classifyFileWrite(policyToolName, params, {
       sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
-      workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel,
+      workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel, confirmedMemoryWriteTargets,
     }, permStartTime);
     const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1970,6 +1973,7 @@ export class ToolExecutor {
             boundaryViolation,
             workingDirectory: canonicalBashWorkingDirectory,
             workspaceRoot,
+            confirmedMemoryWriteTargets,
             permissionLevel: toolDef.permissionLevel,
             permStartTime,
             readOnlyForcesConfirmation,

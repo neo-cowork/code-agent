@@ -176,3 +176,13 @@ export function hasMatchingDirectiveMemoryWriteGrant(
     && grant.fingerprint === assessment.fingerprint
   );
 }
+
+/** Targets the user confirmed via the directive dialog; undefined unless a matching grant exists. */
+export function confirmedDirectiveMemoryTargets(
+  assessment: DirectiveMemoryWriteAssessment,
+  grant: DirectiveMemoryWriteGrant | undefined,
+): readonly string[] | undefined {
+  return assessment.requiresConfirmation && grant && hasMatchingDirectiveMemoryWriteGrant(assessment, grant)
+    ? assessment.targets
+    : undefined;
+}

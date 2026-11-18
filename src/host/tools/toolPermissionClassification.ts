@@ -483,6 +483,7 @@ export async function resolveToolPermissionClassification(input: {
   boundaryViolation: { skillName: string; allowedTools: readonly string[] } | undefined;
   workingDirectory: string;
   workspaceRoot?: string;
+  confirmedMemoryWriteTargets?: readonly string[];
   permissionLevel: ToolPermissionLevel;
   permStartTime: number;
   readOnlyForcesConfirmation: boolean;
@@ -586,6 +587,7 @@ export async function resolveToolPermissionClassification(input: {
       workspaceRoot: input.workspaceRoot,
       permissionLevel,
       workingDirectoryFromToolCall: true,
+      confirmedMemoryWriteTargets: input.confirmedMemoryWriteTargets,
     });
   }
   if (input.readOnlyForcesConfirmation && !excelRead && classification.decision === 'approve') {

@@ -153,12 +153,12 @@
 
 ### F14 — 记忆写入并在新会话召回
 - **Preconditions**: surface web；记忆开启（默认自动）。
-- **Steps**: 1. 说「记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万」。2. 先出现第一个弹窗「确认用户规则」（不是审批卡），点「确认保存规则」；2 分钟内不点会自动关闭、本次不写入。3. 紧接着出现第二个确认：普通审批卡（`permission-card`，同 F05），因为记忆文件写在项目目录外；点「允许一次」。两个都点了才会写入。4. 新开一个会话说「帮我起草这周周报」。
+- **Steps**: 1. 说「记住：周报用本周进展 / 风险 / 下周计划三段式，数字用万」。2. 出现一个弹窗「确认用户规则」（不是审批卡），点「确认保存规则」；2 分钟内不点会自动关闭、本次不写入。点了就直接写入，不会再出现「写入项目目录外」审批卡。3. 新开一个会话说「帮我起草这周周报」。
 - **Selectors**: 确认弹窗是 `src/renderer/components/features/memory/MemoryConfirmModal.tsx`，**没有 data-testid**，用可见文字定位：标题「确认用户规则」、按钮「确认保存规则」（文案在 `src/renderer/i18n/zh.ts` 的 `memory.confirmDirectiveTitle` / `confirmDirectiveSave`）；超时常量 `MEMORY_TIMEOUTS.DIRECTIVE_CONFIRM` = 120000 毫秒（`src/shared/constants/timeouts.ts`）；`testid:sidebar-new-task` @ `src/renderer/components/features/sidebar/SidebarNewTaskRow.tsx`；`testid:memory-settings-tab` @ `src/renderer/components/features/settings/tabs/MemoryTab.tsx`；`testid:memory-entry-row` @ `src/renderer/components/features/settings/tabs/MemoryEntriesManager.tsx`。
 - **Expected UI**: 第一轮明确说「已记住」；设置里记忆列表多一条；第二个会话的草稿直接用三段式。
-- **Observable**: 成功：`<home>/.code-agent/memory/` 下出现新的 .md 文件，`Write` 的 `tool_execution_events` 为 complete success；`permission_decisions` 有一行 `tool_name='Write'`、`final_outcome='allow'`、`history_outcome='ask-approved'`，`trace_json` 里规则为 `W3: outside_project`（「写入项目目录外」，由第二个审批卡产生）；第二个会话的工具事件里有对该文件的 `Read`。「确认用户规则」弹窗本身不写 `permission_decisions`，那一行只来自第二个审批卡。失败（第一个弹窗没点或超时）：`Write` 工具结果带错误码 `DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED`，文案含「确认窗口等了 2 分钟没有等到响应，已自动关闭，这次没有写入」，目录里没有新文件，也没有 `Write` 的 `permission_decisions` 行。
-- **Failure looks like**: 说「记住了」但没落盘；每次新会话都忘；写入被拦了却不告诉用户；第一个弹窗点了但第二个审批卡没人答，`Write` 被拒或超时（`permission_decisions` 为 `deny`），文件不存在；用户只知道点了一次确认却不知道还有第二个。
-- **Proof**: 本单真跑闭环成功（`realrun3`）：脚本在 `/api/events` 收到 `memory:confirm-request` 后向 `/api/memory/confirm-response` 回 `confirmed:true`（`confirm-responses.jsonl` t=1794931748146，等价于点「确认保存规则」）；随后同一次 `Write` 又走普通权限分类，`realrun3/db-3.json:522` `"history_outcome": "ask-approved"`、`:525` `"wait_ms": 301590`、`:528` trace 含 `W3: outside_project`；`realrun3/approvals.jsonl:1` `"tool":"Write","response":"allow"`、`"source":"foreground-permission-island"`（由 `--auto-approve` 客户端代答第二个卡）。之后新会话先 `Read` 该文件再按三段式起草。两个点击都不是浏览器真点，标 partial。不回应第一个弹窗的失败形态见 `realrun2/db-4.json:875`。
+- **Observable**: 成功：`<home>/.code-agent/memory/` 下出现新的 .md 文件，`Write` 的 `tool_execution_events` 为 complete success；`permission_decisions` **没有** `W3: outside_project` 行，该次写入的 trace 规则为 `directive_memory_write_confirmed`（确认弹窗的授权只豁免弹窗里确认过的那几个记忆文件；写别的项目外目录仍走 `W3: outside_project` 审批卡）；`approvals.jsonl` 对该次写入为空；第二个会话的工具事件里有对该文件的 `Read`。失败（弹窗没点或超时）：`Write` 工具结果带错误码 `DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED`，文案含「确认窗口等了 2 分钟没有等到响应，已自动关闭，这次没有写入」，目录里没有新文件，也没有审批卡。
+- **Failure looks like**: 说「记住了」但没落盘；每次新会话都忘；写入被拦了却不告诉用户；点完「确认保存规则」后又冒出「写入项目目录外」审批卡（回到两次确认）。
+- **Proof**: 单测 `tests/unit/tools/toolExecutor.directiveMemoryOneConfirm.test.ts`（走 `ToolExecutor.execute`）：确认后不触发审批回调、trace 含 `directive_memory_write_confirmed`；拒绝/超时不写入且无审批卡；其他项目外目录、`../` 逃逸、指向外部的软链仍弹审批卡。真跑闭环：`neo-realrun.mjs` 在 `/api/events` 收到 `memory:confirm-request` 后向 `/api/memory/confirm-response` 回 `confirmed:true`，之后 `db-*.json` 无 `W3: outside_project`、`approvals.jsonl` 为空。脚本回应不是浏览器真点，标 partial。
 
 ### F15 — 定时任务创建并运行
 - **Preconditions**: surface web；已配置模型。
