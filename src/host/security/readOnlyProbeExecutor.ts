@@ -281,6 +281,15 @@ class Runner {
     if (this.stdout.length + this.stderr.length > MAX_OUTPUT_CHARS) throw new ProbeAbort('output too large');
   }
 
+  /** `prog … | head -N`：stdout（及 2>&1 并入的 stderr）经 head 截断；末段是 head，无 pipefail，退出码 0。 */
+  private emitThroughHead(redirect: ProbeRedirect, res: ProbeRunResult, headLines: number): number {
+    const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
+    const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+    const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
+    this.emit({ out: 'out', err: 'err' }, lines.slice(0, headLines).join(''), stderr);
+    return 0;
+  }
+
   async run(cmd: ProbeCommand, redirect: ProbeRedirect): Promise<number> {
     switch (cmd.kind) {
       case 'cd': {
@@ -336,6 +345,7 @@ class Runner {
       case 'which': {
         let missing = false;
         for (const name of cmd.names) {
+          if (cmd.builtins && SHELL_BUILTINS.has(name)) { this.emit(redirect, `${name}\n`, ''); continue; }
           const found = lookupOnPath(name);
           if (found) this.emit(redirect, `${found}\n`, ''); else missing = true;
         }
@@ -345,6 +355,7 @@ class Runner {
         const bin = resolveSystemBinary(cmd.name);
         if (!bin) throw new ProbeAbort('version probe binary not in a system directory');
         const result = await runFixed(bin, [cmd.flag], this.currentDirectory);
+        if (cmd.headLines !== undefined) return this.emitThroughHead(redirect, result, cmd.headLines);
         this.emit(redirect, result.stdout, result.stderr);
         return result.exitCode;
       }
@@ -383,13 +394,7 @@ class Runner {
         const targets = cmd.paths.length > 0 ? cmd.paths : ['.'];
         for (const p of targets) this.need(p);
         const res = await runFixed(FIXED_BINARIES.ls, [...cmd.flags, '--', ...cmd.paths], this.currentDirectory);
-        if (cmd.headLines !== undefined) {
-          const input = (redirect.err === 'out' ? res.stderr : '') + (redirect.out === 'out' ? res.stdout : '');
-          const lines = input.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-          const stderr = (redirect.err === 'err' ? res.stderr : '') + (redirect.out === 'err' ? res.stdout : '');
-          this.emit({ out: 'out', err: 'err' }, lines.slice(0, cmd.headLines).join(''), stderr);
-          return 0; // The last program is a literal head, with no pipefail.
-        }
+        if (cmd.headLines !== undefined) return this.emitThroughHead(redirect, res, cmd.headLines);
         this.emit(redirect, res.stdout, res.stderr);
         return res.exitCode;
       }

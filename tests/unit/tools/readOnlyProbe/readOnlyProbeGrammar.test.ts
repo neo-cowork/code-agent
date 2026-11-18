@@ -82,6 +82,8 @@ describe('只读探测文法扩展（后台任务执行器，async_agent）', ()
     const positives: Array<[string, () => string]> = [
       ['which pdftotext pdfinfo', () => 'which pdftotext pdfinfo'],
       ['python3 --version', () => 'python3 --version'],
+      ['command -v with several names', () => 'command -v pdftotext pdfinfo python3'],
+      ['version probe piped to head', () => 'python3 --version 2>&1 | head -2'],
       ['for-loop over literal words with command -v', () => 'for t in pdftotext pdfinfo python3; do command -v "$t"; done'],
       ['echo prefix then for-loop', () => 'echo "=== tools ==="; for t in pdftotext pdfinfo; do command -v $t; done'],
     ];
@@ -156,6 +158,14 @@ describe('只读探测文法扩展（后台任务执行器，async_agent）', ()
     it.skipIf(!HAS_POPPLER)('a path under a user Read deny rule is not probed', async () => {
       getPolicyEngine().loadUserRules({ deny: [`Read(${root}/**)`] });
       const r = await run(`pdfinfo ${pdf}`);
+      expectNotProbed(r);
+    });
+    it('command -v with a missing name is not silently accepted (non-zero exit goes to the card)', async () => {
+      const r = await run('command -v pdftotext no-such-tool-xyz');
+      expectNotProbed(r);
+    });
+    it('version probe piped to anything but head', async () => {
+      const r = await run('python3 --version | tee out.txt');
       expectNotProbed(r);
     });
     it('for loop with a write body (rm)', async () => {

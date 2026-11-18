@@ -445,8 +445,9 @@ function compileSimple(words: Word[]): { cmd: ProbeCommand; program: string } | 
       return text === null ? null : { program, cmd: { kind: 'printf', text } };
     }
     case 'command': {
-      if (argv.length !== 2 || argv[0] !== '-v' || !/^[A-Za-z0-9._+][A-Za-z0-9._+-]*$/.test(argv[1])) return null;
-      return { program, cmd: { kind: 'command-v', name: argv[1] } };
+      if (argv.length < 2 || argv.length > 33 || argv[0] !== '-v' || argv.slice(1).some((name) => !/^[A-Za-z0-9._+][A-Za-z0-9._+-]*$/.test(name))) return null;
+      // 多名字：各 shell 对「部分找不到」的退出码不一致，这里一律在任一缺失时返回 1（非零 → 调用方走审批）。
+      return argv.length === 2 ? { program, cmd: { kind: 'command-v', name: argv[1] } } : { program, cmd: { kind: 'which', names: argv.slice(1), builtins: true } };
     }
     case 'ls': {
       const flags: string[] = [];
@@ -523,11 +524,11 @@ export function compileReadOnlyProbePlan(command: string, ctx: ProbeCompileConte
       if (count === undefined || Number(count) < 1 || Number(count) > 10000) return false;
       if (left.some((token) => token.type !== 'word' && token.type !== 'redir')) return false;
       const compiled = compileSimple(left.filter((token) => token.type === 'word').map((token) => token.word));
-      if (compiled?.cmd.kind !== 'ls') return false;
+      if (compiled?.cmd.kind !== 'ls' && compiled?.cmd.kind !== 'version-probe') return false;
       const source = command.slice(group[0].start, group[group.length - 1].end).trim();
       const headSource = command.slice(right[0].start, right[right.length - 1].end).trim();
       const redirs = left.filter((token) => token.type === 'redir');
-      steps.push({ op, cmd: { ...compiled.cmd, headLines: Number(count) }, redirect: foldRedirect(redirs), program: 'ls', source, extraSources: [headSource] });
+      steps.push({ op, cmd: { ...compiled.cmd, headLines: Number(count) }, redirect: foldRedirect(redirs), program: compiled.program, source, extraSources: [headSource] });
       group = [];
       return true;
     }

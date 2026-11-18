@@ -5,8 +5,8 @@
 // ============================================================================
 
 export type ProbeToolCommand =
-  | { kind: 'which'; names: string[] }
-  | { kind: 'version-probe'; name: string; flag: string }
+  | { kind: 'which'; names: string[]; builtins?: boolean }
+  | { kind: 'version-probe'; name: string; flag: string; headLines?: number }
   | { kind: 'pdf-read'; program: 'pdfinfo' | 'pdftotext'; options: string[]; file: string };
 
 const PROGRAM_NAME = /^[A-Za-z0-9._+][A-Za-z0-9._+-]*$/;
