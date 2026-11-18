@@ -58,6 +58,16 @@ const REAL_FAILED_ROWS = [
   '没能取到显示名称',
 ];
 
+it('notice keeps only the first conclusion line, plain text; detail keeps the full cleaned text', () => {
+  const outcome = resolveStoppedTaskOutcome({
+    status: 'completed',
+    detail: '**结论：抓取失败，没有拿到页面内容。**\n1. 直接访问 → `Failed to fetch URL: fetch failed`',
+  });
+  expect(outcome.notice).toBe('这个后台任务没有完成你交代的事，下面是它留下的说明：结论：抓取失败，没有拿到页面内容。');
+  expect(outcome.detail).toContain('Failed to fetch URL');
+  expect(outcome.notice).not.toContain('Failed to fetch');
+});
+
 describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
   it.each([
     '执行失败：连接超时',
@@ -71,15 +81,20 @@ describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
   ])('failure prose with completed status becomes failed: %s', (detail) => {
     const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail });
     expect(outcome).toMatchObject({ status: 'failed', kind: 'error' });
-    expect(outcome.notice).toBe(outcome.detail);
+    expect(outcome.notice).toContain('这个后台任务没有完成你交代的事，下面是它留下的说明：');
     expect(outcome.detail).toContain('这个后台任务没有完成你交代的事');
-    expect(outcome.detail).toContain(detail.trim());
+    expect(`${outcome.notice}${outcome.detail}`).not.toMatch(/\*\*|__|`/);
+    const firstLine = detail.split('\n')[0].replace(/(\*\*|__|`)/g, '').replace(/^[-*+]\s+/, '').trim();
+    expect(outcome.notice).toContain(firstLine);
+    expect(outcome.detail).toContain(firstLine);
   });
 
   it.each([
     '页面标题是 Example Domain。',
     '三条要点已整理好。其中一个子页面打不开，已跳过；任务未完成的只有附录。',
     '\n\n已完成。\n无法打开的链接有 1 个。',
+    '无法访问英文版，以下是中文版定价页的三条要点：\n1. 基础版 99 元/月',
+    '未能找到官方折扣说明，但已核对标准价格：专业版 299 元/月。',
   ])('success prose stays completed: %s', (detail) => {
     expect(resolveStoppedTaskOutcome({ status: 'completed', detail }).status).toBe('completed');
   });

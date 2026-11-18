@@ -350,12 +350,13 @@ describe('settle 终态投影在登录恢复窗口里的收口', () => {
     harness.user = { id: 'u1' };
     const manager = new ControllableTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {});
-    const taskId = await spawnAndComplete(manager, center, '任务未完成——页面打不开，没有任何定价表内容。');
+    const taskId = await spawnAndComplete(manager, center, '**任务未完成——页面打不开，没有任何定价表内容。**\n1. 直接访问 → `fetch failed`');
 
     await vi.waitFor(() => expect(messageRows().some((row) => row.id === `session-task-result-${taskId}`)).toBe(true));
     const row = messageRows().find((r) => r.id === `session-task-result-${taskId}`)!;
     expect(row.content).toContain('周报｜已失败｜');
     expect(row.content).not.toContain('已完成');
+    expect(row.content).not.toMatch(/\*\*|`/);
     expect(row.content).toContain('任务未完成——页面打不开');
     expect((row.metadata as { backgroundTaskResult?: { status?: string } }).backgroundTaskResult?.status).toBe('failed');
   });
