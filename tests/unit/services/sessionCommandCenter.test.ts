@@ -1080,7 +1080,7 @@ describe('SessionCommandCenter idle expiry', () => {
 // N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：模型侧结果文本（resultText）
 // FB-577 复盘：388 字结论经 240 字 summary 硬切，SSRF 拒绝提示里
 // 「use a Bash curl command instead — it asks the user for approval.」整句
-// 到不了前台，四条用户可见回复全丢下一步指引。模型侧改读 1500 封顶的
+// 到不了前台，四条用户可见回复全丢下一步指引。模型侧改读 8000 预算的
 // resultText；UI/账本 summary 维持 240 不变。
 // ============================================================================
 describe('model-facing task result text', () => {
@@ -1090,9 +1090,6 @@ describe('model-facing task result text', () => {
   });
 
   const HINT_SENTENCE = 'use a Bash curl command instead — it asks the user for approval.';
-  // SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 的同值（该常量不导出——src 侧只有
-  // 同文件的 composeSessionCommandTaskResultText 消费它，导出会撞 knip production）
-  const MODEL_CAP = 1500;
 
   /** FB-577 镜像：总长 388 字，提示句从第 262 字开始——240 字旧截断必然丢句。 */
   function fb577Conclusion(): string {
@@ -1156,10 +1153,9 @@ describe('model-facing task result text', () => {
     }
   });
 
-  it('caps an over-long conclusion at the model limit with an explicit truncation marker', async () => {
+  it('delivers a 5000-char conclusion whole (under the 8000 model budget) with no truncation marker', async () => {
     const conclusion = overCapConclusion();
     expect(conclusion).toHaveLength(5000);
-    const marker = `…(truncated, 5000 chars total)`;
 
     const manager = new FakeTaskManager();
     const addMessageToSession = vi
@@ -1173,11 +1169,9 @@ describe('model-facing task result text', () => {
       await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
 
       const message = addMessageToSession.mock.calls[0][1];
-      const expectedBody = `${conclusion.slice(0, MODEL_CAP)}${marker}`;
-      expect(message.content).toBe(`[任务结果] 任务1｜已完成｜${expectedBody}`);
-      // 截断线之前的正文（含提示句）原样到达，且模型明确知道被裁过
+      expect(message.content).toBe(`[任务结果] 任务1｜已完成｜${conclusion}`);
       expect(message.content).toContain(HINT_SENTENCE);
-      expect(message.content.endsWith(marker)).toBe(true);
+      expect(message.content).not.toContain('truncated');
 
       // 账本/UI summary 维持 240 字上限，不随 resultText 放宽
       const ledgerTask = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })[0];
