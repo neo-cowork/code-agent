@@ -64,6 +64,7 @@ import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
+import { formatRunPolicyDenial, isForegroundExcelNonReadParams } from './runPolicyBounceText';
 import { evaluateSubagentPolicyDenial, type SubagentToolPolicy } from '../agent/subagentToolRuntime';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { denyUnanalyzableCommand, recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
@@ -806,19 +807,12 @@ export class ToolExecutor {
     // AgentLoop 已在 schema 面过滤 + messageProcessor 拦截模型直调；这里兜底
     // 嵌套调用（PTC executeTool）与直接 executor 调用，保证被裁剪工具永不静默执行。
     // 与 recordDecision 配对（policy-deny），权限账本不断流。
-    if (isToolDeniedByRunPolicy({
-      deniedToolNames: options.deniedToolNames,
-      allowedToolNames: options.allowedToolNames,
-      toolScope: options.toolScope,
-      skillBoundaryAllowedTools: options.skillBoundaryAllowedTools,
-    }, executionToolName)) {
+    const runPolicy = { deniedToolNames: options.deniedToolNames, allowedToolNames: options.allowedToolNames, toolScope: options.toolScope, skillBoundaryAllowedTools: options.skillBoundaryAllowedTools };
+    if (isToolDeniedByRunPolicy(runPolicy, executionToolName) || isForegroundExcelNonReadParams(options.foregroundToolFace, executionToolName, params)) {
       logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
-      return {
-        success: false,
-        error: `${executionToolName} is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.`,
-        metadata: { code: 'TOOL_DISABLED_FOR_RUN', bounced: true },
-      };
+      const canHandOff = options.foregroundToolFace === true && !getPermissionModeManager().isUnattendedSession(effectiveSessionId) && !isToolDeniedByRunPolicy(runPolicy, 'delegate_task');
+      return { success: false, error: formatRunPolicyDenial(executionToolName, canHandOff), metadata: { code: 'TOOL_DISABLED_FOR_RUN', bounced: true } };
     }
 
     // Subagent 收缩闸：subagent 调用必须先过工具白名单 + 收缩策略。

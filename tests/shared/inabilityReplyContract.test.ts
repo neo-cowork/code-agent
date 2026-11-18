@@ -51,11 +51,15 @@ describe('shared inability reply contract', () => {
 
   // #3342 删掉了 messageProcessor 里那行直接注入：它与 deniedToolRetryGuidance 返回的契约重复，
   // 且在「可交后台」路径上会与 delegate_task 指引互相矛盾。契约改由 deniedToolRetryGuidance 单点注入。
-  it('messageProcessor <tool-run-policy> block carries the contract via deniedToolRetryGuidance', () => {
-    const processor = readFileSync('src/host/agent/runtime/messageProcessor.ts', 'utf8');
-    const block = processor.match(/'<tool-run-policy>',[\s\S]*?'<\/tool-run-policy>'/)?.[0] ?? '';
-    expect(block).toContain('deniedToolRetryGuidance(this.ctx)');
+  // 拒绝口后来搬到 foregroundDenialHandoff.ts（messageProcessor 只转交），断言跟着真源走，没有放宽。
+  it('foreground denial <tool-run-policy> block carries the contract via deniedToolRetryGuidance', () => {
+    const source = readFileSync('src/host/agent/runtime/foregroundDenialHandoff.ts', 'utf8');
+    const block = source.match(/'<tool-run-policy>',[\s\S]*?'<\/tool-run-policy>'/)?.[0] ?? '';
+    expect(block).toContain('deniedToolRetryGuidance(ctx)');
     expect(block).not.toContain('getInabilityReplyGuidance');
+    const processor = readFileSync('src/host/agent/runtime/messageProcessor.ts', 'utf8');
+    expect(processor).toContain('settleForegroundToolDenial(');
+    expect(processor).not.toContain("'<tool-run-policy>'");
   });
 
   it.each(['zh', 'en'] as const)('%s retry relay follows the current turn language (runUserPrompt)', (locale) => {
