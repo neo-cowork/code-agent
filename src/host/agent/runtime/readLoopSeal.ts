@@ -93,6 +93,8 @@ export function applyReadLoopHardLimit(
   toolCall: Pick<ToolCall, 'id' | 'name'>,
   startTime: number,
   injectPrompt: (content: string) => void,
+  /** true：命令已真实执行完才触顶封口——结果只是被替换，metadata.skipped 仍保留给连续失败计数，但不能说「没执行」。 */
+  executed = false,
 ): ToolResult {
   const alreadySealed = ctx.control.readLoopSealActive;
   if (!alreadySealed) {
@@ -116,6 +118,7 @@ export function applyReadLoopHardLimit(
     metadata: {
       blocked: true,
       skipped: true,
+      ...(executed ? { executed: true } : {}),
       hardLimitPreflight: true,
       readLoopSeal: true,
       readLoopSealBlockedReads: ctx.control.readLoopSealBlockedReads,

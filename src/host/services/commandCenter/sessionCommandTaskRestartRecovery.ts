@@ -20,6 +20,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
+import { clampTaskResultCardSummary } from './taskResultHandback';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
 
 const logger = createLogger('SessionCommandRestartRecovery');
@@ -168,7 +169,7 @@ export function buildSessionTaskResultMessage(
         taskId: task.id,
         shortName: task.shortName,
         status,
-        summary: cleanResultText ?? '',
+        summary: cleanResultText === undefined ? '' : clampTaskResultCardSummary(cleanResultText),
       },
     },
   };

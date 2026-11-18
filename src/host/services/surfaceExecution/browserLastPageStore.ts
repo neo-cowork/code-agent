@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { getSecureStorage } from '../core/secureStorage';
-import type { BrowserService } from '../infra/browserService';
 
 const LAST_PAGE_SLOT_PREFIX = 'browser-last-page:';
 const MIN_TOKEN_SEGMENT_LENGTH = 24;
@@ -9,11 +8,6 @@ interface SecureKeyValueStore {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
-}
-
-interface BrowserLastPageLogger {
-  info?(message: string, metadata?: unknown): void;
-  warn?(message: string, metadata?: unknown): void;
 }
 
 export interface BrowserLastPageStore {
@@ -136,43 +130,5 @@ export class SecureBrowserLastPageStore implements BrowserLastPageStore {
 
   private slot(conversationId: string): string {
     return `${LAST_PAGE_SLOT_PREFIX}${conversationHash(conversationId)}`;
-  }
-}
-
-export async function restoreManagedBrowserLastPage(input: {
-  conversationId: string;
-  conversationIdHash: string;
-  browserService: Pick<BrowserService, 'navigate'>;
-  store: BrowserLastPageStore;
-  logger?: BrowserLastPageLogger;
-}): Promise<boolean> {
-  let targetUrl: string | null;
-  try {
-    targetUrl = await input.store.getForConversation(input.conversationId);
-  } catch (error) {
-    input.logger?.warn?.('Failed to read managed browser last page; continuing on blank page', {
-      reason: 'last_page_read_failed',
-      conversationIdHash: input.conversationIdHash,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
-  if (!targetUrl) return false;
-  try {
-    await input.browserService.navigate(targetUrl);
-    input.logger?.info?.('Restored managed browser last page', {
-      reason: 'last_page_restored',
-      conversationIdHash: input.conversationIdHash,
-      url: targetUrl,
-    });
-    return true;
-  } catch (error) {
-    input.logger?.warn?.('Failed to navigate to managed browser last page; continuing on blank page', {
-      reason: 'last_page_navigation_failed',
-      conversationIdHash: input.conversationIdHash,
-      url: targetUrl,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
   }
 }

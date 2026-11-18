@@ -39,13 +39,14 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
-  composeSessionCommandTaskResultText,
+  composeSessionCommandTaskDisplayText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
+import { composeTaskResultForModel } from './taskResultHandback';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -844,7 +845,7 @@ export class SessionCommandCenter {
     );
     // 模型侧文本与 UI/账本 summary 分家：240 字硬切会截断 SSRF 拒绝提示里的
     // 「改走 Bash curl 审批」整句，前台拿不到可执行的下一步（FB-577）。
-    task.resultText = composeSessionCommandTaskResultText(detail);
+    task.resultText = composeTaskResultForModel(task, detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
     if (status === 'completed' && artifacts?.length) {
@@ -944,6 +945,9 @@ export class SessionCommandCenter {
           retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
+          ...(TERMINAL.has(task.status) && task.detail
+            ? { resultMarkdown: composeSessionCommandTaskDisplayText(task.detail) }
+            : {}),
         },
       });
     } catch (error) {

@@ -130,5 +130,62 @@ describe('blobModule', () => {
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.output).toContain('iVBORw0KGgo=');
     });
+
+    // ---- 压缩包/音视频/wasm/数据库/原生库（N-FIX-READ-OTHER-BINARY-AS-TEXT-GARBLE）----
+    const ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(4096, 0xfe)]);
+    const MP4 = Buffer.concat([
+      Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]),
+      Buffer.alloc(4096, 0xfe),
+    ]);
+    const WASM = Buffer.concat([Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]), Buffer.alloc(4096, 0xfe)]);
+    const SQLITE = Buffer.concat([Buffer.from('SQLite format 3\0', 'latin1'), Buffer.alloc(4096, 0xfe)]);
+    const ELFISH = Buffer.alloc(4096, 0xfe); // 后缀路径不需要魔数
+
+    it.each([
+      ['backup.zip', ZIP, 'unzip -l'],
+      ['backup-noext', ZIP, 'unzip -l'],
+      ['backup-renamed.txt', ZIP, 'unzip -l'],
+      ['clip.mp4', MP4, 'ffprobe'],
+      ['clip-noext', MP4, 'ffprobe'],
+      ['mod.wasm', WASM, 'read_base64'],
+      ['mod-noext', WASM, 'read_base64'],
+      ['app.sqlite', SQLITE, 'sqlite3'],
+      ['db-noext', SQLITE, 'sqlite3'],
+      ['lib.so', ELFISH, 'Blob stat'],
+      ['tool.exe', ELFISH, 'Blob stat'],
+    ])('%s is refused with a short non-image hint', async (name, data, tool) => {
+      const { file, result } = await readText(name, data);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('BINARY_FILE_NOT_TEXT');
+        expect(result.error.length).toBeLessThan(500);
+        expect(result.error).toContain(file);
+        expect(result.error).toContain(tool);
+        expect(result.error).not.toContain('�');
+        // 非图片拒绝不能带上图片语境的补充提示
+        expect(result.error).not.toContain('stat still returns size/mime for images');
+      }
+    });
+
+    it('image refusals still carry the image-specific Blob hint', async () => {
+      const { result } = await readText('shot.png', PNG);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('Blob stat still returns size/mime for images');
+      }
+    });
+
+    it('read_base64 of a zip still works', async () => {
+      const file = path.join(tmpDir, 'backup.zip');
+      await fs.writeFile(file, ZIP);
+      const handler = await blobModule.createHandler();
+      const result = await handler.execute(
+        { action: 'read_base64', file_path: file, max_bytes: 4 },
+        makeCtx(tmpDir),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('UEsDB');
+    });
   });
 });

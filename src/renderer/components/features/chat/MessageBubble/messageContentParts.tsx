@@ -170,11 +170,13 @@ export const CodeBlock = memo(function CodeBlock({
   code,
   deferOffscreenLayout = false,
   isStreaming = false,
+  collapseLines = CODE_COLLAPSE_LINES,
 }: {
   language: string;
   code: string;
   deferOffscreenLayout?: boolean;
   isStreaming?: boolean;
+  collapseLines?: number;
 }) {
   const { t } = useI18n();
   const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -183,7 +185,7 @@ export const CodeBlock = memo(function CodeBlock({
   const config = languageConfig[language] || { color: 'text-zinc-400', name: language || 'code' };
   const lines = useMemo(() => code.split('\n'), [code]);
   const showLineNumbers = lines.length > 3;
-  const isLong = lines.length > CODE_COLLAPSE_LINES;
+  const isLong = lines.length > collapseLines;
   const [copied, setCopied] = useState(false);
   const [wrapLines, setWrapLines] = useState(false);
   const [collapsed, setCollapsed] = useState(() => isLong && !isStreaming);
@@ -207,7 +209,7 @@ export const CodeBlock = memo(function CodeBlock({
     setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
   }, [code]);
 
-  const displayCode = collapsed ? lines.slice(0, CODE_COLLAPSE_LINES).join('\n') : code;
+  const displayCode = collapsed ? lines.slice(0, collapseLines).join('\n') : code;
   const displayLines = collapsed ? displayCode.split('\n') : [];
   const deferredContentKind = getCodeBlockDeferredContentKind(lines.length);
 
