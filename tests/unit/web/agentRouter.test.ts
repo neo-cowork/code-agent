@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import express from 'express';
 import http from 'http';
 import { mkdtemp, rm } from 'fs/promises';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
@@ -1375,6 +1375,7 @@ describe('createAgentRouter', () => {
         error: 'Project folder needs trust confirmation',
         code: 'PROJECT_SOURCE_TRUST',
         kind: 'identity_changed',
+        folderName: basename(workspaceRoot),
       });
       expect(first.status).toBe(422);
       // 第二次发送：run 未注册，拿到同一个 422（不是「另一条 run 正在跑」的 409）
@@ -1384,6 +1385,7 @@ describe('createAgentRouter', () => {
         error: 'Project folder needs trust confirmation',
         code: 'PROJECT_SOURCE_TRUST',
         kind: 'identity_changed',
+        folderName: basename(workspaceRoot),
       });
       expect(runRegistry.getBySessionId('session-trust-reject')).toBeUndefined();
       expect(logger.warn).toHaveBeenCalledWith(
@@ -1403,10 +1405,57 @@ describe('createAgentRouter', () => {
           error: 'Project folder needs trust confirmation',
           code: 'PROJECT_SOURCE_TRUST',
           kind: 'identity_changed',
+          folderName: basename(workspaceRoot),
         });
       } finally {
         currentUser.mockRestore();
       }
+    } finally {
+      projectServiceMocks.getWorkspaceScope.mockReset();
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('answers source_missing with 422 kind and the folder basename, not the full path', async () => {
+    await closeServer();
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-source-missing-'));
+    const missingPath = join(workspaceRoot, 'weekly-notes');
+    const getSession = vi.fn(async () => ({
+      id: 'session-source-missing',
+      title: 'Missing folder',
+      projectId: 'project-source-missing',
+      workingDirectory: missingPath,
+    }));
+    projectServiceMocks.getWorkspaceScope.mockImplementation(() => {
+      throw new ProjectSourceTrustError('source_missing', missingPath);
+    });
+
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({ getSession, updateSession: vi.fn(async () => undefined) }),
+      });
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '请只回复：收到',
+          sessionId: 'session-source-missing',
+          context: { workingDirectory: missingPath },
+        }),
+      });
+      const body = await response.json();
+      expect(response.status).toBe(422);
+      expect(body).toEqual({
+        error: 'Project folder needs trust confirmation',
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'source_missing',
+        folderName: 'weekly-notes',
+      });
+      expect(JSON.stringify(body)).not.toContain(workspaceRoot);
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[AgentRouter] run rejected by Project Source trust gate',
+        expect.objectContaining({ sessionId: 'session-source-missing', kind: 'source_missing', sourcePath: missingPath }),
+      );
     } finally {
       projectServiceMocks.getWorkspaceScope.mockReset();
       await rm(workspaceRoot, { recursive: true, force: true });

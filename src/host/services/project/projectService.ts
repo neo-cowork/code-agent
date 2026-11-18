@@ -675,7 +675,9 @@ export class ProjectService {
     const sources = repo.listSources(projectId).map((source) => {
       const identity = workspacePathIdentity(source.canonicalPath);
       const failureKind = sourceTrustFailureKind(source, identity);
-      return failureKind ? { ...source, trustState: 'blocked' as const } : source;
+      return failureKind
+        ? { ...source, trustState: 'blocked' as const, trustFailureKind: failureKind }
+        : source;
     });
     return {
       project,

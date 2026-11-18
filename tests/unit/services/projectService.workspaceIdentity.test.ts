@@ -108,7 +108,10 @@ function expectBlocked(
     expect(error).toBeInstanceOf(ProjectSourceTrustError);
     expect(error).toMatchObject({ code: 'PROJECT_SOURCE_TRUST', kind: expectedKind });
   }
-  expect(service.getProjectDetail(projectId)?.sources[0].trustState).toBe('blocked');
+  expect(service.getProjectDetail(projectId)?.sources[0]).toMatchObject({
+    trustState: 'blocked',
+    trustFailureKind: expectedKind,
+  });
 }
 
 afterEach(() => {
@@ -153,6 +156,7 @@ describe('ProjectService workspace source identity gate', () => {
       primaryRoot: canonicalizeWorkspacePath(fixture.sourcePath),
     }));
     expect(fixture.service.getProjectDetail('proj_identity')?.sources[0].trustState).toBe('trusted');
+    expect(fixture.service.getProjectDetail('proj_identity')?.sources[0].trustFailureKind).toBeUndefined();
   });
 
   it('blocks the source when the path points to a newly created inode', () => {

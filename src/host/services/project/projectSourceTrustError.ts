@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import type {
   ProjectSourceTrustFailureKind,
   ProjectSourceTrustFailureMarker,
@@ -12,6 +13,26 @@ export class ProjectSourceTrustError extends Error {
   ) {
     super(ProjectSourceTrustError.messageFor(kind, sourcePath));
     this.name = 'ProjectSourceTrustError';
+  }
+
+  /** 422 body: kind plus the folder's basename. Never the full path. */
+  toHttpBody(): {
+    error: 'Project folder needs trust confirmation';
+    code: 'PROJECT_SOURCE_TRUST';
+    kind: ProjectSourceTrustFailureKind;
+    folderName?: string;
+  } {
+    const name = basename(this.sourcePath);
+    const folderName = name && name !== '.' && name !== '..' && name !== '/' && name !== '\\'
+      && !name.includes('/') && !name.includes('\\')
+      ? name
+      : undefined;
+    return {
+      error: 'Project folder needs trust confirmation',
+      code: 'PROJECT_SOURCE_TRUST',
+      kind: this.kind,
+      ...(folderName ? { folderName } : {}),
+    };
   }
 
   private static messageFor(kind: ProjectSourceTrustFailureKind, sourcePath: string): string {

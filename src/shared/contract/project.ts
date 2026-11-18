@@ -107,6 +107,11 @@ export interface ProjectSource {
   role: ProjectSourceRole;
   access: ProjectSourceAccess;
   trustState: ProjectSourceTrustState;
+  /**
+   * Set by getProjectDetail when this source currently fails the trust gate.
+   * Absent when the source is healthy. trustState stays blocked for existing consumers.
+   */
+  trustFailureKind?: ProjectSourceTrustFailureKind;
   identityDev?: string | null;
   identityIno?: string | null;
   identityBirthtimeNs?: string | null;
