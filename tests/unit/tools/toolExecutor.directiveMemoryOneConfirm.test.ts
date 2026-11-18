@@ -136,12 +136,13 @@ describe('directive memory write: one confirmation, no outside-project card', ()
     requestId: 'dir-1', confirmed, respondedAt: Date.now(), timedOut: false,
   });
 
-  function buildExecutor() {
+  let runSeq = 0;
+  function buildExecutor(runId = `mc-run-${++runSeq}`) {
     const executor = new ToolExecutor({
       requestPermission: permission,
       workingDirectory: workspace,
       runContext: createRunContext({
-        runId: 'mc-run', sessionId: 'mc-session', cwd: workspace,
+        runId, sessionId: 'mc-session', cwd: workspace,
         workspaceScope: createWorkspaceScope('mc-project', [{
           sourceId: 'ws-root', path: workspace, access: 'read_write', role: 'primary',
         }]),
@@ -199,5 +200,50 @@ describe('directive memory write: one confirmation, no outside-project card', ()
     await write(path.join(memoryDir, 'link.md'));
     expect(permission).toHaveBeenCalledOnce();
     expect(JSON.stringify(permission.mock.calls[0])).toContain('写入项目目录外');
+  });
+
+  it('rule file + INDEX.md pointer in one run: one dialog, no card, both written', async () => {
+    const executor = buildExecutor();
+    const rule = path.join(memoryDir, 'weekly-report-format.md');
+    const index = path.join(memoryDir, 'INDEX.md');
+    confirm(true);
+    const r1 = await executor.execute('Write', { file_path: rule, content: 'rule' }, { sessionId: 'mc-session' });
+    const r2 = await executor.execute('Write',
+      { file_path: index, content: '- [周报格式](weekly-report-format.md)' }, { sessionId: 'mc-session' });
+    expect(r1).toMatchObject({ success: true });
+    expect(r2).toMatchObject({ success: true });
+    expect(mocks.confirmation).toHaveBeenCalledOnce();
+    expect(permission).not.toHaveBeenCalled();
+    expect(existsSync(rule)).toBe(true);
+    expect(existsSync(index)).toBe(true);
+  });
+
+  it('lone INDEX.md write with no confirmed rule in this run still asks', async () => {
+    confirm(true);
+    await buildExecutor().execute('Write',
+      { file_path: path.join(memoryDir, 'INDEX.md'), content: '- weekly-report-format.md' }, { sessionId: 'mc-session' });
+    expect(mocks.confirmation).toHaveBeenCalledOnce();
+  });
+
+  it('INDEX.md in another run is not covered by an earlier run\'s confirmation', async () => {
+    confirm(true);
+    await buildExecutor().execute('Write',
+      { file_path: path.join(memoryDir, 'weekly-report-format.md'), content: 'rule' }, { sessionId: 'mc-session' });
+    confirm(true);
+    await buildExecutor().execute('Write',
+      { file_path: path.join(memoryDir, 'INDEX.md'), content: '- weekly-report-format.md' }, { sessionId: 'mc-session' });
+    expect(mocks.confirmation).toHaveBeenCalledTimes(2);
+  });
+
+  it('declined rule: INDEX.md afterwards still asks and nothing is written', async () => {
+    const executor = buildExecutor();
+    confirm(false);
+    await executor.execute('Write', { file_path: path.join(memoryDir, 'r.md'), content: 'rule' }, { sessionId: 'mc-session' });
+    confirm(false);
+    const r = await executor.execute('Write',
+      { file_path: path.join(memoryDir, 'INDEX.md'), content: '- r.md' }, { sessionId: 'mc-session' });
+    expect(r).toMatchObject({ success: false, metadata: { code: 'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED' } });
+    expect(mocks.confirmation).toHaveBeenCalledTimes(2);
+    expect(existsSync(path.join(memoryDir, 'INDEX.md'))).toBe(false);
   });
 });

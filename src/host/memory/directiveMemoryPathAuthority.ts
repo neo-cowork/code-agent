@@ -186,3 +186,37 @@ export function confirmedDirectiveMemoryTargets(
     ? assessment.targets
     : undefined;
 }
+
+// 同一轮 run 里，已确认的规则文件所附带的 INDEX.md 指针更新不再弹第二次规则确认窗。
+// 只认：本 run 已有确认过的非 INDEX 规则文件，且这次写入的目标全是 INDEX.md、
+// 内容里点到了那个规则文件的名字。单独的 INDEX.md 写入、跨 run 的写入仍然要问。
+const confirmedRuleFilesByRun = new Map<string, Set<string>>();
+const MAX_TRACKED_RUNS = 200;
+const INDEX_FILE_NAME = 'INDEX.md';
+
+export function noteConfirmedRuleWrite(runKey: string | undefined, assessment: DirectiveMemoryWriteAssessment): void {
+  if (!runKey) return;
+  const rules = assessment.targets.map((t) => path.basename(t)).filter((name) => name !== INDEX_FILE_NAME);
+  if (!rules.length) return;
+  const known = confirmedRuleFilesByRun.get(runKey) ?? new Set<string>();
+  rules.forEach((name) => known.add(name));
+  confirmedRuleFilesByRun.delete(runKey);
+  confirmedRuleFilesByRun.set(runKey, known);
+  if (confirmedRuleFilesByRun.size > MAX_TRACKED_RUNS) {
+    confirmedRuleFilesByRun.delete(confirmedRuleFilesByRun.keys().next().value as string);
+  }
+}
+
+export function coveredIndexConfirmation(
+  runKey: string | undefined,
+  assessment: DirectiveMemoryWriteAssessment,
+  params: Record<string, unknown>,
+): DirectiveMemoryConfirmationResult | undefined {
+  const known = runKey ? confirmedRuleFilesByRun.get(runKey) : undefined;
+  if (!known || !assessment.targets.length) return undefined;
+  if (!assessment.targets.every((t) => path.basename(t) === INDEX_FILE_NAME)) return undefined;
+  const body = JSON.stringify(params);
+  const mentioned = [...known].some((name) => body.includes(name) || body.includes(name.replace(/\.md$/, '')));
+  if (!mentioned) return undefined;
+  return { requestId: `covered-by-run-${runKey}`, confirmed: true, respondedAt: Date.now(), timedOut: false };
+}
