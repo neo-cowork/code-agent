@@ -39,6 +39,8 @@ export interface SessionCreateOptions {
   workingDirectory?: string;
   /** 建行时写入的归属用户；缺省 NULL（纯 CLI 无登录）。 */
   userId?: string | null;
+  /** 建行时写入的项目归属；之后分支会继承它，所以必须在建行时给。 */
+  projectId?: string | null;
 }
 
 export interface SessionScopedMessageOptions extends SessionCreateOptions {
@@ -125,6 +127,7 @@ export class CLISessionManager {
       title: options.title || this.generateSessionTitle(),
       modelConfig: options.modelConfig,
       workingDirectory: options.workingDirectory,
+      ...(options.projectId ? { projectId: options.projectId } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -218,9 +221,11 @@ export class CLISessionManager {
    * 更新会话
    */
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
+    let persisted = false;
     if (await this.ensureDbReady()) {
       try {
         this.getDb()!.updateSession(sessionId, updates);
+        persisted = true;
         this.pushTitleToCloud(sessionId, updates);
         await this.syncTelemetrySessionTitle(sessionId, updates);
       } catch (error) {
@@ -233,6 +238,27 @@ export class CLISessionManager {
       const cached = this.sessionCache.get(sessionId)!;
       Object.assign(cached, updates, { updatedAt: Date.now() });
     }
+
+    // web 构建走本类，不经过 host SessionManager.notifySessionUpdated。
+    // 标题落库后立刻推到 renderer 总线，侧栏不必等本轮结束或整页刷新。
+    const title = typeof updates.title === 'string' ? updates.title : '';
+    if (persisted && title.trim()) {
+      this.broadcastSessionTitle(sessionId, title);
+    }
+  }
+
+  /** 懒加载：纯 CLI 启动不拉 window bridge；没有订阅者时 emit 是静默空操作。导入或发送失败只留痕，不阻断改名。 */
+  private broadcastSessionTitle(sessionId: string, title: string): void {
+    void import('../host/platform/windowBridge')
+      .then(({ broadcastToRenderer }) => {
+        broadcastToRenderer('session:updated', { sessionId, updates: { title } });
+      })
+      .catch((error: unknown) => {
+        logger.warn('session title broadcast failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   /** web 构建走本类而非 host SessionManager：标题变更同样回写云端行（懒加载，CLI 启动不拉起 supabase 栈）。 */

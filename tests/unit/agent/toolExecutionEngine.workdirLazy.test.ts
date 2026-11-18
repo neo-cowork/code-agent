@@ -628,6 +628,7 @@ describe('delegate task tools do not materialize; empty folders recycle (N-DELEG
     beginWorkDirectoryRun(dir);
     await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-extra-meta' });
     plantFinalSnapshot(dir, 'session-extra-meta', 'run-extra-meta');
+    mkdirSync(path.join(dir, '.code-agent'), { recursive: true });
     writeFileSync(path.join(dir, '.code-agent', 'other.txt'), 'keep');
     endWorkDirectoryRun(dir);
     expect(existsSync(path.join(dir, '.code-agent', 'other.txt'))).toBe(true);

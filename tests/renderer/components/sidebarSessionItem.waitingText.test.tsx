@@ -35,8 +35,8 @@ afterEach(() => {
 
 describe('SidebarSessionItem visible waiting text', () => {
   it.each([
-    ['zh', '等你批准：操作《Calculator》', '等你批准', '等你确认'],
-    ['en', 'Approve: "Calculator"', 'Waiting for your approval', 'Waiting for you'],
+    ['zh', '等你确认：操作《Calculator》', '等你确认', '等你确认'],
+    ['en', 'Approve: "Calculator"', 'Needs your approval', 'Waiting for you'],
   ] as const)('renders actual %s text nodes for app permission, generic permission and other input', (language, appText, permissionText, otherText) => {
     useAppStore.setState({ language });
     const sources: SessionNeedsInputSources = { permissionState: {
