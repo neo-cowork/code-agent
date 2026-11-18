@@ -123,11 +123,13 @@ export async function quiesceServer(bin: string, server: ServerInfo): Promise<st
   const deadline = Date.now() + IDLE_CAP_MS;
   let busy = busySessions(dumpDb(bin, server).data);
   while (busy.length && Date.now() < deadline) {
+    console.log(`quiesce: ${busy.length} busy session(s), cancelling`);
     await cancelSessions(server, busy);
     await new Promise((r) => setTimeout(r, 3_000));
     busy = busySessions(dumpDb(bin, server).data);
   }
   if (!busy.length) return null;
+  console.log('quiesce: still busy, kill9 + restart');
   runRealrun(bin, ['kill9', '--out', server.dir]);
   runRealrun(bin, ['restart', '--out', server.dir], START_TIMEOUT_MS);
   return `上一次尝试留下 ${busy.length} 个停不下来的会话，${IDLE_CAP_MS / 1000}s 内没回到空闲，已 kill9 + restart 服务`;
