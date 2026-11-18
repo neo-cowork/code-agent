@@ -221,6 +221,10 @@ export async function getFirstWakeSnapshot(roleId: string): Promise<RoleFirstWak
   if (!state) return null;
   const intro = boundedText(state.intro, INTRO_MAX_CHARS);
   const failureReason = boundedText(state.failureReason, FAILURE_REASON_MAX_CHARS);
+  // 计时锚点只抄 enqueuedAt。缺字段、null、NaN、Infinity 都不带出。
+  const startedAt = typeof state.enqueuedAt === 'number' && Number.isFinite(state.enqueuedAt)
+    ? state.enqueuedAt
+    : undefined;
   return {
     state: state.state,
     ...(state.sessionId ? { sessionId: state.sessionId } : {}),
@@ -231,6 +235,7 @@ export async function getFirstWakeSnapshot(roleId: string): Promise<RoleFirstWak
     suggestions: Array.isArray(state.suggestions) ? state.suggestions : [],
     ...(intro ? { intro } : {}),
     ...(failureReason ? { failureReason } : {}),
+    ...(startedAt !== undefined ? { startedAt } : {}),
   };
 }
 

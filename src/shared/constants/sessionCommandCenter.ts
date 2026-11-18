@@ -130,6 +130,25 @@ export function composeSessionCommandTaskResultText(value: string | undefined): 
   return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
 }
 
+/** 成员页「完整产出」用的展示文本封顶（保留换行，供 markdown 渲染）；模型侧 resultText 另有 1500 字规范化版本。 */
+const SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS = 8000;
+
+/**
+ * 成员页展示文本：保留换行（围栏代码块靠它成立），统一行尾、去首尾空白，按 code point 封顶。
+ * 封顶时回退到最近的换行，并在围栏未闭合时补一个闭合围栏，避免页面上出现孤立的 ```。
+ */
+export function composeSessionCommandTaskDisplayText(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\r\n?/g, '\n').trim();
+  if (!normalized) return undefined;
+  const chars = Array.from(normalized);
+  if (chars.length <= SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS) return normalized;
+  let cut = chars.slice(0, SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS).join('');
+  const lastNewline = cut.lastIndexOf('\n');
+  if (lastNewline > 0) cut = cut.slice(0, lastNewline);
+  const fenceCount = (cut.match(/^\s*```/gm) ?? []).length;
+  return `${cut}${fenceCount % 2 === 1 ? '\n```' : ''}\n…`;
+}
+
 /**
  * [任务结果] 行的状态词（给人读的）：正文里不再露英文机读 token（failed/completed）。
  * metadata.backgroundTaskResult.status 仍保持机器可读原值，渲染端/账本不受影响。

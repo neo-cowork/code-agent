@@ -39,6 +39,7 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  composeSessionCommandTaskDisplayText,
   composeSessionCommandTaskResultText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
@@ -671,6 +672,7 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        ...(data.action ? { action: data.action } : {}),
         ...(data.description ? { description: data.description } : {}),
         at: Date.now(),
       },
@@ -706,8 +708,13 @@ export class SessionCommandCenter {
       return;
     }
 
+    task.progress = { ...task.progress, failedToolCalls: (task.progress?.failedToolCalls ?? 0) + 1 };
+    task.updatedAt = Date.now();
     const code = result.metadata?.code;
-    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) return;
+    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) {
+      this.projectTask(task);
+      return;
+    }
     const alternatives = result.metadata?.alternatives;
     task.progress = {
       ...task.progress,
@@ -938,6 +945,9 @@ export class SessionCommandCenter {
           retryOf: task.retryOf,
           parentRunId: task.parentRunId,
           childRunId: task.id,
+          ...(TERMINAL.has(task.status) && task.detail
+            ? { resultMarkdown: composeSessionCommandTaskDisplayText(task.detail) }
+            : {}),
         },
       });
     } catch (error) {

@@ -31,6 +31,7 @@ import {
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../utils/agentActivity';
+import { MemberOutputMarkdown } from './MemberOutputMarkdown';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
@@ -203,7 +204,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
     }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
-    const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
+    // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
+    const taskResultMarkdown = plainTask?.metadata?.resultMarkdown;
+    const finalOutput = plainNode?.progress
+      ?? (typeof taskResultMarkdown === 'string' && taskResultMarkdown ? taskResultMarkdown : plainTask?.summary)
+      ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
     // 终态工具失败出路（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：只在任务收尾后亮，运行中不亮
     const toolFailure = isLastToolFailureVisible(plainTask?.status)
@@ -275,7 +280,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <section data-testid="member-final-output">
             <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-              <pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{finalOutput || text.noOutput}</pre>
+              <MemberOutputMarkdown output={finalOutput} fallback={text.noOutput} />
               {outputRefs.length > 0 && (
                 <ul className="mt-2 space-y-0.5">
                   {outputRefs.map((ref) => (
@@ -412,7 +417,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <section data-testid="member-final-output">
           <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>
           <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-            <pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{agent.finalOutput || text.noOutput}</pre>
+            <MemberOutputMarkdown output={agent.finalOutput} fallback={text.noOutput} />
           </div>
         </section>
 
