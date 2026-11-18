@@ -85,6 +85,11 @@ function formattedDatetime(raw: unknown, language: string): string {
   return formatDateTime(date, language === 'en' ? 'en' : 'zh');
 }
 
+/** 更新是局部补丁：缺失字段和查出来的快照字段不进草稿，确认时也不回传。 */
+function isPartialUpdate(tool: string): boolean {
+  return tool === 'calendar_update_event' || tool === 'reminders_update';
+}
+
 export function draftFromArgs(tool: string, args: Record<string, unknown>, includeSnapshot = false): WritebackDraft {
   const draft: WritebackDraft = {};
   const snapshotFields = !includeSnapshot && Array.isArray(args.calendarApprovalSnapshotFields)
@@ -93,7 +98,7 @@ export function draftFromArgs(tool: string, args: Record<string, unknown>, inclu
     if (field.readonly) continue;
     const raw = args[field.key];
     // 更新是局部补丁：缺失字段保持缺失，用户输入（包括主动清空）才加入草稿。
-    if (tool === 'calendar_update_event' && (!Object.hasOwn(args, field.key) || snapshotFields.includes(field.key))) continue;
+    if (isPartialUpdate(tool) && (!Object.hasOwn(args, field.key) || snapshotFields.includes(field.key))) continue;
     if (field.kind === 'string_list') {
       draft[field.key] = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '';
     } else if (field.kind === 'datetime') {
@@ -114,7 +119,7 @@ export function draftToArgs(tool: string, draft: WritebackDraft, original?: Reco
   const out: Record<string, unknown> = {};
   for (const field of EDITABLE_TOOL_FIELDS[tool] ?? []) {
     if (field.readonly) continue;
-    if (tool === 'calendar_update_event' && !Object.hasOwn(draft, field.key)) continue;
+    if (isPartialUpdate(tool) && !Object.hasOwn(draft, field.key)) continue;
     const value = draft[field.key] ?? '';
     if (field.kind === 'string_list') {
       out[field.key] = value.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
@@ -168,9 +173,7 @@ function useFieldLabels(): Record<string, string> {
     subject: w.fieldSubject,
     content: w.fieldContent,
     calendar: w.fieldCalendar,
-    event_uid: w.fieldEventUid,
     list: w.fieldList,
-    reminder_id: w.fieldReminderId,
     title: w.fieldTitle,
     notes: w.fieldNotes,
     location: w.fieldLocation,
@@ -207,7 +210,7 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
   return (
     <div className="space-y-1.5 rounded bg-zinc-800/60 p-2.5" data-testid="writeback-fields-view">
       {fields.map((field) => {
-        if (field.readonly && field.key === 'event_uid') return null;
+        if (field.internal) return null;
         const raw = args[field.key];
         const text = field.kind === 'string_list'
           ? (Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string').join(', ') : '')
