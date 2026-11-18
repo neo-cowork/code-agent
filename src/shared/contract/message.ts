@@ -269,6 +269,8 @@ export type AgentErrorCategory =
   | 'insufficient_balance'
   | 'model_not_found'
   | 'forbidden'
+  /** 服务商只回了光秃秃的 400 Bad Request / Invalid request：没有可纠正的字段，引导换模型。 */
+  | 'bad_request'
   | 'rate_limited'
   /** 套餐用量窗口用尽（429 + 用量上限措辞）：窗口会自己恢复，不给重试。 */
   | 'usage_limit'

@@ -374,7 +374,6 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     'tmeetMeetingCreate',
     'mcp_add_server',
     'xlwings_execute',
-    'ExcelAutomate',
     'sleep_until',
     'wake_on',
     'wake_on_event',
@@ -386,6 +385,18 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     expect(result.success).toBe(true);
     expect(permissionCalls.length).toBe(1);
     expect(permissionCalls[0].tool).toBe(toolName);
+  });
+
+  // ExcelAutomate 已按 action 分级：整工具不再进 ACCEPT_EDITS_MUST_ASK_TOOLS，
+  // automate / 缺失 / 未知 action 由分类器给出 trustBoundary ask，acceptEdits 不得升级成 approve。
+  it.each([{ action: 'automate' }, {}, { action: 'bogus' }])('acceptEdits：ExcelAutomate %j 的 trustBoundary ask 仍需用户确认', async (params) => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: 'ExcelAutomate', requiresPermission: true, permissionLevel: 'write' });
+    mockClassification = { decision: 'ask', reason: 'Excel automation or unknown action requires confirmation', confidence: 1, cached: false, trustBoundary: true } as typeof mockClassification;
+    const result = await executor.execute('ExcelAutomate', params, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(1);
+    expect(permissionCalls[0].tool).toBe('ExcelAutomate');
   });
 
   // 对照组：可逆 / 草稿 / 只读浏览类在 acceptEdits 下保持免确认（真实分类链，零请求）
