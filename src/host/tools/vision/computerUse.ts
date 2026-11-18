@@ -423,6 +423,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({
         executionIntent: context.executionIntent,
         agentId: context.agentId,
+        ...(context.sessionId ? { conversationId: context.sessionId } : {}),
       }));
     }
 
