@@ -117,6 +117,7 @@ export const agentErrorZh = {
       insufficient_balance: '账号余额不足',
       model_not_found: '模型名称或接口不匹配',
       forbidden: '服务商拒绝了请求',
+      bad_request: '当前模型可能不支持这次请求',
       rate_limited: '模型服务限流',
       usage_limit: '套餐额度已用完',
       concurrency: '账号并发已满',
@@ -149,6 +150,10 @@ export const agentErrorZh = {
       forbidden: {
         title: '模型服务拒绝了这次请求',
         suggestion: '当前模型供应商返回 403/Forbidden。请检查 API Key 是否有效、账号是否有该模型权限、额度是否可用；也可以先切换到其他模型后重试。',
+      },
+      bad_request: {
+        title: '当前模型可能用不了',
+        suggestion: '当前模型供应商没有说明原因就拒绝了请求。这个模型可能暂时不可用，或不支持这类请求；可以先切换到其他模型后重试。',
       },
       rate_limited: {
         title: '模型服务暂时限流',
@@ -237,6 +242,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       insufficient_balance: 'insufficient balance',
       model_not_found: 'model name or endpoint mismatch',
       forbidden: 'provider rejected the request',
+      bad_request: 'this model may not support this request',
       rate_limited: 'rate limited',
       usage_limit: 'plan quota used up',
       concurrency: 'concurrency limit reached',
@@ -267,6 +273,10 @@ export const agentErrorEn: typeof agentErrorZh = {
       forbidden: {
         title: 'The model service rejected this request',
         suggestion: 'The model provider returned 403/Forbidden. Check that the API Key is valid, the account has access to this model, and quota is available — or switch to another model and retry.',
+      },
+      bad_request: {
+        title: 'This model may not work here',
+        suggestion: 'The model provider rejected the request without saying why. This model may be unavailable or not support this kind of request — switch to another model and retry.',
       },
       rate_limited: {
         title: 'Model service is rate limited',
