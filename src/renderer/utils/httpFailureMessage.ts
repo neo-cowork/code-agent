@@ -162,7 +162,7 @@ export interface ProjectSourceTrustHttpFields {
 }
 
 /** Basename only. A value that still looks like a path is dropped so it cannot reach the bubble. */
-export function safeProjectFolderName(value: unknown): string | undefined {
+function safeProjectFolderName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const name = value.trim();
   if (!name || name === '.' || name === '..' || name === '/' || name === '\\') return undefined;
