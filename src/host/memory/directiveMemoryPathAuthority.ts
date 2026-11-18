@@ -6,6 +6,8 @@ import type {
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { hasPathBoundaryMention, resolveToolPath, resolveToolWriteTargets, shellScopedUncertainRedirects } from '../tools/writeTargets';
+import { buildDirectiveMemoryConfirmView } from './directiveMemoryConfirmView';
+import type { MemoryConfirmView } from '../../shared/contract/memory';
 import type { DirectiveMemoryConfirmationResult } from './directiveMemoryConfirmation';
 
 export interface DirectiveMemoryWriteAssessment {
@@ -13,6 +15,8 @@ export interface DirectiveMemoryWriteAssessment {
   fingerprint: string;
   targets: readonly string[];
   preview: string;
+  /** 给用户看的确认卡内容（语言中立、只含值）；preview 仍是 headless 探针用的 JSON */
+  buildConfirmView: () => MemoryConfirmView;
 }
 
 interface AssessInput {
@@ -143,6 +147,11 @@ export function assessDirectiveMemoryWrite(input: AssessInput): DirectiveMemoryW
     fingerprint,
     targets: uniqueTargets,
     preview: JSON.stringify(input.params).slice(0, 4_000),
+    buildConfirmView: () => buildDirectiveMemoryConfirmView({
+      toolName: input.definition.name,
+      params: input.params,
+      targets: uniqueTargets,
+    }),
   };
 }
 

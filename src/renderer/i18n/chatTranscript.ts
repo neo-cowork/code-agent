@@ -247,6 +247,7 @@ toolGroup: {
 // 消费方 ToolStepGroup 的步骤行；原工具名/参数仍在展开详情（ToolHeader/ToolDetails）里，不删信息。
 toolStepHumanize: {
   ...toolStepVerbsZh,
+  excelRead: '读取 {target}', excelWrite: '写入 {target}',
   declared: { tmeetMeetingListUpcoming: '查了待开始/进行中的会议', tmeetMeetingListEnded: '查了近 30 天已结束的会议',
     tmeetMeetingCreate: '创建了一场会议', tmeetMeetingSearch: '搜索了会议', tmeetRecordList: '查了腾讯会议录制', tmeetRecordRead: '读了腾讯会议转写和纪要', feishuMinutesSearch: '搜了飞书妙记', feishuMinutesRead: '读了一条飞书妙记', meetingRecords: '查了会议记录' },
   intent: { tmeetMeetingListUpcoming: '查待开始/进行中的会议', tmeetMeetingListEnded: '查近 30 天已结束的会议',
@@ -271,6 +272,7 @@ toolStepHumanize: {
   channelNames: { lark: '飞书', feishu: '飞书', slack: 'Slack', telegram: 'Telegram' } as Record<string, string>,
   subagentSpawn: '启动了代理 — {description}',
   subagentSpawnFallback: '启动了一个代理',
+  subagentSpawnParallel: '启动了 {count} 个代理 — {names}',
   subagentMessage: '给代理发了条消息',
   agentConversation: '正在跟 {name} 说话',
   agentConversationFallback: '正在跟代理说话',
@@ -711,7 +713,7 @@ traceView: {
 
 // Tool step group (ToolStepGroup)
 toolGroup: {
-  statusRunning: 'running',
+  statusRunning: 'In progress',
   statusPartial: 'Some steps need attention',
   statusFailed: outcomeWordsEn.outcomeWords['failed-tool'].badge.label,
   statusCompleted: outcomeWordsEn.outcomeWords.completed.badge.label,
@@ -731,6 +733,7 @@ toolGroup: {
 // The raw tool name/args still show in the expanded detail (ToolHeader/ToolDetails).
 toolStepHumanize: {
   ...toolStepVerbsEn,
+  excelRead: 'Read {target}', excelWrite: 'Write {target}',
   declared: { tmeetMeetingListUpcoming: 'Checked upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checked meetings ended in the last 30 days',
     tmeetMeetingCreate: 'Created a meeting', tmeetMeetingSearch: 'Searched meetings', tmeetRecordList: 'Checked Tencent Meeting recordings', tmeetRecordRead: 'Read a Tencent Meeting transcript', feishuMinutesSearch: 'Searched Feishu Minutes', feishuMinutesRead: 'Read a Feishu Minutes record', meetingRecords: 'Checked meeting records' },
   intent: { tmeetMeetingListUpcoming: 'Check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Check meetings ended in the last 30 days',
@@ -756,6 +759,7 @@ toolStepHumanize: {
   channelNames: { lark: 'Lark', feishu: 'Feishu', slack: 'Slack', telegram: 'Telegram' } as Record<string, string>,
   subagentSpawn: 'Started an agent — {description}',
   subagentSpawnFallback: 'Started an agent',
+  subagentSpawnParallel: 'Started {count} agent tasks — {names}',
   subagentMessage: 'Sent a message to an agent',
   agentConversation: 'Talking to {name}',
   agentConversationFallback: 'Talking to an agent',

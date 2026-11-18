@@ -45,7 +45,7 @@ it.each([['zh', false], ['en', false], ['zh', true], ['en', true]] as const)('%s
   const records = screen.getByTestId('role-detail-records-tab');
   expect(within(records).getByText(body)).toBeTruthy();
   expect(within(records).getByText('Weekly definitions')).toBeTruthy();
-  expect(within(records).getByText('reporting.md')).toBeTruthy();
+  expect(within(records).queryByText('reporting.md')).toBeNull();
   for (const raw of ['---', 'type:', 'name:', '[advance]', '[report]', '[suggest]']) expect(records.textContent).not.toContain(raw);
   const copy = (language === 'zh' ? expertZh : expertEn).expert.roleDetail.historyDecision;
   for (const label of Object.values(copy)) expect(records.textContent).toContain(label + ' Definitions aligned');

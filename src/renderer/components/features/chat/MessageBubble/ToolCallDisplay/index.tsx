@@ -288,7 +288,7 @@ export function ToolCallDisplay({
 
   return (
     <div
-      className={`group font-mono text-sm ${
+      className={`group text-sm ${
         status === 'error'
           ? `border-l-2 pl-2 ${quietError ? 'border-[var(--cc-muted)]/40' : 'border-[var(--cc-error)]'}`
           : ''
@@ -721,7 +721,7 @@ function BrowserComputerActionPreviewLine({ preview }: { preview: BrowserCompute
       {preview.target && (
         <>
           <span className="text-zinc-700">→</span>
-          <span className="max-w-[320px] truncate" title={preview.target}>{preview.target}</span>
+          <span className="max-w-[320px] truncate font-mono" title={preview.target}>{preview.target}</span>
         </>
       )}
       <span className={getActionPreviewRiskClass(preview.risk)}>{preview.riskLabel}</span>

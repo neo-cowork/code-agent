@@ -1,0 +1,30 @@
+diff --git a/src/host/tools/shell/sandboxEscalation.ts b/src/host/tools/shell/sandboxEscalation.ts
+index 115ffdcce..0e18e6254 100644
+--- a/src/host/tools/shell/sandboxEscalation.ts
++++ b/src/host/tools/shell/sandboxEscalation.ts
+@@ -6,6 +6,9 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
+ import { parseShellCommand } from '../../security/commandParse';
+ import type { PolicyEnforcer } from '../../security/policyEnforcer';
+ import { denyConcreteShellWritePath } from './writePathPolicyDeny';
++import { createLogger } from '../../services/infra/logger';
++
++const approvedRmLogger = createLogger('ApprovedRmGrant');
+
+ function expandLeadingHome(rawPath: string): string {
+   const home = homedir();
+@@ -17,64 +20,138 @@ function expandLeadingHome(rawPath: string): string {
+   return rawPath;
+ }
+
+-/**
+- * Extract one literal file operand from one `rm`, optionally accompanied by
+- * harmless status reporting. The only accepted options are `--`, `-f`, and
+- * `--force`; recursive, redirected, expanded, and multi-target rm stay ordinary.
+- */
+-function extractApprovedSingleFileRmTarget(
+-  command: string,
+-  workingDirectory: string,
+-): string | undefined {
+-  const parsed = parseShellCommand(command);
+-  if (parsed.parsingFailed || parsed.trailingOperator || parsed.writeTargets.length > 0 || parsed.uncertain.length > 0) {
+-    return undefined;

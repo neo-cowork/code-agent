@@ -100,6 +100,7 @@ vi.mock('../../../src/host/platform', () => ({
 
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: () => undefined,
       sendMessage: vi.fn(async () => undefined),
