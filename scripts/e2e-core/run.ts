@@ -9,7 +9,7 @@ import { CORE_FLOWS, CORE_FLOW_IDS } from './flows';
 import { buildAttempt, buildFlowResult, buildResult, exitCodeFor, formatFailure, type AttemptResult, type FlowResult } from './result';
 import { assertRealrunBin, cancelSessions, captureEvents, dumpDb, quiesceServer, startServer, stopServer } from './server';
 import type { AttemptEnv, FlowDef, ServerInfo } from './types';
-import { dismissFirstRunLayers } from './ui';
+import { dismissFirstRunLayers, setDeliveryProbe } from './ui';
 
 const ATTEMPT_CAP_MS = 12 * 60_000;
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -33,6 +33,7 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
     note: (text) => { if (!notes.includes(text)) notes.push(text); },
     readDb: async () => { const r = dumpDb(bin, server); lastDb = r.file; return r; },
   };
+  setDeliveryProbe(async (since) => (await env.readDb()).data.permissionDecisions.some((r) => Number(r.recorded_at) >= since - 2_000));
   const started = Date.now();
   const restarted = await quiesceServer(bin, server);
   if (restarted) env.note(restarted);

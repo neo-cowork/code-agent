@@ -95,10 +95,16 @@ export async function driveTurn(page: Page, handlers: TurnHandlers, timeoutMs: n
   throw new Error(`等待回合收尾超时（${Math.round(timeoutMs / 1000)}s）`);
 }
 
+type DeliveryProbe = (sinceMs: number) => Promise<boolean>;
+let deliveryProbe: DeliveryProbe | null = null;
+/** 排队的几张卡文字可能完全一样、界面上看不出换了一张：超时后用数据库里「点击之后有没有新的审批决定」判断点击是否送达。 */
+export function setDeliveryProbe(probe: DeliveryProbe | null): void { deliveryProbe = probe; }
+
 export async function clickCardButton(page: Page, label: string): Promise<void> {
   const card = page.getByTestId('permission-card').first();
   const before = await card.innerText();
   const countBefore = await page.getByTestId('permission-card').count();
+  const clickedAt = Date.now();
   await card.getByRole('button', { name: label }).click({ timeout: 10_000 });
   // 点完这张卡应当收起（或换成下一张不同的卡）；原样还在就是「点了没反应」。快速轮询，别漏掉短暂的收起
   const deadline = Date.now() + CARD_COLLAPSE_TIMEOUT_MS;
@@ -107,7 +113,10 @@ export async function clickCardButton(page: Page, label: string): Promise<void> 
     // 排队的两张卡文字可能一样（路径被截断），所以数量减少也算收起
     if ((await page.getByTestId('permission-card').count()) < countBefore) return;
     if ((await card.innerText().catch(() => before)) !== before) return;
-    if (Date.now() > deadline) throw new Error(`点「${label}」后审批卡 ${CARD_COLLAPSE_TIMEOUT_MS / 1000} 秒内没有收起（原样还在）`);
+    if (Date.now() > deadline) {
+      if (deliveryProbe && await deliveryProbe(clickedAt).catch(() => false)) return;
+      throw new Error(`点「${label}」后审批卡 ${CARD_COLLAPSE_TIMEOUT_MS / 1000} 秒内没有收起（原样还在，数据库里也没有新的审批决定）`);
+    }
     await sleep(100);
   }
 }
