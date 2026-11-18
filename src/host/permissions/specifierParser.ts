@@ -104,6 +104,7 @@ export function matchSpecifier(
   if (specifier.specifierType === 'command') {
     return matchCommandSpecifier(specifier.specifier, input.trim(), intent);
   }
-  // Identifiers (command/path) are matched trimmed: cleanXmlResidues no longer trims untagged strings.
-  return globMatches(specifier.specifier, input.trim());
+  // A padded path is only trimmed for deny/ask: the executor outside the engine opens it literally, so an
+  // allow rule must never be granted to a spelling that names a different file.
+  return globMatches(specifier.specifier, intent === 'restrict' ? input.trim() : input);
 }

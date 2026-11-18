@@ -300,7 +300,7 @@ export class PolicyEngine {
           || specifier?.specifierType !== 'path' || !specifier.specifier) {
         continue;
       }
-      if (pathCandidates.some((candidate) => matchSpecifier(specifier, candidate))) return rule;
+      if (pathCandidates.some((candidate) => matchSpecifier(specifier, candidate, 'restrict'))) return rule;
     }
     return null;
   }
