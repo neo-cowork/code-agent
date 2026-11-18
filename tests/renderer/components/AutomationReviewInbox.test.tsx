@@ -680,8 +680,14 @@ describe('AutomationReviewInbox', () => {
       expect(card.querySelector('button')).toBeNull();
       expect([...card.children].every((line) => line.textContent?.trim())).toBe(true);
     });
-    expect(screen.getAllByTestId('parked-args-preview')).toHaveLength(2);
-    expect(cards[0].textContent).toContain(`${language === 'en' ? 'Details: ' : '操作内容：'}invoice-export --token=***REDACTED***`);
+    expect(screen.getAllByTestId('parked-shell-preview')).toHaveLength(2);
+    const folded = cards[0].querySelector('details');
+    expect(folded?.hasAttribute('open')).toBe(false);
+    expect(folded?.querySelector('summary')?.textContent).toBe(language === 'en' ? 'View command' : '查看命令');
+    expect(folded?.querySelector('[data-testid="parked-shell-preview"]')?.textContent).toBe('invoice-export --token=***REDACTED***');
+    const outside = cards[0].cloneNode(true) as HTMLElement;
+    outside.querySelectorAll('details').forEach((node) => node.remove());
+    expect(outside.textContent).not.toContain('invoice-export');
     // Same tool, reason and session; only requestedAt differs (indices 0 and 3).
     expect(cards[0].textContent).not.toBe(cards[3].textContent);
   });
@@ -798,7 +804,7 @@ describe('AutomationReviewInbox', () => {
     listParkedApprovals.mockResolvedValue([makeParked({ tool: 'Bash', riskClass: null, argsPreview: 'ls -la /tmp/notes' })]);
     render(<AutomationReviewInbox />);
     const card = await screen.findByTestId('parked-approval-item');
-    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run a command');
+    expect(card.textContent).toContain(language === 'zh' ? '运行命令' : 'Run command');
     expect(card.textContent).not.toContain('Bash');
     const summary = screen.getByText(language === 'zh' ? '查看命令' : 'View command');
     expect(summary.closest('details')?.open).toBe(false);

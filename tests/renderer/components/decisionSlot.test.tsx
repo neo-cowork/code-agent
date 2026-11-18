@@ -188,10 +188,10 @@ describe('DecisionSlot', () => {
     expect(slot.getAttribute('aria-label')).toBe('待你决定');
     expect(slot.className).toContain('chat-col-pad');
     expect(slot.className).not.toContain('overflow-y-auto');
-    expect(screen.getByText('执行命令')).toBeTruthy();
+    expect(screen.getByText('运行命令')).toBeTruthy();
     expect(screen.getAllByText('危险')).toHaveLength(1);
     expect(screen.getByText('还有 2 项')).toBeTruthy();
-    expect(screen.queryByText('创建文件')).toBeNull();
+    expect(screen.queryByText('写入文件')).toBeNull();
     expect(screen.getByTestId('permission-card-details-scroll').className).toContain('overflow-y-auto');
     expect(screen.getByTestId('permission-card-pinned-options').className).toContain('shrink-0');
     expect(screen.queryByTestId('permission-card-actions')).toBeNull();
@@ -230,7 +230,7 @@ describe('DecisionSlot', () => {
 
     expect(screen.getByText('发送邮件')).toBeTruthy();
     expect(screen.getByText('还有 2 项')).toBeTruthy();
-    expect(screen.queryByText('创建文件')).toBeNull();
+    expect(screen.queryByText('写入文件')).toBeNull();
   });
 
   it('常规权限卡默认高亮主按钮，Enter = 允许一次', async () => {
@@ -542,6 +542,18 @@ describe('DecisionSlot', () => {
     expect(effectStart).toBeGreaterThan(signalStart);
     expect(activitySignal).not.toMatch(/PermissionRequest|queuedPermissionRequests/u);
     expect(appSource).toContain('syncTaskWorkbenchForActivity(currentSessionId, taskWorkbenchActivityKey)');
+  });
+
+  it('只有提问卡时数字键选中第二项', () => {
+    render(<DecisionSlot userQuestion={userQuestion} />);
+
+    expect(screen.getByTestId('user-question-card')).toBeTruthy();
+    expect(screen.queryByTestId('permission-card')).toBeNull();
+    expect(screen.queryByTestId('plan-approval-card')).toBeNull();
+    expect(screen.getByTestId('user-question-key-hint').textContent).toContain('1-3');
+
+    fireEvent.keyDown(window, { key: '2' });
+    expect(screen.getByRole('button', { name: /方案 B/ }).className).toContain('ring-1');
   });
 
   it('提问卡和计划卡进入同一槽位：提问优先，Esc 迷你条汇总数量且保留已选状态', () => {

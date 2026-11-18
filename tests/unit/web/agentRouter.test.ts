@@ -11,6 +11,8 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
 import { createCLIAgent } from '../../../src/cli/adapter';
+import { CLIDatabaseService } from '../../../src/cli/database';
+import { CLISessionManager } from '../../../src/cli/session';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { handleServerError } from '../../../src/web/middleware/serverErrors';
 import { ProjectSourceTrustError } from '../../../src/host/services/project/projectSourceTrustError';
@@ -74,6 +76,8 @@ const agentEngineMocks = vi.hoisted(() => ({
 }));
 const projectServiceMocks = vi.hoisted(() => ({
   getWorkspaceScope: vi.fn(),
+  getProjectForWorkspace: vi.fn(),
+  findProjectForWorkspace: vi.fn(),
 }));
 const forkContextBuilderMocks = vi.hoisted(() => ({
   buildValidatedExternalForkContextHandoff: vi.fn(),
@@ -111,6 +115,8 @@ const cloudRunLedgerStub = {
 };
 const mockQueuedInputEnqueue = vi.spyOn(QueuedInputRepository.prototype, 'enqueue')
   .mockImplementation(() => undefined);
+
+vi.mock('../../../src/host/model/quickModel', () => ({ isQuickModelAvailable: () => false, quickTask: vi.fn() }));
 
 vi.mock('../../../src/cli/adapter', () => ({
   createCLIAgent: vi.fn(async () => ({
@@ -229,6 +235,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 vi.mock('../../../src/host/services/project/projectService', () => ({
   getProjectService: () => ({
     getWorkspaceScope: projectServiceMocks.getWorkspaceScope,
+    getProjectForWorkspace: projectServiceMocks.getProjectForWorkspace,
+    findProjectForWorkspace: projectServiceMocks.findProjectForWorkspace,
   }),
 }));
 
@@ -563,6 +571,8 @@ describe('createAgentRouter', () => {
     agentEngineMocks.ledgerQueueNotification.mockReset();
     agentEngineMocks.enqueueReviewSession.mockReset();
     projectServiceMocks.getWorkspaceScope.mockReset();
+    projectServiceMocks.getProjectForWorkspace.mockReset();
+    projectServiceMocks.findProjectForWorkspace.mockReset();
     forkContextBuilderMocks.buildValidatedExternalForkContextHandoff.mockClear();
     mockDb.getSession.mockReturnValue({
       id: 'session-existing',
@@ -5062,7 +5072,7 @@ describe('createAgentRouter', () => {
     //（ui.language=zh 档；无标题 → 首条用户消息第一个分句）
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: expectedDir,
     }));
@@ -5235,7 +5245,7 @@ describe('createAgentRouter', () => {
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     // 首轮按分句规划、已回写、还没落盘；第二轮智能标题已就位
-    const plannedFromClause = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const plannedFromClause = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     const replanned = `${tempDataDir}-work/任务_${mmdd}_季度总结报告`;
     const updateSession = vi.fn(async () => undefined);
     await startAgentApi({
@@ -5280,7 +5290,7 @@ describe('createAgentRouter', () => {
 
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const materializedFolder = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const materializedFolder = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     mkdirSync(materializedFolder, { recursive: true });
     writeFileSync(join(materializedFolder, '既有产物.md'), 'keep');
     const updateSession = vi.fn(async (_sessionId: string, _updates: Record<string, unknown>) => undefined);
@@ -5419,7 +5429,7 @@ describe('createAgentRouter', () => {
 
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     // 首轮目录回写到已存在的会话行（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
     expect(sessionRows.get(sessionId)?.workingDirectory).toBe(expectedDir);
     // 两轮都跑在同一个按会话目录里；两轮都是纯对话（loop 被 mock、无写工具），
@@ -5575,7 +5585,7 @@ describe('createAgentRouter', () => {
     await response.text();
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
     // 懒开：只规划不落盘
     expect(existsSync(expectedDir)).toBe(false);
@@ -5650,7 +5660,7 @@ describe('createAgentRouter', () => {
     await response.text();
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
     // 懒开：只规划不落盘（loop 被 mock、无写工具，本轮不该有任何目录出现）
     expect(existsSync(expectedDir)).toBe(false);
@@ -6169,6 +6179,85 @@ describe('createAgentRouter', () => {
 
       await disconnectAndStop(controller);
       await waitForAssertion(() => expect(runRegistry.hasSession('session-env-protocol-ok')).toBe(false), 3000);
+    });
+  });
+  describe('/api/run 建行时写入 project_id（N-FIX-API-RUN-SESSION-PROJECT-ID-NULL）', () => {
+    async function runWithRealCliSessionManager(sessionId: string, project: string) {
+      mockRun.mockResolvedValue(undefined);
+      const cliDb = new CLIDatabaseService();
+      await cliDb.initialize();
+      const cliSessionManager = new CLISessionManager();
+      Object.assign(cliSessionManager as unknown as Record<string, unknown>, { _db: cliDb, _dbChecked: true });
+      await closeServer();
+      await startAgentApi({ tryGetSessionManager: async () => cliSessionManager });
+      setDbAvailable(true);
+      const post = async () => {
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: '总结 notes.txt', sessionId, project }),
+        });
+        await response.text();
+      };
+      await post();
+      return { cliDb, cliSessionManager, post };
+    }
+
+    it('注册过的项目目录：会话行带 project_id，第二轮 CLI getSession 读得到', async () => {
+      const projectDir = await mkdtemp(join(tmpdir(), 'run-project-'));
+      projectServiceMocks.getProjectForWorkspace.mockImplementation((dir: string) =>
+        dir === projectDir ? { id: 'project-registered-1' } : undefined);
+      const { cliDb, cliSessionManager, post } = await runWithRealCliSessionManager('session-project-bound', projectDir);
+      try {
+        expect(cliDb.getSession('session-project-bound')?.projectId).toBe('project-registered-1');
+        const raw = new Database(join(tempDataDir!, 'code-agent.db'), { readonly: true });
+        try {
+          expect(raw.prepare('SELECT project_id FROM sessions WHERE id = ?').get('session-project-bound'))
+            .toEqual({ project_id: 'project-registered-1' });
+        } finally { raw.close(); }
+        // 第二轮：路由读到的 persistedSession 带 projectId，喂给 getWorkspaceScope 的项目闸
+        await waitForAssertion(() => expect(runRegistry.hasSession('session-project-bound')).toBe(false), 3000);
+        projectServiceMocks.getWorkspaceScope.mockClear();
+        await post();
+        expect((await cliSessionManager.getSession('session-project-bound'))?.projectId).toBe('project-registered-1');
+        expect(projectServiceMocks.getWorkspaceScope).toHaveBeenCalledWith('project-registered-1');
+      } finally {
+        cliDb.close();
+        await rm(projectDir, { recursive: true, force: true });
+      }
+    });
+
+    it('未注册目录：project_id 为空，并留下 no-registered-project 日志', async () => {
+      const projectDir = await mkdtemp(join(tmpdir(), 'run-unregistered-'));
+      projectServiceMocks.getProjectForWorkspace.mockReturnValue(undefined);
+      projectServiceMocks.findProjectForWorkspace.mockReturnValue(undefined);
+      const { cliDb } = await runWithRealCliSessionManager('session-project-unbound', projectDir);
+      try {
+        expect(cliDb.getSession('session-project-unbound')).toBeTruthy();
+        expect(cliDb.getSession('session-project-unbound')?.projectId).toBeUndefined();
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.stringContaining('session-project-unbound created without project_id: no-registered-project'),
+        );
+      } finally {
+        cliDb.close();
+        await rm(projectDir, { recursive: true, force: true });
+      }
+    });
+
+    it('项目查询抛错：project_id 为空，并留下 lookup-failed 日志（带原始错误）', async () => {
+      const projectDir = await mkdtemp(join(tmpdir(), 'run-lookup-fail-'));
+      projectServiceMocks.getProjectForWorkspace.mockImplementation(() => { throw new Error('project db locked'); });
+      const { cliDb } = await runWithRealCliSessionManager('session-project-lookup-failed', projectDir);
+      try {
+        expect(cliDb.getSession('session-project-lookup-failed')?.projectId).toBeUndefined();
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('session-project-lookup-failed created without project_id: lookup-failed'),
+          'project db locked',
+        );
+      } finally {
+        cliDb.close();
+        await rm(projectDir, { recursive: true, force: true });
+      }
     });
   });
 });

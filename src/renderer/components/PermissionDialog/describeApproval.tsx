@@ -15,6 +15,7 @@ import type { Language } from '../../i18n';
 import type { PermissionRequest } from './types';
 import { formatFilePath, getPermissionConfig, getPermissionTitle } from './utils';
 import { permissionConsequence, permissionSummary } from './permissionPresentation';
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import { isSandboxEscalation } from './sandboxEscalationPresentation';
 import { formatDateTime } from '../../utils/formatDateTime';
 
@@ -28,6 +29,7 @@ type ApprovalKind =
   | 'folder_access'
   | 'web_open'
   | 'web_action'
+  | 'web_upload'
   | 'web_clipboard'
   | 'role_setting'
   | 'subtask'
@@ -71,6 +73,14 @@ function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
 }
 
+/** 上传审批卡只露文件名：host 给的是「.../<名>」，绝对路径与 sha256/大小都不上卡面。 */
+function uploadFileName(request: PermissionRequest): string | undefined {
+  const raw = request.details.file;
+  if (typeof raw !== 'string') return undefined;
+  const name = raw.split(/[\\/]/u).pop()?.trim();
+  return name ? redactCredentialText(name) : undefined;
+}
+
 function classify(request: PermissionRequest): ApprovalKind {
   const tool = request.tool.trim();
   const lower = tool.toLowerCase();
@@ -80,6 +90,7 @@ function classify(request: PermissionRequest): ApprovalKind {
   if (/^browser(?:$|[_.])/u.test(lower)) {
     const action = String(request.details.action ?? '');
     if (action === 'write_clipboard') return 'web_clipboard';
+    if (lower === 'browser_action.upload_file' && uploadFileName(request)) return 'web_upload';
     return request.details.url && (!action || WEB_OPEN_ACTIONS.has(action)) ? 'web_open' : 'web_action';
   }
   if (request.type === 'directory_access') return request.details.path ? 'folder_access' : 'generic';
@@ -164,6 +175,7 @@ function iconFor(kind: ApprovalKind, request: PermissionRequest): React.ReactEle
       return getPermissionConfig('directory_access').icon as React.ReactElement;
     case 'web_open':
     case 'web_action':
+    case 'web_upload':
     case 'web_clipboard':
       return React.createElement(Globe, { size: 20 });
     case 'role_setting':
@@ -221,11 +233,15 @@ function describeKind(
       const title = kind === 'shell' || kind === 'network'
         ? getPermissionTitle(request.type, p)
         : p[FILE_TITLE_KEY[kind]];
+      const connector = request.details.connectorAccess;
+      const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';
       return {
         kind,
         title,
-        question: permissionSummary(request, t, language),
-        consequence: permissionConsequence(request, t),
+        question: connector
+          ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
+          : permissionSummary(request, t, language),
+        consequence: permissionConsequence(request, t, language),
         icon,
       };
     }
@@ -247,6 +263,10 @@ function describeKind(
       };
     case 'web_action':
       return { kind, title: p.titleWebAction, question: p.questionWebAction, consequence: p.consequenceWebAction, icon };
+    case 'web_upload': {
+      const file = uploadFileName(request) ?? '';
+      return { kind, title: p.titleWebUpload, question: p.questionWebUpload.replace('{file}', file), consequence: p.consequenceWebUpload, icon };
+    }
     case 'web_clipboard':
       return { kind, title: p.titleWebClipboard, question: p.questionWebClipboard, consequence: p.consequenceWebClipboard, icon };
     case 'role_setting':

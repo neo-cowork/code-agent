@@ -20,6 +20,7 @@ import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';
+import { getPermissionModeManager } from '../permissions/modes';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
@@ -39,6 +40,7 @@ import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import {
   SESSION_COMMAND_CENTER_TOOL_NAMES,
   formatSessionTaskDeliveryFailure,
+  formatSessionTaskUserDenied,
 } from '../../shared/constants/sessionCommandCenter';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
@@ -106,6 +108,13 @@ function isInferenceHistoryMessage(message: Message): boolean {
  * });
  * ```
  */
+function isBackgroundApprovalDetached(sessionId: string): boolean {
+  if (hasInteractiveUi()) return false;
+  const modes = getPermissionModeManager();
+  return !(modes.isUnattendedSession(sessionId) || modes.isLiveVoiceSession(sessionId)
+    || modes.isUnattendedApprovalTerminal(sessionId) || modes.isUnattendedApprovalDegrade(sessionId));
+}
+
 export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
@@ -373,6 +382,10 @@ export class TaskManager extends EventEmitter {
           return true;
         });
         const deliveryFailure = getTaskDeliveryFailure(messages, artifacts.length);
+        if (deliveryFailure === 'user_denied') {
+          this.emitEvent('task_cancelled', sessionId, { taskId, detail: formatSessionTaskUserDenied(resolveSessionTaskResultLocale()) });
+          return;
+        }
         this.emitEvent(deliveryFailure ? 'task_error' : 'task_completed', sessionId, {
           taskId,
           ...(deliveryFailure
@@ -1207,6 +1220,9 @@ export class TaskManager extends EventEmitter {
       planningService: this.planningService,
       runRegistry: this.runRegistry,
       hasApprovalUi: () => hasInteractiveUi(),
+      // 后台 lane 没有页面时审批停车进收件箱（degrade），不再 60s 自动拒绝。
+      // cron/heartbeat/channel/语音会话保持它们自己的停车模式，这里恒 false。
+      ...(eventKey !== sessionId ? { isDetachedRun: () => isBackgroundApprovalDetached(sessionId) } : {}),
       onEvent: async (event: AgentEvent) => this.trackEventHandling(sessionId, this.handleAgentEvent(sessionId, event, eventKey)),
       getHomeDir: () => app.getPath('home'),
       broadcastDAGEvent: (event) => {

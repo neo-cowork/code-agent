@@ -13,6 +13,7 @@ import type { TraceNode } from '@shared/contract/trace';
 import { traceTerminalToolCall } from '../../../utils/toolCallTerminalState';
 import type { FileChange } from '../../../utils/turnDiffSummary';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
+import { stripLegacyTeamRecipeSeed } from '@shared/utils/legacyTeamRecipeDisplay';
 import { extractUserRequest, stripSystemReminderBlocks } from '@shared/utils/turnScaffold';
 import { normalizeSpokenFileName } from '@shared/utils/normalizeSpokenFileName';
 import { isTelemetryRecoveredMessage, stripTelemetryRecoveryNotice } from '@shared/telemetryRecovery';
@@ -201,7 +202,7 @@ const UserNode: React.FC<{
   // 用户原话——包装是模型面，用户界面显示原话（UX round2 20f，定义在 shared/utils/turnScaffold）。
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const rawDisplayContent = restoreNeoTagTokenForDisplay(
-    stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(stripTelemetryRecoveryNotice(content || '')))),
+    stripLegacyTeamRecipeSeed(stripSystemReminderBlocks(stripAppshotBlocks(extractUserRequest(stripTelemetryRecoveryNotice(content || ''))))),
     Boolean(isNeoTagMessage),
   );
   const displayContent = sourceType === 'voice'

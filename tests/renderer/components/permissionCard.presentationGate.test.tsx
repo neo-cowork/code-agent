@@ -340,7 +340,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
       for (const language of LANGUAGES) {
         const { text } = renderCard(c.request, language);
         lines.push(`${label} ${language}: ${text}`);
-        expect(text).not.toMatch(/创建文件|Create file/u);
+        expect(text).not.toMatch(/写入文件|Write file/u);
         expect(text).toContain(language === 'zh' ? '访问其他文件夹' : 'Access another folder');
         expect(text).not.toMatch(/path:|requestedAccess:/u);
         if (label === 'read_write') {
@@ -361,10 +361,37 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     const line = summary.split('\n').find((l) => l.includes('22:00'))!;
     for (const language of LANGUAGES) {
       const { html, text } = renderCard(role.request, language);
-      expect(text.split(line).length - 1, `${language} old->new line count`).toBe(1);
+      const expected = language === 'zh' ? line : '22:00 to 08:00';
+      expect(text.split(expected).length - 1, `${language} old->new line count`).toBe(1);
       expect(html).not.toContain('lucide-terminal');
       expect(text).toContain(language === 'zh' ? '更改角色打扰设置' : 'Change role interruption settings');
     }
+  });
+
+  it('role setting body follows the UI language and shows the localized role name (en run-3 shape)', () => {
+    const level = { level: 'silent', cadence: null, quietHours: null, topicsInclude: [] as string[], topicsExclude: [] as string[] };
+    const hostSummary = '角色「明镜」主动性调整：\n打扰频率：静默（不主动） -> 每日简报（每天 09:00）\n永远别提：+ 天气、weather\n免打扰时段：未设置 -> 22:00 至 08:00';
+    const request = {
+      id: 'approval-role-en', sessionId: 's', type: 'command', tool: 'set_role_proactivity', forceConfirm: true,
+      reason: hostSummary, dangerLevel: 'normal', timestamp: 1,
+      details: {
+        roleId: '明镜',
+        before: level,
+        after: { level: 'daily', cadence: '0 0 9 * * *', quietHours: { start: '22:00', end: '08:00' }, topicsInclude: [], topicsExclude: ['天气', 'weather'] },
+        preview: { type: 'generic', summary: hostSummary },
+        changes: hostSummary,
+      },
+    } as unknown as PermissionRequest;
+    const en = renderCard(request, 'en').text;
+    expect(en).toContain('Mingjing');
+    expect(en).toContain('Role "Mingjing" proactivity changes:');
+    expect(en).toContain('How often to interrupt: Silent (not proactive) -> Daily brief (');
+    expect(en).toContain('Quiet hours: Not set -> 22:00 to 08:00');
+    expect(en).not.toContain('明镜');
+    // user-typed topics ("天气") are values, not copy; every other CJK char would be untranslated card text
+    expect(en.split('天气').join('')).not.toMatch(/\p{Script=Han}|[\u3000-\u303f\uff00-\uffef]/u);
+    const zh = renderCard(request, 'zh').text;
+    expect(zh).toContain(hostSummary);
   });
 
   it('outside-workspace read says read-only, never write/overwrite', () => {
@@ -465,7 +492,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
         const { html, text } = renderCard(c.request, language);
         expect(text, `${c.origin} ${language}`).toContain(title);
         expect(html).not.toContain('lucide-terminal');
-        expect(stripUserValues(text, c.request)).not.toMatch(/命令|command|创建文件|Create file|Read file|读取文件|写入|write/iu);
+        expect(stripUserValues(text, c.request)).not.toMatch(/命令|command|写入文件|Write file|Read file|读取文件|写入|write/iu);
       }
     }
   });
@@ -506,7 +533,7 @@ describe('PermissionCard presentation gate (production host request shapes)', ()
     });
 
     it('zh cards keep the same Chinese titles', () => {
-      for (const [type, title] of [['command', '执行命令'], ['dangerous_command', '危险命令'], ['network', '网络请求'], ['mcp', 'MCP 工具'], ['future_type', '需要你确认']] as const) {
+      for (const [type, title] of [['command', '运行命令'], ['dangerous_command', '危险命令'], ['network', '网络请求'], ['mcp', 'MCP 工具'], ['future_type', '需要你确认']] as const) {
         const request = build(type);
         expect(describeApproval(request as never, zh, 'zh').title, `${type} zh title`).toBe(title);
         if (type !== 'dangerous_command') expect(renderCard(request, 'zh').text, `${type} zh card`).toContain(title);

@@ -136,11 +136,18 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   // 经 task:progress → agentUpdated 一路活着送到 store。工具名对非程序员没意义，
   // 过一遍聊天流那套 humanizeToolStep；没有 args 时它落到各类目的人话兜底句。
   const recentActions = useMemo(() => {
-    const tools = (liveContextSnapshot ?? agent?.contextSnapshot)?.tools ?? [];
-    return [...tools].reverse().map((tool, index) => ({
-      key: `${tool}-${index}`,
-      label: humanizeToolStep(tool, undefined, t),
+    const snapshot = liveContextSnapshot ?? agent?.contextSnapshot;
+    // 去重后的 tools 会把多条 Bash 折成一个名字；每次 Bash 的 description 随快照带来，
+    // 逐条过 humanizeToolStep 的描述过滤（命令样/错语种退通用文案），连续命令才分得清。
+    const bashRows = [...(snapshot?.bashSteps ?? [])].reverse().map((step, index) => ({
+      key: `Bash-step-${index}`,
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
     }));
+    return [...(snapshot?.tools ?? [])].reverse().flatMap((tool, index) => (
+      (tool === 'Bash' || tool === 'bash') && bashRows.length > 0
+        ? bashRows
+        : [{ key: `${tool}-${index}`, label: humanizeToolStep(tool, undefined, t) }]
+    ));
   }, [liveContextSnapshot, agent?.contextSnapshot, t]);
 
   // D2 运行轨迹：粗粒度生命周期事件早就落库（SwarmRunEventRecord），此前全仓零消费。
@@ -190,6 +197,11 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       const currentAction = plainNode
         ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus)
         : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus);
+    // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
+    const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
+      key: `step-${index}`,
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+    }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
@@ -230,6 +242,17 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
               <div className="rounded-lg border border-badge-accent/40 bg-violet-500/10 px-3 py-2 text-xs text-zinc-200">
                 {currentAction}
               </div>
+            </section>
+          )}
+
+          {stepRows.length > 0 && (
+            <section data-testid="member-bash-steps">
+              <h3 className="mb-1 text-xs font-medium text-zinc-400">{memberText.recentActions}</h3>
+              <ol className="space-y-1">
+                {stepRows.map((row) => (
+                  <li key={row.key} data-testid="member-bash-step" className="rounded-lg bg-zinc-950/60 py-1.5 pl-3 pr-3 text-xs text-zinc-300">{row.label}</li>
+                ))}
+              </ol>
             </section>
           )}
 

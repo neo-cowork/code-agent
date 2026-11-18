@@ -8,6 +8,7 @@
 // Shift+N=永不允许 作为隐藏直发保留；授权记忆命中仍 100ms 自动执行、不弹卡。
 // ============================================================================
 
+import { catalogConnectorDisplayName } from '@shared/utils/catalogConnectorToolLabel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarPlus, ListTodo, Mail } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
@@ -94,9 +95,13 @@ function normalizeRequest(
       body: request.details.body,
       connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
+      file: request.details.file,
       requestedAccess: request.details.requestedAccess,
       access: stringField(request.details, 'access'),
       preview: request.details.preview,
+      roleId: stringField(request.details, 'roleId'),
+      before: unknownField(request.details, 'before'),
+      after: unknownField(request.details, 'after'),
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
@@ -426,11 +431,12 @@ export function PermissionCard({
   const p = t.decisionCard.permission;
   const w = p.writeback;
   const connector = request.details.connectorAccess;
+  const connectorName = connector ? catalogConnectorDisplayName(connector.connectorId, language, connector.connectorName) : '';
   const connectorQuestion = connector
-    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connector.connectorName)
+    ? (connector.access === 'read' ? p.connectorRead : p.connectorWrite).replace('{connector}', connectorName)
     : undefined;
   const connectorScope = connector
-    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connector.connectorName)
+    ? (connector.access === 'read' ? p.connectorReadScope : p.connectorWriteScope).replace('{connector}', connectorName)
     : undefined;
   const pendingHeaderEnd = remainingCount > 0
     ? <span className="text-xs text-zinc-500">{p.remainingCount.replace('{count}', String(remainingCount))}</span>

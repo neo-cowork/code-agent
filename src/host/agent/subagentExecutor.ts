@@ -185,6 +185,7 @@ export class SubagentExecutor {
       ? Math.max(0, Math.floor(config.maxToolCalls))
       : undefined;
     const toolsUsed: string[] = [];
+    const bashSteps: Array<{ description?: string; command: string }> = [];
     // 持久化角色履历用：收集实例产出的产物（设计 §4.3 履历 = 产物清单）
     const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
@@ -400,6 +401,7 @@ export class SubagentExecutor {
       context.modelConfig.provider,
       toolsUsed,
       context.attachments,
+      bashSteps,
     );
     const emitContextSnapshot = (messageOverride?: RuntimeMessage[]): void => {
       const effectiveMessages = messageOverride || messages;
@@ -409,6 +411,7 @@ export class SubagentExecutor {
         context.modelConfig.provider,
         toolsUsed,
         context.attachments,
+        bashSteps,
       );
       context.onContextSnapshot?.(latestContextSnapshot);
       // 只读侧聊等一次性运行不落活动账（见 SubagentExecutionContext.suppressContextPublishing）
@@ -873,6 +876,11 @@ export class SubagentExecutor {
             }
 
             toolsUsed.push(toolCall.name);
+            const bashArgs = toolCall.arguments as { description?: unknown; command?: unknown } | undefined;
+            if (toolCall.name === 'Bash' || toolCall.name === 'bash') {
+              const description = typeof bashArgs?.description === 'string' ? bashArgs.description : undefined;
+              bashSteps.push({ ...(description ? { description } : {}), command: typeof bashArgs?.command === 'string' ? bashArgs.command.slice(0, 200) : '' });
+            }
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
@@ -1064,7 +1072,7 @@ export class SubagentExecutor {
       if (!exitedLoop) {
         return earlyFailure('Max iterations reached', {
           iterations, toolsUsed, toolCallCount: turnObservability.getToolCallCount(), output: answerLedger.settled(),
-          failureCode: AgentFailureCode.BudgetExhausted,
+          failureCode: AgentFailureCode.StepCapReached,
           // 只读提示：前台照 main 按失败返回；后台注册表据此给用户一句白话（而不是「额度用完了」）。
           ...(answerLedger.settled() ? {} : { stopHint: { kind: 'step_cap' as const, conclusion: buildStepCapConclusion({ iterations, maxIterations, messages }) } }),
         });

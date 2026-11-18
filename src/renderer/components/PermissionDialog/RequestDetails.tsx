@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { getPermissionBoundary, permissionReasonText, type DecisionTrace, type PermissionBoundary } from '@shared/contract';
 import { formatFilePath } from './utils';
+import { catalogConnectorParamRows } from '@shared/utils/catalogConnectorToolLabel';
 import { DiffView } from '../DiffView';
 import { WritebackFieldsView } from './WritebackFields';
 import { redactCredentialText } from '@shared/security/secretPatterns';
@@ -18,6 +19,7 @@ import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { browserSessionGrantEn, browserSessionGrantZh } from '../../i18n/browserSessionGrant';
 import { isDangerousRequestShape, isSafeDefaultDeny } from './permissionPresentation';
 import { describeApproval } from './describeApproval';
+import { describeRoleSettingChange } from './roleSettingRows';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { estimateMediaPriceCny } from './mediaPriceEstimate';
 import { formatCny } from '@shared/media/imageCost';
@@ -252,7 +254,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         <div className="mt-4">
           {!(details.connectorAccess && details.preview.type === 'generic')
             && !(details.preview.type === 'generic' && details.preview.summary.includes(request.tool)) && (
-            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">{details.preview.summary}</div>
+            <div className="text-xs text-zinc-400 mb-2 whitespace-pre-line">
+              {(kind === 'role_setting' && describeRoleSettingChange(details as unknown as Record<string, unknown>, t, language)) || details.preview.summary}
+            </div>
           )}
           {kind === 'web_action' && webActionRows(details.preview.diff).map((row, index) => (
             <DetailItem
@@ -263,7 +267,11 @@ export function RequestDetails({ request }: RequestDetailsProps) {
                 : row.value}
             />
           ))}
-          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action' && (
+          {details.connectorAccess && details.preview.type === 'generic' && catalogConnectorParamRows(details.preview.diff, language).map((row, index) => (
+            <DetailItem key={`${index}-${row.label ?? ''}`} label={row.label ?? ''} value={row.value} />
+          ))}
+          {details.preview.diff && kind !== 'web_open' && kind !== 'web_action'
+            && !(details.connectorAccess && details.preview.type === 'generic') && (
             <pre className="text-xs p-2 rounded bg-zinc-700 border border-zinc-700 text-zinc-400 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.type === 'generic' ? humanizeParamLabels(details.preview.diff) : details.preview.diff}
             </pre>

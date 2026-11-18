@@ -25,6 +25,7 @@ const OUTCOME_KEYS = [
   'failed-timeout',
   'failed-idle-reaped',
   'failed-budget',
+  'failed-step-cap',
   'failed-dependency',
   'failed-unavailable',
   'failed-upstream',
@@ -108,6 +109,13 @@ describe('outcomeWords contract', () => {
         expect(en[audience].reason.trim(), `en ${outcome}/${audience} reason`).not.toBe('');
       }
     }
+  });
+
+  it.each(OUTCOME_AUDIENCES)('completed-with-warnings/%s describes an unsuccessful step in zh and en', (audience) => {
+    expect(outcomeWordsZh.outcomeWords['completed-with-warnings'][audience].reason)
+      .toBe('有步骤没有成功，结果可能不完整');
+    expect(outcomeWordsEn.outcomeWords['completed-with-warnings'][audience].reason)
+      .toBe('A step did not succeed, so the result may be incomplete');
   });
 
   it('gives every badge outcome a reason phrase', () => {
