@@ -3346,10 +3346,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     userId: string | null,
     limit: number,
     projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope,
+    includeArchived?: boolean,
   ): SessionSearchMetaRow[] {
     this.ensureDb();
     if (!this.db) throw new Error('Database not opened');
-    return searchSessionTitleRows(this.db, query, userId, limit, projectScope);
+    return searchSessionTitleRows(this.db, query, userId, limit, projectScope, includeArchived);
   }
   searchSessionMessagesFts(
     query: string,

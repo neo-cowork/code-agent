@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Search } from 'lucide-react';
-import type { SessionWithMeta } from '../../../stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatLocalDateTime } from '../../../utils/i18nTime';
 import { formatSidebarMessageSearchHitLabel } from '../../../utils/sidebarMessageSearch';
@@ -10,7 +10,8 @@ import type {
   SidebarMessageSearchHitGroup,
   SidebarSearchScope,
 } from '../../../utils/sidebarMessageSearch';
-import { Input, Modal } from '../../primitives';
+import { Badge, Button, Input, Modal, Toggle } from '../../primitives';
+import { useArchivedSessionSearch } from './useArchivedSessionSearch';
 
 interface SidebarSearchDialogProps {
   isOpen: boolean;
@@ -33,7 +34,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   query,
   onQueryChange,
   onClose,
-  sessions,
+  sessions: activeSessions,
   currentSessionId,
   messageSearchHitsBySessionId,
   messageSearchLoading,
@@ -47,6 +48,24 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   const sb = t.sidebar;
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const currentSession = useSessionStore((state) => state.sessions.find((item) => item.id === currentSessionId));
+  const { archivedRows, loading: archivedLoading, removeArchivedRow } = useArchivedSessionSearch({
+    enabled: isOpen && includeArchived,
+    query,
+    scope: effectiveSearchScope,
+    project: currentSession ?? null,
+  });
+  const hasQuery = query.trim().length > 0;
+  const sessions = useMemo(() => {
+    if (!includeArchived) return activeSessions;
+    if (!hasQuery) return archivedRows;
+    const activeIds = new Set(activeSessions.map((session) => session.id));
+    return [...activeSessions, ...archivedRows.filter((session) => !activeIds.has(session.id))].sort(
+      (left, right) => (right.updatedAt || 0) - (left.updatedAt || 0),
+    );
+  }, [activeSessions, archivedRows, hasQuery, includeArchived]);
+  const archivedIds = useMemo(() => new Set(archivedRows.map((session) => session.id)), [archivedRows]);
   const sessionIdsKey = useMemo(() => sessions.map((session) => session.id).join('\n'), [sessions]);
 
   const runLabels = useMemo(
@@ -67,6 +86,15 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
     const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) setIncludeArchived(false);
+  }, [isOpen]);
+
+  const handleRestore = (sessionId: string) => {
+    removeArchivedRow(sessionId);
+    void useSessionStore.getState().unarchiveSession(sessionId);
+  };
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -148,25 +176,41 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
           )}
         </div>
 
+        <label className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
+          <Toggle checked={includeArchived} onChange={setIncludeArchived} aria-label={sb.searchIncludeArchived} />
+          {sb.searchIncludeArchived}
+          {archivedLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        </label>
+
         <div className="mt-3 border-t border-zinc-800 pt-2">
-          {!query.trim() && sessions.length > 0 && (
+          {!hasQuery && sessions.length > 0 && (
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-              {sb.recentSessions}
+              {includeArchived ? sb.archivedSessionsHeading : sb.recentSessions}
             </p>
           )}
           {sessions.length === 0 ? (
             <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center">
               <Search className="h-6 w-6 text-zinc-600" />
               <p className="text-sm text-zinc-500">
-                {messageSearchLoading ? sb.searchingMessageContent : messageSearchFailed ? sb.searchFailed : sb.noMatchedSessions}
+                {messageSearchLoading
+                  ? sb.searchingMessageContent
+                  : messageSearchFailed
+                    ? sb.searchFailed
+                    : includeArchived && !hasQuery
+                      ? sb.noArchivedSessions
+                      : sb.noMatchedSessions}
               </p>
+              {!includeArchived && hasQuery && !messageSearchLoading && !messageSearchFailed && (
+                <p className="text-xs text-zinc-600">{sb.searchArchivedHint}</p>
+              )}
             </div>
           ) : (
             <div role="listbox" aria-label={sb.searchResultsAria} className="max-h-80 overflow-y-auto">
               {sessions.map((session, index) => {
                 const hitGroup = messageSearchHitsBySessionId[session.id];
                 const selected = index === selectedIndex;
-                return (
+                const isArchived = archivedIds.has(session.id);
+                const row = (
                   <button /* ds-allow:button: 搜索结果是两行信息+命中计数的可选列表行，Button primitive 的动作按钮布局不适配 */
                     key={session.id}
                     type="button"
@@ -174,7 +218,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     aria-selected={selected}
                     onMouseMove={() => setSelectedIndex(index)}
                     onClick={() => void onSelectSession(session.id)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                    className={`flex w-full min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
                       selected ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300 hover:bg-zinc-800/70'
                     }`}
                   >
@@ -184,6 +228,9 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">
                         {getLocalizedSessionTitle(session.title, language)}
+                        {isArchived && (
+                          <Badge className="ml-2 border-zinc-700 text-[10px] text-zinc-400">{sb.archivedBadge}</Badge>
+                        )}
                         {session.id === currentSessionId && (
                           <span className="ml-2 text-[11px] text-badge-info">{sb.currentSession}</span>
                         )}
@@ -207,6 +254,20 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                       )}
                     </span>
                   </button>
+                );
+                if (!isArchived) return row;
+                return (
+                  <div key={session.id} className="flex items-center gap-1">
+                    {row}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`${sb.restoreSession} ${getLocalizedSessionTitle(session.title, language)}`}
+                      onClick={() => handleRestore(session.id)}
+                    >
+                      {sb.restoreSession}
+                    </Button>
+                  </div>
                 );
               })}
             </div>

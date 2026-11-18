@@ -52,6 +52,7 @@ import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarAccountStatus } from './features/sidebar/SidebarAccountStatus';
 import { useSidebarSearchShortcut } from './features/sidebar/useSidebarSearchShortcut';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
+import { ArchiveUndoToast } from './features/sidebar/ArchiveUndoToast';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
 import {
@@ -990,12 +991,10 @@ export const Sidebar: React.FC = () => {
         <UndoToast
           message={sb.deletedCount.replace('{count}', String(pendingDelete.ids.length))}
           onUndo={undoDelete}
-          onDismiss={() => {
-            // timer 已经在 softDelete 中设置了，这里是视觉消失后的回调
-            // 不需要额外操作，confirmDelete 由 timer 触发
-          }}
+          onDismiss={() => {}} // confirmDelete 由 softDelete 的 timer 触发
         />
       )}
+      <ArchiveUndoToast />
     </div>
   );
 };

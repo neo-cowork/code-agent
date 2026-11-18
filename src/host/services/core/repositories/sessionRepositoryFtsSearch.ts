@@ -64,7 +64,7 @@ export interface SessionMessagesFtsSearchOptions {
    * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
    * 不传 = 不过滤（agent 记忆侧语义不变）。
    */
-  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
 }
 
 /** session_messages_fts 命中计数选项 */
@@ -95,7 +95,7 @@ function pushActiveSessionScope(
   conditions: string[],
   params: unknown[],
   sessionColumn: string,
-  scope: { userId: string | null; projectScope?: CrossSessionSearchProjectScope } | undefined,
+  scope: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean } | undefined,
 ): void {
   if (!scope) return;
   const owner = scope.userId === null ? 'AND s.user_id IS NULL' : 'AND s.user_id = ?';
@@ -105,7 +105,7 @@ function pushActiveSessionScope(
   pushProjectScopeCondition(projectConditions, projectParams, scope.projectScope);
   const project = projectConditions.map((c) => ` AND ${c}`).join('');
   conditions.push(
-    `${sessionColumn} IN (SELECT s.id FROM sessions s WHERE s.is_deleted = 0 AND COALESCE(s.status, '') != 'archived' ${owner}${project})`,
+    `${sessionColumn} IN (SELECT s.id FROM sessions s WHERE s.is_deleted = 0${scope.includeArchived ? '' : " AND COALESCE(s.status, '') != 'archived'"} ${owner}${project})`,
   );
   params.push(...ownerParams, ...projectParams);
 }

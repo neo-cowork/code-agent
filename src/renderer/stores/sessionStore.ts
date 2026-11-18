@@ -35,6 +35,7 @@ import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedCo
 import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 import { openInitialSession } from './sessionBootDraft';
+import { useSessionArchiveUndoStore } from './sessionArchiveUndoStore';
 import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 
@@ -550,9 +551,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
       const { filter } = useSessionUIStore.getState();
       const { currentSessionId, sessions } = get();
       const previousSessions = sessions;
-
-      // 乐观更新（2026-08-01 归档连点无响应）：行先消失/置标，IPC 失败再回滚。
-      // 版本号 +1 让在途的 loadSessions 识别自己拿到的是陈旧快照（见 sessionListPagination）。
+      // 乐观更新（2026-08-01 归档连点）：行先消失/置标，失败回滚；版本号 +1 让在途 loadSessions 丢弃陈旧快照。
       bumpSessionsLocalVersion();
       if (filter === 'active') {
         set({ sessions: sessions.filter((s) => s.id !== sessionId) });
@@ -583,6 +582,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
         }
 
         logger.info('Session archived', { sessionId });
+        useSessionArchiveUndoStore.getState().show(sessionId, previousSessions.find((s) => s.id === sessionId)?.title ?? '');
       } catch (error) {
         logger.error('Failed to archive session', error);
         // 回滚乐观移除（版本号再 +1：回滚本身也是一次本地变更）。
@@ -600,7 +600,6 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
         const { filter } = useSessionUIStore.getState();
         const { sessions } = get();
-
         bumpSessionsLocalVersion();
         if (filter === 'archived') {
           set({
@@ -615,6 +614,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
         }
 
         logger.info('Session unarchived', { sessionId });
+        await get().loadSessions({ silent: true }); // active 过滤下归档行已被移除，必须重取才能让行回到侧栏
       } catch (error) {
         logger.error('Failed to unarchive session', error);
         set({

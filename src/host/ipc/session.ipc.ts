@@ -262,7 +262,7 @@ export async function performCrossSessionSearch(
     limit: options?.limit ?? 30,
     sessionIds: options?.sessionIds,
     // 归档/已删除/他人会话在 SQL 层就排除：否则它们先占满 FTS 候选与 limit，后置过滤后只剩空
-    activeSessionScope: { userId: ownerUserId, projectScope: options?.projectScope },
+    activeSessionScope: { userId: ownerUserId, projectScope: options?.projectScope, includeArchived: options?.includeArchived },
     role: options?.role,
     caseSensitive: options?.caseSensitive ?? false,
     sortBy: 'relevance',
@@ -292,9 +292,9 @@ export async function performCrossSessionSearch(
     try {
       const allowed = options?.sessionIds && options.sessionIds.length > 0 ? new Set(options.sessionIds) : undefined;
       titleMatches = database
-        .searchSessionTitles(query, ownerUserId, SESSION_SEARCH.TITLE_MATCH_LIMIT, options?.projectScope)
+        .searchSessionTitles(query, ownerUserId, SESSION_SEARCH.TITLE_MATCH_LIMIT, options?.projectScope, options?.includeArchived)
         .filter((row) => !allowed || allowed.has(row.sessionId))
-        .map((row) => ({ sessionId: row.sessionId, title: row.title, updatedAt: row.updatedAt }));
+        .map((row) => ({ sessionId: row.sessionId, title: row.title, updatedAt: row.updatedAt, ...(row.archived ? { archived: true } : {}) }));
     } catch (error) {
       logger.warn('Cross-session search: session title match failed', { error });
     }

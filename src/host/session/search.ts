@@ -55,7 +55,7 @@ export interface SessionSearchFtsSource {
       role?: string;
       limitCap?: number;
       shortQueryFallback?: boolean;
-      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
     }
   ): SessionSearchFtsHit[];
   countSessionMessagesFts(
@@ -64,7 +64,7 @@ export interface SessionSearchFtsSource {
       sessionIds?: string[];
       role?: string;
       shortQueryFallback?: boolean;
-      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+      activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
     }
   ): { matches: number; sessions: number };
   getMessages(sessionId: string, limit?: number): Message[];
@@ -99,7 +99,7 @@ export interface SearchOptions {
   /** Sort direction */
   sortOrder?: 'asc' | 'desc';
   /** FTS 路径：在 SQL 层（LIMIT 之前）只召回未删除、未归档、归属匹配的会话 */
-  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
 }
 
 /**
