@@ -1,5 +1,5 @@
 import { reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
-import { agentNodeLabel, agentRoleLabel, backgroundTaskLabels } from './agentRoleLabel';
+import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
@@ -255,7 +255,7 @@ export function buildAgentRows(input: {
     rows.push({
       key: task.id,
       kind: 'task',
-      name: taskLabels.get(task.id) ?? backgroundTaskLabels([task], t).get(task.id)!,
+      name: taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
