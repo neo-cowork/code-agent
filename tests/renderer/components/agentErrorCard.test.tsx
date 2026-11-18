@@ -90,7 +90,7 @@ describe('AgentErrorCard', () => {
     expect(screen.queryByRole('button', { name: /换个模型/ })).toBeNull();
   });
 
-  it.each(['model_not_found', 'forbidden', 'concurrency', 'network'] as const)(
+  it.each(['model_not_found', 'forbidden', 'bad_request', 'concurrency', 'network'] as const)(
     'shows 换个模型 but not 新开会话 for model-ish category %s',
     (category) => {
       renderCard(makeError({ category, httpStatus: undefined }));
@@ -199,6 +199,15 @@ describe('AgentErrorCard', () => {
       (e) => (e as Event).type === OPEN_MODEL_SWITCHER_EVENT,
     );
     expect(event).toBeTruthy();
+  });
+
+  it('bad_request: zh 卡片给出白话建议、无「服务商返回」行、换个模型按钮触发切换器', () => {
+    renderCard(makeError({ category: 'bad_request', httpStatus: undefined, rawMessage: 'Bad Request' }));
+    expect(screen.getByText('当前模型可能用不了')).toBeTruthy();
+    expect(screen.queryByTestId('agent-error-provider-reason')).toBeNull();
+    expect(screen.queryByText(/Bad Request/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /换个模型/ }));
+    expect(mocks.dispatchEvent.mock.calls.some(([e]) => (e as Event).type === OPEN_MODEL_SWITCHER_EVENT)).toBe(true);
   });
 
   it('new session goes through the session store createSession path', () => {
