@@ -31,8 +31,8 @@ const thClass = 'whitespace-nowrap px-1 py-2';
 const tdClass = 'px-1 py-2';
 
 function executionColumnCount(hasJob: boolean, hasLocation: boolean): number {
-  // 状态、计划、开始、耗时、成本、重试、退出码，外加可选的任务名与位置。
-  return 7 + (hasJob ? 1 : 0) + (hasLocation ? 1 : 0);
+  // 状态、计划、开始、耗时、成本，外加可选的任务名与位置。
+  return 5 + (hasJob ? 1 : 0) + (hasLocation ? 1 : 0);
 }
 
 export const CronExecutionList: React.FC<CronExecutionListProps> = ({
@@ -71,8 +71,6 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
             <th className={thClass}>{cc.colStartedAt}</th>
             <th className={thClass}>{cc.colDuration}</th>
             <th className={thClass}>{cc.colCost}</th>
-            <th className={thClass}>{cc.colRetry}</th>
-            <th className={thClass}>{cc.colExitCode}</th>
           </tr>
         </thead>
         <tbody>
@@ -150,10 +148,6 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   <td className={`whitespace-nowrap text-zinc-400 tabular-nums ${tdClass}`}>{formatRunListTime(execution.startedAt)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{formatDuration(execution.duration, language)}</td>
                   <td className={`whitespace-nowrap text-zinc-300 tabular-nums ${tdClass}`} data-testid="cron-execution-cost-cell">{formatRunCostUsd(execution.cost, costRunsOn)}</td>
-                  <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>{execution.retryAttempt}</td>
-                  <td className={`whitespace-nowrap text-zinc-300 ${tdClass}`}>
-                    {execution.exitCode != null ? execution.exitCode : '—'}
-                  </td>
                 </tr>
                 {rowReason && (
                   <tr

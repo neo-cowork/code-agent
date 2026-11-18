@@ -1,12 +1,10 @@
 import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
-import { cronCloudEn, cronCloudZh } from './cronCloud';
-import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
+import { cronCloudEn, cronCloudZh } from './cronCloud'; import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels'; import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
-import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
-import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied'; import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
 import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
@@ -197,7 +195,6 @@ export const cronCenterZh = {
     colScheduledAt: '计划时间',
     colStartedAt: '开始时间',
     colDuration: '耗时',
-    colRetry: '重试',
     colExitCode: '退出码',
     execSession: '运行会话',
     execLocation: '执行位置',
@@ -207,6 +204,9 @@ export const cronCenterZh = {
     triggerSourceMail: '邮件',
     execCompletedAt: '完成时间',
     execRetryCount: '重试次数',
+    // 默认层的重试一句话（N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT）：只说发生了什么，不出现工程字段名。
+    execRetryFailedNote: { one: '自动重试了 {count} 次后仍然失败', other: '自动重试了 {count} 次后仍然失败' },
+    execRetrySucceededNote: { one: '自动重试 {count} 次后成功', other: '自动重试 {count} 次后成功' },
     // 运行成本（N-CRON-RUN-LEDGER-VISIBLE）：单次成本 + 每日小计 + 唤醒未运行原因
     colCost: '成本',
     wakeSkipTitle: '未运行原因',
@@ -717,7 +717,6 @@ export const cronCenterEn: typeof cronCenterZh = {
     colScheduledAt: 'Scheduled',
     colStartedAt: 'Started',
     colDuration: 'Duration',
-    colRetry: 'Retries',
     colExitCode: 'Exit code',
     execSession: 'Session',
     execLocation: 'Execution location',
@@ -726,6 +725,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     triggerSourceMail: 'Mail',
     execCompletedAt: 'Completed',
     execRetryCount: 'Retry count',
+    execRetryFailedNote: { one: 'Retried automatically {count} time, then failed', other: 'Retried automatically {count} times, then failed' },
+    execRetrySucceededNote: { one: 'Succeeded after {count} automatic retry', other: 'Succeeded after {count} automatic retries' },
     // Run cost ledger (N-CRON-RUN-LEDGER-VISIBLE): per-run cost + daily subtotals + wake skip reasons
     colCost: 'Cost',
     wakeSkipTitle: 'Why it did not run',

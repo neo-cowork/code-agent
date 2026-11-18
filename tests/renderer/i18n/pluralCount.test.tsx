@@ -41,4 +41,13 @@ describe('English count copy', () => {
     expect(rendered(zh.cronCenter.parkedTitle, 1)).toBe('1 个操作等你确认');
     expect(rendered(zh.cronCenter.parkedTitle, 5)).toBe('5 个操作等你确认');
   });
+
+  it('renders cron retry notes with correct agreement (N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT)', () => {
+    expect(rendered(en.cronCenter.execRetryFailedNote, 1)).toBe('Retried automatically 1 time, then failed');
+    expect(rendered(en.cronCenter.execRetryFailedNote, 2)).toBe('Retried automatically 2 times, then failed');
+    expect(rendered(en.cronCenter.execRetrySucceededNote, 1)).toBe('Succeeded after 1 automatic retry');
+    expect(rendered(en.cronCenter.execRetrySucceededNote, 3)).toBe('Succeeded after 3 automatic retries');
+    expect(rendered(zh.cronCenter.execRetryFailedNote, 2)).toBe('自动重试了 2 次后仍然失败');
+    expect(rendered(zh.cronCenter.execRetrySucceededNote, 2)).toBe('自动重试 2 次后成功');
+  });
 });

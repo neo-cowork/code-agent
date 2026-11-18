@@ -6,6 +6,7 @@ import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
+import { interpolatePlural } from '../../../i18n/interpolate';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { CronRunWorkingFolderStatus } from './CronWorkingFolderStatus';
@@ -266,9 +267,23 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
         <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
         <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
-        <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
-        <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
+      {(execution.status === 'failed' || execution.status === 'completed') && execution.retryAttempt > 0 && (
+        <p className="mt-3 text-sm text-zinc-300" data-testid="cron-exec-retry-note">
+          {interpolatePlural(
+            execution.status === 'failed' ? cc.execRetryFailedNote : cc.execRetrySucceededNote,
+            execution.retryAttempt,
+          )}
+        </p>
+      )}
+      {/* 重试次数/退出码是工程字段（N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT）：默认折叠，排在信息网格后。 */}
+      <details className="mt-3" data-testid="cron-exec-technical-fields">
+        <summary className="cursor-pointer text-xs text-zinc-400">{cc.failureTechnical}</summary>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
+          <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
+        </div>
+      </details>
       {hasRunBudget && <div className="mt-3"><FlatFeeBudgetNote variant="center" /></div>}
 
       {stopReason && stopReason.sessionId === reasonSessionId && (

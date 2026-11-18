@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // N-CRON-RUN-LEDGER-VISIBLE-FU1-SHOTS：英文运行记录表在 1440x900 下比滚动容器宽 83px，
-// 把「重试 / 退出码」挤出可视区。jsdom 不排版，这里钉住造成溢出的两个类：
-// 表头不得 uppercase（英文大写表头最宽），任务名列上限不得超过 200px。
+// 曾把「重试 / 退出码」挤出可视区（这两列已在 N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT 删除）。
+// jsdom 不排版，这里钉住造成溢出的两个类：表头不得 uppercase（英文大写表头最宽），任务名列上限不得超过 200px。
 // 真实宽度由 headless 截图脚本量（证据档 ②）。
 import React from 'react';
 import { readFileSync } from 'node:fs';
@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('CronExecutionList 英文表头宽度', () => {
-  it('表头不 uppercase、任务名列 max-w ≤200px，保证 Retries / Exit code 留在可视区', () => {
+  it('表头不 uppercase、任务名列 max-w ≤200px，剩余列在可视区放得下', () => {
     const { container } = render(
       <CronExecutionList
         executions={[{
