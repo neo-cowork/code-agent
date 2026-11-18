@@ -4,7 +4,9 @@ import { approveCard, clickCardButton, driveTurn, openNewSession, sendMessage } 
 
 // 同类工具连发两次：同一条任务里两次 curl。第一次问（点「本次任务内允许」铸 run 档授权），
 // 第二次应当命中授权记忆直接执行（permission_decisions 里 auto-approve），不再弹卡。
-const PROMPT = '用两条单独的 curl 命令分别抓取网页：第一条抓 https://example.com 存成 a.html，第二条抓 https://example.org 存成 b.html，完成后各用一句话说明页面讲了什么';
+// 提示词两处教训：加了「不要转后台」模型反而先来确认（f07t1 两轮「要我开始吗？」）；
+// 不加则偶发 delegate_task 转后台（run5-a3）。折中：只叮嘱直接开始。
+const PROMPT = '用两条单独的 curl 命令分别抓取网页：第一条抓 https://example.com 存成 a.html，第二条抓 https://example.org 存成 b.html，完成后各用一句话说明页面讲了什么。不用先确认，现在就开始。';
 const TURN_TIMEOUT_MS = 300_000;
 const CARD_TIMEOUT_MS = 120_000;
 
