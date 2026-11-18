@@ -61,6 +61,8 @@ import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const originalDomainAPI = window.domainAPI;
+type DomainInvoke = (domain: string, action: string, payload?: unknown) => Promise<unknown>;
+const domainInvoke = vi.fn<DomainInvoke>();
 const TITLE = '整理周报素材';
 const OTHER = '另一条会话';
 
@@ -78,7 +80,11 @@ beforeEach(() => {
   host.searchOptions = [];
   window.domainAPI = {
     ...originalDomainAPI,
-    invoke: vi.fn(async (domain: string, action: string, payload?: { sessionId?: string }) => {
+    invoke: domainInvoke as unknown as NonNullable<typeof window.domainAPI>['invoke'],
+  };
+  domainInvoke.mockReset();
+  domainInvoke.mockImplementation(async (domain, action, rawPayload) => {
+      const payload = rawPayload as { sessionId?: string } | undefined;
       if (domain !== IPC_DOMAINS.SESSION) return { success: true, data: [] };
       host.calls.push(action);
       if (action === 'list') return { success: true, data: hostList(payload as never) };
@@ -88,8 +94,7 @@ beforeEach(() => {
         return { success: true, data: toSession(row) };
       }
       return { success: true, data: [] };
-    }),
-  };
+  });
   useSessionStore.setState(useSessionStore.getInitialState());
   useSessionUIStore.setState(useSessionUIStore.getInitialState());
   useSessionArchiveUndoStore.setState({ pending: null });
@@ -153,9 +158,8 @@ describe('归档后撤销（真实 Sidebar 树）', () => {
 
   it('归档失败：不出 Toast', async () => {
     await mountLoaded();
-    const base = window.domainAPI!.invoke as ReturnType<typeof vi.fn>;
-    const original = base.getMockImplementation()!;
-    base.mockImplementation(async (domain: string, action: string, payload?: unknown) =>
+    const original = domainInvoke.getMockImplementation()!;
+    domainInvoke.mockImplementation(async (domain, action, payload) =>
       action === 'archive' ? { success: false, error: { message: 'db locked' } } : original(domain, action, payload));
     await act(async () => { fireEvent.click(rowArchiveButton(TITLE)); });
     await flush();

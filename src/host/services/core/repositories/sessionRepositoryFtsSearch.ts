@@ -80,7 +80,7 @@ export interface SessionMessagesFtsCountOptions {
    * 必须在 SQL 层、LIMIT 之前生效——否则大量归档/已删除会话的命中会先占满候选再被后置过滤清空。
    * 不传 = 不过滤（agent 记忆侧语义不变）。
    */
-  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope };
+  activeSessionScope?: { userId: string | null; projectScope?: CrossSessionSearchProjectScope; includeArchived?: boolean };
 }
 
 function normalizeFtsQuery(raw: string): string {
