@@ -8,7 +8,7 @@ describe('describeSubagentStopReason', () => {
       expect(describeSubagentStopReason('upstream failed', code)).toContain('回复「继续」');
     });
 
-  it.each([AgentFailureCode.ToolUnavailable, AgentFailureCode.PermissionDenied, AgentFailureCode.BudgetExhausted, AgentFailureCode.ParentGone])(
+  it.each([AgentFailureCode.ToolUnavailable, AgentFailureCode.PermissionDenied, AgentFailureCode.BudgetExhausted, AgentFailureCode.StepCapReached, AgentFailureCode.ParentGone])(
     'does not tell the user to retry a deterministic failure (%s)', (code) => {
       const text = describeSubagentStopReason('Durable Run persistence is unavailable', code);
       expect(text).not.toContain('继续');

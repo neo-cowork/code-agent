@@ -15,6 +15,7 @@ const NEXT_STEP: Record<AgentFailureCode, string> = {
   [AgentFailureCode.ToolUnavailable]: 'Check the registered tool and capability requirements before retrying.',
   [AgentFailureCode.InvalidArguments]: 'Retry with foregroundBlockingBudgetMs below roleExecutionTimeout, omit foregroundBlockingBudgetMs, or use background mode (run_in_background: true).',
   [AgentFailureCode.BudgetExhausted]: 'Do not redispatch unchanged. Narrow the task, or explicitly raise maxBudget with a reason.',
+  [AgentFailureCode.StepCapReached]: 'Do not redispatch unchanged. Narrow the task or split it into smaller steps.',
   [AgentFailureCode.Timeout]: 'Split the task into smaller steps, or explicitly increase the execution time allowance.',
   [AgentFailureCode.ParentGone]: 'The parent run ended. Wait for a new authorized parent task.',
   [AgentFailureCode.CancelledByUser]: 'Respect the cancellation; do not restart without a new user request.',
