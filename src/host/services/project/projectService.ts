@@ -103,6 +103,8 @@ type ProjectArtifactMessage = {
     content?: string;
   }>;
   toolCalls?: ToolCall[];
+  /** tool 角色消息把结果单独存成一行（按 toolCallId 对回 assistant 的 toolCalls）。 */
+  toolResults?: Array<{ toolCallId: string } & NonNullable<ToolCall['result']>>;
 };
 
 type ProjectArtifactSession = {
@@ -235,7 +237,13 @@ export function buildProjectArtifacts(
   const seen = new Set<string>();
   const items: ProjectArtifact[] = [];
   for (const session of sessions) {
-    for (const msg of loadMessages(session.id)) {
+    const messages = loadMessages(session.id);
+    // 落库形态里工具结果在后继 tool 行，assistant.toolCalls[].result 往往为空：先按 id 收齐再对回去。
+    const resultsByCallId = new Map<string, NonNullable<ToolCall['result']>>();
+    for (const m of messages) {
+      if (m.role === 'tool') for (const r of m.toolResults ?? []) resultsByCallId.set(r.toolCallId, r);
+    }
+    for (const msg of messages) {
       if (msg.role !== 'assistant') continue;
 
       for (const art of msg.artifacts ?? []) {
@@ -268,7 +276,7 @@ export function buildProjectArtifacts(
       }
 
       for (const toolCall of msg.toolCalls ?? []) {
-        const result = toolCall.result;
+        const result = toolCall.result ?? resultsByCallId.get(toolCall.id);
         if (!result || isReadOnlyArtifactTool(toolCall.name)) continue;
 
         const previewItemId = previewItemIdFromMetadataPreview(toolCall.id, result.metadata?.previewItem);
