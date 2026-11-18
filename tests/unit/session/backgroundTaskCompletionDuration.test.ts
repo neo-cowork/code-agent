@@ -94,7 +94,7 @@ describe('task completion notification duration', () => {
     await moveToBackground(sessionId);
     vi.setSystemTime(COMPLETE_AT_MS);
 
-    getBackgroundTaskManager().markFailed(sessionId, 'Provider stopped', COMPLETE_AT_MS);
+    await getBackgroundTaskManager().markFailed(sessionId, 'Provider stopped', COMPLETE_AT_MS);
 
     expect(latestBody()).toContain(language === 'zh' ? '耗时: 3 分 53 秒' : 'Duration: 3 min 53 sec');
   });
@@ -118,7 +118,7 @@ describe('task completion notification duration', () => {
     await moveToBackground(sessionId);
     vi.setSystemTime(COMPLETE_AT_MS);
 
-    getBackgroundTaskManager().markFailed(sessionId, 'Provider stopped');
+    await getBackgroundTaskManager().markFailed(sessionId, 'Provider stopped');
 
     const body = latestBody();
     expect(body).not.toMatch(/耗时|Duration|不到 1 秒|under 1 sec/);

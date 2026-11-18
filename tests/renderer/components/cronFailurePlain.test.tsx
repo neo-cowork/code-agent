@@ -17,6 +17,7 @@ import {
 import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { CRON_RUNTIME_NOT_READY_MESSAGE_EN } from '../../../src/shared/utils/cronRuntimeNotReady';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 
 const GLM_WITH_FLUSH = [
@@ -108,6 +109,7 @@ describe('cron failure notification copy', () => {
     ['auth', '401 Unauthorized: incorrect api key'],
     ['network', 'fetch failed'],
     ['cloud-down', CRON_CLOUD_UNAVAILABLE_MESSAGE_EN],
+    ['runtime-starting', CRON_RUNTIME_NOT_READY_MESSAGE_EN],
     ['other', 'something exploded in the runner'],
   ] as const;
 
@@ -264,6 +266,7 @@ describe('CronExecutionDetail 人话失败', () => {
     ['429 Too Many Requests', '服务商暂时限流，下次运行会自动再试', '立即重跑'],
     ['request timed out', '这次运行超时被停了', '立即重跑'],
     ['fetch failed', '暂时连不上模型服务', '立即重跑'],
+    [CRON_RUNTIME_NOT_READY_MESSAGE_EN, 'Neo 刚启动还没准备好，这次运行没能开始。', '立即重跑'],
     ['401 Unauthorized: incorrect api key', '模型账号没通过授权（密钥错误或已过期）', '检查账号设置'],
     ['something exploded in the runner', '运行失败', null],
   ] as const)('详情下一步：%s', (error, sentence, action) => {
@@ -378,5 +381,6 @@ function sentenceFor(
   if (kind === 'auth') return copy.failureAuth;
   if (kind === 'network') return copy.failureNetwork;
   if (kind === 'cloud_unavailable') return copy.failureCloudUnavailable;
+  if (kind === 'runtime_starting') return copy.failureRuntimeStarting;
   return copy.failureOther;
 }

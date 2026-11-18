@@ -1,3 +1,5 @@
+import { EXCEL_READ_ACTIONS, EXCEL_WRITE_ACTIONS } from '../../shared/constants/excelActions';
+import { materializeExcelGenerateOutput, resolveExcelWriteTargets } from './modules/excel/resolveExcelWriteTargets';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ClassificationContext, ClassificationResult } from './permissionClassifier';
@@ -93,25 +95,33 @@ export async function classifyFileWrite(
   context: ClassificationContext,
   startTime: number,
 ): Promise<ClassificationResult | null> {
-  if (!WRITE_TOOLS.has(toolName)) return classifyOtherScheduledWrite(toolName, args, context, startTime);
+  const excelAction = typeof args.action === 'string' ? args.action : '';
+  const excelWrite = toolName === 'ExcelAutomate' && EXCEL_WRITE_ACTIONS.has(excelAction);
+  if (toolName === 'ExcelAutomate' && !excelWrite) {
+    if (EXCEL_READ_ACTIONS.has(excelAction)) return { decision: 'approve', reason: 'Excel read action', confidence: 1, cached: false };
+    return { decision: 'ask', reason: 'Excel automation or unknown action requires confirmation', confidence: 1, cached: false, trustBoundary: true };
+  }
+  if (!excelWrite && !WRITE_TOOLS.has(toolName)) return classifyOtherScheduledWrite(toolName, args, context, startTime);
   if (!context.workspaceRoot && GENERATOR_WRITE_TOOLS.has(toolName)) return null;
   const scheduled = await requiresScheduleWriteGrant(context.sessionId);
   // Keep the original lexical-path policy authoritative. The descriptor resolver
   // canonicalizes symlinks, which must not turn an in-folder escape into /tmp approval.
-  const policyTarget = writeTargetPathOf(toolName, args);
+  if (excelWrite) materializeExcelGenerateOutput(args);
+  const excelTargets = excelWrite ? resolveExcelWriteTargets(args, context.workingDirectory) : undefined;
+  const policyTarget = excelWrite ? excelTargets?.[0] : writeTargetPathOf(toolName, args);
   const originalPolicy = policyTarget ? classifyTarget(toolName, policyTarget, context, startTime) : undefined;
   if (originalPolicy && originalPolicy.decision !== 'approve') return { ...originalPolicy, bypassCache: scheduled || originalPolicy.bypassCache };
-  const assessment = scheduled && context.toolDefinition
+  const assessment = !excelWrite && scheduled && context.toolDefinition
     ? resolveToolWriteTargets({ definition: context.toolDefinition, params: args, workingDirectory: context.workingDirectory })
     : undefined;
   // Legacy callers without a definition retain their existing path semantics. Optional
   // generators have an implicit cwd destination; never use that default for malformed input.
   const fallback = !scheduled || !context.toolDefinition || (GENERATOR_WRITE_TOOLS.has(toolName) && args.output_path === undefined)
     ? writeTargetPathOf(toolName, args) : undefined;
-  const targets = assessment?.targets.length ? assessment.targets : fallback ? [fallback] : [];
+  const targets = excelTargets ?? (assessment?.targets.length ? assessment.targets : fallback ? [fallback] : []);
   if (!targets.length || assessment?.uncertain.length) {
     const reason = 'File write target is missing or uncertain';
-    return { decision: 'ask', reason, confidence: 0.5, cached: false, bypassCache: scheduled,
+    return { decision: 'ask', reason, confidence: 0.5, cached: false, bypassCache: scheduled, trustBoundary: excelWrite || undefined,
       scheduleWriteTargets: scheduled ? [] : undefined,
       traceStep: createTraceStep('permission_classifier', 'W0: no_path', 'ask', reason, startTime) };
   }
@@ -130,7 +140,7 @@ export async function classifyFileWrite(
       traceStep: createTraceStep('permission_classifier', 'schedule_write_grant', 'ask', reason, startTime) };
   }
   const { workspaceWrite: _workspaceWrite, ...result } = results[0];
-  return { ...result, bypassCache: scheduled || result.bypassCache };
+  return { ...result, bypassCache: excelWrite || scheduled || result.bypassCache };
 }
 
 /**
@@ -194,6 +204,7 @@ function classifyTarget(
   // Symlink that looks in-workspace but resolves outside is a boundary escape;
   // check before the /tmp allowlist so a link into /tmp cannot become implicit approval.
   if (isPathInside(candidate, workspaceBoundary)) return outsideProjectWriteAsk(toolName, resolved, startTime);
+  if (toolName === 'ExcelAutomate') return outsideProjectWriteAsk(toolName, resolved, startTime);
   const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
   if (
     isPathWithinRoot(resolved, tmpRoot)
