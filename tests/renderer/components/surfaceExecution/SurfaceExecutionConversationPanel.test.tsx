@@ -3,7 +3,9 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SurfaceExecutionConversationPanel } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel';
-import { surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
+import { SurfaceExecutionCompactBar } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceExecutionCompactBar';
+import { getSurfaceExecutionTranslations, surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
+import type { SurfaceSessionStateV1 } from '../../../../src/shared/contract/surfaceExecution';
 import { useAppStore } from '../../../../src/renderer/stores/appStore';
 import { surfaceEvent, surfaceEvidence, surfaceScope, surfaceSession } from './fixtures';
 
@@ -281,6 +283,84 @@ describe('SurfaceExecutionConversationPanel', () => {
       } finally {
         useAppStore.setState({ openWorkbenchTab: original });
       }
+    });
+
+    const SESSION_STATES: SurfaceSessionStateV1[] = [
+      'preparing',
+      'waiting_permission',
+      'running',
+      'waiting_human',
+      'paused',
+      'stopping',
+      'completed',
+      'failed',
+    ];
+    const WORKING_STATES = new Set<SurfaceSessionStateV1>(['preparing', 'running', 'stopping']);
+
+    it.each(['zh', 'en'] as const)('maps every session state on the compact bar (%s)', (language) => {
+      const copy = getSurfaceExecutionTranslations(language);
+      const workingSentence = language === 'zh' ? '正在操作' : 'Working on';
+      for (const state of SESSION_STATES) {
+        const view = render(
+          <SurfaceExecutionCompactBar
+            session={surfaceSession({ id: 'page', title: 'Example', state })}
+            copy={copy}
+          />,
+        );
+        const bar = screen.getByTestId('surface-execution-compact-bar');
+        expect(bar.getAttribute('data-state')).toBe(state);
+        const text = bar.textContent ?? '';
+        if (WORKING_STATES.has(state)) {
+          expect(text).toContain(language === 'zh'
+            ? '浏览器 · 正在操作 page.example.test'
+            : 'Browser · Working on page.example.test');
+          expect(bar.querySelector('.animate-spin')).not.toBeNull();
+        } else {
+          expect(text).not.toContain(workingSentence);
+          expect(bar.querySelector('.animate-spin')).toBeNull();
+        }
+        if (state === 'completed') expect(text).toContain(language === 'zh' ? '浏览器 · 已结束' : 'Browser · Ended');
+        if (state === 'failed') expect(text).toContain(language === 'zh' ? '浏览器 · 已失败' : 'Browser · Failed');
+        if (state === 'paused') expect(text).toContain(language === 'zh' ? '浏览器 · 已暂停' : 'Browser · Paused');
+        view.unmount();
+      }
+    });
+
+    it.each(['zh', 'en'] as const)('panel bar stays off the working sentence for ended, failed, and paused sessions (%s)', (language) => {
+      const copy = getSurfaceExecutionTranslations(language);
+      const workingSentence = language === 'zh' ? '正在操作' : 'Working on';
+      const { unmount } = render(
+        <SurfaceExecutionConversationPanel
+          conversationId="conversation-1"
+          sessions={[
+            surfaceSession({ id: 'prep', state: 'preparing', updatedAt: 9_000 }),
+            surfaceSession({ id: 'run', state: 'running', updatedAt: 8_000 }),
+            surfaceSession({ id: 'stop', state: 'stopping', updatedAt: 7_000 }),
+            surfaceSession({ id: 'done', state: 'completed', updatedAt: 6_000 }),
+            surfaceSession({ id: 'hold', state: 'paused', updatedAt: 5_000 }),
+            surfaceSession({ id: 'bad', state: 'failed', updatedAt: 4_000 }),
+          ]}
+          translations={copy}
+        />,
+      );
+      const bars = screen.getAllByTestId('surface-execution-compact-bar');
+      const byState = new Map(bars.map((bar) => [bar.getAttribute('data-state'), bar.textContent ?? '']));
+      expect(byState.get('preparing')).toContain(workingSentence);
+      expect(byState.get('running')).toContain(workingSentence);
+      expect(byState.get('stopping')).toContain(workingSentence);
+      expect(byState.get('completed')).not.toContain(workingSentence);
+      expect(byState.get('paused')).not.toContain(workingSentence);
+      expect(byState.has('failed')).toBe(false);
+      expect(screen.getByTestId('surface-execution-session').textContent ?? '').not.toContain(workingSentence);
+      for (const state of ['preparing', 'running', 'stopping'] as const) {
+        const bar = bars.find((candidate) => candidate.getAttribute('data-state') === state);
+        expect(bar?.querySelector('.animate-spin')).not.toBeNull();
+      }
+      for (const state of ['completed', 'paused'] as const) {
+        const bar = bars.find((candidate) => candidate.getAttribute('data-state') === state);
+        expect(bar?.querySelector('.animate-spin')).toBeNull();
+      }
+      unmount();
     });
   });
 });
