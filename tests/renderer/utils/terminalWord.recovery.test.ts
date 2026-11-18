@@ -92,3 +92,66 @@ it('background result arrival order cannot turn an earlier success into a later 
   ]);
   expect(resolveBackgroundTerminalKey({ status: 'completed' }, { toolStepOutcome: result })).toBe('completed-with-warnings');
 });
+
+describe('failed foreground read recovered by a background delegate_task', () => {
+  type LedgerTask = NonNullable<Parameters<typeof buildRunUiState>[0]['backgroundTasks']>[number];
+  const delegate = (prompt: string, id = 'deleg-1') => ({ id, name: 'delegate_task', arguments: { title: 'read', prompt }, success: true });
+  const task = (over: Partial<LedgerTask> = {}): LedgerTask => ({ toolCallId: 'deleg-1', status: 'completed', ...over });
+  const run = (calls: Array<{ id?: string; name: string; arguments: Record<string, unknown>; success: boolean }>, tasks: LedgerTask[]) => {
+    const projection: TraceProjection = {
+      sessionId: 's', activeTurnIndex: 0,
+      turns: [{
+        turnId: 't', turnNumber: 1, startTime: 1, status: 'completed',
+        nodes: calls.map((call, index) => ({
+          id: `n-${index}`, type: 'tool_call', content: '', timestamp: 1 + index,
+          toolCall: { id: call.id ?? `c-${index}`, name: call.name, args: call.arguments, success: call.success, result: 'done' },
+        })),
+      }],
+    };
+    return resolveRunTerminalKey(buildRunUiState({ projection, sessionId: 's', sessionStatus: 'idle', backgroundTasks: tasks }));
+  };
+  const failedRead = { ...read('a.pdf', false) };
+
+  it('completed delegation naming the failed file recovers the step', () => {
+    expect(run([failedRead, delegate('请读取 /ws/contracts/a.pdf 并总结')], [task()])).toBe('completed');
+    expect(run([failedRead, delegate('Read a.pdf and summarize it')], [task()])).toBe('completed');
+  });
+
+  it.each(['running', 'queued', 'failed', 'cancelled'])('%s delegation keeps the warning', (status) => {
+    expect(run([failedRead, delegate('Read a.pdf')], [task({ status: status as LedgerTask['status'] })])).toBe('completed-with-warnings');
+  });
+
+  it('prompt that does not name the file keeps the warning', () => {
+    expect(run([failedRead, delegate('Summarize the contracts')], [task()])).toBe('completed-with-warnings');
+    expect(run([failedRead, delegate('Read data.pdf')], [task()])).toBe('completed-with-warnings');
+    expect(run([read('src/a/x.ts', false), delegate('Read src/b/x.ts')], [task()])).toBe('completed-with-warnings');
+  });
+
+  it('two failed files with only one named keeps the warning', () => {
+    expect(run([failedRead, read('b.pdf', false), delegate('Read a.pdf')], [task()])).toBe('completed-with-warnings');
+    expect(run([failedRead, read('b.pdf', false), delegate('Read a.pdf and b.pdf')], [task()])).toBe('completed');
+  });
+
+  it('completed task with lastToolFailure keeps the warning', () => {
+    expect(run([failedRead, delegate('Read a.pdf')], [task({ progress: { lastToolFailure: { toolName: 'Read' } } })])).toBe('completed-with-warnings');
+  });
+
+  it('task bound to a different tool call keeps the warning', () => {
+    expect(run([failedRead, delegate('Read a.pdf')], [task({ toolCallId: 'other' })])).toBe('completed-with-warnings');
+  });
+
+  it('completed task whose own tool calls failed keeps the warning', () => {
+    expect(run([failedRead, delegate('Read a.pdf')], [task({ progress: { failedToolCalls: 1 } })])).toBe('completed-with-warnings');
+  });
+
+  it('a bare route word or another non-ASCII file name does not name the failed target', () => {
+    const url = { name: 'WebFetch', arguments: { url: 'https://example.com/status' }, success: false };
+    expect(run([url, delegate('Check the status of the build')], [task()])).toBe('completed-with-warnings');
+    expect(run([read('合同.pdf', false), delegate('读取 备份合同.pdf')], [task()])).toBe('completed-with-warnings');
+    expect(run([read('合同.pdf', false), delegate('读取 /ws/合同.pdf')], [task()])).toBe('completed');
+  });
+
+  it('a delegation that came before the failure recovers nothing', () => {
+    expect(run([delegate('Read a.pdf'), failedRead], [task()])).toBe('completed-with-warnings');
+  });
+});

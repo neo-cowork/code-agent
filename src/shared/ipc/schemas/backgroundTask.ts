@@ -71,6 +71,7 @@ export const TaskProgressSchema: z.ZodType<TaskProgress> = z.object({
     alternatives: z.string().optional(),
     at: z.number(),
   }).optional(),
+  failedToolCalls: z.number().optional(),
 });
 
 export const TaskFailureSchema: z.ZodType<TaskFailure> = z.object({
