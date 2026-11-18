@@ -89,7 +89,9 @@ describe('一句话规则先于只读探测免卡', () => {
   }
   const probeRows = () => getDecisionHistory().getAll().filter((entry) => entry.reason === 'readonly-probe-plan');
   // 共享解析器读不懂 `command -v`，所以它不走「已知安全命令」捷径，只可能由只读探测放行。
-  const LOOKUP = 'command -v exiftool; command -v mdls; command -v sips';
+  // 探测只在整条命令退出码为 0 时接手：查的工具在哪个平台都不存在，靠结尾的 echo 收成 0，
+  // 这样 macOS 与 Linux 走的是同一条路（原先以 `command -v sips` 结尾，只有 macOS 上退出码是 0）。
+  const LOOKUP = 'command -v exiftool; command -v k2-probe-no-such-tool; echo "EXIT_OK"';
 
   it('对照：没有规则时这条命令确实走探测、不出卡', async () => {
     beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '看看装了哪些工具' });
@@ -118,7 +120,7 @@ describe('一句话规则先于只读探测免卡', () => {
   it('带角色范围的 ask 命中后半段命令：同样出卡', async () => {
     getPolicyEngine().loadUserRules({ nlRules: [{ behavior: 'ask', rule: 'Bash(echo *)', roleId: ROLE }] });
     beginRunPolicy(RUN_ID, SESSION, { roleId: ROLE, initiatingText: '看看装了哪些工具' });
-    await run(`${LOOKUP}; echo "EXIT_OK"`);
+    await run(LOOKUP);
     expect(asks).toHaveLength(1);
     expect(probeRows()).toHaveLength(0);
   });
