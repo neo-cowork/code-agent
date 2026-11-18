@@ -178,8 +178,14 @@ export class ParallelAgentCoordinatorRegistry {
     }
     for (const snapshot of this.completedSnapshots.values()) {
       if (snapshot.scope.sessionId !== sessionId) continue;
+      // 取消/失败的运行可能在成员仍 pending/running 时就被 finalize（冻结后不会再更新），
+      // 读侧按运行终态收口，避免这些成员永远显示为排队/工作中。
+      const settled = snapshot.status === 'cancelled' || snapshot.status === 'failed'
+        ? snapshot.status
+        : undefined;
       for (const task of snapshot.tasks) {
-        tasks.push({ ...task, task: '', tools: [] });
+        const open = task.status === 'pending' || task.status === 'running';
+        tasks.push({ ...task, status: settled && open ? settled : task.status, task: '', tools: [] });
       }
     }
     return tasks;

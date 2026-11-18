@@ -95,6 +95,26 @@ describe('getAgentTreeSnapshot with a run-scoped parallel coordinator', () => {
     expect(snapshot.nodes.map((n) => n.status)).toEqual(['completed', 'completed']);
   });
 
+  it('settles members still queued/running when the run is finalized as cancelled', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const execute = vi.fn(async () => {
+      await gate;
+      return { success: true, output: 'ok', toolsUsed: [], iterations: 1 };
+    });
+    const run = startRun(scopeA, [task(scopeA, 'm1', 'reader'), task(scopeA, 'm2', 'writer')], execute);
+    await vi.waitFor(() => expect(execute).toHaveBeenCalled());
+
+    getParallelAgentCoordinatorRegistry().finalize(scopeA, 'cancelled');
+    resetSpawnGuard();
+
+    const snapshot = getAgentTreeSnapshot({ sessionId: 'sess-a' });
+    expect(snapshot.nodes.map((n) => n.status)).toEqual(['cancelled', 'cancelled']);
+
+    release();
+    await run.catch(() => undefined);
+  });
+
   it("does not leak another session's members", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
