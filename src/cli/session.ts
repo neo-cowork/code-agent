@@ -247,13 +247,18 @@ export class CLISessionManager {
     }
   }
 
-  /** 懒加载：纯 CLI 启动不拉 window bridge；没有订阅者时 emit 是静默空操作。 */
+  /** 懒加载：纯 CLI 启动不拉 window bridge；没有订阅者时 emit 是静默空操作。导入或发送失败只留痕，不阻断改名。 */
   private broadcastSessionTitle(sessionId: string, title: string): void {
     void import('../host/platform/windowBridge')
       .then(({ broadcastToRenderer }) => {
         broadcastToRenderer('session:updated', { sessionId, updates: { title } });
       })
-      .catch(() => { /* 推送总线不可用时不阻断改名 */ });
+      .catch((error: unknown) => {
+        logger.warn('session title broadcast failed', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   /** web 构建走本类而非 host SessionManager：标题变更同样回写云端行（懒加载，CLI 启动不拉起 supabase 栈）。 */

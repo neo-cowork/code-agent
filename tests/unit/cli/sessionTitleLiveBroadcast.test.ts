@@ -12,6 +12,13 @@ const quick = vi.hoisted(() => ({
   ),
 }));
 
+const log = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
 vi.mock('../../../src/host/model/quickModel', () => ({
   isQuickModelAvailable: () => true,
   quickTask: (prompt: string) => quick.task(prompt),
@@ -29,8 +36,8 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
 }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  logger: log,
+  createLogger: () => log,
 }));
 
 const { CLISessionManager } = await import('../../../src/cli/session');
@@ -163,5 +170,26 @@ describe('CLISessionManager 标题落库后推送侧栏', () => {
 
     expect(titlePayloads(pushes)).toEqual([]);
     expect(db.sessions.get(SESSION_ID)?.title).not.toBe('写不进去');
+  });
+
+  it('推送总线抛错时留痕，标题仍留在库里', async () => {
+    const bridge = await import('../../../src/host/platform/windowBridge');
+    const spy = vi.spyOn(bridge, 'broadcastToRenderer').mockImplementation(() => {
+      throw new Error('bus down');
+    });
+    log.warn.mockClear();
+    try {
+      const { db, manager } = await managerWith(provisionalTitle(PROMPT));
+      await manager.updateSession(SESSION_ID, { title: '看看 workspace' });
+      await vi.waitFor(() => expect(log.warn).toHaveBeenCalled());
+      expect(db.sessions.get(SESSION_ID)?.title).toBe('看看 workspace');
+      expect(titlePayloads(pushes)).toEqual([]);
+      expect(log.warn).toHaveBeenCalledWith('session title broadcast failed', {
+        sessionId: SESSION_ID,
+        error: 'bus down',
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
