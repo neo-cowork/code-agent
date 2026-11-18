@@ -17,6 +17,7 @@ import {
   type KnowledgeInboxDecisionRecord,
 } from '../memory/knowledgeInboxDecision';
 import { packMemoryEntries, storedMemoryToEntry } from '../memory/memoryEntryRuntime';
+import { tokenizeQuery } from '../memory/memoryEntryScoring';
 import { memoryInjectionPauses } from '../memory/memoryUsageEviction';
 import type { MemoryPackResult } from '../../shared/contract/memory';
 import { estimateTokens } from '../context/tokenEstimator';
@@ -201,9 +202,15 @@ export async function buildPackedSeedMemory(options: {
       maxItems: MAX_SEED_MEMORIES,
       perItemCharLimit: MAX_ENTRY_CHARS,
       totalCharBudget: MAX_SEED_CHARS,
+      requireQueryMatch: true,
     }, memoryDb);
 
     if (packed.items.length === 0 || !packed.block.trim()) {
+      // 有 query token 却没有命中：返回空包让调用方明确"不注入"，而不是 null（null = 降级回落）。
+      if (tokenizeQuery(options.query ?? '').length > 0) {
+        logger.info('[SeedMemory] No memory matched the query, skipping user-memory injection');
+        return { block: '', packed };
+      }
       return null;
     }
 
