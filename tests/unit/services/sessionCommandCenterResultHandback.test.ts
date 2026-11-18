@@ -90,10 +90,10 @@ describe('background task result handback', () => {
       expect(settled?.resultText).toBe(conclusion);
       expect(settled?.resultText?.split('\n')).toHaveLength(3);
       for (const n of [1, 2, 3]) expect(message.content).toContain(`[P${n}-END]`);
-      // 卡片摘要维持历史口径：折叠空白、1500 封顶
-      const flat = Array.from(conclusion.replace(/\s+/g, ' '));
+      // 卡片摘要：保留换行、1500 封顶、total 报真实总长
+      const all = Array.from(conclusion);
       expect(message.metadata?.backgroundTaskResult?.summary)
-        .toBe(`${flat.slice(0, 1500).join('')}…(truncated, ${flat.length} chars total)`);
+        .toBe(`${all.slice(0, 1500).join('')}…(truncated, ${all.length} chars total)`);
     } finally { done(); }
   });
 
@@ -119,7 +119,7 @@ describe('background task result handback', () => {
       const summary = message.metadata?.backgroundTaskResult?.summary ?? '';
       expect(summary).not.toContain('archive=');
       expect(summary).not.toContain('read_tool_result_archive');
-      expect(Array.from(summary).length).toBeLessThanOrEqual(1500 + 40);
+      expect(summary).toMatch(new RegExp(`…\\(truncated, ${Array.from(conclusion).length} chars total\\)$`));
     } finally { done(); }
   });
 
@@ -135,5 +135,12 @@ describe('background task result handback', () => {
         expect.objectContaining({ reason: 'task_result_spill_failed', chars: 9000 }),
       );
     } finally { done(); }
+  });
+
+  it('card summary keeps newlines and later text; only the trailing archive notice is stripped', async () => {
+    const { clampTaskResultCardSummary } = await import('../../../src/host/services/commandCenter/taskResultHandback');
+    const withMarkerLine = '第一行\n[Full output saved to: /x — archive=a; sha256=b; bytes=1; use Read/Grep on this file to inspect the full output.]\n结论：全部完成';
+    expect(clampTaskResultCardSummary(withMarkerLine)).toBe(withMarkerLine);
+    expect(clampTaskResultCardSummary('Page titles:\n\nExample Domain')).toBe('Page titles:\n\nExample Domain');
   });
 });
