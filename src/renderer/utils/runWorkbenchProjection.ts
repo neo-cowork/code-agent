@@ -1,3 +1,4 @@
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 import { classifyToolSteps, type DelegationLedgerTask } from './terminalWord';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { getLastConversationTurnIndex, latestUserTurnItems } from './conversationTurns';
@@ -31,6 +32,8 @@ export interface BuildRunWorkbenchModelInput {
   taskProgress?: TaskProgressData | null;
   todos?: TodoItem[];
   pendingApprovalId?: string | null;
+  /** 只影响等待审批标签（取共享文案源）；缺省 zh。 */
+  language?: 'zh' | 'en';
   /** Ledger tasks: a completed delegate_task naming a failed file recovers that failure. */
   backgroundTasks?: readonly DelegationLedgerTask[];
 }
@@ -88,14 +91,14 @@ function statusFromInput(args: BuildRunWorkbenchModelInput, turn: TraceTurn | nu
   return 'planning';
 }
 
-function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null): string {
+function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string {
   if (taskProgress?.step?.trim()) return taskProgress.step.trim();
   if (taskProgress?.tool?.trim()) return `工具 ${taskProgress.tool.trim()}`;
 
   const labels: Record<RunUiStatus, string> = {
     planning: '规划任务',
     running: '执行中',
-    waiting_approval: '等你确认',
+    waiting_approval: WAITING_ON_USER_LABELS[language].approval,
     using_tools: '调用工具',
     verifying: '验证结果',
     completed: '已完成',
@@ -169,7 +172,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     },
     title: userInstructionTitle(turn),
     status,
-    phase: phaseFromStatus(status, args.taskProgress),
+    phase: phaseFromStatus(status, args.taskProgress, args.language),
     activeToolName: toolCall?.name,
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),

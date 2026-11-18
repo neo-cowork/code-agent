@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -40,5 +40,30 @@ describe('SkillWatcher planned work directory', () => {
     await watcher.updateProjectDirectory(plannedDirectory);
 
     await expect(stat(plannedDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('picks up a project skills dir that appears after startup, without pre-creating it', async () => {
+    const project = path.join(tempHome, 'notes');
+    await mkdir(project, { recursive: true });
+    const watcher = getSkillWatcher();
+    await watcher.initialize(project);
+    expect(await readdir(project)).toEqual([]);
+
+    const nextReload = () => new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no skills reload')), 8000);
+      watcher.once('reloaded', () => { clearTimeout(timer); resolve(); });
+    });
+
+    // 会话中途 skill_create(scope=project) 一次性建出整条路径
+    const first = nextReload();
+    await mkdir(path.join(project, '.code-agent', 'skills', 'first'), { recursive: true });
+    await writeFile(path.join(project, '.code-agent', 'skills', 'first', 'SKILL.md'), '---\nname: first\n---\n');
+    await first;
+
+    // 之后的递归监听已经挂上：再写一个技能仍会触发重扫
+    const second = nextReload();
+    await mkdir(path.join(project, '.code-agent', 'skills', 'second'), { recursive: true });
+    await writeFile(path.join(project, '.code-agent', 'skills', 'second', 'SKILL.md'), '---\nname: second\n---\n');
+    await second;
   });
 });

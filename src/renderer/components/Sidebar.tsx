@@ -653,9 +653,9 @@ export const Sidebar: React.FC = () => {
 
   const handleSelectSearchSession = async (sessionId: string) => {
     try {
-      if (sessionId !== currentSessionId) {
-        await switchSession(sessionId);
-      }
+      // 走带「命中跳转」的选择路径：先种 pendingSearchJump（消息节点高亮 / 找不到时打开会话内搜索），
+      // 再切会话；此前弹窗里点命中只切会话，跳转与兜底都不会发生。
+      await handleSelectSession(sessionId);
     } finally {
       closeSearchDialog();
     }

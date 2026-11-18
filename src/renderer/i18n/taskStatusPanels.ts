@@ -1,6 +1,7 @@
 // ============================================================================
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 // Task-status 面板域词条（RewindPanel / TaskPanel 各卡 / SkillsPanel /
 // context detail popover）—— zh/en 同文件相邻维护。独立文件避免 zh.ts/en.ts 撞
 // max-lines(1000) 门；与既有 t.taskPanel 命名空间并存（组件里两个命名空间并用）。
@@ -51,7 +52,7 @@ export const taskStatusPanelsZh = {
       statusUserAction: '等你操作',
       statusCancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
       statusPending: '待开始',
-      statusWaitingApproval: '等你确认',
+      statusWaitingApproval: WAITING_ON_USER_LABELS.zh.approval,
       statusUsingTools: '使用工具中',
       statusVerifying: '核实中',
       scopeSession: '会话',
@@ -290,7 +291,7 @@ export const taskStatusPanelsEn: typeof taskStatusPanelsZh = {
       statusUserAction: 'Waiting for you to act',
       statusCancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,
       statusPending: 'Pending',
-      statusWaitingApproval: 'Waiting for you to confirm',
+      statusWaitingApproval: WAITING_ON_USER_LABELS.en.approval,
       statusUsingTools: 'Using tools',
       statusVerifying: 'Verifying',
       scopeSession: 'Session',
