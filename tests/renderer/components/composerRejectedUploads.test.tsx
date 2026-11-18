@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, renderHook, screen, fireEvent } from '@testing-library/react';
 
@@ -91,6 +92,29 @@ describe('ComposerRejectedUploadsNotice', () => {
     fireEvent.click(screen.getAllByTestId('composer-rejected-upload-dismiss')[0]);
     expect(items()).toHaveLength(4);
     expect(screen.getByTestId('composer-rejected-uploads').textContent).not.toContain('demo.mp4');
+  });
+
+  it('dismiss X inside the composer <form> only removes that row and does not submit', () => {
+    // X 挂在 composer <form> 里；无 type 的 button 默认是 submit，点 X 会顺带发送草稿。
+    // 复刻 attachmentMergeToast 的表单包裹 + submit 探针写法。
+    const submit = vi.fn((e: React.FormEvent) => e.preventDefault());
+    render(
+      <form data-testid="composer-form" onSubmit={submit}>
+        <ComposerRejectedUploadsNotice />
+        <textarea data-testid="composer-textarea" defaultValue="草稿正文" />
+      </form>
+    );
+    act(() => {
+      const s = useComposerRejectedUploadsStore.getState();
+      s.add({ name: 'demo.mp4', size: 25 * MB });
+      s.add({ name: 'other.mp4', size: 11 * MB });
+    });
+    fireEvent.click(screen.getAllByTestId('composer-rejected-upload-dismiss')[0]);
+    expect(submit).not.toHaveBeenCalled(); // X 不是发送键
+    expect(screen.getByTestId('composer-rejected-uploads').textContent).not.toContain('demo.mp4');
+    expect(screen.getByTestId('composer-rejected-uploads').textContent).toContain('other.mp4');
+    expect(screen.getAllByTestId('composer-rejected-upload-row')).toHaveLength(1);
+    expect((screen.getByTestId('composer-textarea') as HTMLTextAreaElement).value).toBe('草稿正文');
   });
 });
 
