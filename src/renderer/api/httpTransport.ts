@@ -29,7 +29,7 @@ import {
 import { getServerConnectionStatus } from '../stores/serverConnectionStore';
 import { logPermissionClickExit } from '../services/permissionClickLog';
 import { useAppStore } from '../stores/appStore';
-import { domainFailureMessage, httpFailureMessage, readRetryAfterSeconds, UploadFailureError, uploadFailureMessage } from '../utils/httpFailureMessage';
+import { domainFailureMessage, httpFailureMessage, readProjectSourceTrustHttpFields, readRetryAfterSeconds, UploadFailureError, uploadFailureMessage } from '../utils/httpFailureMessage';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -692,9 +692,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 带上 status：调用方要能区分「这个 session 正忙」（409，可排队重发）
           // 和真正的失败。只留一句人话字符串的话，上层只能去正则匹配错误文案。
           // message 只按 status/code 出一句话；原始响应体挂 rawErrorBody 留诊断，不进 message。
+          const trustFields = readProjectSourceTrustHttpFields(errorBody);
           throw Object.assign(
             new Error(httpFailureMessage({ status: response.status, code: errorCode, language: useAppStore.getState().language })),
-            { status: response.status, ...(errorCode ? { code: errorCode } : {}), rawErrorBody: errorMessage || errorBody },
+            { status: response.status, ...(errorCode ? { code: errorCode } : {}), ...trustFields, rawErrorBody: errorMessage || errorBody },
           );
         }
 

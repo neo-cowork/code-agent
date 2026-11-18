@@ -153,14 +153,70 @@ const MATRIX_CASES: MatrixCase[] = [
           error: `Project folder needs trust confirmation ${SENTINEL}`,
           code: 'PROJECT_SOURCE_TRUST',
           kind: 'identity_changed',
+          folderName: 'replaced-folder',
         }),
       );
       const error = await invokeSend().catch((e: unknown) => e);
+      expect(error).toMatchObject({
+        status: 422,
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'identity_changed',
+        folderName: 'replaced-folder',
+      });
       return { error, expectedRawInWarn: SENTINEL };
     },
     expected: {
       zh: '这个项目文件夹需要你确认后 Neo 才能使用。',
       en: 'This project folder needs your confirmation before Neo can use it.',
+    },
+  },
+  {
+    id: '422 PROJECT_SOURCE_TRUST source_missing',
+    run: async ({ invokeSend }) => {
+      fetchMock.mockImplementation(async () =>
+        jsonResponse(422, {
+          error: `Project Source is missing: /secret/weekly-notes ${SENTINEL}`,
+          code: 'PROJECT_SOURCE_TRUST',
+          kind: 'source_missing',
+          folderName: 'weekly-notes',
+        }),
+      );
+      const error = await invokeSend().catch((e: unknown) => e);
+      expect(error).toMatchObject({
+        status: 422,
+        code: 'PROJECT_SOURCE_TRUST',
+        kind: 'source_missing',
+        folderName: 'weekly-notes',
+      });
+      const message = error instanceof Error ? error.message : '';
+      expect(message).not.toContain('/secret/');
+      expect(message).not.toContain(SENTINEL);
+      return { error, expectedRawInWarn: SENTINEL };
+    },
+    expected: {
+      zh: '找不到项目文件夹“weekly-notes”。它可能已被移动或删除。',
+      en: 'Cannot find project folder “weekly-notes”. It may have been moved or deleted.',
+    },
+  },
+  {
+    id: '422 PROJECT_SOURCE_TRUST source_missing drops a path-shaped folder name',
+    run: async ({ invokeSend }) => {
+      fetchMock.mockImplementation(async () =>
+        jsonResponse(422, {
+          error: `Project Source is missing ${SENTINEL}`,
+          code: 'PROJECT_SOURCE_TRUST',
+          kind: 'source_missing',
+          folderName: '/secret/weekly-notes',
+        }),
+      );
+      const error = await invokeSend().catch((e: unknown) => e);
+      expect(error).toMatchObject({ status: 422, code: 'PROJECT_SOURCE_TRUST', kind: 'source_missing' });
+      expect(error).not.toMatchObject({ folderName: '/secret/weekly-notes' });
+      return { error, expectedRawInWarn: SENTINEL };
+    },
+    expected: {
+      zh: '找不到项目文件夹“此文件夹”。它可能已被移动或删除。',
+      en: 'Cannot find project folder “this folder”. It may have been moved or deleted.',
     },
   },
   {

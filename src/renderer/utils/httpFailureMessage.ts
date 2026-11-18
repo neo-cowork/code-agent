@@ -154,6 +154,60 @@ export function isProjectSourceTrustFailure(error: unknown): boolean {
     && (error as { code?: unknown }).code === 'PROJECT_SOURCE_TRUST';
 }
 
+const PROJECT_SOURCE_TRUST_KINDS = new Set(['source_missing', 'identity_changed', 'not_trusted']);
+
+export interface ProjectSourceTrustHttpFields {
+  kind?: 'source_missing' | 'identity_changed' | 'not_trusted';
+  folderName?: string;
+}
+
+/** Basename only. A value that still looks like a path is dropped so it cannot reach the bubble. */
+export function safeProjectFolderName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const name = value.trim();
+  if (!name || name === '.' || name === '..' || name === '/' || name === '\\') return undefined;
+  if (name.includes('/') || name.includes('\\')) return undefined;
+  return name;
+}
+
+function trustKind(value: unknown): ProjectSourceTrustHttpFields['kind'] {
+  return typeof value === 'string' && PROJECT_SOURCE_TRUST_KINDS.has(value)
+    ? value as ProjectSourceTrustHttpFields['kind']
+    : undefined;
+}
+
+/** 从 422 JSON 取出 kind 与文件夹名，供 transport 挂到抛出的错误上。非信任门响应返回空对象。 */
+export function readProjectSourceTrustHttpFields(errorBody: string): ProjectSourceTrustHttpFields {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(errorBody);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== 'object') return {};
+  const record = parsed as { code?: unknown; kind?: unknown; folderName?: unknown };
+  if (record.code !== 'PROJECT_SOURCE_TRUST') return {};
+  const kind = trustKind(record.kind);
+  const folderName = safeProjectFolderName(record.folderName);
+  return {
+    ...(kind ? { kind } : {}),
+    ...(folderName ? { folderName } : {}),
+  };
+}
+
+/** 读 transport 挂在错误对象上的 kind / 文件夹名。 */
+export function projectSourceTrustFieldsOf(error: unknown): ProjectSourceTrustHttpFields | undefined {
+  if (!isProjectSourceTrustFailure(error)) return undefined;
+  const record = error as { kind?: unknown; folderName?: unknown };
+  const kind = trustKind(record.kind);
+  const folderName = safeProjectFolderName(record.folderName);
+  if (!kind && !folderName) return undefined;
+  return {
+    ...(kind ? { kind } : {}),
+    ...(folderName ? { folderName } : {}),
+  };
+}
+
 /** 发送失败是不是会话被没结束的旧任务占着（失败说明下挂「放弃 / 重试」两个按钮）。 */
 export function isSessionConflictFailure(error: unknown): boolean {
   return typeof error === 'object' && error !== null

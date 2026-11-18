@@ -25,8 +25,14 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
   sessionId?: string;
 }): React.JSX.Element | null {
   const { t } = useI18n();
-  const [state, setState] = useState<ConfirmState>('idle');
-  const [failure, setFailure] = useState<{ reason?: string; folderName?: string }>();
+  const presetMissing = node.metadata?.sendFailureKind === 'source_missing';
+  const presetFolder = typeof node.metadata?.sendFailureFolderName === 'string'
+    ? node.metadata.sendFailureFolderName
+    : undefined;
+  const [state, setState] = useState<ConfirmState>(presetMissing ? 'failed' : 'idle');
+  const [failure, setFailure] = useState<{ reason?: string; folderName?: string } | undefined>(
+    presetMissing ? { reason: 'source_missing', folderName: presetFolder } : undefined,
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const confirming = useRef(false);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
@@ -50,14 +56,13 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
     if (confirming.current) return;
     confirming.current = true;
     setState('confirming');
-    setFailure(undefined);
     try {
       const confirmed = await ipcService.unsafeInvoke<{ confirmed?: boolean; reason?: string; folderName?: string }>(
         'project:confirm-source-trust',
         { sessionId: anchorSessionId },
       );
       if (!confirmed?.confirmed) {
-        setFailure(confirmed);
+        setFailure(confirmed ?? {});
         setState('failed');
         return;
       }
@@ -76,6 +81,7 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
       }
       setState('sent');
     } catch {
+      setFailure({});
       setState('failed');
     } finally {
       confirming.current = false;
@@ -83,9 +89,22 @@ export function ProjectTrustConfirmCard({ node, sessionId }: {
   }, [anchorSessionId, messageId, retryClientMessageId]);
 
   if (state === 'sent') return null;
+  // 气泡已经写了「找不到文件夹」这句。首屏只留重新选择，不再把同一句画第二遍，也不给确认按钮。
+  const missingFolderAction = presetMissing
+    && failure?.reason === 'source_missing'
+    && (state === 'failed' || state === 'confirming');
   return (
     <div className="mt-2" data-testid="project-trust-confirm">
-      {state === 'failed' ? (
+      {missingFolderAction ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={state === 'confirming'}
+          onClick={() => setSettingsOpen(true)}
+        >
+          {copy.reselect}
+        </Button>
+      ) : state === 'failed' ? (
         <div className="flex flex-col items-start gap-2">
           <span className="text-[13px] text-text-secondary">{failureText}</span>
           {canReselect && (
