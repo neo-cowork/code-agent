@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildDelegatedTaskPrompt } from '../../../../src/host/services/commandCenter/delegationGuidance';
-import { DELEGATED_SCAFFOLDING_MARKERS } from '../../../helpers/delegatedScaffoldingMarkers';
+import { DELEGATED_SCAFFOLDING_MARKERS } from '../../../utils/delegatedScaffoldingMarkers';
 
 const SRC = path.resolve(__dirname, '../../../../src');
 const DEFINITION = path.join(SRC, 'host/services/commandCenter/delegationGuidance.ts');
