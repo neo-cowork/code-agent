@@ -18,29 +18,33 @@ async function restoreZh(server: { port: number; token: string }): Promise<void>
   await putSettings(server, { ui: { language: 'zh' } });
 }
 
-/** 打开设置弹窗并点进「外观」页，等「界面语言」区块出现（地图 F17 点名的设置项）。 */
+/** 打开设置弹窗并点进「外观」页，等「界面语言」区块出现（地图 F17 点名的设置项）。
+ *  步骤 3 时界面已是英文：设置页各名字都要中英两态兼容。 */
 async function openAppearanceLanguage(page: Page): Promise<void> {
   await page.keyboard.press('ControlOrMeta+Comma');
-  const dialog = page.getByRole('dialog', { name: '设置' });
+  const dialog = page.getByRole('dialog', { name: /^(设置|Settings)$/ });
   await dialog.waitFor({ state: 'visible', timeout: 15_000 });
-  await dialog.getByRole('button', { name: '外观', exact: true }).first().click();
-  await dialog.getByRole('heading', { name: '界面语言' }).waitFor({ state: 'visible', timeout: 15_000 });
+  await dialog.getByRole('button', { name: /^(外观|Appearance)$/ }).first().click();
+  await dialog.getByRole('heading', { name: /^(界面语言|Interface language)$/ }).waitFor({ state: 'visible', timeout: 15_000 });
 }
 
 /** 切换语言：按钮可用就点（真用户的路）；web 构建禁用按钮时用按钮背后同一入口 PUT /api/settings。 */
 async function switchLanguage(env: AttemptEnv, lang: 'en' | 'zh'): Promise<void> {
   const page = env.page;
   await openAppearanceLanguage(page);
-  const option = page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: lang === 'en' ? 'English' : '简体中文' }).first();
+  const option = page.getByRole('dialog', { name: /^(设置|Settings)$/ }).getByRole('button', { name: lang === 'en' ? 'English' : '简体中文' }).first();
   await option.waitFor({ state: 'visible', timeout: 10_000 });
   if (await option.isEnabled()) {
     await option.click();
   } else {
     if (lang === 'en') env.note('web 构建把「界面语言」选项禁用了（AppearanceSettings isWebMode），改用按钮背后同一入口 PUT /api/settings 切换（偏差，见证据档）');
     await putSettings(env.server, { ui: { language: lang } });
-    // 设置变化没有事件推送：像用户重开页面一样 reload，App 启动时会读回语言
-    await page.reload();
+    // 设置变化没有事件推送：像用户「返回应用」一样回主界面，App 启动时会读回语言
+    //（设置页是路由且会话里记着它：回首页后若还停在设置页，点「返回应用」退出）
+    await page.goto(`http://127.0.0.1:${env.server.port}/`);
     await page.getByTestId('sidebar-new-task').waitFor({ timeout: SWITCH_TIMEOUT_MS });
+    await page.getByRole('button', { name: /Back to app|返回应用/ }).click({ timeout: 5_000 }).catch(() => {});
+    await sleep(500);
     return;
   }
   // 按钮路径即时生效：关掉设置弹窗，等主界面文字换过来
@@ -61,14 +65,18 @@ async function assertLanguage(env: AttemptEnv, lang: 'en' | 'zh'): Promise<void>
   const sidebar = await page.getByTestId('sidebar-new-task').innerText();
   if (sidebar !== (lang === 'en' ? EN_SIDEBAR : ZH_SIDEBAR)) throw new Error(`侧栏「新任务」按钮文案是「${sidebar}」（语言 ${lang}）`);
   if (lang === 'en') {
-    // 英文下侧栏区域不允许残留中文；欢迎标题应是英文句
-    const welcome = await page.getByTestId('chat-welcome-title').innerText().catch(() => '');
-    if (welcome !== EN_WELCOME) throw new Error(`英文下欢迎标题是「${welcome}」，应为「${EN_WELCOME}」`);
-    const sidebarText = (await page.getByTestId('sidebar-capability-zone').innerText().catch(() => ''))
-      + '\n' + (await page.getByTestId('sidebar-session-scroll').innerText().catch(() => ''));
+    // 欢迎标题要在「新任务」空会话态看（页面可能停在上一条会话上，先点新任务），并等它真渲染出来
+    await page.getByTestId('sidebar-new-task').click();
+    const welcome = page.getByTestId('chat-welcome-title');
+    await welcome.waitFor({ state: 'visible', timeout: 20_000 });
+    const text = (await welcome.innerText()).trim();
+    if (text !== EN_WELCOME) throw new Error(`英文下欢迎标题是「${text}」，应为「${EN_WELCOME}」`);
+    // 残留中文只查侧栏的固定 UI 区（能力区：能力中心/协作空间/资料库/自动化）；会话标题是用户自己起的
+    // 中文内容，不算界面残留
+    const sidebarText = await page.getByTestId('sidebar-capability-zone').innerText().catch(() => '');
     if (hasCjk(sidebarText)) {
       const residue = sidebarText.split('\n').filter((line) => hasCjk(line)).slice(0, 5).join(' / ');
-      throw new Error(`英文下侧栏残留中文：${residue}`);
+      throw new Error(`英文下侧栏固定区残留中文：${residue}`);
     }
   }
 }

@@ -1,12 +1,42 @@
 import { expectDb } from './db';
-import type { FlowDef } from './types';
+import type { AttemptEnv, FlowDef } from './types';
 import { sleep } from './ui';
 
 // 自动化页「新建」→ 简版创建表单：目标里写「每周一早上 9 点」，表单把频率（每周）/星期（周一）/时间（09:00）
 // 自动带出来。任务名不填时缺省取目标句（buildSimpleDraft），列表里就叫这句话。
+// 手动触发后的执行是无人值守 agent run：模型有时要往工作目录外写文件，权限请求会停车等审
+// （执行一直 running）。真用户的处理位是自动化页的「待过目」收件箱；脚本用同一入口背后的
+// /api/agent/permission-response 代点允许（与 neo-realrun --auto-approve 同一机制），让执行走到终态。
 const GOAL = '每周一早上 9 点帮我整理周报';
 const CREATE_TIMEOUT_MS = 60_000;
-const RUN_TIMEOUT_MS = 420_000;
+const RUN_TIMEOUT_MS = 600_000;
+
+/** 无人值守执行里停车等审的权限请求：代用户点「允许」（只对本次执行关联的会话）。
+ *  pending_approvals 表不带 session 列，会话与请求 id 都在 payload_json 里。 */
+async function approveParkedPermissions(env: AttemptEnv): Promise<void> {
+  const { data } = await env.readDb();
+  const cronSessionIds = new Set(
+    data.cronExecutions
+      .filter((e) => e.status === 'running' || Number(e.started_at ?? 0) >= env.startedAtMs - 300_000)
+      .map((e) => String(e.session_id ?? '')),
+  );
+  const pending = data.pendingApprovals.filter((a) => String(a.status ?? 'pending') === 'pending');
+  for (const row of pending) {
+    let payload: { sessionId?: string; tool?: string } = {};
+    try { payload = JSON.parse(String(row.payload_json ?? '{}')) as typeof payload; } catch { continue; }
+    // 请求 id 就是停车行自己的 id（perm-…，permission-response 端点收的就是它）
+    const requestId = String(row.id ?? '');
+    const sessionId = String(payload.sessionId ?? '');
+    if (!requestId || !cronSessionIds.has(sessionId)) continue;
+    await fetch(`http://127.0.0.1:${env.server.port}/api/agent/permission-response`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.server.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([requestId, 'allow', sessionId]),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => undefined);
+    env.note(`定时执行停车等审，代点允许（请求 ${requestId.slice(0, 8)}… 会话 ${sessionId.slice(-8)}）`);
+  }
+}
 
 export const f15: FlowDef = {
   id: 'F15',
@@ -31,8 +61,7 @@ export const f15: FlowDef = {
       run: async (env) => {
         const page = env.page;
         await page.getByRole('button', { name: '创建自动化' }).click();
-        // 无角色任务先出「保存前确认」复述卡，确认后才真正创建（任务摘要确认）；
-        // 等复述卡和编辑器都收起，再等列表里这条任务的行出现
+        // 无角色任务先出「保存前确认」复述卡，确认后才真正创建（任务摘要确认）
         const confirm = page.getByTestId('cron-pending-routine-confirm');
         await confirm.waitFor({ state: 'visible', timeout: CREATE_TIMEOUT_MS });
         await confirm.click();
@@ -65,20 +94,34 @@ export const f15: FlowDef = {
     },
     {
       text: '核对可观测量：cron_jobs 新增 enabled=1 的行；运行后 cron_executions 有该 job_id 的行，status 终态且 session_id 非空。',
-      run: (env) => expectDb(env, (d) => {
-        const mine = d.cronJobs.filter((j) => String(j.name ?? '') === GOAL && Number(j.created_at ?? 0) >= env.startedAtMs - 60_000);
-        if (!mine.length) return `没有以目标句命名的 cron_jobs 新行：\n${d.cronJobs.map((j) => `${j.id}|${j.name}|enabled=${j.enabled}`).join('\n') || '（没有行）'}`;
-        const job = mine[0];
-        env.scratch.jobId = String(job.id);
-        if (Number(job.enabled) !== 1) return `新任务 enabled=${String(job.enabled)}，应为 1`;
-        const execs = d.cronExecutions.filter((e) => String(e.job_id) === String(job.id));
-        if (!execs.length) return `任务 ${String(job.id)} 没有执行记录（cron_executions 没有行）`;
-        const terminal = execs.find((e) => ['completed', 'failed', 'interrupted'].includes(String(e.status)));
-        if (!terminal) return `执行记录还不是终态：\n${execs.map((e) => `${e.id}|${e.status}|session=${String(e.session_id)}`).join('\n')}`;
-        if (!terminal.session_id) return `终态执行 ${String(terminal.id)} 的 session_id 是空的`;
-        env.note(`执行 ${String(terminal.id)} status=${String(terminal.status)} session=${String(terminal.session_id)}`);
-        return null;
-      }, RUN_TIMEOUT_MS),
+      run: async (env) => {
+        // 执行是真实 agent run：边等终态边把停车等审的权限请求代点允许（见文件头说明）
+        const deadline = Date.now() + RUN_TIMEOUT_MS;
+        for (;;) {
+          await approveParkedPermissions(env);
+          const { data } = await env.readDb();
+          const mine = data.cronJobs.filter((j) => String(j.name ?? '') === GOAL && Number(j.created_at ?? 0) >= env.startedAtMs - 60_000);
+          const execs = mine.length ? data.cronExecutions.filter((e) => String(e.job_id) === String(mine[0].id)) : [];
+          const terminal = execs.find((e) => ['completed', 'failed', 'interrupted'].includes(String(e.status)));
+          if (mine.length && terminal) break;
+          if (Date.now() > deadline) break;
+          await sleep(5_000);
+        }
+        await expectDb(env, (d) => {
+          const mine = d.cronJobs.filter((j) => String(j.name ?? '') === GOAL && Number(j.created_at ?? 0) >= env.startedAtMs - 60_000);
+          if (!mine.length) return `没有以目标句命名的 cron_jobs 新行：\n${d.cronJobs.map((j) => `${j.id}|${j.name}|enabled=${j.enabled}`).join('\n') || '（没有行）'}`;
+          const job = mine[0];
+          env.scratch.jobId = String(job.id);
+          if (Number(job.enabled) !== 1) return `新任务 enabled=${String(job.enabled)}，应为 1`;
+          const execs = d.cronExecutions.filter((e) => String(e.job_id) === String(job.id));
+          if (!execs.length) return `任务 ${String(job.id)} 没有执行记录（cron_executions 没有行）`;
+          const terminal = execs.find((e) => ['completed', 'failed', 'interrupted'].includes(String(e.status)));
+          if (!terminal) return `执行记录还不是终态：\n${execs.map((e) => `${e.id}|${e.status}|session=${String(e.session_id)}`).join('\n')}`;
+          if (!terminal.session_id) return `终态执行 ${String(terminal.id)} 的 session_id 是空的`;
+          env.note(`执行 ${String(terminal.id)} status=${String(terminal.status)} session=${String(terminal.session_id)}`);
+          return null;
+        });
+      },
     },
   ],
 };
