@@ -22,7 +22,8 @@ import {
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import { SecureBrowserResumeStateStore, type BrowserResumeStateStore } from './BrowserResumeStateStore';
-import { restoreManagedBrowserLastPage, SecureBrowserLastPageStore, type BrowserLastPageStore } from './browserLastPageStore';
+import { SecureBrowserLastPageStore, type BrowserLastPageStore } from './browserLastPageStore';
+import { BrowserResumeStateError, installManagedBrowserLaunchResume } from './browserLaunchResume';
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
 import { getKeptBrowserRegistry, type KeptBrowserRegistry } from './keptBrowserRegistry';
@@ -61,17 +62,6 @@ interface ManagedBrowserBinding {
   abortShutdown?: Promise<void>;
   /** 本 binding 认领了 takeover 停靠窗：首个动作结果附 get_dom_snapshot 提示（一次性）。 */
   claimedTakeoverPark?: boolean;
-}
-
-type BrowserResumeFailureCode =
-  | 'BROWSER_RESUME_STATE_EXPORT_FAILED'
-  | 'BROWSER_RESUME_STATE_IMPORT_FAILED';
-
-class BrowserResumeStateError extends Error {
-  constructor(readonly code: BrowserResumeFailureCode, message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'BrowserResumeStateError';
-  }
 }
 
 export interface ManagedBrowserActionInput {
@@ -236,7 +226,13 @@ export class ManagedBrowserProviderAdapter {
     private readonly lastPageStore: BrowserLastPageStore = new SecureBrowserLastPageStore({
       ephemeral: !(resumeStateStore instanceof SecureBrowserResumeStateStore),
     }),
-  ) {}
+  ) {
+    installManagedBrowserLaunchResume({
+      resumeStateStore,
+      lastPageStore,
+      logger: resumeLogger,
+    });
+  }
 
   getBrowserService(identity: SurfaceRuntimeIdentityV1): BrowserService {
     // N-FIX-FIX-BROWSER-SECRETREF-HARDEN: when this run's action will run on a
@@ -512,14 +508,37 @@ export class ManagedBrowserProviderAdapter {
     const leaseOwner = isUserRun(identity)
       ? 'user-personal-browser'
       : `surface:${identity.runId}`;
+    const passConversation = !isUserRun(identity)
+      && serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY;
     return withManagedBrowserActivity(browserService, async () => {
       // Do not force profileMode when reusing a live shared window — switching while
       // running throws in BrowserService.launch.
-      await browserService.ensureSession('about:blank', {
-        ...((shared || keptService) ? {} : { profileMode }),
-        leaseOwner,
-        leaseTtlMs: SURFACE_PROFILE_TTL_MS,
-      });
+      try {
+        await browserService.ensureSession('about:blank', {
+          ...((shared || keptService) ? {} : { profileMode }),
+          leaseOwner,
+          leaseTtlMs: SURFACE_PROFILE_TTL_MS,
+          ...(passConversation ? { conversationId: identity.conversationId } : {}),
+        });
+      } catch (error) {
+        if (error instanceof BrowserResumeStateError && !shared) {
+          this.resumeLogger.error('Failed to restore managed browser login state', {
+            conversationIdHash: hashIdentity([identity.conversationId]),
+            error: error.message,
+          });
+          await browserService.close().catch((closeError) => {
+            this.resumeLogger.error('Failed to close managed browser after resume import failure', {
+              error: closeError instanceof Error ? closeError.message : String(closeError),
+            });
+          });
+          await this.releaseBrowser(serviceKey).catch((releaseError) => {
+            this.resumeLogger.error('Failed to release managed browser after resume import failure', {
+              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+            });
+          });
+        }
+        throw error;
+      }
       const loginGatedSiteOrigin = await cronLoginGatedSiteOrigin(identity, this.resumeLogger);
       if (loginGatedSiteOrigin && !isUserRun(identity)) {
         const personalBrowser = this.acquireBrowser(null);
@@ -569,38 +588,6 @@ export class ManagedBrowserProviderAdapter {
             }
           }
         });
-      }
-      try {
-        // Kept-window adoption skips the resume import: the adopted window already
-        // carries this conversation's freshest login state from the agent run.
-        if (!keptService) {
-          await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
-        }
-      } catch (error) {
-        this.resumeLogger.error('Failed to restore managed browser login state', {
-          conversationIdHash: hashIdentity([identity.conversationId]),
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (!shared) {
-          await browserService.close().catch((closeError) => {
-            this.resumeLogger.error('Failed to close managed browser after resume import failure', {
-              error: closeError instanceof Error ? closeError.message : String(closeError),
-            });
-          });
-          await this.releaseBrowser(serviceKey).catch((releaseError) => {
-            this.resumeLogger.error('Failed to release managed browser after resume import failure', {
-              error: releaseError instanceof Error ? releaseError.message : String(releaseError),
-            });
-          });
-        }
-        throw new BrowserResumeStateError(
-          'BROWSER_RESUME_STATE_IMPORT_FAILED',
-          'Browser login state could not be restored. The browser started without the previous login state.',
-          { cause: error },
-        );
-      }
-      if (!shared && !keptService && !isUserRun(identity) && serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
-        await restoreManagedBrowserLastPage({ conversationId: identity.conversationId, conversationIdHash: hashIdentity([identity.conversationId]), browserService, store: this.lastPageStore, logger: this.resumeLogger });
       }
       const state = browserService.getSessionState();
       const provider = state.provider || DEFAULT_PROVIDER;
