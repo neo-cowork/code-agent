@@ -88,6 +88,20 @@ describe('AcpClientHostBridge — 写文件闸', () => {
 });
 
 describe('AcpClientHostBridge — 读文件闸', () => {
+  it('图片/PDF（含改名、无后缀）不按文本读，抛短提示', async () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8192, 0xfe)]);
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(2048, 0xfe)]);
+    const bridge = bridgeWith(approve);
+    for (const [name, data] of [['a.png', png], ['a-noext', png], ['a.txt', png], ['d.pdf', pdf], ['d-noext', pdf]] as const) {
+      const target = path.join(workspace, name);
+      await fsp.writeFile(target, data);
+      const err = await bridge.readTextFile({ path: target }).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message.length).toBeLessThan(1024);
+      expect((err as Error).message).toContain(target);
+    }
+  });
+
   it('工作区内的读不打扰用户', async () => {
     const target = path.join(workspace, 'inside.txt');
     await fsp.writeFile(target, 'inside', 'utf8');
