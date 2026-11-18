@@ -843,6 +843,7 @@ describe('getFirstWakeSnapshot', () => {
       },
     });
     await vi.waitFor(async () => { await expect(readState('snap-role')).resolves.toMatchObject({ state: 'completed' }); });
+    const enqueuedAt = (await readState('snap-role')).enqueuedAt;
     expect(await getFirstWakeSnapshot('snap-role')).toEqual({
       state: 'completed',
       sessionId: harness.runnerCalls[0]!.sessionId,
@@ -851,6 +852,7 @@ describe('getFirstWakeSnapshot', () => {
       sources: ['日历', 'Lark 文档'],
       suggestions: [{ title: 't', prompt: 'p' }],
       intro: '这是自我介绍，一共两三句。',
+      startedAt: enqueuedAt,
     });
   });
 
