@@ -622,4 +622,81 @@ describe('SurfaceConversationProjectionService', () => {
       agentId: 'agent-surface-checkpoint',
     })).toBeNull();
   });
+
+  it('projects a terminal browser state when the run ended but the stored snapshot says running', async () => {
+    const stale = sessionView('surface-stale');
+    stale.state = 'running';
+    const { service } = harness({
+      persistEvents: false,
+      messages: [messageWithSurfaceMetadata({
+        session: stale,
+        events: [event('surface-stale')],
+        mode: 'native',
+      })],
+    });
+
+    const ended = await service.getSnapshot('conversation-1');
+    expect(ended.sessions).toHaveLength(1);
+    expect(ended.sessions[0].session.state).toBe('completed');
+    expect(ended.sessions[0].source).not.toBe('live');
+
+    const paused = sessionView('surface-paused');
+    paused.state = 'paused';
+    const { service: pausedService } = harness({
+      persistEvents: false,
+      messages: [messageWithSurfaceMetadata({
+        session: paused,
+        events: [event('surface-paused', 1, { sessionState: 'paused' })],
+        mode: 'native',
+      })],
+    });
+    await expect(pausedService.getSnapshot('conversation-1')).resolves.toMatchObject({
+      sessions: [{ session: { state: 'paused' } }],
+    });
+
+    const failedLedger = projection('surface-failed-ledger');
+    failedLedger.session = { ...failedLedger.session, state: 'failed' };
+    failedLedger.source = 'persisted';
+    failedLedger.writable = false;
+    const runningMessage = sessionView('surface-failed-ledger');
+    runningMessage.state = 'running';
+    const { service: failedService } = harness({
+      persistEvents: false,
+      metadata: {
+        [SURFACE_EXECUTION_LEDGER_METADATA_KEY]: {
+          version: 1,
+          conversationId: 'conversation-1',
+          sessions: [failedLedger],
+          updatedAt: 200,
+        },
+      },
+      messages: [messageWithSurfaceMetadata({
+        session: runningMessage,
+        events: [event('surface-failed-ledger')],
+        mode: 'native',
+      })],
+    });
+    await expect(failedService.getSnapshot('conversation-1')).resolves.toMatchObject({
+      sessions: [{ session: { state: 'failed' } }],
+    });
+
+    const liveProjection = projection('surface-live-still');
+    const { service: liveService } = harness({
+      persistEvents: false,
+      messages: [messageWithSurfaceMetadata({
+        session: sessionView('surface-live-still'),
+        events: [event('surface-live-still', 0)],
+        mode: 'native',
+      })],
+      live: {
+        version: 1,
+        conversationId: 'conversation-1',
+        sessions: [liveProjection],
+        updatedAt: 300,
+      },
+    });
+    const running = await liveService.getSnapshot('conversation-1');
+    expect(running.sessions[0].session.state).toBe('running');
+    expect(running.sessions[0].source).toBe('live');
+  });
 });
