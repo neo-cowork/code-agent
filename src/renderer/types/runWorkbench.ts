@@ -79,6 +79,8 @@ export interface TaskRecord {
   title: string;
   /** 后台任务账本来源；渲染层据此决定标题是否需要折叠成本地化兜底名 */
   source?: import('@shared/contract/backgroundTask').Task['source'];
+  /** 已按会话账本全集编号的展示名（助手 1/2）；缺省时渲染层按 source+title 现算 */
+  displayTitle?: string;
   status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled' | 'needs_decision' | 'user_action';
   steps: Array<{
     title: string;

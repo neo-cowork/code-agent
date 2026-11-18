@@ -12,7 +12,9 @@
 // ============================================================================
 
 import { useMemo } from 'react';
-import type { Language } from '../i18n';
+import type { Language, Translations } from '../i18n';
+import { useI18n } from './useI18n';
+import { backgroundTaskLabels } from '../utils/agentRoleLabel';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
@@ -352,11 +354,13 @@ function backgroundTaskResumeHint(task: Task, outputRefs: TaskRecordOutputRef[])
   return task.summary ? { hint: task.summary } : {};
 }
 
-export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null): TaskRecord[] {
+export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string | null, t?: Translations): TaskRecord[] {
   if (!currentSessionId) return [];
 
-  return tasks
-    .filter((task) => task.sessionId === currentSessionId)
+  const sessionTasks = tasks.filter((task) => task.sessionId === currentSessionId);
+  // 序号按会话账本全集算（与成员列表、回放摘要同源），不受下面 slice 影响
+  const labels = t ? backgroundTaskLabels(sessionTasks, t) : null;
+  return sessionTasks
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
@@ -368,6 +372,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         scope: 'global' as const,
         title: task.title,
         source: task.source,
+        ...(labels ? { displayTitle: labels.get(task.id) } : {}),
         status,
         ...(status === 'blocked' ? { failed: true } : {}),
         steps: [
@@ -433,6 +438,8 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     ? pendingPermissionRequest?.id ?? null
     : null;
 
+  const { t } = useI18n();
+
   return useMemo(() => {
     const run = buildRunUiState({
       projection,
@@ -450,7 +457,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       todos: statusRail.todos.items,
       taskProgress,
     });
-    const ledgerTasks = buildLedgerTaskRecords(backgroundTasks, currentSessionId);
+    const ledgerTasks = buildLedgerTaskRecords(backgroundTasks, currentSessionId, t);
     const workflowTask = buildWorkflowTaskRecord(workflowSnapshot);
     const workflowSubagents = buildWorkflowSubagentViews(workflowSnapshot);
 
@@ -475,6 +482,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
     backgroundTasks,
     currentSessionId,
     durableSwarmDetail,
+    t,
     pendingApprovalId,
     projection,
     selectedSwarmAgentId,

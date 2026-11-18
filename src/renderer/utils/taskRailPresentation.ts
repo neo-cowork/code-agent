@@ -125,22 +125,12 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
     .filter((step) => step.title && !isUtilityStepTitle(step.title));
 }
 
-/** 多个后台任务都折叠成同一个兜底名时加序号（与 agentRows 同口径），否则任务栏里分不清谁是谁。 */
-export function foldTaskRailTitles(tasks: TaskRecord[], t: Translations): Map<string, string> {
-  const titles = new Map(tasks.map((task) => [task.id, backgroundTaskLabel(task, t)] as const));
-  const fallback = t.agentRoleLabels.roles.background;
-  const folded = tasks.filter((task) => task.source && titles.get(task.id) === fallback);
-  if (folded.length > 1) folded.forEach((task, index) => titles.set(task.id, `${fallback} ${index + 1}`));
-  return titles;
-}
-
 export function deriveTaskRailView(
   task: TaskRecord,
   run: RunUiState | null | undefined,
   t: Translations,
-  foldedTitle?: string,
 ): TaskRailView {
-  const title = foldedTitle ?? backgroundTaskLabel(task, t);
+  const title = task.displayTitle ?? backgroundTaskLabel(task, t);
   const taskSteps = toStepViews(task);
   const waitingCount = taskSteps.filter((step) => (step.blockedByTitles?.length ?? 0) > 0).length;
   const unlockingCount = taskSteps.filter((step) => (step.blockedTaskTitles?.length ?? 0) > 0).length;

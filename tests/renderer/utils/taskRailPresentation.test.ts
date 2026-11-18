@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveTaskRailView as derive, foldTaskRailTitles } from '../../../src/renderer/utils/taskRailPresentation';
+import { deriveTaskRailView as derive } from '../../../src/renderer/utils/taskRailPresentation';
 import { languages } from '../../../src/renderer/i18n';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
 
@@ -221,12 +221,9 @@ describe('background task title localisation', () => {
     expect(view.title).toBe('助手');
   });
 
-  it('zh: two folded tasks are numbered, a single one is plain', () => {
-    const tasks = [bg('a', 'Summarize the first report now'), bg('b', 'Summarize the second report now')];
-    const titles = foldTaskRailTitles(tasks, languages.zh);
-    expect(derive(tasks[0], null, languages.zh, titles.get('a')).title).toBe('助手 1');
-    expect(derive(tasks[1], null, languages.zh, titles.get('b')).title).toBe('助手 2');
-    expect(foldTaskRailTitles([tasks[0]], languages.zh).get('a')).toBe('助手');
+  it('zh: a ledger-numbered displayTitle wins; a lone task is plain 助手', () => {
+    expect(derive({ ...bg('a', 'Summarize the first report now'), displayTitle: '助手 2' }, null, languages.zh).title).toBe('助手 2');
+    expect(derive(bg('a', 'Summarize the first report now'), null, languages.zh).title).toBe('助手');
   });
 
   it('en: Chinese delegate_task title becomes Background assistant; other sources keep title', () => {

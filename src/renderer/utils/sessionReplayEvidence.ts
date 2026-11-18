@@ -1,7 +1,7 @@
 import type { Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import type { Translations } from '../i18n';
-import { backgroundTaskLabel } from './agentRoleLabel';
+import { backgroundTaskLabels } from './agentRoleLabel';
 
 type SessionReplayEvidenceType = 'replay' | 'trace';
 type SessionReplayEvidenceActionKind = 'sessionReplay' | 'file' | 'url' | 'copy';
@@ -110,7 +110,7 @@ function buildWorkflowReplayEvidence(snapshot: ScriptRunSnapshot): SessionReplay
 function buildTaskOutputEvidence(
   task: Task,
   ref: TaskOutputRef,
-  t: Translations,
+  labels: ReadonlyMap<string, string>,
 ): SessionReplayEvidence | null {
   if (!task.sessionId || (ref.type !== 'replay' && ref.type !== 'trace')) {
     return null;
@@ -120,7 +120,7 @@ function buildTaskOutputEvidence(
   const fallbackLabel = lastPathSegment(pathOrUrl) || evidenceTypeLabel(ref.type);
   const label = truncateLabel(ref.label || fallbackLabel);
   const typeLabel = evidenceTypeLabel(ref.type);
-  const displayTitle = backgroundTaskLabel(task, t);
+  const displayTitle = labels.get(task.id) ?? '';
   const sourceLabel = truncateLabel(displayTitle || 'Background task');
   const pathSuffix = pathOrUrl ? ` · ${pathOrUrl}` : '';
 
@@ -150,9 +150,10 @@ export function buildSessionReplayEvidenceMap(
     }
   }
 
+  const labels = backgroundTaskLabels(tasks, t);
   for (const task of tasks) {
     for (const ref of task.outputRefs) {
-      const evidence = buildTaskOutputEvidence(task, ref, t);
+      const evidence = buildTaskOutputEvidence(task, ref, labels);
       if (evidence) {
         pushEvidence(map, evidence);
       }

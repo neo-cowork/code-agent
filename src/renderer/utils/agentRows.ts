@@ -1,5 +1,5 @@
 import { reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
-import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel } from './agentRoleLabel';
+import { agentNodeLabel, agentRoleLabel, backgroundTaskLabels } from './agentRoleLabel';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
@@ -163,9 +163,12 @@ export function buildAgentRows(input: {
   members: MemberRowSource[];
   nodes: AgentTreeNode[];
   tasks: Task[];
+  /** 调用方传会话账本全集算出的名字，避免子集序号与其他视图错位 */
+  taskLabels?: ReadonlyMap<string, string>;
 }): AgentRow[] {
   const { members, nodes, tasks } = input;
   const t = languages[useAppStore.getState().language] ?? languages.zh;
+  const taskLabels = input.taskLabels ?? backgroundTaskLabels(tasks, t);
   const rows: AgentRow[] = [];
   const memberById = new Map(members.map((member) => [member.key, member]));
 
@@ -252,7 +255,7 @@ export function buildAgentRows(input: {
     rows.push({
       key: task.id,
       kind: 'task',
-      name: backgroundTaskLabel(task, t),
+      name: taskLabels.get(task.id) ?? backgroundTaskLabels([task], t).get(task.id)!,
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
@@ -260,11 +263,6 @@ export function buildAgentRows(input: {
       task,
     });
   }
-
-  // 多个任务都折叠成同一个兜底名时加序号，否则面板/chip 里分不清哪个失败、该停哪个
-  const fallback = t.agentRoleLabels.roles.background;
-  const folded = rows.filter((row) => row.kind === 'task' && row.name === fallback);
-  if (folded.length > 1) folded.forEach((row, index) => { row.name = `${fallback} ${index + 1}`; });
 
   return rows;
 }

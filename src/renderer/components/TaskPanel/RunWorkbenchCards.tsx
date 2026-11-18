@@ -37,7 +37,6 @@ import type {
 import { isLiveRunStatus } from '../../utils/overviewRunHeader';
 import {
   deriveTaskRailView,
-  foldTaskRailTitles,
   type TaskRailDependencySummary,
   type TaskRailStepView,
 } from '../../utils/taskRailPresentation';
@@ -294,7 +293,6 @@ export const TaskDashboardSummary = ({
 
   const sessionTask = tasks.find((task) => task.scope === 'session') || null;
   const backgroundTasks = tasks.filter((task) => task.scope !== 'session');
-  const foldedTitles = foldTaskRailTitles(backgroundTasks, t);
 
   return (
     <div className="space-y-2">
@@ -319,7 +317,7 @@ export const TaskDashboardSummary = ({
           </div>
           <div className="space-y-1.5">
             {backgroundTasks.slice(0, 3).map((task) => (
-              <TaskRecordRow key={task.id} task={task} foldedTitle={foldedTitles.get(task.id)} showOutputRefs={showOutputRefs} />
+              <TaskRecordRow key={task.id} task={task} showOutputRefs={showOutputRefs} />
             ))}
           </div>
         </div>
@@ -397,16 +395,14 @@ const TaskRecordRow = ({
   task,
   run,
   showOutputRefs = true,
-  foldedTitle,
 }: {
   task: TaskRecord;
   run?: RunUiState | null;
-  foldedTitle?: string;
   primary?: boolean;
   showOutputRefs?: boolean;
 }) => {
   const { t, language } = useI18n();
-  const rail = deriveTaskRailView(task, run, t, foldedTitle);
+  const rail = deriveTaskRailView(task, run, t);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
   const rw = t.taskStatusPanels.runWorkbench;
   const detailLabel = task.status === 'blocked'
