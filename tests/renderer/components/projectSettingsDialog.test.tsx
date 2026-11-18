@@ -143,6 +143,36 @@ describe('ProjectSettingsDialog', () => {
     return { alert, name, onClose };
   }
 
+  it.each(['en', 'zh'] as const)('constrains long source paths so row controls stay inside the card (%s)', async (lang) => {
+    mocks.language.value = lang;
+    const longPath = `/Users/leo/work/${'very-deep-folder-name/'.repeat(6)}project`;
+    expect(longPath.length).toBeGreaterThan(120);
+    const base = detail();
+    mocks.getProjectDetail.mockResolvedValue({
+      ...base,
+      sources: [
+        { ...base.sources[0], path: longPath, canonicalPath: longPath },
+        { ...base.sources[0], id: 'source-2', path: `${longPath}-docs`, canonicalPath: `${longPath}-docs`, role: 'additional', access: 'read_only' },
+      ],
+    });
+    render(<ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} />);
+    const rows = await screen.findAllByTestId('project-source-row');
+    expect(rows).toHaveLength(2);
+    const copy = (lang === 'zh' ? zh : en).sidebarProject.settings;
+    rows.forEach((row, i) => {
+      const fullPath = i === 0 ? longPath : `${longPath}-docs`;
+      expect(row.className).toContain('grid-cols-1');
+      expect(row.className).toContain('min-w-0');
+      const span = row.querySelector(`span[title="${fullPath}"]`) as HTMLElement;
+      expect(span.textContent).toBe(fullPath);
+      expect(span.className).toContain('truncate');
+      expect(span.className).toContain('min-w-0');
+      expect(span.parentElement!.className).toContain('min-w-0');
+    });
+    const remove = screen.getByRole('button', { name: copy.remove });
+    expect(remove.className).toContain('shrink-0');
+  });
+
   it.each(['en', 'zh'] as const)('keeps edits open and shows localized plain text when a coded save fails (%s)', async (lang) => {
     mocks.language.value = lang;
     const hostMessage = 'Project Source is missing: /gone/old';
