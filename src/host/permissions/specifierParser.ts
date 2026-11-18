@@ -102,7 +102,9 @@ export function matchSpecifier(
     return true; // No specifier means match all inputs for this tool
   }
   if (specifier.specifierType === 'command') {
-    return matchCommandSpecifier(specifier.specifier, input, intent);
+    return matchCommandSpecifier(specifier.specifier, input.trim(), intent);
   }
-  return globMatches(specifier.specifier, input);
+  // A padded path is only trimmed for deny/ask: the executor outside the engine opens it literally, so an
+  // allow rule must never be granted to a spelling that names a different file.
+  return globMatches(specifier.specifier, intent === 'restrict' ? input.trim() : input);
 }
