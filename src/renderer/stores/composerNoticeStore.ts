@@ -50,6 +50,7 @@ export type ComposerSlotOccupantId =
   | 'loop-status'
   | 'meeting-status'
   | 'rejected-uploads'
+  | 'attachment-limit'
   | 'suggestion-bar'
   | 'capability-strip'
   | 'combo-skill'
@@ -69,6 +70,7 @@ export const COMPOSER_SLOT_LAYER: Readonly<Record<ComposerSlotOccupantId, Compos
   'loop-status': 3,
   'meeting-status': 3,
   'rejected-uploads': 3,
+  'attachment-limit': 3,
   'suggestion-bar': 4,
   'capability-strip': 4,
   'combo-skill': 4,

@@ -116,6 +116,7 @@ import { MountedConnectorIcons } from './MountedConnectorIcons';
 import { getAgentSlashCommandQuery } from './agentCommand';
 import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { ComposerRejectedUploadsNotice } from './ComposerRejectedUploadsNotice';
+import { ComposerAttachmentLimitNotice } from './ComposerAttachmentLimitNotice';
 import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
@@ -1385,6 +1386,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           </SlotEntry>
 
           <SlotEntry id="rejected-uploads"><ComposerRejectedUploadsNotice /></SlotEntry>
+          <SlotEntry id="attachment-limit"><ComposerAttachmentLimitNotice /></SlotEntry>
 
           {/* Combo Skill suggestion card（L4 建议层） */}
           <SlotEntry id="combo-skill" active={Boolean(comboSuggestion)}>
