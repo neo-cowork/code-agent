@@ -54,6 +54,7 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: (name: string) => {
       if (name === 'Write' || name === 'Edit') return { permissionLevel: 'write' };
+      if (name === 'Bash') return { permissionLevel: 'execute' };
       if (name === 'Read' || name === 'read_xlsx') return { permissionLevel: 'read' };
       return undefined;
     },
@@ -301,6 +302,56 @@ describe('TaskManager background delivery verdict', () => {
     expect(event.type).toBe('task_completed');
   });
 
+  it('ends a user-denied Bash (execute) as task_cancelled and drops the model chmod prose', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser }],
+      conclusion: 'chmod 600 notes.txt 已被用户拒绝，权限未修改。',
+    }));
+    expect(event.type).toBe('task_cancelled');
+    expect((event.data as EventData).detail).toBe('你拒绝了这一步，任务已停止。');
+    expect(JSON.stringify(event.data)).not.toContain('chmod');
+  });
+
+  it('keeps a denied Bash completed when a later Bash succeeded', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser },
+        { id: 'bash-2', name: 'Bash', success: true },
+      ],
+      conclusion: 'Done another way.',
+    }));
+    expect(event.type).toBe('task_completed');
+  });
+
+  it('keeps a denied Bash completed when a deliverable artifact exists', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser },
+        { id: 'read-1', name: 'Read', success: true, artifact: artifact('report-1', '/work/report.md') },
+      ],
+      conclusion: 'Report delivered.',
+    }));
+    expect(event.type).toBe('task_completed');
+  });
+
+  it('keeps a Bash failure that is not a user denial completed', async () => {
+    for (const hostCode of [HostReasonCode.PermissionDeniedSafetyRule, undefined]) {
+      const event = await runBackgroundTask(messages({
+        calls: [{ id: 'bash-1', name: 'Bash', success: false, hostCode }],
+        conclusion: 'Command exited non-zero.',
+      }));
+      expect(event.type).toBe('task_completed');
+    }
+  });
+
+  it('keeps a Read-only research task completed', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'read-1', name: 'Read', success: true }],
+      conclusion: 'Read-only findings.',
+    }));
+    expect(event.type).toBe('task_completed');
+  });
+
   it('projects a user-denied background task as a cancelled [任务结果] row, zh and en', async () => {
     for (const [language, status, sentence] of [
       ['zh', '已取消', '你拒绝了这一步，任务已停止。'],
@@ -310,8 +361,8 @@ describe('TaskManager background delivery verdict', () => {
       resetSessionTaskConcurrencyPoolForTest();
       resetBackgroundTaskLedgerForTest();
       orchestratorState.messageRuns.push(messages({
-        calls: [{ id: 'write-1', name: 'Write', success: false, hostCode: HostReasonCode.PermissionDeniedByUser }],
-        conclusion: '写入操作被拒绝，文件未生成。',
+        calls: [{ id: 'write-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser }],
+        conclusion: 'chmod 600 notes.txt 已被用户拒绝，权限未修改。',
       }));
       const manager = new TaskManager({ maxConcurrentTasks: 1 });
       manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });

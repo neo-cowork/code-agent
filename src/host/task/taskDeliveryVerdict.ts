@@ -37,13 +37,17 @@ export function getTaskDeliveryFailure(
   for (const message of messages) {
     for (const result of message.toolResults ?? []) {
       const toolName = toolNamesByCallId.get(result.toolCallId);
-      if (!toolName || resolver.getDefinition(toolName)?.permissionLevel !== 'write') continue;
+      if (!toolName) continue;
+      const permissionLevel = resolver.getDefinition(toolName)?.permissionLevel;
+      const isWrite = permissionLevel === 'write';
+      if (!isWrite && permissionLevel !== 'execute') continue;
+      const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
+      const deniedByUser = hostReason?.code === HostReasonCode.PermissionDeniedByUser;
       if (result.success) outputSucceeded = true;
-      else {
+      else if (deniedByUser) {
         outputFailed = true;
-        const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
-        if (hostReason?.code === HostReasonCode.PermissionDeniedByUser) outputDeniedByUser = true;
-      }
+        outputDeniedByUser = true;
+      } else if (isWrite) outputFailed = true;
     }
   }
 
