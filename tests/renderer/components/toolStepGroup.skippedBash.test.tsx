@@ -50,6 +50,10 @@ describe.each(['zh', 'en'] as const)('skipped Bash in ToolStepGroup header (%s)'
   it('un-degraded skipped (not recovered) also excluded from ran', () => {
     expect(header([read('r'), skipped('a', { recovered: false })])).not.toMatch(/运行了|Ran/);
   });
+  it('Bash that really ran and was then replaced by the read-loop seal (executed:true) still says ran', () => {
+    const sealed = (id: string) => skipped(id, { metadata: { ...SKIPPED_META, executed: true, readLoopSeal: true } });
+    expect(header([sealed('a'), sealed('b')])).toBe(zhEn('运行了 2 条命令', 'Ran 2 commands'));
+  });
   it('normal non-skipped Bash group still says ran', () => {
     expect(header([bash('a'), bash('b')])).toBe(zhEn('运行了 2 条命令', 'Ran 2 commands'));
   });

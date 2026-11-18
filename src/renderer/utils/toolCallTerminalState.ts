@@ -73,8 +73,8 @@ export function resolveToolCallTerminalState(input: {
   const notRun = result?.success === false && result.metadata?.recovered !== true
     && isParkedApprovalClosureSentence(result.error);
   // 主机封存、从未执行的 Bash（metadata.skipped）：即使被降级为 recovered（state 仍是 completed、
-  // 不变色），标题也不能说「运行了」。只改措辞，不改 state。
-  const skipped = result?.metadata?.skipped === true && !!toolCall && classifyToolName(toolCall.name) === 'bash';
+  // 不变色），标题也不能说「运行了」。executed===true 是命令跑完后才被读循环封口替换的结果，不算没执行。只改措辞，不改 state。
+  const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !!toolCall && classifyToolName(toolCall.name) === 'bash';
   return { state, displayStatus, stepStatus, notRun, skipped };
 }
 
