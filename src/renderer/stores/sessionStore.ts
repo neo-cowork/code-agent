@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { useSessionLoadRecoveryStore, sessionLoadErrorCode } from './sessionLoadRecovery';
 import type { Session, Message, SessionTask, TodoItem, StreamRecoverySnapshot, UserQuestionRequest } from '@shared/contract';
 import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
@@ -172,6 +173,9 @@ function isUntouchedNewSession(
   projectId?: string,
 ): boolean {
   if (projectId && session.projectId !== projectId) return false;
+  // 对称：没指定空间的无目录新建，不能复用属于某个显式空间的空白草稿（否则新快速对话悄悄落进空间）。
+  if (!projectId && !normalizeDraftDirectory(workingDirectory)
+    && session.projectId && session.projectId !== UNSORTED_PROJECT_ID) return false;
   if (!isBlankNewSession(session)) {
     return false;
   }

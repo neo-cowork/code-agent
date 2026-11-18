@@ -61,7 +61,7 @@ export interface SidebarSessionActions {
   handleOpenWorkspaceAssets: (e: React.MouseEvent) => void;
   handleOpenSessionAssets: (e: React.MouseEvent, session: SessionWithMeta) => Promise<void>;
   handleOpenProjectArtifactSession: (artifact: SidebarProjectArtifactMeta) => Promise<void>;
-  handleStartProjectGoal: (goal: SidebarProjectGoalMeta, workspaceKey: string, workingDirectory?: string) => Promise<void>;
+  handleStartProjectGoal: (goal: SidebarProjectGoalMeta, workspaceKey: string, workingDirectory?: string, projectId?: string) => Promise<void>;
   handleRenameSidebarProject: (projectId: string, name: string) => Promise<void>;
   handleSetSidebarProjectStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
   handleSetSidebarProjectDescription: (projectId: string, description: string | null) => Promise<void>;
@@ -307,11 +307,15 @@ export function useSidebarSessionActions(
     goal: SidebarProjectGoalMeta,
     workspaceKey: string,
     workingDirectory?: string,
+    projectId?: string,
   ) => {
     const directory = workingDirectory?.trim() || null;
     const goalTitleText = goal.title.length > 42 ? `${goal.title.slice(0, 39)}…` : goal.title;
     const title = t.sidebar.goalSessionTitle.replace('{title}', goalTitleText);
-    const session = await createSession(title, { workingDirectory: directory });
+    const session = await createSession(title, {
+      workingDirectory: directory,
+      ...(projectId ? { projectId } : {}),
+    });
     if (!session) {
       return;
     }

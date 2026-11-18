@@ -373,7 +373,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           meta={projectMeta}
           fallbackSessionCount={group.sessions.length}
           onOpenArtifactSession={handleOpenProjectArtifactSession}
-          onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path); }}
+          onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path, group.projectId); }}
           onMetaChange={(update) => {
             const projectId = group.projectId;
             if (!projectId) return;
@@ -405,7 +405,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             setProjectDrawerKey(null);
           }}
           onStartGoal={async (goal) => {
-            await handleStartProjectGoal(goal, group.key, group.path);
+            await handleStartProjectGoal(goal, group.key, group.path, group.projectId);
             setProjectDrawerKey(null);
           }}
           onOpenGoalSession={async (sessionId) => {

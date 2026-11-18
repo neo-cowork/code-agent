@@ -78,6 +78,20 @@ describe('folderless space composer', () => {
   });
 });
 
+describe('plain new chat vs a blank folderless space draft', () => {
+  it('does not reuse the space draft; the created session is not in that space', async () => {
+    useSessionStore.setState({
+      sessions: [{ id: 'space-draft', title: '新对话', messageCount: 0, turnCount: 0, projectId: SPACE_ID, workingDirectory: undefined, createdAt: 1, updatedAt: 1 }],
+      currentSessionId: null,
+    } as never);
+    await useSessionStore.getState().createSession('新对话', { workingDirectory: null });
+    expect(createPayloads).toHaveLength(1);
+    expect(createPayloads[0].projectId).toBeUndefined();
+    const created = useSessionStore.getState().sessions.find((x) => x.id === 'sess-1');
+    expect(created?.projectId).toBe('proj_unsorted');
+  });
+});
+
 describe('groupByWorkspace empty spaces', () => {
   it('adds a project:<id> group with no sessions for a space that has none yet', () => {
     const groups = groupByWorkspace([], '快速对话', '项目', [{ id: SPACE_ID, name: '周计划空间', workspacePath: null }]);
