@@ -133,6 +133,32 @@ describe('ChatSearchBar — empty-query matches push (r3 ①)', () => {
     );
   });
 
+  it('seeded open starts on the jump target match, not match 0', async () => {
+    const onMatchesChange = vi.fn();
+    const proj = projection();
+    // 命中词出现在第 1 轮与第 3 轮；跳转目标是第 3 轮（不是首个命中、也不在底部之外）
+    proj.turns[0].nodes[0].content = 'first marker message';
+    proj.turns[2].nodes[0].content = 'last marker message';
+    render(
+      <ChatSearchBar
+        visible
+        seedQuery="marker"
+        seedMatch={{ turnIndex: 2, nodeIndex: 0, offset: 5 }}
+        projection={proj}
+        onClose={() => {}}
+        onMatchesChange={onMatchesChange}
+        onActiveMatchChange={() => {}}
+      />,
+    );
+    await flushFrames(80);
+    const calls = onMatchesChange.mock.calls.filter(([m]) => m.length > 0);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [matches, activeIndex] of calls) {
+      expect(matches.length).toBeGreaterThanOrEqual(3);
+      expect(matches[activeIndex]).toMatchObject({ turnIndex: 2 });
+    }
+  });
+
   it('pushes matches when the user types, and clears them when the user empties the query', async () => {
     const onMatchesChange = vi.fn();
     renderBar(onMatchesChange, projection());
@@ -158,6 +184,33 @@ describe('ChatSearchBar — empty-query matches push (r3 ①)', () => {
 });
 
 describe('TurnBasedTraceView — search-match scroll settlement (r3 ②)', () => {
+  it('keeps the in-flight settlement when the match list is rewritten with the same active location', async () => {
+    const m = { turnIndex: 1, nodeIndex: 0, offset: 0 };
+    const view = render(
+      <TurnBasedTraceView projection={projection()} searchMatches={[m]} activeMatchIndex={0} />,
+    );
+    const turnEl = document.querySelector('[data-trace-turn-id="turn-2"]') as HTMLElement;
+    turnEl.getBoundingClientRect = () => ({
+      top: 0, bottom: 100, left: 0, right: 500, width: 500, height: 100, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect);
+    const scroller = document.querySelector('[data-testid="virtuoso-scroller"]') as HTMLElement;
+    scroller.getBoundingClientRect = () => ({
+      top: 0, bottom: 600, left: 0, right: 500, width: 500, height: 600, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect);
+    await flushFrames(40);
+    // 搜索栏带词打开后的回写：新数组、同一激活位置
+    const proj = projection();
+    view.rerender(
+      <TurnBasedTraceView projection={proj} searchMatches={[{ ...m }, { turnIndex: 2, nodeIndex: 0, offset: 0 }]} activeMatchIndex={0} />,
+    );
+    const before = scrollToIndexMock.mock.calls.length;
+    await flushFrames(120);
+    expect(scrollToIndexMock.mock.calls.length).toBeGreaterThan(before);
+    for (const call of scrollToIndexMock.mock.calls) {
+      expect(call[0]).toMatchObject({ index: 1 });
+    }
+  });
+
   it('re-issues scrollToIndex across frames until the target settles (not a one-shot)', async () => {
     render(
       <TurnBasedTraceView

@@ -31,6 +31,8 @@ interface ChatSearchBarProps {
   visible: boolean;
   /** 打开时预填的查询词（侧栏命中跳转的兜底：节点没找到时带着搜索词打开） */
   seedQuery?: string;
+  /** 带词打开时已定位好的跳转目标：首次扫描的激活下标取它，而不是 0（否则会把跳转滚走） */
+  seedMatch?: SearchMatch;
   projection: TraceProjection;
   onClose: () => void;
   onMatchesChange: (matches: SearchMatch[], activeIndex: number) => void;
@@ -40,6 +42,7 @@ interface ChatSearchBarProps {
 export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   visible,
   seedQuery,
+  seedMatch,
   projection,
   onClose,
   onMatchesChange,
@@ -58,6 +61,9 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   // pendingSearchJump 跳转刚种下的高亮在同一秒内抹掉（真跑诊断：MATCH branch 已
   // 执行、amber 始终 0）。关闭搜索栏的清空（visible effect else 分支）不受影响。
   const lastQueryRef = useRef('');
+  const seedMatchRef = useRef(seedMatch);
+  seedMatchRef.current = seedMatch;
+  const consumedSeedMatchRef = useRef<SearchMatch | undefined>(undefined);
 
   // Cross-session search state
   const [crossResults, setCrossResults] = useState<CrossSessionSearchResults | null>(null);
@@ -113,9 +119,17 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
       });
     });
 
+    let initialIndex = 0;
+    const seed = seedMatchRef.current;
+    if (seed && consumedSeedMatchRef.current !== seed && newMatches.length > 0) {
+      consumedSeedMatchRef.current = seed;
+      const seeded = newMatches.findIndex((m) => m.turnIndex === seed.turnIndex && m.nodeIndex === seed.nodeIndex);
+      if (seeded >= 0) initialIndex = seeded;
+    }
+
     setMatches(newMatches);
-    setActiveIndex(0);
-    onMatchesChange(newMatches, 0);
+    setActiveIndex(initialIndex);
+    onMatchesChange(newMatches, initialIndex);
   }, [query, projection.turns, onMatchesChange, tab]);
 
   // Cross-session search (debounced)

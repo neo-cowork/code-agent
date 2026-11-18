@@ -279,6 +279,7 @@ export const ChatView: React.FC = () => {
   const pendingSearchJump = useSessionUIStore((state) => state.pendingSearchJump);
   const [searchJumpTick, setSearchJumpTick] = useState(0);
   const [searchSeedQuery, setSearchSeedQuery] = useState('');
+  const [searchSeedMatch, setSearchSeedMatch] = useState<SearchMatch | undefined>(undefined);
   const setPendingSearchJump = useSessionUIStore((state) => state.setPendingSearchJump);
   const [pendingPromptRewind, setPendingPromptRewind] = useState<{
     messageId: string;
@@ -558,6 +559,7 @@ export const ChatView: React.FC = () => {
     const match = findSearchMatchForPendingJump(projection, pendingSearchJump);
     if (match) {
       setSearchSeedQuery(pendingSearchJump.query);
+      setSearchSeedMatch(match);
       setShowSearch(true);
       setSearchMatches([match]);
       setActiveMatchIndex(0);
@@ -864,8 +866,9 @@ export const ChatView: React.FC = () => {
         <ChatSearchBar
           visible={showSearch}
           seedQuery={searchSeedQuery}
+          seedMatch={searchSeedMatch}
           projection={projection}
-          onClose={() => { setShowSearch(false); setSearchSeedQuery(''); }}
+          onClose={() => { setShowSearch(false); setSearchSeedQuery(''); setSearchSeedMatch(undefined); }}
           onMatchesChange={handleSearchMatchesChange}
           onActiveMatchChange={handleActiveMatchChange}
         />
