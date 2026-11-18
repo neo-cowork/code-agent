@@ -91,5 +91,20 @@ export function getBuiltinJobDisplay(
 
 /** Names are display projections; keep the original identity in storage and edit forms. */
 export function getJobDisplayName(job: Pick<CronJobDefinition, 'name' | 'description' | 'tags'>, language: Language = 'zh'): string {
+  const roleWake = getRoleWakeJobLabel(job.name, language);
+  if (roleWake) return roleWake;
   return humanizeInternalText(getBuiltinJobDisplay(job, language)?.name ?? job.name, language, { omitIds: true }).text;
+}
+
+const ROLE_WAKE_NAME = /^\[Cadence\]\s+(.+)$/;
+
+/**
+ * 角色定时唤醒任务的存储名是 `[Cadence] <roleId>`（host 注册点写死，不改）。
+ * 展示成「定时唤醒 · <角色>」；withRole=false 给角色自己的页面用（上下文里已经是这个角色）。
+ */
+export function getRoleWakeJobLabel(name: string, language: Language, withRole = true): string | null {
+  const match = ROLE_WAKE_NAME.exec(name);
+  if (!match) return null;
+  const label = language === 'en' ? 'Scheduled wake-up' : '定时唤醒';
+  return withRole ? `${label} · ${match[1]}` : label;
 }

@@ -1079,8 +1079,8 @@ export class ToolExecutor {
         );
       } else {
         const confirmation = await requestDirectiveMemoryConfirmation({
-          category: `Persistent memory write: ${executionToolName}`,
           content: directiveMemoryAssessment.preview,
+          view: directiveMemoryAssessment.buildConfirmView(),
         });
         if (!confirmation.confirmed) {
           return {
@@ -2200,6 +2200,12 @@ export class ToolExecutor {
           // 要改 / 删的日程找不到：不弹一张说不清是哪条的卡，直接让模型重新 list_events
           return { success: false, error: error instanceof Error ? error.message : String(error), metadata: { code: 'CALENDAR_EVENT_NOT_FOUND' } };
         }
+      }
+      if (executionToolName === 'reminders_update' || executionToolName === 'reminders_delete') {
+        if (executionToolName === 'reminders_delete') { delete permissionRequest.details.title; delete permissionRequest.details.remind_at_ms; }
+        const { remindersApprovalDetails } = await import('./modules/connectors/remindersApprovalDetails');
+        try { Object.assign(permissionRequest.details, await remindersApprovalDetails(executionToolName, params)); }
+        catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
       }
       // Never trust an identically named model argument in the default request branch.
       delete permissionRequest.details.scheduleWriteTargets;

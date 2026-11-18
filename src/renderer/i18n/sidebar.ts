@@ -1,5 +1,6 @@
 import { cronSessionTitlePrefixes } from '@shared/cronSessionTitle';
 import { CHOOSE_FOLDER_ENTRY_LABEL } from '@shared/i18n/chooseFolderEntry';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 // ============================================================================
 // 侧边栏导航域词条（Sidebar / features/sidebar 各组件与 hook）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 chatInput.ts / chatTranscript.ts 先例）。
@@ -398,9 +399,9 @@ export const sidebarZh = {
   },
   sidebarSession: {
     unread: '未读',
-    waitingPermissionApp: '等你批准：操作《{app}》',
-    waitingPermission: '等你批准',
-    waitingInput: '等你确认',
+    waitingPermissionApp: `${WAITING_ON_USER_LABELS.zh.approval}：操作《{app}》`,
+    waitingPermission: WAITING_ON_USER_LABELS.zh.approval,
+    waitingInput: WAITING_ON_USER_LABELS.zh.question,
     importedFromClaudeCode: 'Claude Code 历史',
     importedFromCodex: 'Codex 历史',
     forkedFrom: '分支任务，源任务：{sessionId}',
@@ -786,8 +787,8 @@ export const sidebarEn: typeof sidebarZh = {
   sidebarSession: {
     unread: 'Unread',
     waitingPermissionApp: 'Approve: "{app}"',
-    waitingPermission: 'Waiting for your approval',
-    waitingInput: 'Waiting for you',
+    waitingPermission: WAITING_ON_USER_LABELS.en.approval,
+    waitingInput: WAITING_ON_USER_LABELS.en.question,
     importedFromClaudeCode: 'Claude Code history',
     importedFromCodex: 'Codex history',
     forkedFrom: 'Forked task, source task: {sessionId}',
