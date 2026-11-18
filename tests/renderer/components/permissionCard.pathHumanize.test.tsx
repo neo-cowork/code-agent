@@ -90,3 +90,39 @@ describe('RequestDetails 文件行路径人话化', () => {
     expect(render()).toContain(p);
   });
 });
+
+function writeReq(filePath: string, boundaryId?: string): ContractPermissionRequest {
+  return {
+    id: 'req-write-1', tool: 'excel_generate', type: 'file_write',
+    ...(boundaryId ? { boundary: { id: boundaryId, reason: 'x' } } : {}),
+    details: { filePath, path: filePath }, timestamp: 1,
+  } as unknown as ContractPermissionRequest;
+}
+
+describe('RequestDetails 写入后果句路径人话化', () => {
+  const upload = `/Users/x/work/out/rr/neo/home/.code-agent/uploads/${UUID}/合同金额整理.xlsx`;
+  const temp = '/var/folders/ab/cd/T/周报汇总.xlsx';
+
+  it.each([
+    ['zh', upload, '你上传的文件：合同金额整理.xlsx', UUID],
+    ['zh', temp, '临时文件：周报汇总.xlsx', '/var/folders'],
+    ['en', upload, 'Your uploaded file: 合同金额整理.xlsx', UUID],
+    ['en', temp, 'Temporary file: 周报汇总.xlsx', '/var/folders'],
+  ] as const)('%s file_write consequence + file row hide the raw path (%s)', (lang, p, shown, leak) => {
+    storeState.language = lang;
+    for (const boundary of [undefined, 'file.external_write']) {
+      storeState.request = writeReq(p, boundary);
+      const html = render();
+      const consequence = html.match(/data-testid="permission-consequence"[^>]*>([^<]*)</)?.[1] ?? '';
+      expect(consequence).toContain(shown);
+      expect(html).not.toContain(leak);
+    }
+  });
+
+  it('traversal path stays verbatim in the consequence sentence', () => {
+    storeState.language = 'en';
+    storeState.request = writeReq('/var/folders/ab/cd/T/../../../etc/passwd');
+    const html = render();
+    expect(html.match(/data-testid="permission-consequence"[^>]*>([^<]*)</)?.[1]).toContain('/var/folders/ab/cd/T/../../../etc/passwd');
+  });
+});
