@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, Eye, Zap } from 'lucide-react';
-import type { CronEventDecision, CronJobDefinition } from '@shared/contract';
+import type { CronEventDecision, CronEventStats, CronJobDefinition } from '@shared/contract';
 import { resolveCronEventActionMode } from '@shared/cronEventActionMode';
 import { localizeDecisionText } from '@shared/cronEventDecisionText';
 import { cronClient } from '../../../services/cronClient';
@@ -38,6 +38,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   const mode = resolveCronEventActionMode(job) ?? 'observe';
   const [decisions, setDecisions] = useState<CronEventDecision[]>([]);
   const [modeChange, setModeChange] = useState<{ from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null>(null);
+  const [stats, setStats] = useState<CronEventStats | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -55,6 +56,10 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
       .then(() => cronClient.getEventActionModeChange(job.id))
       .then((entry) => { if (!cancelled) setModeChange(entry ?? null); })
       .catch(() => { if (!cancelled) setModeChange(null); });
+    Promise.resolve()
+      .then(() => cronClient.getEventStats(job.id))
+      .then((value) => { if (!cancelled) setStats(value ?? null); })
+      .catch(() => { if (!cancelled) setStats(null); });
     return () => { cancelled = true; };
   }, [job.id, job.updatedAt]);
 
@@ -190,6 +195,14 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
           </Button>
         )}
       </div>
+      {stats && (stats.prefilterCalls > 0 || stats.heldByCap > 0) && (
+        <div className="mt-2 text-xs text-zinc-400" data-testid="cron-event-stats-line">
+          {t.cronCenter.eventLimits.statsLine
+            .replace('{calls}', String(stats.prefilterCalls))
+            .replace('{skipped}', String(stats.prefilterSkipped))
+            .replace('{held}', String(stats.heldByCap))}
+        </div>
+      )}
       {switchError && <div className="mt-2 text-xs text-badge-danger" role="alert">{switchError}</div>}
       {modeChange && (
         <div className="mt-2 text-xs text-zinc-500" data-testid="cron-action-mode-change">

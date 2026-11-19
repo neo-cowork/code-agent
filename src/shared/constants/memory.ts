@@ -147,6 +147,15 @@ export const MEMORY_CONSOLIDATION = {
   JOB_TAG: 'light-memory-consolidation',
   /** 每次真跑追加一行 JSON，保留合并/降级/索引/镜像的可回放证据。 */
   AUDIT_FILENAME: 'consolidation-audit.jsonl',
+  /**
+   * 演练预览文件（与审计文件同目录，只保留最近一次）：开关未开启时定时演练
+   * 「如果开启，下次会改什么」，设置页「最近整理」读它出预告句（N-MEM-CONSOLIDATION-HISTORY-UNDO）。
+   */
+  PREVIEW_FILENAME: 'consolidation-preview.json',
+  /** 「最近整理」列表最多返回的运行条数（新在前）。 */
+  HISTORY_MAX_RUNS: 20,
+  /** 列表/恢复读审计文件时最多回看的行数（一周一跑，400 行足够覆盖多年）。 */
+  HISTORY_TAIL_LINES: 400,
 } as const;
 
 /** Built-in maintenance is not a user-created schedule and must not keep the app resident. */
