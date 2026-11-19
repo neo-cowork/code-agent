@@ -132,6 +132,23 @@ describe('group-listen template fill step', () => {
     expect((payload.action as Record<string, unknown>).type).toBe('agent');
   });
 
+  it('limit boxes in the fill step flow into the createJob payload', async () => {
+    await openGroupListenFillStep();
+    fireEvent.change(controlForLabel(/^要做什么/), { target: { value: '总结催款' } });
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    fireEvent.change(await screen.findByLabelText('限定会话 / 群（可选）'), { target: { value: 'oc_release' } });
+    fireEvent.change(screen.getByTestId('cron-event-prefilter-input'), { target: { value: '只处理催款的消息' } });
+    fireEvent.change(screen.getByTestId('cron-event-max-runs-input'), { target: { value: '10' } });
+    fireEvent.click(screen.getByText('创建任务'));
+    fireEvent.click(await screen.findByTestId('cron-pending-routine-confirm'));
+    await waitFor(() => expect(cronStore.createJob).toHaveBeenCalledTimes(1));
+    const payload = cronStore.createJob.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.schedule).toEqual({
+      type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu', chatId: 'oc_release',
+      prefilter: '只处理催款的消息', maxRunsPerHour: 10,
+    });
+  });
+
   it('clears the required-fields banner as the last missing field is filled', async () => {
     render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
     fireEvent.click(screen.getByText('从模板创建'));
