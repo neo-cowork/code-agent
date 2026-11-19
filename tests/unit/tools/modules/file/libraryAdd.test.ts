@@ -72,7 +72,7 @@ describe('library_add and app-data discovery refusal', () => {
   });
 
   async function add(args: Record<string, unknown>, canUseTool: CanUseToolFn = allowAll) {
-    const handler = libraryAddModule.createHandler();
+    const handler = await libraryAddModule.createHandler();
     return handler.execute(args, makeCtx(incoming, logger), canUseTool);
   }
 
