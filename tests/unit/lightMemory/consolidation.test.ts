@@ -371,7 +371,7 @@ describe('user-flagged sources (N-MEM-SOURCE-WRONG-FEEDBACK)', () => {
 
   /** r2：尊重 listMemories 窗口参数的假库——flaggedLightFilenames 旧实现只扫最新 N 行。 */
   class WindowedFakeDb extends FakeMemoryDb {
-    override listMemories(options?: { limit?: number }): MemoryRecord[] {
+    override listMemories(options?: { limit?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC' }): MemoryRecord[] {
       const rows = [...this.records].sort((a, b) => b.updatedAt - a.updatedAt);
       return options?.limit === undefined ? rows : rows.slice(0, options.limit);
     }
