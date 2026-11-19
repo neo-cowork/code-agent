@@ -47,10 +47,12 @@ function stripNonProseSpans(message: string): string {
     .replace(ALNUM_MIXED_TOKEN, ' ');
 }
 
-// 只认祈使式：中文“用/以”前不能紧挨别的汉字（挡“所以英文回答”“应用英文回复”），“要/需要/请”前不能是否定词；
+// 只认祈使式：中文“用/以”前不能是“所/应/使…”这类构词字（挡“所以英文回答”“应用英文回复”），指令前紧邻否定词则忽略；
 // 英文动词前必须是句首/标点或 please/to/and 等祈使引导词（挡 “The answer in Chinese”“don't reply in English”）。
 const ZH_REPLY_DIRECTIVE =
-  /(?:(?<![不别勿])(?:请|要|需要|须|务必|都|也|再|还|就|并)(?:用|以)|(?<![\u4e00-\u9fff])(?:请?(?:用|以)|请))(简体中文|繁体中文|中文|汉语|英文|英语)(?:来)?(?:回复|回答|答复|作答|回应)/g;
+  /(?<![所应使可利引采作适足得难加予借据何申])(?:请?(?:用|以)|请)(简体中文|繁体中文|中文|汉语|英文|英语)(?:来)?(?:回复|回答|答复|作答|回应)/g;
+// 指令前紧邻否定（不要/不需要/不必/不用/别/勿/无需）则不是指令
+const ZH_NEGATED_LEAD = /(?:[不别勿](?:要|需要?|必|用|须|想)?|无需)$/;
 const EN_REPLY_DIRECTIVE =
   /(?<=^|[.!?;:,\n]\s*|\b(?:please|kindly|and|then|also|just|always|to|you)\s+)(?:reply|respond|answer)(?:\s+to\s+me)?\s+in\s+(Chinese|Mandarin|English)\b/gi;
 
@@ -64,6 +66,7 @@ function detectReplyDirective(message: string): SessionTitleLanguage | undefined
   let last: { index: number; lang: SessionTitleLanguage } | undefined;
   for (const re of [ZH_REPLY_DIRECTIVE, EN_REPLY_DIRECTIVE]) {
     for (const m of code.matchAll(re)) {
+      if (re === ZH_REPLY_DIRECTIVE && ZH_NEGATED_LEAD.test(code.slice(Math.max(0, m.index - 3), m.index))) continue;
       if (!last || m.index > last.index) last = { index: m.index, lang: directiveLanguage(m[1]) };
     }
   }

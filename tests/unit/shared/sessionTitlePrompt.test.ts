@@ -76,4 +76,14 @@ describe('explicit reply-language directive', () => {
     expect(detectMessageLanguage('Fix the failing tests in the module, answer in Chinese.')).toBe('zh');
     expect(detectMessageLanguage('Fix the failing tests in the module. 要用中文回答。')).toBe('zh');
   });
+  it('accepts Han-prefixed lead-ins and rejects every negated lead-in', () => {
+    const body = 'Export the monthly sales table to Excel with a totals row. ';
+    for (const tail of ['你用中文回答', '统一用中文回复', '全部用中文回答', '一律用中文回复', '我希望你用中文回答']) {
+      expect(detectMessageLanguage(body + tail)).toBe('zh');
+    }
+    expect(detectMessageLanguage('不需要用英文回答，这段 bug 怎么修')).toBe('zh');
+    expect(detectMessageLanguage('不必用英文回复，帮我看看这个 bug')).toBe('zh');
+    expect(detectMessageLanguage('无需用英文回答，帮我看看这个 bug')).toBe('zh');
+    expect(detectMessageLanguage('请不要用英文回复，帮我看看这个 bug')).toBe('zh');
+  });
 });
