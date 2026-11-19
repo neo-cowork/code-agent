@@ -381,6 +381,7 @@ export class RunFinalizer {
     // Handle loop exit conditions
     if (terminalStatus === 'failed') {
       const errorMessage = formatTerminalError(terminalError);
+      const httpStatus = getModelErrorStatus(terminalError);
       if (this.ctx.goalMode?.isPending()) {
         const reason = `运行失败：${errorMessage}`;
         emitGoalAbort(this.ctx, {
@@ -407,6 +408,7 @@ export class RunFinalizer {
           details: {
             provider: this.ctx.modelConfig.provider,
             model: this.ctx.modelConfig.model,
+            ...(typeof httpStatus === 'number' ? { httpStatus } : {}),
           },
           goalAbort: this.ctx.goalMode?.getStatus() === 'aborted',
           // 引擎内吞掉的推理失败只从这里出去：不挂鉴权/停用/余额标记，手机/renderer 只能说
