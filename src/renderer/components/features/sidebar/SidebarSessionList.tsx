@@ -236,9 +236,10 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
         </div>
       ) : listLoad.error && !hasAnySessions ? (
         listErrorNotice
-      ) : !hasAnySessions ? (
+      ) : !hasAnySessions && groups.length === 0 ? (
         /* 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球（母星，"还没有勘测记录"），
-           替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。 */
+           替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。
+           没有任何会话、但已有协作空间组时不走这里：空空间也要出现在「协作空间」下。 */
         <div className="flex flex-col items-center justify-center h-full text-center px-4">
           <div className="mb-3">
             <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} />
