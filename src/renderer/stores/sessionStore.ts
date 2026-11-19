@@ -39,6 +39,7 @@ import { useSessionArchiveUndoStore } from './sessionArchiveUndoStore';
 import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
+import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
 
 const logger = createLogger('SessionStore');
 
@@ -534,6 +535,8 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
     deleteSession: async (sessionId: string) => {
       try {
         await invokeSession('delete', { sessionId });
+        // 乐观更新早于落库：落库后再通知，侧栏空空间目录才能读到最新可见会话数。
+        notifyProjectSpaceList('sessions');
         clearFailedSend(sessionId);
         removeComposerDraft(composerDraftStorageKey(sessionId, false));
 
@@ -584,6 +587,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
       try {
         await invokeSession('archive', { sessionId });
+        notifyProjectSpaceList('sessions');
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);

@@ -1,6 +1,6 @@
 // 协作空间列表变更。侧栏空空间分组订阅它，项目列表页自己的刷新不经过这里。
 
-export type ProjectSpaceListChange = 'created' | 'promoted' | 'renamed' | 'status' | 'deleted';
+export type ProjectSpaceListChange = 'created' | 'promoted' | 'renamed' | 'status' | 'deleted' | 'sessions';
 
 type ProjectSpaceListListener = (change: ProjectSpaceListChange) => void;
 
