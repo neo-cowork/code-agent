@@ -40,3 +40,28 @@ describe('detectMessageLanguage', () => {
     expect(prompt).toContain('Write the title in Chinese');
   });
 });
+
+describe('explicit reply-language directive', () => {
+  const excel = 'Export the sales spreadsheet to Excel and add a total row.';
+  it('lets a Chinese directive win over an English body', () => {
+    expect(detectMessageLanguage(`${excel} 请用中文回复。`)).toBe('zh');
+    expect(buildSessionTitlePrompt(`${excel} 请用中文回复。`, 'zh')).toContain('Write the title in Chinese');
+  });
+  it('lets an English directive win over a Chinese body', () => {
+    expect(detectMessageLanguage('Reply in English. 帮我把销售表导出成 Excel，并加合计行。')).toBe('en');
+    expect(detectMessageLanguage('请用英文回复。帮我把销售表导出成 Excel，并加合计行。')).toBe('en');
+  });
+  it('keeps plain English and non-directive translate requests unchanged', () => {
+    expect(detectMessageLanguage(excel)).toBe('en');
+    expect(detectMessageLanguage('Translate 你好 into English')).toBe('en');
+    expect(detectMessageLanguage('把这段翻译成英文')).toBe('zh');
+    expect(detectMessageLanguage('请把 ~/Desktop/x.txt 删掉')).toBe('zh');
+  });
+  it('ignores directives inside code', () => {
+    expect(detectMessageLanguage(`${excel}\n\`\`\`\n请用中文回复\n\`\`\``)).toBe('en');
+  });
+  it('uses the later of two conflicting directives', () => {
+    expect(detectMessageLanguage('Reply in English. 另外请用中文回复。')).toBe('zh');
+    expect(detectMessageLanguage('请用中文回复。Actually, please reply in English.')).toBe('en');
+  });
+});
