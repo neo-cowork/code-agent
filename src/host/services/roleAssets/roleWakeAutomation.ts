@@ -8,6 +8,14 @@ import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('RoleProactivity');
 
+/** 「建议」待过目行的摘要：理由优先作一行摘要，全文为醒来产出摘要（与 cron 行同一 digest 形状）。 */
+function suggestDigest(result: RoleWakeResult): { digest?: { artifactCount: number; summaryLine?: string; summaryText?: string } } {
+  const text = result.summary?.trim();
+  const line = result.rationale?.trim() || text?.split(/\r?\n/).find((l) => l.trim())?.trim();
+  if (!text && !line) return {};
+  return { digest: { artifactCount: 0, ...(line ? { summaryLine: line } : {}), ...(text ? { summaryText: text } : {}) } };
+}
+
 /** Every wake, including one without a source conversation, owns a visible run record. */
 export async function withRoleWakeAutomation(input: {
   sessionId: string; roleId: string; trigger: RoleWakeTrigger; title: string;
@@ -54,7 +62,7 @@ export async function withRoleWakeAutomation(input: {
       eventId: `${automationId}:${result.decision}:${result.advanceGoalStatus ?? 'none'}`,
       lastRunAt: finishedAt,
       configPatch: {
-        ...(awaitingUser ? { pendingReview: { resultSessionId: input.sessionId, at: finishedAt } } : {}),
+        ...(awaitingUser ? { pendingReview: { resultSessionId: input.sessionId, at: finishedAt, ...suggestDigest(result) } } : {}),
         decision: result.decision, advanceGoalStatus: result.advanceGoalStatus,
         ...(result.rationale ? { rationale: result.rationale } : {}),
         ...(result.evidence ? { evidence: result.evidence } : {}),

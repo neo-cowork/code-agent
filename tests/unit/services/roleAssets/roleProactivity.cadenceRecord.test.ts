@@ -26,7 +26,7 @@ const mockSessionEvents = vi.hoisted(() => ({
 }));
 const mockSessionAutomation = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
-  recordEvent: vi.fn(async (_event: { recordStatus?: string; configPatch?: { pendingReview?: unknown } }) => undefined),
+  recordEvent: vi.fn(async (_event: { recordStatus?: string; configPatch?: { pendingReview?: { digest?: { summaryLine?: string; summaryText?: string } } } }) => undefined),
 }));
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
@@ -108,7 +108,15 @@ vi.mock('../../../../src/host/hooks', () => ({
 }));
 
 
-import { wakeRole } from '../../../../src/host/services/roleAssets/roleProactivity';
+const mockCron = vi.hoisted(() => ({
+  listJobs: vi.fn(() => [] as unknown[]),
+  createJob: vi.fn(async (_input: { description?: string }) => undefined),
+  updateJob: vi.fn(),
+  deleteJob: vi.fn(),
+}));
+vi.mock('../../../../src/host/cron/cronService', () => ({ getCronService: () => mockCron }));
+
+import { wakeRole, syncCadenceJobs } from '../../../../src/host/services/roleAssets/roleProactivity';
 import { ensureRoleAssetDirs, appendRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 
 const RESEARCHER = '研究员';
@@ -154,7 +162,15 @@ describe('wakeRole → withRoleWakeAutomation 记录（N-FIX-ROLE-WAKE-CADENCE-N
     const patch = mockSessionAutomation.recordEvent.mock.calls.at(-1)?.[0];
     expect(patch).toBeDefined();
     expect(patch?.recordStatus).toBe('pending_review');
-    expect(patch?.configPatch?.pendingReview).toEqual({ resultSessionId: 'wake-suggest-2', at: expect.any(Number) });
+    expect(patch?.configPatch?.pendingReview).toEqual(expect.objectContaining({ resultSessionId: 'wake-suggest-2', at: expect.any(Number) }));
+  });
+
+  it('suggest 的待过目记录带摘要（理由作一行摘要，全文不含 [suggest] 前缀）', async () => {
+    primeWakeRun('suggest', 'wake-suggest-3');
+    await wakeRole(RESEARCHER, 'cadence');
+    const digest = mockSessionAutomation.recordEvent.mock.calls.at(-1)?.[0]?.configPatch?.pendingReview?.digest;
+    expect(digest?.summaryText).toContain('检查完毕');
+    expect(digest?.summaryText).not.toContain('[suggest]');
   });
 
   it.each(['report', 'advance', 'silence'])('%s → 不进待审收件箱', async (decision) => {
@@ -164,5 +180,13 @@ describe('wakeRole → withRoleWakeAutomation 记录（N-FIX-ROLE-WAKE-CADENCE-N
     expect(patch).toBeDefined();
     expect(patch?.recordStatus).not.toBe('pending_review');
     expect(patch?.configPatch?.pendingReview).toBeUndefined();
+  });
+
+  it('新注册的 cadence 任务描述不带内部字样', async () => {
+    await syncCadenceJobs();
+    const description = mockCron.createJob.mock.calls[0]?.[0]?.description ?? '';
+    expect(description).toContain(RESEARCHER);
+    expect(description).not.toContain('内部文档');
+    expect(description).not.toContain('角色主动性');
   });
 });

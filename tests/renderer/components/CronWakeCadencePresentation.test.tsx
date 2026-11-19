@@ -73,6 +73,25 @@ describe('role-wake 运行列表', () => {
   });
 });
 
+describe('role-wake 跳过行状态', () => {
+  it('skipped 的唤醒状态格不是「完成」，显示「未运行」（列表 + 详情）', () => {
+    const e = exec({ roleId: 'r', trigger: 'cadence', status: 'skipped', skipReason: 'daily_budget_exceeded (5/4)' }, { cost: undefined });
+    render(<CronExecutionList executions={[e]} selectedExecutionId={null} onSelectExecution={() => undefined} />);
+    const row = screen.getAllByRole('row')[1].textContent ?? '';
+    expect(row).toContain('未运行');
+    expect(row).not.toContain('完成');
+    cleanup();
+    render(<CronExecutionDetail execution={e} />);
+    expect(document.body.textContent).toContain('未运行');
+    expect(document.body.textContent).not.toContain('完成运行');
+  });
+
+  it('完成的唤醒仍是完成', () => {
+    render(<CronExecutionList executions={[exec({ roleId: 'r', trigger: 'cadence', status: 'completed', decision: 'report' })]} selectedExecutionId={null} onSelectExecution={() => undefined} />);
+    expect(screen.getAllByRole('row')[1].textContent).not.toContain('未运行');
+  });
+});
+
 describe('AutomationRoleChip', () => {
   it('命中角色 → 显示花名', async () => {
     listRolesMock.mockResolvedValue([{ roleId: 'role-weekly', displayName: '周报小助' }]);

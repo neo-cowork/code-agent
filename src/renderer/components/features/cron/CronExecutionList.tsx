@@ -76,7 +76,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
         </thead>
         <tbody>
           {executions.map((execution) => {
-            const statusMeta = getLatestExecutionStatus(execution, cc);
+            const statusMeta = getLatestExecutionStatus(execution, cc, t.cronWakeCadence);
             // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章。
             const permissionDenied = isPermissionDeniedExecution(execution);
             const wakeSkipText = wakeSkipSentence(execution, {

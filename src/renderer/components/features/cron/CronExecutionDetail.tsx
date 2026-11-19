@@ -128,7 +128,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     can_wait: cc.inboxUrgencySectionCanWait,
     fyi: cc.inboxUrgencySectionFyi,
   }[resultView.urgency];
-  const statusMeta = getLatestExecutionStatus(execution, cc);
+  const statusMeta = getLatestExecutionStatus(execution, cc, t.cronWakeCadence);
   // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
   const deniedCandidate = isPermissionDeniedExecution(execution)
     ? (execution.result as { permissionDenied?: unknown }).permissionDenied
