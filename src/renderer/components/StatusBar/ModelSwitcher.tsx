@@ -13,7 +13,7 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
-import { isAgenticVerifiedModel } from '@shared/constants';
+import { getModelDisplayLabel, isAgenticVerifiedModel } from '@shared/constants';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
@@ -928,7 +928,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                     <span
                                       className={`ml-auto text-[10px] tabular-nums ${badge.known ? 'text-zinc-400' : 'text-zinc-600'}`}
                                       title={badge.known
-                                        ? modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)
+                                        // 价格基准 hover 用展示名（不再裸 id）。main 的目录 label 自带
+                                        // 中文限定词（如 'DeepSeek V4 Pro (推理)'）：en 界面去尾缀再显示，
+                                        // zh 保持原样；zh-qualifier 分支把限定词挪进 i18n 后 en 分支自然 no-op。
+                                        ? modelText.priceCoefTitle.replace('{baseline}', language === 'zh'
+                                          ? getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId)
+                                          : getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId).replace(/\s*[（(][^()（）]*[)）]\s*$/, ''))
                                         : modelText.priceUnknownTitle}
                                     >
                                       {badge.label}
