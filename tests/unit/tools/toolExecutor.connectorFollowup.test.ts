@@ -177,6 +177,25 @@ describe('connector follow-up through MessageProcessor.handleToolResponse', () =
       expect(getDeferredToolsToPreloadForTurn(next.ctx)).toContain('calendar_create_event');
     });
 
+  // A pure acknowledgement between the connector turn and the correction is not a topic change:
+  // the backward scan must skip "好吧"/"okay"/"ok" instead of breaking, or the correction
+  // ("改到下午4点"/"make it 4pm") loses the inherited connector tools and bounces off
+  // TOOL_DISABLED_FOR_RUN. The acknowledgement turn itself still inherits nothing.
+  it.each([
+    ['好吧', '改到下午4点'],
+    ['okay', 'make it 4pm'],
+    ['ok', 'cancel it'],
+  ])('pure acknowledgement %j between a calendar turn and the correction %j does not break the carry', (ack, correction) => {
+    user(FIRST);
+    const ackTurn = user(ack);
+    for (const tool of ['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']) {
+      expect(ackTurn.ctx.allowedToolNames).not.toContain(tool);
+    }
+    const next = user(correction);
+    expect(next.ctx.allowedToolNames).toContain('calendar_create_event');
+    expect(getDeferredToolsToPreloadForTurn(next.ctx)).toContain('calendar_create_event');
+  });
+
   it('a prior turn naming several connectors still guesses no target on either surface', () => {
     user('Send mail and add a calendar event.');
     const next = user('No wait, send it to sam@example.test instead.');
