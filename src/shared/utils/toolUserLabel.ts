@@ -26,6 +26,7 @@ const TOOL_USER_LABELS: Record<string, string> = {
   webfetch: '网页抓取',
   websearch: '联网搜索',
   memorysearch: '记忆检索',
+  libraryadd: '放入资料库',
   browseraction: '浏览器操作',
   computeruse: '电脑操作',
 };
@@ -34,7 +35,7 @@ const TOOL_USER_LABELS_EN: Record<string, string> = {
   bash: 'Run command', write: 'Write file', writefile: 'Write file', edit: 'Edit file', editfile: 'Edit file',
   docedit: 'Edit document', excelgenerate: 'Export spreadsheet', docxgenerate: 'Create document',
   read: 'Read file', readfile: 'Read file', glob: 'Find files', grep: 'Search contents',
-  webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search',
+  webfetch: 'Web fetch', websearch: 'Web search', memorysearch: 'Memory search', libraryadd: 'Add to Library',
   browseraction: 'Browser action', computeruse: 'Computer action',
 };
 
