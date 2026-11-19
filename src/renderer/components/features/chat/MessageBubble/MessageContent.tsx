@@ -99,7 +99,7 @@ function plainText(value: React.ReactNode): string {
 }
 
 // Main message content component
-export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart }) {
+export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser, isStreaming = false, messageId, mediaContext, streamingTailStart, codeCollapseLines }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
@@ -244,12 +244,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           if (language === 'document') {
             return <DocumentBlock spec={codeContent} />;
           }
-          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} />;
+          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} collapseLines={codeCollapseLines} />;
         }
 
         // Block text retains a trailing newline; inline code normalizes newlines to spaces.
         if (!className && isCodeBlock && (codeContent === '' || codeText.endsWith('\n'))) {
-          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} />;
+          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} collapseLines={codeCollapseLines} />;
         }
 
         return (
@@ -564,7 +564,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [t, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [t, handleOpenFile, handleOpenHttpLink, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId, codeCollapseLines]
   );
 
   // For user messages, render as plain text (no markdown processing)

@@ -111,23 +111,57 @@ export function resolveSessionCommandTaskApprovalWaitCapMs(
 }
 
 /**
- * 模型侧任务结果文本（resultText）的封顶字符数。UI/账本仍用 240 字 summary；
- * 前台模型读到的是这份宽松上限——SSRF 拒绝提示里的「改走 Bash curl 审批」整句
- * 必须完整到达前台，否则前台不知道下一步能做什么（FB-577）。
+ * 模型侧任务结果文本（resultText）的预算（code point）。UI/账本仍用 240 字 summary；
+ * 前台模型读到的是这份宽松预算——结果在预算内整段送达（含换行），超出走「开头 + 存档指针」
+ * （见 commandCenter/taskResultHandback.ts）。SSRF 拒绝提示里的「改走 Bash curl 审批」整句
+ * 必须完整到达前台（FB-577）。
  */
-const SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS = 1500;
+export const SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS = 8000;
+
+/** [任务结果] 卡片摘要（metadata.backgroundTaskResult.summary）的封顶，保持用户看到的卡片不变。 */
+export const SESSION_COMMAND_TASK_RESULT_CARD_MAX_CHARS = 1500;
+
+/** 规范化任务结果文本：只折叠行内横向空白与 3 个以上空行，保留换行。 */
+export function normalizeSessionCommandTaskResultText(value: string | undefined): string | undefined {
+  const normalized = value
+    ?.replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return normalized || undefined;
+}
 
 /**
- * resultText 的单一真源：detail 规范化空白后封顶；超限保留前缀并显式标注总长，
- * 让模型知道文本被裁过。空 detail 返回 undefined——消费点回落 240 字 summary。
- * 按 code point 计数，与 compactSummary 的口径一致。
+ * resultText 的单一真源：detail 规范化后封顶；超限保留前缀并显式标注总长。
+ * 空 detail 返回 undefined——消费点回落 240 字 summary。按 code point 计数。
+ * 后台任务的完整交付路径（超限落存档）见 commandCenter/taskResultHandback.ts。
  */
 export function composeSessionCommandTaskResultText(value: string | undefined): string | undefined {
-  const normalized = value?.replace(/\s+/g, ' ').trim();
+  const normalized = normalizeSessionCommandTaskResultText(value);
   if (!normalized) return undefined;
   const chars = Array.from(normalized);
-  if (chars.length <= SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS) return chars.join('');
+  if (chars.length <= SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS) return normalized;
   return `${chars.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS).join('')}…(truncated, ${chars.length} chars total)`;
+}
+
+/** 成员页「完整产出」用的展示文本封顶（保留换行，供 markdown 渲染）；模型侧 resultText 另走 composeSessionCommandTaskResultText（8000 预算，超限落存档）。 */
+const SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS = 8000;
+
+/**
+ * 成员页展示文本：保留换行（围栏代码块靠它成立），统一行尾、去首尾空白，按 code point 封顶。
+ * 封顶时回退到最近的换行，并在围栏未闭合时补一个闭合围栏，避免页面上出现孤立的 ```。
+ */
+export function composeSessionCommandTaskDisplayText(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\r\n?/g, '\n').trim();
+  if (!normalized) return undefined;
+  const chars = Array.from(normalized);
+  if (chars.length <= SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS) return normalized;
+  let cut = chars.slice(0, SESSION_COMMAND_TASK_DISPLAY_MAX_CHARS).join('');
+  const lastNewline = cut.lastIndexOf('\n');
+  if (lastNewline > 0) cut = cut.slice(0, lastNewline);
+  const fenceCount = (cut.match(/^\s*```/gm) ?? []).length;
+  return `${cut}${fenceCount % 2 === 1 ? '\n```' : ''}\n…`;
 }
 
 /**

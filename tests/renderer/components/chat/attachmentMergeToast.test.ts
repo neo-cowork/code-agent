@@ -1,11 +1,23 @@
 // @vitest-environment jsdom
+import { createElement as h } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UI } from '../../../../src/shared/constants';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+
+const useI18nMock = vi.hoisted(() => ({ lang: 'zh' as 'zh' | 'en' }));
+vi.mock('../../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../../src/renderer/i18n/zh');
+  const { en } = await import('../../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ t: useI18nMock.lang === 'zh' ? zh : en }) };
+});
 import { useToastStore } from '../../../../src/renderer/hooks/useToast';
 import {
   dismissAttachmentLimitToast,
   notifyAttachmentMerge,
 } from '../../../../src/renderer/components/features/chat/ChatInput/attachmentMergeToast';
+import { ComposerAttachmentLimitNotice } from '../../../../src/renderer/components/features/chat/ChatInput/ComposerAttachmentLimitNotice';
+import { ToastContainer } from '../../../../src/renderer/components/Toast';
+import { useComposerAttachmentLimitStore } from '../../../../src/renderer/stores/composerAttachmentLimitStore';
+import { COMPOSER_SLOT_LAYER } from '../../../../src/renderer/stores/composerNoticeStore';
 import type { AttachmentMergeResult } from '../../../../src/renderer/components/features/chat/ChatInput/attachmentDedupe';
 import { zh } from '../../../../src/renderer/i18n/zh';
 import { en } from '../../../../src/renderer/i18n/en';
@@ -37,80 +49,113 @@ function duplicateResult(count: number, overflowCount = 0): AttachmentMergeResul
 }
 
 const toasts = () => useToastStore.getState().toasts;
+const limitNotice = () => useComposerAttachmentLimitStore.getState().notice;
 
 describe('notifyAttachmentMerge', () => {
   beforeEach(() => {
+    useI18nMock.lang = 'zh';
     vi.useFakeTimers();
     dismissAttachmentLimitToast();
     useToastStore.setState({ toasts: [] });
   });
   afterEach(() => {
+    cleanup();
     vi.clearAllTimers();
     vi.useRealTimers();
     dismissAttachmentLimitToast();
     useToastStore.setState({ toasts: [] });
   });
 
+  it('overflow writes the composer notice and never the global toast container', () => {
+    notifyAttachmentMerge(overflow(10, 10), zh.chatInput);
+    expect(toasts()).toHaveLength(0);
+    expect(limitNotice()).toEqual({ added: 10, dropped: 10, max: 10, kind: 'partial' });
+  });
+
+  it('renders the notice inline in the composer, outside the global toast container', () => {
+    render(
+      h('div', null, h(ToastContainer), h('div', { 'data-testid': 'composer' }, h(ComposerAttachmentLimitNotice))),
+    );
+    act(() => notifyAttachmentMerge(overflow(10, 10), zh.chatInput));
+    const node = screen.getByTestId('composer-attachment-limit');
+    expect(node.getAttribute('role')).toBe('alert');
+    expect(screen.getByTestId('composer').contains(node)).toBe(true);
+    expect(node.closest('.fixed')).toBeNull();
+    expect(node.textContent).toContain('附件已满（10 个）');
+    expect(node.textContent).not.toMatch(/\{(?:added|dropped|max)\}/);
+  });
+
+  it('is registered in the composer slot at layer 3', () => {
+    expect(COMPOSER_SLOT_LAYER['attachment-limit']).toBe(3);
+  });
+
   it('stays visible after five minutes until explicitly dismissed', () => {
     notifyAttachmentMerge(overflow(10, 10), zh.chatInput);
-    const id = toasts()[0].id;
     vi.advanceTimersByTime(5 * 60 * 1000);
-    expect(toasts().map((t) => t.id)).toEqual([id]);
-    expect(toasts()[0].duration).toBe(UI.TOAST_PERSISTENT_DURATION);
+    expect(limitNotice()).not.toBeNull();
     dismissAttachmentLimitToast();
-    expect(toasts()).toHaveLength(0);
+    expect(limitNotice()).toBeNull();
   });
 
-  it('can be manually closed and replaced after closing', () => {
-    notifyAttachmentMerge(overflow(10, 10), zh.chatInput);
-    useToastStore.getState().removeToast(toasts()[0].id);
-    expect(toasts()).toHaveLength(0);
-    notifyAttachmentMerge(overflow(0, 5), zh.chatInput);
-    expect(toasts()).toHaveLength(1);
-    dismissAttachmentLimitToast();
-    dismissAttachmentLimitToast();
-    expect(toasts()).toHaveLength(0);
+  it('can be manually closed with X, leaves no leftover node, and a new overflow shows again', () => {
+    render(h(ComposerAttachmentLimitNotice));
+    act(() => notifyAttachmentMerge(overflow(10, 10), zh.chatInput));
+    fireEvent.click(screen.getByTestId('composer-attachment-limit-dismiss'));
+    expect(screen.queryByTestId('composer-attachment-limit')).toBeNull();
+    expect(limitNotice()).toBeNull();
+    act(() => notifyAttachmentMerge(overflow(0, 5), zh.chatInput));
+    expect(screen.getAllByTestId('composer-attachment-limit')).toHaveLength(1);
   });
 
-  it('keeps exactly one limit toast, the newer one, across consecutive overflows', () => {
-    notifyAttachmentMerge(overflow(10, 20), zh.chatInput);
-    const oldId = toasts()[0].id;
+  it('keeps exactly one notice, the newer one, across consecutive overflows (replaced not stacked)', () => {
+    render(h(ComposerAttachmentLimitNotice));
+    act(() => notifyAttachmentMerge(overflow(10, 20), zh.chatInput));
     vi.advanceTimersByTime(60 * 1000);
-    notifyAttachmentMerge(overflow(0, 5), zh.chatInput);
-    vi.advanceTimersByTime(5 * 60 * 1000);
-    expect(toasts()).toHaveLength(1);
-    expect(toasts()[0].id).not.toBe(oldId);
-    expect(toasts()[0].message).toContain('5 个都没加进来');
+    act(() => notifyAttachmentMerge(overflow(0, 5), zh.chatInput));
+    const nodes = screen.getAllByTestId('composer-attachment-limit');
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].textContent).toContain('5 个都没加进来');
+    expect(nodes[0].textContent).not.toContain('20');
   });
 
   it('is idempotent when fired twice with identical input (updater double-invoke)', () => {
-    notifyAttachmentMerge(overflow(3, 7), zh.chatInput);
-    notifyAttachmentMerge(overflow(3, 7), zh.chatInput);
-    expect(toasts()).toHaveLength(1);
+    render(h(ComposerAttachmentLimitNotice));
+    act(() => {
+      notifyAttachmentMerge(overflow(3, 7), zh.chatInput);
+      notifyAttachmentMerge(overflow(3, 7), zh.chatInput);
+    });
+    expect(screen.getAllByTestId('composer-attachment-limit')).toHaveLength(1);
   });
 
   it.each([
     ['zh', zh.chatInput, ['10 个', '加进了 3 个', '另 7 个', '发送这条消息后']],
     ['en', en.chatInput, ['(10)', '3 added', '7 more', 'after sending this message']],
-  ] as const)('copy states limit, added, not-added and next step (%s)', (_l, copy, parts) => {
-    notifyAttachmentMerge(overflow(3, 7), copy);
-    for (const part of parts) expect(toasts()[0].message).toContain(part);
+  ] as const)('copy states limit, added, not-added and next step (%s)', (_l, _copy, parts) => {
+    useI18nMock.lang = _l;
+    render(h(ComposerAttachmentLimitNotice));
+    act(() => notifyAttachmentMerge(overflow(3, 7), _copy));
+    const text = screen.getByTestId('composer-attachment-limit').textContent ?? '';
+    for (const part of parts) expect(text).toContain(part);
   });
 
   it('reads naturally when none were added (zh and en)', () => {
-    notifyAttachmentMerge(overflow(0, 4), zh.chatInput);
-    expect(toasts()[0].message).toContain('没有加进任何文件');
-    expect(toasts()[0].message).not.toContain('{');
-    notifyAttachmentMerge(overflow(0, 4), en.chatInput);
-    expect(toasts()).toHaveLength(1);
-    expect(toasts()[0].message).toContain('none were added this time');
+    render(h(ComposerAttachmentLimitNotice));
+    act(() => notifyAttachmentMerge(overflow(0, 4), zh.chatInput));
+    expect(screen.getByTestId('composer-attachment-limit').textContent).toContain('没有加进任何文件');
+    cleanup();
+    useI18nMock.lang = 'en';
+    render(h(ComposerAttachmentLimitNotice));
+    act(() => notifyAttachmentMerge(overflow(0, 4), en.chatInput));
+    const text = screen.getByTestId('composer-attachment-limit').textContent ?? '';
+    expect(text).toContain('none were added this time');
+    expect(text).not.toContain('{');
   });
 
-  it('dismiss removes the limit toast but leaves other toasts', () => {
+  it('dismiss clears the limit notice but leaves other toasts', () => {
     useToastStore.getState().addToast('info', 'other', 0);
     notifyAttachmentMerge(overflow(10, 20), zh.chatInput);
-    expect(toasts()).toHaveLength(2);
     dismissAttachmentLimitToast();
+    expect(limitNotice()).toBeNull();
     expect(toasts().map((t) => t.message)).toEqual(['other']);
   });
 
@@ -127,12 +172,11 @@ describe('notifyAttachmentMerge', () => {
     expect(toasts()[0].message).not.toMatch(/\{(?:name|count)\}/);
   });
 
-  it('keeps both toasts when 10 duplicates and overflow occur in the same merge', () => {
+  it('keeps the duplicate toast and the limit notice separate when both occur in one merge', () => {
     notifyAttachmentMerge(duplicateResult(10, 2), zh.chatInput);
-    console.info('10 duplicates + overflow toasts:', toasts());
     expect(toasts().map((toast) => toast.message)).toEqual([
       '读书笔记01.txt 等 10 个文件已添加，无需重复添加',
-      '附件已满（10 个）：这次没有加进任何文件，2 个都没加进来。发送这条消息后，就能继续添加。',
     ]);
+    expect(limitNotice()).toEqual({ added: 0, dropped: 2, max: 10, kind: 'none' });
   });
 });

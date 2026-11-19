@@ -16,6 +16,7 @@ import type {
   ManagedBrowserSessionState,
 } from '@shared/contract/desktop';
 import { useComposerStore } from '../../../stores/composerStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSession';
 import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
@@ -81,6 +82,7 @@ function getStatusClass(ready: boolean): string {
 // 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责。
 export const BrowserSurfaceContent: React.FC = () => {
   const setBrowserSessionMode = useComposerStore((state) => state.setBrowserSessionMode);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { t } = useI18n();
   const cookieCopy = t.workbenchTabs.agentWindow;
   const browserSession = useWorkbenchBrowserSession();
@@ -121,20 +123,29 @@ export const BrowserSurfaceContent: React.FC = () => {
     await ipcService.invokeDomain<ManagedBrowserSessionState>(
       IPC_DOMAINS.DESKTOP,
       'openManagedBrowserUrl',
-      { url, mode: 'visible', profileMode: 'isolated' },
+      {
+        url,
+        mode: 'visible',
+        profileMode: 'isolated',
+        ...(currentSessionId ? { conversationId: currentSessionId } : {}),
+      },
     );
     setNotice('已在本次隔离的托管浏览器打开。关闭后会清理临时 profile。');
-  }), [run, setBrowserSessionMode, url]);
+  }), [currentSessionId, run, setBrowserSessionMode, url]);
 
   const handleLaunch = useCallback(() => run('launch', async () => {
     setBrowserSessionMode('managed');
     await ipcService.invokeDomain<ManagedBrowserSessionState>(
       IPC_DOMAINS.DESKTOP,
       'ensureManagedBrowserSession',
-      { mode: 'visible', profileMode: 'isolated' },
+      {
+        mode: 'visible',
+        profileMode: 'isolated',
+        ...(currentSessionId ? { conversationId: currentSessionId } : {}),
+      },
     );
     setNotice('托管浏览器已启动。');
-  }), [run, setBrowserSessionMode]);
+  }), [currentSessionId, run, setBrowserSessionMode]);
 
   const handleRefreshAccount = useCallback(() => run('refresh', async () => {
     await ipcService.invokeDomain<AccountRefreshResult>(

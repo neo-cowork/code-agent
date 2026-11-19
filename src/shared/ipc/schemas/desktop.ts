@@ -60,6 +60,17 @@ const DesktopDomainRequestSchema = z.object({
 
 export type DesktopDomainRequest = z.infer<typeof DesktopDomainRequestSchema>;
 
+/** Launch payload for ensureManagedBrowserSession / openManagedBrowserUrl. Extra keys pass through. */
+export const managedBrowserLaunchPayloadSchema = z.object({
+  url: z.string().optional(),
+  mode: z.enum(['headless', 'visible']).optional(),
+  provider: z.string().optional(),
+  profileMode: z.enum(['persistent', 'isolated']).optional(),
+  leaseOwner: z.string().optional(),
+  leaseTtlMs: z.number().optional(),
+  conversationId: z.string().min(1).optional(),
+}).passthrough();
+
 export const DesktopSchemas = {
   REQUEST: channelSchema({ channel: IPC_DOMAINS.DESKTOP, payload: DesktopDomainRequestSchema }),
   /** action 字面量集合：shellCapabilities 派生用（shared 层零 host 依赖） */

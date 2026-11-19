@@ -137,7 +137,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { notRun: terminal.notRun, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, skipped: terminal.skipped, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
@@ -158,6 +158,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const byStatus = new Map<ToolStepStatus, string[]>();
     let blockedCommands = 0;
     let blockedSteps = 0;
+    let skippedBash = 0;
     let staleUnfinished = 0;
     const notRunNames: string[] = [];
     let envWaiting: string | undefined;
@@ -186,14 +187,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         else staleUnfinished += 1;
         continue;
       }
+      if (terminalById.get(tc.id)?.skipped) {
+        skippedBash += 1;
+        continue;
+      }
       const stepStatus = benign
         ? 'completed'
         : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
       if (!benign && terminalById.get(tc.id)?.notRun) notRunNames.push(tc.name);
     }
+    if (skippedBash && !byStatus.has('completed')) byStatus.set('completed', []);
     return [
       ...Array.from(byStatus, ([stepStatus, names]) => {
+        if (stepStatus === 'completed') return humanizeToolGroupLabel(names, t, stepStatus, false, skippedBash);
         if (stepStatus !== 'failed' || notRunNames.length === 0) return humanizeToolGroupLabel(names, t, stepStatus);
         const rest = [...names];
         for (const name of notRunNames) rest.splice(rest.indexOf(name), 1);

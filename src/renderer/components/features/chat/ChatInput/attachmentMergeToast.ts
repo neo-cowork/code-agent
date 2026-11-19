@@ -1,21 +1,15 @@
-import { UI } from '@shared/constants';
-import { toast, useToastStore } from '../../../../hooks/useToast';
+import { toast } from '../../../../hooks/useToast';
+import { useComposerAttachmentLimitStore } from '../../../../stores/composerAttachmentLimitStore';
 import type { AttachmentMergeResult } from './attachmentDedupe';
 
 interface AttachmentMergeCopy {
   attachmentAlreadyAdded: string;
   attachmentAlreadyAddedMany: string;
-  attachmentLimitReached: string;
-  attachmentLimitReachedNone: string;
 }
 
-// 同一时刻最多一条「附件已满」提示：新的出现前先撤掉旧的，旧数字不会和新数字并存。
-let limitToastId: string | null = null;
-
+// 「附件已满」不再走全局 toast（fixed 悬浮层会盖住输入框），改写输入框上方的单槽提示。
 export function dismissAttachmentLimitToast(): void {
-  if (limitToastId === null) return;
-  useToastStore.getState().removeToast(limitToastId);
-  limitToastId = null;
+  useComposerAttachmentLimitStore.getState().clear();
 }
 
 export function notifyAttachmentMerge(
@@ -31,15 +25,11 @@ export function notifyAttachmentMerge(
     );
   }
   if (result.overflowCount > 0) {
-    const template = result.addedCount > 0 ? copy.attachmentLimitReached : copy.attachmentLimitReachedNone;
-    dismissAttachmentLimitToast();
-    limitToastId = toast.show(
-      'warning',
-      template
-        .replace('{added}', String(result.addedCount))
-        .replace('{dropped}', String(result.overflowCount))
-        .replace('{max}', String(result.cap)),
-      UI.TOAST_PERSISTENT_DURATION,
-    );
+    useComposerAttachmentLimitStore.getState().show({
+      added: result.addedCount,
+      dropped: result.overflowCount,
+      max: result.cap,
+      kind: result.addedCount > 0 ? 'partial' : 'none',
+    });
   }
 }

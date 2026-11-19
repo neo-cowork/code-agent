@@ -66,6 +66,7 @@ import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
 import type { ComposerDraftSendOutcome } from './composerDraftStore';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
+import { dismissAttachmentLimitToast } from './attachmentMergeToast';
 import { useStepLimitContinue } from '../StepLimitContinue';
 
 type VoiceInputContextValue = {
@@ -742,6 +743,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       setVoiceInputContext(null);
       setAttachments([]);
       useComposerRejectedUploadsStore.getState().clear();
+      dismissAttachmentLimitToast();
       setPendingPromptCommand(null);
       setPendingAgentSelection(null);
       if (typeof setSessionReferences === 'function') setSessionReferences([]);

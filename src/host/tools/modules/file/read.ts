@@ -11,7 +11,8 @@
 //   * file_path 内嵌参数兼容（"file offset=N limit=N" / "file lines 7-9" 等）
 //   * 每行 6 位对齐行号（cat -n 风格），超长行截断到 2000 字符
 //   * endLine < 总行数时 fail-loud：已读行数、未读行数、下一次 offset，并以 "... (N more lines)" 收尾
-//   * 二进制格式（xlsx/xls/docx/pdf/pptx）重定向到专用工具
+//   * 二进制格式：xlsx/docx/pdf 重定向到专用工具；图片/压缩包/音视频/wasm/
+//     数据库/原生库返回短拒绝（见 binaryNotText.ts，不解码）
 //   * fileReadTracker.recordRead 记录（mtime + size，供 Edit 做外改检测）
 //   * dataFingerprintStore.recordFact 提取文件指纹
 //   * ENOENT 明确错误码
