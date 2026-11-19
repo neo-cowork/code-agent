@@ -320,7 +320,7 @@ describe('SurfaceExecutionConversationPanel', () => {
           expect(bar.querySelector('.animate-spin')).toBeNull();
         }
         if (state === 'completed') expect(text).toContain(language === 'zh' ? '浏览器 · 已结束' : 'Browser · Ended');
-        if (state === 'failed') expect(text).toContain(language === 'zh' ? '浏览器 · 已失败' : 'Browser · Failed');
+        if (state === 'failed') expect(text).toContain(language === 'zh' ? '浏览器 · 已失败' : "Browser · Didn't finish");
         if (state === 'paused') expect(text).toContain(language === 'zh' ? '浏览器 · 已暂停' : 'Browser · Paused');
         view.unmount();
       }

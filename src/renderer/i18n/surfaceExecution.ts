@@ -497,7 +497,7 @@ const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
     outputKind: { artifact: 'Artifact', file: 'File', download: 'Download', trace: 'Execution record' },
   },
   takeover: { title: 'Your action is needed', description: 'Neo released input control. Resume when you are done.', waitingTitle: 'Neo is waiting for you', stoppedTitle: 'Neo stopped and is waiting for you', done: 'Done' },
-  compact: { active: 'Working on {target}', completed: 'Ended', failed: 'Failed', paused: 'Paused', open: 'View the live browser scene in the sidebar' },
+  compact: { active: 'Working on {target}', completed: 'Ended', failed: "Didn't finish", paused: 'Paused', open: 'View the live browser scene in the sidebar' },
   terminal: {
     badge: 'Ended',
     frameAlt: 'The last frame before Neo finished',
