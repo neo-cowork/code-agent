@@ -53,6 +53,7 @@ function toBasename(path: string): string {
 
 function plainProse(text: string): string {
   const kept: string[] = [];
+  const headings: string[] = [];
   let inFence = false;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
@@ -60,7 +61,7 @@ function plainProse(text: string): string {
     if (inFence || !line) continue;
     if (line.startsWith('|') || (line.match(/\|/g)?.length ?? 0) >= 2) continue;
     if (/^[-=_*:|\s]{3,}$/.test(line)) continue;
-    kept.push(
+    (/^#{1,6}\s/.test(line) ? headings : kept).push(
       line
         .replace(/^(?:#{1,6}\s+|>+\s*|[-*+]\s+|\d+[.)]\s+)+/, '')
         .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -70,7 +71,8 @@ function plainProse(text: string): string {
         .trim(),
     );
   }
-  return kept.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  // 标题只是栏目名，不是句子：有正文时不拼进摘要，没有正文才退而用标题
+  return (kept.some(Boolean) ? kept : headings).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 }
 
 /**
