@@ -362,4 +362,32 @@ describe('NativeConnectorsSection diagnostic presentation', () => {
     expect(screen.getByText('Reminders')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/id:\s*(calendar|mail|reminders)/i);
   });
+
+  for (const language of ['zh', 'en'] as const) {
+    it(`list checkbox shows a state word and an opposite action aria-label in ${language}`, async () => {
+      testLocale.value = language;
+      mockInvokeDomain.mockImplementation((_domain: string, action: string) => {
+        if (action === 'listNativeInventory') {
+          return Promise.resolve([
+            { id: 'calendar', label: 'Calendar', enabled: true },
+            { id: 'mail', label: 'Mail', enabled: false },
+          ]);
+        }
+        if (action === 'listStatuses') return Promise.resolve(diagnosticStatuses);
+        return Promise.resolve(undefined);
+      });
+      const t = (language === 'zh' ? zh : en).settings.nativeConnectors;
+      render(React.createElement(NativeConnectorsSection));
+
+      await screen.findByText(t.grid.labels.calendar);
+      const boxes = screen.getAllByRole('checkbox');
+      const off = boxes.find((b) => !(b as HTMLInputElement).checked) as HTMLInputElement;
+      const on = boxes.find((b) => (b as HTMLInputElement).checked) as HTMLInputElement;
+      expect(off.closest('label')?.querySelector('span')?.textContent).toBe(t.disabled);
+      expect(on.closest('label')?.querySelector('span')?.textContent).toBe(t.enabled);
+      expect(off.getAttribute('aria-label')).toBe(`${t.enableAction} ${t.grid.labels.mail}`);
+      expect(on.getAttribute('aria-label')).toBe(`${t.disableAction} ${t.grid.labels.calendar}`);
+      expect(t.enabled).not.toBe(t.enableAction);
+    });
+  }
 });
