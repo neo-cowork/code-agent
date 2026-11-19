@@ -93,7 +93,8 @@ export const ConversationSettings: React.FC = () => {
     const modelId = compressionState.compactModel.model || compressionState.config.compactModel;
     const found = selectedProvider?.models.find((m) => m.id === modelId);
     const raw = found?.label || modelId || conversationText.notSet;
-    return found?.label ? localizeModelLabel(modelId, found.label, language) : raw;
+    if (!found?.label || !modelId) return raw;
+    return localizeModelLabel(modelId, found.label, language);
   }, [compressionState.compactModel.model, compressionState.config.compactModel, conversationText.notSet, language, selectedProvider]);
 
   useEffect(() => {
