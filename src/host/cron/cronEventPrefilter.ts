@@ -19,7 +19,7 @@ export type CronPrefilterOutcome =
   | { kind: 'judged'; rejected: Map<string, string> }
   | { kind: 'unavailable'; cause: string };
 
-export function buildPrefilterPrompt(sentence: string, wrappedEvents: string, eventIds: readonly string[]): string {
+function buildPrefilterPrompt(sentence: string, wrappedEvents: string, eventIds: readonly string[]): string {
   return [
     '你是事件预筛器。判断下面每条事件是否符合用户给出的一句话条件。',
     `用户条件（可信）：${sentence}`,

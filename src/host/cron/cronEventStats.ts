@@ -8,7 +8,7 @@
 import type { CronEventStats } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 
-export type CronEventStatsDelta = Partial<CronEventStats>;
+type CronEventStatsDelta = Partial<CronEventStats>;
 
 export interface CronEventStatsStore {
   bump(jobId: string, delta: CronEventStatsDelta, now: number): void;
