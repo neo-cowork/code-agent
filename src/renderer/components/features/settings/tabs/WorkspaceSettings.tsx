@@ -42,6 +42,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
+import { MissingWorkspaceDirectoryNotice } from './MissingWorkspaceDirectoryNotice';
 import { WorkspaceDirectorySummaryCard } from './WorkspaceDirectorySummaryCard';
 import {
   BROWSER_OPTIONS,
@@ -295,19 +296,25 @@ export const WorkspaceSettings: React.FC = () => {
             ))}
           </div>
           {displayedCurrentDir && (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
-              <Folder className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="flex-1 truncate font-mono" title={displayedCurrentDir}>{displayedCurrentDir}</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={isWebMode()}
-                onClick={() => handleReveal(displayedCurrentDir)}
-                leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
-              >
-                {workspaceText.actions.revealInFinder}
-              </Button>
-            </div>
+            <>
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400">
+                <Folder className="h-3.5 w-3.5 text-zinc-500" />
+                <span className="flex-1 truncate font-mono" title={displayedCurrentDir}>{displayedCurrentDir}</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={isWebMode()}
+                  onClick={() => handleReveal(displayedCurrentDir)}
+                  leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
+                >
+                  {workspaceText.actions.revealInFinder}
+                </Button>
+              </div>
+              <MissingWorkspaceDirectoryNotice
+                dir={displayedCurrentDir}
+                onReselect={() => { void handlePickDirectory(); }}
+              />
+            </>
           )}
 
           <div className="border-t border-zinc-700/60 px-3 py-3">
