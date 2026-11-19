@@ -1114,8 +1114,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   }, [hasOlderMessages, isLoadingOlder, t]);
 
   // Footer 只保留呼吸间距；待决权限在 DecisionSlot，已决结果归属到对应工具步骤旁。
+  // 高度另吃 --toast-reserve（ToastContainer 发布，无 toast 时 0px）：toast 显示期间
+  // 把末条消息的操作行顶到 toast 上缘之上，不被底部居中的全局 toast 盖住。
   const Footer = useCallback(() => (
-    <div className="h-6" aria-hidden="true" />
+    <div aria-hidden="true" style={{ height: 'calc(1.5rem + var(--toast-reserve, 0px))' }} />
   ), []);
 
   return (

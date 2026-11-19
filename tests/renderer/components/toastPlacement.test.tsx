@@ -1,10 +1,59 @@
 // @vitest-environment jsdom
+// jsdom 没有布局：这里的用例锁「契约」（占位变量发布/清除、Footer 消费、锚定与
+// 点击穿透 class），真实几何（盒子不相交、elementFromPoint）由 web 构建的
+// Playwright 证据页证明（N-FIX-TOAST-COVERS-LAST-MESSAGE-ACTIONS ②）。
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastContainer } from '../../../src/renderer/components/Toast';
 import { SaaSConnectorFeedback } from '../../../src/renderer/components/features/settings/sections/SaaSConnectorFeedback';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
 import { Z_LAYERS } from '../../../src/renderer/styles/zLayers';
+
+vi.mock('react-virtuoso', async () => {
+  const ReactModule = await import('react');
+  return {
+    Virtuoso: ReactModule.forwardRef(function MockVirtuoso(props: Record<string, any>, ref) {
+      ReactModule.useImperativeHandle(ref, () => ({ scrollToIndex: vi.fn() }));
+      const items = props.data.map((turn: any, index: number) => ReactModule.createElement(
+        ReactModule.Fragment,
+        { key: turn.turnId },
+        props.itemContent(props.firstItemIndex + index, turn),
+      ));
+      // Footer 是被测契约的一半（消费 --toast-reserve），mock 里必须真渲染出来。
+      return ReactModule.createElement(
+        'div',
+        { 'data-testid': 'virtuoso-scroller' },
+        ...items,
+        props.components?.Footer ? ReactModule.createElement(props.components.Footer) : null,
+      );
+    }),
+  };
+});
+
+vi.mock('../../../src/renderer/stores/sessionStore', () => {
+  const state = { currentSessionId: 'session-1', sessions: [], messages: [], runningSessionIds: new Set<string>() };
+  const useSessionStore = (selector?: (value: typeof state) => unknown) => (
+    selector ? selector(state) : state
+  );
+  useSessionStore.getState = () => state;
+  return { useSessionStore };
+});
+
+vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
+  useMessageActionStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
+    createForkFromReply: vi.fn(),
+    sendPrompt: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../src/renderer/components/PermissionDialog/PermissionCard', () => ({
+  PermissionCard: () => null,
+}));
+
+import { TurnBasedTraceView } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
+import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+
+const RESERVE = '--toast-reserve';
 
 function expectBottomCenter(element: HTMLElement) {
   expect(element.classList.contains('fixed')).toBe(true);
@@ -18,7 +67,10 @@ function expectBottomCenter(element: HTMLElement) {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   useToastStore.setState({ toasts: [] });
+  document.documentElement.style.removeProperty(RESERVE);
 });
 
 describe('toast placement keeps page-header actions clear', () => {
@@ -49,5 +101,54 @@ describe('toast placement keeps page-header actions clear', () => {
   it.each(['info', 'success'] as const)('anchors connector %s feedback in the same position', (kind) => {
     render(<SaaSConnectorFeedback receipt={{ kind, text: 'Connection updated' }} error={null} />);
     expectBottomCenter(screen.getByTestId('saas-connector-toast'));
+  });
+});
+
+describe('toast reserve contract (toast yields to the chat list)', () => {
+  it('publishes --toast-reserve from real geometry while a toast shows and clears it after removal', () => {
+    vi.stubGlobal('innerHeight', 768);
+    render(<ToastContainer />);
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('0px');
+
+    act(() => {
+      useToastStore.getState().addToast('warning', 'Upload slowed down', 0);
+    });
+    // jsdom 无布局：栈顶/视口高都量不出真值，按实现同源的方式喂确定性几何
+    // （栈顶 600、视口底 768 → 占位 168px）。
+    const container = screen.getByRole('alert').parentElement!;
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({ top: 600 } as DOMRect);
+    act(() => {
+      useToastStore.getState().addToast('error', 'Could not save changes', 0);
+    });
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('168px');
+
+    act(() => {
+      for (const t of useToastStore.getState().toasts) useToastStore.getState().removeToast(t.id);
+    });
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('0px');
+
+    // 卸载也要归零：页面切走不留残余占位
+    act(() => {
+      useToastStore.getState().addToast('info', 'Still here', 0);
+    });
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).not.toBe('0px');
+    cleanup();
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('0px');
+  });
+
+  it('the chat list Footer consumes the reserve on top of its breathing space', () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '帮我总结一下', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '这是总结内容。', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+
+    const scroller = screen.getByTestId('virtuoso-scroller');
+    const footer = scroller.lastElementChild as HTMLElement;
+    expect(footer.getAttribute('aria-hidden')).toBe('true');
+    expect(footer.getAttribute('style')).toContain('calc(1.5rem + var(--toast-reserve, 0px))');
+    // 变量发布后 Footer 不需要 React 参与：同一 DOM 节点的高度表达式由 CSS 解析
+    const other = scroller.querySelector('[data-trace-turn-id]');
+    expect(other).not.toBeNull();
   });
 });

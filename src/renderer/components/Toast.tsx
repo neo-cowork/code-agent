@@ -24,11 +24,41 @@ const COLOR_MAP: Record<ToastType, string> = {
 
 export const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useToastStore();
+  const stackRef = React.useRef<HTMLDivElement | null>(null);
+
+  // 底部居中的全局 toast 会盖住会话列表末条消息的操作行（复制/重试）。与其每个
+  // 页面自己躲，不如把占位发布成根节点上的 CSS 变量 --toast-reserve：值取真实
+  // 几何「栈顶到视口底的距离」（含 bottom-32 锚定偏移，即可能压到内容的整条带），
+  // 消费方（TurnBasedTraceView 的列表 Footer）用它把内容顶到 toast 上缘之上；
+  // 无 toast / 卸载时归零，其他页面不受影响。
+  const publishReserve = React.useCallback(() => {
+    const stack = stackRef.current;
+    const reserve = stack
+      ? Math.max(0, window.innerHeight - stack.getBoundingClientRect().top)
+      : 0;
+    document.documentElement.style.setProperty('--toast-reserve', `${reserve}px`);
+  }, []);
+
+  // 每次 render 后重测（增删 toast 都会 render）；栈高变化（多条/换行）不一定
+  // 伴随 render，用 ResizeObserver 追帧。jsdom 没有这个 API 也没有布局，跳过——
+  // 契约由 renderer 测试锁字符串，几何由真浏览器证据证明。
+  React.useLayoutEffect(publishReserve);
+  React.useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const stack = stackRef.current;
+    if (!stack) return;
+    const observer = new ResizeObserver(() => publishReserve());
+    observer.observe(stack);
+    return () => observer.disconnect();
+  });
+  React.useEffect(() => () => {
+    document.documentElement.style.setProperty('--toast-reserve', '0px');
+  }, []);
 
   if (toasts.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-32 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-sm" style={{ zIndex: Z_LAYERS.toast }}>
+    <div ref={stackRef} className="pointer-events-none fixed bottom-32 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-sm" style={{ zIndex: Z_LAYERS.toast }}>
       {toasts.map((t) => (
         <div
           key={t.id}
