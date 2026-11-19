@@ -76,6 +76,8 @@ export interface SessionCreateOptions {
 	  sourceRunId?: string;
 	  engine?: Session['engine'];
 	  metadata?: Session['metadata'];
+	  /** Explicit space ownership. Unknown, deleted, and archived ids throw. */
+	  projectId?: string;
 	  readOnly?: boolean;
   retryOfSessionId?: string;
   userId?: string | null; memoryMode?: Session['memoryMode'];
@@ -231,12 +233,8 @@ export class SessionManager implements Disposable {
     // transaction as the session row. Resolve that boundary before creation so
     // a later Project assignment cannot invalidate the first message append.
     try {
-      const { getProjectService } = await import('../project/projectService');
-      const project = await getProjectService().ensureProjectForWorkspace(
-        session.workingDirectory,
-        now,
-      );
-      session.projectId = project.id;
+      const { applySessionProjectOnCreate } = await import('./explicitSessionProject');
+      await applySessionProjectOnCreate(session, options.projectId, now);
     } catch (err) {
       logger.error(
         '[SessionManager] 会话 Project 边界解析失败，已在写入前中止:',
