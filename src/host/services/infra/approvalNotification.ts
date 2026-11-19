@@ -4,7 +4,7 @@ import { getConfigService } from '../core/configService';
 /** Resolve approval-banner language once for every host producer and native fallback. */
 export function buildApprovalNotification(
   tool?: string,
-  context: 'approval' | 'parked' | 'native' = 'approval',
+  context: 'approval' | 'parked' = 'approval',
 ): { title: string; body: string } {
   let locale: 'zh' | 'en' = 'zh';
   try {
