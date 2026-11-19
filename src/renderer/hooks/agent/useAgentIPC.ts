@@ -54,7 +54,7 @@ import {
   claimSendInflight,
   type ChatSendDelivery,
 } from '../../utils/chatSendState';
-import { isProjectSourceTrustFailure, isSessionConflictFailure } from '../../utils/httpFailureMessage';
+import { isProjectSourceTrustFailure, isSessionConflictFailure, projectSourceTrustFieldsOf } from '../../utils/httpFailureMessage';
 import {
   buildSendFailureRetryAnchor,
   markOptimisticUserSendFailed,
@@ -712,6 +712,7 @@ export function useAgentIPC({
         const retryAnchor = buildSendFailureRetryAnchor(userMessage, effectiveSessionId);
         // 所有未进 host 运行期的被拒发送都打稳定标记供轮头/红色恢复条让位；
         // PROJECT_SOURCE_TRUST 保留专属码供气泡挂「确认并重发」入口。
+        const trustFields = projectSourceTrustFieldsOf(sendFailure);
         const sendFailureCode = isProjectSourceTrustFailure(sendFailure)
           ? 'PROJECT_SOURCE_TRUST'
           : isSessionConflictFailure(sendFailure)
@@ -727,18 +728,26 @@ export function useAgentIPC({
           timestamp: Date.now(),
           // 失败用户气泡留在时间线上；错误卡「重试」仍锚到失败那条并带原
           // clientMessageId。纯附件消息 content 为空，锚点不能按文本判。
-          metadata: { ...retryAnchor, sendFailureCode },
+          metadata: {
+            ...retryAnchor,
+            sendFailureCode,
+            ...(trustFields?.kind ? { sendFailureKind: trustFields.kind } : {}),
+            ...(trustFields?.folderName ? { sendFailureFolderName: trustFields.folderName } : {}),
+          },
         };
         if (effectiveSessionId) recordFailedSend(effectiveSessionId, userMessage, errorMessage);
         if (useSessionStore.getState().currentSessionId === effectiveSessionId) addMessage(errorMessage);
         // 按会话清除处理状态
         setSessionProcessing(effectiveSessionId!, false);
         // taskStore 也必须重置，否则会话永远卡在 'running'：
-        // 后续消息全部进入"运行中排队"分支但没有 run 去消费，表现为永远不回复
-        useTaskStore.getState().updateSessionState(effectiveSessionId!, {
-          status: 'error',
-          error: String(sendFailure),
-        });
+        // 后续消息全部进入"运行中排队"分支但没有 run 去消费，表现为永远不回复。
+        // 文件夹已不存在不是运行错误：恢复发送前的状态，侧栏不打出错徽章、不计入未完成。
+        useTaskStore.getState().updateSessionState(
+          effectiveSessionId!,
+          trustFields?.kind === 'source_missing'
+            ? (previousTaskState ?? { status: 'idle' })
+            : { status: 'error', error: String(sendFailure) },
+        );
         return { outcome: 'failed' as const };
       }
       return { outcome: 'sent' as const };
