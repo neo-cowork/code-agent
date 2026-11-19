@@ -62,6 +62,13 @@ describe('mergeEmptyCollaborationSpaces', () => {
     expect(merged.filter((group) => group.projectId === 'proj_loaded')).toHaveLength(1);
   });
 
+  it('does not add empty spaces while a search or status filter is active', () => {
+    const groups = groupByWorkspace([session({ id: 'hit', projectId: 'proj_hit', workingDirectory: '/a' })], '快速对话', '项目');
+    const spaces = [space({ id: 'proj_empty' })];
+    expect(mergeEmptyCollaborationSpaces(groups, spaces, true).some((g) => g.projectId === 'proj_empty')).toBe(false);
+    expect(mergeEmptyCollaborationSpaces(groups, spaces, false).some((g) => g.projectId === 'proj_empty')).toBe(true);
+  });
+
   it('keeps the uncategorized bucket last', () => {
     const groups = groupByWorkspace(
       [session({ id: 'chat-1', projectId: 'proj_unsorted', workingDirectory: undefined, updatedAt: 100 })],

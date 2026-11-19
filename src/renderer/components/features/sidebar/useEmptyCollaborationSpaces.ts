@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ProjectWithActivity } from '@shared/contract/project';
 import { listProjectsWithActivity } from '../../../services/projectClient';
 import { subscribeProjectSpaceList } from '../../../services/projectSpaceListEvents';
@@ -17,6 +17,13 @@ export interface EmptyCollaborationSpaces {
 export function useEmptyCollaborationSpaces(): EmptyCollaborationSpaces {
   const [spaces, setSpaces] = useState<ProjectWithActivity[]>([]);
   const [revision, setRevision] = useState(0);
+  // 可见会话被删/归档/换登录身份后，目录里的 visibleSessionCount 就过期了：
+  // 会话 id + 归档态变化时重拉，让最后一条会话消失的空间回到空组。
+  const sessions = useSessionStore((state) => state.sessions);
+  const sessionsKey = useMemo(
+    () => (Array.isArray(sessions) ? sessions.map((s) => `${s.id}:${s.isArchived ? 1 : 0}`).join('|') : ''),
+    [sessions],
+  );
 
   const reload = useCallback(async () => {
     try {
@@ -34,6 +41,9 @@ export function useEmptyCollaborationSpaces(): EmptyCollaborationSpaces {
 
   useEffect(() => {
     void reload();
+  }, [reload, sessionsKey]);
+
+  useEffect(() => {
     return subscribeProjectSpaceList((change) => {
       setRevision((current) => current + 1);
       void reload();

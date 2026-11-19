@@ -518,8 +518,12 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [backgroundSessionMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates, t],
   );
   const groupedWithEmptySpaces = useMemo(
-    () => mergeEmptyCollaborationSpaces(sessionGroupedWorkspaces, collaborationSpaces),
-    [collaborationSpaces, sessionGroupedWorkspaces],
+    () => mergeEmptyCollaborationSpaces(
+      sessionGroupedWorkspaces,
+      collaborationSpaces,
+      searchQuery.trim() !== '' || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter,
+    ),
+    [collaborationSpaces, hasActiveTrajectoryFilter, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
   );
   // 归档过滤之前取 id：详情回来把空间标成 archived 后组会从展示列表消失，
   // 若这里跟着消失，effect 会清掉 meta，组又出现，来回闪。

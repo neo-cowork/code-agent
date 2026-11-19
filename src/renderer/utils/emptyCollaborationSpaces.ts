@@ -8,7 +8,10 @@ import { getSidebarGroupKeyForSession, type WorkspaceGroup } from './workspaceGr
 export function mergeEmptyCollaborationSpaces(
   groups: readonly WorkspaceGroup[],
   spaces: readonly ProjectWithActivity[],
+  /** 搜索/状态/轨迹筛选生效时，没有会话的空间不可能命中，不并入。 */
+  isFiltering = false,
 ): WorkspaceGroup[] {
+  if (isFiltering) return groups as WorkspaceGroup[];
   const occupied = new Set(
     groups
       .map((group) => group.projectId?.trim())
