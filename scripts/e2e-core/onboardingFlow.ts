@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,10 +20,28 @@ function realrunBin(): string {
   return process.env.NEO_REALRUN_BIN?.trim() || path.join(os.homedir(), 'work/fleet-console/mini/bin/neo-realrun.mjs');
 }
 
-function realrun(server: ServerInfo, cmd: 'kill9' | 'restart', env?: NodeJS.ProcessEnv): void {
-  execFileSync(process.execPath, [realrunBin(), cmd, '--out', server.dir], {
-    env: env ? { ...process.env, ...env } : process.env,
-    timeout: 300_000, stdio: ['ignore', 'pipe', 'pipe'],
+// kill9 对服务进程组发 SIGKILL。同组里用 execFileSync 调它时，信号会把 runner 一起打死（退出码 137）。
+// 把这次调用放进独立进程组，和 server.ts 的 runRealrunDetached 同一办法。
+function realrun(server: ServerInfo, cmd: 'kill9' | 'restart', env?: NodeJS.ProcessEnv): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [realrunBin(), cmd, '--out', server.dir], {
+      env: env ? { ...process.env, ...env } : process.env,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout?.on('data', (d) => { out += String(d); });
+    child.stderr?.on('data', (d) => { out += String(d); });
+    const timer = setTimeout(() => {
+      try { process.kill(-child.pid!, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+      reject(new Error(`neo-realrun ${cmd} 超时\n${out}`));
+    }, 300_000);
+    child.on('error', (err) => { clearTimeout(timer); reject(err); });
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(`neo-realrun ${cmd} 退出码 ${code}\n${out}`));
+    });
   });
 }
 
@@ -41,15 +59,15 @@ function relayConfig(server: ServerInfo): { baseUrl: string; apiKey: string; mod
 async function prepare(server: ServerInfo): Promise<void> {
   // 停服务 → 带首启强制钩子重启；重启时 writeConfig 重写 config.json，settings（含 onboarding）清零。
   // kill9 而不是 stop：stop 等 SIGTERM 收尾，超时后进程可能还活着，restart 会拒绝启动
-  realrun(server, 'kill9');
-  realrun(server, 'restart', { [FORCE_ENV]: String(Date.now()) });
+  await realrun(server, 'kill9');
+  await realrun(server, 'restart', { [FORCE_ENV]: String(Date.now()) });
 }
 
 async function cleanup(server: ServerInfo): Promise<void> {
   // 摘掉钩子再重启一次：后面的流程/下一轮跑批不能看到首启引导
   delete process.env[FORCE_ENV];
-  realrun(server, 'kill9');
-  realrun(server, 'restart');
+  await realrun(server, 'kill9');
+  await realrun(server, 'restart');
 }
 
 export const f18: FlowDef = {
