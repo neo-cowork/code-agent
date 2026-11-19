@@ -61,6 +61,15 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
 const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
 const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
 
+// 非交付轮的表格阅读/改写：ExcelAutomate 只作为意图附加项进面，其他轮次的 schema 字节不变。
+// 生成轮仍走上面的 excel_generate + DocEdit，不把自动化工具塞进交付卡。
+const SPREADSHEET_TOKEN_RE = /\.xlsx\b|\.xls\b|\bspreadsheet\b|工作簿|工作表|\bexcel\b/i;
+const SPREADSHEET_USE_VERB_RE = /说明|解释|讲了|讲什么|看看|看一下|看下|读一下|读取|总结|打开|内容|summarize|explain|describe|read\b|look at|改写|改一下|修改|重写|公式|rewrite|edit\b/i;
+
+function isSpreadsheetReadOrRevisePrompt(prompt: string): boolean {
+  return SPREADSHEET_TOKEN_RE.test(prompt) && SPREADSHEET_USE_VERB_RE.test(prompt);
+}
+
 // 句首才算存草稿指令。晨报正文或句子中间出现这几个字不能把 mail_draft 送上轮。
 // 允许的前缀只是客气话（请 / 麻烦 / 帮我 / 你好 / please），不是任意前文。
 const SAVE_DRAFT_POLITE_RE = '(?:请帮我|麻烦你|请你|劳驾|拜托|您好|你好|please|kindly|请|麻烦|帮我)';
@@ -181,6 +190,8 @@ export function getTextForegroundToolNamesForPrompt(
   if (features.isOneTurnFileDeliverable) {
     if (OFFICE_DOC_DELIVERABLE_RE.test(prompt)) extras.push('docx_generate');
     if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
+  } else if (isSpreadsheetReadOrRevisePrompt(prompt)) {
+    extras.push('ExcelAutomate');
   }
   if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
   // 角色主动性写入必须留在用户亲自参与的前台轮次，并继续走工具内 force-confirm。

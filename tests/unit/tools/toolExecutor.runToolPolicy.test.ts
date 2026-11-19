@@ -19,6 +19,10 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
 
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { getDecisionHistory } from '../../../src/host/security/decisionHistory';
+import {
+  BACKGROUND_HANDOFF_SENTENCE,
+  BACKGROUND_HANDOFF_SENTENCE_EN,
+} from '../../../src/host/services/commandCenter/delegationGuidance';
 
 describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () => {
   beforeEach(() => {
@@ -167,5 +171,58 @@ describe('ToolExecutor run tool policy gate (--tools/--disallowed-tools)', () =>
     expect(latest?.toolName).toBe('Bash');
     expect(latest?.outcome).toBe('policy-deny');
     expect(latest?.reason).toContain('run tool policy');
+  });
+
+  it('前台可交接时拒绝文案只有交接句，不点工具名', async () => {
+    const executor = new ToolExecutor({
+      requestPermission: async () => true,
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const result = await executor.execute('Bash', { command: 'osascript' }, {
+      sessionId: 's-foreground',
+      allowedToolNames: ['Read', 'delegate_task'],
+      foregroundToolFace: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect([BACKGROUND_HANDOFF_SENTENCE, BACKGROUND_HANDOFF_SENTENCE_EN]).toContain(result.error);
+    expect(result.error).not.toMatch(/Bash|disabled|permission policy|tool list/i);
+    expect(result.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN', bounced: true });
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
+  it('前台 ExcelAutomate 的读操作放行，非读和缺 action 在执行层打回', async () => {
+    resolverState.getDefinition.mockReturnValue({
+      name: 'ExcelAutomate',
+      description: 'excel',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      requiresPermission: false,
+      permissionLevel: 'write',
+    });
+    const executor = new ToolExecutor({
+      requestPermission: async () => true,
+      workingDirectory: '/tmp/workbench',
+    });
+    const face = {
+      sessionId: 's-excel',
+      allowedToolNames: ['ExcelAutomate', 'delegate_task', 'Read'],
+      foregroundToolFace: true,
+    };
+
+    const read = await executor.execute('ExcelAutomate', { action: 'list_sheets', file_path: '/tmp/a.xlsx' }, face);
+    expect(read.success).toBe(true);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+
+    const edit = await executor.execute('ExcelAutomate', { action: 'edit', file_path: '/tmp/a.xlsx' }, face);
+    expect(edit.success).toBe(false);
+    expect(edit.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    expect([BACKGROUND_HANDOFF_SENTENCE, BACKGROUND_HANDOFF_SENTENCE_EN]).toContain(edit.error);
+    expect(edit.error).not.toMatch(/ExcelAutomate|disabled|permission policy/i);
+
+    const missing = await executor.execute('ExcelAutomate', { file_path: '/tmp/a.xlsx' }, face);
+    expect(missing.success).toBe(false);
+    expect(missing.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 });
