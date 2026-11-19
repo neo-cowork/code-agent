@@ -28,9 +28,11 @@ vi.mock('../../../src/renderer/stores/appStore', async (importOriginal) => {
 
 import {
   MemoryConsolidationSection,
+} from '../../../src/renderer/components/features/settings/tabs/MemoryConsolidationSection';
+import {
   buildTidyPreviewSentence,
   buildTidyRunSummary,
-} from '../../../src/renderer/components/features/settings/tabs/MemoryConsolidationSection';
+} from '../../../src/renderer/components/features/settings/tabs/MemoryTidyHistory.helpers';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const copy = zh.settings.memoryTidy;

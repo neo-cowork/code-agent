@@ -351,8 +351,8 @@ export interface MemoryTidyRestoreRequest {
   auditId: string;
 }
 
-/** 恢复被拒绝的原因 code（稳定 code，renderer 翻译；不往 UI 抛异常）。 */
-export type MemoryTidyRestoreRefusal =
+/** 恢复被拒绝的原因 code（稳定 code，renderer 翻译；不往 UI 抛异常；仅本文件 MemoryTidyRestoreResult 引用）。 */
+type MemoryTidyRestoreRefusal =
   | 'run-not-found'
   | 'not-applied'
   | 'already-restored'
