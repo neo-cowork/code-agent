@@ -64,7 +64,7 @@ describe('findReusableNewSessionDraft', () => {
 
 describe('explicit space draft reuse', () => {
   it('reuses a blank draft only when the requested space id matches', () => {
-    const draft = session({ id: 'space-draft', projectId: 'proj_space', workingDirectory: null });
+    const draft = session({ id: 'space-draft', projectId: 'proj_space', workingDirectory: undefined });
     const params = {
       sessions: [draft],
       currentSessionId: draft.id,

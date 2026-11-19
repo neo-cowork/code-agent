@@ -64,7 +64,7 @@ describe('mergeEmptyCollaborationSpaces', () => {
 
   it('keeps the uncategorized bucket last', () => {
     const groups = groupByWorkspace(
-      [session({ id: 'chat-1', projectId: 'proj_unsorted', workingDirectory: null, updatedAt: 100 })],
+      [session({ id: 'chat-1', projectId: 'proj_unsorted', workingDirectory: undefined, updatedAt: 100 })],
       '快速对话',
       '项目',
     );

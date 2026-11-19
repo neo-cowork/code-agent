@@ -147,6 +147,7 @@ const projectFixture = {
   createdAt: 1,
   updatedAt: 2,
   activeTopicCount: 3,
+  visibleSessionCount: 3,
   lastActivityAt: Date.now() - 5 * 60_000,
 };
 

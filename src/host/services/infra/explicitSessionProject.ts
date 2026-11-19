@@ -6,7 +6,7 @@ import {
 import { getProjectService } from '../project/projectService';
 
 /** 显式 projectId 必须指向仍可用的项目。缺失、已删除、已归档都拒绝，不回落到未分类。 */
-export function resolveExplicitSessionProject(projectId: string): { id: string } {
+function resolveExplicitSessionProject(projectId: string): { id: string } {
   const detail = getProjectService().getProjectDetail(projectId);
   if (!detail || detail.project.status === 'archived') {
     throw new Error(SESSION_PROJECT_UNAVAILABLE);
@@ -14,7 +14,7 @@ export function resolveExplicitSessionProject(projectId: string): { id: string }
   return { id: detail.project.id };
 }
 
-export function pinSessionProjectMetadata(metadata: Session['metadata'] | undefined): Session['metadata'] {
+function pinSessionProjectMetadata(metadata: Session['metadata'] | undefined): Session['metadata'] {
   return {
     ...(metadata ?? {}),
     [SESSION_PROJECT_PINNED_METADATA_KEY]: true,
