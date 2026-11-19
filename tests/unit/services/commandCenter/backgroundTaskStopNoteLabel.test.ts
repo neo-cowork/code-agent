@@ -60,7 +60,7 @@ vi.mock('../../../../src/host/task/TaskManager', () => ({
 import { recordBackgroundTaskStopNote } from '../../../../src/host/services/commandCenter/backgroundTaskStopNote';
 import { projectTerminalResult } from '../../../../src/host/services/commandCenter/terminalResultProjection';
 import type { SessionCommandTask } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
-import type { WorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
 
 function makeTask(overrides: Partial<SessionCommandTask> = {}): SessionCommandTask {
   return {
@@ -71,7 +71,7 @@ function makeTask(overrides: Partial<SessionCommandTask> = {}): SessionCommandTa
     laneKey: 'lane-a',
     submissionKey: 'sub-a',
     prompt: 'do it',
-    workspaceScope: {} as WorkspaceScope,
+    workspaceScope: createWorkspaceScope('p', [{ sourceId: 's', path: '/tmp', role: 'primary', access: 'read_write' }]),
     status: 'cancelled',
     attempt: 1,
     createdAt: 1,
