@@ -42,6 +42,7 @@ import { CronResultChannelField } from './CronResultChannel';
 import { CronRunBudgetField } from './CronRunBudgetField';
 import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
+import { CronEventLimitFields } from './CronEventLimitFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
 import { CronTemplateRoleField } from './CronTemplateRoleField';
@@ -795,6 +796,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   // 与通道分支同一道显示闸门：光选「新邮件」不填不挨红框（r2 口径）。
                   violation={eventValidationArmed ? eventViolation : null}
+                />
+              )}
+
+              {isEventScheduleKind(draft.scheduleType) && (
+                <CronEventLimitFields
+                  prefilter={draft.eventPrefilter}
+                  maxRunsPerHour={draft.eventMaxRunsPerHour}
+                  onPrefilterChange={(value) => setEventField('eventPrefilter', value)}
+                  onMaxRunsPerHourChange={(value) => setEventField('eventMaxRunsPerHour', value)}
                 />
               )}
             </div>

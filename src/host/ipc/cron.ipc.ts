@@ -3,6 +3,7 @@ import { normalizePersonalSkillIds } from '../../shared/cronPersonalSkills';
 // Cron IPC Handlers
 // ============================================================================
 
+import { loadCronEventStats } from '../cron/cronEventStats';
 import { ipcHost } from '../platform';
 import type { IPCResponse } from '../../shared/ipc';
 import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
@@ -341,6 +342,11 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     if (!jobId) throw new Error('Invalid cron job id');
     const limit = getNumberField(payload, 'limit');
     return { success: true, data: getCronService().getEventDecisions(jobId, limit) } satisfies IPCResponse;
+  },
+  getEventStats: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: loadCronEventStats(jobId) } satisfies IPCResponse;
   },
   getEventActionModeChange: async (_ctx, payload) => {
     const jobId = getStringField(payload, 'jobId');
