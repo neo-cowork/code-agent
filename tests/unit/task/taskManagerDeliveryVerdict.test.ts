@@ -411,7 +411,8 @@ describe('TaskManager background delivery verdict', () => {
       expect(row.metadata?.backgroundTaskResult?.status).toBe('cancelled');
       expect(projected).toContain(status);
       expect(projected).toContain(sentence);
-      expect(projected).not.toContain('写入操作被拒绝');
+      expect(projected).not.toContain('chmod');
+      expect(projected).not.toContain('已被用户拒绝');
       center.dispose();
     }
     configState.language = 'zh';
