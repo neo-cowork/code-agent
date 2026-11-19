@@ -345,6 +345,8 @@ export interface MemoryPackRequest {
   maxItems?: number;
   perItemCharLimit?: number;
   totalCharBudget?: number;
+  /** 有可用 query token 时，只保留带 query-match 的候选（自动注入用；默认关，memoryPack IPC 不变）。 */
+  requireQueryMatch?: boolean;
 }
 
 export interface PackedMemoryItem {
