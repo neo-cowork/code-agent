@@ -47,7 +47,7 @@ const GENERIC_FALLBACK = {
  * 且加了名字的门禁评审要能看到这条注释。
  *
  * 本单（2026-11-19）只收口了 ListDirectory（分类表漏注册名）与六个 Office 文档工具；
- * 其余 59 个存量名按家族分组列在下面，逐个配句走后续单。
+ * 返修 r1 又收口 Blob（用户路径实测落兜底）。其余 58 个存量名按家族分组列在下面，逐个配句走后续单。
  */
 const FALLBACK_ALLOWLIST = new Set<string>([
   // ── Office 邻接、按任务书逐个决策后留在兜底的四个 ──
@@ -64,7 +64,9 @@ const FALLBACK_ALLOWLIST = new Set<string>([
   // 有自己的预览面与成套文案，配句走整家族的单子。
   'ProposeSlidesOps', 'ProposeCanvasOps', 'ProposeVideoOps', 'ProposeProjectMemory',
   // ── 其余存量：尚未配步骤句的注册名（本单不动）──
-  'Append', 'attempt_completion', 'Blob', 'calendar', 'collect_agent', 'confirm_action',
+  // Blob 已配句（read_text/read_base64 → read 句、stat → 「文件信息」句）——收录器返修 r1
+  // （2026-11-19）：Blob 在本单用户路径上出现过，不允许留兜底，已从名单移除。
+  'Append', 'attempt_completion', 'calendar', 'collect_agent', 'confirm_action',
   'decide', 'declare_deliverables', 'diagnostics', 'enter_plan_mode', 'EpisodicRecall',
   'exit_plan_mode', 'exit_role_flow', 'ExternalSearch', 'git_commit', 'git_diff',
   'git_worktree', 'github_pr', 'History', 'image_analyze', 'jira',

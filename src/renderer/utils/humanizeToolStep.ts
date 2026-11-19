@@ -113,7 +113,7 @@ function isMessagingMcpTool(server: string, tool: string): boolean {
 }
 
 type ToolCategory =
-  | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir' | 'office'
+  | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir' | 'office' | 'fileStat'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
   | 'subagentSpawn' | 'subagentMessage' | 'agentConversation' | 'todo' | 'planUpdate' | 'planRead'
   | 'delegateSession' | 'listSessionCandidates' | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
@@ -167,13 +167,16 @@ const TOOL_SEARCH_TOOLS = new Set(['ToolSearch', 'tool_search']);
 
 
 
-/** 带入参的分类：ExcelAutomate 按 action 落到既有的读 / 写步骤；其余沿用按工具名分类。 */
+/** 带入参的分类：ExcelAutomate / Blob 按 action 落到既有或专属步骤；其余沿用按工具名分类。 */
 export function classifyToolCall(name: string, args: Record<string, unknown> | undefined): ToolCategory {
   if (name === 'ExcelAutomate') {
     const action = args?.action;
     if (typeof action === 'string' && EXCEL_READ_ACTIONS.has(action)) return 'read';
     if (typeof action === 'string' && EXCEL_WRITE_ACTIONS.has(action)) return 'write';
   }
+  // Blob 是文件查看族：stat 只看元信息（大小/时间/hash，不读内容），落专属「文件信息」句；
+  // read_text/read_base64 是读内容，与 Read 同句。缺 action 的形状按读取兜（schema 本要求必填）。
+  if (name === 'Blob') return args?.action === 'stat' ? 'fileStat' : 'read';
   return classifyToolName(name);
 }
 
@@ -611,8 +614,16 @@ function buildToolStep(
       return query ? h.search.replace('{query}', query) : h.searchFallback;
     }
     case 'listDir': {
+      // "."/"./"/缺省 = 工作目录本身（ListDirectory schema：path 默认 workingDir）。
+      // 裸点「查看了 . 目录」对用户不可读，换成工作目录说法；其余路径照旧走 {target} 模板。
+      const rawPath = typeof a.path === 'string' ? a.path.trim() : '';
+      if (rawPath === '' || rawPath === '.' || rawPath === './') return h.listDirWorking;
       const target = firstPath(a, ['path']);
       return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
+    }
+    case 'fileStat': {
+      const target = firstPath(a, ['file_path', 'path']);
+      return target ? h.fileStat.replace('{target}', target) : h.fileStatFallback;
     }
     case 'office': {
       const kind = OFFICE_TOOLS[name];

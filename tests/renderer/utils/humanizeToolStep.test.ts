@@ -452,8 +452,34 @@ describe('ListDirectory — schema 注册名复用 listDir 句式', () => {
     expect(humanizeToolStep('ListDirectory', { path: 'src' }, en, undefined, 'failed')).toBe('Could not view the src directory');
   });
 
-  it('无 path 参数时走 listDirFallback', () => {
-    expect(humanizeToolStep('ListDirectory', {}, zh)).toBe('查看了目录');
+  // 返修 r1：path 为 "."/"./"/缺省 = 工作目录本身（schema 默认 workingDir），
+  // 不许把裸点「.」当目标上屏（真跑实测「查看了 . 目录」缺陷）。
+  it('path 为 . / ./ / 缺省时渲染「当前工作目录」而非裸点（zh/en 四态）', () => {
+    expect(humanizeToolStep('ListDirectory', { path: '.' }, zh, undefined, 'pending-approval')).toBe('请求查看当前工作目录');
+    expect(humanizeToolStep('ListDirectory', { path: '.' }, zh, undefined, 'running')).toBe('正在查看当前工作目录');
+    expect(humanizeToolStep('ListDirectory', { path: '.' }, zh, undefined, 'completed')).toBe('查看了当前工作目录');
+    expect(humanizeToolStep('ListDirectory', { path: '.' }, zh, undefined, 'failed')).toBe('查看当前工作目录未成功');
+    expect(humanizeToolStep('ListDirectory', { path: './' }, zh)).toBe('查看了当前工作目录');
+    expect(humanizeToolStep('ListDirectory', {}, zh)).toBe('查看了当前工作目录');
+    expect(humanizeToolStep('ListDirectory', { path: '.' }, en, undefined, 'pending-approval')).toBe('Request to view the working folder');
+    expect(humanizeToolStep('ListDirectory', { path: './' }, en, undefined, 'running')).toBe('Viewing the working folder');
+    expect(humanizeToolStep('ListDirectory', { path: '.' }, en)).toBe('Viewed the working folder');
+    expect(humanizeToolStep('ListDirectory', { path: './' }, en, undefined, 'failed')).toBe('Could not view the working folder');
+  });
+
+  it.each(['.', './', ''] as const)('path=%j 的四态句子里不出现裸点目标', (path) => {
+    for (const status of ['pending-approval', 'running', 'completed', 'failed'] as const) {
+      expect(humanizeToolStep('ListDirectory', path === '' ? {} : { path }, zh, undefined, status))
+        .not.toContain(' . ');
+      expect(humanizeToolStep('ListDirectory', path === '' ? {} : { path }, en, undefined, status))
+        .not.toContain(' . ');
+    }
+  });
+
+  it('具名路径保持既有 {target} 句式', () => {
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh)).toBe('查看了 src 目录');
+    expect(humanizeToolStep('list_directory', { path: '.' }, zh)).toBe('查看了当前工作目录');
+    expect(humanizeToolStep('LS', { path: '.' }, en)).toBe('Viewed the working folder');
   });
 
   it('组聚合落 explored 桶（与 list_directory 一致，不再算「执行了 N 个步骤」）', () => {
@@ -518,6 +544,58 @@ describe('Office 文档工具四态专句', () => {
       const enLine = humanizeToolStep(name, {}, en, undefined, status);
       expect(enLine, `en ${status}`).not.toBe(GENERIC.en[status]);
       expect(enLine, `en ${status}`).not.toContain(name);
+    }
+  });
+});
+
+// ============================================================================
+// 返修 r1（2026-11-19）：Blob 不许再落「执行了工具操作」兜底 —— 它在本单用户路径
+// （列目录 → 导出 Excel）上真实出现（zh 真跑 FALLBACK-ROWS 实测）。
+// read_text/read_base64 是读内容 → 复用 read 句；stat 只看元信息 → 专属「文件信息」句。
+// ============================================================================
+describe('Blob — 文件查看族专句', () => {
+  const STATUSES = ['pending-approval', 'running', 'completed', 'failed'] as const;
+  const GENERIC = {
+    zh: {
+      'pending-approval': '请求执行工具操作', running: '正在执行工具操作',
+      completed: '执行了工具操作', failed: '执行工具操作未成功',
+    },
+    en: {
+      'pending-approval': 'Request to run a tool operation', running: 'Running a tool operation',
+      completed: 'Ran a tool operation', failed: 'Could not run the tool operation',
+    },
+  } as const;
+
+  it('read_text / read_base64 复用 read 句（带文件路径）', () => {
+    expect(humanizeToolStep('Blob', { action: 'read_text', file_path: 'monthly-sales.csv' }, zh))
+      .toBe('读取了 monthly-sales.csv');
+    expect(humanizeToolStep('Blob', { action: 'read_base64', file_path: 'monthly-sales.csv' }, zh))
+      .toBe('读取了 monthly-sales.csv');
+    expect(humanizeToolStep('Blob', { action: 'read_text', file_path: 'report.md' }, en))
+      .toBe('Read report.md');
+    expect(humanizeToolStep('Blob', { action: 'read_text', file_path: 'notes.md' }, zh, undefined, 'failed'))
+      .toBe('读取 notes.md 未成功');
+  });
+
+  it('stat 用「文件信息」专句（zh/en 四态，带文件路径）', () => {
+    const args = { action: 'stat', file_path: 'monthly-sales.xlsx' };
+    expect(humanizeToolStep('Blob', args, zh, undefined, 'pending-approval')).toBe('请求查看 monthly-sales.xlsx 的文件信息');
+    expect(humanizeToolStep('Blob', args, zh, undefined, 'running')).toBe('正在查看 monthly-sales.xlsx 的文件信息');
+    expect(humanizeToolStep('Blob', args, zh, undefined, 'completed')).toBe('查看了 monthly-sales.xlsx 的文件信息');
+    expect(humanizeToolStep('Blob', args, zh, undefined, 'failed')).toBe('查看 monthly-sales.xlsx 的文件信息未成功');
+    expect(humanizeToolStep('Blob', args, en, undefined, 'completed')).toBe('Checked file info for monthly-sales.xlsx');
+    expect(humanizeToolStep('Blob', args, en, undefined, 'failed')).toBe('Could not check file info for monthly-sales.xlsx');
+  });
+
+  // 全矩阵：三种 action × 四态 × zh/en 都不等于兜底句、不露原始工具名。
+  it.each(['read_text', 'read_base64', 'stat'] as const)('action=%s 空参四态不落兜底、不含原始工具名', (action) => {
+    for (const status of STATUSES) {
+      const zhLine = humanizeToolStep('Blob', { action }, zh, undefined, status);
+      expect(zhLine, `zh ${status}`).not.toBe(GENERIC.zh[status]);
+      expect(zhLine, `zh ${status}`).not.toContain('Blob');
+      const enLine = humanizeToolStep('Blob', { action }, en, undefined, status);
+      expect(enLine, `en ${status}`).not.toBe(GENERIC.en[status]);
+      expect(enLine, `en ${status}`).not.toContain('Blob');
     }
   });
 });
