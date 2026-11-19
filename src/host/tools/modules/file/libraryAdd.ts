@@ -126,6 +126,9 @@ async function executeLibraryAdd(
     ? displayName(args.title, resolved)
     : null;
   const title = explicitTitle ?? displayName(undefined, resolved);
+  // The card names the file that is really copied; the model-chosen title is a second line only when it differs.
+  const sourceName = displayName(undefined, resolved);
+  const cardSummary = title === sourceName ? sourceName : `${sourceName}\n${title}`;
   const permit = await canUseTool(
     schema.name,
     { title },
@@ -137,7 +140,7 @@ async function executeLibraryAdd(
       tool: schema.name,
       reason: 'This copies the file into the Library panel.',
       dangerLevel: 'normal',
-      details: { title, preview: { type: 'generic', summary: title } },
+      details: { title, preview: { type: 'generic', summary: cardSummary } },
     },
   );
   if (!permit.allow) return fail('PERMISSION_DENIED', `permission denied: ${permit.reason}`);

@@ -121,6 +121,18 @@ describe('library_add and app-data discovery refusal', () => {
     expect(JSON.stringify(seen[0])).toContain('"summary":"cadence.md"');
   });
 
+  it('the approval card shows the copied file name even when the title differs', async () => {
+    const source = writeIncoming('real-file.md', 'x');
+    const seen: unknown[] = [];
+    await add({ file_path: source, title: 'Another label' }, (async (...a: unknown[]) => {
+      seen.push(a[3]);
+      return { allow: true };
+    }) as CanUseToolFn);
+    const preview = (seen[0] as { details: { preview: { summary: string } } }).details.preview;
+    expect(preview.summary).toBe('real-file.md\nAnother label');
+    expect(JSON.stringify(seen[0])).not.toContain(incoming);
+  });
+
   it('uses the requested title and dedupes the same bytes', async () => {
     const first = writeIncoming('a.md', 'same-bytes');
     const named = await add({ file_path: first, title: 'Next quarter' });
