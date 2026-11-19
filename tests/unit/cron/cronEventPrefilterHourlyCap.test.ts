@@ -286,3 +286,93 @@ describe('r2 评审回归', () => {
     expect(h.runs).toHaveLength(0);
   });
 });
+
+describe('r3 评审回归', () => {
+  const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  function mailPrefilterJob(id: string) {
+    const j = job({ source: 'connector', connector: 'mail', accountId: 'acct', mailbox: 'INBOX', pollIntervalSec: 30, prefilter: '只处理账单邮件' }, id);
+    delete (j.schedule as { chatId?: string }).chatId;
+    return j;
+  }
+  const mail = (id: number, subject: string) => ({ id, subject, sender: 's@x', receivedAtMs: NOW, read: false });
+  /** 主题含「促销」的判不符合，其余符合。 */
+  function subjectJudge(prompts: string[]): CronPrefilterJudge {
+    return async (prompt) => {
+      prompts.push(prompt);
+      const ids = JSON.parse(/事件 id 列表：(\[.*\])/.exec(prompt)![1]) as string[];
+      return { success: true, content: JSON.stringify(ids.map((id) => {
+        const subject = new RegExp(`id=${escapeRe(id)} [^\\n]*\\n([^\\n]*)`).exec(prompt)?.[1] ?? '';
+        return subject.includes('促销') ? { id, match: false, reason: '促销' } : { id, match: true };
+      })) };
+    };
+  }
+
+  it('A 邮件：补正文期间 dispose → 不花预筛调用、不起 run，留 dropped 行，水位回滚后重启重新入队', async () => {
+    const mails = [mail(1, '旧邮件')];
+    let releaseBody: (body: string) => void = () => undefined;
+    const readMessage = vi.fn(() => new Promise<string>((resolve) => { releaseBody = resolve; }));
+    const prompts: string[] = [];
+    const j = mailPrefilterJob('mail-shutdown');
+    const first = harness(j, { mailReader: { listMessages: async () => [...mails], readMessage }, judge: subjectJudge(prompts) });
+    await vi.advanceTimersByTimeAsync(5_000); // 播种
+    mails.push(mail(2, '账单提醒'));
+    await vi.advanceTimersByTimeAsync(40_000); // 入队 → flush → 补正文挂起
+    expect(readMessage).toHaveBeenCalledTimes(1);
+    first.trigger.dispose();
+    releaseBody('正文');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(prompts).toHaveLength(0);
+    expect(first.runs).toHaveLength(0);
+    const id = 'acct|INBOX|2';
+    expect(decisions('mail-shutdown')).toContainEqual({
+      event_id: id, decision: 'dropped', reason: 'shutdown abandoned: the app stopped before this event was handled',
+    });
+    // 重启：水位已回滚，邮件 2 重新入队并被携带。
+    const second = harness(j, { mailReader: { listMessages: async () => [...mails], readMessage: async () => '正文' }, judge: subjectJudge(prompts) });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(second.runs.flatMap((run) => run.trigger.eventIds ?? [])).toEqual([id]);
+  });
+
+  it('A webhook：预筛在飞时 dispose → 不起 run，每个事件 id 都有 dropped 行', async () => {
+    let release: (value: { success: boolean; content: string }) => void = () => undefined;
+    const judge: CronPrefilterJudge = () => new Promise((resolve) => { release = resolve; });
+    const j = job({ source: 'webhook', prefilter: '只处理催款' }, 'wh-shutdown');
+    delete (j.schedule as { accountId?: string }).accountId;
+    const h = harness(j, { judge });
+    h.trigger.ingestWebhook({ jobId: 'wh-shutdown', deliveryId: 'd1', receivedAt: NOW, body: '催款' });
+    h.trigger.ingestWebhook({ jobId: 'wh-shutdown', deliveryId: 'd2', receivedAt: NOW, body: '催款2' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    h.trigger.dispose();
+    release({ success: true, content: JSON.stringify([{ id: 'd1', match: true }, { id: 'd2', match: true }]) });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(h.runs).toHaveLength(0);
+    expect(decisions('wh-shutdown').filter((row) => row.decision === 'dropped').map((row) => row.event_id).sort()).toEqual(['d1', 'd2']);
+  });
+
+  it('B 正文读取失败的邮件：不送预筛、不记 ignored，整封交给 run 并留说明行', async () => {
+    const mails = [mail(1, '旧邮件')];
+    const prompts: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const readMessage = vi.fn(async (_account: string, _mailbox: string, id: number) => {
+      if (id === 2) throw new Error('read failed');
+      return '账单正文';
+    });
+    const h = harness(mailPrefilterJob('mail-body-fail'), { mailReader: { listMessages: async () => [...mails], readMessage }, judge: subjectJudge(prompts) });
+    await vi.advanceTimersByTimeAsync(5_000);
+    mails.push(mail(2, '促销活动'), mail(3, '账单提醒'));
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(h.runs).toHaveLength(1);
+    expect(h.runs[0].trigger.eventIds).toEqual(['acct|INBOX|2', 'acct|INBOX|3']);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).not.toContain('acct|INBOX|2');
+    const rows = decisions('mail-body-fail');
+    expect(rows.filter((row) => row.event_id === 'acct|INBOX|2' && row.decision === 'ignored')).toHaveLength(0);
+    expect(rows).toContainEqual({
+      event_id: 'acct|INBOX|2', decision: 'unavailable', reason: 'prefilter skipped: could not read the email body',
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cause: body-unavailable'));
+    expect(readMessage).toHaveBeenCalledTimes(2); // 每封只读一次（失败的也不在 run 里重读）
+    error.mockRestore();
+  });
+});

@@ -30,6 +30,8 @@ export type CronEventDecisionTextKey =
   | 'runQuiet'
   | 'prefilterSkipped'
   | 'prefilterUnavailable'
+  | 'prefilterBodyUnavailable'
+  | 'shutdownAbandoned'
   | 'runReported';
 
 type TextParams = Readonly<Record<string, string | number>>;
@@ -162,6 +164,18 @@ const TEMPLATES: readonly DecisionTextTemplate[] = [
     stored: 'prefilter could not judge this batch ({cause}); ran it unfiltered',
     zh: '预筛没能判断这批消息（{cause}），已原样交给自动化处理',
     en: 'The pre-check could not judge this batch ({cause}), so it was handled unfiltered',
+  },
+  {
+    key: 'prefilterBodyUnavailable',
+    stored: 'prefilter skipped: could not read the email body',
+    zh: '没能读取邮件正文，已跳过预筛，直接交给自动化处理',
+    en: 'The email body could not be read, so the pre-check was skipped and the email was handled directly',
+  },
+  {
+    key: 'shutdownAbandoned',
+    stored: 'shutdown abandoned: the app stopped before this event was handled',
+    zh: '应用在处理这个事件之前停止了',
+    en: 'The app stopped before this event was handled',
   },
   {
     key: 'runFailedWithCause',

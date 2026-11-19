@@ -321,6 +321,7 @@ export class CronEventTrigger {
   private epoch = 0;
   private readonly decisionStore: CronEventDecisionStore;
   private readonly statsStore: CronEventStatsStore;
+  private readonly watermarkStore: CronMailWatermarkStore;
   private readonly prefilterJudge: CronPrefilterJudge;
   /** mail 源轮询器（N-TRIGGER-CONNECTOR-MAIL）：新邮件经 enqueueRecord 进同一条合批链。 */
   private readonly mailPoller: CronMailPoller;
@@ -340,6 +341,7 @@ export class CronEventTrigger {
     this.mailReader = options.mailReader ?? createDefaultMailReader();
     this.decisionStore = options.decisionStore ?? sqliteCronEventDecisionStore;
     this.statsStore = options.statsStore ?? sqliteCronEventStatsStore;
+    this.watermarkStore = options.watermarkStore ?? sqliteCronMailWatermarkStore;
     this.prefilterJudge = options.prefilterJudge ?? quickModelJudge;
     this.mailPoller = new CronMailPoller({
       host: { getJobDefinitions: () => this.host.getJobDefinitions() },
@@ -357,7 +359,7 @@ export class CronEventTrigger {
       mailReader: this.mailReader,
       now: this.now,
       setTimer: this.setTimer,
-      watermarkStore: options.watermarkStore ?? sqliteCronMailWatermarkStore,
+      watermarkStore: this.watermarkStore,
     });
   }
 
@@ -381,11 +383,46 @@ export class CronEventTrigger {
     this.started = false;
     this.epoch += 1;
     this.mailPoller.dispose();
-    for (const state of this.states.values()) {
+    for (const [jobId, state] of this.states) {
       state.flushTimer?.clear();
       state.flushTimer = undefined;
+      // 关停时还在队里的事件不静默消失：留可恢复的台账行，邮件水位回滚到它们之前。
+      this.abandonEvents(jobId, state.pending, state.droppedEvents);
     }
     this.states.clear();
+  }
+
+  /**
+   * 关停时被放弃的事件：每条记一行 dropped（原因 shutdown abandoned）；邮件事件另把持久化水位回滚到
+   * 它们之前，下次启动会重新入队。webhook 事件的中继 ack 在入队时已发出，无法重投，台账行是唯一留痕。
+   */
+  private abandonEvents(
+    jobId: string,
+    events: readonly ChannelEventRecord[],
+    alreadyDropped: readonly CronDroppedEvent[] = [],
+  ): void {
+    if (events.length === 0 && alreadyDropped.length === 0) return;
+    this.decisionStore.record([
+      ...events.map((event): CronEventDecisionInput => ({
+        jobId,
+        kind: 'event',
+        eventId: event.messageId,
+        decision: 'dropped',
+        reason: buildCronEventDecisionText('shutdownAbandoned'),
+      })),
+      ...droppedEventDecisions(jobId, alreadyDropped),
+    ]);
+    const mailKeys = new Set(events.filter((event) => event.mail !== undefined).map((event) => event.messageId));
+    if (mailKeys.size === 0) return;
+    try {
+      const loaded = this.watermarkStore.load(jobId);
+      if (loaded.status !== 'found') return;
+      const kept = loaded.watermark.seenKeys.filter((key) => !mailKeys.has(key));
+      this.watermarkStore.save(jobId, loaded.watermark.binding, kept, this.now());
+      console.warn(`[CronEventTrigger] Rolled back mail watermark for job ${jobId}: ${mailKeys.size} abandoned message(s) will be queued again on next start`);
+    } catch (error) {
+      console.error(`[CronEventTrigger] Mail watermark rollback failed for job ${jobId}:`, error);
+    }
   }
 
   private readonly handleChannelMessage = (accountId: string, message: ChannelMessage): void => {
@@ -621,18 +658,37 @@ export class CronEventTrigger {
       const judged = carried.some((event) => event.mail !== undefined)
         ? await this.withMailBodies(jobId, carried)
         : carried;
+      // 补正文期间触发器已关停：不再花预筛调用，整批按关停放弃留痕。
+      if (epoch !== this.epoch) { this.abandonEvents(jobId, judged, droppedEvents); return; }
       let remaining = judged;
-      this.statsStore.bump(jobId, { prefilterCalls: 1 }, this.now());
-      const ids = judged.map((event) => event.messageId);
-      const outcome = await runEventPrefilter(
-        this.prefilterJudge,
-        schedule.prefilter ?? '',
-        wrapUntrustedEvents(judged).join('\n'),
-        ids,
-      );
-      // 等待期间触发器已关停：不再起 run、不写台账。
-      if (epoch !== this.epoch) return;
       const rows: CronEventDecisionInput[] = [];
+      // 正文读取失败的邮件不是「空正文」：不送预筛，整封放行并留说明行。
+      const bodyless = judged.filter((event) => event.mail?.bodyUnavailable === true);
+      const toJudge = judged.filter((event) => event.mail?.bodyUnavailable !== true);
+      for (const event of bodyless) {
+        console.warn(`[CronEventTrigger] Prefilter skipped for job ${jobId} message ${event.messageId} (cause: body-unavailable); running it unfiltered`);
+        rows.push({
+          jobId,
+          kind: 'event',
+          eventId: event.messageId,
+          decision: 'unavailable',
+          reason: buildCronEventDecisionText('prefilterBodyUnavailable'),
+          matchedRule: rule,
+        });
+      }
+      const outcome = toJudge.length === 0
+        ? { kind: 'judged' as const, rejected: new Map<string, string>() }
+        : await (async () => {
+          this.statsStore.bump(jobId, { prefilterCalls: 1 }, this.now());
+          return runEventPrefilter(
+            this.prefilterJudge,
+            schedule.prefilter ?? '',
+            wrapUntrustedEvents(toJudge).join('\n'),
+            toJudge.map((event) => event.messageId),
+          );
+        })();
+      // 预筛期间触发器已关停：不起 run，整批按关停放弃留痕。
+      if (epoch !== this.epoch) { this.abandonEvents(jobId, judged, droppedEvents); return; }
       if (outcome.kind === 'unavailable') {
         console.warn(`[CronEventTrigger] Prefilter could not judge job ${jobId} (cause: ${outcome.cause}); running the batch unfiltered`);
         rows.push({
@@ -712,7 +768,7 @@ export class CronEventTrigger {
       const events = carried.some((event) => event.mail !== undefined)
         ? await this.withMailBodies(jobId, carried)
         : carried;
-      if (epoch !== this.epoch) return;
+      if (epoch !== this.epoch) { this.abandonEvents(jobId, events, droppedEvents); return; }
       execution = await this.host.executeEventJob(definition, trigger, buildUntrustedChannelEventBlock(events));
     } catch (error) {
       runError = error;
@@ -742,7 +798,7 @@ export class CronEventTrigger {
     events: readonly ChannelEventRecord[],
   ): Promise<ChannelEventRecord[]> {
     return Promise.all(events.map(async (event) => {
-      if (!event.mail || event.mail.body !== undefined) return event;
+      if (!event.mail || event.mail.body !== undefined || event.mail.bodyUnavailable) return event;
       try {
         const content = await this.mailReader.readMessage(event.mail.account, event.mail.mailbox, event.mail.messageId);
         return { ...event, mail: { ...event.mail, body: truncate(content, CRON_EVENT_TRIGGER.MAX_MESSAGE_CHARS) } };
@@ -750,7 +806,7 @@ export class CronEventTrigger {
         console.error(
           `[CronEventTrigger] Mail body fetch failed for job ${jobId} message ${event.messageId} (cause: read-error): ${mailErrorMessage(error)}`,
         );
-        return event;
+        return { ...event, mail: { ...event.mail, bodyUnavailable: true as const } };
       }
     }));
   }
