@@ -87,7 +87,7 @@ export interface SessionListOptions {
   searchQuery?: string;
   includeArchived?: boolean;
   /** 只取归档会话（侧栏「已归档」过滤器的独立分页路径，优先于 includeArchived） */
-  archivedOnly?: boolean;
+  archivedOnly?: boolean; projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope; // projectScope 仅 archivedOnly 路径生效
 }
 
 // ----------------------------------------------------------------------------
@@ -458,7 +458,7 @@ export class SessionManager implements Disposable {
 
     // archivedOnly：归档过滤器的独立分页路径——直接在 SQL 层只取归档页，
     // 不再拉混合页回前端挑（混合分页下归档会话会被摊薄到翻不到）。
-    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId) : db.listSessions(limit, offset, includeArchived, ownerId);
+    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId, ...(options.projectScope ? [options.projectScope] as const : [])) : db.listSessions(limit, offset, includeArchived, ownerId);
 
     // 搜索过滤
     if (options.searchQuery) {
@@ -867,13 +867,13 @@ export class SessionManager implements Disposable {
   /**
    * 取消归档会话
    */
-  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void): Promise<Session | null> {
+  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void, updatedAt?: number): Promise<Session | null> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
 
     // 取消归档
-    if (commit) commit(() => db.unarchiveSession(sessionId)); else db.unarchiveSession(sessionId);
+    if (commit) commit(() => db.unarchiveSession(sessionId, updatedAt)); else db.unarchiveSession(sessionId, updatedAt);
 
     // 清除缓存
     this.sessionCache.delete(sessionId);
