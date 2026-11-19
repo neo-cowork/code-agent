@@ -5,6 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../src/shared/contract/skillRegistry';
 import { en } from '../../../src/renderer/i18n/en';
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -21,7 +22,7 @@ import { useAuthStore } from '../../../src/renderer/stores/authStore';
 
 const INSTALLED = {
   name: 'label-plugin',
-  marketplace: 'official',
+  marketplace: SKILL_REGISTRY_MARKETPLACE_ID,
   scope: 'user',
   isEnabled: true,
   installedAt: '2026-01-01',
@@ -30,7 +31,7 @@ const INSTALLED = {
   pluginRoot: '/opt/plugins/label-plugin',
   types: ['skill', 'command'],
 };
-const ENTRY = { name: 'market-plugin', marketplace: 'official', source: './m', skills: ['s'] };
+const ENTRY = { name: 'market-plugin', marketplace: SKILL_REGISTRY_MARKETPLACE_ID, source: './m', skills: ['s'] };
 
 afterEach(() => {
   cleanup();
@@ -64,8 +65,8 @@ describe('PluginsSettings 中文行标签', () => {
       throw new Error(`Unexpected channel ${channel}`);
     });
     const { container } = render(<PluginsSettings />);
-    await screen.findByText('label-plugin@official');
-    await screen.findByText('market-plugin@official');
+    await screen.findByText(`label-plugin@${SKILL_REGISTRY_MARKETPLACE_ID}`);
+    await screen.findByText(`market-plugin@${SKILL_REGISTRY_MARKETPLACE_ID}`);
     const text = container.textContent ?? '';
     expect(text).not.toContain('Trust');
     const t = zh.settings.plugins.installed;
@@ -74,9 +75,27 @@ describe('PluginsSettings 中文行标签', () => {
     const header = screen.getByRole('heading', { name: 'label-plugin' }).parentElement!;
     const pillTexts = Array.from(header.querySelectorAll('span.rounded-md.border')).map((el) => el.textContent);
     for (const zhPill of ['官方', '用户级', '技能', '命令']) expect(pillTexts).toContain(zhPill);
-    for (const raw of ['official', 'user', 'skill', 'command']) expect(pillTexts).not.toContain(raw);
+    for (const raw of ['official', SKILL_REGISTRY_MARKETPLACE_ID, 'user', 'skill', 'command']) expect(pillTexts).not.toContain(raw);
     // 「可见插件」列表里的 scope pill 同样中文化
     expect(container.textContent).not.toMatch(/(^|[^a-z])user($|[^a-z])/);
     for (const label of [t.runtime, t.skills, t.commands, t.pluginAsset]) expect(text).toContain(label);
+  });
+
+  it('用户自建且恰好叫 official 的 marketplace 保持原名，不被误译成「官方」', async () => {
+    useAuthStore.setState({ user: { id: 'admin', email: 'a@example.com', isAdmin: true } });
+    const custom = { ...INSTALLED, name: 'custom-plugin', marketplace: 'official' };
+    invoke.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED) return Promise.resolve({ success: true, data: [custom] });
+      if (channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS || channel === IPC_CHANNELS.MARKETPLACE_LIST || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+        return Promise.resolve({ success: true, data: [] });
+      }
+      if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) return Promise.resolve({ status: 'fallback' });
+      throw new Error(`Unexpected channel ${channel}`);
+    });
+    render(<PluginsSettings />);
+    const header = (await screen.findByRole('heading', { name: 'custom-plugin' })).parentElement!;
+    const pills = Array.from(header.querySelectorAll('span.rounded-md.border')).map((el) => el.textContent);
+    expect(pills).toContain('official');
+    expect(pills).not.toContain('官方');
   });
 });
