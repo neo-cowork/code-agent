@@ -339,6 +339,14 @@ describe('单轮 Office 文件交付 — 意图与提醒', () => {
     ['zh 属性别放后台', '属性别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
     ['zh 别处理成后台任务', '别处理成后台任务，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
     ['zh 别处于后台运行', '别处于后台运行，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 这一个别放后台', '这一个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 整个别放后台', '整个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 警告别放后台', '警告别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 小区别放后台', '小区别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 班级别放后台', '班级别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 人类别放后台', '人类别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 外国别放后台', '外国别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 一个别放后台', '一个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
   ])('词尾字（报告/这个/部分/…）后接祈使别、动词开头（处理/处于）不误组复合词，真否定仍判单轮交付（r1）：%s', (_label, prompt) => {
     expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
   });
