@@ -459,7 +459,7 @@ export const sidebarEn: typeof sidebarZh = {
     createProjectSubmit: 'Create',
     createProjectFailed: 'Failed to create project. Try again.',
     createSessionFailedPrefix: 'Failed to create session: ',
-    sessionProjectUnavailable: 'This collaboration space was archived or deleted, so a new session cannot be created there.',
+    sessionProjectUnavailable: 'This Space was archived or deleted, so a new session cannot be created there.',
     confirm: 'Confirm',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',

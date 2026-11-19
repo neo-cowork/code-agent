@@ -28,13 +28,13 @@ export async function executeSpaceCreate(
   const permit = await canUseTool(
     schema.name,
     args,
-    `Create collaboration space "${args.name.trim()}"`,
+    `Create Space "${args.name.trim()}"`,
     {
       sessionId: ctx.sessionId,
       forceConfirm: true,
       type: args.workspacePath ? 'directory_access' : 'file_write',
       tool: schema.name,
-      reason: 'Creating a collaboration space changes durable project state.',
+      reason: 'Creating a Space changes durable project state.',
       dangerLevel: 'normal',
     },
   );

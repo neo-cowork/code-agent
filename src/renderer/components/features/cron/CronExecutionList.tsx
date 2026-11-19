@@ -10,6 +10,7 @@ import {
   isPermissionDeniedExecution,
 } from './types';
 import { wakeSkipSentence } from './wakeSkipSentence';
+import { wakeDecisionOf } from './wakeDecision';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 
@@ -75,14 +76,16 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
         </thead>
         <tbody>
           {executions.map((execution) => {
-            const statusMeta = getLatestExecutionStatus(execution, cc);
+            const statusMeta = getLatestExecutionStatus(execution, cc, t.cronWakeCadence);
             // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章。
             const permissionDenied = isPermissionDeniedExecution(execution);
             const wakeSkipText = wakeSkipSentence(execution, {
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
+              generic: t.cronWakeCadence.skipGeneric,
             });
+            const wakeDecision = wakeDecisionOf(execution);
             const deniedMarker = permissionDenied
               ? (execution.result as { permissionDenied: CronPermissionDeniedMarker }).permissionDenied
               : undefined;
@@ -132,6 +135,11 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     ) : (
                       <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
                         {statusMeta.label}
+                      </span>
+                    )}
+                    {wakeDecision && (
+                      <span className="mt-0.5 block max-w-[120px] truncate text-xs text-zinc-300" title={t.cronWakeCadence.decision[wakeDecision]} data-testid="cron-wake-decision">
+                        {t.cronWakeCadence.decision[wakeDecision]}
                       </span>
                     )}
                   </td>

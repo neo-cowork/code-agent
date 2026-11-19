@@ -255,7 +255,7 @@ const projectHandlers: RawDomainRouteHandlers<ProjectDomainRequest, void> = {
     const { projectId } = (payload ?? {}) as DetailPayload;
     if (!projectId?.trim()) return invalid('projectId is required');
     if (projectId === UNSORTED_PROJECT_ID) {
-      return invalid('the unsorted project cannot be promoted to a cloud space');
+      return invalid('the unsorted project cannot be promoted to a cloud Space');
     }
     return {
       success: true,

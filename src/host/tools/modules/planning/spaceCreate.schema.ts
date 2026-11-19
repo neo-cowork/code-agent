@@ -3,19 +3,19 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const spaceCreateSchema: ToolSchema = {
   name: 'space_create',
   description:
-    'Create a Neo collaboration space for durable shared work, configured capabilities, activity, and artifacts. ' +
-    'Use this only when the user explicitly wants a new collaboration space. This is a write operation and requires approval.',
+    'Create a Neo Space for durable shared work, configured capabilities, activity, and artifacts. ' +
+    'Use this only when the user explicitly wants a new Space. This is a write operation and requires approval.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
     properties: {
       name: {
         type: 'string',
-        description: 'Human-readable collaboration space name.',
+        description: 'Human-readable Space name.',
       },
       description: {
         type: 'string',
-        description: 'Optional purpose and scope of the collaboration space.',
+        description: 'Optional purpose and scope of the Space.',
       },
       workspacePath: {
         type: 'string',
