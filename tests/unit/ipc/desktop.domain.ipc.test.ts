@@ -115,6 +115,16 @@ describe('简单委派', () => {
       profileMode: 'isolated',
     }));
   });
+
+  it('ensureManagedBrowserSession forwards conversationId', async () => {
+    const call = await setup();
+    await call('ensureManagedBrowserSession', { conversationId: 'chat-a', url: 'about:blank' });
+    expect(svc.browser.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({
+      conversationId: 'chat-a',
+      leaseOwner: 'desktop-ipc',
+      profileMode: 'isolated',
+    }));
+  });
 });
 
 describe('raw browser relay IPC', () => {

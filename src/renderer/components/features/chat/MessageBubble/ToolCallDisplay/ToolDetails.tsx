@@ -12,6 +12,7 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useSessionStore } from '../../../../../stores/sessionStore';
 import { isPreviewable } from '../../../../../utils/previewable';
 import {
   formatBrowserComputerActionArguments,
@@ -529,9 +530,11 @@ export function getBrowserComputerNextSteps(
       sourceToolName: toolCall.name,
       sourceArgs: toolCall.arguments,
       run: async () => {
+        const conversationId = useSessionStore.getState().currentSessionId;
         const response = await window.domainAPI?.invoke(IPC_DOMAINS.DESKTOP, 'ensureManagedBrowserSession', {
           url: 'about:blank',
           provider: 'system-chrome-cdp',
+          ...(conversationId ? { conversationId } : {}),
         });
         if (response?.success) {
           return {

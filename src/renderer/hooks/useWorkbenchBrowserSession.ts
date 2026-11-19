@@ -742,14 +742,22 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
           await ipcService.invokeDomain<ManagedBrowserSessionState>(
             IPC_DOMAINS.DESKTOP,
             'ensureManagedBrowserSession',
-            { mode: 'headless', profileMode: 'persistent' },
+            {
+              mode: 'headless',
+              profileMode: 'persistent',
+              ...(currentSessionId ? { conversationId: currentSessionId } : {}),
+            },
           );
           break;
         case 'launch_managed_browser_visible':
           await ipcService.invokeDomain<ManagedBrowserSessionState>(
             IPC_DOMAINS.DESKTOP,
             'ensureManagedBrowserSession',
-            { mode: 'visible', profileMode: 'persistent' },
+            {
+              mode: 'visible',
+              profileMode: 'persistent',
+              ...(currentSessionId ? { conversationId: currentSessionId } : {}),
+            },
           );
           break;
         case 'open_screen_capture_settings':
@@ -783,7 +791,7 @@ export function useWorkbenchBrowserSession(): BrowserWorkbenchState & {
     } finally {
       setBusyActionKind(null);
     }
-  }, [probePermissions, refresh, setShowDesktopPanel]);
+  }, [currentSessionId, probePermissions, refresh, setShowDesktopPanel]);
 
   return {
     mode,
