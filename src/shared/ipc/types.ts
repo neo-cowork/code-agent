@@ -414,6 +414,8 @@ export interface CrossSessionSearchOptions {
   role?: 'user' | 'assistant' | 'system';
   /** Case-sensitive search */
   caseSensitive?: boolean;
+  /** Also search archived sessions (default false: archived sessions are excluded) */
+  includeArchived?: boolean;
 }
 
 export interface CrossSessionSearchResultItem {
@@ -449,6 +451,8 @@ export interface CrossSessionSearchTitleMatch {
   sessionId: string;
   title: string;
   updatedAt: number;
+  /** Present (true) only when the matched session is archived */
+  archived?: boolean;
 }
 
 export interface CrossSessionSearchResults {

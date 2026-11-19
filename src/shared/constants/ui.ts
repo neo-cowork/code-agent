@@ -8,6 +8,8 @@ export const UI = {
   MAX_HISTORY_ITEMS: 100,
   /** Toast 默认显示时长 (ms) */
   TOAST_DURATION: 5000,
+  /** 归档后「撤销」Toast 的显示时长 (ms) */
+  ARCHIVE_UNDO_TOAST_DURATION: 10_000,
   /** Keep the toast visible until explicitly removed. */
   TOAST_PERSISTENT_DURATION: 0,
   /** 复制成功反馈时长 (ms) */
