@@ -212,4 +212,35 @@ describe('computerUseWorkbench', () => {
     // 权限状态映射保持：permission_denied 是 blocked 色调
     expect(explanations.find((item) => item.id === 'failure:permission_denied')?.tone).toBe('blocked');
   });
+  it.each([
+    ['zh', localOpsZh.localOps.computerUse, '辅助功能'],
+    ['en', localOpsEn.localOps.computerUse, 'Accessibility'],
+  ])('accessibility denied card body says not granted, not unconfirmed (%s)', (_l, copy, name) => {
+    const explanations = describeComputerUseFailures({
+      copy,
+      nativeAvailable: true,
+      desktopProviderError: null,
+      permissions: {
+        schemaVersion: 1,
+        platform: 'darwin',
+        checkedAtMs: 1000,
+        bundleId: 'x',
+        permissions: [{
+          kind: 'accessibility',
+          label: 'Accessibility',
+          status: 'denied',
+          required: true,
+          detail: 'AXIsProcessTrusted() returned false.',
+        }],
+      },
+      surface: makeSurface(),
+      targets: [],
+      elementsError: null,
+      observeError: null,
+    } as Parameters<typeof describeComputerUseFailures>[0]);
+    const card = explanations.find((item) => item.id === 'accessibility:denied');
+    expect(card?.title).toContain(name);
+    expect(card?.detail).toContain(name);
+    expect(card?.detail).not.toMatch(/未确认|unconfirmed/);
+  });
 });

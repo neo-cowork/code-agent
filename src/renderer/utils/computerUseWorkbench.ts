@@ -264,7 +264,10 @@ function explainPermission(
       permission.status === 'denied' ? fail.permDeniedTitle : fail.permUnconfirmedTitle,
       { name: label },
     ),
-    detail: interpolate(fail.permUnconfirmedDetail, { name: label }),
+    detail: interpolate(
+      permission.status === 'denied' ? fail.permDeniedDetail : fail.permUnconfirmedDetail,
+      { name: label },
+    ),
     tone: permission.status === 'denied' ? 'blocked' : 'warning',
   });
 }
