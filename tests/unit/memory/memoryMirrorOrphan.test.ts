@@ -32,6 +32,8 @@ function createStatefulDb(): MemoryEntryDatabase & { rows: MemoryRecord[] } {
   let seq = 0;
   return {
     rows,
+    findMemoryByEntryId: (entryId) => rows.find((row) => (row.metadata as { memoryEntry?: { id?: string } } | null)?.memoryEntry?.id === entryId) ?? null,
+    listMemoriesWithInjectionFeedback: () => rows.filter((row) => (row.metadata as Record<string, unknown> | null)?.injectionFeedback !== undefined),
     listMemories: (options) => rows.filter((row) => (
       options?.includeArchived || row.status !== 'archived'
     )),

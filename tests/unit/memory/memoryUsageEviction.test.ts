@@ -10,7 +10,6 @@ import type {
   Logger,
   ToolContext,
 } from '../../../src/host/protocol/tools';
-import type { MemoryRecord } from '../../../src/host/protocol/types/repositories';
 
 const dbHolder = vi.hoisted(() => ({ current: null as unknown }));
 const loggerMock = vi.hoisted(() => ({
@@ -56,8 +55,7 @@ vi.mock('../../../src/host/model/quickModel', () => ({
 }));
 
 import Database from 'better-sqlite3';
-import { applySchema } from '../../../src/host/services/core/database/schema';
-import { MemoryRepository } from '../../../src/host/services/core/repositories/MemoryRepository';
+import { DatabaseService } from '../../../src/host/services/core/databaseService';
 import { memoryEntryMetadata } from '../../../src/host/memory/memoryEntryMetadata';
 import {
   listUnifiedMemoryEntries,
@@ -88,45 +86,16 @@ function makeToolLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-type DbWrapper = {
-  isReady: boolean;
-  listMemories: (options?: Parameters<MemoryRepository['listMemories']>[0]) => MemoryRecord[];
-  getMemory: (id: string) => MemoryRecord | null;
-  createMemory: (data: Parameters<MemoryRepository['createMemory']>[0]) => MemoryRecord;
-  updateMemory: (id: string, updates: Partial<MemoryRecord>, journal?: Parameters<MemoryRepository['updateMemory']>[2]) => MemoryRecord | null;
-  recordMemoryAccess: (id: string) => void;
-  searchMemories: (query: string, options?: { limit?: number; applyDecay?: boolean }) => MemoryRecord[];
-  findMemoryByEntryId: (entryId: string) => MemoryRecord | null;
-  listMemoriesWithInjectionFeedback: () => MemoryRecord[];
-};
-
+// r3：全部走真 DatabaseService（不再手搓 wrapRepo 补方法——r2 的直查/全量负反馈方法
+// 只在包装里存在，生产对象上缺席，窗口修复在生产静默失效）。
+let service: DatabaseService | null = null;
 let raw: Database.Database | null = null;
-let repo: MemoryRepository | null = null;
-let db: DbWrapper | null = null;
+let db: DatabaseService | null = null;
 let seq = 0;
 
-function currentDb(): DbWrapper {
+function currentDb(): DatabaseService {
   if (!db) throw new Error('db not initialized');
   return db;
-}
-
-function currentRepo(): MemoryRepository {
-  if (!repo) throw new Error('repo not initialized');
-  return repo;
-}
-
-function wrapRepo(repository: MemoryRepository): DbWrapper {
-  return {
-    isReady: true,
-    listMemories: (options) => repository.listMemories(options ?? {}),
-    getMemory: (id) => repository.getMemory(id),
-    createMemory: (data) => repository.createMemory(data),
-    updateMemory: (id, updates, journal) => repository.updateMemory(id, updates, journal),
-    recordMemoryAccess: (id) => repository.recordMemoryAccess(id),
-    searchMemories: (query, options) => repository.searchMemories(query, options ?? {}),
-    findMemoryByEntryId: (entryId) => repository.findMemoryByEntryId(entryId),
-    listMemoriesWithInjectionFeedback: () => repository.listMemoriesWithInjectionFeedback(),
-  };
 }
 
 function lightFile(title: string, body: string, projectPath?: string): string {
@@ -242,10 +211,10 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     for (const entry of await fs.readdir(memDir)) {
       await fs.rm(path.join(memDir, entry), { recursive: true, force: true });
     }
-    raw = new Database(':memory:');
-    applySchema(raw, loggerMock as unknown as Parameters<typeof applySchema>[1]);
-    repo = new MemoryRepository(raw);
-    db = wrapRepo(repo);
+    service = new DatabaseService(await fs.mkdtemp(path.join(dataDir, 'db-')));
+    await service.initialize();
+    raw = service.getDb();
+    db = service;
     dbHolder.current = db;
   });
 
@@ -253,8 +222,8 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     vi.useRealTimers();
     dbHolder.current = null;
     db = null;
-    repo = null;
-    raw?.close();
+    service?.close();
+    service = null;
     raw = null;
   });
 
@@ -372,15 +341,20 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
 
     // 端到端：扫描抛错（第一次 listMemories）不拖垮注入，条目照常注入
     let calls = 0;
-    db = {
-      ...currentDb(),
-      listMemories: (options) => {
-        calls += 1;
-        if (calls === 1) throw new Error('boom scan');
-        return currentRepo().listMemories(options ?? {});
+    const real = currentDb();
+    dbHolder.current = new Proxy(real, {
+      get(target, prop) {
+        if (prop === 'listMemories') {
+          return (options?: Parameters<DatabaseService['listMemories']>[0]) => {
+            calls += 1;
+            if (calls === 1) throw new Error('boom scan');
+            return target.listMemories(options ?? {});
+          };
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === 'function' ? value.bind(target) : value;
       },
-    };
-    dbHolder.current = db;
+    });
     const ids = await injectedEntryIds();
     expect(ids).toContain(entry.entryId);
   });
@@ -595,7 +569,7 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       const flagged = await mirrorEntry('uf-journal', 'zirchufjournal');
       await flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
       clearMemoryInjectionFlag(currentDb(), flagged.entryId);
-      const journal = currentRepo().listMemoryJournal({ entryId: flagged.entryId });
+      const journal = currentDb().listMemoryJournal({ entryId: flagged.entryId });
       // create（镜像行）+ flag + clear = 至少 3 行，后两行 actor 都是 user_manual
       const manual = journal.filter((row) => row.actor === 'user_manual');
       expect(manual.length).toBeGreaterThanOrEqual(2);
@@ -643,6 +617,9 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     // ai-review：窗口外的镜像行 flag 恒失败；标记成功的行被 500 条更新行挤出窗口后
     // 暂停扫描看不见 kind，光文件重新被注入。两条回归都在真 SQLite 上复刻窗口挤出。
     it('r2 镜像行被挤出最新 500 行窗口：flag 仍成功（直查不扫窗口），注入照停', async () => {
+      // r3：生产对象（真 DatabaseService）必须带这两个方法——缺了就是 r2 修复在生产静默失效
+      expect(typeof currentDb().findMemoryByEntryId).toBe('function');
+      expect(typeof currentDb().listMemoriesWithInjectionFeedback).toBe('function');
       vi.useFakeTimers({ now: NOW });
       const target = await mirrorEntry('w2-old', 'zirchw2old');
       const keeper = await mirrorEntry('w2-keep', 'zirchw2keep');
@@ -680,6 +657,22 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       expect(afterPush).toContain(keeper.entryId);
       // 设置侧「被标记过 N 次」同一窗口问题（同类位置）：计数不丢
       expect(memoryUserFlagCounts(currentDb()).get(target.entryId)).toBe(1);
+      // 撤销标记后（仍在窗口外）重新回到注入集合
+      expect(clearMemoryInjectionFlag(currentDb(), target.entryId)).toBe(true);
+      // （时钟已推进 60 天，从没用过的行会被用量规则另行暂停；这里只断言用户标记已解除）
+      expect(memoryInjectionPauses(currentDb(), NOW + 60 * DAY_MS).get(target.entryId)?.reason ?? '').not.toMatch(/^user_/);
+    });
+
+    it('r3 窗口外 flag → 不注入 → clear → 重新注入（真 DatabaseService，时钟不推进）', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const target = await mirrorEntry('w3-roundtrip', 'zirchw3rt');
+      vi.setSystemTime(NOW + DAY_MS);
+      pushJunkRows(600);
+      assertOutsideScanWindow(target.rowId);
+      expect(await flagMemoryInjection(currentDb(), target.entryId, 'wrong')).toBe(true);
+      expect(await injectedEntryIds().catch(() => [])).not.toContain(target.entryId);
+      expect(clearMemoryInjectionFlag(currentDb(), target.entryId)).toBe(true);
+      expect(await injectedEntryIds()).toContain(target.entryId);
     });
   });
 });

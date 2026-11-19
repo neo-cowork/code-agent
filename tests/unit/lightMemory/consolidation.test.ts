@@ -49,6 +49,17 @@ class FakeMemoryDb {
     return record;
   }
 
+  findMemoryByEntryId(entryId: string): MemoryRecord | null {
+    return this.records.find((record) => (record.metadata as { memoryEntry?: { id?: string } } | null)?.memoryEntry?.id === entryId) ?? null;
+  }
+
+  listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+    return this.records.filter((record) => {
+      const feedback = (record.metadata as Record<string, unknown> | null)?.injectionFeedback;
+      return typeof feedback === 'object' && feedback !== null;
+    });
+  }
+
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null {
     const index = this.records.findIndex((record) => record.id === id);
     if (index < 0) return null;
