@@ -64,21 +64,27 @@ function permissionTone(permission: NativePermissionStatus | null): StatusTone {
   return 'warning';
 }
 
-function permissionLabel(permission: NativePermissionStatus | null): string {
-  if (!permission) return '未探测';
+/** 本页文案节点（localOps.computerUse）：默认视图的所有字面量都从它取。 */
+type ComputerUseCopy = ReturnType<typeof useI18n>['t']['localOps']['computerUse'];
+
+function permissionLabel(
+  permission: NativePermissionStatus | null,
+  status: ComputerUseCopy['status'],
+): string {
+  if (!permission) return status.notProbed;
   switch (permission.status) {
     case 'granted':
-      return '已授权';
+      return status.granted;
     case 'denied':
-      return '未授权';
+      return status.denied;
     case 'needs_restart':
-      return '需重启';
+      return status.needsRestart;
     case 'wrong_bundle_id':
-      return 'Bundle 不匹配';
+      return status.wrongBundle;
     case 'unsupported':
-      return '不支持';
+      return status.unsupported;
     default:
-      return '未确认';
+      return status.unconfirmed;
   }
 }
 
@@ -108,7 +114,7 @@ const BoundaryCard: React.FC<{
   </div>
 );
 
-function createUnavailableSurfaceState(): ComputerSurfaceState {
+function createUnavailableSurfaceState(copy: ComputerUseCopy['webFallback']): ComputerSurfaceState {
   return {
     id: 'computer-surface-web-unavailable',
     mode: 'background_surface_unavailable',
@@ -116,17 +122,17 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
     ready: false,
     background: false,
     approvalScope: 'blocked',
-    safetyNote: '网页版读不到桌面状态；这里只说明电脑操作的能力范围和不可用的原因。',
+    safetyNote: copy.safetyNote,
     targetApp: null,
-    blockedReason: '网页版里无法读取桌面状态',
+    blockedReason: copy.blockedReason,
     approvedApps: [],
     deniedApps: [],
     lastAction: null,
     lastSnapshot: null,
     failureKind: 'evidence_unavailable',
-    blockingReasons: ['网页版里无法读取桌面状态'],
-    recommendedAction: '在桌面壳中打开后再读取窗口、截图和 AX evidence。',
-    evidenceSummary: ['网页版里读不到桌面信息'],
+    blockingReasons: [copy.blockedReason],
+    recommendedAction: copy.recommendedAction,
+    evidenceSummary: [copy.evidence],
     axQuality: null,
   };
 }
@@ -135,6 +141,8 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
 // 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责，原页头的「诊断」角标和刷新按钮
 // 收进左栏顶部的工具行。
 export const ComputerUseContent: React.FC = () => {
+  const { t } = useI18n();
+  const copy = t.localOps.computerUse;
   const snapshot = useSyncExternalStore(
     subscribeComputerUseSnapshot,
     getComputerUseSnapshot,
@@ -175,7 +183,7 @@ export const ComputerUseContent: React.FC = () => {
           collectorStatus: null,
           frontmost: null,
           recentEvents: [],
-          surface: createUnavailableSurfaceState(),
+          surface: createUnavailableSurfaceState(copy.webFallback),
           observation: null,
           desktopProviderError: 'Web 模式没有 native desktop bridge',
           observeError: null,
@@ -278,7 +286,7 @@ export const ComputerUseContent: React.FC = () => {
     });
     refreshInFlightRef.current = refreshPromise;
     return refreshPromise;
-  }, []);
+  }, [copy]);
 
   const loadElements = useCallback(async (targetApp: string | null) => {
     setElementsResult(null);
@@ -376,16 +384,17 @@ export const ComputerUseContent: React.FC = () => {
   }, [loadElements, selectedTargetApp]);
 
   const actionSummary = useMemo(() => buildRecentComputerUseAction(surface), [surface]);
-  const { t } = useI18n();
-  const copy = t.localOps.computerUse;
   const elementCandidates = useMemo(
     () => toElementCandidates(elementsResult, copy.diag.unnamedElement),
     [elementsResult, copy.diag.unnamedElement],
   );
   const screenPermission = getNativePermissionStatus(permissionSnapshot, 'screenCapture');
   const accessibilityPermission = getNativePermissionStatus(permissionSnapshot, 'accessibility');
+  // 「授权弹窗会显示「{name}」。」按 {name} 切开，产品名保持高亮样式
+  const grantDialogHint = copy.grantDialogHint.split('{name}');
   const failureExplanations = useMemo(
     () => describeComputerUseFailures({
+      copy,
       nativeAvailable,
       desktopProviderError,
       capabilities,
@@ -400,6 +409,7 @@ export const ComputerUseContent: React.FC = () => {
     }),
     [
       capabilities,
+      copy,
       desktopProviderError,
       elementsError,
       nativeAvailable,
@@ -501,18 +511,21 @@ export const ComputerUseContent: React.FC = () => {
             </div>
 
             <div className="mt-5 space-y-2">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Permissions</div>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">{copy.permissionsTitle}</div>
 
               {/* Accessibility = 必需。cua 走 AX 树优先，授权弹窗显示重签后的「Agent Neo Computer Use」 */}
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-zinc-200">Accessibility <span className="text-[10px] text-badge-info">必需</span></span>
-                  <StatusPill label={permissionLabel(accessibilityPermission)} tone={permissionTone(accessibilityPermission)} />
+                  <span className="text-sm text-zinc-200">{copy.permAccessibility} <span className="text-[10px] text-badge-info">{copy.badgeRequired}</span></span>
+                  <StatusPill label={permissionLabel(accessibilityPermission, copy.status)} tone={permissionTone(accessibilityPermission)} />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                  {accessibilityPermission?.detail || copy.accessibilityHint}
+                  {/* 原生 detail（英文系统文案）只进「诊断」区；默认卡用本地化提示 */}
+                  {copy.accessibilityHint}
                   {accessibilityPermission?.status !== 'granted' && (
-                    <span className="text-zinc-400">授权弹窗会显示 <span className="text-zinc-200">Agent Neo Computer Use</span>。</span>
+                    <span className="text-zinc-400">
+                      {grantDialogHint[0]}<span className="text-zinc-200">Agent Neo Computer Use</span>{grantDialogHint[1]}
+                    </span>
                   )}
                 </p>
                 {accessibilityPermission?.status !== 'granted' && nativeAvailable && (
@@ -522,7 +535,7 @@ export const ComputerUseContent: React.FC = () => {
                     className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-badge-info/60 bg-badge-info px-2.5 text-[11px] text-badge-info hover:bg-badge-info"
                   >
                     <ShieldCheck className="h-3 w-3" />
-                    开启辅助功能权限
+                    {copy.openAccessibility}
                   </button>
                 )}
               </div>
@@ -530,9 +543,9 @@ export const ComputerUseContent: React.FC = () => {
               {/* Screen Recording = 可选。默认 capture_mode=ax 不需要录屏（§11.1） */}
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-zinc-200">Screen Recording <span className="text-[10px] text-zinc-500">可选</span></span>
+                  <span className="text-sm text-zinc-200">{copy.permScreenRecording} <span className="text-[10px] text-zinc-500">{copy.badgeOptional}</span></span>
                   <StatusPill
-                    label={screenPermission?.status === 'granted' ? '已授权' : '可选'}
+                    label={screenPermission?.status === 'granted' ? copy.status.granted : copy.badgeOptional}
                     tone={screenPermission?.status === 'granted' ? 'ready' : 'neutral'}
                   />
                 </div>
@@ -546,15 +559,15 @@ export const ComputerUseContent: React.FC = () => {
                     className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-700"
                   >
                     <Eye className="h-3 w-3" />
-                    开启录屏（可选）
+                    {copy.openScreenRecording}
                   </button>
                 )}
               </div>
 
               <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-zinc-200">Automation</span>
-                  <StatusPill label="按 app 单独授权" tone="warning" />
+                  <span className="text-sm text-zinc-200">{copy.permAutomation}</span>
+                  <StatusPill label={copy.automationScope} tone="warning" />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-zinc-500">
                   {copy.automationHint}
@@ -569,7 +582,7 @@ export const ComputerUseContent: React.FC = () => {
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
                     <AlertTriangle className="h-4 w-4 text-badge-warning" />
-                    <h3 className="text-sm font-medium text-zinc-200">失败原因解释</h3>
+                    <h3 className="text-sm font-medium text-zinc-200">{copy.failureTitle}</h3>
                   </div>
                   <div className="grid gap-2 p-4 md:grid-cols-2">
                     {failureExplanations.map((item) => (
@@ -607,7 +620,7 @@ export const ComputerUseContent: React.FC = () => {
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
                     <ShieldCheck className="h-4 w-4 text-badge-success" />
-                    <h3 className="text-sm font-medium text-zinc-200">能力边界</h3>
+                    <h3 className="text-sm font-medium text-zinc-200">{copy.boundaryTitle}</h3>
                   </div>
                   <div className="space-y-2 p-4 text-xs leading-relaxed text-zinc-400">
                     <p>{copy.boundarySeen}</p>
@@ -666,16 +679,16 @@ export const ComputerUseContent: React.FC = () => {
                 <section className="rounded-lg border border-zinc-800 bg-zinc-950/30">
                   <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
                     <Lock className="h-4 w-4 text-zinc-400" />
-                    <h3 className="text-sm font-medium text-zinc-200">当前窗口观察</h3>
+                    <h3 className="text-sm font-medium text-zinc-200">{copy.observeTitle}</h3>
                   </div>
                   <div className="space-y-2 p-4 text-xs text-zinc-400">
                     <div className="flex items-center justify-between gap-3">
-                      <span>前台 app</span>
-                      <span className="truncate text-zinc-200">{observation?.snapshot?.appName || frontmost?.appName || '未知'}</span>
+                      <span>{copy.observeFrontApp}</span>
+                      <span className="truncate text-zinc-200">{observation?.snapshot?.appName || frontmost?.appName || copy.observeUnknown}</span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
-                      <span className="shrink-0">窗口</span>
-                      <span className="min-w-0 text-right text-zinc-200">{observation?.snapshot?.windowTitle || frontmost?.windowTitle || '未知'}</span>
+                      <span className="shrink-0">{copy.observeWindow}</span>
+                      <span className="min-w-0 text-right text-zinc-200">{observation?.snapshot?.windowTitle || frontmost?.windowTitle || copy.observeUnknown}</span>
                     </div>
                   </div>
                 </section>

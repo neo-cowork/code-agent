@@ -56,7 +56,7 @@ describe('ProjectCollaborationError locale', () => {
     const en = new ProjectCollaborationError('COLLAB_AUTH_REQUIRED').message;
     language.value = 'zh';
     const zh = new ProjectCollaborationError('COLLAB_AUTH_REQUIRED').message;
-    expect(en).toBe('Please sign in before using a collaboration space.');
+    expect(en).toBe('Please sign in before using a cloud Space.');
     expect(zh).toBe('请先登录后再使用协作空间。');
   });
 

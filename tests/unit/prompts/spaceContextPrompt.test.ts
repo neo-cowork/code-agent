@@ -73,7 +73,7 @@ describe('buildSpaceContextPrompt', () => {
     expect(block).toContain('selected_skills: (none)');
   });
 
-  it('has zero prompt cost outside an explicit collaboration space', () => {
+  it('has zero prompt cost outside an explicit Space', () => {
     expect(buildSpaceContextPrompt('session_1', undefined, dependencies())).toBeNull();
     expect(buildSpaceContextPrompt('session_1', scope, dependencies({
       getProjectDetail: vi.fn(() => detail(null)),
