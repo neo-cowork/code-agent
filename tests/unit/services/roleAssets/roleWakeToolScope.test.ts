@@ -36,6 +36,7 @@ const harness = vi.hoisted(() => ({
     allowedToolNames?: string[];
     deniedToolNames?: string[];
     hasGoal: boolean;
+    topology?: string;
     roleId?: string;
     rolePrompt?: string;
   }>,
@@ -140,17 +141,21 @@ vi.mock('../../../../src/host/runtime/runContext', () => ({
 }));
 
 vi.mock('../../../../src/cli/bootstrap', () => ({
-  createRunToolExecutor: vi.fn(() => ({ setExecutionTopology: vi.fn() })),
+  createRunToolExecutor: vi.fn(() => {
+    const executor = { topology: 'main', setExecutionTopology(t: string) { executor.topology = t; } };
+    return executor;
+  }),
   createAgentLoop: vi.fn((config: {
     allowedToolNames?: string[];
     deniedToolNames?: string[];
     goalContract?: unknown;
     agentOverride?: { id: string; systemPrompt: string };
-  }) => {
+  }, _onEvent?: unknown, _messages?: unknown, _sessionId?: unknown, _telemetry?: unknown, executor?: { topology?: string }) => {
     harness.loops.push({
       allowedToolNames: config.allowedToolNames ? [...config.allowedToolNames] : undefined,
       deniedToolNames: config.deniedToolNames ? [...config.deniedToolNames] : undefined,
       hasGoal: config.goalContract != null,
+      topology: executor?.topology,
       roleId: config.agentOverride?.id,
       rolePrompt: config.agentOverride?.systemPrompt,
     });
@@ -233,6 +238,8 @@ describe('role wake tool scope', () => {
 
     expect(harness.loops).toHaveLength(1);
     expect(harness.loops[0].hasGoal).toBe(false);
+    // 无 orchestrator 的 headless 路径也走 async_agent，预算记无人值守池
+    expect(harness.loops[0].topology).toBe('async_agent');
     expect(harness.loops[0].roleId).toBe(SCOPE_ROLE);
     expect(harness.loops[0].rolePrompt).toBe('只读巡检角色提示词');
     expectScopedAllowList(harness.loops[0].allowedToolNames);
@@ -258,6 +265,7 @@ describe('role wake tool scope', () => {
 
     expect(harness.loops).toHaveLength(2);
     expect(harness.loops[1].hasGoal).toBe(true);
+    expect(harness.loops.map((l) => l.topology)).toEqual(['async_agent', 'async_agent']);
     expect(harness.loops[1].roleId).toBe(SCOPE_ROLE);
     expect(harness.loops[1].rolePrompt).toBe('只读巡检角色提示词');
     expectScopedAllowList(harness.loops[1].allowedToolNames);
