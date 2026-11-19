@@ -26,7 +26,7 @@ const mockSessionEvents = vi.hoisted(() => ({
 }));
 const mockSessionAutomation = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
-  recordEvent: vi.fn(async () => undefined),
+  recordEvent: vi.fn(async (_event: { recordStatus?: string; configPatch?: { pendingReview?: unknown } }) => undefined),
 }));
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
@@ -151,16 +151,18 @@ describe('wakeRole → withRoleWakeAutomation 记录（N-FIX-ROLE-WAKE-CADENCE-N
   it('suggest → 记录落 pending_review 并带 pendingReview 标记（进待审收件箱）', async () => {
     primeWakeRun('suggest', 'wake-suggest-2');
     await wakeRole(RESEARCHER, 'cadence');
-    const patch = mockSessionAutomation.recordEvent.mock.calls.at(-1)?.[0] as Record<string, any>;
-    expect(patch.recordStatus).toBe('pending_review');
-    expect(patch.configPatch.pendingReview).toEqual({ resultSessionId: 'wake-suggest-2', at: expect.any(Number) });
+    const patch = mockSessionAutomation.recordEvent.mock.calls.at(-1)?.[0];
+    expect(patch).toBeDefined();
+    expect(patch?.recordStatus).toBe('pending_review');
+    expect(patch?.configPatch?.pendingReview).toEqual({ resultSessionId: 'wake-suggest-2', at: expect.any(Number) });
   });
 
   it.each(['report', 'advance', 'silence'])('%s → 不进待审收件箱', async (decision) => {
     primeWakeRun(decision, `wake-${decision}`);
     await wakeRole(RESEARCHER, 'cadence');
-    const patch = mockSessionAutomation.recordEvent.mock.calls.at(-1)?.[0] as Record<string, any>;
-    expect(patch.recordStatus).not.toBe('pending_review');
-    expect(patch.configPatch.pendingReview).toBeUndefined();
+    const patch = mockSessionAutomation.recordEvent.mock.calls.at(-1)?.[0];
+    expect(patch).toBeDefined();
+    expect(patch?.recordStatus).not.toBe('pending_review');
+    expect(patch?.configPatch?.pendingReview).toBeUndefined();
   });
 });
