@@ -6,8 +6,8 @@ import {
   QUICK_LANE_LOW_REASONING_EFFORT_MODELS,
   getModelDisplayLabel,
 } from '../../../src/shared/constants';
-import { ADDITIONAL_PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistryAdditional';
-import { buildRuntimeModelOptions } from '../../../src/shared/modelRuntime';
+import { PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistry';
+import { buildRuntimeModelOptions, getRuntimeModelLabel } from '../../../src/shared/modelRuntime';
 
 const EXPECTED_ZHIPU_MODEL_IDS = [
   'glm-5.1',
@@ -26,13 +26,16 @@ describe('runtime model display labels', () => {
     expect(getModelDisplayLabel('glm-5.3')).toBe('GLM-5.3');
   });
 
-  it("labels every ADDITIONAL_PROVIDER_REGISTRY model id so the switcher never shows a raw id", () => {
-    const registryIds = Object.values(ADDITIONAL_PROVIDER_REGISTRY)
-      .flatMap((provider) => provider.models.map((model) => model.id));
+  it("labels every PROVIDER_REGISTRY model id so the switcher never shows a raw id", () => {
+    const providers = Object.values(PROVIDER_REGISTRY);
+    const registryIds = providers.flatMap((provider) =>
+      provider.models.map((model) => model.id));
 
     expect(registryIds.length).toBeGreaterThan(0);
-    for (const modelId of registryIds) {
-      expect(getModelDisplayLabel(modelId), modelId).not.toBe(modelId);
+    for (const provider of providers) {
+      for (const model of provider.models) {
+        expect(getModelDisplayLabel(model.id), `${provider.id}: ${model.id}`).not.toBe(model.id);
+      }
     }
   });
 
@@ -79,5 +82,37 @@ describe('runtime model display labels', () => {
 
     expect(buildRuntimeModelOptions(settings, ['zhipu']).find((option) => option.model === 'glm-5.3')?.label)
       .toBe('GLM-5.3');
+  });
+
+  it('renders configured gpt-4o / qwen-max as friendly labels instead of raw ids', () => {
+    expect(getRuntimeModelLabel('gpt-4o')).toBe('GPT-4o');
+    expect(getRuntimeModelLabel('qwen-max')).toBe('Qwen Max');
+
+    const settings = {
+      models: {
+        default: 'openai',
+        providers: {
+          openai: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'gpt-4o': { enabled: true },
+            },
+          },
+          qwen: {
+            enabled: true,
+            apiKeyConfigured: true,
+            models: {
+              'qwen-max': { enabled: true },
+            },
+          },
+        },
+        routing: {},
+      },
+    } as never;
+
+    const options = buildRuntimeModelOptions(settings, ['openai', 'qwen']);
+    expect(options.find((option) => option.model === 'gpt-4o')?.label).toBe('GPT-4o');
+    expect(options.find((option) => option.model === 'qwen-max')?.label).toBe('Qwen Max');
   });
 });
