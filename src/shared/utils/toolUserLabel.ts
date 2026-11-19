@@ -63,14 +63,9 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
 export function permissionNotice(
   toolName: string | undefined,
   language: 'zh' | 'en',
-  context: 'approval' | 'parked' | 'native' = 'approval',
+  context: 'approval' | 'parked' = 'approval',
 ): { title: string; body: string } {
   const en = language === 'en';
-  // The native fallback also serves questions: preserve its generic wording.
-  if (context === 'native') return {
-    title: en ? 'Confirmation needed' : '有事项需要你确认',
-    body: en ? 'A background task is waiting for your confirmation. Open Agent Neo to respond.' : '后台任务在等你确认，打开 Agent Neo 处理。',
-  };
   const title = en ? 'Approval needed' : '需要授权';
   const label = toolName?.trim() ? toolUserLabel(toolName, language) : undefined;
   const body = label ? `${title}${en ? ': ' : '：'}${label}` : (en ? 'Review the proposed action.' : '请求执行权限');

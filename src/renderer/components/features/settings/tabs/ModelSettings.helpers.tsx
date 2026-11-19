@@ -1,3 +1,4 @@
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import type {
   AppSettings,
@@ -237,6 +238,7 @@ export function buildProviderManagementRows({
     const runtimeModels = getProviderRuntimeModels(provider, providerConfig);
     const enabledModels = runtimeModels.filter((model) => model.enabled);
     const rowDefaultModel = providerConfig?.model || registryInfo?.defaultModel || runtimeModels[0]?.id || '-';
+    const selectedModelId = config.provider === provider.id ? config.model : rowDefaultModel;
     return {
       id: provider.id,
       name: getProviderDisplayName(provider.id, providerConfig?.displayName, provider.name, language),
@@ -249,9 +251,7 @@ export function buildProviderManagementRows({
       defaultModel: rowDefaultModel,
       endpoint: providerConfig?.baseUrl || registryInfo?.endpoint || '-',
       selected: config.provider === provider.id,
-      selectedModelLabel: config.provider === provider.id
-        ? getModelLabel(runtimeModels, config.model)
-        : getModelLabel(runtimeModels, rowDefaultModel),
+      selectedModelLabel: localizeModelLabel(selectedModelId, getModelLabel(runtimeModels, selectedModelId), language),
       keyless: !providerRequiresApiKey(provider.id),
     };
   });
