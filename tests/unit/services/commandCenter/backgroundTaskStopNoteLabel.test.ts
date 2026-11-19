@@ -124,7 +124,7 @@ describe('停止行标题：完整任务名，词边界截断，中文界面不�
     expect(stopNoteRows()[0].content).toBe('「周报」：这个后台任务已取消。');
   });
 
-  it('中文界面遇到纯英文标题退回短键；英文界面（en）用完整英文标题', async () => {
+  it('中文界面遇到纯英文标题且短键是整词时用短键；英文界面（en）用完整英文标题', async () => {
     harness.locale = 'zh';
     await projectTerminalResult(makeTask({ title: 'Fetch GUI documentation', shortName: 'GUI' }), 'cancelled');
     expect(stopNoteRows()[0].content).toBe('「GUI」：这个后台任务已取消。');
@@ -133,6 +133,14 @@ describe('停止行标题：完整任务名，词边界截断，中文界面不�
     harness.locale = 'en';
     await projectTerminalResult(makeTask({ title: 'Fetch GUI documentation', shortName: 'GUI' }), 'cancelled');
     expect(stopNoteRows()[0].content).toBe('「Fetch GUI documentation」：This background task was cancelled.');
+  });
+
+  it('zh locale + English-only title + half-word short key falls back to the full title', async () => {
+    harness.locale = 'zh';
+    await projectTerminalResult(makeTask({ title: 'Fetch React docs into a weekly note', shortName: 'Reac' }), 'cancelled');
+    const content = stopNoteRows()[0].content;
+    expect(content).not.toContain('「Reac」');
+    expect(content).toBe('「Fetch React docs into a…」：这个后台任务已取消。');
   });
 
   it('空标题退回短键，不出「」空名字', async () => {

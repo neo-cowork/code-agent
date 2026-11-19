@@ -30,14 +30,23 @@ const CJK_CHAR_RE = /[\u4e00-\u9fff]/;
 /**
  * 停止行用哪个名字：完整任务标题（超长的词边界截断由 recordBackgroundTaskStopNote 负责），
  * shortName 只是会话内部引用键（2-4 字符，可能是「抓gui」这类半截词），不再直接上屏。
- * 例外：中文界面遇到完全没有中文字符的标题（整句英文任务名）时退回短键，
+ * 例外：中文界面遇到完全没有中文字符的标题（整句英文任务名）且短键是整词/首字母缩写时用短键，半截词仍用完整标题，
  * 不在中文界面上印一整句英文；标题为空同样退回短键，不出「」空名字。
  */
 function stopNoteTitleForTask(task: SessionCommandTask, locale: ReturnType<typeof resolveLocale>): string {
   const title = task.title.trim();
   if (!title) return task.shortName;
-  if (locale === 'zh' && !CJK_CHAR_RE.test(title)) return task.shortName;
+  if (locale === 'zh' && !CJK_CHAR_RE.test(title) && isWholeKeyOfTitle(task.shortName, title)) return task.shortName;
   return title;
+}
+
+/** 短键是标题里的整词，或标题各词首字母缩写（全大写）时才算「完整」；4 字符硬截断的半截词不算。 */
+function isWholeKeyOfTitle(shortName: string, title: string): boolean {
+  const words = title.match(/[A-Za-z0-9]+/g) ?? [];
+  const key = shortName.trim();
+  if (words.some((w) => w.toLowerCase() === key.toLowerCase())) return true;
+  const initials = words.map((w) => w[0]).join('');
+  return key.length > 1 && key === key.toUpperCase() && key.toUpperCase() === initials.toUpperCase();
 }
 
 /**
