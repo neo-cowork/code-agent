@@ -292,6 +292,43 @@ describe('单轮 Office 文件交付 — 意图与提醒', () => {
     expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
   });
 
+  it.each([
+    ['zh 分别在后台', '分别在后台把 a.csv 和 b.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 特别在后台', '特别在后台把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 特别说明：请在后台任务里做', '特别说明：请在后台任务里做，把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 差别在后台', '差别在后台跑，把 signups.csv 导出成 Excel 文件 .xlsx'],
+  ])('「别」是复合词一部分（分别/特别/差别）不算否定，仍算要后台：%s', (_label, prompt) => {
+    const features = detectTaskFeatures(prompt);
+    expect(features.isOfficeFileDeliverable).toBe(true);
+    expect(features.isOneTurnFileDeliverable).toBe(false);
+    expect(getSystemReminders(prompt).some((r) => r.includes('不要派发后台任务'))).toBe(false);
+  });
+
+  it.each([
+    ['zh 别在后台跑', '别在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 请别放后台', '请别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不要放到后台', '不要放到后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['en Don\'t run it in the background', "Don't run it in the background, just export signups.csv as an Excel file (.xlsx)"],
+  ])('真否定（别在/请别/不要/don\'t）仍判单轮交付：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
+  it.each([
+    ['zh 不用', '不用在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不必', '不必在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 无需', '无需在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不需要', '不需要在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不想', '不想在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不许', '不许在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 禁止', '禁止在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 勿', '请勿在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['en never', 'Never run it in the background, just export signups.csv as an Excel file (.xlsx)'],
+    ['en without', 'Export signups.csv as an Excel file (.xlsx) without running it in the background'],
+    ['en instead of', 'Instead of a background task, just export signups.csv as an Excel file (.xlsx)'],
+  ])('其余否定词仍判单轮交付：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
   it('同一句里否定在别的分句不影响：「不要问我，在后台导出」仍算要后台', () => {
     expect(detectTaskFeatures('不要问我，在后台把名单导出成 Excel 文件 .xlsx').isOneTurnFileDeliverable).toBe(false);
   });

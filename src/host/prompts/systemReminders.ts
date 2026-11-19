@@ -468,6 +468,12 @@ const OFFICE_FILE_OPERATION_RE = new RegExp([
  * 两道防误判：① 「后台」作名词（商家后台/管理后台/用后台导出的数据）不算——正则只收「在/放到…后台」
  * 这类动作介词和「后台任务/后台跑」等，且「后台管理/系统/页面…」排除；② 命中前同一分句里有否定
  * （不要在后台跑 / don't run it in the background）不算。
+ * ③ 「别」只认祈使（别在/请别放/千万别）：「别」打头或收尾的复合词里的别不是否定——裸「别」会把
+ * 「分别在后台跑」「特别说明：请在后台任务里做」误判成否定，让模型编出「没有后台槽位」转前台
+ * （N-FIX-BG-NEGATION-RE-BIE-FALSE-NEGATIVE）。收尾复合词（分别/特别/差别/区别/个别/类别/级别/
+ * 派别/告别/识别/鉴别/判别/辨别/送别/诀别/惜别/阔别/暂别/性别/国别/种别/分门别类）靠前置字符排除，
+ * 打头复合词（别人/别的/别处/别名/别称/别国/别墅/别致/别论）靠后置字符排除；「别开（灯）」「别提」
+ * 「别说」是祈使，不进排除表。
  */
 const EXPLICIT_BACKGROUND_REQUEST_RE = new RegExp([
   String.raw`(?:在|放到?|转到?|丢到?|扔到?)\s*后台(?!管理|系统|页面|界面|登录|账号|入口|数据)`,
@@ -475,7 +481,7 @@ const EXPLICIT_BACKGROUND_REQUEST_RE = new RegExp([
   String.raw`\bbackground\s+(?:task|job|agent)s?\b`,
   String.raw`\b(?:in|to|as)\s+(?:the\s+|a\s+)?background\b`,
 ].join('|'), 'gi');
-const BACKGROUND_NEGATION_RE = /不要|别|不用|不必|无需|不需要|不想|不许|禁止|勿|\b(?:don'?t|do not|never|not|no need to|without|instead of)\b/i;
+const BACKGROUND_NEGATION_RE = /不要|(?<![分特差区个类级派告识鉴判辨送诀惜阔暂性国种门])别(?!人|的|处|名|称|国|墅|致|论)|不用|不必|无需|不需要|不想|不许|禁止|勿|\b(?:don'?t|do not|never|not|no need to|without|instead of)\b/i;
 
 function hasExplicitBackgroundRequest(message: string): boolean {
   for (const m of message.matchAll(EXPLICIT_BACKGROUND_REQUEST_RE)) {
