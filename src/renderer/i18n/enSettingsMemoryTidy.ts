@@ -13,6 +13,7 @@ export const enSettingsMemoryTidy = {
       collapseLabel: 'Collapse',
       summaryMerged: 'merged {groups} memory group(s), put away {cards} older ones',
       summaryConflictSuffix: ', plus {count} conflicting memories put away',
+      summaryConflictOnly: 'put away {count} conflicting memories',
       summaryNoChange: 'checked and found nothing to change',
       summaryFailed: 'tidy-up attempt failed, nothing was changed',
       mergeLineSources: '{sources} → {result}',

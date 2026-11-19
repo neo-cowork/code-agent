@@ -13,6 +13,7 @@ export const zhSettingsMemoryTidy = {
       collapseLabel: '收起',
       summaryMerged: '合并 {groups} 组记忆，收起 {cards} 条旧记忆',
       summaryConflictSuffix: '，另有 {count} 条与说明冲突的记忆被收起',
+      summaryConflictOnly: '收起了 {count} 条与说明冲突的记忆',
       summaryNoChange: '检查后没有需要改动的',
       summaryFailed: '整理尝试失败，没有改动记忆',
       mergeLineSources: '{sources} → {result}',

@@ -39,13 +39,17 @@ export function buildTidyRunSummary(run: MemoryTidyRunView, copy: MemoryTidyCopy
       ? copy.summaryFailed
       : copy.summaryNoChange;
   }
-  let summary = copy.summaryMerged
-    .replace('{groups}', String(run.mergeCount))
-    .replace('{cards}', String(tidyPutAwayCount(run) - run.conflictCount));
-  if (run.conflictCount > 0) {
-    summary += copy.summaryConflictSuffix.replace('{count}', String(run.conflictCount));
+  const parts: string[] = [];
+  if (run.mergeCount > 0) {
+    parts.push(copy.summaryMerged
+      .replace('{groups}', String(run.mergeCount))
+      .replace('{cards}', String(tidyPutAwayCount(run) - run.conflictCount)));
   }
-  return summary;
+  if (run.conflictCount > 0) {
+    parts.push((run.mergeCount > 0 ? copy.summaryConflictSuffix : copy.summaryConflictOnly)
+      .replace('{count}', String(run.conflictCount)));
+  }
+  return parts.join('');
 }
 
 /** 开关未开启时的预告句（最近一次检查会改什么 / 暂时不会改什么）。 */

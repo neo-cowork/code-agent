@@ -134,6 +134,12 @@ describe('buildTidyRunSummary / buildTidyPreviewSentence（纯函数）', () => 
     expect(buildTidyRunSummary(run, copy)).toBe(
       '合并 1 组记忆，收起 2 条旧记忆，另有 1 条与说明冲突的记忆被收起',
     );
+    // 只降级冲突、没有合并的运行不说「合并 0 组」。
+    const conflictOnly = buildTidyRunSummary(
+      { ...run, mergeCount: 0, merges: [] },
+      copy,
+    );
+    expect(conflictOnly).toBe('收起了 1 条与说明冲突的记忆');
   });
 
   it('summarizes no-op / failed runs without internal English reasons', () => {

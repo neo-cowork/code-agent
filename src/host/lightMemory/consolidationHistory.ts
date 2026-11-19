@@ -70,7 +70,7 @@ interface AuditLine {
 }
 
 /** 演练预览文件的磁盘形状（consolidation.ts 的 dry-run 写入）。 */
-export interface ConsolidationPreviewFile {
+interface ConsolidationPreviewFile {
   schemaVersion: number;
   at: number;
   wouldChangeNothing: boolean;
@@ -276,7 +276,7 @@ export async function listConsolidationRuns(): Promise<MemoryTidyHistoryResult> 
       restorable,
       ...(blockedCode ? { blockedCode } : {}),
     };
-  });
+  }).sort((left, right) => right.at - left.at);
 
   const previewFile = await readConsolidationPreviewFile();
   let preview: MemoryTidyPreviewView | null = null;
