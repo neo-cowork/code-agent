@@ -25,6 +25,7 @@ import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { interpolatePlural } from '../../../../i18n/interpolate';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { localizeCatalogProviderName } from '../../../../i18n/providerDisplay';
 import { getProviderDisplayName } from '../../../../i18n/settingsVocabulary';
 import { formatDateTime } from '../../../../utils/formatDateTime';
@@ -460,7 +461,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
           >
             {executionModel
               ? (PROVIDER_MODELS_MAP[executionModel.provider]?.models ?? []).map((model) => (
-                <option key={model.id} value={model.id}>{model.label}</option>
+                <option key={model.id} value={model.id}>{localizeModelLabel(model.id, model.label, uiLanguage)}</option>
               ))
               : <option value="">{text.executionModelFollowSession}</option>}
           </select>

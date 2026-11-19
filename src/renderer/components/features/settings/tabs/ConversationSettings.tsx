@@ -22,6 +22,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { zh } from '../../../../i18n/zh';
 
@@ -77,7 +78,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export const ConversationSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const conversationText = t.settings.conversation;
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const [compressionState, setCompressionState] = useState<ContextCompressionChannelState>(DEFAULT_COMPRESSION_STATE);
@@ -91,8 +92,9 @@ export const ConversationSettings: React.FC = () => {
   const selectedModelLabel = useMemo(() => {
     const modelId = compressionState.compactModel.model || compressionState.config.compactModel;
     const found = selectedProvider?.models.find((m) => m.id === modelId);
-    return found?.label || modelId || conversationText.notSet;
-  }, [compressionState.compactModel.model, compressionState.config.compactModel, conversationText.notSet, selectedProvider]);
+    const raw = found?.label || modelId || conversationText.notSet;
+    return found?.label ? localizeModelLabel(modelId, found.label, language) : raw;
+  }, [compressionState.compactModel.model, compressionState.config.compactModel, conversationText.notSet, language, selectedProvider]);
 
   useEffect(() => {
     let cancelled = false;
