@@ -992,6 +992,7 @@ export class ToolExecutionEngine {
           toolCall,
           startTime,
           (content) => this.injectFileConsistencyGuard(content),
+          true,
         );
         langfuse.endSpan(toolSpanId, {
           success: false,

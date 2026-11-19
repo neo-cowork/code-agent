@@ -108,7 +108,7 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
-  const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
+  const qualifier = isOutsideWorkspace(request) ? p.workspaceOutsideQualifier : '';
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
     && !isDeletionRequest(request)

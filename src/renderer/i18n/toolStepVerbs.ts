@@ -101,6 +101,9 @@ interface ToolStepVerbBundle {
   failureCode: string;
   failureReasonMissing: string;
   notRunPrefix: string;
+  /** 主机封存、从未执行的命令（metadata.skipped）：整句 / 混合组里的未执行计数 */
+  skippedCommands: { one: string; other: string };
+  skippedCount: { one: string; other: string };
   /** 裸工程错误码（metadata.code，未登记进 toolErrors.codes 的那批）→ 一句人话 + 下一步 */
   rawFailureCodes: {
     ENOENT: string;
@@ -232,6 +235,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   failureCode: '错误码 {code}',
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   notRunPrefix: '未执行',
+  skippedCommands: { one: '有一条命令没有执行', other: '有 {count} 条命令没有执行' },
+  skippedCount: { one: '{count} 条未执行', other: '{count} 条未执行' },
   rawFailureCodes: {
     ENOENT: '找不到这个文件或目录，请确认路径是否正确',
     INVALID_ARGS: '这一步准备的内容不完整，Neo 会调整后再试',
@@ -318,6 +323,8 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   failureCode: 'Error code {code}',
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   notRunPrefix: 'Not run',
+  skippedCommands: { one: 'A command did not run', other: '{count} commands did not run' },
+  skippedCount: { one: '{count} not run', other: '{count} not run' },
   rawFailureCodes: {
     ENOENT: 'Could not find that file or folder; check the path',
     INVALID_ARGS: 'This step was set up incompletely; Neo will adjust and try again',

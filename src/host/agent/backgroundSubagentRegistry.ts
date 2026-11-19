@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
+import { stripCardToolCallMarkup } from '../../shared/modelMarkupStrip';
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { describeSubagentStopReason } from './subagentFailureReason';
 import { appendSubagentLeftoverShellReport } from './subagentLeftoverShells';
@@ -310,7 +311,7 @@ export class BackgroundSubagentRegistry {
         // 前台共用的执行器只给 stopHint、不改判；后台注册表才把「没有结论就停下」落成失败 + 白话说明。
         const cancelRequested = this.entries.get(agentId)?.cancelRequested === true;
         const hint: SubagentResult['stopHint'] | undefined = returned.success && !cancelRequested
-          ? returned.stopHint ?? (!returned.output.trim()
+          ? returned.stopHint ?? (!stripCardToolCallMarkup(returned.output).trim()
             ? { kind: 'no_conclusion', conclusion: resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail }
             : undefined)
           : undefined;
