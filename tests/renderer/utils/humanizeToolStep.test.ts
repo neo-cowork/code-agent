@@ -428,3 +428,96 @@ describe('file selection patterns use plain step copy', () => {
     }
   });
 });
+
+// ============================================================================
+// N-FIX-STEP-ROW-GENERIC-TOOL-VERB-OFFICE-LISTDIR
+// ListDirectory（schema 注册名）此前漏在 LISTDIR_TOOLS 分类表外，落「执行了工具操作」
+// 兜底；Office 文档工具（excel/docx/ppt/pdf/chart 生成 + DocEdit）同样落兜底。
+// 这里钉四态专句；注册表全量的「不落兜底」门见 toolStepRegistryVerbs.gate.test.ts。
+// ============================================================================
+describe('ListDirectory — schema 注册名复用 listDir 句式', () => {
+  it('completed: 与 list_directory 同句式（zh/en）', () => {
+    expect(humanizeToolStep('ListDirectory', { path: '/Users/me/project/src/renderer' }, zh))
+      .toBe('查看了 …/src/renderer 目录');
+    expect(humanizeToolStep('ListDirectory', { path: '/Users/me/project/src/renderer' }, en))
+      .toBe('Viewed the …/src/renderer directory');
+  });
+
+  it('四态使用 listDir 词表，不落工具操作兜底、不露内部名', () => {
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh, undefined, 'pending-approval')).toBe('请求查看 src 目录');
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh, undefined, 'running')).toBe('正在查看 src 目录');
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh, undefined, 'completed')).toBe('查看了 src 目录');
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh, undefined, 'failed')).toBe('查看 src 目录未成功');
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh)).not.toContain('ListDirectory');
+    expect(humanizeToolStep('ListDirectory', { path: 'src' }, en, undefined, 'failed')).toBe('Could not view the src directory');
+  });
+
+  it('无 path 参数时走 listDirFallback', () => {
+    expect(humanizeToolStep('ListDirectory', {}, zh)).toBe('查看了目录');
+  });
+
+  it('组聚合落 explored 桶（与 list_directory 一致，不再算「执行了 N 个步骤」）', () => {
+    expect(humanizeToolGroupLabel(['ListDirectory'], zh)).toBe('查看了 1 次内容');
+  });
+});
+
+describe('Office 文档工具四态专句', () => {
+  const STATUSES = ['pending-approval', 'running', 'completed', 'failed'] as const;
+  const GENERIC = {
+    zh: {
+      'pending-approval': '请求执行工具操作', running: '正在执行工具操作',
+      completed: '执行了工具操作', failed: '执行工具操作未成功',
+    },
+    en: {
+      'pending-approval': 'Request to run a tool operation', running: 'Running a tool operation',
+      completed: 'Ran a tool operation', failed: 'Could not run the tool operation',
+    },
+  } as const;
+
+  it.each([
+    ['excel_generate', { title: '月度销售', data: 'x', output_path: '/Users/me/reports/sales.xlsx' }, '导出了表格 sales.xlsx'],
+    ['docx_generate', { title: '周报', content: 'x', output_path: '/Users/me/reports/weekly.docx' }, '生成了文档 weekly.docx'],
+    ['ppt_generate', { topic: '复盘', output_path: '/Users/me/reports/deck.pptx' }, '生成了演示文稿 deck.pptx'],
+    ['pdf_generate', { title: '简报', content: 'x', output_path: '/Users/me/reports/brief.pdf' }, '生成了 PDF brief.pdf'],
+    ['chart_generate', { type: 'bar', output_path: '/Users/me/reports/chart.png' }, '生成了图表 chart.png'],
+    ['DocEdit', { file_path: '/Users/me/reports/plan.docx', operations: [] }, '编辑了文档 plan.docx'],
+  ] as const)('%s 完成态命名文档种类并带文件名', (name, args, expected) => {
+    expect(humanizeToolStep(name, args, zh)).toBe(expected);
+  });
+
+  it('文件名参数缺失时句子仍成立（不带文件名后缀）', () => {
+    expect(humanizeToolStep('excel_generate', { title: '月度销售', data: 'x' }, zh)).toBe('导出了表格');
+    expect(humanizeToolStep('DocEdit', { operations: [] }, zh)).toBe('编辑了文档');
+  });
+
+  it('四态（zh/en）动词形态对齐，失败态不带文件名', () => {
+    const args = { output_path: '/Users/me/reports/sales.xlsx' };
+    expect(humanizeToolStep('excel_generate', args, zh, undefined, 'pending-approval')).toBe('请求导出表格 sales.xlsx');
+    expect(humanizeToolStep('excel_generate', args, zh, undefined, 'running')).toBe('正在导出表格 sales.xlsx');
+    expect(humanizeToolStep('excel_generate', args, zh, undefined, 'failed')).toBe('导出表格未成功');
+    expect(humanizeToolStep('excel_generate', args, en, undefined, 'pending-approval')).toBe('Request to export spreadsheet sales.xlsx');
+    expect(humanizeToolStep('excel_generate', args, en, undefined, 'running')).toBe('Exporting spreadsheet sales.xlsx');
+    expect(humanizeToolStep('excel_generate', args, en, undefined, 'completed')).toBe('Exported spreadsheet sales.xlsx');
+    expect(humanizeToolStep('excel_generate', args, en, undefined, 'failed')).toBe('Could not export spreadsheet');
+  });
+
+  it('DocEdit 待批/进行/失败态（en）', () => {
+    const args = { file_path: '/Users/me/reports/plan.docx', operations: [] };
+    expect(humanizeToolStep('DocEdit', args, en, undefined, 'pending-approval')).toBe('Request to edit a document plan.docx');
+    expect(humanizeToolStep('DocEdit', args, en, undefined, 'running')).toBe('Editing a document plan.docx');
+    expect(humanizeToolStep('DocEdit', args, en, undefined, 'failed')).toBe('Could not edit a document');
+  });
+
+  // 全矩阵：ListDirectory + 六个 Office 工具 × 四态 × zh/en 都不等于兜底句，且不露原始工具名。
+  const NO_FALLBACK_TOOLS = ['ListDirectory', 'excel_generate', 'docx_generate', 'ppt_generate', 'pdf_generate', 'chart_generate', 'DocEdit'] as const;
+  it.each(NO_FALLBACK_TOOLS)('%s 空参四态不落「工具操作」兜底、不含原始工具名', (name) => {
+    for (const status of STATUSES) {
+      const zhLine = humanizeToolStep(name, {}, zh, undefined, status);
+      expect(zhLine, `zh ${status}`).not.toBe(GENERIC.zh[status]);
+      expect(zhLine, `zh ${status}`).not.toContain(name);
+      const enLine = humanizeToolStep(name, {}, en, undefined, status);
+      expect(enLine, `en ${status}`).not.toBe(GENERIC.en[status]);
+      expect(enLine, `en ${status}`).not.toContain(name);
+    }
+  });
+});
