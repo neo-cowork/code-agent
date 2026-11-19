@@ -34,6 +34,7 @@ import { useAuthStore } from '../../../../stores/authStore';
 import { useInternalFeatureStore } from '../../../../internalFeatures/internalFeatureStore';
 import { refreshThirdPartyPluginUi } from '../../../../slots/thirdPartyPluginUiLoader';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolatePlural } from '../../../../i18n/interpolate';
 import ipcService from '../../../../services/ipcService';
 import { pickNativeFile } from '../../../../services/tauriPluginFacade';
 import { isTauriMode } from '../../../../utils/platform';
@@ -889,12 +890,10 @@ export const PluginsSettings: React.FC = () => {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h4 className="text-sm font-medium text-zinc-100">{marketplace.name}</h4>
-                          <Pill>{marketplace.pluginCount} plugins</Pill>
-                          {marketplace.autoUpdate && <Pill tone="success">auto update</Pill>}
+                          <Pill>{interpolatePlural(pluginsText.marketplaceSources.pluginCount, marketplace.pluginCount)}</Pill>
+                          {marketplace.autoUpdate && <Pill tone="success">{pluginsText.marketplaceSources.autoUpdate}</Pill>}
                         </div>
-                        {marketplace.description && (
-                          <p className="mt-1 text-xs text-zinc-500">{marketplace.description}</p>
-                        )}
+                        {marketplace.description && <p className="mt-1 text-xs text-zinc-500">{marketplace.description}</p>}
                         <div className="mt-2 break-all text-xs text-zinc-600">
                           {formatMarketplaceSource(marketplace.source)}
                         </div>
