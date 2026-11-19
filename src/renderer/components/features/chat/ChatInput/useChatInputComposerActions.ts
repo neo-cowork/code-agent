@@ -67,7 +67,7 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     try {
       return await processFile(file);
     } catch (error) {
-      logger.error('processFile threw', { fileName: file.name, error });
+      logger.error('processFile threw', error, { fileName: file.name });
       toast.show('error', t.chatInput.uploadProcessFailed.replace('{name}', file.name));
       return null;
     }
@@ -96,7 +96,7 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
       try {
         attachment = await processFile(file);
       } catch (error) {
-        logger.error('processFile threw', { fileName: file.name, error });
+        logger.error('processFile threw', error, { fileName: file.name });
         toast.show('error', t.chatInput.uploadProcessFailed.replace('{name}', file.name));
       }
       if (attachment) appendAttachments([attachment]);
