@@ -975,6 +975,8 @@ export const enSettingsModels = {
         updatePrefix: ' · Updated ',
         refresh: 'Refresh',
         remove: 'Remove',
+        pluginCount: { one: '{count} plugin', other: '{count} plugins' },
+        autoUpdate: 'auto update',
       },
       visibleList: {
         title: 'Visible plugin list',

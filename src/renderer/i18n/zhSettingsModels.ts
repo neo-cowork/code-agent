@@ -944,8 +944,8 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         installing: '安装中…',
         cancelling: '取消中…',
         cancelInstall: '取消安装',
-        skillsCountSuffix: ' skills',
-        commandsCountSuffix: ' commands',
+        skillsCountSuffix: '个技能',
+        commandsCountSuffix: '个命令',
       },
       overview: {
         title: '管理概览',
@@ -975,6 +975,8 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
         updatePrefix: ' · 更新 ',
         refresh: '刷新',
         remove: '移除',
+        pluginCount: { one: '{count} 个插件', other: '{count} 个插件' },
+        autoUpdate: '自动更新',
       },
       visibleList: {
         title: '可见插件清单',
