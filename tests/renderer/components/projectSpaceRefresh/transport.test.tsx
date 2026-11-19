@@ -11,7 +11,7 @@ import { useAppStore } from '../../../../src/renderer/stores/appStore';
 const existing: ProjectWithActivity = {
   id: 'space-existing', name: 'Existing space', workspacePath: '/tmp/existing-space',
   workspaceKey: 'existing-key', status: 'active', createdAt: 1, updatedAt: 1,
-  spacePromotedAt: 1, activeTopicCount: 0, lastActivityAt: null,
+  spacePromotedAt: 1, activeTopicCount: 0, lastActivityAt: null, visibleSessionCount: 0,
 };
 const created: ProjectWithActivity = {
   ...existing, id: 'space-new', name: 'New space', workspacePath: '/tmp/new-space',
