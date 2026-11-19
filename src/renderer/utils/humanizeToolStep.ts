@@ -614,10 +614,12 @@ function buildToolStep(
       return query ? h.search.replace('{query}', query) : h.searchFallback;
     }
     case 'listDir': {
-      // "."/"./"/缺省 = 工作目录本身（ListDirectory schema：path 默认 workingDir）。
-      // 裸点「查看了 . 目录」对用户不可读，换成工作目录说法；其余路径照旧走 {target} 模板。
+      // "."/"./"/缺省 = 工作目录本身（ListDirectory schema：path 默认 workingDir）；
+      // "~"/"~/" = 主目录。裸符号「查看了 . 目录」「查看了 ~ 目录」对用户不可读，
+      // 换成对应的人话目标；其余路径照旧走 {target} 模板。
       const rawPath = typeof a.path === 'string' ? a.path.trim() : '';
       if (rawPath === '' || rawPath === '.' || rawPath === './') return h.listDirWorking;
+      if (rawPath === '~' || rawPath === '~/') return h.listDirHome;
       const target = firstPath(a, ['path']);
       return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
     }

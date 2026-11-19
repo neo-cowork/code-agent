@@ -476,6 +476,14 @@ describe('ListDirectory — schema 注册名复用 listDir 句式', () => {
     }
   });
 
+  it('path 为 ~ / ~/ 时渲染「主目录」而非裸波浪号（zh/en 四态）', () => {
+    expect(humanizeToolStep('ListDirectory', { path: '~' }, zh, undefined, 'completed')).toBe('查看了主目录');
+    expect(humanizeToolStep('ListDirectory', { path: '~' }, zh, undefined, 'pending-approval')).toBe('请求查看主目录');
+    expect(humanizeToolStep('ListDirectory', { path: '~/' }, zh, undefined, 'failed')).toBe('查看主目录未成功');
+    expect(humanizeToolStep('ListDirectory', { path: '~' }, en)).toBe('Viewed the home folder');
+    expect(humanizeToolStep('ListDirectory', { path: '~/' }, en, undefined, 'running')).toBe('Viewing the home folder');
+  });
+
   it('具名路径保持既有 {target} 句式', () => {
     expect(humanizeToolStep('ListDirectory', { path: 'src' }, zh)).toBe('查看了 src 目录');
     expect(humanizeToolStep('list_directory', { path: '.' }, zh)).toBe('查看了当前工作目录');
