@@ -138,7 +138,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                       </span>
                     )}
                     {wakeDecision && (
-                      <span className="ml-1.5 whitespace-nowrap text-xs text-zinc-300" data-testid="cron-wake-decision">
+                      <span className="mt-0.5 block max-w-[120px] truncate text-xs text-zinc-300" title={t.cronWakeCadence.decision[wakeDecision]} data-testid="cron-wake-decision">
                         {t.cronWakeCadence.decision[wakeDecision]}
                       </span>
                     )}
