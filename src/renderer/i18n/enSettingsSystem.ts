@@ -435,6 +435,8 @@ export const enSettingsSystem = {
       connected: 'Connected',
       enabled: 'Enabled',
       disabled: 'Disabled',
+      enableAction: 'Enable',
+      disableAction: 'Disable',
       separator: ', ',
       availableActionsPrefix: 'Available actions: ',
       capabilitiesPrefix: 'Capabilities: ',

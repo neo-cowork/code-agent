@@ -22,6 +22,17 @@ export function tokenizeQuery(query: string): string[] {
   return Array.from(new Set(tokens)).slice(0, 12);
 }
 
+/** requireQueryMatch 用：未标点的中文句子只会成一个 token，补上词级切分才能命中相关记忆。 */
+export function expandTokensWithWordSegments(query: string, tokens: string[]): string[] {
+  const text = normalizeText(query);
+  if (!text || typeof Intl.Segmenter !== 'function') return tokens;
+  const words: string[] = [];
+  for (const part of new Intl.Segmenter('zh', { granularity: 'word' }).segment(text)) {
+    if (part.isWordLike && part.segment.length >= 2) words.push(part.segment);
+  }
+  return Array.from(new Set([...tokens, ...words])).slice(0, 12);
+}
+
 function projectMemoryMatches(entry: MemoryEntry, match: ProjectMemoryMatch): boolean {
   if (!entry.projectPath) return true;
   const entryKey = match.entryKeys.get(entry.id);
