@@ -15,6 +15,8 @@ export interface UndoToastProps {
   onDismiss: () => void;
   /** 自动消失时间（毫秒），默认 5000 */
   duration?: number;
+  /** 垂直锚点 class；多个 UndoToast 同屏时错开（默认 bottom-32，与全局 Toast 同档） */
+  bottomClass?: string;
 }
 
 export const UndoToast: React.FC<UndoToastProps> = ({
@@ -22,6 +24,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   onUndo,
   onDismiss,
   duration = 5000,
+  bottomClass = 'bottom-32',
 }) => {
   const { t } = useI18n();
   const [visible, setVisible] = useState(true);
@@ -60,7 +63,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
 
   return (
     <div
-      className={`fixed bottom-32 left-1/2 max-w-sm -translate-x-1/2 transition-all duration-200 ${
+      className={`fixed ${bottomClass} left-1/2 max-w-sm -translate-x-1/2 transition-all duration-200 ${
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
       style={{ zIndex: Z_LAYERS.undoToast }}

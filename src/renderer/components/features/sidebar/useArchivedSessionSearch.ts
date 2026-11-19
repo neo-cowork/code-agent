@@ -49,11 +49,17 @@ export function useArchivedSessionSearch({ enabled, query, scope, project }: Par
   const trimmed = query.trim();
   const projectId = project?.projectId?.trim() || '';
   const workingDirectory = project?.workingDirectory?.trim() || '';
+  const scopeKeyRef = useRef('');
   const narrow = scope === 'current-project' && (projectId || workingDirectory);
+
+  const scopeKey = JSON.stringify([enabled, narrow ? (projectId ? { projectId } : { workingDirectory }) : null]);
 
   useEffect(() => {
     rawLoadedRef.current = 0;
     setHasMore(false);
+    // 范围/开关变了：上一范围的行立刻作废，否则旧行（可能属于别的项目）在新请求回来前仍可点「恢复」。
+    if (scopeKeyRef.current !== scopeKey) setArchivedRows([]);
+    scopeKeyRef.current = scopeKey;
     if (!enabled) {
       setArchivedRows([]);
       setLoading(false);
@@ -65,15 +71,21 @@ export function useArchivedSessionSearch({ enabled, query, scope, project }: Par
       : undefined;
     const fetchArchivedPage = (offset: number) =>
       ipcService
-        .invokeDomain<Session[]>(IPC_DOMAINS.SESSION, 'list', { archivedOnly: true, limit: SESSION_LIST_PAGE_SIZE, offset })
+        // 项目收窄在 host SQL 层做（分页之前），否则本项目的归档会被全局归档页摊薄、翻不到
+        .invokeDomain<Session[]>(IPC_DOMAINS.SESSION, 'list', {
+          archivedOnly: true,
+          limit: SESSION_LIST_PAGE_SIZE,
+          offset,
+          ...(projectScope ? { projectScope } : {}),
+        })
         .then((list) => {
           const page = list ?? [];
-          rawLoadedRef.current = offset + page.length;
-          if (!cancelled) setHasMore(page.length >= SESSION_LIST_PAGE_SIZE);
-          const rows = page
-            .filter((s) => !narrow || (projectId ? s.projectId === projectId : s.workingDirectory === workingDirectory))
-            .map((s) => toArchivedRow(s));
-          return { rows };
+          // 已作废（范围/查询变了）的请求不得改 offset / hasMore，否则下一次加载更多会跳页
+          if (!cancelled) {
+            rawLoadedRef.current = offset + page.length;
+            setHasMore(page.length >= SESSION_LIST_PAGE_SIZE);
+          }
+          return { rows: page.map((s) => toArchivedRow(s)) };
         });
     loadMoreRef.current = () => {
       setLoading(true);

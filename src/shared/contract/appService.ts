@@ -234,6 +234,8 @@ export type SteerOrQueueOutcome =
 export interface SessionListQueryOptions {
   includeArchived?: boolean;
   archivedOnly?: boolean;
+  /** 仅与 archivedOnly 配合：只取某个项目的归档会话（SQL 层过滤，分页才不会被其他项目摊薄） */
+  projectScope?: { projectId?: string; workingDirectory?: string };
   limit?: number;
   offset?: number;
 }

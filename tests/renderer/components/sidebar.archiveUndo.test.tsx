@@ -9,7 +9,12 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, UI } from '../../../src/shared/constants';
 
 interface Row { id: string; title: string; status: 'idle' | 'archived'; updatedAt: number; dir?: string }
-const host = vi.hoisted(() => ({ rows: [] as Row[], calls: [] as string[], searchOptions: [] as unknown[] }));
+const host = vi.hoisted(() => ({
+  rows: [] as Row[], calls: [] as string[], searchOptions: [] as unknown[],
+  listPayloads: [] as Array<Record<string, unknown>>,
+  /** 第 N 次 session list 调用（从 1 起）挂起，直到 release() */
+  holdListCall: 0, release: null as null | (() => void), gate: null as null | Promise<void>,
+}));
 
 vi.mock('../../../src/renderer/utils/logger', () => ({
   createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
@@ -21,9 +26,11 @@ function toSession(row: Row): Session {
     modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
   } as unknown as Session;
 }
-function hostList(query: { includeArchived?: boolean; archivedOnly?: boolean; limit?: number; offset?: number } = {}): Session[] {
+function hostList(query: { includeArchived?: boolean; archivedOnly?: boolean; limit?: number; offset?: number; projectScope?: { workingDirectory?: string } } = {}): Session[] {
   const all = host.rows
     .filter((row) => (query.archivedOnly ? row.status === 'archived' : query.includeArchived || row.status !== 'archived'))
+    // 与 host SQL 一致：项目收窄发生在分页之前
+    .filter((row) => !query.projectScope?.workingDirectory || (row.dir ?? '/repo/demo') === query.projectScope.workingDirectory)
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map(toSession);
   return all.slice(query.offset ?? 0, (query.offset ?? 0) + (query.limit ?? all.length));
@@ -46,8 +53,13 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
         })),
       };
     }),
-    invokeDomain: vi.fn(async (domain: string, action: string, payload?: { archivedOnly?: boolean; includeArchived?: boolean }) =>
-      domain === IPC_DOMAINS.SESSION && action === 'list' ? hostList(payload) : []),
+    invokeDomain: vi.fn(async (domain: string, action: string, payload?: { archivedOnly?: boolean; includeArchived?: boolean }) => {
+      if (domain !== IPC_DOMAINS.SESSION || action !== 'list') return [];
+      host.listPayloads.push({ ...payload });
+      const result = hostList(payload);
+      if (host.holdListCall && host.listPayloads.length === host.holdListCall) await host.gate;
+      return result;
+    }),
     on: () => () => {},
   },
 }));
@@ -82,6 +94,9 @@ beforeEach(() => {
   ];
   host.calls = [];
   host.searchOptions = [];
+  host.listPayloads = [];
+  host.holdListCall = 0;
+  host.gate = null;
   window.domainAPI = {
     ...originalDomainAPI,
     invoke: domainInvoke as unknown as NonNullable<typeof window.domainAPI>['invoke'],
@@ -292,5 +307,94 @@ describe('归档后撤销（真实 Sidebar 树）', () => {
     expect(options[0]).toContain('周报 本项目归档');
     expect(options[0]).toContain(zh.sidebar.archivedBadge);
     expect(host.searchOptions.at(-1)).toMatchObject({ includeArchived: true, projectScope: { workingDirectory: '/repo/demo' } });
+  });
+
+  it('本项目归档列表：项目收窄在分页之前，本项目归档不在全局最近 50 条里也能列出并恢复', async () => {
+    host.rows = [
+      { id: 'cur', title: '本项目进行中', status: 'idle', updatedAt: 9_000, dir: '/repo/demo' },
+      ...Array.from({ length: 60 }, (_, i) => ({ id: `o-${i}`, title: `别项目归档 ${i}`, status: 'archived' as const, updatedAt: 8_000 - i, dir: '/repo/other' })),
+      { id: 'mine', title: '我的旧归档', status: 'archived', updatedAt: 10, dir: '/repo/demo' },
+    ];
+    await mountLoaded();
+    await act(async () => { useSessionStore.setState({ currentSessionId: 'cur' }); });
+    await act(async () => { window.dispatchEvent(new Event('app:openSessionSearch')); });
+    const dialog = screen.getByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('switch', { name: zh.sidebar.searchIncludeArchived })); });
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.scopeCurrentProject })); });
+    await flush();
+    expect(within(dialog).getAllByRole('option').map((el) => el.textContent)).toEqual([expect.stringContaining('我的旧归档')]);
+    expect(host.listPayloads.at(-1)).toMatchObject({ archivedOnly: true, projectScope: { workingDirectory: '/repo/demo' } });
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: `${zh.sidebar.restoreSession} 我的旧归档` })); });
+    await flush();
+    expect(host.rows.find((row) => row.id === 'mine')!.status).toBe('idle');
+  });
+
+  it('切换范围后旧范围的归档行立即作废，不能再点恢复（不会误恢复别的项目的会话）', async () => {
+    host.rows = [
+      { id: 'cur', title: '本项目进行中', status: 'idle', updatedAt: 9_000, dir: '/repo/demo' },
+      { id: 'a-demo', title: '本项目归档', status: 'archived', updatedAt: 400, dir: '/repo/demo' },
+      { id: 'a-other', title: '别项目归档', status: 'archived', updatedAt: 300, dir: '/repo/other' },
+    ];
+    await mountLoaded();
+    await act(async () => { useSessionStore.setState({ currentSessionId: 'cur' }); });
+    await act(async () => { window.dispatchEvent(new Event('app:openSessionSearch')); });
+    const dialog = screen.getByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('switch', { name: zh.sidebar.searchIncludeArchived })); });
+    await flush();
+    expect(within(dialog).getByRole('button', { name: `${zh.sidebar.restoreSession} 别项目归档` })).toBeTruthy();
+
+    // 新范围的请求挂起（下一次 list 调用）：回来之前旧行不能还在
+    host.gate = new Promise<void>((resolve) => { host.release = resolve; });
+    host.holdListCall = host.listPayloads.length + 1;
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.scopeCurrentProject })); });
+    await flush();
+    expect(within(dialog).queryByRole('button', { name: `${zh.sidebar.restoreSession} 别项目归档` })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: `${zh.sidebar.restoreSession} 本项目归档` })).toBeNull();
+    await act(async () => { host.release?.(); });
+    await flush();
+    expect(within(dialog).getByRole('button', { name: `${zh.sidebar.restoreSession} 本项目归档` })).toBeTruthy();
+    expect(host.rows.find((row) => row.id === 'a-other')!.status).toBe('archived');
+  });
+
+  it('已作废的翻页请求晚到，不会抬高 offset（下一次加载更多不跳页）', async () => {
+    host.rows = [
+      { id: 'cur', title: '本项目进行中', status: 'idle', updatedAt: 99_000, dir: '/repo/demo' },
+      ...Array.from({ length: 120 }, (_, i) => ({ id: `d-${i}`, title: `归档 ${String(i).padStart(3, '0')}`, status: 'archived' as const, updatedAt: 10_000 - i, dir: '/repo/demo' })),
+    ];
+    await mountLoaded();
+    await act(async () => { useSessionStore.setState({ currentSessionId: 'cur' }); });
+    await act(async () => { window.dispatchEvent(new Event('app:openSessionSearch')); });
+    const dialog = screen.getByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('switch', { name: zh.sidebar.searchIncludeArchived })); });
+    await flush();
+    expect(within(dialog).getAllByRole('option')).toHaveLength(50);
+
+    // 「加载更多」请求挂起 → 切到当前项目（旧请求作废）→ 新范围首页到达 → 旧请求才晚到
+    host.gate = new Promise<void>((resolve) => { host.release = resolve; });
+    host.holdListCall = host.listPayloads.length + 1;
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.loadMoreArchived })); });
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.scopeCurrentProject })); });
+    await flush();
+    expect(within(dialog).getAllByRole('option')).toHaveLength(50);
+    await act(async () => { host.release?.(); });
+    await flush();
+
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.loadMoreArchived })); });
+    await flush();
+    expect(host.listPayloads.at(-1)).toMatchObject({ offset: 50 });
+    expect(within(dialog).getAllByRole('option')).toHaveLength(100);
+  });
+
+  it('删除撤销与归档撤销同屏：两个 Toast 的撤销按钮都可点（锚点错开）', async () => {
+    await mountLoaded();
+    await act(async () => { useSessionUIStore.getState().softDelete(['s-b']); });
+    await act(async () => { fireEvent.click(rowArchiveButton(TITLE)); });
+    await flush();
+    const deleteToast = screen.getByText(zh.sidebar.deletedCount.replace('{count}', '1')).closest('.fixed')!;
+    const archiveToast = screen.getByText(zh.sidebar.archivedToast.replace('{title}', TITLE)).closest('.fixed')!;
+    const anchor = (el: Element) => [...el.classList].find((c) => /^bottom-\d+$/.test(c));
+    expect(anchor(deleteToast)).toBeTruthy();
+    expect(anchor(archiveToast)).toBeTruthy();
+    expect(anchor(deleteToast)).not.toBe(anchor(archiveToast));
   });
 });

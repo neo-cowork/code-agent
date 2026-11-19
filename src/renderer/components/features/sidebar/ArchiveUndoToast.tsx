@@ -21,6 +21,7 @@ const ArchiveUndoToastItem: React.FC<{ pending: PendingArchiveUndo }> = ({ pendi
       onUndo={undo}
       onDismiss={dismiss}
       duration={UI.ARCHIVE_UNDO_TOAST_DURATION}
+      bottomClass="bottom-48" // 高于删除撤销 Toast（bottom-32），同屏时互不遮挡
     />
   );
 };

@@ -1126,6 +1126,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const sessions = await getSessionManager().listSessions({
       includeArchived: options?.includeArchived,
       archivedOnly: options?.archivedOnly,
+      ...(options?.projectScope ? { projectScope: options.projectScope } : {}),
       limit: options?.limit,
       offset: options?.offset,
     });

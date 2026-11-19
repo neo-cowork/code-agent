@@ -87,7 +87,7 @@ export interface SessionListOptions {
   searchQuery?: string;
   includeArchived?: boolean;
   /** 只取归档会话（侧栏「已归档」过滤器的独立分页路径，优先于 includeArchived） */
-  archivedOnly?: boolean;
+  archivedOnly?: boolean; projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope; // projectScope 仅 archivedOnly 路径生效
 }
 
 // ----------------------------------------------------------------------------
@@ -458,7 +458,7 @@ export class SessionManager implements Disposable {
 
     // archivedOnly：归档过滤器的独立分页路径——直接在 SQL 层只取归档页，
     // 不再拉混合页回前端挑（混合分页下归档会话会被摊薄到翻不到）。
-    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId) : db.listSessions(limit, offset, includeArchived, ownerId);
+    let sessions = archivedOnly ? db.listArchivedSessions(limit, offset, ownerId, ...(options.projectScope ? [options.projectScope] as const : [])) : db.listSessions(limit, offset, includeArchived, ownerId);
 
     // 搜索过滤
     if (options.searchQuery) {

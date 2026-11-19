@@ -3315,9 +3315,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getSessionRuntimeState(sessionId);
   }
-  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): import('./repositories').StoredSession[] {
+  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null, projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope): import('./repositories').StoredSession[] {
     this.ensureDb();
-    return this.sessionRepo.listArchivedSessions(limit, offset, userId);
+    return this.sessionRepo.listArchivedSessions(limit, offset, userId, projectScope);
   }
   /** 懒开目录撞名判定用的名字占用表：未删除会话行已记下的工作目录（DISTINCT）。 */
   listRecordedWorkingDirectories(exceptSessionId?: string): string[] {
