@@ -135,6 +135,10 @@ vi.mock('../../../../src/cli/adapter', () => ({
   }),
 }));
 
+vi.mock('../../../../src/host/runtime/runContext', () => ({
+  createRunContext: vi.fn((input: { sessionId: string }) => ({ runId: 'run-test', sessionId: input.sessionId })),
+}));
+
 vi.mock('../../../../src/cli/bootstrap', () => ({
   createRunToolExecutor: vi.fn(() => ({ setExecutionTopology: vi.fn() })),
   createAgentLoop: vi.fn((config: {
