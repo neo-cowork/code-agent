@@ -94,6 +94,9 @@ export function getToolPreflightKind(tool: Pick<ToolCall, 'name' | 'result'>): P
 }
 
 export function toolPreflightCopy(tool: Pick<ToolCall, 'name' | 'result'> & Partial<Pick<ToolCall, 'arguments'>>, t: Translations): { action: string; reason: string } | null {
+  // 后续同一步已成功：行标题回到普通人话，由「后续修改已成功」脚注交代结局，
+  // 不再同时写「未修改 · 文件名」自相矛盾。
+  if (tool.result?.metadata?.recovered === true) return null;
   const kind = getToolPreflightKind(tool);
   if (!kind) return null;
   const c = t.deliveryExperience;
