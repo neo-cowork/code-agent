@@ -50,7 +50,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [includeArchived, setIncludeArchived] = useState(false);
   const currentSession = useSessionStore((state) => state.sessions.find((item) => item.id === currentSessionId));
-  const { archivedRows, loading: archivedLoading, removeArchivedRow } = useArchivedSessionSearch({
+  const { archivedRows, loading: archivedLoading, hasMore: archivedHasMore, loadMore: loadMoreArchived, removeArchivedRow } = useArchivedSessionSearch({
     enabled: isOpen && includeArchived,
     query,
     scope: effectiveSearchScope,
@@ -270,6 +270,11 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
                   </div>
                 );
               })}
+              {includeArchived && !hasQuery && archivedHasMore && (
+                <Button variant="ghost" size="sm" fullWidth disabled={archivedLoading} onClick={loadMoreArchived}>
+                  {sb.loadMoreArchived}
+                </Button>
+              )}
             </div>
           )}
         </div>

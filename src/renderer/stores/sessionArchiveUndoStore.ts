@@ -5,12 +5,14 @@ import { create } from 'zustand';
 export interface PendingArchiveUndo {
   sessionId: string;
   title: string;
+  /** 归档前的 updatedAt：撤销时传给 host，让会话回到原排序位置 */
+  updatedAt?: number;
   seq: number;
 }
 
 interface SessionArchiveUndoState {
   pending: PendingArchiveUndo | null;
-  show: (sessionId: string, title: string) => void;
+  show: (sessionId: string, session?: { title?: string; updatedAt?: number }) => void;
   clear: (seq?: number) => void;
 }
 
@@ -18,7 +20,8 @@ let nextSeq = 0;
 
 export const useSessionArchiveUndoStore = create<SessionArchiveUndoState>((set, get) => ({
   pending: null,
-  show: (sessionId, title) => set({ pending: { sessionId, title, seq: ++nextSeq } }),
+  show: (sessionId, session) =>
+    set({ pending: { sessionId, title: session?.title ?? '', updatedAt: session?.updatedAt, seq: ++nextSeq } }),
   // 带 seq 时只清自己那一条，避免旧 Toast 的延迟回调误清新 Toast。
   clear: (seq) => {
     const { pending } = get();

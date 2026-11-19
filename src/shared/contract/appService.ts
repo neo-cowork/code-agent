@@ -267,7 +267,7 @@ export interface AgentApplicationService {
   findExpertThreadSession(roleId: string): Promise<{ sessionId: string | null }>;
   updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
   archiveSession(sessionId: string): Promise<Session | null>;
-  unarchiveSession(sessionId: string): Promise<Session | null>;
+  unarchiveSession(sessionId: string, updatedAt?: number): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;
   /** 只读存在性探测：不 restore、不切 currentSessionId、不写审计（loadSession 有这些副作用） */
   sessionExists(sessionId: string): Promise<boolean>;

@@ -60,13 +60,13 @@ export const UndoToast: React.FC<UndoToastProps> = ({
 
   return (
     <div
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 transition-all duration-200 ${
+      className={`fixed bottom-32 left-1/2 max-w-sm -translate-x-1/2 transition-all duration-200 ${
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
       style={{ zIndex: Z_LAYERS.undoToast }}
     >
       <div className="flex items-center gap-3 px-4 py-2.5 bg-zinc-700 border border-zinc-700/60 rounded-lg shadow-lg">
-        <span className="text-sm text-zinc-400">{message}</span>
+        <span className="min-w-0 truncate text-sm text-zinc-400">{message}</span>
         <button
           onClick={handleUndo}
           className="text-sm font-medium text-badge-info hover:text-badge-info transition-colors whitespace-nowrap"

@@ -9,6 +9,8 @@ import {
   runSessionMessagesFtsCount,
   runSessionMessagesFtsSearch,
 } from '../../../src/host/services/core/repositories/sessionRepositoryFtsSearch';
+import { searchSessionTitles } from '../../../src/host/services/core/repositories/sessionSearchMeta';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 let db: BetterSqlite3.Database;
@@ -93,5 +95,51 @@ describe.each([
     expect(
       runSessionMessagesFtsCount(db, word, { shortQueryFallback: true, activeSessionScope: { userId: null, includeArchived: true } }),
     ).toEqual({ matches: 4, sessions: 4 });
+  });
+});
+
+describe('includeArchived + projectScope（真实 SQLite，标题 + FTS）', () => {
+  const word = 'zebra-quartz';
+  function seedProjectSession(id: string, projectId: string, status: string): void {
+    seedSession(id, { status });
+    db.prepare('UPDATE sessions SET project_id = ?, title = ? WHERE id = ?').run(projectId, `title ${word} ${id}`, id);
+    seedMessage(id, `m-${id}`, `body ${word} ${id}`, 10);
+  }
+  beforeEach(() => {
+    seedProjectSession('p1-live', 'proj-1', 'idle');
+    seedProjectSession('p1-arch', 'proj-1', 'archived');
+    seedProjectSession('p2-live', 'proj-2', 'idle');
+    seedProjectSession('p2-arch', 'proj-2', 'archived');
+  });
+
+  it('FTS: project scope keeps only that project; includeArchived adds only that project\'s archived sessions', () => {
+    const ids = (includeArchived: boolean) =>
+      runSessionMessagesFtsSearch(db, word, {
+        limit: 50,
+        activeSessionScope: { userId: null, projectScope: { projectId: 'proj-1' }, includeArchived },
+      })
+        .map((h) => h.sessionId)
+        .sort();
+    expect(ids(false)).toEqual(['p1-live']);
+    expect(ids(true)).toEqual(['p1-arch', 'p1-live']);
+  });
+
+  it('title: project scope + includeArchived', () => {
+    const ids = (includeArchived: boolean) =>
+      searchSessionTitles(db, word, null, 20, { projectId: 'proj-1' }, includeArchived).map((r) => r.sessionId).sort();
+    expect(ids(false)).toEqual(['p1-live']);
+    expect(ids(true)).toEqual(['p1-arch', 'p1-live']);
+  });
+});
+
+describe('SessionRepository.unarchiveSession 时间戳', () => {
+  it('带 updatedAt 时恢复到该时间（撤销回原位），不带则写当前时间', () => {
+    seedSession('u1');
+    const repo = new SessionRepository(db);
+    repo.archiveSession('u1', 5_000);
+    expect(repo.unarchiveSession('u1', 123)?.updatedAt).toBe(123);
+    const before = Date.now();
+    repo.archiveSession('u1');
+    expect(repo.unarchiveSession('u1')?.updatedAt).toBeGreaterThanOrEqual(before);
   });
 });

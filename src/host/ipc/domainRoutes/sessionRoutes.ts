@@ -515,8 +515,12 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
     return data;
   },
 
-  unarchive: async (ctx, payload) =>
-    (await ctx.sessions()).unarchiveSession((payload as { sessionId?: string } | undefined)?.sessionId as string),
+  unarchive: async (ctx, payload) => {
+    const p = payload as { sessionId?: string; updatedAt?: number } | undefined;
+    // updatedAt：撤销归档时把会话放回归档前的排序位置（缺省 = 现在，与旧行为一致）
+    const restoreAt = typeof p?.updatedAt === 'number' && Number.isFinite(p.updatedAt) ? [p.updatedAt] as const : [] as const;
+    return (await ctx.sessions()).unarchiveSession(p?.sessionId as string, ...restoreAt);
+  },
 
   update: async (ctx, payload) => {
     const p = payload as { sessionId?: string; updates?: Partial<Session> } | undefined;

@@ -8,7 +8,7 @@ import type { Session } from '../../../src/shared/contract';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, UI } from '../../../src/shared/constants';
 
-interface Row { id: string; title: string; status: 'idle' | 'archived'; updatedAt: number }
+interface Row { id: string; title: string; status: 'idle' | 'archived'; updatedAt: number; dir?: string }
 const host = vi.hoisted(() => ({ rows: [] as Row[], calls: [] as string[], searchOptions: [] as unknown[] }));
 
 vi.mock('../../../src/renderer/utils/logger', () => ({
@@ -16,24 +16,28 @@ vi.mock('../../../src/renderer/utils/logger', () => ({
 }));
 function toSession(row: Row): Session {
   return {
-    id: row.id, title: row.title, createdAt: 1, updatedAt: row.updatedAt, workingDirectory: '/repo/demo',
+    id: row.id, title: row.title, createdAt: 1, updatedAt: row.updatedAt, workingDirectory: row.dir ?? '/repo/demo',
     status: row.status, isArchived: row.status === 'archived',
     modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL },
   } as unknown as Session;
 }
-function hostList(query: { includeArchived?: boolean; archivedOnly?: boolean } = {}): Session[] {
-  return host.rows
+function hostList(query: { includeArchived?: boolean; archivedOnly?: boolean; limit?: number; offset?: number } = {}): Session[] {
+  const all = host.rows
     .filter((row) => (query.archivedOnly ? row.status === 'archived' : query.includeArchived || row.status !== 'archived'))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map(toSession);
+  return all.slice(query.offset ?? 0, (query.offset ?? 0) + (query.limit ?? all.length));
 }
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
-    invoke: vi.fn(async (channel: string, payload: { query: string; options?: { includeArchived?: boolean } }) => {
+    invoke: vi.fn(async (channel: string, payload: { query: string; options?: { includeArchived?: boolean; projectScope?: { workingDirectory?: string } } }) => {
       if (channel !== IPC_CHANNELS.SESSION_SEARCH) return undefined;
       host.searchOptions.push(payload.options);
       const hits = host.rows.filter(
-        (row) => row.title.includes(payload.query) && (payload.options?.includeArchived || row.status !== 'archived'),
+        (row) =>
+          row.title.includes(payload.query) &&
+          (payload.options?.includeArchived || row.status !== 'archived') &&
+          (!payload.options?.projectScope?.workingDirectory || (row.dir ?? '/repo/demo') === payload.options.projectScope.workingDirectory),
       );
       return {
         query: payload.query, totalMatches: 0, sessionsWithMatches: 0, results: [], searchTime: 0, truncated: false,
@@ -84,13 +88,15 @@ beforeEach(() => {
   };
   domainInvoke.mockReset();
   domainInvoke.mockImplementation(async (domain, action, rawPayload) => {
-      const payload = rawPayload as { sessionId?: string } | undefined;
+      const payload = rawPayload as { sessionId?: string; updatedAt?: number } | undefined;
       if (domain !== IPC_DOMAINS.SESSION) return { success: true, data: [] };
       host.calls.push(action);
       if (action === 'list') return { success: true, data: hostList(payload as never) };
       if (action === 'archive' || action === 'unarchive') {
         const row = host.rows.find((item) => item.id === payload?.sessionId)!;
         row.status = action === 'archive' ? 'archived' : 'idle';
+        // 与 host 一致：归档/取消归档都会刷新 updated_at；取消归档可带回原时间
+        row.updatedAt = action === 'unarchive' && payload?.updatedAt !== undefined ? payload.updatedAt : 9_000 + host.calls.length;
         return { success: true, data: toSession(row) };
       }
       return { success: true, data: [] };
@@ -208,5 +214,83 @@ describe('归档后撤销（真实 Sidebar 树）', () => {
     expect(within(dialog).getByText(zh.sidebar.archivedSessionsHeading)).toBeTruthy();
     expect(within(dialog).getByRole('option', { name: new RegExp(OTHER) })).toBeTruthy();
     expect(within(dialog).queryByRole('option', { name: new RegExp(TITLE) })).toBeNull();
+  });
+
+  it('撤销回到归档前的原位置：侧栏行顺序前后一致（归档会刷新 updated_at，撤销带回原值）', async () => {
+    host.rows = [
+      { id: 'o-a', title: '第一条任务', status: 'idle', updatedAt: 300 },
+      { id: 'o-b', title: '第二条任务', status: 'idle', updatedAt: 200 },
+      { id: 'o-c', title: '第三条任务', status: 'idle', updatedAt: 100 },
+    ];
+    await mountLoaded();
+    const order = () => screen.getAllByRole('button', { name: new RegExp(`^${zh.sidebarSession.archiveSession} `) }).map((el) => el.getAttribute('aria-label'));
+    const before = order();
+    expect(before).toHaveLength(3);
+
+    await act(async () => { fireEvent.click(rowArchiveButton('第二条任务')); });
+    await flush();
+    expect(order()).toHaveLength(2);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.common.undo })); });
+    await flush();
+
+    expect(order()).toEqual(before);
+    expect(host.rows.find((row) => row.id === 'o-b')!.updatedAt).toBe(200);
+  });
+
+  it('空查询归档列表分页：第 51 条也能加载出来并恢复，恢复后回到侧栏', async () => {
+    host.rows = Array.from({ length: 120 }, (_, i) => ({
+      id: `arch-${i}`, title: `归档任务 ${String(i).padStart(3, '0')}`, status: 'archived' as const, updatedAt: 10_000 - i,
+    }));
+    await mountLoaded();
+    await act(async () => { window.dispatchEvent(new Event('app:openSessionSearch')); });
+    const dialog = screen.getByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('switch', { name: zh.sidebar.searchIncludeArchived })); });
+    await flush();
+
+    expect(within(dialog).getAllByRole('option')).toHaveLength(50);
+    expect(within(dialog).queryByRole('option', { name: /归档任务 050/ })).toBeNull();
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.loadMoreArchived })); });
+    await flush();
+    expect(within(dialog).getAllByRole('option')).toHaveLength(100);
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.loadMoreArchived })); });
+    await flush();
+    expect(within(dialog).getAllByRole('option')).toHaveLength(120);
+    expect(within(dialog).queryByRole('button', { name: zh.sidebar.loadMoreArchived })).toBeNull();
+
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: `${zh.sidebar.restoreSession} 归档任务 050` })); });
+    await flush();
+    expect(host.rows.find((row) => row.id === 'arch-50')!.status).toBe('idle');
+    expect(useSessionStore.getState().sessions.map((s) => s.id)).toContain('arch-50');
+    // 空查询只列归档会话：恢复的那条从列表消失，其余 119 条仍在
+    expect(within(dialog).getAllByRole('option')).toHaveLength(119);
+    expect(within(dialog).queryByRole('option', { name: /归档任务 050/ })).toBeNull();
+  });
+
+  it('当前项目范围 + 包含已归档：只列/只搜本项目的归档会话', async () => {
+    host.rows = [
+      { id: 'cur', title: '本项目进行中', status: 'idle', updatedAt: 500, dir: '/repo/demo' },
+      { id: 'a-demo', title: '周报 本项目归档', status: 'archived', updatedAt: 400, dir: '/repo/demo' },
+      { id: 'a-other', title: '周报 别的项目归档', status: 'archived', updatedAt: 300, dir: '/repo/other' },
+    ];
+    await mountLoaded();
+    await act(async () => { useSessionStore.setState({ currentSessionId: 'cur' }); });
+    await act(async () => { window.dispatchEvent(new Event('app:openSessionSearch')); });
+    const dialog = screen.getByRole('dialog');
+    await act(async () => { fireEvent.click(within(dialog).getByRole('switch', { name: zh.sidebar.searchIncludeArchived })); });
+    await flush();
+    // 「全部」范围：两个归档都在
+    expect(within(dialog).getAllByRole('option')).toHaveLength(2);
+
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: zh.sidebar.scopeCurrentProject })); });
+    await flush();
+    expect(within(dialog).getAllByRole('option').map((el) => el.textContent)).toEqual([expect.stringContaining('周报 本项目归档')]);
+
+    await act(async () => { fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: '周报' } }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    const options = within(dialog).getAllByRole('option').map((el) => el.textContent ?? '');
+    expect(options).toHaveLength(1);
+    expect(options[0]).toContain('周报 本项目归档');
+    expect(options[0]).toContain(zh.sidebar.archivedBadge);
+    expect(host.searchOptions.at(-1)).toMatchObject({ includeArchived: true, projectScope: { workingDirectory: '/repo/demo' } });
   });
 });

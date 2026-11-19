@@ -3328,9 +3328,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.archiveSession(sessionId);
   }
-  unarchiveSession(sessionId: string): import('./repositories').StoredSession | null {
+  unarchiveSession(sessionId: string, updatedAt?: number): import('./repositories').StoredSession | null {
     this.ensureDb();
-    return this.sessionRepo.unarchiveSession(sessionId);
+    return this.sessionRepo.unarchiveSession(sessionId, updatedAt);
   }
   getSessionSearchMeta(
     sessionIds: string[],

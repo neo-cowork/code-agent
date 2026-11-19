@@ -248,7 +248,7 @@ interface SessionActions {
   refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
   deleteSession: (sessionId: string) => Promise<void>;
   archiveSession: (sessionId: string) => Promise<void>;
-  unarchiveSession: (sessionId: string) => Promise<void>;
+  unarchiveSession: (sessionId: string, updatedAt?: number) => Promise<void>;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setMessages: (messages: Message[]) => void;
@@ -582,7 +582,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
         }
 
         logger.info('Session archived', { sessionId });
-        useSessionArchiveUndoStore.getState().show(sessionId, previousSessions.find((s) => s.id === sessionId)?.title ?? '');
+        useSessionArchiveUndoStore.getState().show(sessionId, previousSessions.find((s) => s.id === sessionId));
       } catch (error) {
         logger.error('Failed to archive session', error);
         // 回滚乐观移除（版本号再 +1：回滚本身也是一次本地变更）。
@@ -594,9 +594,9 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
       }
     },
 
-    unarchiveSession: async (sessionId: string) => {
+    unarchiveSession: async (sessionId: string, updatedAt?: number) => {
       try {
-        await invokeSession('unarchive', { sessionId });
+        await invokeSession('unarchive', { sessionId, updatedAt });
 
         const { filter } = useSessionUIStore.getState();
         const { sessions } = get();

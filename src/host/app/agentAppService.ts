@@ -1148,8 +1148,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return getSessionManager().archiveSession(sessionId);
   }
 
-  async unarchiveSession(sessionId: string): Promise<Session | null> {
-    return getSessionManager().unarchiveSession(sessionId);
+  async unarchiveSession(sessionId: string, updatedAt?: number): Promise<Session | null> {
+    return getSessionManager().unarchiveSession(sessionId, undefined, updatedAt);
   }
 
   async getMessages(sessionId: string): Promise<Message[]> {

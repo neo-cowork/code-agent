@@ -8,13 +8,13 @@ import { getLocalizedSessionTitle } from '../../../utils/sessionPresentation';
 
 const ArchiveUndoToastItem: React.FC<{ pending: PendingArchiveUndo }> = ({ pending }) => {
   const { t, language } = useI18n();
-  const { seq, sessionId, title } = pending;
+  const { seq, sessionId, title, updatedAt } = pending;
   // UndoToast 在 onDismiss 引用变化时会重置计时，必须稳定。
   const dismiss = useCallback(() => useSessionArchiveUndoStore.getState().clear(seq), [seq]);
   const undo = useCallback(() => {
     useSessionArchiveUndoStore.getState().clear(seq);
-    void useSessionStore.getState().unarchiveSession(sessionId);
-  }, [seq, sessionId]);
+    void useSessionStore.getState().unarchiveSession(sessionId, updatedAt);
+  }, [seq, sessionId, updatedAt]);
   return (
     <UndoToast
       message={t.sidebar.archivedToast.replace('{title}', getLocalizedSessionTitle(title, language))}

@@ -76,6 +76,7 @@ export const sidebarZh = {
     restoreSession: '恢复',
     archivedSessionsHeading: '已归档会话',
     noArchivedSessions: '没有已归档的会话',
+    loadMoreArchived: '加载更多已归档会话',
     searchFailed: '搜索没有成功，请稍后再试一次',
     statusMatchFallback: '匹配',
     // 分页（加载更早的历史会话）
@@ -485,6 +486,7 @@ export const sidebarEn: typeof sidebarZh = {
     restoreSession: 'Restore',
     archivedSessionsHeading: 'Archived sessions',
     noArchivedSessions: 'No archived sessions',
+    loadMoreArchived: 'Load more archived sessions',
     searchFailed: 'Search didn\'t go through. Please try again.',
     statusMatchFallback: 'Matched',
     // Pagination (loading older history sessions)

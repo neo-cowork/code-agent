@@ -867,13 +867,13 @@ export class SessionManager implements Disposable {
   /**
    * 取消归档会话
    */
-  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void): Promise<Session | null> {
+  async unarchiveSession(sessionId: string, commit?: (write: () => void) => void, updatedAt?: number): Promise<Session | null> {
     const db = getDatabase();
     const ownerId = this.currentOwnerUserId();
     this.assertAccessibleSession(sessionId, ownerId);
 
     // 取消归档
-    if (commit) commit(() => db.unarchiveSession(sessionId)); else db.unarchiveSession(sessionId);
+    if (commit) commit(() => db.unarchiveSession(sessionId, updatedAt)); else db.unarchiveSession(sessionId, updatedAt);
 
     // 清除缓存
     this.sessionCache.delete(sessionId);
