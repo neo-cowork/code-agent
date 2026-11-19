@@ -136,6 +136,8 @@ import {
   assessDirectiveMemoryWrite,
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
+import type { DirectiveMemoryClassifierAuthorization } from '../memory/directiveMemoryOutsideWriteExemption';
+import { recordGrantedMemoryWritePointer } from '../memory/grantedMemoryIndexPointer';
 import { resolveToolWriteTargets } from './writeTargets';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { parseShellCommand } from '../security/commandParse';
@@ -1043,6 +1045,8 @@ export class ToolExecutor {
       env: process.env,
     });
     let directiveMemoryWriteGrant: import('../../shared/contract').DirectiveMemoryWriteGrant | undefined;
+    // 机器合成的 headless 放行不是用户确认：不得借它跳过 W3 项目外审批。
+    let directiveGrantIsUserConfirmed = false;
     if (directiveMemoryAssessment.requiresConfirmation) {
       if (!hasInteractiveUi()) {
         // headless/非交互：确认窗不存在，绝不挂 DIRECTIVE_CONFIRM（120s）。
@@ -1107,8 +1111,13 @@ export class ToolExecutor {
           directiveMemoryAssessment,
           confirmation,
         );
+        directiveGrantIsUserConfirmed = true;
       }
     }
+    const directiveMemoryAuthorization: DirectiveMemoryClassifierAuthorization | undefined = directiveMemoryWriteGrant
+      ? { grant: directiveMemoryWriteGrant, assessment: directiveMemoryAssessment }
+      : undefined;
+    const classifierDirectiveAuthorization = directiveGrantIsUserConfirmed ? directiveMemoryAuthorization : undefined;
 
     const writeTargets = toolDef.permissionLevel !== 'read'
       ? resolveToolWriteTargets({
@@ -1773,6 +1782,7 @@ export class ToolExecutor {
     const scheduledWrite = await classifyFileWrite(policyToolName, params, {
       sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
       workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel,
+      directiveMemoryWrite: classifierDirectiveAuthorization,
     }, permStartTime);
     const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1986,6 +1996,7 @@ export class ToolExecutor {
             sessionPermissionMode,
             peerOriginForcesConfirmation,
             launderRetryForcesAsk,
+            directiveMemoryWrite: classifierDirectiveAuthorization,
             browserSubmitProbe: async () => {
               const {
                 getManagedBrowserProviderAdapter,
@@ -2811,6 +2822,14 @@ export class ToolExecutor {
 
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
+      if (result.success) {
+        await recordGrantedMemoryWritePointer({
+          toolName: executionToolName,
+          params,
+          workingDirectory: this.executionCwd,
+          authorization: directiveMemoryAuthorization,
+        });
+      }
       return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
       if (error instanceof EnvBlockedError) throw error;

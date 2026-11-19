@@ -187,6 +187,16 @@ ${body}
       expect(updated).not.toContain('old-b.md');
       expect(updated).toContain('- [merged.md](merged.md) — Merged memory');
     });
+
+    it('keeps every pointer when updates run in parallel', async () => {
+      const names = Array.from({ length: 8 }, (_, i) => `p${i}.md`);
+      await Promise.all(names.map((filename) => updateLightMemoryIndexPointers({
+        remove: [],
+        add: [{ filename, description: `desc ${filename}` }],
+      })));
+      const updated = await fs.readFile(path.join(memDir, 'INDEX.md'), 'utf-8');
+      for (const filename of names) expect(updated).toContain(`- [${filename}](${filename})`);
+    });
   });
 
   // --------------------------------------------------------------------------

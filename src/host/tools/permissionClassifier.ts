@@ -15,6 +15,7 @@ import * as crypto from 'crypto';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createHostReason, HostReasonCode, type HostReasonPayload } from '../../shared/contract/permission';
 import { createTraceStep } from '../security/decisionTraceBuilder';
+import type { DirectiveMemoryClassifierAuthorization } from '../memory/directiveMemoryOutsideWriteExemption';
 import {
   isKnownSafeCommand,
   lenientCompoundSegments, splitCompoundCommand,
@@ -130,6 +131,11 @@ export interface ClassificationContext {
   pathResolutionCache?: Map<string, string>;
   /** True when workingDirectory is this tool call's real cwd. Auto-mode process.cwd() re-run must omit it. */
   workingDirectoryFromToolCall?: boolean;
+  /**
+   * Set only after this call's directive-memory confirmation. Lets a memory-dir
+   * write skip the outside-project card. Absent means no exemption.
+   */
+  directiveMemoryWrite?: DirectiveMemoryClassifierAuthorization;
 }
 
 interface CacheEntry {
@@ -779,11 +785,16 @@ export class PermissionClassifier {
     const workspaceNamespace = context.workspaceRoot
       ? resolveCanonicalRunPath(path.resolve(context.workspaceRoot))
       : '<no-authoritative-workspace>';
-    const namespace = [
+    const namespaceParts = [
       context.sessionId ?? '<no-session>',
       workspaceNamespace,
       resolveCanonicalRunPath(path.resolve(context.workingDirectory)),
-    ].join('\u0000');
+    ];
+    // A per-call memory grant must not reuse, or be reused by, an ungranted decision.
+    if (context.directiveMemoryWrite?.grant.fingerprint) {
+      namespaceParts.push(context.directiveMemoryWrite.grant.fingerprint);
+    }
+    const namespace = namespaceParts.join('\u0000');
     if (isBashToolName(toolName)) {
       // Bash 命令：使用完整归一化命令。只取前缀会把 `npm run test` 和 `npm run postinstall`
       // 合并成一个缓存项，进而复用错误的权限判断。

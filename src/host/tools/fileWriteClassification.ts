@@ -14,6 +14,7 @@ import { resolveToolWriteTargets } from './writeTargets';
 import { connectorWriteAskClassification } from './connectorTokenWrite';
 import { isNonLocalWriteTool, requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { isTaskOutputPathAuthorized } from '../permissions/taskOutputDirectory';
+import { directiveMemoryGrantSkipsOutsideProjectAsk } from '../memory/directiveMemoryOutsideWriteExemption';
 
 // 写入工具名映射
 const WRITE_TOOLS = new Set([
@@ -49,7 +50,19 @@ function outsideProjectWriteAsk(
   toolName: string,
   resolved: string,
   startTime: number,
+  context: ClassificationContext,
 ): ClassificationResult {
+  if (directiveMemoryGrantSkipsOutsideProjectAsk(context.directiveMemoryWrite, resolved, context.workingDirectory)) {
+    const reason = 'directive memory write already confirmed for this call';
+    return {
+      decision: 'approve',
+      reason,
+      confidence: 1,
+      cached: false,
+      bypassCache: true,
+      traceStep: createTraceStep('permission_classifier', 'directive_memory_grant', 'allow', reason, startTime),
+    };
+  }
   const reason = `写入项目目录外: ${resolved}`;
   return {
     decision: 'ask',
@@ -128,7 +141,7 @@ export async function classifyFileWrite(
   const results = targets.map((target) => classifyTarget(toolName, target, context, startTime));
   if (scheduled && !policyTarget) {
     const outside = results.findIndex((result) => !result.workspaceWrite);
-    if (outside >= 0) return { ...outsideProjectWriteAsk(toolName, targets[outside], startTime), bypassCache: true };
+    if (outside >= 0) return { ...outsideProjectWriteAsk(toolName, targets[outside], startTime, context), bypassCache: true };
   }
   const boundary = results.find((result) => result.decision !== 'approve');
   if (boundary) return { ...boundary, bypassCache: scheduled || boundary.bypassCache };
@@ -197,14 +210,14 @@ function classifyTarget(
     return { decision: 'approve', reason: 'task_output_directory', confidence: 1, cached: false, bypassCache: true,
       traceStep: createTraceStep('permission_classifier', 'task_output_directory', 'allow', 'Explicit output directory for this task', startTime) };
   }
-  if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime);
+  if (!workspaceBoundary || !workspace) return outsideProjectWriteAsk(toolName, resolved, startTime, context);
   if (isPathInside(resolved, workspace)) {
     return { decision: 'approve', reason: '写入项目目录内', confidence: 0.95, cached: false, workspaceWrite: true };
   }
   // Symlink that looks in-workspace but resolves outside is a boundary escape;
   // check before the /tmp allowlist so a link into /tmp cannot become implicit approval.
-  if (isPathInside(candidate, workspaceBoundary)) return outsideProjectWriteAsk(toolName, resolved, startTime);
-  if (toolName === 'ExcelAutomate') return outsideProjectWriteAsk(toolName, resolved, startTime);
+  if (isPathInside(candidate, workspaceBoundary)) return outsideProjectWriteAsk(toolName, resolved, startTime, context);
+  if (toolName === 'ExcelAutomate') return outsideProjectWriteAsk(toolName, resolved, startTime, context);
   const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
   if (
     isPathWithinRoot(resolved, tmpRoot)
@@ -212,5 +225,5 @@ function classifyTarget(
   ) {
     return { decision: 'approve', reason: '写入临时目录', confidence: 0.95, cached: false };
   }
-  return outsideProjectWriteAsk(toolName, resolved, startTime);
+  return outsideProjectWriteAsk(toolName, resolved, startTime, context);
 }
