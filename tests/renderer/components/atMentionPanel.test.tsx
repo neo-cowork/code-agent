@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LibraryItem } from '../../../src/shared/contract/library';
 import type { ProjectArtifact } from '../../../src/shared/contract/project';
@@ -12,6 +12,7 @@ import type { Session } from '../../../src/shared/contract/session';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { AtMentionPopover } from '../../../src/renderer/components/features/chat/ChatInput/AtMentionPopover';
 import {
   buildArtifactRows,
   buildFileRows,
@@ -22,6 +23,7 @@ import {
   groupLimitForTab,
   shiftAtMentionTab,
   wrapIndex,
+  type AtMentionLibraryRow,
 } from '../../../src/renderer/components/features/chat/ChatInput/atMentionPanelModel';
 
 const mocks = vi.hoisted(() => ({
@@ -31,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   listProjects: vi.fn(),
   getProjectArtifacts: vi.fn(),
   toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn(), success: vi.fn() },
+  // 渲染用语言（默认 zh 保持既有用例行为；渲染用例内切换 en 后须复位）
+  language: 'zh' as 'zh' | 'en',
 }));
 
 vi.mock('../../../src/renderer/services/libraryClient', () => ({
@@ -45,7 +49,12 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: mocks.toast }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return {
+    useI18n: () => (mocks.language === 'en'
+      ? { t: en, language: 'en' as const }
+      : { t: zh, language: 'zh' as const }),
+  };
 });
 
 import { useAtMentionPanel } from '../../../src/renderer/components/features/chat/ChatInput/useAtMentionPanel';
@@ -153,6 +162,93 @@ describe('atMentionPanelModel', () => {
     expect(flattenAtMentionRows([], [], [buildSessionRows([session('s1', '会话')], new Map(), '', null)[0]], [
       buildArtifactRows([{ id: 'a1', sessionId: 's1', kind: 'file', title: '报告.docx', createdAt: 1 }], '')[0],
     ]).map((row) => row.kind)).toEqual(['session', 'artifact']);
+  });
+
+  it('空 query 跳过点开头条目（首屏不被 .claude/.code-agent 占据），非空 query 照旧可搜到', () => {
+    const files = [
+      { name: '.claude', path: '/w/.claude', isDirectory: true },
+      { name: '.code-agent', path: '/w/.code-agent', isDirectory: true },
+      { name: 'src', path: '/w/src', isDirectory: true },
+      { name: 'README.md', path: '/w/README.md', isDirectory: false },
+    ];
+    expect(buildFileRows(files, '').map((row) => row.name)).toEqual(['src', 'README.md']);
+    // `.` 非空：子串过滤照旧（README.md 也含 `.`），点开头条目仍可搜到
+    expect(buildFileRows(files, '.').map((row) => row.name)).toEqual(['.claude', '.code-agent', 'README.md']);
+    expect(buildFileRows(files, 'claude').map((row) => row.name)).toEqual(['.claude']);
+  });
+});
+
+// ============================================================================
+// N-FIX-ATMENTION-POPOVER-INTERNAL-PATH-EXPOSED：资料库行第二行灰字绝不外露内部存储
+// 绝对路径（~/…/library/proj_xxx/…），无 summary 时显示类型人话标签；external_ref
+// 的 http(s) URL 附 host。文件组空 query 不列点开头目录。经 AtMentionPopover 公共
+// props 渲染断言，不直接调内部 helper。
+// ============================================================================
+describe('AtMentionPopover 资料库行第二行不外露内部路径', () => {
+  beforeEach(() => {
+    // jsdom 未实现 scrollIntoView；组件高亮行的滚动跟随在渲染用例里只需不炸
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    cleanup();
+    mocks.language = 'zh';
+  });
+
+  function renderPopover(libraryRows: AtMentionLibraryRow[]): string {
+    const { container } = render(
+      <AtMentionPopover
+        query=""
+        libraryRows={libraryRows}
+        fileRows={[]}
+        sessionRows={[]}
+        artifactRows={[]}
+        activeTab="all"
+        selectedIndex={0}
+        onTabChange={vi.fn()}
+        onSelect={vi.fn()}
+        onHover={vi.fn()}
+      />,
+    );
+    return container.textContent ?? '';
+  }
+
+  it('无 summary 的本地条目显示类型标签，不显示 /Users/…/proj_ 路径（zh）', () => {
+    const item = libraryItem('p1', 'proj-1', '品牌色规范');
+    item.pathOrUri = '/Users/me/.code-agent-dev/library/proj_7c9d42b5abb9/upload/brand.pdf';
+    const text = renderPopover([{ kind: 'library', item, pinned: false }]);
+    expect(text).toContain('上传文件');
+    expect(text).not.toContain('/Users/');
+    expect(text).not.toContain('proj_');
+  });
+
+  it('无 summary 的本地条目显示类型标签，不显示内部路径（en）', () => {
+    mocks.language = 'en';
+    const item = libraryItem('p1', 'proj-1', 'Brand colors');
+    item.pathOrUri = '/Users/me/.code-agent-dev/library/proj_7c9d42b5abb9/upload/brand.pdf';
+    const text = renderPopover([{ kind: 'library', item, pinned: false }]);
+    expect(text).toContain('Uploaded file');
+    expect(text).not.toContain('/Users/');
+    expect(text).not.toContain('proj_');
+  });
+
+  it('summary 非空时仍以 summary 为第二行', () => {
+    const item = libraryItem('p1', 'proj-1', '品牌色规范');
+    item.pathOrUri = '/Users/me/.code-agent-dev/library/proj_7c9d42b5abb9/upload/brand.pdf';
+    item.summary = '主色 #171717，强调色 zinc';
+    const text = renderPopover([{ kind: 'library', item, pinned: false }]);
+    expect(text).toContain('主色 #171717，强调色 zinc');
+    expect(text).not.toContain('/Users/');
+  });
+
+  it('external_ref 的 http(s) URL 显示「类型标签 · host」，不显示完整 URL 路径段', () => {
+    const item = libraryItem('p1', 'proj-1', '设计系统文档');
+    item.kind = 'external_ref';
+    item.pathOrUri = 'https://design.example.com/spec/brand/colors';
+    const text = renderPopover([{ kind: 'library', item, pinned: false }]);
+    expect(text).toContain('外部引用 · design.example.com');
+    expect(text).not.toContain('/spec/brand/colors');
+    expect(text).not.toContain('https://');
   });
 });
 
