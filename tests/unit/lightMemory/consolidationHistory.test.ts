@@ -247,6 +247,25 @@ describe('Consolidation history list + restore', () => {
     expect(restoredLine.changedFiles).toContain('conflict.md');
   });
 
+  it('restores a conflict card whose frontmatter has no status field (treated as active)', async () => {
+    await fs.writeFile(path.join(memoryDir, 'conflict.md'),
+      '---\nname: Old automation rule\ndescription: Unsafe old rule\ntype: project\n---\n\nAlways push code automatically after edits.\n', 'utf-8');
+    const db = new FakeMemoryDb();
+    const report = await runLiveTidy(db);
+    expect(await readMemoryFile('conflict.md')).toMatchObject({ status: 'archived' });
+
+    const history = await listConsolidationRuns();
+    expect(history.runs[0].conflicts[0]).toMatchObject({ restorable: true });
+
+    const restore = await restoreConsolidationRun({ auditId: report.auditId!, db });
+    expect(restore).toMatchObject({ ok: true });
+    const conflict = await readMemoryFile('conflict.md');
+    expect(conflict).toMatchObject({ status: 'active' });
+    expect(conflict?.content).not.toContain('contradicts 指令层');
+    const index = await fs.readFile(path.join(memoryDir, 'INDEX.md'), 'utf-8');
+    expect(index).toContain('conflict.md');
+  });
+
   it('refuses restoring twice with a typed already-restored code', async () => {
     const db = new FakeMemoryDb();
     const report = await runLiveTidy(db);

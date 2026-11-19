@@ -587,7 +587,7 @@ export async function consolidateLightMemory(
     plan.conflicts = await Promise.all(plan.conflicts.map(async (conflict) => {
       const source = await readMemoryFile(conflict.source);
       return source
-        ? { ...conflict, original: { status: source.status, content: source.content } }
+        ? { ...conflict, original: { status: source.status ?? 'active', content: source.content } }
         : conflict;
     }));
   }
