@@ -62,6 +62,41 @@ describe('findReusableNewSessionDraft', () => {
   });
 });
 
+describe('explicit space draft reuse', () => {
+  it('reuses a blank draft only when the requested space id matches', () => {
+    const draft = session({ id: 'space-draft', projectId: 'proj_space', workingDirectory: undefined });
+    const params = {
+      sessions: [draft],
+      currentSessionId: draft.id,
+      messages: [],
+      todos: [],
+      workingDirectory: null,
+    };
+    expect(findReusableNewSessionDraft({ ...params, projectId: 'proj_space' })?.id).toBe('space-draft');
+    expect(findReusableNewSessionDraft({ ...params, projectId: 'proj_other' })).toBeNull();
+  });
+
+  it('does not reuse an explicit space draft for a plain new task', () => {
+    const draft = session({ id: 'space-draft', projectId: 'proj_space' });
+    expect(findReusableNewSessionDraft({
+      sessions: [draft],
+      currentSessionId: draft.id,
+      messages: [],
+      todos: [],
+    })).toBeNull();
+  });
+
+  it('still reuses an unsorted blank draft for a plain new task', () => {
+    const draft = session({ id: 'unsorted-draft', projectId: 'proj_unsorted' });
+    expect(findReusableNewSessionDraft({
+      sessions: [draft],
+      currentSessionId: draft.id,
+      messages: [],
+      todos: [],
+    })?.id).toBe('unsorted-draft');
+  });
+});
+
 describe('blank placeholder titles in either UI language', () => {
   it.each(['新对话', 'New conversation', 'New Chat', '新会话', ''])('recognises %j without changing stored text', (title) => {
     const draft = session({ title });

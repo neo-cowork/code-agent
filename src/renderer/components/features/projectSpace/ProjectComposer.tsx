@@ -3,8 +3,8 @@
 // 直接复用主聊天 ChatInput 完整件（爸 2026-07-30 拍板「把外面的完整输入框搬进来或用同一个」）。
 // sessionless 模式 = 主界面新会话草稿同款语义：会话绑定的部件（/loop、记忆开关、资料库 pin、
 // 实时通话）按既有草稿态逻辑降级提示，不会绑到项目页背后那个会话上发错配置。
-// 发送链路：onSend(envelope) 内 createSession（workingDirectory=项目 workspacePath，host 侧
-// ensureProjectForWorkspace 按 workspace 自动挂 projectId）→ 乐观上屏首条用户消息
+// 发送链路：onSend(envelope) 内 createSession（显式 projectId 钉住归属；workingDirectory
+// 仍传项目目录，目录可空）→ 乐观上屏首条用户消息
 // （落地即进行中态：切进会话那一刻消息已在时间线上，不再先 stare 几秒空态）
 // → pendingProjectChatSeed（完整 envelope，clientMessageId 与乐观消息同 id）
 // → switchSession，ChatView 消费 seed 把 envelope 真正发给 agent（sendMessage 按 id 去重
@@ -90,6 +90,9 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
       // createSession 内 handoffActiveScopeToSession：space 槽 → 新会话槽 + pin 物化 + 专家 bind
       const session = await useSessionStore.getState().createSession(title || undefined, {
         workingDirectory: project?.workspacePath ?? undefined,
+        projectId: project?.id,
+        // 失败时留在空间页，已输入的文字才能留在这个输入框里。
+        preserveSecondaryPages: true,
       });
       if (!session) return false;
       // sessionless 期选中的 skill 在这里补挂载（新会话 id 已知、切页之前）；
@@ -121,7 +124,7 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
     } finally {
       setSending(false);
     }
-  }, [project?.workspacePath, sending, t.slashSelect.mountSkillFailedPrefix]);
+  }, [project?.id, project?.workspacePath, sending, t.slashSelect.mountSkillFailedPrefix]);
 
   return (
     <div className="shrink-0 border-t border-zinc-800/70" data-testid="project-space-composer">
