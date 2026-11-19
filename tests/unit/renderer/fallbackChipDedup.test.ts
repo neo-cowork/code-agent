@@ -7,14 +7,26 @@ const decision = (o: Partial<ModelDecisionEventData>) => ({
   reason: 'user-selected', requestedModel: 'a', resolvedModel: 'a', fallbackFrom: null, ...o,
 }) as ModelDecisionEventData;
 const text = (id: string, d?: ModelDecisionEventData): TraceNode => ({ id, type: 'assistant_text', content: 'x', timestamp: 1, modelDecision: d });
-const banner: TraceNode = { id: 'b', type: 'system', content: '{}', timestamp: 1, subtype: 'model_fallback' };
+const noticeFrom = (from: string) => JSON.stringify({ __modelFallbackNotice: { reason: 'r', from, to: 'z/w' } });
+const bannerFor = (id: string, from: string): TraceNode => ({ id, type: 'system', content: noticeFrom(from), timestamp: 1, subtype: 'model_fallback' });
+const banner = bannerFor('b', 'x/y');
 
 describe('getFallbackDuplicateChipNodeIds', () => {
   it('hides fallbackFrom chip when the turn has a banner', () => {
     expect([...getFallbackDuplicateChipNodeIds([text('a', decision({ fallbackFrom: 'x/y' })), banner])]).toEqual(['a']);
   });
-  it('hides fallback-availability chip even without fallbackFrom', () => {
-    expect(getFallbackDuplicateChipNodeIds([banner, text('a', decision({ reason: 'fallback-availability', resolvedModel: 'b' }))]).has('a')).toBe(true);
+  it('keeps a fallback-availability chip that has no fallbackFrom to match the banner', () => {
+    expect(getFallbackDuplicateChipNodeIds([banner, text('a', decision({ reason: 'fallback-availability', resolvedModel: 'b' }))]).size).toBe(0);
+  });
+  it('keeps a missing-key chip when the turn banner belongs to a different fallback', () => {
+    const ids = getFallbackDuplicateChipNodeIds([
+      text('nokey', decision({ fallbackFrom: 'zhipu/glm-5' })), text('real', decision({ fallbackFrom: 'x/y' })), banner,
+    ]);
+    expect([...ids]).toEqual(['real']);
+  });
+  it('ignores a banner whose content cannot be parsed', () => {
+    const bad: TraceNode = { ...banner, content: 'not json' };
+    expect(getFallbackDuplicateChipNodeIds([text('a', decision({ fallbackFrom: 'x/y' })), bad]).size).toBe(0);
   });
   it('keeps the chip when there is no banner (no-API-key case)', () => {
     expect(getFallbackDuplicateChipNodeIds([text('a', decision({ fallbackFrom: 'x/y' }))]).size).toBe(0);

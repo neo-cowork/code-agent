@@ -83,4 +83,11 @@ describe('fallback chip / banner de-dup through the real chat view', () => {
     expect(banners(container)).toBe(1);
     expect(chips(container)).toBe(0);
   });
+  it('keeps a missing-key chip when the turn banner is for a different fallback', () => {
+    useAppStore.setState({ language: 'zh', disclosureLevel: 'standard' });
+    const noKey = fallbackDecision({ fallbackFrom: 'zhipu/glm-5', reason: 'user-selected' });
+    const { container } = renderTurn([reply(noKey)], true);
+    expect(chips(container)).toBe(1);
+    expect(banners(container)).toBe(1);
+  });
 });
