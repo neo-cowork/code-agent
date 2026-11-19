@@ -232,12 +232,13 @@ describe('computerUseWorkbench', () => {
           required: true,
           detail: 'AXIsProcessTrusted() returned false.',
         }],
+        summary: { granted: 0, denied: 1, needsRestart: 0, wrongBundleId: 0, unknown: 0, unsupported: 0 },
       },
       surface: makeSurface(),
       targets: [],
       elementsError: null,
       observeError: null,
-    } as Parameters<typeof describeComputerUseFailures>[0]);
+    });
     const card = explanations.find((item) => item.id === 'accessibility:denied');
     expect(card?.title).toContain(name);
     expect(card?.detail).toContain(name);
