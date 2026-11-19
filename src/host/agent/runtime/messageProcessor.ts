@@ -1,6 +1,5 @@
 import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
 import type { TraceEventDataMap } from './turnTrace';
-import { getToolAttemptTrace } from './toolAttemptTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
 import { cancelTimeWakesOnUserReturn } from '../../services/wake/userReturn';
@@ -70,13 +69,10 @@ import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
 import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
-import { deniedToolFinalReply, deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
-import { isBashToolName } from '../../tools/toolNames';
-import { describeDeniedShellCalls } from './foregroundShellDenial';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
-import { isWriteBlockedDuringPlanExitFallback } from './planExitFallback';
+import { settleForegroundToolDenial } from './foregroundDenialHandoff';
 import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
 import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
@@ -660,48 +656,16 @@ export class MessageProcessor {
       );
     }
 
-    // ADR-074 K1/K2：plan-exit 兜底窗口内工具面收成 allowlist，落选者与 run 级禁用工具同一 admission 口拒绝。
-    const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name)
-      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall));
-    if (deniedToolCalls.length > 0) {
-      for (const call of toolCalls) {
-        const blocked = deniedToolCalls.some((denied) => denied.id === call.id);
-        getToolAttemptTrace(this.ctx).begin(call);
-        getToolAttemptTrace(this.ctx).finish(call, { toolCallId: call.id, success: false,
-          error: blocked ? 'TOOL_DISABLED_FOR_RUN' : 'TOOL_BATCH_SKIPPED', metadata: { skipped: !blocked } }, false, 0);
-      }
-      this.guardState.toolCallRetryCount++;
-      const shellDenial = describeDeniedShellCalls(this.ctx, deniedToolCalls);
-      this.contextAssembly.injectSystemMessage(
-        [
-          '<tool-run-policy>',
-          this.ctx.foregroundToolFace ? 'The previous call was NOT run.'
-            : `The previous call was NOT run. Internal call identifiers, not user-facing wording: ${Array.from(new Set(deniedToolCalls.filter((call) => !isBashToolName(call.name)).map((call) => call.name))).join(', ')}.`,
-          deniedToolRetryGuidance(this.ctx),
-          ...(shellDenial ? [shellDenial.guidance] : []),
-          '</tool-run-policy>',
-        ].join('\n'),
-        'tool-policy-guard',
-      );
-      await sealBouncedToolCalls({ ctx: this.ctx, contextAssembly: this.contextAssembly }, response, toolCalls, 'denied', new Set(deniedToolCalls.map((denied) => denied.id)));
-      if (this.guardState.toolCallRetryCount > this.ctx.maxToolCallRetries) {
-        const finalMessage: Message = {
-          id: this.contextAssembly.generateId(),
-          role: 'assistant',
-          content: deniedToolFinalReply(this.ctx),
-          timestamp: Date.now(),
-          effortLevel: this.ctx.turn.effortLevel,
-          metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-          ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
-        };
-        await this.contextAssembly.addAndPersistMessage(finalMessage);
-        this.ctx.onEvent({ type: 'message', data: finalMessage });
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.contextHealth.currentSystemPromptHash);
-        this.ctx.onEvent({ type: 'turn_end', data: { turnId: this.ctx.turn.currentTurnId } });
-        return 'break';
-      }
-      return 'continue';
-    }
+    // ADR-074 K1/K2 与前台执行工具收窄：拒绝口在 foregroundDenialHandoff，本文件只转交。
+    const admission = await settleForegroundToolDenial({
+      ctx: this.ctx,
+      contextAssembly: this.contextAssembly,
+      guard: this.guardState,
+      response,
+      toolCalls,
+      planModeActive: () => this.toolEngine.runtimeControl?.isPlanMode() === true,
+    });
+    if (admission) return admission;
 
     // Goal mode：拦截 attempt_completion → 双闸验证（闸1 确定性 verifyCommand + 闸2 软评审 reviewCondition）。
     // 完成判定权在代码层，模型无法靠"自称完成"绕过（拒绝 Ralph）。详见 goalCompletionGate。
