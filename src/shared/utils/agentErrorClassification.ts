@@ -216,6 +216,13 @@ export function classifyAgentError(
     ) {
       return { ...base, category: 'network', httpStatus: explicitStatus };
     }
+
+    // 更具体的类都没接住的 HTTP 400/422（含非空 JSON 正文）：沿用 bad_request，
+    // 卡片是「这个模型可能用不了」，而不是 generic 的「运行失败，重试一次」。
+    // 只认结构化状态码，不扫正文里的数字。
+    if (explicitStatus === 400 || explicitStatus === 422) {
+      return { ...base, category: 'bad_request', httpStatus: explicitStatus };
+    }
   }
 
   return { ...base, category: 'generic', httpStatus: explicitStatus };
