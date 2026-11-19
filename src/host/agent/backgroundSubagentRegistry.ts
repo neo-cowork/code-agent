@@ -12,6 +12,8 @@
 // ============================================================================
 
 import { recordBackgroundTaskStopNote } from '../services/commandCenter/backgroundTaskStopNote';
+import { resolveSessionTaskResultLocale } from '../services/commandCenter/sessionTaskResultLocale';
+import { formatSessionTaskCancelledClosing } from '../../shared/constants/sessionCommandCenter';
 import { stripCardToolCallMarkup } from '../../shared/modelMarkupStrip';
 import { resolveStoppedTaskOutcome } from '../services/commandCenter/sessionTaskStopConclusion';
 import { describeSubagentStopReason } from './subagentFailureReason';
@@ -391,6 +393,15 @@ export class BackgroundSubagentRegistry {
           kind: entry.result?.stopKind ?? (entry.result?.stopHint?.kind === 'step_cap' ? 'step_cap' : 'error'),
         });
       } catch (error) { logger.warn('Failed to record background stop note', error); }
+    }
+    if (entry.status === 'failed' && entry.sessionId && (cancelled || entry.cancelRequested)) {
+      // 取消不唤醒模型；宿主写一句收尾，避免卡片「已取消」而正文仍停在「还在跑」。
+      try {
+        await recordBackgroundTaskStopNote(
+          entry.sessionId, record.title, formatSessionTaskCancelledClosing(resolveSessionTaskResultLocale()),
+          { taskId: entry.agentId, kind: 'cancelled' },
+        );
+      } catch (error) { logger.warn('Failed to record background cancelled note', error); }
     }
     if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
       this.queuedNotificationKeys.add(record.dedupeKey);
