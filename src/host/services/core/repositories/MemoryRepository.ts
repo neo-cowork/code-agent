@@ -59,6 +59,12 @@ function journalEntryId(metadata: Record<string, unknown>): string | null {
   return null;
 }
 
+/** 注入负反馈（不对/过时）只动 metadata 不动正文（N-MEM-SOURCE-WRONG-FEEDBACK）：快照判重
+ *  看不见它，单独比对让标记/撤销也落一行日志（面板历史与审计口径一致）。 */
+function injectionFeedbackSnapshot(record: Pick<MemoryRecord, 'metadata'>): string {
+  return JSON.stringify(record.metadata?.injectionFeedback ?? null);
+}
+
 function memoryStatusCondition(
   options: { includeArchived?: boolean; includeCandidates?: boolean },
   column = 'status',
@@ -234,8 +240,11 @@ export class MemoryRepository {
     if (before && after) {
       // 只记真实变更（rework r2 ①③）：快照（summary/status/content）无差异的写入
       // 不追加日志行——否则镜像重建等批量回写会给每条 no-op 记一行，淹没历史并
-      // 抹掉列表上真实的「后台写入」标记。显式 evict 恒记（清退要留痕）。
-      const changed = journal?.operation === 'evict' || journalSnapshot(before) !== journalSnapshot(after);
+      // 抹掉列表上真实的「后台写入」标记。显式 evict 恒记（清退要留痕）；注入负反馈
+      // 的 metadata 变化单独比对（标记/撤销必须留痕，见 injectionFeedbackSnapshot）。
+      const changed = journal?.operation === 'evict'
+        || journalSnapshot(before) !== journalSnapshot(after)
+        || injectionFeedbackSnapshot(before) !== injectionFeedbackSnapshot(after);
       if (changed) {
         this.appendJournal(journal?.operation ?? 'update', after, before, after, journal);
       }

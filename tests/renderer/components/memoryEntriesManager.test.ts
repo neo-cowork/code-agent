@@ -231,3 +231,26 @@ describe('MemoryEntriesManager helpers', () => {
   });
 
 });
+
+// N-MEM-SOURCE-WRONG-FEEDBACK：user_* 暂停原因的徽标分档（你标记为不对 / 过时了）
+describe('injectionPaused badge 按 reason 分档', () => {
+  const base = {
+    selectedEntryId: null,
+    searchQuery: '',
+    statusFilter: 'all' as const,
+    showArchived: false,
+    kindFilter: 'all' as const,
+    sourceFilter: 'all' as const,
+    now,
+  };
+
+  it('user_wrong / user_outdated 用专属徽标，用量原因沿用通用徽标', () => {
+    const wrong = entry({ id: 'mem_uw', status: 'active', injectionPaused: { reason: 'user_wrong', since: now } });
+    const outdated = entry({ id: 'mem_uo', status: 'active', injectionPaused: { reason: 'user_outdated', since: now } });
+    const stale = entry({ id: 'mem_st', status: 'active', injectionPaused: { reason: 'stale_used', since: now } });
+    const rows = buildMemoryEntryRows({ ...base, entries: [wrong, outdated, stale] });
+    expect(rows.find((row) => row.id === 'mem_uw')?.pausedLabel).toBe('你标记为不对');
+    expect(rows.find((row) => row.id === 'mem_uo')?.pausedLabel).toBe('你标记为过时了');
+    expect(rows.find((row) => row.id === 'mem_st')?.pausedLabel).toBe(zh.settings.memory.entries.injectionPaused.badge);
+  });
+});

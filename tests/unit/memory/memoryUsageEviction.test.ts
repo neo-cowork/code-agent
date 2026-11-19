@@ -60,6 +60,12 @@ import {
   storedMemoryToEntry,
 } from '../../../src/host/memory/memoryEntryRuntime';
 import { memoryInjectionPauses, resumeMemoryInjection } from '../../../src/host/memory/memoryUsageEviction';
+import {
+  clearMemoryInjectionFlag,
+  flagMemoryInjection,
+  memoryUserFlagCounts,
+  readInjectionFeedback,
+} from '../../../src/host/memory/memoryInjectionFeedback';
 import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
 import { memoryReadModule } from '../../../src/host/tools/modules/lightMemory/memoryRead';
 import { memorySearchModule } from '../../../src/host/tools/modules/lightMemory/memorySearch';
@@ -80,7 +86,7 @@ type DbWrapper = {
   listMemories: (options?: Parameters<MemoryRepository['listMemories']>[0]) => MemoryRecord[];
   getMemory: (id: string) => MemoryRecord | null;
   createMemory: (data: Parameters<MemoryRepository['createMemory']>[0]) => MemoryRecord;
-  updateMemory: (id: string, updates: Partial<MemoryRecord>) => MemoryRecord | null;
+  updateMemory: (id: string, updates: Partial<MemoryRecord>, journal?: Parameters<MemoryRepository['updateMemory']>[2]) => MemoryRecord | null;
   recordMemoryAccess: (id: string) => void;
   searchMemories: (query: string, options?: { limit?: number; applyDecay?: boolean }) => MemoryRecord[];
 };
@@ -106,7 +112,7 @@ function wrapRepo(repository: MemoryRepository): DbWrapper {
     listMemories: (options) => repository.listMemories(options ?? {}),
     getMemory: (id) => repository.getMemory(id),
     createMemory: (data) => repository.createMemory(data),
-    updateMemory: (id, updates) => repository.updateMemory(id, updates),
+    updateMemory: (id, updates, journal) => repository.updateMemory(id, updates, journal),
     recordMemoryAccess: (id) => repository.recordMemoryAccess(id),
     searchMemories: (query, options) => repository.searchMemories(query, options ?? {}),
   };
@@ -466,5 +472,97 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     const after = buildSeedMemoryBlock(PROJ);
     expect(after).not.toBeNull();
     expect(after).toContain(`[#${paused.rowId}]`);
+  });
+
+  // ---- N-MEM-SOURCE-WRONG-FEEDBACK：回复下方「不对 / 过时了」负反馈 ----
+  // 全部走真实 SQLite + flagMemoryInjection / clearMemoryInjectionFlag 公共入口 +
+  // buildPackedSeedMemory / buildSeedMemoryBlock 两条注入通道，无手搓替身。
+  describe('user flag（不对/过时了）', () => {
+    it('⑤ 标记 → 下一轮不再注入（packed 与 fallback 两通道）→ 撤销 → 重新注入；撤销不动 access_count', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const flagged = await mirrorEntry('uf-flag', 'zirchufflag');
+      const keeper = await mirrorEntry('uf-keep', 'zirchufkeep');
+      setUsage(flagged.rowId, 2, NOW - 3 * DAY_MS);
+      setUsage(keeper.rowId, 1, NOW - 3 * DAY_MS);
+      const accessBefore = currentDb().getMemory(flagged.rowId)?.accessCount;
+
+      // 标记前两条都在
+      expect(await injectedEntryIds()).toEqual(expect.arrayContaining([flagged.entryId, keeper.entryId]));
+
+      expect(flagMemoryInjection(currentDb(), flagged.entryId, 'wrong')).toBe(true);
+      expect(memoryInjectionPauses(currentDb(), NOW).get(flagged.entryId)).toMatchObject({ reason: 'user_wrong' });
+
+      // packed 通道：标记的条目不再注入（keeper 在场排除「整体为空」假绿）
+      const afterFlag = await injectedEntryIds();
+      expect(afterFlag).toContain(keeper.entryId);
+      expect(afterFlag).not.toContain(flagged.entryId);
+
+      // fallback 通道（项目记忆混合时：标记的不回流，未标记的照常在）
+      const projFlagged = await mirrorEntry('uf-proj', 'zirchufproj', PROJ);
+      const projKeeper = await mirrorEntry('uf-projk', 'zirchufprojk', PROJ);
+      expect(buildSeedMemoryBlock(PROJ)).toContain(`[#${projFlagged.rowId}]`);
+      expect(flagMemoryInjection(currentDb(), projFlagged.entryId, 'outdated')).toBe(true);
+      const projBlock = buildSeedMemoryBlock(PROJ);
+      expect(projBlock).not.toContain(`[#${projFlagged.rowId}]`);
+      expect(projBlock).toContain(`[#${projKeeper.rowId}]`);
+      expect(memoryInjectionPauses(currentDb(), NOW).get(projFlagged.entryId)).toMatchObject({ reason: 'user_outdated' });
+
+      // 撤销 → 重新注入；access_count 与标记前一致（撤销绝不记使用）
+      expect(clearMemoryInjectionFlag(currentDb(), flagged.entryId)).toBe(true);
+      expect(await injectedEntryIds()).toContain(flagged.entryId);
+      expect(currentDb().getMemory(flagged.rowId)?.accessCount).toBe(accessBefore);
+      // 幂等：没有标记时撤销返回 false
+      expect(clearMemoryInjectionFlag(currentDb(), flagged.entryId)).toBe(false);
+    });
+
+    it('user_* 优先于用量原因：stale_used 的行被标记后暂停原因变成 user_wrong', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const stale = await mirrorEntry('uf-stale', 'zirchufstale');
+      setUsage(stale.rowId, 3, NOW - 40 * DAY_MS);
+      expect(memoryInjectionPauses(currentDb(), NOW).get(stale.entryId)).toMatchObject({ reason: 'stale_used' });
+      expect(flagMemoryInjection(currentDb(), stale.entryId, 'wrong')).toBe(true);
+      expect(memoryInjectionPauses(currentDb(), NOW).get(stale.entryId)).toMatchObject({ reason: 'user_wrong' });
+    });
+
+    it('④ 负反馈计数累计在 metadata（撤销不清零），MemoryRead/搜索照常返回', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const flagged = await mirrorEntry('uf-count', 'zirchufcount');
+      flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
+      flagMemoryInjection(currentDb(), flagged.entryId, 'outdated', NOW + 1000);
+      expect(readInjectionFeedback(currentDb().getMemory(flagged.rowId)?.metadata)).toEqual({
+        kind: 'outdated', at: NOW + 1000, count: 2,
+      });
+      expect(memoryUserFlagCounts(currentDb()).get(flagged.entryId)).toBe(2);
+
+      expect(clearMemoryInjectionFlag(currentDb(), flagged.entryId)).toBe(true);
+      // 撤销后：不再暂停、计数保留
+      expect(memoryInjectionPauses(currentDb(), NOW).has(flagged.entryId)).toBe(false);
+      expect(readInjectionFeedback(currentDb().getMemory(flagged.rowId)?.metadata)).toEqual({ count: 2 });
+      expect(memoryUserFlagCounts(currentDb()).get(flagged.entryId)).toBe(2);
+
+      // MemoryRead / 搜索不受标记影响（与用量暂停同口径）
+      flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
+      const read = await executeRead({ filename: flagged.filename }, makeCtx({ runId: 'run-uf' }));
+      expect(read.ok).toBe(true);
+      if (read.ok) expect(read.output).toContain('zirchufcount');
+      const searchHandler = await memorySearchModule.createHandler();
+      const searched = await searchHandler.execute({ query: 'zirchufcount' }, makeCtx(), allowAll);
+      expect(searched.ok).toBe(true);
+      if (searched.ok) expect(searched.output).toContain(flagged.filename);
+    });
+
+    it('④ 标记与撤销都落变更日志（actor=user_manual）；找不到的条目返回 false', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const flagged = await mirrorEntry('uf-journal', 'zirchufjournal');
+      flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
+      clearMemoryInjectionFlag(currentDb(), flagged.entryId);
+      const journal = currentRepo().listMemoryJournal({ entryId: flagged.entryId });
+      // create（镜像行）+ flag + clear = 至少 3 行，后两行 actor 都是 user_manual
+      const manual = journal.filter((row) => row.actor === 'user_manual');
+      expect(manual.length).toBeGreaterThanOrEqual(2);
+      expect(manual[0].operation).toBe('update');
+      expect(flagMemoryInjection(currentDb(), 'no-such-entry', 'wrong')).toBe(false);
+      expect(clearMemoryInjectionFlag(currentDb(), 'no-such-entry')).toBe(false);
+    });
   });
 });

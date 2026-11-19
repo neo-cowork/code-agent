@@ -11,6 +11,7 @@ import { createLogger } from '../services/infra/logger';
 import { MEMORY } from '../../shared/constants';
 import type { MemoryEntryInjectionPause } from '../../shared/contract/memory';
 import { storedMemoryToEntry, type MemoryEntryDatabase } from './memoryEntryRuntime';
+import { readInjectionFeedback } from './memoryInjectionFeedback';
 
 const logger = createLogger('MemoryUsageEviction');
 
@@ -30,6 +31,15 @@ function scanRows(db: MemoryEntryDatabase): EvictionRow[] {
 }
 
 function pauseFor(row: EvictionRow, now: number): MemoryEntryInjectionPause | null {
+  // 用户负反馈（N-MEM-SOURCE-WRONG-FEEDBACK）优先于用量原因：标记「不对/过时了」即刻停注入，
+  // 不受宽限期与最近使用影响；since = 标记时刻。
+  const feedback = readInjectionFeedback(row.metadata);
+  if (feedback?.kind) {
+    return {
+      reason: feedback.kind === 'wrong' ? 'user_wrong' : 'user_outdated',
+      since: feedback.at ?? row.updatedAt,
+    };
+  }
   if (row.accessCount > 0) {
     // lastAccessedAt 判 typeof：DB 列可空，null 会被 as 掩盖，`null < cutoff` 在数值比较里成真。
     if (typeof row.lastAccessedAt === 'number' && row.lastAccessedAt < now - MEMORY.SEED_STALE_USED_MS) {

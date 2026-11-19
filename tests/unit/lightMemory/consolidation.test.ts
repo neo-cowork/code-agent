@@ -344,4 +344,84 @@ describe('Light Memory consolidation live contract', () => {
     expect(await fs.readFile(path.join(memoryDir, 'alpha.md'), 'utf-8')).toBe(beforeAlpha);
     await expect(fs.stat(path.join(memoryDir, 'unsafe-directive.md'))).rejects.toThrow();
   });
+
+
+// N-MEM-SOURCE-WRONG-FEEDBACK：被用户标记「不对/过时了」的来源在 consolidation 里优先处理
+describe('user-flagged sources (N-MEM-SOURCE-WRONG-FEEDBACK)', () => {
+  function flaggedMirrorDb(filename: string): FakeMemoryDb {
+    const db = new FakeMemoryDb();
+    db.records.push({
+      id: 'mirror-1',
+      type: 'project_knowledge',
+      category: 'project',
+      content: 'mirror body',
+      source: 'user_defined',
+      confidence: 1,
+      metadata: {
+        memoryEntry: { id: `light:${filename}`, sourceOfTruth: 'light_file', filePath: filename },
+        injectionFeedback: { kind: 'wrong', at: 1_000, count: 1 },
+      },
+      status: 'active',
+      accessCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return db;
+  }
+
+  it('③ 有标记时穿过小库健康跳过：healthy 存量 + flagged 行也触发', async () => {
+    await fs.rm(path.join(memoryDir, 'beta.md'));
+    await fs.rm(path.join(memoryDir, 'conflict.md'));
+    await fs.writeFile(path.join(memoryDir, 'INDEX.md'), [
+      '# Memory Index',
+      '',
+      '- [alpha.md](alpha.md) — Release facts',
+      '',
+    ].join('\n'), 'utf-8');
+
+    // 无标记：健康跳过（对照组）
+    const skipped = await consolidateLightMemory({ dryRun: true, db: new FakeMemoryDb() });
+    expect(skipped.triggered).toBe(false);
+
+    const report = await consolidateLightMemory({ dryRun: true, db: flaggedMirrorDb('alpha.md') });
+    expect(report.triggered).toBe(true);
+    expect(report.reason).toContain('user-flagged');
+  });
+
+  it('③ 标记文件在 prompt 里排最前并点名「不得原样保留」', async () => {
+    const report = await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      db: flaggedMirrorDb('beta.md'),
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    expect(report.triggered).toBe(true);
+    const prompt = mocks.memoryTask.mock.calls[0][0] as string;
+    expect(prompt).toContain('标记为「不对/过时了」');
+    expect(prompt).toContain('- beta.md');
+    expect(prompt).toContain('不得原样保留');
+    // beta.md（被标记）排在 alpha.md（未标记）前面
+    expect(prompt.indexOf('### beta.md')).toBeLessThan(prompt.indexOf('### alpha.md'));
+  });
+
+  it('③ 审计行带 flaggedSources；撤销后（kind 清空）不再算标记', async () => {
+    const db = flaggedMirrorDb('alpha.md');
+    const report = await consolidateLightMemory({
+      dryRun: false,
+      force: true,
+      db,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    expect(report.applied).toBe(true);
+    const auditLines = (await fs.readFile(
+      path.join(memoryDir, MEMORY_CONSOLIDATION.AUDIT_FILENAME),
+      'utf-8',
+    )).trim().split('\n');
+    const audits = auditLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(audits.length).toBeGreaterThanOrEqual(2);
+    for (const audit of audits) {
+      expect(audit.flaggedSources).toEqual(['alpha.md']);
+    }
+  });
+});
 });

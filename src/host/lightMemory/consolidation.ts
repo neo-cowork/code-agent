@@ -34,6 +34,8 @@ import {
   rebuildMemoryMirrorFromLightFiles,
 } from '../memory/memoryEntryRuntime';
 import { skipAutomaticMemory } from '../memory/automaticMemoryPolicy';
+import { memoryEntryMetadata } from '../memory/memoryEntryMetadata';
+import { readInjectionFeedback } from '../memory/memoryInjectionFeedback';
 import type { MemoryRecord } from '../services/core/repositories';
 
 const logger = createLogger('MemoryConsolidation');
@@ -120,6 +122,7 @@ interface TriggerDecision {
 function decideTrigger(
   health: Awaited<ReturnType<typeof getLightMemoryHealth>>,
   fileCount: number,
+  flaggedCount = 0,
 ): TriggerDecision {
   const reasons: string[] = [];
   if (health.indexTooLong) reasons.push(`INDEX over budget (${health.indexLineCount} lines)`);
@@ -130,10 +133,37 @@ function decideTrigger(
   if (fileCount >= MEMORY_CONSOLIDATION.FILE_COUNT_THRESHOLD) {
     reasons.push(`file count ${fileCount} ≥ threshold ${MEMORY_CONSOLIDATION.FILE_COUNT_THRESHOLD}`);
   }
+  // 用户负反馈（N-MEM-SOURCE-WRONG-FEEDBACK）：有标记待纠偏也算跑的理由，穿过小库健康跳过。
+  if (flaggedCount > 0) reasons.push(`${flaggedCount} user-flagged file(s) to correct or drop`);
 
   return reasons.length > 0
     ? { shouldRun: true, reason: reasons.join('; ') }
     : { shouldRun: false, reason: `healthy: ${fileCount} files, INDEX ${health.indexLineCount} lines` };
+}
+
+/**
+ * 被用户标记「不对/过时了」且标记仍生效的 light 文件名（N-MEM-SOURCE-WRONG-FEEDBACK）：
+ * 镜像行 metadata.injectionFeedback.kind 存在即命中。db 缺席或读失败按无标记处理（fail-open）。
+ */
+function flaggedLightFilenames(
+  files: LightMemoryFile[],
+  db?: ConsolidationMemoryDatabase,
+): Set<string> {
+  if (!db) return new Set();
+  try {
+    const flaggedEntryIds = new Set<string>();
+    for (const row of db.listMemories({ includeArchived: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' })) {
+      const entryId = memoryEntryMetadata(row)?.id;
+      if (typeof entryId === 'string' && readInjectionFeedback(row.metadata)?.kind) {
+        flaggedEntryIds.add(entryId);
+      }
+    }
+    return new Set(files
+      .filter((file) => flaggedEntryIds.has(file.entryId || `light:${file.filename}`))
+      .map((file) => file.filename));
+  } catch {
+    return new Set();
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -460,13 +490,21 @@ export async function consolidateLightMemory(
   const dryRun = opts?.dryRun ?? false;
   const force = opts?.force ?? false;
 
+  const [health, allFiles] = await Promise.all([getLightMemoryHealth(), listMemoryFiles()]);
+  const files = allFiles.filter((file) => (file.status || 'active') === 'active'
+    && !skipAutomaticMemory(file, file.sessionId || 'memory-consolidation', 'consolidation'));
+  const beforeCount = allFiles.filter((file) => (file.status || 'active') === 'active').length;
+  const before = { fileCount: beforeCount, indexLineCount: health.indexLineCount };
+  // 用户负反馈标记（N-MEM-SOURCE-WRONG-FEEDBACK）：这些来源优先整理，审计行记 flaggedSources。
+  const flagged = flaggedLightFilenames(files, opts?.db);
+
   const finish = async (
     report: ConsolidationReport,
     extra: Record<string, unknown> = {},
     auditId?: string,
   ): Promise<ConsolidationReport> => {
     try {
-      return await appendAudit(report, extra, { auditId });
+      return await appendAudit(report, { flaggedSources: [...flagged], ...extra }, { auditId });
     } catch (error) {
       logger.error('Consolidation audit append failed', { error });
       return {
@@ -476,15 +514,9 @@ export async function consolidateLightMemory(
     }
   };
 
-  const [health, allFiles] = await Promise.all([getLightMemoryHealth(), listMemoryFiles()]);
-  const files = allFiles.filter((file) => (file.status || 'active') === 'active'
-    && !skipAutomaticMemory(file, file.sessionId || 'memory-consolidation', 'consolidation'));
-  const beforeCount = allFiles.filter((file) => (file.status || 'active') === 'active').length;
-  const before = { fileCount: beforeCount, indexLineCount: health.indexLineCount };
-
   const trigger = force
     ? { shouldRun: true, reason: 'forced (manual trigger, gate bypassed)' }
-    : decideTrigger(health, files.length);
+    : decideTrigger(health, files.length, flagged.size);
   if (!trigger.shouldRun) {
     logger.info('Consolidation skipped', { reason: trigger.reason });
     return finish({
@@ -497,7 +529,16 @@ export async function consolidateLightMemory(
     ?? await loadInstructionLayer(opts?.workingDirectory || process.cwd());
   const instructionsBefore = instructionDigest(instructionFiles);
   // Ask the configurable memory model for a compress-without-loss + instruction reconciliation plan.
-  const prompt = `${CONSOLIDATION_PROMPT}\n\n记忆文件：\n${buildFilesDump(files)}`
+  // 被标记「不对/过时了」的来源排最前并点名：改写修正或归档，不得原样带过。
+  const flaggedNote = flagged.size > 0
+    ? '\n\n用户已在对话里把这些记忆标记为「不对/过时了」（下面文件清单里排最前）：\n'
+      + [...flagged].map((filename) => `- ${filename}`).join('\n')
+      + '\n对它们要么改写修正后并入合并产物，要么列入 conflicts 归档；不得原样保留、不得原样并入。'
+    : '';
+  const orderedFiles = [...files].sort(
+    (a, b) => Number(flagged.has(b.filename)) - Number(flagged.has(a.filename)),
+  );
+  const prompt = `${CONSOLIDATION_PROMPT}${flaggedNote}\n\n记忆文件：\n${buildFilesDump(orderedFiles)}`
     + `\n\n只读指令层：\n${buildInstructionDump(instructionFiles)}`;
   let planRaw: string;
   try {
@@ -618,7 +659,7 @@ export async function consolidateLightMemory(
       actions: plan.actions,
       conflicts: plan.conflicts,
       diff,
-    }, auditContext, { outcome: 'pending' });
+    }, { ...auditContext, flaggedSources: [...flagged] }, { outcome: 'pending' });
   } catch (error) {
     logger.error('Consolidation pending audit append failed', { error });
     return {
