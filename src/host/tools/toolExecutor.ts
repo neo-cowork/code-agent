@@ -267,6 +267,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 import { validateToolInputSchema, formatToolSchemaValidationError, stripUndeclaredToolParams } from './toolSchemaValidator';
 import { computeDeleteImpact } from './deleteImpact';
+import { trimIdentifierArgs } from './trimIdentifierArgs';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -621,7 +622,11 @@ export class ToolExecutor {
     }
     const requestedToolName = toolName;
     const normalizedRequestedToolName = normalizeToolName(requestedToolName);
-    const boundParams = this.bindRunScopedParams(normalizedRequestedToolName, rawParams);
+    const boundParams = this.bindRunScopedParams(
+      normalizedRequestedToolName,
+      // 先裁路径键再做 workspace 边界检查：判定、授权、执行看到同一个值（command 不裁，!run 逐字节）
+      trimIdentifierArgs(rawParams, { includeCommand: false }),
+    );
     if ('error' in boundParams) {
       return {
         success: false,
@@ -1296,7 +1301,7 @@ export class ToolExecutor {
       ? undefined
       : (nestedToolName: string, nestedParams: Record<string, unknown>) => this.execute(
         nestedToolName,
-        nestedParams,
+        trimIdentifierArgs(nestedParams, { includeCommand: true }),
         {
           ...options,
           nestedToolCall: true,

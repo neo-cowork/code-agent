@@ -1,4 +1,5 @@
-// npm run test:e2e:core —— 一条命令跑 5 条核心 Web 路径（真实服务 + dogfood 模型），写 result.json。
+// npm run test:e2e:core —— 一条命令跑全部核心 Web 路径（真实服务 + dogfood 模型），写 result.json。
+// 地图 18 条里 web 可跑的 10 条都在这（F05-F10 F14-F17）；7 条 shell 流程和首启 F18 的归属见 flows.ts。
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,7 +30,7 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
   const notes: string[] = [];
   let lastDb: string | null = null;
   const env: AttemptEnv = {
-    page, server, sessionIds: [], startedAtMs: Date.now(), scratch: {},
+    page, server, sessionIds: [], startedAtMs: Date.now(), sseFile, scratch: {},
     note: (text) => { if (!notes.includes(text)) notes.push(text); },
     readDb: async () => { const r = dumpDb(bin, server); lastDb = r.file; return r; },
   };
@@ -50,7 +51,8 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
   try {
     await page.goto(`${origin}/`);
     await page.getByTestId('sidebar-new-task').waitFor({ timeout: 30_000 });
-    await dismissFirstRunLayers(page);
+    // 首启流程（F18 一类）要用首启弹层，默认的「点掉首启弹层」对它们关掉
+    if (!flow.requiresFirstRun) await dismissFirstRunLayers(page);
     for (const [i, step] of flow.steps.entries()) {
       try {
         await step.run(env);
@@ -63,6 +65,13 @@ async function runAttempt(flow: FlowDef, n: number, ctx: { browser: Browser; ser
   } catch (e) {
     failedStep = { n: 0, text: '打开页面并进入聊天界面' };
     reason = (e as Error).message;
+  } finally {
+    // 收尾护栏（F17 恢复界面语言）：步骤红不红都要跑，失败只记 note 不掩盖原失败
+    try {
+      await flow.cleanup?.(server);
+    } catch (e) {
+      notes.push(`cleanup 失败：${(e as Error).message}`);
+    }
   }
   let screenshot: string | null = path.join(shots, `${tag}-${failedStep ? 'fail' : 'pass'}.png`);
   await page.screenshot({ path: screenshot }).catch(() => { screenshot = null; });
@@ -99,6 +108,10 @@ async function runIsolated(flow: FlowDef, n: number, ctx: { headed: boolean; ser
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2), process.env, process.cwd());
   assertRealrunBin(args.realrunBin);
+  // F16 要用 POST /api/dev/seed-messages 种长会话：它只认 CODE_AGENT_E2E=1（dev.ts），
+  // neo-realrun 只开 CODE_AGENT_ENABLE_DEV_API。种子写进的是本次隔离 HOME 的库，先于起服务设好
+  // （该标志在隔离服务里只是多放行 e2e 种子钩子、少连 MCP/auth/telemetry 这类本次用不到的远端）。
+  process.env.CODE_AGENT_E2E ??= '1';
   const startedAt = new Date().toISOString();
   const wanted = args.only ?? CORE_FLOW_IDS;
   const flows = CORE_FLOWS.filter((f) => wanted.includes(f.id));
