@@ -6,6 +6,7 @@ import {
   QUICK_LANE_LOW_REASONING_EFFORT_MODELS,
   getModelDisplayLabel,
 } from '../../../src/shared/constants';
+import { ADDITIONAL_PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistryAdditional';
 import { buildRuntimeModelOptions } from '../../../src/shared/modelRuntime';
 
 const EXPECTED_ZHIPU_MODEL_IDS = [
@@ -23,6 +24,20 @@ const EXPECTED_ZHIPU_MODEL_IDS = [
 describe('runtime model display labels', () => {
   it("returns a friendly label for the runtime-only GLM-5.3 target", () => {
     expect(getModelDisplayLabel('glm-5.3')).toBe('GLM-5.3');
+  });
+
+  it("labels every ADDITIONAL_PROVIDER_REGISTRY model id so the switcher never shows a raw id", () => {
+    const registryIds = Object.values(ADDITIONAL_PROVIDER_REGISTRY)
+      .flatMap((provider) => provider.models.map((model) => model.id));
+
+    expect(registryIds.length).toBeGreaterThan(0);
+    for (const modelId of registryIds) {
+      expect(getModelDisplayLabel(modelId), modelId).not.toBe(modelId);
+    }
+  });
+
+  it("labels the neohorse runtime-only target with the friendly NeoHorse name", () => {
+    expect(getModelDisplayLabel('neohorse-1.5-flash-preview')).toBe('NeoHorse 1.5 Flash');
   });
 
   it('keeps the catalog zhipu model-id list unchanged', () => {
