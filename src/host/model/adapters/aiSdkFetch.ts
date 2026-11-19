@@ -99,11 +99,53 @@ function responseBodyForFetch(data: unknown, status: number): BodyInit | null {
   return JSON.stringify(data);
 }
 
+// 进程内记住「这个 url+model 的中转拒绝顶层 reasoning_effort」。只由 openai-compatible
+// 默认分支显式打开；判定只看我们发出的字段和 HTTP 状态，不看错误正文。
+const rejectedReasoningEffortTargets = new Set<string>();
+
+function requestHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
+function parseJsonObject(body: unknown): Record<string, unknown> | null {
+  if (typeof body !== 'string') return null;
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function reasoningTargetKey(url: string, json: Record<string, unknown>): string {
+  const model = typeof json.model === 'string' ? json.model : '';
+  return `${url}\u0000${model}`;
+}
+
+function withoutReasoningEffort(json: Record<string, unknown>): string {
+  const next = { ...json };
+  delete next.reasoning_effort;
+  return JSON.stringify(next);
+}
+
+function discardResponseStream(data: unknown): void {
+  if (!isNodeReadable(data) || data.destroyed) return;
+  data.on('error', () => {});
+  data.resume();
+  data.destroy();
+}
+
 // 按 provider 生成 fetch：闭包绑定 provider，使 getHttpsAgent 能按 provider 身份决定走代理/直连
 // （而非只看 url host）。修复 mimo 等「国内厂商海外节点」被全局代理打偏的问题。
 export function makeAiSdkFetch(
   provider?: string,
   transformRequestBody?: (body: Record<string, unknown>) => Record<string, unknown>,
+  options?: { dropRejectedReasoningEffort?: boolean },
 ): typeof globalThis.fetch {
   return async (input, init) => {
   const request = input instanceof Request ? input : undefined;
@@ -125,6 +167,21 @@ export function makeAiSdkFetch(
     }
   }
   const signal = init?.signal ?? request?.signal;
+  const dropRejectedReasoningEffort = options?.dropRejectedReasoningEffort === true;
+  let reasoningKey: string | null = null;
+  let sentReasoningEffort = false;
+  if (dropRejectedReasoningEffort) {
+    const json = parseJsonObject(body);
+    if (json) {
+      reasoningKey = reasoningTargetKey(url, json);
+      const hasField = Object.prototype.hasOwnProperty.call(json, 'reasoning_effort');
+      if (hasField && rejectedReasoningEffortTargets.has(reasoningKey)) {
+        body = withoutReasoningEffort(json);
+      } else {
+        sentReasoningEffort = hasField;
+      }
+    }
+  }
   const agent = getHttpsAgent(url, provider);
 
   if (process.env.CODE_AGENT_DUMP_MODEL_PAYLOAD) {
@@ -137,27 +194,50 @@ export function makeAiSdkFetch(
     });
   }
 
-  noteFirstModelRequestDispatched(provider);
-  const response = await axios({
-    url,
-    method,
-    headers,
-    data: body,
-    signal,
-    responseType: 'stream',
-    timeout: 0,
-    validateStatus: () => true,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-    httpAgent: agent,
-    httpsAgent: agent,
-    proxy: false,
-  });
+  const send = (data: unknown) => {
+    noteFirstModelRequestDispatched(provider);
+    return axios({
+      url,
+      method,
+      headers,
+      data,
+      signal,
+      responseType: 'stream' as const,
+      timeout: 0,
+      validateStatus: () => true,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      httpAgent: agent,
+      httpsAgent: agent,
+      proxy: false,
+    }).then((response) => {
+      // HTTP 层错误在此落日志（带 URL）：AI SDK 上抛的 APICallError 往往只剩 statusText（如 "Not Found"），
+      // 没有这条日志就无法定位 Base URL 配错（缺 /v1、末尾多斜杠等）
+      if (response.status >= 400) {
+        logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
+      }
+      return response;
+    });
+  };
 
-  // HTTP 层错误在此落日志（带 URL）：AI SDK 上抛的 APICallError 往往只剩 statusText（如 "Not Found"），
-  // 没有这条日志就无法定位 Base URL 配错（缺 /v1、末尾多斜杠等）
-  if (response.status >= 400) {
-    logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
+  let response = await send(body);
+  // 中转对顶层 reasoning_effort 回 400/422：丢掉该字段重发一次，并记住 url+model，
+  // 后面的请求直接不带。不看错误正文；信号已中止则不重试；第二次失败原样返回。
+  if (
+    dropRejectedReasoningEffort
+    && sentReasoningEffort
+    && reasoningKey
+    && (response.status === 400 || response.status === 422)
+    && signal?.aborted !== true
+  ) {
+    logger.warn(`[AiSdkAdapter] reasoning_effort rejected by relay; retrying once without it provider=${provider ?? ''} host=${requestHost(url)} status=${response.status}`);
+    rejectedReasoningEffortTargets.add(reasoningKey);
+    discardResponseStream(response.data);
+    const json = parseJsonObject(body);
+    response = await send(json ? withoutReasoningEffort(json) : body);
+    if (response.status < 400) {
+      logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
+    }
   }
   // 流式请求收到的 2xx 却是 JSON/HTML/空体（非 SSE）：AI SDK 的 SSE 解析器会把它静默吞成「空回复」，
   // 调用方既没报错也没内容。这类体不是流，整体读出来：不能解析就抛 2xx APICallError（与非流式

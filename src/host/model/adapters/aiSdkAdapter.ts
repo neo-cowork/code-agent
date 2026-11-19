@@ -209,7 +209,7 @@ function resolveModel(
         apiKey: req.apiKey,
         // transformRequestBody is applied inside the fetch wrapper (it is not a
         // native createOpenAICompatible option); includeUsage/headers are native.
-        fetch: makeAiSdkFetch(config.provider, vendor.transformRequestBody),
+        fetch: makeAiSdkFetch(config.provider, vendor.transformRequestBody, { dropRejectedReasoningEffort: true }),
         ...vendor,
       })(config.model);
     }
