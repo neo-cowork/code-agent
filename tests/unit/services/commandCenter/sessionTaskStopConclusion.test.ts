@@ -80,6 +80,7 @@ describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
     '抓取已实际发起，失败了，没有拿到任何页面内容。',
     '抓取已发起，但是失败了，页面没有内容。',
     '已尝试抓取，没有成功拿到页面。',
+    '抓取没能成功，页面内容拿不到，原因很明确：本机没有任何程序在监听 2 号端口。',
     ...REAL_FAILED_ROWS,
   ])('failure prose with completed status becomes failed: %s', (detail) => {
     const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail });
