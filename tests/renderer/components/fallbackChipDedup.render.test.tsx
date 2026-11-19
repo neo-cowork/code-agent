@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Message, ModelDecisionEventData } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
@@ -73,5 +73,14 @@ describe('fallback chip / banner de-dup through the real chat view', () => {
     const { container } = renderTurn([reply(fallbackDecision()), { id: 'a2', role: 'assistant', content: '再补充', timestamp: 2.5, modelDecision: strategy }], true);
     expect(chips(container)).toBe(1);
     expect(banners(container)).toBe(1);
+  });
+  it('a folded turn keeps the chip as the only notice, expanding it shows only the banner', () => {
+    useAppStore.setState({ language: 'zh', disclosureLevel: 'simple' });
+    const { container } = renderTurn([reply(fallbackDecision())], true);
+    expect(banners(container)).toBe(0);
+    expect(chips(container)).toBe(1);
+    fireEvent.click(screen.getByText(/^用时/));
+    expect(banners(container)).toBe(1);
+    expect(chips(container)).toBe(0);
   });
 });

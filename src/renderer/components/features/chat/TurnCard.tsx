@@ -483,7 +483,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.finalTextNode}
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
-            inVoiceDispatchCard={isVoiceTurn} showMemoryChip={foldedView.finalTextNode.id === foldedView.chipOwnerId} hideRouteChip={foldedView.dupChipIds.has(foldedView.finalTextNode.id)}
+            inVoiceDispatchCard={isVoiceTurn} showMemoryChip={foldedView.finalTextNode.id === foldedView.chipOwnerId} hideRouteChip={!folded && foldedView.dupChipIds.has(foldedView.finalTextNode.id)}
             onStreamingDisplayUpdate={handleAnchorStreamingDisplayUpdate}
           />
         )}
