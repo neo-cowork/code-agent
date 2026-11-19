@@ -369,6 +369,68 @@ describe('user-flagged sources (N-MEM-SOURCE-WRONG-FEEDBACK)', () => {
     return db;
   }
 
+  /** r2：尊重 listMemories 窗口参数的假库——flaggedLightFilenames 旧实现只扫最新 N 行。 */
+  class WindowedFakeDb extends FakeMemoryDb {
+    override listMemories(options?: { limit?: number }): MemoryRecord[] {
+      const rows = [...this.records].sort((a, b) => b.updatedAt - a.updatedAt);
+      return options?.limit === undefined ? rows : rows.slice(0, options.limit);
+    }
+
+    /** 与真 MemoryRepository 同语义：全量取带负反馈 metadata 的行，不看窗口。 */
+    listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+      return this.records.filter((record) => {
+        const feedback = (record.metadata as Record<string, unknown> | null)?.injectionFeedback;
+        return typeof feedback === 'object' && feedback !== null;
+      });
+    }
+  }
+
+  it('r2 被标记的镜像行挤出最新 500 行窗口：整理点名不丢（flaggedSources 同源查询）', async () => {
+    await fs.rm(path.join(memoryDir, 'beta.md'));
+    await fs.rm(path.join(memoryDir, 'conflict.md'));
+    const db = new WindowedFakeDb();
+    db.records.push({
+      id: 'mirror-old',
+      type: 'project_knowledge',
+      category: 'project',
+      content: 'mirror body',
+      source: 'user_defined',
+      confidence: 1,
+      metadata: {
+        memoryEntry: { id: 'light:alpha.md', sourceOfTruth: 'light_file', filePath: 'alpha.md' },
+        injectionFeedback: { kind: 'wrong', at: 1_000, count: 1 },
+      },
+      status: 'active',
+      accessCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    for (let i = 0; i < 600; i += 1) {
+      db.records.push({
+        id: `junk-${i}`,
+        type: 'project_knowledge',
+        category: 'project',
+        content: `window-junk-${i}`,
+        source: 'user_defined',
+        confidence: 0.5,
+        metadata: {},
+        status: 'archived',
+        accessCount: 0,
+        createdAt: 2 + i,
+        updatedAt: 2 + i,
+      });
+    }
+    // 坐实：窗口内看不到被标记行（旧实现的全部视野）
+    expect(db.listMemories({ limit: 500, orderBy: 'updated_at', orderDir: 'DESC' }).some((r) => r.id === 'mirror-old')).toBe(false);
+
+    const report = await consolidateLightMemory({ dryRun: true, force: true, db });
+    expect(report.triggered).toBe(true);
+    const prompt = mocks.memoryTask.mock.calls[0][0] as string;
+    // r2 修复前：窗口扫不到 kind → 点名段消失、被标记文件不再排最前
+    expect(prompt).toContain('标记为「不对/过时了」');
+    expect(prompt).toContain('不得原样保留');
+  });
+
   it('③ 有标记时穿过小库健康跳过：healthy 存量 + flagged 行也触发', async () => {
     await fs.rm(path.join(memoryDir, 'beta.md'));
     await fs.rm(path.join(memoryDir, 'conflict.md'));

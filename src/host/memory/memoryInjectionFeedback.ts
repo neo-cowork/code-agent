@@ -58,6 +58,13 @@ export function readInjectionFeedback(
 }
 
 function findRow(db: MemoryEntryDatabase, entryId: string): FeedbackRow | null {
+  // r2：直查优先（主键/metadata.memoryEntry.id），不依赖 updated_at 最新 N 行窗口；
+  // 方法缺席（旧形状 db）时回退窗口扫描——窗口外的行会 miss，warn 已在调用侧留痕。
+  if (typeof db.findMemoryByEntryId === 'function') {
+    const direct = db.findMemoryByEntryId(entryId);
+    if (direct) return direct;
+    return null;
+  }
   return scanRows(db).find((candidate) => storedMemoryToEntry(candidate).id === entryId) ?? null;
 }
 
@@ -150,12 +157,16 @@ export function clearMemoryInjectionFlag(
   }
 }
 
-/** 面板「被标记过 N 次」：entryId → 累计次数（只收 count > 0 的行）。读失败 fail-open 空表。 */
+/** 面板「被标记过 N 次」：entryId → 累计次数（只收 count > 0 的行）。读失败 fail-open 空表。
+ *  r2：优先全量负反馈查询（窗口外的计数行也要算），方法缺席时回退窗口扫描。 */
 export function memoryUserFlagCounts(db: MemoryEntryDatabase | undefined): Map<string, number> {
   const counts = new Map<string, number>();
   if (!db) return counts;
   try {
-    for (const row of scanRows(db)) {
+    const rows = typeof db.listMemoriesWithInjectionFeedback === 'function'
+      ? db.listMemoriesWithInjectionFeedback()
+      : scanRows(db);
+    for (const row of rows) {
       const feedback = readInjectionFeedback(row.metadata);
       if (feedback?.count && feedback.count > 0) {
         counts.set(storedMemoryToEntry(row).id, feedback.count);

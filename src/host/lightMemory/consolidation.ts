@@ -89,6 +89,8 @@ export interface ConsolidationMemoryDatabase {
   }): MemoryRecord[];
   createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
   updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
+  /** 全量取带注入负反馈 metadata 的行（N-MEM-SOURCE-WRONG-FEEDBACK r2）；缺省实现时回退窗口扫描 */
+  listMemoriesWithInjectionFeedback?(): MemoryRecord[];
 }
 
 export interface ConsolidationReport {
@@ -152,7 +154,12 @@ function flaggedLightFilenames(
   if (!db) return new Set();
   try {
     const flaggedEntryIds = new Set<string>();
-    for (const row of db.listMemories({ includeArchived: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' })) {
+    // r2（N-MEM-SOURCE-WRONG-FEEDBACK）：全量负反馈查询优先——被标记的镜像行被 500 条
+    // 更新行挤出窗口后，整理点名不能丢；方法缺席（旧形状 db）时回退窗口扫描。
+    const rows = typeof db.listMemoriesWithInjectionFeedback === 'function'
+      ? db.listMemoriesWithInjectionFeedback()
+      : db.listMemories({ includeArchived: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC' });
+    for (const row of rows) {
       const entryId = memoryEntryMetadata(row)?.id;
       if (typeof entryId === 'string' && readInjectionFeedback(row.metadata)?.kind) {
         flaggedEntryIds.add(entryId);

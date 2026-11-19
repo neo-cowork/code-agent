@@ -190,6 +190,33 @@ export class MemoryRepository {
     return rows.map(row => this.rowToMemoryRecord(row));
   }
 
+  /**
+   * N-MEM-SOURCE-WRONG-FEEDBACK r2：按 entryId 直查行，不依赖「updated_at 最新 N 行」扫描窗口。
+   * `db:<rowId>` 走主键；其余（light:/mem_entry_*）按 metadata.memoryEntry.id 匹配。
+   */
+  findMemoryByEntryId(entryId: string): MemoryRecord | null {
+    if (entryId.startsWith('db:')) {
+      return this.getMemory(entryId.slice(3));
+    }
+    const row = this.db.prepare(
+      `SELECT * FROM memories WHERE json_extract(metadata, '$.memoryEntry.id') = ? LIMIT 1`,
+    ).get(entryId) as SQLiteRow | undefined;
+    return row ? this.rowToMemoryRecord(row) : null;
+  }
+
+  /**
+   * N-MEM-SOURCE-WRONG-FEEDBACK r2：全量取带注入负反馈 metadata 的行（kind 或 count 任一在场），
+   * 窗口外也可见——暂停扫描 / 标记计数 / 整理点名不得被最新 N 行窗口挤出。
+   */
+  listMemoriesWithInjectionFeedback(): MemoryRecord[] {
+    const rows = this.db.prepare(
+      `SELECT * FROM memories`
+      + ` WHERE json_extract(metadata, '$.injectionFeedback.kind') IS NOT NULL`
+      + ` OR json_extract(metadata, '$.injectionFeedback.count') > 0`,
+    ).all() as SQLiteRow[];
+    return rows.map((row) => this.rowToMemoryRecord(row));
+  }
+
   updateMemory(id: string, updates: Partial<MemoryRecord>, journal?: MemoryChangeJournalContext): MemoryRecord | null {
     const before = this.getMemory(id);
 

@@ -96,6 +96,8 @@ type DbWrapper = {
   updateMemory: (id: string, updates: Partial<MemoryRecord>, journal?: Parameters<MemoryRepository['updateMemory']>[2]) => MemoryRecord | null;
   recordMemoryAccess: (id: string) => void;
   searchMemories: (query: string, options?: { limit?: number; applyDecay?: boolean }) => MemoryRecord[];
+  findMemoryByEntryId: (entryId: string) => MemoryRecord | null;
+  listMemoriesWithInjectionFeedback: () => MemoryRecord[];
 };
 
 let raw: Database.Database | null = null;
@@ -122,6 +124,8 @@ function wrapRepo(repository: MemoryRepository): DbWrapper {
     updateMemory: (id, updates, journal) => repository.updateMemory(id, updates, journal),
     recordMemoryAccess: (id) => repository.recordMemoryAccess(id),
     searchMemories: (query, options) => repository.searchMemories(query, options ?? {}),
+    findMemoryByEntryId: (entryId) => repository.findMemoryByEntryId(entryId),
+    listMemoriesWithInjectionFeedback: () => repository.listMemoriesWithInjectionFeedback(),
   };
 }
 
@@ -166,6 +170,34 @@ function setUsage(rowId: string, accessCount: number, lastAccessedAt: number | n
 function backdate(rowId: string, ts: number): void {
   if (!raw) throw new Error('db not initialized');
   raw.prepare('UPDATE memories SET created_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, rowId);
+}
+
+/**
+ * r2 窗口挤出回归：往库里塞 N 条 archived 垃圾行（不进注入，但占满 updated_at 最新 N 行的
+ * 扫描窗口），把目标行挤出「最新 500 行」。archived 保证垃圾只影响窗口、不影响注入断言。
+ */
+function pushJunkRows(count: number): void {
+  for (let i = 0; i < count; i += 1) {
+    currentDb().createMemory({
+      type: 'user_preference',
+      category: 'fact',
+      content: `window-junk-${i}`,
+      source: 'session_extracted',
+      confidence: 0.5,
+      metadata: {},
+      status: 'archived',
+      deprecatedBy: null,
+    });
+  }
+}
+
+/** 坐实目标行不在「updated_at 最新 500 行」窗口里（负反馈旧实现只扫这个窗口）。 */
+function assertOutsideScanWindow(rowId: string): void {
+  const window = currentDb().listMemories({
+    includeArchived: true, includeCandidates: true, limit: 500, orderBy: 'updated_at', orderDir: 'DESC',
+  });
+  expect(window).toHaveLength(500);
+  expect(window.some((row) => row.id === rowId)).toBe(false);
 }
 
 async function injectedEntryIds(options?: { excludeEntryIds?: string[] }): Promise<string[]> {
@@ -605,6 +637,49 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
         .map((line) => JSON.parse(line) as Record<string, unknown>)
         .filter((row) => Array.isArray(row.flaggedSources) && (row.flaggedSources as string[]).includes(filename));
       expect(flaggedRows.length).toBeGreaterThan(0);
+    });
+
+    // ---- Rework r2：负反馈不得依赖「updated_at 最新 500 行」扫描窗口 ----
+    // ai-review：窗口外的镜像行 flag 恒失败；标记成功的行被 500 条更新行挤出窗口后
+    // 暂停扫描看不见 kind，光文件重新被注入。两条回归都在真 SQLite 上复刻窗口挤出。
+    it('r2 镜像行被挤出最新 500 行窗口：flag 仍成功（直查不扫窗口），注入照停', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const target = await mirrorEntry('w2-old', 'zirchw2old');
+      const keeper = await mirrorEntry('w2-keep', 'zirchw2keep');
+      backdate(target.rowId, NOW - 90 * DAY_MS);
+      // 窗口内仍注入（光文件直读，不经窗口）
+      expect(await injectedEntryIds()).toContain(target.entryId);
+
+      pushJunkRows(600);
+      assertOutsideScanWindow(target.rowId);
+
+      // 窗口外的行也要标记得上（r2 修复前：findRow 只扫最新 500 行 → false）
+      expect(await flagMemoryInjection(currentDb(), target.entryId, 'wrong')).toBe(true);
+      expect(memoryInjectionPauses(currentDb(), NOW).get(target.entryId)).toMatchObject({ reason: 'user_wrong' });
+      const afterFlag = await injectedEntryIds();
+      expect(afterFlag).not.toContain(target.entryId);
+      expect(afterFlag).toContain(keeper.entryId);
+    });
+
+    it('r2 标记成功后被 600 条更新行挤出窗口：暂停不丢、不重新注入、计数仍在', async () => {
+      vi.useFakeTimers({ now: NOW });
+      const target = await mirrorEntry('w2-evict', 'zirchw2evict');
+      const keeper = await mirrorEntry('w2-keep2', 'zirchw2keep2');
+      expect(await flagMemoryInjection(currentDb(), target.entryId, 'outdated')).toBe(true);
+      expect((await injectedEntryIds())).not.toContain(target.entryId);
+
+      // 标记之后又写进 600 条更新的行（垃圾行 archived：不进注入，只占窗口）
+      vi.setSystemTime(NOW + 60 * DAY_MS);
+      pushJunkRows(600);
+      assertOutsideScanWindow(target.rowId);
+
+      // 暂停必须还在（r2 修复前：窗口扫描看不见 kind → 光文件重新被注入）
+      expect(memoryInjectionPauses(currentDb(), NOW).get(target.entryId)).toMatchObject({ reason: 'user_outdated' });
+      const afterPush = await injectedEntryIds();
+      expect(afterPush).not.toContain(target.entryId);
+      expect(afterPush).toContain(keeper.entryId);
+      // 设置侧「被标记过 N 次」同一窗口问题（同类位置）：计数不丢
+      expect(memoryUserFlagCounts(currentDb()).get(target.entryId)).toBe(1);
     });
   });
 });

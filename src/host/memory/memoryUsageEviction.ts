@@ -68,6 +68,22 @@ export function memoryInjectionPauses(
       const pause = pauseFor(row, now);
       if (pause) pauses.set(storedMemoryToEntry(row).id, pause);
     }
+    // r2（N-MEM-SOURCE-WRONG-FEEDBACK）：用户负反馈不随窗口丢——标记行被 500 条更新的
+    // DB 行挤出扫描窗口后，暂停必须还在（否则光文件重新被注入）。全量负反馈查询兜底；
+    // 方法缺席（旧形状 db）时维持窗口行为。
+    if (typeof db.listMemoriesWithInjectionFeedback === 'function') {
+      for (const row of db.listMemoriesWithInjectionFeedback()) {
+        const feedback = readInjectionFeedback(row.metadata);
+        if (!feedback?.kind) continue;
+        const entryId = storedMemoryToEntry(row).id;
+        if (!pauses.has(entryId)) {
+          pauses.set(entryId, {
+            reason: feedback.kind === 'wrong' ? 'user_wrong' : 'user_outdated',
+            since: feedback.at ?? row.updatedAt,
+          });
+        }
+      }
+    }
   } catch (error) {
     logger.warn('[MemoryUsageEviction] usage scan failed, injecting without eviction', {
       error: String(error),
