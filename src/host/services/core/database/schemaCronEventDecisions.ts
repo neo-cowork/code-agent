@@ -53,6 +53,15 @@ export function applyCronEventDecisionsSchema(db: BetterSqlite3.Database, logger
     CREATE INDEX IF NOT EXISTS idx_cron_event_decisions_job
       ON cron_event_decisions (job_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS cron_event_stats (
+      job_id TEXT PRIMARY KEY,
+      prefilter_calls INTEGER NOT NULL DEFAULT 0,
+      prefilter_skipped INTEGER NOT NULL DEFAULT 0,
+      held_by_cap INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS cron_mail_watermarks (
       job_id TEXT PRIMARY KEY,
       binding TEXT NOT NULL,

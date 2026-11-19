@@ -62,6 +62,8 @@ export interface MailEventFields {
   subject: string;
   /** 进批后经 read_message 补取的正文（已截断）；取失败留空（降级为主题+发件人）。 */
   body?: string;
+  /** read_message 失败：正文「取不到」（不是空正文），预筛据此跳过、整封放行。 */
+  bodyUnavailable?: true;
 }
 
 /** mail 轮询喂回合批链路的事件形状（CronEventTrigger 补齐通道侧字段后入队）。 */
