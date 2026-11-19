@@ -109,7 +109,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v135: integrate main sys-v134 with Bash command-substitution refusal guidance.
 // sys-v138: reminders_create omits notes unless the user asks, and must not restate the title or the time.
 // sys-v139: chat can copy a workspace file into the Library with library_add.
-export const PROMPT_VERSION = 'sys-v139' as const;
+// sys-v140: library_add confirms inside the handler, after empty and app-data checks.
+export const PROMPT_VERSION = 'sys-v140' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

@@ -30,6 +30,10 @@ export const libraryAddSchema: ToolSchema = {
   },
   category: 'fs',
   permissionLevel: 'write',
+  // The handler confirms through canUseTool after it rejects an empty, oversized,
+  // missing, or app-data file. Leaving the executor gate on asks first, and that
+  // card is built from the raw arguments, so it shows the file path.
+  requiresPermission: false,
   readOnly: false,
   allowInTextForeground: true,
   allowInPlanMode: false,
