@@ -49,6 +49,8 @@ const MemoryDomainRequestSchema = z.object({
     'memoryInboxResolve',
     'memoryPack',
     'memoryRebuildMirror',
+    'memoryTidyList',
+    'memoryTidyRestore',
     'searchCode',
     'searchConversations',
     'update',

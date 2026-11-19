@@ -238,6 +238,110 @@ describe('Light Memory consolidation live contract', () => {
     expect(JSON.stringify(audit)).toContain('conflict.md');
   });
 
+  it('enriches audit lines with the new-card snapshot and conflict originals (restore groundwork)', async () => {
+    const report = await consolidateLightMemory({
+      dryRun: false,
+      force: true,
+      db: new FakeMemoryDb(),
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+
+    expect(report.applied).toBe(true);
+    const auditLine = (await fs.readFile(
+      path.join(memoryDir, MEMORY_CONSOLIDATION.AUDIT_FILENAME),
+      'utf-8',
+    )).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>).at(-1)!;
+    expect(auditLine).toMatchObject({ outcome: 'applied', schemaVersion: 2 });
+    // merges[].result 带产物卡全量快照（name/description/type/content）——「最近整理」
+    // 恢复与展示靠它，不再只有 filename/entryId。
+    const merge = (auditLine.merges as Array<Record<string, unknown>>)[0];
+    expect(merge.sources).toEqual(['alpha.md', 'beta.md']);
+    expect(merge.result).toMatchObject({
+      filename: 'release-governance.md',
+      name: 'Release governance',
+      description: 'Merged release facts',
+      type: 'project',
+      content: 'Alpha original fact: release requires tests. Beta original fact: release requires approval.',
+    });
+    // conflicts[] 带降级前原文快照：status=active + 未加冲突标记的正文。
+    const conflict = (auditLine.conflicts as Array<Record<string, unknown>>)[0];
+    expect(conflict).toMatchObject({ source: 'conflict.md', status: 'archived' });
+    expect(conflict.original).toEqual({
+      status: 'active',
+      content: 'Always push code automatically after edits.',
+    });
+  });
+
+  it('writes the latest-only preview file for dry runs and never for live runs', async () => {
+    const previewPath = path.join(memoryDir, MEMORY_CONSOLIDATION.PREVIEW_FILENAME);
+
+    // 演练有合并计划 → 预览文件记录「会改什么」。
+    await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    const previewAfterPlan = JSON.parse(await fs.readFile(previewPath, 'utf-8')) as Record<string, unknown>;
+    expect(previewAfterPlan).toMatchObject({ wouldChangeNothing: false });
+    expect(previewAfterPlan.merges).toHaveLength(1);
+    expect(previewAfterPlan.conflicts).toHaveLength(1);
+    // 预览只存出预告句所需字段，不存正文。
+    expect((previewAfterPlan.merges as Array<Record<string, unknown>>)[0].result).not.toHaveProperty('content');
+
+    // 演练无可改动 → 覆盖为「不会改动」。
+    mocks.memoryTask.mockResolvedValueOnce({
+      success: true,
+      content: JSON.stringify({ actions: [], conflicts: [] }),
+    });
+    await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    const previewAfterNoop = JSON.parse(await fs.readFile(previewPath, 'utf-8')) as Record<string, unknown>;
+    expect(previewAfterNoop).toMatchObject({ wouldChangeNothing: true, merges: [], conflicts: [] });
+
+    // 演练 LLM 失败 → 不覆盖上一次的好预览。
+    mocks.memoryTask.mockResolvedValueOnce({ success: false, error: 'model down' });
+    await consolidateLightMemory({
+      dryRun: true,
+      force: true,
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    const previewAfterFailure = JSON.parse(await fs.readFile(previewPath, 'utf-8')) as Record<string, unknown>;
+    expect(previewAfterFailure).toMatchObject({ wouldChangeNothing: true });
+
+    // 真跑不写预览文件（预览是「开关未开启」时的预告，不是运行日志）。
+    await fs.rm(previewPath);
+    await consolidateLightMemory({
+      dryRun: false,
+      force: true,
+      db: new FakeMemoryDb(),
+      instructionFiles: [{ path: instructionsPath, content: instructions }],
+    });
+    await expect(fs.stat(previewPath)).rejects.toThrow();
+  });
+
+  it('marks the preview "nothing to change" when a dry run is skipped by the health gate', async () => {
+    await fs.rm(path.join(memoryDir, 'beta.md'));
+    await fs.rm(path.join(memoryDir, 'conflict.md'));
+    await fs.writeFile(path.join(memoryDir, 'INDEX.md'), [
+      '# Memory Index',
+      '',
+      '- [alpha.md](alpha.md) — Release facts',
+      '',
+    ].join('\n'), 'utf-8');
+
+    await consolidateLightMemory({ dryRun: true });
+
+    const preview = JSON.parse(await fs.readFile(
+      path.join(memoryDir, MEMORY_CONSOLIDATION.PREVIEW_FILENAME),
+      'utf-8',
+    )) as Record<string, unknown>;
+    expect(preview).toMatchObject({ wouldChangeNothing: true, merges: [], conflicts: [] });
+    expect(String(preview.reason)).toContain('healthy: 1 files');
+  });
+
   it('writes a replayable no-op audit row for every live run', async () => {
     mocks.memoryTask.mockResolvedValueOnce({
       success: true,
