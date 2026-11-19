@@ -650,7 +650,7 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
 
     await cron.createJob({
       name: `[Cadence] ${roleId}`,
-      description: `角色主动性：${roleId} 定时醒来巡检（内部文档）`,
+      description: `${roleId} 定时醒来巡检，有值得你知道的事再告诉你`,
       scheduleType: 'cron',
       schedule: { type: 'cron', expression: cadence },
       action: { type: 'role-wake', roleId },

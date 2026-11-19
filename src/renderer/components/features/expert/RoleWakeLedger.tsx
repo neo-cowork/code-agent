@@ -63,6 +63,7 @@ export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }>
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
+              generic: t.cronWakeCadence.skipGeneric,
             });
             return (
               <li

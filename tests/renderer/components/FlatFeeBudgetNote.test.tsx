@@ -51,7 +51,7 @@ describe('ScheduleConfirmCard flat-fee budget note', () => {
     const { container } = render(<ScheduleCardHarness initial={draft} />);
     // Flush source-catalog effects without mocking either of the actual field components.
     await act(async () => undefined);
-    const budget = screen.getByRole('spinbutton') as HTMLInputElement;
+    const budget = screen.getAllByRole('spinbutton')[0] as HTMLInputElement;
     const note = screen.getByRole('note');
     expect(container.querySelector('[data-schedule-confirm]')?.contains(note)).toBe(true);
     expect(container.querySelector('[data-schedule-event-fields]')?.contains(note)).toBe(true);
@@ -62,7 +62,7 @@ describe('ScheduleConfirmCard flat-fee budget note', () => {
     fireEvent.change(budget, { target: { value: '0.75' } });
     act(() => setModel('deepseek', 'deepseek-chat', language));
     expect(screen.queryAllByTestId('flat-fee-budget-note')).toHaveLength(0);
-    expect(screen.getByRole('spinbutton')).toBe(budget);
+    expect(screen.getAllByRole('spinbutton')[0]).toBe(budget);
     expect(budget.value).toBe('0.75');
 
     act(() => setModel('xiaomi', 'mimo-v2.6-flash', language));

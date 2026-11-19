@@ -365,7 +365,7 @@ const TimeCapabilityPanel: React.FC = () => {
 
   const renderCronJobRow = (job: CronJobDefinition, options?: { showError?: boolean }) => {
     const latest = latestExecutions[job.id];
-    const latestMeta = getLatestExecutionStatus(latest, t.cronCenter);
+    const latestMeta = getLatestExecutionStatus(latest, t.cronCenter, t.cronWakeCadence);
     const isTriggering = triggeringJobId === job.id;
     const displayName = getJobDisplayName(job, language);
     const scheduleSummary = job.schedule.type === 'cron'
