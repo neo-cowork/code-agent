@@ -230,6 +230,14 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         >
           <IconComponent className="w-4 h-4 shrink-0 text-zinc-400" />
           <span className="truncate text-[13px] font-medium leading-5 text-zinc-200">{summary.displayName}</span>
+          {summary.folderMissing && (
+            <span
+              data-testid="sidebar-folder-missing"
+              className="shrink-0 text-[11px] font-medium leading-5 text-mark-warning"
+            >
+              {p.folderMissing}
+            </span>
+          )}
           <ChevronRight
             className={`w-3 h-3 shrink-0 text-zinc-500 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${
               expanded ? 'rotate-90' : ''

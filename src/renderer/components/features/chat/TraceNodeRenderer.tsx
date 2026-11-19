@@ -77,6 +77,8 @@ interface TraceNodeRendererProps {
   /** 旧项目待确认轮：用户气泡不挂「没发出去 · 编辑重发」（见 utils/projectTrustTurn）。 */
   suppressSendFailedBadge?: boolean;
   fileChangesByPath?: ReadonlyMap<string, FileChange>;
+  /** 记忆芯片只挂在本轮 chip owner 上；不传则 TurnQualityStrip 按默认显示。 */
+  showMemoryChip?: boolean;
 }
 
 export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
@@ -91,6 +93,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
   rewindDisabled,
   suppressSendFailedBadge,
   fileChangesByPath,
+  showMemoryChip,
 }) => {
   const { t } = useI18n();
   let content: React.ReactNode;
@@ -129,6 +132,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           isStreaming={isStreaming}
           inVoiceDispatchCard={inVoiceDispatchCard}
           onStreamingDisplayUpdate={onStreamingDisplayUpdate}
+          showMemoryChip={showMemoryChip}
         />
       );
       break;
@@ -342,7 +346,8 @@ const AssistantTextNode: React.FC<{
   /** X5.5-D4/D6：语音任务卡内抑制节点级语音小标与派活 label（轮头已讲） */
   inVoiceDispatchCard?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
-}> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate }) => {
+  showMemoryChip?: boolean;
+}> = ({ node, sessionId, isStreaming: turnStreaming, inVoiceDispatchCard, onStreamingDisplayUpdate, showMemoryChip }) => {
   const { t, language } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -503,7 +508,7 @@ const AssistantTextNode: React.FC<{
       )}
 
       {node.metadata?.turnQuality && (
-        <TurnQualityStrip summary={node.metadata.turnQuality} />
+        <TurnQualityStrip summary={node.metadata.turnQuality} showMemoryChip={showMemoryChip} />
       )}
 
       {node.metadata?.source === 'voice' && !node.metadata?.voiceDispatch && !inVoiceDispatchCard && (

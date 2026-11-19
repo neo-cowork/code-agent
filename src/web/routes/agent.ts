@@ -801,11 +801,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
       if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
       if (transport.connectedClient) {
-        res.status(422).json({
-          error: 'Project folder needs trust confirmation',
-          code: 'PROJECT_SOURCE_TRUST',
-          kind: error.kind,
-        });
+        res.status(422).json(error.toHttpBody());
         return;
       }
       throw error;
