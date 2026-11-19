@@ -49,6 +49,12 @@ vi.mock('../../../src/host/services/infra/logger', async () => {
   return { ...actual, createLogger: () => loggerMock };
 });
 
+// 整理（consolidateLightMemory）的 quick model 在单测里不出网：直接判失败路径，
+// 审计行照写（flaggedSources 断言与模型成败无关）。
+vi.mock('../../../src/host/model/quickModel', () => ({
+  memoryTask: vi.fn(async () => ({ success: false, error: 'memory model not configured in test' })),
+}));
+
 import Database from 'better-sqlite3';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { MemoryRepository } from '../../../src/host/services/core/repositories/MemoryRepository';
@@ -67,9 +73,10 @@ import {
   readInjectionFeedback,
 } from '../../../src/host/memory/memoryInjectionFeedback';
 import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
+import { consolidateLightMemory } from '../../../src/host/lightMemory/consolidation';
 import { memoryReadModule } from '../../../src/host/tools/modules/lightMemory/memoryRead';
 import { memorySearchModule } from '../../../src/host/tools/modules/lightMemory/memorySearch';
-import { MEMORY } from '../../../src/shared/constants';
+import { MEMORY, MEMORY_CONSOLIDATION } from '../../../src/shared/constants';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** 固定时钟：所有过期判定都相对这个时刻 */
@@ -489,7 +496,7 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       // 标记前两条都在
       expect(await injectedEntryIds()).toEqual(expect.arrayContaining([flagged.entryId, keeper.entryId]));
 
-      expect(flagMemoryInjection(currentDb(), flagged.entryId, 'wrong')).toBe(true);
+      expect(await flagMemoryInjection(currentDb(), flagged.entryId, 'wrong')).toBe(true);
       expect(memoryInjectionPauses(currentDb(), NOW).get(flagged.entryId)).toMatchObject({ reason: 'user_wrong' });
 
       // packed 通道：标记的条目不再注入（keeper 在场排除「整体为空」假绿）
@@ -501,7 +508,7 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       const projFlagged = await mirrorEntry('uf-proj', 'zirchufproj', PROJ);
       const projKeeper = await mirrorEntry('uf-projk', 'zirchufprojk', PROJ);
       expect(buildSeedMemoryBlock(PROJ)).toContain(`[#${projFlagged.rowId}]`);
-      expect(flagMemoryInjection(currentDb(), projFlagged.entryId, 'outdated')).toBe(true);
+      expect(await flagMemoryInjection(currentDb(), projFlagged.entryId, 'outdated')).toBe(true);
       const projBlock = buildSeedMemoryBlock(PROJ);
       expect(projBlock).not.toContain(`[#${projFlagged.rowId}]`);
       expect(projBlock).toContain(`[#${projKeeper.rowId}]`);
@@ -520,15 +527,15 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       const stale = await mirrorEntry('uf-stale', 'zirchufstale');
       setUsage(stale.rowId, 3, NOW - 40 * DAY_MS);
       expect(memoryInjectionPauses(currentDb(), NOW).get(stale.entryId)).toMatchObject({ reason: 'stale_used' });
-      expect(flagMemoryInjection(currentDb(), stale.entryId, 'wrong')).toBe(true);
+      expect(await flagMemoryInjection(currentDb(), stale.entryId, 'wrong')).toBe(true);
       expect(memoryInjectionPauses(currentDb(), NOW).get(stale.entryId)).toMatchObject({ reason: 'user_wrong' });
     });
 
     it('④ 负反馈计数累计在 metadata（撤销不清零），MemoryRead/搜索照常返回', async () => {
       vi.useFakeTimers({ now: NOW });
       const flagged = await mirrorEntry('uf-count', 'zirchufcount');
-      flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
-      flagMemoryInjection(currentDb(), flagged.entryId, 'outdated', NOW + 1000);
+      await flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
+      await flagMemoryInjection(currentDb(), flagged.entryId, 'outdated', NOW + 1000);
       expect(readInjectionFeedback(currentDb().getMemory(flagged.rowId)?.metadata)).toEqual({
         kind: 'outdated', at: NOW + 1000, count: 2,
       });
@@ -541,7 +548,7 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       expect(memoryUserFlagCounts(currentDb()).get(flagged.entryId)).toBe(2);
 
       // MemoryRead / 搜索不受标记影响（与用量暂停同口径）
-      flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
+      await flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
       const read = await executeRead({ filename: flagged.filename }, makeCtx({ runId: 'run-uf' }));
       expect(read.ok).toBe(true);
       if (read.ok) expect(read.output).toContain('zirchufcount');
@@ -554,15 +561,50 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     it('④ 标记与撤销都落变更日志（actor=user_manual）；找不到的条目返回 false', async () => {
       vi.useFakeTimers({ now: NOW });
       const flagged = await mirrorEntry('uf-journal', 'zirchufjournal');
-      flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
+      await flagMemoryInjection(currentDb(), flagged.entryId, 'wrong', NOW);
       clearMemoryInjectionFlag(currentDb(), flagged.entryId);
       const journal = currentRepo().listMemoryJournal({ entryId: flagged.entryId });
       // create（镜像行）+ flag + clear = 至少 3 行，后两行 actor 都是 user_manual
       const manual = journal.filter((row) => row.actor === 'user_manual');
       expect(manual.length).toBeGreaterThanOrEqual(2);
       expect(manual[0].operation).toBe('update');
-      expect(flagMemoryInjection(currentDb(), 'no-such-entry', 'wrong')).toBe(false);
+      expect(await flagMemoryInjection(currentDb(), 'no-such-entry', 'wrong')).toBe(false);
       expect(clearMemoryInjectionFlag(currentDb(), 'no-such-entry')).toBe(false);
+    });
+
+    // ---- Rework r1：光文件无镜像行（MemoryWrite 主路径常态，用户从不手跑 rebuild）----
+    // flag 必须自补镜像再落标记：注入立即停 + 整理审计 flaggedSources 点名该文件。
+    it('r1 无镜像行的 light 条目：flag 自补镜像 → 注入停 + 整理审计 flaggedSources 点名', async () => {
+      vi.useFakeTimers({ now: NOW });
+      // 只写光文件，不 rebuild 镜像 —— 主用户路径常态
+      const filename = 'no-mirror-flag.md';
+      await fs.writeFile(path.join(memDir, filename), lightFile(filename, 'zirchnomirror'), 'utf-8');
+      const keeperName = 'no-mirror-keep.md';
+      await fs.writeFile(path.join(memDir, keeperName), lightFile(keeperName, 'zirchnomirrorkeep'), 'utf-8');
+      const entryId = `light:${filename}`;
+      // 前提坐实：DB 里一行镜像都没有
+      expect(currentDb().listMemories({
+        includeArchived: true, includeCandidates: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC',
+      })).toHaveLength(0);
+      // 无镜像也在注入（packer 直读光文件）
+      expect(await injectedEntryIds()).toContain(entryId);
+
+      // 公共入口：无镜像行也要标记上（自补镜像），不再返回 false
+      expect(await flagMemoryInjection(currentDb(), entryId, 'wrong')).toBe(true);
+      expect(memoryInjectionPauses(currentDb(), NOW).get(entryId)).toMatchObject({ reason: 'user_wrong' });
+      const afterFlag = await injectedEntryIds();
+      expect(afterFlag).not.toContain(entryId);
+
+      // 整理侧同源：审计行 flaggedSources 含该文件（模型 mock 为失败路径，审计照写）
+      const report = await consolidateLightMemory({ dryRun: false, workingDirectory: dataDir, db: currentDb() });
+      expect(report.triggered).toBe(true);
+      const auditLines = (await fs.readFile(
+        path.join(memDir, MEMORY_CONSOLIDATION.AUDIT_FILENAME), 'utf-8',
+      )).trim().split('\n');
+      const flaggedRows = auditLines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((row) => Array.isArray(row.flaggedSources) && (row.flaggedSources as string[]).includes(filename));
+      expect(flaggedRows.length).toBeGreaterThan(0);
     });
   });
 });

@@ -624,7 +624,7 @@ async function handleMemoryEntryFlagInjection(
   if (payload.flag !== 'wrong' && payload.flag !== 'outdated') {
     throw new Error('memory entry flag requires wrong or outdated');
   }
-  return { flagged: flagMemoryInjection(getDatabase(), payload.entryId, payload.flag) };
+  return { flagged: await flagMemoryInjection(getDatabase(), payload.entryId, payload.flag) };
 }
 
 /** 撤销负反馈：只清 metadata 标记（count 保留），不记使用、不动 access_count。 */

@@ -12,6 +12,7 @@ export const memorySourceZh = {
     markWrongTitle: '这条记忆不对：停用后不再自动带进对话',
     markOutdatedTitle: '这条记忆过时了：停用后不再自动带进对话',
     undoTitle: '撤销标记，恢复自动带上这条记忆',
+    markFailed: '没标记上，请重试',
   },
 };
 
@@ -28,5 +29,6 @@ export const memorySourceEn = {
     markWrongTitle: 'This memory is wrong: stop including it automatically',
     markOutdatedTitle: 'This memory is outdated: stop including it automatically',
     undoTitle: 'Undo the flag and resume auto-include',
+    markFailed: "Couldn't mark it, try again",
   },
 };

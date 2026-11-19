@@ -13,7 +13,13 @@ import type {
   MemoryInjectionFeedbackMetadata,
   MemoryInjectionUserFlagKind,
 } from '../../shared/contract/memory';
-import { storedMemoryToEntry, type MemoryEntryDatabase } from './memoryEntryRuntime';
+import {
+  lightMemoryFileToEntry,
+  rebuildMemoryMirrorFromLightFiles,
+  storedMemoryToEntry,
+  type MemoryEntryDatabase,
+} from './memoryEntryRuntime';
+import { listMemoryFiles } from '../lightMemory/lightMemoryIpc';
 
 const logger = createLogger('MemoryInjectionFeedback');
 
@@ -55,16 +61,40 @@ function findRow(db: MemoryEntryDatabase, entryId: string): FeedbackRow | null {
   return scanRows(db).find((candidate) => storedMemoryToEntry(candidate).id === entryId) ?? null;
 }
 
-/** 记一次负反馈：置 kind/at 并给 count +1；经 updateMemory 落 metadata，journal actor user_manual。 */
-export function flagMemoryInjection(
+/**
+ * 记一次负反馈：置 kind/at 并给 count +1；经 updateMemory 落 metadata，journal actor user_manual。
+ * Rework r1：MemoryWrite 只写光文件不写 DB，用户主路径常态是「有 light 文件、无镜像行」。
+ * flag 遇到 light: 条目没有镜像行时先自补镜像（rebuild，journal actor user_manual）再落标记；
+ * 仍失败时 warn 出可区分的原因（光文件不存在 vs 重建没覆盖 vs 扫描窗内找不到），不留静默分支。
+ */
+export async function flagMemoryInjection(
   db: MemoryEntryDatabase,
   entryId: string,
   kind: MemoryInjectionUserFlagKind,
   now: number = Date.now(),
-): boolean {
+): Promise<boolean> {
   try {
-    const row = findRow(db, entryId);
-    if (!row) return false;
+    let row = findRow(db, entryId);
+    if (!row && entryId.startsWith('light:')) {
+      const rebuilt = await rebuildMemoryMirrorFromLightFiles(db, { journal: USER_MANUAL_JOURNAL });
+      row = findRow(db, entryId);
+      if (!row) {
+        // 可区分原因：光文件本身不存在 vs 重建完成但没覆盖到该条
+        const lightExists = await lightEntryExists(entryId);
+        if (!lightExists) {
+          logger.warn('[MemoryInjectionFeedback] flag skipped: no light file for entry', { entryId, kind });
+        } else {
+          logger.warn('[MemoryInjectionFeedback] flag skipped: mirror rebuild did not cover light entry', {
+            entryId, kind, created: rebuilt.created, updated: rebuilt.updated, skipped: rebuilt.skipped.length,
+          });
+        }
+        return false;
+      }
+    }
+    if (!row) {
+      logger.warn('[MemoryInjectionFeedback] flag skipped: entry not found in db scan window', { entryId, kind });
+      return false;
+    }
     const previous = readInjectionFeedback(row.metadata);
     const feedback: MemoryInjectionFeedbackMetadata = {
       kind,
@@ -76,7 +106,20 @@ export function flagMemoryInjection(
     }, USER_MANUAL_JOURNAL);
     return true;
   } catch (error) {
-    logger.warn('[MemoryInjectionFeedback] flag write failed', { entryId, kind, error: String(error) });
+    logger.warn('[MemoryInjectionFeedback] flag failed: mirror rebuild or write errored', {
+      entryId, kind, error: String(error),
+    });
+    return false;
+  }
+}
+
+/** 光文件侧存在性（与 packer 同源）：listMemoryFiles → lightMemoryFileToEntry 的 id 对得上才算存在。 */
+async function lightEntryExists(entryId: string): Promise<boolean> {
+  try {
+    const files = await listMemoryFiles();
+    return files.some((file) => lightMemoryFileToEntry(file).id === entryId);
+  } catch (error) {
+    logger.warn('[MemoryInjectionFeedback] light file existence check failed', { entryId, error: String(error) });
     return false;
   }
 }

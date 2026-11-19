@@ -39,8 +39,9 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   // 本条回复里的负反馈（N-MEM-SOURCE-WRONG-FEEDBACK）：entryId → 标记类型。
-  // 乐观更新：点了立刻灰掉 + 给撤销；host 写失败时回滚（下一轮的芯片本就不会再列它）。
+  // 乐观更新：点了立刻灰掉 + 给撤销；host 写失败时回滚并在行上留一句提示（rework r1：不静默弹回）。
   const [flags, setFlags] = useState<Record<string, 'wrong' | 'outdated'>>({});
+  const [flagErrors, setFlagErrors] = useState<Record<string, true>>({});
   const used = usedMemory(summary);
   if (!used) return null;
   const { items } = used;
@@ -55,13 +56,29 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
     });
   };
 
+  const clearFlagError = (entryId: string) => {
+    setFlagErrors((current) => {
+      if (!(entryId in current)) return current;
+      const next = { ...current };
+      delete next[entryId];
+      return next;
+    });
+  };
+
   const markFlag = (entryId: string, flag: 'wrong' | 'outdated') => {
+    clearFlagError(entryId);
     setFlags((current) => ({ ...current, [entryId]: flag }));
     void invokeMemoryEntryCommand<{ flagged: boolean }>({ action: 'memoryEntryFlagInjection', entryId, flag })
       .then((response) => {
-        if (!response.success || !response.data?.flagged) dropFlag(entryId);
+        if (!response.success || !response.data?.flagged) {
+          dropFlag(entryId);
+          setFlagErrors((current) => ({ ...current, [entryId]: true }));
+        }
       })
-      .catch(() => dropFlag(entryId));
+      .catch(() => {
+        dropFlag(entryId);
+        setFlagErrors((current) => ({ ...current, [entryId]: true }));
+      });
   };
 
   const undoFlag = (entryId: string, previous: 'wrong' | 'outdated') => {
@@ -135,6 +152,14 @@ export const MemorySourceChip: React.FC<{ summary: TurnQualitySummary }> = ({ su
                         >
                           {t.memorySource.markOutdated}
                         </Button>
+                        {flagErrors[item.entryId] && (
+                          <span
+                            className="text-[10px] text-zinc-400"
+                            data-testid={`memory-source-flag-failed-${item.entryId}`}
+                          >
+                            {t.memorySource.markFailed}
+                          </span>
+                        )}
                       </div>
                     )}
                   </li>

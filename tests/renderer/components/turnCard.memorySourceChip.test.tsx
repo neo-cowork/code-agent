@@ -285,4 +285,24 @@ describe('MemorySourceChip 行级负反馈（不对/过时了）', () => {
       expect(row.textContent).not.toContain('已停用');
     });
   });
+
+  it('r1 回滚不静默：行上留「没标记上，请重试」，重试成功后提示消失', async () => {
+    vi.mocked(invokeMemoryEntryCommand)
+      .mockResolvedValueOnce({ success: true, data: { flagged: false } })
+      .mockResolvedValueOnce({ success: true, data: { flagged: true } });
+    const container = renderExpanded(['周报分三段']);
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '不对')!);
+    await vi.waitFor(() => {
+      const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+      expect(row.textContent).toContain('没标记上，请重试');
+      expect(row.textContent).not.toContain('已停用');
+    });
+    // 重试：动作还在（回滚后回到两个），再点一次成功 → 置灰、提示消失
+    fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === '不对')!);
+    await vi.waitFor(() => {
+      const row = container.querySelector('[data-testid="memory-source-rows"] > li')!;
+      expect(row.textContent).toContain('已停用 · 你标记为不对');
+      expect(row.textContent).not.toContain('没标记上，请重试');
+    });
+  });
 });
