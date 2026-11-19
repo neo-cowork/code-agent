@@ -85,7 +85,7 @@ vi.mock('../../../../src/host/services/core/sessionDefaults', () => ({
 vi.mock('../../../../src/host/task', () => ({
   getTaskManager: () => ({
     getOrCreateCurrentOrchestrator: () => (
-      harness.orchestratorPresent ? { sendMessage: harness.sendMessage } : undefined
+      harness.orchestratorPresent ? { sendMessage: harness.sendMessage, setExecutionTopology: vi.fn() } : undefined
     ),
     setWorkingDirectory: vi.fn(),
     cleanup: vi.fn(),
@@ -129,12 +129,14 @@ vi.mock('../../../../src/cli/adapter', () => ({
       maxIterations?: number;
       originKind?: string;
       goalContract?: unknown;
-    } = {};
+      workingDirectory?: string;
+    } = { workingDirectory: process.cwd() };
     return { getConfig: () => config };
   }),
 }));
 
 vi.mock('../../../../src/cli/bootstrap', () => ({
+  createRunToolExecutor: vi.fn(() => ({ setExecutionTopology: vi.fn() })),
   createAgentLoop: vi.fn((config: {
     allowedToolNames?: string[];
     deniedToolNames?: string[];
