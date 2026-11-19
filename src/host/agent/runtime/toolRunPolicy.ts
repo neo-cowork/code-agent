@@ -1,5 +1,6 @@
 import {
   BACKGROUND_HANDOFF_GUIDANCE, BACKGROUND_HANDOFF_PENDING_REPLY, BACKGROUND_HANDOFF_PENDING_REPLY_EN,
+  BACKGROUND_HANDOFF_SENTENCE, BACKGROUND_HANDOFF_SENTENCE_EN,
   OUT_OF_SCOPE_REPLY, OUT_OF_SCOPE_REPLY_EN,
 } from '../../services/commandCenter/delegationGuidance';
 import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
@@ -89,8 +90,14 @@ function runtimeToolPolicy(ctx: RuntimeContext): RunToolPolicy {
   };
 }
 
-function canHandOffToBackground(ctx: RuntimeContext): boolean {
+export function canHandOffToBackground(ctx: RuntimeContext): boolean {
   return ctx.foregroundToolFace === true && !ctx.unattendedTurn && !isToolDeniedForRun(ctx, 'delegate_task');
+}
+
+/** The one sentence the user sees after a same-turn handoff. Names no tool. */
+export function backgroundHandoffUserSentence(ctx: RuntimeContext): string {
+  const zh = (detectMessageLanguage(ctx.turn?.runUserPrompt ?? '') ?? readUiLanguage()) === 'zh';
+  return zh ? BACKGROUND_HANDOFF_SENTENCE : BACKGROUND_HANDOFF_SENTENCE_EN;
 }
 
 /** User-visible last word once denied calls exhaust the retries: names no tool, grants none. */

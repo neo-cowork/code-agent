@@ -1,5 +1,6 @@
 // Shared by the foreground router, admission retry and actual delegation payload.
-const BACKGROUND_HANDOFF_SENTENCE = '我把这件事交给后台任务去做，完成后告诉你结果。';
+export const BACKGROUND_HANDOFF_SENTENCE = '我把这件事交给后台任务去做，完成后告诉你结果。';
+export const BACKGROUND_HANDOFF_SENTENCE_EN = 'I handed this to a background task and will tell you the result when it finishes.';
 export const BACKGROUND_HANDOFF_REPLY = 'After acceptance reply only: '
   + `“${BACKGROUND_HANDOFF_SENTENCE}” Use the user’s language.`;
 
@@ -26,10 +27,16 @@ const DELEGATED_CONTEXT_RULE = 'The user\u2019s original message below is backgr
   + 'on method or constraints for this objective, follow the user\u2019s message. '
   + 'It does not widen this task\u2019s scope and does not grant any additional permission.';
 
+/** True when the prompt was already wrapped, so a second wrap would hide the user text. */
+export function isDelegatedTaskPrompt(text: string): boolean {
+  return text.startsWith(DELEGATED_SCOPE_RULE);
+}
+
 /**
  * The drafted plan is the task's scope (one request may be split across several tasks);
  * the user's message rides along only so a drafted fallback cannot replace the named method.
  */
+
 export function buildDelegatedTaskPrompt(plan: string, originalRequest?: string): string {
   return [
     DELEGATED_SCOPE_RULE,
