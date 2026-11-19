@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 vi.unmock('better-sqlite3');
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import type { AgentEvent, Message } from '../../../src/shared/contract';
 import type { ConfigService } from '../../../src/host/services/core/configService';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
@@ -187,6 +188,27 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     expect(notes[0].content).toContain('继续');
     expect(notes[0].content).not.toMatch(/429|inference|provider/);
     expect(rows().filter((m) => m.role === 'assistant')).toHaveLength(0);
+  });
+
+  it('registry agent cancelled through cancelSession gets one plain cancelled line and no wake', async () => {
+    const registry = new BackgroundSubagentRegistry();
+    const onComplete = vi.fn();
+    let finish!: () => void;
+    const run = new Promise<SubagentResult>((resolve) => {
+      finish = () => resolve({ success: false, output: '', error: 'aborted', toolsUsed: [], iterations: 1 });
+    });
+    const id = registry.spawn(() => run, { sessionId: 'session-stop', title: '百科摘要', abort: () => finish(), onComplete });
+    const fired = registry.cancelSession('session-stop');
+    expect(fired.map((f) => f.agentId)).toEqual([id]);
+    await registry.await(id);
+    const notes = rows().filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      id: `background-task-stopped-${id}`, role: 'system', content: '「百科摘要」：这个后台任务已取消。',
+      metadata: { backgroundTaskStopped: { taskId: id, kind: 'cancelled' } },
+    });
+    expect(onComplete).not.toHaveBeenCalled();
+    console.log(`registry cancelled: ${JSON.stringify(notes[0])}`);
   });
 
   it('keeps the wake when the stop note could not be delivered', async () => {
