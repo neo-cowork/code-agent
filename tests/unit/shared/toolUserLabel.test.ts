@@ -21,6 +21,17 @@ describe('toolUserLabel', () => {
     expect(permissionNotice(undefined, 'en')).toEqual({ title: 'Approval needed', body: 'Review the proposed action.' });
     expect(permissionNotice('internal_tool', 'en').body).toBe('Approval needed: Action');
   });
+  it('approval 与 parked 两档文案逐字节钉死（zh/en × 有无工具名）', () => {
+    // N-FIX-PERMISSION-NOTICE-NATIVE-BRANCH-DEAD-CODE：删掉无人调用的 'native' 档后，存留两档不许变。
+    expect(permissionNotice('Bash', 'zh', 'approval')).toEqual({ title: '需要授权', body: '需要授权：运行命令' });
+    expect(permissionNotice(undefined, 'zh', 'approval')).toEqual({ title: '需要授权', body: '请求执行权限' });
+    expect(permissionNotice('Bash', 'en', 'approval')).toEqual({ title: 'Approval needed', body: 'Approval needed: Run command' });
+    expect(permissionNotice(undefined, 'en', 'approval')).toEqual({ title: 'Approval needed', body: 'Review the proposed action.' });
+    expect(permissionNotice('Bash', 'zh', 'parked')).toEqual({ title: '需要授权', body: '需要授权：运行命令。任务已暂停，到「自动化」→「运行记录」处理。' });
+    expect(permissionNotice(undefined, 'zh', 'parked')).toEqual({ title: '需要授权', body: '请求执行权限。任务已暂停，到「自动化」→「运行记录」处理。' });
+    expect(permissionNotice('Bash', 'en', 'parked')).toEqual({ title: 'Approval needed', body: 'Approval needed: Run command. The task is paused. Open Agent Neo to review the unattended task.' });
+    expect(permissionNotice(undefined, 'en', 'parked')).toEqual({ title: 'Approval needed', body: 'Review the proposed action.. The task is paused. Open Agent Neo to review the unattended task.' }); // 双句号是现行输出，本单不改文案
+  });
   it('内置工具给动作名，不露原名', () => {
     expect(toolUserLabel('Bash')).toBe('运行命令');
     expect(toolUserLabel('Write')).toBe('写入文件');
