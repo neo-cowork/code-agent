@@ -8,6 +8,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { UNSORTED_PROJECT_ID } from '../../../../shared/contract/project';
 import { getUserConfigDir } from '../../../config/configPaths';
 import { getDatabase } from '../../../services/core/databaseService';
 import { getLibraryService } from '../../../services/library/libraryService';
@@ -45,7 +46,10 @@ function parseTags(raw: unknown): string[] | undefined | null {
 function sessionProjectId(sessionId: string): string | null {
   try {
     const projectId = getDatabase().getSession(sessionId)?.projectId;
-    return typeof projectId === 'string' && projectId.trim() ? projectId : null;
+    // The panel opens on the global scope; sessions without a project sit in the
+    // reserved unsorted bucket, so store those items globally or they look missing.
+    if (typeof projectId !== 'string' || !projectId.trim() || projectId === UNSORTED_PROJECT_ID) return null;
+    return projectId;
   } catch {
     return null;
   }
@@ -133,7 +137,7 @@ async function executeLibraryAdd(
       tool: schema.name,
       reason: 'This copies the file into the Library panel.',
       dangerLevel: 'normal',
-      details: { title },
+      details: { title, preview: { type: 'generic', summary: title } },
     },
   );
   if (!permit.allow) return fail('PERMISSION_DENIED', `permission denied: ${permit.reason}`);

@@ -108,6 +108,19 @@ describe('library_add and app-data discovery refusal', () => {
     expect(calls[0]?.[1]).toEqual({ title: 'cadence.md' });
   });
 
+  it('stores unsorted-session items in the global scope the panel opens on, and the card names the item', async () => {
+    projectId = 'proj_unsorted';
+    const source = writeIncoming('cadence.md', 'x');
+    const seen: unknown[] = [];
+    const result = await add({ file_path: source }, (async (...a: unknown[]) => {
+      seen.push(a[3]);
+      return { allow: true };
+    }) as CanUseToolFn);
+    expect(result.ok).toBe(true);
+    expect(getLibraryService().list({ projectId: null })).toHaveLength(1);
+    expect(JSON.stringify(seen[0])).toContain('"summary":"cadence.md"');
+  });
+
   it('uses the requested title and dedupes the same bytes', async () => {
     const first = writeIncoming('a.md', 'same-bytes');
     const named = await add({ file_path: first, title: 'Next quarter' });
