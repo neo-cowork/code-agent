@@ -4,6 +4,7 @@
 
 import { EXCEL_READ_ACTIONS } from '../../shared/constants/excelActions';
 import { classifyPermission, type ClassificationContext, type ClassificationResult } from './permissionClassifier';
+import type { DirectiveMemoryClassifierAuthorization } from '../memory/directiveMemoryOutsideWriteExemption';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
@@ -501,6 +502,8 @@ export async function resolveToolPermissionClassification(input: {
   launderRetryForcesAsk?: boolean;
   /** Resolve the run-owned managed browser lazily only for click target probing. */
   browserSubmitProbe?: BrowserSubmitProbeResolver;
+  /** Present only after this call passed the directive-memory confirmation gate. */
+  directiveMemoryWrite?: DirectiveMemoryClassifierAuthorization;
 }): Promise<ClassificationResult> {
   const excelRead = input.executionToolName === 'ExcelAutomate' && EXCEL_READ_ACTIONS.has(String(input.params.action ?? ''));
   const permissionLevel = excelRead ? 'read' : input.permissionLevel;
@@ -586,6 +589,7 @@ export async function resolveToolPermissionClassification(input: {
       workspaceRoot: input.workspaceRoot,
       permissionLevel,
       workingDirectoryFromToolCall: true,
+      directiveMemoryWrite: input.directiveMemoryWrite,
     });
   }
   if (input.readOnlyForcesConfirmation && !excelRead && classification.decision === 'approve') {

@@ -134,6 +134,8 @@ import {
   assessDirectiveMemoryWrite,
   createDirectiveMemoryWriteGrant,
 } from '../memory/directiveMemoryPathAuthority';
+import type { DirectiveMemoryClassifierAuthorization } from '../memory/directiveMemoryOutsideWriteExemption';
+import { recordGrantedMemoryWritePointer } from '../memory/grantedMemoryIndexPointer';
 import { resolveToolWriteTargets } from './writeTargets';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { parseShellCommand } from '../security/commandParse';
@@ -1099,6 +1101,9 @@ export class ToolExecutor {
         );
       }
     }
+    const directiveMemoryAuthorization: DirectiveMemoryClassifierAuthorization | undefined = directiveMemoryWriteGrant
+      ? { grant: directiveMemoryWriteGrant, assessment: directiveMemoryAssessment }
+      : undefined;
 
     const writeTargets = toolDef.permissionLevel !== 'read'
       ? resolveToolWriteTargets({
@@ -1763,6 +1768,7 @@ export class ToolExecutor {
     const scheduledWrite = await classifyFileWrite(policyToolName, params, {
       sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: this.executionCwd,
       workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel,
+      directiveMemoryWrite: directiveMemoryAuthorization,
     }, permStartTime);
     const scheduleWriteGrantRequired = Boolean(scheduledWrite?.scheduleWriteTargets);
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1976,6 +1982,7 @@ export class ToolExecutor {
             sessionPermissionMode,
             peerOriginForcesConfirmation,
             launderRetryForcesAsk,
+            directiveMemoryWrite: directiveMemoryAuthorization,
             browserSubmitProbe: async () => {
               const {
                 getManagedBrowserProviderAdapter,
@@ -2801,6 +2808,14 @@ export class ToolExecutor {
 
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
+      if (result.success) {
+        await recordGrantedMemoryWritePointer({
+          toolName: executionToolName,
+          params,
+          workingDirectory: this.executionCwd,
+          authorization: directiveMemoryAuthorization,
+        });
+      }
       return { ...result, metadata: { ...result.metadata, executionStarted } };
     } catch (error) {
       if (error instanceof EnvBlockedError) throw error;
