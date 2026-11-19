@@ -25,6 +25,21 @@ export type TerminalResultStatus = 'completed' | 'failed' | 'cancelled';
 
 const resolveLocale = resolveSessionTaskResultLocale;
 
+const CJK_CHAR_RE = /[\u4e00-\u9fff]/;
+
+/**
+ * 停止行用哪个名字：完整任务标题（超长的词边界截断由 recordBackgroundTaskStopNote 负责），
+ * shortName 只是会话内部引用键（2-4 字符，可能是「抓gui」这类半截词），不再直接上屏。
+ * 例外：中文界面遇到完全没有中文字符的标题（整句英文任务名）时退回短键，
+ * 不在中文界面上印一整句英文；标题为空同样退回短键，不出「」空名字。
+ */
+function stopNoteTitleForTask(task: SessionCommandTask, locale: ReturnType<typeof resolveLocale>): string {
+  const title = task.title.trim();
+  if (!title) return task.shortName;
+  if (locale === 'zh' && !CJK_CHAR_RE.test(title)) return task.shortName;
+  return title;
+}
+
 /**
  * 正常终态的 [任务结果] 行。消息 id 由 taskId 派生：迟到的重试与正常写撞同一 id 时
  * addMessageToSession 走幂等分支（更新而非插入），不会写出第二行。
@@ -42,7 +57,7 @@ export async function projectTerminalResult(
   // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等）。放在 [任务结果] 行之后：
   // 说明写失败会抛出并随整条投影重试，但绝不会挡住结果行落库。
   if (task.stopped) {
-    await recordBackgroundTaskStopNote(task.sessionId, task.shortName, task.stopped.content, {
+    await recordBackgroundTaskStopNote(task.sessionId, stopNoteTitleForTask(task, resolveLocale()), task.stopped.content, {
       taskId: task.id, kind: task.stopped.kind,
     });
     return;
@@ -54,7 +69,7 @@ export async function projectTerminalResult(
     const declined = isSessionTaskUserDeniedDetail(task.detail);
     await recordBackgroundTaskStopNote(
       task.sessionId,
-      task.shortName,
+      stopNoteTitleForTask(task, locale),
       declined ? formatSessionTaskUserDenied(locale) : formatSessionTaskCancelledClosing(locale),
       { taskId: task.id, kind: 'cancelled' },
     );
