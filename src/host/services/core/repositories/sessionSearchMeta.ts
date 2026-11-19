@@ -70,13 +70,14 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-/** 标题子串匹配（大小写不敏感）：未删除、未归档、归属匹配，最近更新优先。 */
+/** 标题子串匹配（大小写不敏感）：未删除、归属匹配（默认排除归档，includeArchived 才纳入），最近更新优先。 */
 export function searchSessionTitles(
   db: BetterSqlite3.Database,
   query: string,
   userId: OwnerFilter,
   limit: number,
   projectScope?: CrossSessionSearchProjectScope,
+  includeArchived = false,
 ): SessionSearchMetaRow[] {
   const needle = query.trim();
   if (!needle) return [];
@@ -96,7 +97,7 @@ export function searchSessionTitles(
        WHERE (s.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR cron_title_display(s.title, 'zh') LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR cron_title_display(s.title, 'en') LIKE ? ESCAPE '\\' COLLATE NOCASE)
-         AND s.is_deleted = 0 AND s.status != 'archived'${owner}
+         AND s.is_deleted = 0${includeArchived ? '' : " AND s.status != 'archived'"}${owner}
        ORDER BY s.updated_at DESC LIMIT ?`,
     )
     .all(...params) as Record<string, unknown>[];
