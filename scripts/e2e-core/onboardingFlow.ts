@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readModelCredentialsFromDataDir } from '../../src/host/services/core/secureStorage';
 import { lastAssistantText } from './db';
 import type { FlowDef, ServerInfo } from './types';
 import { driveTurn, openNewSession, sendMessage, sleep } from './ui';
@@ -45,15 +46,17 @@ function realrun(server: ServerInfo, cmd: 'kill9' | 'restart', env?: NodeJS.Proc
   });
 }
 
-/** 隔离 config.json 里 dogfood provider 的连接信息（引导「密钥」路线填的就是这套已在本机的配置）。 */
+/** 隔离 home 里 dogfood provider 的连接信息（引导「密钥」路线填的就是这套已在本机的配置）。
+ *  服务启动后会把 apiKey 迁进加密 secure-storage，config.json 只留 baseUrl/model。 */
 function relayConfig(server: ServerInfo): { baseUrl: string; apiKey: string; model: string } {
   const config = JSON.parse(fs.readFileSync(path.join(server.dataDir, 'config.json'), 'utf8')) as {
     models?: { defaultProvider?: string; providers?: Record<string, { apiKey?: string; baseUrl?: string; model?: string }> };
   };
   const providerId = config.models?.defaultProvider ?? '';
   const provider = config.models?.providers?.[providerId] ?? {};
-  if (!provider.baseUrl || !provider.apiKey || !provider.model) throw new Error(`隔离 config.json 里没有完整的 provider 配置（${providerId}）`);
-  return { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model };
+  const apiKey = provider.apiKey || readModelCredentialsFromDataDir(server.dataDir)[`apikey.${providerId}`] || '';
+  if (!provider.baseUrl || !apiKey || !provider.model) throw new Error(`隔离 home 里没有完整的 provider 配置（${providerId}）`);
+  return { baseUrl: provider.baseUrl, apiKey, model: provider.model };
 }
 
 async function prepare(server: ServerInfo): Promise<void> {
@@ -125,8 +128,10 @@ export const f18: FlowDef = {
       run: async (env) => {
         const page = env.page;
         const raw = fs.readFileSync(path.join(env.server.dataDir, 'config.json'), 'utf8');
-        const completedAt = JSON.parse(raw)?.settings?.onboarding?.completedAt;
-        if (!completedAt) throw new Error(`config.json 里 settings.onboarding.completedAt 没有值：${raw.slice(0, 200)}`);
+        // config.json 本身就是 AppSettings：onboarding 在根上，不在 settings 包裹层。
+        const parsed = JSON.parse(raw) as { onboarding?: { completedAt?: number }; settings?: { onboarding?: { completedAt?: number } } };
+        const completedAt = parsed.onboarding?.completedAt ?? parsed.settings?.onboarding?.completedAt;
+        if (!completedAt) throw new Error(`config.json 里 onboarding.completedAt 没有值：${raw.slice(0, 200)}`);
         // 第二次打开不再弹引导
         await page.reload();
         await page.getByTestId('sidebar-new-task').waitFor({ timeout: 30_000 });
