@@ -67,7 +67,7 @@ function historyFixture(): MemoryTidyHistoryResult {
       },
       {
         auditId: 'mem_consolidation_run0',
-        at: Date.parse('2026-11-12T07:00:00.000Z'),
+        at: Date.parse('2026-11-11T12:00:00.000Z'),
         outcome: 'applied',
         reason: 'duplicate names',
         mergeCount: 1,
