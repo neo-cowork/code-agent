@@ -1,16 +1,291 @@
 // ============================================================================
-// MemoryConsolidationSection —— 「自动整理记忆」开关（N-MEM-CONSOLSAFE 第二波）
+// MemoryConsolidationSection —— 「自动整理记忆」开关 + 「最近整理」记录
 // 读写 settings.memory.autoConsolidate；host 侧在设置保存时同步 cron job 的 dryRun。
 // 独立成组件而非内联进 MemoryTab：后者已逼近 max-lines。
+// 最近整理（N-MEM-CONSOLIDATION-HISTORY-UNDO）：列出每次自动整理改了什么，
+// 支持把一次整理恢复原样；开关未开启时展示最近一次检查的预告句。
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type { AppSettings } from '@shared/contract';
-import { Toggle } from '../../../primitives';
+import type {
+  MemoryTidyHistoryResult,
+  MemoryTidyPreviewView,
+  MemoryTidyRestoreResult,
+  MemoryTidyRunView,
+} from '@shared/contract/memory';
+import { Badge, Button, GhostButton, Toggle } from '../../../primitives';
 import { SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatMemoryEntryUpdatedAt } from './MemoryEntriesManager';
+import { localeForLanguage } from '../../../../utils/i18nTime';
+import { zh } from '../../../../i18n/zh';
+
+type MemoryTidyCopy = typeof zh.settings.memoryTidy;
+
+/** 一次整理收起的来源卡总数（合并来源 + 冲突降级）。 */
+function tidyPutAwayCount(run: MemoryTidyRunView): number {
+  return run.merges.reduce((count, merge) => count + merge.sources.length, 0) + run.conflicts.length;
+}
+
+/** 行首一句人话摘要（内部 reason 字符串不外显）。 */
+export function buildTidyRunSummary(run: MemoryTidyRunView, copy: MemoryTidyCopy): string {
+  const changed = run.outcome === 'applied' && (run.mergeCount > 0 || run.conflictCount > 0);
+  if (!changed) {
+    return run.outcome === 'failed' || run.outcome === 'pending'
+      ? copy.summaryFailed
+      : copy.summaryNoChange;
+  }
+  let summary = copy.summaryMerged
+    .replace('{groups}', String(run.mergeCount))
+    .replace('{cards}', String(tidyPutAwayCount(run) - run.conflictCount));
+  if (run.conflictCount > 0) {
+    summary += copy.summaryConflictSuffix.replace('{count}', String(run.conflictCount));
+  }
+  return summary;
+}
+
+/** 开关未开启时的预告句（最近一次检查会改什么 / 暂时不会改什么）。 */
+export function buildTidyPreviewSentence(
+  preview: MemoryTidyPreviewView | null,
+  copy: MemoryTidyCopy,
+  labels: typeof zh.settings.memory.relativeDate,
+  locale: string,
+  now = Date.now(),
+): string {
+  if (!preview) return copy.previewMissing;
+  const date = formatMemoryEntryUpdatedAt(preview.at, now, labels, locale);
+  const intro = copy.previewIntro.replace('{date}', date);
+  const mergeCount = preview.merges.length;
+  const sourceCount = preview.merges.reduce((count, merge) => count + merge.sources.length, 0);
+  if (preview.wouldChangeNothing || (mergeCount === 0 && preview.conflicts.length === 0)) {
+    return `${intro} ${copy.previewNothing}`;
+  }
+  let sentence = `${intro} ${copy.previewWouldChange
+    .replace('{groups}', String(mergeCount))
+    .replace('{cards}', String(sourceCount))}`;
+  if (preview.conflicts.length > 0) {
+    sentence += copy.previewConflictSuffix.replace('{count}', String(preview.conflicts.length));
+  }
+  return sentence;
+}
+
+const MemoryTidyHistory: React.FC<{ toggleEnabled: boolean | null }> = ({ toggleEnabled }) => {
+  const { t, language } = useI18n();
+  const copy = t.settings.memoryTidy;
+  const locale = localeForLanguage(language === 'en' ? 'en' : 'zh');
+  const [history, setHistory] = useState<MemoryTidyHistoryResult | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<{ auditId: string; text: string } | null>(null);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const result = await ipcService.invokeDomain<MemoryTidyHistoryResult>(
+        IPC_DOMAINS.MEMORY,
+        'memoryTidyList',
+      );
+      setHistory(result);
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
+
+  const handleRestore = async (run: MemoryTidyRunView) => {
+    if (restoringId) return;
+    setRestoringId(run.auditId);
+    setConfirmingId(null);
+    setRestoreError(null);
+    try {
+      const result = await ipcService.invokeDomain<MemoryTidyRestoreResult>(
+        IPC_DOMAINS.MEMORY,
+        'memoryTidyRestore',
+        { auditId: run.auditId },
+      );
+      if (result?.ok) {
+        await loadHistory();
+      } else {
+        const code = result?.code && result.code in copy.restoreErrors ? result.code : 'restore-failed';
+        setRestoreError({ auditId: run.auditId, text: copy.restoreErrors[code] });
+      }
+    } catch {
+      setRestoreError({ auditId: run.auditId, text: copy.restoreErrors['restore-failed'] });
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const runs = history?.runs ?? [];
+
+  return (
+    <div
+      data-testid="memory-tidy-history"
+      className="mt-3 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3"
+    >
+      <div className="text-sm font-medium text-zinc-200">{copy.recentTitle}</div>
+      <p className="mt-1 text-xs text-zinc-500">{copy.recentDescription}</p>
+
+      {toggleEnabled === false && (
+        <p data-testid="memory-tidy-preview" className="mt-2 text-xs text-zinc-400">
+          {buildTidyPreviewSentence(
+            history?.preview ?? null,
+            copy,
+            t.settings.memory.relativeDate,
+            locale,
+          )}
+        </p>
+      )}
+
+      {loadFailed && <p className="mt-2 text-xs text-badge-warning">{copy.loadFailed}</p>}
+
+      {!loadFailed && runs.length === 0 && (
+        <p className="mt-2 text-xs text-zinc-500">{copy.empty}</p>
+      )}
+
+      <div className="mt-2 space-y-2">
+        {runs.map((run) => {
+          const expanded = expandedId === run.auditId;
+          const error = restoreError?.auditId === run.auditId ? restoreError.text : null;
+          return (
+            <div
+              key={run.auditId}
+              data-testid="memory-tidy-run"
+              className="rounded-md border border-zinc-800 bg-zinc-900/80 px-3 py-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 pt-1 text-xs text-zinc-300">
+                  <span className="block truncate">
+                    {formatMemoryEntryUpdatedAt(
+                      run.at,
+                      Date.now(),
+                      t.settings.memory.relativeDate,
+                      locale,
+                    )}
+                    {' · '}
+                    {buildTidyRunSummary(run, copy)}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {run.restored ? (
+                    <Badge data-testid="memory-tidy-restored">{copy.restoredBadge}</Badge>
+                  ) : null}
+                  <GhostButton
+                    size="sm"
+                    aria-expanded={expanded}
+                    aria-label={expanded ? copy.collapseLabel : copy.expandLabel}
+                    onClick={() => setExpandedId(expanded ? null : run.auditId)}
+                    leftIcon={expanded
+                      ? <ChevronDown className="h-3.5 w-3.5" />
+                      : <ChevronRight className="h-3.5 w-3.5" />}
+                    data-testid="memory-tidy-expand"
+                  />
+                </div>
+              </div>
+
+              {expanded && (
+                <div className="mt-2 space-y-1.5 border-t border-zinc-800 pt-2 text-xs text-zinc-400">
+                  {run.merges.map((merge) => (
+                    <div key={merge.result.filename} data-testid="memory-tidy-merge">
+                      {copy.mergeLineSources
+                        .replace('{sources}', merge.sources.map((source) => source.name).join(' + '))
+                        .replace('{result}', merge.result.name)}
+                      {merge.result.summary && merge.result.summary !== merge.result.name
+                        ? copy.resultSummaryParens.replace('{summary}', merge.result.summary)
+                        : ''}
+                    </div>
+                  ))}
+                  {(() => {
+                    const putAway = run.merges.flatMap((merge) => merge.sources);
+                    if (putAway.length === 0) return null;
+                    return (
+                      <div data-testid="memory-tidy-putaway">
+                        {copy.putAwayLabel.replace(
+                          '{names}',
+                          putAway.map((source) => source.name).join('、'),
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {run.conflicts.map((conflict) => (
+                    <div key={conflict.source.filename} data-testid="memory-tidy-conflict">
+                      {copy.conflictLine
+                        .replace('{name}', conflict.source.name)
+                        .replace('{reason}', conflict.reason)}
+                      {!conflict.restorable ? copy.conflictReadOnlyNote : ''}
+                    </div>
+                  ))}
+
+                  {run.restorable && !run.restored && (
+                    <div className="pt-1">
+                      {confirmingId === run.auditId ? (
+                        <div className="space-y-1.5" data-testid="memory-tidy-confirm">
+                          <p className="text-zinc-300">
+                            {copy.restoreConfirmTitle}
+                            <span className="text-zinc-500">{copy.restoreConfirmBody}</span>
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              loading={restoringId === run.auditId}
+                              disabled={restoringId !== null}
+                              leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+                              onClick={() => void handleRestore(run)}
+                              data-testid="memory-tidy-confirm-ok"
+                            >
+                              {copy.restoreConfirmOk}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={restoringId !== null}
+                              onClick={() => setConfirmingId(null)}
+                              data-testid="memory-tidy-confirm-cancel"
+                            >
+                              {copy.restoreConfirmCancel}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={restoringId !== null}
+                          leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+                          onClick={() => {
+                            setRestoreError(null);
+                            setConfirmingId(run.auditId);
+                          }}
+                          data-testid="memory-tidy-restore"
+                        >
+                          {copy.restoreButton}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {restoringId === run.auditId && (
+                    <p className="text-zinc-500">{copy.restoring}</p>
+                  )}
+                  {error && <p className="text-xs text-badge-danger" data-testid="memory-tidy-error">{error}</p>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 export const MemoryConsolidationSection: React.FC = () => {
   const { t } = useI18n();
@@ -66,6 +341,7 @@ export const MemoryConsolidationSection: React.FC = () => {
         </p>
         {error && <p className="mt-1 text-xs text-badge-warning">{error}</p>}
       </div>
+      <MemoryTidyHistory toggleEnabled={enabled} />
     </SettingsSection>
   );
 };

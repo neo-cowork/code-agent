@@ -29,7 +29,9 @@ import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { MEMORY_CONSOLIDATION } from '../../shared/constants';
+import type { MemoryEntryStatus } from '../../shared/contract/memory';
 import { getMemoryDir } from './indexLoader';
+import { writeConsolidationPreviewFile } from './consolidationHistory';
 import {
   rebuildMemoryMirrorFromLightFiles,
 } from '../memory/memoryEntryRuntime';
@@ -65,6 +67,12 @@ interface ConsolidationConflict {
   source: string;
   status: 'candidate' | 'archived';
   reason: string;
+  /**
+   * 冲突源卡的原文快照（降级前的 status + 正文，N-MEM-CONSOLIDATION-HISTORY-UNDO）。
+   * 只在真跑计划确定后、写盘前捕获；「最近整理」的一键恢复用它把冲突卡还原原样。
+   * 旧审计行没有该字段——那部分只读展示，不阻塞合并部分的恢复。
+   */
+  original?: { status: MemoryEntryStatus | undefined; content: string };
 }
 
 export interface ConsolidationInstructionFile {
@@ -421,7 +429,7 @@ async function appendAudit(
   const auditId = options.auditId || `mem_consolidation_${randomUUID()}`;
   await fs.mkdir(path.dirname(auditPath), { recursive: true });
   await fs.appendFile(auditPath, `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     auditId,
     at: Date.now(),
     outcome: options.outcome
@@ -431,7 +439,16 @@ async function appendAudit(
     after: report.after,
     merges: report.actions.map((action) => ({
       sources: action.sources,
-      result: action.result ? { filename: action.result.filename, entryId: action.result.entryId } : null,
+      // 产物卡快照（N-MEM-CONSOLIDATION-HISTORY-UNDO）：v1 行只有 filename/entryId，
+      // v2 起带 name/description/type/content，「最近整理」用它还原/展示合并产物。
+      result: action.result ? {
+        filename: action.result.filename,
+        entryId: action.result.entryId,
+        name: action.result.name,
+        description: action.result.description,
+        type: action.result.type,
+        content: action.result.content,
+      } : null,
     })),
     conflicts: report.conflicts,
     ...extra,
@@ -487,6 +504,16 @@ export async function consolidateLightMemory(
     : decideTrigger(health, files.length);
   if (!trigger.shouldRun) {
     logger.info('Consolidation skipped', { reason: trigger.reason });
+    if (dryRun) {
+      // 演练被健康门跳过 = 开启后也不会改动；预告句落在预览文件里给设置页读。
+      try {
+        await writeConsolidationPreviewFile({
+          wouldChangeNothing: true, reason: trigger.reason, merges: [], conflicts: [],
+        });
+      } catch (error) {
+        logger.warn('Consolidation preview write failed', { error: String(error) });
+      }
+    }
     return finish({
       triggered: false, applied: false, dryRun, reason: trigger.reason,
       before, after: before, actions: [], conflicts: [], diff: 'Skipped — memory healthy.',
@@ -554,6 +581,17 @@ export async function consolidateLightMemory(
     conflicts,
   };
 
+  // 冲突源卡原文快照（写盘前捕获）：审计行靠它支持「最近整理」的一键还原。
+  // 此刻文件尚未被本次整理改动，读到即原文。
+  if (plan.conflicts.length > 0) {
+    plan.conflicts = await Promise.all(plan.conflicts.map(async (conflict) => {
+      const source = await readMemoryFile(conflict.source);
+      return source
+        ? { ...conflict, original: { status: source.status, content: source.content } }
+        : conflict;
+    }));
+  }
+
   const archivedSources = new Set(plan.actions.flatMap((action) => action.sources));
   for (const conflict of plan.conflicts) archivedSources.add(conflict.source);
   const afterCount = beforeCount - archivedSources.size + plan.actions.length;
@@ -568,6 +606,19 @@ export async function consolidateLightMemory(
   const maxRemovals = Math.max(3, Math.ceil(beforeCount * 0.5));
   if (netReduction > maxRemovals) {
     logger.warn('Consolidation blocked by safety guard', { netReduction, maxRemovals });
+    if (dryRun) {
+      // 真跑也会被这道闸拦下 → 预告句如实写「不会改动」。
+      try {
+        await writeConsolidationPreviewFile({
+          wouldChangeNothing: true,
+          reason: `safety guard: plan removes ${netReduction} files net (> ${maxRemovals}); not applied`,
+          merges: [],
+          conflicts: [],
+        });
+      } catch (error) {
+        logger.warn('Consolidation preview write failed', { error: String(error) });
+      }
+    }
     return finish({
       triggered: true, applied: false, dryRun, reason: trigger.reason,
       before, after: { fileCount: afterCount, indexLineCount: health.indexLineCount },
@@ -580,6 +631,31 @@ export async function consolidateLightMemory(
     logger.info('Consolidation dry-run / no-op', {
       dryRun, actionCount: plan.actions.length, conflictCount: plan.conflicts.length, netReduction,
     });
+    if (dryRun) {
+      // 演练产物落预览文件（最新一次覆盖）：设置页开关未开启时展示「开启后会改什么」。
+      // LLM 失败/计划不可解析的路径不写——失败的窥视不覆盖上一次的好预览。
+      try {
+        await writeConsolidationPreviewFile({
+          wouldChangeNothing: plan.actions.length === 0 && plan.conflicts.length === 0,
+          reason: trigger.reason,
+          merges: plan.actions.flatMap((action) => action.result ? [{
+            sources: action.sources,
+            result: {
+              filename: action.result.filename,
+              name: action.result.name,
+              description: action.result.description,
+            },
+          }] : []),
+          conflicts: plan.conflicts.map((conflict) => ({
+            source: conflict.source,
+            status: conflict.status,
+            reason: conflict.reason,
+          })),
+        });
+      } catch (error) {
+        logger.warn('Consolidation preview write failed', { error: String(error) });
+      }
+    }
     return finish({
       triggered: true, applied: false, dryRun, reason: trigger.reason,
       before, after: { fileCount: afterCount, indexLineCount: health.indexLineCount },

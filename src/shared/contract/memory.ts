@@ -294,6 +294,83 @@ export interface MemoryMirrorRebuildResult {
   skipped: Array<{ filename: string; reason: string }>;
 }
 
+// ----------------------------------------------------------------------------
+// 自动整理历史（N-MEM-CONSOLIDATION-HISTORY-UNDO）
+// ----------------------------------------------------------------------------
+
+/** 一次整理里的一组合并：来源卡片 + 合并产物卡片（名字已解析成人话，非文件名）。 */
+export interface MemoryTidyMergeView {
+  sources: Array<{ filename: string; name: string }>;
+  result: { filename: string; name: string; summary: string };
+}
+
+/** 一次整理里被降级的冲突卡片。restorable=false 表示记录里没存原文，只能看不能自动还原。 */
+export interface MemoryTidyConflictView {
+  source: { filename: string; name: string };
+  reason: string;
+  restorable: boolean;
+}
+
+/** 设置页「最近整理」列表的一行（同一次运行的多行流水已按 auditId 合并，取终态）。 */
+export interface MemoryTidyRunView {
+  auditId: string;
+  at: number;
+  outcome: 'pending' | 'applied' | 'failed' | 'no-op' | 'skipped';
+  reason: string;
+  mergeCount: number;
+  conflictCount: number;
+  /** 本次整理净收起的记忆条数（before.fileCount - after.fileCount）。 */
+  netPutAway: number;
+  merges: MemoryTidyMergeView[];
+  conflicts: MemoryTidyConflictView[];
+  restored: boolean;
+  restoredAt: number | null;
+  /** 是否可以一键恢复原样。 */
+  restorable: boolean;
+  /** restorable=false 时的原因 code（renderer 按 code 出人话文案）。 */
+  blockedCode?: 'already-restored' | 'not-applied' | 'snapshot-missing';
+}
+
+/** 最近一次演练（开关关着时的定时检查）会改什么的预览。 */
+export interface MemoryTidyPreviewView {
+  at: number;
+  wouldChangeNothing: boolean;
+  reason: string;
+  merges: MemoryTidyMergeView[];
+  conflicts: MemoryTidyConflictView[];
+}
+
+export interface MemoryTidyHistoryResult {
+  /** 最近的真实整理记录，新在前。 */
+  runs: MemoryTidyRunView[];
+  /** 最近一次演练的预览；从未演练过为 null。 */
+  preview: MemoryTidyPreviewView | null;
+}
+
+export interface MemoryTidyRestoreRequest {
+  auditId: string;
+}
+
+/** 恢复被拒绝的原因 code（稳定 code，renderer 翻译；不往 UI 抛异常）。 */
+export type MemoryTidyRestoreRefusal =
+  | 'run-not-found'
+  | 'not-applied'
+  | 'already-restored'
+  | 'snapshot-missing'
+  | 'source-file-missing'
+  | 'restore-failed';
+
+export interface MemoryTidyRestoreResult {
+  ok: boolean;
+  /** ok=false 时的拒绝原因；ok=true 时缺省。 */
+  code?: MemoryTidyRestoreRefusal;
+  /** 英文诊断明细（日志/排查用，不是用户文案）。 */
+  message?: string;
+  restoredAt?: number;
+  /** 恢复中途失败时已改过、未回滚的文件（host 日志同步记录）。 */
+  changedFiles?: string[];
+}
+
 export interface MemoryEntryCreateRequest {
   content?: string;
   /** 仅 user / feedback / project / reference；其余由 host 拒绝 */
