@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { groupByWorkspace } from '../../../src/renderer/utils/workspaceGrouping';
+import { groupByWorkspace, type WorkspaceGroup } from '../../../src/renderer/utils/workspaceGrouping';
 import { buildSidebarProjectSummary } from '../../../src/renderer/utils/sidebarProjectSummary';
 
-const summarize = (group: never, sessionCount: number) => buildSidebarProjectSummary({
+const summarize = (group: WorkspaceGroup, sessionCount: number) => buildSidebarProjectSummary({
   group,
   backgroundSessionMap: new Map(),
   sessionRuntimes: new Map(),
@@ -19,7 +19,7 @@ describe('sidebar project summary session count', () => {
   });
 
   it('(c) a group with a visible session still shows the meta count', () => {
-    const group = { ...emptyGroup, sessions: [{ id: 's1', updatedAt: 1 }] } as never;
+    const group: WorkspaceGroup = { ...emptyGroup, sessions: [{ id: 's1', updatedAt: 1 } as WorkspaceGroup['sessions'][number]] };
     expect(summarize(group, 1).sessionCount).toBe(1);
   });
 });
