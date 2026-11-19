@@ -59,7 +59,12 @@ describe('fallback chip / banner de-dup through the real chat view', () => {
     expect(banners(container)).toBe(0);
   });
   it('keeps an external engine failure chip next to the banner', () => {
-    const d = fallbackDecision({ externalEngine: { kind: 'codex_cli', installState: 'installed', failure: { code: 'x', message: 'm', suggestion: 's' } } } as Partial<ModelDecisionEventData>);
+    const d = fallbackDecision({
+      externalEngine: {
+        kind: 'codex_cli', label: 'Codex CLI', installState: 'installed', runtimeState: 'blocked', executable: true, capabilities: [],
+        failure: { category: 'unknown', reason: 'x', message: 'm', suggestion: 's', retryable: false },
+      },
+    });
     const { container } = renderTurn([reply(d)], true);
     expect(chips(container)).toBe(1);
   });
