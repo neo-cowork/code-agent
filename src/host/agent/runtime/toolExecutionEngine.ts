@@ -35,11 +35,10 @@ import { readFileSync } from 'node:fs';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 
 // Import refactored modules
-import type {
-  AgentLoopConfig,
-} from '../../agent/loopTypes';
+import type { AgentLoopConfig } from '../../agent/loopTypes';
 import { classifyToolCalls, executeOrderedSegments, toolBatchLabel } from '../../agent/toolExecution/parallelStrategy';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
+import { trimIdentifierArgs } from '../../tools/trimIdentifierArgs';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
 import { minimalCallExample } from './toolArgsMinimalCall';
 import { ToolArgsRepairGate, buildRepairExhaustedMessage } from './toolArgsRepairGate';
@@ -617,6 +616,8 @@ export class ToolExecutionEngine {
 
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
     toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
+    // 路径键 + command 首尾空白只在模型输入边界裁一次（正文字段保持逐字节）
+    trimIdentifierArgs(toolCall.arguments, { includeCommand: true });
 
     // Schema validation gate — 在真实 dispatch 前用工具自身 inputSchema 校验
     // missing required + 顶层 type，失败时把 schema 信息回灌给模型自我修正
