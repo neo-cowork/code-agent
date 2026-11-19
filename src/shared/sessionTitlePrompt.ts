@@ -47,10 +47,12 @@ function stripNonProseSpans(message: string): string {
     .replace(ALNUM_MIXED_TOKEN, ' ');
 }
 
+// 只认祈使式：中文“用/以”前不能紧挨别的汉字（挡“所以英文回答”“应用英文回复”），“要/需要/请”前不能是否定词；
+// 英文动词前必须是句首/标点或 please/to/and 等祈使引导词（挡 “The answer in Chinese”“don't reply in English”）。
 const ZH_REPLY_DIRECTIVE =
-  /(?:请?(?:用|以)|请)(简体中文|繁体中文|中文|汉语|英文|英语)(?:来)?(?:回复|回答|答复|作答|回应)/g;
+  /(?:(?<![不别勿])(?:请|要|需要|须|务必|都|也|再|还|就|并)(?:用|以)|(?<![\u4e00-\u9fff])(?:请?(?:用|以)|请))(简体中文|繁体中文|中文|汉语|英文|英语)(?:来)?(?:回复|回答|答复|作答|回应)/g;
 const EN_REPLY_DIRECTIVE =
-  /\b(?:reply|respond|answer)(?:\s+to\s+me)?\s+in\s+(Chinese|Mandarin|English)\b/gi;
+  /(?<=^|[.!?;:,\n]\s*|\b(?:please|kindly|and|then|also|just|always|to|you)\s+)(?:reply|respond|answer)(?:\s+to\s+me)?\s+in\s+(Chinese|Mandarin|English)\b/gi;
 
 function directiveLanguage(name: string): SessionTitleLanguage {
   return /^(?:英文|英语|english)$/i.test(name) ? 'en' : 'zh';

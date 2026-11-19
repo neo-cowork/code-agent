@@ -64,4 +64,16 @@ describe('explicit reply-language directive', () => {
     expect(detectMessageLanguage('Reply in English. 另外请用中文回复。')).toBe('zh');
     expect(detectMessageLanguage('请用中文回复。Actually, please reply in English.')).toBe('en');
   });
+  it('does not treat negated, word-internal or noun uses as a directive', () => {
+    expect(detectMessageLanguage('不要用英文回复，这段 bug 怎么修')).toBe('zh');
+    expect(detectMessageLanguage('别用英文回答，帮我看看这个 bug')).toBe('zh');
+    expect(detectMessageLanguage('所以英文回答被评委打回来了，帮我改标题')).toBe('zh');
+    expect(detectMessageLanguage('The answer in Chinese is wrong; fix the docs, the tests, and the comments.')).toBe('en');
+    expect(detectMessageLanguage("Please don't reply in Chinese, just fix the failing tests in the module.")).toBe('en');
+  });
+  it('still accepts imperative English and polite Chinese forms', () => {
+    expect(detectMessageLanguage('Fix the failing tests in the module and please reply in Chinese.')).toBe('zh');
+    expect(detectMessageLanguage('Fix the failing tests in the module, answer in Chinese.')).toBe('zh');
+    expect(detectMessageLanguage('Fix the failing tests in the module. 要用中文回答。')).toBe('zh');
+  });
 });
