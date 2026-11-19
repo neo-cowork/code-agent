@@ -317,7 +317,18 @@ export class ProjectRepository {
     return (this.db.prepare(sql).all() as SQLiteRow[]).map(rowToProject);
   }
 
-  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
+  /**
+   * ownerUserId：传入时 sessionCount 只数「默认侧栏列表看得见」的会话（未删除、未归档、属于该用户；
+   * null = 未登录，只数 user_id IS NULL）。undefined = 不按用户过滤（仍排除已删除/已归档）。
+   */
+  listProjectsWithActivity(
+    includeArchived = false,
+    spacesOnly = false,
+    ownerUserId?: string | null,
+  ): ProjectWithActivity[] {
+    const ownerClause = ownerUserId === undefined
+      ? ''
+      : ownerUserId === null ? 'AND s.user_id IS NULL' : 'AND s.user_id = @ownerUserId';
     const archivedClause = includeArchived ? '' : "AND p.status != 'archived'";
     const spacesClause = spacesOnly
       ? 'AND p.space_promoted_at IS NOT NULL AND p.id != @unsortedProjectId'
@@ -326,7 +337,10 @@ export class ProjectRepository {
       SELECT
         p.*,
         COALESCE(cards.active_topic_count, 0) AS active_topic_count,
-        COALESCE(sessions.session_count, 0) AS session_count,
+        (
+          SELECT COUNT(*) FROM sessions s
+          WHERE s.project_id = p.id AND s.is_deleted = 0 AND s.status != 'archived' ${ownerClause}
+        ) AS session_count,
         CASE
           WHEN cards.last_topic_at IS NULL THEN sessions.last_session_at
           WHEN sessions.last_session_at IS NULL THEN cards.last_topic_at
@@ -348,7 +362,7 @@ export class ProjectRepository {
         GROUP BY project_id
       ) cards ON cards.project_id = p.id
       LEFT JOIN (
-        SELECT project_id, MAX(updated_at) AS last_session_at, COUNT(*) AS session_count
+        SELECT project_id, MAX(updated_at) AS last_session_at
         FROM sessions
         WHERE is_deleted = 0 AND project_id IS NOT NULL
         GROUP BY project_id
@@ -359,9 +373,10 @@ export class ProjectRepository {
         last_activity_at DESC,
         p.updated_at DESC
     `);
-    const rows = (spacesOnly
-      ? statement.all({ unsortedProjectId: UNSORTED_PROJECT_ID })
-      : statement.all()) as SQLiteRow[];
+    const params: Record<string, string> = {};
+    if (spacesOnly) params.unsortedProjectId = UNSORTED_PROJECT_ID;
+    if (typeof ownerUserId === 'string') params.ownerUserId = ownerUserId;
+    const rows = statement.all(params) as SQLiteRow[];
     return rows.map((row) => ({
       ...rowToProject(row),
       activeTopicCount: Number(row.active_topic_count ?? 0),

@@ -141,7 +141,8 @@ export function buildSidebarProjectSummary({
     // 未分类组没有 projectMeta，displayName 落到 group.name——即 groupByWorkspace
     // 由调用方按 i18n 传入的未分类组名（「快速对话」），这里不再硬编码。
     displayName: projectMeta?.name || group.name,
-    sessionCount: projectMeta?.sessionCount ?? group.sessions.length,
+    // 空组（只因空间存在而补出的组）显示 0：meta 的宽口径计数含归档/他人会话，会出现「计数>0 却没有可点会话」。
+    sessionCount: group.sessions.length === 0 ? 0 : projectMeta?.sessionCount ?? group.sessions.length,
     unfinishedCount: needsInputCount + attentionCount + runningCount,
     needsInputCount,
     pendingApprovalCount: needsInputCount,

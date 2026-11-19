@@ -686,8 +686,8 @@ export class ProjectService {
     return this.repo().listProjects(includeArchived);
   }
 
-  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
-    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly);
+  listProjectsWithActivity(includeArchived = false, spacesOnly = false, ownerUserId?: string | null): ProjectWithActivity[] {
+    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly, ownerUserId);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */
