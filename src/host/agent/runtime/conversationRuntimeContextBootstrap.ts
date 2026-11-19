@@ -249,7 +249,9 @@ async function injectSeedMemory(
         excludeEntryIds: ctx.suppressedMemoryEntryIds,
       });
       let userMemoryBlock = packedSeedMemory?.block ?? null;
-      if (!userMemoryBlock) {
+      // 空包 = 有 query 但没有记忆命中：明确不注入，不回落到 database-seed 的最近 10 条。
+      const packerMatchedNothing = packedSeedMemory?.packed.items.length === 0;
+      if (!userMemoryBlock && !packerMatchedNothing) {
         memorySource = 'database-seed';
         userMemoryBlock = buildSeedMemoryBlock(ctx.workingDirectory);
       }
