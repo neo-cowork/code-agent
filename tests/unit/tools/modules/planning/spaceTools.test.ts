@@ -44,6 +44,7 @@ function makeOperations(): SpaceOperations {
     list: vi.fn(() => [{
       ...space,
       activeTopicCount: 2,
+      visibleSessionCount: 2,
       lastActivityAt: 10,
     }]),
     query: vi.fn(async () => ({

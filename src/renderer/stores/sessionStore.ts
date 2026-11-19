@@ -38,6 +38,8 @@ import { openInitialSession } from './sessionBootDraft';
 import { useSessionArchiveUndoStore } from './sessionArchiveUndoStore';
 import { composerDraftStorageKey, removeComposerDraft } from '../components/features/chat/ChatInput/composerDraftStore';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
+import { notifyProjectSpaceList } from '../services/projectSpaceListEvents';
 
 const logger = createLogger('SessionStore');
 
@@ -135,6 +137,8 @@ export type SessionFilter = 'active' | 'archived' | 'all';
 
 export interface CreateSessionOptions {
   workingDirectory?: string | null;
+  /** Explicit collaboration space. Blank drafts are reused only for this same id. */
+  projectId?: string;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   expertRoleId?: string;
   /** Keep secondary pages mounted while a workflow creates a target session. */
@@ -143,6 +147,13 @@ export interface CreateSessionOptions {
 
 function normalizeDraftDirectory(value?: string | null): string {
   return value?.trim() ?? '';
+}
+
+/** 显式协作空间的项目 id。未分类桶不算空间归属。 */
+function explicitSpaceProjectId(projectId?: string | null): string {
+  const trimmed = projectId?.trim() ?? '';
+  if (!trimmed || trimmed === UNSORTED_PROJECT_ID) return '';
+  return trimmed;
 }
 
 /**
@@ -166,13 +177,21 @@ export function isBlankNewSession(
 }
 
 function isUntouchedNewSession(
-  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status' | 'projectId'>,
   workingDirectory?: string | null,
+  projectId?: string | null,
 ): boolean {
   if (!isBlankNewSession(session)) {
     return false;
   }
-  return normalizeDraftDirectory(session.workingDirectory) === normalizeDraftDirectory(workingDirectory);
+  if (normalizeDraftDirectory(session.workingDirectory) !== normalizeDraftDirectory(workingDirectory)) {
+    return false;
+  }
+  const requested = explicitSpaceProjectId(projectId);
+  const owned = explicitSpaceProjectId(session.projectId);
+  // 点名要某个空间时，只复用这个空间自己的空白草稿。
+  // 没点名时，绝不复用已经属于某个空间的草稿，免得「新任务」掉进空间里。
+  return requested ? owned === requested : owned === '';
 }
 
 export function findReusableNewSessionDraft(params: {
@@ -181,6 +200,7 @@ export function findReusableNewSessionDraft(params: {
   messages: Message[];
   todos: TodoItem[];
   workingDirectory?: string | null;
+  projectId?: string | null;
 }): SessionWithMeta | null {
   const current = params.currentSessionId
     ? params.sessions.find((session) => session.id === params.currentSessionId) ?? null
@@ -192,13 +212,13 @@ export function findReusableNewSessionDraft(params: {
     visibleMessages.length === 0 &&
     !hasRenderableMetaMessages &&
     params.todos.length === 0 &&
-    isUntouchedNewSession(current, params.workingDirectory)
+    isUntouchedNewSession(current, params.workingDirectory, params.projectId)
   ) {
     return current;
   }
 
   return params.sessions.find((session) =>
-    isUntouchedNewSession(session, params.workingDirectory)
+    isUntouchedNewSession(session, params.workingDirectory, params.projectId)
   ) ?? null;
 }
 
@@ -515,6 +535,8 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
     deleteSession: async (sessionId: string) => {
       try {
         await invokeSession('delete', { sessionId });
+        // 乐观更新早于落库：落库后再通知，侧栏空空间目录才能读到最新可见会话数。
+        notifyProjectSpaceList('sessions');
         clearFailedSend(sessionId);
         removeComposerDraft(composerDraftStorageKey(sessionId, false));
 
@@ -565,6 +587,7 @@ export const useSessionStore = observeSessionDraftUsage(create<SessionStore>()((
 
       try {
         await invokeSession('archive', { sessionId });
+        notifyProjectSpaceList('sessions');
 
         // 清理该会话的设计态：design-active 标记 + 画布属主，避免悬空。
         useDesignCanvasStore.getState().releaseSessionDesignState(sessionId);
