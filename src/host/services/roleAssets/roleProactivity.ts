@@ -19,6 +19,7 @@ import {
   topicExcludeHits,
 } from './wakeRationale';
 import { withRoleWakeAutomation } from './roleWakeAutomation';
+import { assertUnattendedBudgetAvailable } from './unattendedBudgetGate';
 import { getKnownToolNames } from '../../tools/knownToolNames';
 import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import { resolveTurnToolFace } from '../../agent/runtime/turnToolFace';
@@ -351,11 +352,14 @@ export async function wakeRole(
     const tm = getTaskManager();
     const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
     const wakeTimeoutMs = options?.wakeTimeoutMs ?? ROLE_PROACTIVITY.WAKE_TIMEOUT_MS;
+    assertUnattendedBudgetAvailable();
 
     if (orchestrator) {
       if (workspacePath) {
         tm.setWorkingDirectory(session.id, workspacePath);
       }
+      // 醒来是无人值守运行：与 cron agent 同口径走 async_agent，预算记到无人值守池而非前台池。
+      orchestrator.setExecutionTopology('async_agent');
       const wakeTools = await resolveWakeRunToolScope(roleId);
       try {
         await withWakeRunTimeout(() => orchestrator.sendMessage(wakePrompt, undefined, {
@@ -429,6 +433,7 @@ export async function wakeRole(
       const proposal = parseAdvanceGoalProposal(finalOutput) ?? inferredAdvanceProposal;
       if (proposal) {
         logger.info('Advance → goal run', { roleId, goal: proposal.goal, hasVerify: !!proposal.verify });
+        assertUnattendedBudgetAvailable();
         advanceGoalStatus = await launchAdvanceGoalRun({
           sessionId: session.id,
           roleId,
@@ -697,6 +702,16 @@ export async function resolveWakeRunToolScope(roleId: string): Promise<{
   return { allowedToolNames: resolveTurnToolFace({ declaredToolNames: declared, roleId, wake: true }) };
 }
 
+/** headless 路径没有 orchestrator：自建 run 级 executor 并标 async_agent，预算才进无人值守池。 */
+async function createUnattendedRunExecutor(sessionId: string, workingDirectory: string) {
+  const { createRunToolExecutor } = await import('../../../cli/bootstrap');
+  const { createRunContext } = await import('../../runtime/runContext');
+  const runContext = createRunContext({ sessionId, workspace: workingDirectory });
+  const executor = createRunToolExecutor(runContext);
+  executor.setExecutionTopology('async_agent');
+  return { executor, runContext };
+}
+
 /** headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。 webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。 角色身份走 config.agentOverride，记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。 */
 async function runWakeViaCliLoop(params: {
   sessionId: string;
@@ -728,7 +743,8 @@ async function runWakeViaCliLoop(params: {
     config.deniedToolNames = [...new Set([...(config.deniedToolNames ?? []), ...wakeTools.deniedToolNames])];
   }
 
-  const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
+  const { executor, runContext } = await createUnattendedRunExecutor(params.sessionId, config.workingDirectory);
+  const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId, undefined, executor, runContext);
   await withWakeRunTimeout(() => agentLoop.run(params.wakePrompt), {
     roleId: params.roleId,
     sessionId: params.sessionId,
@@ -798,6 +814,8 @@ async function launchAdvanceGoalRun(params: {
   const orchestrator = params.orchestrator;
   if (orchestrator) {
     if (params.workspacePath) params.taskManager.setWorkingDirectory(params.sessionId, params.workspacePath);
+    // 与 wakeRole 同口径：goal run 也是无人值守，记无人值守池。
+    orchestrator.setExecutionTopology('async_agent');
     try {
       const outcome = await withGoalPauseAbort(
         () => withWakeRunTimeout(() => orchestrator.sendMessage(goalPrompt, undefined, {
@@ -862,6 +880,7 @@ async function launchAdvanceGoalRun(params: {
     allowSwarm: false,
   });
 
+  const { executor, runContext } = await createUnattendedRunExecutor(params.sessionId, config.workingDirectory);
   let terminal: 'met' | 'aborted' = 'aborted';
   let pauseObserved: GoalPauseObservation = { paused: false };
   const agentLoop = createAgentLoop(
@@ -878,6 +897,9 @@ async function launchAdvanceGoalRun(params: {
     },
     [],
     params.sessionId,
+    undefined,
+    executor,
+    runContext,
   );
   const outcome = await withGoalPauseAbort(
     () => withWakeRunTimeout(() => agentLoop.run(goalPrompt), {
