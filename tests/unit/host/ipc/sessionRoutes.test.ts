@@ -94,6 +94,20 @@ describe('defineSessionRoutes 表面差异', () => {
     expect(svc.importSession).toHaveBeenCalledWith({ id: 'x' });
   });
 
+  it('unarchive 透传可选 updatedAt（撤销回原位）；缺省/非法值保持原单参调用', async () => {
+    const { registered, target } = createTarget();
+    const unarchiveSession = vi.fn(async () => null);
+    installDomainRoutes(target, defineSessionRoutes('web'), {
+      ...createDummyContext(),
+      sessions: async () => ({ unarchiveSession }),
+    } as unknown as SessionCommandContext);
+    const invoke = registered.get('domain:session');
+    await invoke?.(undefined, { action: 'unarchive', payload: { sessionId: 's1', updatedAt: 1234 } });
+    await invoke?.(undefined, { action: 'unarchive', payload: { sessionId: 's2' } });
+    await invoke?.(undefined, { action: 'unarchive', payload: { sessionId: 's3', updatedAt: 'x' } });
+    expect(unarchiveSession.mock.calls).toEqual([['s1', 1234], ['s2'], ['s3']]);
+  });
+
   it('search 在 web 形态走 performCrossSessionSearch 真链路（标题改由 DB 按命中会话取，不再依赖 listSessions）', async () => {
     const { registered, target } = createTarget();
     const svc = {

@@ -2,16 +2,20 @@
 // 中文插件卡行标签翻译 + Trust 行不再「标签+前缀」叠加
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../src/shared/contract/skillRegistry';
 import { en } from '../../../src/renderer/i18n/en';
 
 const invoke = vi.hoisted(() => vi.fn());
+// 可切换 zh/en 的 useI18n mock（默认 zh，保持既有用例行为）
+const i18nState = vi.hoisted(() => ({ t: null as unknown, language: 'zh' as string }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: zh, language: 'zh' }),
+  useI18n: () => ({ t: i18nState.t, language: i18nState.language }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke },
@@ -32,6 +36,11 @@ const INSTALLED = {
   types: ['skill', 'command'],
 };
 const ENTRY = { name: 'market-plugin', marketplace: SKILL_REGISTRY_MARKETPLACE_ID, source: './m', skills: ['s'] };
+
+beforeEach(() => {
+  i18nState.t = zh;
+  i18nState.language = 'zh';
+});
 
 afterEach(() => {
   cleanup();
@@ -97,5 +106,118 @@ describe('PluginsSettings 中文行标签', () => {
     const pills = Array.from(header.querySelectorAll('span.rounded-md.border')).map((el) => el.textContent);
     expect(pills).toContain('official');
     expect(pills).not.toContain('官方');
+  });
+});
+
+// Marketplace 源行 pill：数量带单复数、autoUpdate 条件渲染（N-FIX-ZH-UI-PLUGIN-MARKETPLACE-SOURCE-ENGLISH-PILLS）
+const MARKETPLACE_SOURCES = [
+  {
+    name: 'alpha-market',
+    source: { source: 'directory', path: '/marketplaces/alpha' },
+    installLocation: '/marketplaces/alpha',
+    lastUpdated: '2026-01-01T00:00:00.000Z',
+    pluginCount: 1,
+    autoUpdate: true,
+  },
+  {
+    name: 'beta-market',
+    source: { source: 'directory', path: '/marketplaces/beta' },
+    installLocation: '/marketplaces/beta',
+    lastUpdated: '2026-01-01T00:00:00.000Z',
+    pluginCount: 2,
+    autoUpdate: false,
+  },
+  {
+    name: 'gamma-market',
+    source: { source: 'directory', path: '/marketplaces/gamma' },
+    installLocation: '/marketplaces/gamma',
+    lastUpdated: '2026-01-01T00:00:00.000Z',
+    pluginCount: 0,
+  },
+];
+
+function mockMarketplaceChannels() {
+  invoke.mockImplementation((channel: string) => {
+    if (channel === IPC_CHANNELS.MARKETPLACE_LIST) {
+      return Promise.resolve({ success: true, data: MARKETPLACE_SOURCES });
+    }
+    if (channel === IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED
+      || channel === IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS
+      || channel === IPC_CHANNELS.CAPABILITY_PACKAGE_LIST) {
+      return Promise.resolve({ success: true, data: [] });
+    }
+    if (channel === IPC_CHANNELS.CAPABILITY_STATE_READINESS) return Promise.resolve({ status: 'fallback' });
+    throw new Error(`Unexpected channel ${channel}`);
+  });
+}
+
+/** 展开默认收起的 Marketplace 源管理 <details>（管理员可见），返回其根节点 */
+function openMarketplaceSourcesDetails(): HTMLElement {
+  const root = screen.getByTestId('marketplace-source-management');
+  const details = root.querySelector('details');
+  expect(details).toBeTruthy();
+  expect((details as HTMLDetailsElement).open).toBe(false);
+  (details as HTMLDetailsElement).open = true;
+  return root;
+}
+
+describe('PluginsSettings Marketplace 源行 pill 文案', () => {
+  it('目录词条：zh pluginCount one=other，en one≠other', () => {
+    expect(zh.settings.plugins.marketplaceSources.pluginCount.one)
+      .toBe(zh.settings.plugins.marketplaceSources.pluginCount.other);
+    expect(en.settings.plugins.marketplaceSources.pluginCount.one)
+      .not.toBe(en.settings.plugins.marketplaceSources.pluginCount.other);
+  });
+
+  it('zh：源行显示「N 个插件」，仅 autoUpdate 为真的源出现「自动更新」', async () => {
+    useAuthStore.setState({ user: { id: 'admin', email: 'a@example.com', isAdmin: true } });
+    mockMarketplaceChannels();
+    const { container } = render(<PluginsSettings />);
+    openMarketplaceSourcesDetails();
+    await screen.findByText('1 个插件');
+    expect(screen.getByText('2 个插件')).toBeTruthy();
+    expect(screen.getByText('0 个插件')).toBeTruthy();
+    expect(screen.getByText('自动更新')).toBeTruthy();
+    // beta（autoUpdate:false）与 gamma（未设置）都不渲染自动更新 pill
+    expect((container.textContent ?? '').split('自动更新').length - 1).toBe(1);
+    expect(container.textContent).not.toContain('auto update');
+    expect(container.textContent).not.toMatch(/\d plugins/);
+  });
+
+  it('en：源行单复数 1 plugin / 2 plugins / 0 plugins 与 auto update', async () => {
+    i18nState.t = en;
+    i18nState.language = 'en';
+    useAuthStore.setState({ user: { id: 'admin', email: 'a@example.com', isAdmin: true } });
+    mockMarketplaceChannels();
+    const { container } = render(<PluginsSettings />);
+    openMarketplaceSourcesDetails();
+    await screen.findByText('1 plugin');
+    expect(screen.getByText('2 plugins')).toBeTruthy();
+    expect(screen.getByText('0 plugins')).toBeTruthy();
+    expect(screen.getByText('auto update')).toBeTruthy();
+    expect((container.textContent ?? '').split('auto update').length - 1).toBe(1);
+    expect(container.textContent).not.toContain('个插件');
+    expect(container.textContent).not.toContain('自动更新');
+  });
+});
+
+describe('PluginsSettings Pill 无裸英文源码门', () => {
+  const REPO_ROOT = path.resolve(__dirname, '../../..');
+  const SCAN_FILES = [
+    'src/renderer/components/features/settings/tabs/PluginsSettings.tsx',
+    'src/renderer/components/features/settings/tabs/PluginsSettings.ui.tsx',
+  ];
+
+  it('<Pill> 的 JSX 文本不得含未走 i18n 的英文字面量', () => {
+    const offenders: string[] = [];
+    for (const rel of SCAN_FILES) {
+      const source = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+      for (const match of source.matchAll(/<Pill\b[^>]*>([\s\S]*?)<\/Pill>/g)) {
+        const literalText = match[1].replace(/\{[^{}]*\}/g, '');
+        const word = literalText.match(/[A-Za-z]{2,}/);
+        if (word) offenders.push(`${rel}: “${word[0]}” in ${match[0].replace(/\s+/g, ' ').slice(0, 90)}`);
+      }
+    }
+    expect(offenders, `Pill 里出现未 i18n 的英文字面量:\n${offenders.join('\n')}`).toEqual([]);
   });
 });
