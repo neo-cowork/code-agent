@@ -297,7 +297,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
               </button>
             ))}
             {showNone && (
-              <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
+              <Button type="button" variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
             )}
             {!framed && (showNone || showFailed) && (
               <button
