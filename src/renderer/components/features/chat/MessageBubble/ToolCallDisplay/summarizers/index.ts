@@ -65,6 +65,7 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
       return summarizeWrite(toolCall, t);
 
     case 'list_directory':
+    case 'ListDirectory':
       return summarizeListDirectory(toolCall);
 
     case 'task':
