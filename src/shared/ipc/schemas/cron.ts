@@ -19,6 +19,7 @@ const CronDomainRequestSchema = z.object({
     'generateFromPrompt',
     'getEventActionModeChange',
     'getEventDecisions',
+    'getEventStats',
     'getExecutions',
     'getRecentExecutions',
     'getStats',

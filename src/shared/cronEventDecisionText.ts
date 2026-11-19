@@ -28,6 +28,8 @@ export type CronEventDecisionTextKey =
   | 'channelReplyTool'
   | 'noOutboundAction'
   | 'runQuiet'
+  | 'prefilterSkipped'
+  | 'prefilterUnavailable'
   | 'runReported';
 
 type TextParams = Readonly<Record<string, string | number>>;
@@ -148,6 +150,18 @@ const TEMPLATES: readonly DecisionTextTemplate[] = [
     zh: '本次运行已完成并报告结果；{why}',
     en: 'The run completed and reported a result; {why}',
     nested: ['why'],
+  },
+  {
+    key: 'prefilterSkipped',
+    stored: 'skipped by prefilter: {why}',
+    zh: '预筛跳过：{why}',
+    en: 'Skipped by the pre-check: {why}',
+  },
+  {
+    key: 'prefilterUnavailable',
+    stored: 'prefilter could not judge this batch ({cause}); ran it unfiltered',
+    zh: '预筛没能判断这批消息（{cause}），已原样交给自动化处理',
+    en: 'The pre-check could not judge this batch ({cause}), so it was handled unfiltered',
   },
   {
     key: 'runFailedWithCause',
