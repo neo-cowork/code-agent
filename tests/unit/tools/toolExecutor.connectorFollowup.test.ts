@@ -157,6 +157,35 @@ describe('connector follow-up through MessageProcessor.handleToolResponse', () =
     expect(getDeferredToolsToPreloadForTurn(next.ctx)).toContain(tool);
   });
 
+  // Generic short sentences (translate/summarize/好吧/do it) must not inherit the previous
+  // calendar turn: FOLLOWUP_CUE_RE deliberately excludes add/do/please/ok/okay/吧/帮我.
+  it.each(['帮我翻译这句话', 'please summarize this', '好吧', 'do it'])(
+    'generic short follow-up %j after a calendar turn carries no calendar tool', (generic) => {
+      user(FIRST);
+      const next = user(generic);
+      for (const tool of ['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']) {
+        expect(next.ctx.allowedToolNames).not.toContain(tool);
+        expect(getDeferredToolsToPreloadForTurn(next.ctx)).not.toContain(tool);
+      }
+    });
+
+  it.each(['改到下午4点', '把时间改成17号', 'cancel it', '再试一次'])(
+    'real correction %j after a calendar turn still carries calendar_create_event', (correction) => {
+      user(FIRST);
+      const next = user(correction);
+      expect(next.ctx.allowedToolNames).toContain('calendar_create_event');
+      expect(getDeferredToolsToPreloadForTurn(next.ctx)).toContain('calendar_create_event');
+    });
+
+  it('a prior turn naming several connectors still guesses no target on either surface', () => {
+    user('Send mail and add a calendar event.');
+    const next = user('No wait, send it to sam@example.test instead.');
+    for (const tool of ['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event', 'mail_send', 'mail_draft']) {
+      expect(next.ctx.allowedToolNames).not.toContain(tool);
+      expect(getDeferredToolsToPreloadForTurn(next.ctx)).not.toContain(tool);
+    }
+  });
+
   it('scope/readiness restrictions and non-foreground runs still exclude inherited tools', () => {
     user(FIRST);
     const next = user(FOLLOWUP);

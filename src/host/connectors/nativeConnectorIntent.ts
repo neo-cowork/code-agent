@@ -48,7 +48,9 @@ export interface NativeConnectorIntentInput {
 // no other target: a correction cue or a date/time token. Topic changes stop the carry; a unique
 // prior connector is required, so ambiguous multi-connector turns do not guess a target.
 const FOLLOWUP_MAX_CHARS = 80;
-const FOLLOWUP_CUE_RE = /\b(?:make|move|change|reschedule|set|create|add|send|save|try|do|delete|cancel|instead|again|retry|please|okay|ok)\b|改|换|设|建|创|发|存|删|取消|再|重新|吧|帮我/iu;
+// 通用词（add/do/please/ok/okay/吧/帮我）刻意不进 cue：它们命中的短句大多是无关话题
+// （"帮我翻译这句话"/"please summarize this"/"好吧"），继承连接器工具会白打掉前缀缓存。
+const FOLLOWUP_CUE_RE = /\b(?:make|move|change|reschedule|set|create|send|save|try|delete|cancel|instead|again|retry)\b|改|换|设|建|创|发|存|删|取消|再|重新|重试|再试/iu;
 const FOLLOWUP_TIME_RE = /\d\s*(?:[:：]\d|点|時|时|号|日|月|am\b|pm\b|st\b|nd\b|rd\b|th\b)|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d|\bnoon\b|上午|下午|晚上|中午|今晚/iu;
 const OTHER_TARGET_RE = /\b(?:file|folder|report|spreadsheet|document|code|function|website|image|video)\b|文件|文件夹|报告|表格|代码|函数|网页|图片|视频/iu;
 
