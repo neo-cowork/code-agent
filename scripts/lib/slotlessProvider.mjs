@@ -1,6 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const SLOTLESS_FALLBACK_PROVIDER_ID = 'custom-tokenrhythm';
 export const DEFAULT_DOGFOOD_MODEL_FILE = path.join(os.homedir(), '.ship', 'grab', 'realrun-dev-model');
@@ -44,15 +46,25 @@ export function missingKeyMessage(providerId) {
   return `source config has no usable key for provider ${providerId} (${UNAVAILABLE})`;
 }
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/** secureStorage.ts has directory imports plain node cannot resolve, so read it through tsx (selective, read-only apikey.* only). */
+function readStoredCredentialsViaTsx(dataDir) {
+  const code = "const m = await import(process.argv[1]); process.stdout.write(JSON.stringify(m.readModelCredentialsFromDataDir(process.argv[2])));";
+  const modulePath = path.join(REPO_ROOT, 'src', 'host', 'services', 'core', 'secureStorage.ts');
+  const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code, modulePath, dataDir], {
+    cwd: REPO_ROOT, encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024,
+  });
+  if (result.status !== 0) return {};
+  try { return JSON.parse(result.stdout); } catch { return {}; }
+}
+
 /**
  * Key of a non-fallback provider: the source data dir's secure store (apikey.<id>,
  * selective read-only), else a plain apiKey string on the source provider.
  */
 export async function readSelectedProviderKey(providerId, sourceProvider, sourceDataDir, readCredentials) {
-  let read = readCredentials;
-  if (!read) {
-    ({ readModelCredentialsFromDataDir: read } = await import('../../src/host/services/core/secureStorage.ts'));
-  }
+  const read = readCredentials ?? readStoredCredentialsViaTsx;
   const stored = read(sourceDataDir)?.[`apikey.${providerId}`];
   if (typeof stored === 'string' && stored.trim()) return stored.trim();
   if (typeof sourceProvider?.apiKey === 'string' && sourceProvider.apiKey.trim()) return sourceProvider.apiKey.trim();
