@@ -104,4 +104,33 @@ describe('NativeConnectorsSection grid presentation', () => {
       });
     }
   }
+
+  for (const language of ['zh', 'en'] as const) {
+    it(`grid card shows a state word beside the switch and an opposite action aria-label in ${language}`, async () => {
+      testLocale.value = language;
+      const t = (language === 'zh' ? zh : en).settings.nativeConnectors;
+      mockInvokeDomain.mockImplementation((_domain: string, action: string) => {
+        if (action === 'listNativeInventory') return Promise.resolve(inventory);
+        if (action === 'listStatuses') return Promise.resolve(statuses);
+        return Promise.resolve(undefined);
+      });
+
+      render(React.createElement(NativeConnectorsSection, { presentation: 'grid' }));
+
+      const off = await screen.findByTestId('native-connector-card-photos');
+      const on = await screen.findByTestId('native-connector-card-calendar');
+      const offSwitch = off.querySelector('[role="switch"]');
+      const onSwitch = on.querySelector('[role="switch"]');
+      expect(off.querySelector('.inline-flex > span')?.textContent).toBe(t.disabled);
+      expect(on.querySelector('.inline-flex > span')?.textContent).toBe(t.enabled);
+      expect(offSwitch?.getAttribute('aria-label')).toBe(`${t.enableAction} ${t.grid.labels.photos}`);
+      expect(onSwitch?.getAttribute('aria-label')).toBe(`${t.disableAction} ${t.grid.labels.calendar}`);
+      expect(t.enabled).not.toBe(t.enableAction);
+      expect(t.disabled).not.toBe(t.disableAction);
+      if (language === 'zh') {
+        expect(t.disabled).toBe('已停用');
+        expect(t.enabled).toBe('已启用');
+      }
+    });
+  }
 });
