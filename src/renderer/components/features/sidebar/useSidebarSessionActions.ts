@@ -54,14 +54,14 @@ export interface SidebarSessionActions {
   handleToggleWorkspaceGroup: (workspaceKey: string, view: SidebarGroupExpansionView) => void;
   handleNewChat: () => Promise<void>;
   handleNewIndependentSpace: () => Promise<void>;
-  createWorkspaceChat: (workspaceKey: string, workingDirectory?: string) => Promise<void>;
-  handleNewWorkspaceChat: (e: React.MouseEvent, workspaceKey: string, workingDirectory?: string) => Promise<void>;
+  createWorkspaceChat: (workspaceKey: string, workingDirectory?: string, projectId?: string) => Promise<void>;
+  handleNewWorkspaceChat: (e: React.MouseEvent, workspaceKey: string, workingDirectory?: string, projectId?: string) => Promise<void>;
   handleSelectSession: (sessionId: string) => Promise<void>;
   handleArchiveSession: (id: string, isArchived: boolean, e: React.MouseEvent) => Promise<void>;
   handleOpenWorkspaceAssets: (e: React.MouseEvent) => void;
   handleOpenSessionAssets: (e: React.MouseEvent, session: SessionWithMeta) => Promise<void>;
   handleOpenProjectArtifactSession: (artifact: SidebarProjectArtifactMeta) => Promise<void>;
-  handleStartProjectGoal: (goal: SidebarProjectGoalMeta, workspaceKey: string, workingDirectory?: string) => Promise<void>;
+  handleStartProjectGoal: (goal: SidebarProjectGoalMeta, workspaceKey: string, workingDirectory?: string, projectId?: string) => Promise<void>;
   handleRenameSidebarProject: (projectId: string, name: string) => Promise<void>;
   handleSetSidebarProjectStatus: (projectId: string, status: ProjectStatus) => Promise<void>;
   handleSetSidebarProjectDescription: (projectId: string, description: string | null) => Promise<void>;
@@ -168,17 +168,22 @@ export function useSidebarSessionActions(
   const createWorkspaceChat = useCallback(async (
     workspaceKey: string,
     workingDirectory?: string,
+    projectId?: string,
   ) => {
     const directory = workingDirectory?.trim();
-    if (!directory || isCreatingSession || creatingWorkspaceKey) {
+    const pinnedProjectId = projectId?.trim();
+    if ((!directory && !pinnedProjectId) || isCreatingSession || creatingWorkspaceKey) {
       return;
     }
 
     setCreatingWorkspaceKey(workspaceKey);
     try {
-      const session = await createSession(t.sidebar.newSessionTitle, { workingDirectory: directory });
+      const session = await createSession(t.sidebar.newSessionTitle, {
+        workingDirectory: directory ?? null,
+        ...(pinnedProjectId ? { projectId: pinnedProjectId } : {}),
+      });
       if (session) {
-        setWorkingDirectory(directory);
+        if (directory) setWorkingDirectory(directory);
         setWorkspaceExpanded(workspaceKey, true);
         clearPlanningState();
       }
@@ -218,10 +223,11 @@ export function useSidebarSessionActions(
     e: React.MouseEvent,
     workspaceKey: string,
     workingDirectory?: string,
+    projectId?: string,
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    await createWorkspaceChat(workspaceKey, workingDirectory);
+    await createWorkspaceChat(workspaceKey, workingDirectory, projectId);
   };
 
   const handleSelectSession = async (sessionId: string) => {
@@ -302,11 +308,16 @@ export function useSidebarSessionActions(
     goal: SidebarProjectGoalMeta,
     workspaceKey: string,
     workingDirectory?: string,
+    projectId?: string,
   ) => {
     const directory = workingDirectory?.trim() || null;
+    const pinnedProjectId = projectId?.trim();
     const goalTitleText = goal.title.length > 42 ? `${goal.title.slice(0, 39)}…` : goal.title;
     const title = t.sidebar.goalSessionTitle.replace('{title}', goalTitleText);
-    const session = await createSession(title, { workingDirectory: directory });
+    const session = await createSession(title, {
+      workingDirectory: directory,
+      ...(pinnedProjectId ? { projectId: pinnedProjectId } : {}),
+    });
     if (!session) {
       return;
     }
