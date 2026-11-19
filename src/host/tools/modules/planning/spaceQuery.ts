@@ -14,7 +14,7 @@ export async function executeSpaceQuery(
   }
   const result = await operations.query(args.projectId);
   if (!result) {
-    return { ok: false, error: 'Collaboration space not found', code: 'NOT_FOUND' };
+    return { ok: false, error: 'Space not found', code: 'NOT_FOUND' };
   }
   return {
     ok: true,
