@@ -22,7 +22,7 @@ interface StoppedTaskOutcome {
   detail: string;
   /** 没做完就停下时给用户看的那一句（确定性、不依赖模型转述）；正常结束为 undefined。 */
   notice?: string;
-  kind?: NonNullable<MessageMetadata['backgroundTaskStopped']>['kind'];
+  kind?: Exclude<NonNullable<MessageMetadata['backgroundTaskStopped']>['kind'], 'cancelled'>;
 }
 
 /** 结论开头就承认没做成的措辞（封闭列表）。只认第一行行首，正文后面再出现不算。 */
