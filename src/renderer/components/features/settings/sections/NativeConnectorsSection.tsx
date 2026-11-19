@@ -329,6 +329,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                 type="checkbox"
                 checked={row.enabled}
                 disabled={rowBusy}
+                aria-label={`${row.enabled ? text.disableAction : text.enableAction} ${label}`}
                 onChange={(e) => onToggle(row.id, e.target.checked)}
                 className="w-4 h-4 accent-sky-500 cursor-pointer disabled:opacity-60"
               />
@@ -660,7 +661,7 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
                     checked={row.enabled}
                     disabled={rowBusy}
                     onChange={(enabled) => void toggle(row.id, enabled)}
-                    aria-label={`${row.enabled ? connectorText.disabled : connectorText.enabled} ${label}`}
+                    aria-label={`${row.enabled ? connectorText.disableAction : connectorText.enableAction} ${label}`}
                   />
                 </div>
               </div>

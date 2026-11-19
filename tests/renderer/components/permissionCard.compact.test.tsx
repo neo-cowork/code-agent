@@ -5,10 +5,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { PermissionRequest } from '../../../src/shared/contract';
 
 const invoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return { useI18n: () => ({ t: i18nState.language === 'en' ? en : zh, language: i18nState.language }) };
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
@@ -99,6 +101,7 @@ describe('PermissionCard 紧凑/展开判据', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    i18nState.language = 'zh';
     for (const request of [internalWrite, externalWrite, dangerousCommand, mcpRequest, deviceNullEdit]) releaseApprovalResponse(request.id);
   });
 
@@ -162,6 +165,22 @@ describe('PermissionCard 紧凑/展开判据', () => {
         externalWrite.sessionId,
       );
     });
+  });
+
+  // N-FIX-EN-APPROVAL-QUESTION-FULLWIDTH-PAREN-OUTSIDE-WORKSPACE（FB-1982）：英文卡
+  // 工作区外限定语必须是半角括号且文件名后带一个空格，标题/后果行不得混入中文标点。
+  it('en 工作区外 Write 问句用半角括号加空格，标题与后果行无中文标点', () => {
+    i18nState.language = 'en';
+    renderRequest(externalWrite);
+
+    const card = screen.getByTestId('permission-card').firstElementChild as HTMLElement;
+    expect(card.dataset.viewMode).toBe('expanded');
+    expect(screen.getByText('Allow writing report.md (outside workspace)?')).toBeTruthy();
+    expect(screen.getByText('Write file')).toBeTruthy();
+    const consequence = screen.getByTestId('permission-consequence').textContent ?? '';
+    expect(consequence).toBe('Writes /Users/me/Documents/report.md outside the workspace (1 files) and may overwrite existing content.');
+    expect(consequence).not.toMatch(/[\u3000-\u303F\uFF00-\uFFEF]/u);
+    expect(screen.queryByText('允许写入 report.md（工作区外）？')).toBeNull();
   });
 
   it('/dev/null 标题用完整路径；无 targetKind 时不从路径推断设备', () => {

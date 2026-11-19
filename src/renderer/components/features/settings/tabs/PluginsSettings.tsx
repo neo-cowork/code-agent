@@ -43,6 +43,7 @@ import { SettingsDetails, SettingsSection } from '../SettingsLayout';
 import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesTab';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 import { Pill, SummaryTile } from './PluginsSettings.ui';
+import { getPluginPillLabel } from './PluginsSettings.pillLabels';
 import { CapabilityPackageCard } from './CapabilityPackageCard';
 import { SkillCautionDisclosureModal } from './SkillCautionDisclosureModal';
 import { getSkillCautionSourceLabel, useSkillCautionFlow } from './useSkillCautionFlow';
@@ -547,10 +548,10 @@ export const PluginsSettings: React.FC = () => {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
-                        <Pill>{plugin.marketplace}</Pill>
-                        <Pill>{plugin.scope}</Pill>
+                        <Pill>{getPluginPillLabel('marketplace', plugin.marketplace, language)}</Pill>
+                        <Pill>{getPluginPillLabel('scope', plugin.scope, language)}</Pill>
                         {(plugin.types ?? []).map((type) => (
-                          <Pill key={type}>{type}</Pill>
+                          <Pill key={type}>{getPluginPillLabel('type', type, language)}</Pill>
                         ))}
                         <Pill tone={plugin.isEnabled ? 'success' : 'warning'}>
                           {plugin.isEnabled ? pluginsText.installed.enabled : pluginsText.installed.disabled}
@@ -686,9 +687,9 @@ export const PluginsSettings: React.FC = () => {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
-                        <Pill>{plugin.marketplace}</Pill>
+                        <Pill>{getPluginPillLabel('marketplace', plugin.marketplace, language)}</Pill>
                         {(plugin.types ?? []).slice(0, 3).map((type) => (
-                          <Pill key={type}>{type}</Pill>
+                          <Pill key={type}>{getPluginPillLabel('type', type, language)}</Pill>
                         ))}
                         {plugin.version && <Pill>v{plugin.version}</Pill>}
                         {installedPlugin ? (
@@ -949,7 +950,7 @@ export const PluginsSettings: React.FC = () => {
                   <div key={item.spec} className="rounded-lg border border-badge-success/20 bg-emerald-500/5 p-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-zinc-100">{item.spec}</span>
-                      {item.scope && <Pill tone="success">{item.scope}</Pill>}
+                      {item.scope && <Pill tone="success">{getPluginPillLabel('scope', item.scope, language)}</Pill>}
                     </div>
                     <p className="mt-1 text-xs leading-5 text-zinc-500">{item.reason}</p>
                   </div>
