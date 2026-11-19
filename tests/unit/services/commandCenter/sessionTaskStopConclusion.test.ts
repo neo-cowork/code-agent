@@ -77,6 +77,9 @@ describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
     '- **任务失败**',
     'Unable to open the page.',
     'Failed to fetch the pricing table',
+    '抓取已实际发起，失败了，没有拿到任何页面内容。',
+    '抓取已发起，但是失败了，页面没有内容。',
+    '已尝试抓取，没有成功拿到页面。',
     ...REAL_FAILED_ROWS,
   ])('failure prose with completed status becomes failed: %s', (detail) => {
     const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail });
@@ -94,6 +97,10 @@ describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
     '三条要点已整理好。其中一个子页面打不开，已跳过；任务未完成的只有附录。',
     '\n\n已完成。\n无法打开的链接有 1 个。',
     '无法访问英文版，以下是中文版定价页的三条要点：\n1. 基础版 99 元/月',
+    '已完成，之前那次失败已修复',
+    '已完成，上次没成功的步骤这次补上了。',
+    '页面标题是 Example Domain。\n另一次抓取失败了，已重试。',
+    '已完成。第二次抓取失败了，已跳过。',
     '未能找到官方折扣说明，但已核对标准价格：专业版 299 元/月。',
   ])('success prose stays completed: %s', (detail) => {
     expect(resolveStoppedTaskOutcome({ status: 'completed', detail }).status).toBe('completed');
