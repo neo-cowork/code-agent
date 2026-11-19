@@ -326,6 +326,7 @@ export class ProjectRepository {
       SELECT
         p.*,
         COALESCE(cards.active_topic_count, 0) AS active_topic_count,
+        COALESCE(sessions.session_count, 0) AS session_count,
         CASE
           WHEN cards.last_topic_at IS NULL THEN sessions.last_session_at
           WHEN sessions.last_session_at IS NULL THEN cards.last_topic_at
@@ -347,7 +348,7 @@ export class ProjectRepository {
         GROUP BY project_id
       ) cards ON cards.project_id = p.id
       LEFT JOIN (
-        SELECT project_id, MAX(updated_at) AS last_session_at
+        SELECT project_id, MAX(updated_at) AS last_session_at, COUNT(*) AS session_count
         FROM sessions
         WHERE is_deleted = 0 AND project_id IS NOT NULL
         GROUP BY project_id
@@ -364,6 +365,7 @@ export class ProjectRepository {
     return rows.map((row) => ({
       ...rowToProject(row),
       activeTopicCount: Number(row.active_topic_count ?? 0),
+      sessionCount: Number(row.session_count ?? 0),
       lastActivityAt: row.last_activity_at == null ? null : Number(row.last_activity_at),
     }));
   }

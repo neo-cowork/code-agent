@@ -497,7 +497,8 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   }, [sessionIdsKey, spaceListVersion]);
   const emptySpaces = useMemo(() => {
     const used = new Set(sessions.map((session) => session.projectId).filter(Boolean));
-    return spaceList.filter((space) => !used.has(space.id));
+    // sessionCount 来自 host 全量统计：只在整个空间确实 0 会话时才画空组（侧栏只加载了一页会话，不能靠它判空）。
+    return spaceList.filter((space) => space.sessionCount === 0 && !used.has(space.id));
   }, [sessions, spaceList]);
 
   // Pure workspace grouping (Codex-style): one bucket per workingDirectory,

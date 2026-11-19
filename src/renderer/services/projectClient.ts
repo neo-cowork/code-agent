@@ -169,11 +169,15 @@ export async function setProjectDescription(projectId: string, description: stri
 }
 
 export async function setProjectStatus(projectId: string, status: ProjectStatus): Promise<Project> {
-  return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setStatus', { projectId, status });
+  const project = await ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setStatus', { projectId, status });
+  notifySpacesChanged();
+  return project;
 }
 
 export async function deleteProject(projectId: string): Promise<{ deleted: boolean }> {
-  return ipcService.invokeDomain<{ deleted: boolean }>(IPC_DOMAINS.PROJECT, 'deleteProject', { projectId });
+  const result = await ipcService.invokeDomain<{ deleted: boolean }>(IPC_DOMAINS.PROJECT, 'deleteProject', { projectId });
+  notifySpacesChanged();
+  return result;
 }
 
 export async function addProjectGoal(
