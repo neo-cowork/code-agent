@@ -8,9 +8,10 @@
 // 第二组「工作区文件」（原有 listFiles 数据源）。两组各限 8 条，键盘导航在平铺
 // 序列上循环。组件只负责渲染与副作用，分组/过滤规则全部落在这里便于测试。
 
-import type { LibraryItem } from '@shared/contract/library';
+import type { LibraryItem, LibraryItemKind } from '@shared/contract/library';
 import type { ProjectArtifact, ProjectArtifactKind } from '@shared/contract/project';
 import type { Session } from '@shared/contract/session';
+import type { Translations } from '../../../../i18n';
 import { filterPinCandidates, matchesLibraryItemSearch } from '../../knowledge/libraryItemModel';
 
 /** 每组最多展示条数（资料库 / 工作区文件各自独立计算）。 */
@@ -83,6 +84,40 @@ function deriveDisplayDir(path: string, name: string, baseDir: string | null | u
   return dir;
 }
 
+/** 资料库行第二行灰字用的类型词条键：kind → i18n 词条（与 LibraryPanel 的 kindLabels 同一口径）。 */
+const LIBRARY_KIND_LABEL_KEYS = {
+  upload: 'kindUpload',
+  artifact: 'kindArtifact',
+  capture: 'kindCapture',
+  external_ref: 'kindExternalRef',
+} as const satisfies Record<LibraryItemKind, keyof Translations['library']>;
+
+/** external_ref 的 pathOrUri 按 http(s) URL 解析出 host；不是合法 http(s) URL 时返回 null。 */
+function httpHostOf(pathOrUri: string): string | null {
+  try {
+    const { protocol, host } = new URL(pathOrUri);
+    return protocol === 'http:' || protocol === 'https:' ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 资料库行第二行灰字：summary 非空用 summary；否则用类型人话标签（external_ref 且
+ * pathOrUri 解析为 http(s) URL 时附 host——URL 是用户认得出的东西）。绝不回退本地
+ * pathOrUri：那是内部存储绝对路径（数据目录 library/proj_xxx/…），不该怼到用户面前。
+ */
+export function libraryRowSubtitle(item: LibraryItem, t: Translations): string {
+  const summary = item.summary?.trim();
+  if (summary) return summary;
+  const label = t.library[LIBRARY_KIND_LABEL_KEYS[item.kind]];
+  if (item.kind === 'external_ref') {
+    const host = httpHostOf(item.pathOrUri);
+    if (host) return `${label} · ${host}`;
+  }
+  return label;
+}
+
 /** 资料库组：pin 候选（本项目 ∪ 全局）按 query 过滤（空 query 全量），封顶 limit 条。 */
 export function buildLibraryRows(
   items: LibraryItem[],
@@ -103,7 +138,12 @@ export function buildLibraryRows(
   }));
 }
 
-/** 工作区文件组：沿用旧面板的文件名子串过滤（大小写不敏感），封顶 limit 条。 */
+/**
+ * 工作区文件组：文件名子串过滤（大小写不敏感），封顶 limit 条。空 query（@ 一弹出）
+ * 跳过 `.` 开头的条目——首屏只给真实工作区内容，不再被 .claude/.code-agent 占满；
+ * 非空 query 行为不变，`@.`、`@claude` 仍能搜到点开头条目（对齐 vscode files.exclude 思路：
+ * 默认藏起来但保持可搜索）。
+ */
 export function buildFileRows(
   files: AtMentionFileMatch[],
   query: string,
@@ -112,7 +152,9 @@ export function buildFileRows(
 ): AtMentionFileRow[] {
   const normalized = query.trim().toLowerCase();
   return files
-    .filter((file) => !normalized || file.name.toLowerCase().includes(normalized))
+    .filter((file) => (normalized
+      ? file.name.toLowerCase().includes(normalized)
+      : !file.name.startsWith('.')))
     .slice(0, limit)
     .map((file) => ({
       kind: 'file',

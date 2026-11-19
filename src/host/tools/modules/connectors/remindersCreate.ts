@@ -21,6 +21,7 @@ import {
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { remindersCreateSchema as schema } from './remindersCreate.schema';
 import { formatConnectorTime } from './connectorTime';
+import { omitUnrequestedReminderNotes } from '../../reminderUnrequestedNotes';
 
 const RECONCILE_LIMIT = 200;
 const REMIND_AT_TOLERANCE_MS = 60_000;
@@ -206,7 +207,9 @@ async function executeRemindersCreate(
 
   const reminderTime = normalizeReminderCreateTime(schema.name, args);
   if (!reminderTime.ok) return reminderTime;
-  args = reminderTime.args;
+  const unrequestedNotes = omitUnrequestedReminderNotes(reminderTime.args);
+  if (unrequestedNotes.dropped) ctx.logger.debug('reminders_create dropped notes', { reason: unrequestedNotes.reason });
+  args = unrequestedNotes.args;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
