@@ -275,7 +275,7 @@ type: {{user|feedback|project|reference}}
 {{content}}
 \`\`\`
 
-2. Update INDEX.md — add a pointer: \`- [filename](path) — description\`
+The index updates automatically after that file is saved. Do not write or edit INDEX.md yourself.
 
 ## How to Read
 
