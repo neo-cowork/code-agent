@@ -185,6 +185,10 @@ describe('connector follow-up through MessageProcessor.handleToolResponse', () =
     ['好吧', '改到下午4点'],
     ['okay', 'make it 4pm'],
     ['ok', 'cancel it'],
+    ['好吧，', '改到下午4点'],
+    ['ok?', 'make it 4pm'],
+    ['好吧？', '改到下午4点'],
+    ['好吧…', '改到下午4点'],
   ])('pure acknowledgement %j between a calendar turn and the correction %j does not break the carry', (ack, correction) => {
     user(FIRST);
     const ackTurn = user(ack);

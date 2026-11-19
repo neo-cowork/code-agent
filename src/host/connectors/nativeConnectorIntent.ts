@@ -57,7 +57,8 @@ const OTHER_TARGET_RE = /\b(?:file|folder|report|spreadsheet|document|code|funct
 // 当前轮是纯应答时仍不继承（上面 FOLLOWUP_CUE_RE 已把通用词除名）；但回溯找上一轮连接器
 // 意图时要跳过它——否则「日历轮 → 好吧 → 改到下午4点」会在应答句上断链，修正句拿不到
 // 连接器工具，改期调用直接 TOOL_DISABLED_FOR_RUN。锚定整句，长句/换题句不会误中。
-const FOLLOWUP_ACK_RE = /^(?:ok|okay|sure|fine|please|yes|yeah|got it|好|好的|好嘞|行|可以|嗯|嗯嗯|哦|噢|明白|收到|了解|对|是的)(?:吧|呀|啦|哦|噢|诶)?[\s,.!！。~～]*$/iu;
+// ponytail: 收尾标点只收 , ， . ! ！ 。 ~ ～ ? ？ …；顿号、括号、emoji 不再往里加，是这条白名单的天花板。
+const FOLLOWUP_ACK_RE = /^(?:ok|okay|sure|fine|please|yes|yeah|got it|好|好的|好嘞|行|可以|嗯|嗯嗯|哦|噢|明白|收到|了解|对|是的)(?:吧|呀|啦|哦|噢|诶)?[\s,，.!！。~～?？…]*$/iu;
 
 function isConnectorFollowup(text: string): boolean {
   const trimmed = text.trim();
