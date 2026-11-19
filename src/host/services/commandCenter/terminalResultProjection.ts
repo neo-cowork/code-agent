@@ -15,6 +15,9 @@ import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getAuthService } from '../auth/authService';
 import { resolveSessionTaskResultLocale } from './sessionTaskResultLocale';
+import {
+  formatSessionTaskCancelledClosing, formatSessionTaskUserDenied, isSessionTaskUserDeniedDetail,
+} from '../../../shared/constants/sessionCommandCenter';
 
 const logger = createLogger('TerminalResultProjection');
 
@@ -42,6 +45,19 @@ export async function projectTerminalResult(
     await recordBackgroundTaskStopNote(task.sessionId, task.shortName, task.stopped.content, {
       taskId: task.id, kind: task.stopped.kind,
     });
+    return;
+  }
+  // 取消（含用户拒绝审批）不唤醒模型（foregroundWake 对 cancelled 直接跳过），
+  // 由宿主写一句确定性收尾，让对话正文与卡片的「已取消」一致。
+  if (status === 'cancelled') {
+    const locale = resolveLocale();
+    const declined = isSessionTaskUserDeniedDetail(task.detail);
+    await recordBackgroundTaskStopNote(
+      task.sessionId,
+      task.shortName,
+      declined ? formatSessionTaskUserDenied(locale) : formatSessionTaskCancelledClosing(locale),
+      { taskId: task.id, kind: 'cancelled' },
+    );
   }
 }
 

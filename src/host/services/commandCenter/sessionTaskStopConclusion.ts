@@ -22,7 +22,7 @@ interface StoppedTaskOutcome {
   detail: string;
   /** 没做完就停下时给用户看的那一句（确定性、不依赖模型转述）；正常结束为 undefined。 */
   notice?: string;
-  kind?: NonNullable<MessageMetadata['backgroundTaskStopped']>['kind'];
+  kind?: Exclude<NonNullable<MessageMetadata['backgroundTaskStopped']>['kind'], 'cancelled'>;
 }
 
 /** 结论开头就承认没做成的措辞（封闭列表）。只认第一行行首，正文后面再出现不算。 */
@@ -42,13 +42,30 @@ function toPlainText(text: string): string {
     .join('\n');
 }
 
-function opensWithUnfinished(conclusion: string): boolean {
+/**
+ * 第二条规则：首句里有「做了某事，但结果是失败」的否定结果从句（不要求开头是封闭列表里的词）。
+ * 防误判：只看首句（正文后面、别的行里提到失败不算）；首句带「之前/上次/此前/已修复/已解决/已恢复」
+ * 这类历史或修复限定词时，说的是过去的失败，不是这次的结果，放行。
+ */
+const NEGATIVE_RESULT_CLAUSE = /失败了|没有成功|没成功|没能成功|未成功|未能成功|没有拿到任何|没拿到任何/;
+const HISTORICAL_QUALIFIER = /之前|上次|此前|已修复|已解决|已恢复/;
+
+function conclusionHead(conclusion: string): string {
   const first = conclusion.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
-  const head = first
+  return first
     .replace(/^(?:[>#*_`\-+\s]|\d+[.)、]\s*)+/, '')
     .replace(/^(?:结论|结果|总结|说明)\s*[:：]\s*/, '')
     .replace(/^[*_`\s]+/, '');
-  return UNFINISHED_OPENERS.some((opener) => head.startsWith(opener)) || UNFINISHED_OPENERS_EN.test(head);
+}
+
+function admitsNegativeResultInFirstSentence(head: string): boolean {
+  const sentence = head.split(/[。！？!?]/)[0] ?? '';
+  return NEGATIVE_RESULT_CLAUSE.test(sentence) && !HISTORICAL_QUALIFIER.test(sentence);
+}
+
+function opensWithUnfinished(conclusion: string): boolean {
+  const head = conclusionHead(conclusion);
+  return UNFINISHED_OPENERS.some((opener) => head.startsWith(opener)) || UNFINISHED_OPENERS_EN.test(head) || admitsNegativeResultInFirstSentence(head);
 }
 
 function pageClause(lastUrl: string | undefined): string {
