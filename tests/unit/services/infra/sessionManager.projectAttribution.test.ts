@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '../../../../src/shared/contract/project';
+import {
+  SESSION_PROJECT_PINNED_METADATA_KEY,
+  SESSION_PROJECT_UNAVAILABLE,
+  UNSORTED_PROJECT_ID,
+} from '../../../../src/shared/contract/project';
 
 const sendMock = vi.fn();
 
@@ -36,6 +40,13 @@ const ensureProjectForWorkspace = vi.fn(async (workspacePath: string | undefined
   id: workspacePath?.trim() ? `proj_${workspacePath.trim()}` : UNSORTED_PROJECT_ID,
 }));
 
+const projectsById = new Map<string, { id: string; status: string }>();
+const getProjectDetail = vi.fn((projectId: string) => {
+  const project = projectsById.get(projectId);
+  if (!project) return undefined;
+  return { project, sources: [], goals: [], roles: [], sessionIds: [] };
+});
+
 vi.mock('../../../../src/host/platform', () => ({
   AppWindow: {
     getAllWindows: () => [{ webContents: { send: sendMock } }],
@@ -47,7 +58,7 @@ vi.mock('../../../../src/host/services/core', () => ({
 }));
 
 vi.mock('../../../../src/host/services/project/projectService', () => ({
-  getProjectService: () => ({ ensureProjectForWorkspace }),
+  getProjectService: () => ({ ensureProjectForWorkspace, getProjectDetail }),
 }));
 
 vi.mock('../../../../src/host/services/permissions/modes', () => ({
@@ -78,6 +89,7 @@ async function makeManager() {
 describe('SessionManager project attribution', () => {
   beforeEach(() => {
     dbState.sessions = [];
+    projectsById.clear();
     vi.clearAllMocks();
   });
 
@@ -132,5 +144,51 @@ describe('SessionManager project attribution', () => {
     expect(dbMock.getSession(pinned.id)?.projectId).toBe(UNSORTED_PROJECT_ID);
     expect(ensureProjectForWorkspace).not.toHaveBeenCalledWith('/data-dir-work', expect.anything());
     expect(dbMock.getSession(pinned.id)?.metadata).toMatchObject({ unrelated: 1, [SESSION_PROJECT_PINNED_METADATA_KEY]: true });
+  });
+
+  it('pins an explicit project and keeps it when a working directory arrives later', async () => {
+    projectsById.set('proj_space', { id: 'proj_space', status: 'idle' });
+    const manager = await makeManager();
+    const session = await manager.createSession({
+      title: 'Folderless space',
+      modelConfig: { provider: 'openai', model: 'gpt-5' },
+      projectId: 'proj_space',
+    });
+
+    expect(session.projectId).toBe('proj_space');
+    expect(session.metadata).toMatchObject({ [SESSION_PROJECT_PINNED_METADATA_KEY]: true });
+    expect(ensureProjectForWorkspace).not.toHaveBeenCalled();
+
+    await manager.updateSession(session.id, { workingDirectory: '/tmp/task-folder' });
+
+    expect(dbMock.getSession(session.id)?.projectId).toBe('proj_space');
+    expect(ensureProjectForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown, archived, or deleted explicit project before writing a session', async () => {
+    const manager = await makeManager();
+    const modelConfig = { provider: 'openai', model: 'gpt-5' };
+
+    await expect(manager.createSession({
+      title: 'Missing',
+      modelConfig,
+      projectId: 'proj_missing',
+    })).rejects.toThrow(SESSION_PROJECT_UNAVAILABLE);
+
+    projectsById.set('proj_archived', { id: 'proj_archived', status: 'archived' });
+    await expect(manager.createSession({
+      title: 'Archived',
+      modelConfig,
+      projectId: 'proj_archived',
+    })).rejects.toThrow(SESSION_PROJECT_UNAVAILABLE);
+
+    await expect(manager.createSession({
+      title: 'Deleted',
+      modelConfig,
+      projectId: 'proj_deleted',
+    })).rejects.toThrow(SESSION_PROJECT_UNAVAILABLE);
+
+    expect(dbState.sessions).toHaveLength(0);
+    expect(ensureProjectForWorkspace).not.toHaveBeenCalled();
   });
 });

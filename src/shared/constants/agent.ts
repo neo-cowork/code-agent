@@ -108,7 +108,10 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v132：N-FIX-CALENDAR-TOOL-MODEL-EPOCH-MATH——calendar_create/update_event 增加 start_local/end_local（本机本地时间由 host 换算，模型不再算 epoch）与 create 的可选 notes，叠上 main 的 sys-v131。
 // sys-v135: integrate main sys-v134 with Bash command-substitution refusal guidance.
 // sys-v138: reminders_create omits notes unless the user asks, and must not restate the title or the time.
-export const PROMPT_VERSION = 'sys-v138' as const;
+// sys-v139：N-FIX-BG-NEGATION-RE-BIE-FALSE-NEGATIVE——后台请求否定的「别」只认祈使：分句先整词摘掉「别」复合词（含报告/这个/部分等消歧前词）再测，分别/特别/差别等不再误判为否定，词尾字+祈使别（这份报告别放后台）与别处理/别处于仍算否定。
+// sys-v140：同单 r1——「别」排除从单字前后瞻改为整词摘除（BIE_COMPOUND_WORDS_RE），修复词尾字+祈使别（报告别/这个别/部分别…）与别处理/别处于被误组词放走的回归；sys-v139 未发版，两版合并为本 PR 的净行为。
+// sys-v141：同单 r2——以汉字收尾的「别」易混词（个别/类别/级别/告别/识别…）仅在前一字非汉字时整词摘除，修复「这一个别/警告别/班级别」把祈使别吞掉而被误判为明确要后台。
+export const PROMPT_VERSION = 'sys-v141' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
