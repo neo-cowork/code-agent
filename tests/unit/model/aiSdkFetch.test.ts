@@ -125,11 +125,15 @@ describe('makeAiSdkFetch reasoning_effort strip-retry', () => {
     expect(axiosFn).toHaveBeenCalledTimes(1);
   });
 
-  it('returns the second 400 unchanged and does not send a third request', async () => {
+  it('returns the second 400 unchanged, does not send a third request, and remembers nothing while unconfirmed', async () => {
     const bodies = ['{"n":1}', '{"n":2}'];
+    const seen: unknown[] = [];
     let n = 0;
     axiosFn.mockReset();
-    axiosFn.mockImplementation(async () => rejected(400, bodies[n++] ?? '{"n":9}'));
+    axiosFn.mockImplementation(async (config: { data?: unknown }) => {
+      seen.push(config.data);
+      return rejected(400, bodies[n++] ?? '{"n":9}');
+    });
     const fetchFn = makeAiSdkFetch('custom', undefined, { dropRejectedReasoningEffort: true });
     const response = await fetchFn('https://relay-both.example/v1/chat/completions', {
       method: 'POST',
@@ -138,6 +142,16 @@ describe('makeAiSdkFetch reasoning_effort strip-retry', () => {
     expect(response.status).toBe(400);
     expect(await response.text()).toBe('{"n":2}');
     expect(n).toBe(2);
+
+    // 复审 r1：双 400 说明失败原因未必是 reasoning_effort（内容审核、tool schema……）。
+    // 未确认前不得记入进程级集合——后续请求仍要在第一发就带上用户设置的字段，
+    // 而不是悄悄永久丢弃（旧实现重试前就记，这里第一发已无 reasoning_effort）。
+    const followUp = await fetchFn('https://relay-both.example/v1/chat/completions', {
+      method: 'POST',
+      body: relayBody('m-both'),
+    });
+    expect(followUp.status).toBe(400);
+    expect(JSON.parse(String(seen[2])).reasoning_effort).toBe('high');
   });
 
   it('does not retry when the signal is already aborted, or when axios rejects the aborted call', async () => {

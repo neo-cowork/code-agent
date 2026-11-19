@@ -221,8 +221,12 @@ export function makeAiSdkFetch(
   };
 
   let response = await send(body);
-  // 中转对顶层 reasoning_effort 回 400/422：丢掉该字段重发一次，并记住 url+model，
-  // 后面的请求直接不带。不看错误正文；信号已中止则不重试；第二次失败原样返回。
+  // 中转对顶层 reasoning_effort 回 400/422：丢掉该字段重发一次。不看错误正文；信号已
+  // 中止则不重试；第二次失败原样返回。url+model 只有在「去掉字段后确实成功」才记入
+  // rejectedReasoningEffortTargets——重试前就记会把无关 400（内容审核、tool schema、
+  // 图片参数……）也当成字段拒绝，整个进程后续请求从此悄悄丢掉用户设置的
+  // reasoning_effort 直到重启；不确认就不记，无关 400 每次都完整走原始请求+重试，
+  // 真实原因（第二次响应）原样上抛。
   if (
     dropRejectedReasoningEffort
     && sentReasoningEffort
@@ -231,11 +235,11 @@ export function makeAiSdkFetch(
     && signal?.aborted !== true
   ) {
     logger.warn(`[AiSdkAdapter] reasoning_effort rejected by relay; retrying once without it provider=${provider ?? ''} host=${requestHost(url)} status=${response.status}`);
-    rejectedReasoningEffortTargets.add(reasoningKey);
     discardResponseStream(response.data);
     const json = parseJsonObject(body);
     response = await send(json ? withoutReasoningEffort(json) : body);
     if (response.status < 400) {
+      rejectedReasoningEffortTargets.add(reasoningKey);
       logger.warn(`[AiSdkAdapter] HTTP ${response.status} ${method} ${url}`);
     }
   }
