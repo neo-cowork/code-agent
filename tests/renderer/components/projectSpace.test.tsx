@@ -826,6 +826,7 @@ describe('ProjectComposer 底部输入框', () => {
       expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', {
         workingDirectory: '/tmp/ws',
         projectId: PROJECT_ID,
+        preserveSecondaryPages: true,
       }),
     );
     // 落地即进行中态：切进会话那一刻用户消息已在时间线上
@@ -891,6 +892,7 @@ describe('ProjectComposer 底部输入框', () => {
       expect(createSessionMock).toHaveBeenCalledWith('整理周报', {
         workingDirectory: undefined,
         projectId: PROJECT_ID,
+        preserveSecondaryPages: true,
       }),
     );
   });

@@ -91,6 +91,8 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
       const session = await useSessionStore.getState().createSession(title || undefined, {
         workingDirectory: project?.workspacePath ?? undefined,
         projectId: project?.id,
+        // 失败时留在空间页，已输入的文字才能留在这个输入框里。
+        preserveSecondaryPages: true,
       });
       if (!session) return false;
       // sessionless 期选中的 skill 在这里补挂载（新会话 id 已知、切页之前）；
