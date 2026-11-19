@@ -13,6 +13,7 @@ import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/mo
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
 import { modelKeyOptionLabel } from './modelKeyOptionLabel';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
 
 // 自动模式下四档都要可见可改：代码/文件/产物任务运行时走 profiles.main（modelDecision.applyStrategySlot），
@@ -81,8 +82,8 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     };
   }, [providerConfigs, settings, strategy]);
 
-  const optionLabel = (provider: ModelProvider, label: string) => modelKeyOptionLabel(
-    label, provider, providerConfigs[provider], t.settings.model.header.keyNeededSuffix,
+  const optionLabel = (provider: ModelProvider, modelId: string, label: string) => modelKeyOptionLabel(
+    localizeModelLabel(modelId, label, language), provider, providerConfigs[provider], t.settings.model.header.keyNeededSuffix,
   );
   const memoryRoute = settings?.models.routing.memory;
   const effectiveMemoryRoute = memoryRoute ?? settings?.models.routing.fast;
@@ -226,12 +227,12 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                   disabled={disabled}
                   className="w-full"
                 >
-                  {unavailable ? <option value={value}>{optionLabel(slot.provider, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
+                  {unavailable ? <option value={value}>{optionLabel(slot.provider, slot.model, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
                   {groupedOptions.map((group) => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map((option) => (
                         <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                          {optionLabel(option.provider, option.label)}
+                          {optionLabel(option.provider, option.model, option.label)}
                         </option>
                       ))}
                     </optgroup>
@@ -267,14 +268,14 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
             <option value={FOLLOW_FAST_VALUE}>{strategyText.memory.followFast}</option>
             {memoryRoute && memoryRouteUnavailable ? (
               <option value={optionValue(memoryRoute.provider, memoryRoute.model)}>
-                {optionLabel(memoryRoute.provider, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
+                {optionLabel(memoryRoute.provider, memoryRoute.model, modelLabel(memoryRoute.provider, memoryRoute.model))}{strategyText.unavailableSuffix}
               </option>
             ) : null}
             {groupedOptions.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.options.map((option) => (
                   <option key={optionValue(option.provider, option.model)} value={optionValue(option.provider, option.model)}>
-                    {optionLabel(option.provider, option.label)}
+                    {optionLabel(option.provider, option.model, option.label)}
                   </option>
                 ))}
               </optgroup>

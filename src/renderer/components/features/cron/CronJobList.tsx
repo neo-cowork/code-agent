@@ -24,7 +24,7 @@ import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../..
 import { CronJobWorkingFolderStatus } from './CronWorkingFolderStatus';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
-import { getJobDisplayName, getBuiltinJobDisplay } from './builtinJobDisplay';
+import { getJobDisplayName, getBuiltinJobDisplay, getRoleWakeJobDescription } from './builtinJobDisplay';
 
 interface CronJobListProps {
   /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：命中行的状态 chip 换成「等你确认」。 */
@@ -137,13 +137,13 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
             {filteredJobs.map((job) => {
               const isSelected = job.id === effectiveSelectedJobId;
               const latest = latestExecutions[job.id];
-              const latestMeta = getLatestExecutionStatus(latest, cc);
+              const latestMeta = getLatestExecutionStatus(latest, cc, t.cronWakeCadence);
               const latestLabel = latestMeta.label;
               const awaitingApproval = awaitingByJobId?.has(job.id) ?? false;
               const triggerKind = getCronTriggerKind(job);
               const builtinDisplay = getBuiltinJobDisplay(job, language);
               const displayName = getJobDisplayName(job, language);
-              const displayDescription = builtinDisplay?.description ?? job.description;
+              const displayDescription = builtinDisplay?.description ?? getRoleWakeJobDescription(job, language) ?? job.description;
               const scheduleSummary = job.schedule.type === 'cron'
                 ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
                 : formatScheduleSummary(job, language, eventNamesFor(job));
