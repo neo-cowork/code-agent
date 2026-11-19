@@ -185,7 +185,7 @@ export function buildModelStrategySurfaceVisibilityResult(): ModelStrategySurfac
       'OpenAI-compatible',
       'commonstack.example/v1',
     ]),
-    modelSwitcherTooltipShowsTaskStrategyContext: tooltip === '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: Think',
+    modelSwitcherTooltipShowsTaskStrategyContext: tooltip === '自动路由（按任务、成本和能力切换，当前主任务 MiMo v2.5 Pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: Think',
   };
   const failedChecks = Object.entries(checks)
     .filter(([, passed]) => !passed)

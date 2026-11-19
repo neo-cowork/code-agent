@@ -131,6 +131,36 @@ export const PROVIDER_MODELS_MAP: Record<string, ProviderInfo> = Object.fromEntr
  */
 const RUNTIME_ONLY_MODEL_LABELS: Record<string, string> = {
   'glm-5.3': 'GLM-5.3',
+  // ADDITIONAL_PROVIDER_REGISTRY 里登记但刻意不进 catalog 的模型（进 catalog 会变成
+  // 设置页可选行）；标签取注册表 name，去掉中文括号后缀。新增注册模型没补标签会被
+  // tests/unit/shared/modelDisplayLabels.test.ts 钉红。
+  // minimax
+  'abab6.5s-chat': 'abab6.5s',
+  'abab6.5-chat': 'abab6.5',
+  'abab5.5s-chat': 'abab5.5s',
+  'abab5.5-chat': 'abab5.5',
+  // gemini（直连侧未进 catalog 的档位）
+  'gemini-3-pro': 'Gemini 3 Pro',
+  'gemini-3-flash': 'Gemini 3 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+  // volcengine
+  'doubao-1.5-pro-256k': 'Doubao 1.5 Pro 256K',
+  'doubao-1.5-thinking-pro': 'Doubao 1.5 Thinking Pro',
+  'doubao-seed-1-6-vision-250815': 'Doubao Seed 1.6 Vision',
+  // xiaomi
+  'neohorse-1.5-flash-preview': 'NeoHorse 1.5 Flash',
+  // openrouter（label 查表是精确匹配，带上游前缀的完整 id 就是运行时真源 id）
+  'google/gemini-3-pro-preview': 'Gemini 3 Pro',
+  'google/gemma-3n-e2b-it:free': 'Gemma 3',
+  'anthropic/claude-opus-4.5': 'Claude Opus 4.5',
+  'anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
+  'anthropic/claude-haiku-4.5': 'Claude Haiku 4.5',
+  'openai/gpt-5.2': 'GPT-5.2',
+  'openai/gpt-5.2-codex': 'GPT-5.2 Codex',
+  'meta-llama/llama-3.3-70b-instruct:free': 'Llama 3.3 70B',
+  'meta-llama/llama-4-maverick': 'Llama 4 Maverick',
+  'deepseek/deepseek-v3.2': 'DeepSeek V3.2',
+  'deepseek/deepseek-r1-0528:free': 'DeepSeek R1',
 };
 
 const MODEL_LABELS: Record<string, string> = {

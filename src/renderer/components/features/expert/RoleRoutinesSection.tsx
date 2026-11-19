@@ -12,6 +12,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { formatCronJobDateTime, formatCronScheduleLabelWithZone } from '../../../utils/formatCronJobTime';
+import { isUnattendedBudgetUsedUpError } from '@shared/i18n/unattendedBudgetUsedUp';
 import { isCronExecutionPermissionDenialError } from '../chat/cronRunSessionStatus';
 import { getRoleWakeJobLabel } from '../cron/builtinJobDisplay';
 import { Button } from '../../primitives/Button';
@@ -53,6 +54,7 @@ function statusLabel(status: RoleBoundCronJob['lastStatus'], words: CronStatusTe
 // 取消、中断也用运行记录文案；host 原始执行错误（如 ECONNRESET socket hang up）绝不进专家页。
 function cronRunRecordStatus(job: RoleBoundCronJob, record: CronRunRecordText): string | null {
   if (job.lastStatus === 'failed') {
+    if (isUnattendedBudgetUsedUpError(job.lastError)) return record.failedBudget;
     return isCronExecutionPermissionDenialError(job.lastError) ? record.failedDenied : record.failedGeneric;
   }
   if (job.lastStatus === 'cancelled') return record.cancelled;

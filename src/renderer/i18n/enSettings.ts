@@ -10,6 +10,7 @@ import { enSettingsExternalImport } from './enSettingsExternalImport';
 import { enSettingsExternalImportMcp } from './enSettingsExternalImportMcp';
 import { enSettingsPrivacyReceipt } from './enSettingsPrivacyReceipt';
 import { enSettingsMeeting } from './settingsMeeting';
+import { enSettingsMemoryTidy } from './enSettingsMemoryTidy';
 
 export const enSettings = {
     title: 'Settings',
@@ -24,4 +25,5 @@ export const enSettings = {
   ...enSettingsExternalImportMcp,
   ...enSettingsPrivacyReceipt,
   ...enSettingsMeeting,
+  ...enSettingsMemoryTidy,
 };

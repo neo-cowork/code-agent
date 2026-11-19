@@ -22,6 +22,18 @@ export const CRON_EVENT_TRIGGER = {
   DEFAULT_MIN_RUN_INTERVAL_SEC: 60,
   /** 两次 run 的最小间隔下限（秒）：再小的配置也被抬到这里，绝不放低。 */
   MIN_MIN_RUN_INTERVAL_SEC: 30,
+  /** 每个事件自动化滚动一小时内最多启动的 run 数缺省。 */
+  DEFAULT_MAX_RUNS_PER_HOUR: 20,
+  /** 每小时 run 数上限的可调范围。 */
+  MIN_MAX_RUNS_PER_HOUR: 1,
+  MAX_MAX_RUNS_PER_HOUR: 60,
+  /** 滚动窗口长度（毫秒）。 */
+  RUN_CAP_WINDOW_MS: 3_600_000,
+  /** 预筛一句话的最大长度（字符）。 */
+  MAX_PREFILTER_CHARS: 200,
+  /** 预筛调用的输出 token 上限与超时。 */
+  PREFILTER_MAX_TOKENS: 800,
+  PREFILTER_TIMEOUT_MS: 20_000,
   /** mail 源轮询间隔缺省（秒）。 */
   DEFAULT_POLL_INTERVAL_SEC: 60,
   /** mail 源轮询间隔下限（秒）：再小的配置也被抬到这里。 */

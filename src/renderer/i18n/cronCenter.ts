@@ -4,7 +4,7 @@ import { cronCloudEn, cronCloudZh } from './cronCloud'; import { cronRoutineRest
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels'; import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
-import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied'; import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied'; import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome'; import { cronEventLimitsEn, cronEventLimitsZh } from './cronEventLimits';
 import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
@@ -15,7 +15,7 @@ import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCop
 export const cronCenterZh = {
   ...automationPresentationZh,
   cronCenter: {
-    ...cronEditorChromeZh,
+    ...cronEditorChromeZh, ...cronEventLimitsZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
     ...parkedApprovalInboxZh,
@@ -545,7 +545,7 @@ export const cronCenterZh = {
 export const cronCenterEn: typeof cronCenterZh = {
   ...automationPresentationEn,
   cronCenter: {
-    ...cronEditorChromeEn,
+    ...cronEditorChromeEn, ...cronEventLimitsEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
     ...parkedApprovalInboxEn,

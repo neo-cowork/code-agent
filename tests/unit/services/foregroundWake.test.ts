@@ -9,8 +9,24 @@ import { WAKE_NOOP_TOOL_NAME } from '../../../src/shared/constants/agent';
 import { getSessionCommandCenterBrainContextForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
 import * as brain from '../../../src/host/app/sessionCommandCenterBrain';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { logger } from '../../../src/host/services/infra/logger';
 import { narrowToolNamesByRunPolicy } from '../../../src/host/tools/runToolPolicy';
+
+// N-FIX-BG-WAKE-TURN-KEEPS-EDIT-WRITE：隐藏唤醒轮（无用户消息）不得携带的写入/生成/派发面
+const WAKE_BANNED_TOOL_NAMES = [
+  'Edit',
+  'Write',
+  'DocEdit',
+  'docx_generate',
+  'excel_generate',
+  'ExcelAutomate',
+  'mail_draft',
+  'schedule_task',
+  'delegate_session',
+  'delegate_task',
+  'spawn_agent',
+] as const;
 
 const resolverState = vi.hoisted(() => ({ getDefinition: vi.fn(), execute: vi.fn() }));
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
@@ -139,7 +155,7 @@ describe('foreground task-result wake', () => {
     stateChangeListener = undefined;
   });
 
-  it.each(['completed', 'failed'] as const)('wakes for %s with hidden input and the foreground brain tool surface', async (status) => {
+  it.each(['completed', 'failed'] as const)('wakes for %s with hidden input, a read-only tool face and no foreground brain block', async (status) => {
     const wake = createForegroundWake(dependencies());
 
     await wake(task(), status);
@@ -156,11 +172,69 @@ describe('foreground task-result wake', () => {
       maxIterations: 4,
     });
     expect(options.historyVisibility).toBeUndefined();
-    expect(options.allowedToolNames).toContain(WAKE_NOOP_TOOL_NAME);
+    // N-FIX-BG-WAKE-TURN-KEEPS-EDIT-WRITE：无用户消息的唤醒轮是正向白名单——前台基面自带的
+    // Write/Edit（以及任何未来按 prompt 进面的写入/生成/派发工具）必须被滤掉
+    for (const banned of WAKE_BANNED_TOOL_NAMES) {
+      expect(options.allowedToolNames).not.toContain(banned);
+    }
+    for (const allowed of ['Read', 'Glob', 'Grep', 'ListDirectory', 'task_status', 'cancel_task', 'steer_task', 'AskUserQuestion', WAKE_NOOP_TOOL_NAME]) {
+      expect(options.allowedToolNames).toContain(allowed);
+    }
     expect(options.turnSystemContext?.join('\n')).toContain('<background_task_hidden_wake>');
     expect(options.turnSystemContext?.join('\n')).toContain(`只调用 ${WAKE_NOOP_TOOL_NAME}`);
-    expect(options.turnSystemContext).toContain(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    // 前台 brain 块（教模型 Edit/Write/delegate_task）不再进唤醒轮，契约与只读工具面一致
+    expect(options.turnSystemContext).not.toContain(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    expect(options.turnSystemContext?.join('\n')).not.toContain('<session_command_center>');
+    expect(options.turnSystemContext?.join('\n')).not.toContain('Edit 或 Write');
+    expect(options.turnSystemContext?.join('\n')).toContain('Read/Grep/ListDirectory');
     expect(manager.setSessionContext).toHaveBeenCalledWith('session-a', session.messages);
+  });
+
+  // 正常前台轮的工具面必须原样：点名 docx/xlsx 的 prompt 仍拿到 Edit/Write/生成工具；
+  // 同一套带写入工具的面喂进唤醒轮（模拟未来调用方把 prompt 传进 brain）只剩白名单。
+  it('keeps office-deliverable foreground turns unchanged while the wake face filters their write tools', async () => {
+    const officePrompt = 'write report.docx and summary.xlsx for me';
+    const foreground = brain.withSessionCommandCenterBrain({ mode: 'normal' }, officePrompt);
+    for (const name of ['Edit', 'Write', 'docx_generate', 'excel_generate', 'DocEdit']) {
+      expect(foreground.allowedToolNames).toContain(name);
+    }
+
+    const buildBrain = vi.spyOn(brain, 'withSessionCommandCenterBrain').mockReturnValueOnce(foreground);
+    try {
+      await createForegroundWake(dependencies())(task(), 'completed');
+      const allowed = sendMessage.mock.calls[0][2].allowedToolNames;
+      for (const banned of WAKE_BANNED_TOOL_NAMES) {
+        expect(allowed).not.toContain(banned);
+      }
+      expect(allowed).toContain('Read');
+      expect(allowed).toContain(WAKE_NOOP_TOOL_NAME);
+      expect(sendMessage.mock.calls[0][2].turnSystemContext).not.toContain(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    } finally {
+      buildBrain.mockRestore();
+    }
+  });
+
+  // 注册表侧注入：给前台基面塞一个带 allowInTextForeground 的写入工具，正常前台轮拿得到、唤醒轮必须滤掉
+  it('filters a write tool injected into the foreground registry base set', async () => {
+    const registry = getProtocolRegistry();
+    registry.register({
+      name: 'wake_write_probe',
+      description: 'synthetic write tool used only by this test',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      outputSchema: { type: 'string' },
+      category: 'fs',
+      permissionLevel: 'write',
+      readOnly: false,
+      allowInTextForeground: true,
+    }, () => Promise.reject(new Error('probe tool never executes')));
+    try {
+      const foreground = brain.withSessionCommandCenterBrain({ mode: 'normal' }, '');
+      expect(foreground.allowedToolNames).toContain('wake_write_probe');
+      await createForegroundWake(dependencies())(task(), 'completed');
+      expect(sendMessage.mock.calls[0][2].allowedToolNames).not.toContain('wake_write_probe');
+    } finally {
+      registry.unregister('wake_write_probe');
+    }
   });
 
   it('does not wake a cancelled task', async () => {

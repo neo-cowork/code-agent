@@ -66,7 +66,7 @@ vi.mock('../../../../src/host/services/capabilities/capabilityCenterService', ()
 }));
 vi.mock('../../../../src/host/task', () => ({
   getTaskManager: () => ({
-    getOrCreateCurrentOrchestrator: () => ({ sendMessage: state.send, cancel: state.cancel }),
+    getOrCreateCurrentOrchestrator: () => ({ sendMessage: state.send, cancel: state.cancel, setExecutionTopology: vi.fn() }),
     setWorkingDirectory: vi.fn(), cleanup: vi.fn(),
   }),
 }));

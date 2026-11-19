@@ -18,7 +18,7 @@ const harness = vi.hoisted(() => {
     archiveSession: vi.fn(),
     updateMessage: vi.fn(),
   };
-  const mockOrchestrator = { sendMessage: vi.fn() };
+  const mockOrchestrator = { sendMessage: vi.fn(), setExecutionTopology: vi.fn() };
   return {
     configDir: { dir: '' },
     mockSessionManager,
