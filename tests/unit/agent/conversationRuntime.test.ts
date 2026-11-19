@@ -1482,20 +1482,20 @@ describe('ConversationRuntime', () => {
         vi.mocked(buildSkillInvocationContext).mockReset();
       });
 
-      it('foreground run keeps the task-brief-builder boundary (Bash stays outside it)', async () => {
+      it('foreground run with a hand-written "scope" message keeps the task-brief-builder boundary (Bash stays outside it)', async () => {
         await useRealBuiltinResolution();
-        const prompt = buildDelegatedTaskPrompt('open example.com and read the heading');
-        await runtime.initializeRun(prompt);
+        await runtime.initializeRun('help me scope this task before writing code');
         expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder', matchKind: 'alias' });
         expect(ctx.turn.skillToolBoundary?.skillName).toBe('task-brief-builder');
         expect(ctx.turn.skillToolBoundary?.allowedTools).not.toContain('Bash');
       });
 
-      it('delegated (auxiliary) run with the same text gets no skill boundary but keeps skill context', async () => {
+      it('delegated (auxiliary) run with the delegated prompt gets neither skill context nor boundary', async () => {
         await useRealBuiltinResolution();
         ctx.auxiliaryRun = true;
         await runtime.initializeRun(buildDelegatedTaskPrompt('open example.com and read the heading'));
-        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'task-brief-builder' });
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+        expect(ctx.turn.activeSkillContextBlock).toBeUndefined();
         expect(ctx.turn.skillToolBoundary).toBeUndefined();
       });
 
@@ -1508,6 +1508,16 @@ describe('ConversationRuntime', () => {
           expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: name, matchKind: 'alias' });
           expect(ctx.turn.skillToolBoundary).toMatchObject({ skillName: name, strict: true });
         }
+      });
+
+      it('delegated (auxiliary) run drops an alias word arriving only inside the machine-built envelope', async () => {
+        await useRealBuiltinResolution();
+        ctx.auxiliaryRun = true;
+        await runtime.initializeRun(
+          buildDelegatedTaskPrompt('open example.com and read the heading', 'dream about this while it runs'),
+        );
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+        expect(ctx.turn.skillToolBoundary).toBeUndefined();
       });
 
       it('delegated run still honours an explicit /slash skill boundary', async () => {

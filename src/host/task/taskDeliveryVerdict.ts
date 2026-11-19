@@ -30,23 +30,37 @@ export function getTaskDeliveryFailure(
     for (const call of message.toolCalls ?? []) toolNamesByCallId.set(call.id, call.name);
   }
 
-  let outputSucceeded = false;
-  let outputFailed = false;
-  let outputDeniedByUser = false;
+  let writeSucceeded = false;
+  let executeSucceeded = false;
+  let writeFailed = false;
+  let writeDeniedByUser = false;
+  let executeDeniedByUser = false;
   const resolver = getToolResolver();
   for (const message of messages) {
     for (const result of message.toolResults ?? []) {
       const toolName = toolNamesByCallId.get(result.toolCallId);
-      if (!toolName || resolver.getDefinition(toolName)?.permissionLevel !== 'write') continue;
-      if (result.success) outputSucceeded = true;
-      else {
-        outputFailed = true;
-        const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
-        if (hostReason?.code === HostReasonCode.PermissionDeniedByUser) outputDeniedByUser = true;
+      if (!toolName) continue;
+      const permissionLevel = resolver.getDefinition(toolName)?.permissionLevel;
+      const isWrite = permissionLevel === 'write';
+      if (!isWrite && permissionLevel !== 'execute') continue;
+      if (result.success) {
+        if (isWrite) writeSucceeded = true;
+        else executeSucceeded = true;
+        continue;
       }
+      const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
+      const deniedByUser = hostReason?.code === HostReasonCode.PermissionDeniedByUser;
+      if (isWrite) {
+        writeFailed = true;
+        if (deniedByUser) writeDeniedByUser = true;
+      } else if (deniedByUser) executeDeniedByUser = true;
     }
   }
 
-  if (!outputFailed || outputSucceeded || deliverableArtifactCount > 0) return undefined;
-  return outputDeniedByUser ? 'user_denied' : 'write_failed';
+  if (deliverableArtifactCount > 0 || writeSucceeded) return undefined;
+  // 写失败语义与原来一致：只有成功的写（或交付产物）能救；执行类成功不救。
+  if (writeFailed) return writeDeniedByUser ? 'user_denied' : 'write_failed';
+  // 仅被拒的执行类工具：之后任何成功的执行调用都算任务有进展。
+  if (executeDeniedByUser && !executeSucceeded) return 'user_denied';
+  return undefined;
 }
