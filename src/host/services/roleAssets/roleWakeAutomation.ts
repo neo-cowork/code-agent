@@ -4,6 +4,7 @@ import type { RecordAutomationEventInput } from '../sessionAutomation/sessionAut
 import { createLogger } from '../infra/logger';
 import { getHostUiLocale } from '../../config/hostUiLocale';
 import { roleWakeNextStageTitle } from '../../../shared/i18n/roleWakeNextStage';
+import { UnattendedBudgetUsedUpError } from './unattendedBudgetGate';
 import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('RoleProactivity');
@@ -62,7 +63,8 @@ export async function withRoleWakeAutomation(input: {
   } catch (error) {
     await recordEvent({
       automationId, event: 'failed', status: 'failed', recordStatus: 'failed',
-      resultSessionId: input.sessionId, error: String(error), lastRunAt: Date.now(),
+      resultSessionId: input.sessionId,
+      error: error instanceof UnattendedBudgetUsedUpError ? error.message : String(error), lastRunAt: Date.now(),
     });
     throw error;
   }
