@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ComputerSurfaceState } from '../../../src/renderer/services/nativeDesktop';
+import { localOpsEn, localOpsZh } from '../../../src/renderer/i18n/localOps';
 import {
   buildComputerUseTargets,
   buildRecentComputerUseAction,
@@ -95,6 +96,7 @@ describe('computerUseWorkbench', () => {
 
   it('explains provider, permission, foreground, and AX quality degradation', () => {
     const explanations = describeComputerUseFailures({
+      copy: localOpsZh.localOps.computerUse,
       nativeAvailable: false,
       desktopProviderError: 'Computer Surface state unavailable',
       permissions: {
@@ -167,6 +169,13 @@ describe('computerUseWorkbench', () => {
       'elements-error',
       'no-targets',
     ]));
+    // 权限名走 i18n：zh 文案是「辅助功能 / 屏幕录制」，不再是英文系统名
+    expect(explanations.find((item) => item.id === 'screenCapture:denied')?.title)
+      .toContain('屏幕录制');
+    expect(explanations.find((item) => item.id === 'accessibility:wrong_bundle_id')?.title)
+      .toContain('辅助功能');
+    expect(explanations.find((item) => item.id === 'automation-per-app')?.title)
+      .toContain('自动化');
     expect(explanations.find((item) => item.id === 'failure:ax_tree_poor')?.detail)
       .toContain('Electron');
     // 默认视图的文案不得带工程词；原始报错只放进「诊断」区
@@ -174,5 +183,33 @@ describe('computerUseWorkbench', () => {
     expect(visible).not.toMatch(/provider|axPath|AX candidates|AX tree/i);
     expect(visible).not.toContain('AX unavailable');
     expect(visible).not.toContain('Computer Surface state unavailable');
+    // 原生英文 detail 不再上默认卡，一律本地化提示
+    expect(visible).not.toContain('Screen Recording permission not granted.');
+    expect(visible).not.toContain('Authorized production bundle only.');
+    expect(visible).not.toMatch(/Accessibility|Screen Recording|Automation/);
+  });
+
+  it('builds every failure card from the passed copy: en output carries no Chinese', () => {
+    const explanations = describeComputerUseFailures({
+      copy: localOpsEn.localOps.computerUse,
+      nativeAvailable: false,
+      desktopProviderError: 'Computer Surface state unavailable',
+      permissions: null,
+      surface: makeSurface({ failureKind: 'permission_denied', blockedReason: 'blocked by host' }),
+      targets: [],
+      elementsError: 'AX unavailable',
+      observeError: 'observe failed',
+      screenCaptureOptional: true,
+    });
+
+    const visible = explanations.map((item) => `${item.title} ${item.detail}`).join('\n');
+    expect(visible).toContain('Screen Recording is optional');
+    expect(visible).toContain('Accessibility not probed yet');
+    expect(visible).toContain('Automation is granted per app');
+    // en 输出不得混入 CJK；zh 权限名（辅助功能/屏幕录制）不得出现在 en 卡上
+    expect(visible).not.toMatch(/[㐀-䶿一-鿿豈-﫿]/u);
+    expect(visible).not.toContain('辅助功能');
+    // 权限状态映射保持：permission_denied 是 blocked 色调
+    expect(explanations.find((item) => item.id === 'failure:permission_denied')?.tone).toBe('blocked');
   });
 });
