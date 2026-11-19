@@ -66,7 +66,11 @@ vi.mock('../../../src/renderer/components/features/chat/ChatInput', () => ({
   }) => {
     chatInputStub.lastProps = { sessionless: props.sessionless, disabled: props.disabled };
     const [text, setText] = React.useState('');
-    const submit = () => { void props.onSend({ content: text, ...chatInputStub.extras }); };
+    const submit = () => {
+      void Promise.resolve(props.onSend({ content: text, ...chatInputStub.extras })).then((accepted) => {
+        if (accepted) setText('');
+      });
+    };
     return (
       <div data-testid="mock-chat-input">
         <textarea
@@ -143,6 +147,7 @@ const projectFixture = {
   createdAt: 1,
   updatedAt: 2,
   activeTopicCount: 3,
+  visibleSessionCount: 3,
   lastActivityAt: Date.now() - 5 * 60_000,
 };
 
@@ -819,7 +824,11 @@ describe('ProjectComposer 底部输入框', () => {
     fireEvent.click(screen.getByTestId('project-space-composer-send'));
 
     await waitFor(() =>
-      expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', { workingDirectory: '/tmp/ws' }),
+      expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', {
+        workingDirectory: '/tmp/ws',
+        projectId: PROJECT_ID,
+        preserveSecondaryPages: true,
+      }),
     );
     // 落地即进行中态：切进会话那一刻用户消息已在时间线上
     await waitFor(() => {
@@ -866,6 +875,27 @@ describe('ProjectComposer 底部输入框', () => {
     await waitFor(() => expect(createSessionMock).toHaveBeenCalled());
     expect(useProjectChatSeedStore.getState().pendingProjectChatSeed).toBeNull();
     expect(useSessionStore.getState().messages).toHaveLength(0);
+    expect((input as HTMLTextAreaElement).value).toBe('整理周报');
+  });
+
+  it('无工作目录的空间发送时把 projectId 交给 createSession', async () => {
+    const noWorkspace = { ...projectFixture, workspacePath: null, workspaceKey: null };
+    vi.mocked(projectClient.listProjectsWithActivity).mockResolvedValue([noWorkspace] as never);
+    vi.mocked(projectClient.getProjectDetail).mockResolvedValue({
+      ...detailFixture,
+      project: { ...noWorkspace },
+    } as never);
+    await enterSpaceView();
+    const input = await screen.findByTestId('project-space-composer-input');
+    fireEvent.change(input, { target: { value: '整理周报' } });
+    fireEvent.click(screen.getByTestId('project-space-composer-send'));
+    await waitFor(() =>
+      expect(createSessionMock).toHaveBeenCalledWith('整理周报', {
+        workingDirectory: undefined,
+        projectId: PROJECT_ID,
+        preserveSecondaryPages: true,
+      }),
+    );
   });
 
   // ---- FB-1077：sessionless 期选中的未挂载 skill 在发送时落进新会话 ----
