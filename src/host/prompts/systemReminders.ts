@@ -468,12 +468,14 @@ const OFFICE_FILE_OPERATION_RE = new RegExp([
  * 两道防误判：① 「后台」作名词（商家后台/管理后台/用后台导出的数据）不算——正则只收「在/放到…后台」
  * 这类动作介词和「后台任务/后台跑」等，且「后台管理/系统/页面…」排除；② 命中前同一分句里有否定
  * （不要在后台跑 / don't run it in the background）不算。
- * ③ 「别」只认祈使（别在/请别放/千万别）：「别」打头或收尾的复合词里的别不是否定——裸「别」会把
- * 「分别在后台跑」「特别说明：请在后台任务里做」误判成否定，让模型编出「没有后台槽位」转前台
- * （N-FIX-BG-NEGATION-RE-BIE-FALSE-NEGATIVE）。收尾复合词（分别/特别/差别/区别/个别/类别/级别/
- * 派别/告别/识别/鉴别/判别/辨别/送别/诀别/惜别/阔别/暂别/性别/国别/种别/分门别类）靠前置字符排除，
- * 打头复合词（别人/别的/别处/别名/别称/别国/别墅/别致/别论）靠后置字符排除；「别开（灯）」「别提」
- * 「别说」是祈使，不进排除表。
+ * ③ 「别」只认祈使（别在/请别放/千万别）：复合词里的「别」不是否定——裸「别」会把「分别在后台跑」
+ * 「特别说明：请在后台任务里做」误判成否定，让模型编出「没有后台槽位」转前台
+ * （N-FIX-BG-NEGATION-RE-BIE-FALSE-NEGATIVE）。做法是先把「别」复合词**整词**从分句里摘掉
+ * （BIE_COMPOUND_WORDS_RE），剩下的裸「别」再按祈使计——不按前后单字排除：单字会把「这份报告
+ * 别放后台」（报告+别）误组出「告别」、「这个别放后台」误组出「个别」、「别处理成后台任务」误当
+ * 「别处」，真否定被放走（ai-review r1）。消歧前词（报告/部分/这个/各种/发送/属性/知识/升级/部门…）
+ * 列在同一张表里：左起扫描先吃掉它们，紧随的祈使「别」就不会被当成复合词尾巴摘掉；「别开（灯）」
+ * 「别提」「别说」「别处理/别处于」是祈使，不进表。
  */
 const EXPLICIT_BACKGROUND_REQUEST_RE = new RegExp([
   String.raw`(?:在|放到?|转到?|丢到?|扔到?)\s*后台(?!管理|系统|页面|界面|登录|账号|入口|数据)`,
@@ -481,12 +483,22 @@ const EXPLICIT_BACKGROUND_REQUEST_RE = new RegExp([
   String.raw`\bbackground\s+(?:task|job|agent)s?\b`,
   String.raw`\b(?:in|to|as)\s+(?:the\s+|a\s+)?background\b`,
 ].join('|'), 'gi');
-const BACKGROUND_NEGATION_RE = /不要|(?<![分特差区个类级派告识鉴判辨送诀惜阔暂性国种门])别(?!人|的|处|名|称|国|墅|致|论)|不用|不必|无需|不需要|不想|不许|禁止|勿|\b(?:don'?t|do not|never|not|no need to|without|instead of)\b/i;
+const BACKGROUND_NEGATION_RE = /不要|别|不用|不必|无需|不需要|不想|不许|禁止|勿|\b(?:don'?t|do not|never|not|no need to|without|instead of)\b/i;
+
+/**
+ * 「别」复合词整词表 + 消歧前词（r1）。消歧前词都以复合词首字收尾（报告→告别、部分→分别、
+ * 这个→个别、各种→种别、发送→送别、属性→性别、知识→识别、升级→级别…），列进来只为在左起
+ * 扫描中先被吃掉，防止「报告别」「部分别」这类词尾字+祈使别被误组词摘走。打头复合词的窄化：
+ * 「别处」不吃「别处理/处于/处置」，「别名」不吃「别名单」，「别致」不吃「别致函/致电/致谢」。
+ * 替换占位符「□」隔开两侧，防止摘词后跨洞拼出新的否定词。
+ */
+const BIE_COMPOUND_WORDS_RE = /分门别类|分别|特别|差别|区别|个别|类别|级别|派别|告别|识别|鉴别|判别|辨别|送别|诀别|惜别|阔别|暂别|性别|国别|种别|别人|别的|别处(?![理于置])|别名(?![单])|别称|别国|别墅|别致(?![函电谢])|别论|报告|广告|部分|这个|那个|哪个|某个|每个|各个|这种|那种|各种|某种|每种|分类|归类|种类|地区|校区|街区|社区|误差|时差|温差|偏差|升级|等级|降级|知识|常识|学识|标识|发送|属性|个性|中国|美国|部门|专门/g;
 
 function hasExplicitBackgroundRequest(message: string): boolean {
   for (const m of message.matchAll(EXPLICIT_BACKGROUND_REQUEST_RE)) {
     const clause = message.slice(0, m.index).split(/[，,。.;；!！?？\n]/).pop() ?? '';
-    if (!BACKGROUND_NEGATION_RE.test(clause)) return true;
+    const bieScrubbed = clause.replace(BIE_COMPOUND_WORDS_RE, '□');
+    if (!BACKGROUND_NEGATION_RE.test(bieScrubbed)) return true;
   }
   return false;
 }
