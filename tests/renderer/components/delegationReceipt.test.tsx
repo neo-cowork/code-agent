@@ -179,9 +179,9 @@ afterEach(cleanup);
 
 describe('delegation receipt', () => {
   it.each([
-    ['Extract and summarize contract.pdf', '助手没有完成', false],
-    ['提炼合同关键条款', '提炼合同关键条款没有完成', true],
-    ['deepwiki', 'deepwiki没有完成', true],
+    ['Extract and summarize contract.pdf', '助手 · 没有完成', false],
+    ['提炼合同关键条款', '提炼合同关键条款 · 没有完成', true],
+    ['deepwiki', 'deepwiki · 没有完成', true],
   ])('zh failed headline for task title %s is %s and uses the sans font', (title, headline, verbatim) => {
     mocks.tasks = [task({ title, status: 'failed' })];
     const { getByTestId, container } = renderCall();
@@ -203,8 +203,8 @@ describe('delegation receipt', () => {
     const view = renderCall();
 
     expect(view.getByTestId('delegation-activity').textContent).toContain('读取了 /repo/release.md');
-    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单正在处理');
-    expect(view.getByText('正在处理')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单 · 正在处理');
+    expect(view.getByText('· 正在处理')).toBeTruthy();
   });
 
   it('keeps a completed receipt with title, step count and clickable output refs', () => {
@@ -226,7 +226,7 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByText('已完成')).toBeTruthy();
+    expect(view.getByText('· 已完成')).toBeTruthy();
     expect(view.getByText('核对发布清单')).toBeTruthy();
     expect(view.getByText('做了 2 步')).toBeTruthy();
     fireEvent.click(view.getByText('report.md'));
@@ -240,8 +240,8 @@ describe('delegation receipt', () => {
     })];
     const view = renderCall();
 
-    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单没有完成');
-    expect(view.getByText('没有完成')).toBeTruthy();
+    expect(view.getByTestId('delegation-headline').textContent).toBe('核对发布清单 · 没有完成');
+    expect(view.getByText('· 没有完成')).toBeTruthy();
     expect(view.getByTestId('delegation-failure').textContent).toBe('远端服务超时');
   });
 
@@ -320,7 +320,7 @@ describe('delegation receipt', () => {
     };
     view.rerender(<ToolCallDisplay toolCall={spawnCall} index={0} total={1} />);
     const receipt = view.getByTestId('delegation-receipt');
-    expect(view.getByText('已完成')).toBeTruthy();
+    expect(view.getByText('· 已完成')).toBeTruthy();
     expect(receipt.querySelectorAll('[data-testid="delegation-branch"]')).toHaveLength(1);
     expect(view.getByTestId('delegation-branch').textContent).toBe('改动在分支 agent/launch-polish，合并后才会生效');
     expect(receipt.textContent).not.toContain('/tmp/worktree/launch');
