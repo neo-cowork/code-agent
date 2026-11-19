@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, ChevronRight, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronRight, Loader2, Pause } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import type { RendererSurfaceSessionProjectionV1 } from '../../../utils/surfaceExecutionProjection';
 import type { SurfaceExecutionTranslationsV1 } from '../../../i18n/surfaceExecution';
@@ -9,6 +9,34 @@ import { surfaceTargetDomain, surfaceTargetLabel } from './surfaceExecutionPrese
 type SurfaceRunState = RendererSurfaceSessionProjectionV1['session']['state'];
 
 const SPINNING_STATES: ReadonlySet<SurfaceRunState> = new Set(['preparing', 'running', 'stopping']);
+
+function compactDetail(
+  state: SurfaceRunState,
+  copy: SurfaceExecutionTranslationsV1,
+  target: string,
+): string {
+  if (state === 'completed') return copy.compact.completed;
+  if (state === 'failed') return copy.compact.failed;
+  if (state === 'paused') return copy.compact.paused;
+  if (SPINNING_STATES.has(state)) return formatSurfaceExecutionCopy(copy.compact.active, { target });
+  return copy.state[state];
+}
+
+function CompactMarker({ state }: { state: SurfaceRunState }) {
+  if (state === 'completed') {
+    return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />;
+  }
+  if (state === 'failed') {
+    return <AlertCircle className="h-3.5 w-3.5 shrink-0 text-badge-danger" aria-hidden />;
+  }
+  if (state === 'paused') {
+    return <Pause className="h-3.5 w-3.5 shrink-0 text-badge-warning" aria-hidden />;
+  }
+  if (SPINNING_STATES.has(state)) {
+    return <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" aria-hidden />;
+  }
+  return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mark-warning" aria-hidden />;
+}
 
 interface SurfaceExecutionCompactBarProps {
   session: RendererSurfaceSessionProjectionV1;
@@ -25,9 +53,7 @@ export function SurfaceExecutionCompactBar({ session, copy }: SurfaceExecutionCo
   const state = session.session.state;
   const target = surfaceTargetDomain(session.session.activeTarget)
     ?? surfaceTargetLabel(session.session.activeTarget, copy);
-  const detail = state === 'completed'
-    ? copy.compact.completed
-    : formatSurfaceExecutionCopy(copy.compact.active, { target });
+  const detail = compactDetail(state, copy, target);
   const label = `${copy.surface[session.session.surface]} · ${detail}`;
 
   return (
@@ -41,13 +67,7 @@ export function SurfaceExecutionCompactBar({ session, copy }: SurfaceExecutionCo
       onClick={() => openWorkbenchTab('browser', { source: 'user' })}
       className="flex w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-left text-xs text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
     >
-      {state === 'completed' ? (
-        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-badge-success" aria-hidden />
-      ) : SPINNING_STATES.has(state) ? (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-badge-success" aria-hidden />
-      ) : (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mark-warning" aria-hidden />
-      )}
+      <CompactMarker state={state} />
       <span className="min-w-0 truncate">{label}</span>
       <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-zinc-500" aria-hidden />
     </button>
