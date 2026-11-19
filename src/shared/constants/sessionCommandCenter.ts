@@ -195,6 +195,21 @@ export function formatSessionTaskUserDenied(locale: SessionTaskResultStatusWordL
   return SESSION_TASK_USER_DENIED_MESSAGES[locale];
 }
 
+/** True when a cancelled task's detail is the user-declined sentence (either locale). */
+export function isSessionTaskUserDeniedDetail(detail: string | undefined): boolean {
+  return detail === SESSION_TASK_USER_DENIED_MESSAGES.zh || detail === SESSION_TASK_USER_DENIED_MESSAGES.en;
+}
+
+const SESSION_TASK_CANCELLED_CLOSING_MESSAGES = {
+  zh: '这个后台任务已取消。',
+  en: 'This background task was cancelled.',
+} as const;
+
+/** Closing line shown under a cancelled card so the chat body agrees with the card status. */
+export function formatSessionTaskCancelledClosing(locale: SessionTaskResultStatusWordLocale): string {
+  return SESSION_TASK_CANCELLED_CLOSING_MESSAGES[locale];
+}
+
 export type SessionTaskDeliveryFailure = keyof typeof SESSION_TASK_DELIVERY_FAILURE_MESSAGES.zh;
 
 export function formatSessionTaskDeliveryFailure(

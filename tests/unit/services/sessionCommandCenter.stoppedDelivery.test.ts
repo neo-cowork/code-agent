@@ -6,6 +6,7 @@ import type { ConfigService } from '../../../src/host/services/core/configServic
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
+import { HostReasonCode } from '../../../src/shared/contract/permission';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
@@ -13,10 +14,11 @@ const h = vi.hoisted(() => ({
   manager: undefined as unknown,
   db: undefined as unknown as Database.Database,
   repository: undefined as unknown as SessionRepository,
-  variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed' | 'markup_only',
+  variant: 'step_cap' as 'step_cap' | 'error' | 'no_conclusion' | 'completed' | 'markup_only' | 'hang' | 'denied',
   events: [] as AgentEvent[],
   pageOutput: '',
   conclusion: '',
+  release: undefined as undefined | (() => void),
 }));
 const storage = {
   addMessageToSession: async (sessionId: string, message: Message) => {
@@ -39,12 +41,22 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
     constructor(private readonly options: { onEvent: (event: AgentEvent) => Promise<void> }) {}
     setSessionId() {}
     setWorkspaceScopeAuthority() {}
+    async cancel() { h.release?.(); }
     getMessages() {
       if (h.variant === 'no_conclusion') return [];
+      if (h.variant === 'denied') return [
+        { id: 'a-tools', role: 'assistant', content: '', timestamp: 1, toolCalls: [{ id: 'w1', name: 'Write', arguments: {} }] },
+        { id: 't-res', role: 'tool', content: '', timestamp: 2, toolResults: [{
+          toolCallId: 'w1', success: false, error: 'denied', metadata: { hostReason: { code: HostReasonCode.PermissionDeniedByUser } },
+        }] },
+        { id: 'a-final', role: 'assistant', content: '写入被拒绝。', timestamp: 3 },
+      ];
       if (h.variant === 'markup_only') return [{ role: 'assistant', content: h.conclusion }];
       return [{ role: 'assistant', content: '已查看首页。' }];
     }
     async sendMessage() {
+      if (h.variant === 'hang') await new Promise<void>((resolve) => { h.release = resolve; });
+      if (h.variant === 'hang' || h.variant === 'denied') return;
       await this.options.onEvent({ type: 'tool_call_start', data: {
         id: 'browser-1', name: 'Browser', arguments: { action: 'navigate', url: 'https://baike.baidu.com/item/%E9%B9%88%E9%B9%95' },
       } } as AgentEvent);
@@ -191,6 +203,39 @@ describe('background stop delivery through SessionCommandCenter + TaskManager pe
     } finally {
       write.mockRestore();
     }
+  });
+
+  it('a manual cancel closes the chat with one cancelled line and does not wake the model', async () => {
+    h.variant = 'hang';
+    const result = await center.spawn({
+      sessionId: 'session-stop', title: '百科摘要', shortName: '百科摘要', laneKey: 'baike', submissionKey: 'baike-cancel',
+      prompt: '在后台打开百度百科', options: { mode: 'normal', maxIterations: 3 },
+      workspaceScope: createWorkspaceScope('project-stop', [{ sourceId: 'root', path: '/tmp/stop-project', role: 'primary', access: 'read_write' }]),
+    });
+    if (result.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    await vi.waitFor(() => expect(h.release).toBeDefined());
+    await center.cancel('session-stop', result.task.id);
+    await vi.waitFor(() => expect(rows().some((m) => m.metadata?.backgroundTaskStopped)).toBe(true));
+    const notes = rows().filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      id: `background-task-stopped-${result.task.id}`, role: 'system',
+      content: '「百科摘要」：这个后台任务已取消。',
+      metadata: { backgroundTaskStopped: { taskId: result.task.id, kind: 'cancelled' } },
+    });
+    expect(rows().find((m) => m.metadata?.backgroundTaskResult)?.content).toContain('已取消');
+    expect(wakeForegroundBrain).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'cancelled' }), 'cancelled');
+    console.log(`cancelled: ${JSON.stringify(notes[0])}`);
+  });
+
+  it('a user-declined task closes the chat with the declined sentence', async () => {
+    const messages = await stop('denied', false);
+    const notes = messages.filter((m) => m.metadata?.backgroundTaskStopped);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].content).toBe('「百科摘要」：你拒绝了这一步，任务已停止。');
+    expect(notes[0].metadata?.backgroundTaskStopped).toMatchObject({ kind: 'cancelled' });
+    expect(messages.find((m) => m.metadata?.backgroundTaskResult)?.metadata?.backgroundTaskResult).toMatchObject({ status: 'cancelled' });
+    console.log(`declined: ${JSON.stringify(notes[0])}`);
   });
 
   it('does not announce a normal completion as stopped', async () => {
