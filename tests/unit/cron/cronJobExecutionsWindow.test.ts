@@ -116,8 +116,11 @@ describe('getJobExecutions 短缓存不能截断历史（N-CRON-RUN-LEDGER-VISIB
     expect(history).toHaveLength(3);
     expect(history.map((row) => row.id)).toEqual(['e7', 'e6', 'e1']);
     expect(history.map((row) => row.cost)).toEqual([0.002, 0.0087, 0.0123]);
-    // 历史读取不把库里的旧行灌进内存尾部（连败计数只看本进程推进过的记录）。
-    expect(service.getStats().totalExecutions).toBe(1);
+    // 历史读取不把库里的旧行灌进内存尾部（连败计数只看本进程推进过的记录）：内存仍只有 limit=1 那条。
+    const inMemory = (service as unknown as { executions: Map<string, CronJobExecution[]> }).executions;
+    expect(inMemory.get('job-w1')).toHaveLength(1);
+    // getStats 读 DB 权威窗（N-FIX-CRON-STATS-SUCCESS-RATE-ZERO-CACHE）：3 条库行，不是内存那 1 条。
+    expect(service.getStats().totalExecutions).toBe(3);
   });
 
   it('窗口回库时仍保留只存在于内存的刚结束运行', () => {
@@ -132,6 +135,7 @@ describe('getJobExecutions 短缓存不能截断历史（N-CRON-RUN-LEDGER-VISIB
     const history = service.getJobExecutions('job-w1', 20);
     expect(history.map((row) => row.id)).toEqual(['e7', 'e6', 'e1', 'e-live']);
     expect(history[3]).toBe(live);
-    expect(service.getStats().totalExecutions).toBe(2);
+    // 未落库的 live 行不在 DB 权威窗里：getStats 只数 3 条库行（live 行落库后才计入）。
+    expect(service.getStats().totalExecutions).toBe(3);
   });
 });
