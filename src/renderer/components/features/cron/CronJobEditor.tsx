@@ -317,6 +317,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           accountId: draft.eventAccountId,
           chatId: draft.eventChatId,
           budget: draft.maxRunBudget,
+          prefilter: draft.eventPrefilter,
+          maxRunsPerHour: draft.eventMaxRunsPerHour,
         }, templateLanguage)
         : selectedTemplate.generate(templateValues, templateLanguage);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
@@ -610,6 +612,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           ))}
 
           {selectedTemplate.event ? (
+            <>
             <CronEventScheduleFields
               accountId={draft.eventAccountId}
               chatId={draft.eventChatId}
@@ -622,6 +625,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 return violation ? cc.eventValidation[violation.reason] : null;
               })()}
             />
+            <CronEventLimitFields
+              prefilter={draft.eventPrefilter}
+              maxRunsPerHour={draft.eventMaxRunsPerHour}
+              onPrefilterChange={(value) => setEventField('eventPrefilter', value)}
+              onMaxRunsPerHourChange={(value) => setEventField('eventMaxRunsPerHour', value)}
+            />
+            </>
           ) : (
             <>
               <CronRunsOnSelector

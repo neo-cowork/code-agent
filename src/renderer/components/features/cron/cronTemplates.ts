@@ -350,6 +350,8 @@ const BASE_CRON_TEMPLATES: CronTemplate[] = [
         eventAccountId: v.accountId ?? '',
         eventChatId: v.chatId ?? '',
         maxRunBudget: v.budget?.trim() ? v.budget : String(CRON_EVENT_TRIGGER.DEFAULT_RUN_BUDGET_USD),
+        eventPrefilter: v.prefilter ?? '',
+        eventMaxRunsPerHour: v.maxRunsPerHour ?? '',
         actionType: 'agent',
         agentType: 'default',
         agentPrompt: v.task,
