@@ -148,7 +148,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         ?? state.executionsByJobId[cronTaskId]?.find((execution) => execution.sessionId === session.id);
   });
   const deniedStatus = cronExecution && isPermissionDeniedExecution(cronExecution)
-    ? getLatestExecutionStatus(cronExecution, t.cronCenter)
+    ? getLatestExecutionStatus(cronExecution, t.cronCenter, t.cronWakeCadence)
     : undefined;
   const isUnread = unreadSessionIds.has(session.id);
   const isSelected = currentSessionId === session.id;

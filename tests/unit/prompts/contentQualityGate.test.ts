@@ -292,6 +292,65 @@ describe('单轮 Office 文件交付 — 意图与提醒', () => {
     expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
   });
 
+  it.each([
+    ['zh 分别在后台', '分别在后台把 a.csv 和 b.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 特别在后台', '特别在后台把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 特别说明：请在后台任务里做', '特别说明：请在后台任务里做，把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 差别在后台', '差别在后台跑，把 signups.csv 导出成 Excel 文件 .xlsx'],
+  ])('「别」是复合词一部分（分别/特别/差别）不算否定，仍算要后台：%s', (_label, prompt) => {
+    const features = detectTaskFeatures(prompt);
+    expect(features.isOfficeFileDeliverable).toBe(true);
+    expect(features.isOneTurnFileDeliverable).toBe(false);
+    expect(getSystemReminders(prompt).some((r) => r.includes('不要派发后台任务'))).toBe(false);
+  });
+
+  it.each([
+    ['zh 别在后台跑', '别在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 请别放后台', '请别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不要放到后台', '不要放到后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['en Don\'t run it in the background', "Don't run it in the background, just export signups.csv as an Excel file (.xlsx)"],
+  ])('真否定（别在/请别/不要/don\'t）仍判单轮交付：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
+  it.each([
+    ['zh 不用', '不用在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不必', '不必在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 无需', '无需在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不需要', '不需要在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不想', '不想在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 不许', '不许在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 禁止', '禁止在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 勿', '请勿在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['en never', 'Never run it in the background, just export signups.csv as an Excel file (.xlsx)'],
+    ['en without', 'Export signups.csv as an Excel file (.xlsx) without running it in the background'],
+    ['en instead of', 'Instead of a background task, just export signups.csv as an Excel file (.xlsx)'],
+  ])('其余否定词仍判单轮交付：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
+  it.each([
+    ['zh 这份报告别放后台', '这份报告别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 这个别放后台', '这个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 这种别在后台跑', '这种别在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 这部分别在后台跑', '这部分别在后台跑，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 这个部门别放后台', '这个部门别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 发送别放后台', '发送别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 属性别放后台', '属性别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 别处理成后台任务', '别处理成后台任务，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 别处于后台运行', '别处于后台运行，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 这一个别放后台', '这一个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 整个别放后台', '整个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 警告别放后台', '警告别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 小区别放后台', '小区别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 班级别放后台', '班级别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 人类别放后台', '人类别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 外国别放后台', '外国别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+    ['zh 一个别放后台', '一个别放后台，直接把 signups.csv 导出成 Excel 文件 .xlsx'],
+  ])('词尾字（报告/这个/部分/…）后接祈使别、动词开头（处理/处于）不误组复合词，真否定仍判单轮交付（r1）：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+
   it('同一句里否定在别的分句不影响：「不要问我，在后台导出」仍算要后台', () => {
     expect(detectTaskFeatures('不要问我，在后台把名单导出成 Excel 文件 .xlsx').isOneTurnFileDeliverable).toBe(false);
   });
