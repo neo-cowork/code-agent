@@ -355,6 +355,21 @@ describe('getTextForegroundToolNamesForPrompt — 文件交付扩展', () => {
     }
   });
 
+  it('表格阅读或改写轮把 ExcelAutomate 放进前台面，生成卡与普通轮不放', () => {
+    const readPrompt = '工作区里有一份物业服务合同的 Excel，帮我说明一下这份合同讲了什么。';
+    const revisePrompt = '把这份物业服务合同的 Excel 里的公式改写一下。';
+    const readFace = getTextForegroundToolNamesForPrompt(readPrompt);
+    const reviseFace = getTextForegroundToolNamesForPrompt(revisePrompt);
+    expect(readFace).toContain('ExcelAutomate');
+    expect(reviseFace).toContain('ExcelAutomate');
+    expect(readFace).not.toContain('Bash');
+    expect(reviseFace).not.toContain('Bash');
+    expect(getTextForegroundToolNamesForPrompt(sheetZh)).not.toContain('ExcelAutomate');
+    expect(getTextForegroundToolNamesForPrompt(sheetEn)).not.toContain('ExcelAutomate');
+    expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
   it('非交付轮的前台面保持基础面不变', () => {
     expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
       .toEqual(getTextForegroundToolNames());
