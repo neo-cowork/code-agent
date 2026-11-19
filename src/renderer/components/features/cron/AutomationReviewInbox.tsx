@@ -38,6 +38,7 @@ import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+import { AutomationRoleChip } from './AutomationRoleChip';
 import { folderDisplayName, ParkedArgsDisclosure } from './parkedArgsDisclosure';
 
 const logger = createLogger('AutomationReviewInbox');
@@ -553,6 +554,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-2">
                               <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                              <AutomationRoleChip roleId={record.config?.roleId} />
                               {isMustToday && (
                                 <span
                                   className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"

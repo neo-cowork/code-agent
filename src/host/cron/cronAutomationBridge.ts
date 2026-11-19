@@ -26,6 +26,7 @@ import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { formatCronTimeZoneSuffix } from '../../shared/cronTimeZone';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
+import { cronJobBoundRoleId } from '../../shared/cronRoleBinding';
 import { getDatabase } from '../services/core/databaseService';
 
 /**
@@ -124,12 +125,14 @@ export function buildCronAutomationConfig(definition: CronJobDefinition): Sessio
       ? definition.metadata.handoffPrompt.trim()
       : undefined;
   const nextStage = readAutomationNextStage(definition.metadata?.nextStage);
+  const roleId = cronJobBoundRoleId(definition);
   return {
     createdVia: typeof definition.metadata?.createdVia === 'string' ? definition.metadata.createdVia : 'cron',
     runsOn: definition.runsOn,
     sourceMessageId: typeof definition.metadata?.sourceMessageId === 'string' ? definition.metadata.sourceMessageId : undefined,
     scheduleType: definition.scheduleType,
     actionType: definition.action.type,
+    ...(roleId ? { roleId } : {}),
     ...(handoffPrompt ? { handoffPrompt } : {}),
     ...(nextStage ? { nextStage } : {}),
   };

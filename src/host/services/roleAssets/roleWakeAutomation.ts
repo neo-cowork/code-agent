@@ -41,16 +41,20 @@ export async function withRoleWakeAutomation(input: {
     const result = await run();
     const silent = result.decision === 'silence';
     const goalFailed = result.advanceGoalStatus === 'aborted';
+    // 「建议」要等用户拍板：落 pending_review 并带 config.pendingReview，进待审收件箱；advance/report 不进。
+    const awaitingUser = result.decision === 'suggest' && !goalFailed;
+    const finishedAt = Date.now();
     await recordEvent({
       automationId,
       event: silent ? 'skipped' : result.advanceGoalStatus === 'met' ? 'stage_ready' : 'completed',
       status: silent ? 'skipped' : goalFailed ? 'failed' : 'completed',
-      recordStatus: silent ? 'skipped' : goalFailed ? 'failed' : 'completed',
+      recordStatus: silent ? 'skipped' : goalFailed ? 'failed' : awaitingUser ? 'pending_review' : 'completed',
       resultSessionId: input.sessionId,
       summary: silent ? '巡检无需行动。' : `[${result.decision}] ${result.summary || '角色醒来产出了新内容'}`,
       eventId: `${automationId}:${result.decision}:${result.advanceGoalStatus ?? 'none'}`,
-      lastRunAt: Date.now(),
+      lastRunAt: finishedAt,
       configPatch: {
+        ...(awaitingUser ? { pendingReview: { resultSessionId: input.sessionId, at: finishedAt } } : {}),
         decision: result.decision, advanceGoalStatus: result.advanceGoalStatus,
         ...(result.rationale ? { rationale: result.rationale } : {}),
         ...(result.evidence ? { evidence: result.evidence } : {}),

@@ -10,6 +10,7 @@ import {
   isPermissionDeniedExecution,
 } from './types';
 import { wakeSkipSentence } from './wakeSkipSentence';
+import { wakeDecisionOf } from './wakeDecision';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 
@@ -82,7 +83,9 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
               quietHours: cc.wakeSkipQuietHours,
+              generic: t.cronWakeCadence.skipGeneric,
             });
+            const wakeDecision = wakeDecisionOf(execution);
             const deniedMarker = permissionDenied
               ? (execution.result as { permissionDenied: CronPermissionDeniedMarker }).permissionDenied
               : undefined;
@@ -132,6 +135,11 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     ) : (
                       <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
                         {statusMeta.label}
+                      </span>
+                    )}
+                    {wakeDecision && (
+                      <span className="ml-1.5 whitespace-nowrap text-xs text-zinc-300" data-testid="cron-wake-decision">
+                        {t.cronWakeCadence.decision[wakeDecision]}
                       </span>
                     )}
                   </td>

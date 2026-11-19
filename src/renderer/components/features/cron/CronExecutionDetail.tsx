@@ -26,6 +26,7 @@ import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
+import { wakeDecisionOf } from './wakeDecision';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 import { cronRunResultView } from './cronRunResultView';
 import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
@@ -137,7 +138,9 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     silentLevel: cc.wakeSkipSilentLevel,
     dailyBudget: cc.wakeSkipDailyBudget,
     quietHours: cc.wakeSkipQuietHours,
+    generic: t.cronWakeCadence.skipGeneric,
   });
+  const wakeDecision = wakeDecisionOf(execution);
   const pushNoteText = execution.pushNote && {
     pushed: cc.pushNotePushed,
     duplicate: cc.pushNoteDuplicate,
@@ -299,6 +302,12 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <section className="mt-4" data-testid="cron-wake-skip-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.wakeSkipTitle}</h5>
           <p className="text-sm text-zinc-100" data-testid="cron-wake-skip-sentence">{wakeSkip}</p>
+        </section>
+      )}
+      {wakeDecision && (
+        <section className="mt-4" data-testid="cron-wake-decision-detail">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{t.cronWakeCadence.decisionTitle}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-wake-decision-label">{t.cronWakeCadence.decision[wakeDecision]}</p>
         </section>
       )}
       {pushNoteText && (
