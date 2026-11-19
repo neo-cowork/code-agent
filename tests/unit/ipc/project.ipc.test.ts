@@ -53,9 +53,9 @@ beforeEach(() => {
 });
 
 describe('project space IPC', () => {
-  it('listWithActivity 透传 spacesOnly', async () => {
+  it('listWithActivity 透传 spacesOnly 和当前用户（未登录为 null）', async () => {
     await call('listWithActivity', { includeArchived: true, spacesOnly: true });
-    expect(svc.listProjectsWithActivity).toHaveBeenCalledWith(true, true);
+    expect(svc.listProjectsWithActivity).toHaveBeenCalledWith(true, true, null);
   });
 
   it('createSpace 透传显式空间输入', async () => {
