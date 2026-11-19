@@ -10,6 +10,7 @@
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { accessSync, constants as fsConstants } from 'fs';
+import { getAuthService } from '../auth/authService';
 import { getDatabase } from '../core/databaseService';
 import type { ProjectRepository } from '../core/repositories';
 import { getProjectKey } from '../roleAssets/roleAssetPaths';
@@ -664,7 +665,8 @@ export class ProjectService {
   }
 
   listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
-    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly);
+    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
+    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly, ownerUserId);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */

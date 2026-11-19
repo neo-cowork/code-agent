@@ -137,6 +137,27 @@ describe('defineSessionRoutes 表面差异', () => {
     expect(svc.createSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('memoryMode', { inject: true });
   });
 
+  it('create 只转发非空字符串 projectId', async () => {
+    const { registered, target } = createTarget();
+    const svc = {
+      createSession: vi.fn(async (_config: Record<string, unknown>) => ({ id: 's-new' })),
+    };
+    installDomainRoutes(target, defineSessionRoutes('web'), {
+      ...createDummyContext(),
+      sessions: async () => svc,
+    } as unknown as SessionCommandContext);
+    const invoke = registered.get('domain:session');
+
+    await invoke?.(undefined, { action: 'create', payload: { title: 'T', projectId: ' proj_space ' } });
+    expect(svc.createSession).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj_space' }));
+
+    await invoke?.(undefined, { action: 'create', payload: { title: 'T', projectId: '   ' } });
+    expect(svc.createSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('projectId');
+
+    await invoke?.(undefined, { action: 'create', payload: { title: 'T', projectId: 12 } });
+    expect(svc.createSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('projectId');
+  });
+
   it('gap action 的 backend 门失败（sessions() 抛 SERVICE_UNAVAILABLE）仍先落 code', async () => {
     const { registered, target } = createTarget();
     const unavailable = Object.assign(new Error('SessionManager not available'), {

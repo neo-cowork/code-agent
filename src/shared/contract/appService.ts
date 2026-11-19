@@ -136,6 +136,11 @@ export interface AppServiceRunOptions {
 export interface CreateSessionConfig {
   title?: string;
   workingDirectory?: string | null;
+  /**
+   * 创建时显式指定的协作空间。给出后 host 校验存在且未归档/未删除，
+   * 写入会话并钉住归属；空目录不再反查成未分类。
+   */
+  projectId?: string;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   metadata?: Record<string, unknown>;
   /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
