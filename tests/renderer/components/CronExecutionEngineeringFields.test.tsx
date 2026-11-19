@@ -189,4 +189,22 @@ describe('CronExecutionDetail 重试一句话（③）', () => {
     render(<CronExecutionDetail execution={execution({ status: 'running' })} />);
     expect(screen.queryByTestId('cron-exec-retry-note')).toBeNull();
   });
+
+  it('completed ×2 但角色唤醒被跳过（未运行）：不写「重试后成功」', () => {
+    render(<CronExecutionDetail execution={execution({
+      status: 'completed', retryAttempt: 2, exitCode: 0,
+      result: { status: 'skipped', skipReason: 'silent_level' },
+    })} />);
+    expect(screen.queryByTestId('cron-wake-skip-sentence')).not.toBeNull();
+    expect(screen.queryByTestId('cron-exec-retry-note')).toBeNull();
+  });
+
+  it('completed ×2 但命令未获批（需处理）：不写「重试后成功」', () => {
+    render(<CronExecutionDetail execution={execution({
+      status: 'completed', retryAttempt: 2, exitCode: 0,
+      result: { permissionDenied: { count: 1, steps: [{ tool: 'bash', summary: 'rm x', reason: 'user' }] } },
+    })} />);
+    expect(screen.queryByTestId('cron-exec-detail-permission-denied')).not.toBeNull();
+    expect(screen.queryByTestId('cron-exec-retry-note')).toBeNull();
+  });
 });

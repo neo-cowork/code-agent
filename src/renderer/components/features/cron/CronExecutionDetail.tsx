@@ -268,7 +268,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
         <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
       </div>
-      {(execution.status === 'failed' || execution.status === 'completed') && execution.retryAttempt > 0 && (
+      {(execution.status === 'failed' || (execution.status === 'completed' && !wakeSkip && !permissionDenied)) && execution.retryAttempt > 0 && (
         <p className="mt-3 text-sm text-zinc-300" data-testid="cron-exec-retry-note">
           {interpolatePlural(
             execution.status === 'failed' ? cc.execRetryFailedNote : cc.execRetrySucceededNote,
