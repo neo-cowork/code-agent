@@ -13,9 +13,20 @@ import * as path from 'path';
 import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
-const mockOrchestrator = vi.hoisted(() => ({
-  sendMessage: vi.fn(),
-  cancel: vi.fn(async () => undefined),
+// 有状态：getExecutionTopology 返回 setExecutionTopology 设过的值（默认 'main'，同 toolExecutor）。
+const mockOrchestrator = vi.hoisted(() => {
+  const state = { topology: 'main' as string };
+  return {
+    state,
+    sendMessage: vi.fn(),
+    cancel: vi.fn(async () => undefined),
+    setExecutionTopology: vi.fn((t: string) => { state.topology = t; }),
+    getExecutionTopology: vi.fn(() => state.topology),
+  };
+});
+const mockDb = vi.hoisted(() => ({ appendUsageRecord: vi.fn() }));
+vi.mock('../../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => mockDb,
 }));
 const mockLogger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
 const mockSessionManager = vi.hoisted(() => ({
@@ -136,6 +147,7 @@ import { sanitizeTopicList } from '../../../../src/shared/roleTopicList';
 import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
+import { getBudgetService, initBudgetService, resolveBudgetScope, type BudgetScope } from '../../../../src/host/services/core/budgetService';
 
 import { notificationService } from '../../../../src/host/services/infra/notificationService';
 
@@ -180,6 +192,7 @@ describe('roleProactivity', () => {
     vi.clearAllMocks();
     mockSessionAutomation.recordCreated.mockClear();
     mockSessionAutomation.recordEvent.mockClear();
+    mockOrchestrator.state.topology = 'main';
   });
 
   afterEach(async () => {
@@ -1012,6 +1025,54 @@ describe('roleProactivity', () => {
       expect(result.decision).toBe('report');
       expect(mockOrchestrator.sendMessage).toHaveBeenCalledTimes(1);
       expect(mockOrchestrator.cancel).not.toHaveBeenCalled();
+    });
+  });
+  describe('醒来的预算池归属（无人值守池，不吃前台额度）', () => {
+    const usage = () => ({ inputTokens: 1_000_000, outputTokens: 1_000_000, model: 'unknown-model', provider: 'unknown-provider', timestamp: Date.now() });
+    const resetPools = (unattendedMax = 1000) => {
+      initBudgetService({
+        foreground: { enabled: true, maxBudget: 1000 },
+        unattended: { enabled: true, maxBudget: unattendedMax },
+      });
+      getBudgetService('foreground').manualReset();
+      getBudgetService('unattended').manualReset();
+    };
+
+    it('cadence 侦察轮与 advance goal 轮都在 sendMessage 时落在 unattended 池，花费只涨无人值守池', async () => {
+      resetPools();
+      await seedProductHistory(RESEARCHER);
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-scope-1', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-scope-1',
+        messages: [{ id: 'm2', role: 'assistant', content: '推进。<goal>创建 DONE.md</goal><verify>test -f DONE.md</verify><decision>advance</decision>', timestamp: 2 }],
+      });
+      mockSessionEvents.getEventsByType.mockReturnValue([{ eventData: { status: 'met' } }]);
+      const scopes: BudgetScope[] = [];
+      mockOrchestrator.sendMessage.mockImplementation(async () => {
+        const scope = resolveBudgetScope(mockOrchestrator.getExecutionTopology());
+        scopes.push(scope);
+        getBudgetService(scope).recordUsage(usage());
+      });
+
+      await wakeRole(RESEARCHER, 'cadence');
+
+      expect(scopes).toEqual(['unattended', 'unattended']);
+      expect(getBudgetService('foreground').checkBudget().currentCost).toBe(0);
+      expect(getBudgetService('unattended').checkBudget().currentCost).toBeGreaterThan(0);
+    });
+
+    it('无人值守池已封顶：醒来不起推理，醒来记录写明额度用完', async () => {
+      resetPools(0.0001);
+      getBudgetService('unattended').recordUsage(usage());
+      await seedProductHistory(RESEARCHER);
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-scope-2', workingDirectory: undefined });
+
+      await expect(wakeRole(RESEARCHER, 'cadence')).rejects.toThrow('无人值守额度已用完');
+
+      expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
+      expect(mockSessionAutomation.recordEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed', error: '无人值守额度已用完' }),
+      );
     });
   });
 });

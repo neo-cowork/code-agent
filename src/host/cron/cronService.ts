@@ -709,8 +709,8 @@ export class CronService implements Disposable {
    */
   getStats(): CronServiceStats {
     const allJobs = Array.from(this.jobs.values());
-    const allExecutions = Array.from(this.executions.values()).flat();
-
+    // 执行统计读 DB 权威窗（getRecentExecutions 同源同默认 50 条，与「运行记录」tab 一致）：重启后 this.executions 为空曾显示 0%。只读不写回：连败停机仍只看本进程尾部。
+    const allExecutions = this.getRecentExecutions();
     const successfulExecutions = allExecutions.filter((e) => e.status === 'completed').length;
     const failedExecutions = allExecutions.filter((e) => e.status === 'failed').length;
 

@@ -310,6 +310,45 @@ describe('LibraryPanel', () => {
     expect(screen.queryByText('方案')).toBeNull();
   });
 
+  // N-FIX-LIBRARY-PANEL-ITEM-INTERNAL-PATH-FALLBACK：摘要为空/空白时第二行整行不渲染，
+  // 绝不回退内部绝对路径（pathOrUri 只进动作不进展示），同 atMentionPanelModel libraryRowSubtitle 口径。
+  it('无摘要条目不渲染第二行也不暴露内部路径；有摘要仍显示；点标题仍用原始 pathOrUri 预览', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const openPreview = vi.fn();
+    const originalOpenPreview = useAppStore.getState().openPreview;
+    useAppStore.setState({ openPreview });
+    const hiddenPath = '/Users/x/.code-agent-dev/library/proj_1/Brief.pdf';
+    listLibraryItems.mockResolvedValue([
+      makeItem({ id: 'lib_nosummary', title: '无摘要.pdf', summary: undefined, pathOrUri: hiddenPath }),
+      makeItem({ id: 'lib_blank', title: '空白摘要.md', summary: '   ', pathOrUri: '/Users/x/.code-agent-dev/library/proj_1/Notes.md' }),
+      makeItem({ id: 'lib_summary', title: '有摘要.md', summary: '季度发布节奏', pathOrUri: '/Users/x/.code-agent-dev/library/proj_1/Plan.md' }),
+    ]);
+    const { container } = render(<LibraryPanel />);
+    await screen.findByText('无摘要.pdf');
+
+    // 页面文本与所有 title 属性都不含内部路径 / .code-agent
+    expect(container.textContent).not.toContain(hiddenPath);
+    expect(container.textContent).not.toContain('.code-agent');
+    for (const el of container.querySelectorAll('[title]')) {
+      const title = el.getAttribute('title') ?? '';
+      expect(title).not.toContain(hiddenPath);
+      expect(title).not.toContain('.code-agent');
+    }
+
+    // 第二行整行不渲染：无摘要 / 空白摘要的行里没有摘要行元素（也没有空 div）
+    expect(document.querySelector('[data-library-item="lib_nosummary"] [class*="text-[11px] text-zinc-500"]')).toBeNull();
+    expect(document.querySelector('[data-library-item="lib_blank"] [class*="text-[11px] text-zinc-500"]')).toBeNull();
+    // 有摘要的条目仍把摘要渲染成灰色第二行
+    const summaryLine = document.querySelector('[data-library-item="lib_summary"] [class*="text-[11px] text-zinc-500"]');
+    expect(summaryLine?.textContent).toBe('季度发布节奏');
+
+    // 点标题仍走预览，参数是原始 pathOrUri（动作路径不变）
+    fireEvent.click(screen.getByText('无摘要.pdf'));
+    expect(openPreview).toHaveBeenCalledWith(hiddenPath);
+
+    useAppStore.setState({ openPreview: originalOpenPreview });
+  });
+
   it('删除是两段式：第一次点进入确认态，第二次才真删', async () => {
     const { fireEvent } = await import('@testing-library/react');
     listLibraryItems.mockResolvedValue([makeItem()]);
