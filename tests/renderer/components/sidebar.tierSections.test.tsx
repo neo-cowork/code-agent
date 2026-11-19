@@ -192,6 +192,18 @@ describe('SidebarSessionList 空态星球', () => {
     expect(html).toContain('开始一个新任务');
   });
 
+  it('零会话时仍列出没有会话的协作空间，不落到空态星球', () => {
+    const html = renderList({
+      hasAnySessions: false,
+      groups: [{ key: 'g-empty-space', projectId: 'p-empty', sessions: [] }],
+      projectMetaById: { 'p-empty': { spacePromotedAt: 1 } },
+    });
+    expect(html).toContain('data-testid="sidebar-tier-space"');
+    expect(html).toContain('协作空间');
+    expect(html).toContain('data-testid="sidebar-project-group-g-empty-space"');
+    expect(html).not.toContain('data-planet="earth"');
+  });
+
   it('搜索无结果 = 水星 +「这片星域没有信号」', () => {
     const html = renderList({ filteredSessionsEmpty: true, hasSearchFilters: true, searchQuery: 'xyz' });
     expect(html).toContain('data-planet="mercury"');
