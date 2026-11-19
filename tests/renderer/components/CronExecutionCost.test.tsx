@@ -77,14 +77,15 @@ describe('CronExecutionList 成本列', () => {
     expect(reasons[2]).toBe('未运行：处于免打扰时段，本次不补');
     for (const node of reasonNodes) {
       const cell = node.closest('td');
-      expect(cell?.getAttribute('colspan')).toBe('7');
+      expect(cell?.getAttribute('colspan')).toBe('5');
       expect(cell?.querySelector('span')).toBeNull();
     }
     expect(document.querySelector('[data-testid="cron-execution-table-scroll"]')?.className).toContain('overflow-x-auto');
   });
 
-  // N-CRON-RUN-LEDGER-VISIBLE-FU2-AFTERP2 ①：单任务视图（runsOn → 8 列）与
-  // 跨任务视图（jobName+runsOn → 9 列）下，未运行原因整行横跨、不裁切、是行的唯一单元格。
+  // N-CRON-RUN-LEDGER-VISIBLE-FU2-AFTERP2 ①：单任务视图（runsOn → 6 列）与
+  // 跨任务视图（jobName+runsOn → 7 列）下，未运行原因整行横跨、不裁切、是行的唯一单元格。
+  // （N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT 删掉重试/退出码两列后各视图少 2 列。）
   const SKIP_EXEC = (id: string, skipReason: string) => execution({
     id, result: { roleId: 'r', trigger: 'cadence', status: 'skipped', skipReason },
   });
@@ -109,7 +110,7 @@ describe('CronExecutionList 成本列', () => {
     return reasonNodes.map((node) => node.textContent);
   };
 
-  it('单任务视图（8 列）：三原因+正常行，skip 格横跨全表头且不裁切', () => {
+  it('单任务视图（6 列）：三原因+正常行，skip 格横跨全表头且不裁切', () => {
     render(
       <CronExecutionList
         executions={[
@@ -123,16 +124,16 @@ describe('CronExecutionList 成本列', () => {
         runsOnByJobId={{ 'job-1': 'local' }}
       />,
     );
-    const reasons = assertSkipRows(8);
+    const reasons = assertSkipRows(6);
     expect(reasons[0]).toBe('未运行：角色处于静默档，不主动醒来');
     expect(reasons[1]).toBe('未运行：今日唤醒次数已用满（3/3）');
     expect(reasons[2]).toBe('未运行：处于免打扰时段，本次不补');
-    // 正常行（无 skip）不产生原因行；正常行自身 8 个 td
+    // 正常行（无 skip）不产生原因行；正常行自身 6 个 td
     const normalRow = screen.getAllByText('完成')[0].closest('tr');
-    expect(normalRow?.querySelectorAll('td').length).toBe(8);
+    expect(normalRow?.querySelectorAll('td').length).toBe(6);
   });
 
-  it('跨任务视图（9 列）：三原因+正常行，skip 格横跨全表头且不裁切', () => {
+  it('跨任务视图（7 列）：三原因+正常行，skip 格横跨全表头且不裁切', () => {
     render(
       <CronExecutionList
         executions={[
@@ -147,12 +148,12 @@ describe('CronExecutionList 成本列', () => {
         runsOnByJobId={{ 'job-1': 'local' }}
       />,
     );
-    const reasons = assertSkipRows(9);
+    const reasons = assertSkipRows(7);
     expect(reasons[0]).toBe('未运行：角色处于静默档，不主动醒来');
     expect(reasons[1]).toBe('未运行：今日唤醒次数已用满（3/3）');
     expect(reasons[2]).toBe('未运行：处于免打扰时段，本次不补');
     const normalRow = screen.getAllByText('任务甲')[0].closest('tr');
-    expect(normalRow?.querySelectorAll('td').length).toBe(9);
+    expect(normalRow?.querySelectorAll('td').length).toBe(7);
   });
 
   it('云端运行即使带数字也显示 dash', () => {

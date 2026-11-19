@@ -90,7 +90,7 @@ function artifact(artifactId: string, path: string, role = 'deliverable') {
 }
 
 function messages(input: {
-  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; artifact?: ReturnType<typeof artifact> }>;
+  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; command?: string; artifact?: ReturnType<typeof artifact> }>;
   conclusion: string;
 }): Message[] {
   return [
@@ -99,7 +99,11 @@ function messages(input: {
       role: 'assistant',
       content: '',
       timestamp: 1,
-      toolCalls: input.calls.map((call) => ({ id: call.id, name: call.name, arguments: {} })),
+      toolCalls: input.calls.map((call) => ({
+        id: call.id,
+        name: call.name,
+        arguments: call.command === undefined ? {} : { command: call.command },
+      })),
     },
     {
       id: 'tool-results',
@@ -321,6 +325,57 @@ describe('TaskManager background delivery verdict', () => {
       conclusion: 'Done another way.',
     }));
     expect(event.type).toBe('task_completed');
+  });
+
+  it('cancels a denied Bash when the later success is only ls -l notes.txt', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser, command: 'chmod 600 notes.txt' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'ls -l notes.txt' },
+      ],
+      conclusion: '只看了权限，任务算完成。',
+    }));
+    expect(event.type).toBe('task_cancelled');
+    expect((event.data as EventData).detail).toBe('你拒绝了这一步，任务已停止。');
+    expect(JSON.stringify(event.data)).not.toContain('只看了权限');
+    expect(JSON.stringify(event.data)).not.toContain('chmod');
+  });
+
+  it('keeps a denied Bash completed when a later npm test succeeded', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser, command: 'chmod 600 notes.txt' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'npm test' },
+      ],
+      conclusion: 'Tests passed.',
+    }));
+    expect(event.type).toBe('task_completed');
+    expect((event.data as EventData).conclusion).toBe('Tests passed.');
+  });
+
+  it('keeps a denied Bash completed when ls -l is followed by a successful write', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser, command: 'chmod 600 notes.txt' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'ls -l' },
+        { id: 'write-1', name: 'Write', success: true },
+      ],
+      conclusion: 'Wrote the note another way.',
+    }));
+    expect(event.type).toBe('task_completed');
+    expect((event.data as EventData).conclusion).toBe('Wrote the note another way.');
+  });
+
+  it('keeps a denied Bash completed when a later ls and chmod compound succeeded', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, hostCode: HostReasonCode.PermissionDeniedByUser, command: 'chmod 600 notes.txt' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'ls -l a && chmod 600 a' },
+      ],
+      conclusion: 'Permissions updated.',
+    }));
+    expect(event.type).toBe('task_completed');
+    expect((event.data as EventData).conclusion).toBe('Permissions updated.');
   });
 
   it('keeps a denied Bash completed when a deliverable artifact exists', async () => {
