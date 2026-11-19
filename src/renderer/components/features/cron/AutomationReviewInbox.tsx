@@ -123,9 +123,9 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
     }
     const key = `${row.sessionId}\u0000${row.writeGrantFolder}`;
     const existing = groups.get(key);
-    if (existing) {
-      existing.groupIds!.push(row.id);
-      existing.groupPaths!.push(row.argsPreview ?? '');
+    if (existing?.groupIds && existing.groupPaths) {
+      existing.groupIds.push(row.id);
+      existing.groupPaths.push(row.argsPreview ?? '');
     } else {
       const group: ParkedDisplayItem = { ...row, groupIds: [row.id], groupPaths: [row.argsPreview ?? ''] };
       groups.set(key, group);

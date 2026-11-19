@@ -7,6 +7,7 @@ import os from 'os';
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const mockOrchestrator = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  setExecutionTopology: vi.fn(),
   cancel: vi.fn(async () => undefined),
 }));
 const mockLogger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
