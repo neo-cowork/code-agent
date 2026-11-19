@@ -188,6 +188,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
           )}
           <div className="flex items-center justify-end gap-2">
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={() => { setConfirmBypass(false); setEnableFailure(null); }}
@@ -196,6 +197,7 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
             </Button>
             {enableFailure !== 'forbidden' && (
               <Button
+                type="button"
                 variant="danger"
                 size="sm"
                 loading={applying}
