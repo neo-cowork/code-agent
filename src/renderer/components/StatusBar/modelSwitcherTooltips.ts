@@ -1,3 +1,4 @@
+import { getModelDisplayLabel } from '@shared/constants';
 import type { ModelProvider } from '@shared/contract';
 import { languages, type Language } from '../../i18n';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
@@ -22,15 +23,16 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
+  // 模型 id 统一走共享标签表（未登记 id 原样回落）；provider 部分保持原样。
   const modelLine = args.switchedFrom
     ? labels.switched
-        .replace('{shown}', `${args.shownProvider}/${args.shownModel}`)
-        .replace('{original}', `${args.switchedFrom.provider}/${args.switchedFrom.model}`)
+        .replace('{shown}', `${args.shownProvider}/${getModelDisplayLabel(args.shownModel ?? '')}`)
+        .replace('{original}', `${args.switchedFrom.provider}/${getModelDisplayLabel(args.switchedFrom.model)}`)
     : args.adaptive
-      ? labels.adaptive.replace('{model}', args.currentModel)
+      ? labels.adaptive.replace('{model}', getModelDisplayLabel(args.currentModel))
       : args.overridden
-        ? labels.overridden.replace('{model}', `${args.displayProvider}/${args.displayModel}`).replace('{original}', args.currentModel)
-        : labels.model.replace('{model}', `${args.displayProvider}/${args.displayModel}`);
+        ? labels.overridden.replace('{model}', `${args.displayProvider}/${getModelDisplayLabel(args.displayModel)}`).replace('{original}', getModelDisplayLabel(args.currentModel))
+        : labels.model.replace('{model}', `${args.displayProvider}/${getModelDisplayLabel(args.displayModel)}`);
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,
