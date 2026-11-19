@@ -3,6 +3,7 @@
 // 断言走 ToolExecutor.execute 和真实 Write，不替换 protocol resolver。
 
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,7 +34,7 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
-const OUT_PARENT = '/Users/leo/work/out/N-FIX-GLOBAL-MEMORY-WRITE-DOUBLE-CONFIRM-REDESIGN';
+const OUT_PARENT = path.join(os.homedir(), '.directive-memory-outside-write-test');
 
 function memoryBody(description: string): string {
   return [
@@ -91,6 +92,7 @@ describe('ToolExecutor 记忆目录写入不再二次审批', () => {
     getPermissionClassifier().clearCache();
     resetPermissionModeManager();
     if (root) await fs.rm(root, { recursive: true, force: true });
+    await fs.rmdir(OUT_PARENT).catch(() => undefined);
   });
 
   function executor(): ToolExecutor {
@@ -200,5 +202,27 @@ describe('ToolExecutor 记忆目录写入不再二次审批', () => {
     expect(mocks.confirmation).toHaveBeenCalledTimes(1);
     expect(permissionRequests).toHaveLength(0);
     expect(await fs.readFile(indexPath, 'utf8')).toBe(content);
+  });
+
+  it('headless 机器放行的 directive 探针不豁免 W3：项目外卡照常再问一次', async () => {
+    mocks.hasInteractiveUi.mockReturnValue(false);
+    const requests: PermissionRequestData[] = [];
+    const instance = new ToolExecutor({
+      workingDirectory: workspace,
+      permissionModeOverride: 'default',
+      requestPermission: async (request) => {
+        requests.push(request);
+        return true;
+      },
+    });
+    instance.setAuditEnabled(false);
+    const target = path.join(memoryDir, 'headless.md');
+    await instance.execute('Write', { file_path: target, content: memoryBody('headless') }, {
+      sessionId: 'mem-headless',
+      agentId: 'primary',
+    });
+
+    expect(mocks.confirmation).not.toHaveBeenCalled();
+    expect(JSON.stringify(requests), JSON.stringify(requests)).toContain('W3: outside_project');
   });
 });
