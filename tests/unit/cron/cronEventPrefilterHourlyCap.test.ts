@@ -126,7 +126,8 @@ describe('① 每小时 run 上限', () => {
     expect(h.runs.length).toBeLessThanOrEqual(3);
     expect(h.runs).toHaveLength(3);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Hourly run cap reached for job job-1 (3/3)'));
-    expect(loadCronEventStats('job-1').heldByCap).toBeGreaterThan(0);
+    // 3 个 run 各带 1 条，其余 97 条里窗口内到达的都应被计为「被推迟」。
+    expect(loadCronEventStats('job-1').heldByCap).toBeGreaterThan(50);
     expect(decisions().filter((row) => row.decision === 'dropped')).toHaveLength(0);
 
     await vi.advanceTimersByTimeAsync(3_600_000);

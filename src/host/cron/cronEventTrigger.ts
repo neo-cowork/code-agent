@@ -148,6 +148,8 @@ interface JobEventState {
   runStarts: number[];
   /** 已计入「被每小时上限推迟」的事件 id（同一事件在窗口内多次重挂只计一次）。 */
   heldIds: Set<string>;
+  /** 每小时上限正在挡着新批：期间新入队的事件逐条计入「被推迟」。 */
+  capHold: boolean;
   /** 预筛调用进行中：此时 flush 只重挂，不并发起第二批。 */
   prefiltering: boolean;
 }
@@ -459,6 +461,10 @@ export class CronEventTrigger {
   private enqueueRecord(definition: CronJobDefinition, record: ChannelEventRecord): void {
     const state = this.stateFor(definition.id);
     state.pending.push(record);
+    if (state.capHold && !state.heldIds.has(record.messageId)) {
+      state.heldIds.add(record.messageId);
+      this.statsStore.bump(definition.id, { heldByCap: 1 }, this.now());
+    }
     if (state.pending.length > CRON_EVENT_TRIGGER.PENDING_QUEUE_MAX) {
       const evicted = state.pending.shift();
       state.droppedCount += 1;
@@ -515,7 +521,8 @@ export class CronEventTrigger {
     // 滚动一小时 run 数上限：到顶不启动、不丢事件，把整批挂到最老的一次 run 滑出窗口时。
     state.runStarts = state.runStarts.filter((startedAt) => now - startedAt < CRON_EVENT_TRIGGER.RUN_CAP_WINDOW_MS);
     const cap = scheduleMaxRunsPerHour(schedule);
-    if (state.pending.length > 0 && state.runStarts.length >= cap) {
+    state.capHold = state.pending.length > 0 && state.runStarts.length >= cap;
+    if (state.capHold) {
       const newlyHeld = state.pending.filter((event) => !state.heldIds.has(event.messageId));
       for (const event of newlyHeld) state.heldIds.add(event.messageId);
       if (newlyHeld.length > 0) {
@@ -736,7 +743,7 @@ export class CronEventTrigger {
   private stateFor(jobId: string): JobEventState {
     let state = this.states.get(jobId);
     if (!state) {
-      state = { pending: [], droppedCount: 0, droppedEvents: [], runStarts: [], heldIds: new Set(), prefiltering: false };
+      state = { pending: [], droppedCount: 0, droppedEvents: [], runStarts: [], heldIds: new Set(), capHold: false, prefiltering: false };
       this.states.set(jobId, state);
     }
     return state;
