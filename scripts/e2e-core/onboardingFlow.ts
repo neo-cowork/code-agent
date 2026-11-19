@@ -93,8 +93,8 @@ export const f18: FlowDef = {
         const relay = relayConfig(env.server);
         env.note('走「密钥」路线：URL/Key 用隔离 home 里已有的 dogfood 中转配置（只在本单隔离数据目录内使用）');
         await page.getByTestId('onboarding-route-api').click();
-        // 中转站卡片（provider 卡列表里的 custom 档，卡名「中转站 / 自定义」）
-        await page.getByTestId('onboarding-api-source').getByRole('button').filter({ hasText: '中转站' }).first().click();
+        // 密钥页不再单独放「中转站」卡，custom 走「OpenAI 兼容接口」（data-api-compatibility）。
+        await page.getByTestId('onboarding-api-source').locator('[data-api-compatibility="openai-compatible"]').click();
         await page.locator('input[placeholder*="example.com"]').fill(relay.baseUrl);
         await page.locator('input[type="password"]').first().fill(relay.apiKey);
         await page.getByRole('button', { name: /验证|Verify/ }).click();
