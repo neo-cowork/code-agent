@@ -50,9 +50,9 @@ function stripNonProseSpans(message: string): string {
 // 只认祈使式：中文“用/以”前不能是“所/应/使…”这类构词字（挡“所以英文回答”“应用英文回复”），指令前紧邻否定词则忽略；
 // 英文动词前必须是句首/标点或 please/to/and 等祈使引导词（挡 “The answer in Chinese”“don't reply in English”）。
 const ZH_REPLY_DIRECTIVE =
-  /(?<![所应使可利引采作适足得难加予借据何申])(?:请?(?:用|以)|请)(简体中文|繁体中文|中文|汉语|英文|英语)(?:来)?(?:回复|回答|答复|作答|回应)/g;
-// 指令前紧邻否定（不要/不需要/不必/不用/别/勿/无需）则不是指令
-const ZH_NEGATED_LEAD = /(?:[不别勿](?:要|需要?|必|用|须|想)?|无需)$/;
+  /(?<![所应使可利引采作适足得难加予借据何申户])(?:请?(?:使用|采用|用|以)|请)(简体中文|繁体中文|中文|汉语|英文|英语)(?:来)?(?:回复|回答|答复|作答|回应)/g;
+// 指令前紧邻否定（不要/不需要/不必/不用/别/勿/没有/非/无需）则不是指令
+const ZH_NEGATED_LEAD = /(?:[不别勿没非](?:要|需要?|必|用|须|想|有)?|无需)$/;
 const EN_REPLY_DIRECTIVE =
   /(?<=^|[.!?;:,\n]\s*|\b(?:please|kindly|and|then|also|just|always|to|you)\s+)(?:reply|respond|answer)(?:\s+to\s+me)?\s+in\s+(Chinese|Mandarin|English)\b/gi;
 

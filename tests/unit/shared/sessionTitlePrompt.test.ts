@@ -86,4 +86,31 @@ describe('explicit reply-language directive', () => {
     expect(detectMessageLanguage('无需用英文回答，帮我看看这个 bug')).toBe('zh');
     expect(detectMessageLanguage('请不要用英文回复，帮我看看这个 bug')).toBe('zh');
   });
+  const lead = 'Export the monthly sales table to Excel with a totals row.';
+  it.each([
+    [`${lead} 请用中文回复`, 'zh'],
+    [`${lead} 用中文回答`, 'zh'],
+    [`${lead} 请使用中文回复`, 'zh'],
+    [`${lead} 使用中文回答`, 'zh'],
+    [`${lead} 采用中文回复`, 'zh'],
+    [`${lead} 你用中文回答`, 'zh'],
+    [`${lead} 统一用中文回复`, 'zh'],
+    [`${lead} 全部用中文回答`, 'zh'],
+    ['Reply in English. 帮我把销售表导出成 Excel，并加合计行。', 'en'],
+    [lead, 'en'],
+    ['The answer in Chinese is wrong; fix the docs, the tests, and the comments.', 'en'],
+    ['不要用英文回复，这段 bug 怎么修', 'zh'],
+    ['不需要用英文回答，这段 bug 怎么修', 'zh'],
+    ['不必用英文回复，帮我看看这个 bug', 'zh'],
+    ['不要使用英文回复，帮我看看这个 bug', 'zh'],
+    ['所以英文回答被评委打回来了，帮我改标题', 'zh'],
+    ['请不要用英文回复，帮我看看这个 bug', 'zh'],
+    ['别用英文回答，帮我看看这个 bug', 'zh'],
+    ['他并没有用英文回复，请继续用中文把原因写清楚', 'zh'],
+    ['申请英文回复模板', 'zh'],
+    ['用户用英文回复了一句 hello，帮我翻译并解释', 'zh'],
+    ['用中文回答', 'zh'],
+  ] as const)('pins directive phrasing: %s -> %s', (message, expected) => {
+    expect(detectMessageLanguage(message)).toBe(expected);
+  });
 });
