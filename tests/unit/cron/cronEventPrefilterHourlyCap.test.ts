@@ -132,8 +132,11 @@ describe('① 每小时 run 上限', () => {
 
     await vi.advanceTimersByTimeAsync(3_600_000);
     expect(h.runs.length).toBeGreaterThan(3);
-    const carried = h.runs.reduce((n, run) => n + (run.trigger.eventCount ?? 0), 0);
-    expect(carried).toBeGreaterThan(3);
+    // 之后再过几个小时：被推迟的 97 条一条不丢，最终每个 id 都被某个 run 携带，且没有 carry_limit 丢弃。
+    for (let hour = 0; hour < 8; hour += 1) await vi.advanceTimersByTimeAsync(3_600_000);
+    const carriedIds = new Set(h.runs.flatMap((run) => run.trigger.eventIds ?? []));
+    expect(carriedIds.size).toBe(100);
+    expect(decisions().filter((row) => row.decision === 'dropped')).toHaveLength(0);
   });
 
   it('⑤ 上一趟 run 未结束时并发仍为 1：等它结束才起下一趟', async () => {

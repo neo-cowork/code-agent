@@ -544,13 +544,21 @@ export class CronEventTrigger {
     state.pending = [];
     if (batch.length === 0) return;
 
-    // 单 run 携带上限：超出的计入 droppedCount（与队列溢出合并报告，不静默丢）。
+    // 单 run 携带上限：超出部分里，被每小时上限推迟过的事件放回队首等下一趟（承诺「不会丢」）；
+    // 其余超出的计入 droppedCount（与队列溢出合并报告，不静默丢）。
     const carried = batch.slice(0, CRON_EVENT_TRIGGER.MAX_EVENTS_PER_RUN);
-    const droppedCount = droppedBeforeFlush + (batch.length - carried.length);
-    for (const event of batch.slice(carried.length)) {
+    const overflow = batch.slice(carried.length);
+    const requeued = overflow.filter((event) => state.heldIds.has(event.messageId));
+    const droppedOverflow = overflow.filter((event) => !state.heldIds.has(event.messageId));
+    const droppedCount = droppedBeforeFlush + droppedOverflow.length;
+    for (const event of droppedOverflow) {
       if (droppedEvents.length < CRON_EVENT_DECISIONS.MAX_PENDING_DROPPED_IDS) {
         droppedEvents.push({ eventId: event.messageId, cause: 'carry_limit' });
       }
+    }
+    if (requeued.length > 0) {
+      state.pending = [...requeued, ...state.pending];
+      this.scheduleFlush(jobId, scheduleBatchWindowMs(schedule), state);
     }
     if (schedule.prefilter) {
       state.prefiltering = true;
