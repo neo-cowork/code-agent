@@ -317,6 +317,8 @@ export class CronEventTrigger {
   private readonly now: () => number;
   private readonly setTimer: (callback: () => void, delayMs: number) => { clear(): void };
   private readonly states = new Map<string, JobEventState>();
+  /** dispose 时自增：飞行中的异步步骤（补正文/预筛）回来后据此放弃，关停后不再起 run。 */
+  private epoch = 0;
   private readonly decisionStore: CronEventDecisionStore;
   private readonly statsStore: CronEventStatsStore;
   private readonly prefilterJudge: CronPrefilterJudge;
@@ -377,6 +379,7 @@ export class CronEventTrigger {
     source.removeListener('message', this.handleChannelMessage);
     source.removeListener('listen_message', this.handleChannelListenMessage);
     this.started = false;
+    this.epoch += 1;
     this.mailPoller.dispose();
     for (const state of this.states.values()) {
       state.flushTimer?.clear();
@@ -610,18 +613,25 @@ export class CronEventTrigger {
     droppedEvents: readonly CronDroppedEvent[],
   ): Promise<void> {
     const state = this.stateFor(jobId);
+    const epoch = this.epoch;
     const rule = describeEventScheduleRule(schedule);
-    let remaining = carried;
     for (const event of carried) state.heldIds.delete(event.messageId);
     try {
+      // 邮件先补取正文再预筛：判据可能依赖正文；补好的正文随批进 run，不再读第二遍。
+      const judged = carried.some((event) => event.mail !== undefined)
+        ? await this.withMailBodies(jobId, carried)
+        : carried;
+      let remaining = judged;
       this.statsStore.bump(jobId, { prefilterCalls: 1 }, this.now());
-      const ids = carried.map((event) => event.messageId);
+      const ids = judged.map((event) => event.messageId);
       const outcome = await runEventPrefilter(
         this.prefilterJudge,
         schedule.prefilter ?? '',
-        wrapUntrustedEvents(carried).join('\n'),
+        wrapUntrustedEvents(judged).join('\n'),
         ids,
       );
+      // 等待期间触发器已关停：不再起 run、不写台账。
+      if (epoch !== this.epoch) return;
       const rows: CronEventDecisionInput[] = [];
       if (outcome.kind === 'unavailable') {
         console.warn(`[CronEventTrigger] Prefilter could not judge job ${jobId} (cause: ${outcome.cause}); running the batch unfiltered`);
@@ -636,8 +646,8 @@ export class CronEventTrigger {
           matchedRule: rule,
         });
       } else {
-        const labels = eventLabelsFor(carried);
-        for (const event of carried) {
+        const labels = eventLabelsFor(judged);
+        for (const event of judged) {
           const why = outcome.rejected.get(event.messageId);
           if (why === undefined) continue;
           rows.push({
@@ -653,7 +663,7 @@ export class CronEventTrigger {
             matchedRule: rule,
           });
         }
-        remaining = carried.filter((event) => !outcome.rejected.has(event.messageId));
+        remaining = judged.filter((event) => !outcome.rejected.has(event.messageId));
         if (outcome.rejected.size > 0) {
           this.statsStore.bump(jobId, { prefilterSkipped: outcome.rejected.size }, this.now());
         }
@@ -695,12 +705,14 @@ export class CronEventTrigger {
     carried: readonly ChannelEventRecord[],
     droppedEvents: readonly CronDroppedEvent[],
   ): Promise<void> {
+    const epoch = this.epoch;
     let execution: unknown;
     let runError: unknown;
     try {
       const events = carried.some((event) => event.mail !== undefined)
         ? await this.withMailBodies(jobId, carried)
         : carried;
+      if (epoch !== this.epoch) return;
       execution = await this.host.executeEventJob(definition, trigger, buildUntrustedChannelEventBlock(events));
     } catch (error) {
       runError = error;
@@ -730,7 +742,7 @@ export class CronEventTrigger {
     events: readonly ChannelEventRecord[],
   ): Promise<ChannelEventRecord[]> {
     return Promise.all(events.map(async (event) => {
-      if (!event.mail) return event;
+      if (!event.mail || event.mail.body !== undefined) return event;
       try {
         const content = await this.mailReader.readMessage(event.mail.account, event.mail.mailbox, event.mail.messageId);
         return { ...event, mail: { ...event.mail, body: truncate(content, CRON_EVENT_TRIGGER.MAX_MESSAGE_CHARS) } };

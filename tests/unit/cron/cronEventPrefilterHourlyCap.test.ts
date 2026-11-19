@@ -250,3 +250,39 @@ describe('⑥ 游标：已见内容不会再交给 agent', () => {
     expect(second.runs).toHaveLength(1);
   });
 });
+
+describe('r2 评审回归', () => {
+  it('邮件预筛看得到正文（先补取再预筛），且正文只读一遍', async () => {
+    const mailJob = job({ source: 'connector', connector: 'mail', accountId: 'acct', mailbox: 'INBOX', pollIntervalSec: 30, prefilter: '只处理催款邮件' }, 'mail-pf');
+    delete (mailJob.schedule as { chatId?: string }).chatId;
+    const mails = [{ id: 1, subject: 'old', sender: 's@x', receivedAtMs: NOW, read: false }];
+    const readMessage = vi.fn(async () => '正文：发票已逾期，请付款 BODY-MARKER');
+    const prompts: string[] = [];
+    const judge: CronPrefilterJudge = async (prompt) => {
+      prompts.push(prompt);
+      const id = JSON.parse(/事件 id 列表：(\[.*\])/.exec(prompt)![1])[0] as string;
+      return { success: true, content: JSON.stringify([{ id, match: true }]) };
+    };
+    const h = harness(mailJob, { mailReader: { listMessages: async () => [...mails], readMessage }, judge });
+    await vi.advanceTimersByTimeAsync(5_000);
+    mails.push({ id: 2, subject: '账单', sender: 's@x', receivedAtMs: NOW, read: false });
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('BODY-MARKER');
+    expect(h.runs).toHaveLength(1);
+    expect(h.runs[0].payloadBlock).toContain('BODY-MARKER');
+    expect(readMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('预筛请求在飞时触发器被 dispose：返回后不再起 run', async () => {
+    let release: (value: { success: boolean; content: string }) => void = () => undefined;
+    const judge: CronPrefilterJudge = () => new Promise((resolve) => { release = resolve; });
+    const h = harness(job({ prefilter: '只处理催款' }), { judge });
+    h.emit('a1', '催款');
+    await vi.advanceTimersByTimeAsync(10_000); // flush → 预筛请求已在飞
+    h.trigger.dispose();
+    release({ success: true, content: JSON.stringify([{ id: 'a1', match: true }]) });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(h.runs).toHaveLength(0);
+  });
+});
