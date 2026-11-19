@@ -819,7 +819,7 @@ describe('ProjectComposer 底部输入框', () => {
     fireEvent.click(screen.getByTestId('project-space-composer-send'));
 
     await waitFor(() =>
-      expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', { workingDirectory: '/tmp/ws' }),
+      expect(createSessionMock).toHaveBeenCalledWith('帮我整理这个项目的周报', { workingDirectory: '/tmp/ws', projectId: PROJECT_ID }),
     );
     // 落地即进行中态：切进会话那一刻用户消息已在时间线上
     await waitFor(() => {

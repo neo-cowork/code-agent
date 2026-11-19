@@ -15,6 +15,7 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { ProjectSchemas, type ProjectDomainRequest } from '../../shared/ipc/schemas/project';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getProjectService } from '../services/project/projectService';
+import { getAuthService } from '../services/auth/authService';
 import {
   getProjectCollaborationService,
   ProjectCollaborationError,
@@ -217,7 +218,11 @@ const projectHandlers: RawDomainRouteHandlers<ProjectDomainRequest, void> = {
     const { includeArchived, spacesOnly } = (payload ?? {}) as ListPayload;
     return {
       success: true,
-      data: svc.listProjectsWithActivity(Boolean(includeArchived), Boolean(spacesOnly)),
+      data: svc.listProjectsWithActivity(
+        Boolean(includeArchived),
+        Boolean(spacesOnly),
+        getAuthService().getCurrentUser()?.id ?? null,
+      ),
     };
   },
 

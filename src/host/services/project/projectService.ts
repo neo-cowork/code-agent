@@ -103,6 +103,8 @@ type ProjectArtifactMessage = {
     content?: string;
   }>;
   toolCalls?: ToolCall[];
+  /** tool 角色消息把结果单独存成一行（按 toolCallId 对回 assistant 的 toolCalls）。 */
+  toolResults?: Array<{ toolCallId: string } & NonNullable<ToolCall['result']>>;
 };
 
 type ProjectArtifactSession = {
@@ -235,7 +237,13 @@ export function buildProjectArtifacts(
   const seen = new Set<string>();
   const items: ProjectArtifact[] = [];
   for (const session of sessions) {
-    for (const msg of loadMessages(session.id)) {
+    const messages = loadMessages(session.id);
+    // 落库形态里工具结果在后继 tool 行，assistant.toolCalls[].result 往往为空：先按 id 收齐再对回去。
+    const resultsByCallId = new Map<string, NonNullable<ToolCall['result']>>();
+    for (const m of messages) {
+      if (m.role === 'tool') for (const r of m.toolResults ?? []) resultsByCallId.set(r.toolCallId, r);
+    }
+    for (const msg of messages) {
       if (msg.role !== 'assistant') continue;
 
       for (const art of msg.artifacts ?? []) {
@@ -268,7 +276,7 @@ export function buildProjectArtifacts(
       }
 
       for (const toolCall of msg.toolCalls ?? []) {
-        const result = toolCall.result;
+        const result = toolCall.result ?? resultsByCallId.get(toolCall.id);
         if (!result || isReadOnlyArtifactTool(toolCall.name)) continue;
 
         const previewItemId = previewItemIdFromMetadataPreview(toolCall.id, result.metadata?.previewItem);
@@ -443,6 +451,21 @@ export class ProjectService {
     await linkProjectIdToMeta(dir, project.id).catch((err) =>
       logger.warn('[ProjectService] linkProjectIdToMeta failed:', err instanceof Error ? err.message : String(err)),
     );
+    return project;
+  }
+
+  /** 显式项目 id：存在且未归档才采用；否则 warn（区分未找到/已归档）并返回 undefined 让调用方回落。 */
+  resolveExplicitProject(projectId: string | undefined): Project | undefined {
+    if (!projectId) return undefined;
+    const project = this.repo().getProject(projectId);
+    if (!project) {
+      logger.warn('[ProjectService] explicit projectId not found, falling back to workspace lookup', { projectId });
+      return undefined;
+    }
+    if (project.status === 'archived' || project.archivedAt) {
+      logger.warn('[ProjectService] explicit projectId is archived, falling back to workspace lookup', { projectId });
+      return undefined;
+    }
     return project;
   }
 
@@ -663,8 +686,8 @@ export class ProjectService {
     return this.repo().listProjects(includeArchived);
   }
 
-  listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
-    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly);
+  listProjectsWithActivity(includeArchived = false, spacesOnly = false, ownerUserId?: string | null): ProjectWithActivity[] {
+    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly, ownerUserId);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */

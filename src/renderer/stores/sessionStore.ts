@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { useSessionLoadRecoveryStore, sessionLoadErrorCode } from './sessionLoadRecovery';
 import type { Session, Message, SessionTask, TodoItem, StreamRecoverySnapshot, UserQuestionRequest } from '@shared/contract';
 import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
@@ -137,6 +138,8 @@ export interface CreateSessionOptions {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   expertRoleId?: string;
+  /** 显式归属协作空间：host 创建时优先于目录反查；复用草稿只认同空间的空白会话。 */
+  projectId?: string;
   /** Keep secondary pages mounted while a workflow creates a target session. */
   preserveSecondaryPages?: boolean;
 }
@@ -166,9 +169,14 @@ export function isBlankNewSession(
 }
 
 function isUntouchedNewSession(
-  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status'>,
+  session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'workingDirectory' | 'status' | 'projectId'>,
   workingDirectory?: string | null,
+  projectId?: string,
 ): boolean {
+  if (projectId && session.projectId !== projectId) return false;
+  // 对称：没指定空间的无目录新建，不能复用属于某个显式空间的空白草稿（否则新快速对话悄悄落进空间）。
+  if (!projectId && !normalizeDraftDirectory(workingDirectory)
+    && session.projectId && session.projectId !== UNSORTED_PROJECT_ID) return false;
   if (!isBlankNewSession(session)) {
     return false;
   }
@@ -181,6 +189,7 @@ export function findReusableNewSessionDraft(params: {
   messages: Message[];
   todos: TodoItem[];
   workingDirectory?: string | null;
+  projectId?: string;
 }): SessionWithMeta | null {
   const current = params.currentSessionId
     ? params.sessions.find((session) => session.id === params.currentSessionId) ?? null
@@ -192,13 +201,13 @@ export function findReusableNewSessionDraft(params: {
     visibleMessages.length === 0 &&
     !hasRenderableMetaMessages &&
     params.todos.length === 0 &&
-    isUntouchedNewSession(current, params.workingDirectory)
+    isUntouchedNewSession(current, params.workingDirectory, params.projectId)
   ) {
     return current;
   }
 
   return params.sessions.find((session) =>
-    isUntouchedNewSession(session, params.workingDirectory)
+    isUntouchedNewSession(session, params.workingDirectory, params.projectId)
   ) ?? null;
 }
 

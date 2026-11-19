@@ -176,6 +176,8 @@ export interface ProjectCapabilitySelection {
 
 export interface ProjectWithActivity extends Project {
   activeTopicCount: number;
+  /** 该项目下未删除的会话总数（不受侧栏分页影响）；侧栏据此判定「空空间」。 */
+  sessionCount?: number;
   lastActivityAt: number | null;
 }
 

@@ -70,6 +70,7 @@ export class SessionLifecycleAppService {
       engine: config?.engine ? requestedEngine : undefined,
       metadata: config?.metadata,
       memoryMode: config?.memoryMode,
+      projectId: config?.projectId,
     });
 
     const expertRoleId = config?.expertRoleId?.trim();

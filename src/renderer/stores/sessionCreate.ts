@@ -70,6 +70,8 @@ export interface CreateSessionOptionsInput {
   workingDirectory?: string | null;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   expertRoleId?: string;
+  /** 显式归属协作空间（host 创建时优先于目录反查）。 */
+  projectId?: string;
   /** Keep secondary pages mounted while a workflow creates a target session. */
   preserveSecondaryPages?: boolean;
 }
@@ -118,6 +120,7 @@ export interface SessionCreateDeps {
     messages: Message[];
     todos: TodoItem[];
     workingDirectory?: string | null;
+    projectId?: string;
   }) => SessionCreateMeta | null;
 }
 
@@ -125,6 +128,7 @@ export interface SessionCreateDeps {
 async function findVerifiedDraft(
   deps: SessionCreateDeps,
   workingDirectory: string | null,
+  projectId?: string,
 ): Promise<SessionCreateMeta | null> {
   const rejected = new Set<string>();
   for (;;) {
@@ -134,6 +138,7 @@ async function findVerifiedDraft(
       sessions: excludeBusySessions(state.sessions, state.currentSessionId, state.messages, state)
         .filter((session) => !rejected.has(session.id)),
       workingDirectory,
+      projectId,
     });
     if (!candidate) return null;
     rejected.add(candidate.id);
@@ -152,6 +157,7 @@ async function findVerifiedDraft(
         sessions: excludeBusySessions(live.sessions, live.currentSessionId, live.messages, live)
           .filter((session) => session.id === candidate.id),
         workingDirectory,
+        projectId,
       });
       if (stillEmpty) return stillEmpty;
     } catch (error) {
@@ -192,7 +198,7 @@ export async function executeCreateSession(
     if (getSessionTitlePlaceholder(nextTitle, useAppStore.getState().language) !== null) {
       useAppshotsStore.getState().clear();
       const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
-      let verifiedDraft = await findVerifiedDraft(deps, newSessionWorkingDirectory);
+      let verifiedDraft = await findVerifiedDraft(deps, newSessionWorkingDirectory, options?.projectId);
       if (verifiedDraft && get().currentSessionId !== verifiedDraft.id) {
         await get().switchSession(verifiedDraft.id);
         // load can observe a message that arrived after getMessages; never land there as "new".
@@ -265,6 +271,7 @@ export async function executeCreateSession(
       workingDirectory: newSessionWorkingDirectory,
       engine: options?.engine ?? null,
       ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
+      ...(options?.projectId ? { projectId: options.projectId } : {}),
       // 首句话建会话即带 'off'（无竞态）：host 侧 create 白名单校验后落库
       ...(memoryOffIntent ? { memoryMode: 'off' as const } : {}),
     });

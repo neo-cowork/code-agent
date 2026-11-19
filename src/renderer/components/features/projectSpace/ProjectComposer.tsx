@@ -90,6 +90,7 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
       // createSession 内 handoffActiveScopeToSession：space 槽 → 新会话槽 + pin 物化 + 专家 bind
       const session = await useSessionStore.getState().createSession(title || undefined, {
         workingDirectory: project?.workspacePath ?? undefined,
+        projectId: project?.id,
       });
       if (!session) return false;
       // sessionless 期选中的 skill 在这里补挂载（新会话 id 已知、切页之前）；
@@ -121,7 +122,7 @@ export const ProjectComposer: React.FC<ProjectComposerProps> = ({ project }) => 
     } finally {
       setSending(false);
     }
-  }, [project?.workspacePath, sending, t.slashSelect.mountSkillFailedPrefix]);
+  }, [project?.id, project?.workspacePath, sending, t.slashSelect.mountSkillFailedPrefix]);
 
   return (
     <div className="shrink-0 border-t border-zinc-800/70" data-testid="project-space-composer">
