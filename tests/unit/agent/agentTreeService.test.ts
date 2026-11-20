@@ -359,6 +359,7 @@ describe('agentTreeService', () => {
       for (const field of [node.progress, node.lastEvent?.summary]) {
         if (field === undefined) continue;
         expect(field).not.toMatch(/^Tool \w+: (?:Success|Error|Failed)/m);
+        expect(field).not.toMatch(/^Calling \S+\(/m);
         expect(field).not.toContain('Tool results:');
         expect(field).not.toContain('[cwd:');
         expect(field).not.toContain('/Users/');
@@ -437,6 +438,44 @@ describe('agentTreeService', () => {
       expect(node.progress).toBe('整理 notes.txt');
       expect(node.lastEvent?.summary).toBe('已完成：整理 notes.txt');
       expectCleanFields(node);
+    });
+
+    it('result output that is a Calling-X replay line falls back to the task too', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        spawnAgents: [{
+          id: 'h2', role: 'coder', treeId: 's', status: 'completed', task: '写简报',
+          createdAt: 1, completedAt: 2,
+          result: {
+            success: true,
+            output: 'Calling Write({"file_path":"/tmp/outA/brief2.md","content":"# brief"})',
+            toolsUsed: ['Write'], iterations: 1,
+          },
+        }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'h2')!;
+      expect(node.progress).toBe('写简报');
+      expect(node.lastEvent?.summary).toBe('已完成：写简报');
+      expectCleanFields(node);
+    });
+
+    it('a Calling-X-only context record leaves progress and lastEvent.summary unset', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'h3', updatedAt: 60,
+          messages: [{
+            role: 'assistant',
+            content: 'Calling Read({"file_path":"/Users/x/ws/notes.txt"})',
+            timestamp: 2,
+          }],
+        }],
+      } as never);
+      const node = snapshot.nodes.find((n) => n.id === 'h3')!;
+      expect(node.progress).toBeUndefined();
+      expect(node.lastEvent?.summary).toBeUndefined();
     });
 
     it('strips embedded tool-result lines out of mixed text and keeps the remainder', () => {

@@ -351,10 +351,11 @@ function isToolCallObservation(text: string | undefined): boolean {
 }
 
 // 与 renderer RAW_TOOL_DUMP（delegationPresentation.ts）同口径：整段 executor
-// 工具结果回放以 `Tool results:` 开头；`Tool X: Success/Error/Failed` 是回放行，
-// `[cwd: …]` 是 Bash 输出的工作目录回放行——都不是给用户看的卡片文案。
+// 工具结果回放以 `Tool results:` 开头；`Tool X: Success/Error/Failed`、
+// `Calling X(` 观测回放行、`[cwd: …]` Bash 工作目录回放行都不是给用户看的卡片文案。
 const TOOL_RESULTS_DUMP = /^\s*Tool results:/;
 const TOOL_RESULT_LINE = /^Tool \w+: (?:Success|Error|Failed)\b/;
+const CALLING_LINE = /^Calling \S+\(/;
 const CWD_LINE = /^\[cwd:[^\]]*\]\s*$/;
 
 /**
@@ -369,7 +370,7 @@ function toDisplayText(text: string | undefined, workspaceRoot: string | undefin
     .split('\n')
     .filter((line) => {
       const trimmed = line.trim();
-      return !TOOL_RESULT_LINE.test(trimmed) && !CWD_LINE.test(trimmed);
+      return !TOOL_RESULT_LINE.test(trimmed) && !CALLING_LINE.test(trimmed) && !CWD_LINE.test(trimmed);
     })
     .join('\n')
     .trim();
