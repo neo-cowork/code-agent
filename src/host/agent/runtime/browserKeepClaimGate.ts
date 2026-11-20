@@ -9,22 +9,29 @@ import { BROWSER_KEEP_CLAIM_GATE_WARNING } from '../../../shared/i18n/browserKee
 
 const BROWSER_CONTEXT_RE = /浏览器|网页|页面|窗口|结果页|\bbrowser\b|\bwindow\b|\bpage\b|\btab\b/i;
 
-const KEEP_CLAIM_RE = new RegExp(
-  [
-    '(?:窗口|页面|结果页|浏览器|标签页)[^。！？\\n]{0,12}(?:留着|开着|没(?:有)?关|不会(?:被)?关|没被关|保留(?:着|在)|保持(?:打开|开着|不关|原样)|(?:已|会|仍|将|为你|给你)保留)',
-    '(?:窗口|浏览器)[^。！？\\n]{0,12}(?:仍(?:然)?(?:在|开)|还(?:在|开|是开))',
-    '(?:保留|留着|留下|保持)(?:了|着)?(?:这个|该|当前|此)?(?:窗口|页面|结果页|浏览器)',
-    '(?:window|page|tab|browser)[^.!?\\n]{0,30}(?:\\b(?:is|was|stays?|remains?|kept|left)\\b[^.!?\\n]{0,10}(?:open|kept)|not (?:been )?closed|still open)',
-  ].join('|'),
-  'i',
-);
+const KEEP_CLAIM_PARTS = [
+  '(?:窗口|页面|结果页|浏览器|标签页)[^。！？\\n]{0,12}(?:留着|开着|没(?:有)?关|未(?:被)?关|不会(?:被)?关|没被关|保留(?:着|在)|保持(?:打开|开着|不关|原样)|(?:已|会|仍|将|为你|给你)保留)',
+  '(?:窗口|浏览器)[^。！？\\n]{0,12}(?:仍(?:然)?(?:在|开)|还(?:在|开|是开))',
+  '(?:保留|留着|留下|保持)(?:了|着)?(?:这个|该|当前|此)?(?:窗口|页面|结果页|浏览器)',
+  // 「已停在这个页面」/「停在这个结果页，你可以直接看」= 停给用户；「仍停留在原页面」(没跳转) 不是声明。
+  '已停在(?:这个|该|当前|此)(?:结果)?页',
+  '停在(?:这个|该|当前|此)?(?:结果)?页面?[^。！？\\n]{0,12}(?:给你|直接看|可以看|供你)',
+  '(?:window|page|tab|browser)[^.!?\\n]{0,30}(?:\\b(?:is|was|stays?|remains?|kept|left)\\b[^.!?\\n]{0,10}(?:open|kept)|not (?:been )?closed|still open)',
+  '\\bleft\\b[^.!?\\n]{0,20}\\bopen\\b',
+];
+const KEEP_CLAIM_SRC = KEEP_CLAIM_PARTS.join('|');
+const KEEP_CLAIM_RE = new RegExp(KEEP_CLAIM_SRC, 'i');
+const KEEP_CLAIM_GLOBAL_RE = new RegExp(KEEP_CLAIM_SRC, 'gi');
 
-// A sentence that denies the claim (closed / not kept) is honest even if it mentions "window still open".
-const NEGATION_RE =
-  /没留着|没有留着|没保留|没有保留|未保留|没能|未能|无法|不能|关了|关掉|已关|已经关|被关闭|不再|没有[^，。]{0,8}(?:开着|还开|仍开|保留|留着)|并没有|\bnot\b|n't|\bclosed\b|no longer/i;
+// Only explicit denials of *keeping* cancel a claim. Negations that are part of the claim itself
+// (未关闭 / 没关掉 / 不会关掉 / not closed) never reach this check: claim spans are stripped first.
+const DENIAL_RE =
+  /没留着|没有留着|没保留|没有保留|未保留|没能|未能|无法|不能|关了|关掉了|已关|已经关|已被关|被关闭了|不再|没有[^，。]{0,8}(?:开着|还开|仍开|保留|留着)|并没有|could not keep|couldn't keep|unable to keep|not kept|(?<!not )(?:was|is|been|now|already) closed|no longer/i;
 
 function claimsWindowKept(content: string): boolean {
-  return content.split(/[。！？!?;；\n]|\.(?=\s|$)/).some((sentence) => KEEP_CLAIM_RE.test(sentence) && !NEGATION_RE.test(sentence));
+  return content.split(/[。！？!?;；\n]|\.(?=\s|$)/).some(
+    (sentence) => KEEP_CLAIM_RE.test(sentence) && !DENIAL_RE.test(sentence.replace(KEEP_CLAIM_GLOBAL_RE, ' ')),
+  );
 }
 
 const BROWSER_KEEP_CLAIM_REPAIR_PROMPT = [

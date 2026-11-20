@@ -59,6 +59,29 @@ describe('applyBrowserKeepClaimGate', () => {
     expect((await applyBrowserKeepClaimGate({ ...base, retriesDone: 1, assistantContent: text })).action).toBe('none');
   });
 
+  it.each([
+    '窗口未关闭，你可以继续查看。',
+    '已停在这个页面。',
+    '窗口已停在这个结果页，你可以直接看。',
+    '窗口没关掉，还开着。',
+    '窗口不会关掉，你随时看。',
+    'The window has not been closed.',
+    'The page was not closed, you can view it.',
+    'I left the page open for you.',
+  ])('retries the claim "%s"', async (text) => {
+    expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: text })).action).toBe('retry');
+  });
+
+  it.each([
+    '窗口已经关闭了，没能保留。',
+    '没留着，跑完就关了。',
+    'The window was closed.',
+    'I could not keep the page open.',
+    '页面没有跳转，仍停留在原页面。',
+  ])('keeps honest text "%s" out of the gate', async (text) => {
+    expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: text })).action).toBe('none');
+  });
+
   it('does nothing for unrelated chat or non-browser context', async () => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: '好的，已经帮你改完了。' })).action).toBe('none');
     expect((await applyBrowserKeepClaimGate({ sessionId: 's1', usedBrowserTool: false, retriesDone: 0, recentUserMessages: ['改一下代码'], assistantContent: '窗口保留着。' })).action).toBe('none');

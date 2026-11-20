@@ -78,6 +78,17 @@ describe('MessageProcessor browser keep-claim gate', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('[BrowserKeepClaimGate] warning prepended'), expect.objectContaining({ reason: 'browser_keep_claim_without_kept_entry:warn:browser_tool_used' }));
   });
 
+  it('writes a self-contained warning prefix that still reads correctly when a sub-task result is relayed', async () => {
+    const { assembly, reply } = setup('把结果页留给我');
+    const claim = '窗口未关闭，你可以继续查看。';
+    expect(await reply(claim, 2)).toBe('continue');
+    expect(await reply(claim, 3)).toBe('break');
+    const content = (assembly.addAndPersistMessage.mock.calls[0][0] as { content: string }).content;
+    expect(content.startsWith(BROWSER_KEEP_CLAIM_GATE_WARNING.zh)).toBe(true);
+    expect(content).not.toContain('下面');
+    expect(BROWSER_KEEP_CLAIM_GATE_WARNING.en).not.toMatch(/below/i);
+  });
+
   it('passes the claim through untouched when a kept entry exists', async () => {
     registry.state = 'kept';
     const { assembly, reply } = setup('把结果页留给我');
