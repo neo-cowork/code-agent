@@ -79,6 +79,6 @@ export async function executeKeepResultPage(input: KeepResultPageInput): Promise
   return {
     success: true,
     output: `Result page kept for the user: ${activeTab.title || activeTab.url} (${activeTab.url}). `
-      + `${otherTabs.length} other tab(s) closed. After this run ends the user can open and keep working on this exact page from the chat; it stays available until the idle timeout or a busy browser pool reclaims it.`,
+      + `${otherTabs.length} other tab(s) closed. After this run ends the user can open and keep working on this exact page from the chat. The window closes automatically after 30 minutes without any activity, and any action restarts the timer. A busy browser pool may close it sooner.`,
   };
 }
