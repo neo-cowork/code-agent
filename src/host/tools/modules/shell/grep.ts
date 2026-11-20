@@ -47,6 +47,7 @@ import {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
+import { refuseAppDataDiscovery } from '../../utils/refuseAppDataDiscovery';
 
 const execFileAsync = promisify(execFile);
 const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
@@ -590,6 +591,8 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     // 参数解析
     const rawPath = (args.path as string | undefined) ?? ctx.workingDir;
     const searchPath = resolveInputPath(rawPath, ctx.workingDir);
+    const refused = refuseAppDataDiscovery(searchPath, ctx.logger);
+    if (refused) return refused;
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
     const include = args.include as string | undefined;
     const fileType = args.type as string | undefined;
