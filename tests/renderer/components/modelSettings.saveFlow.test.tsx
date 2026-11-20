@@ -146,6 +146,14 @@ function findSaveButton(container: HTMLElement): HTMLButtonElement {
   return button;
 }
 
+/** 任务档位下拉：Select 原生 select 外包一层 div，档位 label 在再外层的档位块里。 */
+function findProfileSelect(container: HTMLElement, label: string): HTMLSelectElement {
+  const select = Array.from(container.querySelectorAll('select'))
+    .find((sel) => sel.parentElement?.parentElement?.textContent?.includes(label));
+  if (!select) throw new Error(`task profile select not found: ${label}`);
+  return select as HTMLSelectElement;
+}
+
 beforeAll(() => {
   mocks.userDataDir = mkdtempSync(path.join(os.tmpdir(), 'model-settings-save-flow-'));
 });
@@ -181,6 +189,8 @@ afterEach(() => {
   // 真实 ConfigService 单例 secureStorage 在文件内共享：清掉本文件写过的 key（apiKeyCache
   // + 持久 store 两处都要清，deleteApiKey 才覆盖）与落盘文件，让每条用例都从出厂默认起跑（顺序无关）。
   getSecureStorage().deleteApiKey('deepseek');
+  // 第二条用例预置的 zhipu 可用 key 也要清（apiKeyCache 单例跨用例共享）
+  getSecureStorage().deleteApiKey('zhipu');
   rmSync(path.join(mocks.userDataDir!, 'userData'), { recursive: true, force: true });
 });
 
@@ -243,6 +253,67 @@ describe('ModelSettings desktop save flow (real settings handler + real ConfigSe
     const inputAfterSave = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
     expect(inputAfterSave).toBe(inputBeforeSave);
     expect(inputAfterSave?.value).toBe(DEEPSEEK_KEY);
+
+    // (d) FB-1800：promote 不只切默认指针，还把 key-less 的任务主模型档接管到刚保存的
+    // provider/model —— 下拉值与 models.default 一致、无 Key needed 标注，且不重挂载即刷新。
+    const mainSelect = await waitFor(() => {
+      const select = findProfileSelect(view.container, 'Main task model');
+      expect(select.value).toBe(`deepseek:::${nextSendSettings.models.providers.deepseek.model}`);
+      return select;
+    });
+    expect(nextSendSettings.models.default).toBe('deepseek');
+    expect(nextSendSettings.models.taskStrategy?.profiles.main).toMatchObject({
+      provider: 'deepseek',
+      model: nextSendSettings.models.providers.deepseek.model,
+    });
+    expect(mainSelect.selectedOptions[0]?.textContent).not.toContain('Key needed');
+    expect(inputAfterSave).toBe(view.container.querySelector('input[data-model-api-key]'));
+  });
+
+  it('promote keeps a main task model slot that already points at a usable provider', async () => {
+    await startRealHost();
+    // 预置：zhipu 已有 key（可用），任务主模型档显式指向 zhipu——用户能用且选过的档位，
+    // 保存 deepseek key 触发 promote（出厂默认 longcat 仍无 key）时不得被改写。
+    const seeded = await freshSettingsGet();
+    expect(seeded.models.providers.zhipu.apiKeyConfigured).toBe(false);
+    await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+      models: {
+        providers: { zhipu: { ...seeded.models.providers.zhipu, apiKey: 'seed-zhipu-usable-key' } },
+        taskStrategy: {
+          ...seeded.models.taskStrategy!,
+          profiles: { ...seeded.models.taskStrategy!.profiles, main: { ...seeded.models.taskStrategy!.profiles.fast } },
+        },
+      },
+    });
+    const seededStrategy = (await freshSettingsGet()).models.taskStrategy!;
+    expect(seededStrategy.profiles.main).toMatchObject({ provider: 'zhipu', model: seededStrategy.profiles.fast.model });
+
+    const view = render(<Settings />);
+    const keyInput = await waitFor(() => {
+      const input = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
+      expect(input).toBeTruthy();
+      return input!;
+    });
+    const mainSelect = await waitFor(() => {
+      const select = findProfileSelect(view.container, 'Main task model');
+      expect(select.value).toBe(`zhipu:::${seededStrategy.profiles.fast.model}`);
+      return select;
+    });
+    fireEvent.change(keyInput, { target: { value: DEEPSEEK_KEY } });
+    fireEvent.click(findSaveButton(view.container));
+
+    await waitFor(() => expect(queryBadge(view.container)).toBeNull());
+    // promote 仍发生：默认指针切到 deepseek；但 main 档保持 zhipu 不动（同挂载组件 + 落库双证）
+    const after = await freshSettingsGet();
+    expect(after.models.default).toBe('deepseek');
+    expect(after.models.taskStrategy?.profiles.main).toMatchObject({
+      provider: 'zhipu',
+      model: seededStrategy.profiles.fast.model,
+    });
+    expect(mainSelect.value).toBe(`zhipu:::${seededStrategy.profiles.fast.model}`);
+    // main 没被接管时不出现「主任务模型已切换」的假提示（只有保存成功 toast）
+    expect(toast.success).toHaveBeenCalledWith('Provider configuration saved');
+    expect(toast.success).not.toHaveBeenCalledWith(expect.stringContaining('was switched to'));
   });
 
   it('host set rejection keeps the unsaved badge and surfaces the error toast (no false saved)', async () => {
