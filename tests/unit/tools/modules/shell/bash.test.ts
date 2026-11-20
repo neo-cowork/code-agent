@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { dirname, join, parse, resolve } from 'path';
 import { resetPolicyEngine, getPolicyEngine } from '../../../../../src/host/permissions/policyEngine';
@@ -118,6 +118,10 @@ import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
 import { BASH } from '../../../../../src/shared/constants';
 import { resolveToolResultBudget } from '../../../../../src/host/context/layers/toolResultBudget';
+import type { ToolCall } from '../../../../../src/shared/contract';
+import { readModule } from '../../../../../src/host/tools/modules/file/read';
+import { zh, en } from '../../../../../src/renderer/i18n';
+import { humanizeToolError, humanizeToolFailureReason } from '../../../../../src/renderer/utils/toolExecutionPresentation';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -317,7 +321,7 @@ describe('bashModule (native)', () => {
       }
     });
 
-    it('returns non-zero exit as FS_ERROR with stderr/stdout merged into meta.output', async () => {
+    it('returns non-zero exit as COMMAND_FAILED with stderr/stdout merged into meta.output', async () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute(
         { command: 'exit 1' },
@@ -327,7 +331,7 @@ describe('bashModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeDefined();
-        expect(result.code).toBe('FS_ERROR');
+        expect(result.code).toBe('COMMAND_FAILED');
         expect(result.meta?.shellPath).toBeDefined();
       }
     });
@@ -766,7 +770,7 @@ describe('bashModule (native)', () => {
       }
     });
 
-    it('returns FS_ERROR when startBackgroundTask fails', async () => {
+    it('returns COMMAND_FAILED when startBackgroundTask fails', async () => {
       startBackgroundTaskMock.mockReturnValue({
         success: false,
         error: 'too many tasks',
@@ -779,7 +783,7 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('FS_ERROR');
+        expect(result.code).toBe('COMMAND_FAILED');
         expect(result.error).toContain('too many tasks');
       }
     });
@@ -797,7 +801,7 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('FS_ERROR');
+        expect(result.code).toBe('COMMAND_FAILED');
         expect(result.error).toContain('spawn npx ENOENT');
         expect(result.error).toContain('依赖');
         expect(result.error).toContain('npx');
@@ -853,7 +857,7 @@ describe('bashModule (native)', () => {
       }
     });
 
-    it('wait_for_completion failure path returns FS_ERROR with exit code', async () => {
+    it('wait_for_completion failure path returns COMMAND_FAILED with exit code', async () => {
       createPtySessionMock.mockReturnValue({
         success: true,
         sessionId: 'pty-3',
@@ -873,12 +877,12 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('FS_ERROR');
+        expect(result.code).toBe('COMMAND_FAILED');
         expect(result.error).toContain('exited with code 2');
       }
     });
 
-    it('createPtySession failure surfaces as FS_ERROR', async () => {
+    it('createPtySession failure surfaces as COMMAND_FAILED', async () => {
       createPtySessionMock.mockReturnValue({
         success: false,
         error: 'pty unavailable',
@@ -891,7 +895,7 @@ describe('bashModule (native)', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('FS_ERROR');
+        expect(result.code).toBe('COMMAND_FAILED');
         expect(result.error).toContain('pty unavailable');
       }
     });
@@ -1000,7 +1004,7 @@ describe('bashModule failure diagnostics wiring', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe('FS_ERROR');
+      expect(result.code).toBe('COMMAND_FAILED');
       expect(result.error).toContain('可能');
       expect(result.error).toContain('kill');
     }
@@ -1122,7 +1126,7 @@ describe('bashModule failure diagnostics wiring', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe('FS_ERROR');
+      expect(result.code).toBe('COMMAND_FAILED');
       expect(result.error).toContain('exit 137');
       expect(result.error).toMatch(/OOM|内存/);
     }
@@ -1138,7 +1142,7 @@ describe('bashModule failure diagnostics wiring', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe('FS_ERROR');
+      expect(result.code).toBe('COMMAND_FAILED');
       expect(result.error).toContain('ENOENT');
       expect(result.error).toContain('依赖');
       expect(result.error).toContain('npx');
@@ -1649,7 +1653,7 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
       allowAll,
     );
 
-    expect(background).toMatchObject({ ok: false, code: 'FS_ERROR' });
+    expect(background).toMatchObject({ ok: false, code: 'COMMAND_FAILED' });
     expect(cleanupMock).toHaveBeenCalledTimes(1);
 
     createPtySessionMock.mockImplementation(() => {
@@ -1661,7 +1665,7 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
       allowAll,
     );
 
-    expect(pty).toMatchObject({ ok: false, code: 'FS_ERROR' });
+    expect(pty).toMatchObject({ ok: false, code: 'COMMAND_FAILED' });
     expect(cleanupMock).toHaveBeenCalledTimes(2);
   });
 
@@ -2904,5 +2908,117 @@ describe('bashModule env secret sentinel (ADR-066 knife-2)', () => {
     const env = lastBgEnv();
     expect(env).toHaveProperty('NEO_UT_SENTINEL_TOKEN', 'secureref:env.NEO_UT_SENTINEL_TOKEN');
     expect(Object.values(env)).not.toContain('tok-sentinel');
+  });
+});
+
+// 命令失败的人话走 COMMAND_FAILED。结果必须来自生产入口 createHandler()，
+// 再按 toolResolver 的形状（metadata.code = result.code）交给渲染函数。
+describe('COMMAND_FAILED is a command result, not a file lock', () => {
+  const ZH_SENTENCE = '命令运行失败，可展开查看输出';
+  const EN_SENTENCE = 'The command failed to run; expand to see its output';
+  const FILE_LOCK_ZH = '文件读写失败，请确认文件没被占用且有权限';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wrapMock.mockImplementation((cmd: unknown) => ({ command: cmd, cleanup: cleanupMock }));
+    createPtySessionMock.mockReset();
+    getPtySessionOutputMock.mockReset();
+  });
+
+  function presentedCall(
+    name: string,
+    args: Record<string, unknown>,
+    failure: { error: string; code?: string; meta?: Record<string, unknown> },
+  ): ToolCall {
+    return {
+      id: 'cmd-failed-1',
+      name,
+      arguments: args,
+      result: {
+        toolCallId: 'cmd-failed-1',
+        success: false,
+        error: failure.error,
+        metadata: { code: failure.code, ...(failure.meta ?? {}) },
+      },
+    };
+  }
+
+  it('foreground exit 3 returns COMMAND_FAILED and the folded row plus amber box use the command sentence', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'exit 3' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('COMMAND_FAILED');
+
+    const call = presentedCall('Bash', { command: 'exit 3' }, result);
+    expect(humanizeToolFailureReason(call, zh)).toBe(ZH_SENTENCE);
+    expect(humanizeToolFailureReason(call, en)).toBe(EN_SENTENCE);
+
+    const amberZh = humanizeToolError(result.error, 'Bash', zh, call.result?.metadata);
+    const amberEn = humanizeToolError(result.error, 'Bash', en, call.result?.metadata);
+    expect(amberZh?.detail).toBe(ZH_SENTENCE);
+    expect(amberEn?.detail).toBe(EN_SENTENCE);
+
+    const zhCopy = `${humanizeToolFailureReason(call, zh)}\n${amberZh?.summary ?? ''}\n${amberZh?.detail ?? ''}`;
+    const enCopy = `${humanizeToolFailureReason(call, en)}\n${amberEn?.summary ?? ''}\n${amberEn?.detail ?? ''}`;
+    expect(zhCopy).not.toContain('文件读写');
+    expect(zhCopy).not.toContain('被占用');
+    expect(zhCopy).not.toContain('file');
+    expect(enCopy).not.toContain('文件读写');
+    expect(enCopy).not.toContain('被占用');
+    expect(enCopy).not.toContain('file');
+    expect(zhCopy).not.toBe(FILE_LOCK_ZH);
+  });
+
+  it('pty wait_for_completion non-zero exit returns COMMAND_FAILED', async () => {
+    createPtySessionMock.mockReturnValue({
+      success: true,
+      sessionId: 'pty-exit-3',
+      outputFile: '/tmp/pty-exit-3.log',
+    });
+    getPtySessionOutputMock.mockResolvedValue({
+      status: 'failed',
+      output: 'missing: brief.pdf\nmissing: logo.png',
+      exitCode: 3,
+      duration: 12,
+    });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'sh check.sh', pty: true, wait_for_completion: true },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('COMMAND_FAILED');
+    expect(result.error).toContain('exited with code 3');
+    expect(result.error).toContain('missing: brief.pdf');
+  });
+
+  it('Read of an unreadable path stays FS_ERROR and keeps the file sentence', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'read-unreadable-'));
+    const blocked = join(dir, 'notes.txt');
+    writeFileSync(blocked, 'client notes');
+    chmodSync(blocked, 0);
+    try {
+      const handler = await readModule.createHandler();
+      const result = await handler.execute(
+        { file_path: blocked },
+        makeCtx({ workingDir: dir, agentId: 'read-lock-probe' }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.code).toBe('FS_ERROR');
+      const call = presentedCall('Read', { file_path: blocked }, result);
+      expect(humanizeToolFailureReason(call, zh)).toBe(FILE_LOCK_ZH);
+      expect(humanizeToolFailureReason(call, en)).toBe(
+        'Reading or writing the file failed; make sure it is not in use and you have access',
+      );
+      expect(humanizeToolFailureReason(call, zh)).not.toBe(ZH_SENTENCE);
+    } finally {
+      chmodSync(blocked, 0o644);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
