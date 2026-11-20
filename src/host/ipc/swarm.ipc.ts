@@ -595,8 +595,8 @@ export function registerSwarmHandlers(
         ...detail,
         agents: detail.agents.map((agent) => ({
           ...agent,
-          dispatchedTask: cleanDisplayText(agent.dispatchedTask, workspaceRoot),
-          finalOutput: cleanDisplayText(agent.finalOutput, workspaceRoot),
+          dispatchedTask: cleanDisplayText(agent.dispatchedTask, workspaceRoot, 'keep'),
+          finalOutput: cleanDisplayText(agent.finalOutput, workspaceRoot, 'keep'),
         })),
       };
     } catch (error) {

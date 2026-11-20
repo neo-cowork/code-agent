@@ -57,8 +57,14 @@ const CWD_LINE = /^\[cwd:[^\]]*\]\s*$/;
  * 模型/工具文本 → 展示文本（不截断）：剥注入前缀、丢整段工具回放、剔除回放行与
  * [cwd:] 行、绝对路径按工作区缩短。拿不到自然语言剩余时返回 undefined——
  * 调用方保留上一条好值或中性兜底，绝不把回放怼到用户脸上。
+ * outside：卡片短文案用 'tail'；完整全文（成员产出/收到的任务，路径可点击打开）
+ * 必须传 'keep'，工作区外路径原样保留，否则会被截成看似相对路径的两段。
  */
-export function cleanDisplayText(text: string | undefined, workspaceRoot: string | undefined): string | undefined {
+export function cleanDisplayText(
+  text: string | undefined,
+  workspaceRoot: string | undefined,
+  outside: OutsidePathPolicy = 'tail',
+): string | undefined {
   const stripped = stripWorkdirPrefix(text)?.trim();
   if (!stripped || TOOL_RESULTS_DUMP.test(stripped)) return undefined;
   const remainder = stripped
@@ -70,7 +76,7 @@ export function cleanDisplayText(text: string | undefined, workspaceRoot: string
     .join('\n')
     .trim();
   if (!remainder) return undefined;
-  return shortenDisplayPaths(remainder, workspaceRoot);
+  return rewriteAbsolutePaths(remainder, workspaceRoot, outside);
 }
 
 /**

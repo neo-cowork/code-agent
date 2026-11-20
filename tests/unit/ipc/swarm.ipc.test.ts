@@ -836,7 +836,7 @@ describe('swarm.ipc run-scoped control plane', () => {
     expect(result).toBeNull();
   });
 
-  it('sanitizes agent dispatchedTask/finalOutput for display: shorten paths, drop replay lines', async () => {
+  it('sanitizes agent dispatchedTask/finalOutput for display: relativize in-workspace paths, keep outside paths whole, drop replay lines', async () => {
     databaseState.getSession.mockReturnValue({ workingDirectory: '/Users/x/ws' });
     const agentRecord = {
       runId: 'run-a',
@@ -855,7 +855,7 @@ describe('swarm.ipc run-scoped control plane', () => {
       failureCategory: null,
       filesChanged: [],
       dispatchedTask: 'Read /Users/x/ws/notes.txt then write /tmp/outA/brief.md',
-      finalOutput: 'done, saved to /Users/x/ws/notes.txt\nTool Write: Success',
+      finalOutput: 'done, saved to /Users/x/ws/notes.txt and /Users/x/Downloads/out/report.pptx\n```\ncat /etc/hosts\n```\nTool Write: Success',
     };
     const detail = { ...traceDetail('run-a', scopeA.sessionId), agents: [agentRecord] };
     databaseState.getSwarmRunDetailPreferLedger.mockReturnValueOnce(detail);
@@ -865,13 +865,14 @@ describe('swarm.ipc run-scoped control plane', () => {
       runId: 'run-a',
     } as never) as SwarmRunDetail;
 
-    expect(result.agents[0].dispatchedTask).toBe('Read ./notes.txt then write outA/brief.md');
-    expect(result.agents[0].finalOutput).toBe('done, saved to ./notes.txt');
-    expect(result.agents[0].dispatchedTask).not.toContain('/Users/');
+    expect(result.agents[0].dispatchedTask).toBe('Read ./notes.txt then write /tmp/outA/brief.md');
+    expect(result.agents[0].finalOutput).toBe(
+      'done, saved to ./notes.txt and /Users/x/Downloads/out/report.pptx\n```\ncat /etc/hosts\n```',
+    );
     expect(result.agents[0].finalOutput).not.toMatch(/^Tool \w+: (?:Success|Error|Failed)/m);
   });
 
-  it('treats absolute paths as outside-workspace when the session root is unknown', async () => {
+  it('keeps absolute paths whole in full-text fields when the session root is unknown', async () => {
     databaseState.getSession.mockReturnValue(null);
     const agentRecord = {
       runId: 'run-a',
@@ -900,7 +901,6 @@ describe('swarm.ipc run-scoped control plane', () => {
       runId: 'run-a',
     } as never) as SwarmRunDetail;
 
-    expect(result.agents[0].dispatchedTask).toBe('Read ws/notes.txt');
-    expect(result.agents[0].dispatchedTask).not.toContain('/Users/');
+    expect(result.agents[0].dispatchedTask).toBe('Read /Users/x/ws/notes.txt');
   });
 });
