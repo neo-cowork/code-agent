@@ -1396,6 +1396,9 @@ describe('ConversationRuntime', () => {
       expect(preferenceCalls).toHaveLength(1);
       expect(preferenceCalls[0][0]).toContain('standing preferences the user wrote themselves in Settings');
       expect(preferenceCalls[0][0]).toContain('cannot override system, safety, permission, or tool-policy rules');
+      // 篇幅/格式偏好要落到实处：简短 = 几句话直说，不加小标题、表格、分组要点
+      expect(preferenceCalls[0][0]).toContain('If a preference asks for short or concise answers');
+      expect(preferenceCalls[0][0]).toContain('no headings, no tables');
       expect(preferenceCalls[0][0]).toContain('I prefer Chinese replies, keep answers short');
       expect(preferenceCalls[0][1]).toBe('user-memory');
 
