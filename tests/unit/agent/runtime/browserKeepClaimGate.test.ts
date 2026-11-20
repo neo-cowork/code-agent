@@ -49,6 +49,11 @@ describe('applyBrowserKeepClaimGate', () => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: 'The window was closed; I could not keep it open.' })).action).toBe('none');
   });
 
+  it('does not mistake a plain page report for a keep claim (real-run false positive: 停留在原页面)', async () => {
+    const text = '点击「提交预订」后页面没有跳转到结果页，仍停留在原页面，成功提示直接显示在表单下方。页面标题为「会议室预订」。';
+    expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: text })).action).toBe('none');
+  });
+
   it('does nothing for unrelated chat or non-browser context', async () => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: '好的，已经帮你改完了。' })).action).toBe('none');
     expect((await applyBrowserKeepClaimGate({ sessionId: 's1', usedBrowserTool: false, retriesDone: 0, recentUserMessages: ['改一下代码'], assistantContent: '窗口保留着。' })).action).toBe('none');
