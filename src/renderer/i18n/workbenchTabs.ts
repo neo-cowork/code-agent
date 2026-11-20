@@ -111,7 +111,7 @@ export const workbenchTabsZh = {
       },
       foreignSessionTitle: '这个浏览器现场属于另一个会话',
       foreignSessionHint: '当前会话只能看状态，操作请回到启动它的那个会话。',
-      openLocalOps: '高级设置',
+      openLocalOps: '电脑操作与授权',
       moreActions: '更多操作',
       // P1 账号态：地址栏 ⋯ 导入 Cookie（对标 Codex）
       importCookies: '导入 Cookie…',
@@ -315,7 +315,7 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       },
       foreignSessionTitle: 'This browser belongs to another conversation',
       foreignSessionHint: 'This conversation can only watch its status. Go back to the conversation that started it to act on it.',
-      openLocalOps: 'Advanced settings',
+      openLocalOps: 'Computer control & permissions',
       moreActions: 'More actions',
       // P1 auth-state: address-bar ⋯ cookie import (Codex-style)
       importCookies: 'Import cookies…',
