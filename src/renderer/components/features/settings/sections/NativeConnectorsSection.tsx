@@ -469,6 +469,10 @@ interface NativeConnectorsSectionProps {
   presentation?: 'diagnostic' | 'grid';
 }
 
+function isAutomationDenied(status: ConnectorStatusSummary | undefined): boolean {
+  return status?.readiness === 'failed' && status.errorCode === 'not_authorized';
+}
+
 const OperationError: React.FC<{
   className: string;
   prefix: string;
@@ -557,11 +561,13 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
     }
   }, [refresh]);
 
-  // 失败后只静默更新状态（拿 errorCode），不清 error
   const refreshStatusesQuietly = useCallback(async () => {
     try {
       const next = await ipcService.invokeDomain<ConnectorStatusSummary[]>(IPC_DOMAINS.CONNECTOR, 'listStatuses');
-      if (Array.isArray(next)) setStatuses(next);
+      if (Array.isArray(next)) {
+        setStatuses(next);
+        return next;
+      }
     } catch (err) {
       logger.warn('Failed to refresh connector statuses after failure', { err });
     }
@@ -580,12 +586,19 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       await refresh();
     } catch (err) {
       logger.error('Failed to run native connector lifecycle action', { id, action, err });
-      setError(err instanceof Error ? err.message : String(err));
-      await refreshStatusesQuietly();
+      const nextStatuses = await refreshStatusesQuietly();
+      const nextStatus = nextStatuses?.find((status) => status.id === id);
+      const cardExplainsFailure = presentation === 'grid'
+        && items.some((item) => item.id === id && item.enabled)
+        && isAutomationDenied(nextStatus)
+        && nextStatus?.error;
+      if (!cardExplainsFailure) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setBusyKey(null);
     }
-  }, [refresh, refreshStatusesQuietly]);
+  }, [items, presentation, refresh, refreshStatusesQuietly]);
 
   const rows = useMemo(
     () => buildNativeConnectorRows(items, statuses),
@@ -644,7 +657,9 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
             && row.status.detail
             ? row.status.detail
             : null;
-          const statusDetail = probedDetail
+          const automationDenied = row.enabled && isAutomationDenied(row.status);
+          const automationDetail = automationDenied ? row.status?.error || undefined : undefined;
+          const statusDetail = automationDetail ?? probedDetail
             ?? (row.enabled && row.status?.readiness
               ? connectorText.grid.statusDetail[row.status.readiness]
               : description);
@@ -685,6 +700,13 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
               {row.status?.settingsPane === 'calendars' && (
                 <div className="mt-3">
                   <Button size="sm" variant="secondary" type="button" onClick={() => void openCalendarSettings()}>
+                    {connectorText.openAutomationSettings}
+                  </Button>
+                </div>
+              )}
+              {automationDenied && (
+                <div className="mt-3">
+                  <Button size="sm" variant="secondary" type="button" onClick={() => void openAutomationSettings()}>
                     {connectorText.openAutomationSettings}
                   </Button>
                 </div>

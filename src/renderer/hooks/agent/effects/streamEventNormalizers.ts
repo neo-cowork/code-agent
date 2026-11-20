@@ -29,6 +29,7 @@ import type {
   ToolCall,
 } from '@shared/contract';
 import { isHostReasonPayload } from '@shared/contract';
+import { EnvAssistNoticeSchema } from '@shared/contract/envAssistSchema';
 import type {
   AssistantMessagePayload,
   MessageDeltaPayload,
@@ -670,13 +671,19 @@ export function normalizeUserMessagePayload(data: unknown): UserMessagePayload |
   };
 }
 
-/** 宿主广播的 role:'system' 落库消息（有 id 有正文）；其余形状返回 null。 */
-export function normalizeSystemMessagePayload(data: unknown): Message | null {
-  if (!isRecord(data) || data.role !== 'system') return null;
+/** Host-owned rows that have their own timeline position, outside the assistant draft. */
+export function normalizeStandaloneMessagePayload(data: unknown): Message | null {
+  if (!isRecord(data)) return null;
   const id = getStringField(data, 'id');
   const content = getStringField(data, 'content');
   if (!id || content === undefined) return null;
-  return data as unknown as Message;
+  if (data.role === 'system') return data as unknown as Message;
+  if (data.role !== 'assistant' || !id.startsWith('env-assist:') || !isRecord(data.metadata)) return null;
+
+  const timestamp = getNumberField(data, 'timestamp');
+  const notice = EnvAssistNoticeSchema.safeParse(data.metadata.envAssist);
+  if (timestamp === undefined || !notice.success || !notice.data.parkedToolCallId || id !== `env-assist:${notice.data.id}`) return null;
+  return { id, role: 'assistant', content, timestamp, metadata: { ...data.metadata, envAssist: notice.data } };
 }
 
 export function normalizeMessageDeltaPayload(data: unknown): MessageDeltaPayload | null {
