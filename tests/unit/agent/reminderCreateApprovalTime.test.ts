@@ -164,6 +164,29 @@ describe('reminder wall-clock normalization before executor approval', () => {
     expect(mocks.connectorExecute).not.toHaveBeenCalled();
   });
 
+  it('rejects the exact 2026-11-14 20:30 bug case at 23:17 PST with no success text, approval or connector call', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    vi.setSystemTime(new Date('2026-11-14T23:17:00-08:00'));
+    const requestPermission = vi.fn(async () => true);
+    const result = await executor(requestPermission).execute('reminders_create', { title: '买菜', remind_at_local: '2026-11-14 20:30' }, { sessionId: `bugclock-${++session}` });
+    expect(result).toMatchObject({ success: false, metadata: { code: 'REMINDER_TIME_IN_PAST' } });
+    expect(result.error).toContain('2026-11-14 20:30');
+    expect(result.error).toContain('2026-11-14 23:17');
+    expect(result.error).toContain('2026-11-15 20:30');
+    expect(result.error).not.toContain('已创建提醒');
+    expect(result.error).not.toContain('提醒时间：');
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(mocks.connectorExecute).not.toHaveBeenCalled();
+    // Control: the same args at 18:00 PST the same evening are in the future
+    // and must still reach the approval card, so the rejection above is the
+    // past-time guard and not argument parsing.
+    vi.setSystemTime(new Date('2026-11-14T18:00:00-08:00'));
+    const controlPermission = vi.fn(async () => false);
+    await executor(controlPermission).execute('reminders_create', { title: '买菜', remind_at_local: '2026-11-14 20:30' }, { sessionId: `bugclock-ctrl-${++session}` });
+    expect(controlPermission).toHaveBeenCalledOnce();
+    expect(mocks.connectorExecute).not.toHaveBeenCalled();
+  });
+
   it('rejects a past remind_at_ms passed directly', async () => {
     vi.setSystemTime(new Date('2026-11-09T15:17:00Z'));
     const requestPermission = vi.fn(async () => true);
