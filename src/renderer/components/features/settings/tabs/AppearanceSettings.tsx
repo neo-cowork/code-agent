@@ -12,8 +12,6 @@ import { useAppStore, type DisclosureLevel } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
-import { isWebMode } from '../../../../utils/platform';
-import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { Toggle } from '../../../primitives/Toggle';
 
@@ -227,7 +225,6 @@ export const AppearanceSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <WebModeBanner />
       {/* Theme Selection */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{appearanceText.theme}</h3>
@@ -241,7 +238,6 @@ export const AppearanceSettings: React.FC = () => {
             return (
               <button
                 key={option.id}
-                disabled={isWebMode()}
                 onClick={() => handleThemeChange(option.id)}
                 className={`relative p-3 rounded-lg border text-left transition-all ${
                   isActive
@@ -299,7 +295,6 @@ export const AppearanceSettings: React.FC = () => {
             return (
               <button
                 key={option.id}
-                disabled={isWebMode()}
                 onClick={() => handleFontSizeChange(option.id)}
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive
@@ -332,7 +327,6 @@ export const AppearanceSettings: React.FC = () => {
           {availableLanguages.map((lang) => (
             <button
               key={lang.code}
-              disabled={isWebMode()}
               onClick={() => handleLanguageChange(lang.code as Language)}
               className={`w-full p-3 rounded-lg border text-left transition-all ${
                 language === lang.code
@@ -381,7 +375,6 @@ export const AppearanceSettings: React.FC = () => {
                 key={level}
                 role="radio"
                 aria-checked={isActive}
-                disabled={isWebMode()}
                 onClick={() => handleDisclosureLevelChange(level)}
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive
