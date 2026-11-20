@@ -74,7 +74,21 @@ describe('WakeRationaleNote', () => {
     expect(screen.queryByTestId('wake-rationale-panel')).toBeNull();
     fireEvent.click(screen.getByTestId('wake-rationale-why'));
     expect(screen.getByTestId('wake-rationale-text').textContent).toBe('周报两周没更新。');
-    expect(screen.getByTestId('wake-rationale-evidence').textContent).toContain('history.md');
+    expect(screen.getByTestId('wake-rationale-evidence').textContent).toContain('history');
+  });
+
+  it('cleans raw-path evidence before rendering (old persisted messages)', () => {
+    render(<WakeRationaleNote fields={{
+      rationale: '周报两周没更新。',
+      evidence: '`workspace/weekly/2026-W46.md`',
+      missing: false,
+    }} />);
+    fireEvent.click(screen.getByTestId('wake-rationale-why'));
+    const evidence = screen.getByTestId('wake-rationale-evidence');
+    expect(evidence.textContent).toContain('2026-W46');
+    expect(evidence.textContent).not.toContain('workspace/');
+    expect(evidence.textContent).not.toContain('.md');
+    expect(evidence.textContent).not.toContain('`');
   });
 
   it('expands to the missing copy and does not invent a reason', () => {

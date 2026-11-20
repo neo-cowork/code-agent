@@ -270,7 +270,13 @@ describe('roleProactivity', () => {
     it('解析 rationale/evidence；缺失或格式坏时只记 missing，不编理由', () => {
       expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>history.md</evidence>')).toEqual({
         rationale: '该提醒周报过期。',
-        evidence: 'history.md',
+        evidence: 'history',
+        missing: false,
+      });
+      // 裸路径 evidence 在源头即被压成文件名主干：不带 / 路径、.md、反引号
+      expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>`workspace/weekly/2026-W46.md`</evidence>')).toEqual({
+        rationale: '该提醒周报过期。',
+        evidence: '2026-W46',
         missing: false,
       });
       expect(parseWakeRationale('没有任何标记的输出')).toEqual({ missing: true });
@@ -650,7 +656,7 @@ describe('roleProactivity', () => {
 
       expect(result.decision).toBe('suggest');
       expect(result.rationale).toContain('连续两周没更新');
-      expect(result.evidence).toBe('history.md · 周报.md');
+      expect(result.evidence).toBe('history · 周报');
       expect(result.rationaleMissing).toBe(false);
       expect(mockSessionManager.updateMessage).toHaveBeenCalledWith(
         'm-suggest',
@@ -666,6 +672,39 @@ describe('roleProactivity', () => {
       const history = await loadRoleHistory(RESEARCHER, 100);
       expect(history.some((line) => line.includes('[suggest]') && line.includes('why:'))).toBe(true);
       expect(history.some((line) => line.includes('why:') && line.includes('连续两周没更新'))).toBe(true);
+    });
+
+    it('suggest 带裸路径 evidence：履历行与结果只留文件名主干，无 workspace/、.md、反引号', async () => {
+      await seedProductHistory(RESEARCHER);
+      const body = [
+        '建议把周报改成自动生成。',
+        '<rationale>履历里的周报已经连续两周没更新。</rationale>',
+        '<evidence>`workspace/weekly/2026-W46.md`</evidence>',
+        '<decision>suggest</decision>',
+      ].join('\n');
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-ev-path', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-ev-path',
+        messages: [{ id: 'm-evpath', role: 'assistant', content: body, timestamp: 2 }],
+      });
+      mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.evidence).toBe('2026-W46');
+      const wakeLine = (await loadRoleHistory(RESEARCHER, 100)).find((line) => line.includes('[suggest]'));
+      expect(wakeLine).toContain('evidence: 2026-W46');
+      expect(wakeLine).not.toContain('workspace/');
+      expect(wakeLine).not.toContain('.md');
+      expect(wakeLine).not.toContain('`');
+      expect(mockSessionManager.updateMessage).toHaveBeenCalledWith(
+        'm-evpath',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            wakeRationale: expect.objectContaining({ evidence: '2026-W46' }),
+          }),
+        }),
+      );
     });
 
     it('多行 + 超长 suggest 产出写入履历后 why 完整可读', async () => {
@@ -694,7 +733,7 @@ describe('roleProactivity', () => {
       expect(wakeLine).toBeDefined();
       expect(wakeLine?.includes('\n')).toBe(false);
       expect(wakeLine).toContain(`why: ${why}`);
-      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      expect(wakeLine).toContain('evidence: history · 周报');
       const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
       expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     });
@@ -714,7 +753,7 @@ describe('roleProactivity', () => {
       const wakeLine = lines.find((line) => line.includes('[suggest]'));
       expect(wakeLine?.includes('\n')).toBe(false);
       expect(wakeLine).toContain(`why: ${why}`);
-      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      expect(wakeLine).toContain('evidence: history · 周报');
       const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
       expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     });
@@ -735,7 +774,7 @@ describe('roleProactivity', () => {
       const lines = await loadRoleHistory(RESEARCHER);
       expect(lines[0]?.startsWith('- ')).toBe(true);
       expect(lines[0]).toContain(`why: ${why}`);
-      expect(lines[0]).toContain('evidence: history.md');
+      expect(lines[0]).toContain('evidence: history');
     });
 
     it('rationale 缺失时仍保留原决策，只记 missing', async () => {

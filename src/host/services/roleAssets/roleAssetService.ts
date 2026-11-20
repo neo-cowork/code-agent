@@ -19,6 +19,7 @@ import { createLogger } from '../infra/logger';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 import { admitStrictUntrustedText } from '../../security/inputSanitizer';
 import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
+import { plainEvidenceText } from '../../../shared/plainEvidenceText';
 import {
   getRoleDir,
   getRoleMemoriesDir,
@@ -340,7 +341,8 @@ function formatRoleHistoryLine(entry: RoleHistoryEntry): string {
   const summary = flattenHistoryText(entry.summary).slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
   let line = `- ${entry.date} | ${label} | ${summary}`;
   if (entry.why) line += `${HISTORY_WHY_SEP}${flattenHistoryText(entry.why)}`;
-  if (entry.evidence) line += `${HISTORY_EVIDENCE_SEP}${flattenHistoryText(entry.evidence)}`;
+  const evidence = entry.evidence ? plainEvidenceText(entry.evidence) : '';
+  if (evidence) line += `${HISTORY_EVIDENCE_SEP}${evidence}`;
   return line;
 }
 
@@ -353,7 +355,7 @@ function parseRoleHistoryLine(raw: string): RoleHistoryEntry | null {
   let why: string | undefined;
   const evidenceIdx = body.lastIndexOf(HISTORY_EVIDENCE_SEP);
   if (evidenceIdx !== -1) {
-    evidence = flattenHistoryText(body.slice(evidenceIdx + HISTORY_EVIDENCE_SEP.length)) || undefined;
+    evidence = plainEvidenceText(body.slice(evidenceIdx + HISTORY_EVIDENCE_SEP.length)) || undefined;
     body = body.slice(0, evidenceIdx);
   }
   const whyIdx = body.lastIndexOf(HISTORY_WHY_SEP);
