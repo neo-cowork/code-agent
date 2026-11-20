@@ -220,9 +220,12 @@ export function WritebackFieldsView({ tool, args }: { tool: string; args: Record
         // 空值整行不渲染：「日历：无」这类占位对用户没有信息量
         if (!text) return null;
         if (field.multiline) {
+          const body = <CollapsibleBody text={text} expandLabel={w.expandBody} collapseLabel={w.collapseBody} />;
+          // notes 和其他字段一样带行首标签：裸文本行看不出是谁的内容（FB-1704）。
+          if (field.key === 'notes') return row(field.key, labels[field.key] ?? field.key, body);
           return (
             <div key={field.key} className="pt-1 border-t border-zinc-700/60">
-              <CollapsibleBody text={text} expandLabel={w.expandBody} collapseLabel={w.collapseBody} />
+              {body}
             </div>
           );
         }
