@@ -130,4 +130,32 @@ describe('route chip live/reload parity (real-shape fixture)', () => {
     expect(liveChipCount(messages)).toBe(1);
     expect(reloadedChipCount(messages)).toBe(1);
   });
+
+  it('a mid-turn health flip does not erase the final reply chip (empty carriers still advance the dedup ledger)', () => {
+    // 工具循环里健康采样 healthy→degraded→healthy：degraded 决策落在空正文的中间轮
+    // 载体上（重放侧中间轮正文不落库）。账本必须把这条决策记入 run 边界——否则回到
+    // healthy 的终稿正文被当成「回到旧 key 的重复」，折叠后整轮看不到路由 chip。
+    const healthy = (fixture.streamEvents.find((e) => e.type === 'model_decision')!.data as Message['modelDecision'])!;
+    const degraded: Message['modelDecision'] = {
+      ...healthy,
+      providerHealthSnapshot: { ...healthy.providerHealthSnapshot!, status: 'degraded' },
+    };
+    const messages: Message[] = [
+      fixture.persistedMessages[0],
+      { id: 'flip-1', role: 'assistant', content: '先读一下这两个文件。', timestamp: 2, modelDecision: healthy },
+      {
+        // 真实重放形状的中间轮：正文空、带 thinking + 工具调用（reasoning 载体空正文节点）
+        id: 'flip-2', role: 'assistant', content: '', timestamp: 3,
+        thinking: '读一下 README 和 package.json。',
+        toolCalls: [{ id: 'call-flip-1', name: 'Read', arguments: {} } as Message['toolCalls']![number]],
+        modelDecision: degraded,
+      },
+      { id: 'flip-3', role: 'assistant', content: '核对完成，内容一致。', timestamp: 4, modelDecision: healthy },
+    ];
+    expect(liveChipCount(messages)).toBe(2);
+    expect(reloadedChipCount(messages)).toBe(2);
+    // degraded 自己的载体是空正文，不出可见 chip；两枚可见 chip 都在正文的 healthy 决策上
+    const statuses = decisionNodes(messages).filter((n) => Boolean(n.content?.trim())).map((n) => n.modelDecision!.providerHealthSnapshot?.status);
+    expect(statuses).toEqual(['healthy', 'healthy']);
+  });
 });

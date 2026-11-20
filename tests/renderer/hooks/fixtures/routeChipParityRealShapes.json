@@ -602,14 +602,14 @@
             "id": "call_0d446105670f4a38bfdc8946",
             "name": "Read",
             "arguments": {
-              "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md"
+              "file_path": "<workspace>/README.md"
             }
           },
           {
             "id": "call_314598b9560748b3b96675dd",
             "name": "Read",
             "arguments": {
-              "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/package.json"
+              "file_path": "<workspace>/package.json"
             }
           }
         ],
@@ -1076,7 +1076,7 @@
             "id": "call_e0ff4157043d4bb2922747f5",
             "name": "Write",
             "arguments": {
-              "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md",
+              "file_path": "<workspace>/summary.md",
               "content": "# é¡¹ç›®æ¦‚è§ˆ\n\næ¥æºï¼š`README.md`ã€`package.json`ï¼ˆ2026-11-19 æ•´ç†ï¼‰\n\n## åŸºæœ¬ä¿¡æ¯\n\n| é¡¹…[truncated 405]",
               "content_length": 683,
               "content_lines": 34
@@ -1576,7 +1576,7 @@
             "id": "call_7e2169ea292f4d84b4a16351",
             "name": "Read",
             "arguments": {
-              "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md"
+              "file_path": "<workspace>/summary.md"
             }
           }
         ],
@@ -2169,7 +2169,7 @@
           },
           "routingMode": "auto",
           "turnCapabilityScopeMode": "auto",
-          "workingDirectory": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace"
+          "workingDirectory": "<workspace>"
         }
       },
       "role": "user",
@@ -2486,7 +2486,7 @@
       "toolCalls": [
         {
           "arguments": {
-            "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md"
+            "file_path": "<workspace>/README.md"
           },
           "id": "call_41c96ac4d1a14d30a88ece7c",
           "name": "Read",
@@ -2494,7 +2494,7 @@
         },
         {
           "arguments": {
-            "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/package.json"
+            "file_path": "<workspace>/package.json"
           },
           "id": "call_611a20ee8be345c2b843699f",
           "name": "Read",
@@ -2502,7 +2502,7 @@
         },
         {
           "arguments": {
-            "file_path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md"
+            "file_path": "<workspace>/summary.md"
           },
           "id": "call_fe8388f0dcd94cfc9e41a8f4",
           "name": "Read",
@@ -2512,7 +2512,7 @@
       "visibility": "active"
     },
     {
-      "content": "[{\"toolCallId\":\"call_41c96ac4d1a14d30a88ece7c\",\"success\":true,\"output\":\"Read version digest: 0cac74f…[truncated 8870]",
+      "content": "[{\"toolCallId\":\"call_41c96ac4d1a14d30a88ece7c\",\"success\":true,\"output\":\"Read version digest: 0cac74f…[truncated 7630]",
       "id": "5d057bce-452d-425d-a633-0af851d984a8",
       "metadata": {
         "correlation": {
@@ -2533,7 +2533,7 @@
               "metadata": {},
               "mimeType": "text/plain",
               "name": "README.md",
-              "path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md",
+              "path": "<workspace>/README.md",
               "preview": "     1\t# Neo Demo Workspace\n     2\t\n     3\t这是周报演示项目。本目录用于整理本周工程周报素材。\n     4\t\n     5\t- `docs/plan.md`…[truncated 258]",
               "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
               "sha256": "0cac74f4055e9e446c564b1d1ba5ab6e4c25b60fd1ab4f0e1b75d2dca633ca0f",
@@ -2545,7 +2545,7 @@
                 "id": "cite_4_mwo3fhpp",
                 "label": "README.md:1",
                 "location": "lines:1-12",
-                "source": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md",
+                "source": "<workspace>/README.md",
                 "timestamp": 1795125594733,
                 "toolCallId": "call_41c96ac4d1a14d30a88ece7c",
                 "type": "file"
@@ -2555,9 +2555,9 @@
             "documentOrigin": {
               "digest": "0cac74f4055e9e446c564b1d1ba5ab6e4c25b60fd1ab4f0e1b75d2dca633ca0f",
               "kind": "unclassified",
-              "path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md",
+              "path": "<workspace>/README.md",
               "roots": [
-                "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md"
+                "<workspace>/README.md"
               ]
             },
             "evidenceKind": "file_read",
@@ -2570,11 +2570,11 @@
               "id": "evidence_d45bee6e",
               "kind": "read",
               "redactionStatus": "clean",
-              "ref": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md#L1-L11",
+              "ref": "<workspace>/README.md#L1-L11",
               "source": "Read"
             },
             "executionStarted": true,
-            "filePath": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md",
+            "filePath": "<workspace>/README.md",
             "fromCache": false,
             "preserveObservation": true,
             "rangedRead": false,
@@ -2584,7 +2584,7 @@
               "totalLines": 11
             }
           },
-          "output": "Read version digest: 0cac74f4055e9e44\n     1\t# Neo Demo Workspace\n     2\t\n     3\t这是周报演示项目。本目录用于整理本周工…[truncated 677]",
+          "output": "Read version digest: 0cac74f4055e9e44\n     1\t# Neo Demo Workspace\n     2\t\n     3\t这是周报演示项目。本目录用于整理本周工…[truncated 553]",
           "success": true,
           "toolCallId": "call_41c96ac4d1a14d30a88ece7c"
         },
@@ -2598,7 +2598,7 @@
               "metadata": {},
               "mimeType": "text/plain",
               "name": "package.json",
-              "path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/package.json",
+              "path": "<workspace>/package.json",
               "preview": "     1\t{\n     2\t  \"name\": \"neo-demo-workspace\",\n     3\t  \"version\": \"1.4.0\",\n     4\t  \"private\": tru…[truncated 453]",
               "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
               "sha256": "6012683ba568583871500a885ab960244ad476ef2021e5714b41b7f739e953f5",
@@ -2610,7 +2610,7 @@
                 "id": "cite_5_mwo3fhpw",
                 "label": "package.json:1",
                 "location": "lines:1-20",
-                "source": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/package.json",
+                "source": "<workspace>/package.json",
                 "timestamp": 1795125594740,
                 "toolCallId": "call_611a20ee8be345c2b843699f",
                 "type": "file"
@@ -2627,11 +2627,11 @@
               "id": "evidence_91830e7e",
               "kind": "read",
               "redactionStatus": "clean",
-              "ref": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/package.json#L1-L19",
+              "ref": "<workspace>/package.json#L1-L19",
               "source": "Read"
             },
             "executionStarted": true,
-            "filePath": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/package.json",
+            "filePath": "<workspace>/package.json",
             "fromCache": false,
             "preserveObservation": true,
             "rangedRead": false,
@@ -2655,7 +2655,7 @@
               "metadata": {},
               "mimeType": "text/plain",
               "name": "summary.md",
-              "path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md",
+              "path": "<workspace>/summary.md",
               "preview": "     1\t# 项目概览\n     2\t\n     3\t来源：`README.md`、`package.json`（2026-11-19 整理）\n     4\t\n     5\t## 基本信息\n   …[truncated 500]",
               "sessionId": "web-session-33e1a13d-90f2-4bb4-abd6-ea582d68c960",
               "sha256": "d2bbc764fe9d2f724cca3d2d81cb95464158fe6a803bc86a188b2ff1094a85f4",
@@ -2667,7 +2667,7 @@
                 "id": "cite_6_mwo3fhq4",
                 "label": "summary.md:1",
                 "location": "lines:1-35",
-                "source": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md",
+                "source": "<workspace>/summary.md",
                 "timestamp": 1795125594748,
                 "toolCallId": "call_fe8388f0dcd94cfc9e41a8f4",
                 "type": "file"
@@ -2677,9 +2677,9 @@
             "documentOrigin": {
               "digest": "d2bbc764fe9d2f724cca3d2d81cb95464158fe6a803bc86a188b2ff1094a85f4",
               "kind": "derived",
-              "path": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md",
+              "path": "<workspace>/summary.md",
               "roots": [
-                "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/README.md"
+                "<workspace>/README.md"
               ]
             },
             "evidenceKind": "file_read",
@@ -2692,11 +2692,11 @@
               "id": "evidence_7a6a8633",
               "kind": "read",
               "redactionStatus": "clean",
-              "ref": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md#L1-L34",
+              "ref": "<workspace>/summary.md#L1-L34",
               "source": "Read"
             },
             "executionStarted": true,
-            "filePath": "/Users/leo/work/out/N-FIX-ROUTE-CHIP-LOST-ON-RELOAD/realrun/neo/workspace/summary.md",
+            "filePath": "<workspace>/summary.md",
             "fromCache": false,
             "preserveObservation": true,
             "rangedRead": false,
@@ -2706,7 +2706,7 @@
               "totalLines": 34
             }
           },
-          "output": "Read version digest: d2bbc764fe9d2f72\n     1\t# 项目概览\n     2\t\n     3\t来源：`README.md`、`package.json`（202…[truncated 1336]",
+          "output": "Read version digest: d2bbc764fe9d2f72\n     1\t# 项目概览\n     2\t\n     3\t来源：`README.md`、`package.json`（202…[truncated 1212]",
           "success": true,
           "toolCallId": "call_fe8388f0dcd94cfc9e41a8f4"
         }

@@ -208,7 +208,13 @@ export function projectTurns(
     .find((message) => message.metadata?.turnCheckoutNote)?.id ?? null;
   // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
   // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
+  // 账本分两层：lastModelDecisionKey 记**每一条**决策（含空载体上的），用于 run 边界
+  // 判定——否则 healthy→degraded(空载体)→healthy 会被当成「回到旧 key 的重复」，
+  // 终稿正文上的 chip 被清掉；modelDecisionDisplayPending 记当前 run 的 chip 是否
+  // 已落到可见节点——首个决策的载体是空正文（重放侧中间轮）时，chip 顺延给同 run
+  // 下一个有正文的节点，而不是无声消失。
   let lastModelDecisionKey: string | null = null;
+  let modelDecisionDisplayPending = false;
 
   // 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：一段连续失败轮若同
   // agentError.category，只有段内最新一轮渲染整卡，早先的压成一行灰字。纯渲染期
@@ -576,18 +582,22 @@ export function projectTurns(
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
         // 但策略解释字段变化时必须保留，否则 external engine / billing / fallback 诊断会被压掉。
         // 空正文节点（reasoning/agentError 载体；重放侧中间轮正文不落库、形状就是空）
-        // 不承载也不消耗决策——chip 钉在不可见节点上等于这轮路由信息刷新即消失，
-        // 决策顺延给同轮下一个有正文的节点，直播（草稿带流式正文）与重放（只剩
-        // 终稿正文）落到同一个可见落点。
+        // 不承载 chip，但 run 边界照记（见上方账本注释）；本 run 的 chip 尚未落到可见
+        // 节点时顺延给下一个有正文的节点，直播（草稿带流式正文）与重放（只剩终稿正文）
+        // 落到同一个可见落点。
         let modelDecision = msg.modelDecision;
         if (modelDecision) {
           const key = buildModelDecisionProjectionKey(modelDecision);
-          if (key === lastModelDecisionKey) {
+          if (key !== lastModelDecisionKey) {
+            lastModelDecisionKey = key;
+            modelDecisionDisplayPending = true;
+          }
+          if (!modelDecisionDisplayPending) {
             modelDecision = undefined;
           } else if (!projectedContent.trim()) {
             modelDecision = undefined;
           } else {
-            lastModelDecisionKey = key;
+            modelDecisionDisplayPending = false;
           }
         }
         const attachReasoning = !reasoningAttachedForMessage;
