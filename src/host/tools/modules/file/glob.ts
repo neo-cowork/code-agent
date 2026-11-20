@@ -30,6 +30,7 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
+import { refuseAppDataDiscovery } from '../../utils/refuseAppDataDiscovery';
 import { applyPartialToOutput } from '../shell/partialResults';
 import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
@@ -206,6 +207,8 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const searchPath = resolveInputPath(inputPath, ctx.workingDir);
+    const refused = refuseAppDataDiscovery(searchPath, ctx.logger);
+    if (refused) return refused;
     if (isChatUploadPath(searchPath)) {
       try {
         await fs.access(searchPath);

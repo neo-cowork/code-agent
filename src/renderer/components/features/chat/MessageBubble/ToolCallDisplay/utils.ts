@@ -357,6 +357,7 @@ export function getToolDisplayName(name: string): string {
     plan_update: 'Plan',
     plan_read: 'ReadPlan',
     findings_write: 'Finding',
+    library_add: 'Library',
   };
 
   if (name.startsWith('mcp_')) {
