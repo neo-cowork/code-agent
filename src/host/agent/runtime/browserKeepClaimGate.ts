@@ -6,7 +6,6 @@
 // Same retry-once-then-warn shape as desktopActionClaimGate.
 import { getHostUiLocale } from '../../config/hostUiLocale';
 import { BROWSER_KEEP_CLAIM_GATE_WARNING } from '../../../shared/i18n/browserKeepClaimGateWarning';
-import { getKeptBrowserRegistry } from '../../services/surfaceExecution/keptBrowserRegistry';
 
 const BROWSER_CONTEXT_RE = /浏览器|网页|页面|窗口|结果页|\bbrowser\b|\bwindow\b|\bpage\b|\btab\b/i;
 
@@ -45,7 +44,8 @@ export type BrowserKeepClaimGateResult =
   | { action: 'retry'; content: string; reason: string; repairPrompt: string }
   | { action: 'warn'; content: string; reason: string; repairPrompt?: undefined };
 
-export function applyBrowserKeepClaimGate(input: BrowserKeepClaimGateInput): BrowserKeepClaimGateResult {
+// The registry pulls in the browser stack (pool/service singletons); load it lazily, only once a claim matched.
+export async function applyBrowserKeepClaimGate(input: BrowserKeepClaimGateInput): Promise<BrowserKeepClaimGateResult> {
   const content = input.assistantContent || '';
   if (!content.trim() || !KEEP_CLAIM_RE.test(content)) return { action: 'none', content };
 
@@ -53,6 +53,7 @@ export function applyBrowserKeepClaimGate(input: BrowserKeepClaimGateInput): Bro
     || (input.recentUserMessages ?? []).some((text) => BROWSER_CONTEXT_RE.test(text));
   if (!browserContext) return { action: 'none', content };
 
+  const { getKeptBrowserRegistry } = await import('../../services/surfaceExecution/keptBrowserRegistry');
   if (getKeptBrowserRegistry().snapshot(input.sessionId).state === 'kept') return { action: 'none', content };
   if (HONEST_DENIAL_RE.test(content)) return { action: 'none', content };
 

@@ -469,7 +469,7 @@ export class MessageProcessor {
       return 'continue';
     }
 
-    const browserKeepGate = applyBrowserKeepClaimGate({
+    const browserKeepGate = await applyBrowserKeepClaimGate({
       sessionId: this.ctx.sessionId,
       recentUserMessages: collectRecentUserTexts(this.ctx.messages),
       assistantContent: desktopClaimGate.content,
