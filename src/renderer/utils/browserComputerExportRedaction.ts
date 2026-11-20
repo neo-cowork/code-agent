@@ -67,14 +67,16 @@ function buildBrowserComputerExportMetadata(
   });
 }
 
+// Alias names (e.g. "Browser") are normalized by the chat-card formatters; export keeps them raw.
+function isAliasedBrowserComputerToolName(name: string): boolean {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(name);
+  return catalogTool !== null && catalogTool !== name;
+}
+
 function sanitizeBrowserComputerToolCallForExport(
-  sourceCall: ToolCall,
+  call: ToolCall,
   resultMetadata?: Record<string, unknown>,
 ): ToolCall {
-  const catalogTool = normalizeBrowserComputerCatalogToolName(sourceCall.name);
-  const call = catalogTool === 'browser_action' && catalogTool !== sourceCall.name
-    ? { ...sourceCall, name: catalogTool }
-    : sourceCall;
   const rawArguments = call.arguments || {};
   const surfaceProjection = projectSurfaceExecutionMetadataForExport(
     call.result?.metadata ?? resultMetadata,
@@ -86,14 +88,16 @@ function sanitizeBrowserComputerToolCallForExport(
     : call.arguments;
   const safeResultSummary = (isBrowserComputerToolName(call.name)
     ? formatToolResultForBrowserComputerExport(call)
-    : formatBrowserComputerActionResultDetails({
-        name: call.name,
-        arguments: rawArguments,
-        result: call.result,
-      })) ?? undefined;
+    : isAliasedBrowserComputerToolName(call.name)
+      ? undefined
+      : formatBrowserComputerActionResultDetails({
+          name: call.name,
+          arguments: rawArguments,
+          result: call.result,
+        })) ?? undefined;
 
   return {
-    ...sourceCall,
+    ...call,
     arguments: safeArguments || rawArguments,
     result: call.result
       ? {
