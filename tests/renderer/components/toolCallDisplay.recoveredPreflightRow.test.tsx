@@ -32,6 +32,13 @@ const CASES = [
   { kind: 'bash', name: 'Bash', args: { command: 'ls' }, metadata: { failureCode: AgentFailureCode.PermissionDenied }, verbs: ['未执行', 'Not executed'] },
 ] as const;
 
+// recovered 对这些行只表示「不再顶红」，步骤从未执行：预检标题必须保留。
+const NEVER_EXECUTED = [
+  { label: 'gate-bounced Edit under repair guard', name: 'Edit', args: EDIT_ARGS, metadata: { artifactRepairGuard: { blocked: true }, bounced: true }, verbs: ['未修改', 'Not modified'] },
+  { label: 'repair-guard Bash', name: 'Bash', args: { command: 'ls' }, metadata: { artifactRepairGuard: { blocked: true } }, verbs: ['未执行', 'Not executed'] },
+  { label: 'host-skipped Bash', name: 'Bash', args: { command: 'ls' }, metadata: { failureCode: AgentFailureCode.PermissionDenied, skipped: true }, verbs: ['未执行', 'Not executed'] },
+] as const;
+
 for (const locale of ['zh', 'en'] as const) {
   const idx = locale === 'zh' ? 0 : 1;
   describe(`recovered preflight row (${locale})`, () => {
@@ -45,6 +52,12 @@ for (const locale of ['zh', 'en'] as const) {
       const plain = render(<ToolCallDisplay toolCall={failedCall(c.name, c.args, c.metadata)} index={0} total={1} />);
       expect(plain.container.textContent).toContain(verb);
       expect(plain.container.querySelector('[data-testid="tool-call-recovered-note"]')).toBeNull();
+    });
+
+    it.each(NEVER_EXECUTED)('$label keeps the never-executed verb even when recovered', (c) => {
+      mocks.language = locale;
+      const view = render(<ToolCallDisplay toolCall={failedCall(c.name, c.args, { ...c.metadata, recovered: true })} index={0} total={1} />);
+      expect(view.container.textContent).toContain(c.verbs[idx]);
     });
 
     it.each(CASES)('$kind through projectTurns → ToolStepGroup (single and multi step)', (c) => {

@@ -94,11 +94,15 @@ export function getToolPreflightKind(tool: Pick<ToolCall, 'name' | 'result'>): P
 }
 
 export function toolPreflightCopy(tool: Pick<ToolCall, 'name' | 'result'> & Partial<Pick<ToolCall, 'arguments'>>, t: Translations): { action: string; reason: string } | null {
-  // 后续同一步已成功：行标题回到普通人话，由「后续修改已成功」脚注交代结局，
-  // 不再同时写「未修改 · 文件名」自相矛盾。
-  if (tool.result?.metadata?.recovered === true) return null;
   const kind = getToolPreflightKind(tool);
   if (!kind) return null;
+  // 后续同一步已成功：行标题回到普通人话，由「后续修改已成功」脚注交代结局，
+  // 不再同时写「未修改 · 文件名」自相矛盾。例外：recovered 对闸门封口行（bounced）、
+  // 修复模式打回（repair）和主机封存未执行的行（skipped）只表示「不再顶红」，这些步骤
+  // 从未执行，必须继续说「未执行/未修改」，否则用户会以为命令或编辑已经发生。
+  const meta = tool.result?.metadata;
+  const neverExecuted = kind === 'repair' || kind === 'question' || meta?.bounced === true || meta?.skipped === true;
+  if (meta?.recovered === true && !neverExecuted) return null;
   const c = t.deliveryExperience;
   if (kind === 'question') return { action: c.questionUnavailable, reason: c.questionReason };
   const category = classifyToolName(tool.name);
