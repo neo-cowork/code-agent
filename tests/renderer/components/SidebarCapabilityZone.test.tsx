@@ -36,6 +36,7 @@ describe('SidebarCapabilityZone', () => {
       'sidebar-capability-projects',
       'sidebar-capability-library',
       'sidebar-capability-automation',
+      'sidebar-capability-local-ops',
     ]);
     expect(screen.queryByTestId('sidebar-expert-recent-strip')).toBeNull();
     // 三行全部单行：静态说明和动态状态（下次运行/任务数/空态引导）都收进 title 悬浮提示，

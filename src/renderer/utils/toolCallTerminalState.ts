@@ -41,6 +41,8 @@ export function resolveToolCallTerminalState(input: {
 }) {
   const { toolCall, sessionId, sessionLive, awaitingApproval, interruptionReason, delegatedWork } = input;
   const { result, task } = ownOutcome(toolCall, sessionId, input.tasks);
+  // 同一轮已交给后台任务的调用：工作没丢，不当失败、也不读作「没执行」。
+  const handedOff = result?.metadata?.code === 'HANDED_OFF_TO_BACKGROUND';
   const agentId = input.agentId
     ?? (typeof result?.metadata?.agentId === 'string' ? result.metadata.agentId : undefined)
     ?? result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m)?.[1];
@@ -52,7 +54,7 @@ export function resolveToolCallTerminalState(input: {
   // (a failure already recovered by a later success stays settled).
   if (delegatedWork && result?.metadata?.recovered !== true) state = delegatedWork === 'working' ? 'running' : delegatedWork === 'cancelled' ? 'interrupted' : delegatedWork;
   // Otherwise an actual call outcome takes precedence over every inferred task/agent outcome.
-  else if (result) state = result.success || result.metadata?.recovered === true ? 'completed' : 'failed';
+  else if (result) state = result.success || result.metadata?.recovered === true || handedOff ? 'completed' : 'failed';
   else if (awaitingApproval) state = 'running';
   else if (task) state = task.status === 'completed' ? 'completed'
     : task.status === 'cancelled' ? 'interrupted'
@@ -79,8 +81,8 @@ export function resolveToolCallTerminalState(input: {
   // 只有封口/封存（bounced/skipped）的行 recovered 也不改变「没执行」。
   const sealed = result?.metadata?.skipped === true || result?.metadata?.bounced === true;
   const skipped = isToolResultNeverExecuted(result) && (result?.metadata?.recovered !== true || sealed)
-    && !!toolCall && classifyToolName(toolCall.name) === 'bash';
-  return { state, displayStatus, stepStatus, notRun, skipped };
+    && !handedOff && !!toolCall && classifyToolName(toolCall.name) === 'bash';
+  return { state, displayStatus, stepStatus, notRun, skipped, handedOff };
 }
 
 /** Preserve even empty tool results when adapting the trace's flattened representation. */

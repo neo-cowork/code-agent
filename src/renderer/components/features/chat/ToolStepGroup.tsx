@@ -1,4 +1,5 @@
 import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
+import { readHelperOutcomes } from '../../../utils/helperOutcomeCopy';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
@@ -138,7 +139,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { notRun: terminal.notRun, skipped: terminal.skipped, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, skipped: terminal.skipped, handedOff: terminal.handedOff, helperOutcomes: readHelperOutcomes(tc.metadata), connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
