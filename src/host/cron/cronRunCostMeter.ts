@@ -18,6 +18,9 @@
 // ============================================================================
 import { createScopedCostLimit, type ScopedCostListener } from '../services/core/scopedCostLimit';
 import { createCronExecutionCostWriter } from './cronPersistence';
+import { isZeroPricedModel } from '../../shared/constants';
+import { addCronRunCostUsd } from '../../shared/cronRunLedger';
+import type { CronJobExecution } from '../../shared/contract/cron';
 import { isCronAgentActionResult, isRecord } from './cronNormalizers';
 
 /** 纯计量档的上限：高到永不触顶；若真越过，说明预算体系整体失守，fail-loud 合理。 */
@@ -73,7 +76,7 @@ export function createCronRunCostMeterForExecution(
  * role-wake 结果两个形状），失败路径读挂在 Error 上的 cronRunCostUsd。
  * 其他 result 一律 undefined——云端结果、模型自由文本不猜成本。
  */
-export function readCronRunCostUsd(source: unknown): number | undefined {
+function readCronRunCostUsd(source: unknown): number | undefined {
   if (source instanceof Error) {
     return readPositiveCost((source as Error & { cronRunCostUsd?: unknown }).cronRunCostUsd);
   }
@@ -88,9 +91,54 @@ function readPositiveCost(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-/** 把实测成本挂到失败的 Error 上（失败路径的记账通道；成功路径走 result.costUsd）。 */
-export function attachCronRunCost(error: unknown, meter: CronRunCostMeter): void {
+/**
+ * 包月/免费额度标记（N-FIX-CRON-SUBSCRIPTION-COST-ALWAYS-UNRECORDED）：本次模型在价表里是 0 元、
+ * 计量器也确实读到 0 → true；有正的实测成本（嵌套了计价调用）或模型不是 0 元 → undefined。
+ * 不编造美元数，只给「不按美元计费」的机读标记。
+ */
+export function cronFlatFeeForModel(
+  modelConfig: { provider: string; model: string } | undefined,
+  costUsd: number,
+): true | undefined {
+  if (!modelConfig || costUsd > 0) return undefined;
+  return isZeroPricedModel(modelConfig.provider, modelConfig.model) ? true : undefined;
+}
+
+/** role-wake 成功结果：按醒来会话实际用的模型补 flatFee（跳过的唤醒没有会话，不打标）。 */
+export async function markWakeFlatFee<T extends { sessionId?: string }>(result: T): Promise<T | (T & { flatFee: true })> {
+  if (!result.sessionId) return result;
+  const { getSessionManager } = await import('../services/infra/sessionManager');
+  const session = await getSessionManager().getSession(result.sessionId);
+  return cronFlatFeeForModel(session?.modelConfig, 0) ? { ...result, flatFee: true } : result;
+}
+
+/**
+ * 把一次尝试的产出（成功 result / 失败 Error）并入执行记录：累计成本 + flatFee 标记。
+ * 有任何正成本即以美元为准、清掉标记；cloud/无模型调用的行两者都不写。
+ */
+export function applyCronRunOutcome(execution: CronJobExecution, source: unknown): void {
+  execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(source));
+  const flagged = source instanceof Error
+    ? (source as Error & { cronRunFlatFee?: unknown }).cronRunFlatFee === true
+    : isRecord(source) && source.flatFee === true;
+  if (execution.cost !== undefined) delete execution.flatFee;
+  else if (flagged) execution.flatFee = true;
+}
+
+/** 把实测成本（或包月标记）挂到失败的 Error 上（失败路径的记账通道；成功路径走 result.costUsd / result.flatFee）。 */
+export function attachCronRunCost(
+  error: unknown,
+  meter: CronRunCostMeter,
+  modelConfig?: { provider: string; model: string },
+): void {
+  if (!(error instanceof Error)) return;
   const costUsd = meter.getCostUsd();
-  if (costUsd <= 0 || !(error instanceof Error) || 'cronRunCostUsd' in error) return;
+  if (costUsd <= 0) {
+    if (cronFlatFeeForModel(modelConfig, costUsd) && !('cronRunFlatFee' in error)) {
+      (error as Error & { cronRunFlatFee?: true }).cronRunFlatFee = true;
+    }
+    return;
+  }
+  if ('cronRunCostUsd' in error) return;
   (error as Error & { cronRunCostUsd?: number }).cronRunCostUsd = costUsd;
 }
