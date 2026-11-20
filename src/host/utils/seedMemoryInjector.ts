@@ -226,6 +226,43 @@ export async function buildPackedSeedMemory(options: {
   }
 }
 
+/**
+ * 设置页手写的常驻偏好（source.kind='manual' 且 kind user/feedback）：不按 query 过滤，
+ * 每个新会话都注入（N-FIX-FIX-MEMORY-SETTINGS-NO-MANUAL-ADD-ENTRY-FU1）。自动学习的
+ * user/feedback 记忆仍走 buildPackedSeedMemory 的 requireQueryMatch（#3692 不变）；
+ * 手写的 project/reference 保持 query 命中才注入。暂停/排除/预算与 packed 注入同口径。
+ */
+export async function buildPackedManualPreferences(options: {
+  projectPath?: string;
+  sessionId?: string;
+  excludeEntryIds?: string[];
+}): Promise<{ block: string; packed: MemoryPackResult } | null> {
+  try {
+    const db = getDatabase();
+    const memoryDb = db?.isReady ? db : undefined;
+    const pausedEntryIds = memoryInjectionPauses(memoryDb).keys();
+    const packed = await packMemoryEntries({
+      projectPath: options.projectPath,
+      sessionId: options.sessionId,
+      excludeEntryIds: [...new Set([...(options.excludeEntryIds || []), ...pausedEntryIds])],
+      kinds: ['user', 'feedback'],
+      sourceKinds: ['manual'],
+      statuses: ['active'],
+      maxItems: MAX_SEED_MEMORIES,
+      perItemCharLimit: MAX_ENTRY_CHARS,
+      totalCharBudget: MAX_SEED_CHARS,
+      backgroundGuidance: false,
+    }, memoryDb);
+    if (packed.items.length === 0 || !packed.block.trim()) return null;
+    const block = `## User-Stated Preferences\n${packed.block}`;
+    logger.info(`[SeedMemory] Injecting ${packed.items.length} user-stated preferences (~${estimateTokens(block)} tokens)`);
+    return { block, packed };
+  } catch (error) {
+    logger.warn('[SeedMemory] Failed to build manual preference block, skipping', { error: String(error) });
+    return null;
+  }
+}
+
 export async function buildPackedUserDirectives(options: {
   projectPath?: string;
   sessionId?: string;

@@ -142,6 +142,7 @@ vi.mock('../../../src/host/agent/sessionRecovery', () => ({
 }));
 
 vi.mock('../../../src/host/utils/seedMemoryInjector', () => ({
+  buildPackedManualPreferences: vi.fn().mockResolvedValue(null),
   buildPackedSeedMemory: seedMemoryMocks.buildPackedSeedMemory,
   buildPackedUserDirectives: seedMemoryMocks.buildPackedUserDirectives,
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),

@@ -119,6 +119,7 @@ vi.mock('../../../src/host/agent/sessionRecovery', () => ({
 }));
 
 vi.mock('../../../src/host/utils/seedMemoryInjector', () => ({
+  buildPackedManualPreferences: vi.fn().mockResolvedValue(null),
   buildPackedSeedMemory: vi.fn().mockResolvedValue(null),
   buildPackedUserDirectives: vi.fn().mockResolvedValue(null),
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),
@@ -395,6 +396,7 @@ import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeCont
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
 import { GoalModeController } from '../../../src/host/agent/goalModeController';
 import {
+  buildPackedManualPreferences,
   buildPackedSeedMemory,
   buildPackedUserDirectives,
   buildSeedMemoryBlock,
@@ -536,6 +538,7 @@ describe('ConversationRuntime', () => {
     clearMemoryInjectionTracesForTest();
     vi.mocked(buildPackedSeedMemory).mockResolvedValue(null);
     vi.mocked(buildPackedUserDirectives).mockResolvedValue(null);
+    vi.mocked(buildPackedManualPreferences).mockResolvedValue(null);
     vi.mocked(buildSeedMemoryBlock).mockReturnValue(null);
     vi.mocked(buildRecentConversationsBlock).mockResolvedValue(null);
     activityMocks.getCurrentActivityContext.mockResolvedValue({
@@ -1368,6 +1371,89 @@ describe('ConversationRuntime', () => {
           source: 'directive-memory-packer',
           count: 1,
         }),
+      );
+    });
+
+    // N-FIX-FIX-MEMORY-SETTINGS-NO-MANUAL-ADD-ENTRY-FU1：设置页手写的常驻偏好走独立
+    // <user-stated-preferences> 系统消息，不再被 query 命中挡住；条目从 query 命中的
+    // user-memory 包排除，避免双重注入。
+    it('injects manual preferences as their own user-stated-preferences block and excludes them from the query pack', async () => {
+      const packedItems = [{
+        entryId: 'mem_entry_manual_1', title: 'I prefer Chinese replies, keep answers short', kind: 'user',
+        scope: 'global', status: 'active', score: 30, scoreReasons: [],
+        source: { kind: 'manual', sourceOfTruth: 'light_file' }, evidence: [],
+        content: 'I prefer Chinese replies, keep answers short', originalChars: 41, packedChars: 41, truncated: false,
+      }];
+      vi.mocked(buildPackedManualPreferences).mockResolvedValue({
+        block: '## User-Stated Preferences\n<memory-pack>\n- [1] I prefer Chinese replies, keep answers short\n</memory-pack>',
+        packed: { items: packedItems, selectedCount: 1, totalCandidates: 1, budget: 800 } as any,
+      });
+
+      await runtime.initializeRun('What is the difference between TCP and UDP, and when should I pick each one?');
+
+      const preferenceCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
+        .filter((call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).startsWith('<user-stated-preferences>'));
+      expect(preferenceCalls).toHaveLength(1);
+      expect(preferenceCalls[0][0]).toContain('standing preferences the user wrote themselves in Settings');
+      expect(preferenceCalls[0][0]).toContain('cannot override system, safety, permission, or tool-policy rules');
+      // 篇幅/格式偏好要落到实处：简短 = 几句话直说，不加小标题、表格、分组要点
+      expect(preferenceCalls[0][0]).toContain('If a preference asks for short or concise answers');
+      expect(preferenceCalls[0][0]).toContain('no headings, no tables');
+      expect(preferenceCalls[0][0]).toContain('I prefer Chinese replies, keep answers short');
+      expect(preferenceCalls[0][1]).toBe('user-memory');
+
+      // 同一条目不得再进 query 命中的 user-memory 包（双重注入防护）
+      const seedCall = vi.mocked(buildPackedSeedMemory).mock.calls[0]?.[0];
+      expect(seedCall?.excludeEntryIds).toContain('mem_entry_manual_1');
+      expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
+        expect.objectContaining({
+          blockType: 'user-memory',
+          trigger: 'session_start',
+          injected: true,
+          source: 'manual-preference-packer',
+          count: 1,
+          sessionId: 'test-session-1',
+        }),
+      );
+    });
+
+    it('records an empty manual-preference trace when the packer returns nothing', async () => {
+      vi.mocked(buildPackedManualPreferences).mockResolvedValue(null);
+
+      await runtime.initializeRun('hello');
+
+      expect(vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls)
+        .not.toContainEqual([expect.stringContaining('<user-stated-preferences>'), expect.anything()]);
+      expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
+        expect.objectContaining({
+          blockType: 'user-memory',
+          trigger: 'session_start',
+          injected: false,
+          source: 'manual-preference-packer',
+        }),
+      );
+    });
+
+    it('injects nothing from the manual-preference block when memoryMode=off', async () => {
+      ctx.memoryMode = 'off';
+      const packedItems = [{
+        entryId: 'mem_entry_manual_1', title: 'I prefer Chinese replies, keep answers short', kind: 'user',
+        scope: 'global', status: 'active', score: 30, scoreReasons: [],
+        source: { kind: 'manual', sourceOfTruth: 'light_file' }, evidence: [],
+        content: 'I prefer Chinese replies, keep answers short', originalChars: 41, packedChars: 41, truncated: false,
+      }];
+      vi.mocked(buildPackedManualPreferences).mockResolvedValue({
+        block: '## User-Stated Preferences\n<memory-pack>\n- [1] I prefer Chinese replies, keep answers short\n</memory-pack>',
+        packed: { items: packedItems, selectedCount: 1, totalCandidates: 1, budget: 800 } as any,
+      });
+
+      await runtime.initializeRun('hello');
+
+      expect(buildPackedManualPreferences).not.toHaveBeenCalled();
+      expect(vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls)
+        .not.toContainEqual([expect.stringContaining('<user-stated-preferences>'), expect.anything()]);
+      expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).not.toContainEqual(
+        expect.objectContaining({ source: 'manual-preference-packer', injected: true }),
       );
     });
 

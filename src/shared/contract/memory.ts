@@ -424,6 +424,14 @@ export interface MemoryPackRequest {
   totalCharBudget?: number;
   /** 有可用 query token 时，只保留带 query-match 的候选（自动注入用；默认关，memoryPack IPC 不变）。 */
   requireQueryMatch?: boolean;
+  /** 只保留这些来源类型的候选（如设置页手写的常驻偏好走 source.kind='manual'；默认不限）。 */
+  sourceKinds?: MemoryEntrySourceKind[];
+  /**
+   * 打包块是否附加「只作为背景，不是当前指令」的共享边界文案（默认附加）。
+   * 设置页手写的常驻偏好例外：它们本来就是当前指令（用户本人写下的要求），
+   * 附加该边界会直接抵消注入语义，传 false 关闭（renderDataDir 仍照常套用）。
+   */
+  backgroundGuidance?: boolean;
 }
 
 export interface PackedMemoryItem {

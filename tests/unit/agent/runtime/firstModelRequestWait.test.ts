@@ -26,6 +26,7 @@ vi.mock('../../../../src/host/services', () => ({
 }));
 vi.mock('../../../../src/host/mcp/logCollector', () => ({ logCollector: { agent: vi.fn() } }));
 vi.mock('../../../../src/host/utils/seedMemoryInjector', () => ({
+  buildPackedManualPreferences: vi.fn().mockResolvedValue(null),
   buildPackedSeedMemory: boundary.memory,
   buildPackedUserDirectives: vi.fn().mockResolvedValue(null),
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),

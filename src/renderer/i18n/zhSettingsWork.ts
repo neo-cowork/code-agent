@@ -582,7 +582,7 @@ export const zhSettingsWork = {
         deleteSuccessPrefix: '已归档 ',
         deleteFailed: '归档失败',
         managementTitle: '记忆文件管理',
-        managementDescription: '查看本地 Light Memory 文件、类型、更新时间和内容长度。',
+        managementDescription: '查看已保存的记忆、类型、更新时间和内容长度。',
         stats: {
           memoryFiles: '记忆文件',
           matchSuffix: ' 个匹配当前筛选',
