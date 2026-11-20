@@ -933,9 +933,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                         // localizeModelLabel（zh 还原中文限定词、en 用目录英文限定词），
                                         // 与下拉行标签同管线。
                                         ? modelText.priceCoefTitle.replace('{baseline}', localizeModelLabel(
-                                          PRICING_BASELINE_DEFAULT.modelId,
-                                          getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId),
-                                          language))
+                                          PRICING_BASELINE_DEFAULT.modelId, getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId), language))
                                         : modelText.priceUnknownTitle}
                                     >
                                       {badge.label}
