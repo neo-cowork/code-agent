@@ -19,8 +19,13 @@ const KEEP_CLAIM_RE = new RegExp(
   'i',
 );
 
-const HONEST_DENIAL_RE =
-  /已(?:经)?(?:被)?关(?:闭|掉|了)|窗口已关|(?:没|未|无法|不能|没能|未能)(?:能|有)?(?:成功)?保留|(?:was|been|is|now|already) closed|(?:could not|couldn't|cannot|can't|unable to|failed to) keep|not (?:been )?kept|no longer open|isn't open/i;
+// A sentence that denies the claim (closed / not kept) is honest even if it mentions "window still open".
+const NEGATION_RE =
+  /没留着|没有留着|没保留|没有保留|未保留|没能|未能|无法|不能|关了|关掉|已关|已经关|被关闭|不再|没有[^，。]{0,8}(?:开着|还开|仍开|保留|留着)|并没有|\bnot\b|n't|\bclosed\b|no longer/i;
+
+function claimsWindowKept(content: string): boolean {
+  return content.split(/[。！？!?;；\n]|\.(?=\s|$)/).some((sentence) => KEEP_CLAIM_RE.test(sentence) && !NEGATION_RE.test(sentence));
+}
 
 const BROWSER_KEEP_CLAIM_REPAIR_PROMPT = [
   '<browser-keep-claim-guard>',
@@ -48,7 +53,7 @@ export type BrowserKeepClaimGateResult =
 // The registry pulls in the browser stack (pool/service singletons); load it lazily, only once a claim matched.
 export async function applyBrowserKeepClaimGate(input: BrowserKeepClaimGateInput): Promise<BrowserKeepClaimGateResult> {
   const content = input.assistantContent || '';
-  if (!content.trim() || !KEEP_CLAIM_RE.test(content)) return { action: 'none', content };
+  if (!content.trim() || !claimsWindowKept(content)) return { action: 'none', content };
 
   const browserContext = input.usedBrowserTool
     || (input.recentUserMessages ?? []).some((text) => BROWSER_CONTEXT_RE.test(text));
@@ -56,7 +61,6 @@ export async function applyBrowserKeepClaimGate(input: BrowserKeepClaimGateInput
 
   const { getKeptBrowserRegistry } = await import('../../services/surfaceExecution/keptBrowserRegistry');
   if (getKeptBrowserRegistry().snapshot(input.sessionId).state === 'kept') return { action: 'none', content };
-  if (HONEST_DENIAL_RE.test(content)) return { action: 'none', content };
 
   const trigger = input.usedBrowserTool ? 'browser_tool_used' : 'user_text_mentions_browser';
   if (input.retriesDone < 1) {

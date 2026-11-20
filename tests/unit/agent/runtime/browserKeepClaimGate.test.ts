@@ -54,6 +54,11 @@ describe('applyBrowserKeepClaimGate', () => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: text })).action).toBe('none');
   });
 
+  it('accepts the honest reply a model gives after the repair prompt (real-run text)', async () => {
+    const text = '没留着——那次浏览是后台任务临时打开的，跑完就关了，所以现在没有窗口还开着。要留页面的话，我可以重新打开一次。';
+    expect((await applyBrowserKeepClaimGate({ ...base, retriesDone: 1, assistantContent: text })).action).toBe('none');
+  });
+
   it('does nothing for unrelated chat or non-browser context', async () => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: '好的，已经帮你改完了。' })).action).toBe('none');
     expect((await applyBrowserKeepClaimGate({ sessionId: 's1', usedBrowserTool: false, retriesDone: 0, recentUserMessages: ['改一下代码'], assistantContent: '窗口保留着。' })).action).toBe('none');
