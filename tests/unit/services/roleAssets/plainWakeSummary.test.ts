@@ -9,7 +9,7 @@ import { plainWakeSummary } from '../../../../src/host/services/roleAssets/wakeR
 const HOSTILE: Array<[string, string, string?]> = [
   ['table-only', '| 检查项 | 结论 |\n|---|---|\n| a | b |', '周报已检查，无需处理。'],
   ['heading+table', '## 实测现状\n| 检查项 | 结论 |\n|---|---|\n| `workspace/weekly/weekly-47.md` | 通过 |\n\n巡检完成，没有动文件。'],
-  ['absolute path', '已读取 /Users/leo/work/workspace/weekly/weekly-47.md，内容完整。'],
+  ['absolute path', '已读取 /home/alice/work/workspace/weekly/weekly-47.md，内容完整。'],
   ['~/ path', '备份写到 ~/.code-agent/backup/notes.md 和 ~/Documents/a.txt 了。'],
   ['fenced code', '```bash\ncat workspace/weekly/weekly-47.md | head\n---\n```\n检查完了，两份周报都在。'],
   ['CJK prose + relative path', '**周报**已生成：见 [周报](workspace/weekly/weekly-47.md) 与 `workspace/weekly/weekly-46.md`。第二句。第三句不应出现。'],
@@ -26,6 +26,11 @@ describe('plainWakeSummary recurrence gate', () => {
     expect(out).not.toMatch(/[\w.~-]+\/[\w./-]+\.\w+/);
     expect(out).not.toMatch(/(?:^|\s)(?:~|\.{0,2})\/[\w.-]+/);
     expect(out.length).toBeLessThanOrEqual(200);
+  });
+
+  it('fixtures use a placeholder home directory, never a real login name', () => {
+    const src = readFileSync('tests/unit/services/roleAssets/plainWakeSummary.test.ts', 'utf8');
+    expect(src).not.toMatch(/\/Users\/[l]eo\b/);
   });
 
   it('keeps only the basename of a mentioned file and at most two sentences', () => {
