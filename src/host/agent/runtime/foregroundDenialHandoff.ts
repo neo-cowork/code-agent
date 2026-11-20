@@ -245,7 +245,8 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   if (eligible.length > 0 && !alreadyAttempted(ctx)) {
     markAttempted(ctx);
     if (await handOffInThisTurn(ctx)) {
-      await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds);
+      const handedOffIds = new Set(eligible.map((call) => call.id));
+      await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds, handedOffIds);
       await emitAssistantClose(ctx, contextAssembly, response, backgroundHandoffUserSentence(ctx));
       return 'break';
     }
