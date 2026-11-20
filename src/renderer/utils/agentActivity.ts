@@ -1,6 +1,6 @@
 import type { AgentTreeNodeStatus } from '@shared/contract/agentTree';
 import { resolveAgentNodeOutcomeKey } from '../i18n/outcomeWords';
-import type { LastToolFailure, LastToolStep, Task } from '@shared/contract/backgroundTask';
+import type { BashStep, LastToolFailure, LastToolStep, Task } from '@shared/contract/backgroundTask';
 import type { ToolStepStatus } from '@shared/contract';
 import type { PermissionRequest } from '@shared/contract/permission';
 import { findConnectorToolMetadata } from '@shared/contract/workbenchTools';
@@ -49,12 +49,22 @@ export function describeLastToolFailure(
   }) ?? undefined;
 }
 
+/** lastToolStep 对应 bashSteps 的最后一条（同序追加）；两者都是 80 字命令预览，须严格相等且该条 notRun。 */
+function lastBashStepMatches(bashSteps: readonly BashStep[] | undefined, target: string | undefined): boolean {
+  const last = bashSteps?.[bashSteps.length - 1];
+  return !!last?.notRun && !!target && Array.from(last.command.trim()).slice(0, 80).join('') === target;
+}
+
 export function describeLastToolStep(
   step: LastToolStep | undefined,
   t: Translations,
   status: ToolStepStatus = 'completed',
+  bashSteps?: readonly BashStep[],
 ): string | undefined {
   if (!step) return undefined;
+  // 当前动作若正是被拦下、从未执行的那条 Bash，与「最近动作」列表同口径读作「未执行 · 描述」。
+  const skipped = (step.tool === 'Bash' || step.tool === 'bash')
+    && lastBashStepMatches(bashSteps, step.target);
   const targetArgs = step.target || step.action
     ? {
       ...(step.description ? { description: step.description } : {}),
@@ -68,7 +78,7 @@ export function describeLastToolStep(
       ...(step.action ? { action: step.action } : {}),
     }
     : undefined;
-  return humanizeToolStep(step.tool, targetArgs, t, undefined, status);
+  return humanizeToolStep(step.tool, targetArgs, t, undefined, skipped ? 'failed' : status, undefined, skipped ? { skipped: true } : undefined);
 }
 
 // ============================================================================

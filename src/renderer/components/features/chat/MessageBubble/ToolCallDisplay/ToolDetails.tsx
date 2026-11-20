@@ -36,6 +36,7 @@ import {
 } from '../../../../../utils/toolExecutionPresentation';
 import { hasCompletenessIssues, replaceCompletenessWarningInOutput } from '../../../../../utils/toolOutputCompletenessWarning';
 import { readHostReasonFromMetadata } from '../../../../../utils/hostReasonPresentation';
+import { isToolResultNeverExecuted } from '@shared/toolNeverExecuted';
 import { cleanToolResultDisplayText } from '../../../../../utils/toolResultDisplayText';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
@@ -177,7 +178,10 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const humanError = result && !result.success
     ? humanizeToolError(result.error, name, t, result.metadata)
     : null;
+  // 从未执行的 Bash：折叠行已经写了「未执行 · 描述」和原因句，展开不再重复同一句（命令/参数区不变）。
   const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
+  // 带结构化 hostReason 的拒绝（审批/权限规则）由既有登记表文案块承担原因说明，不在此抑制。
+  const neverRanShell = isShellTool(name) && isToolResultNeverExecuted(result) && !structuredHostReason;
 
   const isEditFile = name === 'Edit';
   // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一聚合 old/new；legacy 平铺不变
@@ -362,7 +366,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   copy={copy}
                 />
               )}
-              {!result.success && !safeBrowserComputerResult ? (
+              {neverRanShell ? null : !result.success && !safeBrowserComputerResult ? (
                 <div className="rounded-lg border border-badge-warning/20 bg-amber-500/[0.04] p-3 text-xs">
                   <div className="font-medium text-badge-warning/90">
                     {humanError?.summary ?? copy.genericErrorSummary}

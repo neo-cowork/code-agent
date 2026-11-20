@@ -100,6 +100,8 @@ export interface LastToolFailure {
 export interface BashStep {
   description?: string;
   command: string;
+  /** 该命令从未执行（被审批拒绝/运行策略拦下）；跑过再失败的不写。 */
+  notRun?: true;
 }
 
 export interface TaskProgress {

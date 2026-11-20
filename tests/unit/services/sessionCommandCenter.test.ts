@@ -589,6 +589,57 @@ describe('SessionCommandCenter', () => {
     center.dispose();
   });
 
+  it('marks the denied Bash step notRun in progress.bashSteps and leaves the others plain', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { projectTerminalResult: vi.fn() });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    const run = (id: string, command: string, description: string, end: Record<string, unknown>) => {
+      manager.emitAgent('session-a', { type: 'tool_call_start', data: { id, name: 'Bash', arguments: { command, description } } } as AgentEvent, spawned.task.id);
+      manager.emitAgent('session-a', { type: 'task_progress', data: { tool: 'Bash', target: command, description } } as AgentEvent, spawned.task.id);
+      manager.emitAgent('session-a', { type: 'tool_call_end', data: { toolCallId: id, ...end } } as AgentEvent, spawned.task.id);
+    };
+    run('b1', 'date', 'Check today date', { success: true, output: 'Fri' });
+    run('b2', 'ls ~/Downloads', 'List Downloads folder', {
+      success: false, error: 'denied',
+      metadata: { failureCode: 'permission-denied', hostReason: { code: 'PERMISSION_DENIED_BY_USER' } },
+    });
+    run('b3', 'false', 'Exit with one', { success: false, error: 'exit 1', metadata: { exitCode: 1, executed: true } });
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' }).find((task) => task.id === spawned.task.id);
+    expect(projected?.progress?.bashSteps).toEqual([
+      { description: 'Check today date', command: 'date' },
+      { description: 'List Downloads folder', command: 'ls ~/Downloads', notRun: true },
+      { description: 'Exit with one', command: 'false' },
+    ]);
+    center.dispose();
+  });
+
+  // 审阅发现：按命令文本回标会把更早、真跑过的同命令步骤标成未执行；现按 toolCallId 对应各自追加的那一步。
+  async function runThenSkippedDuplicate(withStart: boolean) {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { projectTerminalResult: vi.fn() });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    const emit = (event: AgentEvent) => manager.emitAgent('session-a', event, spawned.task.id);
+    const args = { command: 'npm test', description: 'Run the tests' };
+    emit({ type: 'tool_call_start', data: { id: 't1', name: 'Bash', arguments: args } } as AgentEvent);
+    emit({ type: 'task_progress', data: { tool: 'Bash', target: 'npm test', description: 'Run the tests' } } as AgentEvent);
+    emit({ type: 'tool_call_end', data: { toolCallId: 't1', success: true, output: 'ok' } } as AgentEvent);
+    if (withStart) emit({ type: 'tool_call_start', data: { id: 't2', name: 'Bash', arguments: args } } as AgentEvent);
+    emit({ type: 'tool_call_end', data: { toolCallId: 't2', success: false, error: 'skipped', metadata: { skipped: true, bounced: true } } } as AgentEvent);
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' }).find((task) => task.id === spawned.task.id);
+    center.dispose();
+    return projected?.progress?.bashSteps;
+  }
+
+  it('barrier-deferred duplicate (no start, no task_progress) leaves the executed step unmarked', async () => {
+    expect(await runThenSkippedDuplicate(false)).toEqual([{ description: 'Run the tests', command: 'npm test' }]);
+  });
+
+  it('force-sealed duplicate (start + skipped result, no task_progress) leaves the executed step unmarked', async () => {
+    expect(await runThenSkippedDuplicate(true)).toEqual([{ description: 'Run the tests', command: 'npm test' }]);
+  });
+
   it('counts every failed tool call in progress.failedToolCalls, even without an allow-listed code', async () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {

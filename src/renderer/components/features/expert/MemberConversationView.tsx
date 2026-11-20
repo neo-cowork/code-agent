@@ -142,7 +142,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     // 逐条过 humanizeToolStep 的描述过滤（命令样/错语种退通用文案），连续命令才分得清。
     const bashRows = [...(snapshot?.bashSteps ?? [])].reverse().map((step, index) => ({
       key: `Bash-step-${index}`,
-      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, step.notRun ? 'failed' : 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
     return [...(snapshot?.tools ?? [])].reverse().flatMap((tool, index) => (
       (tool === 'Bash' || tool === 'bash') && bashRows.length > 0
@@ -196,12 +196,12 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           permission: permissionState,
         });
       const currentAction = plainNode
-        ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus)
-        : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus);
+        ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus, plainNode.bashSteps)
+        : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus, plainTask?.progress?.bashSteps);
     // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
     const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
       key: `step-${index}`,
-      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, step.notRun ? 'failed' : 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立

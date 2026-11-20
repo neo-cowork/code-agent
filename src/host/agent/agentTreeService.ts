@@ -33,6 +33,7 @@ import {
 } from '../context/subagentContextStore';
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
+import { alignSnapshotNotRun, notRunCallIds } from './bashStepOutcome';
 import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 import { stripWorkdirPrefix } from './workdirPrefix';
@@ -329,13 +330,15 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
 
 function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
   const steps: BashStep[] = [];
+  const notRunIds = notRunCallIds(record.messages);
   for (const message of record.messages) {
     for (const call of message.toolCalls ?? []) {
       if (call.name !== 'Bash' && call.name !== 'bash') continue;
       const description = bashStepDescription(call.name, call.arguments);
-      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '' });
+      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '', ...(notRunIds.has(call.id) ? { notRun: true as const } : {}) });
     }
   }
+  alignSnapshotNotRun(steps, record.snapshot?.bashSteps);
   return steps.length > 0 ? steps.slice(-20) : undefined;
 }
 

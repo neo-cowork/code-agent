@@ -1,3 +1,4 @@
+import { isToolResultNeverExecuted } from '@shared/toolNeverExecuted';
 import { SkillActivityBanner } from './SkillActivityBanner';
 import { isProjectTrustPendingTurn, isSendFailureTurn } from '../../../utils/projectTrustTurn';
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
@@ -853,7 +854,7 @@ function getTurnPhase(turn: TraceTurn, t: Translations): string | null {
   }
 
   const lastTool = getLastToolNode(turn)?.toolCall;
-  if (lastTool) return humanizeToolStep(lastTool.name, lastTool.args, t, lastTool.shortDescription, lastTool.result === undefined || lastTool._streaming ? 'running' : 'completed');
+  if (lastTool) return humanizeToolStep(lastTool.name, lastTool.args, t, lastTool.shortDescription, lastTool.result === undefined || lastTool._streaming ? 'running' : 'completed', undefined, { skipped: isToolResultNeverExecuted({ success: lastTool.success, metadata: lastTool.metadata }) });
 
   if (turn.status === 'streaming') return null;
 

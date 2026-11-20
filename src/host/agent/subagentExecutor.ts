@@ -89,6 +89,8 @@ import { SubagentDoomLoopGuard } from './subagentDoomLoopGuard';
 import { createSubagentTurnObservability } from './subagentTurnTrace';
 import { buildStepCapConclusion } from './subagentStepCapConclusion';
 import { noteSubagentLiveProgress } from './backgroundSubagentLiveProgress';
+import { markBashStepOutcome, pushBashStep } from './bashStepOutcome';
+import type { BashStep } from '../../shared/contract/backgroundTask';
 import {
   handleSubagentAbort,
   finalizeSubagentSuccess, appendSubagentLeftoverShellReport, reportSubagentLeftoverShells,
@@ -185,7 +187,7 @@ export class SubagentExecutor {
       ? Math.max(0, Math.floor(config.maxToolCalls))
       : undefined;
     const toolsUsed: string[] = [];
-    const bashSteps: Array<{ description?: string; command: string }> = [];
+    const bashSteps: BashStep[] = [];
     // 持久化角色履历用：收集实例产出的产物（设计 §4.3 履历 = 产物清单）
     const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
@@ -876,11 +878,7 @@ export class SubagentExecutor {
             }
 
             toolsUsed.push(toolCall.name);
-            const bashArgs = toolCall.arguments as { description?: unknown; command?: unknown } | undefined;
-            if (toolCall.name === 'Bash' || toolCall.name === 'bash') {
-              const description = typeof bashArgs?.description === 'string' ? bashArgs.description : undefined;
-              bashSteps.push({ ...(description ? { description } : {}), command: typeof bashArgs?.command === 'string' ? bashArgs.command.slice(0, 200) : '' });
-            }
+            const bashStep = pushBashStep(bashSteps, toolCall);
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
@@ -924,6 +922,7 @@ export class SubagentExecutor {
                   subagentPolicy,
                 },
               ).finally(markToolEnd);
+              markBashStepOutcome(bashStep, result);
               await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡

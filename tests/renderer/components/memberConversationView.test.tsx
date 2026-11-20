@@ -13,6 +13,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
@@ -25,7 +26,9 @@ const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefin
   agents: [], activeSessionId: undefined, messages: [],
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+const i18nState = vi.hoisted(() => ({ en: false }));
+afterEach(() => { i18nState.en = false; });
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: i18nState.en ? en : zh }) }));
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({ useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState) }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -347,6 +350,94 @@ describe('成员对话页', () => {
     const rows = screen.getAllByTestId('member-bash-step').map((node) => node.textContent);
     expect(rows).toEqual(['列出工作区目录内容', zh.toolStepHumanize.bashFallback, '找出最大的 csv']);
     expect(screen.getByTestId('member-bash-steps').textContent).not.toContain('/tmp/ws');
+  });
+
+  it('被拒绝的 Bash 步骤读作「未执行 · 描述」，其余仍是普通描述，命令不外露', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-nr', sessionId: 'session-1', source: 'delegate_task', title: '查下载', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        bashSteps: [
+          { description: '查看今天日期', command: 'date' },
+          { description: '列出下载文件夹', command: 'ls ~/Downloads', notRun: true },
+          { description: '统计 PDF 数量', command: 'ls ~/Downloads | grep -c pdf' },
+        ],
+      },
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-nr' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-bash-steps')).toBeTruthy());
+    expect(screen.getAllByTestId('member-bash-step').map((node) => node.textContent))
+      .toEqual(['查看今天日期', `${zh.toolStepHumanize.notRunPrefix} · 列出下载文件夹`, '统计 PDF 数量']);
+    expect(screen.getByTestId('member-bash-steps').textContent).not.toMatch(/Downloads|ls |date/);
+  });
+
+  it('swarm 成员近期动作里被拒绝的 Bash 同样读作「未执行 · 描述」', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 1, maxTokens: 10, usagePercent: 1, messageCount: 1, warningLevel: 'normal', lastUpdated: 1,
+          attachments: [], previews: [], truncatedMessages: 0, tools: ['Bash'],
+          bashSteps: [{ description: '列出下载文件夹', command: 'ls ~/Downloads', notRun: true }, { description: '查看今天日期', command: 'date' }],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+    expect(screen.getAllByTestId('member-recent-action').map((node) => node.textContent))
+      .toEqual(['查看今天日期', `${zh.toolStepHumanize.notRunPrefix} · 列出下载文件夹`]);
+  });
+
+  it('当前动作条：最后一步被拒绝时读「未执行 · 描述」，没被拒绝时仍是普通描述', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const mk = (notRun: boolean): Task => ({
+      id: 'task-ca', sessionId: 'session-1', source: 'delegate_task', title: '查下载', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        lastToolStep: { tool: 'Bash', target: 'mkdir -p ~/Downloads/PDFs && mv ~/Downloads/*.pdf ~/Downloads/PDFs/', description: '把 PDF 移进新文件夹', at: 2 },
+        bashSteps: [{ description: '把 PDF 移进新文件夹', command: 'mkdir -p ~/Downloads/PDFs && mv ~/Downloads/*.pdf ~/Downloads/PDFs/', ...(notRun ? { notRun: true as const } : {}) }],
+      },
+    });
+    useBackgroundTaskStore.setState({ tasks: [mk(true)] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-ca' });
+    const view = render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).toContain(`${zh.toolStepHumanize.notRunPrefix} · 把 PDF 移进新文件夹`);
+    view.unmount();
+    useBackgroundTaskStore.setState({ tasks: [mk(false)] });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).not.toContain(zh.toolStepHumanize.notRunPrefix);
+  });
+
+  it('current-action bar (en, agent node): denied last step reads "Not run · desc"; a retry that ran stays plain', async () => {
+    i18nState.en = true;
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const mk = (steps: Array<{ description: string; command: string; notRun?: true }>): Task => ({
+      id: 'task-en', sessionId: 'session-1', source: 'delegate_task', title: 'Check downloads', summary: 'Done', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: { lastToolStep: { tool: 'Bash', target: 'ls ~/Downloads', description: 'List Downloads folder', at: 2 }, bashSteps: steps },
+    });
+    const denied = { description: 'List Downloads folder', command: 'ls ~/Downloads', notRun: true as const };
+    const ran = { description: 'List Downloads folder', command: 'ls ~/Downloads' };
+    useMemberViewStore.setState({ viewingMemberId: 'task-en' });
+    useBackgroundTaskStore.setState({ tasks: [mk([ran, denied])] });
+    const first = render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).toContain('Not run · List Downloads folder');
+    first.unmount();
+    useBackgroundTaskStore.setState({ tasks: [mk([denied, ran])] });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).not.toContain('Not run');
+    i18nState.en = false;
   });
 
   it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
