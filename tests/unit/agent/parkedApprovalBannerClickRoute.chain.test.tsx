@@ -4,13 +4,14 @@
  * 壳 notification-clicked 载荷 → 真实 useCronOsNotification（冷启动）→ 落点。
  * 全程走生产入口：OrchestratorPermissionIsland.requestPermission、真实文件 SQLite 上的
  * PendingApprovalRepository、真实 NotificationService、真实 SessionAutomationService.listParkedApprovals。
- * 证据档位：hermetic-protocol（不含真壳；点击载荷由下方 TS 镜像构造）。
+ * 证据档位：hermetic-protocol（模拟壳点击，载荷来自 Rust 和 TS 共用的 fixture）。
  */
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fixture from '../../../src-tauri/src/notification_click_fixtures/needs-input-click.json';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -71,13 +72,6 @@ import { notificationService } from '../../../src/host/services/infra/notificati
 import { NEEDS_INPUT_NATIVE_FALLBACK } from '../../../src/shared/constants/timeouts';
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-
-/** TS mirror of `clicked_payload(id, session_id)` in src-tauri/src/native_notification.rs. */
-function clickedPayload(id: string, sessionId?: string): { id: string; sessionId?: string } {
-  const payload: { id: string; sessionId?: string } = { id };
-  if (sessionId) payload.sessionId = sessionId;
-  return payload;
-}
 
 function argvValue(argv: string[], flag: string): string {
   expect(argv).toContain(flag);
@@ -154,7 +148,7 @@ describe('parked approval banner click → route (chain)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** 经 requestPermission 停车一条无人值守 tool_approval，返回壳点击载荷与 notify-only argv。 */
+  /** 经 requestPermission 停车一条无人值守 tool_approval，返回 notify-only argv。 */
   async function raise(sessionId: string) {
     getPermissionModeManager().markUnattendedSession(sessionId);
     raises.push(island.requestPermission({
@@ -182,17 +176,19 @@ describe('parked approval banner click → route (chain)', () => {
     expect(event).toMatchObject({ id: argvValue(argv!, '--id'), sessionId, dedupeKey: row!.id });
     expect(argv![0]).toBe('--notify-only');
     console.info('CAPTURED notify-only argv:', JSON.stringify(argv));
-    return { argv: argv!, payload: clickedPayload(argvValue(argv!, '--id'), argvValue(argv!, '--session')) };
+    return argv!;
   }
 
   /** 冷启动：从未见过 NOTIFICATION_SHOW，id 未知；点击只靠壳载荷里的 sessionId。 */
-  async function coldClick(payload: { id: string; sessionId?: string }) {
+  async function coldClick(argv: string[]) {
+    expect(argvValue(argv, '--session')).toBe(fixture.payload.sessionId);
+    const payload = { ...fixture.payload, id: argvValue(argv, '--id') };
     vi.useRealTimers();
     const open = vi.fn();
     const runs = vi.spyOn(useAppStore.getState(), 'openCronCenterRuns');
     renderHook(() => useCronOsNotification({} as never, open));
     await waitFor(() => expect(h.click).not.toBeNull());
-    expect(listenTauriEvent).toHaveBeenCalledExactlyOnceWith('notification-clicked', expect.any(Function));
+    expect(listenTauriEvent).toHaveBeenCalledExactlyOnceWith(fixture.event, expect.any(Function));
     expect(ipcService.on).toHaveBeenCalledWith(IPC_CHANNELS.NOTIFICATION_SHOW, expect.any(Function));
     // The host broadcast was captured, never delivered to this newly mounted renderer.
     expect(postOsNotification).not.toHaveBeenCalled();
@@ -215,28 +211,27 @@ describe('parked approval banner click → route (chain)', () => {
   }
 
   it('banner argv 带该审批的 sessionId，且行是真实 pending', async () => {
-    const { argv, payload } = await raise('sess-A');
+    const argv = await raise('sess-A');
     expect(argvValue(argv, '--session')).toBe('sess-A');
-    expect(payload).toEqual({ id: argvValue(argv, '--id'), sessionId: 'sess-A' });
     const rows = repo.listByKindAndStatus('tool_approval', 'pending');
     expect(rows.map((r) => r.coordinatorId)).toEqual(['sess-A']);
   });
 
   it('pending 行 → 冷启动点击落「自动化 → 运行记录」，不开会话', async () => {
-    const { payload } = await raise('sess-A');
-    const { record, items } = await coldClick(payload);
+    const argv = await raise('sess-A');
+    const { record, items } = await coldClick(argv);
     expect(items).toEqual([expect.objectContaining({ id: repo.listByKindAndStatus('tool_approval', 'pending')[0].id, sessionId: 'sess-A', status: 'pending' })]);
     expect(useAppStore.getState().showActivityPanel).toBe(false);
     expect(record).toEqual({ openCronCenterRuns: true, showCronCenter: true, onOpenSession: [] });
   });
 
   it.each(['orphaned', 'rejected', 'rejected-voided'] as const)('点击时行已是 %s → 开会话', async (status) => {
-    const { payload } = await raise('sess-A');
+    const argv = await raise('sess-A');
     const [row] = repo.listByKindAndStatus('tool_approval', 'pending');
     if (status === 'orphaned') repo.markPendingAsOrphaned('tool_approval', Date.now());
     else repo.resolve({ id: row.id, status: 'rejected', feedback: status === 'rejected-voided' ? 'Auto-rejected after restart: args_unavailable' : 'no', resolvedAt: Date.now() });
     expect(repo.getById(row.id)?.status).toBe(status === 'orphaned' ? 'orphaned' : 'rejected');
-    const { record, items } = await coldClick(payload);
+    const { record, items } = await coldClick(argv);
     if (status === 'rejected') expect(items).toEqual([]);
     else expect(items).toEqual([expect.objectContaining({ id: row.id, sessionId: 'sess-A', status: status === 'orphaned' ? 'orphaned' : 'voided' })]);
     expect(record).toEqual({ openCronCenterRuns: false, showCronCenter: false, onOpenSession: ['sess-A'] });
@@ -248,7 +243,7 @@ describe('parked approval banner click → route (chain)', () => {
     const rowA = repo.listByKindAndStatus('tool_approval', 'pending').find((r) => r.coordinatorId === 'sess-A')!;
     repo.resolve({ id: rowA.id, status: 'rejected', feedback: 'no', resolvedAt: Date.now() });
     expect(repo.listByKindAndStatus('tool_approval', 'pending').map((r) => r.coordinatorId)).toEqual(['sess-B']);
-    const { record, items } = await coldClick(a.payload);
+    const { record, items } = await coldClick(a);
     expect(items).toEqual([expect.objectContaining({ sessionId: 'sess-B', status: 'pending' })]);
     expect(record).toEqual({ openCronCenterRuns: false, showCronCenter: false, onOpenSession: ['sess-A'] });
   });

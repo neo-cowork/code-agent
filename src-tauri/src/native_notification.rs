@@ -138,6 +138,17 @@ fn exe_is_in_app_bundle(exe: &Path) -> bool {
 /// Private metadata key; the value is the renderer's NotificationShowEvent.id.
 const NOTIFICATION_ID_KEY: &str = "neoNotificationId";
 const SESSION_ID_KEY: &str = "neoSessionId";
+const NOTIFICATION_CLICKED_EVENT: &str = "notification-clicked";
+
+fn notification_user_info<'a>(
+    id: &'a str,
+    session_id: Option<&'a str>,
+) -> [(&'static str, Option<&'a str>); 2] {
+    [
+        (NOTIFICATION_ID_KEY, Some(id)),
+        (SESSION_ID_KEY, session_id),
+    ]
+}
 
 fn notification_id(user_info: &serde_json::Value) -> Option<&str> {
     user_info
@@ -152,6 +163,15 @@ fn clicked_payload(id: &str, session_id: Option<&str>) -> serde_json::Value {
         payload["sessionId"] = serde_json::json!(session_id);
     }
     payload
+}
+
+fn clicked_payload_from_user_info(
+    mut get_string: impl FnMut(&str) -> Option<String>,
+) -> Option<serde_json::Value> {
+    let metadata = serde_json::json!({ NOTIFICATION_ID_KEY: get_string(NOTIFICATION_ID_KEY) });
+    let id = notification_id(&metadata)?;
+    let session_id = get_string(SESSION_ID_KEY);
+    Some(clicked_payload(id, session_id.as_deref()))
 }
 
 #[derive(Default)]
@@ -247,8 +267,8 @@ fn write_notification_click_released<R: tauri::Runtime>(
 #[cfg(target_os = "macos")]
 mod delegate {
     use super::{
-        clicked_payload, notification_id, write_notification_click_released, ClickDelivery,
-        NOTIFICATION_ID_KEY, SESSION_ID_KEY,
+        clicked_payload_from_user_info, write_notification_click_released, ClickDelivery,
+        NOTIFICATION_CLICKED_EVENT,
     };
     use block2::DynBlock;
     use objc2::{
@@ -286,16 +306,13 @@ mod delegate {
                 completion: &DynBlock<dyn Fn()>,
             ) {
                 let user_info = response.notification().request().content().userInfo();
-                let key = NSString::from_str(NOTIFICATION_ID_KEY);
                 // userInfo is untyped: never send NSString messages to a wrong-type value.
-                let value = user_info
-                    .objectForKey(&key)
-                    .and_then(|value| value.downcast_ref::<NSString>().map(|id| id.to_string()));
-                let session_id = user_info
-                    .objectForKey(&NSString::from_str(SESSION_ID_KEY))
-                    .and_then(|value| value.downcast_ref::<NSString>().map(|id| id.to_string()));
-                let metadata = serde_json::json!({ NOTIFICATION_ID_KEY: value });
-                if let Some(id) = notification_id(&metadata) {
+                let payload = clicked_payload_from_user_info(|key| {
+                    user_info
+                        .objectForKey(&NSString::from_str(key))
+                        .and_then(|value| value.downcast_ref::<NSString>().map(|id| id.to_string()))
+                });
+                if let Some(payload) = payload {
                     let ivars = self.ivars();
                     if !(ivars.focus)(&ivars.app) {
                         eprintln!("[native_notification] WARN notification-click focus failed");
@@ -304,9 +321,9 @@ mod delegate {
                         .clicks
                         .lock()
                         .expect("notification click mutex poisoned")
-                        .receive(clicked_payload(id, session_id.as_deref()));
+                        .receive(payload);
                     if let Some(Err(error)) =
-                        payload.map(|payload| ivars.app.emit("notification-clicked", payload))
+                        payload.map(|payload| ivars.app.emit(NOTIFICATION_CLICKED_EVENT, payload))
                     {
                         eprintln!(
                             "[native_notification] WARN notification-click emit failed: {error}"
@@ -349,7 +366,7 @@ mod delegate {
             let released = pending.len();
             write_notification_click_released(&ready_app, "renderer-ready", released);
             for payload in pending {
-                if let Err(error) = ready_app.emit("notification-clicked", payload) {
+                if let Err(error) = ready_app.emit(NOTIFICATION_CLICKED_EVENT, payload) {
                     eprintln!(
                         "[native_notification] WARN queued notification-click emit failed: {error}"
                     );
@@ -386,7 +403,7 @@ mod delegate {
                 );
                 write_notification_click_released(&timeout_app, reason, released);
                 for payload in pending {
-                    if let Err(error) = timeout_app.emit("notification-clicked", payload) {
+                    if let Err(error) = timeout_app.emit(NOTIFICATION_CLICKED_EVENT, payload) {
                         eprintln!(
                             "[native_notification] WARN timed-out notification-click emit failed: {error}"
                         );
@@ -507,17 +524,15 @@ fn post_unc_with_session(
         content.setTitle(&title);
         content.setBody(&body);
         if let Some(id) = id {
-            let key = NSString::from_str(NOTIFICATION_ID_KEY);
-            let value = NSString::from_str(id);
-            let session_key = NSString::from_str(SESSION_ID_KEY);
-            let session_value = session_id.map(NSString::from_str);
-            let mut keys = vec![&*key];
-            let mut values = vec![&*value];
-            if let Some(ref session_value) = session_value {
-                keys.push(&*session_key);
-                values.push(&**session_value);
-            }
-            let user_info = NSDictionary::<NSString, NSString>::from_slices(&keys, &values);
+            let (keys, values): (Vec<_>, Vec<_>) = notification_user_info(id, session_id)
+                .into_iter()
+                .filter_map(|(key, value)| {
+                    value.map(|value| (NSString::from_str(key), NSString::from_str(value)))
+                })
+                .unzip();
+            let keys: Vec<_> = keys.iter().map(|key| &**key).collect();
+            let user_info =
+                NSDictionary::<NSString, NSString>::from_retained_objects(&keys, &values);
             // SAFETY: Erase only the dictionary's generic parameters. Both objects
             // are NSStrings, so userInfo contains property-list-compatible metadata.
             let user_info =
@@ -858,6 +873,48 @@ mod tests {
         assert_eq!(
             super::clicked_payload("notification-X", None),
             serde_json::json!({ "id": "notification-X" })
+        );
+    }
+
+    #[test]
+    fn needs_input_click_matches_shared_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "notification_click_fixtures/needs-input-click.json"
+        ))
+        .unwrap();
+        let argv: Vec<String> = serde_json::from_value(fixture["argv"].clone()).unwrap();
+        let parsed =
+            super::parse_notify_only_args(&argv).expect("shared notify-only argv must parse");
+        let read_payload = |session_id| {
+            let user_info = super::notification_user_info(&parsed.id, Some(session_id));
+            assert_eq!(
+                user_info,
+                [
+                    ("neoNotificationId", Some(parsed.id.as_str())),
+                    ("neoSessionId", Some(session_id)),
+                ]
+            );
+            super::clicked_payload_from_user_info(|key| {
+                user_info
+                    .iter()
+                    .find_map(|&(name, value)| (name == key).then_some(value).flatten())
+                    .map(str::to_owned)
+            })
+            .expect("posted metadata must produce a click payload")
+        };
+        assert_eq!(read_payload(&parsed.session_id), fixture["payload"]);
+        assert_eq!(read_payload(""), serde_json::json!({ "id": parsed.id }));
+        assert_eq!(fixture["event"], super::NOTIFICATION_CLICKED_EVENT);
+
+        let bundled = super::Path::new(fixture["executable"].as_str().unwrap());
+        let unbundled = super::Path::new("target/debug/code-agent-tauri");
+        assert_eq!(
+            decide_backend(super::exe_is_in_app_bundle(bundled), true),
+            NotificationBackend::Unc
+        );
+        assert_ne!(
+            decide_backend(super::exe_is_in_app_bundle(unbundled), true),
+            NotificationBackend::Unc
         );
     }
 
