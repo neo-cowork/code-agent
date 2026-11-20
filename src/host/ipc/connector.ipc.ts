@@ -143,6 +143,7 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       checkedAt: status.checkedAt,
       noAccessibleItems: status.noAccessibleItems,
       errorCode: status.errorCode,
+      settingsPane: status.settingsPane,
       actions: status.actions,
       capabilities: status.capabilities,
     } satisfies ConnectorStatusSummary;
@@ -264,6 +265,11 @@ async function executeConnectorAction(
 async function handleOpenAutomationSettings(): Promise<{ opened: boolean }> {
   if (!canOpenEnvSettings()) return { opened: false };
   return { opened: await openEnvSettings('automation') };
+}
+
+async function handleOpenCalendarSettings(): Promise<{ opened: boolean }> {
+  if (!canOpenEnvSettings()) return { opened: false };
+  return { opened: await openEnvSettings('calendars') };
 }
 
 async function handleProbeConnector(
@@ -868,6 +874,9 @@ const connectorHandlers: DomainRouteHandlers<ConnectorDomainRequest, ConnectorRo
   },
   openAutomationSettings: async () => {
     return await handleOpenAutomationSettings();
+  },
+  openCalendarSettings: async () => {
+    return await handleOpenCalendarSettings();
   },
   openApp: async (_ctx, payload) => {
     return await handleOpenConnectorApp(
