@@ -71,7 +71,7 @@ beforeEach(() => {
 
 describe('ToolExecutor: reminder update/delete approval details', () => {
   it('update card carries the looked-up title and time, and execute params stay the originals', async () => {
-    const params = { list: 'Personal', reminder_id: OPAQUE };
+    const params = { list: 'Personal', reminder_id: OPAQUE, completed: true };
     const original = { ...params };
     const { requestPermission, executor } = makeExecutor();
     await executor.execute('reminders_update', params, { sessionId: 's-update' });
@@ -92,6 +92,7 @@ describe('ToolExecutor: reminder update/delete approval details', () => {
     const params = { list: 'Personal', reminder_id: OPAQUE, remind_at_ms: 1_800_000_000_000 };
     const { requestPermission, executor } = makeExecutor();
     await executor.execute('reminders_update', params, { sessionId: 's-update-friday' });
+    expect(requestPermission).toHaveBeenCalledTimes(1);
     const details = requestPermission.mock.calls[0][0].details;
     expect(details).toMatchObject({
       title: 'pay electricity',
@@ -134,14 +135,14 @@ describe('ToolExecutor: reminder update/delete approval details', () => {
   it('not-found update returns failure without a card; other update lookup failures still ask', async () => {
     store.mode = 'missing';
     const missing = makeExecutor();
-    const missingResult = await missing.executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE }, { sessionId: 's-update-missing' });
+    const missingResult = await missing.executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE, completed: true }, { sessionId: 's-update-missing' });
     expect(missing.requestPermission).toHaveBeenCalledTimes(0);
     expect(missingResult.success).toBe(false);
     expect(missingResult.error).toContain('list_reminders');
 
     store.mode = 'boom';
     const { requestPermission, executor } = makeExecutor();
-    await executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE }, { sessionId: 's-update-boom' });
+    await executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE, completed: true }, { sessionId: 's-update-boom' });
     expect(requestPermission).toHaveBeenCalledTimes(1);
     const details = requestPermission.mock.calls[0][0].details;
     expect(details).not.toHaveProperty('title');
@@ -156,5 +157,66 @@ describe('ToolExecutor: reminder update/delete approval details', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('list_reminders');
     expect(String(result.error)).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+});
+
+describe('ToolExecutor: reminders_update with no effective change', () => {
+  it('unknown time field (remind_at alias) is rejected before any card', async () => {
+    const { requestPermission, executor } = makeExecutor();
+    const result = await executor.execute(
+      'reminders_update',
+      { list: 'Personal', reminder_id: OPAQUE, remind_at: '2026-11-22 15:00' },
+      { sessionId: 's-alias-time' },
+    );
+    expect(requestPermission).toHaveBeenCalledTimes(0);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('INVALID_ARGS');
+    expect(result.error).toContain('remind_at_ms');
+    expect(String(result.error)).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('bare list+reminder_id (no change field at all) is rejected the same way', async () => {
+    const { requestPermission, executor } = makeExecutor();
+    const result = await executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE }, { sessionId: 's-bare' });
+    expect(requestPermission).toHaveBeenCalledTimes(0);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.metadata?.code).toBe('INVALID_ARGS');
+    expect(result.error).toContain('remind_at_ms');
+  });
+
+  it('completed:false is a real change and still produces one card', async () => {
+    const { requestPermission, executor } = makeExecutor();
+    await executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE, completed: false }, { sessionId: 's-reopen' });
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('clear_remind_at:true is a real change and still produces one card', async () => {
+    const { requestPermission, executor } = makeExecutor();
+    await executor.execute('reminders_update', { list: 'Personal', reminder_id: OPAQUE, clear_remind_at: true }, { sessionId: 's-clear' });
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('replay: alias call needs 0 cards, corrected remind_at_ms retry needs exactly 1 card', async () => {
+    const { requestPermission, executor } = makeExecutor();
+    const failed = await executor.execute(
+      'reminders_update',
+      { list: 'Personal', reminder_id: OPAQUE, remind_at: '2026-11-22 15:00' },
+      { sessionId: 's-replay' },
+    );
+    expect(failed.success).toBe(false);
+    expect(failed.metadata?.code).toBe('INVALID_ARGS');
+    expect(requestPermission).toHaveBeenCalledTimes(0);
+
+    const corrected = { list: 'Personal', reminder_id: OPAQUE, remind_at_ms: 1_800_000_000_000 };
+    await executor.execute('reminders_update', corrected, { sessionId: 's-replay-2' });
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    const details = requestPermission.mock.calls[0][0].details;
+    expect(details.remind_at_ms).toBe(1_800_000_000_000);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute.mock.calls[0][1]).toEqual(corrected);
   });
 });
