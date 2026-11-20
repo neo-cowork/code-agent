@@ -52,6 +52,8 @@ export interface CronAgentActionResult {
   alertReason?: string;
   /** 本次运行实测成本（USD，N-CRON-RUN-LEDGER-VISIBLE）：scoped 计量器读数；无模型调用时缺省。 */
   costUsd?: number;
+  /** 价表 0 元（包月/免费额度）模型且无实测美元成本：不按美元计费的机读标记。 */
+  flatFee?: true;
   /**
    * 有命令没获批准且无产出（N-CRON-RUN-COMPLETED-BUT-DENIED）：状态仍是 completed
    * （拒绝不是任务失败，不触发重试/停用），通知与 UI 用它换琥珀色「需处理」。
@@ -167,6 +169,7 @@ export interface CronExecutionRow {
   retry_attempt: number;
   exit_code?: number | null;
   cost_usd?: number | null;
+  flat_fee?: number | null;
   trigger_json?: string | null;
   push_note?: string | null;
 }
@@ -665,6 +668,7 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     exit_code: readNullableNumberField(row, 'exit_code'),
     trigger_json: readNullableStringField(row, 'trigger_json'),
     cost_usd: readNullableNumberField(row, 'cost_usd'),
+    flat_fee: readNullableNumberField(row, 'flat_fee'),
     push_note: readNullableStringField(row, 'push_note'),
   };
 }
