@@ -1,4 +1,5 @@
 import { readableBrowserPage, browserPageFromOutput } from '../../agent/subagentStepCapConclusion';
+import { markNotRunStepByCommand } from '../../agent/bashStepOutcome';
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
@@ -693,8 +694,10 @@ export class SessionCommandCenter {
     const mapKey = `${task.id}:${result.toolCallId}`;
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
+    const shellCommand = this.shellCommandsByCallId.get(mapKey);
     this.shellCommandsByCallId.delete(mapKey);
     this.shellHold.noteToolCallEnd(task.id, result);
+    task.progress = markNotRunStepByCommand(task.progress, shellCommand, result);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;

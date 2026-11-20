@@ -3,6 +3,7 @@ import type { Task } from '@shared/contract/backgroundTask';
 import type { TraceNode } from '@shared/contract/trace';
 import type { AgentRow } from './agentRows';
 import { isToolInterruptionPlaceholder } from './toolExecutionPresentation';
+import { isToolResultNeverExecuted } from '@shared/toolNeverExecuted';
 import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
 import { classifyToolName } from './humanizeToolStep';
 import { isDelegationTool, isTaskTerminalStatus } from './agentActivity';
@@ -72,9 +73,13 @@ export function resolveToolCallTerminalState(input: {
   // 停车审批被自动收口：命令从未执行，标题不能说「未成功」。
   const notRun = result?.success === false && result.metadata?.recovered !== true
     && isParkedApprovalClosureSentence(result.error);
-  // 主机封存、从未执行的 Bash（metadata.skipped）：即使被降级为 recovered（state 仍是 completed、
+  // 从未执行的 Bash（共享判定 isToolResultNeverExecuted：skipped/bounced/权限拒绝）：即使被降级为 recovered（state 仍是 completed、
   // 不变色），标题也不能说「运行了」。executed===true 是命令跑完后才被读循环封口替换的结果，不算没执行。只改措辞，不改 state。
-  const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !!toolCall && classifyToolName(toolCall.name) === 'bash';
+  // 审批拒绝后被后续成功收尾（recovered）的行沿用既有口径：回到普通描述 + 「已恢复」脚注；
+  // 只有封口/封存（bounced/skipped）的行 recovered 也不改变「没执行」。
+  const sealed = result?.metadata?.skipped === true || result?.metadata?.bounced === true;
+  const skipped = isToolResultNeverExecuted(result) && (result?.metadata?.recovered !== true || sealed)
+    && !!toolCall && classifyToolName(toolCall.name) === 'bash';
   return { state, displayStatus, stepStatus, notRun, skipped };
 }
 

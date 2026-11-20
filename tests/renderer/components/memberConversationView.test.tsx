@@ -349,6 +349,47 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-bash-steps').textContent).not.toContain('/tmp/ws');
   });
 
+  it('被拒绝的 Bash 步骤读作「未执行 · 描述」，其余仍是普通描述，命令不外露', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task: Task = {
+      id: 'task-nr', sessionId: 'session-1', source: 'delegate_task', title: '查下载', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        bashSteps: [
+          { description: '查看今天日期', command: 'date' },
+          { description: '列出下载文件夹', command: 'ls ~/Downloads', notRun: true },
+          { description: '统计 PDF 数量', command: 'ls ~/Downloads | grep -c pdf' },
+        ],
+      },
+    };
+    useBackgroundTaskStore.setState({ tasks: [task] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-nr' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-bash-steps')).toBeTruthy());
+    expect(screen.getAllByTestId('member-bash-step').map((node) => node.textContent))
+      .toEqual(['查看今天日期', `${zh.toolStepHumanize.notRunPrefix} · 列出下载文件夹`, '统计 PDF 数量']);
+    expect(screen.getByTestId('member-bash-steps').textContent).not.toMatch(/Downloads|ls |date/);
+  });
+
+  it('swarm 成员近期动作里被拒绝的 Bash 同样读作「未执行 · 描述」', async () => {
+    swarmState.agents = [
+      agentOf({
+        status: 'running',
+        contextSnapshot: {
+          currentTokens: 1, maxTokens: 10, usagePercent: 1, messageCount: 1, warningLevel: 'normal', lastUpdated: 1,
+          attachments: [], previews: [], truncatedMessages: 0, tools: ['Bash'],
+          bashSteps: [{ description: '列出下载文件夹', command: 'ls ~/Downloads', notRun: true }, { description: '查看今天日期', command: 'date' }],
+        },
+      }),
+    ];
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-recent-actions')).toBeTruthy());
+    expect(screen.getAllByTestId('member-recent-action').map((node) => node.textContent))
+      .toEqual(['查看今天日期', `${zh.toolStepHumanize.notRunPrefix} · 列出下载文件夹`]);
+  });
+
   it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
     swarmState.agents = [
       agentOf({

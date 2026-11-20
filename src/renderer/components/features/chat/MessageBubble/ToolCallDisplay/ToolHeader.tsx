@@ -93,6 +93,7 @@ export function ToolHeader({
   const assembled = status === 'interrupted'
     ? buildToolStatusLineCopy({ status, interruptionReason, toolCall, envWaitingTarget }, t)
     : null;
+  const terminal = resolveToolCallTerminalState({ toolCall });
   const preflight = toolPreflightCopy(toolCall, t);
   const rawArgs = toolCall.arguments as Record<string, unknown> | undefined;
   const leasedApp = toolCall.name === 'computer_use' || toolCall.name === 'Computer'
@@ -114,7 +115,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
-        { notRun: resolveToolCallTerminalState({ toolCall }).notRun, delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
+        { notRun: terminal.notRun, skipped: terminal.skipped, delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
   const statusLabel = assembled
     ? assembled.terminal
