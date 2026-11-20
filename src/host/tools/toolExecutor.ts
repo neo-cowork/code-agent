@@ -2213,7 +2213,10 @@ export class ToolExecutor {
       }
       if (executionToolName === 'reminders_update' || executionToolName === 'reminders_delete') {
         if (executionToolName === 'reminders_delete') { delete permissionRequest.details.title; delete permissionRequest.details.remind_at_ms; }
-        const { remindersApprovalDetails } = await import('./modules/connectors/remindersApprovalDetails');
+        const { remindersApprovalDetails, remindersUpdateNoChangeError } = await import('./modules/connectors/remindersApprovalDetails');
+        // 空更新（模型只传了认不出的字段名）：不弹一张拿旧时间冒充修改的卡，直接让模型补字段重试。
+        const noChangeError = executionToolName === 'reminders_update' ? remindersUpdateNoChangeError(params) : null;
+        if (noChangeError) return { success: false, error: noChangeError, metadata: { code: 'INVALID_ARGS' } };
         try { Object.assign(permissionRequest.details, await remindersApprovalDetails(executionToolName, params)); }
         catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
       }

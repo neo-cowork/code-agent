@@ -107,7 +107,7 @@ export const BrowserAgentWindow: React.FC = () => {
     }
   }, [currentSessionId, workbenchCollapsed]);
 
-  const openAdvancedPanel = useCallback(() => openLocalOpsPanel('browser'), [openLocalOpsPanel]);
+  const openAdvancedPanel = useCallback(() => openLocalOpsPanel('desktop'), [openLocalOpsPanel]);
 
   const {
     managedSession, preview, ownedByCurrentSession,

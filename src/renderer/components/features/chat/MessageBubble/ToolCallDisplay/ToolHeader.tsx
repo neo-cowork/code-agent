@@ -20,6 +20,7 @@ import {
   isInternalStreamTool,
   toolNameForDetail,
 } from '../../../../../utils/humanizeToolStep';
+import { readHelperOutcomes } from '../../../../../utils/helperOutcomeCopy';
 import { resolveToolCallTerminalState } from '../../../../../utils/toolCallTerminalState';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
@@ -114,7 +115,7 @@ export function ToolHeader({
               ? 'failed'
               : 'completed',
         toolCall.stepLabel,
-        { notRun: resolveToolCallTerminalState({ toolCall }).notRun, delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
+        { notRun: resolveToolCallTerminalState({ toolCall }).notRun, handedOff: resolveToolCallTerminalState({ toolCall }).handedOff, helperOutcomes: readHelperOutcomes(toolCall.result?.metadata), delegationReceipt: toolCall.name === 'delegate_session' ? parseDelegateSessionReceipt(toolCall.result) : undefined },
       ));
   const statusLabel = assembled
     ? assembled.terminal
