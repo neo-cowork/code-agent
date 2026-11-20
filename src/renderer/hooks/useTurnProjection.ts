@@ -31,8 +31,7 @@ import {
 import { normalizeEditArgs } from '@shared/utils/editToolArgs';
 import { isRecoverableAfterLaterSuccess } from './failureRecovery';
 import { isToolInterruptionPlaceholder } from '../utils/toolExecutionPresentation';
-
-type MessageModelDecision = NonNullable<Message['modelDecision']>;
+import { buildModelDecisionProjectionKey } from './modelDecisionProjectionKey';
 
 /**
  * 一条持久化工具结果是否代表「真的执行过并给出了结局」（护栏判据）。
@@ -47,92 +46,6 @@ function isPersistedExecutionResult(
   if (isToolInterruptionPlaceholder(result.error)) return false;
   if (typeof result.metadata?.cancellationReason === 'string') return false;
   return !/\b(?:cancel(?:led|ing)?|interrupt(?:ed|ing)?|crash(?:ed)?)\b/i.test(result.error ?? '');
-}
-
-function buildModelDecisionProjectionKey(decision: MessageModelDecision): string {
-  const health = decision.providerHealthSnapshot;
-  const tools = decision.toolStrategy;
-  const savings = tools?.tokenSavings;
-  const measurement = savings?.measurement;
-  const providerIdentity = decision.providerIdentity;
-  const engine = decision.externalEngine;
-  const reliability = engine?.reliability;
-  const failure = engine?.failure;
-
-  return JSON.stringify({
-    route: [
-      decision.reason,
-      decision.requestedProvider,
-      decision.requestedModel,
-      decision.resolvedProvider,
-      decision.resolvedModel,
-      decision.billingMode,
-      decision.fallbackFrom,
-    ],
-    strategy: [
-      decision.strategySummary,
-      decision.taskClass,
-      decision.costPolicy,
-      decision.speedPolicy,
-      decision.toolPolicy,
-      decision.capabilityNeeds,
-    ],
-	    // 只保留分类态（provider/status），不放 sampledAt/latency/errorRate 这类每次采样都变的
-	    // 遥测——否则同一个"用户选择 mimo"决策每轮 key 都不同，去重永远失效，chip 重复刷屏。
-	    health: health ? [health.provider, health.status] : null,
-	    providerIdentity: providerIdentity
-	      ? [
-	          providerIdentity.provider,
-	          providerIdentity.displayName,
-	          providerIdentity.sourceLabel,
-	          providerIdentity.protocol,
-	          providerIdentity.transportLabel,
-	          providerIdentity.endpoint,
-	        ]
-	      : null,
-	    // token 数值（savedTokens/providerUsage/...）每轮都变，不入 key；只保留工具结构性字段
-    // 和 savings 的分类态/来源，保证"决策本质没变"时能正确去重。
-    tools: tools
-      ? [
-          tools.visibleToolCount,
-          tools.mcpToolCount,
-          tools.mcpServerIds,
-          tools.programmaticToolCalling,
-          tools.programmaticToolCount,
-          savings?.status,
-          measurement?.savingsSource,
-          measurement?.usageSource,
-          savings?.providerReport?.source,
-        ]
-      : null,
-    engine: engine
-      ? [
-          engine.kind,
-          engine.installState,
-          engine.runtimeState,
-          engine.executable,
-          engine.model,
-          engine.version,
-          engine.capabilities,
-          reliability?.cliStatus,
-          reliability?.authState,
-          reliability?.quotaState,
-          reliability?.streamingMode,
-          reliability?.toolSupport,
-          reliability?.transcriptMode,
-          reliability?.partialMessages,
-          reliability?.mcpBridge,
-          failure?.category,
-          failure?.reason,
-          failure?.retryable,
-          failure?.statusCode,
-          failure?.exitCode,
-          failure?.reliability?.authState,
-          failure?.reliability?.quotaState,
-          failure?.reliability?.cliStatus,
-        ]
-      : null,
-  });
 }
 
 interface VoiceArtifactAnchor {
@@ -295,7 +208,13 @@ export function projectTurns(
     .find((message) => message.metadata?.turnCheckoutNote)?.id ?? null;
   // 连续相同的模型路由决策只显示首个——agent 一个 turn 内多次 LLM 调用会各发一条
   // "用户选择 mimo"，重复刷没意义；模型变化（降级/角色档位）时 key 不同会照常显示。
+  // 账本分两层：lastModelDecisionKey 记**每一条**决策（含空载体上的），用于 run 边界
+  // 判定——否则 healthy→degraded(空载体)→healthy 会被当成「回到旧 key 的重复」，
+  // 终稿正文上的 chip 被清掉；modelDecisionDisplayPending 记当前 run 的 chip 是否
+  // 已落到可见节点——首个决策的载体是空正文（重放侧中间轮）时，chip 顺延给同 run
+  // 下一个有正文的节点，而不是无声消失。
   let lastModelDecisionKey: string | null = null;
+  let modelDecisionDisplayPending = false;
 
   // 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：一段连续失败轮若同
   // agentError.category，只有段内最新一轮渲染整卡，早先的压成一行灰字。纯渲染期
@@ -662,13 +581,23 @@ export function projectTurns(
         if (isToolResultEcho(content)) return;
         // 去重：连续相同的模型决策只在首个节点显示，避免每条消息都刷"用户选择 mimo"
         // 但策略解释字段变化时必须保留，否则 external engine / billing / fallback 诊断会被压掉。
+        // 空正文节点（reasoning/agentError 载体；重放侧中间轮正文不落库、形状就是空）
+        // 不承载 chip，但 run 边界照记（见上方账本注释）；本 run 的 chip 尚未落到可见
+        // 节点时顺延给下一个有正文的节点，直播（草稿带流式正文）与重放（只剩终稿正文）
+        // 落到同一个可见落点。
         let modelDecision = msg.modelDecision;
         if (modelDecision) {
           const key = buildModelDecisionProjectionKey(modelDecision);
-          if (key === lastModelDecisionKey) {
+          if (key !== lastModelDecisionKey) {
+            lastModelDecisionKey = key;
+            modelDecisionDisplayPending = true;
+          }
+          if (!modelDecisionDisplayPending) {
+            modelDecision = undefined;
+          } else if (!projectedContent.trim()) {
             modelDecision = undefined;
           } else {
-            lastModelDecisionKey = key;
+            modelDecisionDisplayPending = false;
           }
         }
         const attachReasoning = !reasoningAttachedForMessage;

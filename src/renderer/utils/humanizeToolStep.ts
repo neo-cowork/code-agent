@@ -12,6 +12,7 @@ import { agentRoleLabel } from './agentRoleLabel';
 import { isSemanticToolUIEnabled } from './featureFlags';
 import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
+import type { OfficeToolKind } from '../i18n/toolStepVerbs';
 import type { ToolCallTargetContext, ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { getHumanToolLabel } from './toolHumanLabel';
 import {
@@ -112,7 +113,7 @@ function isMessagingMcpTool(server: string, tool: string): boolean {
 }
 
 type ToolCategory =
-  | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir'
+  | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir' | 'office' | 'fileStat'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
   | 'subagentSpawn' | 'subagentMessage' | 'agentConversation' | 'todo' | 'planUpdate' | 'planRead'
   | 'delegateSession' | 'listSessionCandidates' | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
@@ -127,7 +128,18 @@ const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'edit_file', 'NotebookEdit', 'n
 // 不并进来——它们不是「运行了命令」，混进 ran 桶会谎报动作。
 const BASH_TOOLS = new Set(['Bash', 'bash', 'Process', 'code_execute', 'terminal_write']);
 const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'grep', 'glob', 'academic_search', 'ocr_search']);
-const LISTDIR_TOOLS = new Set(['LS', 'list_directory']);
+// ListDirectory 是 schema 注册名（modules/file/listDirectory.schema.ts）；LS/list_directory 是历史名。
+const LISTDIR_TOOLS = new Set(['LS', 'list_directory', 'ListDirectory']);
+// Office 文档工具（生成/编辑表格、文档、演示稿、PDF、图表）：步骤行按文档种类给专句，
+// 有输出/目标路径时带文件名（见 buildToolStep 的 office 分支）。词表在 toolStepVerbs 的 office 表。
+const OFFICE_TOOLS: Record<string, OfficeToolKind> = {
+  excel_generate: 'excel',
+  docx_generate: 'docx',
+  ppt_generate: 'ppt',
+  pdf_generate: 'pdf',
+  chart_generate: 'chart',
+  DocEdit: 'docEdit',
+};
 const WEBSEARCH_TOOLS = new Set(['WebSearch']);
 const WEBFETCH_TOOLS = new Set(['WebFetch', 'web_fetch', 'http_request', 'screenshot_page', 'twitter_fetch', 'youtube_transcript']);
 const SUBAGENT_SPAWN_TOOLS = new Set(['spawn_agent', 'AgentSpawn', 'Task', 'Explore']);
@@ -155,19 +167,28 @@ const TOOL_SEARCH_TOOLS = new Set(['ToolSearch', 'tool_search']);
 
 
 
-/** 带入参的分类：ExcelAutomate 按 action 落到既有的读 / 写步骤；其余沿用按工具名分类。 */
+/** 带入参的分类：ExcelAutomate / Blob 按 action 落到既有或专属步骤；其余沿用按工具名分类。 */
 export function classifyToolCall(name: string, args: Record<string, unknown> | undefined): ToolCategory {
   if (name === 'ExcelAutomate') {
     const action = args?.action;
     if (typeof action === 'string' && EXCEL_READ_ACTIONS.has(action)) return 'read';
     if (typeof action === 'string' && EXCEL_WRITE_ACTIONS.has(action)) return 'write';
   }
+  // Blob 是文件查看族：stat 只看元信息（大小/时间/hash，不读内容），落专属「文件信息」句；
+  // read_text/read_base64 是读内容，与 Read 同句。缺 action 的形状按读取兜（schema 本要求必填）。
+  if (name === 'Blob') return args?.action === 'stat' ? 'fileStat' : 'read';
   return classifyToolName(name);
 }
 
 /** ExcelAutomate 的步骤只显示文件名（不露完整路径）；generate 用 output_path。 */
 function excelFileName(args: Record<string, unknown>): string {
   const raw = (args.action === 'generate' ? [args.output_path] : [args.file_path]).find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return raw?.trim().split(/[\\/]/).filter(Boolean).pop() ?? '';
+}
+
+/** Office 工具的文件名（basename，不露完整路径）：generate 系用 output_path，DocEdit 用 file_path。 */
+function officeFileName(args: Record<string, unknown>): string {
+  const raw = [args.output_path, args.file_path, args.path].find((v): v is string => typeof v === 'string' && v.trim() !== '');
   return raw?.trim().split(/[\\/]/).filter(Boolean).pop() ?? '';
 }
 
@@ -178,6 +199,7 @@ export function classifyToolName(name: string): ToolCategory {
   if (BASH_TOOLS.has(name)) return 'bash';
   if (SEARCH_TOOLS.has(name)) return 'search';
   if (LISTDIR_TOOLS.has(name)) return 'listDir';
+  if (OFFICE_TOOLS[name]) return 'office';
   if (WEBSEARCH_TOOLS.has(name)) return 'webSearch';
   if (WEBFETCH_TOOLS.has(name)) return 'webFetch';
   if (SUBAGENT_SPAWN_TOOLS.has(name)) return 'subagentSpawn';
@@ -592,8 +614,25 @@ function buildToolStep(
       return query ? h.search.replace('{query}', query) : h.searchFallback;
     }
     case 'listDir': {
+      // "."/"./"/缺省 = 工作目录本身（ListDirectory schema：path 默认 workingDir）；
+      // "~"/"~/" = 主目录。裸符号「查看了 . 目录」「查看了 ~ 目录」对用户不可读，
+      // 换成对应的人话目标；其余路径照旧走 {target} 模板。
+      const rawPath = typeof a.path === 'string' ? a.path.trim() : '';
+      if (rawPath === '' || rawPath === '.' || rawPath === './') return h.listDirWorking;
+      if (rawPath === '~' || rawPath === '~/') return h.listDirHome;
       const target = firstPath(a, ['path']);
       return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
+    }
+    case 'fileStat': {
+      const target = firstPath(a, ['file_path', 'path']);
+      return target ? h.fileStat.replace('{target}', target) : h.fileStatFallback;
+    }
+    case 'office': {
+      const kind = OFFICE_TOOLS[name];
+      const sentence = h.office[kind];
+      // 失败行不带文件名：与既有「…未成功」句式一致，文件名留给详情/错误行。
+      const file = status === 'failed' ? '' : officeFileName(a);
+      return file ? `${sentence} ${file}` : sentence;
     }
     case 'webSearch': {
       const query = takePreview(a.query);
