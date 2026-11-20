@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { TraceTurn } from '@shared/contract/trace';
+import { subscribeToastReserveChange } from '../../toastReserve';
 
 export function scheduleAfterLayout(callback: () => void): () => void {
   if (typeof requestAnimationFrame !== 'function') {
@@ -143,6 +144,33 @@ export function useListResizeFollow({
     };
   }, [historyPrependInProgressRef, isUserScrollSuppressed, keepActiveOutputVisibleRef, outputFollowStreamingRef,
     projectionTurnsRef, scroller, sessionEntrySettlingRef, virtuosoRef]);
+}
+
+// 亚像素容差：贴底距离比较吸收换行/缩放的小数残差。
+const TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX = 8;
+
+/**
+ * toast 让位钉底：--toast-reserve 增长（全局 toast 出现/叠高）时，贴底跟随中的
+ * 列表要把长出的 Footer 让位带滚出视口，末条消息的操作行才不会被 toast 盖住。
+ * Virtuoso 只在条目数变化时经 followOutput 重新钉底，Footer 变高既不触发它的
+ * 重新钉底、也不在 item-list 里（useListResizeFollow 的 ResizeObserver 看不见），
+ * 不主动滚列表就停原地。事件与变量写入同帧到达，此刻读 scroller.scrollHeight
+ * 已含新 Footer 高（同步重排），直接落底即可；离底距离恰为本次增量（增量前贴底），
+ * 用户上滚阅读（离底更远）不动。回落（toast 消失）由浏览器把 scrollTop 钳回
+ * 新最大值自然收尾，不需要干预。
+ */
+export function useToastReserveBottomKeep(scroller: HTMLElement | null): void {
+  const prevReserveRef = useRef(0);
+  useEffect(() => {
+    if (!scroller) return;
+    return subscribeToastReserveChange((reserve) => {
+      const delta = reserve - prevReserveRef.current;
+      prevReserveRef.current = reserve;
+      if (delta <= 0) return;
+      if (!isScrollerNearBottom(scroller, delta + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX)) return;
+      scroller.scrollTop = scroller.scrollHeight;
+    });
+  }, [scroller]);
 }
 
 // scroller 还没量出尺寸时无从判断，返回 null 表示保持现状，不要硬猜。
