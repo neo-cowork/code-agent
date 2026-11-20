@@ -72,7 +72,8 @@ describe('environment parked turn continuation', () => {
     render(<TurnCard turn={project()} sessionId={SESSION} forceExpanded />);
     const text = screen.getByRole('button', { name: /用时/ }).textContent;
     console.log('long-park turn duration:', text);
-    expect(text).toBe('用时 14s'); // (315000 - 1000) - (305000 - 5000)
+    // park starts at the parked call (3000), ends at the first resumed message (305000): (315000 - 1000) - (305000 - 3000) = 12s
+    expect(text).toBe('用时 12s');
   });
 
   it('while parked the real env-waiting assembler has no interrupted word', () => {
@@ -172,7 +173,7 @@ describe('environment continuation ownership and time boundaries', () => {
 
   it('missing raw history uses the first resumed trace node as the bounded fallback', () => {
     render(<TurnCard turn={project()} sessionId={SESSION} forceExpanded />);
-    expect(screen.getByRole('button', { name: /用时/ }).textContent).toBe('用时 11s');
+    expect(screen.getByRole('button', { name: /用时/ }).textContent).toBe('用时 9s'); // (315000 - 1000) - (308000 - 3000): bounded by the first resumed trace node
   });
 
   it('a parallel pre-park call draining its result after the card does not end the parked span', () => {
@@ -182,7 +183,7 @@ describe('environment continuation ownership and time boundaries', () => {
       toolResults: [{ toolCallId: 'parallel-status', success: true, output: 'status' }] });
     store(messages);
     render(<TurnCard turn={project(messages)} sessionId={SESSION} forceExpanded />);
-    expect(screen.getByRole('button', { name: /用时/ }).textContent).toBe('用时 14s');
+    expect(screen.getByRole('button', { name: /用时/ }).textContent).toBe('用时 12s');
   });
 
   it('ordinary permission-error notices never subtract time or reclassify an unrelated stale call', () => {
@@ -208,6 +209,73 @@ describe('environment continuation ownership and time boundaries', () => {
     useAppStore.setState({ language: 'en' });
     render(<TurnCard turn={project()} sessionId={SESSION} forceExpanded />);
     expect(screen.getByTestId('tool-group-head-label').textContent).toBe('Calendar · Queried events');
-    expect(screen.getByRole('button', { name: /Worked for/ }).textContent).toBe('Worked for 14s');
+    expect(screen.getByRole('button', { name: /Worked for/ }).textContent).toBe('Worked for 12s');
+  });
+});
+
+describe('parked span starts at the parked call under live message shapes', () => {
+  beforeEach(() => {
+    useAppStore.setState({ disclosureLevel: 'simple', language: 'zh', processingSessionIds: new Set(), isProcessing: false });
+  });
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ currentSessionId: null, messages: [], sessions: [] });
+  });
+  const duration = () => screen.getByRole('button', { name: /用时/ }).textContent;
+
+  it('parked call carried only by a stream-recovery message (its tool node is dropped) still starts the span at the call', () => {
+    const messages = history();
+    // the real carrier (3000) is dropped as interrupted; only the recovery copy of the same call (4000) survives as a node
+    messages.splice(2, 0, { ...messages[1], id: 'recovery-carrier', timestamp: 4_000,
+      metadata: { streamRecovery: { turnId: 'old' } } } as Message);
+    messages.splice(4, 1); // no recovery tool row yet (index 4 = original recovery tool row)
+    store(messages);
+    const turn = project(messages);
+    expect(turn.nodes.filter(n => n.toolCall?.id === 'parked-call').every(n => n.timestamp === 4_000)).toBe(true);
+    render(<TurnCard turn={turn} sessionId={SESSION} forceExpanded />);
+    expect(duration()).toBe('用时 9s'); // (315000 - 1000) - (308000 - 3000): no recovery row, ends at the first resumed assistant; not the 314s wall clock
+  });
+
+  it('parked tool row whose result carries the env notice is dropped from the trace; span still starts at the call', () => {
+    const messages = history();
+    messages[3] = { ...messages[3], toolResults: [{ toolCallId: 'parked-call', success: false,
+      error: 'waiting', metadata: { envAssist: notice } }] } as Message;
+    store(messages);
+    const turn = project(messages);
+    expect(turn.nodes.some(n => n.toolCall?.id === 'parked-call')).toBe(false);
+    render(<TurnCard turn={turn} sessionId={SESSION} forceExpanded />);
+    expect(duration()).toBe('用时 12s');
+  });
+
+  it.each(['needs_user', 'resolved'] as const)('notice phase %s gives the same span', phase => {
+    const messages = history();
+    messages[2] = { ...messages[2], metadata: { envAssist: { ...notice, phase } } };
+    store(messages);
+    render(<TurnCard turn={project(messages)} sessionId={SESSION} forceExpanded />);
+    expect(duration()).toBe('用时 12s');
+  });
+
+  it('replays the saved real rows: header excludes the whole park (~24s, not 1m40s or 4m5s)', () => {
+    const base = 1795139517602;
+    const ok = (callId: string, ms: number) => ({ toolCallId: callId, success: true, output: 'ok', duration: ms });
+    const rows: Message[] = [
+      { id: 'u', role: 'user', content: '明天日历上有什么安排', timestamp: base },
+      { id: 'a1', role: 'assistant', content: '', timestamp: 1795139523035,
+        toolCalls: [{ id: 'parked-call', name: 'calendar', arguments: { action: 'list_events' } }] },
+      { id: 'n', role: 'assistant', content: '', timestamp: 1795139599391,
+        metadata: { envAssist: { ...notice, phase: 'resolved', updatedAt: 1795139599391 } } },
+      { id: 't1', role: 'tool', content: '', timestamp: 1795139744348, toolResults: [{ toolCallId: 'parked-call', success: false,
+        error: 'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded' }] },
+      { id: 'a2', role: 'assistant', content: '', timestamp: 1795139748975,
+        toolCalls: [{ id: 's', name: 'calendar', arguments: { action: 'get_status' } }] },
+      { id: 't2', role: 'tool', content: '', timestamp: 1795139749057, toolResults: [ok('s', 6)] },
+      { id: 'a3', role: 'assistant', content: '', timestamp: 1795139750434,
+        toolCalls: [{ id: 'l', name: 'calendar', arguments: { action: 'list_events' } }] },
+      { id: 't3', role: 'tool', content: '', timestamp: 1795139759695, toolResults: [ok('l', 9136)] },
+      { id: 'f', role: 'assistant', content: '明天没有日程。', timestamp: 1795139762778 },
+    ];
+    store(rows);
+    render(<TurnCard turn={project(rows)} sessionId={SESSION} forceExpanded />);
+    expect(duration()).toBe('用时 23s'); // 23863ms floors to 23s; 245176 - (1795139744348 - 1795139523035) = 23863ms
   });
 });
