@@ -46,9 +46,14 @@ export function envParkedTurnDuration(turn: TraceTurn, messages: readonly Messag
   if (turn.endTime === undefined) return null;
   const endTime = turn.endTime;
   const spans = turn.nodes.flatMap((node, index) => {
-    const callId = node.metadata?.envAssist?.parkedToolCallId;
+    const notice = node.metadata?.envAssist;
+    const callId = notice?.parkedToolCallId;
     if (!callId) return [];
-    const start = Math.max(turn.startTime, parkedCallIssuedAt(callId, node, index, turn, messages));
+    // EventKit keeps the run active through the confirm window and publishes the card when it parks.
+    const parkedAt = notice.class === 'perm_calendars'
+      ? node.timestamp
+      : parkedCallIssuedAt(callId, node, index, turn, messages);
+    const start = Math.max(turn.startTime, parkedAt);
     const resumedMessage = messages.find(message => message.timestamp > node.timestamp
       && message.timestamp <= endTime && (message.role === 'assistant'
         || (message.role === 'tool' && message.toolResults?.some(result => result.toolCallId === callId)))
