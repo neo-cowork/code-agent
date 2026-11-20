@@ -3,17 +3,21 @@
 import React from 'react';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
+import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { ToolCall } from '../../../src/shared/contract';
 
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { PermissionRequest } from '../../../src/shared/contract/permission';
 
 const mocks = vi.hoisted(() => ({
   tasks: [] as Task[],
   snapshot: null as AgentTreeSnapshot | null,
   openPreview: vi.fn(),
+  sendPrompt: vi.fn(),
+  setViewingMemberId: vi.fn(),
   pendingPermissionRequest: null as PermissionRequest | null,
   pendingPermissionSessionId: null as string | null,
   queuedPermissionRequests: {} as Record<string, PermissionRequest[] | undefined>,
@@ -31,6 +35,14 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: { currentSessionId: string }) => unknown) => (
     selector({ currentSessionId: 'session-1' })
   ),
+}));
+
+vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
+  useMessageActionStore: { getState: () => ({ sendPrompt: mocks.sendPrompt }) },
+}));
+
+vi.mock('../../../src/renderer/stores/memberViewStore', () => ({
+  useMemberViewStore: { getState: () => ({ setViewingMemberId: mocks.setViewingMemberId }) },
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -170,6 +182,8 @@ beforeEach(() => {
   mocks.tasks = [];
   mocks.snapshot = null;
   mocks.openPreview.mockReset();
+  mocks.sendPrompt.mockReset();
+  mocks.setViewingMemberId.mockReset();
   mocks.pendingPermissionRequest = null;
   mocks.pendingPermissionSessionId = null;
   mocks.queuedPermissionRequests = {};
@@ -542,5 +556,73 @@ describe('delegation receipt — approval pending copy', () => {
 
     expect(view.getByTestId('delegation-receipt')).toBeTruthy();
     expect(view.queryByTestId('delegation-activity')).toBeNull();
+  });
+});
+
+
+describe('delegation receipt — cancelled retry and details', () => {
+  const spawnCall: ToolCall = {
+    id: 'spawn-compare',
+    name: 'spawn_agent',
+    arguments: { role: 'researcher', task: '对比三家供应商', run_in_background: true },
+    result: { toolCallId: 'spawn-compare', success: true, metadata: { agentId: 'background-compare' } },
+  };
+  const node: AgentTreeNode = {
+    id: 'execution-compare',
+    backgroundAgentId: 'background-compare',
+    role: 'researcher',
+    displayName: '调研员',
+    background: true,
+    status: 'cancelled',
+    statusLabel: '已取消',
+    failureReason: '无法读取供应商报价',
+    createdAt: 1,
+    updatedAt: 4,
+    completedAt: 3,
+    children: [],
+    worktreeState: { status: 'none' },
+    budgetSummary: {},
+    evidenceRefs: [],
+    sources: ['backgroundRegistry'],
+  };
+
+  it.each([
+    ['agent', spawnCall, [], [node], '调研员', '对比三家供应商', 'execution-compare', 3],
+    ['task', delegateCall(), [task({ title: '发布协调', status: 'cancelled', summary: '无法读取清单' })], [],
+      '发布协调', '核对发布清单', 'task-1', 2],
+  ] as const)('shows both actions on a cancelled %s receipt', (_kind, call, tasks, nodes, title, dispatch, memberId, endedAt) => {
+    const presentation = deriveDelegationPresentation(call, [...tasks], [...nodes]);
+    expect(presentation).toMatchObject({ memberId, endedAt, retryTitle: dispatch });
+    if (!presentation) throw new Error('Expected a delegation presentation');
+    const view = render(<>
+      <DelegationHeader presentation={presentation} />
+      <DelegationReceipt presentation={presentation} superseded />
+    </>);
+
+    expect(view.getByTestId('delegation-headline').textContent).toBe(`${title} · 已取消`);
+    expect(view.queryByTestId('delegation-failure')).toBeNull();
+    expect(view.queryByTestId('delegation-failure-superseded')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: '查看详情' }));
+    expect(mocks.setViewingMemberId).toHaveBeenCalledWith(memberId);
+    fireEvent.click(view.getByRole('button', { name: '重试' }));
+    expect(mocks.sendPrompt).toHaveBeenCalledWith(`请重新做一下我刚才取消的任务：${dispatch}`, {
+      clientMessageId: expect.stringMatching(`^delegation-retry-${memberId}-`),
+    });
+  });
+
+  it('keeps the failure headline, reason and retry wording for a failed agent', () => {
+    const presentation = deriveDelegationPresentation(spawnCall, [], [{ ...node, status: 'failed' }]);
+    if (!presentation) throw new Error('Expected a delegation presentation');
+    const view = render(<>
+      <DelegationHeader presentation={presentation} />
+      <DelegationReceipt presentation={presentation} />
+    </>);
+
+    expect(view.getByTestId('delegation-headline').textContent).toBe('调研员 · 没有完成');
+    expect(view.getByTestId('delegation-failure').textContent).toBe('无法读取供应商报价');
+    fireEvent.click(view.getByRole('button', { name: '重试' }));
+    expect(mocks.sendPrompt).toHaveBeenCalledWith('请重新做一下刚才失败的任务：对比三家供应商', {
+      clientMessageId: expect.stringMatching(/^delegation-retry-execution-compare-/),
+    });
   });
 });

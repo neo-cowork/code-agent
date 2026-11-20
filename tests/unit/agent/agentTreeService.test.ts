@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
+import { SubagentContextStore } from '../../../src/host/context/subagentContextStore';
 import type { EvidenceRef } from '../../../src/shared/contract/evidence';
 
 describe('agentTreeService', () => {
@@ -197,6 +201,48 @@ describe('agentTreeService', () => {
   // 执行方已死，节点不能再以 unknown（renderer 口径 = 工作中）谎报在跑。
   // 用 Date.now() 相对量构造「上一进程写的」与「本进程刚写的」两类记录。
   // --------------------------------------------------------------------------
+  it('rehydrates a stopped agent as cancelled after the executor reports failure', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'agent-tree-restart-'));
+    const storePath = join(directory, 'context.json');
+    const sessionId = 'session-notes';
+    const agentId = 'subagent-bg-notes';
+    const now = Date.now();
+    const record = {
+      sessionId,
+      agentId,
+      messages: [],
+      lifecycle: {
+        status: 'running' as const,
+        displayName: 'Notes researcher',
+        task: 'Compare note-taking apps',
+        background: true,
+        startedAt: now,
+      },
+      updatedAt: now,
+    };
+
+    try {
+      const store = new SubagentContextStore(storePath);
+      store.upsert(record);
+      store.markTerminal(sessionId, agentId, 'cancelled', now + 1);
+      store.upsert({
+        ...record,
+        lifecycle: { ...record.lifecycle, status: 'failed', finishedAt: now + 2 },
+        updatedAt: now + 2,
+      });
+      const reopened = new SubagentContextStore(storePath);
+      const tree = buildAgentTreeSnapshot({ sessionId, contextRecords: reopened.list(sessionId) });
+
+      expect(tree.nodes).toEqual([expect.objectContaining({
+        id: agentId,
+        status: 'cancelled',
+        sources: ['subagentContext'],
+      })]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   describe('restart orphan reconciliation', () => {
     function contextRecord(agentId: string, updatedAt: number) {
       return {
