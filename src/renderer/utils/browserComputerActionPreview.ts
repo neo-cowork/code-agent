@@ -194,12 +194,12 @@ function hasBackgroundWindowTarget(args: Record<string, unknown>, metadata?: Rec
   return !!formatBackgroundWindowTarget(args, metadata);
 }
 
-function formatTypedText(args: Record<string, unknown>): string {
+function formatTypedText(args: Record<string, unknown>, messages: Messages): string {
   if (asString(args.secretRef)) {
     return 'secretRef';
   }
   const text = asString(args.text);
-  return text ? `${text.length} chars` : 'text';
+  return text ? messages.charCount(text.length) : messages.textFallback;
 }
 
 function isInputPayloadAction(action: string): boolean {
@@ -293,13 +293,13 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>, mess
     case 'click_text':
       return { summary: messages.clickText, target: formatSelector(args) };
     case 'type':
-      return { summary: messages.browserType(formatTypedText(args)), target: formatSelectorWithoutInputText(args) };
+      return { summary: messages.browserType(formatTypedText(args, messages)), target: formatSelectorWithoutInputText(args) };
     case 'press_key':
       return { summary: messages.pressKey, target: asString(args.key) };
     case 'scroll':
       return { summary: messages.browserScroll, target: asString(args.direction) || null };
     case 'screenshot':
-      return { summary: messages.screenshot, target: args.fullPage ? 'full page' : null };
+      return { summary: messages.screenshot, target: args.fullPage ? messages.fullPage : null };
     case 'get_content':
       return { summary: messages.getContent };
     case 'get_elements':
@@ -326,7 +326,7 @@ function buildBrowserSummary(action: string, args: Record<string, unknown>, mess
       const formData = args.formData && typeof args.formData === 'object'
         ? Object.keys(args.formData as Record<string, unknown>).length
         : 0;
-      return { summary: messages.fillForm, target: formData ? `${formData} fields` : null };
+      return { summary: messages.fillForm, target: formData ? messages.fieldCount(formData) : null };
     }
     case 'get_logs':
       return { summary: messages.getLogs };
@@ -355,7 +355,7 @@ function buildComputerSummary(
     case 'observe':
       return {
         summary: args.targetApp ? messages.observeApp : messages.observeFrontWindow,
-        target: asString(args.targetApp) || (args.includeScreenshot ? 'with screenshot' : null),
+        target: asString(args.targetApp) || (args.includeScreenshot ? messages.withScreenshot : null),
       };
     case 'get_ax_elements':
       return { summary: messages.getAxElements, target: asString(args.targetApp) };
@@ -379,7 +379,7 @@ function buildComputerSummary(
     case 'move':
       return { summary: messages.moveMouse, target: formatSelector(args) };
     case 'type':
-      return { summary: messages.desktopType(formatTypedText(args)), target: formatDesktopElementTarget(args) || asString(args.targetApp) };
+      return { summary: messages.desktopType(formatTypedText(args, messages)), target: formatDesktopElementTarget(args) || asString(args.targetApp) };
     case 'key': {
       const modifiers = Array.isArray(args.modifiers) ? args.modifiers.join('+') : '';
       return { summary: messages.desktopKey, target: [modifiers, asString(args.key)].filter(Boolean).join('+') || null };
@@ -402,7 +402,7 @@ function buildComputerSummary(
     case 'smart_click':
       return { summary: messages.smartClick, target: formatSelector(args) };
     case 'smart_type':
-      return { summary: messages.smartType(formatTypedText(args)), target: formatSelectorWithoutInputText(args) };
+      return { summary: messages.smartType(formatTypedText(args, messages)), target: formatSelectorWithoutInputText(args) };
     case 'smart_hover':
       return { summary: messages.smartHover, target: formatSelector(args) };
     case 'get_elements':
