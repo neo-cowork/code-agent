@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addCronRunCostUsd,
   cronDailyCostTotals,
+  cronDayCostKind,
   cronTodayYesterdayKeys,
   readWakeSkipFromResult,
   wakeSkipReasonText,
@@ -151,5 +152,25 @@ describe('addCronRunCostUsd', () => {
   it('零/负读数不写入', () => {
     expect(addCronRunCostUsd(0.01, 0)).toBe(0.01);
     expect(addCronRunCostUsd(0.01, -1)).toBe(0.01);
+  });
+});
+
+describe('flat-fee day classification (N-FIX-CRON-SUBSCRIPTION-COST-ALWAYS-UNRECORDED)', () => {
+  const at = new Date(2026, 10, 13, 9).getTime();
+  it('counts flat-fee runs without adding money; only-flat-fee day is flat-fee kind', () => {
+    const [day] = cronDailyCostTotals([
+      { scheduledAt: at, flatFee: true }, { scheduledAt: at, flatFee: true },
+    ]);
+    expect(day).toMatchObject({ totalUsd: 0, runCount: 2, flatFeeCount: 2 });
+    expect(cronDayCostKind(day)).toBe('flat-fee');
+  });
+  it('mixed day keeps the priced USD sum and is usd kind', () => {
+    const [day] = cronDailyCostTotals([{ scheduledAt: at, flatFee: true }, { scheduledAt: at, cost: 0.02 }]);
+    expect(day.totalUsd).toBeCloseTo(0.02);
+    expect(cronDayCostKind(day)).toBe('usd');
+  });
+  it('a day with no marker stays usd kind', () => {
+    const [day] = cronDailyCostTotals([{ scheduledAt: at }]);
+    expect(cronDayCostKind(day)).toBe('usd');
   });
 });
