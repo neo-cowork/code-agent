@@ -13,6 +13,8 @@ import {
   visibleCandidateEntryIds,
 } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager.helpers';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { zhSettingsWork } from '../../../src/renderer/i18n/zhSettingsWork';
+import { enSettingsWork } from '../../../src/renderer/i18n/enSettingsWork';
 
 const now = Date.parse('2026-05-15T08:00:00.000Z');
 
@@ -228,6 +230,15 @@ describe('MemoryEntriesManager helpers', () => {
     expect(detail).toContain('指令类条目');
     expect(detail).toContain('mem_missing');
     expect(detail).toContain('some-future-reason');
+  });
+
+  // N-FIX-FIX-MEMORY-SETTINGS-NO-MANUAL-ADD-ENTRY-FU1：管理区块说明不再外露内部词
+  // Light Memory（zh/en 同步收口）。
+  it('management section description uses plain wording in zh and en', () => {
+    expect(zhSettingsWork.memory.files.managementDescription).toBe('查看已保存的记忆、类型、更新时间和内容长度。');
+    expect(enSettingsWork.memory.files.managementDescription).toBe('View saved memories, types, update times, and content length.');
+    expect(zhSettingsWork.memory.files.managementDescription).not.toMatch(/Light\s+Memory/i);
+    expect(enSettingsWork.memory.files.managementDescription).not.toMatch(/Light\s+Memory/i);
   });
 
 });

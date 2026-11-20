@@ -581,7 +581,7 @@ export const enSettingsWork = {
         deleteSuccessPrefix: 'Archived ',
         deleteFailed: 'Archive failed',
         managementTitle: 'Memory file management',
-        managementDescription: 'View local Light Memory files, types, update times, and content length.',
+        managementDescription: 'View saved memories, types, update times, and content length.',
         stats: {
           memoryFiles: 'Memory files',
           matchSuffix: ' match the current filter',
