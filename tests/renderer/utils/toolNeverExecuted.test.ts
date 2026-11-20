@@ -51,3 +51,14 @@ describe('never-executed Bash presentation', () => {
     expect(en.toolStepHumanize.notRunPrefix).toBe('Not run');
   });
 });
+
+describe('describeLastToolStep (member current-action bar)', () => {
+  it.each([[zh, '把 PDF 移进新文件夹'], [en, 'Move PDFs to Receipts']] as const)('reads "Not run · desc" when the step is notRun, plain otherwise', async (t, description) => {
+    const { describeLastToolStep } = await import('../../../src/renderer/utils/agentActivity');
+    const step = { tool: 'Bash', target: 'mkdir -p ~/Downloads/X && mv ~/Downloads/*.pdf ~/Downloads/X/', description, at: 1 };
+    const steps = [{ description, command: step.target, notRun: true as const }];
+    expect(describeLastToolStep(step, t, 'completed', steps)).toBe(`${t.toolStepHumanize.notRunPrefix} · ${description}`);
+    expect(describeLastToolStep(step, t, 'completed', [{ description, command: step.target }])).not.toContain(t.toolStepHumanize.notRunPrefix);
+    expect(describeLastToolStep(step, t, 'completed')).not.toContain(t.toolStepHumanize.notRunPrefix);
+  });
+});

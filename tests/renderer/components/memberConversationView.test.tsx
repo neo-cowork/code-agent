@@ -390,6 +390,29 @@ describe('成员对话页', () => {
       .toEqual(['查看今天日期', `${zh.toolStepHumanize.notRunPrefix} · 列出下载文件夹`]);
   });
 
+  it('当前动作条：最后一步被拒绝时读「未执行 · 描述」，没被拒绝时仍是普通描述', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const mk = (notRun: boolean): Task => ({
+      id: 'task-ca', sessionId: 'session-1', source: 'delegate_task', title: '查下载', summary: '完成', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: {
+        lastToolStep: { tool: 'Bash', target: 'mkdir -p ~/Downloads/PDFs && mv ~/Downloads/*.pdf ~/Downloads/PDFs/', description: '把 PDF 移进新文件夹', at: 2 },
+        bashSteps: [{ description: '把 PDF 移进新文件夹', command: 'mkdir -p ~/Downloads/PDFs && mv ~/Downloads/*.pdf ~/Downloads/PDFs/', ...(notRun ? { notRun: true as const } : {}) }],
+      },
+    });
+    useBackgroundTaskStore.setState({ tasks: [mk(true)] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-ca' });
+    const view = render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).toContain(`${zh.toolStepHumanize.notRunPrefix} · 把 PDF 移进新文件夹`);
+    view.unmount();
+    useBackgroundTaskStore.setState({ tasks: [mk(false)] });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).not.toContain(zh.toolStepHumanize.notRunPrefix);
+  });
+
   it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
     swarmState.agents = [
       agentOf({

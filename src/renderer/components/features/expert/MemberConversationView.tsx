@@ -196,8 +196,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           permission: permissionState,
         });
       const currentAction = plainNode
-        ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus)
-        : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus);
+        ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus, plainNode.bashSteps)
+        : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus, plainTask?.progress?.bashSteps);
     // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
     const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
       key: `step-${index}`,

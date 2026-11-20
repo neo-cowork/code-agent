@@ -1,6 +1,6 @@
 import type { AgentTreeNodeStatus } from '@shared/contract/agentTree';
 import { resolveAgentNodeOutcomeKey } from '../i18n/outcomeWords';
-import type { LastToolFailure, LastToolStep, Task } from '@shared/contract/backgroundTask';
+import type { BashStep, LastToolFailure, LastToolStep, Task } from '@shared/contract/backgroundTask';
 import type { ToolStepStatus } from '@shared/contract';
 import type { PermissionRequest } from '@shared/contract/permission';
 import { findConnectorToolMetadata } from '@shared/contract/workbenchTools';
@@ -53,8 +53,12 @@ export function describeLastToolStep(
   step: LastToolStep | undefined,
   t: Translations,
   status: ToolStepStatus = 'completed',
+  bashSteps?: readonly BashStep[],
 ): string | undefined {
   if (!step) return undefined;
+  // 当前动作若正是被拦下、从未执行的那条 Bash，与「最近动作」列表同口径读作「未执行 · 描述」。
+  const skipped = (step.tool === 'Bash' || step.tool === 'bash')
+    && bashSteps?.some((b) => b.notRun && !!step.target && b.command.startsWith(step.target)) === true;
   const targetArgs = step.target || step.action
     ? {
       ...(step.description ? { description: step.description } : {}),
@@ -68,7 +72,7 @@ export function describeLastToolStep(
       ...(step.action ? { action: step.action } : {}),
     }
     : undefined;
-  return humanizeToolStep(step.tool, targetArgs, t, undefined, status);
+  return humanizeToolStep(step.tool, targetArgs, t, undefined, skipped ? 'failed' : status, undefined, skipped ? { skipped: true } : undefined);
 }
 
 // ============================================================================
