@@ -14,6 +14,7 @@ import {
 import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
 import {
   formatBrowserComputerActionResultDetails,
+  getBrowserComputerPreviewToolName,
   summarizeBrowserComputerActionResult,
 } from './browserComputerActionPreview';
 
@@ -67,9 +68,11 @@ function buildBrowserComputerExportMetadata(
 }
 
 function sanitizeBrowserComputerToolCallForExport(
-  call: ToolCall,
+  sourceCall: ToolCall,
   resultMetadata?: Record<string, unknown>,
 ): ToolCall {
+  const toolName = getBrowserComputerPreviewToolName(sourceCall.name);
+  const call = toolName && toolName !== sourceCall.name ? { ...sourceCall, name: toolName } : sourceCall;
   const rawArguments = call.arguments || {};
   const surfaceProjection = projectSurfaceExecutionMetadataForExport(
     call.result?.metadata ?? resultMetadata,
@@ -88,7 +91,7 @@ function sanitizeBrowserComputerToolCallForExport(
       })) ?? undefined;
 
   return {
-    ...call,
+    ...sourceCall,
     arguments: safeArguments || rawArguments,
     result: call.result
       ? {

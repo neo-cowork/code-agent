@@ -25,9 +25,7 @@ export function summarizeTool(toolCall: ToolCall, t: Translations, locale?: Lang
     const sessionTaskOutput = formatSessionTaskOutput(result.metadata, result.output, t);
     if (sessionTaskOutput !== result.output) return sessionTaskOutput;
   }
-  const browserComputerSummary = name === 'browser_action' || name === 'computer_use'
-    ? summarizeBrowserComputerActionResult(toolCall, locale)
-    : null;
+  const browserComputerSummary = summarizeBrowserComputerActionResult(toolCall, locale);
 
   if (browserComputerSummary) {
     return browserComputerSummary;

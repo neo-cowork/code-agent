@@ -130,7 +130,7 @@ describe('ExportModal Surface Execution projection', () => {
     expect(json).not.toContain('hidden internal reasoning');
   });
 
-  it('keeps legacy Browser arguments compatible after applying existing redaction', () => {
+  it.each(['browser_action', 'Browser'])('redacts %s arguments and keeps its recorded name', (name) => {
     const json = exportToJson('Legacy Browser session', [{
       id: 'legacy-message',
       role: 'assistant',
@@ -138,17 +138,17 @@ describe('ExportModal Surface Execution projection', () => {
       timestamp: 150,
       toolCalls: [{
         id: 'legacy-tool',
-        name: 'browser_action',
+        name,
         arguments: { action: 'type', selector: '#email', text: 'secret@example.com' },
       }],
     }]);
     const parsed = JSON.parse(json) as {
-      messages: Array<{ toolCalls: Array<{ arguments: Record<string, unknown> }> }>;
+      messages: Array<{ toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> }>;
     };
 
-    expect(parsed.messages[0].toolCalls[0].arguments).toMatchObject({
-      action: 'type',
-      selector: '#email',
+    expect(parsed.messages[0].toolCalls[0]).toMatchObject({
+      name,
+      arguments: { action: 'type', selector: '#email' },
     });
     expect(json).not.toContain('secret@example.com');
   });

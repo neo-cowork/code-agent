@@ -9,6 +9,7 @@ import {
 } from '@shared/utils/browserComputerRedaction';
 import {
   getBrowserComputerActionCatalogEntry,
+  normalizeBrowserComputerCatalogToolName,
   type BrowserComputerActionCatalogEntry,
   type BrowserComputerCatalogApprovalKind,
   type BrowserComputerCatalogEvidenceKind,
@@ -19,6 +20,13 @@ import {
 } from '@shared/utils/browserComputerActionCatalog';
 
 type Messages = ReturnType<typeof getBrowserComputerActionPreviewMessages>;
+
+export function getBrowserComputerPreviewToolName(toolName: string): 'browser_action' | 'computer_use' | null {
+  if (toolName === 'computer_use') return toolName;
+
+  const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
+  return catalogTool === 'browser_action' ? catalogTool : null;
+}
 
 function getPreviewLocale(): Language {
   return useAppStore.getState().language === 'en' ? 'en' : 'zh';
@@ -408,20 +416,21 @@ export function buildBrowserComputerActionPreview(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'result'>,
   locale?: Language,
 ): BrowserComputerActionPreview | null {
-  if (toolCall.name !== 'browser_action' && toolCall.name !== 'computer_use') {
+  const toolName = getBrowserComputerPreviewToolName(toolCall.name);
+  if (!toolName) {
     return null;
   }
 
   const args = toolCall.arguments || {};
   const action = asString(args.action) || 'unknown';
-  const catalog = getBrowserComputerActionCatalogEntry(toolCall.name, action, args);
+  const catalog = getBrowserComputerActionCatalogEntry(toolName, action, args);
   if (!catalog) {
     return null;
   }
   const { traceId, mode } = getTraceMetadata(toolCall);
   const messages = getBrowserComputerActionPreviewMessages(locale ?? getPreviewLocale());
 
-  if (toolCall.name === 'browser_action') {
+  if (toolName === 'browser_action') {
     return {
       surface: 'browser',
       tool: catalog.tool,
@@ -620,7 +629,7 @@ export function summarizeBrowserComputerActionResult(
     return isInputPayloadAction(action) ? `${joinResultSummary(preview)} failed` : null;
   }
 
-  if (toolCall.name === 'browser_action') {
+  if (preview.tool === 'browser_action') {
     const messages = getBrowserComputerActionPreviewMessages(locale ?? getPreviewLocale());
     switch (action) {
       case 'screenshot': {
@@ -713,7 +722,7 @@ export function formatBrowserComputerActionArguments(
   toolName: string,
   args: Record<string, unknown>,
 ): string | null {
-  if (toolName !== 'browser_action' && toolName !== 'computer_use') {
+  if (!getBrowserComputerPreviewToolName(toolName)) {
     return null;
   }
 
@@ -751,14 +760,16 @@ export function formatBrowserComputerActionResultDetails(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'result'>,
   locale?: Language,
 ): string | null {
-  const metadata = toolCall.result?.metadata || {};
-  const args = toolCall.arguments || {};
-  if (toolCall.name !== 'browser_action' && toolCall.name !== 'computer_use') {
+  const toolName = getBrowserComputerPreviewToolName(toolCall.name);
+  if (!toolName) {
     return null;
   }
 
+  const metadata = toolCall.result?.metadata || {};
+  const args = toolCall.arguments || {};
+
   const messages = getBrowserComputerActionPreviewMessages(locale ?? getPreviewLocale());
-  const recovery = formatRecoveryOutcome(toolCall.name, args, metadata, messages);
+  const recovery = formatRecoveryOutcome(toolName, args, metadata, messages);
   if (recovery) {
     return recovery;
   }
@@ -770,7 +781,7 @@ export function formatBrowserComputerActionResultDetails(
 
   const preview = buildBrowserComputerActionPreview(toolCall, locale);
   if (preview && toolCall.result && !toolCall.result.success) {
-    const failureDetail = formatInputFailureDetail(toolCall.name, args, preview, toolCall.result.error, messages);
+    const failureDetail = formatInputFailureDetail(toolName, args, preview, toolCall.result.error, messages);
     if (failureDetail) {
       return failureDetail;
     }

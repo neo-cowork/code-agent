@@ -32,6 +32,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 }));
 
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -55,15 +56,20 @@ function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
 }
 
 describe('browser/computer action preview rendering', () => {
+  const browserActions = [
+    ['launch', {}, 'Started the managed browser', 'Managed browser action'],
+    ['navigate', { url: 'https://example.com' }, 'Opened a page', 'Managed browser action'],
+    ['click', { selector: '#submit' }, 'Clicked a page element', 'Managed browser action'],
+    ['type', { text: 'sample' }, 'Typed 6 chars', 'Managed browser action'],
+    ['screenshot', {}, 'Took a page screenshot', 'Read-only'],
+  ] as const;
+
   it.each([
-    ['browser_action', 'launch', {}, 'Started the managed browser', 'Managed browser action'],
-    ['browser_action', 'navigate', { url: 'https://example.com' }, 'Opened a page', 'Managed browser action'],
-    ['browser_action', 'click', { selector: '#submit' }, 'Clicked a page element', 'Managed browser action'],
-    ['browser_action', 'type', { text: 'sample' }, 'Typed 6 chars', 'Managed browser action'],
-    ['browser_action', 'screenshot', {}, 'Took a page screenshot', 'Read-only'],
+    ...browserActions.map(row => ['browser_action', ...row] as const),
+    ...browserActions.map(row => ['Browser', ...row] as const),
     ['computer_use', 'observe', {}, 'Looked at the front window', 'Read-only'],
     ['computer_use', 'get_windows', {}, 'Listed window candidates', 'Read-only'],
-  ])('renders English chat preview for %s.%s', (name, action, args, summary, riskLabel) => {
+  ] as const)('renders English chat preview for %s.%s', (name, action, args, summary, riskLabel) => {
     useAppStore.getState().language = 'en';
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
@@ -77,6 +83,27 @@ describe('browser/computer action preview rendering', () => {
     expect(html).toContain(riskLabel);
     expect(html).not.toMatch(/\p{Script=Han}/u);
     if (action === 'screenshot') expect(html).toContain('Screenshot saved');
+  });
+
+  it('localizes expanded Browser input failures without exposing the arguments or echoed input', () => {
+    useAppStore.getState().language = 'en';
+    const html = renderToStaticMarkup(
+      React.createElement(ToolDetails, {
+        toolCall: makeToolCall({
+          name: 'Browser',
+          arguments: { action: 'type', text: 'private-input', selector: '#email' },
+          result: {
+            toolCallId: 'tool-1',
+            success: false,
+            error: 'No element found after private-input',
+          },
+        }),
+      }),
+    );
+
+    expect(html).toContain('[redacted 13 chars]');
+    expect(html).toContain('Typed 13 chars -&gt; #email failed: Target element not found.');
+    expect(html).not.toContain('private-input');
   });
 
   it('renders browser action preview without exposing trace metadata in the main row', () => {
@@ -182,11 +209,11 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('secret@example.com');
   });
 
-  it('redacts browser typed text from collapsed result summary markup', () => {
+  it.each(['browser_action', 'Browser'])('keeps Chinese %s type copy and redacts the collapsed result', (name) => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
         toolCall: makeToolCall({
-          name: 'browser_action',
+          name,
           arguments: {
             action: 'type',
             selector: '#email',
