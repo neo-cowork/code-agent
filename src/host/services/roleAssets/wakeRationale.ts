@@ -42,6 +42,58 @@ export function stripWakeMarkup(text: string): string {
     .trim();
 }
 
+const ABS_PATH_PATTERN = /(?<![\w.:/~-])(?:~|\.{1,2})?(?:\/[\w.@~-]+)+/g;
+const REL_FILE_PATTERN = /(?<![\w.:/~-])[\w.@-]+(?:\/[\w.@-]+)*\/[\w@-]+\.\w{1,8}\b/g;
+const SENTENCE_PATTERN = /^.*?(?:[。！？!?…]+|[.!?](?=\s|$))/;
+
+function toBasename(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+function plainProse(text: string): string {
+  const kept: string[] = [];
+  const headings: string[] = [];
+  let inFence = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (/^(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence || !line) continue;
+    if (line.startsWith('|') || (line.match(/\|/g)?.length ?? 0) >= 2) continue;
+    if (/^[-=_*:|\s]{3,}$/.test(line)) continue;
+    (/^#{1,6}\s/.test(line) ? headings : kept).push(
+      line
+        .replace(/^(?:#{1,6}\s+|>+\s*|[-*+]\s+|\d+[.)]\s+)+/, '')
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/(\*\*|__|`)/g, '')
+        .replace(ABS_PATH_PATTERN, toBasename)
+        .replace(REL_FILE_PATTERN, toBasename)
+        .trim(),
+    );
+  }
+  // 标题只是栏目名，不是句子：有正文时不拼进摘要，没有正文才退而用标题
+  return (kept.some(Boolean) ? kept : headings).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * suggest/report 的人话摘要（收件箱 / 履历 / 横幅共用）：丢表格行、分隔线、围栏代码，
+ * 去 Markdown 记号，路径只留文件名，取前两句；空了依次回落 rationale（同样清洗），再交给调用方的既有兜底文案。
+ */
+export function plainWakeSummary(text: string, rationale?: string): string {
+  const pick = (source: string): string => {
+    const prose = plainProse(source);
+    let out = '';
+    let rest = prose;
+    for (let i = 0; i < 2 && rest; i += 1) {
+      const sentence = rest.match(SENTENCE_PATTERN)?.[0] ?? rest;
+      out = `${out}${out && !/[。！？]$/.test(out) ? ' ' : ''}${sentence.trim()}`;
+      rest = rest.slice(sentence.length).trim();
+    }
+    return out.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+  };
+  return pick(text) || (rationale ? pick(rationale) : '');
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
