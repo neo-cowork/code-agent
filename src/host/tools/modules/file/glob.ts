@@ -30,7 +30,7 @@ import type {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
-import { refuseAppDataDiscovery } from '../../utils/refuseAppDataDiscovery';
+import { appDataRootDiscoveryFilter, refuseAppDataDiscovery } from '../../utils/refuseAppDataDiscovery';
 import { applyPartialToOutput } from '../shell/partialResults';
 import { buildExpiredChatUploadResult, isChatUploadPath, isPathMissing } from '../../file/pathUtils';
 import { isDefaultWorkDirectory, isPlannedSessionWorkDirectory } from '../../../config/sessionWorkDirectory';
@@ -217,6 +217,7 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
       }
     }
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
+    const appDataRootFilter = appDataRootDiscoveryFilter(searchPath);
 
     onProgress?.({ stage: 'starting', detail: `glob ${pattern}` });
 
@@ -269,9 +270,13 @@ class GlobHandler implements ToolHandler<Record<string, unknown>, string> {
         nodir: true,
         ignore,
         fs: traversalFs,
-      })).filter((match) => (
-        !isListedPathInsideForeignSlot(path.resolve(searchPath, match), slotExcludes.roots)
-      ));
+      })).filter((match) => {
+        const resolvedMatch = path.resolve(searchPath, match);
+        return (
+          !isListedPathInsideForeignSlot(resolvedMatch, slotExcludes.roots)
+          && !appDataRootFilter?.(resolvedMatch)
+        );
+      });
       const sortedMatches = await sortMatches(matches, searchPath, sort);
 
       if (sortedMatches.length === 0) {
