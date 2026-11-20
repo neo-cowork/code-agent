@@ -21,16 +21,15 @@ const KEEP_CLAIM_PARTS = [
 ];
 const KEEP_CLAIM_SRC = KEEP_CLAIM_PARTS.join('|');
 const KEEP_CLAIM_RE = new RegExp(KEEP_CLAIM_SRC, 'i');
-const KEEP_CLAIM_GLOBAL_RE = new RegExp(KEEP_CLAIM_SRC, 'gi');
 
 // Only explicit denials of *keeping* cancel a claim. Negations that are part of the claim itself
-// (未关闭 / 没关掉 / 不会关掉 / not closed) never reach this check: claim spans are stripped first.
+// (未关闭 / 没关掉 / 不会关掉 / not closed) are deliberately absent from this list.
 const DENIAL_RE =
   /没留着|没有留着|没保留|没有保留|未保留|没能|未能|无法|不能|关了|关掉了|已关|已经关|已被关|被关闭了|不再|没有[^，。]{0,8}(?:开着|还开|仍开|保留|留着)|并没有|could not keep|couldn't keep|unable to keep|not kept|(?<!not )(?:was|is|been|now|already) closed|no longer/i;
 
 function claimsWindowKept(content: string): boolean {
   return content.split(/[。！？!?;；\n]|\.(?=\s|$)/).some(
-    (sentence) => KEEP_CLAIM_RE.test(sentence) && !DENIAL_RE.test(sentence.replace(KEEP_CLAIM_GLOBAL_RE, ' ')),
+    (sentence) => KEEP_CLAIM_RE.test(sentence) && !DENIAL_RE.test(sentence),
   );
 }
 

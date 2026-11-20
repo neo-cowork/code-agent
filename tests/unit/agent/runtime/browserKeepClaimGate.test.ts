@@ -78,6 +78,10 @@ describe('applyBrowserKeepClaimGate', () => {
     'The window was closed.',
     'I could not keep the page open.',
     '页面没有跳转，仍停留在原页面。',
+    '窗口没有开着。',
+    '页面没留着。',
+    '现在没有窗口还开着。',
+    '窗口不再开着了。',
   ])('keeps honest text "%s" out of the gate', async (text) => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: text })).action).toBe('none');
   });
