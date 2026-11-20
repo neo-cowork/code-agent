@@ -39,12 +39,16 @@ const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 async function runGlob(args: Record<string, unknown>, workingDir: string) {
   const handler = await globModule.createHandler();
-  return handler.execute(args, makeCtx(workingDir), allowAll);
+  const result = await handler.execute(args, makeCtx(workingDir), allowAll);
+  if (!result.ok) throw new Error(`glob failed (${result.code ?? 'no-code'}): ${result.error}`);
+  return result;
 }
 
 async function runGrep(args: Record<string, unknown>, workingDir: string) {
   const handler = await grepModule.createHandler();
-  return handler.execute(args, makeCtx(workingDir), allowAll);
+  const result = await handler.execute(args, makeCtx(workingDir), allowAll);
+  if (!result.ok) throw new Error(`grep failed (${result.code ?? 'no-code'}): ${result.error}`);
+  return result;
 }
 
 function listedMatches(result: Awaited<ReturnType<typeof runGlob>>): string[] {
