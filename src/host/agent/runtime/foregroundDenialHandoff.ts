@@ -245,7 +245,11 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   if (eligible.length > 0 && !alreadyAttempted(ctx)) {
     markAttempted(ctx);
     if (await handOffInThisTurn(ctx)) {
-      const handedOffIds = new Set(eligible.map((call) => call.id));
+      // The whole request went to the background task: the handed-off calls and their same-batch
+      // siblings (skipped, not themselves denied) are both "handed off". Other denials keep their code.
+      const handedOffIds = new Set(toolCalls
+        .filter((call) => !deniedIds.has(call.id) || eligible.includes(call))
+        .map((call) => call.id));
       await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds, handedOffIds);
       await emitAssistantClose(ctx, contextAssembly, response, backgroundHandoffUserSentence(ctx));
       return 'break';

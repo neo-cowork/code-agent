@@ -305,6 +305,20 @@ describe('foreground narrowing gate', () => {
       expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
     });
 
+    it('a same-batch sibling skipped by the handoff is also sealed as handed off', async () => {
+      const prompt = '把这份表格做成演示稿，成品都存到同一目录：/tmp/out';
+      const ctx = prepare(prompt);
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      await processor.handleToolResponse(responseOf([
+        { id: 'sib-bash', name: 'Bash', arguments: { command: 'ls' } },
+        { id: 'sib-read', name: 'Read', arguments: { file_path: '/tmp/a.csv' } },
+      ]), false, 1, EVENT_PROC);
+      const results = deps.persisted.find((message) => message.role === 'tool')?.toolResults ?? [];
+      expect(results.map((r) => r.metadata?.code)).toEqual(['HANDED_OFF_TO_BACKGROUND', 'HANDED_OFF_TO_BACKGROUND']);
+    });
+
     it('failed handoff keeps TOOL_DISABLED_FOR_RUN', async () => {
       const prompt = '明天上午 9 点提醒我交报告，请用 Bash 执行多行 osascript 建提醒';
       const ctx = prepare(prompt, { workspaceScope: undefined, maxToolCallRetries: 0 });
