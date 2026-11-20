@@ -296,7 +296,7 @@ class NotificationService implements Disposable {
 
   /**
    * 投递系统通知：交给渲染端用 Tauri 通知插件发送——原生通知自动带 app（Agent Neo）
-   * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
+   * 图标与身份，点击经 onAction 跳到对应会话。
    * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
    */
   private deliverNow(item: BudgetedNotification, via: 'immediate' | 'window-end' | 'digest'): void {
