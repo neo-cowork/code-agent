@@ -1,0 +1,51 @@
+// ============================================================================
+// plainEvidenceText — 醒来 evidence 人话化：不得带 / 路径、.md、反引号
+// ============================================================================
+
+import { describe, expect, it } from 'vitest';
+import { plainEvidenceText } from '../../src/shared/plainEvidenceText';
+
+describe('plainEvidenceText', () => {
+  it('reduces a backticked relative path to basename without extension', () => {
+    expect(plainEvidenceText('`workspace/weekly/2026-W46.md`')).toBe('2026-W46');
+  });
+
+  it('reduces absolute paths (unix home / windows drive) to basename without extension', () => {
+    expect(plainEvidenceText('/Users/alice/work/workspace/weekly/2026-W46.md')).toBe('2026-W46');
+    expect(plainEvidenceText('~/Documents/notes.md')).toBe('notes');
+    expect(plainEvidenceText('C:\\work\\logs\\run.log')).toBe('run');
+  });
+
+  it('strips bare backticks around prose', () => {
+    expect(plainEvidenceText('`该跟进周报`')).toBe('该跟进周报');
+    expect(plainEvidenceText('**重点** 和 __次重点__')).toBe('重点 和 次重点');
+  });
+
+  it('keeps markdown link label and drops the link target', () => {
+    expect(plainEvidenceText('[周报](workspace/weekly/2026-W46.md)')).toBe('周报');
+    expect(plainEvidenceText('见 [第46周](workspace/weekly/2026-W46.md) 的内容')).toBe('见 第46周 的内容');
+  });
+
+  it('strips the doc extension from bare filenames', () => {
+    expect(plainEvidenceText('history.md · 周报.md')).toBe('history · 周报');
+  });
+
+  it('returns ordinary Chinese prose byte-identical', () => {
+    const prose = '履历里的周报已经连续两周没更新';
+    expect(plainEvidenceText(prose)).toBe(prose);
+    expect(plainEvidenceText('参考了上次会话的结论和记忆条目')).toBe('参考了上次会话的结论和记忆条目');
+  });
+
+  it('collapses whitespace and returns empty string for blank input', () => {
+    expect(plainEvidenceText('  a  \n b  ')).toBe('a b');
+    expect(plainEvidenceText('')).toBe('');
+    expect(plainEvidenceText('   \n  ')).toBe('');
+  });
+
+  it('result never keeps a joined path, a .md suffix, or a backtick', () => {
+    const out = plainEvidenceText('依据 `workspace/weekly/2026-W46.md` 与 /Users/alice/x/notes.md');
+    expect(out).not.toContain('/');
+    expect(out).not.toContain('.md');
+    expect(out).not.toContain('`');
+  });
+});
