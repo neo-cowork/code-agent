@@ -50,7 +50,8 @@ const variantStyles: Record<ButtonVariant, string> = {
   ghost: [
     'bg-transparent hover:bg-btn-ghost-hover',
     'text-zinc-400 hover:text-zinc-200',
-    'disabled:text-zinc-600',
+    // ghost 没有禁用底色 token，保留 /50 透明度做禁用观感
+    'disabled:text-zinc-600 disabled:opacity-50',
   ].join(' '),
   danger: [
     // red-600 白字 ≥4.5；禁用 /50 白字约 2.6:1，改走同一对 secondary disabled token。
@@ -106,7 +107,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       'transition-all duration-200',
       'focus:outline-hidden',
       'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
-      'disabled:opacity-50 disabled:cursor-not-allowed',
+      // 禁用态对比度走各变体的 disabled token（≥5.7:1），不再叠 /50 透明度
+      //（叠了会掉到 ~2.3:1，低于 3:1）；ghost 例外，见 variantStyles.ghost。
+      'disabled:cursor-not-allowed',
       'active:scale-[0.98]',
     ].join(' ');
 
