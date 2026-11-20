@@ -383,6 +383,10 @@ export class BrowserService implements Disposable {
     }
   }
 
+  noteUserActivity(): void {
+    this.leaseController.heartbeat();
+  }
+
   setLeaseInUse(inUse: boolean): void {
     this.leaseController.setInUse(inUse);
   }
