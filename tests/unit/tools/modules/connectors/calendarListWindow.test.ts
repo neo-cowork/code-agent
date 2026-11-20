@@ -39,10 +39,10 @@ describe('calendar list window through the production handler', () => {
     expect((await run(args)).ok).toBe(true);
     const payload = { action: 'list_events', from_ms: Date.parse('2026-11-17T21:00:00Z'), to_ms: Date.parse('2026-11-18T02:00:00Z') };
     expect(execute).toHaveBeenCalledExactlyOnceWith('list_events', payload);
-    expect(permit).toHaveBeenCalledExactlyOnceWith('calendar', { action: 'list_events', ...args });
+    expect(permit).toHaveBeenCalledExactlyOnceWith('calendar', payload);
   });
-  it('reuses only the approved list_events input and sends normalized bounds to the connector', async () => {
-    const args = { action: 'list_events', from_local: '2026-11-19 00:00', to_local: '2026-11-19 23:59' };
+  it('asks permission with the normalized window, not the raw local strings', async () => {
+    const args = { action: 'list_events', from_local: '2020-01-01 00:00', to_local: '2030-01-01 00:00' };
     const requestPermission = vi.fn(async () => false);
     const canUseTool = buildCanUseToolFromLegacy({
       workingDirectory: ctx.workingDir,
@@ -53,18 +53,13 @@ describe('calendar list window through the production handler', () => {
 
     const result = await run(args, canUseTool);
 
-    expect(requestPermission).not.toHaveBeenCalled();
-    expect(result.ok).toBe(true);
-    expect(execute).toHaveBeenCalledExactlyOnceWith('list_events', {
-      action: 'list_events',
-      from_ms: Date.parse('2026-11-19T08:00:00Z'),
-      to_ms: Date.parse('2026-11-20T07:59:00Z'),
-    });
-
-    const changed = await run({ ...args, to_local: '2026-11-20 23:59' }, canUseTool);
-    expect(changed).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
     expect(requestPermission).toHaveBeenCalledOnce();
-    expect(execute).toHaveBeenCalledOnce();
+    expect(requestPermission.mock.calls[0][0]).toMatchObject({
+      tool: 'calendar',
+      details: { action: 'list_events', from_ms: Date.parse('2020-01-01T08:00:00Z'), to_ms: Date.parse('2030-01-01T08:00:00Z') },
+    });
+    expect(result).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
+    expect(execute).not.toHaveBeenCalled();
   });
   it('(b) preserves a cross-day window', async () => {
     await run({ from_local: '2026-11-17 23:30', to_local: '2026-11-18 01:00' });

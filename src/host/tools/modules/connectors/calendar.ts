@@ -86,8 +86,8 @@ async function executeCalendar(
     connectorArgs = window.args;
   }
 
-  // Reuse the top-level permission decision for the exact input it covered.
-  const permit = await canUseTool(schema.name, args);
+  // Ask about the normalized window the connector will actually read.
+  const permit = await canUseTool(schema.name, connectorArgs);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
   }
