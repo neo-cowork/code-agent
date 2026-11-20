@@ -93,7 +93,7 @@ describe('ProjectSpaceView header', () => {
 
     fireEvent.click(button);
     const dialog = within(screen.getByRole('dialog', { name: '升级为协作空间' }));
-    fireEvent.click(dialog.getByRole('button', { name: '升级', exact: true }));
+    fireEvent.click(dialog.getByRole('button', { name: '升级' }));
     await waitFor(() => expect(projectClient.promoteToCloudSpace).toHaveBeenCalledWith(PROJECT_ID));
     expect(projectClient.createInvite).not.toHaveBeenCalled();
   });
@@ -109,7 +109,7 @@ describe('ProjectSpaceView header', () => {
       .toBe('升级后会把这个协作空间同步到云端，可邀请成员协作。需要登录账号。');
 
     vi.mocked(projectClient.getProjectDetail).mockResolvedValue(projectDetail(PROMOTED_AT, CLOUD_ID));
-    fireEvent.click(dialog.getByRole('button', { name: '升级到云端', exact: true }));
+    fireEvent.click(dialog.getByRole('button', { name: '升级到云端' }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('已升级到云端'));
     expect(projectClient.promoteToCloudSpace).toHaveBeenCalledWith(PROJECT_ID);
     await screen.findByTestId('project-space-header-cloud-badge');
