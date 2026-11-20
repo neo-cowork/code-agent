@@ -61,6 +61,7 @@ function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
     exitCode: row.exit_code ?? undefined,
     trigger: parseCronExecutionTrigger(row.trigger_json),
     cost: row.cost_usd ?? undefined,
+    ...(row.flat_fee === 1 ? { flatFee: true as const } : {}),
     pushNote: parseCronPushNote(row.push_note),
   }));
 }
@@ -166,8 +167,8 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
     if (!db) return;
     db.prepare(`
       INSERT OR REPLACE INTO cron_executions
-      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code, trigger_json, cost_usd, push_note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code, trigger_json, cost_usd, flat_fee, push_note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       execution.id, execution.jobId, execution.sessionId || null, execution.status,
       execution.scheduledAt, execution.startedAt || null,
@@ -177,6 +178,7 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
       execution.exitCode || null,
       execution.trigger ? JSON.stringify(execution.trigger) : null,
       execution.cost ?? null,
+      execution.flatFee ? 1 : null,
       execution.pushNote ?? null,
     );
   } catch (error) {
