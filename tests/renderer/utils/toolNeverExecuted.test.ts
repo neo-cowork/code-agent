@@ -62,3 +62,20 @@ describe('describeLastToolStep (member current-action bar)', () => {
     expect(describeLastToolStep(step, t, 'completed')).not.toContain(t.toolStepHumanize.notRunPrefix);
   });
 });
+
+describe('describeLastToolStep only trusts the LAST bash step (retry / prefix)', () => {
+  it.each([[zh, '列出下载文件夹'], [en, 'List Downloads folder']] as const)('(a) denied then same command ran → plain', async (t, description) => {
+    const { describeLastToolStep } = await import('../../../src/renderer/utils/agentActivity');
+    const step = { tool: 'Bash', target: 'ls ~/Downloads', description, at: 1 };
+    const steps = [{ description, command: 'ls ~/Downloads', notRun: true as const }, { description, command: 'ls ~/Downloads' }];
+    expect(describeLastToolStep(step, t, 'completed', steps)).not.toContain(t.toolStepHumanize.notRunPrefix);
+  });
+  it.each([[zh, '列出目录'], [en, 'List the directory']] as const)('(b) denied `ls ~/secret` then ran `ls` → plain; (c) denied last step → Not run', async (t, description) => {
+    const { describeLastToolStep } = await import('../../../src/renderer/utils/agentActivity');
+    const denied = { description, command: 'ls ~/secret', notRun: true as const };
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls', description, at: 1 }, t, 'completed', [denied, { description, command: 'ls' }]))
+      .not.toContain(t.toolStepHumanize.notRunPrefix);
+    expect(describeLastToolStep({ tool: 'Bash', target: 'ls ~/secret', description, at: 1 }, t, 'completed', [{ description, command: 'ls' }, denied]))
+      .toBe(`${t.toolStepHumanize.notRunPrefix} · ${description}`);
+  });
+});

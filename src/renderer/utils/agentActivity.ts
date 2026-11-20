@@ -49,6 +49,12 @@ export function describeLastToolFailure(
   }) ?? undefined;
 }
 
+/** lastToolStep 对应 bashSteps 的最后一条（同序追加）；两者都是 80 字命令预览，须严格相等且该条 notRun。 */
+function lastBashStepMatches(bashSteps: readonly BashStep[] | undefined, target: string | undefined): boolean {
+  const last = bashSteps?.[bashSteps.length - 1];
+  return !!last?.notRun && !!target && Array.from(last.command.trim()).slice(0, 80).join('') === target;
+}
+
 export function describeLastToolStep(
   step: LastToolStep | undefined,
   t: Translations,
@@ -58,7 +64,7 @@ export function describeLastToolStep(
   if (!step) return undefined;
   // 当前动作若正是被拦下、从未执行的那条 Bash，与「最近动作」列表同口径读作「未执行 · 描述」。
   const skipped = (step.tool === 'Bash' || step.tool === 'bash')
-    && bashSteps?.some((b) => b.notRun && !!step.target && b.command.startsWith(step.target)) === true;
+    && lastBashStepMatches(bashSteps, step.target);
   const targetArgs = step.target || step.action
     ? {
       ...(step.description ? { description: step.description } : {}),

@@ -13,6 +13,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
@@ -25,7 +26,9 @@ const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefin
   agents: [], activeSessionId: undefined, messages: [],
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+const i18nState = vi.hoisted(() => ({ en: false }));
+afterEach(() => { i18nState.en = false; });
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: i18nState.en ? en : zh }) }));
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({ useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState) }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -411,6 +414,30 @@ describe('成员对话页', () => {
     render(<MemberConversationView sessionId="session-1" />);
     await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
     expect(screen.getByTestId('member-current-action').textContent).not.toContain(zh.toolStepHumanize.notRunPrefix);
+  });
+
+  it('current-action bar (en, agent node): denied last step reads "Not run · desc"; a retry that ran stays plain', async () => {
+    i18nState.en = true;
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const mk = (steps: Array<{ description: string; command: string; notRun?: true }>): Task => ({
+      id: 'task-en', sessionId: 'session-1', source: 'delegate_task', title: 'Check downloads', summary: 'Done', status: 'completed',
+      createdAt: 1, updatedAt: 2, durationMs: 1_000, events: [], outputRefs: [],
+      progress: { lastToolStep: { tool: 'Bash', target: 'ls ~/Downloads', description: 'List Downloads folder', at: 2 }, bashSteps: steps },
+    });
+    const denied = { description: 'List Downloads folder', command: 'ls ~/Downloads', notRun: true as const };
+    const ran = { description: 'List Downloads folder', command: 'ls ~/Downloads' };
+    useMemberViewStore.setState({ viewingMemberId: 'task-en' });
+    useBackgroundTaskStore.setState({ tasks: [mk([ran, denied])] });
+    const first = render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).toContain('Not run · List Downloads folder');
+    first.unmount();
+    useBackgroundTaskStore.setState({ tasks: [mk([denied, ran])] });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-current-action')).toBeTruthy());
+    expect(screen.getByTestId('member-current-action').textContent).not.toContain('Not run');
+    i18nState.en = false;
   });
 
   it('swarm 成员缺描述的 Bash 不消失：显示通用「运行了一条命令」行', async () => {
