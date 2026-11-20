@@ -83,7 +83,9 @@ function scanSource(relPath: string, source: string): Violation[] {
   for (const match of source.matchAll(CALL_START_RE)) {
     const index = match.index ?? 0;
     const expr = extractSecondArgument(source, index + match[0].length);
-    if (/getModelDisplayLabel|getRuntimeModelLabel/.test(expr)) continue;
+    // shownModelLabel：modelSwitcherTooltips 的本地包装（localizeModelLabel +
+    // getModelDisplayLabel，定义在被扫文件头部），与两个公共入口同属标签表管线。
+    if (/getModelDisplayLabel|getRuntimeModelLabel|shownModelLabel/.test(expr)) continue;
     const line = source.slice(0, index).split('\n').length;
     violations.push({
       file: relPath,
@@ -116,6 +118,9 @@ describe('model id placeholder copy gate (N-FIX-COMPOSER-RAW-MODEL-ID-NEOHORSE-R
     expect(scanSource('synthetic/CostDisplay.tsx', "t.turnCostLine.replace('{model}', getModelDisplayLabel(lastTurnCost.modelId))"))
       .toEqual([]);
     expect(scanSource('synthetic/modelSwitcherTooltips.ts', "labels.model.replace('{model}', getRuntimeModelLabel(m, p, s))"))
+      .toEqual([]);
+    // main 的本地包装 shownModelLabel（localizeModelLabel + getModelDisplayLabel）也算走标签表
+    expect(scanSource('synthetic/modelSwitcherTooltips.ts', "labels.model.replace('{model}', shownModelLabel(args.currentModel, language))"))
       .toEqual([]);
     // JSX 副标题 {opt.model} 不是 .replace 调用，模式刻意不匹配（下拉副标题保留裸 id 是产品决定）
     expect(scanSource('synthetic/ModelSwitcher.tsx', '<span className="text-gray-500">{opt.model}</span>'))

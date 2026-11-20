@@ -14,6 +14,7 @@ import type {
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import { getModelDisplayLabel, isAgenticVerifiedModel } from '@shared/constants';
+import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
   buildRuntimeModelOptions,
@@ -224,7 +225,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     return visibleModelOptions.filter((opt) => {
       const providerName = resolveProviderLabel(opt.provider, opt.providerLabel, language).toLowerCase();
       return (
-        opt.label.toLowerCase().includes(q) ||
+        localizeModelLabel(opt.model, opt.label, language).toLowerCase().includes(q) ||
         opt.model.toLowerCase().includes(q) ||
         providerName.includes(q)
       );
@@ -600,9 +601,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   // 「自动」模式下换模型是预期行为，不标「已换」（所选只是占位默认）。
   const shown = resolveDisplayedModel(sessionId, { provider: displayProvider, model: displayModel }, overrideAdaptive ? null : lastDecision);
   const switchedLabel = shown.switchedFrom
-    ? `${getRuntimeModelLabel(shown.model, shown.provider, modelSettings)}${panelText.switchedSuffix}`
+    ? `${localizeModelLabel(shown.model, getRuntimeModelLabel(shown.model, shown.provider, modelSettings), language)}${panelText.switchedSuffix}`
     : null;
-  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? panelText.auto : getRuntimeModelLabel(displayModel, displayProvider, modelSettings));
+  const nativeDisplayLabel = switchedLabel ?? (overrideAdaptive ? panelText.auto : localizeModelLabel(displayModel, getRuntimeModelLabel(displayModel, displayProvider, modelSettings), language));
   const selectedNativeOption = useMemo(
     () => modelOptions.find((option) => option.provider === displayProvider && option.model === displayModel),
     [displayModel, displayProvider, modelOptions],
@@ -893,7 +894,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                               `}
                             >
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-medium">{opt.label}</span>
+                                <span className="font-medium">{localizeModelLabel(opt.model, opt.label, language)}</span>
                                 {isAgenticVerifiedModel(opt.model) ? (
                                   <span
                                     className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-badge-success"
@@ -928,12 +929,13 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                     <span
                                       className={`ml-auto text-[10px] tabular-nums ${badge.known ? 'text-zinc-400' : 'text-zinc-600'}`}
                                       title={badge.known
-                                        // 价格基准 hover 用展示名（不再裸 id）。main 的目录 label 自带
-                                        // 中文限定词（如 'DeepSeek V4 Pro (推理)'）：en 界面去尾缀再显示，
-                                        // zh 保持原样；zh-qualifier 分支把限定词挪进 i18n 后 en 分支自然 no-op。
-                                        ? modelText.priceCoefTitle.replace('{baseline}', language === 'zh'
-                                          ? getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId)
-                                          : getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId).replace(/\s*[（(][^()（）]*[)）]\s*$/, ''))
+                                        // 价格基准 hover 用展示名（不再裸 id）；限定词本地化走
+                                        // localizeModelLabel（zh 还原中文限定词、en 用目录英文限定词），
+                                        // 与下拉行标签同管线。
+                                        ? modelText.priceCoefTitle.replace('{baseline}', localizeModelLabel(
+                                          PRICING_BASELINE_DEFAULT.modelId,
+                                          getModelDisplayLabel(PRICING_BASELINE_DEFAULT.modelId),
+                                          language))
                                         : modelText.priceUnknownTitle}
                                     >
                                       {badge.label}

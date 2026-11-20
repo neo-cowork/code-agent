@@ -19,7 +19,8 @@ import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } 
 import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
 import { cronEditorChromeZh } from '../../../i18n/cronEditorChrome';
 import { formatDateTime } from '../../../utils/formatDateTime';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { readWakeSkipFromResult } from '@shared/cronRunLedger';
+import { getBuiltinJobDisplay, roleWakeActionLabel } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -618,6 +619,8 @@ export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang 
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
       return job.action.channel;
+    case 'role-wake':
+      return roleWakeActionLabel(lang);
     default:
       return (job.action as { type: string }).type;
   }
@@ -678,12 +681,16 @@ export function prettyJson(value: unknown): string {
 export function getLatestExecutionStatus(
   execution: CronJobExecution | null | undefined,
   copy: { status: Record<CronJobStatus | 'none', string>; permissionDeniedBadge: string },
+  wakeCopy?: { skippedBadge: string },
 ): { label: string; className: string } {
   if (!execution) {
     return { label: copy.status.none, className: 'text-zinc-300 bg-zinc-500/10' };
   }
   if (isPermissionDeniedExecution(execution)) {
     return { label: copy.permissionDeniedBadge, className: 'text-badge-warning bg-amber-500/10' };
+  }
+  if (wakeCopy && readWakeSkipFromResult(execution.result)) {
+    return { label: wakeCopy.skippedBadge, className: 'text-zinc-300 bg-zinc-500/10' };
   }
   return { label: copy.status[execution.status], className: getExecutionStatusMeta(execution.status).className };
 }
