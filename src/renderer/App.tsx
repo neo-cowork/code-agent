@@ -2,7 +2,6 @@
 // App - Main Application Component
 // Linear-style UI refactor: Clean layout with task panel
 // ============================================================================
-
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { useAppStore } from './stores/appStore';
 import { listRoles } from './services/rolesClient';
@@ -75,6 +74,7 @@ import { applyModelSettings, loadModelSettings } from './services/modelSettings'
 import { applyRendererPrivacyFlags, readReportedTelemetryEnv, resolvePrivacyFlags } from './observability/privacyFlags';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
+import { applyFontSizeBase } from './utils/fontSize';
 import ipcService from './services/ipcService';
 import { useSwarmStore } from './stores/swarmStore';
 import { useWorkflowStore } from './stores/workflowStore';
@@ -475,6 +475,8 @@ export const App: React.FC = () => {
           setTheme(settings.ui.theme);
           logger.info('Loaded theme setting', { theme: settings.ui.theme });
         }
+        applyFontSizeBase(settings?.ui?.fontSize);
+        logger.info('Loaded font size', { fontSize: settings?.ui?.fontSize });
 
         // 加载界面设置（渐进披露级别）
         if (settings?.ui?.disclosureLevel) {
