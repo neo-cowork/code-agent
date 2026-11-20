@@ -1,3 +1,4 @@
+import { strictEqual } from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -139,7 +140,7 @@ describe('kept result page reopen (real chromium)', () => {
     await service.close();
     const closed = getKeptResultPageHandler(links, { conversationId });
     console.log('[reopen] handler after close:', JSON.stringify(closed));
-    expect(closed.state).toBe('closed');
+    strictEqual(closed.state, 'closed');
     expect(closed.url).toBe(kept.url);
 
     try {
