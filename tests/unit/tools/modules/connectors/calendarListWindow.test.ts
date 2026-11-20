@@ -43,7 +43,7 @@ describe('calendar list window through the production handler', () => {
   });
   it('asks permission with the normalized window, not the raw local strings', async () => {
     const args = { action: 'list_events', from_local: '2020-01-01 00:00', to_local: '2030-01-01 00:00' };
-    const requestPermission = vi.fn(async () => false);
+    const requestPermission = vi.fn(async (_request: unknown) => false);
     const canUseTool = buildCanUseToolFromLegacy({
       workingDirectory: ctx.workingDir,
       sessionId: ctx.sessionId,
