@@ -87,33 +87,56 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ProjectSpaceView header', () => {
-  it('spacePromotedAt=null, cloudProjectId=null: 升级为协作空间', async () => {
+  it.each([
+    { language: 'zh', label: '升级为协作空间', submit: '升级' },
+    { language: 'en', label: 'Upgrade to cloud Space', submit: 'Upgrade' },
+  ] as const)('spacePromotedAt=null, cloudProjectId=null ($language): $label', async ({ language, label, submit }) => {
+    useAppStore.setState({ language });
     const button = await openHeader(null, null);
-    expect(button.textContent).toBe('升级为协作空间');
+    expect(button.textContent).toBe(label);
 
     fireEvent.click(button);
-    const dialog = within(screen.getByRole('dialog', { name: '升级为协作空间' }));
-    fireEvent.click(dialog.getByRole('button', { name: '升级' }));
+    const dialog = within(screen.getByRole('dialog', { name: label }));
+    fireEvent.click(dialog.getByRole('button', { name: submit }));
     await waitFor(() => expect(projectClient.promoteToCloudSpace).toHaveBeenCalledWith(PROJECT_ID));
     expect(projectClient.createInvite).not.toHaveBeenCalled();
   });
 
-  it('spacePromotedAt=number, cloudProjectId=null: 升级到云端', async () => {
+  it.each([
+    {
+      language: 'zh',
+      label: '升级到云端',
+      plainLabel: '升级为协作空间',
+      body: '升级后会把这个协作空间同步到云端，可邀请成员协作。需要登录账号。',
+      success: '已升级到云端',
+      invite: '邀请',
+    },
+    {
+      language: 'en',
+      label: 'Sync to cloud',
+      plainLabel: 'Upgrade to cloud Space',
+      body: 'Sync this Space to the cloud so you can invite members to collaborate. Sign-in required.',
+      success: 'Space synced to the cloud',
+      invite: 'Invite',
+    },
+  ] as const)('spacePromotedAt=number, cloudProjectId=null ($language): $label', async ({
+    language, label, plainLabel, body, success, invite,
+  }) => {
+    useAppStore.setState({ language });
     const button = await openHeader(PROMOTED_AT, null);
-    expect(button.textContent).toBe('升级到云端');
-    expect(button.textContent).not.toContain('升级为协作空间');
+    expect(button.textContent).not.toContain(plainLabel);
+    expect(button.textContent).toBe(label);
 
     fireEvent.click(button);
-    const dialog = within(screen.getByRole('dialog', { name: '升级到云端' }));
-    expect(dialog.getByTestId('project-space-invite-promote-modal').textContent)
-      .toBe('升级后会把这个协作空间同步到云端，可邀请成员协作。需要登录账号。');
+    const dialog = within(screen.getByRole('dialog', { name: label }));
+    expect(dialog.getByTestId('project-space-invite-promote-modal').textContent).toBe(body);
 
     vi.mocked(projectClient.getProjectDetail).mockResolvedValue(projectDetail(PROMOTED_AT, CLOUD_ID));
-    fireEvent.click(dialog.getByRole('button', { name: '升级到云端' }));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('已升级到云端'));
+    fireEvent.click(dialog.getByRole('button', { name: label }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(success));
     expect(projectClient.promoteToCloudSpace).toHaveBeenCalledWith(PROJECT_ID);
     await screen.findByTestId('project-space-header-cloud-badge');
-    expect(button.textContent).toBe('邀请');
+    expect(button.textContent).toBe(invite);
   });
 
   it.each([
