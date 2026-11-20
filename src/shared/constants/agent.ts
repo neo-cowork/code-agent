@@ -111,7 +111,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v139：N-FIX-BG-NEGATION-RE-BIE-FALSE-NEGATIVE——后台请求否定的「别」只认祈使：分句先整词摘掉「别」复合词（含报告/这个/部分等消歧前词）再测，分别/特别/差别等不再误判为否定，词尾字+祈使别（这份报告别放后台）与别处理/别处于仍算否定。
 // sys-v140：同单 r1——「别」排除从单字前后瞻改为整词摘除（BIE_COMPOUND_WORDS_RE），修复词尾字+祈使别（报告别/这个别/部分别…）与别处理/别处于被误组词放走的回归；sys-v139 未发版，两版合并为本 PR 的净行为。
 // sys-v141：同单 r2——以汉字收尾的「别」易混词（个别/类别/级别/告别/识别…）仅在前一字非汉字时整词摘除，修复「这一个别/警告别/班级别」把祈使别吞掉而被误判为明确要后台。
-export const PROMPT_VERSION = 'sys-v141' as const;
+// sys-v142：N-FIX-EN-SPACE-TERM-UNIFY——space_create/list/query 描述与 Space 上下文提示词英文统一为 Space（不再用 collaboration space）。
+export const PROMPT_VERSION = 'sys-v142' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
