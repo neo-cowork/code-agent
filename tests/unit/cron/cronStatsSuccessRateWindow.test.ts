@@ -93,7 +93,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       exit_code INTEGER,
       trigger_json TEXT,
       cost_usd REAL,
-      push_note TEXT
+      push_note TEXT,
+      flat_fee INTEGER
     );
   `);
 }
