@@ -158,7 +158,7 @@ export function ToolCallDisplay({
   agentId,
   sessionLive,
 }: ToolCallDisplayProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
     ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
     : originalToolCall, [originalToolCall]);
@@ -255,8 +255,8 @@ export function ToolCallDisplay({
   // Track if user manually toggled
   const [userToggled, setUserToggled] = useState(false);
   const actionPreview = useMemo(
-    () => buildBrowserComputerActionPreview(toolCall),
-    [toolCall],
+    () => buildBrowserComputerActionPreview(toolCall, language),
+    [toolCall, language],
   );
   const workflowStagePreview = useMemo(
     () => buildWorkflowStagePreview(toolCall),
