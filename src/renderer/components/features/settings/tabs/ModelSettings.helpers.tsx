@@ -8,6 +8,7 @@ import type {
   ModelProvider,
   ModelProviderProtocol,
   ModelProviderSettings,
+  TaskModelStrategySettings,
 } from '@shared/contract';
 import { getProviderEndpointForProtocol, getProviderInfo } from '@shared/constants';
 import type { ProviderInfo, ProviderModelEntry } from '@shared/constants';
@@ -180,10 +181,37 @@ export function shouldPromoteProviderToDefault(
   return !hasConfiguredDefaultRuntimeModel(settings);
 }
 
+/** promote 时一并接管的「任务主模型」档（FB-1800）：运行时的代码/文件/产物任务走
+ *  profiles.main（modelDecision.applyStrategySlot），它不跟随默认模型指针。仅当当前
+ *  main 档指向的 provider 运行时不可用（没 key）时，把 main 切到刚保存的 provider/model；
+ *  main 已指向可用 provider（用户显式选过且能用）时不改写。reasoningEffort / maxTokens
+ *  保留原 main 档的值。settings 缺省（手动「设为默认模型」路径）不接管。 */
+function buildPromotedTaskStrategy(
+  provider: ModelProvider,
+  providerConfig: ModelProviderSettings,
+  settings?: AppSettings | null,
+): TaskModelStrategySettings | undefined {
+  const strategy = settings?.models?.taskStrategy;
+  const mainSlot = strategy?.profiles?.main;
+  if (!strategy || !mainSlot) return undefined;
+  if (isRuntimeProviderAvailable(mainSlot.provider, settings.models.providers?.[mainSlot.provider])) return undefined;
+  const model = providerConfig.model || getProviderInfo(provider)?.defaultModel;
+  if (!model) return undefined;
+  return {
+    ...strategy,
+    profiles: {
+      ...strategy.profiles,
+      main: { ...mainSlot, provider, model },
+    },
+  };
+}
+
 export function buildDefaultModelSettingsUpdate(
   provider: ModelProvider,
   providerConfig: ModelProviderSettings,
+  settings?: AppSettings | null,
 ): Partial<AppSettings> {
+  const promotedTaskStrategy = buildPromotedTaskStrategy(provider, providerConfig, settings);
   return {
     models: {
       default: provider,
@@ -191,6 +219,7 @@ export function buildDefaultModelSettingsUpdate(
       providers: {
         [provider]: providerConfig,
       },
+      ...(promotedTaskStrategy ? { taskStrategy: promotedTaskStrategy } : {}),
     },
   } as Partial<AppSettings>;
 }
