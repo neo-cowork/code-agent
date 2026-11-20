@@ -111,7 +111,7 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'computer',
-      summary: '桌面输入 18 chars',
+      summary: '桌面输入 18 个字符',
       target: 'Google Chrome',
       risk: 'desktop_input',
       riskLabel: '前台需确认',
@@ -130,7 +130,7 @@ describe('buildBrowserComputerActionPreview', () => {
     }))).toMatchObject({
       surface: 'computer',
       summary: '观察前台窗口',
-      target: 'with screenshot',
+      target: '附截图',
       risk: 'read',
     });
   });
@@ -157,7 +157,7 @@ describe('buildBrowserComputerActionPreview', () => {
 
     expect(buildBrowserComputerActionPreview(toolCall)).toMatchObject({
       surface: 'computer',
-      summary: '读取 Computer Surface 状态',
+      summary: '读取电脑操作状态',
       risk: 'read',
       riskLabel: '只读',
       mode: 'foreground_fallback',
@@ -187,7 +187,7 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'computer',
-      summary: 'click 坐标',
+      summary: '点击坐标',
       target: 'Safari',
       mode: 'foreground_fallback',
     });
@@ -217,7 +217,7 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'computer',
-      summary: 'click 后台元素',
+      summary: '点击后台元素',
       target: 'button "Back"',
       mode: 'background_ax',
     });
@@ -247,7 +247,7 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'computer',
-      summary: 'click 后台元素',
+      summary: '点击后台元素',
       target: 'axPath 1.2.3',
       mode: 'background_ax',
     });
@@ -280,7 +280,7 @@ describe('buildBrowserComputerActionPreview', () => {
 
     expect(buildBrowserComputerActionPreview(toolCall)).toMatchObject({
       surface: 'computer',
-      summary: '读取后台 AX 元素',
+      summary: '读取后台无障碍元素',
       target: 'Finder',
       risk: 'read',
       riskLabel: '只读',
@@ -346,10 +346,10 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'computer',
-      summary: 'click 后台窗口动作',
+      summary: '点击后台窗口',
       target: 'windowRef cgwin:1234:42:abcdef123456',
       risk: 'desktop_input',
-      riskLabel: '后台 CGEvent',
+      riskLabel: '后台输入',
       mode: 'background_cgevent',
     });
   });
@@ -375,9 +375,9 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }))).toMatchObject({
       surface: 'computer',
-      summary: 'rightClick 后台窗口动作',
+      summary: '右键点击后台窗口',
       target: 'pid 1234 · window 42 · windowLocal 20,30',
-      riskLabel: '后台 CGEvent',
+      riskLabel: '后台输入',
       mode: 'background_cgevent',
     });
   });
@@ -400,7 +400,7 @@ describe('buildBrowserComputerActionPreview', () => {
         },
       },
     }))).toMatchObject({
-      riskLabel: '后台 AX',
+      riskLabel: '后台无障碍',
       mode: 'background_ax',
     });
 
@@ -439,7 +439,7 @@ describe('buildBrowserComputerActionPreview', () => {
       },
     }));
 
-    expect(summary).toBe('输入 18 chars -> #email');
+    expect(summary).toBe('输入 18 个字符 -> #email');
     expect(summary).not.toContain('secret@example.com');
   });
 
@@ -463,7 +463,7 @@ describe('buildBrowserComputerActionPreview', () => {
 
     expect(args).toContain('[redacted 18 chars]');
     expect(args).not.toContain('secret@example.com');
-    expect(result).toBe('输入 18 chars -> #email failed');
+    expect(result).toBe('输入 18 个字符 -> #email failed');
     expect(result).not.toContain('secret@example.com');
   });
 
@@ -536,7 +536,7 @@ describe('buildBrowserComputerActionPreview', () => {
       approvalKind: 'tool_executor',
       safeRecovery: 'refresh_managed_snapshot',
     });
-    expect(summary).toBe('智能输入 18 chars -> #email');
+    expect(summary).toBe('智能输入 18 个字符 -> #email');
     expect(summary).not.toContain('secret@example.com');
   });
 
@@ -657,5 +657,21 @@ describe('buildBrowserComputerActionPreview', () => {
         command: 'npm test',
       },
     }))).toBeNull();
+  });
+});
+
+describe('English browser/computer action results', () => {
+  it.each([
+    ['screenshot', {}, 'Screenshot saved'],
+    ['screenshot', { path: '/tmp/example.png' }, 'Screenshot saved: example.png'],
+    ['get_dom_snapshot', {}, 'Page structure read'],
+    ['get_dom_snapshot', { domSnapshot: { headingCount: 2, interactiveCount: 3 } }, 'Page structure: 2 headings · 3 clickable elements'],
+    ['get_a11y_snapshot', {}, 'Page accessibility info read'],
+    ['get_workbench_state', {}, 'Browser status read'],
+  ])('summarizes %s using the selected locale', (action, metadata, expected) => {
+    expect(summarizeBrowserComputerActionResult(makeToolCall({
+      arguments: { action },
+      result: { toolCallId: 'tool-1', success: true, output: '', metadata },
+    }), 'en')).toBe(expected);
   });
 });

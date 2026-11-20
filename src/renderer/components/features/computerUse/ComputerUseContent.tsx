@@ -141,7 +141,7 @@ function createUnavailableSurfaceState(copy: ComputerUseCopy['webFallback']): Co
 // 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责，原页头的「诊断」角标和刷新按钮
 // 收进左栏顶部的工具行。
 export const ComputerUseContent: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.localOps.computerUse;
   const snapshot = useSyncExternalStore(
     subscribeComputerUseSnapshot,
@@ -383,7 +383,7 @@ export const ComputerUseContent: React.FC = () => {
     void loadElements(selectedTargetApp);
   }, [loadElements, selectedTargetApp]);
 
-  const actionSummary = useMemo(() => buildRecentComputerUseAction(surface), [surface]);
+  const actionSummary = useMemo(() => buildRecentComputerUseAction(surface, language), [surface, language]);
   const elementCandidates = useMemo(
     () => toElementCandidates(elementsResult, copy.diag.unnamedElement),
     [elementsResult, copy.diag.unnamedElement],
