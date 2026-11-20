@@ -147,7 +147,7 @@ describe('route chip live/reload parity (real-shape fixture)', () => {
         // 真实重放形状的中间轮：正文空、带 thinking + 工具调用（reasoning 载体空正文节点）
         id: 'flip-2', role: 'assistant', content: '', timestamp: 3,
         thinking: '读一下 README 和 package.json。',
-        toolCalls: [{ id: 'call-flip-1', name: 'Read', arguments: {} } as Message['toolCalls']![number]],
+        toolCalls: [{ id: 'call-flip-1', name: 'Read', arguments: {} } as NonNullable<Message['toolCalls']>[number]],
         modelDecision: degraded,
       },
       { id: 'flip-3', role: 'assistant', content: '核对完成，内容一致。', timestamp: 4, modelDecision: healthy },
