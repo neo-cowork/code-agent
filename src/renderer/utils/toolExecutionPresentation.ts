@@ -277,6 +277,7 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'STALE_FILE',
   'READ_DIGEST_MISMATCH',
   'READ_REQUIRED_AFTER_SEARCH',
+  'COMMAND_FAILED',
 ]);
 
 /**

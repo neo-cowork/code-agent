@@ -119,6 +119,7 @@ interface ToolStepVerbBundle {
     ENOENT: string;
     INVALID_ARGS: string;
     FS_ERROR: string;
+    COMMAND_FAILED: string;
   };
   /** 登记表外仍未翻译的全大写码（^[A-Z][A-Z0-9_]*$）的兜底句；数字退出码 / HTTP nnn 不走这里 */
   rawFailureCodeFallback: string;
@@ -257,6 +258,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     ENOENT: '找不到这个文件或目录，请确认路径是否正确',
     INVALID_ARGS: '这一步准备的内容不完整，Neo 会调整后再试',
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
+    COMMAND_FAILED: '命令运行失败，可展开查看输出',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
   delegationRejectionCodes: {
@@ -351,6 +353,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     ENOENT: 'Could not find that file or folder; check the path',
     INVALID_ARGS: 'This step was set up incompletely; Neo will adjust and try again',
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
+    COMMAND_FAILED: 'The command failed to run; expand to see its output',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
   delegationRejectionCodes: {
