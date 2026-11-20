@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { TraceTurn } from '@shared/contract/trace';
+import { readToastReserve, subscribeToastReserveChange } from '../../toastReserve';
 
 export function scheduleAfterLayout(callback: () => void): () => void {
   if (typeof requestAnimationFrame !== 'function') {
@@ -143,6 +144,84 @@ export function useListResizeFollow({
     };
   }, [historyPrependInProgressRef, isUserScrollSuppressed, keepActiveOutputVisibleRef, outputFollowStreamingRef,
     projectionTurnsRef, scroller, sessionEntrySettlingRef, virtuosoRef]);
+}
+
+// 亚像素容差：贴底距离比较吸收换行/缩放的小数残差。
+const TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX = 8;
+// 钉底帧循环上限，与 startBottomSettlement 的 60 帧同档。
+const TOAST_RESERVE_PIN_MAX_FRAMES = 60;
+
+/**
+ * toast 让位钉底：--toast-reserve 增长（全局 toast 出现/叠高）时，贴底跟随中的
+ * 列表要把长出的 Footer 让位带滚出视口，末条消息的操作行才不会被 toast 盖住。
+ * Virtuoso 只在条目数变化时经 followOutput 重新钉底，Footer 变高既不触发它的
+ * 重新钉底、也不在 item-list 里（useListResizeFollow 的 ResizeObserver 看不见），
+ * 不主动滚列表就停原地。事件与变量写入同帧到达，此刻读 scroller.scrollHeight
+ * 已含新 Footer 高（同步重排），先同步落底一次；但 Virtuoso 随后几帧的测量补偿
+ * 会把视口再挪回去（useListResizeFollow 注释里的同类坑），所以还要逐帧落底直到
+ * 几何稳定（同 startBottomSettlement 的思路）。贴底判据 = 离底距离 ≤ 本次增量
+ * （增量前贴底）+ 同拍视口收缩 + 亚像素容差：toast 到来常与 composer 变高同拍
+ * （如上传失败 chip），视口变矮会让距离叠上收缩量，不吃进去会被误判成「用户已
+ * 上滚」而放弃钉底。用户真上滚（离底更远）仍不动；帧循环里发现视口被拽离底部
+ * 也立即停。回落（toast 消失）反向同理：浏览器钳底后 Virtuoso 对 Footer 变矮的
+ * 补偿会把视口上挪，仍贴底时同样逐帧守底；用户已上滚则不拽回。
+ */
+export function useToastReserveBottomKeep(scroller: HTMLElement | null): void {
+  const prevReserveRef = useRef(0);
+  useEffect(() => {
+    if (!scroller) return;
+    // 列表可能在 toast 已显示时才挂上（切会话/空会话刚出消息）：delta 要从当前占位起算。
+    prevReserveRef.current = readToastReserve();
+    // 持续记着最近一次已知的视口高：ResizeObserver 回调在变化发生后才送达，
+    // 事件到达的同一帧里它还握着收缩前的值，恰好就是「同拍收缩量」的来源。
+    const lastClientHeightRef = { current: scroller.clientHeight };
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        lastClientHeightRef.current = scroller.clientHeight;
+      });
+      observer.observe(scroller);
+    }
+    const unsubscribe = subscribeToastReserveChange((reserve) => {
+      const delta = reserve - prevReserveRef.current;
+      const viewportShrink = Math.max(0, lastClientHeightRef.current - scroller.clientHeight);
+      prevReserveRef.current = reserve;
+      if (delta === 0) return;
+      if (delta > 0) {
+        if (!isScrollerNearBottom(
+          scroller,
+          delta + viewportShrink + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX,
+        )) return;
+        scroller.scrollTop = scroller.scrollHeight;
+      } else {
+        // 回落（toast 消失）：浏览器会把 scrollTop 钳到新底，但 Virtuoso 对 Footer
+        // 变矮的测量补偿随后又把视口上挪，末条内容被留在底缘之下。只在确实还
+        //贴底（钳过之后）时逐帧守底；用户已上滚阅读（离底超出容差）不拽回。
+        if (!isScrollerNearBottom(scroller, viewportShrink + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX)) return;
+      }
+      if (typeof requestAnimationFrame !== 'function') return;
+      let frames = 0;
+      let stableFrames = 0;
+      let lastScrollHeight = -1;
+      const pin = () => {
+        scroller.scrollTop = scroller.scrollHeight;
+        const settled = scroller.scrollHeight === lastScrollHeight
+          && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 1;
+        stableFrames = settled ? stableFrames + 1 : 0;
+        lastScrollHeight = scroller.scrollHeight;
+        frames += 1;
+        const movedAway = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+          > TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX;
+        if (movedAway || frames >= TOAST_RESERVE_PIN_MAX_FRAMES || stableFrames >= SETTLE_STABLE_FRAMES) return;
+        requestAnimationFrame(pin);
+      };
+      requestAnimationFrame(pin);
+    });
+    return () => {
+      unsubscribe();
+      observer?.disconnect();
+    };
+  }, [scroller]);
 }
 
 // scroller 还没量出尺寸时无从判断，返回 null 表示保持现状，不要硬猜。

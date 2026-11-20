@@ -63,6 +63,8 @@ export function createShellPassiveBridge(client: ShellBridgeClient): PassiveBrid
       if (res?.status !== 0 && res?.status !== 1 && res?.status !== 2 && res?.status !== 3 && res?.status !== 4) {
         throw new Error('env_assist_bridge:invalid_passive_calendar_response');
       }
+      // Class status stays 0 in-process after Don't Allow; the completion bool is the denial.
+      if (res.status === 0 && res.answer === false) return 2;
       return res.status;
     },
   };
