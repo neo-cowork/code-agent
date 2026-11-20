@@ -67,7 +67,7 @@ vi.mock('../../../src/host/services/core/configService', async (importOriginal) 
 import { withWorkbenchTurnSystemContext } from '../../../src/host/app/workbenchTurnContext';
 import { getNativeConnectorToolNamesForIntent } from '../../../src/host/connectors/nativeConnectorIntent';
 import { isToolNameAllowedByWorkbenchScope } from '../../../src/host/tools/workbenchToolScope';
-import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
 
 const registry = getConnectorRegistry();
@@ -92,7 +92,17 @@ const notPreloadedWarnCalls = () => loggerSpies.warn.mock.calls.filter(
 );
 
 describe('专家声明 calendar 连接器就绪 failed/unavailable（无头半边）', () => {
+  // 平台无关性（CI Linux 复盘）：连接器工具 schema 只在 darwin 注册
+  // （tools/modules/index.ts 的 registerMigratedTools 按 platform === 'darwin' 分组），
+  // Linux 上 calendar 工具不在 protocol registry → selectTool 的 loadable=false。
+  // 本文件验的是「日志 + 不晾专家」这条平台无关链路，工具注册面统一按 darwin 看待；
+  // 每例 stub 回 darwin 并重置 protocol registry（防导入期已按真实平台建过单例），
+  // afterEach 恢复原始 descriptor。
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+
   beforeEach(() => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    resetProtocolRegistry();
     resolveAgentMock.mockReset();
     trackNodeMock.mockReset();
     loggerSpies.info.mockClear();
@@ -105,6 +115,8 @@ describe('专家声明 calendar 连接器就绪 failed/unavailable（无头半�
   });
 
   afterEach(() => {
+    Object.defineProperty(process, 'platform', originalPlatform);
+    resetProtocolRegistry();
     registry.unregister('calendar');
   });
 
