@@ -1,3 +1,6 @@
+import { getBrowserComputerActionPreviewMessages } from '../i18n/browserComputerActionPreview';
+import type { Language } from '../i18n';
+import { useAppStore } from '../stores/appStore';
 import type { ToolCall } from '@shared/contract';
 import {
   redactBrowserComputerInputPayloadsInValue,
@@ -14,6 +17,12 @@ import {
   type BrowserComputerCatalogScope,
   type BrowserComputerCatalogTool,
 } from '@shared/utils/browserComputerActionCatalog';
+
+type Messages = ReturnType<typeof getBrowserComputerActionPreviewMessages>;
+
+function getPreviewLocale(): Language {
+  return useAppStore.getState().language === 'en' ? 'en' : 'zh';
+}
 
 type BrowserComputerActionRisk = BrowserComputerCatalogRisk;
 
@@ -222,174 +231,182 @@ function getComputerMode(
 function getCatalogRiskLabel(
   catalog: BrowserComputerActionCatalogEntry,
   mode: string | null,
+  messages: Messages,
   metadata?: Record<string, unknown>,
 ): string {
   if (catalog.risk === 'read') {
-    return '只读';
+    return messages.readOnly;
   }
   if (catalog.scope === 'managed_browser' || catalog.scope === 'browser_scoped_computer') {
-    return '托管浏览器动作';
+    return messages.managedBrowser;
   }
   if (mode === 'background_cgevent' || metadata?.computerSurfaceMode === 'background_cgevent') {
-    return '后台 CGEvent';
+    return messages.backgroundInput;
   }
   if (mode === 'background_ax' || metadata?.computerSurfaceMode === 'background_ax' || metadata?.backgroundSurface) {
-    return '后台 AX';
+    return messages.backgroundAccessibility;
   }
-  return '前台需确认';
+  return messages.foregroundConfirmation;
 }
 
-function buildBrowserSummary(action: string, args: Record<string, unknown>): {
+function buildBrowserSummary(action: string, args: Record<string, unknown>, messages: Messages): {
   summary: string;
   target?: string | null;
 } {
   switch (action) {
     case 'launch':
-      return { summary: '启动托管浏览器' };
+      return { summary: messages.launch };
     case 'close':
-      return { summary: '关闭托管浏览器' };
+      return { summary: messages.close };
     case 'new_tab':
-      return { summary: '打开新标签页', target: formatUrlTarget(asString(args.url)) };
+      return { summary: messages.newTab, target: formatUrlTarget(asString(args.url)) };
     case 'close_tab':
-      return { summary: '关闭标签页', target: asString(args.tabId) };
+      return { summary: messages.closeTab, target: asString(args.tabId) };
     case 'switch_tab':
-      return { summary: '切换标签页', target: asString(args.tabId) };
+      return { summary: messages.switchTab, target: asString(args.tabId) };
     case 'navigate':
-      return { summary: '导航到页面', target: formatUrlTarget(asString(args.url)) };
+      return { summary: messages.navigate, target: formatUrlTarget(asString(args.url)) };
     case 'back':
-      return { summary: '浏览器后退' };
+      return { summary: messages.back };
     case 'forward':
-      return { summary: '浏览器前进' };
+      return { summary: messages.forward };
     case 'reload':
-      return { summary: '刷新页面' };
+      return { summary: messages.reload };
     case 'set_viewport': {
       const width = asNumber(args.width);
       const height = asNumber(args.height);
       return {
-        summary: '设置 viewport',
+        summary: messages.viewport,
         target: width && height ? `${width}x${height}` : null,
       };
     }
     case 'click':
-      return { summary: '点击页面元素', target: formatSelector(args) };
+      return { summary: messages.browserClick, target: formatSelector(args) };
     case 'click_text':
-      return { summary: '点击页面文本', target: formatSelector(args) };
+      return { summary: messages.clickText, target: formatSelector(args) };
     case 'type':
-      return { summary: `输入 ${formatTypedText(args)}`, target: formatSelectorWithoutInputText(args) };
+      return { summary: messages.browserType(formatTypedText(args)), target: formatSelectorWithoutInputText(args) };
     case 'press_key':
-      return { summary: '按键', target: asString(args.key) };
+      return { summary: messages.pressKey, target: asString(args.key) };
     case 'scroll':
-      return { summary: '滚动页面', target: asString(args.direction) || null };
+      return { summary: messages.browserScroll, target: asString(args.direction) || null };
     case 'screenshot':
-      return { summary: '截取页面截图', target: args.fullPage ? 'full page' : null };
+      return { summary: messages.screenshot, target: args.fullPage ? 'full page' : null };
     case 'get_content':
-      return { summary: '读取页面内容' };
+      return { summary: messages.getContent };
     case 'get_elements':
-      return { summary: '读取页面元素', target: asString(args.selector) };
+      return { summary: messages.getBrowserElements, target: asString(args.selector) };
     case 'get_dom_snapshot':
-      return { summary: '读取页面结构' };
+      return { summary: messages.getDomSnapshot };
     case 'get_a11y_snapshot':
-      return { summary: '读取 accessibility snapshot' };
+      return { summary: messages.getA11ySnapshot };
     case 'get_workbench_state':
-      return { summary: '读取 browser workbench state' };
+      return { summary: messages.getWorkbenchState };
     case 'get_account_state':
-      return { summary: '读取账号态摘要' };
+      return { summary: messages.getAccountState };
     case 'export_storage_state':
-      return { summary: '导出 storageState', target: basename(args.storageStatePath) };
+      return { summary: messages.exportStorageState, target: basename(args.storageStatePath) };
     case 'import_storage_state':
-      return { summary: '导入 storageState', target: basename(args.storageStatePath) };
+      return { summary: messages.importStorageState, target: basename(args.storageStatePath) };
     case 'wait_for_download':
-      return { summary: '等待下载完成', target: formatSelector(args) };
+      return { summary: messages.waitForDownload, target: formatSelector(args) };
     case 'upload_file':
-      return { summary: '上传文件', target: basename(args.uploadFilePath) || formatSelector(args) };
+      return { summary: messages.uploadFile, target: basename(args.uploadFilePath) || formatSelector(args) };
     case 'wait':
-      return { summary: '等待页面状态', target: formatSelector(args) || asString(args.timeout) };
+      return { summary: messages.wait, target: formatSelector(args) || asString(args.timeout) };
     case 'fill_form': {
       const formData = args.formData && typeof args.formData === 'object'
         ? Object.keys(args.formData as Record<string, unknown>).length
         : 0;
-      return { summary: '填写表单', target: formData ? `${formData} fields` : null };
+      return { summary: messages.fillForm, target: formData ? `${formData} fields` : null };
     }
     case 'get_logs':
-      return { summary: '读取浏览器日志' };
+      return { summary: messages.getLogs };
     case 'keep_result_page':
-      return { summary: '保留结果页给用户' };
+      return { summary: messages.keepResultPage };
     case 'wait_for_user':
-      return { summary: '等你来处理', target: asString(args.reason) };
+      return { summary: messages.waitForUser, target: asString(args.reason) };
     default:
-      return { summary: `浏览器动作: ${action}` };
+      return { summary: messages.browserAction(action) };
   }
 }
 
-function buildComputerSummary(action: string, args: Record<string, unknown>, metadata?: Record<string, unknown>, mode?: string | null): {
+function buildComputerSummary(
+  action: string,
+  args: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+  mode: string | null,
+  messages: Messages,
+): {
   summary: string;
   target?: string | null;
 } {
   switch (action) {
     case 'get_state':
-      return { summary: '读取 Computer Surface 状态' };
+      return { summary: messages.getComputerState };
     case 'observe':
       return {
-        summary: args.targetApp ? '观察目标 app/window' : '观察前台窗口',
+        summary: args.targetApp ? messages.observeApp : messages.observeFrontWindow,
         target: asString(args.targetApp) || (args.includeScreenshot ? 'with screenshot' : null),
       };
     case 'get_ax_elements':
-      return { summary: '读取后台 AX 元素', target: asString(args.targetApp) };
+      return { summary: messages.getAxElements, target: asString(args.targetApp) };
     case 'get_windows':
-      return { summary: '读取窗口候选', target: asString(args.targetApp) || asString(args.title) || asString(args.bundleId) };
+      return { summary: messages.getWindows, target: asString(args.targetApp) || asString(args.title) || asString(args.bundleId) };
     case 'diagnose_app':
-      return { summary: '诊断目标 app', target: asString(args.targetApp) || asString(args.bundleId) };
+      return { summary: messages.diagnoseApp, target: asString(args.targetApp) || asString(args.bundleId) };
     case 'click':
     case 'doubleClick':
     case 'rightClick':
       if (mode === 'background_cgevent' || hasBackgroundWindowTarget(args, metadata)) {
         return {
-          summary: `${action} 后台窗口动作`,
+          summary: messages.backgroundWindowClick(action),
           target: formatBackgroundWindowTarget(args, metadata) || asString(args.targetApp) || asString(metadata?.targetApp),
         };
       }
       return {
-        summary: args.targetApp && (args.axPath || args.role || args.name || args.selector) ? `${action} 后台元素` : `${action} 坐标`,
+        summary: args.targetApp && (args.axPath || args.role || args.name || args.selector) ? messages.backgroundElementClick(action) : messages.coordinateClick(action),
         target: formatSelector(args) || asString(args.targetApp),
       };
     case 'move':
-      return { summary: '移动鼠标', target: formatSelector(args) };
+      return { summary: messages.moveMouse, target: formatSelector(args) };
     case 'type':
-      return { summary: `桌面输入 ${formatTypedText(args)}`, target: formatDesktopElementTarget(args) || asString(args.targetApp) };
+      return { summary: messages.desktopType(formatTypedText(args)), target: formatDesktopElementTarget(args) || asString(args.targetApp) };
     case 'key': {
       const modifiers = Array.isArray(args.modifiers) ? args.modifiers.join('+') : '';
-      return { summary: '桌面按键', target: [modifiers, asString(args.key)].filter(Boolean).join('+') || null };
+      return { summary: messages.desktopKey, target: [modifiers, asString(args.key)].filter(Boolean).join('+') || null };
     }
     case 'scroll':
-      return { summary: '桌面滚动', target: asString(args.direction) || null };
+      return { summary: messages.desktopScroll, target: asString(args.direction) || null };
     case 'drag': {
       const from = formatSelector(args);
       const toX = asNumber(args.toX);
       const toY = asNumber(args.toY);
       const to = toX !== null && toY !== null ? `${toX},${toY}` : null;
-      return { summary: '桌面拖拽', target: [from, to].filter(Boolean).join(' -> ') || null };
+      return { summary: messages.drag, target: [from, to].filter(Boolean).join(' -> ') || null };
     }
     case 'locate_element':
-      return { summary: '定位页面元素', target: asString(args.selector) };
+      return { summary: messages.locateElement, target: asString(args.selector) };
     case 'locate_text':
-      return { summary: '定位页面文本', target: asString(args.text) };
+      return { summary: messages.locateText, target: asString(args.text) };
     case 'locate_role':
-      return { summary: '定位 ARIA role', target: formatSelector(args) };
+      return { summary: messages.locateRole, target: formatSelector(args) };
     case 'smart_click':
-      return { summary: '智能点击浏览器元素', target: formatSelector(args) };
+      return { summary: messages.smartClick, target: formatSelector(args) };
     case 'smart_type':
-      return { summary: `智能输入 ${formatTypedText(args)}`, target: formatSelectorWithoutInputText(args) };
+      return { summary: messages.smartType(formatTypedText(args)), target: formatSelectorWithoutInputText(args) };
     case 'smart_hover':
-      return { summary: '智能 hover 浏览器元素', target: formatSelector(args) };
+      return { summary: messages.smartHover, target: formatSelector(args) };
     case 'get_elements':
-      return { summary: '读取可交互元素' };
+      return { summary: messages.getInteractiveElements };
     default:
-      return { summary: `Computer action: ${action}` };
+      return { summary: messages.computerAction(action) };
   }
 }
 
 export function buildBrowserComputerActionPreview(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'result'>,
+  locale?: Language,
 ): BrowserComputerActionPreview | null {
   if (toolCall.name !== 'browser_action' && toolCall.name !== 'computer_use') {
     return null;
@@ -402,15 +419,16 @@ export function buildBrowserComputerActionPreview(
     return null;
   }
   const { traceId, mode } = getTraceMetadata(toolCall);
+  const messages = getBrowserComputerActionPreviewMessages(locale ?? getPreviewLocale());
 
   if (toolCall.name === 'browser_action') {
     return {
       surface: 'browser',
       tool: catalog.tool,
       action: catalog.action,
-      ...buildBrowserSummary(action, args),
+      ...buildBrowserSummary(action, args, messages),
       risk: catalog.risk,
-      riskLabel: getCatalogRiskLabel(catalog, mode),
+      riskLabel: getCatalogRiskLabel(catalog, mode, messages),
       scope: catalog.scope,
       requiresManagedSession: catalog.requiresManagedSession,
       evidenceKind: catalog.evidenceKind,
@@ -423,7 +441,7 @@ export function buildBrowserComputerActionPreview(
 
   const metadata = toolCall.result?.metadata || {};
   const computerMode = getComputerMode(args, metadata, mode);
-  const summary = buildComputerSummary(action, args, metadata, computerMode);
+  const summary = buildComputerSummary(action, args, metadata, computerMode, messages);
   const metadataTargetApp = asString(metadata.targetApp);
   return {
     surface: 'computer',
@@ -432,7 +450,7 @@ export function buildBrowserComputerActionPreview(
     ...summary,
     target: summary.target || metadataTargetApp,
     risk: catalog.risk,
-    riskLabel: getCatalogRiskLabel(catalog, computerMode, metadata),
+    riskLabel: getCatalogRiskLabel(catalog, computerMode, messages, metadata),
     scope: catalog.scope,
     requiresManagedSession: catalog.requiresManagedSession,
     evidenceKind: catalog.evidenceKind,
@@ -482,7 +500,7 @@ function formatComputerSurfaceStateSummary(surface: { ready?: unknown; mode?: un
   return `Computer Surface: ${surface.ready ? 'ready' : 'not ready'} · ${mode}`;
 }
 
-function formatAccountStateSummary(value: unknown, prefix = '账号态'): string | null {
+function formatAccountStateSummary(value: unknown, prefix: string): string | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -500,7 +518,7 @@ function formatAccountStateSummary(value: unknown, prefix = '账号态'): string
   ].filter(Boolean).join(' · ');
 }
 
-function formatArtifactSummary(value: unknown): string | null {
+function formatArtifactSummary(value: unknown, messages: Messages): string | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -509,7 +527,7 @@ function formatArtifactSummary(value: unknown): string | null {
   const size = asNumber(value.size);
   const sha256 = asString(value.sha256);
   return [
-    kind === 'download' ? '下载完成' : kind === 'upload' ? '上传文件已选择' : 'Artifact',
+    kind === 'download' ? messages.downloadDone : kind === 'upload' ? messages.uploadSelected : 'Artifact',
     name,
     size !== null ? `${size} bytes` : null,
     sha256 ? `sha256 ${truncate(sha256, 15)}` : null,
@@ -532,6 +550,7 @@ function formatRecoveryOutcome(
   toolName: string,
   args: Record<string, unknown>,
   metadata: Record<string, unknown>,
+  messages: Messages,
 ): string | null {
   const safeMetadata = sanitizeBrowserComputerMetadata(toolName, args, metadata) || {};
   const outcome = safeMetadata.browserComputerRecoveryActionOutcome;
@@ -556,7 +575,7 @@ function formatRecoveryOutcome(
 
   const retryHint = redactForTool(toolName, args, outcome.retryHint);
   if (retryHint) {
-    lines.push(`建议：${retryHint}`);
+    lines.push(messages.retryHint(retryHint));
   }
 
   return lines.length > 0 ? lines.join('\n') : null;
@@ -567,6 +586,7 @@ function formatInputFailureDetail(
   args: Record<string, unknown>,
   preview: BrowserComputerActionPreview,
   error: unknown,
+  messages: Messages,
 ): string | null {
   if (typeof error !== 'string') {
     return null;
@@ -574,19 +594,20 @@ function formatInputFailureDetail(
   const safeError = redactForTool(toolName, args, error) || error;
   const lower = error.toLowerCase();
   if (lower.includes('no element found') || lower.includes('element not found') || lower.includes('target element')) {
-    return `${joinResultSummary(preview)} 没执行成功：目标元素未找到。${safeError ? ` ${safeError}` : ''}`;
+    return messages.elementNotFound(joinResultSummary(preview), safeError);
   }
   return null;
 }
 
 export function summarizeBrowserComputerActionResult(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'result'>,
+  locale?: Language,
 ): string | null {
   if (!toolCall.result) {
     return null;
   }
 
-  const preview = buildBrowserComputerActionPreview(toolCall);
+  const preview = buildBrowserComputerActionPreview(toolCall, locale);
   if (!preview) {
     return null;
   }
@@ -600,10 +621,11 @@ export function summarizeBrowserComputerActionResult(
   }
 
   if (toolCall.name === 'browser_action') {
+    const messages = getBrowserComputerActionPreviewMessages(locale ?? getPreviewLocale());
     switch (action) {
       case 'screenshot': {
         const fileName = basename(metadata.path);
-        return fileName ? `截图已保存: ${fileName}` : '截图已保存';
+        return fileName ? messages.screenshotSavedAs(fileName) : messages.screenshotSaved;
       }
       case 'get_elements':
         return parseFoundCount(toolCall.result.output) || joinResultSummary(preview);
@@ -614,27 +636,27 @@ export function summarizeBrowserComputerActionResult(
           ?? countArray(dom?.interactive)
           ?? countNumber(dom?.interactiveCount);
         if (headings !== null || interactive !== null) {
-          return `页面结构：${headings ?? 0} 个标题 · ${interactive ?? 0} 个可点元素`;
+          return messages.domSnapshotCounts(headings ?? 0, interactive ?? 0);
         }
-        return '页面结构已读取';
+        return messages.domSnapshotRead;
       }
       case 'get_a11y_snapshot':
-        return 'Accessibility snapshot 已读取';
+        return messages.a11ySnapshotRead;
       case 'get_workbench_state':
-        return 'Browser workbench state 已读取';
+        return messages.workbenchStateRead;
       case 'get_account_state':
-        return formatAccountStateSummary(metadata.browserAccountState) || '账号态摘要已读取';
+        return formatAccountStateSummary(metadata.browserAccountState, messages.accountState) || messages.accountStateRead;
       case 'export_storage_state':
-        return formatAccountStateSummary(metadata.browserAccountState, 'Storage state 已导出') || joinResultSummary(preview);
+        return formatAccountStateSummary(metadata.browserAccountState, messages.storageStateExported) || joinResultSummary(preview);
       case 'import_storage_state':
-        return formatAccountStateSummary(metadata.browserAccountState, 'Storage state 已导入') || joinResultSummary(preview);
+        return formatAccountStateSummary(metadata.browserAccountState, messages.storageStateImported) || joinResultSummary(preview);
       case 'wait_for_download':
       case 'upload_file':
-        return formatArtifactSummary(metadata.browserArtifact) || joinResultSummary(preview);
+        return formatArtifactSummary(metadata.browserArtifact, messages) || joinResultSummary(preview);
       case 'get_content':
-        return '页面内容已读取';
+        return messages.contentRead;
       case 'get_logs':
-        return '浏览器日志已读取';
+        return messages.logsRead;
       default:
         return joinResultSummary(preview);
     }
@@ -727,10 +749,16 @@ export function formatBrowserComputerActionArguments(
 
 export function formatBrowserComputerActionResultDetails(
   toolCall: Pick<ToolCall, 'name' | 'arguments' | 'result'>,
+  locale?: Language,
 ): string | null {
   const metadata = toolCall.result?.metadata || {};
   const args = toolCall.arguments || {};
-  const recovery = formatRecoveryOutcome(toolCall.name, args, metadata);
+  if (toolCall.name !== 'browser_action' && toolCall.name !== 'computer_use') {
+    return null;
+  }
+
+  const messages = getBrowserComputerActionPreviewMessages(locale ?? getPreviewLocale());
+  const recovery = formatRecoveryOutcome(toolCall.name, args, metadata, messages);
   if (recovery) {
     return recovery;
   }
@@ -740,13 +768,13 @@ export function formatBrowserComputerActionResultDetails(
     return null;
   }
 
-  const preview = buildBrowserComputerActionPreview(toolCall);
+  const preview = buildBrowserComputerActionPreview(toolCall, locale);
   if (preview && toolCall.result && !toolCall.result.success) {
-    const failureDetail = formatInputFailureDetail(toolCall.name, args, preview, toolCall.result.error);
+    const failureDetail = formatInputFailureDetail(toolCall.name, args, preview, toolCall.result.error, messages);
     if (failureDetail) {
       return failureDetail;
     }
   }
 
-  return summarizeBrowserComputerActionResult(toolCall);
+  return summarizeBrowserComputerActionResult(toolCall, locale);
 }

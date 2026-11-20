@@ -1,6 +1,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { ToolCall } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -12,13 +12,15 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
     processingSessionIds: new Set<string>(),
     openPreview: vi.fn(),
     workingDirectory: '/repo/app',
-    language: 'zh' as const,
+    language: 'zh' as 'zh' | 'en',
     setLanguage: vi.fn(),
     cloudUIStrings: undefined,
   };
   return {
-    useAppStore: (selector?: (s: typeof state) => unknown) =>
-      (selector ? selector(state) : state),
+    useAppStore: Object.assign(
+      (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
+      { getState: () => state },
+    ),
   };
 });
 
@@ -32,6 +34,11 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+afterEach(() => {
+  useAppStore.getState().language = 'zh';
+});
 
 function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
   return {
@@ -48,6 +55,30 @@ function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
 }
 
 describe('browser/computer action preview rendering', () => {
+  it.each([
+    ['browser_action', 'launch', {}, 'Started the managed browser', 'Managed browser action'],
+    ['browser_action', 'navigate', { url: 'https://example.com' }, 'Opened a page', 'Managed browser action'],
+    ['browser_action', 'click', { selector: '#submit' }, 'Clicked a page element', 'Managed browser action'],
+    ['browser_action', 'type', { text: 'sample' }, 'Typed 6 chars', 'Managed browser action'],
+    ['browser_action', 'screenshot', {}, 'Took a page screenshot', 'Read-only'],
+    ['computer_use', 'observe', {}, 'Looked at the front window', 'Read-only'],
+    ['computer_use', 'get_windows', {}, 'Listed window candidates', 'Read-only'],
+  ])('renders English chat preview for %s.%s', (name, action, args, summary, riskLabel) => {
+    useAppStore.getState().language = 'en';
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({ name, arguments: { action, ...args } }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).toContain(summary);
+    expect(html).toContain(riskLabel);
+    expect(html).not.toMatch(/\p{Script=Han}/u);
+    if (action === 'screenshot') expect(html).toContain('Screenshot saved');
+  });
+
   it('renders browser action preview without exposing trace metadata in the main row', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {

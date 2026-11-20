@@ -659,3 +659,19 @@ describe('buildBrowserComputerActionPreview', () => {
     }))).toBeNull();
   });
 });
+
+describe('English browser/computer action results', () => {
+  it.each([
+    ['screenshot', {}, 'Screenshot saved'],
+    ['screenshot', { path: '/tmp/example.png' }, 'Screenshot saved: example.png'],
+    ['get_dom_snapshot', {}, 'Page structure read'],
+    ['get_dom_snapshot', { domSnapshot: { headingCount: 2, interactiveCount: 3 } }, 'Page structure: 2 headings · 3 clickable elements'],
+    ['get_a11y_snapshot', {}, 'Page accessibility info read'],
+    ['get_workbench_state', {}, 'Browser status read'],
+  ])('summarizes %s using the selected locale', (action, metadata, expected) => {
+    expect(summarizeBrowserComputerActionResult(makeToolCall({
+      arguments: { action },
+      result: { toolCallId: 'tool-1', success: true, output: '', metadata },
+    }), 'en')).toBe(expected);
+  });
+});

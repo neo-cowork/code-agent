@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
-import type { Translations } from '../../../../../../i18n';
+import type { Language, Translations } from '../../../../../../i18n';
 import { summarizeBash } from './bashSummarizer';
 import { summarizeGrep } from './grepSummarizer';
 import { summarizeGlob } from './globSummarizer';
@@ -17,7 +17,7 @@ import { summarizeBrowserComputerActionResult } from '../../../../../../utils/br
  * Generate a smart summary for a tool call result
  * Returns null if no summary is available
  */
-export function summarizeTool(toolCall: ToolCall, t: Translations): string | null {
+export function summarizeTool(toolCall: ToolCall, t: Translations, locale?: Language): string | null {
   if (!toolCall.result) return null;
 
   const { name, result } = toolCall;
@@ -26,7 +26,7 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
     if (sessionTaskOutput !== result.output) return sessionTaskOutput;
   }
   const browserComputerSummary = name === 'browser_action' || name === 'computer_use'
-    ? summarizeBrowserComputerActionResult(toolCall)
+    ? summarizeBrowserComputerActionResult(toolCall, locale)
     : null;
 
   if (browserComputerSummary) {
