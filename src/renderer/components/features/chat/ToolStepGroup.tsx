@@ -547,7 +547,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
               {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
