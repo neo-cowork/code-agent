@@ -15,8 +15,8 @@ import { useSessionTurnActive } from '../../../../../hooks/useSessionTurnActive'
 import type { DelegationPresentation } from './delegationPresentation';
 
 /**
- * 这张失败回执是否已经重试过。认当前会话里 id 以 `delegation-retry-<key>-` 开头的用户消息。
- * 有 endedAt 时，只有比这次失败更晚的重试才算；没有 endedAt 时，只要存在就算。
+ * 这张回执是否已经重试过。认当前会话里 id 以 `delegation-retry-<key>-` 开头的用户消息。
+ * 有 endedAt 时，只有比这次结束更晚的重试才算；没有 endedAt 时，只要存在就算。
  */
 function delegationRetryAlreadySent(
   messages: readonly Message[] | undefined,
@@ -153,13 +153,15 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
           {toolFailure.detail && <span className="text-zinc-400"> · {toolFailure.detail}</span>}
         </div>
       )}
-      {presentation.state === 'failed' && <DelegationFailedActions presentation={presentation} />}
+      {(presentation.state === 'failed' || presentation.state === 'cancelled') && (
+        <DelegationRetryActions presentation={presentation} />
+      )}
     </div>
   );
 }
 
-/** 失败回执的两个出口：看成员详情（同成员条 chip 的视图）、一键把重做句作为普通用户消息发出。 */
-function DelegationFailedActions({ presentation }: { presentation: DelegationPresentation }) {
+/** 失败或取消回执的两个出口：看成员详情（同成员条 chip 的视图）、一键把重做句作为普通用户消息发出。 */
+function DelegationRetryActions({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const text = t.delegationFailedActions;
   const { memberId } = presentation;
@@ -170,7 +172,8 @@ function DelegationFailedActions({ presentation }: { presentation: DelegationPre
   const active = useSessionTurnActive(sessionId);
   // 乐观锁：发送函数把用户消息写进会话之前，同一次挂载里的连点不再发出。
   const [sent, setSent] = useState(false);
-  const task = (presentation.retryTitle ?? presentation.title).trim();
+  const cancelled = presentation.state === 'cancelled';
+  const task = (presentation.retryTitle ?? (cancelled ? '' : presentation.title)).trim();
   const retryKey = memberId ?? presentation.activityIds[0];
   const retryIdentity = retryKey ?? task;
   const retryPrefix = retryIdentity ? `delegation-retry-${retryIdentity}-` : '';
@@ -180,7 +183,8 @@ function DelegationFailedActions({ presentation }: { presentation: DelegationPre
   const retry = () => {
     if (disabled || !retryPrefix) return;
     setSent(true);
-    void useMessageActionStore.getState().sendPrompt(text.retryDraft.replace('{task}', task), {
+    const draft = cancelled ? text.cancelledRetryDraft : text.retryDraft;
+    void useMessageActionStore.getState().sendPrompt(draft.replace('{task}', task), {
       // 前缀稳定，后缀每次有效点击新生成，避免同 id 覆盖上一条用户消息。
       clientMessageId: `${retryPrefix}${generateMessageId()}`,
     });
