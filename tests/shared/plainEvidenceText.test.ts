@@ -48,4 +48,15 @@ describe('plainEvidenceText', () => {
     expect(out).not.toContain('.md');
     expect(out).not.toContain('`');
   });
+
+  it('keeps single-slash abbreviations and ratios untouched', () => {
+    for (const text of ['CI/CD 流水线两周没跑', '评分 4.5/5', 'A/B 实验结果未出', 'I/O 延迟升高', '版本 v1.2/v1.3 对比']) {
+      expect(plainEvidenceText(text)).toBe(text);
+    }
+  });
+
+  it('still reduces real paths next to abbreviations', () => {
+    expect(plainEvidenceText('CI/CD 日志见 `workspace/weekly/2026-W46.md`')).toBe('CI/CD 日志见 2026-W46');
+    expect(plainEvidenceText('读了 ./notes/a.md 和 ~/x/b')).toBe('读了 a 和 b');
+  });
 });

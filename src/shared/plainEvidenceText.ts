@@ -29,9 +29,15 @@ function basenameNoExt(token: string): string {
   return last.replace(FILE_EXT_TAIL_RE, '');
 }
 
-function isNumericOnlyPath(token: string): boolean {
-  const segments = token.split(/[\\/]+/).filter(Boolean);
-  return segments.length > 0 && segments.every((segment) => /^\d+$/.test(segment));
+const DOC_EXT_TAIL_RE = /\.(?:md|markdown|txt|log|pdf|docx?|xlsx?|xls|pptx?|ppt|csv|json|jsonl|ya?ml|toml|xml|html?|png|jpe?g|gif|svg|webp|mp3|mp4|mov|zip|tar|gz|tgz|sql|db|ts|tsx|jsx?|py|rs|go|java|sh|css)$/i;
+
+// 只在明确像文件路径时才化简：以 / ~ . \ 开头、至少两个分隔符、或末段带文档扩展名。
+// CI/CD、A/B、4.5/5 这类单斜杠缩写/比值原样保留。
+function isPathLike(token: string): boolean {
+  if (/^[\\/~.]/.test(token)) return true;
+  const separators = token.match(/[\\/]/g)?.length ?? 0;
+  if (separators >= 2) return true;
+  return DOC_EXT_TAIL_RE.test(token);
 }
 
 /**
@@ -49,8 +55,8 @@ export function plainEvidenceText(text: string): string {
     .replace(URL_RE, basenameNoExt)
     .replace(CJK_DOC_PATH_RE, basenameNoExt)
     .replace(WIN_ABS_RE, basenameNoExt)
-    .replace(SLASH_PATH_RE, (match) => (isNumericOnlyPath(match) ? match : basenameNoExt(match)))
-    .replace(CJK_DIR_PREFIX_RE, '')
+    .replace(SLASH_PATH_RE, (match) => (isPathLike(match) && !/^[\d\\/.]+$/.test(match) ? basenameNoExt(match) : match))
+    .replace(CJK_DIR_PREFIX_RE, (match) => (/\P{ASCII}/u.test(match) ? '' : match))
     .replace(BARE_DOC_RE, (match) => match.replace(TRAILING_DOC_EXTS_RE, ''))
     .replace(/\s+/g, ' ')
     .trim();
