@@ -32,17 +32,25 @@ function delegationRetryAlreadySent(
   return false;
 }
 
+const HEADLINE_SENTENCE_END = /[。.!！?？]+$/u;
+
+/** 状态后缀非空时，去掉标题句末标点，避免句号和状态词贴在分隔符两侧。不改 presentation.title。 */
+function headlineDisplayTitle(title: string, suffix: string): string {
+  return suffix ? title.replace(HEADLINE_SENTENCE_END, '') : title;
+}
+
 export function DelegationHeader({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const template = presentation.outcomeKey
     ? t.outcomeWords[presentation.outcomeKey].assistant.label
     : t.chat.delegationReceipt.headlines[presentation.state];
-  const [prefix, suffix] = template.split('{name}');
-  const headline = template.replace('{name}', presentation.title);
+  const [prefix, suffix = ''] = template.split('{name}');
+  const shownTitle = headlineDisplayTitle(presentation.title, suffix);
+  const headline = `${prefix}${shownTitle}${suffix}`;
   return (
     <div className="min-w-0 flex-1 truncate font-sans text-xs text-zinc-200" title={headline} data-testid="delegation-headline">
       {prefix && <span className="text-zinc-500">{prefix}</span>}
-      <span className="font-semibold" title={presentation.title}>{presentation.title}</span>
+      <span className="font-semibold" title={shownTitle}>{shownTitle}</span>
       {suffix && <span className="text-zinc-500">{suffix}</span>}
     </div>
   );
