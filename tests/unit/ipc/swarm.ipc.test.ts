@@ -108,6 +108,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import {
   createScopedSwarmAgentId,
   createScopedSwarmMessageId,
+  createSwarmTraceStorageId,
   type SwarmRunScope,
 } from '../../../src/shared/contract/swarm';
 import type {
@@ -623,6 +624,40 @@ describe('swarm.ipc run-scoped control plane', () => {
       'Cancelled by user',
     );
     unregister();
+  });
+
+  it('cancels a live single spawn addressed by the member view trace ID', async () => {
+    const agentId = 'subagent-bg-notes';
+    const scope: SwarmRunScope = {
+      sessionId: 'session-notes',
+      runId: `single_${agentId}`,
+      treeId: 'session-notes',
+      parentNativeRunId: 'native-parent',
+    };
+    const unregister = registerSingleSpawnVisibility(scope, agentId);
+    coordinatorRegistryState.getByRun.mockReturnValue(undefined);
+    coordinatorRegistryState.get.mockReturnValue(undefined);
+    spawnGuardState.cancel.mockReturnValueOnce(true);
+    const cancel = (sessionId: string, runId: string) => handler('swarm:cancel-agent')(
+      {}, { sessionId, runId, agentId } as never,
+    );
+
+    try {
+      await expect(cancel('other-session', createSwarmTraceStorageId(scope))).resolves.toBe(false);
+      await expect(cancel(scope.sessionId, createSwarmTraceStorageId({
+        ...scope,
+        treeId: 'other-tree',
+      }))).resolves.toBe(false);
+      expect(spawnGuardState.cancel).not.toHaveBeenCalled();
+
+      await expect(cancel(scope.sessionId, createSwarmTraceStorageId(scope))).resolves.toBe(true);
+      expect(spawnGuardState.cancel).toHaveBeenCalledWith(agentId, undefined);
+      expect(swarmEmitterState.agentCancelled).toHaveBeenCalledWith(scope, agentId, 'Cancelled by user');
+    } finally {
+      unregister();
+    }
+
+    await expect(cancel(scope.sessionId, createSwarmTraceStorageId(scope))).resolves.toBe(false);
   });
 
   it('fails closed when terminal-run mutations are replayed after live cleanup', async () => {
