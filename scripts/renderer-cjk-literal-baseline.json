@@ -27,7 +27,6 @@
     "src/renderer/components/features/chat/TraceNodeRenderer.tsx": 5,
     "src/renderer/components/features/chat/TraceTimelineNodes.tsx": 1,
     "src/renderer/components/features/chat/TurnQualityStrip.tsx": 1,
-    "src/renderer/components/features/computerUse/ComputerUseContent.tsx": 11,
     "src/renderer/components/features/expert/RoleDetailPage.tsx": 2,
     "src/renderer/components/features/explorer/FileExplorerPanel.tsx": 16,
     "src/renderer/components/features/export/ExportModal.tsx": 7,
