@@ -128,7 +128,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         }
         const stepStatus = terminal.stepStatus;
         const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
-          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result,
+          metadata: tc.recovered ? { ...tc.metadata, recovered: true } : tc.metadata,
         } }, t);
         const step = preflight?.action ?? humanizeToolStep(
           tc.name,
@@ -547,7 +548,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
               {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
