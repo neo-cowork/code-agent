@@ -190,4 +190,21 @@ describe('toast reserve contract (toast yields to the chat list)', () => {
     act(() => { setToastReserve(0); });
     expect(scroller.scrollTop).toBe(120);
   });
+
+  it('still pins when the toast arrives together with a viewport shrink (composer grows)', () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复）', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    // 上传失败 toast 到来的真实形态：Footer 长出的同时 composer 因失败 chip 变高、
+    // 列表视口变矮——离底距离 = 增量 + 收缩量（100 + 46 = 146），只认增量会误判
+    // 成「用户已上滚」而放弃钉底。内容 700 / 视口收缩到 54 / scrollTop 500。
+    Object.defineProperty(scroller, 'scrollHeight', { value: 700, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 54, configurable: true });
+    Object.defineProperty(scroller, 'scrollTop', { value: 500, writable: true, configurable: true });
+    act(() => { setToastReserve(100); });
+    expect(scroller.scrollTop).toBe(700);
+  });
 });

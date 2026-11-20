@@ -148,6 +148,8 @@ export function useListResizeFollow({
 
 // 亚像素容差：贴底距离比较吸收换行/缩放的小数残差。
 const TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX = 8;
+// 钉底帧循环上限，与 startBottomSettlement 的 60 帧同档。
+const TOAST_RESERVE_PIN_MAX_FRAMES = 60;
 
 /**
  * toast 让位钉底：--toast-reserve 增长（全局 toast 出现/叠高）时，贴底跟随中的
@@ -155,21 +157,60 @@ const TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX = 8;
  * Virtuoso 只在条目数变化时经 followOutput 重新钉底，Footer 变高既不触发它的
  * 重新钉底、也不在 item-list 里（useListResizeFollow 的 ResizeObserver 看不见），
  * 不主动滚列表就停原地。事件与变量写入同帧到达，此刻读 scroller.scrollHeight
- * 已含新 Footer 高（同步重排），直接落底即可；离底距离恰为本次增量（增量前贴底），
- * 用户上滚阅读（离底更远）不动。回落（toast 消失）由浏览器把 scrollTop 钳回
- * 新最大值自然收尾，不需要干预。
+ * 已含新 Footer 高（同步重排），先同步落底一次；但 Virtuoso 随后几帧的测量补偿
+ * 会把视口再挪回去（useListResizeFollow 注释里的同类坑），所以还要逐帧落底直到
+ * 几何稳定（同 startBottomSettlement 的思路）。贴底判据 = 离底距离 ≤ 本次增量
+ * （增量前贴底）+ 同拍视口收缩 + 亚像素容差：toast 到来常与 composer 变高同拍
+ * （如上传失败 chip），视口变矮会让距离叠上收缩量，不吃进去会被误判成「用户已
+ * 上滚」而放弃钉底。用户真上滚（离底更远）仍不动；帧循环里发现视口被拽离底部
+ * 也立即停。回落（toast 消失）由浏览器把 scrollTop 钳回新最大值自然收尾。
  */
 export function useToastReserveBottomKeep(scroller: HTMLElement | null): void {
   const prevReserveRef = useRef(0);
   useEffect(() => {
     if (!scroller) return;
-    return subscribeToastReserveChange((reserve) => {
+    // 持续记着最近一次已知的视口高：ResizeObserver 回调在变化发生后才送达，
+    // 事件到达的同一帧里它还握着收缩前的值，恰好就是「同拍收缩量」的来源。
+    const lastClientHeightRef = { current: scroller.clientHeight };
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        lastClientHeightRef.current = scroller.clientHeight;
+      });
+      observer.observe(scroller);
+    }
+    const unsubscribe = subscribeToastReserveChange((reserve) => {
       const delta = reserve - prevReserveRef.current;
+      const viewportShrink = Math.max(0, lastClientHeightRef.current - scroller.clientHeight);
       prevReserveRef.current = reserve;
       if (delta <= 0) return;
-      if (!isScrollerNearBottom(scroller, delta + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX)) return;
+      if (!isScrollerNearBottom(
+        scroller,
+        delta + viewportShrink + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX,
+      )) return;
       scroller.scrollTop = scroller.scrollHeight;
+      if (typeof requestAnimationFrame !== 'function') return;
+      let frames = 0;
+      let stableFrames = 0;
+      let lastScrollHeight = -1;
+      const pin = () => {
+        scroller.scrollTop = scroller.scrollHeight;
+        const settled = scroller.scrollHeight === lastScrollHeight
+          && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 1;
+        stableFrames = settled ? stableFrames + 1 : 0;
+        lastScrollHeight = scroller.scrollHeight;
+        frames += 1;
+        const movedAway = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+          > TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX;
+        if (movedAway || frames >= TOAST_RESERVE_PIN_MAX_FRAMES || stableFrames >= SETTLE_STABLE_FRAMES) return;
+        requestAnimationFrame(pin);
+      };
+      requestAnimationFrame(pin);
     });
+    return () => {
+      unsubscribe();
+      observer?.disconnect();
+    };
   }, [scroller]);
 }
 
