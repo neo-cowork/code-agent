@@ -95,7 +95,7 @@ beforeEach(() => {
       sessionId: ctx.sessionId, workingDirectory: ctx.workingDirectory, legacyCtx: ctx, abortSignal: ctx.abortSignal,
     });
     const allowAll: CanUseToolFn = async () => ({ allow: true });
-    const protoResult = await calendarModule.createHandler().execute(args, protoCtx, allowAll);
+    const protoResult = await (await calendarModule.createHandler()).execute(args, protoCtx, allowAll);
     if (!protoResult.ok) return { success: false, error: protoResult.error, metadata: { code: protoResult.code } };
     const output = typeof protoResult.output === 'string' ? protoResult.output : JSON.stringify(protoResult.output);
     return { success: true, output, result: protoResult.output, metadata: protoResult.meta };
