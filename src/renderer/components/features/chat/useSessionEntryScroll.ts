@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { TraceTurn } from '@shared/contract/trace';
-import { subscribeToastReserveChange } from '../../toastReserve';
+import { readToastReserve, subscribeToastReserveChange } from '../../toastReserve';
 
 export function scheduleAfterLayout(callback: () => void): () => void {
   if (typeof requestAnimationFrame !== 'function') {
@@ -170,6 +170,8 @@ export function useToastReserveBottomKeep(scroller: HTMLElement | null): void {
   const prevReserveRef = useRef(0);
   useEffect(() => {
     if (!scroller) return;
+    // 列表可能在 toast 已显示时才挂上（切会话/空会话刚出消息）：delta 要从当前占位起算。
+    prevReserveRef.current = readToastReserve();
     // 持续记着最近一次已知的视口高：ResizeObserver 回调在变化发生后才送达，
     // 事件到达的同一帧里它还握着收缩前的值，恰好就是「同拍收缩量」的来源。
     const lastClientHeightRef = { current: scroller.clientHeight };

@@ -11,6 +11,12 @@ export function setToastReserve(reserve: number): void {
   window.dispatchEvent(new CustomEvent(TOAST_RESERVE_CHANGE_EVENT, { detail: { reserve } }));
 }
 
+/** 读取当前已发布的占位（px）；列表在 toast 已显示期间才挂上时，用它作 delta 的起点。 */
+export function readToastReserve(): number {
+  const value = parseFloat(document.documentElement.style.getPropertyValue(TOAST_RESERVE_VAR));
+  return Number.isFinite(value) ? value : 0;
+}
+
 /** 订阅占位变化（含归零），返回取消订阅函数。 */
 export function subscribeToastReserveChange(listener: (reserve: number) => void): () => void {
   const handler = (event: Event) => {

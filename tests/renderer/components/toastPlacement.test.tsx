@@ -228,4 +228,30 @@ describe('toast reserve contract (toast yields to the chat list)', () => {
     act(() => { setToastReserve(100); });
     expect(scroller.scrollTop).toBe(700);
   });
+
+  it('starts the delta from the reserve already published when the list mounts mid-toast', async () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复）', timestamp: 2_000 },
+    ], 'session-1', false);
+    // toast 先显示（占位 200），列表之后才挂上。
+    setToastReserve(200);
+    const { unmount } = render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    // 用户上滚阅读（离底 380）：占位 200 → 400 真实增量只有 200，不得被当成 400 而拽到底。
+    scroller.scrollTop = 120;
+    act(() => { setToastReserve(400); });
+    expect(scroller.scrollTop).toBe(120);
+    unmount();
+
+    // toast 消失必须被识别为回落（200 → 0）并守底，而不是 delta 0 被跳过。
+    setToastReserve(200);
+    render(<TurnBasedTraceView projection={projection} />);
+    const next = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    Object.defineProperty(next, 'scrollHeight', { value: 400, configurable: true });
+    next.scrollTop = 300;
+    act(() => { setToastReserve(0); });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(next.scrollTop).toBe(400);
+  });
 });
