@@ -76,7 +76,7 @@ export function createCronRunCostMeterForExecution(
  * role-wake 结果两个形状），失败路径读挂在 Error 上的 cronRunCostUsd。
  * 其他 result 一律 undefined——云端结果、模型自由文本不猜成本。
  */
-export function readCronRunCostUsd(source: unknown): number | undefined {
+function readCronRunCostUsd(source: unknown): number | undefined {
   if (source instanceof Error) {
     return readPositiveCost((source as Error & { cronRunCostUsd?: unknown }).cronRunCostUsd);
   }
