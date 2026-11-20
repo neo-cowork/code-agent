@@ -1,4 +1,5 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
+import { describeHelperFailureReasons, readHelperOutcomes } from './helperOutcomeCopy';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, HostReasonCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -250,6 +251,7 @@ type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
 const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Set([
   'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
   'TOOL_DISABLED_FOR_RUN',
+  'HANDED_OFF_TO_BACKGROUND',
   'TOOL_BATCH_SKIPPED',
   'WORKBENCH_SCOPE_DENIED',
   'PROJECT_SOURCE_READ_ONLY',
@@ -536,6 +538,9 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   if (isDeclinedSandboxEscalation(metadata)) {
     return t.decisionCard.permission.sandboxEscalationDeclined;
   }
+  const helperOutcomes = toolCall.name === 'spawn_agent' ? readHelperOutcomes(metadata) : undefined;
+  const helperReason = helperOutcomes ? describeHelperFailureReasons(helperOutcomes, t) : null;
+  if (helperReason) return helperReason;
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t, toolCall.name, error);
   if (mappedFailureCode) return mappedFailureCode;

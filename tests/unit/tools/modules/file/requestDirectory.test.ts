@@ -17,6 +17,13 @@ import type {
 import type { WorkspaceScope } from '../../../../../src/shared/contract/project';
 import { canonicalizeWorkspacePath } from '../../../../../src/host/runtime/workspaceScope';
 
+await vi.hoisted(async () => {
+  const nodeFs = await import('node:fs');
+  const nodeOs = await import('node:os');
+  const nodePathMod = await import('node:path');
+  process.env.CODE_AGENT_DATA_DIR = nodeFs.mkdtempSync(nodePathMod.join(nodeOs.tmpdir(), 'req-dir-data-'));
+});
+
 const getProjectDetailMock = vi.fn();
 const updateProjectMock = vi.fn();
 const setFolderTrustMock = vi.fn();
@@ -32,6 +39,8 @@ vi.mock('../../../../../src/host/security/folderTrustService', () => ({
   setFolderTrust: (...args: unknown[]) => setFolderTrustMock(...args),
 }));
 
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../../../src/host/permissions/modes';
+import { withTaskOutputDirectory } from '../../../../../src/host/permissions/taskOutputDirectory';
 import { requestDirectoryModule } from '../../../../../src/host/tools/modules/file/requestDirectory';
 
 function makeLogger(): Logger {
@@ -221,5 +230,55 @@ describe('requestDirectoryModule (native)', () => {
         expect(result.error).toContain('expected revision 3');
       }
     });
+  });
+});
+
+// 完全访问 + 走开：交接出去的后台/辅助执行继承任务输出目录，对已授权目录 request_directory
+// 不能再停车等「需要授权」，否则走开的用户永远收不到成品。
+describe('request_directory inside the task output directory lease', () => {
+  const SESSION = 'req-dir-bypass-session';
+  const asked = vi.fn(async () => ({ allow: true }) as const);
+
+  beforeEach(() => {
+    asked.mockClear();
+    resetPermissionModeManager();
+    getPermissionModeManager().setSessionMode(SESSION, 'bypassPermissions', true, 'user-ui');
+  });
+  afterEach(() => resetPermissionModeManager());
+
+  const lease = <T,>(dir: string, fn: () => Promise<T>, inherit = false) => withTaskOutputDirectory({
+    sessionId: SESSION, internal: false, inherit, userText: `做两份成品，成品都存到同一目录：${dir}`,
+  }, fn);
+
+  it('bypass session: the granted directory resolves without asking anyone', async () => {
+    const result = await lease(outsideDir, () => run(
+      { path: outsideDir, reason: '写成品', access: 'read_write' }, makeCtx({ sessionId: SESSION, workspaceScope: scope }), asked));
+    expect(result.ok).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
+    expect(updateProjectMock).not.toHaveBeenCalled();
+  });
+
+  it('auxiliary run inheriting the lease resolves without asking too', async () => {
+    const result = await lease(outsideDir, () => lease(outsideDir, () => run(
+      { path: outsideDir, reason: '写成品', access: 'read_write' }, makeCtx({ sessionId: SESSION, workspaceScope: scope }), asked), true));
+    expect(result.ok).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  it('a different directory, an expired lease and a non-bypass session still ask', async () => {
+    const other = canonicalizeWorkspacePath(mkdtempSync(path.join(tmpdir(), 'req-dir-other-')));
+    getProjectDetailMock.mockReturnValue({ project: { name: 'p', sourceRevision: 0 }, sources: [] });
+    updateProjectMock.mockResolvedValue(true);
+    try {
+      await lease(outsideDir, () => run({ path: other, reason: 'x' }, makeCtx({ sessionId: SESSION, workspaceScope: scope }), asked));
+      expect(asked).toHaveBeenCalledTimes(1);
+      await run({ path: outsideDir, reason: 'x', access: 'read_write' }, makeCtx({ sessionId: SESSION, workspaceScope: scope }), asked);
+      expect(asked).toHaveBeenCalledTimes(2);
+      getPermissionModeManager().setSessionMode(SESSION, 'default', false, 'user-ui');
+      await lease(outsideDir, () => run({ path: outsideDir, reason: 'x', access: 'read_write' }, makeCtx({ sessionId: SESSION, workspaceScope: scope }), asked));
+      expect(asked).toHaveBeenCalledTimes(3);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
   });
 });
