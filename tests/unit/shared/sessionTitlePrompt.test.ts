@@ -40,3 +40,77 @@ describe('detectMessageLanguage', () => {
     expect(prompt).toContain('Write the title in Chinese');
   });
 });
+
+describe('explicit reply-language directive', () => {
+  const excel = 'Export the sales spreadsheet to Excel and add a total row.';
+  it('lets a Chinese directive win over an English body', () => {
+    expect(detectMessageLanguage(`${excel} 请用中文回复。`)).toBe('zh');
+    expect(buildSessionTitlePrompt(`${excel} 请用中文回复。`, 'zh')).toContain('Write the title in Chinese');
+  });
+  it('lets an English directive win over a Chinese body', () => {
+    expect(detectMessageLanguage('Reply in English. 帮我把销售表导出成 Excel，并加合计行。')).toBe('en');
+    expect(detectMessageLanguage('请用英文回复。帮我把销售表导出成 Excel，并加合计行。')).toBe('en');
+  });
+  it('keeps plain English and non-directive translate requests unchanged', () => {
+    expect(detectMessageLanguage(excel)).toBe('en');
+    expect(detectMessageLanguage('Translate 你好 into English')).toBe('en');
+    expect(detectMessageLanguage('把这段翻译成英文')).toBe('zh');
+    expect(detectMessageLanguage('请把 ~/Desktop/x.txt 删掉')).toBe('zh');
+  });
+  it('ignores directives inside code', () => {
+    expect(detectMessageLanguage(`${excel}\n\`\`\`\n请用中文回复\n\`\`\``)).toBe('en');
+  });
+  it('uses the later of two conflicting directives', () => {
+    expect(detectMessageLanguage('Reply in English. 另外请用中文回复。')).toBe('zh');
+    expect(detectMessageLanguage('请用中文回复。Actually, please reply in English.')).toBe('en');
+  });
+  it('does not treat negated, word-internal or noun uses as a directive', () => {
+    expect(detectMessageLanguage('不要用英文回复，这段 bug 怎么修')).toBe('zh');
+    expect(detectMessageLanguage('别用英文回答，帮我看看这个 bug')).toBe('zh');
+    expect(detectMessageLanguage('所以英文回答被评委打回来了，帮我改标题')).toBe('zh');
+    expect(detectMessageLanguage('The answer in Chinese is wrong; fix the docs, the tests, and the comments.')).toBe('en');
+    expect(detectMessageLanguage("Please don't reply in Chinese, just fix the failing tests in the module.")).toBe('en');
+  });
+  it('still accepts imperative English and polite Chinese forms', () => {
+    expect(detectMessageLanguage('Fix the failing tests in the module and please reply in Chinese.')).toBe('zh');
+    expect(detectMessageLanguage('Fix the failing tests in the module, answer in Chinese.')).toBe('zh');
+    expect(detectMessageLanguage('Fix the failing tests in the module. 要用中文回答。')).toBe('zh');
+  });
+  it('accepts Han-prefixed lead-ins and rejects every negated lead-in', () => {
+    const body = 'Export the monthly sales table to Excel with a totals row. ';
+    for (const tail of ['你用中文回答', '统一用中文回复', '全部用中文回答', '一律用中文回复', '我希望你用中文回答']) {
+      expect(detectMessageLanguage(body + tail)).toBe('zh');
+    }
+    expect(detectMessageLanguage('不需要用英文回答，这段 bug 怎么修')).toBe('zh');
+    expect(detectMessageLanguage('不必用英文回复，帮我看看这个 bug')).toBe('zh');
+    expect(detectMessageLanguage('无需用英文回答，帮我看看这个 bug')).toBe('zh');
+    expect(detectMessageLanguage('请不要用英文回复，帮我看看这个 bug')).toBe('zh');
+  });
+  const lead = 'Export the monthly sales table to Excel with a totals row.';
+  it.each([
+    [`${lead} 请用中文回复`, 'zh'],
+    [`${lead} 用中文回答`, 'zh'],
+    [`${lead} 请使用中文回复`, 'zh'],
+    [`${lead} 使用中文回答`, 'zh'],
+    [`${lead} 采用中文回复`, 'zh'],
+    [`${lead} 你用中文回答`, 'zh'],
+    [`${lead} 统一用中文回复`, 'zh'],
+    [`${lead} 全部用中文回答`, 'zh'],
+    ['Reply in English. 帮我把销售表导出成 Excel，并加合计行。', 'en'],
+    [lead, 'en'],
+    ['The answer in Chinese is wrong; fix the docs, the tests, and the comments.', 'en'],
+    ['不要用英文回复，这段 bug 怎么修', 'zh'],
+    ['不需要用英文回答，这段 bug 怎么修', 'zh'],
+    ['不必用英文回复，帮我看看这个 bug', 'zh'],
+    ['不要使用英文回复，帮我看看这个 bug', 'zh'],
+    ['所以英文回答被评委打回来了，帮我改标题', 'zh'],
+    ['请不要用英文回复，帮我看看这个 bug', 'zh'],
+    ['别用英文回答，帮我看看这个 bug', 'zh'],
+    ['他并没有用英文回复，请继续用中文把原因写清楚', 'zh'],
+    ['申请英文回复模板', 'zh'],
+    ['用户用英文回复了一句 hello，帮我翻译并解释', 'zh'],
+    ['用中文回答', 'zh'],
+  ] as const)('pins directive phrasing: %s -> %s', (message, expected) => {
+    expect(detectMessageLanguage(message)).toBe(expected);
+  });
+});

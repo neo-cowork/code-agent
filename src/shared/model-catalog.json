@@ -148,26 +148,26 @@
         },
         {
           "id": "deepseek-v4-pro",
-          "label": "DeepSeek V4 Pro (推理)",
+          "label": "DeepSeek V4 Pro (Reasoning)",
           "desc": "1M · 1.6T/49B MoE 深度思考 · 9/14 起将路由到 V4.1 Flash",
           "scaffoldTier": "strong"
         },
         {
           "id": "deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash（兼容名）",
+          "label": "DeepSeek V4 Flash (Alias)",
           "desc": "已退役，请求路由到 V4.1 Flash 并按 Flash 价计费",
           "evalEligible": false
         },
         {
           "id": "deepseek-chat",
-          "label": "DeepSeek Chat（旧版）",
+          "label": "DeepSeek Chat (Legacy)",
           "desc": "128K · 2026-07-24 退役，已 route 到 V4.1 Flash",
           "evalEligible": false,
           "scaffoldTier": "lite"
         },
         {
           "id": "deepseek-reasoner",
-          "label": "DeepSeek Reasoner（旧版）",
+          "label": "DeepSeek Reasoner (Legacy)",
           "desc": "128K · 2026-07-24 退役，已 route 到 V4 Pro",
           "evalEligible": false,
           "scaffoldTier": "strong"
@@ -200,7 +200,7 @@
         },
         {
           "id": "glm-4.7-flash",
-          "label": "GLM-4.7 Flash (免费)",
+          "label": "GLM-4.7 Flash (Free)",
           "desc": "200K · 快速任务"
         },
         {
@@ -216,13 +216,13 @@
         },
         {
           "id": "glm-4-flash",
-          "label": "GLM-4 Flash (免费)",
+          "label": "GLM-4 Flash (Free)",
           "desc": "极速非思考 · 意图分类/短任务",
           "evalEligible": false
         },
         {
           "id": "glm-4.6v",
-          "label": "GLM-4.6V (视觉)",
+          "label": "GLM-4.6V (Vision)",
           "desc": "128K · 视觉理解",
           "evalEligible": false
         },
@@ -263,7 +263,7 @@
         },
         {
           "id": "qwen-vl-max",
-          "label": "Qwen VL Max (视觉)",
+          "label": "Qwen VL Max (Vision)",
           "desc": "多模态",
           "evalEligible": false
         }
@@ -439,7 +439,7 @@
         },
         {
           "id": "deepseek/deepseek-v4-flash",
-          "label": "DeepSeek V4 Flash（兼容名）",
+          "label": "DeepSeek V4 Flash (Alias)",
           "group": "DeepSeek",
           "desc": "已退役，路由到 V4.1 Flash",
           "evalEligible": false
@@ -502,13 +502,13 @@
       "models": [
         {
           "id": "qwen3.5:9b",
-          "label": "Qwen3.5 9B 原版",
+          "label": "Qwen3.5 9B (Original)",
           "group": "Qwen",
           "desc": "256K 多模态 · 通用 baseline"
         },
         {
           "id": "huihui_ai/qwen3.5-abliterated:9b-Qwopus-q4_K",
-          "label": "Qwen3.5 9B Qwopus (agent 调优)",
+          "label": "Qwen3.5 9B Qwopus (Agent-tuned)",
           "group": "Qwen-Abliterated",
           "desc": "Claude-style agent SFT · uncensored · 9B Q4_K"
         },
