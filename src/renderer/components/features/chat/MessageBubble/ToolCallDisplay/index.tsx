@@ -50,6 +50,7 @@ import {
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
+import { finalizeSessionTaskStatus } from '../../../../../utils/sessionTaskStatusFinalize';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -212,9 +213,14 @@ export function ToolCallDisplay({
     ).has(toolCall.id);
   }, [delegationPresentation?.state, sessionMessages, sessionId, currentSessionId, backgroundTasks, t, toolCall.id]);
 
+  const taskStatusMessages = toolCall.name === 'task_status' && sessionId && sessionId === currentSessionId
+    ? sessionMessages
+    : undefined;
   const displayToolCall = useMemo(
-    () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
-    [toolCall, t, delegationPresentation],
+    () => taskStatusMessages
+      ? finalizeSessionTaskStatus(toolCall, taskStatusMessages)
+      : toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
+    [toolCall, taskStatusMessages, t, delegationPresentation],
   );
 
   const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, [{ toolCall, agentId }]);
