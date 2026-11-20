@@ -249,6 +249,11 @@ describe('approval banner action-name parity across the five delivery paths', ()
         if (c.language === 'en') expect(text).not.toMatch(/[\u3400-\u9fff]/);
         else expect(text).not.toMatch(/[A-Za-z]/); // zh 全套文案无拉丁字母，动作名也不会串成英文
       }
+      // 证据口：四路捕获 + 控制器日志 notice 原样打进测试输出（验收 ①–④ 引用这一段）。
+      console.log(`[parity-evidence] ${c.language}/${c.tool}`, JSON.stringify({
+        foreground: { payload: foreground, loggerNotice: fgLogger.info.mock.calls[sentLogIndex][1] },
+        persisted, parked, ownChat,
+      }));
     } finally {
       parkedIsland.drainPendingPermissions();
       ownIsland.drainPendingPermissions();
@@ -279,6 +284,8 @@ describe('approval banner action-name parity across the five delivery paths', ()
       for (const form of idForms) expect(`${payload.title}${payload.body}`).not.toContain(form);
       if (c.language === 'en') expect(`${payload.title}${payload.body}`).not.toMatch(/[\u3400-\u9fff]/);
       else expect(payload.body).not.toMatch(/[A-Za-z]/);
+      // 证据口：原生兜底 deliver 载荷原样打进测试输出（验收 ⑤ 引用这一段）。
+      console.log(`[native-evidence] ${c.language}/${c.tool}`, JSON.stringify(payload));
     } finally {
       notificationService.clearRecentNotifications();
       vi.useRealTimers();
