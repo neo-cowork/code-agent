@@ -64,6 +64,9 @@ import {
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
+// 模块装载时的真实平台串：末尾的回归组用它证明平台钉没给同 worker 后续文件留残渣。
+const fileLoadPlatform = process.platform;
+
 /**
  * 真实 executor 硬拒结果：工作区临时目录 + 审批回调一叫就炸（硬拒必须发生在审批之前）。
  * 传 requestPermission 覆盖时走 ask 路径（回调回 false = 真人点拒）。
@@ -407,8 +410,10 @@ describe('turn-disabled tool bounce in the real chat detail row', () => {
     resetProtocolRegistry();
     getProtocolRegistry();
   });
+  // 还原要传「完整描述符」本体（value/writable/enumerable/configurable 一次归位），
+  // 不是把它包进 { value: … } —— 包了会把描述符对象当成平台串写给同 worker 的后续文件。
   afterAll(() => {
-    Object.defineProperty(process, 'platform', { value: realPlatform });
+    Object.defineProperty(process, 'platform', realPlatform);
   });
 
   it.each([
@@ -454,5 +459,18 @@ describe('turn-disabled tool bounce in the real chat detail row', () => {
     expect(folded).toContain(sentence);
     for (const banned of bannedTexts) expect(folded).not.toContain(banned);
     process.stdout.write(`disabled-row-${language}: ${markup}\nfolded-${language}: ${folded}\n`);
+  });
+});
+
+describe('platform pin leaves no residue for later files in the same worker', () => {
+  // 回归（Rework r1 / ai-review）：afterAll 曾把整个属性描述符对象当成 value 写回
+  // process.platform，之后的 process.platform 变成对象，同 worker 后续文件里
+  // === 'darwin' / === 'linux' 全为假（managerNpmEnv 的 it.runIf 沙箱用例被跳过、
+  // isDaemonLockSupported() 在 mac/linux 上返回 false 而门仍绿）。
+  // 本组排在平台钉组之后：它一还原失真，这里立刻红。
+  it('process.platform is the real platform string after the bounce group restored it', () => {
+    expect(process.platform).toBe(fileLoadPlatform);
+    expect(typeof process.platform).toBe('string');
+    expect(['darwin', 'linux', 'win32']).toContain(process.platform);
   });
 });
