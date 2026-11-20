@@ -51,6 +51,7 @@ import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifac
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate, collectRecentUserTexts } from './desktopActionClaimGate';
+import { applyBrowserKeepClaimGate } from './browserKeepClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } from './hiddenWakeNoop';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
@@ -93,6 +94,7 @@ export class MessageProcessor {
     toolCallRetryCount: 0,
     deliveryCriticBlockCount: 0,
     deliverableRepairCount: 0,
+    browserKeepClaimRetryCount: 0,
     artifactRenderRepairCount: 0,
     _consecutiveTruncations: 0,
   };
@@ -467,6 +469,23 @@ export class MessageProcessor {
       return 'continue';
     }
 
+    const browserKeepGate = applyBrowserKeepClaimGate({
+      sessionId: this.ctx.sessionId,
+      recentUserMessages: collectRecentUserTexts(this.ctx.messages),
+      assistantContent: desktopClaimGate.content,
+      usedBrowserTool: this.ctx.turn.toolsUsedInTurn.some((name) => name === 'Browser' || name === 'browser_action'),
+      retriesDone: this.guardState.browserKeepClaimRetryCount,
+    });
+    if (browserKeepGate.action === 'retry') {
+      this.guardState.browserKeepClaimRetryCount += 1;
+      logger.warn('[BrowserKeepClaimGate] retrying: window-kept claim without a kept entry', { reason: browserKeepGate.reason, sessionId: this.ctx.sessionId });
+      this.contextAssembly.injectSystemMessage(browserKeepGate.repairPrompt, 'browser-keep-claim-guard');
+      return 'continue';
+    }
+    if (browserKeepGate.action === 'warn') {
+      logger.warn('[BrowserKeepClaimGate] warning prepended: window-kept claim without a kept entry', { reason: browserKeepGate.reason, sessionId: this.ctx.sessionId });
+    }
+
     // === Ground-truth gate ===
     // 如果用户首条消息含 URL 且本 run 命中反爬阈值，给"成功输出"加 disclaimer。
     // 不替换内容，只 prefix 提示——让用户看到"反爬限制下未必准确"。
@@ -474,7 +493,7 @@ export class MessageProcessor {
     const gated = applyGroundTruthGate(
       typeof userFirstMessage === 'string' ? userFirstMessage : undefined,
       this.guardState.antiScrapingHitsInRun,
-      desktopClaimGate.content,
+      browserKeepGate.content,
     );
     if (gated.applied) {
       logger.warn(
