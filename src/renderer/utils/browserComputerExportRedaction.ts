@@ -12,9 +12,9 @@ import {
   surfaceExecutionArgumentsForExport,
 } from '@shared/utils/surfaceExecutionExportProjection';
 import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
+import { normalizeBrowserComputerCatalogToolName } from '@shared/utils/browserComputerActionCatalog';
 import {
   formatBrowserComputerActionResultDetails,
-  getBrowserComputerPreviewToolName,
   summarizeBrowserComputerActionResult,
 } from './browserComputerActionPreview';
 
@@ -71,8 +71,10 @@ function sanitizeBrowserComputerToolCallForExport(
   sourceCall: ToolCall,
   resultMetadata?: Record<string, unknown>,
 ): ToolCall {
-  const toolName = getBrowserComputerPreviewToolName(sourceCall.name);
-  const call = toolName && toolName !== sourceCall.name ? { ...sourceCall, name: toolName } : sourceCall;
+  const catalogTool = normalizeBrowserComputerCatalogToolName(sourceCall.name);
+  const call = catalogTool === 'browser_action' && catalogTool !== sourceCall.name
+    ? { ...sourceCall, name: catalogTool }
+    : sourceCall;
   const rawArguments = call.arguments || {};
   const surfaceProjection = projectSurfaceExecutionMetadataForExport(
     call.result?.metadata ?? resultMetadata,

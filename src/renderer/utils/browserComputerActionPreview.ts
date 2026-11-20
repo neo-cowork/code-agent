@@ -21,7 +21,7 @@ import {
 
 type Messages = ReturnType<typeof getBrowserComputerActionPreviewMessages>;
 
-export function getBrowserComputerPreviewToolName(toolName: string): 'browser_action' | 'computer_use' | null {
+function getBrowserComputerPreviewToolName(toolName: string): 'browser_action' | 'computer_use' | null {
   if (toolName === 'computer_use') return toolName;
 
   const catalogTool = normalizeBrowserComputerCatalogToolName(toolName);
