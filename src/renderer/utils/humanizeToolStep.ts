@@ -1,4 +1,5 @@
 import { EXCEL_READ_ACTIONS, EXCEL_WRITE_ACTIONS } from '@shared/constants/excelActions';
+import { describeHelperOutcomes, type HelperOutcome } from './helperOutcomeCopy';
 import { resolveSkillName } from '@shared/resolveSkillName';
 import { catalogConnectorToolPhrase } from '@shared/utils/catalogConnectorToolLabel';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
@@ -516,7 +517,9 @@ export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): str
   const notRun = args[4] === 'failed' && args[6]?.notRun === true;
   const skippedBash = args[6]?.skipped === true && classifyToolName(args[0]) === 'bash';
   const skippedDescription = skippedBash ? usableBashDescription(args[0], args[1], t) : undefined;
-  const step = skippedBash
+  const step = args[6]?.handedOff === true
+    ? t.toolStepHumanize.handedOffStep
+    : skippedBash
     ? (skippedDescription ? `${t.toolStepHumanize.notRunPrefix} · ${skippedDescription}` : t.toolStepHumanize.skippedCommands.one)
     : notRun
     ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
@@ -531,7 +534,7 @@ function buildToolStep(
   shortDescription?: string,
   status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
-  renderContext: { notRun?: boolean; skipped?: boolean; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
+  renderContext: { notRun?: boolean; skipped?: boolean; handedOff?: boolean; helperOutcomes?: HelperOutcome[]; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
@@ -656,6 +659,9 @@ function buildToolStep(
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
+      const helperSentence = renderContext.helperOutcomes && status === 'failed'
+        ? describeHelperOutcomes(renderContext.helperOutcomes, t) : null;
+      if (helperSentence) return helperSentence;
       const parallelEntries = a.parallel === true && Array.isArray(a.agents)
         ? a.agents.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
         : [];
