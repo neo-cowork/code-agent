@@ -65,6 +65,28 @@ describe('@ 面板随发送关闭（FB-586）', () => {
     fireEvent.input(editor);
   }
 
+  it('keeps a fast @filename Enter in the real composer without sending', async () => {
+    useSessionStore.setState({
+      sessions: [makeSession('s-fast-mention')],
+      currentSessionId: 's-fast-mention',
+      messages: [],
+    });
+    const onSend = vi.fn(async () => true);
+    const { getByTestId, container } = render(<ChatInput onSend={onSend} />);
+    const editor = getByTestId('chat-composer-textarea');
+    const draft = '@dogfood-upload-test.txt';
+    editor.textContent = draft;
+    const selection = window.getSelection()!;
+    selection.selectAllChildren(editor);
+    selection.collapseToEnd();
+    fireEvent.input(editor);
+    expect(container.querySelector('[data-at-mention-popover]')).toBeNull();
+    await act(async () => { fireEvent.keyDown(editor, { key: 'Enter', keyCode: 13 }); });
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.textContent).toBe(draft);
+  });
+
   it('面板开着时提交发送：草稿清空后面板不再渲染', async () => {
     useSessionStore.setState({
       sessions: [makeSession('s-mention-1')],

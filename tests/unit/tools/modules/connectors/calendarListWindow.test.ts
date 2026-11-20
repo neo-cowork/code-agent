@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolContext } from '../../../../../src/host/protocol/tools';
+import type { CanUseToolFn, ToolContext } from '../../../../../src/host/protocol/tools';
 import { getConnectorRegistry } from '../../../../../src/host/connectors';
+import { buildCanUseToolFromLegacy } from '../../../../../src/host/tools/dispatch/shadowAdapter';
 import { calendarModule } from '../../../../../src/host/tools/modules/connectors/calendar';
 
 vi.hoisted(() => { process.env.TZ = 'America/Los_Angeles'; });
@@ -14,9 +15,9 @@ const ctx = {
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }, emit: vi.fn(),
 } as unknown as ToolContext;
 
-async function run(args: Record<string, unknown>) {
+async function run(args: Record<string, unknown>, canUseTool: CanUseToolFn = permit) {
   const handler = await calendarModule.createHandler();
-  return handler.execute({ action: 'list_events', ...args }, ctx, permit);
+  return handler.execute({ action: 'list_events', ...args }, ctx, canUseTool);
 }
 
 beforeEach(() => {
@@ -34,10 +35,31 @@ afterEach(() => { registry.unregister('calendar'); vi.useRealTimers(); });
 
 describe('calendar list window through the production handler', () => {
   it('(a) converts local strings into the exact connector payload', async () => {
-    expect((await run({ from_local: '2026-11-17 13:00', to_local: '2026-11-17 18:00' })).ok).toBe(true);
+    const args = { from_local: '2026-11-17 13:00', to_local: '2026-11-17 18:00' };
+    expect((await run(args)).ok).toBe(true);
     const payload = { action: 'list_events', from_ms: Date.parse('2026-11-17T21:00:00Z'), to_ms: Date.parse('2026-11-18T02:00:00Z') };
     expect(execute).toHaveBeenCalledExactlyOnceWith('list_events', payload);
-    expect(permit).toHaveBeenCalledWith('calendar', payload);
+    expect(permit).toHaveBeenCalledExactlyOnceWith('calendar', payload);
+  });
+  it('asks permission with the normalized window, not the raw local strings', async () => {
+    const args = { action: 'list_events', from_local: '2020-01-01 00:00', to_local: '2030-01-01 00:00' };
+    const requestPermission = vi.fn(async (_request: unknown) => false);
+    const canUseTool = buildCanUseToolFromLegacy({
+      workingDirectory: ctx.workingDir,
+      sessionId: ctx.sessionId,
+      requestPermission,
+      approvedToolCall: { toolName: 'calendar', args },
+    }, 'calendar');
+
+    const result = await run(args, canUseTool);
+
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(requestPermission.mock.calls[0][0]).toMatchObject({
+      tool: 'calendar',
+      details: { action: 'list_events', from_ms: Date.parse('2020-01-01T08:00:00Z'), to_ms: Date.parse('2030-01-01T08:00:00Z') },
+    });
+    expect(result).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
+    expect(execute).not.toHaveBeenCalled();
   });
   it('(b) preserves a cross-day window', async () => {
     await run({ from_local: '2026-11-17 23:30', to_local: '2026-11-18 01:00' });

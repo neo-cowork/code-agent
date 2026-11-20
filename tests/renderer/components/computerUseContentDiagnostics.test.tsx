@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 // 只 mock 桥接边缘（native desktop 服务），组件本体真渲染。
 vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
@@ -25,10 +25,23 @@ vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
   readComputerSurfaceState: vi.fn(async () => ({ success: false })),
 }));
 
+// LocalOpsPage 入口挂载需要的两枚边缘 mock（与 localOpsPage.test.tsx 同写法）：
+// cua-driver 已启用才渲染桌面 tab；浏览器 tab 的挂载面在桌面 tab 下不可见，stub 掉。
+vi.mock('../../../src/renderer/hooks/useMcpServerStates', () => ({
+  useMcpServerStates: () => [{ config: { name: 'cua-driver', enabled: true } }],
+}));
+vi.mock('../../../src/renderer/components/features/browser/BrowserSurfaceContent', () => ({
+  BrowserSurfaceContent: () => <div data-testid="mock-browser-surface-content" />,
+}));
+
+import { listComputerSurfaceElements } from '../../../src/renderer/services/nativeDesktop';
 import { ComputerUseContent } from '../../../src/renderer/components/features/computerUse/ComputerUseContent';
+import { LocalOpsPage } from '../../../src/renderer/components/features/localOps/LocalOpsPage';
 import { RouteTraceChip } from '../../../src/renderer/components/features/chat/RouteTraceChip';
 import { setComputerUseSnapshot } from '../../../src/renderer/stores/computerUseStore';
 import type { ComputerUseSnapshot } from '../../../src/renderer/stores/computerUseStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { localOpsEn, localOpsZh } from '../../../src/renderer/i18n/localOps';
 
 const BANNED = [/provider/i, /token/i, /AX candidates/i, /axPath/i];
 const BANNED_STATUS = [/Surface ready/i, /Approval scope/i, /Agent pointer/i, /current app/i];
@@ -181,3 +194,83 @@ describe('RouteTraceChip diagnostics fold', () => {
     expect(panel.textContent).toMatch(/stream-json/i);
   });
 });
+
+// zh/en 双语桌面页诊断折叠证明（N-FIX-UI-RAW-TOOL-NAMES-EXPOSED-DIAG-FOLD-FU1）：
+// 生产入口 = LocalOpsPage 桌面 tab（cua-driver enabled → 桌面 tab 渲染真实 ComputerUseContent）。
+// listComputerSurfaceElements 返回 native bridge 的字段名（BackgroundAxElement: role/name/axPath）。
+describe.each(['zh', 'en'] as const)(
+  'LocalOpsPage desktop diagnostics fold (%s)',
+  (language) => {
+    const copy = (language === 'zh' ? localOpsZh : localOpsEn).localOps.computerUse;
+    const diag = copy.diag;
+
+    beforeEach(() => {
+      useAppStore.getState().setLanguage(language);
+      useAppStore.setState({ localOpsTab: 'desktop', showLocalOpsPanel: true });
+      seedSnapshot();
+      vi.mocked(listComputerSurfaceElements).mockResolvedValue({
+        success: true,
+        data: {
+          metadata: {
+            elementCount: 4,
+            elements: [
+              { index: 0, role: 'AXButton', name: 'Send', axPath: 'window/0/button/1', enabled: true },
+              { index: 1, role: 'AXTextField', name: 'Message', axPath: 'window/0/textfield/2', enabled: true },
+              { index: 2, role: 'AXStaticText', name: 'Status', enabled: true },
+              { index: 3, role: 'AXCheckBox', name: 'Auto-start', enabled: false },
+            ],
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof listComputerSurfaceElements>>);
+    });
+
+    afterEach(() => {
+      useAppStore.getState().setLanguage('zh');
+      useAppStore.setState({ localOpsTab: 'desktop', showLocalOpsPanel: false });
+    });
+
+    it('collapsed default view shows no engineering words and the toggle label is localized', async () => {
+      render(<LocalOpsPage />);
+      const page = screen.getByTestId('local-ops-page');
+      const toggle = await screen.findByTestId('computer-use-diagnostics-toggle');
+      expect(toggle.textContent?.trim()).toBe(copy.diagnostics);
+      expect(screen.queryByTestId('computer-use-diagnostics')).toBeNull();
+      const before = page.textContent ?? '';
+      for (const word of [...BANNED, ...BANNED_STATUS]) expect(before).not.toMatch(word);
+    });
+
+    it('expanding reveals each AX row as role/label/path cells; collapsing hides the paths again', async () => {
+      render(<LocalOpsPage />);
+      const page = screen.getByTestId('local-ops-page');
+      fireEvent.click(await screen.findByTestId('computer-use-diagnostics-toggle'));
+      const panel = await screen.findByTestId('computer-use-diagnostics');
+      await within(panel).findByText('window/0/button/1');
+      await within(panel).findByText('window/0/textfield/2');
+
+      const expectRowCells = (thirdCell: string, role: string, label: string) => {
+        const cell = within(panel).getByText(thirdCell);
+        const row = cell.parentElement;
+        expect(row?.childElementCount).toBe(3);
+        expect(row?.children[0]?.textContent).toBe(role);
+        expect(row?.children[1]?.textContent).toBe(label);
+        expect(row?.children[2]?.textContent).toBe(thirdCell);
+        expect(row?.children[2]).toBe(cell);
+      };
+
+      expectRowCells('window/0/button/1', 'AXButton', 'Send');
+      expectRowCells('window/0/textfield/2', 'AXTextField', 'Message');
+      expect(panel.textContent).toContain('window/0/button/1');
+      expect(panel.textContent).toContain('window/0/textfield/2');
+
+      // 无 axPath 行 / 禁用行：第三格回落到词条目录文案（不是字面量断言）
+      expectRowCells(diag.noAxPath, 'AXStaticText', 'Status');
+      expectRowCells(diag.disabled, 'AXCheckBox', 'Auto-start');
+
+      fireEvent.click(screen.getByTestId('computer-use-diagnostics-toggle'));
+      await waitFor(() => expect(screen.queryByTestId('computer-use-diagnostics')).toBeNull());
+      const after = page.textContent ?? '';
+      expect(after).not.toMatch(/axPath/i);
+      expect(after).not.toContain('window/0/');
+    });
+  },
+);

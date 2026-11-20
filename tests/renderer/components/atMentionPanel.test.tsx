@@ -304,6 +304,75 @@ describe('useAtMentionPanel', () => {
     });
   }
 
+  it.each([{}, { metaKey: true }, { ctrlKey: true }])(
+    'consumes fast Enter before the @ panel opens (%j), then selects the file on a later Enter',
+    async (modifiers) => {
+      const onFileSelect = vi.fn();
+      const { result } = setup(onFileSelect);
+      await act(async () => { result.current.search('@alpha', 6); });
+      expect(result.current.isOpen).toBe(false);
+      const enter = { ...keyEvent('Enter'), ...modifiers };
+      expect(result.current.handleKeyDown(enter)).toBe(true);
+      expect(enter.preventDefault).toHaveBeenCalledOnce();
+      expect(onFileSelect).not.toHaveBeenCalled();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+      expect(result.current.isOpen).toBe(true);
+      const select = keyEvent('Enter');
+      act(() => { expect(result.current.handleKeyDown(select)).toBe(true); });
+      expect(select.preventDefault).toHaveBeenCalledOnce();
+      expect(onFileSelect).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.ts' }));
+    },
+  );
+
+  it('consumes fast Enter in the new debounce window after clearing and retyping', async () => {
+    const { result } = setup();
+    await act(async () => { result.current.search('@alpha', 6); });
+    act(() => { result.current.search('', 0); });
+    expect(result.current.handleKeyDown(keyEvent('Enter'))).toBe(false);
+    await act(async () => { result.current.search('@docs', 5); });
+    const enter = keyEvent('Enter');
+    expect(result.current.handleKeyDown(enter)).toBe(true);
+    expect(enter.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('leaves Shift+Enter and IME Enter alone while the @ panel is pending', async () => {
+    const { result } = setup();
+    await act(async () => { result.current.search('@alpha', 6); });
+    const shift = { ...keyEvent('Enter'), shiftKey: true };
+    const ime = { ...keyEvent('Enter'), nativeEvent: { ...keyEvent('Enter').nativeEvent, isComposing: true } };
+    for (const enter of [shift, ime]) {
+      expect(result.current.handleKeyDown(enter)).toBe(false);
+      expect(enter.preventDefault).not.toHaveBeenCalled();
+    }
+  });
+
+  it('consumes Enter while listFiles is unresolved and after a superseded lookup resolves', async () => {
+    const files = Promise.withResolvers<{ success: boolean; data: [] }>();
+    const invoke = vi.mocked(window.domainAPI!.invoke);
+    const originalInvoke = invoke.getMockImplementation()!;
+    invoke.mockImplementation((...args) => args[1] === 'listFiles'
+      ? files.promise as ReturnType<typeof originalInvoke>
+      : originalInvoke(...args));
+    const { result } = setup();
+    await act(async () => {
+      result.current.search('@alpha', 6);
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', expect.anything());
+    expect(result.current.isOpen).toBe(false);
+    const enter = keyEvent('Enter');
+    expect(result.current.handleKeyDown(enter)).toBe(true);
+    expect(enter.preventDefault).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      result.current.search('@docs', 5);
+      files.resolve({ success: true, data: [] });
+    });
+    expect(result.current.isOpen).toBe(false);
+    expect(result.current.handleKeyDown(keyEvent('Enter'))).toBe(true);
+  });
+
   it('打开后同时给出资料库组与工作区文件组，pin 态来自 getSessionPin', async () => {
     const { result } = setup();
     await openPanel(result);
@@ -433,7 +502,7 @@ describe('useAtMentionPanel', () => {
     expect(mocks.setSessionPin).not.toHaveBeenCalled();
   });
 
-  it('Esc 关闭后面板不因同一段文本再次弹开', async () => {
+  it('Esc 关闭后面板不因同一段文本再次弹开，Enter 留给提交', async () => {
     const { result } = setup();
     await openPanel(result);
 
@@ -445,6 +514,10 @@ describe('useAtMentionPanel', () => {
       await vi.advanceTimersByTimeAsync(250);
     });
     expect(result.current.isOpen).toBe(false);
+
+    const enter = keyEvent('Enter');
+    expect(result.current.handleKeyDown(enter)).toBe(false);
+    expect(enter.preventDefault).not.toHaveBeenCalled();
 
     // 文本变了（继续输入 query）则重新打开
     await act(async () => {

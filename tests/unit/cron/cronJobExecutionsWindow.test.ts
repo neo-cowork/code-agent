@@ -92,7 +92,8 @@ describe('getJobExecutions 短缓存不能截断历史（N-CRON-RUN-LEDGER-VISIB
         exit_code INTEGER,
         trigger_json TEXT,
         cost_usd REAL,
-        push_note TEXT
+        push_note TEXT,
+        flat_fee INTEGER
       );
     `);
     databaseState.db = db;

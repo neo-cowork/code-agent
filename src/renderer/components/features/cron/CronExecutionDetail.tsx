@@ -269,7 +269,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
         <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
-        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
+        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn, execution.flatFee ? cc.costFlatFee : undefined)} testId="cron-execution-cost" />
       </div>
       {(execution.status === 'failed' || (execution.status === 'completed' && !wakeSkip && !permissionDenied)) && execution.retryAttempt > 0 && (
         <p className="mt-3 text-sm text-zinc-300" data-testid="cron-exec-retry-note">
