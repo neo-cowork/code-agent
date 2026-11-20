@@ -4,13 +4,16 @@ import * as path from 'path';
 import os from 'os';
 import type { IPCRequest, IPCResponse } from '../../../../src/shared/ipc';
 import type { RoleFirstWakeSnapshot } from '../../../../src/shared/contract/roleAssets';
+import { useDarwinPlatform } from '../../connectors/fakeCalendarBridge';
+
+const { fake } = await vi.hoisted(async () => ({
+  fake: (await import('../../connectors/fakeCalendarBridge')).createFakeCalendarBridge(),
+}));
 
 const harness = vi.hoisted(() => ({
   configDir: '',
   listCapabilities: vi.fn(),
-  resolveAgent: vi.fn(),
   createSession: vi.fn(),
-  calendarRead: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
   recordEvent: vi.fn(),
@@ -32,7 +35,10 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   }),
 }));
 vi.mock('../../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
+  getConfigService: () => ({
+    getSettings: () => ({ ui: { language: 'zh' } }),
+    onSettingsUpdated: vi.fn(),
+  }),
 }));
 vi.mock('../../../../src/host/services/core/sessionDefaults', () => ({
   resolveSessionDefaultModelConfig: () => ({ provider: 'test', model: 'test' }),
@@ -40,20 +46,12 @@ vi.mock('../../../../src/host/services/core/sessionDefaults', () => ({
 vi.mock('../../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => ({ recordCreated: vi.fn(), recordEvent: harness.recordEvent }),
 }));
-vi.mock('../../../../src/host/agent/agentRegistry', () => ({
-  resolveAgent: (roleId: string) => harness.resolveAgent(roleId),
-  listAllAgents: () => [],
-}));
 vi.mock('../../../../src/host/services/capabilities/capabilityCenterService', () => ({
   getCapabilityCenterService: () => ({ listCapabilities: harness.listCapabilities }),
 }));
-vi.mock('../../../../src/host/connectors', () => ({
-  getConnectorRegistry: () => ({
-    list: () => [{ id: 'calendar', getCachedStatus: () => ({ readiness: 'ready' }) }],
-  }),
-}));
-vi.mock('../../../../src/host/tools/dispatch/toolDefinitions', () => ({
-  getAllToolDefinitions: () => [{ name: 'calendar', permissionLevel: 'read' }],
+vi.mock('../../../../src/host/permissions/envAssist/shellBridge/client', async (original) => ({
+  ...(await original<typeof import('../../../../src/host/permissions/envAssist/shellBridge/client')>()),
+  resolveShellBridgeClientFromEnv: () => fake.client,
 }));
 // Keep unrelated IPC routes from booting the database/cron services. The registered
 // roles route, first-wake service, parser, state writes and snapshots remain real.
@@ -62,20 +60,26 @@ vi.mock('../../../../src/host/cron/cronService', () => ({ getCronService: vi.fn(
 
 import { registerRolesHandlers } from '../../../../src/host/ipc/roles.ipc';
 import { enqueueFirstWake, getFirstWakeSnapshot, skipFirstWake } from '../../../../src/host/services/roleAssets/roleFirstWake';
+import { disposeAgentRegistry, initAgentRegistry } from '../../../../src/host/agent/agentRegistry';
+import { getConnectorRegistry } from '../../../../src/host/connectors';
+import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
+import { calendarModule } from '../../../../src/host/tools/modules/connectors/calendar';
+
+useDarwinPlatform();
 
 const ROLE_ID = '小历';
 const EVENTS = [
-  { title: '项目周会', start: '2026-11-10T09:00:00', preparation: '整理项目周会的议程和待确认事项' },
-  { title: '客户方案评审', start: '2026-11-11T14:00:00', preparation: '准备客户方案评审的材料清单' },
-  { title: '季度计划讨论', start: '2026-11-12T10:00:00', preparation: '梳理季度计划讨论的重点和问题' },
+  { title: '项目周会', start: '2026-11-10 09:00', preparation: '整理项目周会的议程和待确认事项' },
+  { title: '客户方案评审', start: '2026-11-11 14:00', preparation: '准备客户方案评审的材料清单' },
+  { title: '季度计划讨论', start: '2026-11-12 10:00', preparation: '梳理季度计划讨论的重点和问题' },
 ];
-const AGENT_MD = [
+const agentMd = (roleId: string) => [
   '---',
-  'name: 小历',
+  `name: ${roleId}`,
   'description: 根据日历安排整理会议准备与日程建议',
   'display-name: 小历',
   'profession: 日程规划专家',
-  'tools: [calendar]',
+  'tools: [calendar, calendar_create_event]',
   '---',
   '你是日程规划专家。只读日历，结合真实日程提出可委托的准备建议。',
 ].join('\n');
@@ -107,15 +111,32 @@ async function consume(roleId: string, title: string): Promise<void> {
 
 async function runCalendarExpert(roleId: string): Promise<RoleFirstWakeSnapshot> {
   await fs.mkdir(path.join(harness.configDir, 'agents'), { recursive: true });
-  await fs.writeFile(path.join(harness.configDir, 'agents', `${roleId}.md`), AGENT_MD);
-  harness.resolveAgent.mockReturnValue({ id: roleId, tools: ['calendar'] });
-  const runner = vi.fn(async (input: { prompt: string; allowedToolNames: string[] }) => {
+  await fs.writeFile(path.join(harness.configDir, 'agents', `${roleId}.md`), agentMd(roleId));
+  await initAgentRegistry();
+  const runner = vi.fn(async (input: { sessionId: string; prompt: string; allowedToolNames: string[] }) => {
     expect(input.prompt).toContain('日历');
     expect(input.prompt).toContain('first_wake_suggestions');
     expect(input.allowedToolNames).toEqual(['calendar']);
-    const events = await harness.calendarRead({ action: 'list_events', limit: 3 }) as typeof EVENTS;
-    expect(events).toHaveLength(3);
-    const suggestions = events.map((event) => ({ title: `准备${event.title}`, prompt: event.preparation }));
+    const calendar = await calendarModule.createHandler();
+    const result = await calendar.execute({
+      action: 'list_events',
+      from_ms: new Date('2026-11-10T00:00:00').getTime(),
+      to_ms: new Date('2026-11-13T00:00:00').getTime(),
+      limit: 3,
+    }, {
+      sessionId: input.sessionId,
+      workingDir: harness.configDir,
+      abortSignal: new AbortController().signal,
+      logger: { debug: vi.fn(), info: harness.info, warn: harness.warn, error: vi.fn() },
+      emit: vi.fn(),
+    }, async () => ({ allow: true }));
+    if (!result.ok) throw new Error(result.error);
+    expect(result.meta).toMatchObject({ action: 'list_events', count: EVENTS.length });
+    for (const event of EVENTS) {
+      expect(result.output).toContain(`[Work] ${event.title}\n  ${event.start}`);
+    }
+    process.stdout.write(`${result.output}\n`);
+    const suggestions = EVENTS.map((event) => ({ title: `准备${event.title}`, prompt: event.preparation }));
     return {
       finalOutput: [
         '看过你的三场日程，可以帮你提前准备会议材料。也可以一起安排本周的重点。',
@@ -125,23 +146,41 @@ async function runCalendarExpert(roleId: string): Promise<RoleFirstWakeSnapshot>
   });
   expect(await enqueueFirstWake(roleId, { runner })).toEqual({ enqueued: true });
   await vi.waitFor(async () => {
-    expect(await readState(roleId)).toMatchObject({ state: 'completed', sourcesMode: 'connected' });
+    const state = await readState(roleId);
+    expect(state.failureReason).toBeUndefined();
+    expect(state).toMatchObject({ state: 'completed', sourcesMode: 'connected' });
     expect(harness.info).toHaveBeenCalledWith('First wake completed', expect.objectContaining({ roleId, sourcesMode: 'connected', suggestions: 3 }));
   });
   expect(runner).toHaveBeenCalledOnce();
-  expect(harness.calendarRead).toHaveBeenCalledWith({ action: 'list_events', limit: 3 });
-  expect(harness.createSession).toHaveBeenCalledWith(expect.objectContaining({ title: '小历 · 初次见面' }));
+  expect(fake.paths()).toContain('/v1/read/calendar-items');
+  expect(harness.createSession).toHaveBeenCalledWith(expect.objectContaining({
+    title: '小历 · 初次见面',
+    origin: { kind: 'cron', name: 'role-cadence', metadata: { roleId, trigger: 'first_wake' } },
+  }));
   expect(harness.warn).not.toHaveBeenCalled();
   return readState(roleId);
 }
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  fake.reset();
+  fake.state.items = EVENTS.map((event, index) => {
+    const startMs = new Date(event.start.replace(' ', 'T')).getTime();
+    return {
+      id: `event-${index}`,
+      calendarId: 'c-work',
+      calendar: 'Work',
+      title: event.title,
+      startMs,
+      endMs: startMs + 30 * 60 * 1000,
+    };
+  });
   harness.configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wake-consume-lifecycle-'));
+  getProtocolRegistry();
+  getConnectorRegistry().configure(['calendar']);
   harness.listCapabilities.mockResolvedValue({ items: [
     { kind: 'connector', name: '日历', source: { kind: 'builtin' }, tags: ['connector', 'native', 'calendar'], state: { runtime: 'connected' } },
   ] });
-  harness.calendarRead.mockResolvedValue(EVENTS);
   harness.createSession.mockResolvedValue({ id: 'calendar-first-meeting', messages: [] });
   harness.info.mockImplementation((message: string, details: unknown) => {
     if (message === 'First wake completed' || message.includes('consume missed')) {
@@ -152,6 +191,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await disposeAgentRegistry();
+  getConnectorRegistry().configure([]);
   await fs.rm(harness.configDir, { recursive: true, force: true });
 });
 
