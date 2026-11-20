@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
+import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
@@ -84,20 +85,35 @@ describe('humanizeToolStep — spawn_agent parallel form', () => {
 
     it('zh: one status per helper, step-cap uses the existing step-cap sentence', () => {
       expect(humanizeToolStep('spawn_agent', pair, zh, undefined, 'failed', undefined, { helperOutcomes: mixed }))
-        .toBe('纪要助手已完成；演示稿助手未完成 — 这次任务做到步数上限，已停下');
+        .toBe('纪要助手已完成；演示稿助手未完成');
     });
 
     it('en: done / not done with a plain reason', () => {
       expect(humanizeToolStep('spawn_agent', pair, en, undefined, 'failed', undefined, { helperOutcomes: mixed }))
-        .toBe('纪要助手 done; 演示稿助手 not done — This task reached its step limit and stopped');
+        .toBe('纪要助手 done; 演示稿助手 not done');
     });
 
     it('unknown failure code still gives a non-empty reason, never internal ids', () => {
       const out = humanizeToolStep('spawn_agent', pair, zh, undefined, 'failed', undefined, {
         helperOutcomes: [{ name: '甲', success: true }, { name: '乙', success: false, failureCode: 'weird-internal-state' }],
       });
-      expect(out).toMatch(/^甲已完成；乙未完成 — .+/);
+      expect(out).toMatch(/^甲已完成；乙未完成$/);
       expect(out).not.toContain('weird-internal-state');
+    });
+
+    it('the step-cap reason appears exactly once across title + reason line (zh and en)', () => {
+      for (const [t, reason] of [[zh, '这次任务做到步数上限，已停下'], [en, 'This task reached its step limit and stopped']] as const) {
+        const title = humanizeToolStep('spawn_agent', pair, t, undefined, 'failed', undefined, { helperOutcomes: mixed });
+        const line = humanizeToolFailureReason({ name: 'spawn_agent', result: { toolCallId: 't', success: false, error: 'x', metadata: { helperOutcomes: mixed } } } as never, t);
+        expect(`${title}\n${line}`.split(reason).length - 1).toBe(1);
+        expect(line).toBe(reason);
+      }
+    });
+
+    it('several failed helpers: reason line names each one', () => {
+      const line = humanizeToolFailureReason({ name: 'spawn_agent', result: { toolCallId: 't', success: false, error: 'x', metadata: { helperOutcomes: [
+        { name: '甲', success: false, failureCode: 'step-cap-reached' }, { name: '乙', success: false, failureCode: 'timeout' }] } } } as never, zh);
+      expect(line).toMatch(/^甲未完成 — .+；乙未完成 — .+/);
     });
 
     it('without outcomes the old failed sentence is kept', () => {

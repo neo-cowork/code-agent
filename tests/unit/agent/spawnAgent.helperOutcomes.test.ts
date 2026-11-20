@@ -89,11 +89,12 @@ describe('spawn_agent parallel: each helper reports its own outcome', () => {
       const toolCall = { name: 'spawn_agent', result: { toolCallId: 't', success: false, error: result.error, metadata: result.metadata } };
       const row = humanizeToolStep('spawn_agent', args, zh, undefined, 'failed', undefined, { helperOutcomes: result.metadata?.helperOutcomes as never });
       console.info(`ROW zh: ${row}`);
-      expect(row).toBe('纪要助手已完成；演示稿助手未完成 — 这次任务做到步数上限，已停下');
+      expect(row).toBe('纪要助手已完成；演示稿助手未完成');
       expect(humanizeToolFailureReason(toolCall as never, zh)).toBe('这次任务做到步数上限，已停下');
+      expect(`${row}\n${humanizeToolFailureReason(toolCall as never, zh)}`.split('步数上限').length - 1).toBe(1);
       expect(humanizeToolFailureReason(toolCall as never, zh)).not.toBe(zh.toolStepHumanize.failureReasonMissing);
       expect(humanizeToolStep('spawn_agent', args, en, undefined, 'failed', undefined, { helperOutcomes: result.metadata?.helperOutcomes as never }))
-        .toBe('纪要助手 done; 演示稿助手 not done — This task reached its step limit and stopped'.replace('This task', 'This task'));
+        .toBe('纪要助手 done; 演示稿助手 not done'.replace('This task', 'This task'));
       expect(row).not.toMatch(/agent_|explore|step-cap-reached|Max iterations/);
     } finally {
       configureAgentTeamDurableRuntime(null);

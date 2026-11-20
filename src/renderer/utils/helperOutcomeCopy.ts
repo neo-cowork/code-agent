@@ -28,20 +28,20 @@ function reasonFor(outcome: HelperOutcome, t: Translations): string {
   return agentFailureCopy(code, t) ?? t.toolStepHumanize.agentFailureReasons.unknown;
 }
 
-/** Per-helper sentence, e.g. 「纪要助手已完成；演示稿助手未完成 — 这次任务做到步数上限，已停下」. */
+/** Row title: who finished and who did not, no reason (the reason line carries it once). */
 export function describeHelperOutcomes(outcomes: HelperOutcome[], t: Translations): string | null {
   if (!outcomes.some((outcome) => !outcome.success)) return null;
   const h = t.toolStepHumanize.helperOutcome;
   return outcomes
-    .map((outcome) => (outcome.success ? h.done : h.notDone)
-      .replace('{name}', outcome.name)
-      .replace('{reason}', outcome.success ? '' : reasonFor(outcome, t)))
+    .map((outcome) => (outcome.success ? h.done : h.notDoneTitle).replace('{name}', outcome.name))
     .join(h.separator);
 }
 
-/** The folded row's reason line: only the helpers that did not finish. */
+/** The reason line: one bare reason for a single failed helper, name-attributed when several failed. */
 export function describeHelperFailureReasons(outcomes: HelperOutcome[], t: Translations): string | null {
   const failed = outcomes.filter((outcome) => !outcome.success);
   if (failed.length === 0) return null;
-  return Array.from(new Set(failed.map((outcome) => reasonFor(outcome, t)))).join(t.toolStepHumanize.helperOutcome.separator);
+  const h = t.toolStepHumanize.helperOutcome;
+  if (failed.length === 1) return reasonFor(failed[0], t);
+  return failed.map((outcome) => h.notDone.replace('{name}', outcome.name).replace('{reason}', reasonFor(outcome, t))).join(h.separator);
 }
