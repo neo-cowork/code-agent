@@ -79,13 +79,15 @@ async function executeCalendar(
     return { ok: false, error: `Unsupported calendar action: ${action}`, code: 'INVALID_ARGS' };
   }
 
+  let connectorArgs = args;
   if (action === 'list_events') {
     const window = normalizeCalendarListWindow(args);
     if (!window.ok) return window;
-    args = window.args;
+    connectorArgs = window.args;
   }
 
-  const permit = await canUseTool(schema.name, args);
+  // Ask about the normalized window the connector will actually read.
+  const permit = await canUseTool(schema.name, connectorArgs);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
   }
@@ -115,7 +117,7 @@ async function executeCalendar(
   }
 
   try {
-    const result = await connector.execute(action, args);
+    const result = await connector.execute(action, connectorArgs);
     ctx.logger.debug('calendar', { action });
 
     if (action === 'get_status') {
