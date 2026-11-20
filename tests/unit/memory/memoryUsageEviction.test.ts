@@ -60,7 +60,7 @@ import {
   storedMemoryToEntry,
 } from '../../../src/host/memory/memoryEntryRuntime';
 import { memoryInjectionPauses, resumeMemoryInjection } from '../../../src/host/memory/memoryUsageEviction';
-import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
+import { buildPackedManualPreferences, buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
 import { memoryReadModule } from '../../../src/host/tools/modules/lightMemory/memoryRead';
 import { memorySearchModule } from '../../../src/host/tools/modules/lightMemory/memorySearch';
 import { MEMORY } from '../../../src/shared/constants';
@@ -305,6 +305,39 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     expect(ids).toContain(keeper.entryId);
     expect(ids).not.toContain(fresh.entryId);
     expect(ids).not.toContain(stale.entryId);
+  });
+
+  // N-FIX-FIX-MEMORY-SETTINGS-NO-MANUAL-ADD-ENTRY-FU1：手写常驻偏好也吃用量暂停——
+  // 暂停的手写条目不进 buildPackedManualPreferences，新鲜的照常进。
+  it('手写常驻偏好：用量暂停的 manual 条目不注入，未暂停的照常注入', async () => {
+    vi.useFakeTimers({ now: NOW });
+    seq += 1;
+    const staleFilename = `manual-stale-${seq}.md`;
+    await fs.writeFile(
+      path.join(memDir, staleFilename),
+      `---\nname: manual-stale\ndescription: fixture manual-stale\ntype: user\nsource: manual\n---\n\nmanual stale body\n`,
+      'utf8',
+    );
+    seq += 1;
+    const freshFilename = `manual-fresh-${seq}.md`;
+    await fs.writeFile(
+      path.join(memDir, freshFilename),
+      `---\nname: manual-fresh\ndescription: fixture manual-fresh\ntype: user\nsource: manual\n---\n\nmanual fresh body\n`,
+      'utf8',
+    );
+    await rebuildMemoryMirrorFromLightFiles(currentDb());
+    const rows = currentDb().listMemories({ includeArchived: true, includeCandidates: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' });
+    const staleRow = rows.find((memory) => memoryEntryMetadata(memory)?.filePath === staleFilename);
+    const freshRow = rows.find((memory) => memoryEntryMetadata(memory)?.filePath === freshFilename);
+    if (!staleRow || !freshRow) throw new Error('mirror rows missing for manual fixtures');
+    setUsage(staleRow.id, 3, NOW - 40 * DAY_MS);
+    setUsage(freshRow.id, 1, NOW - 3 * DAY_MS);
+
+    const packed = await buildPackedManualPreferences({});
+    expect(packed).not.toBeNull();
+    const titles = (packed?.packed.items ?? []).map((item) => item.title);
+    expect(titles).toContain('manual-fresh');
+    expect(titles).not.toContain('manual-stale');
   });
 
   it('④ 用量扫描出错时 fail-open：注入照常进行，不淘汰任何条目', async () => {

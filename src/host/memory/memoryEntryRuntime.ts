@@ -39,6 +39,7 @@ import {
   type ProjectMemoryMatch,
 } from './memoryEntryScoring';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
+import { renderDataDir } from '../config/renderDataDir';
 import { MEMORY } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { formatMemoryAgeLine, withPackedWrittenLine } from './memoryAge';
@@ -199,7 +200,7 @@ function antiLostInMiddleOrder(items: PackedMemoryItem[]): PackedMemoryItem[] {
   return [first, ...rest, second];
 }
 
-function renderPackedMemoryBlock(items: PackedMemoryItem[], writtenByEntryId: ReadonlyMap<string, string>): string {
+function renderPackedMemoryBlock(items: PackedMemoryItem[], writtenByEntryId: ReadonlyMap<string, string>, withGuidance = true): string {
   if (items.length === 0) return '';
   const block = [
     '<memory-pack>',
@@ -212,7 +213,7 @@ function renderPackedMemoryBlock(items: PackedMemoryItem[], writtenByEntryId: Re
     ], writtenByEntryId.get(item.entryId)).join('\n')),
     '</memory-pack>',
   ].join('\n');
-  return withMemoryBackgroundGuidance(block);
+  return withGuidance ? withMemoryBackgroundGuidance(block) : renderDataDir(block);
 }
 
 function sanitizePackedMemoryText(value: string): string {
@@ -606,6 +607,7 @@ export async function packMemoryEntries(
   const totalCharBudget = clampNumber(request.totalCharBudget, 4_000, 500, 30_000);
   const statuses = new Set<MemoryEntryStatus>(request.statuses?.length ? request.statuses : ['active']);
   const kinds = request.kinds?.length ? new Set<MemoryEntryKind>(request.kinds) : null;
+  const sourceKinds = request.sourceKinds?.length ? new Set(request.sourceKinds) : null;
   const excludedEntryIds = new Set(request.excludeEntryIds || []);
   const query = (request.query || '').trim();
   const baseTokens = tokenizeQuery(query);
@@ -654,6 +656,7 @@ export async function packMemoryEntries(
     .filter((entry) => statuses.has(entry.status))
     .filter((entry) => !excludedEntryIds.has(entry.id))
     .filter((entry) => !kinds || kinds.has(entry.kind))
+    .filter((entry) => !sourceKinds || sourceKinds.has(entry.source.kind))
     .filter((entry) => scopeMatches(entry, request, projectMatch))
     .map((entry) => {
       const scored = scoreMemoryEntry(entry, request, projectMatch, tokens);
@@ -707,7 +710,7 @@ export async function packMemoryEntries(
     totalChars: ordered.reduce((sum, item) => sum + item.packedChars, 0),
     budget: totalCharBudget,
     items: ordered,
-    block: renderPackedMemoryBlock(ordered, writtenByEntryId),
+    block: renderPackedMemoryBlock(ordered, writtenByEntryId, request.backgroundGuidance !== false),
   };
 }
 
