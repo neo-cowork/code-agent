@@ -186,9 +186,30 @@ describe('toast reserve contract (toast yields to the chat list)', () => {
     act(() => { setToastReserve(400); });
     expect(scroller.scrollTop).toBe(120);
 
-    // toast 消失（回落）：由浏览器把 scrollTop 钳回新最大值，这里不滚动。
+    // toast 消失（回落）：用户已上滚（离底 380），钩子不得把视口拽回底部。
     act(() => { setToastReserve(0); });
     expect(scroller.scrollTop).toBe(120);
+  });
+
+  it('guards the bottom through the dismissal shrink so the last row is not left below the fold', async () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复）', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    // 贴底 + toast：钉到底（600）。
+    scroller.scrollTop = 500;
+    act(() => { setToastReserve(200); });
+    expect(scroller.scrollTop).toBe(600);
+    // toast 消失：Footer 收缩（600 → 400）。真浏览器此刻把 scrollTop 钳到新底
+    // （jsdom 桩不钳，手动落一次模拟钳后状态），Virtuoso 随后的补偿由帧循环守回。
+    Object.defineProperty(scroller, 'scrollHeight', { value: 400, configurable: true });
+    scroller.scrollTop = 300;
+    act(() => { setToastReserve(0); });
+    // rAF 帧循环逐帧落底，稳定后停（jsdom 的 rAF 按定时器走，等够帧数）。
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(scroller.scrollTop).toBe(400);
   });
 
   it('still pins when the toast arrives together with a viewport shrink (composer grows)', () => {

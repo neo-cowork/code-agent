@@ -163,7 +163,8 @@ const TOAST_RESERVE_PIN_MAX_FRAMES = 60;
  * （增量前贴底）+ 同拍视口收缩 + 亚像素容差：toast 到来常与 composer 变高同拍
  * （如上传失败 chip），视口变矮会让距离叠上收缩量，不吃进去会被误判成「用户已
  * 上滚」而放弃钉底。用户真上滚（离底更远）仍不动；帧循环里发现视口被拽离底部
- * 也立即停。回落（toast 消失）由浏览器把 scrollTop 钳回新最大值自然收尾。
+ * 也立即停。回落（toast 消失）反向同理：浏览器钳底后 Virtuoso 对 Footer 变矮的
+ * 补偿会把视口上挪，仍贴底时同样逐帧守底；用户已上滚则不拽回。
  */
 export function useToastReserveBottomKeep(scroller: HTMLElement | null): void {
   const prevReserveRef = useRef(0);
@@ -183,12 +184,19 @@ export function useToastReserveBottomKeep(scroller: HTMLElement | null): void {
       const delta = reserve - prevReserveRef.current;
       const viewportShrink = Math.max(0, lastClientHeightRef.current - scroller.clientHeight);
       prevReserveRef.current = reserve;
-      if (delta <= 0) return;
-      if (!isScrollerNearBottom(
-        scroller,
-        delta + viewportShrink + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX,
-      )) return;
-      scroller.scrollTop = scroller.scrollHeight;
+      if (delta === 0) return;
+      if (delta > 0) {
+        if (!isScrollerNearBottom(
+          scroller,
+          delta + viewportShrink + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX,
+        )) return;
+        scroller.scrollTop = scroller.scrollHeight;
+      } else {
+        // 回落（toast 消失）：浏览器会把 scrollTop 钳到新底，但 Virtuoso 对 Footer
+        // 变矮的测量补偿随后又把视口上挪，末条内容被留在底缘之下。只在确实还
+        //贴底（钳过之后）时逐帧守底；用户已上滚阅读（离底超出容差）不拽回。
+        if (!isScrollerNearBottom(scroller, viewportShrink + TOAST_RESERVE_SUBPIXEL_TOLERANCE_PX)) return;
+      }
       if (typeof requestAnimationFrame !== 'function') return;
       let frames = 0;
       let stableFrames = 0;
