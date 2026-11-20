@@ -132,6 +132,7 @@ function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
     readiness: 'unchecked',
     checkedAt: lastCheckedAt,
     detail: lastAccess ? ACCESS_DETAIL[lastAccess] : 'Calendar connector 已启用，用到时才检查日历授权。',
+    ...(lastAccess === 'denied' || lastAccess === 'write_only' ? { settingsPane: 'calendars' as const } : {}),
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities,
   };

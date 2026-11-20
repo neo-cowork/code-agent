@@ -38,11 +38,7 @@ function harness() {
     healthRunner, absolutePath: '/tmp/page.html',
     toolCall: { id: 'write', name: 'Write', arguments: {} }, toolResult: { toolCallId: 'write', success: true },
   });
-  const print = () => {
-    for (const [message] of persist.mock.calls) console.log('persisted system content:', message.content);
-    for (const [, text] of progress.mock.calls) console.log('emitTaskProgress:', text);
-  };
-  return { ctx, persist, progress, healthRunner, check, print };
+  return { ctx, persist, progress, healthRunner, check };
 }
 
 beforeEach(() => { config.language = 'zh'; config.throws = false; });
@@ -68,7 +64,6 @@ describe.each(['zh', 'en'] as const)('UI %s with OS en-US', (language) => {
     const h = harness(); await h.check();
     expect(h.progress).toHaveBeenCalledWith('tool_running', text[language].notice);
     expect(h.persist).not.toHaveBeenCalled(); // Initial notice is progress-only in production.
-    h.print();
   });
   it.each(['fixed', 'remaining'] as const)('webRepair %s follows UI language with localized categories', async (outcome) => {
     const h = harness(); await h.check();
@@ -80,7 +75,6 @@ describe.each(['zh', 'en'] as const)('UI %s with OS en-US', (language) => {
     }));
     expect(h.progress).toHaveBeenLastCalledWith('tool_running', text[language][outcome]);
     if (language === 'zh') expect(h.persist.mock.calls[0][0].content).not.toContain('display problem(s)');
-    h.print();
   });
   it.each(['crashed', 'skipped', 'checkerFailed'] as const)('webRepairUnavailable follows UI language for %s', async (failure) => {
     const h = harness();
@@ -89,7 +83,6 @@ describe.each(['zh', 'en'] as const)('UI %s with OS en-US', (language) => {
     await h.check();
     expect(h.persist).toHaveBeenCalledWith(expect.objectContaining({ role: 'system', content: `page.html: ${text[language].unavailable}` }));
     expect(h.progress).not.toHaveBeenCalled();
-    h.print();
   });
 });
 
@@ -113,5 +106,4 @@ it('formats every PreviewHealthMessageKey in both tables with identical key cove
       expect(formatPreviewHealthMessage(key, { count: 2, reason: 'reason', provider: 'provider', categories: 'categories' }, locale)).not.toBe('');
     }
   }
-  console.log('key parity:', Object.keys(keys).length, 'keys formatted in zh and en');
 });

@@ -504,6 +504,13 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       logger.error('Failed to open Automation settings', err);
     }
   }, []);
+  const openCalendarSettings = useCallback(async () => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'openCalendarSettings');
+    } catch (err) {
+      logger.error('Failed to open Calendar settings', err);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -631,9 +638,16 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           ] ?? ((row.status?.capabilities ?? []).length > 0
             ? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`
             : '');
-          const statusDetail = row.enabled && row.status?.readiness
-            ? connectorText.grid.statusDetail[row.status.readiness]
-            : description;
+          const probedDetail = row.enabled
+            && row.status?.readiness === 'unchecked'
+            && typeof row.status.checkedAt === 'number'
+            && row.status.detail
+            ? row.status.detail
+            : null;
+          const statusDetail = probedDetail
+            ?? (row.enabled && row.status?.readiness
+              ? connectorText.grid.statusDetail[row.status.readiness]
+              : description);
 
           return (
             <div
@@ -668,6 +682,13 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
               <p className="mt-3 text-xs leading-relaxed text-zinc-400">
                 {statusDetail}
               </p>
+              {row.status?.settingsPane === 'calendars' && (
+                <div className="mt-3">
+                  <Button size="sm" variant="secondary" type="button" onClick={() => void openCalendarSettings()}>
+                    {connectorText.openAutomationSettings}
+                  </Button>
+                </div>
+              )}
               {lifecycleActions.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {lifecycleActions.map((action) => {

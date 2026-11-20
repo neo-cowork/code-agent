@@ -16,6 +16,8 @@ export interface ConnectorStatus {
   noAccessibleItems?: boolean;
   // failed 时的结构化原因（来自 describeAppleScriptFailure().code）；渲染层据此显示「打开系统设置」，不做文案匹配
   errorCode?: 'not_authorized';
+  /** EventKit pane. Set only when calendar access is denied or write-only. */
+  settingsPane?: 'calendars';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
