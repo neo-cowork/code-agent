@@ -688,6 +688,7 @@ function isReadOrSearchTool(name: string): boolean {
     'Glob',
     'LS',
     'list_directory',
+    'ListDirectory',
   ].includes(name);
 }
 
