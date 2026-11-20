@@ -11,6 +11,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { resolveProviderText } from '../../../../i18n/providerDisplay';
 import { Button } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -217,10 +218,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     if (!query) return currentModels;
     return currentModels.filter((model) =>
       model.id.toLowerCase().includes(query) ||
-      model.label.toLowerCase().includes(query) ||
+      localizeModelLabel(model.id, model.label, language).toLowerCase().includes(query) ||
       model.capabilities.some((capability) => capability.toLowerCase().includes(query))
     );
-  }, [currentModels, modelSearch]);
+  }, [currentModels, language, modelSearch]);
   const providerRows = useMemo(
     () => buildProviderManagementRows({ providers, config, providerConfigs, labels: modelText.helpers, language }),
     [providers, config, providerConfigs, modelText.helpers, language],
