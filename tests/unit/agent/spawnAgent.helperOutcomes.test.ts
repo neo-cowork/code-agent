@@ -28,10 +28,9 @@ import { configureAgentTeamDurableRuntime, AgentTeamDurableRuntime } from '../..
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import * as appRuns from '../../../src/host/app/applicationRunRegistry';
-import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
-import type { SwarmEvent } from '../../../src/shared/contract/swarm';
+import { shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { executeSpawnAgent } from '../../../src/host/agent/multiagentTools/spawnAgent';
-import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
+import { resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
 import { humanizeToolStep } from '../../../src/renderer/utils/humanizeToolStep';
 import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
