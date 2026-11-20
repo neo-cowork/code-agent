@@ -22,20 +22,42 @@ export function markBashStepOutcome(step: BashStep | undefined, result: ResultPr
   if (step && isToolResultNeverExecuted(result)) step.notRun = true;
 }
 
-/** Task-ledger path: mark the latest unmarked step for this command text; returns progress unchanged when nothing applies. */
-export function markNotRunStepByCommand(
-  progress: TaskProgress | undefined,
-  rawCommand: string | undefined,
-  result: ResultProbe,
-): TaskProgress | undefined {
-  const steps = progress?.bashSteps;
-  if (!progress || !steps || rawCommand === undefined || !isToolResultNeverExecuted(result)) return progress;
-  const target = extractToolStepTarget({ command: rawCommand }) ?? '';
-  for (let i = steps.length - 1; i >= 0; i -= 1) {
-    if (steps[i].notRun || steps[i].command !== target) continue;
-    return { ...progress, bashSteps: steps.map((step, index) => (index === i ? { ...step, notRun: true as const } : step)) };
+/**
+ * Task-ledger path: bashSteps are appended from task_progress, which carries no call id, so the tracker
+ * links each appended step to the oldest pending Bash call (same command preview) of that task. A skipped /
+ * denied tool_call_end marks only the step its own call appended; a call that never produced a step marks nothing.
+ * Host-internal, never serialized.
+ */
+export class BashStepCallTracker {
+  private pending: Array<{ key: string; preview: string }> = [];
+  private readonly linked = new Map<string, BashStep>();
+
+  noteStart(key: string, rawCommand: string): void {
+    this.pending.push({ key, preview: extractToolStepTarget({ command: rawCommand }) ?? '' });
   }
-  return progress;
+
+  linkStep(taskPrefix: string, step: BashStep | undefined): void {
+    if (!step) return;
+    const index = this.pending.findIndex((entry) => entry.key.startsWith(taskPrefix) && entry.preview === step.command);
+    if (index < 0) return;
+    this.linked.set(this.pending[index].key, step);
+    this.pending.splice(index, 1);
+  }
+
+  settle(key: string, progress: TaskProgress | undefined, result: ResultProbe): TaskProgress | undefined {
+    this.pending = this.pending.filter((entry) => entry.key !== key);
+    const step = this.linked.get(key);
+    this.linked.delete(key);
+    const steps = progress?.bashSteps;
+    const index = step && steps ? steps.indexOf(step) : -1;
+    if (!progress || !steps || index < 0 || !isToolResultNeverExecuted(result)) return progress;
+    return { ...progress, bashSteps: steps.map((item, i) => (i === index ? { ...item, notRun: true as const } : item)) };
+  }
+
+  clear(): void {
+    this.pending = [];
+    this.linked.clear();
+  }
 }
 
 /** Agent-tree path: pair tool-role results with the Bash call that issued them. */

@@ -1,5 +1,5 @@
 import { readableBrowserPage, browserPageFromOutput } from '../../agent/subagentStepCapConclusion';
-import { markNotRunStepByCommand } from '../../agent/bashStepOutcome';
+import { BashStepCallTracker } from '../../agent/bashStepOutcome';
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
@@ -169,6 +169,7 @@ export class SessionCommandCenter {
   private readonly stepCapHitTasks = new Set<string>();
   /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
   private readonly shellCommandsByCallId = new Map<string, string>();
+  private readonly bashCalls = new BashStepCallTracker();
   /** permission_request ids still unresolved on the agent event stream, per task. */
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
@@ -439,6 +440,7 @@ export class SessionCommandCenter {
     this.shellHold.dispose();
     this.toolNamesByCallId.clear();
     this.shellCommandsByCallId.clear();
+    this.bashCalls.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
   }
@@ -640,6 +642,7 @@ export class SessionCommandCenter {
         const command = (call.arguments as { command?: unknown } | undefined)?.command;
         if (/bash|shell/i.test(call.name) && typeof command === 'string') {
           this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
+          this.bashCalls.noteStart(`${taskId}:${call.id}`, command);
         }
       }
       return;
@@ -678,6 +681,7 @@ export class SessionCommandCenter {
         at: Date.now(),
       },
     };
+    if (data.tool === 'Bash' || data.tool === 'bash') this.bashCalls.linkStep(`${taskId}:`, task.progress.bashSteps?.at(-1));
     task.updatedAt = Date.now();
     this.projectTask(task);
   }
@@ -694,10 +698,9 @@ export class SessionCommandCenter {
     const mapKey = `${task.id}:${result.toolCallId}`;
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
-    const shellCommand = this.shellCommandsByCallId.get(mapKey);
     this.shellCommandsByCallId.delete(mapKey);
     this.shellHold.noteToolCallEnd(task.id, result);
-    task.progress = markNotRunStepByCommand(task.progress, shellCommand, result);
+    task.progress = this.bashCalls.settle(mapKey, task.progress, result);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;

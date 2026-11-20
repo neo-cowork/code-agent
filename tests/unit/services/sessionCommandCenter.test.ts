@@ -614,6 +614,32 @@ describe('SessionCommandCenter', () => {
     center.dispose();
   });
 
+  // 审阅发现：按命令文本回标会把更早、真跑过的同命令步骤标成未执行；现按 toolCallId 对应各自追加的那一步。
+  async function runThenSkippedDuplicate(withStart: boolean) {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { projectTerminalResult: vi.fn() });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    const emit = (event: AgentEvent) => manager.emitAgent('session-a', event, spawned.task.id);
+    const args = { command: 'npm test', description: 'Run the tests' };
+    emit({ type: 'tool_call_start', data: { id: 't1', name: 'Bash', arguments: args } } as AgentEvent);
+    emit({ type: 'task_progress', data: { tool: 'Bash', target: 'npm test', description: 'Run the tests' } } as AgentEvent);
+    emit({ type: 'tool_call_end', data: { toolCallId: 't1', success: true, output: 'ok' } } as AgentEvent);
+    if (withStart) emit({ type: 'tool_call_start', data: { id: 't2', name: 'Bash', arguments: args } } as AgentEvent);
+    emit({ type: 'tool_call_end', data: { toolCallId: 't2', success: false, error: 'skipped', metadata: { skipped: true, bounced: true } } } as AgentEvent);
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' }).find((task) => task.id === spawned.task.id);
+    center.dispose();
+    return projected?.progress?.bashSteps;
+  }
+
+  it('barrier-deferred duplicate (no start, no task_progress) leaves the executed step unmarked', async () => {
+    expect(await runThenSkippedDuplicate(false)).toEqual([{ description: 'Run the tests', command: 'npm test' }]);
+  });
+
+  it('force-sealed duplicate (start + skipped result, no task_progress) leaves the executed step unmarked', async () => {
+    expect(await runThenSkippedDuplicate(true)).toEqual([{ description: 'Run the tests', command: 'npm test' }]);
+  });
+
   it('counts every failed tool call in progress.failedToolCalls, even without an allow-listed code', async () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
