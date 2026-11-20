@@ -358,6 +358,20 @@ export class ConfirmationGate {
         };
       }
 
+      case 'library_add': {
+        const rawTitle = typeof params.title === 'string' ? params.title : '';
+        const rawPath = typeof params.file_path === 'string' ? params.file_path : '';
+        const name = [rawTitle, rawPath]
+          .map((value) => value.trim().split(/[\\/]/u).filter(Boolean).pop() ?? '')
+          .find((value) => value.length > 0);
+        // Summary repeats the tool id so the card hides it; the visible line is only the file name.
+        return {
+          type: 'generic',
+          summary: toolName,
+          ...(name ? { diff: name } : {}),
+        };
+      }
+
       default: {
         const lines: string[] = [];
         for (const [key, rawValue] of Object.entries(params)) {

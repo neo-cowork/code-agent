@@ -68,16 +68,16 @@ function ChatCard() {
   </div>;
 }
 const cases = [
-  ['queued', 'Background assistant is working', '助手正在处理', 'Working', '工作中'],
-  ['running', 'Background assistant is working', '助手正在处理', 'Working', '工作中'],
-  ['running-recovered', 'Background assistant is working', '助手正在处理', 'Working', '工作中'],
-  ['dead-log-only', 'Background assistant was interrupted', '助手已中断', 'Interrupted', '已中断'],
-  ['completed', 'Background assistant finished', '助手已完成', 'Done', '完成'],
-  ['failed', "Background assistant didn't finish", '助手没有完成', 'Failed', '失败'],
-  ['cancelled', 'Background assistant was cancelled', '助手已取消', 'Cancelled', '已取消'],
-  ['killed', 'Background assistant was stopped', '助手已中止', 'Aborted', '已中止'],
-  ['blocked', 'Background assistant is waiting for you', '助手正在等你回应', 'Waiting for you', '等你回应'],
-  ['unknown', 'Background assistant is working', '助手正在处理', 'Working', '工作中'],
+  ['queued', 'Background assistant · is working', '助手 · 正在处理', 'Working', '工作中'],
+  ['running', 'Background assistant · is working', '助手 · 正在处理', 'Working', '工作中'],
+  ['running-recovered', 'Background assistant · is working', '助手 · 正在处理', 'Working', '工作中'],
+  ['dead-log-only', 'Background assistant · was interrupted', '助手 · 已中断', 'Interrupted', '已中断'],
+  ['completed', 'Background assistant · finished', '助手 · 已完成', 'Done', '完成'],
+  ['failed', "Background assistant · didn't finish", '助手 · 没有完成', 'Failed', '失败'],
+  ['cancelled', 'Background assistant · was cancelled', '助手 · 已取消', 'Cancelled', '已取消'],
+  ['killed', 'Background assistant · was stopped', '助手 · 已中止', 'Aborted', '已中止'],
+  ['blocked', 'Background assistant · is waiting for you', '助手 · 正在等你回应', 'Waiting for you', '等你回应'],
+  ['unknown', 'Background assistant · is working', '助手 · 正在处理', 'Working', '工作中'],
 ] as const;
 
 beforeEach(() => {
@@ -129,7 +129,7 @@ describe.each(['en', 'zh'] as const)('one tree snapshot across three surfaces (%
       action === 'closeAgent' ? { cancelled: true } : snapshot(child)));
     render(<><ChatCard /><SessionMemberBar sessionId="weekly-session" /><SessionAgentsPanel /><StreamingIndicator startTime={1} waitingReason="subagent" /></>);
     await screen.findByLabelText(locale === 'en' ? 'Agent working' : '代理工作中');
-    expect(screen.getByTestId('delegation-headline').textContent).toBe(locale === 'en' ? 'Background assistant is working' : '助手正在处理');
+    expect(screen.getByTestId('delegation-headline').textContent).toBe(locale === 'en' ? 'Background assistant · is working' : '助手 · 正在处理');
     expect(screen.getByTestId('session-member-bar-collapsed').textContent).toContain(locale === 'en' ? 'Working' : '工作中');
     expect(screen.getByTestId('agents-panel-status-weekly-assistant').textContent).toBe(locale === 'en' ? 'Working' : '工作中');
     fireEvent.click(screen.getByTestId('agents-panel-stop-weekly-assistant'));
@@ -170,7 +170,7 @@ describe.each(['en', 'zh'] as const)('one tree snapshot across three surfaces (%
     const expected = locale === 'en' ? 'Working' : '工作中';
     expect(screen.getByTestId('session-member-bar-collapsed').textContent).toContain(expected);
     expect(screen.getByTestId('agents-panel-status-weekly-assistant').textContent).toBe(expected);
-    expect(screen.getByTestId('delegation-headline').textContent).toBe(locale === 'en' ? 'Background assistant is working' : '助手正在处理');
+    expect(screen.getByTestId('delegation-headline').textContent).toBe(locale === 'en' ? 'Background assistant · is working' : '助手 · 正在处理');
     expect(screen.getByTestId('agents-panel-stop-weekly-assistant')).toBeTruthy();
     expect(screen.getByLabelText(locale === 'en' ? 'Agent working' : '代理工作中')).toBeTruthy();
   });
@@ -181,7 +181,7 @@ describe.each(['en', 'zh'] as const)('one tree snapshot across three surfaces (%
     render(<><ChatCard /><SessionMemberBar sessionId="weekly-session" /><SessionAgentsPanel /><StreamingIndicator startTime={1} waitingReason="subagent" subagentCount={1} /></>);
     const headline = await screen.findByTestId('delegation-headline');
     const word = locale === 'en' ? 'Failed' : '失败';
-    expect(headline.textContent).toBe(locale === 'en' ? "Background assistant didn't finish" : '助手没有完成');
+    expect(headline.textContent).toBe(locale === 'en' ? "Background assistant · didn't finish" : '助手 · 没有完成');
     expect(screen.getByTestId('session-member-bar-collapsed').textContent).toContain(word);
     expect(screen.getByTestId('agents-panel-status-weekly-assistant').textContent).toContain(word);
     const reason = screen.getByTestId('delegation-failure');

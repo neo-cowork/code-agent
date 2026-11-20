@@ -20,7 +20,7 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '{name}正在处理', completed: '{name}已完成', failed: '{name}没有完成', cancelled: '{name}已取消' },
+    headlines: { working: '{name} · 正在处理', completed: '{name} · 已完成', failed: '{name} · 没有完成', cancelled: '{name} · 已取消' },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
@@ -508,7 +508,7 @@ chat: {
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
     failureDetail: '{status}: {reason}',
-    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish", cancelled: '{name} was cancelled' },
+    headlines: { working: '{name} · is working', completed: '{name} · finished', failed: "{name} · didn't finish", cancelled: '{name} · was cancelled' },
     working: 'Agent working',
     completed: 'Completed',
     failed: 'Not completed',

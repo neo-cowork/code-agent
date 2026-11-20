@@ -372,8 +372,52 @@ describe('roleProactivity', () => {
         const [notice] = notificationService.getRecentNotifications();
         expect(notice.body).not.toMatch(/\*\*|#|`|\]\(/);
         expect(notice.body).toContain('观测数量明显上升：12 → 18');
-        expect(notice.body).toMatch(/栖息点 与 报告 的变化.*…$/);
-        expect(notice.body.length).toBeLessThanOrEqual(320);
+        expect(notice.body).toMatch(/栖息点 与 报告 的变化/);
+        expect(notice.body.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+      });
+
+      it.each(['suggest', 'report'] as const)('FB-2119 raw table/path output: %s summary, history and banner are plain text', async (decision) => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        const raw = [
+          '巡检完成。检查了我经手的两份周报，没有动任何文件。',
+          '',
+          '## 实测现状',
+          '| 检查项 | 结论 |',
+          '|---|---|',
+          '| `workspace/weekly/weekly-47.md` | 已更新 |',
+          '| `workspace/weekly/weekly-46.md` | 缺少下周计划 |',
+          '',
+          '---',
+          `<decision>${decision}</decision>`,
+        ].join('\n');
+        mockSessionManager.createSession.mockResolvedValue({ id: 'wake-fb2119', workingDirectory: undefined });
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-fb2119', messages: [
+          { id: 'm-fb', role: 'assistant', content: raw, timestamp: 2 },
+        ] });
+        mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        const historyLine = (await loadRoleHistory(RESEARCHER, 100)).find((line) => line.includes(`[${decision}]`)) ?? '';
+        const history = historyLine.split(`[${decision}] `)[1]?.split(' | why:')[0] ?? '';
+        const [notice] = notificationService.getRecentNotifications();
+        for (const text of [result.summary ?? '', history, notice.body]) {
+          expect(text).not.toMatch(/\||##|---|workspace\//);
+        }
+        expect(result.decision).toBe(decision);
+        expect(result.summary).toBe('巡检完成。检查了我经手的两份周报，没有动任何文件。');
+        expect(history).toBe(result.summary);
+        expect(notice.body).toBe(result.summary);
+      });
+
+      it('table-only suggest falls back to the rationale, still without table or path symbols', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        const raw = '| 检查项 | 结论 |\n|---|---|\n| `workspace/weekly/weekly-47.md` | 已更新 |\n<rationale>周报 weekly-47.md 已更新，下周计划还空着。</rationale><decision>suggest</decision>';
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-session-1', messages: [
+          { id: 'm-fb', role: 'assistant', content: raw, timestamp: 2 },
+        ] });
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result.summary).toBe('周报 weekly-47.md 已更新，下周计划还空着。');
       });
 
       it.each(['met', 'aborted'] as const)('realtime advance %s notice uses a human outcome, not internal goal markup', async (status) => {
