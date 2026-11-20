@@ -26,20 +26,37 @@ export function supersededEnvParkedCalls(nodes: readonly TraceNode[]): Set<strin
   return superseded;
 }
 
+/**
+ * The wait starts when the parked call was issued, not when the notice was written (the notice lands after the
+ * OS dialog and its confirm window). The carrier may be absent from the trace (the parked row is dropped when
+ * its result carries the env notice, or when only a recovery message carries the call), so look in raw messages too.
+ */
+function parkedCallIssuedAt(callId: string, node: TraceNode, index: number, turn: TraceTurn, messages: readonly Message[]): number {
+  const stamps = [
+    ...turn.nodes.slice(0, index).filter(candidate => candidate.toolCall?.id === callId).map(candidate => candidate.timestamp),
+    ...messages.filter(message => message.role === 'assistant' && message.timestamp >= turn.startTime
+      && message.toolCalls?.some(call => call.id === callId)).map(message => message.timestamp),
+  ];
+  const carrier = stamps.length ? Math.min(...stamps) : undefined;
+  return Math.min(carrier ?? node.timestamp, node.timestamp);
+}
+
 /** Message timestamps include recovery tool receipts, which have no standalone trace node. */
 export function envParkedTurnDuration(turn: TraceTurn, messages: readonly Message[]): number | null {
   if (turn.endTime === undefined) return null;
   const endTime = turn.endTime;
-  const spans = parkedSteps(turn.nodes).map(({ call, node, index }) => {
-    const start = Math.max(turn.startTime, node.timestamp);
+  const spans = turn.nodes.flatMap((node, index) => {
+    const callId = node.metadata?.envAssist?.parkedToolCallId;
+    if (!callId) return [];
+    const start = Math.max(turn.startTime, parkedCallIssuedAt(callId, node, index, turn, messages));
     const resumedMessage = messages.find(message => message.timestamp > node.timestamp
       && message.timestamp <= endTime && (message.role === 'assistant'
-        || (message.role === 'tool' && message.toolResults?.some(result => result.toolCallId === call.id)))
+        || (message.role === 'tool' && message.toolResults?.some(result => result.toolCallId === callId)))
       && !message.metadata?.envAssist);
     // A trace supplied without its raw history can still bound the wait by its first resumed node.
     const resumedNode = turn.nodes.slice(index + 1).find(candidate => candidate.timestamp > node.timestamp
       && !candidate.metadata?.envAssist && (candidate.type === 'assistant_text' || candidate.type === 'tool_call'));
-    return [start, Math.min(endTime, resumedMessage?.timestamp ?? resumedNode?.timestamp ?? endTime)] as const;
+    return [[start, Math.min(endTime, resumedMessage?.timestamp ?? resumedNode?.timestamp ?? endTime)] as const];
   }).sort((a, b) => a[0] - b[0]);
   let wait = 0;
   let previousEnd = turn.startTime;

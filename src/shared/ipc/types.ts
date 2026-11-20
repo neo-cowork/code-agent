@@ -244,6 +244,8 @@ export interface ConnectorStatusSummary {
   noAccessibleItems?: boolean;
   /** failed 时的结构化原因：not_authorized = macOS 自动化授权被拒 */
   errorCode?: 'not_authorized';
+  /** EventKit pane. Calendar sets it when access is denied or write-only. */
+  settingsPane?: 'calendars';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }
