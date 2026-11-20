@@ -8,6 +8,7 @@ import {
   createScopedSwarmMessageId,
   isSameSwarmRun,
   parseScopedSwarmAgentId,
+  parseSwarmTraceStorageId,
   type SwarmAgentRef,
   type SwarmEvent,
   type SwarmRunRef,
@@ -425,23 +426,28 @@ export function registerSwarmHandlers(
   ipcHost.handle('swarm:cancel-agent', async (_, payload: SwarmAgentRef) => {
     try {
       const services = getSwarmServices();
-      const scope = resolveAgentScope(payload);
-      if (!scope) return false;
+      // The member view can address a live member by its durable trace key.
+      // Decode the key, then still require the live run and member to match.
+      const traceScope = parseSwarmTraceStorageId(payload.runId);
+      if (traceScope && traceScope.sessionId !== payload.sessionId) return false;
+      const ref = traceScope ? { ...payload, runId: traceScope.runId } : payload;
+      const scope = resolveAgentScope(ref);
+      if (!scope || (traceScope && traceScope.treeId !== scope.treeId)) return false;
       const coordinator = services.parallelCoordinators.get(scope);
-      const cancelledPlanCount = services.planApproval.cancelAgent(payload, 'user-cancel');
+      const cancelledPlanCount = services.planApproval.cancelAgent(ref, 'user-cancel');
       // Do not short-circuit these calls. One logical agent may be represented
       // in both SpawnGuard and the parallel coordinator while an approval is
       // pending, and every waiter/executor must receive the cancellation.
-      const singleSpawn = hasSingleSpawnVisibilityAgent(payload, payload.agentId);
+      const singleSpawn = hasSingleSpawnVisibilityAgent(ref, ref.agentId);
       const spawnCancelled = services.spawnGuard.cancel(
-        payload.agentId,
-        singleSpawn ? undefined : payload,
+        ref.agentId,
+        singleSpawn ? undefined : ref,
       );
-      const coordinatorCancelled = coordinator?.abortTask(payload.agentId) ?? false;
+      const coordinatorCancelled = coordinator?.abortTask(ref.agentId) ?? false;
       const cancelled = cancelledPlanCount > 0 || spawnCancelled || coordinatorCancelled;
 
       if (cancelled) {
-        getSwarmEventEmitter().agentCancelled(scope, payload.agentId, 'Cancelled by user');
+        getSwarmEventEmitter().agentCancelled(scope, ref.agentId, 'Cancelled by user');
       }
 
       return cancelled;

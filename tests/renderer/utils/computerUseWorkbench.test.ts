@@ -85,7 +85,7 @@ describe('computerUseWorkbench', () => {
 
     expect(summary?.preview).toMatchObject({
       surface: 'computer',
-      summary: '读取后台 AX 元素',
+      summary: '读取后台无障碍元素',
       target: 'Finder',
       risk: 'read',
       riskLabel: '只读',

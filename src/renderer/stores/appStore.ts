@@ -26,7 +26,7 @@ export function preserveLatestCompressionSignal(
     },
   };
 }
-import { defaultLanguage } from '../i18n';
+import { defaultLanguage, readStoredLanguage, storeLanguage } from '../i18n';
 import {
   DEFAULT_PROVIDER,
   DEFAULT_MODEL,
@@ -160,8 +160,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   optionalUpdateInfo: null,
   showOptionalUpdateModal: false,
 
-  // 语言默认为中文
-  language: defaultLanguage,
+  // 语言默认为中文；localStorage 快照仅作首帧取值，后端设置加载后仍为准
+  language: readStoredLanguage() ?? defaultLanguage,
 
   // 云端 UI 字符串（初始为 null，由主进程推送）
   cloudUIStrings: null,
@@ -412,7 +412,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setOptionalUpdateInfo: (info) => set({ optionalUpdateInfo: info }),
   setShowOptionalUpdateModal: (show) => set({ showOptionalUpdateModal: show }),
-  setLanguage: (language) => set({ language }),
+  setLanguage: (language) => {
+    set({ language });
+    storeLanguage(language);
+  },
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
   setDeveloperMode: (enabled) => set({ developerMode: enabled }),

@@ -494,10 +494,10 @@ function mergeContextRecord(
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
   const lifecycle = record.lifecycle;
-  // Explicit graph terminal (parent-run settlement) wins; then persisted lifecycle (executor exit, tells cancelled
-  // from failed) survives restart; then SpawnGuard's completion fact survives late context flushes; only
-  // unfinished records use the orphan heuristic.
+  // A guard cancellation is persisted before the aborted executor settles.
+  // Its late failure must not replace the stop after rehydration.
   const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (record.lifecycleStatus === 'cancelled' ? record.lifecycleStatus : undefined)
     ?? (lifecycle && lifecycle.status !== 'running'
       ? lifecycle.status
       : record.lifecycleStatus ?? (record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown'));

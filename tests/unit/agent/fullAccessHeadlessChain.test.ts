@@ -204,6 +204,58 @@ describe('full access, walk away: session mode → sub-agent inheritance → zer
       && (entry.meta as { forceConfirm?: boolean }).forceConfirm === false)).toEqual([]);
   });
 
+  it('(b2) the 成品都存到同一目录 directive grants the same output directory, and expires with the task', async () => {
+    await handler(null, {
+      action: 'setSessionPermissionMode',
+      payload: { sessionId: SESSION_ID, mode: 'bypassPermissions', approved: true },
+    } as IPCRequest);
+    const cards: Array<Record<string, unknown>> = [];
+    const island: OrchestratorPermissionIsland = new OrchestratorPermissionIsland({
+      getSettings: () => ({ permissions: {} }) as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      hasApprovalUi: () => true,
+      onEvent: (event) => {
+        if (event.type !== 'permission_request') return;
+        const card = event.data as { id: string };
+        cards.push(card as unknown as Record<string, unknown>);
+        island.handlePermissionResponse(card.id, 'deny');
+      },
+    });
+    const deckFile = nodePath.join(fs.realpathSync(outsideDir), 'deck.md');
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      requestPermission: (request) => island.requestPermission(request),
+    });
+    executor.setAuditEnabled(false);
+    const options = {
+      sessionId: SESSION_ID, modelConfig: { provider: 'test', model: 'test-model' },
+      abortSignal: new AbortController().signal,
+      emitEvent: () => undefined,
+    };
+    const spawnWrite = async (content: string) => {
+      env.responses.push(
+        toolUse({ name: 'Write', arguments: { file_path: deckFile, content } }),
+        { type: 'text', content: 'done', usage: { inputTokens: 4, outputTokens: 5 } },
+      );
+      return executor.execute('spawn_agent', {
+        name: 'deck-agent', task: 'write deck', customPrompt: 'You write a deck.', customTools: ['Write'],
+      }, options);
+    };
+    await withTaskOutputDirectory({
+      sessionId: SESSION_ID, internal: false,
+      userText: `把这份表格和会议记录做成演示稿和纪要，成品都存到同一目录：${fs.realpathSync(outsideDir)}`,
+    }, async () => {
+      await spawnWrite('# deck');
+      expect(cards).toHaveLength(0);
+      expect(fs.readFileSync(deckFile, 'utf8')).toBe('# deck');
+    });
+    await spawnWrite('# expired');
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ tool: 'Write', forceConfirm: true, reasonCode: 'file_write_outside_workspace' });
+    expect(fs.readFileSync(deckFile, 'utf8')).toBe('# deck');
+  });
+
   it.each(['bypassPermissions', 'acceptEdits'] as const)('preserves %s auto-approval through the real executor without forceConfirm cards', async (mode) => {
     const cards: Array<Record<string, unknown>> = [];
     const island: OrchestratorPermissionIsland = new OrchestratorPermissionIsland({
