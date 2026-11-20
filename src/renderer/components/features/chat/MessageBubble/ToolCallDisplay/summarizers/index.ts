@@ -65,6 +65,7 @@ export function summarizeTool(toolCall: ToolCall, t: Translations): string | nul
       return summarizeWrite(toolCall, t);
 
     case 'list_directory':
+    case 'ListDirectory':
       return summarizeListDirectory(toolCall);
 
     case 'task':
@@ -111,7 +112,13 @@ function summarizeListDirectory(toolCall: ToolCall): string | null {
     return `${output.length} items`;
   }
 
-  const lines = String(output).trim().split('\n').filter(Boolean);
+  const entryCount = toolCall.result?.metadata?.entryCount;
+  if (typeof entryCount === 'number') return `${entryCount} items`;
+
+  const lines = String(output)
+    .trim()
+    .split('\n')
+    .filter((line) => line && !/^nextOffset:/.test(line) && !/^\(empty\b/.test(line));
   return `${lines.length} items`;
 }
 
