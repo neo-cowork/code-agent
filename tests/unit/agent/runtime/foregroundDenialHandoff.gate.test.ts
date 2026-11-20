@@ -77,6 +77,7 @@ vi.mock('../../../../src/host/task/TaskManager', async (importOriginal) => ({
   getTaskManager: () => taskManagerHolder.manager,
 }));
 
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../../src/host/permissions/modes';
 import { MessageProcessor } from '../../../../src/host/agent/runtime/messageProcessor';
 import { getTextForegroundToolNamesForPrompt } from '../../../../src/host/app/sessionCommandCenterBrain';
 import {
@@ -272,9 +273,64 @@ describe('foreground narrowing gate', () => {
     expect(tasks[0]?.prompt.match(/<original_user_request /g)).toHaveLength(1);
     expect(tasks[0]?.toolCallId).toBe('host-handoff:turn-1');
     const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
-    expect(sealed?.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN', bounced: true });
+    expect(sealed?.metadata).toMatchObject({ code: 'HANDED_OFF_TO_BACKGROUND', bounced: true, skipped: true });
     expect(ledgerEvents.some((row) => row.phase === 'begin' && row.toolName === 'delegate_task' && row.toolCallId === 'host-handoff:turn-1')).toBe(true);
     expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
+  });
+
+  // 全权限（bypassPermissions）会话：前台工具面不含 Bash / 非读 Excel（ADR-059），拒绝与权限档无关。
+  // 交接成功后封口码必须是 HANDED_OFF_TO_BACKGROUND；交接失败仍是 TOOL_DISABLED_FOR_RUN。
+  describe('bypassPermissions session', () => {
+    beforeEach(() => {
+      resetPermissionModeManager();
+      getPermissionModeManager().setMode('bypassPermissions', true, 'external');
+    });
+    afterEach(() => resetPermissionModeManager());
+
+    it.each([
+      ['Bash', { id: 'bp-bash', name: 'Bash', arguments: { command: 'ls' } }],
+      ['non-read ExcelAutomate', { id: 'bp-xl', name: 'ExcelAutomate', arguments: { action: 'edit', file_path: '/tmp/a.xlsx' } }],
+    ] as const)('%s: handed off, sealed with the handed-off code, not TOOL_DISABLED_FOR_RUN', async (_label, call) => {
+      const prompt = '把这份表格和会议记录做成演示稿和纪要，成品都存到同一目录：/tmp/out';
+      const ctx = prepare(prompt);
+      expect(getPermissionModeManager().getModeForSession(ctx.sessionId)).toBe('bypassPermissions');
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      const action = await processor.handleToolResponse(responseOf([call]), false, 1, EVENT_PROC);
+      expect(action).toBe('break');
+      const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+      expect(sealed?.metadata?.code).toBe('HANDED_OFF_TO_BACKGROUND');
+      expect(JSON.stringify(sealed)).not.toContain('TOOL_DISABLED_FOR_RUN');
+      expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
+    });
+
+    it('a same-batch sibling skipped by the handoff is also sealed as handed off', async () => {
+      const prompt = '把这份表格做成演示稿，成品都存到同一目录：/tmp/out';
+      const ctx = prepare(prompt);
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      await processor.handleToolResponse(responseOf([
+        { id: 'sib-bash', name: 'Bash', arguments: { command: 'ls' } },
+        { id: 'sib-read', name: 'Read', arguments: { file_path: '/tmp/a.csv' } },
+      ]), false, 1, EVENT_PROC);
+      const results = deps.persisted.find((message) => message.role === 'tool')?.toolResults ?? [];
+      expect(results.map((r) => r.metadata?.code)).toEqual(['HANDED_OFF_TO_BACKGROUND', 'HANDED_OFF_TO_BACKGROUND']);
+    });
+
+    it('failed handoff keeps TOOL_DISABLED_FOR_RUN', async () => {
+      const prompt = '明天上午 9 点提醒我交报告，请用 Bash 执行多行 osascript 建提醒';
+      const ctx = prepare(prompt, { workspaceScope: undefined, maxToolCallRetries: 0 });
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      await processor.handleToolResponse(responseOf([
+        { id: 'bp-fail', name: 'Bash', arguments: { command: 'osascript' } },
+      ]), false, 1, EVENT_PROC);
+      const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+      expect(sealed?.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    });
   });
 
   // plan-exit 兜底：写工具被兜底窗口拦住，不因「可交后台」改道。

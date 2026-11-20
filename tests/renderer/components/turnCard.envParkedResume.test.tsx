@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import type { EnvAssistNotice } from '../../../src/shared/contract/envAssist';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { applyConversationStreamEvent } from '../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
+import { envParkedTurnDuration } from '../../../src/renderer/utils/envParkedTurn';
 import { hydrateToolCallResults } from '../../../src/renderer/utils/messageHydration';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
@@ -277,5 +279,125 @@ describe('parked span starts at the parked call under live message shapes', () =
     store(rows);
     render(<TurnCard turn={project(rows)} sessionId={SESSION} forceExpanded />);
     expect(duration()).toBe('用时 23s'); // 23863ms floors to 23s; 245176 - (1795139744348 - 1795139523035) = 23863ms
+  });
+});
+
+describe('persisted calendar permission park across runs', () => {
+  const sessionId = 'session_1795177181906_badabcf6';
+  const runId = 'run-579e2b22-00b5-43e5-802a-630b10464653';
+  const noticeId = `${runId}|perm_calendars|calendar`;
+  const callId = 'call_59c91e8f7a7342599e2eddd2';
+  const carrierId = '9f2a4778-83a0-405e-b513-8304b982ce0d';
+  const parkedAt = 1795177279496;
+  const calendarNotice: EnvAssistNotice = {
+    id: noticeId, sessionId, runId, class: 'perm_calendars',
+    target: { id: 'calendar', labelKey: 'env.target.calendar' },
+    phase: 'needs_user', sentenceKey: 'env.sentence.calendar',
+    action: { kind: 'request_grant', labelKey: 'env.allow.calendar', payload: { pane: 'calendars' } },
+    resume: { mode: 'manual' }, updatedAt: parkedAt, parkedToolCallId: callId,
+  };
+  const parkedCard: Message = {
+    id: `env-assist:${noticeId}`, role: 'assistant', content: '', timestamp: parkedAt,
+    metadata: { envAssist: calendarNotice, correlation: {
+      turnId: '3a461842-8ea0-4643-92ad-ccc38da4ca03', traceId: '5416fda8b89a21fea45ed16eaf5cd9ee',
+    } },
+  };
+
+  function calendarRows(): Message[] {
+    const { action: _action, ...rest } = calendarNotice;
+    const resolvedCard: Message = {
+      ...parkedCard, metadata: { ...parkedCard.metadata, envAssist: {
+        ...rest, phase: 'resolved', doneKey: 'env.done.calendar', updatedAt: 1795177471675,
+      } },
+    };
+    const events = { action: 'list_events', from_local: '2026-11-21 00:00', to_local: '2026-11-21 23:59' };
+    const statusId = 'call_94f5c633eeab4b92913e8d0a';
+    const eventsId = 'call_1fabfcba0e774edcada64085';
+    const status = { toolCallId: statusId, success: true, output: '已允许访问日历。', duration: 24 };
+    const result = { toolCallId: eventsId, success: true, output: '没有找到匹配的日历事件。', duration: 5503 };
+    // Row 13375 is the permission notice itself. Only relevant metadata and tool output are retained.
+    return [
+      { id: '6d097cdf-b604-45fd-b26f-e8b56a822c98', role: 'user', content: '明天日历上有什么安排', timestamp: 1795177189887 },
+      { id: carrierId, role: 'assistant', content: '', timestamp: 1795177197183, thinking: '查询日历。',
+        toolCalls: [{ id: callId, name: 'calendar', arguments: events }],
+        contentParts: [{ type: 'text', text: '' }, { type: 'tool_call', toolCallId: callId }],
+        metadata: { correlation: parkedCard.metadata?.correlation } },
+      resolvedCard,
+      { id: `${carrierId}:interrupted-tool-result:${callId}`, role: 'tool', content: '', timestamp: 1795177472760,
+        toolResults: [{ toolCallId: callId, success: false, duration: 0,
+          error: 'interrupted: process crashed before a result was recorded; do not assume it ran or succeeded' }] },
+      { id: '40bce46f-9289-46d2-8612-9cc52de29642', role: 'assistant', content: '', timestamp: 1795177480963,
+        toolCalls: [{ id: statusId, name: 'calendar', arguments: { action: 'get_status' }, result: status }],
+        contentParts: [{ type: 'text', text: '' }, { type: 'tool_call', toolCallId: statusId }],
+        metadata: { correlation: { turnId: '9df5698d-31eb-4c08-9de3-a9ab3523f86a' } } },
+      { id: '56433d19-bb6c-4e3d-8fd1-8ac74b9c34ff', role: 'tool', content: '', timestamp: 1795177481498, toolResults: [status] },
+      { id: '3c39f45f-47b7-47a6-976b-59a4aad3648d', role: 'assistant', content: '', timestamp: 1795177483688,
+        toolCalls: [{ id: eventsId, name: 'calendar', arguments: events, result }],
+        contentParts: [{ type: 'text', text: '' }, { type: 'tool_call', toolCallId: eventsId }],
+        metadata: { correlation: { turnId: 'd75b59d5-3d01-432a-a324-409a0cc0a6b5' } } },
+      { id: '0f756feb-1070-47ec-9a38-41677564ca16', role: 'tool', content: '', timestamp: 1795177489376, toolResults: [result] },
+      { id: '4314d248-3c97-4f5e-a297-709ae52634d5', role: 'assistant', content: '明天（11月21日，周六）日历上没有任何安排，是空闲的一天。', timestamp: 1795177490787 },
+    ];
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({ disclosureLevel: 'simple', language: 'zh', processingSessionIds: new Set(), isProcessing: false });
+  });
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ currentSessionId: null, messages: [], sessions: [] });
+  });
+
+  function renderFolded(rows: Message[], label: string) {
+    const messages = hydrateToolCallResults(rows);
+    useSessionStore.setState({ currentSessionId: sessionId, messages });
+    const turn = projectTurns(messages, sessionId, false).turns[0];
+    render(<TurnCard turn={turn} sessionId={sessionId} />);
+    const header = screen.getByRole('button', { name: /用时/ });
+    console.log(label, JSON.stringify({
+      nodes: turn.nodes.map(node => [node.type, node.timestamp, node.toolCall?.id, node.metadata?.envAssist?.parkedToolCallId]),
+      hasEnvPark: turn.nodes.some(node => node.metadata?.envAssist?.parkedToolCallId),
+      header: header.textContent,
+    }));
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    return header.textContent;
+  }
+
+  it('shows active time after reloading the resolved SQLite history', () => {
+    expect(renderFolded(calendarRows(), 'calendar SQLite replay')).toBe('用时 1m 47s');
+  });
+
+  it('shows time through the park point while the calendar card is waiting', () => {
+    const messages = hydrateToolCallResults([...calendarRows().slice(0, 2), parkedCard]);
+    const turn = projectTurns(messages, sessionId, false).turns[0];
+    const elapsed = envParkedTurnDuration(turn, messages);
+    console.log('calendar still parked, elapsed ms:', elapsed);
+    expect(elapsed).toBe(89_609);
+  });
+
+  it('shows wall-clock time for the same calendar work without a park', () => {
+    expect(renderFolded(calendarRows().filter(row => row.id !== parkedCard.id), 'calendar without park')).toBe('用时 5m 0s');
+  });
+
+  it('shows active time when the persisted park card arrives on the live message stream', () => {
+    const rows = calendarRows();
+    useSessionStore.setState({ currentSessionId: sessionId, messages: rows.slice(0, 2) });
+    const state = {
+      currentTurnMessageId: carrierId, committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map(), segmentRedirectByTurn: new Map(),
+    };
+    const { addMessage, setMessages, updateMessage } = useSessionStore.getState();
+    const actions = {
+      getMessages: () => useSessionStore.getState().messages,
+      addMessage, setMessages, updateMessage,
+      queueUpdate: () => {},
+      now: () => parkedAt,
+    };
+    applyConversationStreamEvent({ type: 'message', data: parkedCard }, state, actions);
+    applyConversationStreamEvent({ type: 'message', data: parkedCard }, state, actions);
+    const messages = actions.getMessages();
+    expect(renderFolded([...messages, ...rows.slice(3)], 'calendar live park replay')).toBe('用时 1m 47s');
+    expect(messages.filter(row => row.id === parkedCard.id)).toHaveLength(1);
+    expect(messages.find(row => row.id === carrierId)?.timestamp).toBe(rows[1].timestamp);
   });
 });

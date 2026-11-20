@@ -187,7 +187,7 @@ export const BrowserAgentWindowOverflowMenu: React.FC<{
         data-testid="browser-agent-window-more"
       />
       {open && (
-        <div className="absolute right-0 top-full z-40 mt-1 w-56 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-1 shadow-xl backdrop-blur">
+        <div className="absolute right-0 top-full z-40 mt-1 w-64 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-1 shadow-xl backdrop-blur">
           <div className="px-2 py-1.5 text-[10px] text-zinc-500">{modeLabel}</div>
           <GhostButton
             size="sm"

@@ -82,8 +82,31 @@ describe('remindersUpdateModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
+    it('rejects an update whose only time field is an unknown name (remind_at alias), before permission', async () => {
+      const canUseTool = vi.fn(async () => ({ allow: true }));
+      const result = await run({ ...validArgs, remind_at: '2026-11-22 15:00' }, makeCtx(), canUseTool as CanUseToolFn);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toContain('remind_at_ms');
+        expect(result.error).toContain('clear_remind_at');
+        expect(String(result.error)).not.toMatch(/[一-鿿]/);
+      }
+      expect(canUseTool).not.toHaveBeenCalled();
+      expect(execMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects an update with no optional change field at all, before permission', async () => {
+      const canUseTool = vi.fn(async () => ({ allow: true }));
+      const result = await run({ ...validArgs }, makeCtx(), canUseTool as CanUseToolFn);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      expect(canUseTool).not.toHaveBeenCalled();
+      expect(execMock).not.toHaveBeenCalled();
+    });
+
     it('returns PERMISSION_DENIED when canUseTool denies', async () => {
-      const result = await run(validArgs, makeCtx(), denyAll);
+      const result = await run({ ...validArgs, completed: true }, makeCtx(), denyAll);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('PERMISSION_DENIED');
     });
@@ -92,14 +115,14 @@ describe('remindersUpdateModule (native)', () => {
       const ctrl = new AbortController();
       ctrl.abort();
       const ctx = makeCtx({ abortSignal: ctrl.signal });
-      const result = await run(validArgs, ctx);
+      const result = await run({ ...validArgs, completed: true }, ctx);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
 
     it('returns NOT_INITIALIZED when connector missing', async () => {
       getMock.mockReturnValue(undefined);
-      const result = await run(validArgs);
+      const result = await run({ ...validArgs, completed: true });
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.code).toBe('NOT_INITIALIZED');
@@ -116,7 +139,7 @@ describe('remindersUpdateModule (native)', () => {
         { stderr: 'Not authorized to send Apple events to Reminders.', code: 1 },
       );
       execMock.mockRejectedValue(rawError);
-      const result = await run(validArgs, ctx);
+      const result = await run({ ...validArgs, completed: true }, ctx);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).not.toContain('osascript -e');
@@ -136,7 +159,7 @@ describe('remindersUpdateModule (native)', () => {
 
     it('wraps connector errors', async () => {
       execMock.mockRejectedValue(new Error('boom'));
-      const result = await run(validArgs);
+      const result = await run({ ...validArgs, completed: true });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toContain('Reminders update failed: boom');
       expect((result as { meta?: { artifact?: unknown } }).meta?.artifact).toMatchObject({
@@ -225,7 +248,7 @@ describe('remindersUpdateModule (native)', () => {
     it('emits starting progress', async () => {
       execMock.mockResolvedValue({ data: { id: 'r1', list: 'Work', title: 'x', completed: false } });
       const onProgress = vi.fn();
-      await run(validArgs, makeCtx(), allowAll, onProgress);
+      await run({ ...validArgs, completed: true }, makeCtx(), allowAll, onProgress);
       const stages = onProgress.mock.calls.map((c) => c[0].stage);
       expect(stages).toContain('starting');
     });

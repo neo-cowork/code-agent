@@ -40,6 +40,8 @@ export function resolveToolCallTerminalState(input: {
 }) {
   const { toolCall, sessionId, sessionLive, awaitingApproval, interruptionReason, delegatedWork } = input;
   const { result, task } = ownOutcome(toolCall, sessionId, input.tasks);
+  // 同一轮已交给后台任务的调用：工作没丢，不当失败、也不读作「没执行」。
+  const handedOff = result?.metadata?.code === 'HANDED_OFF_TO_BACKGROUND';
   const agentId = input.agentId
     ?? (typeof result?.metadata?.agentId === 'string' ? result.metadata.agentId : undefined)
     ?? result?.output?.match(/^- Agent ID:\s*(\S+)\s*$/m)?.[1];
@@ -51,7 +53,7 @@ export function resolveToolCallTerminalState(input: {
   // (a failure already recovered by a later success stays settled).
   if (delegatedWork && result?.metadata?.recovered !== true) state = delegatedWork === 'working' ? 'running' : delegatedWork === 'cancelled' ? 'interrupted' : delegatedWork;
   // Otherwise an actual call outcome takes precedence over every inferred task/agent outcome.
-  else if (result) state = result.success || result.metadata?.recovered === true ? 'completed' : 'failed';
+  else if (result) state = result.success || result.metadata?.recovered === true || handedOff ? 'completed' : 'failed';
   else if (awaitingApproval) state = 'running';
   else if (task) state = task.status === 'completed' ? 'completed'
     : task.status === 'cancelled' ? 'interrupted'
@@ -74,8 +76,8 @@ export function resolveToolCallTerminalState(input: {
     && isParkedApprovalClosureSentence(result.error);
   // 主机封存、从未执行的 Bash（metadata.skipped）：即使被降级为 recovered（state 仍是 completed、
   // 不变色），标题也不能说「运行了」。executed===true 是命令跑完后才被读循环封口替换的结果，不算没执行。只改措辞，不改 state。
-  const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !!toolCall && classifyToolName(toolCall.name) === 'bash';
-  return { state, displayStatus, stepStatus, notRun, skipped };
+  const skipped = result?.metadata?.skipped === true && result.metadata.executed !== true && !handedOff && !!toolCall && classifyToolName(toolCall.name) === 'bash';
+  return { state, displayStatus, stepStatus, notRun, skipped, handedOff };
 }
 
 /** Preserve even empty tool results when adapting the trace's flattened representation. */
