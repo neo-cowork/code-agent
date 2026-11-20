@@ -71,6 +71,7 @@ const traceRepoState = vi.hoisted(() => ({
 }));
 const databaseState = vi.hoisted(() => ({
   getSwarmRunDetailPreferLedger: vi.fn(),
+  getSession: vi.fn(),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -798,5 +799,73 @@ describe('swarm.ipc run-scoped control plane', () => {
 
     expect(traceRepoState.getRunDetail).toHaveBeenCalledWith(opaqueStorageRunId);
     expect(result).toBeNull();
+  });
+
+  it('sanitizes agent dispatchedTask/finalOutput for display: shorten paths, drop replay lines', async () => {
+    databaseState.getSession.mockReturnValue({ workingDirectory: '/Users/x/ws' });
+    const agentRecord = {
+      runId: 'run-a',
+      agentId: agentA,
+      name: 'helper-C',
+      role: 'explore',
+      status: 'completed' as const,
+      startTime: 1,
+      endTime: 2,
+      durationMs: 1,
+      tokensIn: 1,
+      tokensOut: 1,
+      toolCalls: 1,
+      costUsd: 0,
+      error: null,
+      failureCategory: null,
+      filesChanged: [],
+      dispatchedTask: 'Read /Users/x/ws/notes.txt then write /tmp/outA/brief.md',
+      finalOutput: 'done, saved to /Users/x/ws/notes.txt\nTool Write: Success',
+    };
+    const detail = { ...traceDetail('run-a', scopeA.sessionId), agents: [agentRecord] };
+    databaseState.getSwarmRunDetailPreferLedger.mockReturnValueOnce(detail);
+
+    const result = await handler('swarm:get-trace-run-detail')({}, {
+      sessionId: scopeA.sessionId,
+      runId: 'run-a',
+    } as never) as SwarmRunDetail;
+
+    expect(result.agents[0].dispatchedTask).toBe('Read ./notes.txt then write outA/brief.md');
+    expect(result.agents[0].finalOutput).toBe('done, saved to ./notes.txt');
+    expect(result.agents[0].dispatchedTask).not.toContain('/Users/');
+    expect(result.agents[0].finalOutput).not.toMatch(/^Tool \w+: (?:Success|Error|Failed)/m);
+  });
+
+  it('treats absolute paths as outside-workspace when the session root is unknown', async () => {
+    databaseState.getSession.mockReturnValue(null);
+    const agentRecord = {
+      runId: 'run-a',
+      agentId: agentA,
+      name: 'helper-C',
+      role: 'explore',
+      status: 'completed' as const,
+      startTime: 1,
+      endTime: 2,
+      durationMs: 1,
+      tokensIn: 1,
+      tokensOut: 1,
+      toolCalls: 1,
+      costUsd: 0,
+      error: null,
+      failureCategory: null,
+      filesChanged: [],
+      dispatchedTask: 'Read /Users/x/ws/notes.txt',
+      finalOutput: 'ok',
+    };
+    const detail = { ...traceDetail('run-a', scopeA.sessionId), agents: [agentRecord] };
+    databaseState.getSwarmRunDetailPreferLedger.mockReturnValueOnce(detail);
+
+    const result = await handler('swarm:get-trace-run-detail')({}, {
+      sessionId: scopeA.sessionId,
+      runId: 'run-a',
+    } as never) as SwarmRunDetail;
+
+    expect(result.agents[0].dispatchedTask).toBe('Read ws/notes.txt');
+    expect(result.agents[0].dispatchedTask).not.toContain('/Users/');
   });
 });

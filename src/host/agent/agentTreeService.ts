@@ -35,9 +35,8 @@ import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
 import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
-import { getDatabase } from '../services/core/databaseService';
 import { stripWorkdirPrefix } from './workdirPrefix';
-import { shortenDisplayPaths } from './workspacePathDisplay';
+import { cleanDisplayText, resolveSessionWorkspaceRoot, shortenDisplayPaths } from './workspacePathDisplay';
 
 export interface AgentTreeSpawnAgentSource {
   background?: boolean;
@@ -350,32 +349,14 @@ function isToolCallObservation(text: string | undefined): boolean {
   return lines.length > 0 && lines.every((line) => /^Calling \S+\(/.test(line));
 }
 
-// 与 renderer RAW_TOOL_DUMP（delegationPresentation.ts）同口径：整段 executor
-// 工具结果回放以 `Tool results:` 开头；`Tool X: Success/Error/Failed`、
-// `Calling X(` 观测回放行、`[cwd: …]` Bash 工作目录回放行都不是给用户看的卡片文案。
-const TOOL_RESULTS_DUMP = /^\s*Tool results:/;
-const TOOL_RESULT_LINE = /^Tool \w+: (?:Success|Error|Failed)\b/;
-const CALLING_LINE = /^Calling \S+\(/;
-const CWD_LINE = /^\[cwd:[^\]]*\]\s*$/;
-
 /**
- * 模型/工具文本 → 卡片可显文本：剥注入前缀、丢整段工具回放、剔除回放行与
- * [cwd:] 行、绝对路径按工作区缩短、最后截断。拿不到自然语言剩余时返回
- * undefined——调用方保留上一条好值或中性兜底，绝不把回放怼到卡片上。
+ * 模型/工具文本 → 卡片可显文本：cleanDisplayText（剥前缀、丢回放行、缩短路径）
+ * 之后再截断到卡片长度。拿不到自然语言剩余时返回 undefined——调用方保留
+ * 上一条好值或中性兜底，绝不把回放怼到卡片上。
  */
 function toDisplayText(text: string | undefined, workspaceRoot: string | undefined): string | undefined {
-  const stripped = stripWorkdirPrefix(text)?.trim();
-  if (!stripped || TOOL_RESULTS_DUMP.test(stripped)) return undefined;
-  const remainder = stripped
-    .split('\n')
-    .filter((line) => {
-      const trimmed = line.trim();
-      return !TOOL_RESULT_LINE.test(trimmed) && !CALLING_LINE.test(trimmed) && !CWD_LINE.test(trimmed);
-    })
-    .join('\n')
-    .trim();
-  if (!remainder) return undefined;
-  return truncate(shortenDisplayPaths(remainder, workspaceRoot));
+  const cleaned = cleanDisplayText(text, workspaceRoot);
+  return cleaned === undefined ? undefined : truncate(cleaned);
 }
 
 function progressFromContext(
@@ -718,20 +699,6 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     nodes: flat,
     summary,
   };
-}
-
-/**
- * 展示侧工作区根的唯一来源：会话记录里的 workingDirectory（spawn 注入的
- * `[工作目录: …]` 前缀在登记前就被剥掉，快照源里无处可解析）。DB 未就绪/
- * 会话没落过目录时返回 undefined，所有绝对路径按「区外」缩短处理。
- */
-function resolveSessionWorkspaceRoot(sessionId: string | undefined): string | undefined {
-  if (!sessionId) return undefined;
-  try {
-    return getDatabase().getSession(sessionId)?.workingDirectory?.trim() || undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}): AgentTreeSnapshot {
