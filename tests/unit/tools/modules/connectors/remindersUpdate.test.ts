@@ -2,7 +2,7 @@
 // RemindersUpdate (native ToolModule) Tests — P0-6.3 Batch 5
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -166,6 +166,74 @@ describe('remindersUpdateModule (native)', () => {
         role: 'receipt',
         metadata: { success: false, failureReason: expect.any(String) },
       });
+    });
+  });
+
+  describe('past remind_at_ms guard', () => {
+    const updated = { data: { id: 'r1', list: 'Work', title: 'Old title', completed: false } };
+    const now = new Date('2026-11-20T12:00:00Z').getTime();
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(now);
+    });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('rejects a past remind_at_ms before permission and before the connector', async () => {
+      const canUseTool = vi.fn(async () => ({ allow: true }));
+      const result = await run({ ...validArgs, remind_at_ms: now - 3_600_000 }, makeCtx(), canUseTool as CanUseToolFn);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('REMINDER_TIME_IN_PAST');
+        expect(result.error).toContain('has already passed');
+        expect(result.error).toContain('The reminder was not changed');
+        expect(result.error).toContain('retry only after they confirm');
+        expect(result.error).not.toContain('create');
+      }
+      expect(canUseTool).not.toHaveBeenCalled();
+      expect(getMock).not.toHaveBeenCalled();
+      expect(execMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects a past remind_at_ms even when clear_remind_at is also sent', async () => {
+      const canUseTool = vi.fn(async () => ({ allow: true }));
+      const result = await run(
+        { ...validArgs, remind_at_ms: now - 3_600_000, clear_remind_at: true },
+        makeCtx(),
+        canUseTool as CanUseToolFn,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('REMINDER_TIME_IN_PAST');
+      expect(canUseTool).not.toHaveBeenCalled();
+      expect(execMock).not.toHaveBeenCalled();
+    });
+
+    it('lets a remind_at_ms inside the 60s grace window through to the connector', async () => {
+      execMock.mockResolvedValue(updated);
+      const result = await run({ ...validArgs, remind_at_ms: now - 59_000 });
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ reminder_id: 'r1' }));
+    });
+
+    it('lets a future remind_at_ms through to the connector', async () => {
+      execMock.mockResolvedValue(updated);
+      const result = await run({ ...validArgs, remind_at_ms: now + 3_600_000 });
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ reminder_id: 'r1' }));
+    });
+
+    it('a title-only update is unaffected by the guard', async () => {
+      execMock.mockResolvedValue(updated);
+      const result = await run({ ...validArgs, title: 'Ship PR' });
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ title: 'Ship PR' }));
+    });
+
+    it('clear_remind_at:true alone is unaffected by the guard', async () => {
+      execMock.mockResolvedValue(updated);
+      const result = await run({ ...validArgs, clear_remind_at: true });
+      expect(result.ok).toBe(true);
+      expect(execMock).toHaveBeenCalledWith('update_reminder', expect.objectContaining({ clear_remind_at: true }));
     });
   });
 
