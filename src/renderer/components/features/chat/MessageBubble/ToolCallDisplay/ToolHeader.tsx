@@ -147,6 +147,10 @@ export function ToolHeader({
     resolveStreamInterruptionOutcomeKey(interruptionReason)
   ].timeline;
   const title = humanizeInternalText(buildToolHeaderTitle(toolCall, displayName, assembled?.terminalKey === 'env-waiting' ? assembled.terminal : interruptionOutcome.label), language).text;
+  // aria-label 与 tooltip 同口径：普通路径 humanizeInternalText 原样放行（不改行为），
+  // 只有上传副本这类 /private/var/folders 临时路径被整体改写，屏幕阅读器不再读到
+  // 绝对路径（N-FIX-HUMANIZE-TEMP-PATH-PRIVATE-PREFIX-LEFTOVER）。
+  const humanizedFilePath = filePath ? humanizeInternalText(filePath, language).text : '';
   const pluginOriginDisplayName = getPluginOriginDisplayName(toolCall);
 
   return (
@@ -175,7 +179,7 @@ export function ToolHeader({
           data-testid="tool-header-open-preview"
           className={`${status === 'interrupted' ? 'text-zinc-500 font-normal hover:text-zinc-300' : 'text-zinc-200 font-semibold hover:text-zinc-100'} truncate min-w-0 text-left hover:underline underline-offset-2`}
           title={title}
-          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', filePath)}
+          aria-label={t.toolStepHumanize.openPreviewAria.replace('{path}', humanizedFilePath)}
           onClick={handleOpenPreview}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
