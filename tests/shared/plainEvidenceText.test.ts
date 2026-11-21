@@ -64,14 +64,26 @@ describe('plainEvidenceText', () => {
     // 复判 r2：无空格时不得吞掉「中文+CI/」整段——化简只发生在明确像文件路径的 token 上
     expect(plainEvidenceText('周会CI/CD流水线两周没跑')).toBe('周会CI/CD流水线两周没跑');
     expect(plainEvidenceText('CI/CD流水线两周没跑')).toBe('CI/CD流水线两周没跑');
+    expect(plainEvidenceText('跑CI/CD流水线')).toBe('跑CI/CD流水线');
     expect(plainEvidenceText('覆盖率评分4.5/5')).toBe('覆盖率评分4.5/5');
+    expect(plainEvidenceText('评分4.5/5')).toBe('评分4.5/5');
     expect(plainEvidenceText('A/B实验结果未出')).toBe('A/B实验结果未出');
     expect(plainEvidenceText('在2026/11/20核对过')).toBe('在2026/11/20核对过');
     expect(plainEvidenceText('检查工作区/weekly 进度')).toBe('检查工作区/weekly 进度');
   });
 
-  it('still reduces CJK-prefixed real paths (r2)', () => {
-    expect(plainEvidenceText('工作区/weekly/x 目录里')).toBe('x 目录里');
-    expect(plainEvidenceText('检查工作区/周报.md 是否更新')).toBe('周报 是否更新');
+  it('keeps unspaced CJK words glued to a real path; simplifies only the path part (r3)', () => {
+    // 复判 r3：反引号剥掉后中文紧贴 ASCII 路径（无空格），前导中文是动词/主语，不许丢
+    expect(plainEvidenceText('已核对`workspace/weekly/status`')).toBe('已核对status');
+    expect(plainEvidenceText('见`workspace/weekly/2026-W46.md`')).toBe('见2026-W46');
+    expect(plainEvidenceText('检查工作区/周报.md 是否更新')).toBe('检查工作区周报 是否更新');
+    expect(plainEvidenceText('工作区/weekly/2026-W46.md')).toBe('工作区2026-W46');
+  });
+
+  it('leaves ambiguous CJK slash text unchanged rather than dropping words (r3)', () => {
+    // 『weekly/x』与『CI/CD』结构同形，分不出中文目录名还是缩写 → 基线是原样保留，不丢词
+    expect(plainEvidenceText('工作区/weekly/x 目录里')).toBe('工作区/weekly/x 目录里');
+    expect(plainEvidenceText('他/她 都可以')).toBe('他/她 都可以');
+    expect(plainEvidenceText('一/二/三 的比例')).toBe('一/二/三 的比例');
   });
 });

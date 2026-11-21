@@ -10,6 +10,10 @@
 // 判路径的保守口径：对「由分隔符连成的整个 token」一次判定（isPathLike），不再
 // 分段拼接——r2 复判的教训：分段处理会让兜底规则吞掉「中文+CI/」整段，把
 // 『周会CI/CD流水线』改坏成『CD流水线』且不可恢复；基线是原样保留。
+// r3：反引号剥掉后中文常紧贴 ASCII 路径（无空格）——『已核对workspace/…』里的
+// 前导中文是动词/主语，不是路径段。带前导非 ASCII 段的 token 一律先拆出该段
+// 原样保留，只化简其后的 ASCII 余部；余部不像路径则整个 token 不动（宁留中文
+// 目录名/斜杠，不丢词：『weekly/x』与『CI/CD』结构同形，分不出就不动）。
 
 const MD_LINK_RE = /!?\[([^\]]*)\]\([^)]*\)/g;
 const URL_RE = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s，。；：、"'`\]()（）【】《》]+/g;
@@ -40,6 +44,24 @@ function isPathLike(token: string): boolean {
   return segments.length >= 3 && segments.slice(1, -1).every((s) => /[A-Za-z]/.test(s));
 }
 
+const LEADING_NON_ASCII_RE = /^\P{ASCII}+/u;
+
+// r3：token 的前导非 ASCII 连续段（贴在路径上的中文动词/主语/目录名）拆出来
+// 原样保留，只化简 ASCII 余部。判定余部前先剥前导分隔符——『他/她』的余部
+// '/她' 不能裸凭前导斜杠算路径；真绝对路径剥后仍有多段/扩展名可判。
+// 余部不像路径 → 整个 token 原样返回，绝不丢词。
+function simplifySlashToken(match: string): string {
+  const leading = LEADING_NON_ASCII_RE.exec(match);
+  if (!leading) {
+    return isPathLike(match) ? basenameNoExt(match) : match;
+  }
+  const prefix = leading[0];
+  const rest = match.slice(prefix.length);
+  const restCore = rest.replace(/^[\\/]+/, '');
+  if (!restCore || !isPathLike(restCore)) return match;
+  return prefix + basenameNoExt(rest);
+}
+
 /**
  * 把一条 evidence 压成可读引文：不带 /-路径、.md 或反引号。
  * 输入为空或全空白时返回 ''。
@@ -54,7 +76,7 @@ export function plainEvidenceText(text: string): string {
   return withoutMarkup
     .replace(URL_RE, basenameNoExt)
     .replace(WIN_ABS_RE, basenameNoExt)
-    .replace(SLASH_TOKEN_RE, (match) => (isPathLike(match) ? basenameNoExt(match) : match))
+    .replace(SLASH_TOKEN_RE, simplifySlashToken)
     .replace(BARE_DOC_RE, (match) => match.replace(TRAILING_DOC_EXTS_RE, ''))
     .replace(/\s+/g, ' ')
     .trim();
