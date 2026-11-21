@@ -8,7 +8,7 @@ vi.mock('../../../../src/host/services/surfaceExecution/keptBrowserRegistry', ()
   getKeptBrowserRegistry: () => ({ snapshot: () => ({ state: registry.state }) }),
 }));
 
-import { applyBrowserKeepClaimGate } from '../../../../src/host/agent/runtime/browserKeepClaimGate';
+import { applyBrowserKeepClaimGate, collectBrowserEngines } from '../../../../src/host/agent/runtime/browserKeepClaimGate';
 import { BROWSER_KEEP_CLAIM_GATE_WARNING } from '../../../../src/shared/i18n/browserKeepClaimGateWarning';
 
 const base = { sessionId: 's1', usedBrowserTool: true, retriesDone: 0 };
@@ -36,7 +36,7 @@ describe('applyBrowserKeepClaimGate', () => {
   it('catches the follow-up wording without a browser tool call in this run', async () => {
     const r = await applyBrowserKeepClaimGate({ sessionId: 's1', usedBrowserTool: false, retriesDone: 0, recentUserMessages: ['那个窗口真的留着吗', '把结果页留给我'], assistantContent: '是的，窗口保留着，没有关闭。' });
     expect(r.action).toBe('retry');
-    expect(r.reason).toContain('user_text_mentions_browser');
+    expect(r.reason).toContain('user_text_keep_intent');
   });
 
   it('does nothing when the registry holds a live kept entry', async () => {
@@ -84,6 +84,30 @@ describe('applyBrowserKeepClaimGate', () => {
     '窗口不再开着了。',
   ])('keeps honest text "%s" out of the gate', async (text) => {
     expect((await applyBrowserKeepClaimGate({ ...base, assistantContent: text })).action).toBe('none');
+  });
+
+  it.each([
+    ['把页面边距改窄', '已调整，保留了页面其他设置。'],
+    ['整理 PPT 页面', '页面布局会保留。'],
+    ['看一下表格里这个 sheet tab 的数据', 'I left the issue open.'],
+  ])('no browser call, non-browser task: "%s" / "%s" passes', async (user, reply) => {
+    const r = await applyBrowserKeepClaimGate({ sessionId: 's1', usedBrowserTool: false, retriesDone: 0, recentUserMessages: [user], assistantContent: reply });
+    expect(r.action).toBe('none');
+  });
+
+  it('skips the gate when every browser call used the relay engine', async () => {
+    const r = await applyBrowserKeepClaimGate({ ...base, browserEngines: ['relay', 'relay'], assistantContent: '页面还开着，你可以直接看。' });
+    expect(r.action).toBe('none');
+    const mixed = await applyBrowserKeepClaimGate({ ...base, browserEngines: ['relay', 'managed'], assistantContent: '窗口还开着，你可以直接看。' });
+    expect(mixed.action).toBe('retry');
+  });
+
+  it('collectBrowserEngines reads engine from recorded call params and result metadata', () => {
+    expect(collectBrowserEngines([
+      { role: 'user' },
+      { role: 'assistant', toolCalls: [{ id: 'c1', name: 'Browser', arguments: { action: 'navigate', engine: 'relay' } }, { id: 'c2', name: 'Read', arguments: {} }] },
+      { role: 'tool', toolResults: [{ toolCallId: 'c1', metadata: {} }] },
+    ])).toEqual(['relay']);
   });
 
   it('does nothing for unrelated chat or non-browser context', async () => {

@@ -26,16 +26,22 @@ import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { BROWSER_KEEP_CLAIM_GATE_WARNING } from '../../../src/shared/i18n/browserKeepClaimGateWarning';
 
-function setup(userText: string) {
+function setup(userText: string, opts: { toolsUsed?: string[]; browserEngine?: string } = {}) {
   const ctx = {
     sessionId: 'sess-keep-1',
     workingDirectory: '/tmp',
     artifact: ArtifactState.forTest(),
-    messages: [{ id: 'u1', role: 'user', content: userText, timestamp: Date.now() }] as Array<Record<string, unknown>>,
+    messages: [
+      { id: 'u1', role: 'user', content: userText, timestamp: Date.now() },
+      ...(opts.browserEngine ? [
+        { id: 'a1', role: 'assistant', content: '', timestamp: Date.now() + 1, toolCalls: [{ id: 'tc1', name: 'Browser', arguments: { action: 'navigate', url: 'https://example.com', engine: opts.browserEngine } }] },
+        { id: 't1', role: 'tool', content: '', timestamp: Date.now() + 2, toolResults: [{ toolCallId: 'tc1', success: true, output: 'ok' }] },
+      ] : []),
+    ] as Array<Record<string, unknown>>,
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
     contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'h' } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
-    turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 't1', currentIterationSpanId: 'i1', researchModeActive: false, toolsUsedInTurn: ['browser_action'], isSimpleTaskMode: false } as never),
+    turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 't1', currentIterationSpanId: 'i1', researchModeActive: false, toolsUsedInTurn: opts.toolsUsed ?? (opts.browserEngine ? ['Browser'] : ['browser_action']), isSimpleTaskMode: false } as never),
     turnQualityState: {},
     control: ControlState.forTest({ runAbortController: { signal: { aborted: false } } } as never),
     stats: RunStatsState.forTest({ totalToolCallCount: 1 } as never),
@@ -87,6 +93,19 @@ describe('MessageProcessor browser keep-claim gate', () => {
     expect(content.startsWith(BROWSER_KEEP_CLAIM_GATE_WARNING.zh)).toBe(true);
     expect(content).not.toContain('下面');
     expect(BROWSER_KEEP_CLAIM_GATE_WARNING.en).not.toMatch(/below/i);
+  });
+
+  it('relay-only run: the page really stays open in the user\'s Chrome, so the reply passes unchanged', async () => {
+    const { assembly, reply } = setup('帮我在我的 Chrome 里打开 example.com', { browserEngine: 'relay' });
+    expect(await reply('页面还开着，你可以直接看。', 2)).toBe('break');
+    expect(assembly.injectSystemMessage).not.toHaveBeenCalledWith(expect.anything(), 'browser-keep-claim-guard');
+    expect((assembly.addAndPersistMessage.mock.calls[0][0] as { content: string }).content).toBe('页面还开着，你可以直接看。');
+  });
+
+  it('document-editing run without any browser call: 保留了页面其他设置 passes unchanged', async () => {
+    const { assembly, reply } = setup('把页面边距改窄', { toolsUsed: ['Edit'] });
+    expect(await reply('已调整，保留了页面其他设置。', 2)).toBe('break');
+    expect((assembly.addAndPersistMessage.mock.calls[0][0] as { content: string }).content).toBe('已调整，保留了页面其他设置。');
   });
 
   it('passes the claim through untouched when a kept entry exists', async () => {

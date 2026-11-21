@@ -51,7 +51,7 @@ import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifac
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate, collectRecentUserTexts } from './desktopActionClaimGate';
-import { applyBrowserKeepClaimGate } from './browserKeepClaimGate';
+import { applyBrowserKeepClaimGate, collectBrowserEngines } from './browserKeepClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } from './hiddenWakeNoop';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
@@ -474,6 +474,7 @@ export class MessageProcessor {
       recentUserMessages: collectRecentUserTexts(this.ctx.messages),
       assistantContent: desktopClaimGate.content,
       usedBrowserTool: this.ctx.turn.toolsUsedInTurn.some((name) => name === 'Browser' || name === 'browser_action'),
+      browserEngines: collectBrowserEngines(this.ctx.messages),
       retriesDone: this.guardState.browserKeepClaimRetryCount,
     });
     if (browserKeepGate.action === 'retry') {
