@@ -246,7 +246,7 @@ export const CronJobList: React.FC<CronJobListProps> = ({ awaitingByJobId }) => 
                   onClick={() => setBuiltinOpen((open) => !open)}
                   aria-expanded={builtinExpanded}
                   data-testid="cron-builtin-group-toggle"
-                  className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-xs text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-300"
+                  className="flex w-full items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-xs text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-300"
                 >
                   {builtinExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   {cc.builtinGroupTitle.replace('{count}', String(builtinJobs.length))}
