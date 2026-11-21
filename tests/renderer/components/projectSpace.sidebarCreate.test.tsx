@@ -11,7 +11,7 @@ import { useSessionListLoadStore } from '../../../src/renderer/stores/sessionLis
 const project = vi.hoisted(() => ({
   id: 'weekly-reports',
   name: 'Weekly reports',
-  status: 'active',
+  status: 'active' as const,
   createdAt: 1,
   updatedAt: 1,
   spacePromotedAt: 1,
