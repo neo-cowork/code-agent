@@ -8,7 +8,12 @@ import { isStreamRecoveryMessage } from './streamRecoveryMessage';
 
 const PROTOCOL_MARKERS = /\[cancelled\]|\[未完成\s*[—-]\s*切换会话中断\]|\[连接中断\s*[—-]\s*部分回答已保留\]/giu;
 
-function hasStreamRecoveryInSameTurn(msg: Message, all: Message[], reason: StreamInterruptionReason): boolean {
+function hasStreamRecoveryInSameTurn(
+  msg: Message,
+  all: Message[],
+  reason: StreamInterruptionReason,
+  stoppedTurnId?: string,
+): boolean {
   const messageIndex = all.indexOf(msg);
   if (messageIndex < 0) return false;
 
@@ -28,8 +33,20 @@ function hasStreamRecoveryInSameTurn(msg: Message, all: Message[], reason: Strea
     }
   }
 
-  return all.slice(turnStart, turnEnd).some((message) => isStreamRecoveryMessage(message)
-    && (reason !== 'stream-break' || Boolean(message.content?.trim() || message.toolCalls?.length)));
+  return all.slice(turnStart, turnEnd).some((message) => {
+    const recoveryTurnId = message.metadata?.streamRecovery?.turnId;
+    if (!isStreamRecoveryMessage(message)) return false;
+    // 刷新时可能同时读到同一次 Stop 的落库正文和纯文本快照。没有工具行时，正文用落库版本。
+    if (stoppedTurnId && recoveryTurnId === stoppedTurnId && !message.toolCalls?.length) return false;
+    return reason !== 'stream-break' || Boolean(message.content?.trim() || message.toolCalls?.length);
+  });
+}
+
+export function stoppedPartialText(msg: Message, all: Message[], content: string): string | null {
+  if (isStreamRecoveryMessage(msg)) return null;
+  const visibleText = content.replace(PROTOCOL_MARKERS, '').trimEnd();
+  if (!visibleText || hasStreamRecoveryInSameTurn(msg, all, 'user', msg.metadata?.correlation?.turnId)) return null;
+  return visibleText;
 }
 
 export function bareInterruptionNode(
