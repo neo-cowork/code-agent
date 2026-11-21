@@ -188,6 +188,7 @@ export async function executeDelegateTask(
     attachments: ctx.subagent?.attachments as MessageAttachment[] | undefined,
     options: {
       mode: 'normal',
+      displayContent: prompt,
       toolScope: ctx.toolScope,
       executionIntent: ctx.executionIntent,
     },
