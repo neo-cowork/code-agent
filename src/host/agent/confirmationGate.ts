@@ -22,6 +22,7 @@ import { isSensitiveLogKey, redactCommandSecrets } from '../security/secretRedac
 import { isBashToolName } from '../tools/toolNames';
 import { resolveSubagentUserLabel } from './resolveSubagentUserLabel';
 import { resolveAgent } from './agentRegistry';
+import { relativizeWorkspacePaths } from './workspacePathDisplay';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ConfirmationGate');
@@ -37,21 +38,8 @@ function describeSpawnPermission(role: unknown, messages: ReturnType<typeof getS
   return readOnly ? messages.readOnlyPermission : messages.writePermission;
 }
 
-// 工作区内的绝对路径显示为相对路径；工作区外的路径原样保留（不得隐藏真实目标）。
-const ABSOLUTE_PATH_PATTERN = /(?<![\w:./\\~-])(?:[A-Za-z]:\\|\/)[^\s"'`<>，。；：、）)\]]*/g;
-
-function relativizeWorkspacePaths(text: string, workspaceRoot: string | undefined): string {
-  const root = workspaceRoot?.replace(/[\\/]+$/, '');
-  if (!root) return text;
-  const normalizedRoot = root.replace(/\\/g, '/');
-  return text.replace(ABSOLUTE_PATH_PATTERN, (match) => {
-    const normalized = match.replace(/\\/g, '/');
-    if (normalized === normalizedRoot) return './';
-    if (!normalized.startsWith(`${normalizedRoot}/`)) return match;
-    const rest = normalized.slice(normalizedRoot.length + 1);
-    return rest ? `./${rest}` : './';
-  });
-}
+// 绝对路径的展示侧改写共用 workspacePathDisplay（工作区内 → ./相对路径，
+// 工作区外确认门保留原样：不得隐藏真实目标；代理树则只留最后两段）。
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([
