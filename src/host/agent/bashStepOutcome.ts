@@ -15,7 +15,7 @@ const HANDED_OFF_CODE = 'HANDED_OFF_TO_BACKGROUND';
  * （toolExecutor 的每条拒绝路径——用户拒绝 / 命令无法解析而 fail-closed / 规则拦截 / 超时 / 取消——
  * 都挂 failureCode=permission-denied；只认主机挂的结构化字段，绝不解析命令自己的 stdout/stderr）。
  */
-export function toolResultNeverRan(result: Pick<ToolResult, 'metadata'>): boolean {
+function toolResultNeverRan(result: Pick<ToolResult, 'metadata'>): boolean {
   const meta = result.metadata;
   if (!meta) return false;
   if (meta.skipped === true && meta.executed !== true && meta.code !== HANDED_OFF_CODE) return true;
@@ -37,7 +37,7 @@ export function markBashStepNotRun(
   return steps.map((step) => (step.callId === callId ? { ...step, notRun: true } : step));
 }
 
-export function markLastToolStepNotRun(
+function markLastToolStepNotRun(
   step: LastToolStep | undefined,
   callId: string,
   result: Pick<ToolResult, 'metadata'>,
