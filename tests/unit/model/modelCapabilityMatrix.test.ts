@@ -139,6 +139,8 @@ describe('model capability matrix', () => {
       ['volcengine', 'doubao-1.5-pro-256k'],
       ['longcat', 'LongCat-2.0'],
       ['xiaomi', 'mimo-v2.5-pro'],
+      // ADR-068 as-built note 8: the dogfood endpoint can restart from the beginning.
+      ['xiaomi', 'neohorse-1.5-flash-preview'],
       ['groq', 'llama-3.3-70b-versatile'],
       ['perplexity', 'sonar-pro'],
       ['local', 'qwen2.5-coder:7b'],
