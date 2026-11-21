@@ -304,6 +304,8 @@ export const zhSettingsSystem = {
       desktopOnlyFeature: '部分功能仅在桌面版可用',
       desktopOnlyLabel: '(桌面版)',
       channelsManageDesktopOnly: 'Web 版只能查看通道账号和状态；添加、连接/断开、编辑、删除请在桌面版 Agent Neo 里操作。',
+      modelManageDesktopOnly: '网页版只能查看模型服务；新增、保存、测试连接请在桌面版 Agent Neo 里操作。',
+      engineManageDesktopOnly: '网页版只能查看执行引擎；切换引擎、修改默认模型请在桌面版 Agent Neo 里操作。',
     },
     nativeDesktop: {
       meetingAppNames: [

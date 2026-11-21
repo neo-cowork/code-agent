@@ -98,6 +98,7 @@ interface DefaultModelSelection {
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, onDirtyChange }) => {
   const { t, language } = useI18n();
   const modelText = t.settings.model;
+  const webNote = isWebMode() ? t.settings.webModeBanner.modelManageDesktopOnly : undefined;
   const temperatureControl = useMemo(() => getModelTemperatureControl(config.model), [config.model]);
   const [isSaving, setIsSaving] = useState(false);
   // staged-dirty：Provider 表单有未保存修改（定义见文件头「保存语义契约」）
@@ -877,14 +878,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
       <SettingsSection
-        title={modelText.providerSection.title}
-        description={modelText.providerSection.description}
+        title={modelText.providerSection.title} description={[modelText.providerSection.description, webNote].filter(Boolean).join(' ')}
         actions={
           <Button
             size="sm"
             variant={isAddingProvider ? 'secondary' : 'primary'}
             onClick={() => setIsAddingProvider(true)}
-            disabled={isWebMode()}
+            disabled={isWebMode()} title={webNote}
             leftIcon={<Plus className="h-3.5 w-3.5" />}
           >
             {modelText.list.addProvider}
@@ -1007,7 +1007,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   </span>
                 )}
                 <Button
-                  disabled={isWebMode()}
+                  disabled={isWebMode()} title={webNote}
                   onClick={handleSave}
                   loading={isSaving}
                   size="lg"

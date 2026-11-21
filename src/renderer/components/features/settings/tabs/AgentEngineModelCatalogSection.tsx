@@ -36,6 +36,7 @@ function formatCatalogDate(value?: string, locale: string = localeForLanguage('z
 export const AgentEngineModelCatalogSection: React.FC = () => {
   const { t, language } = useI18n();
   const section = t.engineCompat.catalogSection;
+  const webNote = isWebMode() ? t.settings.webModeBanner.engineManageDesktopOnly : undefined;
   const [catalogResult, setCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
   const [defaults, setDefaults] = useState<Partial<Record<ExternalAgentEngineKind, string>>>({});
   const [savingDefault, setSavingDefault] = useState<ExternalAgentEngineKind | null>(null);
@@ -107,7 +108,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
   return (
     <SettingsSection
       title={section.title}
-      description={section.description}
+      description={[section.description, webNote].filter(Boolean).join(' ')}
     >
       <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
         <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 lg:grid-cols-4">
@@ -165,6 +166,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                     value={selectedDefault}
                     onChange={(event) => void handleDefaultChange(engine.kind, event.target.value)}
                     selectSize="sm"
+                    title={webNote}
                     disabled={isWebMode() || enabledModels.length === 0 || savingDefault === engine.kind}
                   >
                     {enabledModels.map((model) => (
