@@ -716,6 +716,10 @@ const v = getSettingsVocabulary('zh'); export const zhSettingsModels = {
           notConnected: '未连接 · 点开查看连接方式',
           connectionSetup: '连接方式',
           secretInNextStep: '下一步会打开安全配置面板，密钥使用密码型输入并保存到本机安全存储。',
+          addDesktopOnly: '请在桌面版里添加，这里只能查看',
+          enableDesktopOnly: '请在桌面版里启用，这里只能查看',
+          addRequiresAdmin: '需要管理员权限才能添加',
+          browserSignIn: '浏览器授权登录',
           tryIt: '试试这样用',
           examples: [
             '用 {name} 帮我处理当前任务需要的外部数据，并把关键结果列出来。',
