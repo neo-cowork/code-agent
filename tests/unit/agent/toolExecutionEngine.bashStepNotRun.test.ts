@@ -18,6 +18,7 @@ import { getBackgroundTaskLedger, resetBackgroundTaskLedgerForTest } from '../..
 import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { TaskManager } from '../../../src/host/task/TaskManager';
+import type { MCPToolAnnotations } from '../../../src/host/mcp/types';
 import { permissionDenialError } from '../../../src/host/tools/toolPermissionClassification';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import { createHostReason, HostReasonCode } from '../../../src/shared/contract/permission';
