@@ -12,7 +12,7 @@ import { STARTUP_TIMEOUTS } from '../../../../src/shared/constants';
 
 const boundary = vi.hoisted(() => ({
   warn: vi.fn(), info: vi.fn(),
-  initialize: vi.fn(), prompt: vi.fn(),
+  initialize: vi.fn(), prompt: vi.fn(), sessionStart: vi.fn(), recent: vi.fn(),
   memory: vi.fn(), axios: vi.fn(),
 }));
 vi.mock('axios', () => ({ default: boundary.axios }));
@@ -31,7 +31,7 @@ vi.mock('../../../../src/host/utils/seedMemoryInjector', () => ({
   buildSeedMemoryBlock: vi.fn().mockReturnValue(null),
 }));
 vi.mock('../../../../src/host/lightMemory/sessionMetadata', () => ({ recordSessionStart: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../../../../src/host/lightMemory/recentConversations', () => ({ buildRecentConversationsBlock: vi.fn().mockResolvedValue(null) }));
+vi.mock('../../../../src/host/lightMemory/recentConversations', () => ({ buildRecentConversationsBlock: boundary.recent }));
 vi.mock('../../../../src/host/agent/sessionRecovery', () => ({ getSessionRecoveryService: () => ({ checkPreviousSession: vi.fn().mockResolvedValue(null) }) }));
 
 function deferred<T>() {
@@ -48,16 +48,18 @@ function context(sessionId = 'weekly-report-session'): RuntimeContext {
     systemPrompt: '', control: ControlState.forTest(),
     stats: RunStatsState.forTest(), turn: TurnState.forTest(),
     turnQualityState: {},
-    hookManager: { initialize: boundary.initialize, triggerUserPromptSubmit: boundary.prompt, triggerSessionStart: vi.fn().mockResolvedValue({}) },
+    hookManager: { initialize: boundary.initialize, triggerUserPromptSubmit: boundary.prompt, triggerSessionStart: boundary.sessionStart },
   } as unknown as RuntimeContext;
 }
 
-function bootstrap(ctx: RuntimeContext) {
-  return runStartupContextAssembly(ctx, {
-    injectSystemMessage: vi.fn(),
-  } as unknown as Parameters<typeof runStartupContextAssembly>[1], {
+function bootstrap(
+  ctx: RuntimeContext,
+  injectSystemMessage = vi.fn(),
+  injectActivityContext: Parameters<typeof runStartupContextAssembly>[2]['injectActivityContext'] = vi.fn().mockResolvedValue(undefined),
+) {
+  return runStartupContextAssembly(ctx, { injectSystemMessage }, {
     userMessage: 'Prepare the weekly report in the background', isSimpleTask: true,
-    injectActivityContext: vi.fn().mockResolvedValue(undefined),
+    injectActivityContext,
     bootstrapDesktopDerivedContext: vi.fn().mockResolvedValue(undefined),
   });
 }
@@ -67,6 +69,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   boundary.initialize.mockResolvedValue(undefined);
   boundary.prompt.mockResolvedValue({ shouldProceed: false });
+  boundary.sessionStart.mockResolvedValue({});
+  boundary.recent.mockResolvedValue(null);
   boundary.memory.mockResolvedValue(null);
   boundary.axios.mockResolvedValue({ status: 200, statusText: 'OK', headers: {}, data: '{}' });
 });
@@ -107,6 +111,7 @@ describe('first model request wait through production entries', () => {
     expect(delayWarnings()).toEqual([['First model request delayed', expect.objectContaining({ phase: 'user_prompt_hook' })]]);
     hook.resolve({ shouldProceed: false });
     expect(await run).toBe('blocked');
+    expect(boundary.sessionStart).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -114,8 +119,10 @@ describe('first model request wait through production entries', () => {
     const memory = deferred<null>();
     boundary.prompt.mockResolvedValue({ shouldProceed: true });
     const ctx = context('memory-session');
-    // A preceding user message means this is not the once-per-session hook.
-    ctx.messages.push({ id: 'previous', role: 'user', content: 'weekly report', timestamp: 1 });
+    ctx.messages.push(
+      { id: 'previous', role: 'user', content: 'weekly report', timestamp: 1 },
+      { id: 'current', role: 'user', content: 'update', timestamp: 2 },
+    );
     boundary.memory.mockImplementation(async () => {
       const limiter = new ConcurrencyLimiter('test', 1, 0);
       await limiter.acquire();
@@ -128,6 +135,76 @@ describe('first model request wait through production entries', () => {
     expect(delayWarnings()).toEqual([['First model request delayed', expect.objectContaining({ phase: 'seed_memory' })]]);
     memory.resolve(null);
     expect(await run).toBe('proceed');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('runStartupContextAssembly overlaps SessionStart with context reads and preserves injection order before dispatch', async () => {
+    const hook = deferred<{ message: string; injectedContext: string }>();
+    const memory = deferred<null>();
+    const inject = vi.fn();
+    const send = makeAiSdkFetch('test-provider');
+    boundary.prompt.mockResolvedValue({ shouldProceed: true, message: 'prompt guidance' });
+    boundary.sessionStart.mockReturnValue(hook.promise);
+    boundary.recent.mockResolvedValue('<user-memory>recent</user-memory>');
+    boundary.memory.mockReturnValue(memory.promise);
+    const run = watchFirstModelRequest('overlap', async () => {
+      const result = await bootstrap(context('overlap'), inject, async (_options, sink) => {
+        sink.injectSystemMessage('<screen-memory>activity</screen-memory>', 'screen-memory');
+      });
+      expect(result).toBe('proceed');
+      expect(inject.mock.calls).toEqual([
+        ['<user-prompt-hook>\nprompt guidance\n</user-prompt-hook>', 'user-prompt-hook'],
+        ['<session-start-hook>\nhook guidance\n</session-start-hook>', 'session-start-hook'],
+        ['<session-start-hook>\nbuilt-in context\n</session-start-hook>', 'session-start-hook'],
+        ['<user-memory>recent</user-memory>', 'user-memory', 'recent-conversations'],
+        ['<screen-memory>activity</screen-memory>', 'screen-memory'],
+      ]);
+      noteFirstModelRequestPhase('context_ready');
+      noteFirstModelRequestPhase('provider_dispatch');
+      await send('https://example.invalid/v1/chat/completions');
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(boundary.sessionStart).toHaveBeenCalledBefore(boundary.memory);
+    expect(boundary.memory).toHaveBeenCalledOnce();
+    expect(inject).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(1200);
+    memory.resolve(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(boundary.axios).not.toHaveBeenCalled();
+    expect(inject).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(800);
+    hook.resolve({ message: 'hook guidance', injectedContext: 'built-in context' });
+    await run;
+
+    expect(boundary.info).toHaveBeenCalledWith('First model request phase', expect.objectContaining({
+      phase: 'activity_context', previousPhase: 'seed_memory', elapsedMs: 1200, previousPhaseElapsedMs: 1200,
+    }));
+    expect(boundary.info).toHaveBeenCalledWith('First model request phase', expect.objectContaining({
+      phase: 'context_ready', previousPhase: 'session_start_hook', elapsedMs: 2000, previousPhaseElapsedMs: 800,
+    }));
+    expect(boundary.axios).toHaveBeenCalledOnce();
+  });
+
+  it.each(['seed_memory', 'session_start_hook'])('runStartupContextAssembly aborts during %s even with SessionStart pending', async (phase) => {
+    const hook = deferred<never>();
+    const memory = deferred<null>();
+    const ctx = context();
+    ctx.control.setRunAbortController(new AbortController());
+    boundary.prompt.mockResolvedValue({ shouldProceed: true });
+    boundary.sessionStart.mockReturnValue(hook.promise);
+    boundary.memory.mockReturnValue(memory.promise);
+    const run = watchFirstModelRequest(ctx.sessionId, () => bootstrap(ctx));
+    if (phase === 'session_start_hook') memory.resolve(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(boundary.info).toHaveBeenLastCalledWith('First model request phase', expect.objectContaining({ phase }));
+
+    ctx.control.markCancelled();
+    ctx.control.abortRun();
+    expect(await run).toBe('aborted');
+    hook.reject(new Error('hook failed after cancellation'));
+    memory.resolve(null);
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(0);
   });
 
