@@ -27,7 +27,7 @@ export const SidebarCapabilityZone: React.FC = () => {
     : null;
   const rowClass = (key: 'hub' | 'library' | 'automation' | 'projects' | 'localOps') => (
     `group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition-colors ${
-      activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
+      activeRow === key ? 'bg-zinc-700/60 text-zinc-100' : 'hover:bg-zinc-800/70'
     }`
   );
   const jobs = useCronStore((state) => state.jobs);
