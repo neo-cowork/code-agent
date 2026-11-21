@@ -68,7 +68,7 @@ export function describeLastToolStep(
       ...(step.action ? { action: step.action } : {}),
     }
     : undefined;
-  return humanizeToolStep(step.tool, targetArgs, t, undefined, status);
+  return humanizeToolStep(step.tool, targetArgs, t, undefined, status, undefined, step.notRun ? { skipped: true } : undefined);
 }
 
 // ============================================================================
