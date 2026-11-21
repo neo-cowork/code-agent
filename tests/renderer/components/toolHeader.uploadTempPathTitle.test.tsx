@@ -40,4 +40,19 @@ describe('successful Read row hover title for a /private/var/folders upload path
     expect(title).not.toContain('/private');
     expect(title).not.toMatch(/\/var\//);
   });
+  it('open-preview aria-label is humanized the same way (no raw /private path to screen readers)', () => {
+    render(<ToolHeader toolCall={call('a', TEMP_UPLOAD)} status="success" />);
+    const row = screen.getByTestId('tool-header-open-preview');
+    const aria = row.getAttribute('aria-label');
+    expect(aria).toContain('临时文件（dogfood-upload-test.txt）');
+    expect(aria).not.toContain('/private');
+    expect(aria).not.toMatch(/\/var\//);
+  });
+  it('ordinary (non-temp) paths keep their raw path in title and aria-label', () => {
+    const ordinary = '/work/attach/notes.md';
+    render(<ToolHeader toolCall={call('b', ordinary)} status="success" />);
+    const row = screen.getByTestId('tool-header-open-preview');
+    expect(row.getAttribute('title')).toContain(ordinary);
+    expect(row.getAttribute('aria-label')).toContain(ordinary);
+  });
 });
