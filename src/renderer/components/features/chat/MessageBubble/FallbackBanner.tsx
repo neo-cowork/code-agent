@@ -206,7 +206,11 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
             <span className="max-w-[180px] truncate font-mono text-zinc-400">{notice.from}</span>
             <span>→</span>
             <span>{copy.currentModel}</span>
-            <span className="max-w-[180px] truncate font-mono text-zinc-400">{notice.to}</span>
+            {/* 链耗尽（exhausted）时没有切到的模型可展示，按 UI 语言渲染"未切换"；
+                旧会话落盘的 zh 字面量 '未切换' 已在 parseModelFallbackNotice 里映射回 exhausted。 */}
+            <span className="max-w-[180px] truncate font-mono text-zinc-400">
+              {notice.exhausted ? copy.notSwitched : notice.to}
+            </span>
           </div>
           {notice.strategy && (
             <div className="mt-1">

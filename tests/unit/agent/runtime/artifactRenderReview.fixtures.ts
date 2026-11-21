@@ -44,3 +44,14 @@ export async function writeCleanDocx(filePath: string): Promise<void> {
   });
   writeFileSync(filePath, await Packer.toBuffer(doc));
 }
+
+export async function writeMarkdownResidueDocx(filePath: string): Promise<void> {
+  const doc = new Document({
+    sections: [{
+      children: [
+        new Paragraph({ children: [new TextRun({ text: '- **会议时间**：2026-11-09 09:00' })] }),
+      ],
+    }],
+  });
+  writeFileSync(filePath, await Packer.toBuffer(doc));
+}

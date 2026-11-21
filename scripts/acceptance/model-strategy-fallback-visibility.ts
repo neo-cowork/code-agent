@@ -108,7 +108,7 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
       category: 'provider_unavailable',
       strategy: 'adaptive-provider-fallback',
       from: 'moonshot/kimi-k2.5',
-      to: '未切换',
+      exhausted: true,
       tried: [
         {
           provider: 'moonshot',
@@ -172,7 +172,9 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
       fallbackCopy.strategies.provider,
       fallbackCopy.exhausted,
       'deepseek/deepseek-v4-flash',
-      '未切换',
+      // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：耗尽链不再往 payload 写 zh 字面量，
+      // "现用模型"行按 UI 语言渲染 notSwitched 文案（zh 词表 = 未切换）。
+      fallbackCopy.notSwitched,
     ]),
     // B2-3 折叠设计的另一半锁：默认折叠时一行摘要（from -> to + reason）必须可达，
     // 且详情（策略标签/工具策略等）必须真的不在——不然折叠态跟展开态没区别，等于白折叠。
