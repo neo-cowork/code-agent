@@ -108,8 +108,8 @@ describe('buildOverviewContextRows', () => {
       label: 'hello.html',
       detail: '读取文件 / 写入文件',
     });
-    // MCP 按 server 去重显示 server 名
-    expect(rows.find((row) => row.kind === 'mcp')).toMatchObject({ label: 'filesystem' });
+    // MCP 行走 getHumanToolLabel → server 展示名（FB-2291：不再回原文/裸 slug）
+    expect(rows.find((row) => row.kind === 'mcp')).toMatchObject({ label: 'Filesystem' });
   });
 
   it('surfaces blocked context without turning it into an approval card', () => {
