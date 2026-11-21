@@ -526,6 +526,48 @@ describe('inferenceViaAiSdk —— B2 续答提示 + 宿主开头去重（ADR-06
     expect(res.content).toBe(TAIL);
     expect((res.content ?? "").startsWith(KEPT)).toBe(false);
   });
+
+  it('kept 止于表格中间、续答以裸 | 行开头：续答段补回表头+分隔行，渲染成表格行而非字面竖线', async () => {
+    const TABLE_KEPT = '各位同事：日程如下\n\n| 时间 | 安排 |\n| --- | --- |\n| 08:30 | 公司楼下集合签到，分车出发 |\n';
+    const ROWS = '| 10:00 | 抵达湿地公园，自由徒步 |\n| 12:30 | 农家院午餐 |\n\n请携带身份证。';
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([...deltas(TABLE_KEPT), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas(ROWS), finish]));
+    const { res } = await run();
+    const cont = res.content ?? '';
+    // 续答段单独渲染：第一行必须是表头，紧跟分隔行，不能直接是数据行
+    expect(cont.split('\n').slice(0, 2)).toEqual(['| 时间 | 安排 |', '| --- | --- |']);
+    expect(cont).toContain('| 10:00 | 抵达湿地公园，自由徒步 |');
+    expect(cont.endsWith('请携带身份证。')).toBe(true);
+    expect(dedupLog('warn', 'not-restated')).toBe(true);
+  });
+
+  it('kept 止于表头+分隔行、续答又重发分隔行：只补表头，不出现两条分隔行（真跑 t3 复现形状）', async () => {
+    const K = '## 日程\n\n| 时间 | 安排 |\n| --- | --- |\n';
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([...deltas(K), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas('| --- | --- |\n| 08:30 | 集合 |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('| 时间 | 安排 |\n| --- | --- |\n| 08:30 | 集合 |\n');
+  });
+
+  it('续答自己重开了整张表（表头+分隔行）：原样放行，不再叠一层表头', async () => {
+    const K = '| 时间 | 安排 |\n| --- | --- |\n| 08:30 | 集合 |\n';
+    const C = '| 时刻 | 事项 |\n| --- | --- |\n| 10:00 | 抵达 |\n';
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([...deltas(K), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas(C), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(C);
+  });
+
+  it('kept 不在表格中：续答原样放行（不补表头）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas('| a | b |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('| a | b |\n');
+  });
 });
 
 describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', () => {
