@@ -132,12 +132,26 @@ export async function withTaskOutputDirectory<T>(input: {
   });
 }
 
+/** A quoted heredoc body (`<<'PY'`) is never expanded or run by the invoking shell; it is plain
+ * stdin for the program (e.g. a python script). Dropping it lets the guard see the real command
+ * line. Bodies fed to a shell interpreter or eval are kept, because those do get executed. */
+function withoutInertHeredocBodies(command: string): string {
+  return command.replace(/<<-?[ \t]*(['"])([A-Za-z_]\w*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/gu,
+    (match, _quote: string, _tag: string, rest: string, offset: number) => {
+      const lineStart = command.lastIndexOf('\n', offset - 1) + 1;
+      return /\b(?:sh|bash|zsh|dash|ksh|eval|source)\b/u.test(command.slice(lineStart, offset)) ? match : rest;
+    });
+}
+
 /** Add only this task's folder to an already-required OS write jail. Approval,
  * command policy and sensitive-path denials remain separate authoritative gates. */
 export function taskOutputDirectoryForShell(sessionId: string | undefined, mode: PermissionMode, command: string, workspaceScope?: WorkspaceScope): string | undefined {
   const grant = scope.getStore();
-  if (!grant || /\$|`|<\(|>\(/u.test(command)) return undefined;
-  const parsed = parseShellCommand(command);
+  // `$?` `$#` `$$` `$!` expand to numbers only, so they cannot name a path; every other
+  // expansion form (`$VAR`, `${..}`, `$(..)`, backticks, process substitution) stays rejected.
+  const inspected = withoutInertHeredocBodies(command).replace(/\$[?#$!]/gu, '');
+  if (!grant || /\$|`|<\(|>\(/u.test(inspected)) return undefined;
+  const parsed = parseShellCommand(inspected);
   if (parsed.parsingFailed || parsed.uncertain.length > 0) return undefined;
   // A selected output folder does not override a Project Source's read-only promise,
   // including when the selected folder contains that Source rather than vice versa.

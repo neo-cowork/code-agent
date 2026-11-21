@@ -145,6 +145,13 @@ describe('explicit task output directory authorization', () => {
       expect(taskOutputDirectoryForShell('other-session', 'bypassPermissions', 'cp report.pptx output.pptx')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx "$(pwd)/output.pptx"')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx `pwd`/output.pptx')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx; echo "exit=$? $# $$ $!"')).toBe(directory);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx $HOME/output.pptx')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "python3 - <<'PY'\nprint('$HOME', `x`)\nPY")).toBe(directory);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "bash <<'SH'\ncp a $HOME/b\nSH")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'python3 - <<PY\nprint("$HOME")\nPY')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx ${X}/output.pptx')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx; echo $?$X')).toBeUndefined();
       const primary = { sourceId: 'primary', role: 'primary' as const, access: 'read_write' as const, path: `${directory}-workspace` };
       const scope = createWorkspaceScope('project', [primary, { sourceId: 'readonly', role: 'additional', access: 'read_only', path: directory }]);
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx', scope)).toBeUndefined();

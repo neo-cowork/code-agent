@@ -151,6 +151,43 @@ suite('named output directory survives resume / restart (real AgentLoop.run + re
     expect(fs.readFileSync(deck, 'utf8')).toBe('v2-meta-run');
   });
 
+  it('FB-2337 shape: a resumed overwrite that echoes $? / $# / $$ keeps the output root', async () => {
+    const deck = path.join(outDir, `dollar-${n}.pptx`);
+    await runTurn(`输出目录：${outDir}`, `printf 'v1' > ${q(deck)}`);
+    resetPermissionModeManager();
+    probe.infos.length = 0;
+    const result = await runTurn('把第 3 页改一下', `printf 'v2-after-dollar-question' > ${q(deck)}; echo "exit=$? n=$# pid=$$ bang=$!"`);
+    expect(result?.success, JSON.stringify(result)).toBe(true);
+    expect(probe.infos.some((e) => e.message === APPLIED)).toBe(true);
+    expect(fs.readFileSync(deck, 'utf8')).toBe('v2-after-dollar-question');
+  });
+
+  it('a python heredoc overwrite (the usual pptx edit) keeps the output root', async () => {
+    const deck = path.join(outDir, `heredoc-${n}.pptx`);
+    await runTurn(`输出目录：${outDir}`, `printf 'v1' > ${q(deck)}`);
+    resetPermissionModeManager();
+    probe.infos.length = 0;
+    const result = await runTurn('把第 3 页改一下', `python3 - <<'PY'\nopen(${JSON.stringify(deck)}, 'w').write('v2-from-heredoc')\nprint("$HOME stays literal")\nPY`);
+    expect(result?.success, JSON.stringify(result)).toBe(true);
+    expect(probe.infos.some((e) => e.message === APPLIED)).toBe(true);
+    expect(fs.readFileSync(deck, 'utf8')).toBe('v2-from-heredoc');
+  });
+
+  it.each([
+    ['$HOME', 'echo $HOME'],
+    ['${X}', 'echo ${X}'],
+    ['$(pwd)', 'echo $(pwd)'],
+    ['backtick', 'echo `pwd`'],
+  ])('%s still gets no output root', async (_name, tail) => {
+    const deck = path.join(outDir, `exp-${n}.pptx`);
+    await runTurn(`输出目录：${outDir}`, `printf 'v1' > ${q(deck)}`);
+    probe.infos.length = 0;
+    const result = await runTurn('改一下', `printf 'sneaky' > ${q(deck)}; ${tail}`);
+    expect(probe.infos.some((e) => e.message === APPLIED)).toBe(false);
+    expect(result?.success === true && !JSON.stringify(result).includes('Operation not permitted') ? 'wrote' : 'blocked').toBe('blocked');
+    expect(fs.readFileSync(deck, 'utf8')).toBe('v1');
+  });
+
   it('negative: another session, or a non-full-access mode, gets no write root', async () => {
     const deck = path.join(outDir, `neg-${n}.pptx`);
     await runTurn(`输出目录：${outDir}`, `printf 'v1' > ${q(deck)}`);
