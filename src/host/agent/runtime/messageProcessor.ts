@@ -506,7 +506,7 @@ export class MessageProcessor {
       });
       if (gate.action === 'repair') {
         if (gate.kind === 'disk') this.guardState.deliverableRepairCount += 1; else this.guardState.artifactRenderRepairCount += 1;
-        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}) });
+        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}), ...(gate.items ? { items: gate.items } : {}) });
         this.contextAssembly.injectSystemMessage(gate.prompt, gate.tag);
         return 'continue';
       }
