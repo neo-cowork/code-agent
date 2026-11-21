@@ -307,7 +307,6 @@ describe('shellEnvironment', () => {
     const { loadShellEnvironment, getShellEnvironmentValue, getShellPathDiagnostics } = await loadModule();
     loadShellEnvironment();
 
-    expect(getShellEnvironmentValue('ANTHROPIC_API_KEY')).toBeUndefined();
     refreshCallback?.(null, [
       'PATH=/fresh/bin:/usr/bin',
       'ANTHROPIC_API_KEY=fake-anthropic-refresh-c1',
@@ -315,8 +314,11 @@ describe('shellEnvironment', () => {
       '',
     ].join('\n'), '');
 
-    // In-memory: the refreshed secret is available (Claude auth inheritance).
+    // In-memory: the refreshed secret is available (Claude auth inheritance)…
     expect(getShellEnvironmentValue('ANTHROPIC_API_KEY')).toBe('fake-anthropic-refresh-c1');
+    // …and no synchronous re-capture is spawned: the background refresh
+    // already made the in-memory environment fresh.
+    expect(execSyncMock).not.toHaveBeenCalled();
     expect(getShellPathDiagnostics().path).toBe('/fresh/bin:/usr/bin:/bin');
 
     // On disk: the refreshed cache file is filtered too.
@@ -329,5 +331,70 @@ describe('shellEnvironment', () => {
     expect(parsed.PATH).toBe('/fresh/bin:/usr/bin');
     // Proxy with userinfo is dropped by the refresh path as well.
     expect(parsed.HTTPS_PROXY).toBeUndefined();
+  });
+
+  it('cache hit: first secret read re-captures synchronously so Claude auth is inherited immediately', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    process.env.PATH = '/usr/bin:/bin';
+    const cachePath = writeCache({
+      environment: { PATH: '/cached/bin:/usr/bin', HOME: '/cached/home' },
+    });
+    // Background refresh stays in flight (callback never invoked).
+    execFileMock.mockImplementation((_file, _args, _options) => ({}));
+    execSyncMock.mockReturnValue([
+      'PATH=/fresh/bin:/usr/bin',
+      'HOME=/Users/test',
+      'ANTHROPIC_API_KEY=fake-anthropic-recapture-r1',
+      'CLAUDE_CODE_OAUTH_TOKEN=fake-oauth-recapture-r1',
+      '',
+    ].join('\n'));
+
+    const { loadShellEnvironment, getShellEnvironmentValue } = await loadModule();
+    loadShellEnvironment();
+
+    // Boot used the cache: no synchronous shell spawn during startup.
+    expect(execSyncMock).not.toHaveBeenCalled();
+    // Claude Code engine call BEFORE the background refresh callback lands:
+    // the first read must trigger one synchronous re-capture so auth keys
+    // (rc-file-only on Finder launches) are in memory right away.
+    expect(getShellEnvironmentValue('ANTHROPIC_API_KEY')).toBe('fake-anthropic-recapture-r1');
+    expect(execSyncMock).toHaveBeenCalledOnce();
+    expect(execSyncMock).toHaveBeenCalledWith("/bin/zsh -i -l -c 'env'", expect.any(Object));
+    expect(getShellEnvironmentValue('CLAUDE_CODE_OAUTH_TOKEN')).toBe('fake-oauth-recapture-r1');
+    // The re-capture is latched: further reads do not spawn another shell.
+    expect(execSyncMock).toHaveBeenCalledOnce();
+    // Fresh non-secret values replace the cached ones in memory.
+    expect(getShellEnvironmentValue('HOME')).toBe('/Users/test');
+
+    // The re-capture persists through the same filter: no secret on disk…
+    const rawCache = readFileSync(cachePath, 'utf8');
+    expect(rawCache).not.toContain('fake-anthropic-recapture-r1');
+    expect(rawCache).not.toContain('fake-oauth-recapture-r1');
+    expect(rawCache).not.toContain('ANTHROPIC_API_KEY');
+    // …while the fresh PATH replaces the cached one.
+    expect(JSON.parse(rawCache).environment.PATH).toBe('/fresh/bin:/usr/bin');
+  });
+
+  it('keeps cached values when the synchronous re-capture for reads fails, retrying only once', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    writeCache({ environment: { PATH: '/cached/bin', KEEP_ME: 'yes' } });
+    execFileMock.mockImplementation((_file, _args, _options, callback) => {
+      callback(new Error('refresh failed'), '', '');
+      return {};
+    });
+    execSyncMock.mockImplementation(() => {
+      throw new Error('recapture failed');
+    });
+
+    const { loadShellEnvironment, getShellEnvironmentValue } = await loadModule();
+    loadShellEnvironment();
+
+    expect(getShellEnvironmentValue('KEEP_ME')).toBe('yes');
+    expect(getShellEnvironmentValue('KEEP_ME')).toBe('yes');
+    // One bounded re-capture attempt, not a 5s synchronous stall per read on
+    // a broken login shell.
+    expect(execSyncMock).toHaveBeenCalledOnce();
   });
 });

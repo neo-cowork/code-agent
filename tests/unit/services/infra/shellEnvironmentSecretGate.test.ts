@@ -144,4 +144,37 @@ describe('shellEnvironment secret gate (recursive on-disk grep)', () => {
     // …but the refreshed cache file and everything else stay clean.
     expectNoSecretOnDisk(tempDataDir);
   });
+
+  it('cache hit + synchronous re-capture on first read: no file under the data dir contains the planted secret', async () => {
+    process.env.CODE_AGENT_WEB_MODE = 'true';
+    process.env.SHELL = '/bin/zsh';
+    process.env.PATH = '/usr/bin:/bin';
+    mkdirSync(join(tempDataDir, 'cache'), { recursive: true });
+    writeFileSync(join(tempDataDir, 'cache', 'shell-environment.json'), JSON.stringify({
+      schemaVersion: 2,
+      platform: process.platform,
+      shell: '/bin/zsh',
+      capturedAt: '2026-11-21T00:00:00.000Z',
+      environment: { PATH: '/cached/bin:/usr/bin' },
+    }));
+    // Background refresh stays in flight (callback captured, never invoked):
+    // the first read falls back to the synchronous re-capture.
+    execFileMock.mockImplementation((_file, _args, _options, callback) => callback);
+    execSyncMock.mockReturnValue([
+      'PATH=/fresh/bin:/usr/bin',
+      `${GATE_SECRET_KEY}=${GATE_SECRET_VALUE}`,
+      '',
+    ].join('\n'));
+
+    const shellEnvironment = await loadModule();
+    shellEnvironment.loadShellEnvironment();
+    expect(execSyncMock).not.toHaveBeenCalled();
+
+    // First read triggers the synchronous re-capture: the secret is in
+    // memory (Claude auth inheritance)…
+    expect(shellEnvironment.getShellEnvironmentValue(GATE_SECRET_KEY)).toBe(GATE_SECRET_VALUE);
+    expect(execSyncMock).toHaveBeenCalledOnce();
+    // …but the re-captured cache file and everything else stay clean.
+    expectNoSecretOnDisk(tempDataDir);
+  });
 });
