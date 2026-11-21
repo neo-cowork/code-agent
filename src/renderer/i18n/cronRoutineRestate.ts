@@ -1,5 +1,8 @@
 // Shared cron editor restatement and urgency-rule copy.
 export const cronRoutineRestateZh = {
+  // 内置维护任务分组（N-FIX-CRON-LIST-BUILTIN-MAINTENANCE-MIXED-WITH-USER-JOBS）；cronCenter.ts 已到 max-lines，新键放这里随 spread 合入
+  builtinGroupTitle: '系统自动维护（{count}）',
+  builtinMaintenanceNote: '这是系统自动维护任务，不是你创建的；可以暂停或立即运行，不能删除。',
   savedRestateTitle: '已保存 · 这个自动化会这样做',
   savedRestateDone: '完成',
   savedRestateWhenEvent: '有新消息到达时',
@@ -22,6 +25,8 @@ export const cronRoutineRestateZh = {
 };
 
 export const cronRoutineRestateEn = {
+  builtinGroupTitle: 'System maintenance ({count})',
+  builtinMaintenanceNote: 'Automatic system maintenance, not created by you. You can pause or run it now, but not delete it.',
   savedRestateTitle: 'Saved · what this automation will do',
   savedRestateDone: 'Done',
   savedRestateWhenEvent: 'When a new message arrives',

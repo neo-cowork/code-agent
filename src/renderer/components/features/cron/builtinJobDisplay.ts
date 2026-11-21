@@ -70,6 +70,11 @@ function findBuiltinTag(tags?: string[]): BuiltinJobTag | null {
   return tags?.find(isBuiltinTag) ?? null;
 }
 
+/** 内置维护任务（记忆整理/回顾沉淀/流程提炼）：host 启动时按 tag 自动补建，不是用户创建的。 */
+export function isBuiltinMaintenanceJob(job: Pick<CronJobDefinition, 'tags'>): boolean {
+  return findBuiltinTag(job.tags) !== null;
+}
+
 /** Internal classification tags stay in storage/search, never in display copy. */
 export function getVisibleJobTags(job: Pick<CronJobDefinition, 'tags'>): string[] {
   return job.tags?.filter((tag) => !isBuiltinTag(tag) && tag !== ROLE_PROACTIVITY.CADENCE_JOB_TAG) ?? [];
