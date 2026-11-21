@@ -71,3 +71,27 @@ export function formatBatchReviewSkippedDetail(
     })
     .join(labels.skippedItemSeparator);
 }
+
+/** 暂停徽标按原因分档（N-MEM-SOURCE-WRONG-FEEDBACK）：user_* 用「你标记为不对/过时了」，
+ *  用量原因沿用通用「已暂停自动带上」。 */
+export function injectionPausedBadgeLabel(
+  pause: MemoryEntry['injectionPaused'],
+  labels: typeof zh.settings.memory.entries.injectionPaused,
+): string {
+  if (pause?.reason === 'user_wrong') return labels.badgeUserWrong;
+  if (pause?.reason === 'user_outdated') return labels.badgeUserOutdated;
+  return labels.badge;
+}
+
+/** 暂停详情句按原因分档：user_* 是用户自己标记的口径，{date} 仍由调用方替换。 */
+export function injectionPausedReasonLabel(
+  pause: NonNullable<MemoryEntry['injectionPaused']>,
+  labels: typeof zh.settings.memory.entries.injectionPaused,
+): string {
+  switch (pause.reason) {
+    case 'user_wrong': return labels.userWrong;
+    case 'user_outdated': return labels.userOutdated;
+    case 'never_used': return labels.neverUsed;
+    default: return labels.staleUsed;
+  }
+}

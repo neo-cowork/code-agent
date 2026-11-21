@@ -128,6 +128,8 @@ Use current project patterns.
     const created: MemoryRecord[] = [];
     const db = {
       listMemories: vi.fn(() => [] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn((data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>) => {
         const next = record({
           id: `mem-created-${created.length + 1}`,
@@ -205,6 +207,8 @@ Use current project patterns.
     });
     const db = {
       listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
         ...mirror,
@@ -269,6 +273,8 @@ Use current project patterns.
     });
     const db = {
       listMemories: vi.fn(() => [dbRecord] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
         ...dbRecord,
@@ -341,6 +347,8 @@ Use current project patterns.
     });
     const db = {
       listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn(),
       deleteMemory: vi.fn(() => true),
@@ -397,6 +405,8 @@ Use current project patterns.
     });
     const db = {
       listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
         ...mirror,
@@ -447,6 +457,8 @@ schema_version: 2
 softforget marker from archived file.
 `, 'utf-8');
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({ id: 'mem-active-db', content: 'softforget marker active db', status: 'active', metadata: {} }),
         record({ id: 'mem-archived-db', content: 'softforget marker archived db', status: 'archived', metadata: {} }),
@@ -467,6 +479,8 @@ softforget marker from archived file.
 
   it('applies the historical-background boundary to directive-only memory injection too', async () => {
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [record({
         id: 'mem-directive',
         content: 'Use the remembered release checklist.',
@@ -513,6 +527,8 @@ The user's team uses Notion for weekly reports.
     await fs.utimes(path.join(memDir, 'weekly-reports.md'), when, when);
 
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [record({
         id: 'mem-directive',
         content: 'Always keep release notes in the repo.',
@@ -568,6 +584,8 @@ The left menu should keep common daily actions visible.
 `, 'utf-8');
 
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({
           id: 'mem-project-match',
@@ -628,6 +646,8 @@ The left menu should keep common daily actions visible.
     await execFileAsync('git', ['init', '-q'], { cwd: unrelatedDir });
 
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({
           id: 'mem-worktree-shared',
@@ -670,6 +690,8 @@ The left menu should keep common daily actions visible.
     await execFileAsync('git', ['init', '-q'], { cwd: repoDir });
 
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({
           id: 'mem-pkg-a',
@@ -710,6 +732,8 @@ The left menu should keep common daily actions visible.
       metadata: {},
     });
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({ id: 'mem-recent-noise', content: 'Unrelated recent note.', metadata: {} }),
       ] as MemoryRecord[]),
@@ -738,6 +762,8 @@ The left menu should keep common daily actions visible.
     });
     const db = {
       listMemories: vi.fn(() => [shared] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       searchMemories: vi.fn(() => [shared] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn(),
@@ -756,6 +782,8 @@ The left menu should keep common daily actions visible.
 
   it('excludes session-suppressed memory entries from pack candidates', async () => {
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({
           id: 'mem-visible',
@@ -789,6 +817,8 @@ The left menu should keep common daily actions visible.
   it('skips BM25 recall when there is no query', async () => {
     const db = {
       listMemories: vi.fn(() => [] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       searchMemories: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn(),
@@ -800,6 +830,8 @@ The left menu should keep common daily actions visible.
 
   it('renders a [#id] handle carrying the raw MemoryRecord id for db-only entries (memory_amend target)', async () => {
     const db = {
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       listMemories: vi.fn(() => [
         record({ id: 'mem-target', content: 'Correct me if wrong.', summary: 'target summary', metadata: {} }),
       ] as MemoryRecord[]),
@@ -829,6 +861,8 @@ Use current project patterns.
 
     const db = {
       listMemories: vi.fn(() => [] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn(),
     };
@@ -894,6 +928,8 @@ Use current project patterns.
     const created: MemoryRecord[] = [];
     const db = {
       listMemories: vi.fn(() => [] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn((data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>) => {
         const next = record({
           id: `mem-created-${created.length + 1}`,
