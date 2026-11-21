@@ -46,7 +46,7 @@ import { ArtifactState, type ArtifactRenderReviewStamp } from '../../../../src/h
 import { rasterizePdfToImages } from '../../../../src/host/tools/media/officeRaster';
 import { ARTIFACT_RENDER_REVIEW, TURN_OUTCOME } from '../../../../src/shared/constants/agent';
 import type { Message } from '../../../../src/shared/contract';
-import { writeCleanDocx, writeOverflowDocx } from './artifactRenderReview.fixtures';
+import { writeCleanDocx, writeMarkdownResidueDocx, writeOverflowDocx } from './artifactRenderReview.fixtures';
 
 const workRoot = path.join(os.tmpdir(), `artifact-render-review-${process.pid}-${Date.now()}`);
 
@@ -711,5 +711,89 @@ describe('close-gate shell injection', () => {
     expect(result.action).toBe('repair');
     if (result.action !== 'repair') throw new Error('expected repair');
     expect(result.missing).toEqual(['pdf']);
+  });
+});
+
+// ============================================================================
+// 落盘核对补轮日志逐条带 kind/path（N-FIX-DELIVERABLE-DISK-CHECK-...-LOG-KIND）：
+// 旧实现把所有补轮都写成固定文案「deliverables not on disk」并丢掉 item.kind，
+// realrun105 实录里文件在盘、命中的是占位残留，日志却误导调试者去查「假缺失」。
+// 四个 kind 各一条用例，全部走生产入口 applyDeliverableCloseGates。
+// ============================================================================
+describe('applyDeliverableCloseGates disk repair log payload', () => {
+  function diskGate(files: readonly string[], finalText: string) {
+    return applyDeliverableCloseGates({
+      workingDirectory: workRoot,
+      messages: [message(), ...files.map((filePath) => producingActivity(filePath))],
+      finalText,
+      diskRepairsUsed: 0,
+      visualRepairsUsed: 0,
+    });
+  }
+
+  // realrun105 item-1 场景：Write 已落盘的骨架 md（标题 + 独行 TODO: + 待填写），
+  // final 声称已生成——补轮原因应报 placeholder，日志不得再出现「not on disk」。
+  it('placeholder repair names kind, path and first hit location without claiming not on disk', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const artifact = path.join(workRoot, '本周周报.md');
+    writeFileSync(artifact, ['# 本周周报', 'TODO:', '待填写'].join('\n'));
+
+    const result = await diskGate([artifact], '已生成 `本周周报.md`，请查收。');
+
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') throw new Error('expected repair');
+    expect(result.kind).toBe('disk');
+    expect(result.items).toEqual([{
+      kind: 'placeholder',
+      path: artifact,
+      location: '第 2 行',
+      fragment: 'TODO:',
+    }]);
+    expect(result.logMessage).toBe('[DeliverableDiskCheck] deliverables need repair, bounded repair round fed back');
+    expect(result.logMessage).not.toContain('not on disk');
+    expect(result.missing).toEqual([artifact]);
+  });
+
+  it('not_on_disk repair keeps the missing-file wording and the bare kind/path shape', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const artifact = path.join(workRoot, 'gone.md');
+
+    const result = await diskGate([artifact], '已生成 `gone.md`，请查收。');
+
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') throw new Error('expected repair');
+    expect(result.items).toEqual([{ kind: 'not_on_disk', path: artifact }]);
+    expect(result.logMessage).toBe('[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back');
+    expect(result.missing).toEqual([artifact]);
+  });
+
+  it('empty (zero-byte) repair names the kind instead of claiming not on disk', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const artifact = path.join(workRoot, 'blank.md');
+    writeFileSync(artifact, '');
+
+    const result = await diskGate([artifact], '已生成 `blank.md`，请查收。');
+
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') throw new Error('expected repair');
+    expect(result.items).toEqual([{ kind: 'empty', path: artifact }]);
+    expect(result.logMessage).toContain('need repair');
+    expect(result.logMessage).not.toContain('not on disk');
+    expect(result.missing).toEqual([artifact]);
+  });
+
+  it('markdown_residue repair names the kind instead of claiming not on disk', async () => {
+    mkdirSync(workRoot, { recursive: true });
+    const artifact = path.join(workRoot, 'marked.docx');
+    await writeMarkdownResidueDocx(artifact);
+
+    const result = await diskGate([artifact], '已生成 `marked.docx`，请查收。');
+
+    expect(result.action).toBe('repair');
+    if (result.action !== 'repair') throw new Error('expected repair');
+    expect(result.items).toEqual([{ kind: 'markdown_residue', path: artifact }]);
+    expect(result.logMessage).toContain('need repair');
+    expect(result.logMessage).not.toContain('not on disk');
+    expect(result.missing).toEqual([artifact]);
   });
 });
