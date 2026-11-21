@@ -53,6 +53,13 @@ export function isComputerUseMcpServer(server: string): boolean {
   return server === 'cua-driver';
 }
 
+// server id 上屏口径（路由诊断等直接展示 server 列表的地方）：cua-driver →
+// 「电脑操作」（computerUseLabel 由调用方从 i18n 传入，与 TaskPanel 上下文行、
+// shared summary 同词），其余 server 走 formatMcpServerName 人话。
+export function mcpServerDisplayName(server: string, computerUseLabel: string): string {
+  return isComputerUseMcpServer(server) ? computerUseLabel : formatMcpServerName(server);
+}
+
 /**
  * server slug 是否不宜拼进步骤行：已知友好 server（见 MCP_SERVER_DISPLAY_NAMES）
  * 与即时通讯频道名（飞书/Slack…）照旧；目录连接器在调用方更早短路。其余 slug
