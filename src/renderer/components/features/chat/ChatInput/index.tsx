@@ -27,6 +27,7 @@ import { InputAddMenu } from './InputAddMenu';
 import { SuggestionBar } from './SuggestionBar';
 import { ComposerCoreActions, type ComposerCoreAction } from './ComposerCoreActions';
 import { BackgroundHandoffButton } from './BackgroundHandoffButton';
+import { DraftingStopButton } from './DraftingStopButton';
 import { useBackgroundHandoffSubmit } from './useBackgroundHandoffSubmit';
 import { DictationRecordingBar } from './DictationRecordingBar';
 import {
@@ -1677,7 +1678,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSlot currentModel={modelConfig.model} />
             </div>
 
-            {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}
+            <DraftingStopButton
+              isProcessing={isProcessing}
+              hasStoppableBackgroundWork={hasStoppableBackgroundWork}
+              hasContent={hasContent}
+              isStopping={isStopping}
+              onStop={onStop}
+            />
             <BackgroundHandoffButton
               isProcessing={Boolean(isProcessing)}
               draftText={value}
