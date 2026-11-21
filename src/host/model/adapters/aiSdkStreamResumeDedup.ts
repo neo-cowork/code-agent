@@ -23,9 +23,9 @@ export function withB2ContinuationHint(prompt: AiSdkPromptShape, keptText: strin
   };
 }
 
-export type B2DedupReason = 'restated-trimmed' | 'not-restated' | 'trim-skipped';
+type B2DedupReason = 'restated-trimmed' | 'not-restated' | 'trim-skipped';
 
-export interface B2DedupDecision {
+interface B2DedupDecision {
   reason: B2DedupReason;
   /** 公共前缀长度（restated-trimmed 时即被裁掉的字符数，含续答开头空白）。 */
   commonChars: number;

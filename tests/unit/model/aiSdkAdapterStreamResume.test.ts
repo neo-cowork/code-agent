@@ -403,7 +403,7 @@ describe('inferenceViaAiSdk —— B2 续答提示 + 宿主开头去重（ADR-06
   const dedupLog = (level: 'info' | 'warn', reason: string) =>
     vi.mocked(logger[level]).mock.calls.some(([m]) => String(m).includes(`B2 续答开头去重 reason=${reason}`));
   /** renderer 把 kept 段与续答段首尾相接展示。 */
-  const visible = (kept: string, res: { content: string }) => kept + res.content;
+  const visible = (kept: string, res: { content?: string }) => kept + (res.content ?? "");
   const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
 
   it('续答请求 = 原消息逐字不变 + assistant 已保留文本 + user 续写提示（仅请求，不落进 kept）', async () => {
@@ -524,7 +524,7 @@ describe('inferenceViaAiSdk —— B2 续答提示 + 宿主开头去重（ADR-06
     expect(col.chunks.slice(breakAt + 1).filter((c) => c.type === 'text').map((c) => c.content).join('')).toBe(TAIL);
     // 续答 response 自成一条，不含 kept 段
     expect(res.content).toBe(TAIL);
-    expect(res.content.startsWith(KEPT)).toBe(false);
+    expect((res.content ?? "").startsWith(KEPT)).toBe(false);
   });
 });
 
