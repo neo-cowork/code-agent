@@ -129,7 +129,7 @@ describe('tool denial through the production env-assist bridge entries', () => {
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
   });
 
-  async function publishDenial(failure: typeof failures[number], runId: string) {
+  async function publishDenial(failure: Pick<typeof failures[number], 'metadata' | 'klass' | 'target' | 'kind' | 'pane'> & { toolName: string }, runId: string) {
     const result: Pick<ToolResult, 'success' | 'error' | 'metadata'> = {
       success: false, error: 'Permission denied', metadata: { ...failure.metadata },
     };
@@ -161,7 +161,10 @@ describe('tool denial through the production env-assist bridge entries', () => {
   });
 
   it('still raises the automation card for a non-probe reminders read denial (-1743)', async () => {
-    const row = await publishDenial({ ...failures[3], toolName: 'reminders' }, 'denial-reminders-read-1743');
+    const row = await publishDenial({
+      toolName: 'reminders', metadata: { code: 'not_authorized' }, klass: 'perm_automation',
+      target: 'reminders', kind: 'request_grant', pane: 'automation',
+    }, 'denial-reminders-read-1743');
     expect(row?.metadata?.envAssist).toMatchObject({ class: 'perm_automation', phase: 'needs_user' });
   });
 
