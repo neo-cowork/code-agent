@@ -1,7 +1,23 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const logSpy = vi.hoisted(() => ({
+  infos: [] as Array<{ message: string; meta?: unknown }>,
+  warns: [] as Array<{ message: string; meta?: unknown }>,
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({
+    info: (message: string, meta?: unknown) => { logSpy.infos.push({ message, meta }); },
+    warn: (message: string, meta?: unknown) => { logSpy.warns.push({ message, meta }); },
+    debug: () => {},
+    error: () => {},
+  }),
+  LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
+}));
+
 import { getPermissionModeManager, resetPermissionModeManager, type PermissionMode } from '../../../src/host/permissions/modes';
 import { isTaskOutputPathAuthorized, taskOutputDirectoryForShell, withTaskOutputDirectory } from '../../../src/host/permissions/taskOutputDirectory';
 import { PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
@@ -22,6 +38,8 @@ beforeEach(() => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-output-data-'));
   process.env.CODE_AGENT_DATA_DIR = dataDir;
   directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'task-output-')));
+  logSpy.infos.length = 0;
+  logSpy.warns.length = 0;
   resetPermissionModeManager();
   getPermissionModeManager().setSessionMode(SESSION, 'bypassPermissions', true);
 });
@@ -101,6 +119,55 @@ describe('explicit task output directory authorization', () => {
     '输出目录：/',
   ])('does not infer consent from a mention or ambiguous instruction: %s', async (prompt) => {
     await task(prompt.replaceAll('PATH', directory), async () => { expect(authorized()).toBe(false); });
+  });
+
+  it('a negated directive turn grants neither the new folder nor the session\'s previous folder', async () => {
+    const dirA = path.join(directory, 'out-a');
+    const dirB = path.join(directory, 'out-b');
+    fs.mkdirSync(dirA); fs.mkdirSync(dirB);
+    await task(`输出目录：${dirA}`, async () => { expect(authorized(path.join(dirA, 'x.md'))).toBe(true); });
+    await task(`输出目录：${dirB}\n不要覆盖旧文件`, async () => {
+      expect(authorized(path.join(dirA, 'x.md'))).toBe(false);
+      expect(authorized(path.join(dirB, 'x.md'))).toBe(false);
+    });
+    expect(logSpy.warns).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining('directive refused'),
+        meta: { sessionId: SESSION, reason: 'negation_or_fence' },
+      }),
+    ]);
+    // The persisted record is untouched by the refused turn: a plain continue restores A.
+    logSpy.warns.length = 0; logSpy.infos.length = 0;
+    await task('继续', async () => { expect(authorized(path.join(dirA, 'x.md'))).toBe(true); });
+    expect(logSpy.warns).toHaveLength(0);
+    expect(logSpy.infos.some((e) => e.message === 'Task output directory restored for session')).toBe(true);
+  });
+
+  it('any refused directive revives neither folder; the refusal reason is logged', async () => {
+    const dirA = path.join(directory, 'out-a');
+    const dirB = path.join(directory, 'out-b');
+    fs.mkdirSync(dirA); fs.mkdirSync(dirB);
+    const cases: Array<[string, string]> = [
+      ['```text\n输出目录：' + dirB + '\n```', 'negation_or_fence'],
+      ['输出目录：' + dirB + '\n输出目录：' + dirA, 'multiple_directives'],
+      ['输出目录：relative/deliver', 'invalid_path'],
+      ['输出目录：' + path.join(dataDir, 'hooks'), 'root_or_protected'],
+    ];
+    for (const [prompt, reason] of cases) {
+      // re-mint A each round: the refusal must hold on top of a live previous grant
+      await task(`输出目录：${dirA}`, async () => { expect(authorized(path.join(dirA, 'x.md'))).toBe(true); });
+      logSpy.warns.length = 0;
+      await task(prompt, async () => {
+        expect(authorized(path.join(dirA, 'x.md'))).toBe(false);
+        expect(authorized(path.join(dirB, 'x.md'))).toBe(false);
+      });
+      expect(logSpy.warns).toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining('directive refused'),
+          meta: { sessionId: SESSION, reason },
+        }),
+      ]);
+    }
   });
 
   it.each([

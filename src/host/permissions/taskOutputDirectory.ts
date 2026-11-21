@@ -68,6 +68,8 @@ function restoreGrant(sessionId: string): TaskOutputDirectory | undefined {
   }
 }
 
+type DirectiveRefusalReason = 'negation_or_fence' | 'multiple_directives' | 'invalid_path' | 'root_or_protected';
+
 /** Only an explicit output directive in the new user's own task can grant a folder.
  * Never scan history, attachments, model output, recovery or automated input. Ambiguous
  * prose stays on the existing confirmation path; a path mention alone is not consent. */
@@ -83,6 +85,11 @@ export async function withTaskOutputDirectory<T>(input: {
 }, run: () => Promise<T>): Promise<T> {
   const metadata = input.metadata;
   let grant: TaskOutputDirectory | undefined;
+  // When the user's text carries an output-directory directive line that mints nothing
+  // this turn, the freshest instruction outranks any folder recorded for this session:
+  // silently re-applying the stale grant would authorize a folder the user just moved
+  // away from, so the turn runs with no grant (normal confirmation path covers writes).
+  let directiveRefusal: DirectiveRefusalReason | undefined;
   const inherited = scope.getStore();
   if (input.inherit && inherited?.active && inherited.sessionId === input.sessionId
     && !metadata?.automation && getPermissionModeManager().getModeForSession(input.sessionId) === 'bypassPermissions') {
@@ -97,7 +104,8 @@ export async function withTaskOutputDirectory<T>(input: {
     // extraction / model inference, shell expansion, relative path or multiple grants.
     const directives = input.userText.split(/\r?\n/).filter((line) =>
       /(?:^输出目录|(?:^|[，；])成品都存到同一目录)[：:]/u.test(line));
-    const raw = directives.length === 1 && !/```|~~~|不要|不得|禁止|勿|\bdo not\b|\bdon't\b/iu.test(input.userText)
+    const negatedOrFenced = /```|~~~|不要|不得|禁止|勿|\bdo not\b|\bdon't\b/iu.test(input.userText);
+    const raw = directives.length === 1 && !negatedOrFenced
       ? directives[0].match(/(?:^输出目录|(?:^|[，；])成品都存到同一目录)[：:]\s*(\/[^\s`'"<>$\\]+)\s*$/u)?.[1]
       : undefined;
     if (raw && path.isAbsolute(raw) && !raw.split('/').includes('..')) {
@@ -106,18 +114,31 @@ export async function withTaskOutputDirectory<T>(input: {
         if (directory !== path.parse(directory).root && !isProtectedWritePath(directory)) {
           grant = { sessionId: input.sessionId, directory, requestedDirectory: path.resolve(raw), active: true, leases: 1 };
           persistGrant(input.sessionId, { directory, requestedDirectory: grant.requestedDirectory });
+        } else {
+          directiveRefusal = 'root_or_protected';
         }
       } catch {
         // Path analysis failure cannot mint an authorization.
+        directiveRefusal = 'invalid_path';
       }
+    } else if (directives.length >= 1) {
+      if (negatedOrFenced) directiveRefusal = 'negation_or_fence';
+      else if (directives.length > 1) directiveRefusal = 'multiple_directives';
+      else directiveRefusal = 'invalid_path';
+    }
+    if (directiveRefusal) {
+      logger.warn('Task output directory directive refused; session grant restore skipped',
+        { sessionId: input.sessionId, reason: directiveRefusal });
     }
   }
   const manager = getPermissionModeManager();
   if (!grant && input.sessionId && !input.unattended && !manager.isUnattendedSession(input.sessionId)
     && !metadata?.automation && !metadata?.agentTeam && !metadata?.channel
     && manager.getModeForSession(input.sessionId) === 'bypassPermissions') {
-    grant = restoreGrant(input.sessionId);
-    if (grant) logger.info('Task output directory restored for session', { sessionId: grant.sessionId, directory: grant.directory });
+    if (!directiveRefusal) {
+      grant = restoreGrant(input.sessionId);
+      if (grant) logger.info('Task output directory restored for session', { sessionId: grant.sessionId, directory: grant.directory });
+    }
   }
   return scope.run(grant, async () => {
     if (grant) logger.info('Task output directory authorized', { sessionId: grant.sessionId, directory: grant.directory });
