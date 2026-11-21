@@ -16,7 +16,9 @@ export function isAppleEventsDenied(error: unknown): boolean {
   const message = error instanceof Error
     ? error.message
     : typeof error === 'string' ? error : '';
-  return APPLE_EVENTS_DENIED_PATTERN.test(message);
+  const stderr = typeof error === 'object' && error !== null && typeof (error as { stderr?: unknown }).stderr === 'string'
+    ? (error as { stderr: string }).stderr : '';
+  return APPLE_EVENTS_DENIED_PATTERN.test(message) || APPLE_EVENTS_DENIED_PATTERN.test(stderr);
 }
 
 export type AppleScriptFailureCode = 'not_authorized' | 'not_found' | 'timeout' | 'read_failed';

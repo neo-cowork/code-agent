@@ -48,7 +48,9 @@ export function classifyEnvBlocker(input: {
     blocker = 'perm_calendars';
     target = 'calendar';
     pane = 'calendars';
-  } else if (AUTOMATION_TARGETS[input.toolName] && (result.code ?? metadata.code) === 'not_authorized') {
+  } else if (AUTOMATION_TARGETS[input.toolName] && (result.code ?? metadata.code) === 'not_authorized'
+    // A denial that is not an Apple-events refusal cannot be fixed in the Automation pane; the connector guidance covers it.
+    && metadata.notAppleEvents !== true) {
     blocker = 'perm_automation';
     target = AUTOMATION_TARGETS[input.toolName];
     pane = 'automation';
