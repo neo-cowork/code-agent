@@ -39,6 +39,8 @@ vi.mock('../../../src/host/services/sessionAutomation/sessionAutomationService',
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { DEFAULT_SETTINGS } from '../../../src/host/services/core/configDefaults';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { connectorToolGrantIdentity } from '../../../src/host/permissions/connectorToolAccess';
+import { resolvePreAskGrant } from '../../../src/host/permissions/preAskGrant';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { bindToolGrantDatabase, listToolGrants, mintToolRunGrant } from '../../../src/host/permissions/toolGrantStore';
 import { buildCanUseToolFromLegacy, buildProtocolContext } from '../../../src/host/tools/dispatch/shadowAdapter';
@@ -288,5 +290,19 @@ describe('读授权不放行写回（reverse）', () => {
     expect(events[0].tool).toBe('calendar_delete_event');
     const rows = permissionAskRows().filter((row) => row.toolName === 'calendar_delete_event');
     expect(rows.map((row) => row.reason)).toEqual(['user']);
+  });
+
+  it('授权键反向钉：calendar_* 写回的授权身份是写回工具本身，读授权在授权查找层命中不了', () => {
+    // 铸权与消费共用 connectorToolGrantIdentity：写回的 key 若被并进 calendar 读 key，
+    // 读授权就会在授权查找层放行写回。写回走 ToolExecutor 外层闸时这一层被 C1
+    // trustBoundary 挡在前面（外层 preAsk blocked），所以在这里直接钉授权键本身。
+    expect(connectorToolGrantIdentity('calendar_create_event', null)).toEqual({ tool: 'calendar_create_event', target: null });
+    expect(connectorToolGrantIdentity('calendar_delete_event', null)).toEqual({ tool: 'calendar_delete_event', target: null });
+    expect(connectorToolGrantIdentity('calendar_update_event', null)).toEqual({ tool: 'calendar_update_event', target: null });
+    mintToolRunGrant('sess-a', 'calendar', null);
+    // 同会话的 calendar 读授权，对写回工具的 preAsk 授权查找不命中
+    for (const tool of ['calendar_create_event', 'calendar_update_event', 'calendar_delete_event']) {
+      expect(resolvePreAskGrant({ toolName: tool, sessionId: 'sess-a', standingGrantTarget: null, computerApp: null, blocked: false })).toBeNull();
+    }
   });
 });
