@@ -579,11 +579,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // @ 文件 → attachments（文件类型图标）。视觉顺序由编辑器 DOM 里的挂载点位置决定。
   // 本会话 pin 的资料并入文字流（产品负责人 2026-08-05：不再独立一行）
   const { pinnedItems: pinnedLibraryItems, removePin: removeLibraryPin } = usePinnedLibraryItems(currentSessionId ?? null);
-  const pinnedLibraryItemsRef = useRef(pinnedLibraryItems);
-  pinnedLibraryItemsRef.current = pinnedLibraryItems;
-  const removeLibraryPinRef = useRef(removeLibraryPin);
-  removeLibraryPinRef.current = removeLibraryPin;
+  // store→DOM 对账 epoch：框选/⌘A+粘贴等原生编辑把 chip 挂载点从 DOM 吞掉后推一档，
+  // 让 inlineChips 重算出新数组身份，InputArea 的 syncChipMounts 对账 effect 才会重跑
+  // （补回缺席挂载点）。引用条目不按 DOM 在场与否裁剪，见 handleInlineChipsChanged。
+  const [chipReconcileEpoch, setChipReconcileEpoch] = useState(0);
   const inlineChips = useMemo<InlineChipView[]>(() => {
+    void chipReconcileEpoch; // 只触发重算，不参与内容
     const chips: InlineChipView[] = [];
     if (pendingCommand) {
       chips.push({ key: `command:${pendingCommand.id}`, kind: 'command', id: pendingCommand.id, label: pendingCommand.name });
@@ -612,7 +613,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       chips.push({ key: `artifact:${reference.id}`, kind: 'artifact', id: reference.id, label: reference.name });
     }
     return chips;
-  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language]);
+  }, [pendingCommand, selectedSkillIds, attachments, pinnedLibraryItems, sessionReferences, artifactReferences, capabilityRegistry.items, language, chipReconcileEpoch]);
+  const inlineChipsRef = useRef(inlineChips);
+  inlineChipsRef.current = inlineChips;
 
   // slash 面板选中后：光标前的触发词（/goal、/sk…）原位替换成 chip 挂载点。
   // 无触发词（+ 菜单等无光标来源）时 no-op——store 更新后编辑器对账会把 chip 补到末尾。
@@ -654,24 +657,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== chip.id));
   }, [removeLibraryPin]);
 
-  // 浏览器侧删了 chip（框选删除 / 剪切）：DOM 现存的 chip key 回传，缺席的 store 条目同步移除。
+  // 浏览器侧删了 chip（框选删除 / 剪切 / ⌘A+粘贴）：DOM 现存 chip key 回传。
+  // 只有 command 还按 DOM 在场与否移除；skill / library / session / artifact / 附件
+  // 五类不裁剪——⌘A+粘贴/剪切会连带吞掉 chip 挂载点（attachment 前例
+  // N-FIX-COMPOSER-SELECT-ALL-PASTE-DROPS-ATTACHMENT），按 DOM 裁剪会静默丢掉用户
+  // 摆进来的引用。缺席挂载点推对账 epoch 由 syncChipMounts 补回；显式删除走
+  // handleRemoveInlineChip（chip × 按钮 / Backspace·Delete 紧贴 chip），那才是移除意图。
   const handleInlineChipsChanged = useCallback((presentKeys: string[]) => {
     const present = new Set(presentKeys);
     const store = useComposerStore.getState();
     if (store.pendingCommand && !present.has(`command:${store.pendingCommand.id}`)) {
       store.setPendingCommand(null);
     }
-    const keptSkills = store.selectedSkillIds.filter((id) => present.has(`skill:${id}`));
-    if (keptSkills.length !== store.selectedSkillIds.length) {
-      store.setTurnCapabilityScopeMode('manual');
-      store.setSelectedSkillIds(keptSkills);
+    if (inlineChipsRef.current.some((chip) => !present.has(chip.key))) {
+      setChipReconcileEpoch((epoch) => epoch + 1);
     }
-    // 附件不按 DOM 在场与否裁剪：⌘A+粘贴/剪切会连带吞掉 chip 挂载点，由 syncChipMounts 补回。
-    for (const item of pinnedLibraryItemsRef.current) {
-      if (!present.has(`library:${item.id}`)) removeLibraryPinRef.current(item.id);
-    }
-    setSessionReferences((prev) => prev.filter((reference) => present.has(`session:${reference.id}`)));
-    setArtifactReferences((prev) => prev.filter((reference) => present.has(`artifact:${reference.id}`)));
   }, []);
 
   const buildEnvelope = useChatInputEnvelope({
