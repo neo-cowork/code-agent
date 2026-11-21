@@ -16,6 +16,7 @@ import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifa
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
 import { remindersUpdateNoChangeError } from './remindersApprovalDetails';
+import { normalizeReminderCreateTime } from '../../reminderCreateTime';
 import { captureReminderBefore } from './undoMetadata';
 
 async function executeRemindersUpdate(
@@ -35,6 +36,8 @@ async function executeRemindersUpdate(
   if (noChangeError) {
     return { ok: false, error: noChangeError, code: 'INVALID_ARGS' };
   }
+  const reminderTime = normalizeReminderCreateTime(schema.name, args);
+  if (!reminderTime.ok) return reminderTime;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
