@@ -11,7 +11,7 @@
  *   5. internal_tool_name (read_file, write_file, mcp__..., etc.)
  *   6. english_state_word (accepted：..., [running] id=, interrupted: process crashed, etc.)
  *   7. sandbox_exec       (sandbox-exec -f ...)
- *   8. temp_path          (/tmp/..., /private/tmp/..., /var/folders/...)
+ *   8. temp_path          (/tmp/..., /private/tmp/..., /var/tmp/..., /private/var/tmp/..., /var/folders/..., /private/var/folders/...)
  *   9. raw_json           ({"key": ...})
  *
  * Combines:
