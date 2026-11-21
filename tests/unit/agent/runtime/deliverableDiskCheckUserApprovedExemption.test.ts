@@ -250,7 +250,7 @@ describe('applyDeliverableCloseGates user-approved placeholder exemption (realru
       success: true,
       output: 'ok',
       metadata: { outputPath: artifact, userApproved: true },
-    } as unknown as import('../../../../src/shared/contract').ToolResult[]];
+    }] as unknown as import('../../../../src/shared/contract').ToolResult[];
 
     const sanitized = sanitizeToolResultsForHistoryWithCalls(toolResults, [
       { id: 'write-本周周报.md', name: 'Write', arguments: { file_path: artifact } },
