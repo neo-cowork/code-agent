@@ -36,6 +36,7 @@ import * as path from 'path';
 import type { Message, MessageAttachment } from '../../shared/contract/message';
 import { getConfigService } from '../services/core/configService';
 import { deriveRuleSummaryTitle, isPlaceholderSessionTitle, isProvisionalAutoTitle } from '../../shared/sessionTitlePlaceholder';
+import { stripTelemetryRecoveryNoticeOrResidue } from '../../shared/telemetryRecovery';
 import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../shared/constants/timeouts';
 import { buildHostSessionTitlePrompt } from '../session/sessionTitleHostPrompt';
 import { getDefaultWorkDirectory } from './configPaths';
@@ -185,7 +186,8 @@ function cleanRuleFolderTitle(message: string, language?: 'zh' | 'en'): string |
 }
 
 async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions): Promise<string | undefined> {
-  const message = options.userMessage?.trim();
+  // 文件夹命名与标题共用恢复提示清洗入口：只剩提示的消息按空消息处理，沿用附件名兜底。
+  const message = stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '').trim();
   if (!message) return undefined; // 附件名沿用既有路径。
   const started = Date.now();
   const logDecision = (source: 'model' | 'rule' | 'short-clean', reason: string) => {
@@ -268,9 +270,11 @@ function buildSessionFolderBaseName(options: SessionWorkDirectoryOptions): strin
   const date = new Date(options.now ?? Date.now());
   const mmdd = `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const prefix = (options.language ?? readUiLanguage()) === 'en' ? 'Task' : '任务';
+  // 与 chooseFirstTurnFolderTitle 同一道恢复提示清洗：只剩提示的消息等同空消息，走附件名/untitled。
+  const userMessage = stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '');
   const title = sanitizeFolderTitle(usableSessionTitle(options.sessionTitle) ?? '')
-    ?? sanitizeFolderTitle(options.userMessage ?? '')
-    ?? (!options.userMessage?.trim() ? attachmentFolderTitle(options.attachments) : undefined)
+    ?? sanitizeFolderTitle(userMessage)
+    ?? (!userMessage.trim() ? attachmentFolderTitle(options.attachments) : undefined)
     ?? 'untitled';
   return `${prefix}_${mmdd}_${title}`;
 }
@@ -381,7 +385,8 @@ export async function planSessionWorkDirectory(
   const firstTurnTitle = useExistingTitle ? title : await chooseFirstTurnFolderTitle(options);
   const baseName = buildSessionFolderBaseName({
     ...options, sessionTitle: firstTurnTitle, userMessage: undefined,
-    attachments: options.userMessage?.trim() ? undefined : options.attachments,
+    // 附件名兜底的门槛按清洗后的正文判：只剩恢复提示的消息等同空消息。
+    attachments: stripTelemetryRecoveryNoticeOrResidue(options.userMessage ?? '').trim() ? undefined : options.attachments,
   });
   return findFreeSessionWorkDirectory(root, baseName, resolveReservationSet(root, options.reservedPaths));
 }

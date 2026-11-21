@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { stripAppshotBlocks } from './contract/appshot';
+import { isTelemetryRecoveryNoticeResidue, stripTelemetryRecoveryNoticeOrResidue } from './telemetryRecovery';
 
 /** 纯 appshot 会话的固定名（按语言）。存量行里的中文名在展示层经 localizeAppshotSessionTitle 转换。 */
 const APPSHOT_SESSION_TITLE = { zh: 'Appshot 会话', en: 'Appshot conversation' } as const;
@@ -49,10 +50,14 @@ export function isPlaceholderSessionTitle(title: string | null | undefined): boo
   return named.startsWith('Session ') || named.startsWith('CLI Session ');
 }
 
-/** 剥掉 appshot 块后留给小模型和降级标题的正文。纯 appshot 用固定名。 */
+/**
+ * 剥掉旧恢复提示前缀与 appshot 块后留给小模型和降级标题的正文。纯 appshot 用固定名。
+ * 只剩恢复提示（含截断残留）时返回空串：调用方按「不起标题、保留占位」处理。
+ */
 export function sessionTitleSource(sourceText: string, language: TitleLanguage = 'zh'): string {
-  const visibleMessage = stripAppshotBlocks(sourceText);
-  return visibleMessage || (sourceText.trim().startsWith('<appshot') ? APPSHOT_SESSION_TITLE[language] : sourceText);
+  const cleaned = stripTelemetryRecoveryNoticeOrResidue(sourceText);
+  const visibleMessage = stripAppshotBlocks(cleaned);
+  return visibleMessage || (cleaned.trim().startsWith('<appshot') ? APPSHOT_SESSION_TITLE[language] : cleaned);
 }
 
 /**
@@ -65,6 +70,9 @@ export function sessionTitleSource(sourceText: string, language: TitleLanguage =
 export function isProvisionalAutoTitle(title: string | null | undefined, sourceText: string): boolean {
   if (isPlaceholderSessionTitle(title)) return true;
   const named = (title ?? '').trim();
+  // 旧预写层把恢复提示截进了临时标题：来源经 sessionTitleSource 剥掉前缀后，前缀比对必失配；
+  // 但以提示开头的标题必是自动产物而非用户命名，仍按未定档处理，好让干净标题顶上。
+  if (named && isTelemetryRecoveryNoticeResidue(named)) return true;
   // web 预写层对 <=30 字的 prompt 整句写入、不带 `...`：与首行相同同样是自动产物。
   const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
   if (named && flat(named) === flat(sourceText.trimStart().split('\n')[0] ?? '')) return true;
@@ -92,9 +100,11 @@ export function shouldKeepLocalTitleOverCloud(
   return !isProvisionalAutoTitle(localTitle, sourceText);
 }
 
-/** 小模型不可用时的标题：首行，最多 50 字，超出加 `...`。 */
+/** 小模型不可用时的标题：首行，最多 50 字，超出加 `...`。来源只剩恢复提示时返回空串 = 不起标题，保留占位。 */
 export function deriveFallbackSessionTitle(sourceText: string, language: TitleLanguage = 'zh'): string {
-  const firstLine = sessionTitleSource(sourceText, language).trim().split('\n')[0] || APPSHOT_SESSION_TITLE[language];
+  const source = sessionTitleSource(sourceText, language);
+  if (!source.trim()) return '';
+  const firstLine = source.trim().split('\n')[0];
   const title = firstLine.slice(0, 50);
   return firstLine.length > 50 ? `${title}...` : title;
 }
@@ -180,13 +190,15 @@ function avoidFunctionWordFragment(
   return words.join(' ');
 }
 
-/** 无模型 / 模型仍回声时的规则摘要：首行首个分句去掉请求套话，最多 20 字，不带 `...`。 */
+/** 无模型 / 模型仍回声时的规则摘要：首行首个分句去掉请求套话，最多 20 字，不带 `...`。来源只剩恢复提示时返回空串。 */
 export function deriveRuleSummaryTitle(
   sourceText: string,
   language: TitleLanguage = 'zh',
   options?: { avoidFragment?: boolean },
 ): string {
-  const first = firstLineOf(sessionTitleSource(sourceText, language)) || APPSHOT_SESSION_TITLE[language];
+  const source = sessionTitleSource(sourceText, language);
+  if (!source.trim()) return '';
+  const first = firstLineOf(source) || APPSHOT_SESSION_TITLE[language];
   let clause = (first.split(CLAUSE_SPLIT).find((part) => part.trim()) ?? first).trim();
   for (let i = 0; i < 3; i++) {
     const next = clause.replace(REQUEST_BOILERPLATE, '').trim();
