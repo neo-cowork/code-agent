@@ -176,7 +176,7 @@ beforeEach(() => {
       legacyCtx: ctx,
       abortSignal: ctx.abortSignal,
     });
-    const handler = module.createHandler();
+    const handler = await module.createHandler();
     const protoResult = await handler.execute(args, protoCtx, buildCanUseToolFromLegacy(ctx, name));
     if (protoResult.ok) {
       return { success: true, output: protoResult.output, result: protoResult.output, metadata: protoResult.meta };
