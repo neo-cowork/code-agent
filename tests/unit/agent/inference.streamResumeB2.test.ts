@@ -282,6 +282,24 @@ describe('contextAssembly inference —— B2 诚实分段与重发收编（ADR-
     expect(streamedText(ctx)).toBe('断点片段。续答正文。');
   });
 
+  it('B2 去重后的续答：partial 只含 kept 段，续答 delta 是裁掉复述后的新文本，两段可见文本合起来只有一份', async () => {
+    const ctx = buildCtx({ persistMessage: vi.fn().mockResolvedValue(undefined) } as any);
+    ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {
+      onStream?.({ type: 'text', content: '公司定于本周六组织团建，费用全免，不用自己掏一分钱' });
+      onStream?.({ type: 'stream_break', error: 'ECONNRESET' });
+      // adapter 已把复述的开头裁掉，只发新文本
+      onStream?.({ type: 'text', content: '。请周五前回复。' });
+      return Promise.resolve({ type: 'text' as const, content: '。请周五前回复。', finishReason: 'stop' });
+    });
+
+    await inference(ctx);
+    const persist = vi.mocked(ctx.runtime.persistMessage as unknown as ReturnType<typeof vi.fn>);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist.mock.calls[0][0].content).toBe('公司定于本周六组织团建，费用全免，不用自己掏一分钱\n\n[连接中断 — 部分回答已保留]');
+    expect(ctx.runtime.turn.lastStreamedContent).toBe('。请周五前回复。');
+    expect(streamedText(ctx).split('公司定于本周六组织团建').length - 1).toBe(1);
+  });
+
   it('persists one assistant partial when the same response receives repeated stream-break signals', async () => {
     const ctx = buildCtx({ persistMessage: vi.fn().mockResolvedValue(undefined) } as any);
     ctx.runtime.modelRouter.inference = vi.fn((_messages, _tools, _cfg, onStream?: StreamCallback) => {

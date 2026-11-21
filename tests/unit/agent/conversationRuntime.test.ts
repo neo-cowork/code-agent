@@ -1466,14 +1466,14 @@ describe('ConversationRuntime', () => {
     });
 
     describe('skill allowed-tools boundary vs delegated background run', () => {
-      // 真实 builtin skill + 真实 resolver/上下文构建，只把 discovery 的取 skill 一步换成内置目录
+      // 真实 resolver/上下文构建与内置技能，给 dream 和 distill 加上测试用的作者别名
       async function useRealBuiltinResolution(): Promise<void> {
         const actual = await vi.importActual<
           typeof import('../../../src/host/services/skills/skillInvocationResolver')
         >('../../../src/host/services/skills/skillInvocationResolver');
         const { BUILTIN_SKILLS } = await import('../../../src/host/services/skills/builtinSkills');
-        vi.mocked(resolveSkillInvocation).mockImplementation(async (message: string) =>
-          actual.resolveSkillInvocationFromSkills(message, BUILTIN_SKILLS));
+        const skills = BUILTIN_SKILLS.map((skill) => ['dream', 'distill'].includes(skill.name) ? { ...skill, aliases: [`run ${skill.name}`] } : skill);
+        vi.mocked(resolveSkillInvocation).mockImplementation(async (message: string) => actual.resolveSkillInvocationFromSkills(message, skills));
         vi.mocked(buildSkillInvocationContext).mockImplementation(actual.buildSkillInvocationContext);
       }
 
@@ -1499,12 +1499,12 @@ describe('ConversationRuntime', () => {
         expect(ctx.turn.skillToolBoundary).toBeUndefined();
       });
 
-      it('auxiliary run keeps the strict boundary for an alias hit like "dream" / "distill"', async () => {
+      it('auxiliary run keeps the strict boundary for a dream or distill frontmatter alias hit', async () => {
         await useRealBuiltinResolution();
         ctx.auxiliaryRun = true;
-        for (const [text, name] of [['dream about this', 'dream'], ['distill this video', 'distill']]) {
+        for (const name of ['dream', 'distill']) {
           ctx.turn.setSkillToolBoundary(undefined);
-          await runtime.initializeRun(text);
+          await runtime.initializeRun(`run ${name}`);
           expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: name, matchKind: 'alias' });
           expect(ctx.turn.skillToolBoundary).toMatchObject({ skillName: name, strict: true });
         }
@@ -1514,7 +1514,7 @@ describe('ConversationRuntime', () => {
         await useRealBuiltinResolution();
         ctx.auxiliaryRun = true;
         await runtime.initializeRun(
-          buildDelegatedTaskPrompt('open example.com and read the heading', 'dream about this while it runs'),
+          buildDelegatedTaskPrompt('open example.com and read the heading', 'run dream while it runs'),
         );
         expect(ctx.turn.activeSkillInvocation).toBeUndefined();
         expect(ctx.turn.skillToolBoundary).toBeUndefined();
@@ -1529,7 +1529,7 @@ describe('ConversationRuntime', () => {
       });
     });
 
-    it('drops a bare-word alias skill injection on a one-turn file-deliverable turn', async () => {
+    it('drops a frontmatter alias skill injection on a one-turn file-deliverable turn', async () => {
       // 模块 mock 默认透传 retainSkillInvocationForTurn；这里换上真实现来测装配围栏。
       // 消费侧过滤语义本身的断言在 skillInvocationResolver.test.ts。
       const actual = await vi.importActual<
@@ -1548,11 +1548,11 @@ describe('ConversationRuntime', () => {
           source: 'user',
         },
         matchKind: 'alias',
-        matchedText: 'docx',
-        args: '请用 docx 生成一份周报 .docx 文件，不要问我问题',
-        confidence: 0.87,
-        aliases: ['docx'],
-        reason: 'name alias matched',
+        matchedText: '周报排版',
+        args: '请帮我做周报排版，生成 .docx 文件，不要问我问题',
+        confidence: 0.91,
+        aliases: ['周报排版'],
+        reason: 'frontmatter alias matched',
       };
       const passthrough = vi.mocked(retainSkillInvocationForTurn).getMockImplementation();
       vi.mocked(retainSkillInvocationForTurn).mockImplementation(actual.retainSkillInvocationForTurn);
@@ -1560,8 +1560,8 @@ describe('ConversationRuntime', () => {
         .mockResolvedValueOnce(aliasInvocation)
         .mockResolvedValueOnce(aliasInvocation);
       try {
-        // 文件交付轮（含 .docx + 生成动词）：围栏丢弃裸词别名注入，不装配 skill 上下文
-        await runtime.initializeRun('请用 docx 生成一份周报 .docx 文件，不要问我问题');
+        // 文件交付轮（含 .docx + 生成动词）：围栏丢弃别名注入，不装配 skill 上下文
+        await runtime.initializeRun(aliasInvocation.args!);
         expect(buildSkillInvocationContext).not.toHaveBeenCalled();
         expect(ctx.turn.activeSkillInvocation).toBeUndefined();
 
@@ -1570,7 +1570,7 @@ describe('ConversationRuntime', () => {
           block: '<required-skill-invocation name="docx">...</required-skill-invocation>',
           contextModifier: {},
         });
-        await runtime.initializeRun('请用 docx 帮我看看这份周报的排版建议');
+        await runtime.initializeRun('请帮我看看周报排版建议');
         expect(buildSkillInvocationContext).toHaveBeenCalledTimes(1);
         expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'docx', matchKind: 'alias' });
       } finally {
