@@ -35,13 +35,13 @@ const session = (id: string) => ({
   messageCount: 2, turnCount: 1, modelConfig: { provider: 'openai', model: 'gpt-5' },
 });
 
-function renderList(groups: unknown[], currentSessionId: string | null = null) {
+function renderList(groups: unknown[], currentSessionId: string | null = null, expandedWorkspaces: Record<string, boolean> = {}) {
   const props = {
     groups, isLoading: false, hasAnySessions: true, filteredSessionsEmpty: false,
     messageSearchLoading: false, searchQuery: '', sessionStatusFilter: 'all',
     activeStatusFilterLabel: '', hasSearchFilters: false,
     projectMetaById: {}, setProjectMetaById: vi.fn(),
-    expandedWorkspaces: {}, collapsingWorkspaces: {}, expandedProjectDetails: {},
+    expandedWorkspaces, collapsingWorkspaces: {}, expandedProjectDetails: {},
     projectDrawerKey: null, isCreatingSession: false, creatingWorkspaceKey: null,
     setProjectDrawerKey: vi.fn(), setExpandedProjectDetails: vi.fn(),
     handleToggleWorkspaceGroup: vi.fn(), handleOpenWorkspaceAssets: vi.fn(),
@@ -133,5 +133,23 @@ describe('浅色下唯一可见高亮（栏面色 --sidebar-bg 不能当高亮�
     const header = container.querySelector('[data-sidebar-group-phase]')?.firstElementChild;
     expect(header?.className).toContain('bg-[var(--sidebar-bg)]');
     expect(header?.className).not.toContain('bg-zinc-950');
+  });
+});
+
+describe('快速对话层的无头会话（评审 Important）', () => {
+  it('旧版持久化过 uncategorized 已收起：会话行容器仍是展开态，不带 collapsed 类', () => {
+    const { container } = renderList([uncategorized('q')], null, { uncategorized: false });
+    const rows = container.querySelector('[data-sidebar-group-rows="uncategorized"]');
+    expect(rows).not.toBeNull();
+    expect(rows!.className).not.toContain('sidebar-project-rows--collapsed');
+    expect(container.querySelector('[data-sidebar-group-phase="collapsed"]')).toBeNull();
+  });
+
+  it('有文件夹分组时，无头的快速对话排在文件夹组之前，不并入其下', () => {
+    // groupByWorkspace 把未分类组固定排最后，这里按真实顺序喂入
+    const { container } = renderList([folder, uncategorized('q')]);
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Chat s1')).toBeGreaterThan(-1);
+    expect(text.indexOf('Chat s1')).toBeLessThan(text.indexOf('notes'));
   });
 });

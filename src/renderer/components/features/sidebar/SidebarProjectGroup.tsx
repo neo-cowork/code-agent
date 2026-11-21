@@ -152,7 +152,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     unfinishedCount: summary.unfinishedCount,
   };
   const expansionView = resolveSidebarGroupExpansionView({
-    persistedExpanded: isWorkspaceExpanded(expandedWorkspaces, group.key),
+    // 未分类组无组头：旧版本可能持久化过「已收起」，此处恒视为展开，否则行容器带 collapsed 态且无入口恢复。
+    persistedExpanded: group.isUncategorized || isWorkspaceExpanded(expandedWorkspaces, group.key),
     signals: groupExpansionSignals,
     isCollapsing: Boolean(collapsingWorkspaces[group.key]),
     displayName: summary.displayName,
