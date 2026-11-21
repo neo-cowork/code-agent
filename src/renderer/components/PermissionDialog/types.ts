@@ -60,6 +60,8 @@ export interface PermissionRequestDetails {
   commandSecurityFlags?: string[];
   affectedPath?: string;
   affectedFileCount?: number;
+  /** Host-owned：details.path 按真实上传 / 临时根分类的结论。 */
+  pathDisplay?: { path: string; kind: 'upload' | 'temp'; rest: string };
   /** Host 对写入目标的 stat 结论；渲染层只消费，缺省按 regular。 */
   targetKind?: FileTargetKind;
   /** B4：external 工具的授权 target 精确串（收件人/频道 id）；有值时审批卡点一行去向。 */
