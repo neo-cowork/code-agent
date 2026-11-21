@@ -3,6 +3,8 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { appendBashStep, bashStepFromToolCall, markBashStepNotRun } from './bashStepOutcome';
+import type { BashStep } from '../../shared/contract/backgroundTask';
 import { publishEnvAssistToolNotice } from '../permissions/envAssist/toolNotice';
 import { buildConnectorToolFailureEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
@@ -185,7 +187,7 @@ export class SubagentExecutor {
       ? Math.max(0, Math.floor(config.maxToolCalls))
       : undefined;
     const toolsUsed: string[] = [];
-    const bashSteps: Array<{ description?: string; command: string }> = [];
+    let bashSteps: BashStep[] = [];
     // 持久化角色履历用：收集实例产出的产物（设计 §4.3 履历 = 产物清单）
     const instanceArtifacts: Array<{ label: string; ref?: string }> = [];
     let toolCallsAttempted = 0;
@@ -876,11 +878,7 @@ export class SubagentExecutor {
             }
 
             toolsUsed.push(toolCall.name);
-            const bashArgs = toolCall.arguments as { description?: unknown; command?: unknown } | undefined;
-            if (toolCall.name === 'Bash' || toolCall.name === 'bash') {
-              const description = typeof bashArgs?.description === 'string' ? bashArgs.description : undefined;
-              bashSteps.push({ ...(description ? { description } : {}), command: typeof bashArgs?.command === 'string' ? bashArgs.command.slice(0, 200) : '' });
-            }
+            if (toolCall.name === 'Bash' || toolCall.name === 'bash') bashSteps = appendBashStep(bashSteps, bashStepFromToolCall(toolCall));
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
@@ -926,6 +924,7 @@ export class SubagentExecutor {
               ).finally(markToolEnd);
               await publishEnvAssistToolNotice({ toolName: toolCall.name, result, sessionId: context.sessionId, runId: executionRunId, onEvent: (event) => context.events.emit(event.type, event.data) });
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
+              bashSteps = markBashStepNotRun(bashSteps, toolCall.id, result) ?? bashSteps;
               // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
               const scopeCard = buildConnectorToolFailureEvent(result);
               if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);

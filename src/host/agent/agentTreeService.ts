@@ -34,6 +34,7 @@ import {
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
 import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
+import { toolNotRunCallIds } from './bashStepOutcome';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 import { stripWorkdirPrefix } from './workdirPrefix';
 import { cleanDisplayText, resolveSessionWorkspaceRoot, shortenDisplayPaths } from './workspacePathDisplay';
@@ -314,11 +315,14 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
       const target = extractToolStepTarget(call.arguments, call.name);
       const action = extractToolStepAction(call.arguments);
       const description = bashStepDescription(call.name, call.arguments);
+      const isBash = call.name === 'Bash' || call.name === 'bash';
       return {
         tool,
         ...(target ? { target } : {}),
         ...(action ? { action } : {}),
         ...(description ? { description } : {}),
+        ...(isBash ? { callId: call.id } : {}),
+        ...(isBash && toolNotRunCallIds(record.messages).has(call.id) ? { notRun: true } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
     }
@@ -332,11 +336,17 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
 
 function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
   const steps: BashStep[] = [];
+  const notRun = toolNotRunCallIds(record.messages);
   for (const message of record.messages) {
     for (const call of message.toolCalls ?? []) {
       if (call.name !== 'Bash' && call.name !== 'bash') continue;
       const description = bashStepDescription(call.name, call.arguments);
-      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '' });
+      steps.push({
+        ...(description ? { description } : {}),
+        command: extractToolStepTarget(call.arguments) ?? '',
+        callId: call.id,
+        ...(notRun.has(call.id) ? { notRun: true } : {}),
+      });
     }
   }
   return steps.length > 0 ? steps.slice(-20) : undefined;
