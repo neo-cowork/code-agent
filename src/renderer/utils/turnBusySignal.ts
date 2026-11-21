@@ -1,8 +1,13 @@
 import type { TraceTurn } from '@shared/contract/trace';
 
 /** 一轮只允许一个进行中信号，由 TurnCard 决定它落在哪个现有组件里。 */
+/**
+ * `liveBackgroundTaskStarts`：同会话里仍未结束的后台任务的创建时间。
+ * 本轮有已交接后台的调用、且存在本轮开始后创建的存活任务时，后台通道承担进行中态。
+ */
 export function resolveBusySignal(
   turn: TraceTurn,
+  liveBackgroundTaskStarts: readonly number[] = [],
 ): 'thinking' | 'text-caret' | 'tool' | 'none' {
   if (turn.status !== 'streaming') return 'none';
 
@@ -14,6 +19,11 @@ export function resolveBusySignal(
     && node.toolCall?.result === undefined
   ));
   if (hasRunningTool) return 'tool';
+
+  const hasHandedOffCall = turn.nodes.some((node) => (
+    node.type === 'tool_call' && node.toolCall?.metadata?.code === 'HANDED_OFF_TO_BACKGROUND'
+  ));
+  if (hasHandedOffCall && liveBackgroundTaskStarts.some((start) => start >= turn.startTime)) return 'tool';
 
   for (let index = turn.nodes.length - 1; index >= 0; index -= 1) {
     const node = turn.nodes[index];
