@@ -1,7 +1,7 @@
 import type { TraceTurn } from '@shared/contract/trace';
 
 /** 同会话后台任务在账本里的事实：创建时间 + 是否仍未结束。 */
-export interface BackgroundTaskFact {
+interface BackgroundTaskFact {
   createdAt: number;
   live: boolean;
 }
