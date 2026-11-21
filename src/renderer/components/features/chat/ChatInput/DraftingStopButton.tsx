@@ -25,7 +25,7 @@ export function DraftingStopButton({
     <IconButton
       type="button"
       size="sm"
-      className="h-7 w-7 shrink-0"
+      className="composer-drafting-stop h-7 w-7 shrink-0"
       icon={isStopping ? <Loader2 className="animate-spin" /> : <Square className="fill-current" />}
       onClick={onStop}
       aria-label={label}
