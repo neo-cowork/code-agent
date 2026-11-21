@@ -15,7 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/services/infra/logger', () => {
   const fake = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -48,7 +48,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
-import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { ToolExecutionResult } from '../../../src/host/tools/types';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
@@ -63,6 +63,9 @@ import {
 } from '../../../src/renderer/utils/toolExecutionPresentation';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
+
+// 模块装载时的真实平台串：末尾的回归组用它证明平台钉没给同 worker 后续文件留残渣。
+const fileLoadPlatform = process.platform;
 
 /**
  * 真实 executor 硬拒结果：工作区临时目录 + 审批回调一叫就炸（硬拒必须发生在审批之前）。
@@ -343,6 +346,20 @@ describe('ask 拒绝（真人点拒审批卡）的人话卡片（真实 executor
 
 
 describe('denial recovery sentence in the real chat detail row', () => {
+  // 断言面（N-FIX-DENY-LOCKOUT-SURVIVES-EXPLICIT-REQUEST-FU1 ②）：出口句上卡的同时，
+  // 裸工具名 / 内部 code / 英文原句 / 通用兜底句（toolStepVerbs 的 rawFailureCodeFallback：
+  // zh「这一步没有成功，展开可查看详情」/ en "This step did not succeed; expand for details"）
+  // 一个都不许出现在卡片或折叠摘要里。
+  const bannedTexts = [
+    'calendar_create_event',
+    'TOOL_DISABLED_FOR_RUN',
+    'The user just declined',
+    '这一步没有成功',
+    '展开可查看详情',
+    'expand for details',
+    'This step did not succeed',
+  ] as const;
+
   it.each([
     ['zh', '你刚才拒绝了这类操作。请在新消息里再告诉 Neo 要做什么，确认卡片就会重新出现。'],
     ['en', 'You declined this kind of action. Tell Neo what you want in a new message to bring the approval card back.'],
@@ -362,32 +379,98 @@ describe('denial recovery sentence in the real chat detail row', () => {
       toolCall: asToolCall('sticky-refusal', 'Bash', {}, result),
     }));
     expect(markup).toContain(sentence);
-    expect(markup).not.toContain('The user just declined');
-    process.stdout.write(`sticky-row-${language}: ${markup}\n`);
+    for (const banned of bannedTexts) expect(markup).not.toContain(banned);
+    const folded = humanizeToolFailureReason(asToolCall('sticky-refusal', 'Bash', {}, result), language === 'zh' ? zh : en);
+    for (const banned of bannedTexts) expect(folded).not.toContain(banned);
+    process.stdout.write(`sticky-row-${language}: ${markup}\nfolded-sticky-${language}: ${folded}\n`);
     getDenialRegistry().clearAll();
   });
 });
 
 describe('turn-disabled tool bounce in the real chat detail row', () => {
+  // 断言面（N-FIX-DENY-LOCKOUT-SURVIVES-EXPLICIT-REQUEST-FU1 ③）：拒绝行只出
+  // 「新消息里再告诉 Neo」的出口句，不出裸工具名 / 内部 code / 通用兜底句。
+  const bannedTexts = [
+    'calendar_create_event',
+    'TOOL_DISABLED_FOR_RUN',
+    'The user just declined',
+    '这一步没有成功',
+    '展开可查看详情',
+    'expand for details',
+    'This step did not succeed',
+  ] as const;
+
+  // 连接器工具只在 darwin 注册进 protocol registry（modules/index.ts 的 platform 分支）。
+  // 钉住平台并重注册，Linux CI 也解析得到 calendar_create_event（钉法同
+  // tests/unit/tools/toolExecutor.connectorFollowup.test.ts）；本组在文件末尾，
+  // 重注册不影响前面已跑完的组。
+  const realPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  beforeAll(() => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    resetProtocolRegistry();
+    getProtocolRegistry();
+  });
+  // 还原要传「完整描述符」本体（value/writable/enumerable/configurable 一次归位），
+  // 不是把它包进 { value: … } —— 包了会把描述符对象当成平台串写给同 worker 的后续文件。
+  afterAll(() => {
+    Object.defineProperty(process, 'platform', realPlatform);
+  });
+
   it.each([
     ['zh', '请在新消息里再告诉 Neo 你想做什么'],
     ['en', 'Tell Neo again in a new message what you want'],
-  ] as const)('%s shows a way out instead of the generic fallback', (language, sentence) => {
-    const result = {
-      success: false,
-      error: "calendar_create_event is not in this turn's tool list. The call was not executed; use a listed tool within the current role boundary.",
-      metadata: { code: 'TOOL_DISABLED_FOR_RUN' },
-    } as unknown as ToolExecutionResult;
+  ] as const)('%s shows a way out instead of the generic fallback', async (language, sentence) => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+    // 生产入口（③）：真实 ToolExecutor.execute，run 级白名单不含 calendar_create_event
+    // → toolExecutor 的 run-policy 兜底闸在审批之前拒绝（formatRunPolicyDenial，
+    // metadata.code TOOL_DISABLED_FOR_RUN + bounced: true）。审批回调一叫就炸，
+    // 证明拒绝发生在审批之前。
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'tool-bounce-copy-'));
+    let result: ToolExecutionResult;
+    try {
+      const executor = new ToolExecutor({
+        workingDirectory: workspace,
+        requestPermission: async () => {
+          throw new Error('run-policy 拒绝发生在审批之前，审批回调不该被叫起');
+        },
+      });
+      executor.setAuditEnabled(false);
+      result = await executor.execute(
+        'calendar_create_event',
+        { title: 'Team sync', start_ms: 1794956400000, end_ms: 1794958200000 },
+        { sessionId: 'disabled-row-copy', allowedToolNames: ['Read', 'Write', 'Bash'] },
+      );
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+    expect(result.success).toBe(false);
+    // 夹具就是真实串：run-policy 闸的 error 与 metadata（toolExecutor.ts 拒绝出口）。
+    expect(result.error).toContain("calendar_create_event is not in this turn's tool list");
+    expect(result.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    expect(result.metadata?.bounced).toBe(true);
     i18nState.lang = language;
     const markup = renderToStaticMarkup(React.createElement(ToolDetails, {
-      toolCall: asToolCall('disabled-row', 'calendar_create_event', {}, result),
+      toolCall: asToolCall('disabled-row', 'calendar_create_event', { title: 'Team sync' }, result),
     }));
     expect(markup).toContain(sentence);
-    expect(markup).not.toContain('展开可查看详情');
-    expect(markup).not.toContain('expand for details');
-    expect(markup).not.toContain('TOOL_DISABLED_FOR_RUN');
+    for (const banned of bannedTexts) expect(markup).not.toContain(banned);
     const folded = humanizeToolFailureReason(asToolCall('disabled-row', 'calendar_create_event', {}, result), language === 'zh' ? zh : en);
     expect(folded).toContain(sentence);
+    for (const banned of bannedTexts) expect(folded).not.toContain(banned);
     process.stdout.write(`disabled-row-${language}: ${markup}\nfolded-${language}: ${folded}\n`);
+  });
+});
+
+describe('platform pin leaves no residue for later files in the same worker', () => {
+  // 回归（Rework r1 / ai-review）：afterAll 曾把整个属性描述符对象当成 value 写回
+  // process.platform，之后的 process.platform 变成对象，同 worker 后续文件里
+  // === 'darwin' / === 'linux' 全为假（managerNpmEnv 的 it.runIf 沙箱用例被跳过、
+  // isDaemonLockSupported() 在 mac/linux 上返回 false 而门仍绿）。
+  // 本组排在平台钉组之后：它一还原失真，这里立刻红。
+  it('process.platform is the real platform string after the bounce group restored it', () => {
+    expect(process.platform).toBe(fileLoadPlatform);
+    expect(typeof process.platform).toBe('string');
+    expect(['darwin', 'linux', 'win32']).toContain(process.platform);
   });
 });
