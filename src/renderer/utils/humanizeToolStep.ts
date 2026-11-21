@@ -16,6 +16,7 @@ import type { Translations } from '../i18n';
 import type { OfficeToolKind } from '../i18n/toolStepVerbs';
 import type { ToolCallTargetContext, ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { getHumanToolLabel } from './toolHumanLabel';
+import { isComputerUseMcpServer, parseMcpToolName, shouldHideMcpServerSlug } from './mcpServerLabel';
 import {
   extractWorkbenchReferenceFromToolCall,
   findConnectorToolMetadata,
@@ -79,27 +80,13 @@ export function getToolFilePath(
   return null;
 }
 
-// mcp 工具命名：现行 mcp__server__tool（双下划线），历史遗留 mcp_server_tool（单下划线），
-// 与 ToolCallDisplay/utils.ts 的 formatMcpServerName 同款解析口径。
-function parseMcpName(name: string): { server: string; tool: string } | null {
-  if (name.startsWith('mcp__')) {
-    const rest = name.slice('mcp__'.length);
-    const idx = rest.indexOf('__');
-    if (idx > 0) return { server: rest.slice(0, idx), tool: rest.slice(idx + 2) };
-    return null;
-  }
-  const legacy = name.match(/^mcp_([^_]+)_(.+)$/);
-  if (legacy) return { server: legacy[1], tool: legacy[2] };
-  return null;
-}
-
 /**
  * 未声明工具写盘披露（undeclared-tool:<name>）的展示名：mcp__server__tool →
  * 「server / tool」，解不动（无 server/tool 段、非 mcp 前缀）原样展示。
  * 消费方：RewindPanel 与 TraceNodeRenderer 的回退披露行（turnCheckoutNoteUndeclaredTool）。
  */
 export function undeclaredToolDisplayName(name: string): string {
-  const parsed = parseMcpName(name);
+  const parsed = parseMcpToolName(name);
   return parsed && parsed.tool !== '' ? `${parsed.server} / ${parsed.tool}` : name;
 }
 
@@ -224,7 +211,7 @@ export function classifyToolName(name: string): ToolCategory {
   if (MEMORY_STORE_TOOLS.has(name)) return 'memoryStore';
   if (MEMORY_SEARCH_TOOLS.has(name)) return 'memorySearch';
   if (TOOL_SEARCH_TOOLS.has(name)) return 'toolSearch';
-  const mcp = parseMcpName(name);
+  const mcp = parseMcpToolName(name);
   if (mcp) return isMessagingMcpTool(mcp.server, mcp.tool) ? 'mcpChannel' : 'mcp';
   return 'unknown';
 }
@@ -646,16 +633,26 @@ function buildToolStep(
       return target ? h.webFetch.replace('{target}', target) : h.webFetchFallback;
     }
     case 'mcpChannel': {
-      const mcp = parseMcpName(name);
+      const mcp = parseMcpToolName(name);
       if (!mcp) return h.fallbackNeutral;
       const channel = t.toolStepHumanize.channelNames[mcp.server] || mcp.server;
       return h.channelMessage.replace('{channel}', channel);
     }
     case 'mcp': {
-      const mcp = parseMcpName(name);
+      const mcp = parseMcpToolName(name);
       if (!mcp) return h.fallbackNeutral;
       const catalogPhrase = catalogConnectorStepPhrase(name, status, CJK_PATTERN.test(h.writeFallback) ? 'zh' : 'en');
       if (catalogPhrase) return catalogPhrase;
+      // cua-driver 是 Computer Use 后端：整套复用 computer 域既有四态人话，
+      // server slug 与 mcp__ 前缀都不出现在步骤行（FB-2291）。
+      if (isComputerUseMcpServer(mcp.server)) {
+        return buildDomainActionSentence('computer', mcp.tool, status, a, t);
+      }
+      // 未知且 slug 脏（带 - / _ 或纯数字）的 server 不拼进句子，走通用工具句；
+      // 已知友好 server（exa / github…）与频道名照旧走 mcp 句式。
+      if (shouldHideMcpServerSlug(mcp.server, t.toolStepHumanize.channelNames)) {
+        return buildDomainActionSentence('tool', mcp.tool, status, a, t);
+      }
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
@@ -899,7 +896,7 @@ function targetLabelFor(
   name: string,
   args: Record<string, unknown> | undefined,
 ): string | undefined {
-  if (kind === 'mcp_server') return parseMcpName(name)?.server;
+  if (kind === 'mcp_server') return parseMcpToolName(name)?.server;
   if (kind === 'file') {
     const path = getToolFilePath(name, args) ?? firstPath(args ?? {}, ['file_path', 'path', 'pattern']);
     if (!path) return undefined;
