@@ -72,7 +72,9 @@ describe('keep_result_page handler', () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain('https://example.test/result');
     expect(result.output).toContain('from the chat');
-    expect(result.output).toContain('idle timeout');
+    expect(result.output).toContain(
+      'The window closes automatically after 30 minutes without any activity, and any action restarts the timer.',
+    );
     expect(browser.remaining()).toEqual(['tab-result']);
     expect(adapter.markResultPageKept).toHaveBeenCalledWith(identity, {
       url: 'https://example.test/result',
