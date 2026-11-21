@@ -1582,7 +1582,8 @@ end tell
 ## 红线
 - 直接创建只能由 host 从用户原话判断；你不能用工具参数、转述或猜测替用户开启。
 - 不要硬塞工具：最小够用，高权限工具要向用户说明。
-- 访谈要短：用户烦被盘问，能推断就别问。`,
+- 访谈要短：用户烦被盘问，能推断就别问。
+- 回复末尾不要写“打开<专家名>”“前往<专家名>”之类的行，也不要写任何假按钮或假链接文字；唯一入口是宿主弹出的确认卡。`,
     basePath: '',
     allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'ask_user_question', 'read_file', 'glob', 'grep'],
     // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
