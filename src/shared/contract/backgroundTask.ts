@@ -81,6 +81,10 @@ export interface LastToolStep {
   action?: string;
   /** Bash 的 arguments.description；渲染端过滤（usableBashDescription）后才上屏，不是 shortDescription。 */
   description?: string;
+  /** 产生这一步的工具调用 id（task_progress 在 prepare 阶段带来）；notRun 只按它精确落标。 */
+  callId?: string;
+  /** 该调用从未执行（被拒/封存）；缺省 = 未知或已执行。 */
+  notRun?: boolean;
   at: number;
 }
 
@@ -100,6 +104,10 @@ export interface LastToolFailure {
 export interface BashStep {
   description?: string;
   command: string;
+  /** 工具调用 id；结果到达时按它精确标 notRun，绝不按命令文本匹配。 */
+  callId?: string;
+  /** 该调用从未执行（用户拒绝 / 主机封存）；缺省 = 已执行或未知。 */
+  notRun?: boolean;
 }
 
 export interface TaskProgress {
