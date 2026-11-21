@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FallbackBanner } from '../../../src/renderer/components/features/chat/MessageBubble/FallbackBanner';
-import { encodeModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
+import { encodeModelFallbackNotice, parseModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 
@@ -160,7 +160,7 @@ describe('FallbackBanner', () => {
           category: 'provider_unavailable',
           strategy: 'adaptive-provider-fallback',
           from: 'zhipu/glm-4.7-flash',
-          to: '未切换',
+          exhausted: true,
           tried: [
             {
               provider: 'zhipu',
@@ -187,8 +187,123 @@ describe('FallbackBanner', () => {
     expect(html).toContain('未切换');
   });
 
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽的 notice 不再携带 `to`，
+  // "Current model" 行按 UI 语言渲染 notSwitched 文案——en 下整页不得混入 CJK。
+  it('renders Not switched on the current-model row for an exhausted notice under en, with no CJK', () => {
+    i18nState.language = 'en';
+    const html = renderToStaticMarkup(
+      <FallbackBanner
+        defaultExpanded
+        content={encodeModelFallbackNotice({
+          reason: 'Moonshot API error: 503 service unavailable',
+          category: 'provider_unavailable',
+          strategy: 'adaptive-provider-fallback',
+          from: 'zhipu/glm-4.7-flash',
+          exhausted: true,
+          tried: [
+            {
+              provider: 'zhipu',
+              model: 'glm-4.7-flash',
+              status: 'exhausted',
+              reason: 'fallback_chain_exhausted',
+              category: 'provider_unavailable',
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('Current model');
+    expect(html).toContain('Not switched');
+    expect(html).not.toContain('未切换');
+    expect(/[一-龥]/.test(html)).toBe(false);
+  });
+
+  it('renders 未切换 on the current-model row for an exhausted notice under zh', () => {
+    const html = renderToStaticMarkup(
+      <FallbackBanner
+        defaultExpanded
+        content={encodeModelFallbackNotice({
+          reason: 'Moonshot API error: 503 service unavailable',
+          category: 'provider_unavailable',
+          strategy: 'adaptive-provider-fallback',
+          from: 'zhipu/glm-4.7-flash',
+          exhausted: true,
+          tried: [
+            {
+              provider: 'zhipu',
+              model: 'glm-4.7-flash',
+              status: 'exhausted',
+              reason: 'fallback_chain_exhausted',
+              category: 'provider_unavailable',
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain('现用模型');
+    expect(html).toContain('未切换');
+  });
+
+  // 旧会话落盘的 notice 仍带旧 host 写死的 zh 字面量 '未切换'（无 exhausted 字段）——
+  // 数据路径把它映射回 exhausted，横幅按 UI 语言渲染，不透传字面量。
+  it('maps a legacy persisted notice with the zh literal to the localized not-switched copy', () => {
+    const legacyContent = encodeModelFallbackNotice({
+      reason: 'Moonshot API error: 503 service unavailable',
+      category: 'provider_unavailable',
+      strategy: 'adaptive-provider-fallback',
+      from: 'zhipu/glm-4.7-flash',
+      to: '未切换',
+      tried: [
+        {
+          provider: 'zhipu',
+          model: 'glm-4.7-flash',
+          status: 'exhausted',
+          reason: 'fallback_chain_exhausted',
+          category: 'provider_unavailable',
+        },
+      ],
+    });
+
+    i18nState.language = 'en';
+    const enHtml = renderToStaticMarkup(
+      <FallbackBanner defaultExpanded content={legacyContent} />,
+    );
+    expect(enHtml).toContain('Not switched');
+    expect(/[一-龥]/.test(enHtml)).toBe(false);
+
+    i18nState.language = 'zh';
+    const zhHtml = renderToStaticMarkup(
+      <FallbackBanner defaultExpanded content={legacyContent} />,
+    );
+    expect(zhHtml).toContain('未切换');
+  });
+
   it('renders nothing for malformed fallback notice content', () => {
     expect(renderToStaticMarkup(<FallbackBanner content="not a fallback notice" />)).toBe('');
+  });
+
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：exhausted notice（无 to）能经
+  // encode → parse 往返存活；reason+from 齐全但既无 to 也无 exhausted 的仍拒收。
+  it('round-trips an exhausted notice through encode/parse without a `to` key', () => {
+    const parsed = parseModelFallbackNotice(encodeModelFallbackNotice({
+      reason: 'Moonshot API error: 503 service unavailable',
+      from: 'zhipu/glm-4.7-flash',
+      exhausted: true,
+    }));
+    expect(parsed).toEqual({
+      reason: 'Moonshot API error: 503 service unavailable',
+      from: 'zhipu/glm-4.7-flash',
+      exhausted: true,
+    });
+    expect(parseModelFallbackNotice(encodeModelFallbackNotice({ reason: 'r', from: 'a' }))).toBeNull();
+    // 旧落盘格式：zh 字面量映射回 exhausted，字面量本身不透传
+    expect(parseModelFallbackNotice(encodeModelFallbackNotice({ reason: 'r', from: 'a', to: '未切换' }))).toEqual({
+      reason: 'r',
+      from: 'a',
+      exhausted: true,
+    });
   });
 
   // 默认态只留用户需要知道的自动恢复结果；模型 id、原始原因、

@@ -31,6 +31,7 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 const poolMocks = vi.hoisted(() => ({
   setInUse: vi.fn(),
   setKept: vi.fn(),
+  touch: vi.fn(),
   releaseAgent: vi.fn(async () => undefined),
 }));
 vi.mock('../../../../src/host/services/infra/browserPool', async (importActual) => {
@@ -118,6 +119,7 @@ function createFakeBrowser(options?: { initialTabs?: FakeTab[] }) {
       running = false;
     }),
     setLeaseInUse: vi.fn(),
+    noteUserActivity: vi.fn(),
   };
   return {
     service: service as unknown as BrowserService,

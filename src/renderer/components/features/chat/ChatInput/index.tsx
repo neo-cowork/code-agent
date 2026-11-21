@@ -98,6 +98,7 @@ import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
+import { useQuestionCardPlaceholder } from './questionCardAnswer';
 import { useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
@@ -1013,18 +1014,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   // 历史命令功能
-  const {
-    addToInputHistory,
-    getPreviousInput,
-    getNextInput,
-    resetInputHistoryIndex,
-  } = useSessionUIStore();
+  const { addToInputHistory, getPreviousInput, getNextInput, resetInputHistoryIndex } = useSessionUIStore();
 
   // 键盘导航分发：@ 面板与 agent 自动补全互斥打开，先问 @ 面板再交 agent 链路
   const handleComposerAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => (
     atMention.handleKeyDown(e) || handleAutocompleteKeyDown(e)
   ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
+  const questionCardPlaceholder = useQuestionCardPlaceholder(currentSessionId);
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
     if (cronRunFollowUpMode) {
@@ -1033,10 +1030,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         ? t.chatInput.cronFollowUpPlaceholder
         : t.chatInput.cronFollowUpPlaceholderNoResult;
     }
-    if (inputPlaceholder) return inputPlaceholder;
-    if (!isProcessing) return undefined;
-    return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, t]);
+    // 卡片打开时占位随行为改口：单问题=Enter 作答；多问题=引导回卡片（不再说「排队」）
+    if (inputPlaceholder || !isProcessing) return inputPlaceholder;
+    return questionCardPlaceholder ?? t.chatInputSubmit.runtimeInputPlaceholder;
+  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, questionCardPlaceholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({

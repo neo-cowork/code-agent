@@ -94,10 +94,10 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   const listLoad = useSessionListLoadStore();
   const loadSessions = useSessionStore((state) => state.loadSessions);
   const p = t.sidebarProject;
-  // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpacePage。
+  // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpaceCreate。
   const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
   const setTierCollapsed = useSessionUIStore((state) => state.setTierCollapsed);
-  const openProjectSpacePage = useAppStore((state) => state.openProjectSpacePage);
+  const openProjectSpaceCreate = useAppStore((state) => state.openProjectSpaceCreate);
   // 会话列表分页（2026-08-07：侧栏原只加载最近 50 条，历史会话翻不到）——
   // 三态页脚：加载中转圈 / 还有更早会话给「加载更多」钮 / 已翻到底给明确收尾文案。
   const loadedSessionCount = useSessionStore((state) => state.sessions.length);
@@ -313,7 +313,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                     data-testid="sidebar-tier-new-space"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openProjectSpacePage();
+                      openProjectSpaceCreate();
                     }}
                     className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300 focus:outline-hidden"
                   >
