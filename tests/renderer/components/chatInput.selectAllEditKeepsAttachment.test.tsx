@@ -139,6 +139,24 @@ describe('⌘A 后文本编辑不丢附件', () => {
     expect(plainText()).toBe('same draft');
   });
 
+  it('⌘A + 粘贴后 ⌘Z：浏览器把 DOM 还原成不含 chip 的旧状态，附件仍恰好一份并随信封发出', async () => {
+    const { onSend } = await withDraft();
+    selectAll();
+    paste(NEW_TEXT);
+    await expectAttached();
+    // 原生撤销：keydown(Meta+z) → beforeinput(historyUndo) → DOM 回到旧文本（旧快照里没有 chip）→ input
+    fireEvent.keyDown(editor(), { key: 'z', metaKey: true });
+    fireEvent(editor(), new InputEvent('beforeinput', { inputType: 'historyUndo', bubbles: true, cancelable: true }));
+    editor().replaceChildren(document.createTextNode('First draft 80709'));
+    fireEvent.input(editor(), { inputType: 'historyUndo' });
+    await expectAttached();
+    expect(chipMounts()).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: REMOVE_NAME })).toHaveLength(1);
+    expect(plainText()).toBe('First draft 80709');
+    const envelope = await sendAndGetEnvelope(onSend);
+    expect(envelope.attachments?.map((a) => a.id)).toEqual([FILE.id]);
+  });
+
   it('对照：点「移除附件」按钮仍然移除', async () => {
     await withDraft();
     fireEvent.click(screen.getByRole('button', { name: REMOVE_NAME }));
