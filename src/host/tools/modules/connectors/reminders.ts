@@ -15,6 +15,7 @@ import type { Connector } from '../../../connectors/base';
 import {
   appleScriptFailureLogDetail,
   describeAppleScriptFailure,
+  isAppleEventsDenied,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -192,7 +193,8 @@ async function executeReminders(
       code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
     if (probingAccess && result.code === 'not_authorized') {
-      result.meta = { accessProbeDenied: true };
+      // Not an Apple-events (-1743) refusal: the Automation pane cannot fix it, so no env-assist card.
+      result.meta = { accessProbeDenied: true, ...(isAppleEventsDenied(error) ? {} : { notAppleEvents: true }) };
     }
     return result;
   }

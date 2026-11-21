@@ -5,9 +5,7 @@ import type { CuaHelperPermissionState } from './cua/helperPermissionState';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
 
 const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {
-  // The `reminders` read tool is absent on purpose: its denial is the Reminders privacy service, not Apple events,
-  // and connectorReconnectGuidance already points the user to Capability Hub > Connectors.
-  mail: 'mail', reminders_create: 'reminders',
+  mail: 'mail', reminders: 'reminders', reminders_create: 'reminders',
 };
 /** Calendar reads and writes go through EventKit: one permission (perm_calendars), not Apple events. */
 const CALENDAR_TOOLS = new Set(['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']);
@@ -50,7 +48,9 @@ export function classifyEnvBlocker(input: {
     blocker = 'perm_calendars';
     target = 'calendar';
     pane = 'calendars';
-  } else if (AUTOMATION_TARGETS[input.toolName] && (result.code ?? metadata.code) === 'not_authorized') {
+  } else if (AUTOMATION_TARGETS[input.toolName] && (result.code ?? metadata.code) === 'not_authorized'
+    // A denial that is not an Apple-events refusal cannot be fixed in the Automation pane; the connector guidance covers it.
+    && metadata.notAppleEvents !== true) {
     blocker = 'perm_automation';
     target = AUTOMATION_TARGETS[input.toolName];
     pane = 'automation';
