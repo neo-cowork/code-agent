@@ -1900,6 +1900,11 @@ export class ToolExecutor {
         permStartTime, undefined, effectiveSessionId, this.ledgerOrigin,
       );
     }
+    // Owner decision B（realrun105）：真人审批放行（ask.approvalSource === 'user'，含停车/定时
+    // 审批与改参一次性放行）的成功结果在 metadata 盖 userApproved 印；机器批准（auto-approve
+    // /session-allowlist/裸 boolean 等自报来源）不盖章。交付物收尾闸据此豁免「用户已批准写入的
+    // 文件」的占位符/Markdown 残留补轮——批准即拍板，不重写、不重弹同一张审批卡。
+    let userApproved = false;
     if ((toolDef.requiresPermission || scheduleWriteGrantRequired || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (scheduleWriteGrantRequired || commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand)) && !roleOwnMemoryUnattendedAllow) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
@@ -2453,6 +2458,8 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+      // 改参 fail-closed 后 ask.approved 已被改写为 false，取值在这之后才能忠实反映终局。
+      if (approved && ask.approvalSource === 'user') userApproved = true;
       if (approved && ask.approvalSource === 'user' && browserSessionGrant?.target) browserApprovedAction = `browser_action.${params.action}`;
 
       // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
@@ -2814,7 +2821,7 @@ export class ToolExecutor {
 
       executionLedger.complete(result.success ? 'success' : 'error', result.error);
       await durableCheckpoint.complete(result.success);
-      return { ...result, metadata: { ...result.metadata, executionStarted } };
+      return { ...result, metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
       if (error instanceof EnvBlockedError) throw error;
       const duration = Date.now() - startTime;
