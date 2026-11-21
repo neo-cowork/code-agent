@@ -383,7 +383,7 @@ describe('TraceNodeRenderer launch request', () => {
             reason: 'Moonshot API error: 503 service unavailable',
             category: 'provider_unavailable',
             from: 'zhipu/glm-4.7-flash',
-            to: '未切换',
+            exhausted: true,
             tried: [
               {
                 provider: 'zhipu',

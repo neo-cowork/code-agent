@@ -556,6 +556,8 @@ export const RENDERER_POLLING = {
    * 退避重试到这个次数仍失败，才认定状态确实读不出来。
    */
   BACKGROUND_TASK_READ_FAILURE_THRESHOLD: 3,
+  /** 已交接后台的调用出现后，等后台任务进入渲染端台账的最长时间；超时仍无任务则放回通用信号 */
+  HANDOFF_LEDGER_GRACE: 5_000,
   /** 任务状态同步轮询基础间隔 */
   TASK_SYNC_BASE: 5_000,
   /** 本地桥接健康检查轮询基础间隔 */

@@ -92,9 +92,9 @@ export function buildAiSdkAdaptiveFallbackInfo(
         status: outcome === 'selected' ? 'selected' : 'exhausted',
         reason: outcome === 'selected' ? 'main_task_model_selected' : 'main_task_model_failed',
         category: topCategory,
-        detail: outcome === 'selected'
-          ? '回到主任务模型继续本轮任务'
-          : finalReason,
+	        detail: outcome === 'selected'
+	          ? 'Returned to the main-task model'
+	          : finalReason,
       },
     ],
   };
@@ -418,7 +418,10 @@ export function emitModelFallbackNoticeFromResponse(
 	        category: fallback.category,
 	        ...(fallback.strategy ? { strategy: fallback.strategy } : {}),
 	        from: formatFallbackEndpoint(fallback.from),
-	        to: exhausted ? '未切换' : formatFallbackEndpoint(fallback.to),
+	        // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽时没有"切到哪个模型"可报——
+	        // 不写 `to`，改发 `exhausted: true`，由 renderer 按 UI 语言渲染"未切换"。
+	        // 此前这里硬编码中文 '未切换'，英文 UI 的横幅上会混出两种语言。
+	        ...(exhausted ? { exhausted: true as const } : { to: formatFallbackEndpoint(fallback.to) }),
 	        ...(fallback.fromIdentity ? { fromIdentity: fallback.fromIdentity } : {}),
 	        ...(!exhausted && fallback.toIdentity ? { toIdentity: fallback.toIdentity } : {}),
 	        ...(fallback.tried ? { tried: fallback.tried } : {}),
