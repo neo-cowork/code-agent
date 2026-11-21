@@ -265,13 +265,12 @@ export class ToolExecutionEngine {
         getToolSearchService().markToolCalled(entry.toolCall.name, this.ctx.sessionId);
         const parallel = batchSize > 1;
         this.runFinalizer.emitTaskProgress('tool_running', toolBatchLabel(
-          entry.toolCall.name,
-          batchSize,
-          this.ctx.turn.researchModeActive,
+          entry.toolCall.name, batchSize, this.ctx.turn.researchModeActive,
         ), {
           tool: entry.toolCall.name,
           toolIndex: entry.index,
           toolTotal: toolCalls.length,
+          toolCallId: entry.toolCall.id,
           target: computerUseObservedTarget(entry.toolCall.name, entry.toolCall.arguments, {
             sessionId: this.ctx.sessionId,
             turnId: this.ctx.turn.currentTurnId,
