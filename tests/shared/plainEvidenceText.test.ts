@@ -59,4 +59,19 @@ describe('plainEvidenceText', () => {
     expect(plainEvidenceText('CI/CD 日志见 `workspace/weekly/2026-W46.md`')).toBe('CI/CD 日志见 2026-W46');
     expect(plainEvidenceText('读了 ./notes/a.md 和 ~/x/b')).toBe('读了 a 和 b');
   });
+
+  it('keeps unspaced CJK-adjacent abbreviations, ratios and dates verbatim (r2)', () => {
+    // 复判 r2：无空格时不得吞掉「中文+CI/」整段——化简只发生在明确像文件路径的 token 上
+    expect(plainEvidenceText('周会CI/CD流水线两周没跑')).toBe('周会CI/CD流水线两周没跑');
+    expect(plainEvidenceText('CI/CD流水线两周没跑')).toBe('CI/CD流水线两周没跑');
+    expect(plainEvidenceText('覆盖率评分4.5/5')).toBe('覆盖率评分4.5/5');
+    expect(plainEvidenceText('A/B实验结果未出')).toBe('A/B实验结果未出');
+    expect(plainEvidenceText('在2026/11/20核对过')).toBe('在2026/11/20核对过');
+    expect(plainEvidenceText('检查工作区/weekly 进度')).toBe('检查工作区/weekly 进度');
+  });
+
+  it('still reduces CJK-prefixed real paths (r2)', () => {
+    expect(plainEvidenceText('工作区/weekly/x 目录里')).toBe('x 目录里');
+    expect(plainEvidenceText('检查工作区/周报.md 是否更新')).toBe('周报 是否更新');
+  });
 });

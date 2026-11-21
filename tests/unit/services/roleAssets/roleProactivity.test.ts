@@ -279,6 +279,12 @@ describe('roleProactivity', () => {
         evidence: '2026-W46',
         missing: false,
       });
+      // r2 复判：无空格的「中文+单斜杠缩写」不是路径，原样保留，不被吞段
+      expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>周会CI/CD流水线两周没跑</evidence>')).toEqual({
+        rationale: '该提醒周报过期。',
+        evidence: '周会CI/CD流水线两周没跑',
+        missing: false,
+      });
       expect(parseWakeRationale('没有任何标记的输出')).toEqual({ missing: true });
       expect(parseWakeRationale('<rationale>   </rationale><evidence></evidence>').missing).toBe(true);
       expect(parseWakeRationale('<rationale>未闭合<decision>suggest</decision>').missing).toBe(true);
