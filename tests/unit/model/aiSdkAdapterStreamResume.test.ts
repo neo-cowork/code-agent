@@ -109,6 +109,7 @@ beforeEach(() => {
   vi.mocked(streamText).mockReset();
   vi.mocked(generateText).mockReset();
   vi.mocked(logger.warn).mockClear();
+  vi.mocked(logger.info).mockClear();
   // mockClear 保实现（createDeepSeek / createOpenAICompatible 的工厂链 / axios 的 200 响应），只清调用记录。
   vi.mocked(createDeepSeek).mockClear();
   vi.mocked(createOpenAICompatible).mockClear();
@@ -377,6 +378,156 @@ describe('inferenceViaAiSdk —— 首字节后断流续接（ADR-068 刀 1+3）
   });
 });
 
+describe('inferenceViaAiSdk —— B2 续答提示 + 宿主开头去重（ADR-068 as-built 9）', () => {
+  const call = (i: number): { messages: unknown[] } =>
+    vi.mocked(streamText).mock.calls[i][0] as unknown as { messages: unknown[] };
+  const KEPT = '各位同事：公司定于本周六组织团建活动，费用由公司全额承担，大家不用自己掏一分钱';
+  const TAIL = '。请于周五前回复报名。集合时间为上午九点。';
+  const NOTICE = KEPT + TAIL;
+  const RESET = new Error('ECONNRESET');
+  /** 按 n 字符切成真实形状的 text-delta part。 */
+  const deltas = (text: string, n = 4) =>
+    Array.from({ length: Math.ceil(text.length / n) }, (_, i) => ({
+      type: 'text-delta', id: 't', text: text.slice(i * n, i * n + n),
+    }));
+  const finish = { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } };
+  const brokenFirst = () => fakeStream([...deltas(KEPT), { type: 'error', error: RESET }]);
+  const run = async () => {
+    const col = makeCollector();
+    vi.mocked(logger.info).mockClear();
+    const p = inferenceViaAiSdk([{ role: 'user', content: '根据附件写团建通知' }], [], CONFIG, col.onStream);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await p;
+    return { col, res };
+  };
+  const dedupLog = (level: 'info' | 'warn', reason: string) =>
+    vi.mocked(logger[level]).mock.calls.some(([m]) => String(m).includes(`B2 续答开头去重 reason=${reason}`));
+  /** renderer 把 kept 段与续答段首尾相接展示。 */
+  const visible = (kept: string, res: { content: string }) => kept + res.content;
+  const occurrences = (text: string, needle: string) => text.split(needle).length - 1;
+
+  it('续答请求 = 原消息逐字不变 + assistant 已保留文本 + user 续写提示（仅请求，不落进 kept）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(TAIL), finish]));
+    const { res } = await run();
+    const first = call(0).messages;
+    const second = call(1).messages;
+    expect(second.slice(0, first.length)).toEqual(first);
+    expect(second).toHaveLength(first.length + 2);
+    expect(second[first.length]).toEqual({ role: 'assistant', content: KEPT });
+    expect(second[first.length + 1]).toMatchObject({ role: 'user' });
+    expect(String((second[first.length + 1] as { content: string }).content)).toContain('Do not repeat');
+    expect(res.content).toBe(TAIL);
+  });
+
+  it('整篇复述：续答从头重写整篇通知 → 宿主裁掉复述开头，可见文本里通知只出现一次（restated-trimmed）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(NOTICE), finish]));
+    const { col, res } = await run();
+    expect(res.content).toBe(TAIL);
+    expect(res.contentParts).toEqual([{ type: 'text', text: TAIL }]);
+    // 流式 delta 也是裁剪后的：kept 段 + 续答段 = 通知恰好一份
+    expect(col.texts()).toBe(NOTICE);
+    expect(occurrences(visible(KEPT, res), KEPT)).toBe(1);
+    expect(visible(KEPT, res)).toBe(NOTICE);
+    expect(dedupLog('info', 'restated-trimmed')).toBe(true);
+    expect(vi.mocked(logger.info).mock.calls.some(([m]) => String(m).includes(`trimmedChars=${KEPT.length}`))).toBe(true);
+  });
+
+  it('整篇复述但恰好止于 kept 末尾：续答不产生任何新文本（空 content，不抛）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(KEPT), finish]));
+    const { res } = await run();
+    expect(res.content ?? '').toBe('');
+    expect(dedupLog('info', 'restated-trimmed')).toBe(true);
+  });
+
+  it('复述前大半后分叉：公共前缀 ≥ 阈值 → 裁掉公共前缀，只留分叉后的新文本', async () => {
+    const restated = KEPT.slice(0, 30);
+    const fresh = '，不必自掏腰包。' + TAIL.slice(1);
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(restated + fresh), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(fresh);
+    expect(dedupLog('info', 'restated-trimmed')).toBe(true);
+  });
+
+  it('没有复述：续答直接接着写 → 原样放行（not-restated）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(TAIL), finish]));
+    const { col, res } = await run();
+    expect(res.content).toBe(TAIL);
+    expect(col.texts()).toBe(KEPT + TAIL);
+    expect(dedupLog('warn', 'not-restated')).toBe(true);
+  });
+
+  it('复述低于阈值（只重合开头几个字）：原样展示，记 trim-skipped', async () => {
+    const text = KEPT.slice(0, 5) + '：关于周六团建的安排如下。' + TAIL;
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(text), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(text);
+    expect(dedupLog('warn', 'trim-skipped')).toBe(true);
+  });
+
+  it('续答文本较短且是 kept 的前缀（流结束才定案）：重合不足阈值则原样放行', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([{ type: 'text-delta', id: 't', text: '各位' }, finish]));
+    const { res } = await run();
+    expect(res.content).toBe('各位');
+    expect(dedupLog('warn', 'trim-skipped')).toBe(true);
+  });
+
+  it('二次断流：kept 累计（第一段 + 第二段），第三次请求的 assistant 带全部 kept，复述全文只留新增', async () => {
+    const SECOND = TAIL.slice(0, 8);
+    const REST = TAIL.slice(8);
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(SECOND), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas(NOTICE), finish]));
+    const { col, res } = await run();
+    expect(call(2).messages.at(-2)).toEqual({ role: 'assistant', content: KEPT + SECOND });
+    expect(res.content).toBe(REST);
+    expect(col.byType('stream_break')).toHaveLength(2);
+    expect(col.texts()).toBe(NOTICE);
+  });
+
+  it('kept 为空（断流在 reasoning 阶段）：不加后缀，请求与原请求完全相同', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([
+        { type: 'reasoning-delta', id: 'r', text: 'thinking' },
+        { type: 'error', error: RESET },
+      ]))
+      .mockReturnValueOnce(fakeStream([...deltas(NOTICE), finish]));
+    const { res } = await run();
+    expect(call(1).messages).toEqual(call(0).messages);
+    expect(res.content).toBe(NOTICE);
+    expect(vi.mocked(logger.warn).mock.calls.some(([m]) => String(m).includes('B2 续答开头去重'))).toBe(false);
+  });
+
+  it('D2 边界：stream_break 先于续答首个 delta；续答是另一条消息，kept 内容不被改写', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas(NOTICE), finish]));
+    const { col, res } = await run();
+    const types = col.chunks.map((c) => c.type);
+    const breakAt = types.indexOf('stream_break');
+    const keptTexts = col.chunks.slice(0, breakAt).filter((c) => c.type === 'text').map((c) => c.content).join('');
+    expect(keptTexts).toBe(KEPT);
+    expect(col.chunks.slice(breakAt + 1).filter((c) => c.type === 'text').map((c) => c.content).join('')).toBe(TAIL);
+    // 续答 response 自成一条，不含 kept 段
+    expect(res.content).toBe(TAIL);
+    expect(res.content.startsWith(KEPT)).toBe(false);
+  });
+});
+
 describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', () => {
   /** 取第 i 次 streamText 调用参数（mock 抓的请求形状）。 */
   const call = (i: number): { model: unknown; instructions?: unknown; messages: unknown[] } =>
@@ -453,8 +604,9 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     await vi.advanceTimersByTimeAsync(1000);
     const res = await p;
 
-    // 重发请求不拼 prefix assistant（原样 messages），断点 partial 以 stream_break 交调用方
-    expect(JSON.stringify(call(1).messages)).toBe(JSON.stringify(call(0).messages));
+    // B2 重发：原 messages 逐字不变 + 仅请求侧的 assistant kept + user 续写提示（as-built 9）；断点 partial 以 stream_break 交调用方
+    expect(call(1).messages.slice(0, call(0).messages.length)).toEqual(call(0).messages);
+    expect(call(1).messages).toHaveLength(call(0).messages.length + 2);
     const breaks = col.byType('stream_break');
     expect(breaks).toHaveLength(1);
     expect(breaks[0].error).toBe('ECONNRESET');
@@ -620,8 +772,9 @@ describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', (
     await vi.advanceTimersByTimeAsync(1000);
     const res = await p;
 
-    // 能力表 4.6+ 落 none → B1 不生效：重发 prompt 与原请求逐字相同，无末条 assistant
-    expect(JSON.stringify(call(1).messages)).toBe(JSON.stringify(call(0).messages));
+    // 能力表 4.6+ 落 none → B1 不生效：重发 prompt 前缀与原请求逐字相同，仅追加 B2 续写提示（末条是 user）
+    expect(call(1).messages.slice(0, call(0).messages.length)).toEqual(call(0).messages);
+    expect(call(1).messages).toHaveLength(call(0).messages.length + 2);
     expect((call(1).messages.at(-1) as { role?: string })?.role).not.toBe('assistant');
     expect(col.byType('stream_break')).toHaveLength(1);
     expect(res.content).toBe('ok'); // B2：response 只含续答段，断点片段由调用方分段落库
