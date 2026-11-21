@@ -7,8 +7,6 @@
 import React, { createRef } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Session } from '../../../src/shared/contract/session';
-import type { LibraryItem } from '../../../src/shared/contract/library';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 import { zh } from '../../../src/renderer/i18n/zh';
 
@@ -37,9 +35,10 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
 
 import { ChatInput, type ChatInputHandle } from '../../../src/renderer/components/features/chat/ChatInput';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import type { LibraryItem } from '../../../src/shared/contract/library';
 
 const SKILL_ID = 'weekly-report';
 const LIB_ITEM_ID = 'lib-notes';
@@ -58,7 +57,8 @@ const CURRENT_SESSION = {
   modelConfig: {},
   createdAt: 1,
   updatedAt: 1,
-} as unknown as Session;
+  messageCount: 0,
+} as unknown as SessionWithMeta;
 
 function libraryItem(id: string, title: string): LibraryItem {
   return { id, projectId: 'proj-1', title, kind: 'upload', pathOrUri: `/lib/${id}.md`, tags: [], createdAt: 0, updatedAt: 0 };
