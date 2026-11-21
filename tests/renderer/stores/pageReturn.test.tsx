@@ -43,6 +43,7 @@ beforeEach(async () => {
     if (action === 'load') return {
       success: true, data: { ...rows.find((row) => row.id === args?.sessionId), messages: [], todos: [] },
     };
+    if (action === 'create') return { success: true, data: { ...rawSession('created', 99), messageCount: 0, turnCount: 0, title: '新对话' } };
     return { success: true, data: [] };
   });
   Object.assign(window, {
@@ -97,14 +98,14 @@ describe('app startup return-to through useLedgerDeepLink and real session initi
     await boot();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('Snapshot ignored'), expect.objectContaining({ reason: expect.any(String) }));
     expect(sessionStorage.getItem(key)).toBeNull();
-    expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+    expect(sessions.useSessionStore.getState().currentSessionId).toBe('created');
   });
 
   it('ignore missing session id with reason', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     seed({ page: 'chat' }, 'deleted');
     await boot();
-    expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+    expect(sessions.useSessionStore.getState().currentSessionId).toBe('created');
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('session missing'), expect.any(Object));
   });
 
@@ -129,13 +130,13 @@ describe('app startup return-to through useLedgerDeepLink and real session initi
     await boot();
     expect(app.useAppStore.getState().showCronCenter).toBe(true);
     expect(app.useAppStore.getState().showSettings).toBe(false);
-    expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+    expect(sessions.useSessionStore.getState().currentSessionId).toBe('created');
     expect(sessionStorage.getItem(key)).toBeNull();
   });
 
-  it('cold start without snapshot still opens latest', async () => {
+  it('cold start without snapshot opens the new-task start page, not the latest chat', async () => {
     await boot();
-    expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+    expect(sessions.useSessionStore.getState().currentSessionId).toBe('created');
     expect(app.useAppStore.getState().showCronCenter).toBe(false);
   });
 
@@ -167,7 +168,7 @@ describe('app startup return-to through useLedgerDeepLink and real session initi
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     await boot();
     window.dispatchEvent(new Event('pagehide'));
-    expect(sessions.useSessionStore.getState().currentSessionId).toBe('latest');
+    expect(sessions.useSessionStore.getState().currentSessionId).toBe('created');
     expect(warn.mock.calls.filter((call) => String(call[0]).includes('Snapshot storage'))).toHaveLength(2);
   });
 
