@@ -20,7 +20,7 @@ export interface ModelFallbackNoticePayload {
 // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL 之前的 host 把链耗尽标记成硬编码中文
 // '未切换' 塞进 `to`，横幅在英文 UI 上混出两种语言。旧会话落盘的 notice 仍带这个
 // 字面量，数据路径在这里统一把它映射回 `exhausted: true`（组件层不做特判）。
-export const LEGACY_MODEL_FALLBACK_NOT_SWITCHED = '未切换';
+const LEGACY_MODEL_FALLBACK_NOT_SWITCHED = '未切换';
 
 /** 归一 `to` / `exhausted` 两个字段：旧格式的 zh 字面量映射为 exhausted，其余原样保留。 */
 export function resolveModelFallbackTarget(fields: { to?: unknown; exhausted?: unknown }): { to?: string; exhausted?: boolean } {
