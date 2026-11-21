@@ -301,6 +301,7 @@ describe('InputArea 内联 chip', () => {
     fireEvent.input(editor);
 
     expect(onInlineChipsChanged).toHaveBeenLastCalledWith([]);
+    // 回调契约不变（仍回传 []）；file: 附件是否保留由 ChatInput 决定（见 chatInput.selectAllEditKeepsAttachment）。
   });
 
   it('Enter 发送（IME 三重防护）：keyCode 229 / 组合态不发，普通 Enter 发送', () => {

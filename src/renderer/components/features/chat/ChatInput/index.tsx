@@ -666,10 +666,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       store.setTurnCapabilityScopeMode('manual');
       store.setSelectedSkillIds(keptSkills);
     }
-    setAttachments((prev) => {
-      const next = prev.filter((attachment) => present.has(`file:${attachment.id}`));
-      return next.length === prev.length ? prev : next;
-    });
+    // 附件不按 DOM 在场与否裁剪：⌘A+粘贴/剪切会连带吞掉 chip 挂载点，由 syncChipMounts 补回。
     for (const item of pinnedLibraryItemsRef.current) {
       if (!present.has(`library:${item.id}`)) removeLibraryPinRef.current(item.id);
     }
