@@ -377,3 +377,19 @@ describe('CronCenterPanel visible-list detail invariant (FB-1428)', () => {
     expect(useCronStore.getState().selectedJobId).toBe('job-water');
   });
 });
+
+describe('CronCenterPanel 内置维护任务不自动选中', () => {
+  it('全新安装只有内置维护任务：列表显示「还没有自动化任务」，详情为空态，不自动选中', async () => {
+    jobsInBackend = [makeJob({
+      id: 'job-builtin',
+      name: '[Maintenance] Light Memory consolidation',
+      tags: ['light-memory-consolidation'],
+    })];
+    render(<CronCenterPanel onClose={() => undefined} />);
+
+    expect(await screen.findByText('还没有自动化任务')).toBeTruthy();
+    expect(screen.getByTestId('cron-builtin-group-toggle').textContent).toBe('系统自动维护（1）');
+    expectEmptyDetailWithoutActions();
+    expect(useCronStore.getState().selectedJobId).toBeNull();
+  });
+});
