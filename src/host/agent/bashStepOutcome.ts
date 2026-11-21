@@ -71,9 +71,17 @@ export function bashStepFromToolCall(call: { id: string; arguments?: unknown }):
   };
 }
 
-/** 持久化的子代理消息里按调用 id 配对 tool 结果（与 task_progress 路径同一个 callId 身份）。 */
-export function toolNotRunCallIds(messages: readonly Pick<Message, 'toolResults'>[]): Set<string> {
+/**
+ * 重建节点时的「未执行」callId 集：执行器快照里已落标的步骤（执行器是结果的第一手见证，
+ * 持久化消息里只有 "Tool results:" 文本、没有结构化结果）+ 消息里若带结构化 toolResults 的那批。
+ * 一律按 callId，不按命令文本。
+ */
+export function toolNotRunCallIds(
+  messages: readonly Pick<Message, 'toolResults'>[],
+  snapshotSteps?: readonly BashStep[],
+): Set<string> {
   const ids = new Set<string>();
+  for (const step of snapshotSteps ?? []) if (step.notRun && step.callId) ids.add(step.callId);
   for (const message of messages) {
     for (const result of message.toolResults ?? []) if (toolResultNeverRan(result)) ids.add(result.toolCallId);
   }

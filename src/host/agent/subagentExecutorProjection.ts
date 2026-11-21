@@ -181,7 +181,7 @@ export function buildContextSnapshot(
     warningLevel: getWarningLevel(usagePercent),
     lastUpdated: Date.now(),
     tools: [...new Set(toolsUsed)].slice(-6),
-    bashSteps: bashSteps.slice(-6),
+    bashSteps: bashSteps.slice(-20),
     attachments: [...new Set((attachments || []).map((attachment) => attachment.name).filter(Boolean) as string[])].slice(0, 6),
     previews: normalizedMessages.slice(-3).map((message) => ({
       role: message.role,

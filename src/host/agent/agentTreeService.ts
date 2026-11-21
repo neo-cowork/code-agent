@@ -322,7 +322,7 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
         ...(action ? { action } : {}),
         ...(description ? { description } : {}),
         ...(isBash ? { callId: call.id } : {}),
-        ...(isBash && toolNotRunCallIds(record.messages).has(call.id) ? { notRun: true } : {}),
+        ...(isBash && toolNotRunCallIds(record.messages, record.snapshot?.bashSteps).has(call.id) ? { notRun: true } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
     }
@@ -336,7 +336,7 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
 
 function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
   const steps: BashStep[] = [];
-  const notRun = toolNotRunCallIds(record.messages);
+  const notRun = toolNotRunCallIds(record.messages, record.snapshot?.bashSteps);
   for (const message of record.messages) {
     for (const call of message.toolCalls ?? []) {
       if (call.name !== 'Bash' && call.name !== 'bash') continue;
