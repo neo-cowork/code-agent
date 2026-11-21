@@ -3,7 +3,7 @@ import { STARTUP_TIMEOUTS } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
 export type FirstModelRequestPhase =
-  | 'send_accepted' | 'run_started' | 'hook_initialization' | 'skill_discovery'
+  | 'send_accepted' | 'workspace_planning' | 'web_run_setup' | 'run_started' | 'hook_initialization' | 'skill_discovery'
   | 'planning_bootstrap' | 'parallel_judgment' | 'user_prompt_hook' | 'session_start_hook'
   | 'recent_conversations' | 'session_recovery' | 'seed_memory' | 'activity_context'
   | 'desktop_context' | 'context_ready' | 'model_decision' | 'provider_queue' | 'provider_dispatch';

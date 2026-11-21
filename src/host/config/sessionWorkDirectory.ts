@@ -51,6 +51,8 @@ export interface SessionWorkDirectoryOptions {
   userMessage?: string;
   /** 仅首轮规划调用；undefined 表示小模型不可用。配置层不依赖模型层。 */
   askTitle?: (prompt: string, signal: AbortSignal) => Promise<{ success: boolean; content?: string } | undefined>;
+  /** Use the rule title immediately for a bounded reply in chat. */
+  deferModelTitle?: boolean;
   /** 空消息首轮以首个非空附件名兜底；文件去扩展名，文件夹保留名称。 */
   attachments?: readonly Pick<MessageAttachment, 'name' | 'category'>[];
   /** 目录名里的 MMDD 取这个时间戳（缺省 Date.now()），本地时区 */
@@ -195,8 +197,8 @@ async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions):
     logDecision('short-clean', 'clean-first-clause');
     return sanitizeFolderTitle(message);
   }
-  let reason = 'unavailable';
-  const askTitle = options.askTitle;
+  let reason = options.deferModelTitle ? 'deferred-reply' : 'unavailable';
+  const askTitle = options.deferModelTitle ? undefined : options.askTitle;
   if (askTitle) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -359,6 +361,18 @@ async function findFreeSessionWorkDirectory(
     return candidate;
   }
   throw new Error(`session work directory name exhausted after ${COLLISION_SUFFIX_LIMIT} collisions: ${baseName}`);
+}
+
+/**
+ * A short reply in chat does not need a model-generated directory name before
+ * the task starts. A later turn can use the smart session title if the planned
+ * directory is still unmaterialized. Keep model naming for delivery requests.
+ */
+export function canDeferWorkspaceTitleForReply(prompt: string): boolean {
+  const boundedReply = /\b(?:in|within|at most|no more than)\s+(?:[1-5]|one|two|three|four|five)\s+sentences?\b|(?<![十\d])[一二两三四五1-5]\s*句(?:话)?/i;
+  const deliveryAction = /\b(?:save|export|publish|send|create|write)\b|保存|写入|写到|另存|导出|创建|生成.{0,8}文件|发送|发布/i;
+  const summaryAction = /\b(?:summari[sz]e|explain|describe|answer|recap)\b|总结|概括|摘要|解释|回答/iu;
+  return summaryAction.test(prompt) && boundedReply.test(prompt) && !deliveryAction.test(prompt);
 }
 
 /**

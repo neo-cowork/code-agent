@@ -210,6 +210,28 @@ describe('POST /api/run first-turn task folder summary wiring', () => {
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: session.workingDirectory }));
   });
 
+  it.each([
+    'Summarize the weekly handover notes (notes.txt) in three sentences',
+    '请总结一下这份团队交接记录里的主要进展，三句话以内',
+  ])('starts a bounded chat reply without waiting for a folder title (%s)', async (prompt) => {
+    mocks.isQuickModelAvailable.mockReturnValue(true);
+    mocks.quickTask.mockImplementation(() => new Promise(() => {}));
+    await run(prompt);
+    expect(mocks.quickTask).not.toHaveBeenCalled();
+    expect(session.workingDirectory).toBeDefined();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: session.workingDirectory }));
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
+  it('keeps model naming when the short summary is a file deliverable', async () => {
+    const prompt = 'Summarize the weekly handover notes in three sentences and save to summary.txt';
+    mocks.isQuickModelAvailable.mockReturnValue(true);
+    mocks.quickTask.mockResolvedValue({ success: true, content: 'Handover recap' });
+    await run(prompt);
+    expect(mocks.quickTask).toHaveBeenCalledOnce();
+    expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_Handover recap`));
+  });
+
   it('uses the rule summary when the quick model is unavailable', async () => {
     await run('我把合同文件夹整个拖进来了（共 30 份：PDF、Excel 表、图片、文本都有），请逐份摘要');
     expect(mocks.quickTask).not.toHaveBeenCalled();
