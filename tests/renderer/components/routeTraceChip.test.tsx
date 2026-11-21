@@ -394,4 +394,40 @@ describe('RouteTraceChip', () => {
     expect(html).toContain('节省量未计量');
     expect(html).toContain('节省=未计量');
   });
+
+  it('shows human server names in the MCP row, never raw slugs (FB-2291)', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RouteTraceChip, {
+        defaultExpanded: true,
+        defaultDiagnosticsExpanded: true,
+        decision: {
+          requestedProvider: 'zhipu',
+          requestedModel: 'glm-4.5-flash',
+          resolvedProvider: 'zhipu',
+          resolvedModel: 'glm-4.5-flash',
+          reason: 'strategy-main',
+          role: null,
+          billingMode: 'payg',
+          fallbackFrom: null,
+          strategySummary: '识别为主任务策略，使用主任务模型。',
+          taskClass: 'multi-tool',
+          costPolicy: 'neutral',
+          speedPolicy: 'normal',
+          toolPolicy: 'runtime-checked',
+          toolStrategy: {
+            visibleToolCount: 3,
+            toolNamesPreview: ['Read'],
+            mcpToolCount: 2,
+            mcpServerIds: ['cua-driver', 'exa'],
+            programmaticToolCalling: 'available',
+            programmaticToolCount: 3,
+          },
+        },
+      }),
+    );
+
+    // server id 不上屏：cua-driver → 「电脑操作」（与右栏 MCP 行同词），已知 server → 友好名
+    expect(html).toContain('2 个外部工具 · 电脑操作, Exa');
+    expect(html).not.toContain('cua-driver');
+  });
 });
