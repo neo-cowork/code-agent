@@ -117,7 +117,7 @@ import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../hos
 import {
   isPlannedSessionWorkDirectory,
   maybeDivertCollidingSessionWorkDirectory,
-  canDeferWorkspaceTitleForReply,
+  needsWorkspaceModelTitleForDeliverable,
   maybeReplanSessionWorkDirectory,
   planSessionWorkDirectory,
 } from '../../host/config/sessionWorkDirectory';
@@ -708,8 +708,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         && !persistedSession.workingDirectory?.trim()
         && !persistedSessionHasMessages(persistedSession);
       const deferWorkspaceTitle = firstRunNoFolderSession && !isExternalAgentEngine(selectedEngine.kind)
-        && !body.attachments?.length && !body.goal && !prompt.trimStart().startsWith('/')
-        && canDeferWorkspaceTitleForReply(prompt);
+        && !body.goal && !prompt.trimStart().startsWith('/')
+        && !needsWorkspaceModelTitleForDeliverable(prompt);
       if (firstRunNoFolderSession) noteFirstModelRequestPhase('workspace_planning');
       try {
         resolvedProject = firstRunNoFolderSession

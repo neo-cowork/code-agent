@@ -34,6 +34,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Message, MessageAttachment } from '../../shared/contract/message';
+import { needsArtifactTaskBrief } from '../prompts/artifactGeneration';
+import { detectTaskFeatures } from '../prompts/systemReminders';
 import { getConfigService } from '../services/core/configService';
 import { deriveRuleSummaryTitle, isPlaceholderSessionTitle, isProvisionalAutoTitle } from '../../shared/sessionTitlePlaceholder';
 import { SESSION_WORK_DIRECTORY_TIMEOUTS } from '../../shared/constants/timeouts';
@@ -51,7 +53,7 @@ export interface SessionWorkDirectoryOptions {
   userMessage?: string;
   /** 仅首轮规划调用；undefined 表示小模型不可用。配置层不依赖模型层。 */
   askTitle?: (prompt: string, signal: AbortSignal) => Promise<{ success: boolean; content?: string } | undefined>;
-  /** Use the rule title immediately for a bounded reply in chat. */
+  /** Use the rule title immediately for a native turn without a recognized deliverable workflow. */
   deferModelTitle?: boolean;
   /** 空消息首轮以首个非空附件名兜底；文件去扩展名，文件夹保留名称。 */
   attachments?: readonly Pick<MessageAttachment, 'name' | 'category'>[];
@@ -197,7 +199,7 @@ async function chooseFirstTurnFolderTitle(options: SessionWorkDirectoryOptions):
     logDecision('short-clean', 'clean-first-clause');
     return sanitizeFolderTitle(message);
   }
-  let reason = options.deferModelTitle ? 'deferred-reply' : 'unavailable';
+  let reason = options.deferModelTitle ? 'deferred-native-turn' : 'unavailable';
   const askTitle = options.deferModelTitle ? undefined : options.askTitle;
   if (askTitle) {
     const controller = new AbortController();
@@ -364,15 +366,14 @@ async function findFreeSessionWorkDirectory(
 }
 
 /**
- * A short reply in chat does not need a model-generated directory name before
- * the task starts. A later turn can use the smart session title if the planned
- * directory is still unmaterialized. Keep model naming for delivery requests.
+ * The run binds its working directory before checking tool write authority.
+ * Preserve smart naming for recognized deliverable and spreadsheet workflows
+ * that may materialize this turn. Other native turns can use the rule title.
  */
-export function canDeferWorkspaceTitleForReply(prompt: string): boolean {
-  const boundedReply = /\b(?:in|within|at most|no more than)\s+(?:[1-5]|one|two|three|four|five)\s+sentences?\b|(?<![十\d])[一二两三四五1-5]\s*句(?:话)?/i;
-  const deliveryAction = /\b(?:save|export|publish|send|create|write)\b|保存|写入|写到|另存|导出|创建|生成.{0,8}文件|发送|发布/i;
-  const summaryAction = /\b(?:summari[sz]e|explain|describe|answer|recap)\b|总结|概括|摘要|解释|回答/iu;
-  return summaryAction.test(prompt) && boundedReply.test(prompt) && !deliveryAction.test(prompt);
+export function needsWorkspaceModelTitleForDeliverable(prompt: string): boolean {
+  const { isOfficeFileDeliverable, isExcelTask } = detectTaskFeatures(prompt);
+  const savesToFile = /\b(?:save|export)\s+(?:it\s+)?(?:to|as)\b|保存(?:到|至|为)|另存为|导出到/i.test(prompt);
+  return isOfficeFileDeliverable || isExcelTask || savesToFile || needsArtifactTaskBrief(prompt);
 }
 
 /**
