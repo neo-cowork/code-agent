@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { MessageMetadata } from '../../shared/contract';
 import type { WorkspaceScope } from '../../shared/contract/project';
@@ -6,6 +7,7 @@ import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir } from '../config/configPaths';
 import { getPermissionModeManager, type PermissionMode } from './modes';
 import { parseShellCommand } from '../security/commandParse';
 
@@ -19,6 +21,51 @@ interface TaskOutputDirectory {
 
 const scope = new AsyncLocalStorage<TaskOutputDirectory | undefined>();
 const logger = createLogger('TaskOutputDirectory');
+const RECORD_FILE = 'task-output-directories.json';
+
+interface GrantRecord { directory: string; requestedDirectory: string }
+
+/** Host-written, per-session record of the folder the user named. Written only when a
+ * grant is minted from the user's own directive; later runs of the SAME session
+ * re-validate it. History text is never re-parsed. */
+function recordFilePath(): string {
+  return path.join(getUserConfigDir(), RECORD_FILE);
+}
+
+function readRecords(): Record<string, GrantRecord> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(recordFilePath(), 'utf-8')) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, GrantRecord> : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistGrant(sessionId: string, record: GrantRecord): void {
+  try {
+    const records = readRecords();
+    records[sessionId] = record;
+    fs.mkdirSync(path.dirname(recordFilePath()), { recursive: true });
+    fs.writeFileSync(recordFilePath(), JSON.stringify(records), 'utf-8');
+  } catch (error) {
+    logger.warn('Failed to persist task output directory record', error);
+  }
+}
+
+/** Re-run every mint-time check against the live filesystem; a retargeted symlink or
+ * a now-protected path yields no grant. */
+function restoreGrant(sessionId: string): TaskOutputDirectory | undefined {
+  const record = readRecords()[sessionId];
+  if (!record || typeof record.directory !== 'string' || typeof record.requestedDirectory !== 'string') return undefined;
+  try {
+    if (!path.isAbsolute(record.requestedDirectory) || record.requestedDirectory.split('/').includes('..')) return undefined;
+    const directory = resolveCanonicalRunPath(record.requestedDirectory);
+    if (directory !== record.directory || directory === path.parse(directory).root || isProtectedWritePath(directory)) return undefined;
+    return { sessionId, directory, requestedDirectory: record.requestedDirectory, active: true, leases: 1 };
+  } catch {
+    return undefined;
+  }
+}
 
 /** Only an explicit output directive in the new user's own task can grant a folder.
  * Never scan history, attachments, model output, recovery or automated input. Ambiguous
@@ -30,6 +77,8 @@ export async function withTaskOutputDirectory<T>(input: {
   internal: boolean;
   /** Host-owned auxiliary execution of this same task, not a fresh source of consent. */
   inherit?: boolean;
+  /** Unattended (cron / heartbeat) turn: never mints or restores. */
+  unattended?: boolean;
 }, run: () => Promise<T>): Promise<T> {
   const metadata = input.metadata;
   let grant: TaskOutputDirectory | undefined;
@@ -55,11 +104,19 @@ export async function withTaskOutputDirectory<T>(input: {
         const directory = resolveCanonicalRunPath(raw);
         if (directory !== path.parse(directory).root && !isProtectedWritePath(directory)) {
           grant = { sessionId: input.sessionId, directory, requestedDirectory: path.resolve(raw), active: true, leases: 1 };
+          persistGrant(input.sessionId, { directory, requestedDirectory: grant.requestedDirectory });
         }
       } catch {
         // Path analysis failure cannot mint an authorization.
       }
     }
+  }
+  const manager = getPermissionModeManager();
+  if (!grant && input.sessionId && !input.unattended && !manager.isUnattendedSession(input.sessionId)
+    && !metadata?.automation && !metadata?.agentTeam && !metadata?.channel
+    && manager.getModeForSession(input.sessionId) === 'bypassPermissions') {
+    grant = restoreGrant(input.sessionId);
+    if (grant) logger.info('Task output directory restored for session', { sessionId: grant.sessionId, directory: grant.directory });
   }
   return scope.run(grant, async () => {
     if (grant) logger.info('Task output directory authorized', { sessionId: grant.sessionId, directory: grant.directory });

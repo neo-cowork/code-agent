@@ -11,17 +11,24 @@ import type { MessageMetadata } from '../../../src/shared/contract';
 
 const SESSION = 'task-output-session';
 let directory: string;
+let dataDir: string;
+const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
 const authorized = (target = path.join(directory, 'minutes.md'), mode: PermissionMode = 'bypassPermissions', sessionId = SESSION) =>
   isTaskOutputPathAuthorized({ sessionId, mode, target, cwd: directory });
 const task = (userText: string, run: () => Promise<void>, metadata?: MessageMetadata, internal = false) =>
   withTaskOutputDirectory({ sessionId: SESSION, userText, metadata, internal }, run);
 
 beforeEach(() => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-output-data-'));
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
   directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'task-output-')));
   resetPermissionModeManager();
   getPermissionModeManager().setSessionMode(SESSION, 'bypassPermissions', true);
 });
-afterEach(() => { fs.rmSync(directory, { recursive: true, force: true }); resetPermissionModeManager(); });
+afterEach(() => {
+  if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR; else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.rmSync(directory, { recursive: true, force: true }); resetPermissionModeManager(); });
 
 describe('explicit task output directory authorization', () => {
   it('covers only the named directory, current session and full-access mode', async () => {
@@ -50,9 +57,36 @@ describe('explicit task output directory authorization', () => {
     expect(await detached).toBe(false);
   });
 
-  it('expires after failure and is not inherited by a new task', async () => {
+  it('expires after failure; a later run of the SAME session restores it from the host record, never from history text', async () => {
     await expect(task(`输出目录：${directory}`, async () => { throw new Error('task failed'); })).rejects.toThrow('task failed');
-    await task('继续处理会议纪要', async () => { expect(authorized()).toBe(false); });
+    await task('继续处理会议纪要', async () => { expect(authorized()).toBe(true); });
+    await task('继续处理会议纪要', async () => { expect(authorized()).toBe(true); }, undefined, true);
+    // other session / other mode / automated or unattended input never restore
+    await withTaskOutputDirectory({ sessionId: 'other-session', userText: 'x', internal: false }, async () => {
+      expect(authorized(undefined, 'bypassPermissions', 'other-session')).toBe(false);
+    });
+    await task('x', async () => { expect(authorized()).toBe(false); }, { automation: { automationType: 'role_wake' } } as MessageMetadata);
+    await task('x', async () => { expect(authorized()).toBe(false); }, { channel: {} } as MessageMetadata);
+    await withTaskOutputDirectory({ sessionId: SESSION, userText: 'x', internal: true, unattended: true }, async () => {
+      expect(authorized()).toBe(false);
+    });
+    getPermissionModeManager().setSessionMode(SESSION, 'default');
+    await task('x', async () => { expect(authorized()).toBe(false); });
+  });
+
+  it('does not restore when the recorded folder became a symlink elsewhere, and a new directive replaces the record', async () => {
+    const inside = path.join(directory, 'original');
+    const elsewhere = path.join(directory, 'elsewhere');
+    const link = path.join(directory, 'selected');
+    fs.mkdirSync(inside); fs.mkdirSync(elsewhere); fs.symlinkSync(inside, link);
+    await task(`输出目录：${link}`, async () => undefined);
+    fs.unlinkSync(link); fs.symlinkSync(elsewhere, link);
+    await task('继续', async () => { expect(authorized(path.join(elsewhere, 'a.md'))).toBe(false); });
+    await task(`输出目录：${elsewhere}`, async () => undefined);
+    await task('继续', async () => {
+      expect(authorized(path.join(elsewhere, 'a.md'))).toBe(true);
+      expect(authorized(path.join(inside, 'a.md'))).toBe(false);
+    });
   });
 
   it.each([
@@ -119,19 +153,20 @@ describe('explicit task output directory authorization', () => {
     });
   });
 
-  it('never caches a task grant into the next task or a concurrent ungranted scope', async () => {
+  it('never caches a task grant into another session or an ungranted scope', async () => {
     const virtualRoot = path.join(path.parse(directory).root, `neo-output-${path.basename(directory)}`);
     const classifier = new PermissionClassifier({ enableLlm: false });
     const args = { file_path: path.join(virtualRoot, 'minutes.md'), content: '# minutes' };
     const context = { sessionId: SESSION, permissionMode: 'bypassPermissions' as const, workingDirectory: directory, workspaceRoot: directory };
+    const otherContext = { ...context, sessionId: 'other-session' };
     await task(`输出目录：${virtualRoot}`, async () => {
       expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'approve', bypassCache: true });
-      await task('请整理会议纪要', async () => {
-        expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'ask', trustBoundary: true });
+      await withTaskOutputDirectory({ sessionId: 'other-session', userText: '请整理会议纪要', internal: false }, async () => {
+        expect(await classifier.classify('Write', args, otherContext)).toMatchObject({ decision: 'ask', trustBoundary: true });
       });
       expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'approve', bypassCache: true });
     });
-    expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'ask', trustBoundary: true, cached: false });
+    expect(await classifier.classify('Write', args, otherContext)).toMatchObject({ decision: 'ask', trustBoundary: true, cached: false });
   });
 
   it('rejects symlink escapes and root retargets while retaining the frozen directory', async () => {

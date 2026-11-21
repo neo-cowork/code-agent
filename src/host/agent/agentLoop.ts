@@ -343,6 +343,7 @@ export class AgentLoop {
     await withTaskOutputDirectory({
       sessionId: this.ctx.sessionId, userText, metadata: source?.metadata,
       inherit: this.ctx.publishContextHealth === false && !this.ctx.delegationOrigin,
+      unattended: this.ctx.unattendedTurn === true,
       // A new visible user message is the authority. Recovery, hidden and relayed
       // runs cannot regain a grant by replaying a prompt from conversation history.
       internal: source?.role !== 'user' || source.content !== userText || source.isMeta === true
