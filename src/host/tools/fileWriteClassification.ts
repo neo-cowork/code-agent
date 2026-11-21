@@ -13,6 +13,7 @@ import { GENERATOR_WRITE_TOOLS, writeTargetPathOf } from './writeTargetPath';
 import { resolveToolWriteTargets } from './writeTargets';
 import { connectorWriteAskClassification } from './connectorTokenWrite';
 import { isNonLocalWriteTool, requiresScheduleWriteGrant } from '../cron/cronWriteGrant';
+import { getMemoryDir } from '../lightMemory/indexLoader';
 import { isTaskOutputPathAuthorized } from '../permissions/taskOutputDirectory';
 
 // 写入工具名映射
@@ -176,6 +177,13 @@ async function classifyOtherScheduledWrite(
     traceStep: createTraceStep('permission_classifier', 'schedule_write_grant', 'ask', reason, startTime) };
 }
 
+/** Exact-match exemption: the dialog grant authorizes only the confirmed targets, and only if they really resolve inside the memory dir. */
+function isConfirmedMemoryWrite(resolved: string, context: ClassificationContext): boolean {
+  if (!context.confirmedMemoryWriteTargets?.length) return false;
+  if (!isPathInside(resolved, resolveCanonicalRunPath(getMemoryDir()))) return false;
+  return context.confirmedMemoryWriteTargets.some((target) => resolveCanonicalRunPath(target) === resolved);
+}
+
 function classifyTarget(
   toolName: string,
   filePath: string,
@@ -192,6 +200,10 @@ function classifyTarget(
     : undefined;
   if (isProtectedWritePath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) {
     return protectedWriteAsk(toolName, resolved, startTime);
+  }
+  if (isConfirmedMemoryWrite(resolved, context)) {
+    return { decision: 'approve', reason: 'directive_memory_write_confirmed', confidence: 1, cached: false, bypassCache: true,
+      traceStep: createTraceStep('permission_classifier', 'directive_memory_write_confirmed', 'allow', 'User confirmed this global memory write in the rule dialog', startTime) };
   }
   if (isTaskOutputFileWriteAuthorized(toolName, { file_path: filePath }, context)) {
     return { decision: 'approve', reason: 'task_output_directory', confidence: 1, cached: false, bypassCache: true,

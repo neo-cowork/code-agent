@@ -1,3 +1,4 @@
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type {
   DirectiveMemoryWriteGrant,
@@ -175,4 +176,95 @@ export function hasMatchingDirectiveMemoryWriteGrant(
     grant?.authority === 'directive-memory-write'
     && grant.fingerprint === assessment.fingerprint
   );
+}
+
+/** Targets the user confirmed via the directive dialog; undefined unless a matching grant exists. */
+export function confirmedDirectiveMemoryTargets(
+  assessment: DirectiveMemoryWriteAssessment,
+  grant: DirectiveMemoryWriteGrant | undefined,
+): readonly string[] | undefined {
+  return assessment.requiresConfirmation && grant && hasMatchingDirectiveMemoryWriteGrant(assessment, grant)
+    ? assessment.targets
+    : undefined;
+}
+
+// 同一轮 run 里，已确认的规则文件所附带的 INDEX.md 指针更新不再弹第二次规则确认窗。
+// 只认：本 run 已有确认过的非 INDEX 规则文件，且这次写入的目标全是 INDEX.md、
+// 内容里点到了那个规则文件的名字。单独的 INDEX.md 写入、跨 run 的写入仍然要问。
+const confirmedRuleFilesByRun = new Map<string, Set<string>>();
+const MAX_TRACKED_RUNS = 200;
+const INDEX_FILE_NAME = 'INDEX.md';
+
+export function noteConfirmedRuleWrite(runKey: string | undefined, assessment: DirectiveMemoryWriteAssessment): void {
+  if (!runKey) return;
+  const rules = assessment.targets.map((t) => path.basename(t)).filter((name) => name !== INDEX_FILE_NAME);
+  if (!rules.length) return;
+  const known = confirmedRuleFilesByRun.get(runKey) ?? new Set<string>();
+  rules.forEach((name) => known.add(name));
+  confirmedRuleFilesByRun.delete(runKey);
+  confirmedRuleFilesByRun.set(runKey, known);
+  if (confirmedRuleFilesByRun.size > MAX_TRACKED_RUNS) {
+    confirmedRuleFilesByRun.delete(confirmedRuleFilesByRun.keys().next().value as string);
+  }
+}
+
+export function coveredIndexConfirmation(
+  runKey: string | undefined,
+  assessment: DirectiveMemoryWriteAssessment,
+  params: Record<string, unknown>,
+  definition: ToolDefinition,
+): DirectiveMemoryConfirmationResult | undefined {
+  const known = runKey ? confirmedRuleFilesByRun.get(runKey) : undefined;
+  if (!known || !assessment.targets.length) return undefined;
+  if (!isPlainIndexWrite(assessment, params, definition)) return undefined;
+  const bodies = newContentTexts(params);
+  const mentioned = [...known].some((name) => name.length > '.md'.length && bodies.some((b) => mentionsFileName(b, name)));
+  if (!mentioned) return undefined;
+  return { requestId: `covered-by-run-${runKey}`, confirmed: true, respondedAt: Date.now(), timedOut: false };
+}
+
+/**
+ * 只有「路径参数本身就是规范写法、且落点恰好是 <memoryDir>/INDEX.md」才算 INDEX 写入。
+ * 带 ..、. 段、重复分隔符、结尾斜杠的写法（memory.md/../INDEX.md）一律不豁免，
+ * 走正常确认；shell 命令和没声明路径参数的工具同样不豁免。
+ */
+function isPlainIndexWrite(
+  assessment: DirectiveMemoryWriteAssessment,
+  params: Record<string, unknown>,
+  definition: ToolDefinition,
+): boolean {
+  const memoryDir = resolveCanonicalRunPath(getMemoryDir());
+  const indexPath = path.join(memoryDir, INDEX_FILE_NAME);
+  if (!assessment.targets.every((t) => resolveCanonicalRunPath(t) === indexPath)) return false;
+  const descriptors = definition.pathAuthority ?? [];
+  if (!descriptors.length) return false;
+  return descriptors.every((descriptor) => {
+    if (descriptor.kind === 'shell') return false;
+    const raw = params[descriptor.pathParameter];
+    if (raw === undefined) return true;
+    if (typeof raw !== 'string') return false;
+    if (descriptor.kind === 'global-memory' && raw === INDEX_FILE_NAME) return true;
+    const expanded = raw === '~' || raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(1)) : raw;
+    return path.isAbsolute(expanded) && path.resolve(expanded) === expanded && expanded === indexPath;
+  });
+}
+
+/** 只取「新写入的内容」字段：Write content、Edit new_string、MultiEdit edits[].new_string。 */
+function newContentTexts(params: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const key of ['content', 'new_string']) {
+    if (typeof params[key] === 'string') out.push(params[key] as string);
+  }
+  if (Array.isArray(params.edits)) {
+    for (const edit of params.edits) {
+      const next = (edit as { new_string?: unknown } | null)?.new_string;
+      if (typeof next === 'string') out.push(next);
+    }
+  }
+  return out;
+}
+
+function mentionsFileName(text: string, name: string): boolean {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\w.-])${escaped}($|[^\\w.-])`).test(text);
 }
