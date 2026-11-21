@@ -62,9 +62,16 @@ export const TaskProgressSchema: z.ZodType<TaskProgress> = z.object({
     target: z.string().optional(),
     action: z.string().optional(),
     description: z.string().optional(),
+    callId: z.string().optional(),
+    notRun: z.boolean().optional(),
     at: z.number(),
   }).optional(),
-  bashSteps: z.array(z.object({ description: z.string().optional(), command: z.string() })).optional(),
+  bashSteps: z.array(z.object({
+    description: z.string().optional(),
+    command: z.string(),
+    callId: z.string().optional(),
+    notRun: z.boolean().optional(),
+  })).optional(),
   lastToolFailure: z.object({
     tool: z.string(),
     code: z.string(),

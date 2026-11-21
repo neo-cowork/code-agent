@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
+import type { Connector } from '../../../connectors/base';
 import {
   appleScriptFailureLogDetail,
   describeAppleScriptFailure,
@@ -22,6 +23,7 @@ import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
 type RemindersAction = 'get_status' | 'list_lists' | 'list_reminders';
+const pendingAccessProbes = new WeakMap<Connector, Promise<unknown>>();
 
 interface ReminderItem {
   id: string | number;
@@ -114,7 +116,25 @@ async function executeReminders(
     return { ok: false, error: formatConnectorUnavailableMessage('reminders', 'read'), code: 'NOT_INITIALIZED' };
   }
 
+  let probingAccess = false;
   try {
+    if (connector.getCachedStatus?.().readiness === 'unchecked') {
+      probingAccess = true;
+      let probe = pendingAccessProbes.get(connector);
+      if (!probe) {
+        ctx.logger.debug('reminders', { action: 'probe_access', requestedAction: action });
+        probe = connector.execute('probe_access', {}).finally(() => {
+          pendingAccessProbes.delete(connector);
+        });
+        pendingAccessProbes.set(connector, probe);
+      }
+      await probe;
+      probingAccess = false;
+      if (ctx.abortSignal.aborted) {
+        return { ok: false, error: 'aborted', code: 'ABORTED' };
+      }
+    }
+
     const result = await connector.execute(action, args);
     ctx.logger.debug('reminders', { action });
 
@@ -155,14 +175,14 @@ async function executeReminders(
     const osascriptFailure = isAppleScriptFailure(error);
     const failure = describeAppleScriptFailure(
       'Reminders', error,
-      action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
+      !probingAccess && action === 'list_reminders' ? { timeoutContext: 'list_reminders' } : undefined,
     );
     ctx.logger.warn('reminders connector failed', {
       connector: 'reminders',
       code: osascriptFailure ? failure.code : 'connector_error',
       detail: appleScriptFailureLogDetail(error),
     });
-    return {
+    const result: ToolResult<string> = {
       ok: false,
       error: osascriptFailure
         ? failure.message
@@ -171,6 +191,10 @@ async function executeReminders(
       // 判据读 metadata.code，缺了它 reminders 的授权被拒永远发不出环境卡片）。
       code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
+    if (probingAccess && result.code === 'not_authorized') {
+      result.meta = { accessProbeDenied: true };
+    }
+    return result;
   }
 }
 

@@ -215,6 +215,31 @@ function runTouchedPathValues(
   return values;
 }
 
+/**
+ * 本 turn 用户亲手批准写入的文件路径集合（normalizeDeliverablePath 同一归一化）。
+ * 来源：成功工具结果 metadata.userApproved === true——toolExecutor 在
+ * ask.approvalSource === 'user'（真人审批卡放行，含停车/定时审批与改参一次性放行）时盖章；
+ * 机器批准（auto-approve / session-allowlist / 裸 boolean 等）不盖章。
+ * Owner decision B（realrun105）：这些文件上的 placeholder / markdown_residue 残留
+ * 不再触发补轮；not_on_disk / empty / none_produced 与机器批准的写入永不豁免。
+ */
+function userApprovedWrittenPaths(messages: readonly Message[], workingDirectory: string): Set<string> {
+  const paths = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    paths.add(normalizeDeliverablePath(value, workingDirectory));
+  };
+  for (const message of currentMessages(messages)) {
+    for (const result of message.toolResults ?? []) {
+      if (!result.success || result.metadata?.userApproved !== true) continue;
+      if (Array.isArray(result.metadata?.changedFiles)) result.metadata.changedFiles.forEach(add);
+      add(result.outputPath);
+      add(result.metadata?.outputPath);
+    }
+  }
+  return paths;
+}
+
 function runTouchedBasenames(
   messages: readonly Message[],
   workingDirectory: string,
@@ -795,6 +820,8 @@ export type DeliverableDiskCheckGateResult =
  * 收尾闸（messageProcessor 落库前调用）：核对本 run 声称/声明的交付物。
  * 全过 → pass 原样放行；缺漏/正文占位符命中且补轮预算未尽 → action:'repair' 带修复
  * 提示（调用方注入并回喂模型补一轮）；预算用尽 → pass，但 content 已追加如实说明。
+ * 例外（Owner decision B，realrun105）：正文残留（placeholder/markdown_residue）落在
+ * 用户本轮亲手批准写入的文件上时不补轮，pass 并追加如实说明（见 exempt 分支）。
  * 完整核对结果随 check 透传（PR#2079 Round 2 Nit）：turnOutcomeStamp 在 run 收尾
  * 还要消费同一份结论，不复用就会把 office 交付物整个重新解析一遍；artifact 槽是
  * 同一目的的自动透传——只在**落定结论**（pass/预算用尽）上写入：repair 不是终局
@@ -826,11 +853,31 @@ export async function runDeliverableDiskCheckGate(input: {
       nudgeManager: input.nudgeManager,
     },
   );
-  const settled = check.missing.length === 0 || input.repairsUsed >= TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS;
+  // Owner decision B（realrun105）：用户本轮亲手批准写入的文件，正文残留（placeholder /
+  // markdown_residue）不再触发补轮——批准即拍板，再补一轮只会原样重写并重弹同一张审批卡，
+  // 最终回复改为追加如实说明（哪个文件、占位符在哪）。not_on_disk / empty / none_produced
+  // 永不豁免；check.missing 保持原样透传，turn-outcome 印章仍按完整缺漏记账。
+  const approvedPaths = userApprovedWrittenPaths(input.messages, input.workingDirectory);
+  const exempt = approvedPaths.size === 0
+    ? []
+    : check.missing.filter((item) => (item.kind === 'placeholder' || item.kind === 'markdown_residue')
+      && approvedPaths.has(item.claim.resolved));
+  if (exempt.length > 0) {
+    logger.info('deliverable finding exempt from repair: user-approved write', {
+      event: 'deliverable_user_approved_write_exempt',
+      items: exempt.map((item) => ({ kind: item.kind, path: item.claim.resolved })),
+    });
+  }
+  const exemptSet = new Set(exempt);
+  const remaining = exemptSet.size === 0 ? check.missing : check.missing.filter((item) => !exemptSet.has(item));
+  const settled = remaining.length === 0 || input.repairsUsed >= TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS;
   if (settled) input.artifact?.setLastDeliverableCheck?.(check, Date.now());
-  if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [], check };
+  if (remaining.length === 0) {
+    if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [], check };
+    return { action: 'pass', content: appendUndeliveredNote(input.finalText, exempt), missing: check.missing, check };
+  }
   if (input.repairsUsed < TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS) {
-    return { action: 'repair', prompt: buildDeliverableRepairPrompt(check.missing), missing: check.missing, check };
+    return { action: 'repair', prompt: buildDeliverableRepairPrompt(remaining), missing: remaining, check };
   }
   return { action: 'pass', content: appendUndeliveredNote(input.finalText, check.missing), missing: check.missing, check };
 }

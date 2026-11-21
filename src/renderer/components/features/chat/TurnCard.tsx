@@ -68,7 +68,7 @@ import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
 import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
-import { resolveBusySignal } from '../../../utils/turnBusySignal';
+import { useBusySignal } from '../../../hooks/useBusySignal';
 import { useTurnCardExpansion } from './useTurnCardExpansion';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
 import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
@@ -191,7 +191,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const lastIndex = displayNodes.length - 1;
   const lastDisplay = displayNodes[lastIndex];
   const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
-  const busySignal = resolveBusySignal(turn);
+  const busySignal = useBusySignal(turn, sessionId);
   const lastNodeIsStreamingText =
     busySignal === 'text-caret' &&
     !!lastDisplayNode &&
