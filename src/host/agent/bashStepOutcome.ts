@@ -1,6 +1,7 @@
 // 委派任务里 Bash 步骤的「未执行」落标：身份在源头（toolCallId），结果到达时按同一个 id 精确标记。
 // 没有该 callId 的步骤 → 什么都不做；绝不回退到命令文本/位置匹配（命令文本相同的两次调用只有一次被拒时会标错）。
 import type { BashStep, LastToolStep, TaskProgress } from '../../shared/contract/backgroundTask';
+import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { HostReasonCode } from '../../shared/contract/permission';
 import type { Message } from '../../shared/contract/message';
 import type { ToolResult } from '../../shared/contract/tool';
@@ -9,16 +10,18 @@ const MAX_BASH_STEPS = 20;
 const isBashTool = (name: string): boolean => name === 'Bash' || name === 'bash';
 const HANDED_OFF_CODE = 'HANDED_OFF_TO_BACKGROUND';
 
-/** 与前台 toolCallTerminalState 同口径：主机封存且未执行，或权限层拒绝（用户/超时/取消/兜底拒）= 命令从未跑。 */
+/**
+ * 与前台同口径的「命令从未跑」判据：主机封存且未执行，或权限层结构化拒绝
+ * （toolExecutor 的每条拒绝路径——用户拒绝 / 命令无法解析而 fail-closed / 规则拦截 / 超时 / 取消——
+ * 都挂 failureCode=permission-denied；只认主机挂的结构化字段，绝不解析命令自己的 stdout/stderr）。
+ */
 export function toolResultNeverRan(result: Pick<ToolResult, 'metadata'>): boolean {
   const meta = result.metadata;
   if (!meta) return false;
   if (meta.skipped === true && meta.executed !== true && meta.code !== HANDED_OFF_CODE) return true;
+  if (meta.failureCode === AgentFailureCode.PermissionDenied) return true;
   const code = (meta.hostReason as { code?: unknown } | undefined)?.code;
-  return code === HostReasonCode.PermissionDeniedByUser
-    || code === HostReasonCode.PermissionDeniedTimeout
-    || code === HostReasonCode.PermissionDeniedCancelled
-    || code === HostReasonCode.PermissionDeniedFailClosed;
+  return code === HostReasonCode.PermissionDeniedByUser;
 }
 
 export function appendBashStep(steps: readonly BashStep[] | undefined, step: BashStep): BashStep[] {

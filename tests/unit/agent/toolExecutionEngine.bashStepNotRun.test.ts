@@ -20,6 +20,7 @@ import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import type { TaskManager } from '../../../src/host/task/TaskManager';
 import { permissionDenialError } from '../../../src/host/tools/toolPermissionClassification';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { createHostReason, HostReasonCode } from '../../../src/shared/contract/permission';
 
 vi.mock('../../../src/host/services', () => ({
   getConfigService: vi.fn(),
@@ -195,7 +196,18 @@ function userDenied(): Omit<ToolResult, 'toolCallId'> {
   return { success: false, error: hostReason.modelText, metadata: { failureCode: AgentFailureCode.PermissionDenied, hostReason } };
 }
 
-type Outcome = 'ran' | 'denied';
+/** 命令无法解析 → 主机 fail-closed 自动拒绝（真机实录：PERMISSION_COMMAND_ANALYSIS_FAILED）。 */
+function analysisBlocked(): Omit<ToolResult, 'toolCallId'> {
+  const hostReason = createHostReason(HostReasonCode.PermissionCommandAnalysisFailed, 'Bash 被自动拒绝：命令无法可靠拆词（fail-closed）', { toolName: 'Bash' });
+  return { success: false, error: hostReason.modelText, metadata: { failureCode: AgentFailureCode.PermissionDenied, hostReason } };
+}
+
+/** 命令真跑了、非零退出：没有任何权限层结构化字段，输出里即便有 permission denied 字样也不是「未执行」。 */
+function ranButFailed(): Omit<ToolResult, 'toolCallId'> {
+  return { success: false, error: 'ls: /root: Permission denied (exit 1)', metadata: { exitCode: 1 } };
+}
+
+type Outcome = 'ran' | 'denied' | 'blocked' | 'failed';
 
 async function setup(outcomes: Record<string, Outcome>, afterExecute?: (id: string, ctx: RuntimeContext) => void) {
   const manager = new FakeTaskManager();
@@ -211,9 +223,10 @@ async function setup(outcomes: Record<string, Outcome>, afterExecute?: (id: stri
     const id = String((options as { currentToolCallId?: string } | undefined)?.currentToolCallId ?? '');
     const outcome = outcomes[id] ?? 'ran';
     afterExecute?.(id, ctx);
-    return outcome === 'denied'
-      ? { toolCallId: id, ...userDenied() }
-      : { toolCallId: id, success: true, output: `ran ${String(args.command)}` };
+    if (outcome === 'denied') return { toolCallId: id, ...userDenied() };
+    if (outcome === 'blocked') return { toolCallId: id, ...analysisBlocked() };
+    if (outcome === 'failed') return { toolCallId: id, ...ranButFailed() };
+    return { toolCallId: id, success: true, output: `ran ${String(args.command)}` };
   }, (event) => {
     events.push(event.type === 'task_progress' || event.type === 'tool_call_start' || event.type === 'tool_call_end'
       ? `${event.type}:${(event.data as { toolCallId?: string; id?: string }).toolCallId ?? (event.data as { id?: string }).id}` : event.type);
@@ -311,6 +324,15 @@ describe('delegated Bash step notRun is keyed by tool call id (production event 
     expect('c2' in byId).toBe(false);
     expect(byId.c4).toBe(true);
     ['c1', 'c3', 'c4'].forEach((id) => assertProductionOrder(events, id));
+    center.dispose();
+  });
+
+  it('(h) host fail-closed block (unparseable command) is notRun; a command that ran and failed is not', async () => {
+    const { engine, steps, center } = await setup({ h2: 'blocked', h3: 'failed' });
+    await engine.executeToolsWithHooks([bash('h1', 'ls', '看看')]);
+    await engine.executeToolsWithHooks([bash('h2', 'mkdir -p x; mv $(ls) x', '归档')]);
+    await engine.executeToolsWithHooks([bash('h3', 'ls /root', '看看根目录')]);
+    expect(steps().map((s) => [s.callId, s.notRun ?? false])).toEqual([['h1', false], ['h2', true], ['h3', false]]);
     center.dispose();
   });
 
