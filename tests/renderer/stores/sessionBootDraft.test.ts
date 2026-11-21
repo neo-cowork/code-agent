@@ -234,4 +234,28 @@ describe('cold boot through the production entries (initializeSessionStore / rel
     await reloadSessionsForAuthChange({ principalChanged: true });
     expect(useSessionStore.getState().currentSessionId).toBe('created');
   });
+
+  it('race: auth-change reload empties the store list while boot opens → reuses the server blank session, no create', async () => {
+    list.push(wireSession('blank', '新对话', 0, 5));
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    let listCalls = 0;
+    const base = mockDomainInvoke.getMockImplementation()!;
+    mockDomainInvoke.mockImplementation(async (d: string, action: string, payload?: { sessionId?: string }) => {
+      // createSession awaits the settings read; the reload's list answers only after that read.
+      if (action === 'get') await sleep(40);
+      if (action === 'list' && ++listCalls === 2) await sleep(150);
+      return base(d, action, payload);
+    });
+    try {
+      const { initializeSessionStore, reloadSessionsForAuthChange, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+      const init = initializeSessionStore();
+      await sleep(15);
+      const reload = reloadSessionsForAuthChange({ principalChanged: true });
+      await Promise.all([init, reload]);
+      expect(useSessionStore.getState().currentSessionId).toBe('blank');
+      expect(calls).not.toContain('create');
+    } finally {
+      list.pop();
+    }
+  });
 });
