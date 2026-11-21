@@ -9,6 +9,7 @@ import { toast } from '../hooks/useToast';
 import ipcService from '../services/ipcService';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from './logger';
+import { isWebMode } from './platform';
 
 const logger = createLogger('modelSetup');
 
@@ -54,7 +55,9 @@ export async function ensureModelConfigured(
     const { settings, provider, configured } = await readModelReadiness(currentSessionId, {});
     if (!configured) {
       const providerName = getLocalizedProviderDisplayName(provider, language) || t.modelSetup.thisModel;
-      if (hasConfiguredRuntimeModels(settings)) {
+      if (isWebMode()) {
+        toast.info(t.modelSetup.missingApiKeyWeb.replace('{provider}', providerName));
+      } else if (hasConfiguredRuntimeModels(settings)) {
         if (!openSettingsWhenReady) toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
       } else {
         toast.info(t.modelSetup.missingApiKey.replace('{provider}', providerName));
