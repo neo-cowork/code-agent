@@ -63,12 +63,17 @@ export function toolUserLabel(toolName?: string, language: 'zh' | 'en' = 'zh'): 
 export function permissionNotice(
   toolName: string | undefined,
   language: 'zh' | 'en',
-  context: 'approval' | 'parked' = 'approval',
+  context: 'approval' | 'parked' | 'first_wake' = 'approval',
 ): { title: string; body: string } {
   const en = language === 'en';
   const title = en ? 'Approval needed' : '需要授权';
   const label = toolName?.trim() ? toolUserLabel(toolName, language) : undefined;
   const body = label ? `${title}${en ? ': ' : '：'}${label}` : (en ? 'Review the proposed action.' : '请求执行权限');
+  if (context === 'first_wake') {
+    return { title, body: `${body}${en
+      ? '. The task is paused. Go back to the chat where you created this expert and tap Allow.'
+      : '。任务已暂停，回到刚创建专家的对话里点「允许」。'}` };
+  }
   if (context !== 'parked') return { title, body };
   return { title, body: `${body}${en
     ? '. The task is paused. Open Agent Neo to review the unattended task.'
