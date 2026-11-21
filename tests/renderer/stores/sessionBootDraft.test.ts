@@ -67,7 +67,7 @@ describe('cold boot lands on the session that holds the unsent draft', () => {
     expect(useSessionStore.getState().currentSessionId).toBe('blank');
   });
 
-  it('initializeSessionStore keeps the newest session when no blank session holds a draft', async () => {
+  it('initializeSessionStore never falls back to the newest chat when no blank session holds a draft', async () => {
     storeDraft('busy', 'draft in a session that already has messages');
     const list = [wireSession('busy', '其他任务', 3, 20), wireSession('blank', '新对话', 0, 10)];
     mockDomainInvoke.mockImplementation(async (_d: string, action: string, payload?: { sessionId?: string }) => {
@@ -80,7 +80,7 @@ describe('cold boot lands on the session that holds the unsent draft', () => {
     });
     const { initializeSessionStore, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
     await initializeSessionStore();
-    expect(useSessionStore.getState().currentSessionId).toBe('busy');
+    expect(useSessionStore.getState().currentSessionId).not.toBe('busy');
   });
 
   it('with no sessions the home draft moves onto the created session and the home key is cleared', async () => {
@@ -139,11 +139,19 @@ describe('cold boot keeps the chat the user was viewing', () => {
     expect(await open()).toHaveBeenCalledWith('origin');
   });
 
-  it('falls back to the most recent chat when nothing is remembered or it is gone', async () => {
-    expect(await open()).toHaveBeenCalledWith('target');
+  it('opens the new-task start page (createSession) when nothing is remembered or the remembered chat is gone', async () => {
+    const createSession = vi.fn(async () => ({ id: 'fresh' }));
+    const run = async () => {
+      const switchSession = vi.fn(async () => undefined);
+      await openInitialSession({ sessions, isBlank: () => false, switchSession, createSession });
+      return switchSession;
+    };
+    expect(await run()).not.toHaveBeenCalled();
+    expect(createSession).toHaveBeenCalledTimes(1);
     const { rememberLastViewedSession } = await import('../../../src/renderer/stores/sessionBootDraft');
     rememberLastViewedSession('deleted');
-    expect(await open()).toHaveBeenCalledWith('target');
+    expect(await run()).not.toHaveBeenCalled();
+    expect(createSession).toHaveBeenCalledTimes(2);
   });
 
   it('records the visible chat as soon as the user switches (real store + broadcasts wiring)', async () => {
@@ -156,5 +164,74 @@ describe('cold boot keeps the chat the user was viewing', () => {
     await initializeSessionStore();
     await useSessionStore.getState().switchSession('origin');
     expect(localStorage.getItem('neo:last-viewed-session')).toBe('origin');
+  });
+});
+
+describe('cold boot through the production entries (initializeSessionStore / reloadSessionsForAuthChange)', () => {
+  const list = [wireSession('busy', '其他任务', 3, 20), wireSession('older', '更早的任务', 2, 10)];
+  const calls: string[] = [];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+    localStorage.clear();
+    calls.length = 0;
+    (globalThis as Record<string, unknown>).window = Object.assign(window, {
+      domainAPI: { invoke: mockDomainInvoke },
+    });
+    mockDomainInvoke.mockImplementation(async (_d: string, action: string, payload?: { sessionId?: string }) => {
+      calls.push(action);
+      if (action === 'list') return { success: true, data: list };
+      if (action === 'load') {
+        const found = list.find((s) => s.id === payload?.sessionId);
+        return { success: true, data: found ? { ...found, messages: [], todos: [] } : null };
+      }
+      if (action === 'create') return { success: true, data: { ...wireSession('created', '新对话', 0, 99) } };
+      return { success: true, data: [] };
+    });
+  });
+
+  it('(a) empty localStorage: lands on a new blank session, not any existing chat, and the start page applies', async () => {
+    const { initializeSessionStore, useSessionStore, isBlankNewSession } = await import('../../../src/renderer/stores/sessionStore');
+    await initializeSessionStore();
+    const state = useSessionStore.getState();
+    expect(state.currentSessionId).toBe('created');
+    expect(list.map((s) => s.id)).not.toContain(state.currentSessionId);
+    const current = state.sessions.find((s) => s.id === state.currentSessionId);
+    expect(current && isBlankNewSession(current)).toBe(true);
+  });
+
+  it('(b) a valid remembered chat is restored', async () => {
+    localStorage.setItem('neo:last-viewed-session', 'older');
+    const { initializeSessionStore, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    await initializeSessionStore();
+    expect(useSessionStore.getState().currentSessionId).toBe('older');
+    expect(calls).not.toContain('create');
+  });
+
+  it('(c) a remembered chat that no longer exists falls back to the start page', async () => {
+    localStorage.setItem('neo:last-viewed-session', 'deleted-long-ago');
+    const { initializeSessionStore, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    await initializeSessionStore();
+    expect(useSessionStore.getState().currentSessionId).toBe('created');
+  });
+
+  it('(d) an untouched blank session is reused without another create call', async () => {
+    list.push(wireSession('blank', '新对话', 0, 5));
+    try {
+      const { initializeSessionStore, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+      await initializeSessionStore();
+      expect(useSessionStore.getState().currentSessionId).toBe('blank');
+      expect(calls).not.toContain('create');
+    } finally {
+      list.pop();
+    }
+  });
+
+  it('re-sign-in (auth change) with empty localStorage also opens the start page, not the newest chat', async () => {
+    const { initializeSessionStore, reloadSessionsForAuthChange, useSessionStore } = await import('../../../src/renderer/stores/sessionStore');
+    await initializeSessionStore();
+    await reloadSessionsForAuthChange({ principalChanged: true });
+    expect(useSessionStore.getState().currentSessionId).toBe('created');
   });
 });

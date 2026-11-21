@@ -17,7 +17,7 @@ export function rememberLastViewedSession(sessionId: string | null): void {
   try {
     window.localStorage.setItem(LAST_VIEWED_SESSION_KEY, sessionId);
   } catch {
-    // Storage unavailable: boot falls back to the most recently updated session.
+    // Storage unavailable: boot opens the new-task start page.
   }
 }
 
@@ -54,9 +54,12 @@ function adoptHomeDraft(sessionId: string): void {
 
 /**
  * Cold-boot and re-sign-in both pick the session to show. A blank new-task session holding an
- * unsent draft wins, then the chat the user last viewed (a delegation target that was updated
- * after the originating chat must not steal a fresh page), then the most recent session; with no sessions at all the home draft moves
- * onto the one that gets created.
+ * unsent draft wins, then the chat this browser last viewed (a delegation target that was updated
+ * after the originating chat must not steal a fresh page). With no browser-local reason to restore
+ * anything (nothing remembered, or the remembered chat is gone) the new-task start page opens via
+ * createSession (which reuses an untouched blank session) — never the server's most recent chat,
+ * or a first-time browser would append its first task to someone else's old conversation. The home
+ * draft moves onto a freshly created session.
  */
 export async function openInitialSession<T extends { id: string }>(deps: {
   sessions: T[];
@@ -65,8 +68,9 @@ export async function openInitialSession<T extends { id: string }>(deps: {
   createSession: () => Promise<{ id: string } | null>;
 }): Promise<void> {
   const { sessions, isBlank, switchSession, createSession } = deps;
-  if (sessions.length > 0) {
-    await switchSession((findBlankSessionWithDraft(sessions, isBlank) ?? readLastViewedSession(sessions) ?? sessions[0]).id);
+  const restore = findBlankSessionWithDraft(sessions, isBlank) ?? readLastViewedSession(sessions);
+  if (restore) {
+    await switchSession(restore.id);
     return;
   }
   const created = await createSession();
