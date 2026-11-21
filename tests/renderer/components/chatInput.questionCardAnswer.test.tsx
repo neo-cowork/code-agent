@@ -96,7 +96,7 @@ afterEach(() => {
 });
 
 const enqueueCalls = () => domainInvoke.mock.calls.filter((c) => c[1] === 'enqueue');
-const responseCalls = () => invokeSpy.mock.calls.filter((c) => c[0] === IPC_CHANNELS.USER_QUESTION_RESPONSE);
+const responseCalls = () => invokeSpy.mock.calls.filter((c: unknown[]) => c[0] === IPC_CHANNELS.USER_QUESTION_RESPONSE);
 
 async function submit(params: UseChatInputSubmitParams): Promise<void> {
   const { result } = renderHook(() => useChatInputSubmit(params));
