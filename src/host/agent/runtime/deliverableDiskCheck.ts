@@ -33,6 +33,7 @@ import {
 } from '../../security/untrustedContentBoundary';
 import { createLogger } from '../../services/infra/logger';
 import {
+  isPlaceholderScannablePath,
   scanDeliverablesForPlaceholders,
   type PlaceholderScanInput,
   type DeliverablePlaceholderHit,
@@ -75,7 +76,8 @@ export interface DeliverableClaim {
   claimed: string;
   /** 对 workingDirectory resolve 后的绝对路径（NFC 归一化） */
   resolved: string;
-  source: 'declared' | 'inferred';
+  /** written = 本 run 真写出的文件（不依赖回复措辞），文件已被后续脚本删掉/为空时静默跳过 */
+  source: 'declared' | 'inferred' | 'written';
 }
 
 type DeliverableMissingKind = 'not_on_disk' | 'empty' | 'placeholder' | 'markdown_residue' | 'none_produced';
@@ -567,6 +569,13 @@ export function collectDeliverableClaims(input: {
     const text = input.finalText ?? finalReplyText(input.messages);
     for (const candidate of extractClaimedDeliverablePaths(text)) push(candidate, 'inferred');
   }
+
+  // 第三来源：本 run 真写出的可扫描文件，与回复措辞无关；排在最后，MAX_DELIVERABLE_CLAIMS
+  // 截断时不会挤掉 declared/inferred。
+  for (const raw of runTouchedPathValues(input.messages, input.nudgeManager)) {
+    if (!isPlaceholderScannablePath(raw.trim()) || referencesInputMaterials(raw)) continue;
+    push(raw, 'written');
+  }
   return claims;
 }
 
@@ -599,6 +608,8 @@ export async function checkDeliverablesOnDisk(
   const seenRefs = new Set<string>();
   const scanned: PlaceholderScanInput[] = [];
   let readbackBytes = 0;
+  // written 来源的文件可能已被后续脚本删掉/为空：静默跳过，也不进返回的 claims 账。
+  const skippedWritten = new Set<DeliverableClaim>();
 
   for (const claim of claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS)) {
     const candidates = [...new Set([claim.resolved, claim.resolved.normalize('NFD')])];
@@ -610,11 +621,13 @@ export async function checkDeliverablesOnDisk(
       }
     }).find((entry) => entry?.stat.isFile());
     if (!stat) {
-      missing.push({ claim, kind: 'not_on_disk' });
+      if (claim.source === 'written') skippedWritten.add(claim);
+      else missing.push({ claim, kind: 'not_on_disk' });
       continue;
     }
     if (stat.stat.size === 0) {
-      missing.push({ claim, kind: 'empty' });
+      if (claim.source === 'written') skippedWritten.add(claim);
+      else missing.push({ claim, kind: 'empty' });
       continue;
     }
     scanned.push({ claimed: claim.claimed, resolved: claim.resolved, path: stat.hit, size: stat.stat.size });
@@ -635,7 +648,8 @@ export async function checkDeliverablesOnDisk(
       // 回读失败（stat 与 read 之间消失等）：从扫描队列摘掉，避免同一条声称既记
       // not_on_disk 又被扫描记 placeholder，修复提示里出现双条目。
       scanned.pop();
-      missing.push({ claim, kind: 'not_on_disk' });
+      if (claim.source === 'written') skippedWritten.add(claim);
+      else missing.push({ claim, kind: 'not_on_disk' });
     }
   }
   const claimByResolved = new Map(claims.map((claim) => [claim.resolved, claim]));
@@ -660,7 +674,11 @@ export async function checkDeliverablesOnDisk(
       });
     }
   }
-  return { claims: claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS), evidenceRefs, missing };
+  return {
+    claims: claims.slice(0, TURN_OUTCOME.MAX_DELIVERABLE_CLAIMS).filter((claim) => !skippedWritten.has(claim)),
+    evidenceRefs,
+    missing,
+  };
 }
 
 /** 给 evidenceProblems 的稳定 code 行。 */
@@ -816,7 +834,7 @@ export function appendRequestedNoneProduced(
     nudgeManager?: { getModifiedFilesSince(timestamp: number): string[] };
   },
 ): DeliverableDiskCheckResult {
-  if (check.claims.length > 0 || check.missing.some((item) => item.kind === 'none_produced')) return check;
+  if (check.claims.some((claim) => claim.source !== 'written') || check.missing.some((item) => item.kind === 'none_produced')) return check;
   const requestedFormat = requestedDeliverableFormat(input.messages);
   if (!requestedFormat
     || runWroteNonScriptFile(input.messages, input.workingDirectory, input.nudgeManager)
@@ -877,6 +895,13 @@ export async function runDeliverableDiskCheckGate(input: {
   // markdown_residue）不再触发补轮——批准即拍板，再补一轮只会原样重写并重弹同一张审批卡，
   // 最终回复改为追加如实说明（哪个文件、占位符在哪）。not_on_disk / empty / none_produced
   // 永不豁免；check.missing 保持原样透传，turn-outcome 印章仍按完整缺漏记账。
+  const writtenFindings = check.missing.filter((item) => item.claim.source === 'written');
+  if (writtenFindings.length > 0) {
+    logger.info('deliverable finding from a file written this run (no claim wording needed)', {
+      event: 'deliverable_written_claim_finding',
+      items: writtenFindings.map((item) => ({ kind: item.kind, path: item.claim.resolved })),
+    });
+  }
   const approvedPaths = userApprovedWrittenPaths(input.messages, input.workingDirectory);
   const exempt = approvedPaths.size === 0
     ? []

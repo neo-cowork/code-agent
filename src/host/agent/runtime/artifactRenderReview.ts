@@ -431,7 +431,7 @@ async function runArtifactRenderReviewGate(input: {
     declaredDeliverables: input.declaredDeliverables,
     finalText: input.finalText,
     nudgeManager: input.nudgeManager,
-  }).filter(isRenderableClaim);
+  }).filter((claim) => claim.source !== 'written' && isRenderableClaim(claim));
 
   const claimedFiles = claims.map((claim) => claim.resolved);
   const previousIssues = input.repairsUsed > 0 ? (input.previousStamp?.issues ?? []) : [];
