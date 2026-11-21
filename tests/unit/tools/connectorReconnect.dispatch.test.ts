@@ -132,6 +132,18 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
       expect(exec.mock.calls).toHaveLength(3);
     });
 
+    it.each([
+      ['Not authorized to send Apple events to Reminders. (-1743)', undefined],
+      ['Not authorized to access reminders.', true],
+    ])('marks a probe denial %s as notAppleEvents=%s', async (stderr, flag) => {
+      const { exec } = registerReminders(unchecked);
+      exec.mockRejectedValueOnce(Object.assign(new Error('Command failed: osascript'), { stderr }));
+      const result = await execute(path, 'list_reminders', 'reminders');
+      expect(result.metadata?.code).toBe('not_authorized');
+      expect(result.metadata?.accessProbeDenied).toBe(true);
+      expect(result.metadata?.notAppleEvents).toBe(flag);
+    });
+
     it('keeps the authorization error code and stops the read if the probe is denied', async () => {
       const { exec } = registerReminders(unchecked);
       exec.mockRejectedValueOnce(Object.assign(new Error('Command failed: osascript'), {

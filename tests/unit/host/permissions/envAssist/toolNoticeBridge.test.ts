@@ -41,7 +41,7 @@ const failures = [
   },
   mailFailure,
   {
-    toolName: 'reminders', metadata: { code: 'not_authorized' }, klass: 'perm_automation',
+    toolName: 'reminders_create', metadata: { code: 'not_authorized' }, klass: 'perm_automation',
     target: 'reminders', kind: 'request_grant', pane: 'automation',
   },
 ] as const;
@@ -129,7 +129,7 @@ describe('tool denial through the production env-assist bridge entries', () => {
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
   });
 
-  async function publishDenial(failure: typeof failures[number], runId: string) {
+  async function publishDenial(failure: Pick<typeof failures[number], 'metadata' | 'klass' | 'target' | 'kind' | 'pane'> & { toolName: string }, runId: string) {
     const result: Pick<ToolResult, 'success' | 'error' | 'metadata'> = {
       success: false, error: 'Permission denied', metadata: { ...failure.metadata },
     };
@@ -158,6 +158,29 @@ describe('tool denial through the production env-assist bridge entries', () => {
     expect(requests).toEqual(failure.kind === 'request_grant'
       ? [{ method: 'POST', path: reachabilityPath, authorized: true, body: {} }]
       : []);
+  });
+
+  it('still raises the automation card for a non-probe reminders read denial (-1743)', async () => {
+    const row = await publishDenial({
+      toolName: 'reminders', metadata: { code: 'not_authorized' }, klass: 'perm_automation',
+      target: 'reminders', kind: 'request_grant', pane: 'automation',
+    }, 'denial-reminders-read-1743');
+    expect(row?.metadata?.envAssist).toMatchObject({ class: 'perm_automation', phase: 'needs_user' });
+  });
+
+  it('leaves a denied reminders read untouched: no card, no message, no event, guidance kept', async () => {
+    const guidance = '还没有授权 Neo 访问提醒事项，请在能力中心 > 连接器点‘检查’并按提示授权';
+    const result: Pick<ToolResult, 'success' | 'error' | 'metadata'> = {
+      success: false, error: guidance, metadata: { code: 'not_authorized', accessProbeDenied: true, notAppleEvents: true },
+    };
+    const events: unknown[] = [];
+    await publish({ toolName: 'reminders', result, sessionId, runId: 'denial-reminders-read', onEvent: (e) => events.push(e) });
+    expect(events).toEqual([]);
+    expect(db.getMessages(sessionId).filter((m) => m.id.startsWith('env-assist:denial-reminders-read|'))).toEqual([]);
+    expect(result.error).toBe(guidance);
+    expect(result.error).toContain('能力中心 > 连接器');
+    expect(result.error).toContain('检查');
+    expect(requests).toEqual([]);
   });
 
   it('clicks the persisted mail card with one authorized automation grant', async () => {

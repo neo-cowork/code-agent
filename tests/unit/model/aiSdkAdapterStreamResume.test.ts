@@ -526,6 +526,101 @@ describe('inferenceViaAiSdk —— B2 续答提示 + 宿主开头去重（ADR-06
     expect(res.content).toBe(TAIL);
     expect((res.content ?? "").startsWith(KEPT)).toBe(false);
   });
+
+  it('kept 止于表格中间、续答以裸 | 行开头：续答段补回表头+分隔行，渲染成表格行而非字面竖线', async () => {
+    const TABLE_KEPT = '各位同事：日程如下\n\n| 时间 | 安排 |\n| --- | --- |\n| 08:30 | 公司楼下集合签到，分车出发 |\n';
+    const ROWS = '| 10:00 | 抵达湿地公园，自由徒步 |\n| 12:30 | 农家院午餐 |\n\n请携带身份证。';
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([...deltas(TABLE_KEPT), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas(ROWS), finish]));
+    const { res } = await run();
+    const cont = res.content ?? '';
+    // 续答段单独渲染：第一行必须是表头，紧跟分隔行，不能直接是数据行
+    expect(cont.split('\n').slice(0, 2)).toEqual(['| 时间 | 安排 |', '| --- | --- |']);
+    expect(cont).toContain('| 10:00 | 抵达湿地公园，自由徒步 |');
+    expect(cont.endsWith('请携带身份证。')).toBe(true);
+    expect(dedupLog('warn', 'not-restated')).toBe(true);
+  });
+
+  it('kept 止于表头+分隔行、续答又重发分隔行：只补表头，不出现两条分隔行（真跑 t3 复现形状）', async () => {
+    const K = '## 日程\n\n| 时间 | 安排 |\n| --- | --- |\n';
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([...deltas(K), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas('| --- | --- |\n| 08:30 | 集合 |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('| 时间 | 安排 |\n| --- | --- |\n| 08:30 | 集合 |\n');
+  });
+
+  it('续答自己重开了整张表（表头+分隔行）：原样放行，不再叠一层表头', async () => {
+    const K = '| 时间 | 安排 |\n| --- | --- |\n| 08:30 | 集合 |\n';
+    const C = '| 时刻 | 事项 |\n| --- | --- |\n| 10:00 | 抵达 |\n';
+    vi.mocked(streamText)
+      .mockReturnValueOnce(fakeStream([...deltas(K), { type: 'error', error: RESET }]))
+      .mockReturnValueOnce(fakeStream([...deltas(C), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(C);
+  });
+
+  const brokenWith = (kept: string) => fakeStream([...deltas(kept), { type: 'error', error: RESET }]);
+  const HEAD = '| 时间 | 安排 |\n| --- | --- |\n';
+
+  it('kept 止于表格单元格中间（| 10:00 | 抵达湿）、续答从行中接着写：续答补表头+分隔行+半行，无裸片段', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenWith(`日程：\n\n${HEAD}| 08:30 | 集合 |\n| 10:00 | 抵达湿`))
+      .mockReturnValueOnce(fakeStream([...deltas('地公园 |\n| 12:30 | 午餐 |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(`${HEAD}| 10:00 | 抵达湿地公园 |\n| 12:30 | 午餐 |\n`);
+    const bare = (res.content ?? '').split('\n').filter((l) => l.trim() !== '' && !l.trimStart().startsWith('|') && l.trimEnd().endsWith('|'));
+    expect(bare).toEqual([]);
+  });
+
+  it('kept 止于 `| 10:00 |`（单元格边界，未换行）、续答 " 抵达湿地公园 |…"：同样补表头并接上半行', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenWith(`${HEAD}| 08:30 | 集合 |\n| 10:00 |`))
+      .mockReturnValueOnce(fakeStream([...deltas(' 抵达湿地公园 |\n| 12:30 | 午餐 |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(`${HEAD}| 10:00 | 抵达湿地公园 |\n| 12:30 | 午餐 |\n`);
+  });
+
+  it('kept 末行是完整表格行（无换行）、续答以换行开头：走整行路径补表头，不重复半行', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenWith(`${HEAD}| 08:30 | 集合 |`))
+      .mockReturnValueOnce(fakeStream([...deltas('\n| 10:00 | 抵达 |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe(`${HEAD}| 10:00 | 抵达 |\n`);
+  });
+
+  it('kept 止于未闭合围栏代码块：续答补回同 info string 的开栏，收尾围栏不再吞后文', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenWith('示例：\n```bash\nnpm i\n'))
+      .mockReturnValueOnce(fakeStream([...deltas('npm run build\n```\n完成'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('```bash\nnpm run build\n```\n完成');
+  });
+
+  it('kept 止于围栏内半行、续答从行中接着写：开栏 + 半行 + 续答', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenWith('示例：\n```bash\nnpm run bu'))
+      .mockReturnValueOnce(fakeStream([...deltas('ild\n```\n完成'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('```bash\nnpm run build\n```\n完成');
+  });
+
+  it('kept 的围栏已闭合：续答原样放行', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenWith('示例：\n```bash\nnpm i\n```\n'))
+      .mockReturnValueOnce(fakeStream([...deltas('完成。'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('完成。');
+  });
+
+  it('kept 不在表格中：续答原样放行（不补表头）', async () => {
+    vi.mocked(streamText)
+      .mockReturnValueOnce(brokenFirst())
+      .mockReturnValueOnce(fakeStream([...deltas('| a | b |\n'), finish]));
+    const { res } = await run();
+    expect(res.content).toBe('| a | b |\n');
+  });
 });
 
 describe('inferenceViaAiSdk —— B1 prefix 请求形状（ADR-068 刀 2）', () => {
