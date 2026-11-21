@@ -167,7 +167,9 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       protectionLabel: p.keepExpanded,
     },
   });
-  const expanded = expansionView.isVisibleExpanded;
+  // 快速对话层的合成未分类组：层头已是同名标题与唯一折叠控件，组头整行不渲染、会话行直挂层头下。
+  const hideHeader = group.isUncategorized;
+  const expanded = hideHeader || expansionView.isVisibleExpanded;
   const summaryLine = formatSidebarProjectSummaryLine({
     summary,
     isUncategorized: group.isUncategorized,
@@ -199,6 +201,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     <div
       data-sidebar-group-phase={expansionView.phase}
     >
+      {!hideHeader && (
       <div
         className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-950 text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
@@ -375,6 +378,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           />
         )}
       </div>
+      )}
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail
           projectId={group.projectId}
