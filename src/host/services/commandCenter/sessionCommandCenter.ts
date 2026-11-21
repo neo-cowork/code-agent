@@ -47,6 +47,7 @@ import type { RuntimeInputMode } from '../../../shared/contract/conversationEnve
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 import { commandMayAwaitSystemPrompt } from '../../task/macosAutomationPrompt';
 import { composeTaskResultForModel } from './taskResultHandback';
+import { appendBashStep, bashStepFromProgress, withToolCallOutcome } from '../../agent/bashStepOutcome';
 
 const logger = createLogger('SessionCommandCenter');
 
@@ -617,9 +618,7 @@ export class SessionCommandCenter {
       ? (event.data as ToolProgressData | undefined)?.inactiveMs
       : undefined;
     if (typeof heartbeatInactiveMs === 'number' && Number.isFinite(heartbeatInactiveMs)) {
-      if (!this.taskAwaitsApproval(taskId)) {
-        this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
-      }
+      if (!this.taskAwaitsApproval(taskId)) this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
     } else {
       this.ledger(sessionId).touch(taskId);
     }
@@ -628,8 +627,7 @@ export class SessionCommandCenter {
       this.stepCapHitTasks.add(taskId);
     }
 
-    // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
-    // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
+    // tool_call_start 只记 call id → 工具名，供 tool_call_end 落 lastToolFailure.tool；end 即删。
     if (event.type === 'tool_call_start') {
       const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
@@ -663,7 +661,7 @@ export class SessionCommandCenter {
       ...(current === undefined ? {} : { current }),
       ...(data.toolTotal === undefined ? {} : { total: data.toolTotal }),
       ...(data.tool === 'Bash' || data.tool === 'bash'
-        ? { bashSteps: [...(task.progress?.bashSteps ?? []), { ...(data.description ? { description: data.description } : {}), command: data.target ?? '' }].slice(-20) }
+        ? { bashSteps: appendBashStep(task.progress?.bashSteps, bashStepFromProgress(data)) }
         : {}),
       ...(data.progress === undefined ? {} : { percent: data.progress }),
       ...(data.step ? { label: data.step } : {}),
@@ -674,6 +672,7 @@ export class SessionCommandCenter {
         ...(data.target ? { target: data.target } : {}),
         ...(data.action ? { action: data.action } : {}),
         ...(data.description ? { description: data.description } : {}),
+        ...(data.toolCallId ? { callId: data.toolCallId } : {}),
         at: Date.now(),
       },
     };
@@ -708,7 +707,7 @@ export class SessionCommandCenter {
       return;
     }
 
-    task.progress = { ...task.progress, failedToolCalls: (task.progress?.failedToolCalls ?? 0) + 1 };
+    task.progress = { ...withToolCallOutcome(task.progress, result), failedToolCalls: (task.progress?.failedToolCalls ?? 0) + 1 };
     task.updatedAt = Date.now();
     const code = result.metadata?.code;
     if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) {

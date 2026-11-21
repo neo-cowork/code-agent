@@ -42,6 +42,7 @@ import type {
   StreamTextPayload,
   TurnIdPayload,
 } from './streamEventTypes';
+import { resolveModelFallbackTarget } from '../../../components/features/chat/fallbackNotice';
 
 const MODEL_DECISION_REASONS = new Set(Object.keys({
   'user-selected': true,
@@ -878,8 +879,9 @@ export function normalizeModelFallbackPayload(data: unknown): ModelFallbackPaylo
   if (!isRecord(data)) return null;
   const reason = getStringField(data, 'reason');
   const from = getStringField(data, 'from');
-  const to = getStringField(data, 'to');
-  if (!reason || !from || !to) return null;
+  // 链耗尽的事件没有 `to`（exhausted: true）；旧 host 的 zh 字面量 '未切换' 在此映射回 exhausted。
+  const target = resolveModelFallbackTarget({ to: data.to, exhausted: data.exhausted });
+  if (!reason || !from || (!target.to && target.exhausted !== true)) return null;
   const category = getStringField(data, 'category');
   const strategy = getStringField(data, 'strategy');
   const tried = normalizeModelFallbackTraceSteps(data.tried);
@@ -890,7 +892,8 @@ export function normalizeModelFallbackPayload(data: unknown): ModelFallbackPaylo
   return {
     reason,
     from,
-    to,
+    ...(target.to ? { to: target.to } : {}),
+    ...(target.exhausted ? { exhausted: true } : {}),
     ...(category ? { category } : {}),
     ...(strategy && MODEL_FALLBACK_STRATEGIES.has(strategy as ModelFallbackStrategy)
       ? { strategy: strategy as ModelFallbackStrategy }

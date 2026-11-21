@@ -27,6 +27,7 @@ import {
   isSafeRoleId,
   getProjectKey,
   getRoleDir,
+  getRoleHistoryPath,
 } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_ASSETS } from '../../../../src/shared/constants';
 import {
@@ -453,6 +454,37 @@ describe('roleAssetService', () => {
       expect(history[0]).toContain('[Q2 调研报告](artifact://doc/abc)');
       expect(history[1]).toContain('无产物任务');
       expect(history[1]).not.toContain('](-)');
+    });
+
+    it('cleans raw-path evidence on append and on load of legacy lines without rewriting the file', async () => {
+      await ensureRoleAssetDirs('研究员');
+      await appendRoleHistory('研究员', {
+        date: '2026-11-20',
+        artifactLabel: 'RoleWake(cadence)',
+        artifactRef: '-',
+        summary: '[suggest] 周报两周没更新',
+        why: '该跟进周报',
+        evidence: '`workspace/weekly/2026-W46.md`',
+      });
+      // 存量旧行：磁盘上原样保留 raw path evidence
+      await fs.appendFile(
+        getRoleHistoryPath('研究员'),
+        `- 2026-11-19 | 旧巡检 | [report] 旧行 | why: 旧理由 | evidence: workspace/weekly/2026-W45.md\n`,
+        'utf-8',
+      );
+      const bytesBefore = await fs.readFile(getRoleHistoryPath('研究员'), 'utf-8');
+
+      const history = await loadRoleHistory('研究员');
+      expect(history.length).toBe(2);
+      for (const line of history) {
+        expect(line).not.toContain('workspace/');
+        expect(line).not.toContain('.md');
+        expect(line).not.toContain('`');
+      }
+      expect(history[0]).toContain('evidence: 2026-W46');
+      expect(history[1]).toContain('evidence: 2026-W45');
+      // 读取不写盘：旧行字节原样保留
+      expect(await fs.readFile(getRoleHistoryPath('研究员'), 'utf-8')).toBe(bytesBefore);
     });
 
     it('limits loaded history entries', async () => {

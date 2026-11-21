@@ -551,6 +551,25 @@ describe('normalizeModelFallbackPayload', () => {
     });
     expect(result).toEqual({ reason: 'r', from: 'a', to: 'b' });
   });
+
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽的事件没有 `to`，改带 exhausted: true。
+  it('exhausted 事件（无 to）合法；exhausted 与 to 两者皆无仍拒绝', () => {
+    expect(normalizeModelFallbackPayload({ reason: 'r', from: 'a', exhausted: true })).toEqual({
+      reason: 'r',
+      from: 'a',
+      exhausted: true,
+    });
+    // 非 exhausted 事件照旧要求 `to`
+    expect(normalizeModelFallbackPayload({ reason: 'r', from: 'a' })).toBeNull();
+  });
+
+  it('旧 host 的 zh 字面量 to 映射回 exhausted，字面量不透传', () => {
+    expect(normalizeModelFallbackPayload({ reason: 'r', from: 'a', to: '未切换' })).toEqual({
+      reason: 'r',
+      from: 'a',
+      exhausted: true,
+    });
+  });
 });
 
 describe('normalizeHookTriggerData', () => {

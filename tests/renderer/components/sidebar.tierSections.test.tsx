@@ -25,7 +25,7 @@ const sessionUiState = {
 };
 
 const appState = {
-  openProjectSpacePage: vi.fn(),
+  openProjectSpaceCreate: vi.fn(),
 };
 
 vi.mock('../../../src/renderer/stores/sessionUIStore', () => ({
@@ -113,7 +113,7 @@ describe('SidebarSessionList tier section headers', () => {
   beforeEach(() => {
     sessionUiState.collapsedTiers = {};
     sessionUiState.setTierCollapsed.mockReset();
-    appState.openProjectSpacePage.mockReset();
+    appState.openProjectSpaceCreate.mockReset();
   });
 
   it('renders each tier header as a keyboard-reachable toggle without session counts', () => {
@@ -149,7 +149,7 @@ describe('SidebarSessionList tier section headers', () => {
   it('renders a create button for all three tiers', () => {
     const html = renderList();
 
-    // 协作空间「+」→ 空间列表页；独立空间「+」→ 选择工作目录；快速对话「+」→ 新会话。
+    // 协作空间「+」→ 新建空间弹窗；独立空间「+」→ 选择工作目录；快速对话「+」→ 新会话。
     expect(html).toContain('data-testid="sidebar-tier-new-space"');
     expect(html).toContain('data-testid="sidebar-tier-new-project"');
     expect(html).toContain('data-testid="sidebar-tier-new-quick"');
