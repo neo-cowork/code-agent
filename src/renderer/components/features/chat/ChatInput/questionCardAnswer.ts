@@ -1,7 +1,9 @@
 // 提问卡片打开时，composer 里的文字是卡片的答案，而不是排队消息。
 // 单问题 + 纯文本 → 当作该卡片的回答；多问题 / 带附件或引用 → 提示后拦下，永不入队。
+import { useMemo } from 'react';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -41,4 +43,17 @@ export function routeEnvelopeToQuestionCard(
       return true;
     })
     .catch(() => false);
+}
+
+/**
+ * 提问卡片打开时的 composer 占位（与 routeEnvelopeToQuestionCard 同一条判据）：
+ * 单问题 → Enter 就是作答；多问题 → 引导回卡片作答；没有待答卡片 → undefined（沿用原占位）。
+ */
+export function useQuestionCardPlaceholder(sessionId: string | null): string | undefined {
+  const { t } = useI18n();
+  const request = useSessionStore((s) => (sessionId ? s.pendingUserQuestionsBySessionId.get(sessionId)?.[0] : undefined));
+  return useMemo(
+    () => (request ? (request.questions.length === 1 ? t.userQuestion.composerAnswerPlaceholder : t.userQuestion.composerHint) : undefined),
+    [request, t],
+  );
 }
