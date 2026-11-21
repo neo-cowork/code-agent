@@ -148,6 +148,9 @@ describe('explicit task output directory authorization', () => {
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx; echo "exit=$? $# $$ $!"')).toBe(directory);
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx $HOME/output.pptx')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "python3 - <<'PY'\nprint('$HOME', `x`)\nPY")).toBe(directory);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "cat <<'X' | bash\ncp a $HOME/b\nX")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "cat <<'X' | sh\ncp a $HOME/b\nX")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "cat <<'X' | xargs sh -c\ncp a $HOME/b\nX")).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "bash <<'SH'\ncp a $HOME/b\nSH")).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'python3 - <<PY\nprint("$HOME")\nPY')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx ${X}/output.pptx')).toBeUndefined();

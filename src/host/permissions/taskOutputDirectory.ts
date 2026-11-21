@@ -8,6 +8,7 @@ import { isPathWithinRoot } from '../runtime/workspaceScope';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
 import { getUserConfigDir } from '../config/configPaths';
+import { TASK_OUTPUT_RECORD_FILE } from '../../shared/constants/sandbox';
 import { getPermissionModeManager, type PermissionMode } from './modes';
 import { parseShellCommand } from '../security/commandParse';
 
@@ -21,7 +22,7 @@ interface TaskOutputDirectory {
 
 const scope = new AsyncLocalStorage<TaskOutputDirectory | undefined>();
 const logger = createLogger('TaskOutputDirectory');
-const RECORD_FILE = 'task-output-directories.json';
+const RECORD_FILE = TASK_OUTPUT_RECORD_FILE;
 
 interface GrantRecord { directory: string; requestedDirectory: string }
 
@@ -139,7 +140,10 @@ function withoutInertHeredocBodies(command: string): string {
   return command.replace(/<<-?[ \t]*(['"])([A-Za-z_]\w*)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/gu,
     (match, _quote: string, _tag: string, rest: string, offset: number) => {
       const lineStart = command.lastIndexOf('\n', offset - 1) + 1;
-      return /\b(?:sh|bash|zsh|dash|ksh|eval|source)\b/u.test(command.slice(lineStart, offset)) ? match : rest;
+      // Interpreter word anywhere on the heredoc's command line (before `<<` or in the
+      // trailing part, e.g. `| bash`, `| xargs sh`) means the body may be executed.
+      const line = command.slice(lineStart, offset) + rest;
+      return /\b(?:sh|bash|zsh|dash|ksh|eval|source)\b/u.test(line) ? match : rest;
     });
 }
 
