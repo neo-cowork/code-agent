@@ -1,11 +1,24 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
-import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
+import {
+  buildAgentTreeSnapshot,
+  getAgentTreeSnapshot,
+  type AgentTreeSpawnAgentSource,
+} from '../../../src/host/agent/agentTreeService';
+import { getSpawnGuard, resetSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import { SubagentContextStore } from '../../../src/host/context/subagentContextStore';
 import type { EvidenceRef } from '../../../src/shared/contract/evidence';
+import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
+
+const sessionRecords = vi.hoisted(() => new Map<string, { workingDirectory?: string }>());
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    getSession: (id: string) => sessionRecords.get(id) ?? null,
+  }),
+}));
 
 describe('agentTreeService', () => {
   it('builds a read-only tree while keeping SpawnGuard as lifecycle truth', () => {
@@ -362,6 +375,291 @@ describe('agentTreeService', () => {
       const node = snapshot.nodes.find((n) => n.id === 'd')!;
       expect(node.progress).toBe('已读完第一份');
       expect(leaks(node)).not.toContain('Calling');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 卡片/成员视图文本泄漏（N-FIX-SUBAGENT-CARD-CWD-PREFIX-LEAK-FU1-FIX）
+  // ① `Tool results:` 整段回放与 `Tool X: Success/Error/Failed` / `[cwd: …]` 行
+  //   不许进 progress / lastEvent.summary；
+  // ② node.task 与 progress 里的绝对路径：工作区内 → ./相对，区外（或根未知）
+  //   → 只留最后两段，不带家目录前缀；
+  // ③ 清洗只动展示字段：源 record/task 原样，spawn 下发给子代理的串一字不改。
+  // --------------------------------------------------------------------------
+  describe('tool-dump and absolute-path display cleanup', () => {
+    const WS = '/Users/x/ws';
+    const contextSnapshot = (previews: Array<{ role: string; contentPreview: string; tokens: number }>) => ({
+      currentTokens: 10,
+      maxTokens: 100,
+      usagePercent: 10,
+      messageCount: 1,
+      warningLevel: 'normal' as const,
+      lastUpdated: 60,
+      tools: [],
+      attachments: [],
+      previews,
+      truncatedMessages: 0,
+    });
+
+    const expectCleanFields = (node: { progress?: string; lastEvent?: { summary?: string } }) => {
+      for (const field of [node.progress, node.lastEvent?.summary]) {
+        if (field === undefined) continue;
+        expect(field).not.toMatch(/^Tool \w+: (?:Success|Error|Failed)/m);
+        expect(field).not.toMatch(/^Calling \S+\(/m);
+        expect(field).not.toContain('Tool results:');
+        expect(field).not.toContain('[cwd:');
+        expect(field).not.toContain('/Users/');
+      }
+    };
+
+    it('drops a "Tool results:" dump preview and keeps the earlier natural-language one', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'e', messages: [], updatedAt: 60,
+          snapshot: contextSnapshot([
+            { role: 'coder', contentPreview: '已总结 notes.txt 的要点', tokens: 5 },
+            { role: 'coder', contentPreview: 'Tool results:\nTool Grep: Success\n1:foo\n2:bar', tokens: 5 },
+          ]),
+        }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'e')!;
+      expect(node.progress).toBe('已总结 notes.txt 的要点');
+      expect(node.lastEvent?.summary).toBe('已总结 notes.txt 的要点');
+      expectCleanFields(node);
+    });
+
+    it('skips a trailing "Tool results:" message with a [cwd:] line, keeps the earlier reply', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'f', updatedAt: 60,
+          messages: [
+            { role: 'assistant', content: '简报已写到输出目录', timestamp: 1 },
+            {
+              role: 'user',
+              content: 'Tool results:\nTool Bash: Success\n[cwd: /Users/x/ws]\nhello world',
+              timestamp: 2,
+            },
+          ],
+        }],
+      } as never);
+      const node = snapshot.nodes.find((n) => n.id === 'f')!;
+      expect(node.progress).toBe('简报已写到输出目录');
+      expect(node.lastEvent?.summary).toBe('简报已写到输出目录');
+      expectCleanFields(node);
+    });
+
+    it('a dump-only context record leaves progress and lastEvent.summary unset', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'g', updatedAt: 60,
+          messages: [{ role: 'user', content: 'Tool results:\nTool Bash: Failed\n[cwd: /Users/x/ws]\nno such file', timestamp: 2 }],
+        }],
+      } as never);
+      const node = snapshot.nodes.find((n) => n.id === 'g')!;
+      expect(node.progress).toBeUndefined();
+      expect(node.lastEvent?.summary).toBeUndefined();
+    });
+
+    it('result output that is a raw dump falls back to the task instead of leaking it', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        spawnAgents: [{
+          id: 'h', role: 'coder', treeId: 's', status: 'completed', task: '整理 notes.txt',
+          createdAt: 1, completedAt: 2,
+          result: {
+            success: true,
+            output: 'Tool results:\nTool Read: Success\n/Users/x/ws/notes.txt contents',
+            toolsUsed: ['Read'], iterations: 1,
+          },
+        }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'h')!;
+      expect(node.progress).toBe('整理 notes.txt');
+      expect(node.lastEvent?.summary).toBe('已完成：整理 notes.txt');
+      expectCleanFields(node);
+    });
+
+    it('result output that is a Calling-X replay line falls back to the task too', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        spawnAgents: [{
+          id: 'h2', role: 'coder', treeId: 's', status: 'completed', task: '写简报',
+          createdAt: 1, completedAt: 2,
+          result: {
+            success: true,
+            output: 'Calling Write({"file_path":"/tmp/outA/brief2.md","content":"# brief"})',
+            toolsUsed: ['Write'], iterations: 1,
+          },
+        }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'h2')!;
+      expect(node.progress).toBe('写简报');
+      expect(node.lastEvent?.summary).toBe('已完成：写简报');
+      expectCleanFields(node);
+    });
+
+    it('a Calling-X-only context record leaves progress and lastEvent.summary unset', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'h3', updatedAt: 60,
+          messages: [{
+            role: 'assistant',
+            content: 'Calling Read({"file_path":"/Users/x/ws/notes.txt"})',
+            timestamp: 2,
+          }],
+        }],
+      } as never);
+      const node = snapshot.nodes.find((n) => n.id === 'h3')!;
+      expect(node.progress).toBeUndefined();
+      expect(node.lastEvent?.summary).toBeUndefined();
+    });
+
+    it('strips embedded tool-result lines out of mixed text and keeps the remainder', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        contextRecords: [{
+          sessionId: 's', agentId: 'i', updatedAt: 60,
+          messages: [{
+            role: 'assistant',
+            content: '写完了简报\nTool Write: Success\n[cwd: /Users/x/ws]\n交付在输出目录',
+            timestamp: 1,
+          }],
+        }],
+      } as never);
+      const node = snapshot.nodes.find((n) => n.id === 'i')!;
+      expect(node.progress).toBe('写完了简报\n交付在输出目录');
+      expectCleanFields(node);
+    });
+
+    it('shortens inside-workspace absolute paths in node.task to ./relative', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        workspaceRoot: WS,
+        spawnAgents: [{ id: 'j', role: 'coder', treeId: 's', status: 'running', task: `整理 ${WS}/docs/a.md，并对照 ${WS} 根目录`, createdAt: 1 }],
+        parallelTasks: [{ taskId: 'k', role: 'explore', task: `检查 ${WS}/data.csv`, tools: [], status: 'pending' }],
+        contextRecords: [{
+          sessionId: 's', agentId: 'l', messages: [], updatedAt: 5,
+          lifecycle: { status: 'running', displayName: 'Writer', task: `把简报写进 ${WS}/out/brief.md`, background: false, startedAt: 1 },
+        }],
+      });
+      expect(snapshot.nodes.find((n) => n.id === 'j')!.task).toBe('整理 ./docs/a.md，并对照 ./ 根目录');
+      expect(snapshot.nodes.find((n) => n.id === 'k')!.task).toBe('检查 ./data.csv');
+      expect(snapshot.nodes.find((n) => n.id === 'l')!.task).toBe('把简报写进 ./out/brief.md');
+      for (const node of snapshot.nodes) expectCleanFields(node);
+    });
+
+    it('shortens outside-workspace absolute paths to the last two segments, no home prefix', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        workspaceRoot: WS,
+        spawnAgents: [{ id: 'm', role: 'coder', treeId: 's', status: 'running', task: '写一页简报进 /tmp/outA/summary.md', createdAt: 1 }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'm')!;
+      expect(node.task).toBe('写一页简报进 outA/summary.md');
+      expect(node.progress).toBe('写一页简报进 outA/summary.md');
+      expect(node.task).not.toContain('/tmp');
+      expectCleanFields(node);
+    });
+
+    it('leaves a path-free task unchanged', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        workspaceRoot: WS,
+        spawnAgents: [{ id: 'n', role: 'coder', treeId: 's', status: 'running', task: '总结三份笔记的要点', createdAt: 1 }],
+      });
+      expect(snapshot.nodes.find((n) => n.id === 'n')!.task).toBe('总结三份笔记的要点');
+    });
+
+    it('treats every absolute path as outside when the workspace root is unknown', () => {
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        spawnAgents: [{ id: 'o', role: 'coder', treeId: 's', status: 'running', task: `整理 ${WS}/docs/a.md`, createdAt: 1 }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'o')!;
+      expect(node.task).toBe('整理 docs/a.md');
+      expect(node.task).not.toContain('/Users/');
+    });
+
+    it('shortens absolute paths inside progress and lastEvent.summary from real results', () => {
+      const result: SubagentResult = {
+        success: true,
+        output: `已写入 ${WS}/out/brief.md`,
+        toolsUsed: ['Write'], iterations: 2,
+      };
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000,
+        sessionId: 's',
+        workspaceRoot: WS,
+        spawnAgents: [{ id: 'p', role: 'coder', treeId: 's', status: 'completed', task: '写简报', createdAt: 1, completedAt: 2, result }],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'p')!;
+      expect(node.progress).toBe('已写入 ./out/brief.md');
+      expect(node.lastEvent?.summary).toBe('已完成：已写入 ./out/brief.md');
+      expectCleanFields(node);
+    });
+
+    it('does not mutate the model-visible source task string', () => {
+      const rawTask = `[工作目录: ${WS}] 所有文件路径基于此目录。\n\n整理 ${WS}/docs/a.md 并写 /tmp/outA/summary.md`;
+      const source: AgentTreeSpawnAgentSource = {
+        id: 'q', role: 'coder', treeId: 's', status: 'running', task: rawTask, createdAt: 1,
+      };
+      const snapshot = buildAgentTreeSnapshot({
+        now: 1000, sessionId: 's', workspaceRoot: WS, spawnAgents: [source],
+      });
+      const node = snapshot.nodes.find((n) => n.id === 'q')!;
+      expect(node.task).toBe('整理 ./docs/a.md 并写 outA/summary.md');
+      expect(source.task).toBe(rawTask);
+    });
+
+    describe('workspace root plumbing via getAgentTreeSnapshot', () => {
+      afterEach(() => {
+        resetSpawnGuard();
+        sessionRecords.clear();
+      });
+
+      it('resolves the root from the session workingDirectory', () => {
+        sessionRecords.set('sess-ws', { workingDirectory: WS });
+        getSpawnGuard().register(
+          'helper-in',
+          'explore',
+          `整理 ${WS}/docs/a.md`,
+          new Promise<SubagentResult>(() => undefined),
+          new AbortController(),
+          { treeId: 'sess-ws' },
+        );
+        const snapshot = getAgentTreeSnapshot({ sessionId: 'sess-ws' });
+        const node = snapshot.nodes.find((n) => n.id === 'helper-in')!;
+        expect(node.task).toBe('整理 ./docs/a.md');
+      });
+
+      it('falls back to outside handling when the session has no workingDirectory', () => {
+        getSpawnGuard().register(
+          'helper-out',
+          'explore',
+          `整理 ${WS}/docs/a.md`,
+          new Promise<SubagentResult>(() => undefined),
+          new AbortController(),
+          { treeId: 'sess-nowhere' },
+        );
+        const snapshot = getAgentTreeSnapshot({ sessionId: 'sess-nowhere' });
+        const node = snapshot.nodes.find((n) => n.id === 'helper-out')!;
+        expect(node.task).toBe('整理 docs/a.md');
+      });
     });
   });
 });

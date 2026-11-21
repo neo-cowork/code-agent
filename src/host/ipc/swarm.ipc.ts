@@ -27,6 +27,7 @@ import type { AgentMessage } from '../agent/messageOrigin';
 import type { SwarmRunDetail } from '../../shared/contract/swarmTrace';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
+import { cleanDisplayText, resolveSessionWorkspaceRoot } from '../agent/workspacePathDisplay';
 import type { AgentMessageOrigin } from '../agent/messageOrigin';
 import {
   hasSingleSpawnVisibilityAgent,
@@ -585,7 +586,19 @@ export function registerSwarmHandlers(
       }
       // runId is an opaque storage identity. Authorization is derived from the
       // stored record, never from parsing or rebuilding the caller-provided id.
-      return detail?.run.sessionId === payload.sessionId ? detail : null;
+      if (detail?.run.sessionId !== payload.sessionId) return null;
+      // 展示收口：dispatchedTask/finalOutput 是成员视图「收到的任务/产出」、
+      // 工作记录与 run 工作台直接渲染的字段，存储保持原样，只在出栈时清洗
+      // （剥注入前缀、丢回放行、绝对路径按会话工作区缩短）。
+      const workspaceRoot = resolveSessionWorkspaceRoot(payload.sessionId);
+      return {
+        ...detail,
+        agents: detail.agents.map((agent) => ({
+          ...agent,
+          dispatchedTask: cleanDisplayText(agent.dispatchedTask, workspaceRoot, 'keep'),
+          finalOutput: cleanDisplayText(agent.finalOutput, workspaceRoot, 'keep'),
+        })),
+      };
     } catch (error) {
       logger.error('swarm:get-trace-run-detail failed', { error: String(error) });
       return null;
