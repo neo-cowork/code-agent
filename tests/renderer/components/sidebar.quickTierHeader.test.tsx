@@ -21,6 +21,7 @@ vi.mock('../../../src/renderer/stores/sessionListPagination', () => ({
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { SidebarCapabilityZone } from '../../../src/renderer/components/features/sidebar/SidebarCapabilityZone';
 import { SidebarSessionList } from '../../../src/renderer/components/features/sidebar/SidebarSessionList';
 
 afterEach(() => {
@@ -114,5 +115,23 @@ describe('二级页打开时会话行不高亮', () => {
   it('设置页打开：不高亮', () => {
     useAppStore.setState({ showSettings: true });
     expect(selected(renderList([uncategorized('q')], 's1').container)).toBe(0);
+  });
+});
+
+describe('浅色下唯一可见高亮（栏面色 --sidebar-bg 不能当高亮色）', () => {
+  it('Spaces 页打开：协作空间入口带可见高亮类，不是与栏面同色的 bg-zinc-800', () => {
+    useAppStore.setState({ showProjectSpacePage: true });
+    const { getByTestId } = render(<SidebarCapabilityZone />);
+    const row = getByTestId('sidebar-capability-projects');
+    expect(row.getAttribute('aria-current')).toBe('page');
+    expect(row.className).toContain('bg-zinc-700/60');
+    expect(row.className).not.toMatch(/(?<![:\w-])bg-zinc-800(?!\/)/);
+  });
+
+  it('命名空间组头用栏面色而非 bg-zinc-950（浅色下是纯白条，读作选中）', () => {
+    const { container } = renderList([folder]);
+    const header = container.querySelector('[data-sidebar-group-phase]')?.firstElementChild;
+    expect(header?.className).toContain('bg-[var(--sidebar-bg)]');
+    expect(header?.className).not.toContain('bg-zinc-950');
   });
 });

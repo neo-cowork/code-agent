@@ -203,11 +203,11 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     >
       {!hideHeader && (
       <div
-        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-zinc-950 text-left hover:bg-zinc-800/40 transition-colors`}
+        className={`group sticky top-0 ${menuOpen ? 'z-30' : 'z-20'} flex items-center gap-1.5 w-full px-1.5 py-1.5 bg-[var(--sidebar-bg)] text-left hover:bg-zinc-800/40 transition-colors`}
         title={title}
       >
-        {/* 组头底色制度（批P 第五波③）：非选中组头不给常驻底色——bg-zinc-950 是栏面本色
-            （App 侧栏列同一块面），只为 sticky 覆盖滚过的会话行，肉眼读作无底色；
+        {/* 组头底色制度（批P 第五波③）：非选中组头不给常驻底色——--sidebar-bg 是栏面本色
+            （App 侧栏列同一块面；浅色下 zinc-950 是纯白，会读成选中条），只为 sticky 覆盖滚过的会话行，肉眼读作无底色；
             抬色（zinc-800/900）只属 hover 与选中行。修前 bg-zinc-900 是 6 月侧栏还是
             zinc-900 底时的遗留，07-27 侧栏换 zinc-950 后它就成了可见的常驻色块。 */}
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
@@ -265,7 +265,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             底色跟分组头同步（2026-07-29：默认 zinc-950 与侧栏底色齐平，hover 才提亮到
             zinc-900）——盖住行内内容靠的是不透明底色，底色错一拍就会露出一条异色补丁。
             右侧 2px inset 让最右新建图标中心与会话行 trailing 状态轴（rowRight - 14px）重合。 */}
-        <div className="absolute right-0.5 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-zinc-950 pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
+        <div className="absolute right-0.5 top-1/2 z-10 hidden -translate-y-1/2 items-center rounded-md bg-[var(--sidebar-bg)] pl-1 transition-colors group-hover:bg-zinc-900 group-hover:flex group-focus-within:flex">
         {!group.isUncategorized && (
           <>
           <div className="relative" ref={menuRef}>
