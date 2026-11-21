@@ -20,8 +20,42 @@ const logger = createLogger('ShellEnvironment');
 let shellEnv: Record<string, string> | null = null;
 let shellPath: string | null = null;
 
-const SHELL_ENV_CACHE_SCHEMA_VERSION = 1;
+// v2 (2026-11-21): cache files are now written with the secret filter below.
+// Bumping the version makes every legacy plaintext cache (schemaVersion 1,
+// which stored the raw captured environment verbatim) get rejected on the
+// next start and overwritten by a fresh filtered capture.
+const SHELL_ENV_CACHE_SCHEMA_VERSION = 2;
 const SHELL_ENV_CACHE_FILE = 'shell-environment.json';
+
+// Secret-looking variable NAMES, matched as case-insensitive SUBSTRINGS.
+// Deliberately broader than the suffix globs in src/host/utils/envSecretFilter.ts:
+// that file guards Bash-tool children with `*_KEY$`-style rules, which would
+// MISS cache leaks like VOLC_ACCESSKEY / VOLC_SECRETKEY / TAVILY_API_KEYS /
+// SECRET_ID (no `_` delimiter, plural, prefix). The cache is only needed for
+// PATH, proxy and locale-style values, so over-stripping here is fine.
+const CACHE_SECRET_NAME_PATTERN = /(key|token|secret|password|passwd|credential|auth)/i;
+
+// URL userinfo inside a VALUE (`://user:pass@`, e.g. a proxy URL with embedded
+// credentials; also matches the password-less `://user@` form). A credential
+// value does not need a secret-looking name to leak.
+const CACHE_URL_USERINFO_PATTERN = /:\/\/[^/@]+@/;
+
+/**
+ * Drop everything secret-looking from the environment BEFORE it is written to
+ * the on-disk cache. The in-memory environment stays unfiltered —
+ * buildSafeEnv() (claudeCodeAdapter) needs ANTHROPIC_* / CLAUDE_CODE_* values
+ * from getShellEnvironmentValue() to inherit Claude auth on Finder launches.
+ * Only what reaches the disk is filtered.
+ */
+function filterEnvironmentForCache(environment: Record<string, string>): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  for (const [name, value] of Object.entries(environment)) {
+    if (CACHE_SECRET_NAME_PATTERN.test(name)) continue;
+    if (CACHE_URL_USERINFO_PATTERN.test(value)) continue;
+    filtered[name] = value;
+  }
+  return filtered;
+}
 
 const SYSTEM_BASE_PATHS = new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin']);
 const FALLBACK_CLI_PATHS = [
@@ -156,7 +190,7 @@ function persistShellEnvironmentCache(
     platform: process.platform,
     shell,
     capturedAt: new Date().toISOString(),
-    environment,
+    environment: filterEnvironmentForCache(environment),
   };
   const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
   try {
