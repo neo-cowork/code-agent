@@ -57,6 +57,7 @@ import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } fr
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
+import { collectProposedRoleIds, stripRoleOpenLinkTail } from './roleOpenLinkStrip';
 import {
   buildSteerModelContent, buildForcedFinalAssistantContent,
   hasOnlySoftValidationFailures,
@@ -441,7 +442,9 @@ export class MessageProcessor {
 
     const strippedRawContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
     const handoffTail = extractHandoffProposalTail(strippedRawContent);
-    const strippedContent = handoffTail.cleanedContent;
+    const roleOpenStrip = stripRoleOpenLinkTail(handoffTail.cleanedContent, collectProposedRoleIds(this.ctx.messages));
+    const strippedContent = roleOpenStrip.content;
+    if (roleOpenStrip.removedLine) logger.info('[RoleOpenLinkStrip] dropped stray open-link tail line', { roleId: roleOpenStrip.roleId, length: roleOpenStrip.removedLine.length, sessionId: this.ctx.sessionId });
     const latestUserMessage = [...this.ctx.messages].reverse()
       .find((message) => message.role === 'user' && message.visibility !== 'rewound');
     const latestUserContent = latestUserMessage?.content;
@@ -546,7 +549,7 @@ export class MessageProcessor {
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
     // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
-    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+    if ((handoffTail.found || roleOpenStrip.removedLine) && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // forced-final 落盘正文为空（原文仅内部格式标记，被 stripInternalFormatMimicry 清掉）
     // 不算交付（ai-review R2 #2005）：不落空消息、不清 reason，保持循环尾部
