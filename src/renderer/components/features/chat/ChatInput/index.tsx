@@ -27,6 +27,7 @@ import { InputAddMenu } from './InputAddMenu';
 import { SuggestionBar } from './SuggestionBar';
 import { ComposerCoreActions, type ComposerCoreAction } from './ComposerCoreActions';
 import { BackgroundHandoffButton } from './BackgroundHandoffButton';
+import { DraftingStopButton } from './DraftingStopButton';
 import { useBackgroundHandoffSubmit } from './useBackgroundHandoffSubmit';
 import { DictationRecordingBar } from './DictationRecordingBar';
 import {
@@ -97,6 +98,7 @@ import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
+import { useQuestionCardPlaceholder } from './questionCardAnswer';
 import { useComposerDraftPersistence } from './useComposerDraftPersistence';
 import { UnsentDraftNotice } from './UnsentDraftNotice';
 import { AgentCommandAutocomplete } from './AgentCommandAutocomplete';
@@ -1012,18 +1014,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   // 历史命令功能
-  const {
-    addToInputHistory,
-    getPreviousInput,
-    getNextInput,
-    resetInputHistoryIndex,
-  } = useSessionUIStore();
+  const { addToInputHistory, getPreviousInput, getNextInput, resetInputHistoryIndex } = useSessionUIStore();
 
   // 键盘导航分发：@ 面板与 agent 自动补全互斥打开，先问 @ 面板再交 agent 链路
   const handleComposerAutocompleteKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => (
     atMention.handleKeyDown(e) || handleAutocompleteKeyDown(e)
   ), [atMention.handleKeyDown, handleAutocompleteKeyDown]);
 
+  const questionCardPlaceholder = useQuestionCardPlaceholder(currentSessionId);
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
     if (cronRunFollowUpMode) {
@@ -1032,10 +1030,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         ? t.chatInput.cronFollowUpPlaceholder
         : t.chatInput.cronFollowUpPlaceholderNoResult;
     }
-    if (inputPlaceholder) return inputPlaceholder;
-    if (!isProcessing) return undefined;
-    return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, t]);
+    // 卡片打开时占位随行为改口：单问题=Enter 作答；多问题=引导回卡片（不再说「排队」）
+    if (inputPlaceholder || !isProcessing) return inputPlaceholder;
+    return questionCardPlaceholder ?? t.chatInputSubmit.runtimeInputPlaceholder;
+  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, questionCardPlaceholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
@@ -1627,7 +1625,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，右侧
               时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现两个发送键
               （产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）；输入框本体全程可见可编辑。 */}
-          <div className="flex items-center gap-1 px-4 pb-2">
+          <div className="flex items-center gap-1 px-4 pb-2 max-sm:has-[.composer-drafting-stop]:flex-wrap">
             {/* pb-2(8) 不是 16 的笔误：16px 字形居中在 32px 可见盒里，44px 伪元素命中区不改布局，
                 盒底自带 8px 隐形 chrome，8+8=16 才是「图标到下边框」距离，与左轨的 16 一致。 */}
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
@@ -1677,34 +1675,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSlot currentModel={modelConfig.model} />
             </div>
 
-            {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}
-            <BackgroundHandoffButton
-              isProcessing={Boolean(isProcessing)}
-              draftText={value}
-              attachmentCount={attachments.length}
-              sessionId={currentSessionId}
-              editingQueuedInput={Boolean(editingQueuedInputId)}
-              onTrigger={() => { void submitBackgroundHandoff(); }}
-            />
-            {/* 核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项；逐项消费
-              resolveComposerCoreActions。附件 +、身份/连接器/权限/模型、审批与提示 chip 不在核心操作区。 */}
-            <ComposerCoreActions
-              actions={composerCoreActions}
-              voice={voice}
-              disabled={disabled}
-              sessionId={currentSessionId ?? null}
-              hasMessages={hasMessages}
-              configured={liveVoiceAvailability.configured}
-              isProcessing={Boolean(isProcessing)}
-              isInterrupting={isInterrupting}
-              isStopping={isStopping}
-              hasContent={hasContent}
-              hasContinuation={Boolean(hasContinuation)}
-              onStop={onStop}
-              onContinue={onContinue}
-              onAbandon={onAbandonContinuation}
-              canAbandon={canAbandonParked}
-            />
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <DraftingStopButton
+                isProcessing={isProcessing}
+                hasStoppableBackgroundWork={hasStoppableBackgroundWork}
+                hasContent={hasContent}
+                isStopping={isStopping} onStop={onStop}
+              />
+              <BackgroundHandoffButton
+                isProcessing={Boolean(isProcessing)}
+                draftText={value}
+                attachmentCount={attachments.length}
+                sessionId={currentSessionId}
+                editingQueuedInput={Boolean(editingQueuedInputId)}
+                onTrigger={() => { void submitBackgroundHandoff(); }}
+              />
+              {/* 核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项；逐项消费
+                resolveComposerCoreActions。附件 +、身份/连接器/权限/模型、审批与提示 chip 不在核心操作区。 */}
+              <ComposerCoreActions
+                actions={composerCoreActions}
+                voice={voice}
+                disabled={disabled}
+                sessionId={currentSessionId ?? null}
+                hasMessages={hasMessages}
+                configured={liveVoiceAvailability.configured}
+                isProcessing={Boolean(isProcessing)}
+                isInterrupting={isInterrupting}
+                isStopping={isStopping}
+                hasContent={hasContent}
+                hasContinuation={Boolean(hasContinuation)}
+                onStop={onStop}
+                onContinue={onContinue}
+                onAbandon={onAbandonContinuation}
+                canAbandon={canAbandonParked}
+              />
+            </div>
             </>
             )}
           </div>

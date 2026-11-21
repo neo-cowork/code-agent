@@ -4335,6 +4335,9 @@
         "to": {
           "type": "string"
         },
+        "exhausted": {
+          "type": "boolean"
+        },
         "category": {
           "type": "string"
         },
@@ -4368,8 +4371,7 @@
       },
       "required": [
         "reason",
-        "from",
-        "to"
+        "from"
       ],
       "additionalProperties": false
     },

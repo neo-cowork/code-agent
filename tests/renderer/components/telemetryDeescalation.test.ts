@@ -32,7 +32,7 @@ describe('TurnCard 思考行不重复', () => {
     expect(turnCard).toContain('<ThinkingDigestBanner');
     expect(turnCard).toContain("showCaret={waitingForApproval || busySignal === 'text-caret'}");
     expect(turnCard).toContain("waitingReason={waitingForApproval ? 'approval' : busySignal === 'text-caret'");
-    expect(turnCard).toContain('const busySignal = resolveBusySignal(turn)');
+    expect(turnCard).toContain('const busySignal = useBusySignal(turn, sessionId)');
     expect(turnCard).not.toContain('isThinking={isThinkingPhase}');
   });
 

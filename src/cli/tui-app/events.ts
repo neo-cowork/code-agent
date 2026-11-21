@@ -554,7 +554,8 @@ export function reduceAgentEvent(state: ChatState, event: AgentEvent, now: numbe
     case 'model_fallback': {
       const data = event.data;
       if (!data) return state;
-      return appendSystemMessage(state, `Model fallback: ${data.from} → ${data.to} (${data.reason})`, 'warn');
+      // 链耗尽的事件没有 `to`（exhausted: true）——打印 not switched，不显示 "undefined"。
+      return appendSystemMessage(state, `Model fallback: ${data.from} → ${data.to ?? 'not switched'} (${data.reason})`, 'warn');
     }
 
     case 'context_compacted': {
