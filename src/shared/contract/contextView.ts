@@ -126,6 +126,7 @@ export const CONTEXT_INJECTION_SOURCES = [
   'truncation-recovery',
   'delivery-critic',
   'desktop-claim-guard',
+  'browser-keep-claim-guard',
   'output-continuation',
   'stagnation-guard',
   'file-change-warning',
