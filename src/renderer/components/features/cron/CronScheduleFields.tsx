@@ -192,7 +192,7 @@ const CronBranch: React.FC<CronScheduleFieldsProps> = ({ draft, setField, errors
           <p className="text-xs text-zinc-500" data-testid="cron-custom-hint">{cc.editorChrome.cronCustomHint}</p>
           {draft.cronExpression.trim() !== '' && (
             <p className="text-xs text-zinc-400" data-testid="cron-custom-preview">
-              {cc.editorChrome.cronPreviewLabel}：{formatCronExpressionLabel(draft.cronExpression, draft.cronTimezone || undefined, language)}
+              {cc.editorChrome.cronPreviewLabel}{formatCronExpressionLabel(draft.cronExpression, draft.cronTimezone || undefined, language)}
             </p>
           )}
           {simple !== null && (

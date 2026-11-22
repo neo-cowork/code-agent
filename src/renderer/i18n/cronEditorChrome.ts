@@ -73,7 +73,7 @@ export const cronEditorChromeZh = {
     cronUseCustomLink: '使用自定义 Cron 表达式',
     cronBackToSimpleLink: '返回常用时间设置',
     cronCustomHint: '这是一条自定义的重复规则，按 Cron 写法填写；执行时间以下方说明为准。',
-    cronPreviewLabel: '执行时间说明',
+    cronPreviewLabel: '执行时间说明：',
   },
 };
 
@@ -152,6 +152,6 @@ export const cronEditorChromeEn = {
     cronUseCustomLink: 'Use a custom Cron expression',
     cronBackToSimpleLink: 'Back to common schedules',
     cronCustomHint: 'This is a custom repeat rule written in Cron syntax. The plain description below shows when it runs.',
-    cronPreviewLabel: 'Runs',
+    cronPreviewLabel: 'Runs: ',
   },
 };
