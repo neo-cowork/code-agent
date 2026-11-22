@@ -19,6 +19,7 @@ import { calendarModule } from '../../../../src/host/tools/modules/connectors/ca
 import { mailModule } from '../../../../src/host/tools/modules/connectors/mail';
 import { remindersModule } from '../../../../src/host/tools/modules/connectors/reminders';
 import { remindersCreateModule } from '../../../../src/host/tools/modules/connectors/remindersCreate';
+import { withConnectorReconnectGuidance } from '../../../../src/host/tools/dispatch/connectorReconnectGuidance';
 
 /** TCC 拒绝 Apple Events 时 osascript 真实报错形态（execFile error + stderr）。 */
 export function appleEventsDeniedError(app: string): Error {
@@ -28,7 +29,7 @@ export function appleEventsDeniedError(app: string): Error {
   );
 }
 
-/** classify AUTOMATION_TARGETS 的四个工具名（reminders_create 复用 reminders 连接器）。 */
+/** Connector read and write tools exercised by the environment notice tests. */
 export type AutomationConnectorTool = 'calendar' | 'mail' | 'reminders' | 'reminders_create';
 
 const TOOL_MODULES = {
@@ -49,10 +50,10 @@ const CONNECTOR_IDS: Record<AutomationConnectorTool, 'calendar' | 'mail' | 'remi
  * 每个工具触发授权拒绝所需的最小入参、目标 app 名与卡片类别。
  * 日历走 EventKit（N-CALENDAR-ONE-PERMISSION-EVENTKIT）：原生桥 403 calendar_not_authorized → perm_calendars，不经 osascript。
  */
-export const AUTOMATION_FAILURE_CASES: Record<AutomationConnectorTool, { args: Record<string, unknown>; app: string; target: string; blocker: 'perm_automation' | 'perm_calendars' }> = {
+export const AUTOMATION_FAILURE_CASES: Record<AutomationConnectorTool, { args: Record<string, unknown>; app: string; target: string; blocker: 'perm_automation' | 'perm_calendars' | null }> = {
   calendar: { args: { action: 'list_events' }, app: 'Calendar', target: 'calendar', blocker: 'perm_calendars' },
   mail: { args: { action: 'list_accounts' }, app: 'Mail', target: 'mail', blocker: 'perm_automation' },
-  reminders: { args: { action: 'list_reminders' }, app: 'Reminders', target: 'reminders', blocker: 'perm_automation' },
+  reminders: { args: { action: 'list_reminders' }, app: 'Reminders', target: 'reminders', blocker: null },
   // create 先失败、reconcile 的 list_reminders 再失败：runAppleScript 持续拒绝即可走进
   // 「reconcile list 失败」分支，返回带 not_authorized 的失败结果。
   reminders_create: { args: { title: '测试提醒' }, app: 'Reminders', target: 'reminders', blocker: 'perm_automation' },
@@ -96,11 +97,11 @@ export async function runConnectorToolFailure(
   if (bridgeSpy) { Object.defineProperty(process, 'platform', { value: 'darwin' }); resetCalendarConnectorReadiness(); }
   try {
     const handler = await TOOL_MODULES[tool].createHandler();
-    return await handler.execute(
+    return withConnectorReconnectGuidance(tool, await handler.execute(
       AUTOMATION_FAILURE_CASES[tool].args,
       makeConnectorToolContext(sessionId),
       allowAll,
-    );
+    ));
   } finally {
     registry.unregister(connectorId);
     if (bridgeSpy) { bridgeSpy.mockRestore(); Object.defineProperty(process, 'platform', platform); resetCalendarConnectorReadiness(); }
