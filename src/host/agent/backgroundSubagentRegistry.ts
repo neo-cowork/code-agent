@@ -570,6 +570,11 @@ export class BackgroundSubagentRegistry {
     return matched;
   }
 
+  restoreCompletionNotifications(records: readonly SubagentCompletionRecord[]): void {
+    // Draining leaves dedupe keys intact. Restore the original records in delivery order.
+    this.pendingNotifications.unshift(...records);
+  }
+
   private matchesScope(record: SubagentCompletionRecord, scope?: BackgroundSubagentScopeFilter): boolean {
     if (!scope) return true;
     if (!record.sessionId) return !scope.runId && record.treeId === scope.sessionId;
