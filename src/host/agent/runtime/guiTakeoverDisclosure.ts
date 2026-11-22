@@ -36,13 +36,13 @@ import type { RuntimeContext } from './runtimeContext';
 const TELL_PROCESS_TARGET = /tell\s+(?:application\s+process|app\s+process|process)\s+(?:"([^"]+)"|'([^']+)')/i;
 
 /** `tell application "Keynote"` / `tell app 'Keynote'`（引号目标）。 */
-const TELL_APPLICATION_QUOTED = /tell\s+(?:application|app)\s+(?:"([^"]+)"|'([^']+)')/i;
+const TELL_APPLICATION_QUOTED = /\btell\s+(?:application|app)\s+(?:"([^"\r\n]+)"|'([^'\r\n]+)')/gi;
 
 /** `tell application Keynote to …`（不带引号的单词目标）。 */
 const TELL_APPLICATION_BARE = /tell\s+(?:application|app)\s+([A-Za-z][A-Za-z0-9.]*)\s+to\b/i;
 
-/** 激活应用：tell 目标在场的前提下出现 activate 动词（如 `to activate`）。 */
-const ACTIVATE_VERB = /\bactivate\b/i;
+const OSASCRIPT = /(?:^|[\s;&|(/`])osascript\b/;
+const ACTIVATE_VERB = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*activate(?=\s*(?:['";&|\r\n]|--|$))/i;
 
 /**
  * 编辑打开中的文档：tell 目标块内 `set … of document/slide/…`（对象后面才轮到值）。
@@ -50,18 +50,9 @@ const ACTIVATE_VERB = /\bactivate\b/i;
  * 是读取，不是编辑）；make/new 等结构性操作也不属于「编辑已打开的文档」。
  */
 const OPEN_DOCUMENT_EDIT = /\bset\s+(?:(?!\bto\b)[^\n]){0,200}?\bof\s+(?:the\s+)?(?:front\s+)?(?:document|slide|sheet|page|cell|range|selection|word|paragraph|character|table|shape)\b/i;
-
-export type ShellGuiTakeoverShape = 'system-events-input' | 'activate' | 'document-edit';
-
-/** Bash/osascript 命令是否直接驱动某 app 的界面（不要求能解析出应用名）。 */
-export function classifyShellGuiTakeover(command: string): ShellGuiTakeoverShape | null {
-  if (typeof command !== 'string' || command.trim() === '') return null;
-  // System Events 点击/按键/滚动等 GUI 输入合成（与审批链共用同一判据，不重复造表）。
-  if (classifyShellDesktopAutomation(command)) return 'system-events-input';
-  if (ACTIVATE_VERB.test(command)) return 'activate';
-  if (OPEN_DOCUMENT_EDIT.test(command)) return 'document-edit';
-  return null;
-}
+const TELL_OPEN_DOCUMENT = /\btell\s+(?:the\s+)?(?:(?:front|current)\s+)?(?:document|slide|sheet|page|selection)\b/i;
+const SET_PROPERTY = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*set\s+(?:the\s+)?(?:name|title|object text|text|value|content|contents)\s+to\b/i;
+const SYSTEM_EVENTS_UI = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*(?:click|keystroke|key\s+code|scroll)\b/i;
 
 function firstCapture(command: string, patterns: RegExp[]): string | null {
   for (const pattern of patterns) {
@@ -79,11 +70,30 @@ function firstCapture(command: string, patterns: RegExp[]): string | null {
  * 应用名（如整桌面坐标注入没点名任何应用）就不披露——句子以应用名为主语，没有
  * 应用名宁可不说，也不编一个。
  */
-export function resolveShellGuiTargetApp(command: string): ComputerTargetApp | null {
-  const process = firstCapture(command, [TELL_PROCESS_TARGET]);
-  if (process) return { name: process };
-  const application = firstCapture(command, [TELL_APPLICATION_QUOTED, TELL_APPLICATION_BARE]);
-  if (application && !/^system events$/i.test(application)) return { name: application };
+function resolveShellGuiTargetApp(command: string): ComputerTargetApp | null {
+  const applications = Array.from(command.matchAll(TELL_APPLICATION_QUOTED));
+  const isSystemEvents = (name: string) => /^system events$/i.test(name.trim());
+  const hasSystemEvents = applications.some((match) => isSystemEvents(match[1] ?? match[2]));
+  const directInput = classifyShellDesktopAutomation(command)
+    || (OSASCRIPT.test(command) && hasSystemEvents && SYSTEM_EVENTS_UI.test(command));
+  if (directInput && hasSystemEvents) {
+    const process = firstCapture(command, [TELL_PROCESS_TARGET]);
+    if (process) return { name: process };
+  }
+  const applicationTargets = applications.filter((match) => !isSystemEvents(match[1] ?? match[2]));
+  for (const target of applicationTargets) {
+    const afterTarget = command.slice(target.index + target[0].length);
+    const body = afterTarget.split(/\bend\s+tell\b|\btell\s+app(?:lication)?\s+['"]/i, 1)[0];
+    if (directInput || (OSASCRIPT.test(command) && (
+      ACTIVATE_VERB.test(body)
+      || OPEN_DOCUMENT_EDIT.test(body)
+      || (TELL_OPEN_DOCUMENT.test(body) && SET_PROPERTY.test(body))
+    ))) {
+      return { name: (target[1] ?? target[2]).trim() };
+    }
+  }
+  const bare = firstCapture(command, [TELL_APPLICATION_BARE]);
+  if (bare && (directInput || (OSASCRIPT.test(command) && ACTIVATE_VERB.test(command)))) return { name: bare };
   return null;
 }
 
@@ -101,7 +111,6 @@ async function resolveDisclosureApp(toolName: string, args: Record<string, unkno
   const computerTarget = extractComputerTargetApp(toolName, args);
   if (computerTarget) return computerTarget;
   if (isBashToolName(toolName) && typeof args?.command === 'string') {
-    if (!classifyShellGuiTakeover(args.command)) return null;
     return resolveShellGuiTargetApp(args.command);
   }
   return null;
@@ -111,7 +120,7 @@ type DisclosureState = { disclosed: Set<string> };
 
 const states = new WeakMap<RuntimeContext, DisclosureState>();
 
-/** run 边界重置（agentLoop / conversationRuntime 的 run 起点各调一次，与 resetRepairGate 同点位）。 */
+/** Reset alongside the repair gate at the AgentLoop run boundary. */
 export function resetGuiTakeoverDisclosureState(ctx: RuntimeContext): void {
   states.delete(ctx);
 }

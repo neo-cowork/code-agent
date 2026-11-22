@@ -12,7 +12,8 @@ import type { ModelResponse } from '../../../src/host/agent/loopTypes';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
 import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
-import type { Message, ToolResult } from '../../../src/shared/contract';
+import type { AgentEvent, Message, ToolResult } from '../../../src/shared/contract';
+import { logCollector } from '../../../src/host/mcp/logCollector.js';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const sessionManagerState = vi.hoisted(() => ({ addMessageToSession: vi.fn() }));
@@ -42,6 +43,10 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({
     getToolAnnotationsMap: () => new Map(),
     getToolDefinitions: () => [],
+    callTool: vi.fn(async () => ({
+      success: true,
+      metadata: { mcpStructuredContent: { apps: [{ pid: 123, name: 'Keynote', bundle_id: 'com.apple.iWork.Keynote' }] } },
+    })),
     parseMCPToolName: () => null,
   }),
 }));
@@ -66,7 +71,7 @@ const KEYNOTE_CLICK = {
 
 const VISIBLE = ['Bash', 'Read', 'Write', 'computer_use'];
 
-function buildCtx(overrides: Record<string, unknown> = {}) {
+function buildCtx() {
   return {
     sessionId: 'runtime-session-disclosure',
     runId: 'run-1',
@@ -108,7 +113,8 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     },
     goalTracker: { recordAction: vi.fn() },
     turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) },
-    onEvent: vi.fn(),
+    onEvent: vi.fn<(event: AgentEvent) => void>(),
+    toolExecutor: { execute: vi.fn() },
     telemetryAdapter: {
       onTurnStart: vi.fn(),
       onModelCall: vi.fn(),
@@ -119,7 +125,6 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     enableHooks: true,
     enableDeliveryCritic: false,
     maxToolCallRetries: 0,
-    ...overrides,
   };
 }
 
@@ -170,7 +175,7 @@ describe('GUI 接管披露 · 生产链路（模型一言不发也披露）', ()
       }),
     };
     const deps = buildDeps(ctx, timeline);
-    const onEvent = vi.fn((event: { type: string }) => timeline.push(`event:${event.type}`));
+    const onEvent = vi.fn((event: AgentEvent) => { timeline.push(`event:${event.type}`); });
     ctx.onEvent = onEvent;
     const engine = new ToolExecutionEngine(ctx as unknown as RuntimeContext);
     engine.setModules(
@@ -191,7 +196,8 @@ describe('GUI 接管披露 · 生产链路（模型一言不发也披露）', ()
       content: '',
       toolCalls: [
         { ...KEYNOTE_CLICK },
-        { id: 'cu-2', name: 'computer_use', arguments: { action: 'type', targetApp: 'Keynote', text: '2026 年度经营复盘' } },
+        { id: 'cu-2', name: 'computer_use', arguments: { action: 'type', targetApp: ' keynote ', text: '2026 年度经营复盘' } },
+        { id: 'cu-3', name: 'computer_use', arguments: { action: 'click', targetApp: 'Pages', x: 120, y: 340 } },
       ],
       runtimeDiagnostics: { visibleToolNames: VISIBLE },
     } as unknown as ModelResponse;
@@ -203,9 +209,10 @@ describe('GUI 接管披露 · 生产链路（模型一言不发也披露）', ()
     const assistant = deps.persisted.find((m) => m.role === 'assistant' && m.toolCalls?.length);
     expect(assistant?.toolCalls?.[0]?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Keynote' });
     expect(assistant?.toolCalls?.[1]?.guiTakeoverDisclosure).toBeUndefined();
+    expect(assistant?.toolCalls?.[2]?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Pages' });
 
     // tool_call_start 事件同样携带披露（引擎展开整个 toolCall）。
-    const startEvent = onEvent.mock.calls.map((c) => c[0]).find((e: { type: string }) => e.type === 'tool_call_start');
+    const startEvent = onEvent.mock.calls.map((c) => c[0]).find((e) => e.type === 'tool_call_start');
     expect(startEvent?.data?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Keynote' });
 
     // 顺序：消息落库 → message 事件 → tool_call_start → executor 派发。
@@ -216,17 +223,38 @@ describe('GUI 接管披露 · 生产链路（模型一言不发也披露）', ()
     expect(order('executor:execute:computer_use')).toBeGreaterThan(order('event:tool_call_start'));
 
     // 落库消息（历史重放源）与事件里的披露一致。
-    const messageEvent = onEvent.mock.calls.map((c) => c[0]).find((e: { type: string }) => e.type === 'message');
+    const messageEvent = onEvent.mock.calls.map((c) => c[0]).find((e) => e.type === 'message');
     expect(messageEvent?.data?.toolCalls?.[0]?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Keynote' });
   });
 
-  it('Bash + System Events 首次驱动也走同一条披露链（executor 派发前落库）', async () => {
+  it.each([
+    ['screen driver with resolved PID', 'mcp__cua-driver__click', { pid: 123, x: 100, y: 200 }, 'Keynote'],
+    ['System Events click', 'Bash', { command: `osascript -e 'tell application "System Events" to tell process "Keynote" to click button 1 of window 1'` }, 'Keynote'],
+    ['System Events key press', 'Bash', { command: `osascript -e 'tell application "System Events" to tell process "Keynote" to key code 36'` }, 'Keynote'],
+    ['activate', 'Bash', { command: `osascript -e 'tell application "Keynote" to activate'` }, 'Keynote'],
+    ['edit open slide', 'Bash', { command: `osascript -e 'tell application "Keynote" to set object text of default title item of slide 3 of front document to "2026 年度经营复盘"'` }, 'Keynote'],
+    ['edit nested open slide', 'Bash', { command: `osascript <<'APPLESCRIPT'
+tell application "Keynote"
+  tell slide 3 of front document
+    set object text to "2026 年度经营复盘"
+  end tell
+end tell
+APPLESCRIPT` }, 'Keynote'],
+    ['read-only connector', 'mail_search', { query: 'Keynote' }, undefined],
+    ['Apple Events read', 'Bash', { command: `osascript -e 'tell application "Keynote" to set titleText to name of front document'` }, undefined],
+    ['activate as data', 'Bash', { command: `osascript -e 'tell application "Keynote" to get name of every document whose name is "activate"'` }, undefined],
+    ['metadata tool', 'mcp__cua-driver__list_apps', {}, undefined],
+    ['browser action', 'browser_action', { action: 'navigate', url: 'https://example.com', targetApp: 'Keynote' }, undefined],
+  ] as const)('%s carries the expected disclosure through the engine', async (_shape, name, args, app) => {
     const timeline: string[] = [];
     const ctx = buildCtx();
+    const onEvent = vi.fn((event: AgentEvent) => { timeline.push(`event:${event.type}`); });
+    const log = vi.spyOn(logCollector, 'tool');
+    ctx.onEvent = onEvent;
     ctx.toolExecutor = {
-      execute: vi.fn(async (name: string) => {
-        timeline.push(`executor:execute:${name}`);
-        return { toolCallId: '', success: false, error: 'Keynote is not running' };
+      execute: vi.fn(async () => {
+        timeline.push('executor:execute');
+        return { toolCallId: '', success: true, output: 'ok' };
       }),
     };
     const deps = buildDeps(ctx, timeline);
@@ -243,21 +271,27 @@ describe('GUI 接管披露 · 生产链路（模型一言不发也披露）', ()
       engine,
     );
 
-    const response = {
-      type: 'tool_use',
-      content: '',
-      toolCalls: [{
-        id: 'bash-1',
-        name: 'Bash',
-        arguments: { command: `osascript -e 'tell application "System Events" to tell process "Keynote" to keystroke "1"'` },
-      }],
-      runtimeDiagnostics: { visibleToolNames: VISIBLE },
-    } as unknown as ModelResponse;
+    try {
+      await processor.handleToolResponse({
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'gui-case', name, arguments: { ...args } }],
+        runtimeDiagnostics: { visibleToolNames: [name] },
+      } as unknown as ModelResponse, false, 1, EVENT_PROC);
 
-    await processor.handleToolResponse(response, false, 1, EVENT_PROC);
-
-    const assistant = deps.persisted.find((m) => m.role === 'assistant' && m.toolCalls?.length);
-    expect(assistant?.toolCalls?.[0]?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Keynote' });
-    expect(timeline.indexOf('persist:assistant-with-toolcalls')).toBeLessThan(timeline.indexOf('executor:execute:Bash'));
+      const expected = app ? { code: 'gui_takeover', app } : undefined;
+      const message = deps.persisted.find((entry) => entry.role === 'assistant' && entry.toolCalls?.length);
+      expect(message?.toolCalls?.[0]?.guiTakeoverDisclosure).toEqual(expected);
+      const start = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'tool_call_start');
+      expect(start?.data).toBeDefined();
+      expect(start?.data).toMatchObject(expected ? { guiTakeoverDisclosure: expected } : { name });
+      if (!expected) expect(start?.data).not.toHaveProperty('guiTakeoverDisclosure');
+      expect(timeline.indexOf('executor:execute')).toBeGreaterThan(timeline.indexOf('event:tool_call_start'));
+      const decisions = log.mock.calls.filter(([, line]) => line.startsWith('GUI takeover disclosure attached'));
+      expect(decisions.map(([, line]) => line)).toEqual(app ? [`GUI takeover disclosure attached (${app})`] : []);
+      process.stdout.write(`${_shape}: ${decisions[0]?.[1] ?? 'no disclosure'}\n`);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
