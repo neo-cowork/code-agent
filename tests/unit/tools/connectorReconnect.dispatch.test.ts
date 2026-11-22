@@ -7,13 +7,15 @@ import type { Connector, ConnectorStatus } from '../../../src/host/connectors/ba
 import type { ToolContext } from '../../../src/host/tools/types';
 import { calendarSchema } from '../../../src/host/tools/modules/connectors/calendar.schema';
 import { remindersSchema } from '../../../src/host/tools/modules/connectors/reminders.schema';
+import { publishEnvAssistToolNotice } from '../../../src/host/permissions/envAssist/toolNotice';
 
 const warn = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
-  const { createLogger } = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
-  const availabilityLogger = createLogger('ConnectorAvailability');
+  const original = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
+  const availabilityLogger = original.createLogger('ConnectorAvailability');
   warn.mockImplementation(availabilityLogger.warn.bind(availabilityLogger));
   return {
+    ...original,
     createLogger: (context: string) => ({
       info: vi.fn(), warn: context === 'ConnectorAvailability' ? warn : vi.fn(), error: vi.fn(), debug: vi.fn(),
     }),
@@ -133,15 +135,30 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
     });
 
     it.each([
-      ['Not authorized to send Apple events to Reminders. (-1743)', undefined],
-      ['Not authorized to access reminders.', true],
-    ])('marks a probe denial %s as notAppleEvents=%s', async (stderr, flag) => {
-      const { exec } = registerReminders(unchecked);
+      ['probe_access', 'Not authorized to send Apple events to Reminders. (-1743)'],
+      ['list_reminders', 'Not authorized to send Apple events to Reminders. (-1743)'],
+      ['probe_access', 'Not authorized to access reminders.'],
+    ])('keeps Check guidance and skips the card when %s fails with %s', async (failedAction, stderr) => {
+      const status = failedAction === 'probe_access' ? unchecked : { ...unchecked, connected: true, readiness: 'ready' } as const;
+      const { exec } = registerReminders(status);
       exec.mockRejectedValueOnce(Object.assign(new Error('Command failed: osascript'), { stderr }));
       const result = await execute(path, 'list_reminders', 'reminders');
+      const onEvent = vi.fn();
+      const guidance = result.error;
+      expect(result.success).toBe(false);
       expect(result.metadata?.code).toBe('not_authorized');
       expect(result.metadata?.accessProbeDenied).toBe(true);
-      expect(result.metadata?.notAppleEvents).toBe(flag);
+      expect(result.metadata).not.toHaveProperty('notAppleEvents');
+      expect(exec).toHaveBeenCalledExactlyOnceWith(
+        failedAction, failedAction === 'probe_access' ? {} : { action: 'list_reminders' },
+      );
+      expect(guidance).toContain('还没有授权 Neo 访问提醒事项，请在能力中心 > 连接器点‘检查’并按提示授权。');
+      await publishEnvAssistToolNotice({
+        toolName: 'reminders', result, sessionId: 'reminders-denial', runId: 'read-denied', onEvent,
+      });
+      expect(onEvent).not.toHaveBeenCalled();
+      expect(result.metadata?.envAssist).toBeUndefined();
+      expect(result.error).toBe(guidance);
     });
 
     it('keeps the authorization error code and stops the read if the probe is denied', async () => {
@@ -159,6 +176,25 @@ describe('connector reconnect guidance through real protocol dispatch', () => {
       expect(exec.mock.calls).toEqual([['probe_access', {}]]);
       expect(warn).toHaveBeenCalledWith('Connector call needs reconnection', {
         connectorId: 'reminders', toolName: 'reminders', reason: 'access-probe-denied',
+      });
+    });
+
+    it('returns the same Check guidance when get_status reads the denial saved by a previous ask', async () => {
+      const { exec, getCachedStatus } = registerReminders(unchecked);
+      const denied: ConnectorStatus = {
+        ...unchecked, readiness: 'failed', errorCode: 'not_authorized', error: 'Reminders access denied',
+      };
+      exec.mockRejectedValueOnce(Object.assign(new Error('Command failed: osascript'), {
+        stderr: 'Not authorized to send Apple events to Reminders. (-1743)',
+      })).mockResolvedValueOnce({ data: denied });
+      const first = await execute(path, 'get_status', 'reminders');
+      getCachedStatus.mockReturnValue(denied);
+      const second = await execute(path, 'get_status', 'reminders');
+
+      expect(exec.mock.calls).toEqual([['probe_access', {}], ['get_status', { action: 'get_status' }]]);
+      expect(first.error).toContain('Capability Hub > Connectors');
+      expect(second).toMatchObject({
+        success: false, error: first.error, metadata: { code: 'not_authorized', accessProbeDenied: true },
       });
     });
 

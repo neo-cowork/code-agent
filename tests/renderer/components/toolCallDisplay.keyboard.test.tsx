@@ -44,6 +44,23 @@ afterEach(() => {
 });
 
 describe('ToolCallDisplay keyboard interaction', () => {
+  it.each([{ background: true }, { pty: true }])('projects a background Bash launch as a plain receipt (%j)', (metadata) => {
+    const outputFile = '/private/tasks/copy.log';
+    const output = `Background task started.\n<output-file>${outputFile}</output-file>`;
+    const call = makeToolCall({
+      name: 'Bash',
+      arguments: { description: 'Archive notes', command: 'cp notes.txt archive/' },
+      result: { toolCallId: 'tool-1', success: true, output, metadata: { ...metadata, outputFile } },
+    });
+    const view = render(<ToolCallDisplay toolCall={call} index={0} total={1} />);
+    const row = view.getByTestId('tool-call-row-Bash');
+    expect(view.getByText('Started in the background')).toBeTruthy();
+    expect(row.textContent).toContain('Archive notes');
+    fireEvent.click(row);
+    expect(view.container.textContent).not.toMatch(/output-file|copy\.log|cp notes\.txt/);
+    expect(call.result?.output).toBe(output);
+  });
+
   it('puts the row in the Tab order and toggles aria-expanded with Enter and Space', () => {
     const { getByTestId } = render(
       <ToolCallDisplay toolCall={makeToolCall()} index={0} total={1} />,

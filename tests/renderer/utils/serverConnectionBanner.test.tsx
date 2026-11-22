@@ -18,12 +18,15 @@ async function advance(ms: number) {
 async function renderBannerAtPlatform(
   platform: 'darwin' | 'linux',
   status: 'recovering' | 'unavailable',
+  language: 'zh' | 'en' = 'zh',
 ) {
   vi.resetModules();
   vi.doMock('@shared/keybindings/defaults', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../src/shared/keybindings/defaults')>();
     return { ...actual, getCurrentKeybindingPlatform: () => platform };
   });
+  const { useAppStore: platformAppStore } = await import('../../../src/renderer/stores/appStore');
+  platformAppStore.setState({ language });
   const { ServerConnectionBanner: Banner } = await import('../../../src/renderer/components/ServerConnectionBanner');
   const { useServerConnectionStore: platformStore } = await import('../../../src/renderer/stores/serverConnectionStore');
   act(() => platformStore.getState().setStatus(status));
@@ -134,5 +137,37 @@ describe('macOS traffic light safe area', () => {
     expect(banner.classList.contains('min-h-12')).toBe(true);
     expect(banner.classList.contains('pl-[92px]')).toBe(false);
     expect(banner.getAttribute('data-tauri-drag-region')).toBe('deep');
+  });
+});
+
+describe('unavailable hint per platform', () => {
+  const forbidden = /Cmd|View|webServer|daemon|Ctrl/;
+
+  it.each(['zh', 'en'] as const)('%s: darwin Tauri hint names ⌘R reload with quit-and-reopen fallback', async (language) => {
+    const copy = language === 'zh' ? serverConnectionZh.serverConnection : serverConnectionEn.serverConnection;
+    await renderBannerAtPlatform('darwin', 'unavailable', language);
+    const text = screen.getByTestId('server-connection-banner').textContent ?? '';
+    expect(text).toContain(copy.unavailableHintTauriMac);
+    expect(text).toContain('⌘R');
+    expect(text).toMatch(language === 'zh' ? /重新载入/ : /reload/);
+    expect(text).toMatch(language === 'zh' ? /退出后重新打开/ : /quit and reopen/);
+    expect(text).not.toContain(copy.unavailableHintTauri);
+    expect(text).not.toMatch(forbidden);
+    expect(text).not.toMatch(/系统弹窗|system dialog/);
+  });
+
+  it('linux Tauri keeps unavailableHintTauri', async () => {
+    await renderBannerAtPlatform('linux', 'unavailable', 'en');
+    const text = screen.getByTestId('server-connection-banner').textContent ?? '';
+    expect(text).toContain(serverConnectionEn.serverConnection.unavailableHintTauri);
+    expect(text).not.toContain('⌘R');
+  });
+
+  it('web keeps unavailableHintWeb even on a Mac', async () => {
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+    await renderBannerAtPlatform('darwin', 'unavailable', 'en');
+    const text = screen.getByTestId('server-connection-banner').textContent ?? '';
+    expect(text).toContain(serverConnectionEn.serverConnection.unavailableHintWeb);
+    expect(text).not.toContain('⌘R');
   });
 });

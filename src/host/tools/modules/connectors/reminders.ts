@@ -11,11 +11,10 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getConnectorRegistry } from '../../../connectors';
-import type { Connector } from '../../../connectors/base';
+import type { Connector, ConnectorStatus } from '../../../connectors/base';
 import {
   appleScriptFailureLogDetail,
   describeAppleScriptFailure,
-  isAppleEventsDenied,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
@@ -140,7 +139,15 @@ async function executeReminders(
     ctx.logger.debug('reminders', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const status = result.data as ConnectorStatus;
+      if (status.errorCode === 'not_authorized') {
+        return {
+          ok: false,
+          code: status.errorCode,
+          error: status.error ?? 'Reminders access denied',
+          meta: { accessProbeDenied: true },
+        };
+      }
       const output = formatConnectorStatusOutput('reminders', status);
       return {
         ok: true,
@@ -188,13 +195,10 @@ async function executeReminders(
       error: osascriptFailure
         ? failure.message
         : `Reminders connector failed: ${error instanceof Error ? error.message : String(error)}`,
-      // 与 calendar.ts 同形：AppleScript 失败码随结果下发（classify 的 perm_automation
-      // 判据读 metadata.code，缺了它 reminders 的授权被拒永远发不出环境卡片）。
       code: osascriptFailure ? failure.code : 'CONNECTOR_FAILED',
     };
-    if (probingAccess && result.code === 'not_authorized') {
-      // Not an Apple-events (-1743) refusal: the Automation pane cannot fix it, so no env-assist card.
-      result.meta = { accessProbeDenied: true, ...(isAppleEventsDenied(error) ? {} : { notAppleEvents: true }) };
+    if (result.code === 'not_authorized') {
+      result.meta = { accessProbeDenied: true };
     }
     return result;
   }
