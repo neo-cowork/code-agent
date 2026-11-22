@@ -9,7 +9,7 @@ import type {
   AgentEngineSessionMetadata,
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
-import { isProviderImageIcon, type RuntimeModelFeature, type RuntimeModelOptionGroup } from '@shared/modelRuntime';
+import { isProviderImageIcon, type RuntimeModelFeature, type RuntimeModelOption, type RuntimeModelOptionGroup } from '@shared/modelRuntime';
 import {
   getEngineBillingMode,
   getEngineModelCompat,
@@ -907,4 +907,16 @@ export function buildThinkingSegmentOptions(params: {
       };
     }),
   ];
+}
+
+// 设置还没到（也没读失败）时 buildRuntimeModelOptions 跳过所有启用过滤，会把内置全目录（含已停用模型）闪出来；
+// 此时只留当前选中的模型，设置到位后再展开完整列表，列表只增不减。
+export function narrowOptionsBeforeHydrate(
+  options: RuntimeModelOption[],
+  hydrated: boolean,
+  provider: string,
+  model: string,
+): RuntimeModelOption[] {
+  if (hydrated) return options;
+  return options.filter((opt) => opt.provider === provider && opt.model === model);
 }
