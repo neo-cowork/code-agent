@@ -282,25 +282,35 @@ describe('SubagentExecutor environment notice', () => {
   beforeEach(() => { persistence.messages.length = 0; mocks.responses.length = 0; vi.clearAllMocks(); process.env.CODE_AGENT_MODEL_ENGINE = 'legacy'; });
   // 不再手搓 metadata.code：calendar/mail/reminders 的失败结果都从真实连接器工具
   // 失败路径（假 runAppleScript，真实 -1743 文本）产出，code 缺失在这里直接红。
-  it.each(['calendar', 'mail', 'reminders'] as const)('tells the child model that the permission card was shown without quotable error copy (%s)', async (tool) => {
+  it.each(['calendar', 'mail', 'reminders'] as const)('gives the child model the authorization guidance without quotable diagnostics (%s)', async (tool) => {
     mocks.toolResult.current = await realAutomationFailure(tool);
     mocks.responses.push(toolResponse(tool), textResponse('请使用卡片上的按钮，然后再问我。'));
     await new SubagentExecutor().execute(createRequest(tool));
     expect(mocks.inference).toHaveBeenCalledTimes(2);
     const text = JSON.stringify(mocks.inference.mock.calls[1][0]);
     expect(text).not.toMatch(/-1743|osascript|Apple events|TCC|Permission is needed to continue/i);
+    if (tool === 'reminders') {
+      expect(text).toContain('Capability Hub > Connectors, action: Check');
+      expect(text).not.toMatch(/permission card.*already been shown/i);
+      return;
+    }
     expect(text).toMatch(/permission card.*already been shown/i);
     expect(text).toMatch(/do not.*quote/i);
     expect(text).toContain("user's language");
     expect(text).toContain('ask again');
   });
 
-  it.each(['calendar', 'mail', 'reminders'] as const)('emits exactly one persistent parent card even when the delegated %s tool retries', async (tool) => {
+  it.each(['calendar', 'mail', 'reminders'] as const)('publishes the expected parent card state when the delegated %s tool retries', async (tool) => {
     mocks.toolResult.current = await realAutomationFailure(tool);
     mocks.responses.push(toolResponse(tool), toolResponse(tool), textResponse('Permission is needed.'));
     const request = createRequest(tool);
     await new SubagentExecutor().execute(request);
     const notices = request.context.events.emit.mock.calls.filter(([event]) => event === 'env_assist_notice');
+    if (tool === 'reminders') {
+      expect(notices).toHaveLength(0);
+      expect(persistence.messages).toHaveLength(0);
+      return;
+    }
     expect(notices).toHaveLength(1);
     expect(notices[0][1]).toMatchObject({
       sessionId: request.context.sessionId, runId: request.context.runId,
