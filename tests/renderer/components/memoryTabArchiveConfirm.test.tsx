@@ -76,7 +76,8 @@ describe.each([
     state.lang = lang;
     state.web = web;
     render(<MemoryTab />);
-    await screen.findByText(FILENAME);
+    // 列表行只显示人读名称（N-FIX-MEMORY-TAB-FILE-ROW-RAW-FILENAME）；内部文件名仍经 data-memory-filename 与 IPC 断言覆盖
+    await screen.findByText(file.name);
     const rowButton = screen.getAllByRole('button', { name: files.delete })[0];
     expect(rowButton.textContent).toBe(files.delete);
     fireEvent.click(rowButton);
@@ -96,7 +97,8 @@ describe.each([
     const confirm = await openConfirm();
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
-    await screen.findByText(`${files.deleteSuccessPrefix}${FILENAME}`);
+    // 归档成功提示显示人读名称；lightDelete 请求本身仍带内部文件名（下方 IPC 断言）
+    await screen.findByText(`${files.deleteSuccessPrefix}${file.name}`);
     const call = calls()[0];
     if (web) {
       expect(call).toEqual([IPC_DOMAINS.MEMORY, 'lightDelete', { action: 'lightDelete', filename: FILENAME }]);

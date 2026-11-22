@@ -79,6 +79,7 @@ import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
 import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -734,7 +735,7 @@ export class MessageProcessor {
     // 推进目标文件。noProgressTurns 只在目标真被成功改动时清零（markTargetPatched）。
 
     this.ctx.stats.addToolCalls(toolCalls.length);
-    this.runFinalizer.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
+    this.runFinalizer.emitTaskProgress('tool_pending', getHostUiLocale() === 'en' ? `Preparing ${toolCalls.length} actions` : `正在准备 ${toolCalls.length} 项操作`, {
       toolTotal: toolCalls.length,
     });
 

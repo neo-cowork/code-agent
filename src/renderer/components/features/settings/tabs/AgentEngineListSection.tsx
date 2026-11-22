@@ -44,6 +44,7 @@ const logger = createLogger('AgentEngineListSection');
 export const AgentEngineListSection: React.FC = () => {
   const { t, language } = useI18n();
   const section = t.engineCompat.engineSection;
+  const webNote = isWebMode() ? t.settings.webModeBanner.engineManageDesktopOnly : undefined;
   const [sources, setSources] = useState<AgentEngineSourceDescriptor[] | null>(null);
   const [descriptors, setDescriptors] = useState<AgentEngineDescriptor[]>([]);
   const [detecting, setDetecting] = useState(false);
@@ -183,7 +184,7 @@ export const AgentEngineListSection: React.FC = () => {
   return (
     <SettingsSection
       title={section.title}
-      description={section.description}
+      description={[section.description, webNote].filter(Boolean).join(' ')}
       actions={
         <Button
           variant="secondary"
@@ -283,7 +284,7 @@ export const AgentEngineListSection: React.FC = () => {
                       title={
                         selected
                           ? section.currentEngineTitle
-                          : unavailableReason || section.switchToEngine
+                          : unavailableReason || webNote || section.switchToEngine
                       }
                     >
                       {selected
