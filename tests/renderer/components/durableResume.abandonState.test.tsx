@@ -244,15 +244,20 @@ describe('abandon clears the parked projection against the stale-guarded session
     } as never;
   });
 
-  it('confirmed abandon removes the stopped row and decision through list refresh and forced session reload', async () => {
+  it.each([
+    { timing: 'before reply text', stoppedSnapshot: null },
+    { timing: 'after reply text starts', stoppedSnapshot: snapshot },
+  ])('confirmed abandon after Stop $timing removes the decision through list refresh and forced session reload', async ({ stoppedSnapshot }) => {
     const cancelled = { ...session, status: 'cancelled', messageCount: 1, turnCount: 1 };
     const hostInvoke = vi.fn(async (_domain: string, action: string) => ({
       success: true,
       data: action === 'load' ? { ...cancelled, messages: [message] } : action === 'list' ? [cancelled] : [],
     }));
     window.domainAPI = { invoke: hostInvoke } as never;
+    useSessionStore.setState({ streamSnapshot: stoppedSnapshot });
     render(<StoreDrivenRow turnActive={false} />);
     expect(screen.getByTestId(ROW)).toBeTruthy();
+    expect(screen.getByTestId('continue-run-button')).toBeTruthy();
     expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
     expect(unfinishedCount()).toBe(1);
 
@@ -265,12 +270,17 @@ describe('abandon clears the parked projection against the stale-guarded session
       expect(unfinishedCount()).toBe(0);
     }, { timeout: 2_000 });
     expect(hostInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'list', expect.anything());
+    expect(ipcInvoke).toHaveBeenCalledExactlyOnceWith('agent:cancel', {
+      sessionId: SESSION_ID, runId: PARKED.runId, abandonParked: true,
+    });
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
     expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
     expect(useSessionStore.getState().sessions.find((session) => session.id === SESSION_ID)?.durableResume).toBeUndefined();
 
     await act(() => useSessionStore.getState().switchSession(SESSION_ID, { force: true }));
     expect(hostInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'load', { sessionId: SESSION_ID });
     expect(useSessionStore.getState().streamSnapshot).toBeNull();
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
     expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
     expect(unfinishedCount()).toBe(0);
   });
