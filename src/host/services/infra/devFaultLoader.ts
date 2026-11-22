@@ -68,3 +68,7 @@ export function devFaultWrapConnector<T extends ConnectorLike>(connector: T): T 
   const hooks = load();
   return hooks ? hooks.wrapConnector(connector, context()) : connector;
 }
+
+export function isAutomationDenialOverridden(connectorId: string): boolean {
+  return load()?.isAutomationDenied?.(connectorId, context()) ?? false;
+}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // N-FIX-SEND-HANGS-WHEN-PARKED-RUN-SUPERSEDE-FAILS-FU1-FU1-FIX：409 RUN_SESSION_CONFLICT 失败说明点名的
-// 「放弃 / 重试」必须真有按钮；放弃走 agent:cancel + abandonParked；重试走原 clientMessageId 重发，
-// 再被拒时新说明替换旧说明（始终只有一条）。失败节点来自 useAgentIPC 真实发送失败路径。
+// 说明只点名唯一的「重试」；一次点击 = agent:cancel + abandonParked（窗口内每 3 秒重复，最长约 25 秒）
+// 后用原 clientMessageId 重发一次，再被拒时新说明替换旧说明（始终只有一条）。失败节点来自 useAgentIPC 真实发送失败路径。
 import React from 'react';
 import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -97,62 +97,99 @@ const view = () => render(
   <TurnBasedTraceView projection={projectTurns(useSessionStore.getState().messages, SESSION_ID, false)} />,
 );
 
+async function setupRetry() {
+  const hook = await sendAndConflict('zh');
+  useMessageActionStore.getState().register((content, context) => {
+    void hook.result.current.sendMessage({ content, sessionId: SESSION_ID, ...context });
+  }, () => useSessionStore.getState().messages);
+  const utils = view();
+  return { ...utils };
+}
+const sendCalls = () => invokeMock.mock.calls.filter((c) => c[0] === 'agent:send-message');
+const cancelCalls = () => invokeMock.mock.calls.filter((c) => c[0] === 'agent:cancel');
+const conflictNotes = () => useSessionStore.getState().messages
+  .filter((m) => m.metadata?.sendFailureCode === 'RUN_SESSION_CONFLICT');
+
 describe('RUN_SESSION_CONFLICT failure note actions', () => {
-  it.each(['zh', 'en'] as const)('labels the note names are exactly the rendered controls (%s)', async (language) => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each(['zh', 'en'] as const)('the note names only the single rendered Retry control (%s)', async (language) => {
     await sendAndConflict(language);
     const { container } = view();
     const note = httpFailureMessage({ status: 409, code: 'RUN_SESSION_CONFLICT', language });
     const quoted = [...note.matchAll(/[「"]([^」"]+)[」"]/g)].map((m) => m[1]);
     const labels = sessionConflictLabels[language];
-    expect(quoted.sort()).toEqual([labels.abandon, labels.retry].sort());
+    expect(quoted).toEqual([labels.retry]);
     const actions = screen.getByTestId('session-conflict-actions');
     const rendered = [...actions.querySelectorAll('button')].map((b) => b.textContent?.trim());
-    expect(rendered.sort()).toEqual(quoted.sort());
+    expect(rendered).toEqual([labels.retry]);
+    expect(note).not.toMatch(/放弃|Abandon/);
+    expect(actions.textContent).not.toMatch(/放弃|Abandon/);
     expect(container.textContent).toContain(note);
     expect(screen.getByTestId('user-message-edit-resend')).toBeTruthy();
   });
 
-  it('Abandon cancels the old run with abandonParked and reports done', async () => {
-    await sendAndConflict('zh');
-    view();
+  it('one Retry click cancels the old run with abandonParked, then resends once with the original clientMessageId', async () => {
+    await setupRetry();
     invokeMock.mockResolvedValueOnce({ message: 'Cancelled', runId: 'r1' });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '放弃' })); });
-    expect(invokeMock).toHaveBeenLastCalledWith('agent:cancel', { sessionId: SESSION_ID, abandonParked: true });
-    expect(screen.getByRole('status').textContent).toContain('旧任务已结束');
-  });
-
-  it('Abandon that the host answers with "No active agent to cancel" is not reported as done', async () => {
-    await sendAndConflict('zh');
-    view();
-    invokeMock.mockResolvedValueOnce({ message: 'No active agent to cancel' });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '放弃' })); });
-    expect(screen.getByRole('status').textContent).toContain('没能结束旧任务');
-  });
-
-  it('Abandon failure is reported, not swallowed', async () => {
-    await sendAndConflict('zh');
-    view();
-    invokeMock.mockRejectedValueOnce(new Error('boom'));
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '放弃' })); });
-    expect(screen.getByRole('status').textContent).toContain('没能结束旧任务');
-  });
-
-  it('Retry resends with the original clientMessageId; a second rejection leaves exactly one note', async () => {
-    const hook = await sendAndConflict('zh');
-    useMessageActionStore.getState().register((content, context) => {
-      void hook.result.current.sendMessage({ content, sessionId: SESSION_ID, ...context });
-    }, () => useSessionStore.getState().messages);
-    const { rerender } = view();
     rejectSendAsConflict('zh');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
-    await vi.waitFor(() => expect(invokeMock).toHaveBeenLastCalledWith(
-      'agent:send-message', expect.objectContaining({ clientMessageId: 'u1', sessionId: SESSION_ID }),
+    expect(cancelCalls()).toEqual([['agent:cancel', { sessionId: SESSION_ID, abandonParked: true }]]);
+    await vi.waitFor(() => expect(sendCalls()).toHaveLength(2));
+    expect(sendCalls()[1][1]).toEqual(expect.objectContaining({ clientMessageId: 'u1', sessionId: SESSION_ID }));
+    expect(invokeMock.mock.calls.findIndex((c) => c[0] === 'agent:cancel'))
+      .toBeLessThan(invokeMock.mock.calls.map((c) => c[0]).lastIndexOf('agent:send-message'));
+  });
+
+  it('window case: resends only after a later "Cancelled" reply', async () => {
+    vi.useFakeTimers();
+    await setupRetry();
+    invokeMock
+      .mockResolvedValueOnce({ message: 'No active agent to cancel' })
+      .mockResolvedValueOnce({ message: 'No active agent to cancel' })
+      .mockResolvedValueOnce({ message: 'Cancelled' });
+    rejectSendAsConflict('zh');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
+    expect(cancelCalls()).toHaveLength(1);
+    expect(sendCalls()).toHaveLength(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(cancelCalls()).toHaveLength(2);
+    expect(sendCalls()).toHaveLength(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(cancelCalls()).toHaveLength(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(sendCalls()).toHaveLength(2);
+  });
+
+  it('25 s without release: single resend, second 409 leaves exactly one note and no loading at 30 s', async () => {
+    vi.useFakeTimers();
+    const { rerender } = await setupRetry();
+    invokeMock.mockImplementation(async (channel: string) => {
+      if (channel === 'agent:cancel') return { message: 'No active agent to cancel' };
+      throw Object.assign(new Error('409'), { status: 409, code: 'RUN_SESSION_CONFLICT' });
+    });
+    invokeDomainMock.mockRejectedValueOnce(Object.assign(
+      new Error(httpFailureMessage({ status: 409, code: 'RUN_SESSION_CONFLICT', language: 'zh' })),
+      { code: 'RUN_SESSION_CONFLICT' },
     ));
-    expect(invokeMock).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(
-      useSessionStore.getState().messages.filter((m) => m.metadata?.sendFailureCode === 'RUN_SESSION_CONFLICT'),
-    ).toHaveLength(1));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
+    expect((screen.getByRole('button', { name: '重试' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(sendCalls()).toHaveLength(2);
+    expect(sendCalls()[1][1]).toEqual(expect.objectContaining({ clientMessageId: 'u1' }));
+    expect(conflictNotes()).toHaveLength(1);
     rerender(<TurnBasedTraceView projection={projectTurns(useSessionStore.getState().messages, SESSION_ID, false)} />);
     expect(screen.getAllByTestId('session-conflict-actions')).toHaveLength(1);
+    const button = screen.getByRole('button', { name: '重试' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(document.querySelectorAll('[data-testid="session-conflict-actions"] .animate-spin')).toHaveLength(0);
+  });
+
+  it('a thrown cancel error ends the wait with the failure line and does not resend', async () => {
+    await setupRetry();
+    invokeMock.mockRejectedValueOnce(new Error('boom'));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })); });
+    expect(screen.getByRole('status').textContent).toContain('旧任务还在收尾');
+    expect(sendCalls()).toHaveLength(1);
   });
 });

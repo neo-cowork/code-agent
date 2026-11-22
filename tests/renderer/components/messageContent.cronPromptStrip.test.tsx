@@ -53,6 +53,17 @@ describe('MessageContent 用户气泡的 cron prompt 切割', () => {
     expect(view.container.textContent).not.toContain('Unix 秒');
   });
 
+  it('/create-role、/create-team 种子：气泡只显示用户自己的话，不带 slash 前缀；裸命令与普通消息不动', () => {
+    const role = render(<MessageContent content="/create-role 日程小秘书：每天帮我看日历" isUser messageId="seed-role" />);
+    expect(role.container.textContent).toBe('日程小秘书：每天帮我看日历');
+    cleanup();
+    const team = render(<MessageContent content="/create-team 写作小组" isUser messageId="seed-team" />);
+    expect(team.container.textContent).toBe('写作小组');
+    cleanup();
+    const bare = render(<MessageContent content="/create-role" isUser messageId="seed-bare" />);
+    expect(bare.container.textContent).toBe('/create-role');
+  });
+
   it('普通用户消息不受影响', () => {
     const plain = '帮我看看这个报错\n\n第二行';
     const view = render(
