@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { app as platformApp } from 'electron';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
+import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
+import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { SessionLifecycleAppService } from '../../../src/host/app/sessionLifecycleAppService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
@@ -14,6 +15,7 @@ import { getTaskManager } from '../../../src/host/task/TaskManager';
 import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import { saveStreamSnapshot } from '../../../src/host/session/streamSnapshot';
+import { withDurableSessionReplayPayload } from '../../../src/web/helpers/durableSessionPayload';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -426,7 +428,7 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
   ])('$name', async ({ scenario }) => {
     const sessionId = `session-snapshot-${scenario}`;
     const runId = 'run-abandoned';
-    const { registry, db, workspace } = await recoveredWaitingRegistry({ runId, sessionId });
+    const { registry, db, repository, workspace } = await recoveredWaitingRegistry({ runId, sessionId });
     try {
       const database = getDatabase();
       await database.initialize();
@@ -453,7 +455,10 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       });
       const partial = { content: 'Partial reply', reasoning: '', toolCalls: [], estimatedTokens: 2, timestamp: 2_030, isFinal: false };
       saveStreamSnapshot(partial, { sessionId, runId, workingDir: workspace, turnId: 'stopped-turn' });
-      expect((await lifecycle.loadSession(sessionId)).streamSnapshot).toMatchObject({ runId });
+      const readService = new DurableRunReadService(resolveDurableRunRollout({}), repository);
+      const parked = await withDurableSessionReplayPayload(await lifecycle.loadSession(sessionId), readService);
+      expect(parked.streamSnapshot).toMatchObject({ runId });
+      expect(parked.status).toBe('interrupted');
       if (scenario === 'newer') {
         saveStreamSnapshot(partial, { sessionId, runId: 'run-newer', workingDir: workspace, turnId: 'newer-turn' });
       }
@@ -472,7 +477,9 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
         expect(response.status).toBe(200);
         await expect(response.json()).resolves.toMatchObject({ message: 'Cancelled', runId });
       }
-      const loaded = await lifecycle.loadSession(sessionId);
+      const loaded = await withDurableSessionReplayPayload(await lifecycle.loadSession(sessionId), readService);
+      expect(loaded.status).toBe('cancelled');
+      expect(loaded.durableResume).toBeUndefined();
       if (scenario === 'newer') {
         expect(loaded.streamSnapshot).toMatchObject({ runId: 'run-newer', turnId: 'newer-turn' });
       } else {

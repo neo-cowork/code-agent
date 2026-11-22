@@ -126,6 +126,7 @@ export function terminalRecoveredWaitingRunOnce(
     now,
     status: 'cancelled',
     reason: 'recovered_waiting_run_cancelled',
+    ...(options?.abandonParked ? { abandonedParked: true as const } : {}),
     event: {
       type: 'run_cancelled',
       payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },

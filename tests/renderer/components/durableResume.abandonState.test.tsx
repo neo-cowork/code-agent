@@ -34,6 +34,7 @@ import { SendButton } from '../../../src/renderer/components/features/chat/ChatI
 import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
 import { deriveRetryTurnMessage } from '../../../src/renderer/components/ChatView';
 import { deriveStreamInterruptionDecision } from '../../../src/renderer/utils/streamInterruptionDecision';
+import { buildSidebarProjectSummary } from '../../../src/renderer/utils/sidebarProjectSummary';
 
 const SESSION_ID = 'session-parked';
 const PARKED = { mode: 'continue', canContinue: true, runId: 'run-parked-1' };
@@ -184,6 +185,21 @@ describe('abandon clears the parked projection against the stale-guarded session
     reasoning: '', toolCalls: [], estimatedTokens: 2, timestamp: UPDATED_AT + 1,
     isFinal: false, streamStatus: 'incomplete', stableForExecution: false, incompleteToolCallIds: [],
   };
+  function unfinishedCount(): number {
+    return buildSidebarProjectSummary({
+      group: {
+        key: 'library',
+        name: 'Library',
+        paths: [],
+        isUncategorized: false,
+        sessions: useSessionStore.getState().sessions,
+        latestActivityAt: UPDATED_AT,
+      },
+      backgroundSessionMap: new Map(),
+      sessionRuntimes: new Map(),
+      sessionStates: {},
+    }).unfinishedCount;
+  }
   function StoreDrivenRow({ turnActive }: { turnActive: boolean }) {
     const resume = useSessionStore((state) => state.sessions.find((session) => session.id === SESSION_ID)?.durableResume);
     const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
@@ -229,14 +245,16 @@ describe('abandon clears the parked projection against the stale-guarded session
   });
 
   it('confirmed abandon removes the stopped row and decision through list refresh and forced session reload', async () => {
+    const cancelled = { ...session, status: 'cancelled', messageCount: 1, turnCount: 1 };
     const hostInvoke = vi.fn(async (_domain: string, action: string) => ({
       success: true,
-      data: action === 'load' ? { ...session, messages: [message] } : action === 'list' ? [session] : [],
+      data: action === 'load' ? { ...cancelled, messages: [message] } : action === 'list' ? [cancelled] : [],
     }));
     window.domainAPI = { invoke: hostInvoke } as never;
     render(<StoreDrivenRow turnActive={false} />);
     expect(screen.getByTestId(ROW)).toBeTruthy();
     expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
+    expect(unfinishedCount()).toBe(1);
 
     fireEvent.click(screen.getByRole('button', { name: '放弃' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '放弃' }));
@@ -244,6 +262,7 @@ describe('abandon clears the parked projection against the stale-guarded session
     await waitFor(() => {
       expect(screen.queryByTestId(ROW)).toBeNull();
       expect(useSessionStore.getState().streamSnapshot).toBeNull();
+      expect(unfinishedCount()).toBe(0);
     }, { timeout: 2_000 });
     expect(hostInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'list', expect.anything());
     expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
@@ -253,6 +272,7 @@ describe('abandon clears the parked projection against the stale-guarded session
     expect(hostInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'load', { sessionId: SESSION_ID });
     expect(useSessionStore.getState().streamSnapshot).toBeNull();
     expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
+    expect(unfinishedCount()).toBe(0);
   });
 
   it('ignores a session load that read the snapshot before abandon settled', async () => {
