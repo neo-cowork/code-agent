@@ -8,6 +8,7 @@ import {
   removeComposerDraft,
   writeComposerDraftIfAbsent,
 } from '../components/features/chat/ChatInput/composerDraftStore';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 
 const LAST_VIEWED_SESSION_KEY = 'neo:last-viewed-session';
 
@@ -17,7 +18,7 @@ export function rememberLastViewedSession(sessionId: string | null): void {
   try {
     window.localStorage.setItem(LAST_VIEWED_SESSION_KEY, sessionId);
   } catch {
-    // Storage unavailable: boot falls back to the most recently updated session.
+    // Storage unavailable: boot opens the new-task start page.
   }
 }
 
@@ -40,6 +41,22 @@ function findBlankSessionWithDraft<T extends { id: string }>(
   )) ?? null;
 }
 
+/**
+ * First untouched blank new-task session in the server list: no folder, not owned by a space.
+ * Picked from the list boot already holds because createSession reads the live store list, which
+ * the auth-change reload may have just emptied — it would then create a duplicate blank session.
+ */
+function findUntouchedBlankSession<T extends { id: string }>(
+  sessions: T[],
+  isBlank: (session: T) => boolean,
+): T | null {
+  return sessions.find((session) => {
+    const { workingDirectory, projectId } = session as T & { workingDirectory?: string | null; projectId?: string | null };
+    const owner = projectId?.trim() ?? '';
+    return isBlank(session) && !workingDirectory?.trim() && (owner === '' || owner === UNSORTED_PROJECT_ID);
+  }) ?? null;
+}
+
 /** Move the sessionless home draft onto a freshly created session so the card shows there. */
 function adoptHomeDraft(sessionId: string): void {
   const homeKey = composerDraftStorageKey(null, false);
@@ -54,9 +71,14 @@ function adoptHomeDraft(sessionId: string): void {
 
 /**
  * Cold-boot and re-sign-in both pick the session to show. A blank new-task session holding an
- * unsent draft wins, then the chat the user last viewed (a delegation target that was updated
- * after the originating chat must not steal a fresh page), then the most recent session; with no sessions at all the home draft moves
- * onto the one that gets created.
+ * unsent draft wins, then the chat this browser last viewed (a delegation target that was updated
+ * after the originating chat must not steal a fresh page). With no browser-local reason to restore
+ * anything (nothing remembered, or the remembered chat is gone) the new-task start page opens: an
+ * untouched blank session from the list is reused (createSession would read the live store list,
+ * which an auth-change reload may have just emptied, and pile up a duplicate), else createSession
+ * — never the server's most recent chat,
+ * or a first-time browser would append its first task to someone else's old conversation. The home
+ * draft moves onto the blank session that opens.
  */
 export async function openInitialSession<T extends { id: string }>(deps: {
   sessions: T[];
@@ -65,8 +87,15 @@ export async function openInitialSession<T extends { id: string }>(deps: {
   createSession: () => Promise<{ id: string } | null>;
 }): Promise<void> {
   const { sessions, isBlank, switchSession, createSession } = deps;
-  if (sessions.length > 0) {
-    await switchSession((findBlankSessionWithDraft(sessions, isBlank) ?? readLastViewedSession(sessions) ?? sessions[0]).id);
+  const restore = findBlankSessionWithDraft(sessions, isBlank) ?? readLastViewedSession(sessions);
+  if (restore) {
+    await switchSession(restore.id);
+    return;
+  }
+  const reusable = findUntouchedBlankSession(sessions, isBlank);
+  if (reusable) {
+    await switchSession(reusable.id);
+    adoptHomeDraft(reusable.id);
     return;
   }
   const created = await createSession();
