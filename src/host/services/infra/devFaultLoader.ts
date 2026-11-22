@@ -48,6 +48,7 @@ function context(): FaultContext {
   return {
     dataDir: process.env.CODE_AGENT_DATA_DIR ?? '',
     log: (line) => logger.warn(line),
+    active: () => isDevSlotRuntime(),
   };
 }
 

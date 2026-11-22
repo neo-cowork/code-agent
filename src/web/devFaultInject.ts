@@ -8,6 +8,8 @@
 // ============================================================================
 
 import * as fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import * as path from 'node:path';
 import type { DevFaultHooks, FaultContext } from '../shared/devFaultHooks';
 
@@ -82,7 +84,7 @@ function patchGlobalFetch(ctx: FaultContext): void {
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const url = input instanceof Request ? input.url : String(input);
-    if (!isLoopback(url)) {
+    if (ctx.active() && parseFaults().has('offline') && !isLoopback(url)) {
       hit(ctx, 'offline', 'global_fetch');
       throw new TypeError('fetch failed', { cause: offlineError(url) });
     }
@@ -90,10 +92,46 @@ function patchGlobalFetch(ctx: FaultContext): void {
   }) as typeof fetch;
 }
 
+function requestHost(args: unknown[]): string | null {
+  const first = args[0];
+  if (typeof first === 'string') {
+    try { return new URL(first).hostname; } catch { return null; }
+  }
+  if (first instanceof URL) return first.hostname;
+  if (first && typeof first === 'object') {
+    const o = first as { hostname?: string; host?: string; socketPath?: string };
+    if (o.socketPath) return null;
+    const host = o.hostname ?? o.host;
+    return host ? host.replace(/:\d+$/, '') : null;
+  }
+  return null;
+}
+
+let nodeHttpPatched = false;
+
+// axios（http 适配器）与裸 https.request 都经 node:http(s)；补丁挂在内置模块对象上，宿主 bundle 共享同一份。
+function patchNodeHttp(ctx: FaultContext): void {
+  if (nodeHttpPatched) return;
+  nodeHttpPatched = true;
+  for (const mod of [http, https] as Array<Record<string, unknown>>) {
+    for (const name of ['request', 'get']) {
+      const original = mod[name] as (...a: unknown[]) => unknown;
+      mod[name] = (...args: unknown[]) => {
+        const host = requestHost(args);
+        if (host && ctx.active() && parseFaults().has('offline') && !isLoopback(`http://${host}/`)) {
+          hit(ctx, 'offline', 'node_http');
+          throw offlineError(`http://${host}/`);
+        }
+        return original.apply(mod, args);
+      };
+    }
+  }
+}
+
 export const devFaultHooks: DevFaultHooks = {
   atBoot(ctx) {
     const faults = parseFaults();
-    if (faults.has('offline')) patchGlobalFetch(ctx);
+    if (faults.has('offline')) { patchGlobalFetch(ctx); patchNodeHttp(ctx); }
     if (!faults.has('webserver_boot_fail')) return;
     // 与 webserver_exit_once 同列时，等它先触发（先「正常打开 → 挂一次」，之后重启才连败 N 次）
     if (faults.has('webserver_exit_once') && !fs.existsSync(stateFile(ctx.dataDir, 'exit_once.done'))) return;

@@ -4,6 +4,8 @@ export interface FaultContext {
   dataDir: string;
   /** 宿主 logger 的 warn；每次注入命中恰好写一行，含注入名 */
   log: (line: string) => void;
+  /** 调用时刻的身份判断：补丁常驻进程，每次命中前复核当前数据目录仍是 Dev 槽 */
+  active: () => boolean;
 }
 
 export interface ConnectorLike {
