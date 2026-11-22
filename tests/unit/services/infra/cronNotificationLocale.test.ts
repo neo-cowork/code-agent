@@ -42,7 +42,7 @@ function titles(): string[] {
   return notificationService.getRecentNotifications().map((entry) => entry.title);
 }
 
-describe('scheduled-task notification titles follow ui.language', () => {
+describe('scheduled-task notifications follow ui.language', () => {
   beforeEach(() => {
     process.env.CODE_AGENT_NOTIFICATION_DRY_RUN = '1';
     notificationService.clearRecentNotifications();
@@ -55,7 +55,7 @@ describe('scheduled-task notification titles follow ui.language', () => {
 
   it.each([
     ['zh', '任务完成 - [定时] Morning notes', '任务失败 - [定时] Morning notes'],
-    ['en', 'Task completed - [Scheduled] Morning notes', 'Task failed - [Scheduled] Morning notes'],
+    ['en', 'Task completed - [Schedule] Morning notes', 'Task failed - [Schedule] Morning notes'],
   ])('%s: notifyCronAgentExecution success + notifyCronJobDisabled', (lang, done, disabled) => {
     language.value = lang;
     notifyCronAgentExecution(definition, execution('completed'), new CronFailureNoticeGate());
@@ -71,8 +71,56 @@ describe('scheduled-task notification titles follow ui.language', () => {
       new CronFailureNoticeGate(),
     );
     const [title] = titles();
-    expect(title).toBe('Task failed - [Scheduled] Morning notes');
+    expect(title).toBe('Task failed - [Schedule] Morning notes');
     expect(parseScheduledJobName(title)).toBe('Morning notes');
+  });
+
+  describe.each([
+    {
+      lang: 'zh',
+      duration: '耗时: 2 秒',
+      success: '定时任务已完成',
+      failure: '定时任务失败：Provider unavailable',
+      unknownFailure: '定时任务失败：未知错误',
+      consecutive: '连续失败 5 次已自动停用。最后错误：Provider unavailable。可在「自动化中心 → 定时任务」重新启用。',
+      permanent: '因配置/鉴权类错误停用（重试无效）。错误：未知错误。修正配置后可在「自动化中心 → 定时任务」重新启用。',
+    },
+    {
+      lang: 'en',
+      duration: 'Duration: 2 sec',
+      success: 'Scheduled task completed',
+      failure: 'Scheduled task failed: Provider unavailable',
+      unknownFailure: 'Scheduled task failed: Unknown error',
+      consecutive: 'The task was disabled after 5 consecutive failures. Last error: Provider unavailable. '
+        + 'Re-enable it under Automation Center → Scheduled tasks.',
+      permanent: 'The task was disabled because of a configuration or authentication error. Error: Unknown error. '
+        + 'Fix the configuration, then re-enable it under Automation Center → Scheduled tasks.',
+    },
+  ])('$lang bodies', ({ lang, duration, success, failure, unknownFailure, consecutive, permanent }) => {
+    beforeEach(() => {
+      language.value = lang;
+    });
+
+    it('uses the localized success fallback', () => {
+      notifyCronAgentExecution(definition, execution('completed'), new CronFailureNoticeGate());
+      expect(notificationService.getRecentNotifications().at(-1)?.body).toBe(`${success} ${duration}`);
+    });
+
+    it.each([
+      { error: 'Provider unavailable', summary: failure },
+      { error: undefined, summary: unknownFailure },
+    ])('localizes the failure body for error=$error', ({ error, summary }) => {
+      notifyCronAgentExecution(definition, execution('failed', { error }), new CronFailureNoticeGate());
+      expect(notificationService.getRecentNotifications().at(-1)?.body).toBe(`${summary} ${duration}`);
+    });
+
+    it.each([
+      { reason: 'consecutive', error: 'Provider unavailable', summary: consecutive },
+      { reason: 'permanent', error: undefined, summary: permanent },
+    ] as const)('localizes the $reason disabled notice', ({ reason, error, summary }) => {
+      notifyCronJobDisabled(definition, execution('failed', { error }), reason);
+      expect(notificationService.getRecentNotifications().at(-1)?.body).toBe(`${summary} ${duration}`);
+    });
   });
 
   it('notifyTaskComplete shell and body lines: zh unchanged, en localized', () => {
@@ -94,6 +142,7 @@ describe('scheduled-task notification titles follow ui.language', () => {
 describe('parseScheduledJobName', () => {
   it.each([
     ['任务失败 - [定时] 整理邮件', '整理邮件'],
+    ['Task failed - [Schedule] Morning notes', 'Morning notes'],
     ['Task failed - [Scheduled] Morning notes', 'Morning notes'],
     ['[Scheduled] [Work] weekly report [v2]', '[Work] weekly report [v2]'],
     ['任务完成 - [定时] [日报] 汇总', '[日报] 汇总'],
