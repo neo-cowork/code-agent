@@ -403,6 +403,31 @@ describe('F4 切回重水化：streamSnapshot partial 合入与流式续接', ()
     expectSeparatedTurns();
   });
 
+  it('a later user row does not mark an active recovered reply as interrupted', async () => {
+    const snapshot = makeSnapshot();
+    const session = makeSession(snapshot);
+    session.messages.push({
+      id: 'redirect',
+      role: 'user',
+      content: 'Change the request',
+      timestamp: snapshot.timestamp + 1,
+      metadata: { runtimeSteer: true },
+    });
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({
+      success: true,
+      data: action === 'load' ? session : [],
+    }));
+
+    await useSessionStore.getState().switchSession('session-1');
+    const { messages } = useSessionStore.getState();
+    const [, original, redirected] = projectTurns(messages, 'session-1', true).turns;
+    expect(turnText(original)).toBe(snapshot.content);
+    expect(getTurnThinkingSegments(original).map((segment) => segment.text)).toEqual([snapshot.reasoning]);
+    expect(turnText(redirected)).toBe('');
+    expect(messages.find((message) => message.id === snapshot.turnId)?.metadata?.streamInterruptionReason)
+      .toBeUndefined();
+  });
+
   it('final snapshot 不合入（流已完整落库，DB 消息才是权威）', async () => {
     mockDomainInvoke.mockImplementation(async (domain: string, action: string) => {
       if (domain === IPC_DOMAINS.SESSION && action === 'load') {
