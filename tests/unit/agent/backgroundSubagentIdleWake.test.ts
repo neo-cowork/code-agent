@@ -13,6 +13,11 @@ const taskManagerMocks = vi.hoisted(() => ({
   startTask: vi.fn(),
   observeAgentEvents: vi.fn(),
 }));
+const recordStopNote = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/services/commandCenter/backgroundTaskStopNote', () => ({
+  recordBackgroundTaskStopNote: recordStopNote,
+}));
+
 const wakeNoteMocks = vi.hoisted(() => ({
   format: vi.fn((shortName: string, _reason: string) => `wake failed: ${shortName}`),
   record: vi.fn(),
@@ -273,6 +278,47 @@ describe('background subagent idle wake', () => {
     await vi.advanceTimersByTimeAsync(50);
 
     expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'max_iterations', title: '后台任务' });
+  });
+
+  it('uses the persisted stop note as the only report when a user-visible child fails', async () => {
+    const agentId = 'child-with-stop-note';
+    const sessionId = 'session-with-stop-note';
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    recordStopNote.mockClear();
+    const registry = getBackgroundSubagentRegistry();
+    registry.adopt(Promise.resolve({
+      success: false, error: 'Max iterations reached', toolsUsed: [], iterations: 1,
+    }), {
+      agentId, sessionId, completionKind: 'user_visible', onComplete: scheduleBackgroundSubagentIdleWake,
+    });
+    await registry.await(agentId);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(recordStopNote).toHaveBeenCalledExactlyOnceWith(
+      sessionId, expect.any(String), expect.any(String), expect.objectContaining({ taskId: agentId }),
+    );
+    expect(taskManagerMocks.startTask).not.toHaveBeenCalled();
+    expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
+  });
+
+  it.each([
+    { content: '   ', toolCalls: [] },
+    { content: 'Checking the result', toolCalls: [{ name: 'Read' }] },
+  ])('records a visible failure when a wake returns without a report (%j)', async (message) => {
+    const sessionId = 'wake-without-report';
+    const agentId = 'child-without-report';
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      observer(sessionId, { type: 'message', data: { role: 'assistant', ...message } });
+    });
+    await seedCompletion(agentId, sessionId);
+    scheduleBackgroundSubagentIdleWake(trigger(agentId, sessionId));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.record).toHaveBeenCalledExactlyOnceWith(
+      sessionId, 'wake failed: 后台任务', { taskId: agentId, reason: 'wake_failed', title: '后台任务' },
+    );
   });
 
   it.each([

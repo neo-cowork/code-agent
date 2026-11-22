@@ -192,6 +192,7 @@ export class BackgroundSubagentRegistry {
       status: 'running',
       startedAt,
       done,
+      ...(options.abort ? { abort: options.abort } : {}),
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       ...(options.runId ? { runId: options.runId } : {}),
       ...(options.treeId ? { treeId: options.treeId } : {}),
@@ -392,6 +393,8 @@ export class BackgroundSubagentRegistry {
           taskId: entry.agentId,
           kind: entry.result?.stopKind ?? (entry.result?.stopHint?.kind === 'step_cap' ? 'step_cap' : 'error'),
         });
+        // The conversation already has a closing note. Skip a second report for this detached assistant.
+        if (record.kind === 'user_visible' && !options.suppressIdleWake) return;
       } catch (error) { logger.warn('Failed to record background stop note', error); }
     }
     if (entry.status === 'failed' && entry.sessionId && (cancelled || entry.cancelRequested)) {
