@@ -736,7 +736,7 @@ function taskProgressHint(progress?: TaskProgressData | null, language: 'zh' | '
   const details: string[] = [];
   if (progress.toolTotal && progress.toolTotal > 1) {
     const index = Math.min((progress.toolIndex ?? 0) + 1, progress.toolTotal);
-    details.push(`第 ${index}/${progress.toolTotal} 个工具`);
+    details.push(language === 'en' ? `Action ${index} of ${progress.toolTotal}` : `第 ${index}/${progress.toolTotal} 项操作`);
   }
   const step = humanTaskStep(progress, language);
   if (step) details.unshift(step);

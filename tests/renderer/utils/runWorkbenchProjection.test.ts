@@ -906,6 +906,16 @@ describe('runWorkbenchProjection', () => {
       expect(phaseOf({ turnId: 't', phase: 'tool_running', tool: 'mystery_tool' }, 'en')).toBe('Working on it');
     });
 
+    it('多工具时的计数按界面语言，不带「工具」也不混入另一种语言', () => {
+      const progress = { turnId: 't', phase: 'tool_running', step: '正在同时执行 2 项操作', tool: 'calendar', toolIndex: 0, toolTotal: 2 } as const;
+      const zh = hintOf(progress, 'zh');
+      const en = hintOf({ ...progress, step: 'Running 2 actions at once' }, 'en');
+      expect(zh).toBe('正在同时执行 2 项操作 · 第 1/2 项操作');
+      expect(zh).not.toContain('工具');
+      expect(en).toBe('Running 2 actions at once · Action 1 of 2');
+      expect(en).not.toMatch(/[\u4e00-\u9fff]/);
+    });
+
     it('非工具阶段的 step 与已是人话的 step 原样返回', () => {
       expect(phaseOf({ turnId: 't', phase: 'generating', step: '回复完成', tool: 'calendar' })).toBe('回复完成');
       expect(phaseOf({ turnId: 't', phase: 'tool_running', step: '正在修复网页预览', tool: 'write' })).toBe('正在修复网页预览');
