@@ -318,3 +318,9 @@ N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME（A′，owner 10-17 拍板：foundatio
 3. **不自动 resume**。幸存行所属会话的 durable run 在启动 hydrate 时停靠成 `waiting + guard_halt`（复用 `replaceRecoveryProjection` 既有路径，不新增仓储方法），`listRecoverable` 的既有谓词把它挡在崩溃自动续跑之外（K2）；「继续」仍由用户手动触发，批准执行完**不**自动回 loop——run 停在那等用户决定。启动清算（`startupMaintenance` 的 orphan-toolcall-closure）跳过幸存 toolCall，不写 INTERRUPTED 占位去毒化它。
 
 K2 与修订二/三的停靠标记、等审批 `waiting` 认领、预算语义全部不变；`directory_access` / `channel_pairing` 仍 fail-closed 全拒。合同测试：`tests/unit/agent/parkedApprovalSurvival.hydrate.test.ts`（真实 SQLite + 假时钟 23h59m/24h01m + startupMaintenance→hydrate 链）、`tests/unit/agent/parkedApprovalResume.test.ts`（认领幂等/指纹拒绝/拒绝不执行）、`tests/unit/host/runtime/parkedApprovalDurableRunParking.test.ts`（guard_halt 停靠不进 listRecoverable）；真机档：`tests/e2e/recovery-matrix.spec.ts` 的 G 单元格（SIGKILL + 同数据目录重启 + 收件箱批准）。
+
+## 修订五（2026-11-22）：停靠的 mail_draft 续跑后，同一封草稿再问一次
+
+N-ENV-ASSIST-S3-RESUME-REST2-FU2（owner 拍板选 B：维持现状）：用户批准 `mail_draft`、Mail 自动化被拒（-1743）而停靠、授权后同一 run 自动续跑，模型重发同一封草稿时**会再弹一张批准卡**。原因：邮件草稿属于对外写副作用的连接器工具，分类器 C1 `connector_external_write` 带 `trustBoundary`，要求每次调用都重新确认，问用户之前的授权消费（`resolvePreAskGrant`）遇到这类硬门直接返回空。曾评估「同 run、参数完全一致、只用一次」的复用，因为要给这条信任边界开例外而否决。测试 `tests/unit/host/runtime/envResumeMail.test.ts` ⑤ 钉住两张卡。
+
+已知旁支问题：「本次任务内允许」这条绕行看起来也不管用——run 停靠时 `conversationRuntime.ts` 仍会调 `finalizeRun`，`runFinalizer.ts` 在其中 `clearToolRunGrants(sessionId)`，run 档授权随之清空。此结论只来自读代码，未做运行时验证。若 owner 日后要“只出一张卡”，另立 ADR 讨论信任边界例外；修复停靠清授权另立单。

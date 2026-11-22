@@ -119,7 +119,8 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
     process.stdout.write(`APPROVAL_PROMPTS reissued=${JSON.stringify(reissued)}\n`);
     expect(reissued?.success).toBe(true);
     process.stdout.write(`APPROVAL_CARDS ${JSON.stringify(f.approvalCards())}\n`);
-    // No automatic reuse exists for a one-time allow (allow_run/allow_24h are explicit user tiers): the user sees two cards for the one draft.
+    // Two cards on purpose: mail_draft is classified C1 connector_external_write with trustBoundary=true, which forces a fresh confirmation for every call.
+    // That makes resolvePreAskGrant return null (blocked), so a resumed identical call is asked again rather than reusing the parked approval.
     expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
   });
 });
