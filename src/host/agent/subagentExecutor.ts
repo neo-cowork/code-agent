@@ -24,6 +24,7 @@ import {
   getAgentMaxBudget,
 } from './agentDefinition';
 import { routeExternalSubagentExecution } from './subagentExecutionRouter';
+import { attachGuiTakeoverDisclosures } from './runtime/guiTakeoverDisclosure';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SubagentContextProjection } from './subagentContextProjection';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
@@ -383,6 +384,7 @@ export class SubagentExecutor {
     const { toolDefinitions, supportsTool } = buildSubagentToolTable(config.name, context.modelConfig, surface);
 
     const subagentContextStore = getSubagentContextStore();
+    const disclosedApps = new Set<string>();
     // Parallel/Team callers provide a stable composite execution identity.
     // Keep the pipeline's internal random id private to the pipeline registry;
     // user-facing events, tool calls, approvals and results must stay in the
@@ -737,7 +739,7 @@ export class SubagentExecutor {
             timestamp: Date.now(),
           });
 
-          for (const [toolIndex, toolCall] of response.toolCalls.entries()) {
+          for (const [toolIndex, toolCall] of assistantToolCalls.entries()) {
             if (maxToolCalls !== undefined && toolCallsAttempted >= maxToolCalls) {
               const error = `Tool call blocked by tool policy: maxToolCalls=${maxToolCalls}, attempted ${toolCall.name}`;
               logger.warn(`[${config.name}] ${error}`);
@@ -882,8 +884,11 @@ export class SubagentExecutor {
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
-            // 发射 subagent 工具调用开始事件
+            await attachGuiTakeoverDisclosures(disclosedApps, [toolCall]);
             turnObservability.emitToolCallStart(toolCall);
+            if (toolCall.guiTakeoverDisclosure) emitContextSnapshot([...messages, createRuntimeMessage({
+              role: 'assistant', content: '', toolCalls: assistantToolCalls.slice(0, toolIndex + 1),
+            })]);
 
             const toolStartTime = Date.now();
             const workspaceMutationSnapshot = await turnObservability.beginTool(toolCall.name);

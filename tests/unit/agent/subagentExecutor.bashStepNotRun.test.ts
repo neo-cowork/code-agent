@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Message, ToolCall, ToolResult } from '../../../src/shared/contract';
+import type { SubagentExecutionContext } from '../../../src/host/agent/subagentExecutorTypes';
+
 const contextStoreHolder = vi.hoisted(() => ({ instance: undefined as unknown }));
 
 vi.mock('../../../src/host/context/subagentContextStore', async (importOriginal) => {
@@ -37,7 +40,8 @@ const mocks = vi.hoisted(() => {
     recordToolUsage: vi.fn(),
   };
   const toolOutcomes = new Map<string, 'ran' | 'denied'>();
-  return { responses, inference, pipeline, pipelineContext, toolOutcomes };
+  const requestApproval = vi.fn(async (_id: string) => true);
+  return { responses, inference, pipeline, pipelineContext, toolOutcomes, requestApproval };
 });
 
 vi.mock('../../../src/host/model/modelRouter', () => ({
@@ -62,7 +66,7 @@ vi.mock('../../../src/host/agent/subagentToolRuntime', () => ({
   createSubagentToolRuntime: () => ({
     executor: {
       execute: vi.fn(async (_name: string, _args: unknown, options: { currentToolCallId?: string }) => (
-        mocks.toolOutcomes.get(options.currentToolCallId ?? '') === 'denied'
+        !(await mocks.requestApproval(options.currentToolCallId ?? '')) || mocks.toolOutcomes.get(options.currentToolCallId ?? '') === 'denied'
           ? { success: false, error: 'Permission denied by user.', metadata: { failureCode: 'PERMISSION_DENIED', hostReason: { code: 'PERMISSION_DENIED_BY_USER', modelText: 'Permission denied by user.' } } }
           : { success: true, output: 'ok' }
       )),
@@ -193,6 +197,17 @@ vi.mock('../../../src/host/agent/backgroundSubagentRegistry', () => ({
   }),
 }));
 
+vi.mock('../../../src/host/mcp/mcpClient', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/mcp/mcpClient')>(),
+  getMCPClient: () => ({
+    callTool: async () => ({
+      success: true,
+      output: '',
+      metadata: { mcpStructuredContent: { apps: [{ pid: 123, name: 'Keynote', bundle_id: 'com.apple.iWork.Keynote' }] } },
+    }),
+  }),
+}));
+
 import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
 import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 import { getSubagentContextStore } from '../../../src/host/context/subagentContextStore';
@@ -209,6 +224,7 @@ describe('subagent Bash steps carry callId and notRun (executor snapshot == agen
     mocks.responses.length = 0;
     mocks.toolOutcomes.clear();
     vi.clearAllMocks();
+    mocks.requestApproval.mockReset().mockResolvedValue(true);
     process.env.CODE_AGENT_MODEL_ENGINE = 'legacy';
   });
   afterEach(() => {
@@ -252,5 +268,124 @@ describe('subagent Bash steps carry callId and notRun (executor snapshot == agen
     expect(marks(tree.nodes[0]?.bashSteps)).toEqual(expected);
     expect(tree.nodes[0]?.lastToolStep).toMatchObject({ tool: 'Bash', callId: 'b2' });
     expect(tree.nodes[0]?.lastToolStep?.notRun).toBeUndefined();
+  });
+});
+
+
+const bashKeynote = bashCall(
+  'bash-keynote',
+  `osascript -e 'tell application "System Events" to tell process "Keynote" to keystroke "1"'`,
+  'Edit the slide title',
+);
+const cuaKeynote = { id: 'cua-keynote', name: 'mcp__cua-driver__click', arguments: { pid: 123, x: 100, y: 200 } };
+const numbers = bashCall('numbers', `osascript -e 'tell application "Numbers" to activate'`, 'Open the spreadsheet');
+const connector = { id: 'connector', name: 'tmeetMeetingListUpcoming', arguments: {} };
+const metadata = { id: 'metadata', name: 'mcp__cua-driver__list_apps', arguments: {} };
+const keynote = { code: 'gui_takeover', app: 'Keynote' };
+const usage = { inputTokens: 1, outputTokens: 1 };
+
+function callsIn(messages: Message[] | undefined): ToolCall[] {
+  return messages?.flatMap((message) => message.toolCalls ?? []) ?? [];
+}
+
+describe('member GUI disclosures through SubagentExecutor.execute', () => {
+  beforeEach(() => {
+    mocks.responses.length = 0;
+    mocks.toolOutcomes.clear();
+    mocks.requestApproval.mockReset().mockResolvedValue(true);
+    vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    { first: cuaKeynote, second: bashKeynote },
+    { first: bashKeynote, second: cuaKeynote },
+  ])('publishes $first.id before approval and retains it across later actions', async ({ first, second }) => {
+    const timeline: string[] = [];
+    const starts: ToolCall[] = [];
+    const ends: ToolResult[] = [];
+    const agentId = `member-${first.id}`;
+    const readRecord = () => getSubagentContextStore().list(SESSION).find((record) => record.agentId === agentId);
+    const permission: SubagentExecutionContext['permission'] = {
+      request: vi.fn(async (request) => {
+        const id = String(request.details.callId);
+        timeline.push(`approval:${id}`);
+        if (id === first.id) {
+          expect(callsIn(readRecord()?.messages).find((call) => call.id === id)?.guiTakeoverDisclosure).toEqual(keynote);
+        }
+        return id !== second.id;
+      }),
+    };
+    mocks.requestApproval.mockImplementation((callId) => permission.request({
+      type: 'command', tool: 'Bash', details: { callId },
+    }) as Promise<boolean>);
+
+    const executor = new SubagentExecutor();
+    const tools = [first, second, numbers, connector, metadata];
+    const run = (batches: ToolCall[][]) => {
+      mocks.responses.push(
+        ...batches.map((toolCalls) => ({ type: 'tool_use', content: '', toolCalls, usage })),
+        { type: 'text', content: 'Finished', usage },
+      );
+      return executor.execute({
+        prompt: 'Edit the Keynote deck',
+        config: { name: 'slides', systemPrompt: 'Edit slides', availableTools: tools.map((call) => call.name), maxIterations: 5 },
+        context: {
+          sessionId: SESSION,
+          executionAgentId: agentId,
+          cwd: '/tmp/work',
+          modelConfig: { provider: 'test', model: 'test-model' },
+          resolver: { getDefinition: (name: string) => ({ name, description: name, inputSchema: { type: 'object' as const }, outputSchema: { type: 'object' as const }, requiresPermission: false, permissionLevel: 'read' as const }) },
+          permission,
+          events: {
+            emit(event: string, data: unknown) {
+              if (event === 'tool_call_start') {
+                starts.push(data as ToolCall);
+                timeline.push(`start:${(data as ToolCall).id}`);
+              }
+              if (event === 'tool_call_end') ends.push(data as ToolResult);
+            },
+          },
+          abortSignal: new AbortController().signal,
+        },
+      } as never);
+    };
+
+    const expected = [{ app: 'Keynote', callId: first.id }, { app: 'Numbers', callId: numbers.id }];
+    expect(await run([[first, second], [numbers, connector, metadata]])).toMatchObject({ success: true });
+    const record = readRecord();
+    const persisted = callsIn(record?.messages);
+    console.info(JSON.stringify({
+      start: starts[0], persistedToolCall: persisted[0], guiDisclosures: record?.snapshot?.guiDisclosures,
+    }));
+    expect(starts[0]?.guiTakeoverDisclosure).toEqual(keynote);
+    expect(persisted[0]?.guiTakeoverDisclosure).toEqual(keynote);
+    expect(record?.snapshot?.guiDisclosures).toEqual(expected);
+    for (const calls of [starts, persisted]) {
+      expect(calls.find((call) => call.id === second.id)?.guiTakeoverDisclosure).toBeUndefined();
+      expect(calls.find((call) => call.id === numbers.id)?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Numbers' });
+      for (const id of [connector.id, metadata.id]) {
+        expect(calls.find((call) => call.id === id)).toMatchObject({ id });
+        expect(calls.find((call) => call.id === id)?.guiTakeoverDisclosure).toBeUndefined();
+      }
+    }
+    for (const id of [first.id, second.id]) {
+      expect(timeline.indexOf(`start:${id}`)).toBeGreaterThanOrEqual(0);
+      expect(timeline.indexOf(`start:${id}`)).toBeLessThan(timeline.indexOf(`approval:${id}`));
+    }
+    expect(ends).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolCallId: first.id, success: true }),
+      expect.objectContaining({ toolCallId: second.id, success: false }),
+    ]));
+    const tree = buildAgentTreeSnapshot({
+      now: Date.now(), sessionId: SESSION, contextRecords: record ? [record] : [],
+      spawnAgents: [], parallelTasks: [], backgroundAgents: [], worktrees: [], ownershipConflicts: [],
+    });
+    expect(tree.nodes[0]?.guiDisclosures).toEqual(expected);
+
+    starts.length = 0;
+    expect(await run([[first]])).toMatchObject({ success: true });
+    expect(starts[0]?.guiTakeoverDisclosure).toEqual(keynote);
+    expect(readRecord()?.snapshot?.guiDisclosures).toEqual([expected[0]]);
   });
 });

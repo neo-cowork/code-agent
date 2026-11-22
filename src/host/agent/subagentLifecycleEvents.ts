@@ -1,4 +1,5 @@
 import { generateMessageId } from '../../shared/utils/id';
+import type { ToolCall } from '../../shared/contract';
 import type { SubagentEventPort } from './subagentExecutorTypes';
 
 export type SubagentRunEndStatus = 'completed' | 'cancelled' | 'failed';
@@ -78,7 +79,7 @@ export function createSubagentEventScope(input: {
   return {
     identity,
     ...lifecycle,
-    emitToolCallStart(toolCall: { id: string; name: string; arguments: Record<string, unknown> }): void {
+    emitToolCallStart(toolCall: ToolCall): void {
       input.events.emit('tool_call_start', { ...toolCall, ...identity });
     },
     emitToolCallEnd(
