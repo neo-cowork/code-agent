@@ -4,7 +4,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 
 const OFFICE_EXTENSIONS = new Set(['.docx', '.xlsx', '.pptx']);
-const SKIP_DIRS = new Set(['node_modules', '.git']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'site-packages', 'venv', '.venv']);
 const MAX_DEPTH = 3;
 const MAX_FILES = 20;
 
@@ -18,6 +18,8 @@ async function walk(dir: string, depth: number, out: OfficeSnapshot): Promise<vo
   } catch {
     return;
   }
+  // A Python package directory (pip install --target) ships template .docx files that are not deliverables.
+  if (entries.some((entry) => entry.name === '__init__.py')) return;
   for (const entry of entries) {
     if (out.size >= MAX_FILES) return;
     const full = path.join(dir, entry.name);

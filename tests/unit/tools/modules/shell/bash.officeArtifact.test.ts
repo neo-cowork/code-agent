@@ -86,6 +86,17 @@ d.Packer.toBuffer(new d.Document({sections:[{children:[new d.Paragraph('minutes'
     expect(docx?.sha256).toBeTruthy();
   });
 
+  it('ignores template docx files that a pip-installed Python package drops in the folder', async () => {
+    const result = await runScript(
+      `mkdir -p pylibs/docx/templates && touch pylibs/docx/__init__.py && echo x > pylibs/docx/templates/default.docx && echo y > real.docx`,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const paths = collectToolArtifactsFromMetadata(result.meta as Record<string, unknown>).map((a) => a.path);
+    expect(paths.some((p) => p?.endsWith('real.docx'))).toBe(true);
+    expect(paths.some((p) => p?.endsWith('default.docx'))).toBe(false);
+  });
+
   it('does not report pre-existing unchanged office files or ones in node_modules', async () => {
     writeFileSync(join(dir, 'old.docx'), 'x');
     mkdirSync(join(dir, 'node_modules'));
