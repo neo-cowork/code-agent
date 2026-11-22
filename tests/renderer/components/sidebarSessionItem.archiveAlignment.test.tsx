@@ -102,6 +102,24 @@ describe('SidebarSessionItem 归档按钮双轴几何', () => {
       { waitUntil: 'networkidle' },
     );
 
+    // networkidle can return before the Tailwind stylesheet is compiled/applied under load;
+    // never measure an unstyled DOM.
+    try {
+      await page.waitForFunction(
+        `(() => {
+          const button = document.querySelector('[data-session-id="row-archive"] button');
+          return !!button && getComputedStyle(button.parentElement).position === 'absolute';
+        })()`,
+        undefined,
+        { timeout: 15_000 },
+      );
+    } catch (error) {
+      throw new Error(
+        `archive alignment fixture: global.css (Tailwind) was not applied within 15s; refusing to measure an unstyled DOM (${(error as Error).message})`,
+        { cause: error },
+      );
+    }
+
     const screenshotDir = process.env.ARCHIVE_ALIGNMENT_SCREENSHOT_DIR;
     if (screenshotDir) {
       await mkdir(screenshotDir, { recursive: true });
