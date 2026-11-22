@@ -184,6 +184,20 @@ describe('native office connector lazy status', () => {
     }
   });
 
+  it.runIf(process.platform === 'darwin')('ready status (with and without accounts) carries a code and no prose', async () => {
+    for (const connector of [mailConnector, remindersConnector]) {
+      for (const output of ['Work\nPersonal', '']) {
+        osascriptMocks.runAppleScript.mockResolvedValueOnce(output);
+        await connector.execute('probe_access', {});
+        const status = await connector.getStatus();
+        expect(status).toMatchObject({ readiness: 'ready', detailCode: 'ready', noAccessibleItems: output === '' });
+        expect(status.detail).toBeUndefined();
+        expect(status.error).toBeUndefined();
+        expect(JSON.stringify(status)).not.toMatch(/[\u3400-\u9fff]/);
+      }
+    }
+  });
+
   it.runIf(process.platform === 'darwin')('maps every failure shape to a stable detailCode with no prose in detail/error', async () => {
     const cases: Array<[unknown, string, string | undefined]> = [
       [Object.assign(new Error('Command failed: osascript\n(-1743)'), { stderr: '(-1743)' }), 'automation_not_authorized', 'not_authorized'],
