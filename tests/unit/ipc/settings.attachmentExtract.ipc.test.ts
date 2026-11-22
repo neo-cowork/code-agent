@@ -139,7 +139,11 @@ describe('extract-pdf-text：工具拒文件 → reject；工具缺失 → read_
   it('pdftotext 进程级失败（signal 杀死 code=null / maxBuffer）→ 继续回落 read_pdf stub', async () => {
     const sigkill = Object.assign(new Error('Command was killed'), { code: null, signal: 'SIGABRT' });
     const maxBuffer = Object.assign(new Error('maxBuffer exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' });
-    mockExecFile((file) => (file === '/opt/homebrew/bin/pdftotext' ? { error: sigkill } : { error: file === '/usr/local/bin/pdftotext' ? { error: maxBuffer } : ENOENT(file) }));
+    mockExecFile((file) => {
+      if (file === '/opt/homebrew/bin/pdftotext') return { error: sigkill };
+      if (file === '/usr/local/bin/pdftotext') return { error: maxBuffer };
+      return { error: ENOENT(file) };
+    });
 
     const result = await handler('extract-pdf-text')(null, '/tmp/ok.pdf') as { text: string };
     expect(result.text).toContain('read_pdf');
