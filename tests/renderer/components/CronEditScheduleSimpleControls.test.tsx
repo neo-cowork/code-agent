@@ -91,13 +91,22 @@ describe('编辑调度：与创建页同款控件', () => {
     expect(screen.getByText('周三')).toBeTruthy();
   });
 
-  it('自定义表达式保留 Cron 输入框 + 说明 + 预览，没有时分下拉', () => {
+  it('自定义表达式保留 Cron 输入框 + 说明 + 可读预览（不回显原表达式），没有时分下拉', () => {
     open('*/15 9-17 * * 1-5');
     expect(screen.getByDisplayValue('*/15 9-17 * * 1-5')).toBeTruthy();
     expect(screen.queryByTestId('cron-editor-time')).toBeNull();
     expect(screen.getByTestId('cron-custom-hint')).toBeTruthy();
-    expect(screen.getByTestId('cron-custom-preview').textContent).toContain('执行时间说明');
+    const preview = screen.getByTestId('cron-custom-preview').textContent ?? '';
+    expect(preview).toContain('执行时间说明：工作日 09:00–17:59 每 15 分钟');
+    expect(preview).not.toContain('*/15');
     expect(screen.queryByTestId('cron-back-simple')).toBeNull();
+  });
+
+  it('英文自定义预览是一句人话', () => {
+    open('*/15 9-17 * * 1-5', 'en');
+    const preview = screen.getByTestId('cron-custom-preview').textContent ?? '';
+    expect(preview).toContain('Runs: Every 15 minutes, 09:00–17:59, Mon–Fri');
+    expect(preview).not.toContain('*/15');
   });
 
   it('点「使用自定义 Cron 表达式」不改写表达式，再点返回回到下拉', () => {
