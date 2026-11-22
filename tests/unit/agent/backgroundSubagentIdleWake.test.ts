@@ -287,7 +287,7 @@ describe('background subagent idle wake', () => {
     recordStopNote.mockClear();
     const registry = getBackgroundSubagentRegistry();
     registry.adopt(Promise.resolve({
-      success: false, error: 'Max iterations reached', toolsUsed: [], iterations: 1,
+      success: false, output: '', error: 'Max iterations reached', toolsUsed: [], iterations: 1,
     }), {
       agentId, sessionId, completionKind: 'user_visible', onComplete: scheduleBackgroundSubagentIdleWake,
     });
