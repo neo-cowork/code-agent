@@ -451,6 +451,7 @@ export function useRunWorkbenchModel(): RunWorkbenchModel {
       sessionTasks,
       todos: statusRail.todos.items,
       taskProgress,
+      language: language === 'en' ? 'en' : 'zh',
     });
     const ledgerTasks = buildLedgerTaskRecords(backgroundTasks, currentSessionId);
     const workflowTask = buildWorkflowTaskRecord(workflowSnapshot);

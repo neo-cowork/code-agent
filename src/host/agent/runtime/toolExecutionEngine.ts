@@ -37,6 +37,7 @@ import { isAbsolute, resolve as resolvePath } from 'node:path';
 // Import refactored modules
 import type { AgentLoopConfig } from '../../agent/loopTypes';
 import { classifyToolCalls, executeOrderedSegments, toolBatchLabel } from '../../agent/toolExecution/parallelStrategy';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { trimIdentifierArgs } from '../../tools/trimIdentifierArgs';
 import { validateToolArgs, formatSchemaForModel } from './toolArgsValidator';
@@ -265,7 +266,7 @@ export class ToolExecutionEngine {
         getToolSearchService().markToolCalled(entry.toolCall.name, this.ctx.sessionId);
         const parallel = batchSize > 1;
         this.runFinalizer.emitTaskProgress('tool_running', toolBatchLabel(
-          entry.toolCall.name, batchSize, this.ctx.turn.researchModeActive,
+          entry.toolCall.name, batchSize, this.ctx.turn.researchModeActive, getHostUiLocale(),
         ), {
           tool: entry.toolCall.name,
           toolIndex: entry.index,
