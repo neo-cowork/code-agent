@@ -302,6 +302,9 @@ export const enSettingsSystem = {
       desktopOnlyFeature: 'Some features are only available in the desktop app',
       desktopOnlyLabel: '(desktop app)',
       channelsManageDesktopOnly: 'The web app can only view channel accounts and their status. To add, connect/disconnect, edit or delete them, use the desktop Agent Neo app.',
+      modelManageDesktopOnly: 'The web app can only view model services. To add one, save changes or test a connection, use the desktop Agent Neo app.',
+      taskStrategyDesktopOnly: 'The web app can only view the task-based model switching settings. To change them, use the desktop Agent Neo app.',
+      engineManageDesktopOnly: 'The web app can only view execution engines. To switch engines or change the default model, use the desktop Agent Neo app.',
     },
     nativeDesktop: {
       meetingAppNames: [

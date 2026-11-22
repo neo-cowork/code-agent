@@ -12,6 +12,7 @@ import { PROVIDER_MODELS } from '@shared/constants';
 import { buildRuntimeModelOptions, isRuntimeProviderAvailable } from '@shared/modelRuntime';
 import { Button, Select, Toggle } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
+import { isWebMode } from '../../../../utils/platform';
 import { modelKeyOptionLabel } from './modelKeyOptionLabel';
 import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../../../i18n/providerDisplay';
@@ -177,6 +178,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     });
   };
 
+  const webNote = isWebMode() ? t.settings.webModeBanner.taskStrategyDesktopOnly : undefined;
   const selectedOptionSet = new Set(modelOptions.map((option) => optionValue(option.provider, option.model)));
   // 记忆整理不自愈（用户显式选过的路由不静默改写），但要说清原因并给一键回到跟随快速模型。
   const memoryRouteUnavailable = Boolean(memoryRoute && !selectedOptionSet.has(optionValue(memoryRoute.provider, memoryRoute.model)));
@@ -197,9 +199,11 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           checked={strategy.mode === 'auto'}
           onChange={(checked) => patchStrategy({ mode: checked ? 'auto' : 'manual' })}
           disabled={disabled}
+          title={webNote}
           aria-label={strategyText.toggleAriaLabel}
         />
       </label>
+      {webNote ? <p className="text-xs text-zinc-500">{webNote}</p> : null}
 
       {strategy.mode === 'auto' && (
         <div className="grid gap-2 sm:grid-cols-2">
@@ -225,6 +229,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
                     if (parsed) patchProfile(profile, parsed);
                   }}
                   disabled={disabled}
+                  title={webNote}
                   className="w-full"
                 >
                   {unavailable ? <option value={value}>{optionLabel(slot.provider, slot.model, modelLabel(slot.provider, slot.model))}{strategyText.unavailableSuffix}</option> : null}
@@ -262,6 +267,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
               if (parsed) onMemoryRouteChange(parsed);
             }}
             disabled={disabled}
+            title={webNote}
             className="w-full"
             aria-label={strategyText.memory.label}
           >
@@ -284,7 +290,7 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
           {memoryRouteUnavailable ? (
             <div data-testid="memory-route-unavailable" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-badge-warning/30 bg-badge-warning px-2.5 py-2">
               <p className="min-w-0 flex-1 text-xs text-badge-warning">{strategyText.memory.unavailableHint}</p>
-              <Button size="sm" variant="secondary" onClick={() => onMemoryRouteChange(null)} disabled={disabled}>
+              <Button size="sm" variant="secondary" onClick={() => onMemoryRouteChange(null)} disabled={disabled} title={webNote}>
                 {strategyText.memory.resetToFollowFast}
               </Button>
             </div>
