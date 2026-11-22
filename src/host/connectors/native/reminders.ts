@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
-import { appleScriptFailureLogDetail, probeFailureDetailCode } from './appleScriptFailure';
+import { appleScriptFailureLogDetail, isAppleScriptFailure, probeFailureDetailCode } from './appleScriptFailure';
 import { createLogger } from '../../services/infra/logger';
 import {
   buildAppleScriptDateVar,
@@ -66,7 +66,9 @@ async function readWithPermissionStatus<T>(read: () => Promise<T>): Promise<T> {
   try {
     return await read();
   } catch (error) {
-    if (probeFailureDetailCode(error, 'Reminders') === 'automation_not_authorized') markRemindersReadFailed(error);
+    if (isAppleScriptFailure(error) && probeFailureDetailCode(error, 'Reminders') === 'automation_not_authorized') {
+      markRemindersReadFailed(error);
+    }
     throw error;
   }
 }
