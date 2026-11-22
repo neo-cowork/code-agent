@@ -7,7 +7,7 @@
 // ============================================================================
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { en } from '../../../src/renderer/i18n/en';
 
@@ -26,7 +26,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({ pickNativeFile: vi.fn() }));
 vi.mock('../../../src/renderer/utils/platform', () => ({
   isTauriMode: () => false,
-  isWebMode: () => true,
+  isWebMode: () => false,
 }));
 
 import { MemoryTab } from '../../../src/renderer/components/features/settings/tabs/MemoryTab';
@@ -44,25 +44,31 @@ afterEach(() => {
 });
 
 function installMemoryIpc(file: Record<string, unknown>) {
-  invokeDomain.mockImplementation((_domain: string, action: string) => {
+  invokeDomain.mockImplementation((_domain: string, action: string, payload?: { filename?: string }) => {
     if (action === 'lightList') return Promise.resolve([file]);
     if (action === 'lightStats') return Promise.resolve(undefined);
+    if (action === 'lightDelete') return Promise.resolve(true);
+    void payload;
     return Promise.resolve(undefined);
   });
+}
+
+function makeLightFile(lang: 'zh' | 'en') {
+  return {
+    filename: 'memory-abc.md',
+    name: lang === 'zh' ? '周报写作偏好' : 'Weekly Report Style',
+    description: lang === 'zh' ? '记录周报的写作偏好' : 'How weekly reports should be written',
+    type: 'user',
+    content: lang === 'zh' ? '周报尽量简短。' : 'Keep weekly reports short.',
+    updatedAt: '2026-11-01T08:00:00.000Z',
+  };
 }
 
 describe.each(['zh', 'en'] as const)('记忆列表不外露内部文件名（%s）', (lang) => {
   it('列表行与详情头部都只显示人读名称，无 memory-abc.md', async () => {
     state.lang = lang;
     const t = lang === 'zh' ? zh : en;
-    const lightFile = {
-      filename: 'memory-abc.md',
-      name: lang === 'zh' ? '周报写作偏好' : 'Weekly Report Style',
-      description: lang === 'zh' ? '记录周报的写作偏好' : 'How weekly reports should be written',
-      type: 'user',
-      content: lang === 'zh' ? '周报尽量简短。' : 'Keep weekly reports short.',
-      updatedAt: '2026-11-01T08:00:00.000Z',
-    };
+    const lightFile = makeLightFile(lang);
     installMemoryIpc(lightFile);
     render(<MemoryTab />);
 
@@ -89,5 +95,28 @@ describe.each(['zh', 'en'] as const)('记忆列表不外露内部文件名（%s�
     expect(headerText).not.toContain('memory-abc');
     // 整页可见文本兜底：内部文件名不出现在列表、详情、诊断等任何一处
     expect(document.body.textContent).not.toContain('memory-abc');
+  });
+
+  it('归档成功提示展示人读名称；归档请求仍用内部文件名', async () => {
+    state.lang = lang;
+    const t = lang === 'zh' ? zh : en;
+    const lightFile = makeLightFile(lang);
+    installMemoryIpc(lightFile);
+    render(<MemoryTab />);
+
+    const row = await screen.findByTestId('memory-file-row');
+    fireEvent.click(within(row).getByRole('button', { name: t.settings.memory.files.delete }));
+    const dialog = await screen.findByRole('dialog', { name: t.settings.memory.files.archiveConfirmTitle });
+    fireEvent.click(within(dialog).getByRole('button', { name: t.settings.memory.files.delete }));
+
+    // 提示条：人读名称，不是内部文件名（web 构建里此路径被产品规则禁用，故在组件层验证）
+    const toast = await screen.findByText(
+      (_, el) => el?.tagName === 'SPAN' && el.textContent === `${t.settings.memory.files.deleteSuccessPrefix}${lightFile.name}`,
+    );
+    expect(toast.textContent).not.toContain('memory-abc');
+    expect(document.body.textContent).not.toContain('memory-abc');
+    // 删除请求本身仍按内部文件名发送（身份逻辑不变）
+    const deleteCall = invokeDomain.mock.calls.find(([, action]) => action === 'lightDelete');
+    expect((deleteCall?.[2] as { filename?: string }).filename).toBe('memory-abc.md');
   });
 });
