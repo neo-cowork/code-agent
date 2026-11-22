@@ -238,10 +238,17 @@ describe('environment notices through the production tool_call_end path', () => 
     const contractFailure = protoFailure(moduleResult);
     expect(contractFailure.metadata.code).toBe('not_authorized');
     const { ctx, engine } = makeEngine(vi.fn(async () => ({ toolCallId: '', ...contractFailure })));
-    await engine.executeToolsWithHooks([{ id: `${tool}-1`, name: tool, arguments: args }]);
+    const first = await engine.executeToolsWithHooks([{ id: `${tool}-1`, name: tool, arguments: args }]);
     // 同 run 重试（模型再点一次工具）：仍只发一张卡、一个持久化 id。
-    await engine.executeToolsWithHooks([{ id: `${tool}-2`, name: tool, arguments: args }]);
+    const second = await engine.executeToolsWithHooks([{ id: `${tool}-2`, name: tool, arguments: args }]);
     const notices = events(ctx).filter((e) => e.type === 'env_assist_notice');
+    if (blocker === null) {
+      expect(notices).toHaveLength(0);
+      expect(serviceMocks.messages).toHaveLength(0);
+      expect(first[0].error).toContain('Capability Hub > Connectors, action: Check');
+      expect(second[0].error).toBe(first[0].error);
+      return;
+    }
     expect(notices).toHaveLength(1);
     expect(new Set(notices.map((e) => e.data.id)).size).toBe(1);
     expect(notices[0].data).toMatchObject({ class: blocker, target: { id: target } });
