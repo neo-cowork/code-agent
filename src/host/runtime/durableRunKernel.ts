@@ -16,6 +16,7 @@ import {
   getRunInterruptCause,
   MAX_AUTO_RESUME_COUNT,
 } from '../../shared/contract/durableRun';
+import { isEnvBlockerClass } from '../../shared/contract/envAssist';
 import type {
   DurableRunStores,
   RunEventAppend,
@@ -24,6 +25,7 @@ import type {
 } from './durableRunStores';
 import { canClaimOrphanedCliLease, isAbandonedCliProcess } from './cliOrphanLease';
 import { createKeyedSerializer } from './keyedSerializer';
+import type { NativeRecoveryDescriptor } from './nativeRecoveryHost';
 
 export class DurableRunPersistenceUnavailableError extends Error {
   readonly code = 'DURABLE_RUN_PERSISTENCE_UNAVAILABLE';
@@ -465,6 +467,25 @@ export class DurableRunKernel implements RunKernelAdapter {
       });
       if (!claimed) continue;
 
+      const envBlocked = pendingEnvResume(envelope, checkpoint);
+      if (envBlocked && !pendingBeforeClaim.some((operation) => operation.kind === 'approval' && operation.status === 'waiting')) {
+        // The old tool may already be settled. Start the same environment
+        // continuation on session return, with its original operations intact.
+        const parkedCheckpoint = await this.checkpoint({
+          runId: envelope.runId, attempt: claimed.attempt.attempt, owner: claimed.owner,
+          now, status: 'waiting', state: checkpoint?.state, engineCursor: checkpoint?.cursor.engineCursor,
+          pendingOperations: pendingBeforeClaim, childRuns, interruptCause: 'env_blocked', envBlocked,
+          events: [{ type: 'run_interrupted', payload: { cause: 'env_blocked', envBlocked }, recordedAt: now }],
+        });
+        const parkedEnvelope = await stores.get(envelope.runId);
+        if (!parkedEnvelope) throw new Error(`Missing re-parked run ${envelope.runId}`);
+        plans.push({
+          envelope: parkedEnvelope, previousAttempt, checkpoint: parkedCheckpoint,
+          pendingOperations: pendingBeforeClaim, childRuns, requiresHumanConfirmation: [], resumeBlocked: true,
+        });
+        continue;
+      }
+
       const pendingOperations = pendingBeforeClaim.map((operation) =>
         classifyOperationForRecovery(operation, claimed.attempt.attempt, now));
       const requiresHumanConfirmation = pendingOperations.filter((operation) =>
@@ -545,6 +566,13 @@ export class DurableRunKernel implements RunKernelAdapter {
     if (!this.stores) throw new DurableRunPersistenceUnavailableError();
     return this.stores;
   }
+}
+
+function pendingEnvResume(envelope: RunEnvelope, checkpoint: RunCheckpoint | null): RunEnvelope['envBlocked'] {
+  if (envelope.engine.kind !== 'native' || envelope.status === 'waiting' || checkpoint?.status !== 'running') return;
+  const note = (checkpoint.state as Partial<NativeRecoveryDescriptor> | null)?.envResumePending;
+  if (note && isEnvBlockerClass(note.class) && typeof note.target === 'string' && note.target.trim()
+    && typeof note.toolCallId === 'string' && note.toolCallId.trim()) return note;
 }
 
 /** listParkedForReclaim 只会带出 crash_or_quit 的预算耗尽行（running/recovering），停靠时改记 budget_exhausted；显式停靠原因原样保留。 */

@@ -54,6 +54,23 @@ function markRemindersReadReady(noAccessibleLists = false): void {
   remindersProbeListEmpty = noAccessibleLists;
 }
 
+function markRemindersReadFailed(error: unknown): void {
+  remindersReadiness = 'failed';
+  remindersProbeCheckedAt = Date.now();
+  remindersProbeDetailCode = probeFailureDetailCode(error, 'Reminders');
+  remindersProbeErrorCode = remindersProbeDetailCode === 'automation_not_authorized' ? 'not_authorized' : undefined;
+  logger.warn('Reminders access failed', { detail: appleScriptFailureLogDetail(error) });
+}
+
+async function readWithPermissionStatus<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (probeFailureDetailCode(error, 'Reminders') === 'automation_not_authorized') markRemindersReadFailed(error);
+    throw error;
+  }
+}
+
 function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
 }
@@ -148,11 +165,7 @@ async function probeRemindersAccess(): Promise<string[]> {
     markRemindersReadReady(lists.length === 0);
     return lists;
   } catch (error) {
-    remindersReadiness = 'failed';
-    remindersProbeCheckedAt = Date.now();
-    remindersProbeDetailCode = probeFailureDetailCode(error, 'Reminders');
-    logger.warn('Reminders access probe failed', { detail: appleScriptFailureLogDetail(error) });
-    remindersProbeErrorCode = remindersProbeDetailCode === 'automation_not_authorized' ? 'not_authorized' : undefined;
+    markRemindersReadFailed(error);
     throw error;
   }
 }
@@ -468,7 +481,7 @@ export const remindersConnector: Connector = {
           summary: action === 'disconnect' ? 'Reminders connector 已断开。' : 'Reminders connector 已移除。',
         };
       case 'list_lists': {
-        const lists = await listReminderLists();
+        const lists = await readWithPermissionStatus(listReminderLists);
         markRemindersReadReady(lists.length === 0);
         return {
           data: lists,
@@ -476,7 +489,7 @@ export const remindersConnector: Connector = {
         };
       }
       case 'list_reminders': {
-        const reminders = await listReminders(payload);
+        const reminders = await readWithPermissionStatus(() => listReminders(payload));
         markRemindersReadReady();
         return {
           data: reminders,

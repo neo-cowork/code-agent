@@ -58,6 +58,7 @@ function buildFailure(
       : 'Process failed',
     exitCode,
     category: 'command_failed',
+    reason: 'shell_command_failed',
   };
 }
 
@@ -96,7 +97,6 @@ function buildTerminalMessage(args: {
   label: string;
   status: TaskStatus;
   durationMs?: number;
-  exitCode?: number;
   automationPromptLikely?: boolean;
   locale?: SessionTaskSlotLocale;
 }): string {
@@ -107,9 +107,8 @@ function buildTerminalMessage(args: {
   if (args.status === 'cancelled') {
     return `${args.label} 已停止${duration}`;
   }
-  const exitCode = args.exitCode != null && args.exitCode !== 0 ? `，退出码 ${args.exitCode}` : '';
   return withAutomationPromptTimeoutHint(
-    `${args.label} 失败${exitCode}${duration}`,
+    `${args.label} 失败${duration}`,
     args.locale ?? 'zh',
     args.automationPromptLikely,
   );
@@ -154,7 +153,6 @@ function queueTerminalNotification(args: {
       label: args.title,
       status: args.status,
       durationMs: args.durationMs,
-      exitCode: args.exitCode,
       automationPromptLikely: args.automationPromptLikely,
       locale: args.locale,
     }),
@@ -162,9 +160,11 @@ function queueTerminalNotification(args: {
       taskId: args.taskId,
       source: args.source,
       status: args.status,
+      label: args.title,
       outputFile: args.outputFile,
       exitCode: args.exitCode,
       durationMs: args.durationMs,
+      ...(args.automationPromptLikely ? { automationPromptLikely: true } : {}),
       ...(args.timedOut && args.status === 'failed'
         ? { reason: 'timeout', maxRuntimeMs: args.maxRuntimeMs }
         : {}),
@@ -235,6 +235,7 @@ export function syncShellTaskSnapshotToLedger(
       originalTaskId: task.taskId,
       exitCode: task.exitCode,
       recoveryStatus,
+      ...(automationPromptLikely ? { automationPromptLikely: true } : {}),
       recoveryPlan: buildBackgroundTaskRecoveryPlan({
         status,
         recoveryStatus,

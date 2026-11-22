@@ -93,9 +93,8 @@ function connectorIntent(input: NativeConnectorIntentInput): string[] {
 /**
  * 意图 × 启用 × 就绪 → 连接器工具名（core 工具除外，它们本就常驻）。
  * 无意图命中时零副作用（不触 configService/registry），无关轮次的前缀缓存不受影响。
- * 就绪口径与 cron.ipc / cronMailPoller 一致：unchecked（重启后未探测）仍算可用，
- * failed / unavailable 才排除——已授权用户不该被逼去再点一次。
- * 未启用/未注册只放读工具（见循环内注释）；failed / unavailable 分支不动。
+ * unchecked（重启后未探测）仍算可用。未启用、未注册或 Reminders 授权被拒时，
+ * 只放读工具，让用户拿到对应的连接器指引。
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = connectorIntent(input);
@@ -132,7 +131,12 @@ export function getNativeConnectorToolNamesForIntent(input: NativeConnectorInten
       exposeReadToolOnly(connectorId);
       continue;
     }
-    const readiness = connector.getCachedStatus?.().readiness;
+    const status = connector.getCachedStatus?.();
+    const readiness = status?.readiness;
+    if (connectorId === 'reminders' && readiness === 'failed' && status?.errorCode === 'not_authorized') {
+      exposeReadToolOnly(connectorId);
+      continue;
+    }
     if (readiness === 'failed' || readiness === 'unavailable') {
       logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: readiness-${readiness}): ${connectorId}`);
       continue;

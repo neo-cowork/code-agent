@@ -10,6 +10,8 @@ import * as path from 'path';
 import { getMemoryDir, getMemoryIndexPath, ensureMemoryDir } from './indexLoader';
 import { writeLightMemoryFile } from './lightMemoryIpc';
 import { LEARNING_PIPELINE } from '../../shared/constants';
+import type { ErrorCategory } from '../../shared/contract/telemetry';
+import { toolUserLabel } from '../../shared/utils/toolUserLabel';
 import { createLogger } from '../services/infra/logger';
 import { normalizeErrorMessage } from './normalizeErrorMessage';
 
@@ -19,6 +21,27 @@ const logger = createLogger('FailureJournal');
 
 /** journal 文件中嵌入的机器可读数据标记（用于跨会话精确合并计数） */
 const JOURNAL_JSON_MARKER = 'FAILURE_JOURNAL_JSON';
+
+const ERROR_CATEGORY_LABELS: Record<ErrorCategory, string> = {
+  file_not_found: '找不到文件',
+  permission_denied: '没有权限',
+  timeout: '超时',
+  syntax_error: '语法错误',
+  edit_not_unique: '要改的内容不唯一',
+  path_hallucination: '路径不存在',
+  rate_limit: '请求太频繁',
+  network_error: '网络连接失败',
+  command_failure: '命令执行失败',
+  context_overflow: '内容过长',
+  dependency_missing: '缺少依赖',
+  http_4xx: '请求被拒绝',
+  http_5xx: '对方服务出错',
+  sandbox_denied: '被安全限制拦下',
+  auth_failed: '授权失败',
+  tool_args_validation: '参数不合规',
+  database_error: '数据库繁忙',
+  unknown: '未分类',
+};
 
 export interface FailurePattern {
   /** 去重 key：toolName + errorCategory + 归一化错误消息 */
@@ -134,12 +157,15 @@ function renderJournalBody(entries: FailurePattern[]): string {
 
   for (const entry of entries) {
     const lastSeen = new Date(entry.lastSeen).toISOString().split('T')[0];
-    lines.push(`## ${entry.toolName} · ${entry.errorCategory}`);
+    const categoryLabel = Object.hasOwn(ERROR_CATEGORY_LABELS, entry.errorCategory)
+      ? ERROR_CATEGORY_LABELS[entry.errorCategory as ErrorCategory]
+      : ERROR_CATEGORY_LABELS.unknown;
+    lines.push(`## ${toolUserLabel(entry.toolName, 'zh')} · ${categoryLabel}`);
     lines.push('');
     lines.push(`- **模式**: ${entry.pattern}`);
     lines.push(`- **累计次数**: ${entry.count}（跨 ${entry.sessions.length} 个 session）`);
     lines.push(`- **最近出现**: ${lastSeen}`);
-    lines.push(`- **错误样本**: ${entry.sampleError}`);
+    lines.push(`- **原始报错（排查用）**: ${entry.sampleError}`);
     lines.push('');
   }
 
