@@ -5,7 +5,7 @@
 // 像素级不可区分，用户以为自己新开了一条，首条消息却接进昨晚那条。
 //
 // 本单测钉两件事：
-//   ① 恢复行为**不变**（三态：有内容 / 空历史会话 / 无历史）——修复只做消歧，不改习惯；
+//   ① 冷启动不再自动恢复服务端最新会话（FB-2460），只恢复本浏览器记住的会话；
 //   ② 欢迎页只对真·新会话出现，恢复到历史会话时首屏必须写明是哪条。
 // ============================================================================
 
@@ -77,26 +77,24 @@ async function coldStart(stored: StoredSession[]) {
   return { invoke, currentSessionId: mod.useSessionStore.getState().currentSessionId };
 }
 
-describe('冷启动三态（恢复习惯保持不变）', () => {
+describe('冷启动三态（不再自动恢复服务端最新会话）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('列表首位是有内容的历史会话 → 恢复它', async () => {
+  it('无本地记忆、列表首位是有内容的历史会话 → 不恢复它，落到新建的起始页会话', async () => {
     const target = session({ id: 'has-content', title: '昨天的活', messageCount: 6, turnCount: 3, updatedAt: 200 });
-    const { invoke, currentSessionId } = await coldStart([target, session({ id: 'older', updatedAt: 100 })]);
+    const { invoke, currentSessionId } = await coldStart([target, session({ id: 'older', title: '上周的活', messageCount: 2, turnCount: 1, updatedAt: 100 })]);
 
-    expect(currentSessionId).toBe('has-content');
-    expect(invoke).not.toHaveBeenCalledWith(expect.anything(), 'create', expect.anything());
+    expect(currentSessionId).toBe('created-1');
+    expect(invoke).toHaveBeenCalledWith(expect.anything(), 'create', expect.objectContaining({ title: '新对话' }));
   });
 
-  it('列表首位是空投影的历史会话 → 照样恢复它（不偷偷新建），由首屏负责消歧', async () => {
+  it('无本地记忆、列表只有空投影的历史会话 → 同样不恢复它（它不是真新会话，不能被复用）', async () => {
     const emptyHistorical = session({ id: 'empty-历史', title: '你好', messageCount: 0, turnCount: 0, updatedAt: 300 });
-    const { invoke, currentSessionId } = await coldStart([emptyHistorical]);
+    const { currentSessionId } = await coldStart([emptyHistorical]);
 
-    expect(currentSessionId).toBe('empty-历史');
-    expect(invoke).not.toHaveBeenCalledWith(expect.anything(), 'create', expect.anything());
-    // 恢复的是历史会话 → 首屏不许走欢迎页
+    expect(currentSessionId).toBe('created-1');
     expect(isBlankNewSession(emptyHistorical)).toBe(false);
   });
 
@@ -105,5 +103,13 @@ describe('冷启动三态（恢复习惯保持不变）', () => {
 
     expect(invoke).toHaveBeenCalledWith(expect.anything(), 'create', expect.objectContaining({ title: '新对话' }));
     expect(currentSessionId).toBe('created-1');
+  });
+
+  it('列表里有一条没动过的空白新会话 → 复用它，不再多建', async () => {
+    const target = session({ id: 'has-content', title: '昨天的活', messageCount: 6, turnCount: 3, updatedAt: 200 });
+    const { invoke, currentSessionId } = await coldStart([target, session({ id: 'untouched-blank', updatedAt: 100 })]);
+
+    expect(currentSessionId).toBe('untouched-blank');
+    expect(invoke).not.toHaveBeenCalledWith(expect.anything(), 'create', expect.anything());
   });
 });
