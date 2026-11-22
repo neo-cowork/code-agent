@@ -13,6 +13,9 @@ import type { DevFaultHooks, FaultContext } from '../shared/devFaultHooks';
 
 const DEFAULT_BOOT_FAIL_COUNT = 3;
 const DEFAULT_CONNECTOR_ID = 'mail';
+// 只支持走 Apple Events 的连接器：它们的授权失败形状是同一种（-1743）。日历走 EventKit，
+// 失败形状与卡片判据不同，包成这种形状会得到错的卡片，所以不在支持范围。
+const APPLE_EVENTS_CONNECTORS: Record<string, string> = { mail: 'Mail', reminders: 'Reminders' };
 const EXIT_ONCE_DELAY_MS = 4000;
 const STATE_DIR = 'dev-fault';
 
@@ -65,11 +68,12 @@ function offlineError(url: string): Error {
   return Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: 'ENOTFOUND', errno: -3008, syscall: 'getaddrinfo', hostname: host });
 }
 
-function authInvalidError(): Error {
-  const text = 'Not authorized to send Apple events to Mail. (-1743)';
+function authInvalidError(label: string): Error {
+  const text = `Not authorized to send Apple events to ${label}. (-1743)`;
   return Object.assign(new Error(text), { stderr: text });
 }
 
+const unsupportedLogged = new Set<string>();
 let globalFetchPatched = false;
 
 function patchGlobalFetch(ctx: FaultContext): void {
@@ -125,11 +129,20 @@ export const devFaultHooks: DevFaultHooks = {
   wrapConnector(connector, ctx) {
     const faults = parseFaults();
     if (!faults.has('connector_auth_invalid')) return connector;
-    if ((faults.get('connector_auth_invalid') ?? DEFAULT_CONNECTOR_ID) !== connector.id) return connector;
+    const targetId = faults.get('connector_auth_invalid') ?? DEFAULT_CONNECTOR_ID;
+    if (targetId !== connector.id) return connector;
+    const label = APPLE_EVENTS_CONNECTORS[connector.id];
+    if (!label) {
+      if (!unsupportedLogged.has(targetId)) {
+        unsupportedLogged.add(targetId);
+        hit(ctx, 'connector_auth_invalid', `unsupported:${targetId}`);
+      }
+      return connector;
+    }
     const failedStatus = () => ({
       connected: false,
       readiness: 'failed',
-      error: authInvalidError().message,
+      error: authInvalidError(label).message,
       errorCode: 'not_authorized',
       checkedAt: Date.now(),
       capabilities: connector.capabilities,
@@ -139,7 +152,7 @@ export const devFaultHooks: DevFaultHooks = {
         if (prop === 'execute') {
           return async () => {
             hit(ctx, 'connector_auth_invalid', connector.id);
-            throw authInvalidError();
+            throw authInvalidError(label);
           };
         }
         if (prop === 'getStatus') {

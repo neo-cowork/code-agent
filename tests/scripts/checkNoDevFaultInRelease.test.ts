@@ -47,6 +47,10 @@ describe('check-no-dev-fault-in-release', () => {
     expect(checkNoDevFaultInRelease(fixture(conf, 'x'))[0]).toContain('references dev-fault-inject');
   });
 
+  it('真实构建产物（已构建时）不含开关名/日志标记', () => {
+    expect(checkNoDevFaultInRelease(process.cwd())).toEqual([]);
+  });
+
   it('仓库里的真实生产资源清单不引用模块，Dev 清单引用', () => {
     expect(checkNoDevFaultInRelease(process.cwd()).filter((l: string) => l.includes('tauri.conf.json'))).toEqual([]);
     const dev = JSON.parse(fs.readFileSync('src-tauri/tauri.dev.conf.json', 'utf8'));

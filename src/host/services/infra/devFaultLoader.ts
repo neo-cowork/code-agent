@@ -30,7 +30,9 @@ function load(): DevFaultHooks | null {
   let hooks: DevFaultHooks | null = null;
   if (isDevSlotRuntime(dataDir)) {
     const file = candidateDirs().map((dir) => path.join(dir, MODULE_FILE)).find((candidate) => fs.existsSync(candidate));
-    if (file) {
+    if (!file) {
+      logger.warn('dev package module file not found; fault switches disabled', { searched: candidateDirs() });
+    } else {
       try {
         hooks = (createRequire(file)(file) as { devFaultHooks: DevFaultHooks }).devFaultHooks;
       } catch (error) {

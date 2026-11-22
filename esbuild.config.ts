@@ -189,6 +189,8 @@ function writeWebServerArtifacts(isDev: boolean): void {
   copyFileSync('src/web/webServerBootstrap.cjs', 'dist/web/webServer.cjs');
   buildDevFaultModule(isDev);
   writeControlPlanePublicKeysFile();
+  // 生产产物里出现 Dev 故障注入入口 → 构建失败（脚本非 0 退出会抛）
+  execFileSync(process.execPath, ['scripts/ci/check-no-dev-fault-in-release.mjs'], { stdio: 'inherit' });
 }
 
 function runGameSkillContentCodegen(): void {

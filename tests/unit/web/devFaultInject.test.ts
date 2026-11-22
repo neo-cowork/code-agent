@@ -46,12 +46,11 @@ function injectedLines(): string[] {
 
 beforeAll(() => {
   hadModule = fs.existsSync(MODULE_PATH);
-  if (!hadModule) {
-    esbuild.buildSync({
-      entryPoints: ['src/web/devFaultInject.ts'], outfile: MODULE_PATH,
-      bundle: true, platform: 'node', format: 'cjs', logLevel: 'error',
-    });
-  }
+  // 每次现编，避免读到上一次构建留下的旧产物
+  esbuild.buildSync({
+    entryPoints: ['src/web/devFaultInject.ts'], outfile: MODULE_PATH,
+    bundle: true, platform: 'node', format: 'cjs', logLevel: 'error',
+  });
 });
 
 afterAll(() => {
@@ -168,13 +167,22 @@ describe('connector_auth_invalid', () => {
     expect(injectedLines()[0]).toContain('connector_auth_invalid');
   });
 
-  it('指定 id：connector_auth_invalid:calendar 只改 calendar', async () => {
-    useFault('connector_auth_invalid:calendar', devDir);
+  it('指定 id：connector_auth_invalid:reminders 只改 reminders，报 Reminders', async () => {
+    useFault('connector_auth_invalid:reminders', devDir);
     const registry = new ConnectorRegistry('darwin');
     registry.register(stubMail());
-    registry.register({ ...stubMail(), id: 'calendar' });
+    registry.register({ ...stubMail(), id: 'reminders' });
     await expect(registry.get('mail')!.execute('x', {})).resolves.toEqual({ data: [] });
-    await expect(registry.get('calendar')!.execute('x', {})).rejects.toBeInstanceOf(Error);
+    await expect(registry.get('reminders')!.execute('x', {})).rejects.toMatchObject({ stderr: expect.stringContaining('Reminders') });
+  });
+
+  it('不支持的 id（日历走 EventKit）：不改连接器，只留一行 unsupported 日志', async () => {
+    useFault('connector_auth_invalid:calendar', devDir);
+    const registry = new ConnectorRegistry('darwin');
+    registry.register({ ...stubMail(), id: 'calendar' });
+    await expect(registry.get('calendar')!.execute('x', {})).resolves.toEqual({ data: [] });
+    await registry.get('calendar')!.getStatus();
+    expect(injectedLines()).toEqual([expect.stringContaining('unsupported:calendar')]);
   });
 });
 
