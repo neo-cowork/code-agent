@@ -14,7 +14,7 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 
 describe('readOnlyProbePlan switch governs ListDirectory / Glob', () => {
   let root: string;
-  let asks: Array<{ tool?: string }>;
+  let asks: Array<{ tool?: string; forceConfirm?: boolean }>;
 
   beforeAll(() => { getProtocolRegistry(); });
   beforeEach(async () => {
@@ -40,7 +40,7 @@ describe('readOnlyProbePlan switch governs ListDirectory / Glob', () => {
   }
   function executor(): ToolExecutor {
     const ex = new ToolExecutor({
-      requestPermission: async (req) => { asks.push(req as { tool?: string }); return false; },
+      requestPermission: async (req) => { asks.push(req as { tool?: string; forceConfirm?: boolean }); return false; },
       workingDirectory: root,
     });
     ex.setAuditEnabled(false);
@@ -58,6 +58,8 @@ describe('readOnlyProbePlan switch governs ListDirectory / Glob', () => {
       const result = await executor().execute(tool, params, { sessionId: 'ro-lookup' });
       expect(asks).toHaveLength(1);
       expect(asks[0].tool).toBe(tool);
+      // autoApprove[level] 便利放行对 forceConfirm 让路，否则卡在 orchestrator 层被吞
+      expect(asks[0].forceConfirm).toBe(true);
       expect(result.success).toBe(false);
     });
 

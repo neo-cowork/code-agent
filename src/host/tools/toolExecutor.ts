@@ -2357,6 +2357,11 @@ export class ToolExecutor {
           permissionRequest.forceConfirmBoundaryOnly = true;
         }
       }
+      // 查询前免确认关闭：autoApprove.read 等便利放行不得吞掉这张卡。
+      if (readOnlyLookupAsk) {
+        permissionRequest.forceConfirm = true;
+        permissionRequest.forceConfirmBoundaryOnly = false;
+      }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
       }
