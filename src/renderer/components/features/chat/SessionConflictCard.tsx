@@ -32,12 +32,12 @@ export function SessionConflictCard({ node, sessionId }: {
 }): React.JSX.Element {
   const { t } = useI18n();
   const copy = t.turnCard.sessionConflict;
-  const [state, setState] = useState<RetryState>('idle')
+  const [state, setState] = useState<RetryState>('idle');
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
-  }, []);;
+  }, []);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
   const anchorSessionId = typeof node.metadata?.retrySessionId === 'string'
     ? node.metadata.retrySessionId
