@@ -12,6 +12,7 @@ import {
   type SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
 import { createLogger } from '../infra/logger';
+import { sweepEndedSurfaceProfile } from '../infra/browserSurfaceProfileRetention';
 
 const organicNavLogger = createLogger('ManagedBrowserOrganicNav');
 import {
@@ -714,6 +715,11 @@ export class ManagedBrowserProviderAdapter {
         reason: 'last_page_record_failed', conversationIdHash: hashIdentity([binding.identity.conversationId]), error: error instanceof Error ? error.message : String(error),
       }),
     });
+    // Only an idle, non-personal surface: a still-running persistent browser keeps its profile dir.
+    if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY && !binding.browserService.isRunning()) {
+      const state = binding.browserService.getSessionState();
+      if (state.profileMode === 'persistent') sweepEndedSurfaceProfile(state.profileDir);
+    }
     if (abortShutdownError) throw abortShutdownError;
   }
 
