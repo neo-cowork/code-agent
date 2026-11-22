@@ -182,6 +182,12 @@ export function pickModelOptions(rows, name) {
   return rows.filter(exact(name.slice(i + 1).trim())).filter((r) => r.provider.includes(provider));
 }
 
+/** 状态栏触发钮的 title 里「/」后面那段是不是这一行的模型：模型 id 或显示名都算（见 select-model 里的说明）。 */
+export function titleShowsModel(title, row) {
+  const t = title ?? '';
+  return t.includes(`/${row.modelId}`) || t.includes(`/${row.label}`);
+}
+
 /**
  * assert-visible 几何判定：矩形完全在视口与滚动容器内，且探测点最上层命中的是目标本身/子孙。
  * probe = { rect, viewport:{width,height}, clip: rect|null, hits: [{ok, by}] }
@@ -645,8 +651,9 @@ const ACTIONS = {
       throw new Error(hits.length ? `「${name}」命中多个，写成「服务商/模型名」：${list}` : `模型列表里没有「${name}」；可选：${list}`);
     }
     await page.locator(`[data-model-option-index="${hits[0].index}"]`).click({ timeout: 10_000 });
-    // 状态栏触发钮的 title 带「服务商id/模型id」，以它为准确认切过去了（显示名会被规范化，不可靠）。
-    await pollUntil(async () => (await trigger.getAttribute('title'))?.includes(`/${hits[0].modelId}`), { timeoutMs: 10_000, what: `模型切到「${name}」` });
+    // 状态栏触发钮的 title 是「服务商id/模型」：模型一段有的写模型 id，有的被换成显示名（11-22 mini 真机：小米 MiMo 写的是
+    // 「xiaomi/MiMo v2.6 Flash」，只认模型 id 会在已经切成功时白等到超时），两种都认。
+    await pollUntil(async () => titleShowsModel(await trigger.getAttribute('title'), hits[0]), { timeoutMs: 10_000, what: `模型切到「${name}」` });
     return { model: name, provider: hits[0].provider, modelId: hits[0].modelId, title: await trigger.getAttribute('title') };
   },
   async reload(ctx) {

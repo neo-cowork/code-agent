@@ -16,6 +16,7 @@ import {
   readLogsSince,
   runSteps,
   targetConflict,
+  titleShowsModel,
   visibilityVerdict,
   // @ts-expect-error —— 纯 JS 测试工具入口，无类型声明
 } from '../../scripts/neo-drive/neo-drive.mjs';
@@ -146,6 +147,14 @@ describe('neo-drive 纯逻辑', () => {
     expect(pickModelOptions(rows, 'MiMo v2.6 Flash')).toEqual([rows[2]]);
     expect(pickModelOptions(rows, 'MiMo v2.6')).toEqual([]); // 不做子串匹配
     expect(pickModelOptions(rows, 'anthropic/claude-opus-4-8')).toEqual([rows[3]]); // 模型 id 自带 / 时先整串匹配
+  });
+
+  it('select-model 确认切换：触发钮 title 写模型 id 或显示名都认（11-22 mini 真机：小米 MiMo 写的是显示名）', () => {
+    const row = { label: 'MiMo v2.6 Flash', modelId: 'mimo-v2.6-flash', provider: '小米 MiMo' };
+    expect(titleShowsModel('已覆盖: xiaomi/MiMo v2.6 Flash (原主任务: NeoHorse 1.5 Flash) · 计费: 按量', row)).toBe(true);
+    expect(titleShowsModel('当前模型: xiaomi/mimo-v2.6-flash', row)).toBe(true);
+    expect(titleShowsModel('当前模型: xiaomi/neohorse-1.5-flash-preview (NeoHorse 1.5 Flash)', row)).toBe(false);
+    expect(titleShowsModel(null, row)).toBe(false);
   });
 
   it('常驻浏览器与命令行显式目标不一致时报冲突，不静默沿用旧目标', () => {
