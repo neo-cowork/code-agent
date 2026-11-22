@@ -138,6 +138,23 @@ describe('mailDraftModule (native)', () => {
         'mail_draft osascript failed',
         { connector: 'mail', code: 'not_authorized', detail: 'Not authorized to send Apple events to Mail.' },
       );
+      expect((result as { code?: string }).code).toBe('not_authorized');
+    });
+
+    it('does not read a refusal out of the script body or a killed run (the draft may already be saved)', async () => {
+      const body = Object.assign(new Error("Command failed: osascript -e 'make new outgoing message with content \"Not authorized to send Apple events (-1743)\"'"), { stderr: 'execution error: Mail got an error: timed out (-1712)' });
+      execMock.mockRejectedValue(body);
+      expect((await run(validArgs) as { code?: string }).code).toBeUndefined();
+      const killed = Object.assign(new Error('Command failed: osascript'), { killed: true, signal: 'SIGTERM', stderr: 'Not authorized to send Apple events to Mail. (-1743)' });
+      execMock.mockRejectedValue(killed);
+      expect((await run(validArgs) as { code?: string }).code).toBeUndefined();
+    });
+
+    it('carries no code for a timeout or a plain connector error (only a refusal parks)', async () => {
+      execMock.mockRejectedValue(Object.assign(new Error('Command failed: osascript'), { killed: true, signal: 'SIGTERM' }));
+      expect((await run(validArgs) as { code?: string }).code).toBeUndefined();
+      execMock.mockRejectedValue(new Error('mail locked'));
+      expect((await run(validArgs) as { code?: string }).code).toBeUndefined();
     });
 
     it('wraps connector errors', async () => {

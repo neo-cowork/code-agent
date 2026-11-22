@@ -80,7 +80,7 @@ export async function continueParkedDurableRun(input: {
     try {
       if (parkedCause === 'env_blocked') {
         await continueEnvBlockedRun({
-          runId: recovered.runId, registry: runRegistry as RunRegistry, tasks: taskManager,
+          runId: recovered.runId, registry: runRegistry as RunRegistry, tasks: taskManager, envBlocked: parked?.envBlocked,
           getMessages: input.getMessages ?? ((id) => getSessionManager().getMessages(id)),
           ports: input.envRecoveryPorts,
         });

@@ -5,7 +5,7 @@ import type { CuaHelperPermissionState } from './cua/helperPermissionState';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
 
 const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {
-  mail: 'mail', reminders: 'reminders', reminders_create: 'reminders',
+  mail: 'mail', mail_draft: 'mail', reminders: 'reminders', reminders_create: 'reminders',
 };
 /** Calendar reads and writes go through EventKit: one permission (perm_calendars), not Apple events. */
 const CALENDAR_TOOLS = new Set(['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']);
