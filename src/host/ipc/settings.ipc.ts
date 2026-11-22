@@ -681,9 +681,17 @@ export function registerSettingsHandlers(
         const pageCount = countPdfTextPages(stdout);
         return { text: stdout, pageCount };
       } catch (error) {
-        // ENOENT = 这台机器没装该 binary，继续试下一个；进程跑起来却非零退出
-        // = 工具真的拒了这份文件（打不开/解析不了），整条链停在这里报错。
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        const code = (error as { code?: unknown }).code;
+        // 数字退出码 = 进程跑完且工具真的拒了这份文件（打不开/解析不了）→ 停链报错。
+        // ENOENT（binary 没装）、code=null（信号杀死/dyld abort）、maxBuffer 超限
+        // 都是工具自身失败而非文件判定，继续试下一个，与 PyPDF2 分支判据对称。
+        if (code === 'ENOENT' || typeof code !== 'number') {
+          if (code !== 'ENOENT') {
+            const reason = error instanceof Error ? error.message : String(error);
+            logger.warn(`extract-pdf-text: pdftotext unusable, trying next tool (${reason})`);
+          }
+          continue;
+        }
         const stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
           ? (error as { stderr: string }).stderr.trim()
           : '';
@@ -782,7 +790,9 @@ export function registerSettingsHandlers(
   // SheetJS 会把任意文本/二进制当 CSV 吞出一张 Sheet，改名的 .txt 因此「解析
   // 成功」——要拒绝改名文件只能靠签名：xlsx/xlsm/xlsb 是 zip（PK），旧版 .xls
   // 是 CFB 复合文档；SpreadsheetML XML / HTML-table 导出的 .xls 是文本（银行
-  // 导出常见），放行给 XLSX.read 自己裁决（坏 HTML 会在里面 throw）。
+  // 导出常见），放行给 XLSX.read 自己裁决（坏 HTML 会在里面 throw）。取舍：
+  // 纯 CSV/TSV 改名 .xls（ERP/银行也有这种导出）会被拦在签名这一步，这是本
+  // 工单「改名文件必须拒绝」目标的代价；真 CSV 用户应另存为 .csv 再传。
   const looksLikeWorkbookBuffer = (buffer: Buffer): boolean => {
     if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) return true;
     if (buffer.length >= 8
