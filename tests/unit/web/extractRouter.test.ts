@@ -174,6 +174,27 @@ describe('createExtractRouter', () => {
     });
   });
 
+  it('throwing excel / excel-json handlers answer HTTP 500, never an empty success object', async () => {
+    const xlsxPath = makeTempFile('corrupt.xlsx');
+    await startExtractApi(new Map([
+      ['extract-excel-text', async () => {
+        throw new Error('excel extraction failed: corrupt zip');
+      }],
+      ['extract-excel-json', async () => {
+        throw new Error('excel extraction failed: corrupt zip');
+      }],
+    ]));
+
+    await expect(postJson('/api/extract/excel', { filePath: xlsxPath })).resolves.toEqual({
+      status: 500,
+      body: { error: 'excel extraction failed: corrupt zip' },
+    });
+    await expect(postJson('/api/extract/excel-json', { filePath: xlsxPath })).resolves.toEqual({
+      status: 500,
+      body: { error: 'excel extraction failed: corrupt zip' },
+    });
+  });
+
   it('a throwing docx-html handler answers HTTP 500, never an empty success object', async () => {
     const docxPath = makeTempFile('corrupt.docx');
     await startExtractApi(new Map([
