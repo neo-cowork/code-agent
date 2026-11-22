@@ -314,7 +314,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
       if (!snapshotBody && liveBody) {
         return message;
       }
-      if (!snapshotBody.startsWith(liveBody) && !liveBody.startsWith(snapshotBody)) {
+      if (!snapshotBody.trimStart().startsWith(liveBody.trimStart()) && !liveBody.trimStart().startsWith(snapshotBody.trimStart())) {
         return message;
       }
     }
