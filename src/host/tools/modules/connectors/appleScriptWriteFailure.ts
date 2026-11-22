@@ -45,7 +45,7 @@ export function calendarFailureCode(error: unknown): { code?: string } {
 
 /**
  * Machine code of a refused AppleScript write; only `not_authorized` is surfaced (it drives the permission card / park, and
- * the resume text then states nothing was saved). Read from osascript's own stderr only: `error.message` embeds the script
+ * the resume text then states nothing was saved). Read from the script runner's own stderr only: `error.message` embeds the script
  * (the draft body), and a timed-out/killed run may already have saved, so neither may be classified as a refusal.
  */
 export function appleScriptWriteFailureCode(error: unknown): { code?: 'not_authorized' } {
