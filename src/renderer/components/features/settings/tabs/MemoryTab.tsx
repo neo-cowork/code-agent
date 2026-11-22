@@ -508,7 +508,7 @@ export const MemoryTab: React.FC = () => {
         action: 'lightDelete',
         filename,
       });
-      if (result?.success) {
+      if (result?.success && result.data !== false) {
         setMessage({ type: 'success', text: `${memoryText.files.deleteSuccessPrefix}${filename}` });
         if (selectedFile?.filename === filename) setSelectedFile(null);
         setEntriesRefreshKey((key) => key + 1);
@@ -1035,7 +1035,6 @@ export const MemoryTab: React.FC = () => {
         variant="warning"
         confirmText={memoryText.files.delete}
         cancelText={memoryText.files.cancel}
-        confirmDisabled={isWebMode()}
         onConfirm={() => {
           if (deletingFile) handleDelete(deletingFile);
         }}
