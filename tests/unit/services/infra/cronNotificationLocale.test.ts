@@ -91,10 +91,10 @@ describe('scheduled-task notifications follow ui.language', () => {
       success: 'Scheduled task completed',
       failure: 'Scheduled task failed: Provider unavailable',
       unknownFailure: 'Scheduled task failed: Unknown error',
-      consecutive: 'The task was disabled after 5 consecutive failures. Last error: Provider unavailable. '
-        + 'Re-enable it under Automation Center → Scheduled tasks.',
-      permanent: 'The task was disabled because of a configuration or authentication error. Error: Unknown error. '
-        + 'Fix the configuration, then re-enable it under Automation Center → Scheduled tasks.',
+      consecutive: 'The task was disabled after 5 consecutive failures. '
+        + 'Re-enable it under Automation Center → Scheduled tasks. Last error: Provider unavailable',
+      permanent: 'The task was disabled because of a configuration or authentication error. '
+        + 'Fix the configuration, then re-enable it under Automation Center → Scheduled tasks. Error: Unknown error',
     },
   ])('$lang bodies', ({ lang, duration, success, failure, unknownFailure, consecutive, permanent }) => {
     beforeEach(() => {

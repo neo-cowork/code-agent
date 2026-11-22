@@ -162,11 +162,11 @@ const cronNoticeCopy = {
     failed: 'Scheduled task failed: ',
     unknownError: 'Unknown error',
     consecutive: (count: number, lastError: string) =>
-      `The task was disabled after ${count} consecutive failures. Last error: ${lastError}. `
-      + 'Re-enable it under Automation Center → Scheduled tasks.',
+      `The task was disabled after ${count} consecutive failures. `
+      + `Re-enable it under Automation Center → Scheduled tasks. Last error: ${lastError}`,
     permanent: (lastError: string) =>
-      `The task was disabled because of a configuration or authentication error. Error: ${lastError}. `
-      + 'Fix the configuration, then re-enable it under Automation Center → Scheduled tasks.',
+      'The task was disabled because of a configuration or authentication error. '
+      + `Fix the configuration, then re-enable it under Automation Center → Scheduled tasks. Error: ${lastError}`,
   },
 };
 
