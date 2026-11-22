@@ -43,6 +43,12 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
 
   const deliver = async (_event: unknown, ...args: unknown[]) => {
       const [requestId, response, sessionId] = args as [string, PermissionResponse, string | undefined];
+      const rawUpdatedArgs = args[3];
+      const updatedArgs =
+        rawUpdatedArgs && typeof rawUpdatedArgs === 'object' && !Array.isArray(rawUpdatedArgs)
+          ? (rawUpdatedArgs as Record<string, unknown>)
+          : undefined;
+      const edited = updatedArgs !== undefined;
       const pending = pendingDevPermissions.get(requestId);
       if (pending) {
         logger.info('Permission response delivered (web-dev pending)', { requestId, response });
@@ -59,11 +65,11 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
 
       const targetSessionId = sessionId || getCurrentSessionId();
       const foregroundOutcome = targetSessionId
-        ? deliverForegroundPermissionResponse(targetSessionId, requestId, response)
+        ? deliverForegroundPermissionResponse(targetSessionId, requestId, response, updatedArgs)
         : undefined;
       if (foregroundOutcome !== undefined) {
         if (foregroundOutcome === 'delivered') {
-          logger.info('Permission response delivered (web foreground)', { requestId, response, sessionId: targetSessionId });
+          logger.info('Permission response delivered (web foreground)', { requestId, response, sessionId: targetSessionId, edited });
           return { success: true, data: { requestId, sessionId: targetSessionId, source: 'foreground-permission-island' } };
         }
         logger.warn('Permission response not delivered (web foreground)', {
@@ -82,11 +88,11 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
       }
 
       const outcome: PermissionDeliveryOutcome = targetSessionId
-        ? getTaskManager().handlePermissionResponse(targetSessionId, requestId, response)
+        ? getTaskManager().handlePermissionResponse(targetSessionId, requestId, response, updatedArgs)
         : 'no_session';
 
       if (outcome === 'delivered') {
-        logger.info('Permission response delivered (web)', { requestId, response, sessionId: targetSessionId });
+        logger.info('Permission response delivered (web)', { requestId, response, sessionId: targetSessionId, edited });
         return { success: true, data: { requestId, sessionId: targetSessionId, source: 'task-manager' } };
       }
 
