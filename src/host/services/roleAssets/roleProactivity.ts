@@ -280,7 +280,14 @@ export async function wakeRole(
   if (trigger === 'cadence') {
     const allHistory = await loadRoleHistory(roleId, Number.MAX_SAFE_INTEGER);
     const productEntries = allHistory.filter((l) => !l.includes(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX));
-    externalDelta = await resolveWakeExternalDelta({ roleId, hasProducts: productEntries.length > 0, lastWakeDate: lastWakeDateFromHistory(allHistory), config });
+    const { allowedToolNames: declaredWakeTools } = await resolveWakeRunToolScope(roleId);
+    externalDelta = await resolveWakeExternalDelta({
+      roleId,
+      hasProducts: productEntries.length > 0,
+      lastWakeDate: lastWakeDateFromHistory(allHistory),
+      config,
+      ...(declaredWakeTools ? { roleToolNames: declaredWakeTools } : {}),
+    });
     if (productEntries.length === 0 && externalDelta.sourceNames.length === 0) {
       logger.info('Wake resolved to silence: no products in history', { roleId, trigger });
       await appendRoleHistory(roleId, {
