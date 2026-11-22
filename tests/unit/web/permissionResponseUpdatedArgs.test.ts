@@ -358,4 +358,30 @@ describe('审批卡编辑参数经 web 投递链抵达工具调用（FB-2606）'
       expect.objectContaining({ requestId, edited: true }),
     );
   });
+
+  it('(f) 全链：原参数省略可选的 calendar（字面复现路径），编辑照样抵达连接器', async () => {
+    const sessionId = 'sess-edited-chain-no-calendar';
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+    install();
+
+    // 字面复现：模型没传 calendar——只读必填字段不能因「原参数没它」把用户编辑整体拒掉。
+    const originalWithoutCalendar = {
+      title: ORIGINAL_ARGS.title,
+      start_ms: ORIGINAL_START_MS,
+      notes: ORIGINAL_ARGS.notes,
+    };
+    const execution = toolExecutorOf(orchestrator).execute('calendar_create_event', { ...originalWithoutCalendar }, { sessionId });
+    await vi.waitFor(() => expect(pendingIds(orchestrator)).toHaveLength(1));
+    const [requestId] = pendingIds(orchestrator);
+
+    const result = await invoke(requestId, 'allow', sessionId, EDITED_ARGS);
+    expect(result).toMatchObject({ success: true, data: { source: 'task-manager' } });
+    await expect(execution).resolves.toMatchObject({ success: true });
+
+    expect(connectorExecute).toHaveBeenCalledWith('create_event', {
+      ...originalWithoutCalendar,
+      notes: EDITED_NOTES,
+      start_ms: EDITED_START_MS,
+    });
+  });
 });
