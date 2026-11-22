@@ -160,18 +160,19 @@ describe('tool denial through the production env-assist bridge entries', () => {
       : []);
   });
 
-  it('still raises the automation card for a non-probe reminders read denial (-1743)', async () => {
+  it('does not raise the automation card for a reminders read authorization denial', async () => {
     const row = await publishDenial({
       toolName: 'reminders', metadata: { code: 'not_authorized' }, klass: 'perm_automation',
       target: 'reminders', kind: 'request_grant', pane: 'automation',
     }, 'denial-reminders-read-1743');
-    expect(row?.metadata?.envAssist).toMatchObject({ class: 'perm_automation', phase: 'needs_user' });
+    expect(row).toBeUndefined();
+    expect(requests).toEqual([]);
   });
 
   it('leaves a denied reminders read untouched: no card, no message, no event, guidance kept', async () => {
     const guidance = '还没有授权 Neo 访问提醒事项，请在能力中心 > 连接器点‘检查’并按提示授权';
     const result: Pick<ToolResult, 'success' | 'error' | 'metadata'> = {
-      success: false, error: guidance, metadata: { code: 'not_authorized', accessProbeDenied: true, notAppleEvents: true },
+      success: false, error: guidance, metadata: { code: 'not_authorized', accessProbeDenied: true },
     };
     const events: unknown[] = [];
     await publish({ toolName: 'reminders', result, sessionId, runId: 'denial-reminders-read', onEvent: (e) => events.push(e) });
