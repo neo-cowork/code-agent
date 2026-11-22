@@ -36,15 +36,19 @@ export function envBlockedCancelledClosures(runId: string | undefined, toolCalls
 }
 
 /**
- * A refused calendar (EventKit) read on a parkable run parks (EnvBlockedError) instead of failing, so the
- * S3 waiter can replay the same tool call once the grant lands. Non-parkable runs (sub-agents,
+ * A refused calendar (EventKit) read or Mail draft write on a parkable run parks (EnvBlockedError) instead of
+ * failing. Calendar replays the same call once the grant lands; mail_draft is never replayed in place (the
+ * continuation records a "not run" result and the model re-issues it once). Non-parkable runs (sub-agents,
  * non-durable hosts) keep the ordinary failure and its card + model guidance.
- * ponytail: calendar (read-only, replay-safe) only; mail/reminders writes wait for N-ENV-ASSIST-S3-RESUME-REST2.
+ * ponytail: only calendar and mail_draft park; mail_send, reminders, screen and accessibility keep the ordinary failure.
  */
 export function envBlockForToolFailure(input: {
   toolName: string; code: unknown; runId?: string; toolCallId?: string;
 }): EnvBlockedError | null {
-  if (input.toolName !== 'calendar' || input.code !== 'not_authorized' || !input.toolCallId) return null;
+  if (input.code !== 'not_authorized' || !input.toolCallId) return null;
+  if (input.toolName !== 'calendar' && input.toolName !== 'mail_draft') return null;
   if (!isQuotaWaitParkableRun(getConfiguredApplicationRunRegistry(), input.runId)) return null;
-  return new EnvBlockedError('perm_calendars', 'calendar', input.toolCallId);
+  return input.toolName === 'calendar'
+    ? new EnvBlockedError('perm_calendars', 'calendar', input.toolCallId)
+    : new EnvBlockedError('perm_automation', 'mail', input.toolCallId);
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // 预热失败句补写模块：recordFailure 里是动态 import，冷加载多一跳宏任务，
 // 会让首条触发它的用例在 advanceTimersByTimeAsync 之后立刻断言时扑空。
 import '../../../src/host/services/commandCenter/backgroundWakeNoteRetry';
+import { buildStepCapConclusion } from '../../../src/host/agent/subagentStepCapConclusion';
 import { scheduleBackgroundSubagentIdleWake } from '../../../src/host/agent/backgroundSubagentIdleWake';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
@@ -13,6 +14,11 @@ const taskManagerMocks = vi.hoisted(() => ({
   startTask: vi.fn(),
   observeAgentEvents: vi.fn(),
 }));
+const recordStopNote = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/services/commandCenter/backgroundTaskStopNote', () => ({
+  recordBackgroundTaskStopNote: recordStopNote,
+}));
+
 const wakeNoteMocks = vi.hoisted(() => ({
   format: vi.fn((shortName: string, _reason: string) => `wake failed: ${shortName}`),
   record: vi.fn(),
@@ -273,6 +279,84 @@ describe('background subagent idle wake', () => {
     await vi.advanceTimersByTimeAsync(50);
 
     expect(wakeNoteMocks.record).toHaveBeenCalledWith('silent-session', expect.any(String), { taskId: 'agent-silent', reason: 'max_iterations', title: '后台任务' });
+  });
+
+  it('uses one generic stop note when a file-reading child reaches its step cap', async () => {
+    const agentId = 'child-with-stop-note';
+    const sessionId = 'session-with-stop-note';
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    recordStopNote.mockClear();
+    const registry = getBackgroundSubagentRegistry();
+    registry.adopt(Promise.resolve({
+      success: false, output: '', error: 'Max iterations reached', toolsUsed: ['Read'], iterations: 1,
+      stopHint: {
+        kind: 'step_cap',
+        conclusion: buildStepCapConclusion({
+          iterations: 1, maxIterations: 1,
+          messages: [{ role: 'assistant', toolCalls: [{ arguments: { path: 'release.txt' } }] }],
+        }),
+      },
+    }), {
+      agentId, sessionId, completionKind: 'user_visible', onComplete: scheduleBackgroundSubagentIdleWake,
+    });
+    await registry.await(agentId);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(recordStopNote).toHaveBeenCalledExactlyOnceWith(
+      sessionId, expect.any(String), expect.stringContaining('还没有得出最终结果'), { taskId: agentId, kind: 'step_cap' },
+    );
+    expect(recordStopNote.mock.calls[0]?.[2]).not.toContain('网站');
+    expect(recordStopNote.mock.calls[0]?.[2]).toContain('或者把任务缩小一些再试一次');
+    expect(taskManagerMocks.startTask).not.toHaveBeenCalled();
+    expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
+  });
+
+  it('passes a failed child’s partial answer to the idle report without a second note', async () => {
+    const agentId = 'child-with-partial-answer';
+    const sessionId = 'session-with-partial-answer';
+    const output = 'The rollback plan is in release.txt. The recovery check is still unconfirmed.';
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      observer(sessionId, { type: 'message', data: { role: 'assistant', content: output } });
+    });
+    recordStopNote.mockClear();
+    const registry = getBackgroundSubagentRegistry();
+    registry.adopt(Promise.resolve({
+      success: false, output, error: 'Max iterations reached', toolsUsed: [], iterations: 1,
+    }), {
+      agentId, sessionId, completionKind: 'user_visible', onComplete: scheduleBackgroundSubagentIdleWake,
+    });
+    await registry.await(agentId);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(taskManagerMocks.startTask).toHaveBeenCalledExactlyOnceWith(
+      sessionId, expect.stringContaining(output), undefined,
+      expect.objectContaining({ completionReportOnly: true }), expect.anything(), expect.any(String),
+    );
+    expect(recordStopNote).not.toHaveBeenCalled();
+    expect(wakeNoteMocks.record).not.toHaveBeenCalled();
+    expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
+  });
+
+  it.each([
+    { content: '   ', toolCalls: [] },
+    { content: 'Checking the result', toolCalls: [{ name: 'Read' }] },
+  ])('records a visible failure when a wake returns without a report (%j)', async (message) => {
+    const sessionId = 'wake-without-report';
+    const agentId = 'child-without-report';
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      observer(sessionId, { type: 'message', data: { role: 'assistant', ...message } });
+    });
+    await seedCompletion(agentId, sessionId);
+    scheduleBackgroundSubagentIdleWake(trigger(agentId, sessionId));
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(wakeNoteMocks.record).toHaveBeenCalledExactlyOnceWith(
+      sessionId, 'wake failed: 后台任务', { taskId: agentId, reason: 'wake_failed', title: '后台任务' },
+    );
   });
 
   it.each([

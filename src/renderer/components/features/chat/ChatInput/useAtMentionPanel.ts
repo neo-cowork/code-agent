@@ -23,6 +23,7 @@ import { useSessionStore } from '../../../../stores/sessionStore';
 import { notifyLibraryPinChanged } from '../../knowledge/libraryPinEvents';
 import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
+import { getProjectDisplayName } from '../../../../utils/projectDisplayName';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 import {
   buildArtifactRows,
@@ -164,13 +165,14 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
         ? sessionsResult.value.data ?? []
         : [],
     );
+    // 未分类桶的 host 存名是 zh 常量「未分类」，直出会漏进英文界面；按 id 换 i18n 文案
     setProjectNames(new Map(
       projectsResult.status === 'fulfilled'
-        ? projectsResult.value.map((project) => [project.id, project.name])
+        ? projectsResult.value.map((project) => [project.id, getProjectDisplayName(project, t)])
         : [],
     ));
     setArtifacts(artifactsResult.status === 'fulfilled' ? artifactsResult.value : []);
-  }, []);
+  }, [t]);
 
   // 换会话后 pin 是真源在会话上的，重拉一次避免拿上个会话的选中态
   useEffect(() => {

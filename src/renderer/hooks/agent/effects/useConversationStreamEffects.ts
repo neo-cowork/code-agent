@@ -608,6 +608,7 @@ export function applyConversationStreamEvent(
                   stepLabel: fresh.stepLabel ?? existing.stepLabel,
                   targetContext: fresh.targetContext ?? existing.targetContext,
                   expectedOutcome: fresh.expectedOutcome ?? existing.expectedOutcome,
+                  guiTakeoverDisclosure: fresh.guiTakeoverDisclosure ?? existing.guiTakeoverDisclosure,
                   arguments: fresh.arguments ?? existing.arguments,
                 };
               });
