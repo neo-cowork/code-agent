@@ -153,7 +153,7 @@ async function executeMailDraft(
     return {
       ok: false,
       error: failure,
-      ...appleScriptWriteFailureCode('Mail', error),
+      ...appleScriptWriteFailureCode(error),
       meta: {
         action: 'draft_message',
         connector: 'mail',
