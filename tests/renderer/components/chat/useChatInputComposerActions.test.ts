@@ -6,10 +6,13 @@ import type { MessageAttachment } from '../../../../src/shared/contract';
 import { UI } from '../../../../src/shared/constants';
 import { useChatInputComposerActions } from '../../../../src/renderer/components/features/chat/ChatInput/useChatInputComposerActions';
 import { useChatInputSubmit } from '../../../../src/renderer/components/features/chat/ChatInput/useChatInputSubmit';
+import { useChatInputSessionScope } from '../../../../src/renderer/components/features/chat/ChatInput/useChatInputSessionScope';
 import { dismissAttachmentLimitToast } from '../../../../src/renderer/components/features/chat/ChatInput/attachmentMergeToast';
 import { useComposerAttachmentLimitStore } from '../../../../src/renderer/stores/composerAttachmentLimitStore';
 import { useAppStore } from '../../../../src/renderer/stores/appStore';
 import { useComposerStore } from '../../../../src/renderer/stores/composerStore';
+import { useSessionStore } from '../../../../src/renderer/stores/sessionStore';
+import { useToastStore } from '../../../../src/renderer/hooks/useToast';
 
 const send = vi.fn(async () => true);
 const notice = () => useComposerAttachmentLimitStore.getState().notice;
@@ -101,5 +104,68 @@ describe('composer attachment limit notice lifecycle', () => {
     expect(notice()).toEqual({ added: 0, dropped: 3, max: UI.MAX_ATTACHMENTS, kind: 'none' });
     act(() => vi.advanceTimersByTime(5 * 60 * 1000));
     expect(notice()).not.toBeNull();
+  });
+});
+
+describe('stale duplicate-attachment toast lifecycle through the real composer entries', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    send.mockClear();
+    useAppStore.setState({ language: 'en', cloudUIStrings: null });
+    useComposerStore.setState({ pendingCommand: null, selectedTeamRecipeId: null });
+    useSessionStore.setState({ currentSessionId: null, sessions: [] });
+    dismissAttachmentLimitToast();
+  });
+  afterEach(() => {
+    cleanup();
+    dismissAttachmentLimitToast();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    useSessionStore.setState({ currentSessionId: null, sessions: [] });
+  });
+
+  // Duplicate the file through the public handleFileSelect twice: the second
+  // merge is all-skipped, which is the toast this ticket makes dismissable.
+  async function raiseDuplicateToast(result: { current: ReturnType<typeof useComposer> }) {
+    await act(async () => result.current.handleFileSelect(notes(1, 1) as unknown as FileList));
+    await act(async () => result.current.handleFileSelect(notes(1, 1) as unknown as FileList));
+    expect(result.current.attachments).toHaveLength(1);
+    expect(useToastStore.getState().toasts.map((t) => t.message))
+      .toEqual(['reading-note-1.txt is already attached']);
+  }
+
+  it('a successful send removes the duplicate toast via useChatInputSubmit', async () => {
+    const { result } = renderHook(useComposer);
+    await raiseDuplicateToast(result);
+    await act(async () => result.current.handleSubmit());
+    expect(send).toHaveBeenCalledOnce();
+    expect(result.current.attachments).toHaveLength(0);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('switching session removes the duplicate toast via useChatInputSessionScope', async () => {
+    const { result } = renderHook(useComposer);
+    await raiseDuplicateToast(result);
+    const scope = { value: '', attachments: [] as MessageAttachment[] };
+    renderHook(() => useChatInputSessionScope(
+      (value) => { scope.value = value; },
+      (attachments) => { scope.attachments = attachments; },
+    ));
+    act(() => useSessionStore.setState({ currentSessionId: 'session-next', sessions: [] }));
+    expect(scope.attachments).toHaveLength(0);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('dropping the attachment count removes the duplicate toast', async () => {
+    const { result, rerender } = renderHook(useComposer);
+    await act(async () => result.current.handleFileSelect(notes(1, 2) as unknown as FileList));
+    await act(async () => result.current.handleFileSelect(notes(1, 1) as unknown as FileList));
+    expect(result.current.attachments).toHaveLength(2);
+    expect(useToastStore.getState().toasts.map((t) => t.message))
+      .toEqual(['reading-note-1.txt is already attached']);
+    rerender();
+    act(() => result.current.removeAttachment(result.current.attachments[0].id));
+    expect(result.current.attachments).toHaveLength(1);
+    expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });

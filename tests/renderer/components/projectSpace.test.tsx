@@ -426,7 +426,7 @@ describe('ProjectSpacePage 列表视图', () => {
     // 预检拦截：不切新弹层，同一 Modal 内出现确认步 + 危险项清单，createSpace 未提交
     const confirm = await screen.findByTestId('project-space-create-trust-confirm');
     expect(confirm.textContent).toContain(ps.trustConfirmHint);
-    expect(within(confirm).getByTestId('folder-trust-danger-list').textContent).toContain('.code-agent/hooks/hooks.json');
+    expect(within(confirm).getByTestId('folder-trust-danger-list').textContent).not.toContain('.code-agent/');
     expect(projectClient.createSpace).not.toHaveBeenCalled();
 
     // 再点「创建」= 知情确认：带 trustAcknowledged 提交

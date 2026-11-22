@@ -886,8 +886,11 @@ export function registerSettingsHandlers(
       const wordCount = rawText.split(/\s+/).filter(Boolean).length;
 
       return { html, paragraphs, text: rawText, wordCount };
-    } catch {
-      return { html: '', paragraphs: [], text: '', wordCount: 0 };
+    } catch (error) {
+      // 抽取失败必须让上游看到（web 路由 → HTTP 500，renderer → uploadDocxFailed
+      // toast + discardRejectedUpload），吞掉会让损坏文件伪装成空正文附件。
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`docx extraction failed: ${message}`, { cause: error });
     }
   });
 
