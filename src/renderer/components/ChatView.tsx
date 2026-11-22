@@ -98,7 +98,7 @@ import { submitSteerEnvelope } from './features/chat/chatViewSteer';
 import { useChatGlobalFileDrop } from './features/chat/useChatGlobalFileDrop';
 import { useChatGlobalDragState } from './features/chat/useChatGlobalDragState';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
-import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
+import { getStreamRecoveryTurnEnd, isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import { deriveStreamInterruptionDecision } from '../utils/streamInterruptionDecision';
 import {
   isPersistedStreamInterruptionMessage,
@@ -706,12 +706,6 @@ export const ChatView: React.FC = () => {
   const durableAbandon = useAbandonParkedRun(currentSessionId, durableResume?.runId);
   const parkedNoticeYields = useParkedNoticeYields(durableResume);
 
-  // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
-  // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
-  // 字段指回原始用户消息——唯一可靠锚点是结构性推导：addMessage 一律无条件清空 streamSnapshot
-  // (sessionStore.ts addMessage)，所以只要 streamSnapshot 还在，messages 数组末尾就不可能是
-  // 之后新增的消息；跳过末尾合入的 recovery 消息（F4，id=snapshot.turnId）后，末位就是触发
-  // 这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
   const interruptionDecision = deriveStreamInterruptionDecision(
     streamSnapshot,
     deriveRetryTurnMessage(streamSnapshot, messages),
@@ -1125,22 +1119,13 @@ export const ChatView: React.FC = () => {
   );
 };
 
-/**
- * D-1「重试该轮」锚点推导：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID
- * （streamHandler.ts beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无
- * 关联，snapshot 里也没有任何字段指回原始用户消息——唯一可靠锚点是结构性推导：
- * addMessage 一律无条件清空 streamSnapshot（sessionStore.ts addMessage），所以只要
- * streamSnapshot 还在，messages 数组末尾就不可能有之后新增的消息；中断的助手回复
- * 会以 id=snapshot.turnId 的 recovery 消息合入末尾（streamRecoveryMessage，F4），
- * 跳过它之后，末位消息必然就是触发这轮的用户消息。取不到（数组为空或末位不是
- * user）就返回 null，不重试。
- */
+/** Retry the user message in the snapshot's turn, skipping the interruption rows. */
 export function deriveRetryTurnMessage(
   streamSnapshot: StreamRecoverySnapshot | null,
   messages: Message[],
 ): Message | null {
   if (!streamSnapshot || messages.length === 0) return null;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
+  for (let index = getStreamRecoveryTurnEnd(messages, streamSnapshot) - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (isStreamRecoveryMessage(message, streamSnapshot.turnId)) continue;
     if (isPersistedStreamInterruptionMessage(message)) continue;

@@ -601,7 +601,7 @@ export const zh = {
       engineCountLabel: 'Engine 数量',
       engineCountCaption: 'Codex / Claude',
       // 引擎行
-      remoteDefaultLabel: '远程默认',
+      remoteDefaultLabel: '远程默认：',
       localDefaultLabel: '本机默认选择',
       modelSelectableSummary: '{enabled}/{total} 个模型可选',
       loading: '正在读取模型目录…',
