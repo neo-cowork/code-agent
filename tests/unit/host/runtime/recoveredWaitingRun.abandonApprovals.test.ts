@@ -18,9 +18,9 @@ vi.mock('../../../../src/host/services/core/databaseService', () => ({
 
 let db: Database.Database;
 let repo: PendingApprovalRepository;
-const insert = (id: string, sessionId: string) => repo.insert({
+const insert = (id: string, sessionId: string, extra: Record<string, unknown> = {}) => repo.insert({
   id, kind: 'tool_approval', agentId: null, agentName: null, coordinatorId: sessionId,
-  payload: { sessionId, toolCallId: `call-${id}`, tool: 'Write' }, submittedAt: 1,
+  payload: { sessionId, toolCallId: `call-${id}`, tool: 'Write', ...extra }, submittedAt: 1,
 });
 const status = (id: string) => (db.prepare('SELECT status, feedback FROM pending_approvals WHERE id = ?').get(id) as { status: string; feedback: string });
 const registry = () => ({
@@ -43,6 +43,14 @@ describe('terminalRecoveredWaitingRunOnce abandonParked', () => {
     await terminalRecoveredWaitingRunOnce(registry(), new Map(), { sessionId: 's1' }, 10, { abandonParked: true });
     expect(status('mine')).toEqual({ status: 'rejected', feedback: 'run cancelled' });
     expect(status('other').status).toBe('pending');
+  });
+
+  it('leaves background-lane approvals of the same session pending (their in-memory waiter is alive)', async () => {
+    insert('fg', 's1');
+    insert('bg', 's1', { backgroundLane: true });
+    await terminalRecoveredWaitingRunOnce(registry(), new Map(), { sessionId: 's1' }, 10, { abandonParked: true });
+    expect(status('fg').status).toBe('rejected');
+    expect(status('bg').status).toBe('pending');
   });
 
   it('does not touch approvals on a plain Stop (no abandonParked)', async () => {

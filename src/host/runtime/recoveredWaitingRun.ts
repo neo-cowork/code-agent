@@ -102,13 +102,15 @@ function clearAbandonedRunSnapshot({ runId, sessionId }: RecoveredWaitingCancel)
 
 // 放弃停靠 run 后，它名下仍 pending 的工具审批行没有主人了：不收尾的话聊天底部会留着点了也
 // 没用的「请求批准」卡。与 drainPendingPermissions 的取消收尾同口径（rejected / 'run cancelled'）。
-type ApprovalSessionRefs = { sessionId?: unknown; argsRef?: { sessionId?: unknown } };
+type ApprovalSessionRefs = { sessionId?: unknown; argsRef?: { sessionId?: unknown }; backgroundLane?: unknown };
 
 function rejectAbandonedSessionApprovals(repo: PendingApprovalRepository, sessionId: string): void {
   try {
     for (const row of repo.listByKindAndStatus('tool_approval', 'pending')) {
       let payload: ApprovalSessionRefs | null = null;
       try { payload = JSON.parse(row.payloadJson) as ApprovalSessionRefs | null; } catch { /* 损坏 payload 用列兜底 */ }
+      // 后台 lane 的审批内存等待者仍活着，作废行会让它永远等不到裁决（与 drainPendingPermissions 的 skipBackgroundLanes 同口径）。
+      if (payload?.backgroundLane === true) continue;
       const rowSession = payload?.argsRef?.sessionId ?? payload?.sessionId ?? row.coordinatorId;
       if (rowSession === sessionId) repo.resolve({ id: row.id, status: 'rejected', feedback: 'run cancelled', resolvedAt: Date.now() });
     }
