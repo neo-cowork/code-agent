@@ -53,8 +53,8 @@ export function isStreamRecoveryMessage(message: Message, turnId?: string): bool
  *
  * 标记只在「这轮流真的断了、只剩快照回放」时有效。活 run 中途的快照重灌
  * （AGENT_STREAM_SNAPSHOT_REQUIRED）会把非 final 快照回填成 recovery 消息，之后
- * 同一轮继续出 delta、正常 commit —— commit/与活草稿合并就是「这轮没断」的铁证，
- * 标记再留着会把成功的工具步渲染成「应用重启时中断」。
+ * 同一轮继续出 delta、正常 commit —— commit 或合并仍在运行的草稿时清掉标记，
+ * 避免把成功的工具步渲染成「应用重启时中断」。
  */
 export function stripStreamRecoveryMarker(
   message: Pick<Message, 'metadata'>,
@@ -119,10 +119,24 @@ export function buildStreamRecoveryMessage(
   };
 }
 
-/**
- * 把非 final 的 snapshot 追加成当前会话末尾的 streaming assistant 消息。
- * final / 空 partial / 已存在同 id 消息时原样返回，保证幂等。
- */
+/** Find the end of the conversation turn that produced the snapshot. */
+export function getStreamRecoveryTurnEnd(messages: Message[], snapshot: StreamRecoverySnapshot): number {
+  const matchingIndex = messages.findIndex((message) =>
+    !isStreamRecoveryMessage(message)
+    && (message.id === snapshot.turnId || message.metadata?.correlation?.turnId === snapshot.turnId),
+  );
+  const nextUserIndex = messages.findIndex((message, index) =>
+    message.role === 'user'
+    && !message.isMeta
+    && message.visibility !== 'rewound'
+    && !message.metadata?.memberInput
+    && message.metadata?.workbench?.runtimeInputMode !== 'supplement'
+    // Before the first assistant commit, the snapshot may be the only record of this iteration.
+    && (matchingIndex >= 0 ? index > matchingIndex : message.timestamp > snapshot.timestamp),
+  );
+  return nextUserIndex < 0 ? messages.length : nextUserIndex;
+}
+
 export function mergeStreamSnapshotIntoMessages(
   messages: Message[],
   snapshot: StreamRecoverySnapshot | null | undefined,
@@ -134,15 +148,17 @@ export function mergeStreamSnapshotIntoMessages(
     Boolean(snapshot.content.trim() || snapshot.reasoning.trim()) ||
     snapshot.toolCalls.some((toolCall) => Boolean(toolCall.name));
   if (!hasPartial) return messages;
+  const turnEnd = getStreamRecoveryTurnEnd(messages, snapshot);
+  const turnPrefix = messages.slice(0, turnEnd);
   return [
-    ...messages,
+    ...turnPrefix,
     buildStreamRecoveryMessage(
       snapshot,
-      // 切走后仍在运行的会话会靠同一条 recovery message 接收后续 delta，不能把它
-      // 提前收成“应用重启时中断”；只有宿主已无 active run 的恢复快照才是回放终态。
+      // 运行中也会追加用户行（如改道或通话字幕），只有宿主已无 active run 才判回放终态。
       isSessionActive
         ? null
-        : snapshot.interruptionReason ?? deriveStreamInterruptionReason(messages, snapshot.turnId),
+        : snapshot.interruptionReason ?? deriveStreamInterruptionReason(turnPrefix, snapshot.turnId),
     ),
+    ...messages.slice(turnEnd),
   ];
 }
