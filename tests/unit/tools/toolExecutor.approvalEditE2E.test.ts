@@ -45,9 +45,6 @@ vi.mock('../../../src/host/security/writeIsolation', () => ({
 }));
 
 const { ToolExecutor } = await import('../../../src/host/tools/toolExecutor');
-const { getDenialRegistry } = await import('../../../src/host/security/denialRegistry');
-const { resetDecisionHistory } = await import('../../../src/host/security/decisionHistory');
-const { computeActionFingerprint } = await import('../../../src/host/security/denialRegistry');
 
 const { installPermissionResponseHandler } = await import('../../../src/web/webPermissionResponseHandler');
 const { OrchestratorPermissionIsland } = await import('../../../src/host/agent/orchestratorPermissions');
