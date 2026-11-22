@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 import { applySchema } from '../../../../src/host/services/core/database/schema';
+import { applySessionsMigrations } from '../../../../src/host/services/core/database/migrations';
+import { applyIndexes } from '../../../../src/host/services/core/database/indexes';
 import { SessionRepository } from '../../../../src/host/services/core/repositories/SessionRepository';
 import { ToolExecutionEventRepository } from '../../../../src/host/services/core/repositories/ToolExecutionEventRepository';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
@@ -28,12 +30,15 @@ const out = (label: string, value: unknown) => process.stdout.write(`${label} ${
 
 export const databasePorts: { current: Record<string, unknown> } = { current: {} };
 
-export const MAIL_DRAFT_ARGS = { subject: 'Rollback plan', to: ['a@example.com'], content: 'Steps to roll back.' };
+export const MAIL_DRAFT_ARGS = { subject: 'Rollback plan 3', to: ['a@example.com'], content: 'Steps to roll back.' };
 
 /** mail: the real mail_draft tool over a fake Mail connector that refuses (-1743) until green(), then saves one draft. */
-export async function harness(workspace: string, file = ':memory:', sideEffect = false, calendar = false, mail = false) {
+export async function harness(workspace: string, file = ':memory:', sideEffect = false, calendar = false, mail = false, beforeResumedTurn?: () => Promise<void>) {
   const db = new Database(file);
-  applySchema(db, createLogger('EnvResumeFixture'));
+  const logger = createLogger('EnvResumeFixture');
+  applySchema(db, logger);
+  applySessionsMigrations(db, logger);
+  applyIndexes(db);
   const sessions = new SessionRepository(db);
   const events = new ToolExecutionEventRepository(db);
   const repository = new DurableRunRepository(db); repository.migrate();
@@ -81,7 +86,9 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       resumes++;
       out('MODEL_HISTORY', history);
       if (resumedId !== runId) throw new Error('run identity changed');
+      sessions.updateSession(sessionId, { status: 'running' });
       const handle = registry.adoptRecoveredRun({ runId, sessionId, workspace, cwd: workspace });
+      await beforeResumedTurn?.();
       if (mail) {
         // The model's next turn: it reads the recorded "not run" result and issues mail_draft again, once, through the production executor.
         sessions.addMessage(sessionId, { id: 'env-assistant-2', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [{ id: 'env-call-2', name, arguments: callArgs }] });
@@ -90,6 +97,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       }
       await finalizeOrParkDurableRun({ registry, runId, handle, sessionId, completed: true });
       registry.unregister(runId, handle);
+      sessions.updateSession(sessionId, { status: 'idle' });
     },
   } as unknown as TaskManager;
   databasePorts.current = {
@@ -117,9 +125,10 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     },
   });
   const continueRun = () => continueParkedDurableRun({ sessionId, runRegistry: registry, taskManager: tasks, getMessages: async () => messages(), envRecoveryPorts: ports });
-  return { db, registry, repository, messages, tasks, ports, continueRun,
+  return { db, registry, repository, sessions, messages, tasks, ports, continueRun,
     counts: () => ({ executions, resumes, seenCalls, seenRuns }),
     mailSaved: () => ({ attempts: mailAttempts.length, saved }),
+    mailSubjects: () => [...mailAttempts],
     approvalCards: () => [...approvalCards],
     green: () => { blocked = false; },
     wire: (probe: ReturnType<EnvResumeProbeFactory>) => {
