@@ -30,6 +30,7 @@ export interface DurableRunView {
   status: RunStatus | 'idle' | 'unknown';
   engine: RunEngineRef | null;
   terminal: boolean;
+  abandonedParked?: true;
   attempt?: number;
   updatedAt?: number;
   interruptCause?: RunInterruptCause;
@@ -105,6 +106,7 @@ export function mapDurableRunView(consumer: DurableRunConsumer, envelope: RunEnv
     status: envelope.status,
     engine: envelope.engine,
     terminal: Boolean(envelope.terminal),
+    ...(envelope.terminal?.abandonedParked ? { abandonedParked: true as const } : {}),
     attempt: envelope.attempt,
     updatedAt: envelope.updatedAt,
     ...(getRunInterruptCause(envelope) ? { interruptCause: getRunInterruptCause(envelope) } : {}),
@@ -156,7 +158,9 @@ export function projectDurableRunToSessionPayload(view: DurableRunView): {
 } {
   const durableResume = projectDurableResumeState(view);
   return {
-    status: mapDurableRunToSessionStatus(view.status, durableResume),
+    status: view.status === 'cancelled' && view.abandonedParked
+      ? 'cancelled'
+      : mapDurableRunToSessionStatus(view.status, durableResume),
     ...(hasDurableWaitingApprovalRun(view) && durableResume?.mode !== 'continue'
       ? { durableWaitingInput: true as const }
       : {}),
