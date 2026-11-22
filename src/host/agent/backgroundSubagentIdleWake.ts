@@ -117,6 +117,7 @@ async function flushWake(sessionId: string): Promise<void> {
       failureMessage = text;
       failureError = event.data;
     });
+    logger.info('Background subagent completion wake starting', { sessionId, agentIds: records.map((record) => record.agentId) });
     try {
       await taskManager.startTask(
         sessionId,
@@ -143,6 +144,7 @@ async function flushWake(sessionId: string): Promise<void> {
       stopObserving();
     }
     if (failureMessage) await recordFailure(failureError ?? failureMessage);
+    else if (!reportedToUser) await recordFailure('Wake turn returned without an assistant report');
   } catch (error) {
     logger.warn('Failed to wake idle parent session for background subagent completion', {
       sessionId,
