@@ -54,11 +54,32 @@ pub const EVENT_RESTARTED: &str = "desktop-shell-webserver-restarted";
 pub const EVENT_RESTART_GAVE_UP: &str = "desktop-shell-webserver-restart-gave-up";
 pub const EVENT_RESTART_SKIPPED: &str = "desktop-shell-webserver-restart-skipped";
 
-pub const GAVE_UP_DIALOG_TITLE: &str = "Agent Neo";
-pub const GAVE_UP_DIALOG_MESSAGE: &str = "后台服务没能自动恢复。";
+/// give-up 对话框一份语言的文案（标题双语同为产品名）。
 /// 「重试」占 Ok 槽（回车默认键）；「稍后」占 Cancel 槽（Esc 映射到这里）。
-pub const GAVE_UP_DIALOG_RETRY_LABEL: &str = "重试";
-pub const GAVE_UP_DIALOG_LATER_LABEL: &str = "稍后";
+struct GaveUpDialogCopy {
+    title: &'static str,
+    message: &'static str,
+    retry_label: &'static str,
+    later_label: &'static str,
+}
+
+fn gave_up_dialog_copy(language: crate::menu_i18n::Language) -> GaveUpDialogCopy {
+    use crate::menu_i18n::Language;
+    match language {
+        Language::Zh => GaveUpDialogCopy {
+            title: "Agent Neo",
+            message: "后台服务没能自动恢复。",
+            retry_label: "重试",
+            later_label: "稍后",
+        },
+        Language::En => GaveUpDialogCopy {
+            title: "Agent Neo",
+            message: "Background service could not recover automatically.",
+            retry_label: "Retry",
+            later_label: "Later",
+        },
+    }
+}
 
 /// 死亡来源/重启路径标注（进事件，便于区分是哪条链路在拉起）。
 pub const PATH_OWNED_CHILD: &str = "owned-child";
@@ -236,9 +257,10 @@ pub enum GaveUpAction {
 
 /// 只有 Ok 槽位的「重试」文案是 Retry；其余（Cancel 槽「稍后」、Esc、插件
 /// 失败的 None、未知文案）一律 Later——不确定时选择「不再自动尝试」。
-pub fn gave_up_dialog_action(custom_label: Option<&str>) -> GaveUpAction {
+/// `language` 必须与弹窗时用的语言相同，否则 En 的 "Retry" 会被误判成 Later。
+pub fn gave_up_dialog_action(custom_label: Option<&str>, language: crate::menu_i18n::Language) -> GaveUpAction {
     match custom_label {
-        Some(label) if label == GAVE_UP_DIALOG_RETRY_LABEL => GaveUpAction::Retry,
+        Some(label) if label == gave_up_dialog_copy(language).retry_label => GaveUpAction::Retry,
         _ => GaveUpAction::Later,
     }
 }
@@ -681,21 +703,25 @@ pub fn supervise_after_death(
 fn show_gave_up_dialog(app: tauri::AppHandle, path: &'static str) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
+    // 语言只读一次：弹窗文案与回调里的按钮映射必须用同一份，否则 En 的
+    // "Retry" 到达时会被当成 Later。
+    let language = crate::menu_i18n::read_language(crate::real_data_dir().as_deref());
+    let copy = gave_up_dialog_copy(language);
     let app_for_retry = app.clone();
     app.dialog()
-        .message(GAVE_UP_DIALOG_MESSAGE)
-        .title(GAVE_UP_DIALOG_TITLE)
+        .message(copy.message)
+        .title(copy.title)
         .kind(MessageDialogKind::Error)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            GAVE_UP_DIALOG_RETRY_LABEL.to_string(),
-            GAVE_UP_DIALOG_LATER_LABEL.to_string(),
+            copy.retry_label.to_string(),
+            copy.later_label.to_string(),
         ))
         .show_with_result(move |result| {
             let custom_label = match result {
                 MessageDialogResult::Custom(label) => Some(label),
                 _ => None,
             };
-            match gave_up_dialog_action(custom_label.as_deref()) {
+            match gave_up_dialog_action(custom_label.as_deref(), language) {
                 GaveUpAction::Retry => {
                     reset_history();
                     supervise_after_death(app_for_retry.clone(), CAUSE_DIALOG_RETRY, 0, path);
@@ -812,6 +838,7 @@ fn report_daemon_death(app: &tauri::AppHandle, record: &DaemonPidRecord) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::menu_i18n::Language;
     use std::process::{Child, Command};
     use std::time::Instant;
 
@@ -881,10 +908,11 @@ mod tests {
     fn give_up_dialog_retry_resets_and_restarts_later_does_not() {
         // Ok 槽「重试」→ Retry；Cancel 槽「稍后」（Esc 也映射这）→ Later；
         // 插件异常 None / 未知文案 → Later（不确定时选择不再自动尝试）
-        assert_eq!(gave_up_dialog_action(Some(GAVE_UP_DIALOG_RETRY_LABEL)), GaveUpAction::Retry);
-        assert_eq!(gave_up_dialog_action(Some(GAVE_UP_DIALOG_LATER_LABEL)), GaveUpAction::Later);
-        assert_eq!(gave_up_dialog_action(None), GaveUpAction::Later);
-        assert_eq!(gave_up_dialog_action(Some("unknown")), GaveUpAction::Later);
+        let zh = gave_up_dialog_copy(Language::Zh);
+        assert_eq!(gave_up_dialog_action(Some(zh.retry_label), Language::Zh), GaveUpAction::Retry);
+        assert_eq!(gave_up_dialog_action(Some(zh.later_label), Language::Zh), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(None, Language::Zh), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(Some("unknown"), Language::Zh), GaveUpAction::Later);
 
         // Retry 之后的账本：清零 → decide 给出尝试 1 / 1s（新一轮循环）
         let mut history = SuperviseHistory {
@@ -903,6 +931,57 @@ mod tests {
             healthy_since_ms: None,
         };
         assert_eq!(decide(&history_later, 0), SuperviseDecision::GiveUp);
+    }
+
+    // ── 对话框文案按 shell 语言取：Zh 与改造前逐字节一致，En 全英文 ──────
+
+    #[test]
+    fn give_up_dialog_copy_zh_matches_legacy_strings() {
+        // 显式 Zh 与「语言文件缺失/非法 → read_language 兜底 Zh」必须是同一份中文
+        for language in [Language::Zh, crate::menu_i18n::read_language(None)] {
+            let copy = gave_up_dialog_copy(language);
+            assert_eq!(copy.title, "Agent Neo");
+            assert_eq!(copy.message, "后台服务没能自动恢复。");
+            assert_eq!(copy.retry_label, "重试");
+            assert_eq!(copy.later_label, "稍后");
+        }
+    }
+
+    #[test]
+    fn give_up_dialog_copy_en_is_english_without_cjk() {
+        let copy = gave_up_dialog_copy(Language::En);
+        assert_eq!(copy.title, "Agent Neo");
+        assert_eq!(copy.message, "Background service could not recover automatically.");
+        assert_eq!(copy.retry_label, "Retry");
+        assert_eq!(copy.later_label, "Later");
+        for text in [copy.title, copy.message, copy.retry_label, copy.later_label] {
+            assert!(
+                !text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+                "En copy must not contain CJK: {text}"
+            );
+        }
+        // 两种语言的按钮文案必须不同（否则按钮语义与语言脱钩）；同语言内两键也不同
+        let zh = gave_up_dialog_copy(Language::Zh);
+        assert_ne!(zh.retry_label, copy.retry_label);
+        assert_ne!(zh.later_label, copy.later_label);
+        assert_ne!(copy.retry_label, copy.later_label);
+        assert_ne!(zh.retry_label, zh.later_label);
+    }
+
+    #[test]
+    fn gave_up_dialog_action_maps_labels_per_language() {
+        // En：弹窗显示的 "Retry" → Retry；Later 键 / Esc(None) / 未知文案 /
+        // 甚至中文「重试」（另一语言的文案绝不能命中本语言的 Ok 槽）→ Later
+        assert_eq!(gave_up_dialog_action(Some("Retry"), Language::En), GaveUpAction::Retry);
+        assert_eq!(gave_up_dialog_action(Some("Later"), Language::En), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(None, Language::En), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(Some("unknown"), Language::En), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(Some("重试"), Language::En), GaveUpAction::Later);
+        // Zh：「重试」→ Retry；英文 "Retry" 在中文弹窗里是未知文案 → Later
+        assert_eq!(gave_up_dialog_action(Some("重试"), Language::Zh), GaveUpAction::Retry);
+        assert_eq!(gave_up_dialog_action(Some("稍后"), Language::Zh), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(Some("Retry"), Language::Zh), GaveUpAction::Later);
+        assert_eq!(gave_up_dialog_action(None, Language::Zh), GaveUpAction::Later);
     }
 
     // ── 循环级：注入 hooks（虚拟时钟 + 空睡眠），3 连败 GiveUp / 事件序 ────
