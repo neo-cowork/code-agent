@@ -209,6 +209,8 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       return settle(deps, notice, { status: 'checked', outcome: calendarOutcome(asked.access) });
     }
     if (request.actionKind === 'request_grant') {
+      // No grant API exists for files: Settings is the only route.
+      if (request.payload.pane === 'filesAndFolders') return { status: 'rejected' };
       const targetBundleId = automationBundleId(notice.target?.id);
       const probe = noticeProbe(deps, notice, request.payload.pane);
       if (!probe) return { status: 'rejected' };
@@ -222,7 +224,7 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
         }
       }
       const token = mintClickToken(notice.id, deps.now);
-      const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
+      const grant = await requestGrant(token, { pane: request.payload.pane, targetBundleId }, deps.grantBridge ?? null, deps.now);
       return settle(deps, notice, { status: grant === 'requested' ? 'checked' : grant, outcome: await probe() });
     }
     if (!deps.available()) return { status: 'not_available' };
