@@ -291,6 +291,7 @@ export function ToolCallDisplay({
   };
 
   if (terminal.state === 'hidden') return null;
+  const disclosedApp = toolCall.guiTakeoverDisclosure?.app;
 
   return (
     <div
@@ -302,6 +303,16 @@ export function ToolCallDisplay({
       data-testid={status === 'interrupted' ? 'interrupt-timeline-step' : undefined}
       style={{ animationDelay: `${index * 30}ms` }}
     >
+      {/* GUI 接管披露：host 在本 run 首次直接驱动该 app 界面前挂的话，卡前常驻
+          （直播与历史重放同渲染），与模型是否开口无关。 */}
+      {disclosedApp && (
+        <div
+          className="mb-0.5 ml-4 whitespace-normal break-words text-xs leading-5 text-zinc-400"
+          data-testid="gui-takeover-disclosure"
+        >
+          {t.guiTakeover.disclosure.replace('{app}', () => disclosedApp)}
+        </div>
+      )}
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
         data-testid={`tool-call-row-${toolCall.name}`}

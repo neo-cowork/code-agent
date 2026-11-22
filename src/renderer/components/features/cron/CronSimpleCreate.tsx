@@ -21,6 +21,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { interpolate } from '../../../i18n/interpolate';
 import { useI18n } from '../../../hooks/useI18n';
 import { listProjects } from '../../../services/projectClient';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
 import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
@@ -333,7 +334,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone, onDr
             onChange={(e) => setLibraryProjectId(e.target.value)}
             options={[
               { value: '', label: cc.simpleArchiveNone },
-              ...projects.map((project) => ({ value: project.id, label: project.name })),
+              ...projects.map((project) => ({ value: project.id, label: getProjectDisplayName(project, t) })),
             ]}
           />
         </FormField>

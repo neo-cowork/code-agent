@@ -538,6 +538,71 @@ describe('useAtMentionPanel', () => {
     expect(result.current.libraryRows[0]?.pinned).toBe(false);
     expect(mocks.toast.error).toHaveBeenCalled();
   });
+
+  // ============================================================================
+  // N-FIX-EN-ATMENTION-SESSION-ROW-UNSORTED-ZH：未分类桶（proj_unsorted）的 host 存名
+  // 是 zh 常量「未分类」，会话行 meta 不得把它直出进英文界面。经真实 hook 拉项目表
+  // （listProjects 含桶）+ AtMentionPopover 渲染断言，路径即 refreshReferences →
+  // buildSessionRows → AtMentionPopover sessionMeta。
+  // ============================================================================
+  async function renderSessionMeta(): Promise<string> {
+    // 清掉库/文件/产物行，面板里唯一剩下的行就是会话行，第一个按钮内的灰字即其 meta
+    mocks.listLibraryItems.mockResolvedValue([]);
+    mocks.getProjectArtifacts.mockResolvedValue([]);
+    Element.prototype.scrollIntoView = vi.fn();
+    useAppStore.setState({ workingDirectory: null });
+    const { result } = setup();
+    await openPanel(result);
+    const view = render(
+      <AtMentionPopover
+        query={result.current.query}
+        libraryRows={result.current.libraryRows}
+        fileRows={result.current.fileRows}
+        sessionRows={result.current.sessionRows}
+        artifactRows={result.current.artifactRows}
+        activeTab={result.current.activeTab}
+        selectedIndex={result.current.selectedIndex}
+        onTabChange={result.current.setActiveTab}
+        onSelect={result.current.selectRow}
+        onHover={result.current.setSelectedIndex}
+      />,
+    );
+    // 清掉库/文件/产物行后，面板里第一个按钮内的灰字就是会话行 meta
+    return view.container.querySelector('button span.text-zinc-500')?.textContent ?? '';
+  }
+
+  function mockUnsortedSession(): void {
+    mocks.listProjects.mockResolvedValue([{ id: 'proj_unsorted', name: '未分类' }]);
+    vi.mocked(window.domainAPI!.invoke).mockImplementation((_domain: string, action: string) => Promise.resolve({
+      success: true,
+      data: action === 'list' ? [session('past-unsorted', '今日计划', 'proj_unsorted')] : [],
+    }));
+  }
+
+  it('未分类会话行 meta（en）显示 Unsorted，不含任何中文字符', async () => {
+    mocks.language = 'en';
+    mockUnsortedSession();
+    const meta = await renderSessionMeta();
+    expect(meta).toMatch(/6 messages · Unsorted$/);
+    expect(meta).not.toMatch(/[一-鿿]/);
+    cleanup();
+    mocks.language = 'zh';
+  });
+
+  it('未分类会话行 meta（zh）仍显示 未分类', async () => {
+    mocks.language = 'zh';
+    mockUnsortedSession();
+    const meta = await renderSessionMeta();
+    expect(meta).toMatch(/6 条消息 · 未分类$/);
+    cleanup();
+  });
+
+  it('普通项目会话行 meta 不受影响（zh：Neo 项目）', async () => {
+    mocks.language = 'zh';
+    const meta = await renderSessionMeta();
+    expect(meta).toMatch(/6 条消息 · Neo 项目$/);
+    cleanup();
+  });
 });
 
 // ============================================================================

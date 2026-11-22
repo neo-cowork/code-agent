@@ -56,3 +56,8 @@ export function classifyShellDesktopAutomation(
   }
   return null;
 }
+
+/** Recognize the AppleScript runner in shell text without running it. */
+export function containsAppleScriptCommand(command: string): boolean {
+  return /(?:^|[\s;&|(`/])osa(?:script)\b/.test(command);
+}

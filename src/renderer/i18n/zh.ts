@@ -21,7 +21,7 @@ import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { serverConnectionZh } from './serverConnection';
-import { envAssistZh } from './envAssist';
+import { envAssistZh } from './envAssist'; import { guiTakeoverZh } from './guiTakeover';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -961,7 +961,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
-  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh,
+  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh, guiTakeover: guiTakeoverZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,

@@ -86,6 +86,7 @@ export function traceTerminalToolCall(tc: NonNullable<TraceNode['toolCall']>): T
     id: tc.id, name: tc.name, arguments: tc.args, _streaming: tc._streaming,
     shortDescription: tc.shortDescription, stepLabel: tc.stepLabel,
     targetContext: tc.targetContext, expectedOutcome: tc.expectedOutcome, liveOutput: tc.liveOutput,
+    guiTakeoverDisclosure: tc.guiTakeoverDisclosure,
     result: tc.result !== undefined || tc.success !== undefined ? {
       toolCallId: tc.id, success: tc.success ?? true,
       output: tc.success !== false ? tc.result : undefined,
