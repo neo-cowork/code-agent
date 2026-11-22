@@ -14,8 +14,9 @@ async function killThenRecover(parkMode: string, recoverMode: string): Promise<{
   const start = (mode: string) => {
     // Recover children need DEBUG=true: CLI mode gates info/warn at the logger instance
     // level, and the EnvResumeWaiter arm/stop lines are the evidence under test.
-    const child = spawn(process.execPath, ['--import', 'tsx', script, mode, directory, file], {
+    const child = spawn(process.execPath, ['--import', 'tsx', script, mode, directory, file, parkMode], {
       env: { ...process.env, CODE_AGENT_CLI_MODE: 'true', CODE_AGENT_WEB_MODE: 'false', DEBUG: mode.startsWith('park') ? 'false' : 'true', CODE_AGENT_NO_RUNTIME_AUTOINSTALL: '1', CODE_AGENT_DATA_DIR: directory },
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.push(child); return child;
@@ -30,25 +31,29 @@ async function killThenRecover(parkMode: string, recoverMode: string): Promise<{
       child.once('error', reject); child.once('exit', (code) => reject(new Error(`park process exited ${code}: ${first}`)));
     });
     expect(first).toContain('env_blocked');
-    process.stdout.write(`KILL -9 ${child.pid}\n`);
-    child.kill('SIGKILL'); await exited;
+    const killLine = `KILL -9 ${child.pid}\n`;
+    process.stdout.write(killLine);
+    process.kill(-child.pid!, 'SIGKILL'); await exited;
     expect(child.signalCode).toBe('SIGKILL');
     const next = start(recoverMode);
     const code = await new Promise<number | null>((resolve, reject) => {
       next.stdout!.on('data', (chunk) => { second += String(chunk); });
       next.stderr!.on('data', (chunk) => { second += String(chunk); });
-      next.once('error', reject); next.once('exit', resolve);
+      next.once('error', reject); next.once('close', resolve);
     });
     console.log(`PROCESS_ONE_RAW (${parkMode})\n` + first); console.log(`PROCESS_TWO_RAW (${recoverMode})\n` + second);
     if (process.env.ENV_RESUME_EVIDENCE_DIR) {
-      writeFileSync(path.join(process.env.ENV_RESUME_EVIDENCE_DIR, `kill-${recoverMode}.log`), `${first}\n=== recover ===\n${second}`);
+      const name = parkMode === 'park-mail-continuing' ? parkMode : recoverMode;
+      writeFileSync(path.join(process.env.ENV_RESUME_EVIDENCE_DIR, `kill-${name}.log`), first + killLine + second);
     }
     expect(code, second).toBe(0);
     for (const owned of children) expect(() => process.kill(owned.pid!, 0)).toThrow();
     process.stdout.write(`OWNED_PROCESSES_EXITED ${children.map((owned) => owned.pid).join(' ')}\n`);
     return { first, second };
   } finally {
-    for (const owned of children) if (owned.exitCode === null && owned.signalCode === null) owned.kill('SIGKILL');
+    for (const owned of children) {
+      if (owned.pid && owned.exitCode === null && owned.signalCode === null) process.kill(-owned.pid, 'SIGKILL');
+    }
     rmSync(directory, { recursive: true, force: true });
   }
 }
@@ -159,6 +164,19 @@ describe('environment park survives process kill', () => {
     expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
     expect(second).toContain('"status":"completed"');
     expect(second).toContain('not run: Mail automation permission was missing');
+    expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(countUserMessages(second)).toBe(1);
+  }, 60_000);
+
+  it('mail draft, kill inside the continuation: session return resumes the same run and saves one draft', async () => {
+    const { first, second } = await killThenRecover('park-mail-continuing', 'recover-mail-granted');
+    expect(labeledLine(first, 'INSIDE_CONTINUATION')).toContain('"status":"running"');
+    expect(labeledLine(first, 'KILL_SESSION')).toContain('"status":"running","attempts":1,"saved":0');
+    expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
+    expect(second).toContain('Environment auto-continue armed on session return');
+    expect(labeledLine(second, 'AFTER_GREEN')).toContain('"runId":"env-run"');
+    expect(labeledLine(second, 'AFTER_RETURN')).toContain('"sessionStatus":"idle","runStatus":"completed","userMessages":1');
+    expect(labeledLine(second, 'AFTER_RETURN')).toContain('"subjects":["Rollback plan 3"],"seenRuns":["env-run"]');
     expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
     expect(countUserMessages(second)).toBe(1);
   }, 60_000);
