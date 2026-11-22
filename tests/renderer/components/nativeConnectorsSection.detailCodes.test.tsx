@@ -25,7 +25,11 @@ const CJK = /[㐀-鿿]/;
 const ALL_CODES = Object.keys(en.settings.nativeConnectors.grid.detailCode) as NativeConnectorDetailCode[];
 const HOST_PROSE = '宿主写的中文句子 Command failed: osascript /Users/someone/x';
 
-async function renderCalendarRow(language: 'zh' | 'en', detailCode: NativeConnectorDetailCode) {
+async function renderCalendarRow(
+  language: 'zh' | 'en',
+  detailCode: NativeConnectorDetailCode,
+  presentation?: 'grid' | 'diagnostic',
+) {
   testLocale.value = language;
   const inventory: NativeConnectorInventoryItem[] = [{ id: 'calendar', label: 'Calendar', enabled: true }];
   const status: ConnectorStatusSummary = {
@@ -36,6 +40,12 @@ async function renderCalendarRow(language: 'zh' | 'en', detailCode: NativeConnec
     if (action === 'listNativeInventory') return inventory;
     if (action === 'listStatuses') return [status];
   });
+  if (presentation === 'diagnostic') {
+    const { container } = render(React.createElement(NativeConnectorsSection));
+    const label = (language === 'zh' ? zh : en).settings.nativeConnectors.grid.labels.calendar;
+    await screen.findByText(label);
+    return container;
+  }
   render(React.createElement(NativeConnectorsSection, { presentation: 'grid' }));
   return screen.findByTestId('native-connector-card-calendar');
 }
@@ -67,5 +77,21 @@ describe('NativeConnectorsSection renders every detailCode from the catalogue on
     expect(sentence.length).toBeGreaterThan(0);
     expect(sentence).toMatch(CJK);
     expect(card.textContent).not.toMatch(/id:|\{name\}|宿主写的|osascript|Command failed|\/Users\/|TCC/);
+  });
+
+  // The diagnostic list ("Runtime status and local bridge") renders the same catalogue through NativeConnectorItems.
+  it.each(ALL_CODES)('diagnostic en: %s equals the catalogue sentence with no CJK, no id: and no host prose', async (code) => {
+    const root = await renderCalendarRow('en', code, 'diagnostic');
+    const copy = en.settings.nativeConnectors.grid;
+    expect(root.textContent).toContain(copy.detailCode[code].replaceAll('{name}', copy.labels.calendar));
+    expect(root.textContent).not.toMatch(CJK);
+    expect(root.textContent).not.toMatch(/id:|\{name\}|osascript|Command failed|\/Users\/|TCC/i);
+  });
+
+  it.each(ALL_CODES)('diagnostic zh: %s equals the catalogue sentence with no host prose', async (code) => {
+    const root = await renderCalendarRow('zh', code, 'diagnostic');
+    const copy = zh.settings.nativeConnectors.grid;
+    expect(root.textContent).toContain(copy.detailCode[code].replaceAll('{name}', copy.labels.calendar));
+    expect(root.textContent).not.toMatch(/id:|\{name\}|宿主写的|osascript|Command failed|\/Users\/|TCC/);
   });
 });
