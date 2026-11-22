@@ -173,4 +173,18 @@ describe('createExtractRouter', () => {
       body: { error: 'speech failed' },
     });
   });
+
+  it('a throwing docx-html handler answers HTTP 500, never an empty success object', async () => {
+    const docxPath = makeTempFile('corrupt.docx');
+    await startExtractApi(new Map([
+      ['extract-docx-html', async () => {
+        throw new Error("docx extraction failed: Can't find end of central directory");
+      }],
+    ]));
+
+    await expect(postJson('/api/extract/docx-html', { filePath: docxPath })).resolves.toEqual({
+      status: 500,
+      body: { error: "docx extraction failed: Can't find end of central directory" },
+    });
+  });
 });

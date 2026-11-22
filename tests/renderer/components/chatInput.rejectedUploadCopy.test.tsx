@@ -62,6 +62,25 @@ describe('rejected attachments leave no uploaded copy', () => {
     expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('broken.docx'));
   });
 
+  it('(b2) a rejecting extractDocxHtml rejects without an attachment', async () => {
+    extractDocxHtml.mockRejectedValueOnce(new Error('docx extraction failed: end of central directory missing'));
+    const out = await run(new File(['x'], 'corrupt.docx'));
+    expect(out).toBeNull();
+    expect(discardUploadedFiles).toHaveBeenCalledTimes(1);
+    expect(discardUploadedFiles).toHaveBeenCalledWith(['/data/uploads/abc-123/corrupt.docx']);
+    expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('corrupt.docx'));
+  });
+
+  it('(b3) a valid blank docx (truthy empty result) stays an accepted attachment', async () => {
+    extractDocxHtml.mockResolvedValueOnce({ html: '', paragraphs: [], text: '', wordCount: 0 });
+    const out = await run(new File(['x'], 'blank.docx'));
+    expect(out).not.toBeNull();
+    expect(out?.data).toBe('');
+    expect(out?.path).toBe('/data/uploads/abc-123/blank.docx');
+    expect(discardUploadedFiles).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('(c) normal text file and over-limit PDF keep their uploaded copy', async () => {
     const text = await run(new File(['hello'], 'ok.txt'));
     expect(text?.path).toBe('/data/uploads/abc-123/ok.txt');

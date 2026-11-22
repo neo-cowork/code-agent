@@ -252,6 +252,8 @@ export const BROWSER_TIMEOUTS = {
   /** Reject oversized or malformed owner metadata without an unbounded read. */
   ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
   ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
+  /** Minimum idle age before an empty, login-free managed-browser-profile-surface-* dir is reclaimed. */
+  SURFACE_PROFILE_SWEEP_RETENTION: 7 * 24 * 60 * 60_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */

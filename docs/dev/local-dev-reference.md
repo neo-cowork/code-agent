@@ -181,6 +181,26 @@ bash scripts/tauri-install.sh   # 安装到 /Applications（必须用脚本，�
 **代理 / 环境变量**: webServer 启动时按序读 `~/.code-agent/.env` → 脚本同级 `.env` → 上级 `.env`。打包态走 `~/.code-agent/.env`，开发态走项目根 `.env`。Tauri 由 launchd 启动 env 是空的，海外端点（如 mimo sgp）必须在 `.env` 里写 `HTTPS_PROXY=http://127.0.0.1:7897` 才能走代理。
 **Auto-update**: 首次发布前需 `tauri signer generate` 并将 pubkey 写入 tauri.conf.json。
 
+### Dev 测试包故障注入（只在 Dev 槽有效）
+
+测试同学要摆出「后台服务挂了 / 自动重启连败 / 断网 / 连接器授权失效」这几个场面，不用改代码：启动 Dev 测试包时带上环境变量 `NEO_DEV_FAULT`（逗号分隔可叠加）。开关只认 Dev 槽数据目录（`~/.code-agent-dev`、`~/.code-agent-dev2` …）；正式包的文件里没有这个模块，同样的变量对它不起任何作用。
+
+```bash
+# 槽 1 用 Agent Neo Dev.app；槽 N 把包名换成 "Agent Neo Dev N.app"（如 "/Applications/Agent Neo Dev 2.app"）
+open -n --env NEO_DEV_FAULT=offline "/Applications/Agent Neo Dev.app"
+open -n --env NEO_DEV_FAULT=webserver_exit_once,webserver_boot_fail:3 "/Applications/Agent Neo Dev.app"
+open -n --env NEO_DEV_FAULT=connector_auth_invalid:mail "/Applications/Agent Neo Dev 2.app"
+```
+
+| 值 | 你会看到 |
+|----|----------|
+| `offline` | 打开后随便派个任务，模型请求，以及宿主进程里的外部 HTTP 请求（全局 fetch、axios、node 的 http/https、OAuth 与 MCP 的代理请求）全部按「没有网络」失败，出现失败提示；本机回环地址不受影响。宿主启动的外部子进程（浏览器、命令行工具）和全局 WebSocket 不在范围 |
+| `webserver_exit_once` | 应用打开约 4 秒后后台服务自己退出一次，自动重启后恢复正常；再次启动不会重复（状态记在数据目录 `dev-fault/exit_once.done`，删掉可重来） |
+| `webserver_boot_fail:N`（缺省 3） | 后台服务启动时连续退出 N 次，之后一次正常；计数在数据目录 `dev-fault/boot_fail.count`。单独使用时第一次启动就会失败；和 `webserver_exit_once` 同写时，先正常打开、挂一次，之后重启才连败 N 次，直到出现「后台服务没能自动恢复」的原生弹窗 |
+| `connector_auth_invalid:<id>`（缺省 `mail`，只支持 `mail`、`reminders`） | 指定连接器按「授权失效」失败，走现有的授权提示卡片；该连接器需先在设置里启用。日历走另一套授权机制，不在支持范围（写了会在日志里留一行 unsupported） |
+
+每次命中都会在日志里写一行，含 `dev_fault_inject` 和注入名，排查时直接搜这个词。去掉变量重新打开就恢复正常。
+
 ### 本地数据库
 ```
 ~/.code-agent/code-agent.db
