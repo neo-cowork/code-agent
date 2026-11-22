@@ -5,7 +5,9 @@ import {
   type RunEnvelope,
 } from '../../shared/contract/durableRun';
 import type { RunRegistry } from './runRegistry';
+import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { clearStreamSnapshot } from '../session/streamSnapshot';
 
 const logger = createLogger('RecoveredWaitingRun');
 
@@ -90,6 +92,12 @@ export function findSupersededSessionRoots(
 
 type RecoveredWaitingCancel = { runId: string; sessionId: string };
 
+function clearAbandonedRunSnapshot({ runId, sessionId }: RecoveredWaitingCancel): void {
+  const db = getDatabase();
+  const session = db.isReady ? db.getSession(sessionId) : null;
+  if (session) clearStreamSnapshot({ runId, sessionId, workingDir: session.workingDirectory });
+}
+
 /**
  * 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。
  *
@@ -110,7 +118,10 @@ export function terminalRecoveredWaitingRunOnce(
   // 并到同一次提交上，而不是再提交一次撞 cancelled -> cancelled 冲突抛错（桌面 500）。
   // joined 标给后到者：终态事件只由真正提交的一方补发，手机不会收两条 agent_cancelled。
   const inFlight = inFlightCancels.get(recovered.runId);
-  if (inFlight) return inFlight.then((settled) => ({ ...settled, joined: true as const }));
+  if (inFlight) return inFlight.then((settled) => {
+    if (options?.abandonParked) clearAbandonedRunSnapshot(settled);
+    return { ...settled, joined: true as const };
+  });
   const cancel = registry.terminalDurable(recovered.runId, {
     now,
     status: 'cancelled',
@@ -120,7 +131,10 @@ export function terminalRecoveredWaitingRunOnce(
       payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },
       recordedAt: now,
     },
-  }).then(() => recovered).finally(() => {
+  }).then(() => {
+    if (options?.abandonParked) clearAbandonedRunSnapshot(recovered);
+    return recovered;
+  }).finally(() => {
     inFlightCancels.delete(recovered.runId);
   });
   inFlightCancels.set(recovered.runId, cancel);
