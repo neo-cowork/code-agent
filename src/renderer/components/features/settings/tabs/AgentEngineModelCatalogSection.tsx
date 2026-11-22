@@ -154,7 +154,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                     <span>{AGENT_ENGINE_LABELS[engine.kind]}</span>
                   </div>
                   <div className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={engine.defaultModel}>
-                    {section.remoteDefaultLabel}：{engine.defaultModel}
+                    {section.remoteDefaultLabel}{engine.defaultModel}
                   </div>
                 </div>
 
