@@ -13,6 +13,7 @@ import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry
 import { getToolDefinitionWithCloudMeta } from '../../../../src/host/tools/dispatch/toolDefinitions';
 import { setToolLedgerSink } from '../../../../src/host/tools/toolLedgerSink';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
+import { mailDraftSchema } from '../../../../src/host/tools/modules/connectors/mailDraft.schema';
 import { getConnectorRegistry } from '../../../../src/host/connectors';
 import { registerAgentContinueRoute } from '../../../../src/web/routes/registerAgentContinueRoute';
 import { makeEngine } from './envResumeContext';
@@ -57,6 +58,9 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   };
   const approvalCards: string[] = [];
   const mailAttempts: string[] = []; let saved = 0;
+  // The connector tools only register on darwin; CI runs Linux, so register the real module (and connector) explicitly there.
+  const registeredMailDraft = mail && !protocol.has('mail_draft');
+  if (registeredMailDraft) protocol.register(mailDraftSchema, async () => (await import('../../../../src/host/tools/modules/connectors/mailDraft')).mailDraftModule);
   if (mail) getConnectorRegistry().register(mailConnector);
   else protocol.register(schema, async () => ({ schema, createHandler: () => ({ schema, execute: async (_args, context) => {
     executions++; seenCalls.push(context.currentToolCallId!); seenRuns.push(context.runId!);
@@ -142,6 +146,6 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       out('TOOL_EVENTS', db.prepare('SELECT * FROM tool_execution_events').all());
       out('COUNTS', { executions, resumes, seenCalls, seenRuns });
     },
-    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); else protocol.unregister(name); },
+    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (!mail || registeredMailDraft) protocol.unregister(name); },
   };
 }
