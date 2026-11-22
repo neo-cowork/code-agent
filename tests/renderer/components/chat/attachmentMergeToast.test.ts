@@ -179,4 +179,44 @@ describe('notifyAttachmentMerge', () => {
     ]);
     expect(limitNotice()).toEqual({ added: 0, dropped: 2, max: 10, kind: 'none' });
   });
+
+  it('dismiss removes the duplicate toast but leaves an unrelated toast added earlier', () => {
+    useToastStore.getState().addToast('info', 'unrelated notice', 0);
+    notifyAttachmentMerge(duplicateResult(2), zh.chatInput);
+    expect(toasts().map((t) => t.message)).toEqual([
+      'unrelated notice',
+      '读书笔记01.txt 等 2 个文件已添加，无需重复添加',
+    ]);
+    dismissAttachmentLimitToast();
+    expect(toasts().map((t) => t.message)).toEqual(['unrelated notice']);
+    expect(toasts()[0].type).toBe('info');
+  });
+
+  it('two consecutive duplicate merges leave exactly one toast carrying the newest text', () => {
+    notifyAttachmentMerge(duplicateResult(1), zh.chatInput);
+    notifyAttachmentMerge(duplicateResult(3), zh.chatInput);
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0].message).toBe('读书笔记01.txt 等 3 个文件已添加，无需重复添加');
+  });
+
+  it('one merge raises both duplicate toast and limit notice; dismiss clears both', () => {
+    notifyAttachmentMerge(duplicateResult(10, 2), zh.chatInput);
+    expect(toasts().map((t) => t.message)).toEqual([
+      '读书笔记01.txt 等 10 个文件已添加，无需重复添加',
+    ]);
+    expect(limitNotice()).toEqual({ added: 0, dropped: 2, max: 10, kind: 'none' });
+    dismissAttachmentLimitToast();
+    expect(toasts()).toHaveLength(0);
+    expect(limitNotice()).toBeNull();
+  });
+
+  it('duplicate toast is gone from the DOM after dismiss, an earlier info toast stays', () => {
+    useToastStore.getState().addToast('info', 'unrelated notice', 0);
+    render(h('div', null, h(ToastContainer)));
+    act(() => notifyAttachmentMerge(duplicateResult(1), zh.chatInput));
+    expect(document.body.textContent).toContain('读书笔记01.txt 已添加，无需重复添加');
+    act(() => dismissAttachmentLimitToast());
+    expect(document.body.textContent).not.toContain('已添加，无需重复添加');
+    expect(document.body.textContent).toContain('unrelated notice');
+  });
 });
