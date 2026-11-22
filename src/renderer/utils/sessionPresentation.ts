@@ -198,6 +198,9 @@ export function getSessionStatusPresentation(args: {
   if (sessionStatus === 'completed') {
     return PRESENTATION.done;
   }
+  if (sessionStatus === 'cancelled') {
+    return PRESENTATION.idle;
+  }
 
   // P3: messageCount fallback for sessions without explicit status
   const hasHistory = typeof messageCount === 'number' && messageCount > 0;

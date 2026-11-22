@@ -3,15 +3,24 @@ import http from 'http';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
+import { app as platformApp } from 'electron';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
+import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
+import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
+import { SessionLifecycleAppService } from '../../../src/host/app/sessionLifecycleAppService';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { getTaskManager } from '../../../src/host/task/TaskManager';
+import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
+import { saveStreamSnapshot } from '../../../src/host/session/streamSnapshot';
+import { withDurableSessionReplayPayload } from '../../../src/web/helpers/durableSessionPayload';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+
+vi.hoisted(() => vi.stubEnv('CODE_AGENT_WEB_MODE', '1'));
 
 vi.mock('../../../src/shared/constants', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/shared/constants')>();
@@ -31,6 +40,20 @@ const { registerAgentCancelRoute } = await import('../../../src/web/routes/regis
 describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
   let server: http.Server | undefined;
   let baseUrl = '';
+  let dataDir: string;
+
+  beforeAll(() => {
+    dataDir = mkdtempSync(path.join(tmpdir(), 'cancel-route-data-'));
+    vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+    vi.spyOn(platformApp, 'getPath').mockReturnValue(dataDir);
+  });
+
+  afterAll(() => {
+    getDatabase().close();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
 
   afterEach(async () => {
     if (server) {
@@ -391,6 +414,77 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
         terminal: { status: 'cancelled', reason: 'recovered_waiting_run_cancelled' },
       });
       expect(cancelledEvents).toEqual([{ runId: 'run-route-userstop', sessionId: 'session-route-userstop' }]);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { name: 'clears the abandoned run snapshot from loadSession', scenario: 'web' },
+    { name: 'preserves a newer run snapshot in the same session', scenario: 'newer' },
+    { name: 'desktop abandonment clears only the requested parked run snapshot', scenario: 'desktop' },
+  ])('$name', async ({ scenario }) => {
+    const sessionId = `session-snapshot-${scenario}`;
+    const runId = 'run-abandoned';
+    const { registry, db, repository, workspace } = await recoveredWaitingRegistry({ runId, sessionId });
+    try {
+      const database = getDatabase();
+      await database.initialize();
+      database.createSessionWithId(sessionId, {
+        title: 'Stopped task',
+        workingDirectory: workspace,
+        modelConfig: { provider: 'openai', model: 'gpt-4o-mini' },
+      });
+      await registry.checkpointDurable(runId, {
+        now: 2_050,
+        status: 'waiting',
+        state: null,
+        pendingOperations: [],
+        childRuns: [],
+        interruptCause: 'user_stop',
+        events: [{ type: 'run_checkpointed', payload: { reason: 'fixture' }, recordedAt: 2_050 }],
+      });
+      const lifecycle = new SessionLifecycleAppService({
+        getTaskManager,
+        getConfigService: () => null,
+        getCurrentSessionId: () => sessionId,
+        setCurrentSessionId: () => {},
+        getWorkingDirectory: () => workspace,
+      });
+      const partial = { content: 'Partial reply', reasoning: '', toolCalls: [], estimatedTokens: 2, timestamp: 2_030, isFinal: false };
+      saveStreamSnapshot(partial, { sessionId, runId, workingDir: workspace, turnId: 'stopped-turn' });
+      const readService = new DurableRunReadService(resolveDurableRunRollout({}), repository);
+      const parked = await withDurableSessionReplayPayload(await lifecycle.loadSession(sessionId), readService);
+      expect(parked.streamSnapshot).toMatchObject({ runId });
+      expect(parked.status).toBe('interrupted');
+      if (scenario === 'newer') {
+        saveStreamSnapshot(partial, { sessionId, runId: 'run-newer', workingDir: workspace, turnId: 'newer-turn' });
+      }
+      if (scenario === 'desktop') {
+        const agent = new AgentAppServiceImpl(getTaskManager, () => null, () => sessionId, () => {}, registry);
+        await agent.cancel(sessionId, undefined, { abandonParked: true, runId: 'run-stale' });
+        expect((await lifecycle.loadSession(sessionId)).streamSnapshot).toMatchObject({ runId });
+        await agent.cancel(sessionId, undefined, { abandonParked: true, runId });
+      } else {
+        await start(registry);
+        const response = await fetch(`${baseUrl}/api/cancel`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId, runId, abandonParked: true }),
+        });
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toMatchObject({ message: 'Cancelled', runId });
+      }
+      const loaded = await withDurableSessionReplayPayload(await lifecycle.loadSession(sessionId), readService);
+      expect(loaded.status).toBe('cancelled');
+      expect(loaded.durableResume).toBeUndefined();
+      if (scenario === 'newer') {
+        expect(loaded.streamSnapshot).toMatchObject({ runId: 'run-newer', turnId: 'newer-turn' });
+      } else {
+        expect(loaded.streamSnapshot).toBeUndefined();
+      }
     } finally {
       registry.clear();
       db.close();
