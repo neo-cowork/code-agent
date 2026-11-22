@@ -4,7 +4,7 @@ import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
-import type { ToolResult } from '../../../shared/contract/tool';
+import type { ToolCall, ToolResult } from '../../../shared/contract/tool';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { AgentRunOptions } from '../../research/types';
@@ -627,14 +627,21 @@ export class SessionCommandCenter {
       this.stepCapHitTasks.add(taskId);
     }
 
-    // tool_call_start 只记 call id → 工具名，供 tool_call_end 落 lastToolFailure.tool；end 即删。
+    // Keep the tool name for tool_call_end and publish the disclosure before approval.
     if (event.type === 'tool_call_start') {
-      const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
+      const call = event.data as Partial<ToolCall> | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
-        const url = (call.arguments as { url?: unknown } | undefined)?.url;
+        const disclosure = call.guiTakeoverDisclosure;
+        const guiDisclosures = task.progress?.guiDisclosures ?? [];
+        if (disclosure?.code === 'gui_takeover' && !guiDisclosures.some((entry) => entry.callId === call.id)) {
+          task.progress = { ...task.progress, guiDisclosures: [...guiDisclosures, { app: disclosure.app, callId: call.id }] };
+          task.updatedAt = Date.now();
+          this.projectTask(task);
+        }
+        const url = call.arguments?.url;
         if (typeof url === 'string' && url && url !== 'about:blank') this.lastUrlByTask.set(taskId, readableBrowserPage(url));
-        const command = (call.arguments as { command?: unknown } | undefined)?.command;
+        const command = call.arguments?.command;
         if (/bash|shell/i.test(call.name) && typeof command === 'string') {
           this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
         }

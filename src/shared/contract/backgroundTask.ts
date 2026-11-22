@@ -2,6 +2,8 @@
 // Background Task Types - shared contract for main-side task ledgers
 // ============================================================================
 
+import type { SwarmAgentContextSnapshot } from './swarm';
+
 export type TaskStatus =
   | 'queued'
   | 'running'
@@ -116,6 +118,7 @@ export interface TaskProgress {
   percent?: number;
   label?: string;
   lastToolStep?: LastToolStep;
+  guiDisclosures?: SwarmAgentContextSnapshot['guiDisclosures'];
   /** 按调用序的 Bash 步骤（最近 20 条），任务结束后仍在。 */
   bashSteps?: BashStep[];
   lastToolFailure?: LastToolFailure;
