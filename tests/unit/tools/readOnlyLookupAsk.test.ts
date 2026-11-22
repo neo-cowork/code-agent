@@ -47,15 +47,15 @@ describe('readOnlyProbePlan switch governs ListDirectory / Glob', () => {
     return ex;
   }
 
-  const cases: Array<[string, Record<string, unknown>]> = [
-    ['ListDirectory', { path: root }],
-    ['Glob', { pattern: '*', path: root }],
+  const cases: Array<[string, () => Record<string, unknown>]> = [
+    ['ListDirectory', () => ({ path: root })],
+    ['Glob', () => ({ pattern: '*', path: root })],
   ];
 
   for (const [tool, params] of cases) {
     it(`${tool}: switch off -> one permission request`, async () => {
       setSwitch(false);
-      const result = await executor().execute(tool, params, { sessionId: 'ro-lookup' });
+      const result = await executor().execute(tool, params(), { sessionId: 'ro-lookup' });
       expect(asks).toHaveLength(1);
       expect(asks[0].tool).toBe(tool);
       // autoApprove[level] 便利放行对 forceConfirm 让路，否则卡在 orchestrator 层被吞
@@ -65,7 +65,7 @@ describe('readOnlyProbePlan switch governs ListDirectory / Glob', () => {
 
     it(`${tool}: switch on -> no request, listing returned`, async () => {
       setSwitch(true);
-      const result = await executor().execute(tool, params, { sessionId: 'ro-lookup' });
+      const result = await executor().execute(tool, params(), { sessionId: 'ro-lookup' });
       expect(asks).toHaveLength(0);
       expect(result.success).toBe(true);
       expect(String(result.output)).toContain('budget.xlsx');
