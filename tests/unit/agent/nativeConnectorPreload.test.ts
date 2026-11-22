@@ -129,6 +129,30 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(2);
   });
 
+  it.each(['probe_access', 'list_reminders'])('keeps the Reminders read on the next turn after -1743 from %s', async (action) => {
+    enable(['reminders']);
+    const connector = getConnectorRegistry().get('reminders')!;
+    if (action === 'list_reminders') await connector.execute('probe_access', {});
+    const prompt = 'what reminders do I have today';
+    const { getTextForegroundToolNamesForPrompt } = await import('../../../src/host/app/sessionCommandCenterBrain');
+    const { isToolDeniedByRunPolicy } = await import('../../../src/host/tools/runToolPolicy');
+    expect(getTextForegroundToolNamesForPrompt(prompt)).toContain('reminders_create');
+
+    const denied = Object.assign(new Error('Command failed: osascript'), {
+      stderr: 'Not authorized to send Apple events to Reminders. (-1743)',
+    });
+    mocks.runAppleScript.mockRejectedValueOnce(denied);
+    await expect(connector.execute(action, {})).rejects.toBe(denied);
+    expect(connector.getCachedStatus?.()).toMatchObject({ readiness: 'failed', errorCode: 'not_authorized' });
+
+    const allowedToolNames = getTextForegroundToolNamesForPrompt(prompt);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames }, 'reminders')).toBe(false);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames }, 'reminders_create')).toBe(true);
+    expect(isToolDeniedByRunPolicy({ allowedToolNames, deniedToolNames: ['reminders'] }, 'reminders')).toBe(true);
+    expect(getDeferredToolsToPreloadForTurn(turn(prompt))).toContain('reminders');
+    expect(getTextForegroundToolNamesForPrompt(prompt, ['calendar'])).not.toContain('reminders');
+  });
+
   it('enabled but platform unavailable: not preloaded, warns readiness-unavailable', () => {
     const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
     Object.defineProperty(process, 'platform', { value: 'win32' });

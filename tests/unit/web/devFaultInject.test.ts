@@ -26,6 +26,35 @@ import { makeAiSdkFetch } from '../../../src/host/model/adapters/aiSdkFetch';
 import { electronFetch } from '../../../src/host/model/providers/providerHttp';
 import { ConnectorRegistry } from '../../../src/host/connectors/registry';
 import type { Connector } from '../../../src/host/connectors/base';
+import { describeAppleScriptFailure } from '../../../src/host/connectors/native/osascript';
+import { registerEnvAssistHandlers } from '../../../src/host/ipc/envAssist.ipc';
+import { publishEnvAssistToolNotice } from '../../../src/host/permissions/envAssist/toolNotice';
+import { ipcHost, type HandlerFn } from '../../../src/host/platform';
+import type { AgentEvent, Message } from '../../../src/shared/contract';
+
+const noticeStore = vi.hoisted(() => ({
+  messages: new Map<string, Message>(),
+  events: [] as AgentEvent[],
+}));
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({
+    getMessages: async () => Array.from(noticeStore.messages.values(), (message) => structuredClone(message)),
+    addMessageToSession: async (_sessionId: string, message: Message) => {
+      noticeStore.messages.set(message.id, structuredClone(message));
+    },
+  }),
+}));
+vi.mock('../../../src/host/services/agentEngine/agentEngineEventSink', () => ({
+  emitExternalAgentEvent: (_sessionId: string, event: AgentEvent) => { noticeStore.events.push(event); },
+}));
+vi.mock('../../../src/host/permissions/envAssist/settingsPane', () => ({
+  canOpenEnvSettings: () => true,
+  openEnvSettings: async () => true,
+}));
+vi.mock('../../../src/host/permissions/envAssist/shellBridge/client', () => ({
+  canRequestEnvGrant: async () => true,
+  resolveShellBridgeClientFromEnv: () => null,
+}));
 
 const MODULE_PATH = path.join(process.cwd(), 'dist/web/dev-fault-inject.cjs');
 let hadModule = false;
@@ -174,6 +203,67 @@ describe('connector_auth_invalid', () => {
     registry.register({ ...stubMail(), id: 'reminders' });
     await expect(registry.get('mail')!.execute('x', {})).resolves.toEqual({ data: [] });
     await expect(registry.get('reminders')!.execute('x', {})).rejects.toMatchObject({ stderr: expect.stringContaining('Reminders') });
+  });
+
+  it('keeps the Mail authorization action on passive recheck until the fault is cleared', async () => {
+    useFault('connector_auth_invalid:mail', devDir);
+    noticeStore.messages.clear();
+    noticeStore.events.length = 0;
+    const registry = new ConnectorRegistry('darwin');
+    registry.configure(['mail']);
+    const failure: unknown = await registry.get('mail')?.execute('list_messages', {}).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ stderr: 'Not authorized to send Apple events to Mail. (-1743)' });
+    const { code, message } = describeAppleScriptFailure('Mail', failure);
+    await publishEnvAssistToolNotice({
+      toolName: 'mail', result: { success: false, error: message, metadata: { code } },
+      sessionId: 'session', runId: 'run', onEvent: (event) => noticeStore.events.push(event),
+    });
+
+    const noticeId = 'run|perm_automation|mail';
+    const messageId = `env-assist:${noticeId}`;
+    const stored = () => noticeStore.messages.get(messageId)?.metadata?.envAssist;
+    expect(stored()).toMatchObject({ phase: 'needs_user', action: { labelKey: 'env.allow.mail' } });
+    let handler!: HandlerFn;
+    vi.spyOn(ipcHost, 'handle').mockImplementation((_channel, fn) => { handler = fn; });
+    const readAutomation = vi.fn(async (_bundleId: string, _askUser: false) => 0 as const);
+    registerEnvAssistHandlers({
+      available: () => true,
+      open: async () => true,
+      findNotice: async (id) => noticeStore.messages.get(`env-assist:${id}`)?.metadata?.envAssist,
+      passiveBridge: {
+        AXIsProcessTrusted: async () => false,
+        CGPreflightScreenCaptureAccess: async () => false,
+        IOHIDCheckAccess: async () => 1,
+        AEDeterminePermissionToAutomateTarget: readAutomation,
+        EKAuthorizationStatusForEvents: async () => 0,
+      },
+    });
+    const recheck = async () => {
+      const response = await handler({} as never, { action: 'recheck', payload: { noticeId } });
+      const events = noticeStore.events.filter((event) => event.type === 'env_assist_notice');
+      console.info(JSON.stringify({ response, message: noticeStore.messages.get(messageId), events, passiveReads: readAutomation.mock.calls }));
+      return response;
+    };
+
+    const faultResponse = await recheck();
+    const faultLog = injectedLines();
+    for (const line of faultLog) console.info(line);
+    expect(faultResponse).toMatchObject({ data: { status: 'checked', outcome: { status: 'denied' } } });
+    expect(stored()).toMatchObject({ phase: 'needs_user', action: { kind: 'request_grant', labelKey: 'env.allow.mail' } });
+    expect(faultLog).toEqual([
+      'dev_fault_inject connector_auth_invalid mail',
+      'dev_fault_inject connector_auth_invalid mail passive_automation_denied',
+    ]);
+    expect(noticeStore.events.filter((event) => event.type === 'env_assist_notice'))
+      .toEqual([{ type: 'env_assist_notice', data: stored() }]);
+
+    useFault(undefined, devDir);
+    expect(await recheck()).toMatchObject({ data: { status: 'checked', outcome: { status: 'granted' } } });
+    expect(readAutomation).toHaveBeenCalledWith('com.apple.mail', false);
+    expect(stored()).toMatchObject({ phase: 'resolved', doneKey: 'env.done.mail' });
+    expect(stored()?.action).toBeUndefined();
+    expect(noticeStore.events.at(-1)).toEqual({ type: 'env_assist_notice', data: stored() });
+    expect(injectedLines()).toEqual(faultLog);
   });
 
   it('不支持的 id（日历走 EventKit）：不改连接器，只留一行 unsupported 日志', async () => {
