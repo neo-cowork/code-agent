@@ -16,6 +16,7 @@ const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {
 const CALENDAR_TOOLS = new Set(['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']);
 
 const FILE_READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'ListDirectory']);
+const READ_ONLY_COMMANDS = 'ls|cat|head|tail|stat|du|wc|file|find|grep|tree|less|more|cd';
 const OS_DENIAL = /\bEPERM\b|Operation not permitted/i;
 
 /** macOS asks per app before Desktop/Documents/Downloads open; a refused answer shows up as a bare EPERM. */
@@ -24,11 +25,17 @@ function isFilesAndFoldersDenial(toolName: string, result: Record<string, unknow
   const text = cuaFailureText(result);
   if (!OS_DENIAL.test(text)) return false;
   const home = homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const protectedPath = new RegExp(`(?:^|[\\s'"(=:])(?:~|${home})/(?:Desktop|Documents|Downloads)(?=$|[/\\s'":,)])`);
+  const folder = `(?:~|${home})/(?:Desktop|Documents|Downloads)(?=$|[/\\s'":,)])`;
+  const protectedPath = new RegExp(`(?:^|[\\s'"(=:])${folder}`);
   if (!protectedPath.test(text)) return false;
   if (FILE_READ_TOOLS.has(toolName)) return (result.code ?? metadata.code) === 'FS_ERROR';
+  if (toolName !== 'Bash') return false;
   // A proven sandbox write denial belongs to the widen-sandbox card, not to macOS privacy settings.
-  return toolName === 'Bash' && sandboxDeniedWritePath(text) === undefined;
+  if (sandboxDeniedWritePath(text) !== undefined) return false;
+  // Neo's own seatbelt also refuses every write outside the workspace with the same generic text, so absence of a write
+  // proof is not enough: the failing command itself must be a read-only one (`ls: <path>: Operation not permitted`).
+  const readOnlyLine = new RegExp(`^\\s*(?:-?bash: (?:line \\d+: )?)?(?:${READ_ONLY_COMMANDS}): ${folder}[^\\n]*(?:Operation not permitted|EPERM)`, 'im');
+  return readOnlyLine.test(text);
 }
 
 /** A failed MCP result keeps the driver's text in `output`; `error` is only the generic backfill from ensureFailedToolResultError. */

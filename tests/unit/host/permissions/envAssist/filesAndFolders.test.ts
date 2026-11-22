@@ -72,6 +72,16 @@ describe('perm_files classification', () => {
     expect(notice).toBeUndefined();
   });
 
+  it.each([
+    ['cp', `cp: ${home}/Desktop/a.txt: Operation not permitted`],
+    ['sed -i', `sed: couldn't open temporary file ${home}/Downloads/sedAbc123: Operation not permitted`],
+    ['tar -C', `tar: ${home}/Documents/out/a.txt: Cannot open: Operation not permitted`],
+    ['ffmpeg', `${home}/Desktop/out.mp4: Operation not permitted`],
+    ['git clone', `fatal: could not create work tree dir '${home}/Documents/repo': Operation not permitted`],
+  ])('r1 no card when the sandbox refuses a write by %s (Neo seatbelt, not macOS privacy)', async (_cmd, text) => {
+    expect((await run('Bash', bashFailure(text))).notice).toBeUndefined();
+  });
+
   it('③c no card for a path outside Desktop/Documents/Downloads', async () => {
     expect((await run('Read', readFailure(`${home}/Library/Mail/x`))).notice).toBeUndefined();
     expect((await run('Bash', bashFailure(`ls: ${home}/Desktop2: Operation not permitted`))).notice).toBeUndefined();
