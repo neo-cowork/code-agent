@@ -116,9 +116,7 @@ async function resolveDisclosureApp(toolName: string, args: Record<string, unkno
   return null;
 }
 
-type DisclosureState = { disclosed: Set<string> };
-
-const states = new WeakMap<RuntimeContext, DisclosureState>();
+const states = new WeakMap<RuntimeContext, Set<string>>();
 
 /** Reset alongside the repair gate at the AgentLoop run boundary. */
 export function resetGuiTakeoverDisclosureState(ctx: RuntimeContext): void {
@@ -128,16 +126,14 @@ export function resetGuiTakeoverDisclosureState(ctx: RuntimeContext): void {
 /**
  * 给本批工具调用里「本 run 首次直接驱动某 app 界面」的调用挂上结构化披露。
  * 就地写 toolCall.guiTakeoverDisclosure：随后落库的 assistant 消息、tool_call_start
- * 事件（引擎展开整个 toolCall）与执行期审批卡按此顺序到达用户。每 appGrantKey
- * 一次（大小写/trim 归一，bundle 优先），第二个 app 各自再披露一次。
+ * 事件（引擎展开整个 toolCall）与执行期审批卡按此顺序到达用户。主 run 按
+ * appGrantKey 去重，成员 run 按传输方式无关的应用名称去重。
  */
-export async function attachGuiTakeoverDisclosures(ctx: RuntimeContext, toolCalls: ToolCall[]): Promise<void> {
+export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<string>, toolCalls: ToolCall[]): Promise<void> {
   if (toolCalls.length === 0) return;
-  let state = states.get(ctx);
-  if (!state) {
-    state = { disclosed: new Set<string>() };
-    states.set(ctx, state);
-  }
+  const memberRun = scope instanceof Set;
+  const disclosed = memberRun ? scope : states.get(scope) ?? new Set<string>();
+  if (!memberRun) states.set(scope, disclosed);
   for (const toolCall of toolCalls) {
     let app: ComputerTargetApp | null;
     try {
@@ -152,9 +148,10 @@ export async function attachGuiTakeoverDisclosures(ctx: RuntimeContext, toolCall
       continue;
     }
     if (!app) continue;
-    const key = appGrantKey(app);
-    if (state.disclosed.has(key)) continue;
-    state.disclosed.add(key);
+    // Member rows are per app name, including calls that switch between GUI transports.
+    const key = memberRun ? app.name.trim().toLowerCase() : appGrantKey(app);
+    if (disclosed.has(key)) continue;
+    disclosed.add(key);
     toolCall.guiTakeoverDisclosure = { code: 'gui_takeover', app: app.name.trim() };
     logCollector.tool('INFO', `GUI takeover disclosure attached (${app.name.trim()})`, {
       toolCallId: toolCall.id,
