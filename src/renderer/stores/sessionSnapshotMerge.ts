@@ -231,22 +231,24 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
 }
 
 /**
- * 快照侧是 recovery 回填消息时，与活草稿合并即证明这一轮仍在直播——重启中断标记
- * （streamRecovery / streamInterruptionReason）不再成立，随合并一并撤掉，否则标记
- * 会骑着活草稿活到收尾，成功的工具步整段被渲染成「应用重启时中断」。
+ * 运行中的恢复草稿合并后沿用直播呈现。已中断的快照保留标记，因为 live 尾也可能
+ * 含有停止前的草稿，撤掉标记会把它与同轮已落库的部分回复各画一份。
  */
 function mergeMetadata(snapshotMessage: Message, liveMessage: Message): Message['metadata'] {
   if (!snapshotMessage.metadata && !liveMessage.metadata) return undefined;
   const merged = { ...snapshotMessage.metadata, ...liveMessage.metadata };
   if (!isStreamRecoveryMessage(snapshotMessage)) return merged;
+  if (snapshotMessage.metadata?.streamInterruptionReason) {
+    return { ...merged, streamInterruptionReason: snapshotMessage.metadata.streamInterruptionReason };
+  }
   return stripStreamRecoveryMarker({ metadata: merged }).metadata;
 }
 
-/** Unpaired tool drafts still belong to their preceding user, even after later turns loaded. */
-function mergeLiveToolMessages(merged: Message[], tail: Message[], live: Message[]): Message[] {
+/** Unpaired drafts still belong to their preceding user, even after later turns loaded. */
+function mergeLiveTailMessages(merged: Message[], tail: Message[], live: Message[]): Message[] {
   const messages = [...merged];
   for (const message of tail) {
-    const userId = message.role === 'assistant' && message.toolCalls?.length
+    const userId = message.role === 'assistant'
       ? precedingUserId(live, message) : undefined;
     const userIndex = userId === undefined ? -1 : messages.findIndex(item => item.id === userId);
     const nextUserIndex = userIndex < 0 ? -1
@@ -320,7 +322,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
     return mergeAssistantPair(message, liveMessage);
   });
   return {
-    messages: hydrateToolCallResults(mergeLiveToolMessages(merged, [...liveById.values()], live)),
+    messages: hydrateToolCallResults(mergeLiveTailMessages(merged, [...liveById.values()], live)),
     hasLiveTail,
   };
 }
