@@ -15,7 +15,7 @@ import type {
 import { getConnectorRegistry } from '../../../connectors';
 import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
+import { appleScriptWriteFailureCode, describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { mailDraftSchema as schema } from './mailDraft.schema';
 
 function normalizeAddresses(value: unknown): string[] {
@@ -153,6 +153,7 @@ async function executeMailDraft(
     return {
       ok: false,
       error: failure,
+      ...appleScriptWriteFailureCode('Mail', error),
       meta: {
         action: 'draft_message',
         connector: 'mail',

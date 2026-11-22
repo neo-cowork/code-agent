@@ -13,6 +13,7 @@ import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry
 import { getToolDefinitionWithCloudMeta } from '../../../../src/host/tools/dispatch/toolDefinitions';
 import { setToolLedgerSink } from '../../../../src/host/tools/toolLedgerSink';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
+import { getConnectorRegistry } from '../../../../src/host/connectors';
 import { registerAgentContinueRoute } from '../../../../src/web/routes/registerAgentContinueRoute';
 import { makeEngine } from './envResumeContext';
 import { createLogger } from '../../../../src/host/services/infra/logger';
@@ -26,7 +27,10 @@ const out = (label: string, value: unknown) => process.stdout.write(`${label} ${
 
 export const databasePorts: { current: Record<string, unknown> } = { current: {} };
 
-export async function harness(workspace: string, file = ':memory:', sideEffect = false, calendar = false) {
+export const MAIL_DRAFT_ARGS = { subject: 'Rollback plan', to: ['a@example.com'], content: 'Steps to roll back.' };
+
+/** mail: the real mail_draft tool over a fake Mail connector that refuses (-1743) until green(), then saves one draft. */
+export async function harness(workspace: string, file = ':memory:', sideEffect = false, calendar = false, mail = false) {
   const db = new Database(file);
   applySchema(db, createLogger('EnvResumeFixture'));
   const sessions = new SessionRepository(db);
@@ -36,12 +40,25 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   registry.configureDurableKernel(new DurableRunKernel({ stores: repository, ownerId: 'env-host', processInstanceId: `env-process-${process.pid}`, leaseDurationMs: 120_000 }));
   const sessionId = 'env-session', runId = 'env-run', sourceId = 'env-source', toolCallId = 'env-call';
   // calendar: the real tool name, failing the way the native connector does (not_authorized), so the resolver decides to park.
-  const name = calendar ? 'calendar' : sideEffect ? 'env_fixture_write' : 'env_fixture_read';
+  const name = mail ? 'mail_draft' : calendar ? 'calendar' : sideEffect ? 'env_fixture_write' : 'env_fixture_read';
   const protocol = getProtocolRegistry();
   let blocked = true, executions = 0, resumes = 0;
   const seenCalls: string[] = [], seenRuns: string[] = [];
+  const callArgs: Record<string, unknown> = mail ? MAIL_DRAFT_ARGS : {};
   const schema: ToolSchema = { name, description: 'Environment recovery fixture', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'string' }, category: 'network', permissionLevel: sideEffect ? 'write' : 'read', readOnly: !sideEffect, requiresPermission: false };
-  protocol.register(schema, async () => ({ schema, createHandler: () => ({ schema, execute: async (_args, context) => {
+  const mailConnector = {
+    id: 'mail', label: 'Mail', capabilities: ['draft_message'], getStatus: async () => ({ connected: true, capabilities: [] }),
+    execute: async (_action: string, payload: Record<string, unknown>) => {
+      executions++; mailAttempts.push(payload.subject as string);
+      if (blocked) throw Object.assign(new Error('Command failed: osascript\nexecution error: Not authorized to send Apple events to Mail. (-1743)'), { stderr: 'Not authorized to send Apple events to Mail. (-1743)' });
+      saved++;
+      return { data: { subject: payload.subject, to: payload.to, cc: [], bcc: [], attachments: [], saved: true } };
+    },
+  };
+  const approvalCards: string[] = [];
+  const mailAttempts: string[] = []; let saved = 0;
+  if (mail) getConnectorRegistry().register(mailConnector);
+  else protocol.register(schema, async () => ({ schema, createHandler: () => ({ schema, execute: async (_args, context) => {
     executions++; seenCalls.push(context.currentToolCallId!); seenRuns.push(context.runId!);
     if (blocked && calendar) return { ok: false, error: 'Calendar not authorized', code: 'not_authorized' };
     if (blocked) throw new EnvBlockedError('perm_automation', 'mail', context.currentToolCallId!);
@@ -61,6 +78,12 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       out('MODEL_HISTORY', history);
       if (resumedId !== runId) throw new Error('run identity changed');
       const handle = registry.adoptRecoveredRun({ runId, sessionId, workspace, cwd: workspace });
+      if (mail) {
+        // The model's next turn: it reads the recorded "not run" result and issues mail_draft again, once, through the production executor.
+        sessions.addMessage(sessionId, { id: 'env-assistant-2', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [{ id: 'env-call-2', name, arguments: callArgs }] });
+        const again = await executor().execute(name, callArgs, { runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
+        sessions.addMessage(sessionId, { id: 'env-tool-2', role: 'tool', content: '', timestamp: Date.now(), toolResults: [{ toolCallId: 'env-call-2', success: again.success, output: again.output, error: again.error }] });
+      }
       await finalizeOrParkDurableRun({ registry, runId, handle, sessionId, completed: true });
       registry.unregister(runId, handle);
     },
@@ -73,7 +96,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     appendToolExecutionComplete: (input: Parameters<typeof events.appendComplete>[0]) => events.appendComplete(input),
   };
   const executor = () => {
-    const instance = new ToolExecutor({ workingDirectory: workspace, requestPermission: async () => false });
+    const instance = new ToolExecutor({ workingDirectory: workspace, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return true; } : async () => false });
     instance.setAuditEnabled(false); return instance;
   };
   const ports = createApplicationNativeRecoveryPorts(registry, {
@@ -92,6 +115,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   const continueRun = () => continueParkedDurableRun({ sessionId, runRegistry: registry, taskManager: tasks, getMessages: async () => messages(), envRecoveryPorts: ports });
   return { db, registry, repository, messages, tasks, ports, continueRun,
     counts: () => ({ executions, resumes, seenCalls, seenRuns }),
+    mailSaved: () => ({ attempts: mailAttempts.length, saved }),
+    approvalCards: () => [...approvalCards],
     green: () => { blocked = false; },
     wire: (probe: ReturnType<EnvResumeProbeFactory>) => {
       // Exercise the production route registration; wrap only TaskManager's model sink.
@@ -100,12 +125,12 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     park: async () => {
       sessions.createSessionWithId(sessionId, { title: 'Environment fixture', modelConfig: { provider: 'openai', model: 'fixture' }, workingDirectory: workspace });
       sessions.addMessage(sessionId, { id: sourceId, role: 'user', content: 'Read the email', timestamp: 1 });
-      sessions.addMessage(sessionId, { id: 'env-assistant', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: toolCallId, name, arguments: {} }] });
+      sessions.addMessage(sessionId, { id: 'env-assistant', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: toolCallId, name, arguments: callArgs }] });
       const handle = await registry.startDurable({ runId, sessionId, workspace, cwd: workspace });
       const { ctx, engine } = makeEngine(executor().execute.bind(executor()) as never);
       Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages() });
       const emitted: AgentEvent[] = []; Object.assign(ctx, { onEvent: (event: AgentEvent) => { emitted.push(event); } });
-      await engine.executeToolsWithHooks([{ id: toolCallId, name, arguments: {} }]);
+      await engine.executeToolsWithHooks([{ id: toolCallId, name, arguments: callArgs }]);
       if (!ctx.control.isCancelled) throw new Error(`Engine did not cancel: ${JSON.stringify(emitted)}`);
       await finalizeOrParkDurableRun({ registry, runId, handle, sessionId, completed: false, cancelled: ctx.control.isCancelled });
       out('PARK_ENVELOPE', db.prepare('SELECT envelope_json FROM durable_runs').all());
@@ -117,6 +142,6 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       out('TOOL_EVENTS', db.prepare('SELECT * FROM tool_execution_events').all());
       out('COUNTS', { executions, resumes, seenCalls, seenRuns });
     },
-    close: () => { registry.clear(); db.close(); protocol.unregister(name); },
+    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); else protocol.unregister(name); },
   };
 }

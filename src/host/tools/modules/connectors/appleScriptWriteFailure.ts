@@ -41,3 +41,9 @@ export function describeCalendarWriteFailure(failurePrefix: string, error: unkno
 export function calendarFailureCode(error: unknown): { code?: string } {
   return isCalendarFailure(error) ? { code: error.code } : {};
 }
+
+/** Machine code of a refused AppleScript write; only `not_authorized` is surfaced (it drives the permission card / park). */
+export function appleScriptWriteFailureCode(connectorLabel: string, error: unknown): { code?: 'not_authorized' } {
+  return isAppleScriptFailure(error) && describeAppleScriptFailure(connectorLabel, error, { timeoutContext: 'write' }).code === 'not_authorized'
+    ? { code: 'not_authorized' } : {};
+}

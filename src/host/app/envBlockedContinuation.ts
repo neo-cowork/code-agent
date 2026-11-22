@@ -1,4 +1,5 @@
 import type { Message } from '../../shared/contract';
+import type { RunEnvelope } from '../../shared/contract/durableRun';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { NativeRecoveryHost, isNativeRecoveryDescriptor, type NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from './nativeRecoveryHost';
@@ -8,13 +9,16 @@ import { ToolExecutor } from '../tools/toolExecutor';
 /** Reuse native recovery's evidence lookup, replay classification and write interruption. */
 export async function continueEnvBlockedRun(input: {
   runId: string;
+  /** The park note read before the manual-resume reset cleared it; recovery needs it to know why the call stopped. */
+  envBlocked?: RunEnvelope['envBlocked'];
   registry: RunRegistry;
   tasks: Pick<TaskManager, 'resumeExistingDurableRun'>;
   getMessages: (sessionId: string) => Promise<Message[]>;
   ports?: NativeRecoveryHostPorts;
 }): Promise<void> {
   const { registry, runId } = input;
-  const plan = await registry.getDurableRehydrationPlan(runId);
+  const loaded = await registry.getDurableRehydrationPlan(runId);
+  const plan = input.envBlocked ? { ...loaded, envelope: { ...loaded.envelope, envBlocked: input.envBlocked } } : loaded;
   const descriptor = plan.checkpoint?.state;
   if (!isNativeRecoveryDescriptor(descriptor)) throw new Error('Environment continuation descriptor is unavailable');
   const ports = input.ports ?? createApplicationNativeRecoveryPorts(registry, {
