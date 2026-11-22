@@ -138,6 +138,14 @@ describe('mailDraftModule (native)', () => {
         'mail_draft osascript failed',
         { connector: 'mail', code: 'not_authorized', detail: 'Not authorized to send Apple events to Mail.' },
       );
+      expect((result as { code?: string }).code).toBe('not_authorized');
+    });
+
+    it('carries no code for a timeout or a plain connector error (only a refusal parks)', async () => {
+      execMock.mockRejectedValue(Object.assign(new Error('Command failed: osascript'), { killed: true, signal: 'SIGTERM' }));
+      expect((await run(validArgs) as { code?: string }).code).toBeUndefined();
+      execMock.mockRejectedValue(new Error('mail locked'));
+      expect((await run(validArgs) as { code?: string }).code).toBeUndefined();
     });
 
     it('wraps connector errors', async () => {
