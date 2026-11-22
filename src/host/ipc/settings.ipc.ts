@@ -802,6 +802,11 @@ export function registerSettingsHandlers(
     return head.startsWith('<');
   };
 
+  // 扩展名本身是 .csv/.tsv = 真分隔文本，SheetJS 解析它就是本职——Windows 装
+  // Excel 的机器会把 .csv 标成 application/vnd.ms-excel 走进 excel 分支，签名
+  // 闸只对自称 Office 工作簿的扩展名生效。
+  const expectsWorkbookBytes = (filePath: string): boolean => !/\.(csv|tsv)$/i.test(filePath);
+
   /**
    * 行数组 → 带真实行号的 CSV。
    *
@@ -837,7 +842,7 @@ export function registerSettingsHandlers(
     }
 
     try {
-      if (!looksLikeWorkbookBuffer(buffer)) {
+      if (expectsWorkbookBytes(filePath) && !looksLikeWorkbookBuffer(buffer)) {
         throw new Error('file is not an Excel workbook (missing zip/CFB/XML signature)');
       }
       const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -898,7 +903,7 @@ export function registerSettingsHandlers(
     }
 
     try {
-      if (!looksLikeWorkbookBuffer(buffer)) {
+      if (expectsWorkbookBytes(filePath) && !looksLikeWorkbookBuffer(buffer)) {
         throw new Error('file is not an Excel workbook (missing zip/CFB/XML signature)');
       }
       const workbook = XLSX.read(buffer, { type: 'buffer' });

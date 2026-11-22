@@ -98,6 +98,17 @@ describe('extract-excel-json / extract-excel-text：损坏输入必须拒绝', (
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('extract-excel-text: cannot read file'));
   });
 
+  it('真 .csv（Windows 上 MIME=vnd.ms-excel 也会走 excel 分支）仍被接受，不进签名闸', async () => {
+    const filePath = join(workDir, 'data.csv');
+    await writeFile(filePath, 'name,qty\napple,3\npear,5\n');
+    const text = await handler('extract-excel-text')(null, filePath) as { text: string; sheetCount: number };
+    expect(text.sheetCount).toBe(1);
+    expect(text.text).toContain('apple');
+    const json = await handler('extract-excel-json')(null, filePath) as { sheetCount: number; sheets: Array<{ headers: string[] }> };
+    expect(json.sheetCount).toBe(1);
+    expect(json.sheets[0].headers).toContain('name');
+  });
+
   it('有效但空的工作簿仍被接受：两个 handler 照常 resolve', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([]), 'Sheet1');
