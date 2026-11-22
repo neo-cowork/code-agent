@@ -18,6 +18,7 @@ const STREAM_RECOVERY_META_KEY = 'streamRecovery';
 
 const TERMINAL_RECOVERY_SESSION_STATUSES: ReadonlySet<SessionStatus> = new Set([
   'completed',
+  'cancelled',
   'error',
   'interrupted',
   'orphaned',
