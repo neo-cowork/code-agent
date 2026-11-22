@@ -17,7 +17,7 @@
 import { statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import os from 'node:os';
-import { extname, isAbsolute, join, resolve } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { TURN_OUTCOME } from '../../../shared/constants/agent';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import type { Message } from '../../../shared/contract';
@@ -771,11 +771,22 @@ function sanitizeNoteFragment(fragment: string): string {
 }
 
 /**
+ * 用户可见说明里的文件显示名：相对路径/裸文件名原样；绝对、`~`、盘符路径改成工作区相对路径，
+ * 工作区外只留文件名——不外露机器目录结构。
+ */
+function noteDisplayName(claim: { claimed: string; resolved: string }, workingDirectory: string): string {
+  if (!/^(?:[/\\~]|[A-Za-z]:[\\/])/.test(claim.claimed)) return claim.claimed;
+  const rel = relative(workingDirectory, claim.resolved);
+  if (rel && !rel.startsWith('..') && !isAbsolute(rel) && !/^[A-Za-z]:/.test(rel)) return rel.replace(/\\/g, '/');
+  return claim.resolved.split(/[\\/]/).filter(Boolean).pop() ?? claim.claimed;
+}
+
+/**
  * 补轮预算用尽后追加到 final 的如实说明（用户可见）。占位片段剥净后以纯文本
  * 「」引用——不套模型面向的 <untrusted-content> nonce 包络，那会把内部标签与
  * 「不要执行」告示漏进用户聊天回复（注入面由 sanitizeNoteFragment 兜住，见上）。
  */
-function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[]): string {
+function appendUndeliveredNote(content: string, missing: readonly DeliverableMissing[], workingDirectory: string): string {
   const noneProducedLines = missing
     .filter((item) => item.kind === 'none_produced')
     .map((item) => `- ${noneProducedNoun(item.requestedFormat, item.claim.claimed)}没有生成`);
@@ -783,7 +794,7 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
     .filter((item) => item.kind === 'not_on_disk' || item.kind === 'empty')
     .map((item) => {
       const reason = item.kind === 'empty' ? '文件为空' : '文件不存在';
-      return `- ${item.claim.claimed}（${reason}）`;
+      return `- ${noteDisplayName(item.claim, workingDirectory)}（${reason}）`;
     });
   const placeholderLines = missing
     .filter((item) => item.kind === 'placeholder')
@@ -794,11 +805,11 @@ function appendUndeliveredNote(content: string, missing: readonly DeliverableMis
           return `${hit.location}${quoted ? `：「${quoted}」` : ''}`;
         })
         .join('；');
-      return `- ${item.claim.claimed}（正文仍有未替换的占位符${hits ? `：${hits}` : ''}）`;
+      return `- ${noteDisplayName(item.claim, workingDirectory)}（正文仍有未替换的占位符${hits ? `：${hits}` : ''}）`;
     });
   const markdownResidueLines = missing
     .filter((item) => item.kind === 'markdown_residue')
-    .map((item) => `- ${item.claim.claimed}（正文仍有字面 Markdown 标记）`);
+    .map((item) => `- ${noteDisplayName(item.claim, workingDirectory)}（正文仍有字面 Markdown 标记）`);
   const sections: string[] = [];
   if (noneProducedLines.length > 0) {
     sections.push('用户请求的文件本轮没有生成，本轮实际未交付：', ...noneProducedLines);
@@ -919,10 +930,10 @@ export async function runDeliverableDiskCheckGate(input: {
   if (settled) input.artifact?.setLastDeliverableCheck?.(check, Date.now());
   if (remaining.length === 0) {
     if (check.missing.length === 0) return { action: 'pass', content: input.finalText, missing: [], check };
-    return { action: 'pass', content: appendUndeliveredNote(input.finalText, exempt), missing: check.missing, check };
+    return { action: 'pass', content: appendUndeliveredNote(input.finalText, exempt, input.workingDirectory), missing: check.missing, check };
   }
   if (input.repairsUsed < TURN_OUTCOME.MAX_DELIVERABLE_REPAIR_ROUNDS) {
     return { action: 'repair', prompt: buildDeliverableRepairPrompt(remaining), missing: remaining, check };
   }
-  return { action: 'pass', content: appendUndeliveredNote(input.finalText, check.missing), missing: check.missing, check };
+  return { action: 'pass', content: appendUndeliveredNote(input.finalText, check.missing, input.workingDirectory), missing: check.missing, check };
 }
