@@ -59,7 +59,8 @@ function buildWakeExternalDeltaSection(input: WakeExternalDeltaInput): string {
     '- 新邮件：上次醒来之后新收到的邮件；首次醒来查看近期邮件',
     '- 日程冲突：未来 7 天日历里时间上重叠或安排有问题的日程',
     `- 冷线索：已发出超过 ${ROLE_PROACTIVITY.STALE_REPLY_DAYS} 天还没有收到回复的邮件`,
-    '读取规则：某个源读不出来时，必须在回复中点名「未读取：<源名>」，不许静默跳过，更不许编造它的内容。',
+    '读取规则：某个源读不出来时，必须在回复中点名「未读取：<源名>」，后面跟一句通俗的原因，不许静默跳过，更不许编造它的内容。',
+    '措辞规则：给用户看的文字一律用用户的语言、通俗说法；不写工具名、参数名，也不写「注册 / 只读工具」之类的内部解释。',
   ];
   if (input.avoidTitles.length > 0) {
     lines.push(`- 不要重复提议：以下提议已经出现在用户面前（待处理或被搁置），换个切入点：${input.avoidTitles.map((t) => `「${t}」`).join('')}`);
@@ -168,8 +169,10 @@ export async function resolveWakeExternalDelta(input: {
   config?: RoleProactivityConfig;
   /** 显式给定源名单（脚本回放/测试注入）；缺省查能力中心。 */
   sourceNames?: readonly string[];
+  /** 角色声明了工具时的醒来可用工具名；只列角色真能读的 native 源（缺省 = 角色没声明工具，列全部）。 */
+  roleToolNames?: readonly string[];
 }): Promise<ResolvedWakeExternalDelta> {
-  const sourceNames: readonly string[] = input.sourceNames ?? (await listConnectedSourceNames());
+  const sourceNames: readonly string[] = input.sourceNames ?? (await listConnectedSourceNames(input.roleToolNames));
   if (sourceNames.length === 0) return { sourceNames };
   const state = await readWakeProposalsState(input.roleId);
   return {

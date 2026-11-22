@@ -24,6 +24,20 @@ function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, 'name'>): To
 }
 
 describe('toolExecutionPresentation', () => {
+  it.each([zh, en])('uses a localized reason for a denied Reminders read', (translations) => {
+    const call = makeToolCall({
+      name: 'reminders',
+      result: {
+        toolCallId: 'tool-1',
+        success: false,
+        error: 'The complete user-facing answer is exactly this single everyday sentence',
+        metadata: { code: 'not_authorized', accessProbeDenied: true },
+      },
+    });
+    expect(humanizeToolFailureReason(call, translations)).toBe(translations.toolErrors.remindersReadDenied);
+    expect(resolveCollapsedFailureSummary(call, translations)).toBeNull();
+  });
+
   it('classifies tool source for builtin, mcp, computer, and memory tools', () => {
     expect(getToolCapabilitySource('Read')).toBe('builtin');
     expect(getToolCapabilitySource('mcp__github__get_issue')).toBe('mcp');

@@ -133,7 +133,10 @@ describe('task.ipc — real background Bash row stop', () => {
     const row = ledger.getTask(`shell:${taskId}`);
     expect(row).toMatchObject({ status, outputRefs: [expect.objectContaining({ size: 0 })] });
     expect(row?.failure).toEqual(exitCode === 0 ? undefined : {
-      message: 'Process exited with code 3', exitCode: 3, category: 'command_failed',
+      message: 'Process exited with code 3',
+      exitCode: 3,
+      category: 'command_failed',
+      reason: 'shell_command_failed',
     });
     expect(ledger.drainNotifications(sessionId)).toEqual([
       expect.objectContaining({ taskId: row?.id, type: exitCode === 0 ? 'task_completed' : 'task_failed' }),

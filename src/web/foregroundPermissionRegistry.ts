@@ -69,6 +69,7 @@ export function deliverForegroundPermissionResponse(
   sessionId: string,
   requestId: string,
   response: PermissionResponse,
+  updatedArgs?: Record<string, unknown>,
 ): PermissionDeliveryOutcome | undefined {
   const island = foregroundPermissionIslands.get(sessionId);
   if (!island) return undefined;
@@ -78,7 +79,7 @@ export function deliverForegroundPermissionResponse(
   if (!island.listPendingRequests().some((request) => request.id === requestId)) {
     return undefined;
   }
-  const outcome = island.handlePermissionResponse(requestId, response);
+  const outcome = island.handlePermissionResponse(requestId, response, updatedArgs);
   if (outcome !== 'unknown_request' && outcome !== 'storage_unavailable') {
     notifyPermissionStateChange();
   }
