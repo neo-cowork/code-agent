@@ -8,6 +8,7 @@ import { getSessionAutomationService } from '../services/sessionAutomation/sessi
 import { matchAppGrant } from './appGrantStore';
 import { appGrantKey, type ComputerTargetApp } from './computerAppTarget';
 import { connectorToolGrantIdentity } from './connectorToolAccess';
+import { consumeParkedCallApproval } from './parkedCallApproval';
 import { matchToolGrant } from './toolGrantStore';
 
 export function resolvePreAskGrant(input: {
@@ -21,6 +22,7 @@ export function resolvePreAskGrant(input: {
   computerApp: ComputerTargetApp | null;
   browserSessionTarget?: string | null;
   blocked: boolean;
+  params?: unknown;
 }): { ledgerReason: string; traceRule: string; traceDetail: string } | null {
   if (input.blocked) return null;
   if (
@@ -37,6 +39,9 @@ export function resolvePreAskGrant(input: {
     )
   ) {
     return null;
+  }
+  if (consumeParkedCallApproval(input.runId, input.toolName, input.params)) {
+    return { ledgerReason: 'parked_call_approval', traceRule: 'parked_call_approval', traceDetail: `停靠前已批准的同一调用：${input.toolName}` };
   }
   if (input.computerApp && matchAppGrant(input.sessionId ?? '', input.computerApp)) {
     return {

@@ -1175,7 +1175,7 @@ export class ToolExecutionEngine {
       return preservedToolResult;
     } catch (error) {
       watchdog.stop();
-      if (settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled() })) {
+      if (settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled(), toolName: toolCall.name, args: toolCall.arguments })) {
         // The run parks with no tool result, so the card is the only thing the user sees: publish it from the blocker.
         // ponytail: synthetic not_authorized result — calendar and mail_draft park today (envBlockForToolFailure); the card target comes from the blocker.
         await publishEnvAssistToolNotice({ toolName: toolCall.name, result: { success: false, metadata: { code: 'not_authorized' } }, sessionId: this.ctx.sessionId, runId: this.ctx.runId, parkedToolCallId: peekEnvBlockedNote(this.ctx.runId)?.toolCallId, onEvent: this.ctx.onEvent })

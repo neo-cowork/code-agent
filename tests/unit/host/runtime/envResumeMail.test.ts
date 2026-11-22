@@ -119,8 +119,9 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
     process.stdout.write(`APPROVAL_PROMPTS reissued=${JSON.stringify(reissued)}\n`);
     expect(reissued?.success).toBe(true);
     process.stdout.write(`APPROVAL_CARDS ${JSON.stringify(f.approvalCards())}\n`);
-    // No automatic reuse exists for a one-time allow (allow_run/allow_24h are explicit user tiers): the user sees two cards for the one draft.
-    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+    // The card answered before the parked call is reused once for the identical re-issue (N-ENV-ASSIST-S3-RESUME-REST2-FU2).
+    expect(f.approvalCards()).toEqual(['mail_draft']);
+    expect(f.mailSaved()).toEqual({ attempts: 2, saved: 1 });
   });
 });
 

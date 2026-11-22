@@ -2188,6 +2188,7 @@ export class ToolExecutor {
         browserSessionTarget: browserSessionGrant?.target,
         computerApp,
         blocked: preAskBlocked,
+        params,
       }) : null;
       if (preAsk) {
         if (browserSessionGrant?.target && preAsk.ledgerReason === 'tool_grant:session') browserApprovedAction = `browser_action.${params.action}`;

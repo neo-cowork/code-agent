@@ -3,6 +3,7 @@ import type { RunEnvelope } from '../../../shared/contract/durableRun';
 import { EnvBlockedError } from '../../permissions/envAssist/EnvBlockedError';
 import { getConfiguredApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import { isQuotaWaitParkableRun } from '../../runtime/quotaWaitParkability';
+import { recordParkedCallApproval } from '../../permissions/parkedCallApproval';
 import { createLogger } from '../../services/infra/logger';
 
 const notes = new Map<string, NonNullable<RunEnvelope['envBlocked']>>();
@@ -11,7 +12,7 @@ export function peekEnvBlockedNote(runId: string | undefined): RunEnvelope['envB
 export function clearEnvBlockedNote(runId: string): void { notes.delete(runId); }
 
 export function settleEnvBlockedTool(error: unknown, input: {
-  runId?: string; toolCallId: string; markCancelled: () => void;
+  runId?: string; toolCallId: string; markCancelled: () => void; toolName?: string; args?: unknown;
 }): boolean {
   if (!(error instanceof EnvBlockedError)) return false;
   if (!input.runId || error.toolCallId !== input.toolCallId
@@ -23,6 +24,8 @@ export function settleEnvBlockedTool(error: unknown, input: {
   if (!notes.has(input.runId)) notes.set(input.runId, {
     class: error.class, target: error.target, toolCallId: error.toolCallId,
   });
+  // The approval card was answered before the connector refused, so the re-issued identical call needs no second card.
+  if (input.toolName) recordParkedCallApproval(input.runId, input.toolName, input.args);
   input.markCancelled();
   return true;
 }
