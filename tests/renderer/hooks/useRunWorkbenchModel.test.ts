@@ -14,6 +14,7 @@ import { languages } from '../../../src/renderer/i18n';
 import { backgroundTaskFailureCopy } from '../../../src/renderer/utils/agentFailureCopy';
 import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { buildSessionReplayContext } from '../../../src/renderer/utils/sessionReplayContext';
 
 describe('buildGlobalTaskRecords', () => {
   it('does not mirror the current session into background tasks', () => {
@@ -145,6 +146,7 @@ describe('buildLedgerTaskRecords', () => {
       useAppStore.setState({ language: previousLanguage });
     }
     expect(formatTaskStatus(task, t.sessionReplay)).toBe(replayText);
+    expect(buildSessionReplayContext('session-1', {}, [task]).backgroundTasks[0]?.outputRefs).toEqual([]);
     expect(formatBlockDetail({
       type: 'tool_result',
       timestamp: 1,
