@@ -17,6 +17,7 @@ import { applyStreamingMessageDeltasToProjection } from '../../../src/renderer/u
 import { applyConversationStreamEvent } from '../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
 import type { ConversationStreamEventActions } from '../../../src/renderer/hooks/agent/effects/streamEventTypes';
 import { hasIncompleteStreamSnapshot } from '../../../src/renderer/utils/streamingStatePresentation';
+import { getTurnThinkingSegments } from '../../../src/renderer/components/features/chat/ThinkingDigestBanner';
 import { deriveRetryTurnMessage } from '../../../src/renderer/components/ChatView';
 
 const mockDomainInvoke = vi.fn();
@@ -293,6 +294,113 @@ describe('F4 切回重水化：streamSnapshot partial 合入与流式续接', ()
     // 末位已是合入的 assistant partial，但锚点要跳过它拿到 u-2。
     expect(messages[messages.length - 1].id).toBe(SNAPSHOT_TURN_ID);
     expect(deriveRetryTurnMessage(streamSnapshot, messages)?.id).toBe('u-2');
+  });
+
+  it('two Stops before the second reply keep the recovery snapshot and Continue on the first prompt', async () => {
+    const firstPrompt = { id: 'u-tea', role: 'user', content: '100 afternoon-tea ideas', timestamp: 1_000 } as const;
+    const secondPrompt = { id: 'u-desk', role: 'user', content: '100 desk-tidying tips', timestamp: 4_000 } as const;
+    const snapshot = makeSnapshot({
+      content: 'Tea marker: scones and lemon cakes',
+      reasoning: 'Plan the afternoon-tea list',
+      timestamp: 4_002,
+      interruptionReason: 'user',
+    });
+    const persistedMessages: Message[] = [
+      firstPrompt,
+      {
+        id: 'first-stop', role: 'assistant', content: snapshot.content + '\n\n[cancelled]', timestamp: 3_001,
+        metadata: { correlation: { turnId: snapshot.turnId } },
+      },
+      secondPrompt,
+      { id: 'second-stop', role: 'assistant', content: '[cancelled]', timestamp: 4_001 },
+    ];
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({
+      success: true,
+      data: action === 'load'
+        ? makeSession(snapshot, { status: 'interrupted', activeRun: false, messages: persistedMessages })
+        : [],
+    }));
+
+    await useSessionStore.getState().switchSession('session-1');
+    const { messages, streamSnapshot } = useSessionStore.getState();
+    expect(messages.map((message) => message.id)).toEqual([
+      firstPrompt.id, 'first-stop', snapshot.turnId, secondPrompt.id, 'second-stop',
+    ]);
+    const [first, second] = projectTurns(messages, 'session-1', false).turns;
+    expect(hasIncompleteStreamSnapshot(streamSnapshot, second)).toBe(false);
+    expect(hasIncompleteStreamSnapshot(streamSnapshot, first)).toBe(true);
+    expect(turnText(first)).toBe(snapshot.content);
+    expect(turnText(second)).toBe('');
+    expect(getTurnThinkingSegments(second)).toEqual([]);
+    expect(deriveRetryTurnMessage(streamSnapshot, messages)?.id).toBe(firstPrompt.id);
+
+    applyConversationStreamEvent(
+      { type: 'message', sessionId: 'session-1', data: {
+        turnId: snapshot.turnId, id: 'first-stop', content: persistedMessages[1].content,
+      } },
+      makeRemountedStreamState(),
+      makeRealActions(),
+    );
+    await useSessionStore.getState().switchSession('session-1', { force: true });
+    const { turns } = projectTurns(useSessionStore.getState().messages, 'session-1', false);
+    expect(turnText(turns[0])).toBe(snapshot.content);
+    expect(turnText(turns[1])).toBe('');
+  });
+
+  it('a late delta from the first stopped draft stays with its own prompt during the second Stop', async () => {
+    const firstPrompt = { id: 'u-tea', role: 'user', content: 'Afternoon tea ideas', timestamp: 1_000 } as const;
+    const secondPrompt = { id: 'u-desk', role: 'user', content: 'Desk-tidying tips', timestamp: 5_000 } as const;
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({
+      success: true,
+      data: action === 'load'
+        ? makeSession(null, { status: 'interrupted', activeRun: false, messages: [firstPrompt] })
+        : [],
+    }));
+    await useSessionStore.getState().switchSession('session-1');
+    const actions = makeRealActions();
+    const streamState = makeRemountedStreamState();
+    applyConversationStreamEvent(
+      { type: 'turn_start', sessionId: 'session-1', data: { turnId: SNAPSHOT_TURN_ID } },
+      streamState,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'stream_reasoning', sessionId: 'session-1', data: { turnId: SNAPSHOT_TURN_ID, content: 'Plan the tea list' } },
+      streamState,
+      actions,
+    );
+    applyConversationStreamEvent(
+      { type: 'stream_chunk', sessionId: 'session-1', data: { turnId: SNAPSHOT_TURN_ID, content: 'Scones and cakes' } },
+      streamState,
+      actions,
+    );
+    actions.addMessage(secondPrompt);
+
+    const expectSeparatedTurns = () => {
+      const { messages } = useSessionStore.getState();
+      const { entries } = useStreamingMessageAccumulatorStore.getState();
+      const [first, second] = applyStreamingMessageDeltasToProjection(
+        projectTurns(messages, 'session-1', false), messages, entries,
+      ).turns;
+      expect(turnText(second)).toBe('');
+      expect(getTurnThinkingSegments(second)).toEqual([]);
+      expect(turnText(first)).toBe('Scones and cakes');
+      expect(getTurnThinkingSegments(first).map((segment) => segment.text)).toEqual(['Plan the tea list']);
+    };
+    expectSeparatedTurns();
+
+    mockDomainInvoke.mockImplementation(async (_domain: string, action: string) => ({
+      success: true,
+      data: action === 'load' ? makeSession(null, {
+        status: 'interrupted',
+        activeRun: false,
+        messages: [firstPrompt, secondPrompt, {
+          id: 'second-stop', role: 'assistant', content: '[cancelled]', timestamp: 5_001,
+        }],
+      }) : [],
+    }));
+    await useSessionStore.getState().switchSession('session-1', { force: true });
+    expectSeparatedTurns();
   });
 
   it('final snapshot 不合入（流已完整落库，DB 消息才是权威）', async () => {
