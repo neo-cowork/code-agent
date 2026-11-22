@@ -3,16 +3,17 @@
 // ============================================================================
 
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
-import { NATIVE_APP_NAMES } from './appNames';
+import { appleScriptFailureLogDetail, probeFailureDetailCode } from './appleScriptFailure';
+import { createLogger } from '../../services/infra/logger';
 import {
   buildAppleScriptDateVar,
-  describeAppleScriptFailure,
   escapeAppleScriptString,
-  isAppleScriptFailure,
   parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
 } from './osascript';
+
+const logger = createLogger('NativeReminders', { lane: 'mcp' });
 
 interface ReminderItem {
   id: string;
@@ -30,7 +31,7 @@ function initialRemindersReadiness(): NativeReadiness {
 }
 
 let remindersReadiness: NativeReadiness = initialRemindersReadiness();
-let remindersProbeError: string | undefined;
+let remindersProbeDetailCode: ConnectorStatus['detailCode'];
 let remindersProbeErrorCode: ConnectorStatus['errorCode'];
 let remindersProbeCheckedAt: number | undefined;
 // 最近一次探测拿到的提醒列表是否为空（授权通过但无列表）——getStatus 的
@@ -39,7 +40,7 @@ let remindersProbeListEmpty = false;
 
 export function resetRemindersConnectorReadiness(): void {
   remindersReadiness = initialRemindersReadiness();
-  remindersProbeError = undefined;
+  remindersProbeDetailCode = undefined;
   remindersProbeErrorCode = undefined;
   remindersProbeCheckedAt = undefined;
   remindersProbeListEmpty = false;
@@ -48,7 +49,7 @@ export function resetRemindersConnectorReadiness(): void {
 function markRemindersReadReady(noAccessibleLists = false): void {
   remindersReadiness = 'ready';
   remindersProbeCheckedAt = Date.now();
-  remindersProbeError = undefined;
+  remindersProbeDetailCode = undefined;
   remindersProbeErrorCode = undefined;
   remindersProbeListEmpty = noAccessibleLists;
 }
@@ -57,18 +58,12 @@ function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
 }
 
-function errorMessage(error: unknown): string {
-  return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure(NATIVE_APP_NAMES.reminders, error).message
-    : error instanceof Error ? error.message : String(error);
-}
-
 function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
   if (process.platform !== 'darwin') {
     return {
       connected: false,
       readiness: 'unavailable',
-      detail: 'Reminders connector 仅在 macOS 可用。',
+      detailCode: 'platform_unsupported',
       actions: [],
       capabilities,
     };
@@ -79,7 +74,7 @@ function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
       connected: true,
       readiness: 'ready',
       checkedAt: remindersProbeCheckedAt,
-      detail: 'Reminders connector 已通过本地授权/可用性检查。',
+      detailCode: 'ready',
       noAccessibleItems: remindersProbeListEmpty,
       actions: ['disconnect', 'remove'],
       capabilities,
@@ -90,10 +85,9 @@ function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
     return {
       connected: false,
       readiness: 'failed',
-      error: remindersProbeError,
       errorCode: remindersProbeErrorCode,
       checkedAt: remindersProbeCheckedAt,
-      detail: `Reminders 授权/可用性检查失败：${remindersProbeError || '未知错误'}`,
+      detailCode: remindersProbeDetailCode ?? 'probe_failed',
       actions: ['repair_permissions', 'disconnect', 'remove'],
       capabilities,
     };
@@ -102,7 +96,7 @@ function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
   return {
     connected: false,
     readiness: 'unchecked',
-    detail: 'Reminders connector 已启用，但还未检查本地授权；点“检查/授权”时才会拉起 Reminders 或触发系统授权。',
+    detailCode: 'unchecked',
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities,
   };
@@ -145,8 +139,8 @@ async function probeRemindersAccess(): Promise<string[]> {
   if (process.platform !== 'darwin') {
     remindersReadiness = 'unavailable';
     remindersProbeCheckedAt = Date.now();
-    remindersProbeError = 'Reminders connector 仅在 macOS 可用。';
-    throw new Error(remindersProbeError);
+    remindersProbeDetailCode = 'platform_unsupported';
+    throw new Error('Reminders connector is only available on macOS.');
   }
 
   try {
@@ -156,9 +150,9 @@ async function probeRemindersAccess(): Promise<string[]> {
   } catch (error) {
     remindersReadiness = 'failed';
     remindersProbeCheckedAt = Date.now();
-    remindersProbeError = errorMessage(error);
-    remindersProbeErrorCode = isAppleScriptFailure(error)
-      && describeAppleScriptFailure('Reminders', error).code === 'not_authorized' ? 'not_authorized' : undefined;
+    remindersProbeDetailCode = probeFailureDetailCode(error, 'Reminders');
+    logger.warn('Reminders access probe failed', { detail: appleScriptFailureLogDetail(error) });
+    remindersProbeErrorCode = remindersProbeDetailCode === 'automation_not_authorized' ? 'not_authorized' : undefined;
     throw error;
   }
 }

@@ -22,6 +22,7 @@ vi.mock('../../../src/host/connectors/native/osascript', async (importOriginal) 
 }));
 
 import { mailConnector } from '../../../src/host/connectors/native/mail';
+import { photosConnector, resetPhotosConnectorReadiness } from '../../../src/host/connectors/native/photos';
 import { remindersConnector } from '../../../src/host/connectors/native/reminders';
 import { ConnectorRegistry } from '../../../src/host/connectors/registry';
 
@@ -39,7 +40,9 @@ describe('native office connector lazy status', () => {
     if (process.platform === 'darwin') {
       expect(status.actions).toEqual(['repair_permissions', 'disconnect', 'remove']);
     }
-    expect(status.detail).toContain(process.platform === 'darwin' ? '还未检查本地授权' : '仅在 macOS 可用');
+    expect(status.detailCode).toBe(process.platform === 'darwin' ? 'unchecked' : 'platform_unsupported');
+    expect(status.detail).toBeUndefined();
+    expect(status.error).toBeUndefined();
     expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
   });
 
@@ -54,7 +57,9 @@ describe('native office connector lazy status', () => {
     if (process.platform === 'darwin') {
       expect(status.actions).toEqual(['repair_permissions', 'disconnect', 'remove']);
     }
-    expect(status.detail).toContain(process.platform === 'darwin' ? '还未检查本地授权' : '仅在 macOS 可用');
+    expect(status.detailCode).toBe(process.platform === 'darwin' ? 'unchecked' : 'platform_unsupported');
+    expect(status.detail).toBeUndefined();
+    expect(status.error).toBeUndefined();
     expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
   });
 
@@ -64,7 +69,7 @@ describe('native office connector lazy status', () => {
     osascriptMocks.runAppleScript.mockClear();
 
     if (process.platform !== 'darwin') {
-      await expect(mailConnector.execute('probe_access', {})).rejects.toThrow('仅在 macOS 可用');
+      await expect(mailConnector.execute('probe_access', {})).rejects.toThrow('only available on macOS');
       expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
       return;
     }
@@ -84,7 +89,7 @@ describe('native office connector lazy status', () => {
     osascriptMocks.runAppleScript.mockClear();
 
     if (process.platform !== 'darwin') {
-      await expect(remindersConnector.execute('repair_permissions', {})).rejects.toThrow('仅在 macOS 可用');
+      await expect(remindersConnector.execute('repair_permissions', {})).rejects.toThrow('only available on macOS');
       expect(osascriptMocks.runAppleScript).not.toHaveBeenCalled();
       return;
     }
@@ -135,7 +140,7 @@ describe('native office connector lazy status', () => {
     osascriptMocks.runAppleScript.mockClear();
 
     if (process.platform !== 'darwin') {
-      await expect(remindersConnector.execute('repair_permissions', {})).rejects.toThrow('仅在 macOS 可用');
+      await expect(remindersConnector.execute('repair_permissions', {})).rejects.toThrow('only available on macOS');
       return;
     }
 
@@ -172,32 +177,56 @@ describe('native office connector lazy status', () => {
       await expect(connector.execute('repair_permissions', {})).rejects.toBe(raw);
       const status = await connector.getStatus();
       expect(status.readiness).toBe('failed');
-      const text = `${status.detail}\n${status.error}`;
-      expect(text).not.toMatch(/osascript|Command failed|tell application|outputLines/);
-      expect(status.detail).toContain('检查失败');
-      expect(status.detail).toContain('自动化');
+      expect(status.detailCode).toBe('automation_not_authorized');
+      expect(status.detail).toBeUndefined();
+      expect(status.error).toBeUndefined();
+      expect(JSON.stringify(status)).not.toMatch(/osascript|Command failed|tell application|outputLines/);
     }
   });
 
-  it.runIf(process.platform === 'darwin').each(['zh', 'en'])('localizes failed status.error app names for %s', async (language) => {
-    configState.language = language;
-    const raw = Object.assign(new Error('Command failed: osascript -e tell application "Calendar"\n(-1743)'), { stderr: '(-1743)' });
-    try {
-      // 日历已改走 EventKit（N-CALENDAR-ONE-PERMISSION-EVENTKIT），不再有 AppleScript 授权失败
-      for (const [connector, chineseName] of [
-        [mailConnector, '邮件'],
-        [remindersConnector, '提醒事项'],
-      ] as const) {
+  it.runIf(process.platform === 'darwin')('maps every failure shape to a stable detailCode with no prose in detail/error', async () => {
+    const cases: Array<[unknown, string, string | undefined]> = [
+      [Object.assign(new Error('Command failed: osascript\n(-1743)'), { stderr: '(-1743)' }), 'automation_not_authorized', 'not_authorized'],
+      [Object.assign(new Error('Command failed: osascript\n(-1728)'), { stderr: "Can't get account (-1728)" }), 'not_found', undefined],
+      [Object.assign(new Error('Command failed: osascript'), { killed: true, signal: 'SIGTERM' }), 'timeout', undefined],
+      [Object.assign(new Error('Command failed: osascript'), { code: 1, stderr: 'weird' }), 'read_failed', undefined],
+      [new Error('some internal failure /Users/someone/x'), 'probe_failed', undefined],
+    ];
+    for (const connector of [mailConnector, remindersConnector]) {
+      for (const [raw, detailCode, errorCode] of cases) {
         osascriptMocks.runAppleScript.mockRejectedValueOnce(raw);
         await expect(connector.execute('probe_access', {})).rejects.toBe(raw);
         const status = await connector.getStatus();
-        expect(status.errorCode).toBe('not_authorized');
-        expect(status.error).toContain(language === 'en' ? `${connector.label} access was denied` : `${chineseName} 未获授权`);
-        expect(status.error).not.toMatch(/osascript|Command failed|tell application/);
-        if (language === 'zh') expect(status.error).not.toContain(connector.label);
+        expect(status).toMatchObject({ readiness: 'failed', detailCode, errorCode });
+        expect(status.detail).toBeUndefined();
+        expect(status.error).toBeUndefined();
+        expect(JSON.stringify(status)).not.toMatch(/[\u3400-\u9fff]|osascript|Command failed|\/Users\//);
       }
-    } finally {
-      configState.language = 'zh';
+    }
+  });
+
+  it.runIf(process.platform === 'darwin')('photos reports a code per state with no prose in detail/error', async () => {
+    resetPhotosConnectorReadiness();
+    expect(await photosConnector.getStatus()).toMatchObject({ readiness: 'unchecked', detailCode: 'unchecked' });
+
+    osascriptMocks.runAppleScript.mockResolvedValueOnce('3');
+    await photosConnector.execute('probe_access', {});
+    expect(await photosConnector.getStatus()).toMatchObject({ readiness: 'ready', detailCode: 'ready' });
+
+    resetPhotosConnectorReadiness();
+    osascriptMocks.runAppleScript.mockRejectedValueOnce(new Error('Not authorized to send Apple events to Photos. (-1743) not authorized'));
+    await photosConnector.execute('probe_access', {});
+    expect(await photosConnector.getStatus()).toMatchObject({ readiness: 'failed', detailCode: 'photos_failed' });
+
+    resetPhotosConnectorReadiness();
+    osascriptMocks.runAppleScript.mockRejectedValueOnce(new Error('Photos got an error: something /Users/someone/Pictures'));
+    await photosConnector.execute('probe_access', {});
+    const unavailable = await photosConnector.getStatus();
+    expect(unavailable).toMatchObject({ readiness: 'unavailable', detailCode: 'photos_unavailable' });
+    for (const status of [unavailable]) {
+      expect(status.detail).toBeUndefined();
+      expect(status.error).toBeUndefined();
+      expect(JSON.stringify(status)).not.toMatch(/[\u3400-\u9fff]|\/Users\//);
     }
   });
 });
