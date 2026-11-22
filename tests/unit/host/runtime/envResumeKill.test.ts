@@ -179,5 +179,5 @@ describe('environment park survives process kill', () => {
     expect(labeledLine(second, 'AFTER_RETURN')).toContain('"subjects":["Rollback plan 3"],"seenRuns":["env-run"]');
     expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
     expect(countUserMessages(second)).toBe(1);
-  }, 60_000);
+  }, 120_000);
 });

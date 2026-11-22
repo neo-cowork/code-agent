@@ -20,12 +20,6 @@ import { harness } from '../unit/host/runtime/envResumeHarness';
 import { registerEnvResumeContinuer } from '../../src/host/runtime/envResumeWaiter';
 import { DurableRecoveryDispatcher } from '../../src/host/runtime/durableRecoveryDispatcher';
 import { NativeRecoveryHost } from '../../src/host/runtime/nativeRecoveryHost';
-import { hydrateApprovalGatesAtBoot } from '../../src/host/agent/parkedApprovalHydration';
-import { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
-import { MemoryRepository } from '../../src/host/services/core/repositories/MemoryRepository';
-import { PermissionDecisionRepository } from '../../src/host/services/core/repositories/PermissionDecisionRepository';
-import { ToolExecutionEventRepository } from '../../src/host/services/core/repositories/ToolExecutionEventRepository';
-import { runStartupMaintenance } from '../../src/host/services/core/database/startupMaintenance';
 import { createLogger } from '../../src/host/services/infra/logger';
 
 const [mode, workspace, file, crashPoint] = process.argv.slice(2);
@@ -131,6 +125,17 @@ if (mode.startsWith('park')) {
   // production session-return ENTRY below is what this child is under test for.
   registerEnvResumeContinuer(async () => fixture.continueRun(), () => () => { probeCalls++; return Promise.resolve(probeState); });
   if (continuingCrash) {
+    const [
+      { runStartupMaintenance }, { hydrateApprovalGatesAtBoot }, { PendingApprovalRepository },
+      { MemoryRepository }, { PermissionDecisionRepository }, { ToolExecutionEventRepository },
+    ] = await Promise.all([
+      import('../../src/host/services/core/database/startupMaintenance'),
+      import('../../src/host/agent/parkedApprovalHydration'),
+      import('../../src/host/services/core/repositories/PendingApprovalRepository'),
+      import('../../src/host/services/core/repositories/MemoryRepository'),
+      import('../../src/host/services/core/repositories/PermissionDecisionRepository'),
+      import('../../src/host/services/core/repositories/ToolExecutionEventRepository'),
+    ]);
     const approvals = new PendingApprovalRepository(fixture.db);
     runStartupMaintenance({
       db: fixture.db, sessionRepo: fixture.sessions, pendingApprovalRepo: approvals,
