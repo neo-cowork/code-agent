@@ -584,7 +584,10 @@ describe('SessionCommandCenter', () => {
       manager.emitAgent('session-a', start, taskId);
       expect(readProgress().guiDisclosures).toEqual(guiDisclosures);
       manager.emitAgent('session-a', start, taskId);
-      manager.emitAgent('session-a', { type: 'task_progress', data: { tool: 'Read', toolCallId: 'read-call' } }, taskId);
+      manager.emitAgent('session-a', {
+        type: 'task_progress',
+        data: { turnId: 'turn-1', phase: 'tool_running', tool: 'Read', toolCallId: 'read-call' },
+      }, taskId);
       expect(readProgress()).toMatchObject({ guiDisclosures, lastToolStep: { callId: 'read-call' } });
     } finally {
       center.dispose();
