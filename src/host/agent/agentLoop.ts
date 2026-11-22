@@ -87,6 +87,7 @@ import { recordCapabilityGapTurn } from './capabilityGapTurnRecorder';
 import { mergeTurnSystemContext } from './turnScaffold';
 import { beginWorkDirectoryRun, endWorkDirectoryRun } from './runtime/workDirectoryMaterializer';
 import { withTaskOutputDirectory } from '../permissions/taskOutputDirectory';
+import { resetGuiTakeoverDisclosureState } from './runtime/guiTakeoverDisclosure';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -386,6 +387,8 @@ export class AgentLoop {
         : undefined);
       // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
       this.toolEngine.resetRepairGate();
+      // GUI 接管披露账本同窗口清零：新一条 user 消息是新 run，首个 GUI 动作要重新说一句。
+      resetGuiTakeoverDisclosureState(this.ctx);
       // 一轮的边界在这里，所以录制器的开轮也在这里（displayPrompt 才是用户原话，
       // userMessage 可能已被拼上 turnSystemContext 脚手架）。
       this.beginComboTurn(displayPrompt ?? userMessage);

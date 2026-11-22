@@ -141,4 +141,25 @@ describe('environment park survives process kill', () => {
     expect(countUserMessages(second)).toBe(1);
     expect(countsLine(second)).toMatchObject({ executions: 0, resumes: 1, seenCalls: [], seenRuns: [] });
   }, 60_000);
+
+  it('④ mail draft, kill before the grant: the park survives restart, then grant + return saves exactly one draft', async () => {
+    const { first, second } = await killThenRecover('park-mail', 'recover-mail');
+    expect(first).toContain('"target\\":\\"mail');
+    expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
+    expect(second).toContain('Environment auto-continue armed on session return');
+    expect(second).toContain('"status":"completed"');
+    expect(second).toContain('not run: Mail automation permission was missing');
+    expect(second).not.toContain('process crashed');
+    expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(countUserMessages(second)).toBe(1);
+  }, 60_000);
+
+  it('④ mail draft, kill after the grant but before the resume: restart resumes the same run and saves one draft, not two', async () => {
+    const { second } = await killThenRecover('park-mail', 'recover-mail-granted');
+    expect(second).toContain('STARTUP_AUTO_CONTINUES 0 RECOVERY_HANDLER_CALLS 0');
+    expect(second).toContain('"status":"completed"');
+    expect(second).toContain('not run: Mail automation permission was missing');
+    expect(labeledLine(second, 'MAIL_DRAFT')).toContain('"attempts":1,"saved":1,"saves":1');
+    expect(countUserMessages(second)).toBe(1);
+  }, 60_000);
 });

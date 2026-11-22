@@ -12,6 +12,7 @@
 import { AgentFailureCode, inferAgentFailureCode } from '../../../shared/contract/agentFailure';
 import type { MessageMetadata } from '../../../shared/contract';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
+import { formatBackgroundTaskStop } from '../../../shared/i18n/backgroundTaskStop';
 import { describeSubagentStopReason } from '../../agent/subagentFailureReason';
 import { formatSessionTaskDeliveryFailure } from '../../../shared/constants/sessionCommandCenter';
 
@@ -68,10 +69,6 @@ function opensWithUnfinished(conclusion: string): boolean {
   return UNFINISHED_OPENERS.some((opener) => head.startsWith(opener)) || UNFINISHED_OPENERS_EN.test(head) || admitsNegativeResultInFirstSentence(head);
 }
 
-function pageClause(lastUrl: string | undefined): string {
-  return lastUrl ? `最后停留在页面${lastUrl}，` : '';
-}
-
 /** 无需改写（已完成且有正常结论 / 已是白话失败说明）时原样返回。 */
 export function resolveStoppedTaskOutcome(input: {
   status: StoppedTaskStatus;
@@ -86,11 +83,14 @@ export function resolveStoppedTaskOutcome(input: {
     const detail = stripCardToolCallMarkup(raw);
     if (input.stepCap) {
       const max = input.stepCap.max;
-      const head = `后台任务做到第 ${max} 步（上限 ${max} 步）就用完了步数，${pageClause(input.lastUrl)}还没有得出最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
+      const head = formatBackgroundTaskStop({
+        lastPage: input.lastUrl,
+        stepCap: { iterations: max, maxIterations: max },
+      });
       return { status: 'failed', detail: detail ? `${head}\n\n它停下前留下的说明：${detail}` : head, notice: head, kind: 'step_cap' };
     }
     if (!detail) {
-      const notice = `后台任务停下来了，${pageClause(input.lastUrl)}但没有留下最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
+      const notice = formatBackgroundTaskStop({ lastPage: input.lastUrl });
       return { status: 'failed', detail: notice, notice, kind: 'no_conclusion' };
     }
     if (opensWithUnfinished(detail)) {

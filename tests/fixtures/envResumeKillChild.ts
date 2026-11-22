@@ -11,6 +11,9 @@
 //   recover-noentry — user never returns: green probe registered, no entry call
 //   recover-timeout — user returns, probe stays red, ENV_RESUME_TIMEOUT_MS elapses (time-warped, see below)
 //   recover-write   — sideEffect fixture through entry (a): write tool must not re-execute
+//   park-mail       — real mail_draft refused (-1743) → env_blocked park
+//   recover-mail    — kill before grant: restart, user returns, probe red then green → one draft
+//   recover-mail-granted — kill after grant, before resume: restart with the grant already in place → one draft
 import http from 'node:http';
 import { harness } from '../unit/host/runtime/envResumeHarness';
 import { registerEnvResumeContinuer } from '../../src/host/runtime/envResumeWaiter';
@@ -19,6 +22,7 @@ import { DurableRecoveryDispatcher } from '../../src/host/runtime/durableRecover
 const [mode, workspace, file] = process.argv.slice(2);
 if (!workspace || !file) throw new Error('mode, workspace and database are required');
 const sideEffect = mode.endsWith('-write');
+const mail = mode.endsWith('-mail') || mode === 'recover-mail-granted';
 
 /** Fixture-only time warp for recover-timeout: delays >= 100s scale by 1/100 so the
  * 120s ENV_RESUME_TIMEOUT_MS deadline fires in ~1.2s real time (no production override). */
@@ -85,15 +89,16 @@ async function returnViaDomain(cwd: string): Promise<void> {
 }
 
 if (mode.startsWith('park')) {
-  const fixture = await harness(workspace, file, sideEffect);
+  const fixture = await harness(workspace, file, sideEffect, false, mail);
   await fixture.park();
   process.stdout.write(`READY ${process.pid}\n`);
   setInterval(() => {}, 1_000);
 } else {
   if (mode === 'recover-timeout') warpLongTimeouts();
-  const fixture = await harness(workspace, file, sideEffect);
+  const fixture = await harness(workspace, file, sideEffect, false, mail);
+  if (mode === 'recover-mail-granted') fixture.green();
   let probeCalls = 0;
-  let probeState: 'red' | 'green' = mode === 'recover-noentry' ? 'green' : 'red';
+  let probeState: 'red' | 'green' = mode === 'recover-noentry' || mode === 'recover-mail-granted' ? 'green' : 'red';
   // Continuer keeps the fixture's proven registration shape (continueParkedDurableRun with
   // the harness recovery ports); registerAgentContinueRoute's own registration is exercised
   // in-process by envResumePark.test.ts and sessionDomainHandler.envResume.test.ts. The
@@ -132,9 +137,11 @@ if (mode.startsWith('park')) {
       console.log('AFTER_MANUAL', JSON.stringify(await fixture.repository.get('env-run')));
       if ((await fixture.repository.get('env-run'))?.status !== 'completed') throw new Error('manual continue after timeout failed');
     } else {
-      await sleep(mode === 'recover-repeat' ? 2_300 : 1_300); // red poll ticks before the environment is fixed
-      if (probeCalls < 1) throw new Error('probe never polled while red');
-      if ((await fixture.repository.get('env-run'))?.status !== 'waiting') throw new Error('run continued before green');
+      if (mode !== 'recover-mail-granted') { // the grant is already in place there: the first probe tick resumes
+        await sleep(mode === 'recover-repeat' ? 2_300 : 1_300); // red poll ticks before the environment is fixed
+        if (probeCalls < 1) throw new Error('probe never polled while red');
+        if ((await fixture.repository.get('env-run'))?.status !== 'waiting') throw new Error('run continued before green');
+      }
       if (mode === 'recover-repeat') {
         if (probeCalls < 2 || probeCalls > 3) throw new Error(`repeat case poll count ${probeCalls} is not single-loop ticks`);
         if (waiterLines.filter((line) => line.includes('armed on session return')).length !== 1) throw new Error('repeat case armed more than one loop');
@@ -145,6 +152,12 @@ if (mode.startsWith('park')) {
       console.log('AFTER_GREEN', JSON.stringify(envelope));
       if (envelope?.status !== 'completed' || fixture.counts().resumes !== 1) throw new Error('green did not continue same run exactly once');
       if (userMessageCount() !== 1) throw new Error(`expected exactly one user message, saw ${userMessageCount()}`);
+      if (mail) {
+        const results = fixture.messages().filter((message) => message.role === 'tool').flatMap((message) => message.toolResults ?? []);
+        const saves = results.filter((result) => result.success && result.toolCallId === 'env-call-2').length;
+        console.log('MAIL_DRAFT', JSON.stringify({ ...fixture.mailSaved(), saves, parkedResult: results.find((result) => result.toolCallId === 'env-call')?.error }));
+        if (saves !== 1 || fixture.mailSaved().saved !== 1) throw new Error('expected exactly one saved draft');
+      }
       if (mode === 'recover-write') {
         // Restart semantics: this process only sees the continue side, so the write tool
         // not re-executing means zero executions here and exactly one begin row in SQLite.

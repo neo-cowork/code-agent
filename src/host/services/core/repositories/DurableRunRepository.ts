@@ -496,7 +496,10 @@ export class DurableRunRepository implements DurableRunStores {
       const cursor = { ...envelope.cursor, nextEventSeq: terminalSeq + 1 };
       const next: RunEnvelope = {
         ...envelope, status: input.status, cursor,
-        terminal: { status: input.status, eventSeq: terminalSeq, at: input.terminalAt, reason: input.reason },
+        terminal: {
+          status: input.status, eventSeq: terminalSeq, at: input.terminalAt, reason: input.reason,
+          ...(input.abandonedParked ? { abandonedParked: true as const } : {}),
+        },
         updatedAt: input.terminalAt,
       };
       assertRunEnvelope(next);

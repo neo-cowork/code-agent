@@ -86,11 +86,7 @@ export function markStreamSnapshotInterruptionReason(
   try {
     const owner = readOwner(selector);
     if (!owner) return;
-    const filePath = getStreamSnapshotPath({
-      ...selector,
-      runId: owner.runId,
-      turnId: '__mark_interruption__',
-    });
+    const filePath = getStreamSnapshotPath({ ...selector, runId: owner.runId });
     const snapshot = readJsonFile<PersistedSnapshot>(filePath);
     if (
       snapshot?.schemaVersion !== SNAPSHOT_SCHEMA_VERSION
@@ -175,7 +171,9 @@ function getOwnerPath(selector: SnapshotScope): string {
   return path.join(getSessionSnapshotDirectory(selector), OWNER_FILE);
 }
 
-export function getStreamSnapshotPath(identity: StreamSnapshotIdentity): string {
+type StreamSnapshotRun = Omit<StreamSnapshotIdentity, 'turnId'>;
+
+export function getStreamSnapshotPath(identity: StreamSnapshotRun): string {
   const runId = requireIdentityPart(identity.runId, 'runId');
   return path.join(getSessionSnapshotDirectory(identity), `${encodeSnapshotSegment(runId)}.json`);
 }
@@ -391,7 +389,7 @@ export function loadStreamSnapshot(selector: StreamSnapshotSelector): PersistedS
 }
 
 /** Clear only the named run. A stale owner cannot clear the active owner marker. */
-export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
+export function clearStreamSnapshot(identity: StreamSnapshotRun): void {
   try {
     removeSnapshotFile(getStreamSnapshotPath(identity));
     const owner = readOwner(identity);
@@ -399,6 +397,8 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
       fs.rmSync(getSessionSnapshotDirectory(identity), { recursive: true, force: true });
       // 新 run 干净收尾后，旧位置同会话的快照不再是未清证据；只在应用数据目录留标记，不碰用户夹。
       // 必须在 clear 之后而非认领时写：认领到首包落盘之间旧快照仍是唯一证据。
+      markLegacySuperseded(identity);
+    } else if (!owner && readOwner(identity, getLegacySessionSnapshotDirectory(identity))?.runId === identity.runId.trim()) {
       markLegacySuperseded(identity);
     }
   } catch {
@@ -415,7 +415,7 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
  * 处理（fail-safe：判定不了就不许删）。
  *
  * 懒开目录回收（workDirectoryMaterializer 删空任务夹前）用它挡住恢复证据：
- * 终错/取消路径刻意把 incomplete 快照留在盘上，供会话重进时读回、渲染
+ * 终错/停止路径刻意把 incomplete 快照留在盘上，供会话重进时读回、渲染
  * 「继续上次中断回复」决策槽——删了它恢复链就断了。
  */
 export function hasUnclearedStreamSnapshots(workingDir: string): boolean {

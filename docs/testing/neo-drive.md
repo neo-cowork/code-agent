@@ -110,4 +110,54 @@ ssh neo-worker 'cd ~/work/wt/NEO-DRIVE && node scripts/neo-drive/neo-drive.mjs r
 
 命令总墙钟约 92 秒（含服务启动、渲染层构建和自检，约 20 秒）；耗时主要在第一次 `wait-idle`（模型写长文），随模型响应速度波动。
 - 真机模式里，`--dev` 的页面驱动、`quit/launch/install/reset-tcc`、`wait-log/wait-db` 在 ssh 下都能用，前提是 Dev 包已经在 mini 的图形会话里运行。
-  `ax-click` 和 `shot-window` 要用到 System Events 和屏幕录制，ssh 进程拿不到图形会话的辅助功能/录屏授权，要放到图形会话的终端里跑。（尚未实测，待验）
+- `ax-click` 在 ssh 下直接能用（2026-11-22 实测）：mini 的系统授权库里「辅助功能」给了 `/usr/libexec/sshd-keygen-wrapper`，ssh 起的进程借它点得到系统授权框。实测是场景 a 里的日历授权框（`UserNotificationCenter` 的 `Allow Full Access`），点完授权框消失、任务接着读出了日程。mini 系统语言是英文，按钮名要写英文。
+- `shot-window` 在 ssh 下直接跑会报「screencapture 失败」：ssh 进程没有屏幕录制授权。要借 mini 上的 `~/bin/as-node.sh`（它用 launchd 让已授权屏幕录制的 Homebrew node 当责任进程）：
+
+```bash
+ssh neo-worker 'LANG=en_US.UTF-8 ~/bin/as-node.sh /bin/zsh -c "export PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin; cd ~/work/wt/NEO-DRIVE && node scripts/neo-drive/neo-drive.mjs shot-window 名字 --dir ~/work/tmp/nd"'
+```
+
+  2026-11-22 实测截到的是 Dev 包原生窗口（1200×800，内容与窗口当时显示的会话一致）。坑：`as-node.sh` 起的进程 PATH 很短，不补 PATH 会报 `spawnSync node ENOENT`；截到的是原生窗口，和 `shot`（截 neo-drive 自己那个页面）不是同一个画面，两边打开的会话可以不同。
+
+场景 a、b 在 mini 的 Dev 包上实测耗时（2026-11-22，Dev 包 0.33.0，模型 `小米 MiMo/MiMo v2.6 Flash`，经 ssh 跑 `run … --dev`，均 `ok: true`）。两个场景都是先按当前产品流程改过才跑通的，改完后 a 一次跑通；b 的场景文件边跑边改了几版（等待写错、收尾断言收紧），表里是定稿那一版的一次整场结果：
+
+场景 a（重置日历授权 → 问日程 → 批准 → 点系统授权框 → 续做出结果）：
+
+| 步骤 | 耗时 | 结果 |
+|------|------|------|
+| 整个场景（`totalMs`） | 26498 ms（约 26 秒） | 通过 |
+| `quit` | 215 ms | 通过 |
+| `reset-tcc`（Calendar） | 26 ms | 通过 |
+| `launch` | 3271 ms | 通过 |
+| `reload` | 6014 ms | 通过 |
+| `new-session` | 90 ms | 通过 |
+| `select-model` | 472 ms | 通过 |
+| `send` | 302 ms | 通过 |
+| `wait-idle`（等到审批卡） | 10436 ms | 通过 |
+| `click`（允许一次） | 32 ms | 通过 |
+| `ax-click`（Allow Full Access） | 633 ms | 通过 |
+| `wait-idle`（续做完） | 4949 ms | 通过 |
+| `wait-log` | 1 ms | 通过 |
+| `assert-visible` | 6 ms | 通过 |
+| `shot` | 51 ms | 通过 |
+
+场景 b（建 → 改 → 删测试日程，跑完清理）：
+
+| 步骤 | 耗时 | 结果 |
+|------|------|------|
+| 整个场景（`totalMs`） | 80407 ms（约 80 秒） | 通过 |
+| `new-session` | 271 ms | 通过 |
+| `select-model` | 634 ms | 通过 |
+| 建：`send` → `wait-idle` → `click`（创建）→ `wait-idle` | 243 / 12262 / 37 / 7625 ms | 通过 |
+| 改：`send` → `wait-idle` →（可选的允许一次，本次没出现，等 2003 ms）→ `click`（更新）→ `wait-idle` | 207 / 9832 / 2003 / 52 / 4546 ms | 通过 |
+| 删：`send` → `wait-idle` →（可选的允许一次，没出现，2004 ms）→ `click`（删除）→ `wait-idle` | 236 / 4711 / 2004 / 35 / 5335 ms | 通过 |
+| `shot` | 78 ms | 通过 |
+| 收尾清理（查 7 天内的测试日程并删除，等到回复「已清空」，共 9 步） | 约 30 秒 | 通过 |
+
+耗时随模型波动很大：同一天换成 Dev 包默认的 NeoHorse 1.5 Flash 各跑一次，a 是 100874 ms（等审批卡用了 85 秒），b 是 47376 ms；b 用 MiMo 的另外两次是 105637 ms 和 155234 ms（后一次建日程前模型想了 68 秒）。看性能有没有退化只比 `click`、`ax-click`、`launch`、`reload` 这些不经过模型的步骤。
+
+这次踩到、已在本仓修掉的三处：
+- 日历授权流程变了：现在是先出「允许 Neo 查看你的日程吗」审批卡（点「允许一次」），随后直接弹系统授权框；没有「允许访问日历」按钮和「已允许 Neo…」提示了。
+- 写日历的确认卡按钮是「创建 / 更新 / 删除」，不是「允许一次」。模型在改或删之前有时会先查一次日历，多出一张「允许一次」卡，场景里用 `ifVisible` 的可选点击兜住。可选点击后面不要再接 `wait-idle --expect needs-user`：它只认新出现的卡，卡已经在场时会一直等到超时。
+- 场景 b 收尾原来的 `wait-text 已清空` 是空断言：清理提示语里自己就有「已清空」三个字，模型没回也会通过。现在写成 `/^已清空[。.！!]?$|无需删除/`，只认单独成段的回复（模型查不到残留时常答「无需删除」，也认）。
+- `select-model` 以前只认触发钮提示里的模型 id；小米 MiMo 的提示写的是显示名（`xiaomi/MiMo v2.6 Flash`），实际切成功了却等到超时。现在模型 id 和显示名都认。

@@ -4,7 +4,7 @@
 //
 // 不变量：subagentExecutor 主循环每轮按 context.isParentAlive() 探活；父 run 已结束/
 // 被新 run 取代（返回 false）时，用 'parent-gone' 中止本子代理，复用现有 abort 路径
-// 落盘部分产物。只给后台 detached 子代理注入 isParentAlive（前台被父 await 不会成孤儿）。
+// 落盘部分产物。Team 的 detached 子代理跟踪父 run，会话级后台助手在父轮结束后继续交付。
 //
 // 同 abortPropagation / failureCodes 采用源码契约测试——executor runtime mock 链
 // 成本远超本接线复杂度，源码扫描足以防回归。
@@ -67,7 +67,7 @@ describe('subagentExecutor 主循环探活', () => {
   });
 });
 
-describe('executeSpawnAgent 只给后台 detached 子注入探活', () => {
+describe('executeSpawnAgent 只给 Team 后台子代理注入探活', () => {
   const source = readFileSync(SPAWN_AGENT_PATH, 'utf8')
     + readFileSync(path.join(path.dirname(SPAWN_AGENT_PATH), 'spawnSingleAgent.ts'), 'utf8');
 
@@ -80,9 +80,8 @@ describe('executeSpawnAgent 只给后台 detached 子注入探活', () => {
     expect(source).toMatch(/startTime/);
   });
 
-  it('isParentAlive 仅在后台 detached（!waitForCompletion）时构造，前台不装', () => {
-    // 真正的不变量是 gating 条件，而非物理位置：构造被 !waitForCompletion 守卫
-    expect(source).toMatch(/if\s*\(\s*!waitForCompletion\s*&&\s*context\.sessionId\s*\)/);
+  it('只探活 Team 后台子代理，让会话级后台任务跨轮交付', () => {
+    expect(source).toMatch(/if\s*\(\s*!waitForCompletion\s*&&\s*context\.swarmRunScope\s*&&\s*context\.sessionId\s*\)/);
   });
 
   it('用动态 import 取 TaskManager，避开 task→agent 静态循环依赖', () => {

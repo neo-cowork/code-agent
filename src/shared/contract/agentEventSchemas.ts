@@ -108,6 +108,10 @@ const toolCallSchema: z.ZodType<ToolCall> = typed<ToolCall>(z.object({
     iconHint: z.string().optional(),
   }).optional(),
   expectedOutcome: z.string().optional(),
+  guiTakeoverDisclosure: z.object({
+    code: z.literal('gui_takeover'),
+    app: z.string(),
+  }).optional(),
 }));
 
 const messageSchema = typed<Message>(z.object({

@@ -91,7 +91,10 @@ async function handleCancel(
 ): Promise<void> {
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
-  await appService.cancel(payload?.sessionId, undefined, { abandonParked: payload?.abandonParked === true });
+  await appService.cancel(payload?.sessionId, undefined, {
+    abandonParked: payload?.abandonParked === true,
+    ...(payload?.abandonParked && payload.runId ? { runId: payload.runId } : {}),
+  });
 }
 
 async function handlePermissionResponse(

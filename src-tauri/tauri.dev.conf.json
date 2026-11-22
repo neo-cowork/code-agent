@@ -9,6 +9,7 @@
   },
   "bundle": {
     "resources": {
+      "../dist/web/dev-fault-inject.cjs": "dist/web/dev-fault-inject.cjs",
       "../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app": null,
       "../.tauri-resources.noindex/scripts/Agent Neo Computer Use Dev.app": "scripts/Agent Neo Computer Use Dev.app"
     }
