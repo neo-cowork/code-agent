@@ -30,7 +30,7 @@ async function renderCalendarRow(language: 'zh' | 'en', detailCode: NativeConnec
   const inventory: NativeConnectorInventoryItem[] = [{ id: 'calendar', label: 'Calendar', enabled: true }];
   const status: ConnectorStatusSummary = {
     id: 'calendar', label: 'Calendar', connected: false, readiness: 'unchecked',
-    detailCode, detail: HOST_PROSE, error: HOST_PROSE, capabilities: ['list_events'], actions: ['probe'],
+    detailCode, detail: HOST_PROSE, error: HOST_PROSE, capabilities: ['list_events'], actions: ['repair_permissions'],
   };
   mockInvokeDomain.mockImplementation(async (_domain: string, action: string) => {
     if (action === 'listNativeInventory') return inventory;
