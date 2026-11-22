@@ -202,7 +202,7 @@ export interface ToolContext {
  * （N-CUA-HOST-GUI-DISCLOSURE）：与模型是否开口无关，host 在调用派发前自己说一句。
  * 只带稳定 code + app 名，句子文案在 renderer i18n（zh/en），host 不落用户文案。
  */
-export interface GuiTakeoverDisclosure {
+interface GuiTakeoverDisclosure {
   /** 稳定 code，renderer 据此取词条。 */
   code: 'gui_takeover';
   /** 目标应用显示名（host 侧解析：cua 反查 / targetApp / tell 目标，不采信模型自报）。 */

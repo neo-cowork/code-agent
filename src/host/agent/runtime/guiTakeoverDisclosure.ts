@@ -49,9 +49,9 @@ const ACTIVATE_VERB = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*activate(?=\s*(?:['";&|\r\
  * 只认 set-of-对象 形状；set 与 of 之间不许出现 `to`（`set x to name of document 1`
  * 是读取，不是编辑）；make/new 等结构性操作也不属于「编辑已打开的文档」。
  */
-const OPEN_DOCUMENT_EDIT = /\bset\s+(?:(?!\bto\b)[^\n]){0,200}?\bof\s+(?:the\s+)?(?:front\s+)?(?:document|slide|sheet|page|cell|range|selection|word|paragraph|character|table|shape)\b/i;
+const OPEN_DOCUMENT_EDIT = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*set\s+(?:(?!\bto\b)[^\n]){0,200}?\bof\s+(?:the\s+)?(?:front\s+)?(?:document|slide|sheet|page|cell|range|selection|word|paragraph|character|table|shape)\b/i;
 const TELL_OPEN_DOCUMENT = /\btell\s+(?:the\s+)?(?:(?:front|current)\s+)?(?:document|slide|sheet|page|selection)\b/i;
-const SET_PROPERTY = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*set\s+(?:the\s+)?(?:name|title|object text|text|value|content|contents)\s+to\b/i;
+const SET_PROPERTY = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*set\s+(?:the\s+)?(?:name|title|object text|text|value|content|contents)(?:\s+of\s+(?:(?!\bto\b)[^\n]){1,200}?)?\s+to\b/i;
 const SYSTEM_EVENTS_UI = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*(?:click|keystroke|key\s+code|scroll)\b/i;
 
 function firstCapture(command: string, patterns: RegExp[]): string | null {

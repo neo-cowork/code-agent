@@ -40,7 +40,7 @@ export interface TraceNode {
     targetContext?: import('./tool').ToolCallTargetContext;
     expectedOutcome?: string;
     /** host 在派发前附加的 GUI 接管披露（随消息持久化，重放同渲染）。 */
-    guiTakeoverDisclosure?: import('./tool').GuiTakeoverDisclosure;
+    guiTakeoverDisclosure?: import('./tool').ToolCall['guiTakeoverDisclosure'];
   };
   reasoning?: string;
   thinking?: string;

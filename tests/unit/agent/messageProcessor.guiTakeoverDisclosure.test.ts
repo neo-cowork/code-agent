@@ -236,11 +236,11 @@ describe('GUI 接管披露 · 生产链路（模型一言不发也披露）', ()
     ['edit nested open slide', 'Bash', { command: `osascript <<'APPLESCRIPT'
 tell application "Keynote"
   tell slide 3 of front document
-    set object text to "2026 年度经营复盘"
+    set object text of default title item to "2026 年度经营复盘"
   end tell
 end tell
 APPLESCRIPT` }, 'Keynote'],
-    ['read-only connector', 'mail_search', { query: 'Keynote' }, undefined],
+    ['read-only connector', 'mail', { action: 'list_messages', mailbox: 'Inbox', query: 'Keynote' }, undefined],
     ['Apple Events read', 'Bash', { command: `osascript -e 'tell application "Keynote" to set titleText to name of front document'` }, undefined],
     ['activate as data', 'Bash', { command: `osascript -e 'tell application "Keynote" to get name of every document whose name is "activate"'` }, undefined],
     ['metadata tool', 'mcp__cua-driver__list_apps', {}, undefined],
