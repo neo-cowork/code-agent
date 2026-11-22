@@ -10,6 +10,7 @@ import { calendarConnector, resetCalendarConnectorReadiness } from './native/cal
 import { mailConnector, resetMailConnectorReadiness } from './native/mail';
 import { remindersConnector, resetRemindersConnectorReadiness } from './native/reminders';
 import { photosConnector, resetPhotosConnectorReadiness } from './native/photos';
+import { devFaultWrapConnector } from '../devFault/devFaultLoader';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 
 type ConnectorFactory = () => Connector;
@@ -54,11 +55,12 @@ export class ConnectorRegistry {
   }
 
   get(id: string): Connector | undefined {
-    return this.connectors.get(id);
+    const connector = this.connectors.get(id);
+    return connector && devFaultWrapConnector(connector);
   }
 
   list(): Connector[] {
-    return Array.from(this.connectors.values());
+    return Array.from(this.connectors.values(), devFaultWrapConnector);
   }
 
   /** 返回 registry 感知到的所有可启用的原生连接器 id（不代表已激活）*/

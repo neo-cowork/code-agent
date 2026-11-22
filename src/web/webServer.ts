@@ -18,7 +18,7 @@ import './webEnvInit';
 // Platform 模块替代 electron mock
 import { handlers, ipcHost as mockIpcMain, AppWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../host/platform';
 
-import http from 'http';
+import http from 'http'; import { devFaultAfterListen, devFaultAtBoot } from '../host/devFault/devFaultLoader';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -1099,7 +1099,7 @@ async function main(): Promise<void> {
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
     return runCompileWarmup();
   }
-  bootMark('main:start');
+  bootMark('main:start'); devFaultAtBoot();
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
   const host = process.env.WEB_HOST || WEB_SERVER_DEFAULTS.HOST;
   const serviceMode = isWebServiceMode();
@@ -1187,7 +1187,7 @@ async function main(): Promise<void> {
   });
 
   server.listen(port, host, () => {
-    bootMark('listen');
+    bootMark('listen'); devFaultAfterListen();
     dumpBootTiming();
     // Service secrets remain memory-only. Desktop/dev retains the existing mirror
     // file because Tauri and Vite use it to survive backend restarts.

@@ -172,8 +172,22 @@ function writeControlPlanePublicKeysFile(): void {
   console.log(`  ✓ Control plane public keys → dist/web/control-plane-public-keys.json (${Object.keys(keys).length} key(s))`);
 }
 
-function writeWebServerArtifacts(): void {
+// Dev 测试包专用故障注入：独立入口、不并入 webServer.bundle.cjs；只经 tauri.dev.conf.json 进 Dev 包。
+function buildDevFaultModule(isDev: boolean): void {
+  esbuild.buildSync({
+    entryPoints: ['src/web/devFaultInject.ts'],
+    outfile: 'dist/web/dev-fault-inject.cjs',
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    minify: !isDev,
+    logLevel: 'error',
+  });
+}
+
+function writeWebServerArtifacts(isDev: boolean): void {
   copyFileSync('src/web/webServerBootstrap.cjs', 'dist/web/webServer.cjs');
+  buildDevFaultModule(isDev);
   writeControlPlanePublicKeysFile();
 }
 
@@ -276,7 +290,7 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
       alias: BUILD_ALIAS,
       minify: !isDev,
       sourcemap: isDev,
-      postBuild: writeWebServerArtifacts,
+      postBuild: () => writeWebServerArtifacts(isDev),
     },
     mcp: {
       name: 'MCP Server',
