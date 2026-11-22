@@ -464,12 +464,10 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       });
       await runHandle.attach({
         cancel: async () => {
-          if (partialContent) {
-            saveStreamSnapshot({
-              content: partialContent, reasoning: '', toolCalls: [],
-              estimatedTokens: 8, timestamp: Date.now(), isFinal: false,
-            }, { sessionId, runId, workingDir: workspace, turnId: 'assistant-stop' });
-          }
+          saveStreamSnapshot({
+            content: partialContent, reasoning: '', toolCalls: [],
+            estimatedTokens: partialContent ? 8 : 0, timestamp: Date.now(), isFinal: false,
+          }, { sessionId, runId, workingDir: workspace, turnId: 'assistant-stop' });
           await run.markSuccess({ finalStatus: 'interrupted' });
           await run.release();
         },
@@ -484,7 +482,7 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
       await expect(stopped.json()).resolves.toMatchObject({ message: 'Cancelled', runId });
       const parked = await reload();
       expect(parked.durableResume).toMatchObject({ runId, interruptCause: 'user_stop' });
-      expect(parked.streamSnapshot?.content).toBe(partialContent || undefined);
+      expect(parked.streamSnapshot).toMatchObject({ runId, content: partialContent });
 
       const abandoned = await cancel({ sessionId, runId: parked.durableResume!.runId, abandonParked: true });
       await expect(abandoned.json()).resolves.toMatchObject({ message: 'Cancelled', runId });
