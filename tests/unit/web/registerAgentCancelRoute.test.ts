@@ -16,6 +16,7 @@ import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import { saveStreamSnapshot } from '../../../src/host/session/streamSnapshot';
 import { withDurableSessionReplayPayload } from '../../../src/web/helpers/durableSessionPayload';
+import { createAgentDurableRouteRunLifecycle } from '../../../src/web/routes/agentDurableRouteLifecycle';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -414,6 +415,86 @@ describe('registerAgentCancelRoute honest cancel settlement (A3)', () => {
         terminal: { status: 'cancelled', reason: 'recovered_waiting_run_cancelled' },
       });
       expect(cancelledEvents).toEqual([{ runId: 'run-route-userstop', sessionId: 'session-route-userstop' }]);
+    } finally {
+      registry.clear();
+      db.close();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { timing: 'before reply text', partialContent: '' },
+    { timing: 'after reply text starts', partialContent: '1. Inventory the library collection.' },
+  ])('one abandon after Stop $timing survives session reload', async ({ timing, partialContent }) => {
+    const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'cancel-after-stop-')));
+    const db = new Database(':memory:');
+    const repository = new DurableRunRepository(db);
+    repository.migrate();
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(new DurableRunKernel({
+      stores: repository, ownerId: 'route-test', processInstanceId: 'stop-abandon', leaseDurationMs: 60_000,
+    }));
+    const sessionId = `session-fresh-stop-${timing.replaceAll(' ', '-')}`;
+    try {
+      const database = getDatabase();
+      await database.initialize();
+      database.createSessionWithId(sessionId, {
+        title: 'Library reopening plan',
+        workingDirectory: workspace,
+        modelConfig: { provider: 'openai', model: 'gpt-4o-mini' },
+      });
+      const lifecycle = new SessionLifecycleAppService({
+        getTaskManager,
+        getConfigService: () => null,
+        getCurrentSessionId: () => sessionId,
+        setCurrentSessionId: () => {},
+        getWorkingDirectory: () => workspace,
+      });
+      const readService = new DurableRunReadService(resolveDurableRunRollout({}), repository);
+      const reload = async () => withDurableSessionReplayPayload(await lifecycle.loadSession(sessionId), readService);
+      const run = createAgentDurableRouteRunLifecycle({
+        runRegistry: registry, sessionId, workspace, durableActivation: true,
+        logger: { info() {}, warn() {}, error() {} },
+      });
+      const { runHandle } = await run.start();
+      const { runId } = runHandle.context;
+      await registry.checkpointNativeModelOperation({
+        runId, sourceMessageId: 'message-stop', provider: 'openai', model: 'gpt-4o-mini',
+        logicalOperationId: 'turn-stop', phase: 'after_model_dispatch', status: 'dispatched',
+      });
+      await runHandle.attach({
+        cancel: async () => {
+          if (partialContent) {
+            saveStreamSnapshot({
+              content: partialContent, reasoning: '', toolCalls: [],
+              estimatedTokens: 8, timestamp: Date.now(), isFinal: false,
+            }, { sessionId, runId, workingDir: workspace, turnId: 'assistant-stop' });
+          }
+          await run.markSuccess({ finalStatus: 'interrupted' });
+          await run.release();
+        },
+      });
+      await start(registry, readService);
+      const cancel = (body: { sessionId: string; runId?: string; abandonParked?: true }) =>
+        fetch(`${baseUrl}/api/cancel`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+        });
+
+      const stopped = await cancel({ sessionId });
+      await expect(stopped.json()).resolves.toMatchObject({ message: 'Cancelled', runId });
+      const parked = await reload();
+      expect(parked.durableResume).toMatchObject({ runId, interruptCause: 'user_stop' });
+      expect(parked.streamSnapshot?.content).toBe(partialContent || undefined);
+
+      const abandoned = await cancel({ sessionId, runId: parked.durableResume!.runId, abandonParked: true });
+      await expect(abandoned.json()).resolves.toMatchObject({ message: 'Cancelled', runId });
+      expect(await repository.get(runId)).toMatchObject({
+        status: 'cancelled', terminal: { abandonedParked: true },
+      });
+      const reloaded = await reload();
+      expect(reloaded.status).toBe('cancelled');
+      expect(reloaded.durableResume).toBeUndefined();
+      expect(reloaded.streamSnapshot).toBeUndefined();
     } finally {
       registry.clear();
       db.close();
