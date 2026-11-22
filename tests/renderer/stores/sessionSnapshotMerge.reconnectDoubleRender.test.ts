@@ -560,6 +560,16 @@ describe('findLiveCounterpart: correlation.turnId pairing', () => {
     expect(merged.filter((message) => message.role === 'assistant')).toHaveLength(1);
   });
 
+  it('keyless fallback ignores leading whitespace when matching a stopped partial', () => {
+    const partial = '1. Pack the wicker basket and the patched blanket.\n\n[cancelled]';
+    const snapshot = [user('u-keyless-stop'), assistant('host-stop', { content: partial })];
+    const live = [user('u-keyless-stop'), assistant('turn-stop', { content: `\n\n${partial}` })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+
+    expect(merged.filter((message) => message.role === 'assistant')).toHaveLength(1);
+  });
+
   it('keyed match still merges when tool-call sets would have conflicted under the similarity guard', () => {
     const snapshot = [user('u-tools'), assistant('host-tools', { turnId: 'turn-tools', toolCallIds: ['call-old'] })];
     const live = [user('u-tools'), assistant('turn-tools', { turnId: 'turn-tools', toolCallIds: ['call-new'] })];
