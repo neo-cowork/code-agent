@@ -1,4 +1,4 @@
-import type { PendingOperation } from '../../shared/contract/durableRun';
+import type { PendingOperation, RunEnvelope } from '../../shared/contract/durableRun';
 import type { ToolReplaySafety } from '../../shared/contract';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { RunRehydrationPlan } from './durableRunStores';
@@ -22,6 +22,8 @@ export interface NativeRecoveryDescriptor {
   trace?: { traceId?: string; spanId?: string };
   checkpointSequence: number;
   approvalId?: string;
+  /** The environment continuation has left its park but has yet to checkpoint new live work. */
+  envResumePending?: NonNullable<RunEnvelope['envBlocked']>;
   /**
    * Set when the run is a /goal autonomous loop. Recovery must never auto-`completed`
    * a goal run — its verify/review gates only run inside the live loop. Absent on
@@ -179,6 +181,12 @@ export class NativeRecoveryHost {
     const recoverable = pendingOperations
       .filter((operation) => !isTerminalOperation(operation))
       .sort((left, right) => Number(left.operationId === descriptor.operationId) - Number(right.operationId === descriptor.operationId));
+    if (recoverable.length === 0 && descriptor.envResumePending && plan.envelope.envBlocked && this.ports.continueLoop) {
+      // A crash can land after the blocked tool's result was persisted and
+      // before the continued turn checkpointed any new work.
+      await this.ports.continueLoop({ plan, descriptor, operation: descriptorOperation });
+      return { status: 'recovered' as const, reason: 'resume_live_loop' };
+    }
     let guardHalt = false;
     let waitingForApproval = false;
     let loopResumed = false;
