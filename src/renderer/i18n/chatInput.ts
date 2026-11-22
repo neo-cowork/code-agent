@@ -270,6 +270,7 @@ export const chatInputZh = {
     sessionMeta: '{time} · {count} 条消息 · {project}',
     artifactMeta: '出自 {session} · {time}',
     unknownProject: '未分类项目',
+    unsortedProjectName: '未分类',
     unknownSession: '未知会话',
     artifactTypes: {
       html: 'HTML',
@@ -752,6 +753,7 @@ export const chatInputEn: typeof chatInputZh = {
     sessionMeta: '{time} · {count} messages · {project}',
     artifactMeta: 'From {session} · {time}',
     unknownProject: 'Unsorted project',
+    unsortedProjectName: 'Unsorted',
     unknownSession: 'Unknown session',
     artifactTypes: {
       html: 'HTML',

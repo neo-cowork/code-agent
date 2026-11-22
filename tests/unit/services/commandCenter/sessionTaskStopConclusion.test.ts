@@ -51,6 +51,17 @@ describe('resolveStoppedTaskOutcome markup-only browser conclusion', () => {
   });
 });
 
+it.each([
+  { stepCap: { max: 8 }, kind: 'step_cap' },
+  { stepCap: undefined, kind: 'no_conclusion' },
+])('uses generic retry advice without a last page ($kind)', ({ stepCap, kind }) => {
+  const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail: '', stepCap });
+  expect(outcome).toMatchObject({ status: 'failed', kind });
+  expect(outcome.notice).toBe(outcome.detail);
+  expect(outcome.notice).not.toContain('网站');
+  expect(outcome.notice).toContain('或者把任务缩小一些再试一次');
+});
+
 const REAL_FAILED_ROWS = [
   '抓取失败了，没有任何定价内容可以总结——我不会编造要点。\n**请求的地址**：x',
   '**任务未能完成：定价表没有抓到，因此没有 3 条要点可交付。**\n- 抓取失败原因：DNS 直接失败。',

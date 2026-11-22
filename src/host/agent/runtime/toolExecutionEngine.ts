@@ -1177,7 +1177,7 @@ export class ToolExecutionEngine {
       watchdog.stop();
       if (settleEnvBlockedTool(error, { runId: this.ctx.runId, toolCallId: toolCall.id, markCancelled: () => this.ctx.control.markCancelled() })) {
         // The run parks with no tool result, so the card is the only thing the user sees: publish it from the blocker.
-        // ponytail: synthetic not_authorized result — only Apple-events blockers park today (envBlockForToolFailure).
+        // ponytail: synthetic not_authorized result — calendar and mail_draft park today (envBlockForToolFailure); the card target comes from the blocker.
         await publishEnvAssistToolNotice({ toolName: toolCall.name, result: { success: false, metadata: { code: 'not_authorized' } }, sessionId: this.ctx.sessionId, runId: this.ctx.runId, parkedToolCallId: peekEnvBlockedNote(this.ctx.runId)?.toolCallId, onEvent: this.ctx.onEvent })
           .catch((cardError: unknown) => logger.warn('Env-assist card for a parked run failed to publish', { toolCallId: toolCall.id, error: cardError instanceof Error ? cardError.message : String(cardError) }));
       }
