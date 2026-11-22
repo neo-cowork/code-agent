@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import JSZip from 'jszip';
+import { Document, Packer } from 'docx';
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
   isCurrentUserAdmin: () => true,
@@ -186,5 +187,37 @@ describe('locator-word-complex.docx：读侧与真实 writer 对账', () => {
     const revisionBlock = await guardedExecute(locator!);
     expect(revisionBlock?.metadata.reason).toBe('revision_drift');
     expect(executeMock).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe('extract-docx-html：损坏输入必须拒绝（不再吞成空成功对象）', () => {
+  it('截断的 zip 字节 rejects，错误以 docx extraction failed 开头', async () => {
+    const filePath = join(workDir, 'truncated.docx');
+    await writeComplexDocx(filePath);
+    const full = await readFile(filePath);
+    await writeFile(filePath, full.subarray(0, Math.floor(full.length / 2)));
+
+    const handler = handlers.get('extract-docx-html');
+    expect(handler).toBeDefined();
+    await expect(handler!(null, filePath)).rejects.toThrow(/^docx extraction failed: /);
+  });
+
+  it('改名为 .docx 的纯文本文件 rejects，而不是返回空正文', async () => {
+    const filePath = join(workDir, 'weekly-report.docx');
+    await writeFile(filePath, 'this is a plain text note, not a zip archive');
+
+    const handler = handlers.get('extract-docx-html');
+    expect(handler).toBeDefined();
+    await expect(handler!(null, filePath)).rejects.toThrow('docx extraction failed: ');
+  });
+
+  it('有效但空白的 docx 仍被接受：resolve 且 text 为空、wordCount 为 0', async () => {
+    const filePath = join(workDir, 'blank.docx');
+    const doc = new Document({ sections: [{ children: [] }] });
+    await writeFile(filePath, await Packer.toBuffer(doc));
+
+    const handler = handlers.get('extract-docx-html');
+    expect(handler).toBeDefined();
+    await expect(handler!(null, filePath)).resolves.toEqual({ html: '', paragraphs: [], text: '', wordCount: 0 });
   });
 });
