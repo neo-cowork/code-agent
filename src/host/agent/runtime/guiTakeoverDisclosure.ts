@@ -22,14 +22,14 @@ import {
   extractComputerTargetApp,
   type ComputerTargetApp,
 } from '../../permissions/computerAppTarget';
-import { classifyShellDesktopAutomation } from '../../permissions/shellDesktopAutomation';
+import { classifyShellDesktopAutomation, containsAppleScriptCommand } from '../../permissions/shellDesktopAutomation';
 import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../../permissions/cuaAppTarget';
 import { isBashToolName } from '../../tools/toolNames';
 import { logCollector } from '../../mcp/logCollector.js';
 import type { RuntimeContext } from './runtimeContext';
 
 // ----------------------------------------------------------------------------
-// Shell (Bash/osascript) 触发形状表：唯一维护点，正/负例测试都对着这张表。
+// Shell (Bash/AppleScript) 触发形状表。
 // ----------------------------------------------------------------------------
 
 /** `tell process "Keynote"`（System Events 驱动时的真实 GUI 应用）。 */
@@ -41,7 +41,6 @@ const TELL_APPLICATION_QUOTED = /\btell\s+(?:application|app)\s+(?:"([^"\r\n]+)"
 /** `tell application Keynote to …`（不带引号的单词目标）。 */
 const TELL_APPLICATION_BARE = /tell\s+(?:application|app)\s+([A-Za-z][A-Za-z0-9.]*)\s+to\b/i;
 
-const OSASCRIPT = /(?:^|[\s;&|(/`])osascript\b/;
 const ACTIVATE_VERB = /(?:^|\n|\bto\s+|\s-e\s+['"])\s*activate(?=\s*(?:['";&|\r\n]|--|$))/i;
 
 /**
@@ -71,11 +70,12 @@ function firstCapture(command: string, patterns: RegExp[]): string | null {
  * 应用名宁可不说，也不编一个。
  */
 function resolveShellGuiTargetApp(command: string): ComputerTargetApp | null {
+  const usesAppleScript = containsAppleScriptCommand(command);
   const applications = Array.from(command.matchAll(TELL_APPLICATION_QUOTED));
   const isSystemEvents = (name: string) => /^system events$/i.test(name.trim());
   const hasSystemEvents = applications.some((match) => isSystemEvents(match[1] ?? match[2]));
   const directInput = classifyShellDesktopAutomation(command)
-    || (OSASCRIPT.test(command) && hasSystemEvents && SYSTEM_EVENTS_UI.test(command));
+    || (usesAppleScript && hasSystemEvents && SYSTEM_EVENTS_UI.test(command));
   if (directInput && hasSystemEvents) {
     const process = firstCapture(command, [TELL_PROCESS_TARGET]);
     if (process) return { name: process };
@@ -84,7 +84,7 @@ function resolveShellGuiTargetApp(command: string): ComputerTargetApp | null {
   for (const target of applicationTargets) {
     const afterTarget = command.slice(target.index + target[0].length);
     const body = afterTarget.split(/\bend\s+tell\b|\btell\s+app(?:lication)?\s+['"]/i, 1)[0];
-    if (directInput || (OSASCRIPT.test(command) && (
+    if (directInput || (usesAppleScript && (
       ACTIVATE_VERB.test(body)
       || OPEN_DOCUMENT_EDIT.test(body)
       || (TELL_OPEN_DOCUMENT.test(body) && SET_PROPERTY.test(body))
@@ -93,7 +93,7 @@ function resolveShellGuiTargetApp(command: string): ComputerTargetApp | null {
     }
   }
   const bare = firstCapture(command, [TELL_APPLICATION_BARE]);
-  if (bare && (directInput || (OSASCRIPT.test(command) && ACTIVATE_VERB.test(command)))) return { name: bare };
+  if (bare && (directInput || (usesAppleScript && ACTIVATE_VERB.test(command)))) return { name: bare };
   return null;
 }
 
