@@ -56,7 +56,7 @@ export async function ensureModelConfigured(
     if (!configured) {
       const providerName = getLocalizedProviderDisplayName(provider, language) || t.modelSetup.thisModel;
       if (isWebMode()) {
-        toast.info(t.modelSetup.missingApiKeyWeb.replace('{provider}', providerName));
+        toast.info(t.modelSetup.webSetupDesktopOnly.replace('{provider}', providerName));
       } else if (hasConfiguredRuntimeModels(settings)) {
         if (!openSettingsWhenReady) toast.info(t.modelSetup.missingApiKeyWithAlternatives.replace('{provider}', providerName));
       } else {

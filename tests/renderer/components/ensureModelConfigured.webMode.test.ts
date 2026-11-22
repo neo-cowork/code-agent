@@ -33,7 +33,7 @@ describe.each([['zh', zh], ['en', en]] as const)('ensureModelConfigured web toas
   it.each([['no configured model', unkeyed], ['other model configured', unkeyedWithOther]])('web, %s, skip-sign-in path: web wording', async (_n, settings) => {
     invokeDomainMock.mockResolvedValue(settings);
     await expect(ensureModelConfigured(locale, language, { openSettingsWhenReady: true })).resolves.toBe(false);
-    expect(useToastStore.getState().toasts.at(-1)?.message).toBe(locale.modelSetup.missingApiKeyWeb.replace('{provider}', language === 'zh' ? 'OpenAI' : 'OpenAI'));
+    expect(useToastStore.getState().toasts.at(-1)?.message).toBe(locale.modelSetup.webSetupDesktopOnly.replace('{provider}', language === 'zh' ? 'OpenAI' : 'OpenAI'));
     expect(appState.openModelSettings).toHaveBeenCalledWith('openai');
   });
 
