@@ -185,7 +185,10 @@ export function pickModelOptions(rows, name) {
 /** 状态栏触发钮的 title 里「/」后面那段是不是这一行的模型：模型 id 或显示名都算（见 select-model 里的说明）。 */
 export function titleShowsModel(title, row) {
   const t = title ?? '';
-  return t.includes(`/${row.modelId}`) || t.includes(`/${row.label}`);
+  if (t.includes(`/${row.modelId}`)) return true;
+  // 显示名后面必须是结尾、「 (」或「 ·」，免得「MiMo v2.6」把「MiMo v2.6 Flash」认成自己。
+  const at = t.indexOf(`/${row.label}`);
+  return at >= 0 && /^($| \(| ·)/.test(t.slice(at + 1 + row.label.length));
 }
 
 /**

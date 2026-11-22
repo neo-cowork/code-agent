@@ -20,11 +20,12 @@
     { "do": "shot", "name": "b-after-delete" },
     { "do": "click", "always": true, "target": "testid=composer-stop-button", "ifVisible": true, "timeout": 2000 },
     { "do": "wait-idle", "always": true, "grace": 3000 },
-    { "do": "send", "always": true, "text": "查一下日历里从今天起 7 天内还有没有标题以「neo-drive 测试」开头的日程；有就全部删除，最后只回答「已清空」。" },
+    { "do": "send", "always": true, "text": "查一下日历里从今天起 7 天内还有没有标题以「neo-drive 测试」开头的日程；有就全部删除。不管有没有，最后都只回答「已清空」。" },
     { "do": "wait-idle", "always": true, "grace": 10000 },
     { "do": "click", "always": true, "target": "role=button:/^允许一次/", "ifVisible": true, "timeout": 2000 },
     { "do": "wait-idle", "always": true, "grace": 10000 },
     { "do": "click", "always": true, "target": "role=button:/^删除/", "ifVisible": true, "timeout": 2000 },
-    { "do": "wait-idle", "always": true, "expect": "idle", "grace": 10000 }
+    { "do": "wait-idle", "always": true, "expect": "idle", "grace": 10000 },
+    { "do": "wait-text", "always": true, "text": "/^已清空[。.！!]?$|无需删除/", "timeout": 30000 }
   ]
 }

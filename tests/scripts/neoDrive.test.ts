@@ -155,6 +155,9 @@ describe('neo-drive 纯逻辑', () => {
     expect(titleShowsModel('当前模型: xiaomi/mimo-v2.6-flash', row)).toBe(true);
     expect(titleShowsModel('当前模型: xiaomi/neohorse-1.5-flash-preview (NeoHorse 1.5 Flash)', row)).toBe(false);
     expect(titleShowsModel(null, row)).toBe(false);
+    expect(titleShowsModel('已覆盖: xiaomi/MiMo v2.6 Flash (原主任务: X)', { ...row, label: 'MiMo v2.6', modelId: 'mimo-v2.6' })).toBe(false);
+    expect(titleShowsModel('xiaomi/MiMo v2.6 Flash', row)).toBe(true);
+    expect(titleShowsModel('xiaomi/MiMo v2.6 Flash · 计费: 按量', row)).toBe(true);
   });
 
   it('常驻浏览器与命令行显式目标不一致时报冲突，不静默沿用旧目标', () => {
