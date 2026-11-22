@@ -1,5 +1,5 @@
 import { noteFirstModelRequestDispatched } from '../../agent/runtime/firstModelRequestWatch';
-import { devFaultCheckOutbound } from '../../devFault/devFaultLoader';
+import { devFaultCheckOutbound } from '../../services/infra/devFaultLoader';
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import {

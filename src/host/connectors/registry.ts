@@ -10,7 +10,7 @@ import { calendarConnector, resetCalendarConnectorReadiness } from './native/cal
 import { mailConnector, resetMailConnectorReadiness } from './native/mail';
 import { remindersConnector, resetRemindersConnectorReadiness } from './native/reminders';
 import { photosConnector, resetPhotosConnectorReadiness } from './native/photos';
-import { devFaultWrapConnector } from '../devFault/devFaultLoader';
+import { devFaultWrapConnector } from '../services/infra/devFaultLoader';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 
 type ConnectorFactory = () => Connector;

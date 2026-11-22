@@ -2,7 +2,7 @@
 // Dev 测试包专用故障注入（单文件，独立编译为 dist/web/dev-fault-inject.cjs）
 // ----------------------------------------------------------------------------
 // 只经 tauri.dev.conf.json 的 bundle resources 进入 Dev 包；生产包没有这个文件，
-// webServer 的加载器（src/host/devFault/devFaultLoader.ts）只在 Dev 槽数据目录 + 文件存在
+// webServer 的加载器（src/host/services/infra/devFaultLoader.ts）只在 Dev 槽数据目录 + 文件存在
 // 时才 require 它。开关名与全部实现只存在于本文件，不得被 webServer bundle 引用。
 // 自包含：只用 node 内置模块，不 import 宿主代码（独立 bundle 里的单例与宿主不是同一份）。
 // ============================================================================

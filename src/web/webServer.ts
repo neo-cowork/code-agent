@@ -18,7 +18,7 @@ import './webEnvInit';
 // Platform 模块替代 electron mock
 import { handlers, ipcHost as mockIpcMain, AppWindow, onRendererPush, setBrowserWindowInteractionProbe } from '../host/platform';
 
-import http from 'http'; import { devFaultAfterListen, devFaultAtBoot } from '../host/devFault/devFaultLoader';
+import http from 'http'; import { devFaultAfterListen, devFaultAtBoot } from '../host/services/infra/devFaultLoader';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';

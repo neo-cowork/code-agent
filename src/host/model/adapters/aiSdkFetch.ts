@@ -4,7 +4,7 @@ import { Readable, Transform } from 'node:stream';
 import { createLogger } from '../../services/infra/logger';
 import { APICallError, JSONParseError } from 'ai';
 import { getHttpsAgent } from '../providers/shared';
-import { devFaultCheckOutbound } from '../../devFault/devFaultLoader';
+import { devFaultCheckOutbound } from '../../services/infra/devFaultLoader';
 
 export const logger = createLogger('AiSdkAdapter');
 

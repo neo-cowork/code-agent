@@ -21,7 +21,7 @@ vi.mock('axios', () => ({
 import {
   devFaultAfterListen,
   devFaultAtBoot,
-} from '../../../src/host/devFault/devFaultLoader';
+} from '../../../src/host/services/infra/devFaultLoader';
 import { makeAiSdkFetch } from '../../../src/host/model/adapters/aiSdkFetch';
 import { electronFetch } from '../../../src/host/model/providers/providerHttp';
 import { ConnectorRegistry } from '../../../src/host/connectors/registry';

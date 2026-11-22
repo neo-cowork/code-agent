@@ -7,9 +7,9 @@
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
-import { isDevSlotRuntime } from '../services/core/configServiceInternal';
-import { createLogger } from '../services/infra/logger';
-import type { ConnectorLike, DevFaultHooks, FaultContext } from '../../shared/devFaultHooks';
+import { isDevSlotRuntime } from '../core/configServiceInternal';
+import { createLogger } from './logger';
+import type { ConnectorLike, DevFaultHooks, FaultContext } from '../../../shared/devFaultHooks';
 
 const logger = createLogger('DevPackage');
 const MODULE_FILE = 'dev-fault-inject.cjs';
