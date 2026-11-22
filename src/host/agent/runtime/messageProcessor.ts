@@ -58,6 +58,7 @@ import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
 import { collectProposedRoleIds, stripRoleOpenLinkTail } from './roleOpenLinkStrip';
+import { attachGuiTakeoverDisclosures } from './guiTakeoverDisclosure';
 import {
   buildSteerModelContent, buildForcedFinalAssistantContent,
   hasOnlySoftValidationFailures,
@@ -764,6 +765,10 @@ export class MessageProcessor {
 
     // 清理模型输出中模仿内部格式的文本
     const cleanedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+
+    // 本 run 首次直接驱动某 app 界面的调用：host 派发前先挂结构化披露（先于下方
+    // assistant 消息落库与 tool_call_start，审批卡在 executor 里照旧随后弹）。
+    await attachGuiTakeoverDisclosures(this.ctx, toolCalls);
 
     const isTerminalWakeNoop = isTerminalWakeNoopCall(toolCalls, this.ctx.allowedToolNames);
     const assistantMessage: Message = {

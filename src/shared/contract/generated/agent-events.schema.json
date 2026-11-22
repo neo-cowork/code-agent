@@ -656,6 +656,23 @@
         },
         "expectedOutcome": {
           "type": "string"
+        },
+        "guiTakeoverDisclosure": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "const": "gui_takeover"
+            },
+            "app": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "app"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

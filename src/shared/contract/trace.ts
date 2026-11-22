@@ -39,6 +39,8 @@ export interface TraceNode {
     stepLabel?: import('./tool').ToolStepLabelKey;
     targetContext?: import('./tool').ToolCallTargetContext;
     expectedOutcome?: string;
+    /** host 在派发前附加的 GUI 接管披露（随消息持久化，重放同渲染）。 */
+    guiTakeoverDisclosure?: import('./tool').GuiTakeoverDisclosure;
   };
   reasoning?: string;
   thinking?: string;
