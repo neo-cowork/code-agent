@@ -98,6 +98,12 @@ describe('propose_role 工具名校验', () => {
     expect(ctx.emit).toHaveBeenCalledTimes(1);
   });
 
+  it('create-role 技能：对用户说能力只用通俗说法，不复述工具名', () => {
+    const prompt = BUILTIN_SKILLS.find((s) => s.name === 'create-role')?.promptContent ?? '';
+    expect(prompt).toContain('对用户说能力时只用通俗说法');
+    expect(prompt).toContain('不要写工具名或反引号名字');
+  });
+
   it('漂移门：create-role 常用映射里的每个工具名都在注册表里', () => {
     getProtocolRegistry();
     const known = getKnownToolNames();
