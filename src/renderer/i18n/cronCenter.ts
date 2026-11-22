@@ -276,7 +276,7 @@ export const cronCenterZh = {
     manualEditor: {
       oneTimeScheduleOption: '一次性',
       intervalScheduleOption: '间隔循环',
-      cronScheduleOption: '按固定时间重复（Cron 表达式）',
+      cronScheduleOption: '按计划重复（每天 / 每周 / 自定义）',
       retryDelayLabel: '重试间隔',
       timeoutLabel: '执行超时',
       retryDelayPlaceholder: '自动',
@@ -794,7 +794,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     manualEditor: {
       oneTimeScheduleOption: 'One-time',
       intervalScheduleOption: 'Repeat at an interval',
-      cronScheduleOption: 'Repeat at fixed times (Cron expression)',
+      cronScheduleOption: 'Repeat on a schedule (daily / weekly / custom)',
       retryDelayLabel: 'Retry interval',
       timeoutLabel: 'Execution timeout',
       retryDelayPlaceholder: 'Auto',

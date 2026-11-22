@@ -68,7 +68,8 @@ describe('CronJobEditor 错峰建议', () => {
   it('分钟位为 0 的表达式（0 9 * * *）显示错峰建议', async () => {
     render(<CronJobEditor isOpen job={cronExpressionJob('0 9 * * *')} onClose={() => undefined} />);
     await waitFor(() => {
-      expect(screen.getByDisplayValue('0 9 * * *')).toBeTruthy();
+      expect((screen.getByTestId('cron-editor-time-hour') as HTMLSelectElement).value).toBe('09');
+      expect((screen.getByTestId('cron-editor-time-minute') as HTMLSelectElement).value).toBe('00');
     });
     const hint = screen.getByTestId('cron-stagger-hint');
     expect(hint.textContent).toContain('整点任务容易和其他任务扎堆触发');
@@ -78,7 +79,8 @@ describe('CronJobEditor 错峰建议', () => {
   it('非整点表达式（17 9 * * *）不显示建议', async () => {
     render(<CronJobEditor isOpen job={cronExpressionJob('17 9 * * *')} onClose={() => undefined} />);
     await waitFor(() => {
-      expect(screen.getByDisplayValue('17 9 * * *')).toBeTruthy();
+      expect((screen.getByTestId('cron-editor-time-hour') as HTMLSelectElement).value).toBe('09');
+      expect((screen.getByTestId('cron-editor-time-minute') as HTMLSelectElement).value).toBe('17');
     });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
   });

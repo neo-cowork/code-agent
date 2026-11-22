@@ -70,6 +70,10 @@ export const cronEditorChromeZh = {
     cronExpressionLabel: 'Cron 表达式',
     timezoneLabel: '时区',
     cronStaggerHint: '整点任务容易和其他任务扎堆触发，建议把分钟位错开到 {minute} 分。',
+    cronUseCustomLink: '使用自定义 Cron 表达式',
+    cronBackToSimpleLink: '返回常用时间设置',
+    cronCustomHint: '这是一条自定义的重复规则，按 Cron 写法填写；执行时间以下方说明为准。',
+    cronPreviewLabel: '执行时间说明',
   },
 };
 
@@ -145,5 +149,9 @@ export const cronEditorChromeEn = {
     cronExpressionLabel: 'Cron expression',
     timezoneLabel: 'Time zone',
     cronStaggerHint: 'Tasks starting on the hour can overlap with other tasks. Consider offsetting the minute to {minute}.',
+    cronUseCustomLink: 'Use a custom Cron expression',
+    cronBackToSimpleLink: 'Back to common schedules',
+    cronCustomHint: 'This is a custom repeat rule written in Cron syntax. The plain description below shows when it runs.',
+    cronPreviewLabel: 'Runs',
   },
 };

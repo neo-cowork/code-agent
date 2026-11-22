@@ -6,12 +6,16 @@
 // 渲染条件（scheduleType 分支选择）留在编辑器，本组件只管字段本体。
 // ============================================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
 import { DateTimeInput24 } from '../../primitives/DateTimeInput24';
 import { Select } from '../../primitives/Select';
+import { Button } from '../../primitives/Button';
+import { TimeInput24 } from '../../primitives';
+import { formatCronExpressionLabel } from '@shared/cronHumanize';
+import { compileSimpleSchedule, decompileSimpleSchedule, type SimpleFrequency } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
 import type { CronJobDraft } from './types';
 import { localCronTimezone } from './localTimezone';
@@ -101,30 +105,108 @@ export const CronScheduleFields: React.FC<CronScheduleFieldsProps> = ({ draft, s
       )}
 
       {draft.scheduleType === 'cron' && (
-        <div className="space-y-3">
+        <CronBranch draft={draft} setField={setField} errors={errors} />
+      )}
+    </>
+  );
+};
+
+const CronBranch: React.FC<CronScheduleFieldsProps> = ({ draft, setField, errors }) => {
+  const { t, language } = useI18n();
+  const cc = t.cronCenter;
+  const simple = decompileSimpleSchedule(draft.cronExpression);
+  const [customPick, setCustomPick] = useState<boolean | null>(null);
+  const custom = customPick ?? simple === null;
+  const showSimple = !custom && simple !== null;
+
+  const update = (next: { freq: SimpleFrequency; time: string; weekday: string }) => {
+    const compiled = compileSimpleSchedule({ ...next, intervalHours: '1', onceAt: '' });
+    setField('cronExpression', compiled.cronExpression ?? draft.cronExpression);
+  };
+
+  const timezoneField = (
+    <FormField label={cc.editorChrome.timezoneLabel}>
+      <Input
+        value={draft.cronTimezone}
+        onChange={(e) => setField('cronTimezone', e.target.value)}
+        placeholder={localCronTimezone()}
+      />
+    </FormField>
+  );
+
+  return (
+    <div className="space-y-3">
+      {showSimple ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label={cc.simpleFreqLabel}>
+            <Select
+              value={simple.freq}
+              onChange={(e) => update({ ...simple, freq: e.target.value as SimpleFrequency })}
+              options={[
+                { value: 'daily', label: cc.freqDaily },
+                { value: 'weekdays', label: cc.freqWeekdays },
+                { value: 'weekly', label: cc.freqWeekly },
+              ]}
+            />
+          </FormField>
+          <FormField label={cc.simpleTimeLabel}>
+            <TimeInput24
+              testId="cron-editor-time"
+              value={simple.time}
+              onChange={(time) => update({ ...simple, time })}
+              hourLabel={cc.simpleHourLabel}
+              minuteLabel={cc.simpleMinuteLabel}
+            />
+          </FormField>
+          {simple.freq === 'weekly' && (
+            <FormField label={cc.simpleWeekdayLabel}>
+              <Select
+                value={simple.weekday}
+                onChange={(e) => update({ ...simple, weekday: e.target.value })}
+                options={cc.weekdays.map((label: string, i: number) => ({ value: String(i), label }))}
+              />
+            </FormField>
+          )}
+          {timezoneField}
+          <div className="sm:col-span-2">
+            <Button variant="ghost" size="sm" data-testid="cron-use-custom" onClick={() => setCustomPick(true)}>
+              {cc.editorChrome.cronUseCustomLink}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField label={cc.editorChrome.cronExpressionLabel} required error={errors.cronExpression}>
               <Input
                 value={draft.cronExpression}
-                onChange={(e) => setField('cronExpression', e.target.value)}
+                onChange={(e) => {
+                  setCustomPick(true);
+                  setField('cronExpression', e.target.value);
+                }}
                 className="font-mono"
               />
             </FormField>
-            <FormField label={cc.editorChrome.timezoneLabel}>
-              <Input
-                value={draft.cronTimezone}
-                onChange={(e) => setField('cronTimezone', e.target.value)}
-                placeholder={localCronTimezone()}
-              />
-            </FormField>
+            {timezoneField}
           </div>
-          {isHourAlignedCronExpression(draft.cronExpression) && (
-            <p className="text-xs text-badge-warning" data-testid="cron-stagger-hint">
-              {cc.editorChrome.cronStaggerHint.replace('{minute}', String(suggestCronStaggerMinute(draft.cronExpression)))}
+          <p className="text-xs text-zinc-500" data-testid="cron-custom-hint">{cc.editorChrome.cronCustomHint}</p>
+          {draft.cronExpression.trim() !== '' && (
+            <p className="text-xs text-zinc-400" data-testid="cron-custom-preview">
+              {cc.editorChrome.cronPreviewLabel}：{formatCronExpressionLabel(draft.cronExpression, draft.cronTimezone || undefined, language)}
             </p>
           )}
-        </div>
+          {simple !== null && (
+            <Button variant="ghost" size="sm" data-testid="cron-back-simple" onClick={() => setCustomPick(false)}>
+              {cc.editorChrome.cronBackToSimpleLink}
+            </Button>
+          )}
+        </>
       )}
-    </>
+      {isHourAlignedCronExpression(draft.cronExpression) && (
+        <p className="text-xs text-badge-warning" data-testid="cron-stagger-hint">
+          {cc.editorChrome.cronStaggerHint.replace('{minute}', String(suggestCronStaggerMinute(draft.cronExpression)))}
+        </p>
+      )}
+    </div>
   );
 };
