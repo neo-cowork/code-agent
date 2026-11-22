@@ -680,7 +680,17 @@ export function registerSettingsHandlers(
         const { stdout } = await execFileAsync(bin, [filePath, '-'], { maxBuffer: 50 * 1024 * 1024 });
         const pageCount = countPdfTextPages(stdout);
         return { text: stdout, pageCount };
-      } catch { /* 未安装，继续尝试 */ }
+      } catch (error) {
+        // ENOENT = 这台机器没装该 binary，继续试下一个；进程跑起来却非零退出
+        // = 工具真的拒了这份文件（打不开/解析不了），整条链停在这里报错。
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        const stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
+          ? (error as { stderr: string }).stderr.trim()
+          : '';
+        const message = stderr || (error instanceof Error ? error.message : String(error));
+        logger.warn(`extract-pdf-text: pdftotext rejected the file (${message})`);
+        throw new Error(`pdf extraction failed: ${message}`, { cause: error });
+      }
     }
 
     // 尝试 python3 + PyPDF2
@@ -689,21 +699,37 @@ export function registerSettingsHandlers(
         'import sys',
         'try:',
         '    from PyPDF2 import PdfReader',
+        'except ImportError:',
+        '    sys.exit(2)',
+        'try:',
         '    r = PdfReader(sys.argv[1])',
         '    print(f"PAGES:{len(r.pages)}")',
         '    for p in r.pages:',
         '        t = p.extract_text()',
         '        if t: print(t)',
         'except Exception as e:',
-        '    print(f"PAGES:0")',
-        '    print(f"[PyPDF2 error: {e}]")',
+        '    print(f"pdf extraction failed: {e}", file=sys.stderr)',
+        '    sys.exit(3)',
       ].join('\n');
       const { stdout } = await execFileAsync('python3', ['-c', script, filePath], { maxBuffer: 50 * 1024 * 1024 });
       const m = stdout.match(/^PAGES:(\d+)/);
       const pageCount = m ? parseInt(m[1]) : 0;
       const text = stdout.replace(/^PAGES:\d+\n/, '');
       return { text, pageCount };
-    } catch { /* python3 或 PyPDF2 不可用 */ }
+    } catch (error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === 3) {
+        const stderr = typeof (error as { stderr?: unknown }).stderr === 'string'
+          ? (error as { stderr: string }).stderr.trim()
+          : '';
+        const message = stderr || (error instanceof Error ? error.message : String(error));
+        logger.warn(`extract-pdf-text: PyPDF2 rejected the file (${message})`);
+        throw new Error(`pdf extraction failed: ${message}`, { cause: error });
+      }
+      // exit 2 = PyPDF2 未装；ENOENT/其他进程级失败 = python3 不可用——两者都落 stub。
+      const reason = error instanceof Error ? error.message : String(error);
+      logger.warn(`extract-pdf-text: python3/PyPDF2 unavailable, falling back to read_pdf stub (${reason})`);
+    }
 
     // 兜底：返回文件路径，由 AI 模型通过工具读取
     return {
@@ -751,6 +777,21 @@ export function registerSettingsHandlers(
 
   const SHEET_ROWNUM_LEGEND = '第 1 列是 xlsx 真实行号，可直接用于 A1 引用（行号 4 + B 列 = B4）；行号跳号处是空行';
 
+  // ── 「这是不是一份 Excel」两个 handler 的唯一共用谓词 ──────────────────────
+  //
+  // SheetJS 会把任意文本/二进制当 CSV 吞出一张 Sheet，改名的 .txt 因此「解析
+  // 成功」——要拒绝改名文件只能靠签名：xlsx/xlsm/xlsb 是 zip（PK），旧版 .xls
+  // 是 CFB 复合文档；SpreadsheetML XML / HTML-table 导出的 .xls 是文本（银行
+  // 导出常见），放行给 XLSX.read 自己裁决（坏 HTML 会在里面 throw）。
+  const looksLikeWorkbookBuffer = (buffer: Buffer): boolean => {
+    if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) return true;
+    if (buffer.length >= 8
+      && buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0
+      && buffer[4] === 0xa1 && buffer[5] === 0xb1 && buffer[6] === 0x1a && buffer[7] === 0xe1) return true;
+    const head = buffer.subarray(0, 64).toString('utf8').replace(/^\uFEFF/, '').trimStart();
+    return head.startsWith('<');
+  };
+
   /**
    * 行数组 → 带真实行号的 CSV。
    *
@@ -773,11 +814,22 @@ export function registerSettingsHandlers(
 
   // Excel 文件解析
   ipcMain.handle('extract-excel-text', async (_, filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> => {
-    try {
-      const fs = await import('fs');
-      const XLSX = await import('xlsx');
+    const fs = await import('fs');
+    const XLSX = await import('xlsx');
 
-      const buffer = fs.readFileSync(filePath);
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(filePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`extract-excel-text: cannot read file (${message})`);
+      throw new Error(`excel extraction failed: ${message}`, { cause: error });
+    }
+
+    try {
+      if (!looksLikeWorkbookBuffer(buffer)) {
+        throw new Error('file is not an Excel workbook (missing zip/CFB/XML signature)');
+      }
       const workbook = XLSX.read(buffer, { type: 'buffer' });
 
       const sheets: string[] = [];
@@ -803,11 +855,12 @@ export function registerSettingsHandlers(
         rowCount: totalRows,
       };
     } catch (error) {
-      return {
-        text: `[Excel 解析失败: ${error instanceof Error ? error.message : String(error)}]`,
-        sheetCount: 0,
-        rowCount: 0,
-      };
+      // 同 docx：抽取失败必须让上游看到（web 路由 → HTTP 500，renderer →
+      // uploadXlsxFailed toast + discardRejectedUpload），吞掉会让损坏文件
+      // 伪装成空正文附件。
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`extract-excel-text: parse failure (${message})`);
+      throw new Error(`excel extraction failed: ${message}`, { cause: error });
     }
   });
 
@@ -822,11 +875,22 @@ export function registerSettingsHandlers(
     }>;
     sheetCount: number;
   }> => {
-    try {
-      const fs = await import('fs');
-      const XLSX = await import('xlsx');
+    const fs = await import('fs');
+    const XLSX = await import('xlsx');
 
-      const buffer = fs.readFileSync(filePath);
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(filePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`extract-excel-json: cannot read file (${message})`);
+      throw new Error(`excel extraction failed: ${message}`, { cause: error });
+    }
+
+    try {
+      if (!looksLikeWorkbookBuffer(buffer)) {
+        throw new Error('file is not an Excel workbook (missing zip/CFB/XML signature)');
+      }
       const workbook = XLSX.read(buffer, { type: 'buffer' });
 
       const sheets = workbook.SheetNames.map((sheetName: string) => {
@@ -847,8 +911,10 @@ export function registerSettingsHandlers(
       });
 
       return { sheets, sheetCount: workbook.SheetNames.length };
-    } catch {
-      return { sheets: [], sheetCount: 0 };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`extract-excel-json: parse failure (${message})`);
+      throw new Error(`excel extraction failed: ${message}`, { cause: error });
     }
   });
 
