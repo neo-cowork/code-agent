@@ -209,6 +209,21 @@ describe('CronExecutionDetail readable result', () => {
     expect(within(technical).getByText('Technical details')).toBeTruthy();
   });
 
+  it.each([
+    ['zh', '「创建提醒事项」没有获批准（你当时拒绝了它），这次运行没有产出。'],
+    ['en', '“create a reminder” was not approved (you declined it); this run produced nothing.'],
+  ] as const)('shows a localized action when the denial summary is a tool name (%s)', (language, sentence) => {
+    useAppStore.setState({ language });
+    const result = {
+      ...persistedAgentResult('<cron_summary>No reminder was created.</cron_summary>'),
+      permissionDenied: { count: 1, steps: [{ tool: 'reminders_create', summary: 'reminders_create', reason: 'user' }] },
+    };
+    render(<CronExecutionDetail execution={execution(result)} />);
+
+    expect(screen.getByTestId('cron-permission-denied-sentence').textContent).toBe(sentence);
+    expect(resultBody().technical.querySelector('pre')?.textContent).toContain('reminders_create');
+  });
+
   it('renders the English no-text sentence for cloud results', () => {
     useAppStore.setState({ language: 'en' });
     render(<CronExecutionDetail execution={execution({ cloud: true, state: 'done' })} />);

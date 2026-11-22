@@ -53,14 +53,27 @@ function markRemindersReadReady(noAccessibleLists = false): void {
   remindersProbeListEmpty = noAccessibleLists;
 }
 
-function parseLine(line: string): string[] {
-  return line.split('|').map((part) => part.trim());
+function markRemindersReadFailed(message: string, code?: ConnectorStatus['errorCode']): void {
+  remindersReadiness = 'failed';
+  remindersProbeCheckedAt = Date.now();
+  remindersProbeError = message;
+  remindersProbeErrorCode = code;
 }
 
-function errorMessage(error: unknown): string {
-  return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure(NATIVE_APP_NAMES.reminders, error).message
-    : error instanceof Error ? error.message : String(error);
+async function readWithPermissionStatus<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    if (isAppleScriptFailure(error)) {
+      const failure = describeAppleScriptFailure(NATIVE_APP_NAMES.reminders, error);
+      if (failure.code === 'not_authorized') markRemindersReadFailed(failure.message, failure.code);
+    }
+    throw error;
+  }
+}
+
+function parseLine(line: string): string[] {
+  return line.split('|').map((part) => part.trim());
 }
 
 function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
@@ -154,11 +167,12 @@ async function probeRemindersAccess(): Promise<string[]> {
     markRemindersReadReady(lists.length === 0);
     return lists;
   } catch (error) {
-    remindersReadiness = 'failed';
-    remindersProbeCheckedAt = Date.now();
-    remindersProbeError = errorMessage(error);
-    remindersProbeErrorCode = isAppleScriptFailure(error)
-      && describeAppleScriptFailure('Reminders', error).code === 'not_authorized' ? 'not_authorized' : undefined;
+    if (isAppleScriptFailure(error)) {
+      const failure = describeAppleScriptFailure(NATIVE_APP_NAMES.reminders, error);
+      markRemindersReadFailed(failure.message, failure.code === 'not_authorized' ? failure.code : undefined);
+    } else {
+      markRemindersReadFailed(error instanceof Error ? error.message : String(error));
+    }
     throw error;
   }
 }
@@ -474,7 +488,7 @@ export const remindersConnector: Connector = {
           summary: action === 'disconnect' ? 'Reminders connector 已断开。' : 'Reminders connector 已移除。',
         };
       case 'list_lists': {
-        const lists = await listReminderLists();
+        const lists = await readWithPermissionStatus(listReminderLists);
         markRemindersReadReady(lists.length === 0);
         return {
           data: lists,
@@ -482,7 +496,7 @@ export const remindersConnector: Connector = {
         };
       }
       case 'list_reminders': {
-        const reminders = await listReminders(payload);
+        const reminders = await readWithPermissionStatus(() => listReminders(payload));
         markRemindersReadReady();
         return {
           data: reminders,

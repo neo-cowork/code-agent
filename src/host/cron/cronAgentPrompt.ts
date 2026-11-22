@@ -110,7 +110,8 @@ export function buildCronAgentPrompt(
   const mustTodayDefinition = trimmedCriteria ? `must_today = ${trimmedCriteria}` : 'must_today = 今天需要用户处理';
   const deliveryDigestInstruction =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；只列出本次运行创建或修改的文件或产物，绝不列出仅读取的文件；每个产物另起一行，格式为 artifact: <path>。'
-    + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`;
+    + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`
+    + '结果摘要正文请用非技术读者也能看懂的日常用语，不要提及工具名、函数名、参数名、字段名、内部标识符或文件系统内部细节，只说明实际发生了什么，例如「你拒绝了创建提醒的请求，因此没有创建提醒」。';
   const denialInstruction = 'If a tool reports a user denial, the user clicked Deny on the approval card; a timeout is an automatic denial, not a user click; never say nobody can confirm, and in your summary name the declined step (explicitly say "you declined <step>" for a user denial) and state that nothing was done if no productive action succeeded.';
   // notifyWhen 打扰判据（N-CRON-RESTATE-HUMAN-WHEN）：设置后让模型自判本次是否
   // 值得打扰——满足判据才输出 <cron_alert>，host 侧按该标记门通知与推送。

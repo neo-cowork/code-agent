@@ -20,7 +20,7 @@ export const sidebarZh = {
 
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.zh,
-    scheduleSessionPrefix: '[定时]',
+    scheduleSessionPrefix: cronSessionTitlePrefixes.zh.schedule,
     heartbeatSessionPrefix: '[心跳]',
     // 顶部 / 搜索
     newTask: '新任务',
@@ -441,7 +441,7 @@ export const sidebarEn: typeof sidebarZh = {
 
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.en,
-    scheduleSessionPrefix: '[Schedule]',
+    scheduleSessionPrefix: cronSessionTitlePrefixes.en.schedule,
     heartbeatSessionPrefix: '[Heartbeat]',
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
