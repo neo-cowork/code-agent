@@ -11,6 +11,7 @@ import { buildSessionTaskResultMessage } from './sessionCommandTaskRestartRecove
 import { createSessionAccessRetry, isSessionNotAccessibleError, type SessionAccessRetryOutcome } from './sessionAccessRetry';
 import { recordBackgroundWakeFailureNoteWithOwnerRetry } from './backgroundWakeNoteRetry';
 import { recordBackgroundTaskStopNote } from './backgroundTaskStopNote';
+import { collectDeliverableFileArtifacts } from '../../tools/artifacts/collectDeliverableFileArtifacts';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { getAuthService } from '../auth/authService';
@@ -50,6 +51,26 @@ function isWholeKeyOfTitle(shortName: string, title: string): boolean {
 }
 
 /**
+ * 后台任务自己的工具步骤（isMeta 的 tool 消息，前台看不到）里确认产出的文件交付物，
+ * 例如 Bash 脚本写出的 .docx。取任务创建之后落库的那一段；读失败只记日志，不挡结果行。
+ */
+async function collectTaskRunArtifacts(task: SessionCommandTask) {
+  try {
+    const session = await getSessionManager().getSession(task.sessionId, Number.MAX_SAFE_INTEGER);
+    const toolResults = (session?.messages ?? [])
+      .filter((message) => message.isMeta && message.role === 'tool' && message.timestamp >= task.createdAt)
+      .flatMap((message) => message.toolResults ?? []);
+    return collectDeliverableFileArtifacts(toolResults);
+  } catch (error) {
+    logger.warn('Failed to collect background task file artifacts; result row is written without them', {
+      taskId: task.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
+/**
  * 正常终态的 [任务结果] 行。消息 id 由 taskId 派生：迟到的重试与正常写撞同一 id 时
  * addMessageToSession 走幂等分支（更新而非插入），不会写出第二行。
  */
@@ -59,9 +80,10 @@ export async function projectTerminalResult(
 ): Promise<void> {
   // 模型读 resultText，卡片读 backgroundTaskResult.summary；共用构造器负责净化。
   const resultText = task.resultText ?? task.summary;
+  const artifacts = await collectTaskRunArtifacts(task);
   await getSessionManager().addMessageToSession(
     task.sessionId,
-    buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale()),
+    buildSessionTaskResultMessage(task, status, resultText, `session-task-result-${task.id}`, resolveLocale(), artifacts),
   );
   // 提前停下的白话说明走独立的注册 system 事件（id 由 taskId 派生，重试幂等）。放在 [任务结果] 行之后：
   // 说明写失败会抛出并随整条投影重试，但绝不会挡住结果行落库。
