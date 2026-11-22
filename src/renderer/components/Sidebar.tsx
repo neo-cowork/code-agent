@@ -39,6 +39,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
+import { sessionReplayBackgroundTasks } from '../utils/sessionReplayContext';
 import { cronRunAggregatesByTaskId, useCronRunGroups } from '../hooks/useCronRunGroups';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
@@ -563,7 +564,6 @@ export const Sidebar: React.FC = () => {
       t,
     ],
   );
-
   const hasAnySessions = sessions.length > 0;
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
@@ -931,7 +931,7 @@ export const Sidebar: React.FC = () => {
           sessionTitle={replayDialog.sessionTitle}
           replay={replayDialog.replay}
           workflowRuns={Object.values(workflowRuns).filter((run) => run.sessionId === replayDialog.sessionId)}
-          backgroundTasks={durableBackgroundTasks.filter((task) => task.sessionId === replayDialog.sessionId)}
+          backgroundTasks={sessionReplayBackgroundTasks(durableBackgroundTasks, replayDialog.sessionId)}
           evidence={replayEvidenceBySessionId.get(replayDialog.sessionId) ?? []}
           trajectorySummary={trajectoryQualityBySessionId[replayDialog.sessionId]}
           onUpdateTrajectoryDatasetRole={handleUpdateTrajectoryCollection}

@@ -19,6 +19,7 @@ import type { ProbeResult, ReadOnlyProbe } from '../permissions/envAssist/probes
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
 import { createLogger } from '../services/infra/logger';
+import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
 import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
@@ -120,7 +121,11 @@ function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane:
   if (notice.target?.id.startsWith('helper')) {
     return pane === 'accessibility' || pane === 'screenCapture' ? cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane) : null;
   }
-  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(notice.target?.id));
+  const targetId = notice.target?.id;
+  if (pane === 'automation' && targetId && isAutomationDenialOverridden(targetId)) {
+    return async () => ({ status: 'denied' });
+  }
+  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(targetId));
 }
 
 /** Every probe that reads granted closes the card, whether the grant came from the button or from System Settings. */

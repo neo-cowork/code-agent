@@ -33,6 +33,12 @@ function parseFaults(env: NodeJS.ProcessEnv = process.env): Map<string, string |
   return out;
 }
 
+function authInvalidTarget(): string | undefined {
+  const faults = parseFaults();
+  if (!faults.has('connector_auth_invalid')) return undefined;
+  return faults.get('connector_auth_invalid') ?? DEFAULT_CONNECTOR_ID;
+}
+
 function stateFile(dataDir: string, name: string): string {
   return path.join(dataDir, STATE_DIR, name);
 }
@@ -165,9 +171,7 @@ export const devFaultHooks: DevFaultHooks = {
   },
 
   wrapConnector(connector, ctx) {
-    const faults = parseFaults();
-    if (!faults.has('connector_auth_invalid')) return connector;
-    const targetId = faults.get('connector_auth_invalid') ?? DEFAULT_CONNECTOR_ID;
+    const targetId = authInvalidTarget();
     if (targetId !== connector.id) return connector;
     const label = APPLE_EVENTS_CONNECTORS[connector.id];
     if (!label) {
@@ -203,6 +207,12 @@ export const devFaultHooks: DevFaultHooks = {
         return Reflect.get(target, prop, receiver);
       },
     });
+  },
+
+  isAutomationDenied(connectorId, ctx) {
+    if (!Object.hasOwn(APPLE_EVENTS_CONNECTORS, connectorId) || authInvalidTarget() !== connectorId) return false;
+    hit(ctx, 'connector_auth_invalid', `${connectorId} passive_automation_denied`);
+    return true;
   },
 };
 

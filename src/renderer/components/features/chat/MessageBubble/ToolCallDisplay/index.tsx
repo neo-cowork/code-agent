@@ -247,6 +247,11 @@ export function ToolCallDisplay({
   // 不是需要用户关注的错误——安静展示，跟成功行视觉权重接近。真正需要用户介入的错误
   // （鉴权失效/额度耗尽/限流）保留醒目红色样式。
   const quietError = status === 'error' && !delegationPresentation && !isEscalatedToolError(toolCall);
+  const result = toolCall.result;
+  const backgroundShellLaunch = isBashTool(toolCall) && result?.success === true
+    && (result.metadata?.background === true
+      || (result.metadata?.pty === true && typeof result.metadata.outputFile === 'string'));
+  const canExpand = status !== 'interrupted' && !backgroundShellLaunch;
 
   // 工具行默认折叠（含 error）：失败回合常常一连十几条同样的报错，全展开会糊成
   // 一面墙（2026-06-25 dogfood：工件修复死锁 trace 不可读）。折叠态仍保留红左边框 +
@@ -316,17 +321,17 @@ export function ToolCallDisplay({
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
         data-testid={`tool-call-row-${toolCall.name}`}
-        role={status === 'interrupted' ? undefined : 'button'}
-        tabIndex={status === 'interrupted' ? -1 : 0}
-        aria-expanded={status === 'interrupted' ? undefined : expanded}
+        role={canExpand ? 'button' : undefined}
+        tabIndex={canExpand ? 0 : -1}
+        aria-expanded={canExpand ? expanded : undefined}
         className={`group/row flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors ${
           status === 'interrupted'
             ? 'cursor-default text-xs text-zinc-500'
-            : 'cursor-pointer hover:bg-zinc-800'
+            : canExpand ? 'cursor-pointer hover:bg-zinc-800' : ''
         }`}
-        onClick={status === 'interrupted' ? undefined : toggleExpanded}
+        onClick={canExpand ? toggleExpanded : undefined}
         onKeyDown={(event) => {
-          if (status === 'interrupted') return;
+          if (!canExpand) return;
           if (event.target !== event.currentTarget) return;
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
@@ -343,7 +348,7 @@ export function ToolCallDisplay({
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
               envWaitingTarget={envWaitingTarget}
-              showDetailName={expanded}
+              showDetailName={canExpand && expanded}
               hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}
         {receipt && (
@@ -406,15 +411,18 @@ export function ToolCallDisplay({
       )}
 
       {/* Bash inline output - when collapsed, show command output preview */}
-      {!expanded && isBashTool(toolCall) && toolCall.result && (
+      {backgroundShellLaunch && (
+        <div className="ml-6 text-xs text-zinc-500">{t.backgroundPanel.shellTaskStarted}</div>
+      )}
+      {!backgroundShellLaunch && !expanded && isBashTool(toolCall) && toolCall.result && (
         <BashOutputPreview toolCall={displayToolCall} status={status} quietError={quietError} />
       )}
 
       {/* Expanded details - indented under tool name */}
-      {expanded && receipt && (
+      {!backgroundShellLaunch && expanded && receipt && (
         <ReceiptDetail receipt={receipt} toolCall={displayToolCall} />
       )}
-      {expanded && !receipt && (
+      {!backgroundShellLaunch && expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
             toolCall={displayToolCall}
