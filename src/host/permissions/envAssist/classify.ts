@@ -1,5 +1,9 @@
+import { homedir } from 'node:os';
 import type { EnvAssistNotice, EnvBlockerClass } from '../../../shared/contract/envAssist';
 import { classifyCuaFailure } from '../../mcp/cuaFailureStats';
+// The task requires reusing the exact proof bash.ts uses for sandbox write denials; no modules/ wrapper exports it.
+// eslint-disable-next-line no-restricted-imports
+import { sandboxDeniedWritePath } from '../../tools/shell/sandboxFailureDiagnostics';
 import { parseCuaToolName } from '../cuaAppTarget';
 import type { CuaHelperPermissionState } from './cua/helperPermissionState';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
@@ -9,6 +13,22 @@ const AUTOMATION_TARGETS: Readonly<Record<string, string>> = {
 };
 /** Calendar reads and writes go through EventKit: one permission (perm_calendars), not Apple events. */
 const CALENDAR_TOOLS = new Set(['calendar', 'calendar_create_event', 'calendar_update_event', 'calendar_delete_event']);
+
+const FILE_READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'ListDirectory']);
+const OS_DENIAL = /\bEPERM\b|Operation not permitted/i;
+
+/** macOS asks per app before Desktop/Documents/Downloads open; a refused answer shows up as a bare EPERM. */
+function isFilesAndFoldersDenial(toolName: string, result: Record<string, unknown>, metadata: Record<string, unknown>): boolean {
+  if (process.platform !== 'darwin') return false;
+  const text = cuaFailureText(result);
+  if (!OS_DENIAL.test(text)) return false;
+  const home = homedir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const protectedPath = new RegExp(`(?:^|[\\s'"(=:])(?:~|${home})/(?:Desktop|Documents|Downloads)(?=$|[/\\s'":,)])`);
+  if (!protectedPath.test(text)) return false;
+  if (FILE_READ_TOOLS.has(toolName)) return (result.code ?? metadata.code) === 'FS_ERROR';
+  // A proven sandbox write denial belongs to the widen-sandbox card, not to macOS privacy settings.
+  return toolName === 'Bash' && sandboxDeniedWritePath(text) === undefined;
+}
 
 /** A failed MCP result keeps the driver's text in `output`; `error` is only the generic backfill from ensureFailedToolResultError. */
 export function cuaFailureText(result: { error?: unknown; output?: unknown }): string {
@@ -43,7 +63,7 @@ export function classifyEnvBlocker(input: {
   if (surface.approvalScope === 'blocked' || ['protected app', 'approval required'].includes(String(surface.blockedReason))) return null;
   let blocker: EnvBlockerClass;
   let target: string;
-  let pane: 'automation' | 'calendars' | 'accessibility' | 'screenCapture';
+  let pane: 'automation' | 'calendars' | 'accessibility' | 'screenCapture' | 'filesAndFolders';
   if (CALENDAR_TOOLS.has(input.toolName) && (result.code ?? metadata.code) === 'not_authorized') {
     blocker = 'perm_calendars';
     target = 'calendar';
@@ -82,6 +102,10 @@ export function classifyEnvBlocker(input: {
       action: { kind: 'request_grant', labelKey: `env.allow.${target}`, payload: { pane } },
       resume: { mode: 'manual' }, updatedAt: Date.now(),
     };
+  } else if (isFilesAndFoldersDenial(input.toolName, result, metadata)) {
+    blocker = 'perm_files';
+    target = 'files';
+    pane = 'filesAndFolders';
   } else return null;
   return {
     id: `${input.runId}|${blocker}|${target}`,
