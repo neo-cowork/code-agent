@@ -345,7 +345,7 @@ export async function executeSingleSpawnAgent(
         capabilityManifest: capabilityManifestForTools(tools),
         hooks: context.hooks,
         parentContext,
-        // 后台 detached 子代理的父探活（仅 !waitForCompletion 时非 undefined）
+        // Team 的后台子代理跟踪派出它的父 run。
         isParentAlive,
       };
 
@@ -523,11 +523,13 @@ Stats:
 
         const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
         delegateWorktreeCleanup();
-        registerDetachedSubagent({
-          promise: worktreeInfo ? withBackgroundWorktreeNote(promise, worktreeNoteSettled, agentId) : promise,
-          agentId, completionTitle, role, context, treeId, agentStartedAt,
-          abort: () => abortController.abort('cancelled'),
-        });
+        if (!context.swarmRunScope && !context.suppressBackgroundSubagentIdleWake) {
+          registerDetachedSubagent({
+            promise: worktreeInfo ? withBackgroundWorktreeNote(promise, worktreeNoteSettled, agentId) : promise,
+            agentId, completionTitle, role, context, treeId, agentStartedAt,
+            abort: () => abortController.abort('cancelled'),
+          });
+        }
         publishBackgroundSubagentVisibility({
           promise,
           scope: visibilityScope,

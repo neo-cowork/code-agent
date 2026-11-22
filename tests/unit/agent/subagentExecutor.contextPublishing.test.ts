@@ -395,4 +395,67 @@ describe('detached single subagent completion', () => {
       vi.unstubAllEnvs();
     }
   });
+
+  it.each([
+    { sessionId: 'team-detached-session', swarmRunScope: { sessionId: 'team-detached-session', runId: 'team-run', treeId: 'team-tree' } },
+    { sessionId: 'goal-detached-session', suppressBackgroundSubagentIdleWake: true },
+  ])('keeps the scoped SpawnGuard completion for $sessionId', async (scope) => {
+    vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
+    mocks.startTask.mockClear();
+    const { context } = sideChatRequest(scope.sessionId);
+    const treeId = scope.swarmRunScope?.treeId ?? scope.sessionId;
+    const task = 'Find the owner of the release plan';
+    const report = 'The release manager owns the plan.';
+    mocks.responses.push(textResponse(report));
+
+    try {
+      const receipt = await executeSingleSpawnAgent({
+        task, customPrompt: 'Identify the owner.', customTools: [], waitForCompletion: false,
+      }, { ...context, ...scope }, 1, treeId);
+      expect(receipt.success).toBe(true);
+      const child = getSpawnGuard().list().find((agent) => agent.id === receipt.metadata?.agentId);
+      await expect(child?.promise).resolves.toMatchObject({ success: true, output: report });
+
+      const registry = getBackgroundSubagentRegistry();
+      expect(registry.getStatus(String(receipt.metadata?.agentId))).toBeUndefined();
+      expect(registry.drainCompletionNotifications({ sessionId: scope.sessionId })).toEqual([]);
+      expect(getSpawnGuard().drainNotifications(scope.swarmRunScope ?? { sessionId: scope.sessionId })).toEqual([
+        expect.stringContaining(report),
+      ]);
+      expect(mocks.startTask).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps adopted goal work collectable and sends its completion through SpawnGuard', async () => {
+    vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
+    mocks.startTask.mockClear();
+    const sessionId = 'adopted-goal-session';
+    const { context } = sideChatRequest(sessionId);
+    const output = 'The release plan is ready for review.';
+    const inference = Promise.withResolvers<ReturnType<typeof textResponse>>();
+    mocks.inference.mockImplementationOnce(() => inference.promise);
+
+    try {
+      const receipt = await executeSingleSpawnAgent({
+        task: 'Review the release plan',
+        customPrompt: 'Summarize your review.',
+        customTools: [],
+        foregroundBlockingBudgetMs: 1,
+      }, { ...context, suppressBackgroundSubagentIdleWake: true }, 1, sessionId);
+      expect(receipt).toMatchObject({ success: true, metadata: { transferredToBackground: true } });
+      const registry = getBackgroundSubagentRegistry();
+      inference.resolve(textResponse(output));
+      await expect(registry.await(String(receipt.metadata?.agentId))).resolves.toMatchObject({ success: true, output });
+
+      expect(getSpawnGuard().drainNotifications({ sessionId })).toEqual([expect.stringContaining(output)]);
+      expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
+      expect(mocks.startTask).not.toHaveBeenCalled();
+    } finally {
+      inference.resolve(textResponse(output));
+      vi.unstubAllEnvs();
+    }
+  });
+
 });

@@ -38,7 +38,7 @@ function context(): SubagentExecutionContext {
     runId: 'run-completion-title', sessionId, workspace: '/tmp', cwd: '/tmp',
     modelConfig: { provider: 'test', model: 'test-model' },
     permission: { request: async () => true }, events: { emit: () => undefined },
-    abortSignal: new AbortController().signal, suppressBackgroundSubagentIdleWake: true,
+    abortSignal: new AbortController().signal,
   } as unknown as SubagentExecutionContext;
 }
 

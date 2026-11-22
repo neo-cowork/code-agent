@@ -197,13 +197,17 @@ export function registerDetachedSubagent(options: {
     startedAt: agentStartedAt,
     abort,
     suppressIdleWake: Boolean(context.suppressBackgroundSubagentIdleWake),
-    ...(context.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
+    ...(context.suppressBackgroundSubagentIdleWake ? {
+      suppressReason: 'goal-loop' as const,
+      // The goal loop receives the scoped SpawnGuard reminder in its next inference.
+      ...(!context.swarmRunScope ? { completionNotificationGate: { suppress: true } } : {}),
+    } : {}),
     onComplete: scheduleBackgroundSubagentIdleWake,
   });
   const managed = getSpawnGuard().get(agentId);
   if (managed) {
     managed.background = true;
-    managed.completionByBackgroundRegistry = true;
+    managed.completionByBackgroundRegistry = !context.swarmRunScope && !context.suppressBackgroundSubagentIdleWake;
   }
 }
 

@@ -288,6 +288,7 @@ describe('background subagent idle wake', () => {
     const registry = getBackgroundSubagentRegistry();
     registry.adopt(Promise.resolve({
       success: false, output: '', error: 'Max iterations reached', toolsUsed: [], iterations: 1,
+      stopHint: { kind: 'step_cap', conclusion: 'The task ran out of steps before it reached a conclusion.' },
     }), {
       agentId, sessionId, completionKind: 'user_visible', onComplete: scheduleBackgroundSubagentIdleWake,
     });
@@ -298,6 +299,34 @@ describe('background subagent idle wake', () => {
       sessionId, expect.any(String), expect.any(String), expect.objectContaining({ taskId: agentId }),
     );
     expect(taskManagerMocks.startTask).not.toHaveBeenCalled();
+    expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
+  });
+
+  it('passes a failed child’s partial answer to the idle report without a second note', async () => {
+    const agentId = 'child-with-partial-answer';
+    const sessionId = 'session-with-partial-answer';
+    const output = 'The rollback plan is in release.txt. The recovery check is still unconfirmed.';
+    taskManagerMocks.getSessionState.mockReturnValue({ status: 'idle' });
+    taskManagerMocks.startTask.mockImplementation(async () => {
+      const observer = taskManagerMocks.observeAgentEvents.mock.calls[0]?.[0];
+      observer(sessionId, { type: 'message', data: { role: 'assistant', content: output } });
+    });
+    recordStopNote.mockClear();
+    const registry = getBackgroundSubagentRegistry();
+    registry.adopt(Promise.resolve({
+      success: false, output, error: 'Max iterations reached', toolsUsed: [], iterations: 1,
+    }), {
+      agentId, sessionId, completionKind: 'user_visible', onComplete: scheduleBackgroundSubagentIdleWake,
+    });
+    await registry.await(agentId);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(taskManagerMocks.startTask).toHaveBeenCalledExactlyOnceWith(
+      sessionId, expect.stringContaining(output), undefined,
+      expect.objectContaining({ completionReportOnly: true }), expect.anything(), expect.any(String),
+    );
+    expect(recordStopNote).not.toHaveBeenCalled();
+    expect(wakeNoteMocks.record).not.toHaveBeenCalled();
     expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
   });
 

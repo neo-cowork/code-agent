@@ -383,7 +383,9 @@ export class BackgroundSubagentRegistry {
     });
     const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
       || entry.failureCode === AgentFailureCode.CancelledByParent;
-    if (entry.status === 'failed' && entry.sessionId && !cancelled && !entry.cancelRequested) {
+    const autoReportsToUser = record.kind === 'user_visible' && !options.suppressIdleWake;
+    if (entry.status === 'failed' && entry.sessionId && !cancelled && !entry.cancelRequested
+      && !(autoReportsToUser && stripCardToolCallMarkup(entry.result?.output ?? '').trim())) {
       try {
         // 给用户的白话说明只在这条用户可见通道里生成；entry.error / durable terminal.reason 保留原始错误。
         const plain = entry.result?.stopHint?.kind === 'step_cap'
@@ -393,8 +395,8 @@ export class BackgroundSubagentRegistry {
           taskId: entry.agentId,
           kind: entry.result?.stopKind ?? (entry.result?.stopHint?.kind === 'step_cap' ? 'step_cap' : 'error'),
         });
-        // The conversation already has a closing note. Skip a second report for this detached assistant.
-        if (record.kind === 'user_visible' && !options.suppressIdleWake) return;
+        // With no partial result to deliver, the persisted stop note closes the task.
+        if (autoReportsToUser) return;
       } catch (error) { logger.warn('Failed to record background stop note', error); }
     }
     if (entry.status === 'failed' && entry.sessionId && (cancelled || entry.cancelRequested)) {
