@@ -279,7 +279,13 @@ const bashKeynote = bashCall(
 );
 const cuaKeynote = { id: 'cua-keynote', name: 'mcp__cua-driver__click', arguments: { pid: 123, x: 100, y: 200 } };
 const numbers = bashCall('numbers', `osascript -e 'tell application "Numbers" to activate'`, 'Open the spreadsheet');
-const connector = { id: 'connector', name: 'tmeetMeetingListUpcoming', arguments: {} };
+const connector: ToolCall = {
+  id: 'connector',
+  name: 'tmeetMeetingListUpcoming',
+  arguments: {},
+  shortDescription: 'List upcoming meetings',
+  guiTakeoverDisclosure: { code: 'gui_takeover', app: 'Keynote' },
+};
 const metadata = { id: 'metadata', name: 'mcp__cua-driver__list_apps', arguments: {} };
 const keynote = { code: 'gui_takeover', app: 'Keynote' };
 const usage = { inputTokens: 1, outputTokens: 1 };
@@ -362,6 +368,7 @@ describe('member GUI disclosures through SubagentExecutor.execute', () => {
     expect(persisted[0]?.guiTakeoverDisclosure).toEqual(keynote);
     expect(record?.snapshot?.guiDisclosures).toEqual(expected);
     for (const calls of [starts, persisted]) {
+      expect(calls.find((call) => call.id === connector.id)?.shortDescription).toBe(connector.shortDescription);
       expect(calls.find((call) => call.id === second.id)?.guiTakeoverDisclosure).toBeUndefined();
       expect(calls.find((call) => call.id === numbers.id)?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Numbers' });
       for (const id of [connector.id, metadata.id]) {

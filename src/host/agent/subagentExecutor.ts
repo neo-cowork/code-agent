@@ -724,11 +724,9 @@ export class SubagentExecutor {
           doomLoopGuard.recordStep(response.toolCalls);
 
           const toolResults: string[] = [];
-          const assistantToolCalls: ToolCall[] = response.toolCalls.map((toolCall) => ({
-            id: toolCall.id,
-            name: toolCall.name,
-            arguments: toolCall.arguments,
-          }));
+          const assistantToolCalls: ToolCall[] = response.toolCalls.map(
+            ({ guiTakeoverDisclosure: _disclosure, ...toolCall }) => toolCall,
+          );
           pushObservabilityMessage({
             id: generateMessageId(),
             role: 'assistant',
