@@ -12,6 +12,7 @@ import {
   deriveRunOverviewTone,
 } from '../../../src/renderer/utils/overviewRunHeader';
 import type { RunUiState, RunUiStatus } from '../../../src/renderer/types/runWorkbench';
+import { buildRunUiState } from '../../../src/renderer/utils/runWorkbenchProjection';
 
 const runModel = vi.hoisted(() => ({ current: null as unknown }));
 
@@ -265,6 +266,21 @@ describe('OverviewRunHeader 细进度线', () => {
     setRun(run({ status: 'completed', phase: '已完成', startedAt: START, endedAt: START + 5_000 }));
     render(<OverviewRunHeader />);
     expect(screen.queryByTestId('overview-run-header-phase')).toBeNull();
+  });
+
+  it('工具阶段旧式 step「执行 calendar」渲染成人话，不外露工具 id', () => {
+    const live = buildRunUiState({
+      projection: { sessionId: 'session-a', turns: [], activeTurnIndex: -1 },
+      sessionId: 'session-a',
+      language: 'zh',
+      taskProgress: { turnId: 'turn-1', phase: 'tool_running', step: '执行 calendar', tool: 'calendar' },
+    });
+    // 空 projection 没有 turnId，头部不渲染；phase 仍是真实 builder 产出，只补身份。
+    setRun({ ...live, identity: { ...live.identity, turnId: 'turn-1', runId: 'run-1' }, startedAt: START });
+    render(<OverviewRunHeader />);
+    const header = screen.getByTestId('overview-run-header');
+    expect(screen.getByTestId('overview-run-header-phase').textContent).toBe('正在查看日历');
+    expect(header.textContent).not.toMatch(/calendar|tool_running/);
   });
 
   it('异常态显示人话结局，不出现 error/blocked 字样', () => {

@@ -19,6 +19,7 @@ import type {
 } from '../types/runWorkbench';
 import { getToolCapabilitySource } from './toolExecutionPresentation';
 import { mentionsRawToolName } from './humanizeToolStep';
+import { toolProgressLabel } from '@shared/utils/toolProgressLabel';
 import { hasCancelledRunMarker, isIdleReapedRun } from './streamingStatePresentation';
 import {
   isReadOnlyArtifactOwnershipItem,
@@ -91,9 +92,24 @@ function statusFromInput(args: BuildRunWorkbenchModelInput, turn: TraceTurn | nu
   return 'planning';
 }
 
+const TASK_PHASE_WORDS = new Set(['thinking', 'tool_pending', 'tool_running', 'generating', 'completed', 'failed']);
+
+/** 工具阶段的 step 若带着工具 id 或阶段枚举词，换成人话进行时；其余阶段与已是人话的 step 原样返回。 */
+function humanTaskStep(progress: TaskProgressData | null | undefined, language: 'zh' | 'en'): string | undefined {
+  if (!progress) return undefined;
+  const step = progress.step?.trim();
+  const tool = progress.tool?.trim();
+  if (progress.phase !== 'tool_pending' && progress.phase !== 'tool_running') return step || undefined;
+  if (!step) return tool ? toolProgressLabel(tool, language) : undefined;
+  const mentionsTool = Boolean(tool) && mentionsRawToolName(step, tool as string);
+  if (mentionsTool || TASK_PHASE_WORDS.has(step)) return toolProgressLabel(tool, language);
+  return step;
+}
+
 function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string {
-  if (taskProgress?.step?.trim()) return taskProgress.step.trim();
-  if (taskProgress?.tool?.trim()) return `工具 ${taskProgress.tool.trim()}`;
+  const humanStep = humanTaskStep(taskProgress, language);
+  if (humanStep) return humanStep;
+  if (taskProgress?.tool?.trim()) return toolProgressLabel(taskProgress.tool, language);
 
   const labels: Record<RunUiStatus, string> = {
     planning: '规划任务',
@@ -634,6 +650,7 @@ function buildSessionTaskRecordFromSessionTasks(args: {
   runId: string | null;
   sessionTasks: SessionTask[];
   taskProgress?: TaskProgressData | null;
+  language?: 'zh' | 'en';
 }): TaskRecord | null {
   const tasks = args.sessionTasks.filter((task) => task.subject?.trim() || task.description?.trim());
   if (tasks.length === 0) return null;
@@ -710,19 +727,18 @@ function buildSessionTaskRecordFromSessionTasks(args: {
     steps,
     ownerRunId: args.runId,
     sourceThreadId: args.sessionId,
-    resumeHint: taskProgressHint(args.taskProgress),
+    resumeHint: taskProgressHint(args.taskProgress, args.language),
   };
 }
 
-function taskProgressHint(progress?: TaskProgressData | null): string | undefined {
+function taskProgressHint(progress?: TaskProgressData | null, language: 'zh' | 'en' = 'zh'): string | undefined {
   if (!progress) return undefined;
   const details: string[] = [];
-  if (progress.tool?.trim()) details.push(`工具：${progress.tool.trim()}`);
   if (progress.toolTotal && progress.toolTotal > 1) {
     const index = Math.min((progress.toolIndex ?? 0) + 1, progress.toolTotal);
-    details.push(`第 ${index}/${progress.toolTotal} 个工具`);
+    details.push(language === 'en' ? `Action ${index} of ${progress.toolTotal}` : `第 ${index}/${progress.toolTotal} 项操作`);
   }
-  const step = progress.step?.trim();
+  const step = humanTaskStep(progress, language);
   if (step) details.unshift(step);
   return details.length > 0 ? details.join(' · ') : undefined;
 }
@@ -734,6 +750,7 @@ export function buildSessionTaskRecord(args: {
   sessionTasks?: SessionTask[];
   todos?: TodoItem[];
   taskProgress?: TaskProgressData | null;
+  language?: 'zh' | 'en';
 }): TaskRecord | null {
   if (args.sessionTasks && args.sessionTasks.length > 0) {
     return buildSessionTaskRecordFromSessionTasks({
@@ -741,6 +758,7 @@ export function buildSessionTaskRecord(args: {
       runId: args.runId,
       sessionTasks: args.sessionTasks,
       taskProgress: args.taskProgress,
+      language: args.language,
     });
   }
 
@@ -772,6 +790,6 @@ export function buildSessionTaskRecord(args: {
     })),
     ownerRunId: args.runId,
     sourceThreadId: args.sessionId,
-    resumeHint: taskProgressHint(args.taskProgress),
+    resumeHint: taskProgressHint(args.taskProgress, args.language),
   };
 }

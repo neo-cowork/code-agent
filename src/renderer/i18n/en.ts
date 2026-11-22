@@ -585,7 +585,7 @@ export const en = {
       engineCountLabel: 'Engine Count',
       engineCountCaption: 'Codex / Claude',
       // Engine rows
-      remoteDefaultLabel: 'Remote default',
+      remoteDefaultLabel: 'Remote default: ',
       localDefaultLabel: 'Local default selection',
       modelSelectableSummary: '{enabled}/{total} models available',
       loading: 'Loading model catalog...',

@@ -111,7 +111,7 @@ const EN_SNAPSHOT = {
     "cloudCardsReadonlyBadge": "Read-only",
     "cloudCardsLoading": "Loading cloud cards…",
     "cloudCardsEmpty": "No cards shared by other members yet.",
-    "cloudCardsLoadFailed": "Failed to load cloud cards",
+    "cloudCardsLoadFailed": "Failed to load cloud cards: ",
     "cloudCardsRetry": "Retry",
     "cloudCardsResync": "Resync my cards",
     "cloudCardsResyncing": "Syncing…",

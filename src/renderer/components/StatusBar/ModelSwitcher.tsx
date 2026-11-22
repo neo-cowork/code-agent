@@ -55,7 +55,7 @@ import {
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
-  buildModelSwitcherEngineSelection,
+  buildModelSwitcherEngineSelection, narrowOptionsBeforeHydrate,
 } from './modelSwitcherHelpers';
 import {
   EngineScopedModelPanel,
@@ -218,7 +218,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     modelSettings,
     nativeHasConfiguredModels,
   );
-  const visibleModelOptions = showModelSettingsPrompt ? [] : modelOptions;
+  const displayModel = overrideModel || hostModel?.model || currentModel;
+  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
+  const visibleModelOptions = showModelSettingsPrompt ? [] : narrowOptionsBeforeHydrate(modelOptions, modelSettings !== null || settingsLoaded, displayProvider, displayModel);
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
@@ -564,9 +566,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   ]);
 
   // 没有会话 override 时显示 host 算出的下一轮模型；host 还没回话的首帧才用渲染层设置快照。
-  const displayModel = overrideModel || hostModel?.model || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
-  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
 
   // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
   // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
