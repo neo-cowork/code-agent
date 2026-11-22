@@ -654,6 +654,7 @@ export function projectTurns(
             stepLabel: tc.stepLabel,
             targetContext: tc.targetContext,
             expectedOutcome: tc.expectedOutcome,
+            guiTakeoverDisclosure: tc.guiTakeoverDisclosure,
           },
           metadata: nodeMetadata,
         });

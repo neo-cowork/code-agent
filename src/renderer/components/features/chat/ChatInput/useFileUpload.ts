@@ -10,7 +10,6 @@ import {
   MAX_FOLDER_FILES,
   getFileCategory,
   readDirectoryEntry,
-  extractPdfText,
   generateAttachmentId,
 } from './utils';
 import { toast } from '../../../../hooks/useToast';
@@ -88,11 +87,20 @@ export function useFileUpload() {
 
     // PDF 大文件只传路径，不受 MAX_FILE_SIZE 限制
     if (category === 'pdf' && filePath) {
-      const { text, pageCount } = await extractPdfText(t, filePath);
-      return {
-        id, type: 'file', category: 'pdf', name: displayName, size: file.size,
-        mimeType: 'application/pdf', data: text, pageCount, path: filePath,
-      };
+      try {
+        const result = await ipcService.extractPdfText(filePath);
+        if (result) {
+          return {
+            id, type: 'file', category: 'pdf', name: displayName, size: file.size,
+            mimeType: 'application/pdf', data: result.text, pageCount: result.pageCount, path: filePath,
+          };
+        }
+      } catch (e) {
+        logger.warn('PDF extraction failed', { error: e });
+      }
+      showToast('error', t.chatInput.uploadPdfFailed.replace('{name}', file.name));
+      discardRejectedUpload(filePath);
+      return null;
     }
 
     // 仅剩 PDF 没拿到路径的情形会走到这里
@@ -131,23 +139,26 @@ export function useFileUpload() {
 
     // Excel 文件处理
     if (category === 'excel' && filePath) {
-      const result = await ipcService.extractExcelText(filePath);
-      if (result) {
-        // Also extract JSON for SpreadsheetBlock interactive rendering
-        let sheetsJson: string | undefined;
-        try {
-          const jsonResult = await ipcService.extractExcelJson(filePath);
-          if (jsonResult) sheetsJson = JSON.stringify(jsonResult);
-        } catch { /* non-blocking */ }
+      try {
+        const result = await ipcService.extractExcelText(filePath);
+        if (result) {
+          // Also extract JSON for SpreadsheetBlock interactive rendering
+          let sheetsJson: string | undefined;
+          try {
+            const jsonResult = await ipcService.extractExcelJson(filePath);
+            if (jsonResult) sheetsJson = JSON.stringify(jsonResult);
+          } catch { /* non-blocking */ }
 
-        return {
-          id, type: 'file', category: 'excel', name: displayName, size: file.size,
-          mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          data: result.text, sheetCount: result.sheetCount, rowCount: result.rowCount, path: filePath,
-          sheetsJson,
-        };
+          return {
+            id, type: 'file', category: 'excel', name: displayName, size: file.size,
+            mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            data: result.text, sheetCount: result.sheetCount, rowCount: result.rowCount, path: filePath,
+            sheetsJson,
+          };
+        }
+      } catch (e) {
+        logger.warn('Excel extraction failed', { error: e });
       }
-      logger.warn('Excel extraction failed, falling back to binary warning');
       showToast('error', t.chatInput.uploadXlsxFailed.replace('{name}', file.name));
       discardRejectedUpload(filePath);
       return null;

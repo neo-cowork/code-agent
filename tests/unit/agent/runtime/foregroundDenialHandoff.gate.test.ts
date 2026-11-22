@@ -434,6 +434,63 @@ describe('foreground narrowing gate', () => {
     expect(tasks[0]?.options?.executionIntent).toEqual(executionIntent);
   });
 
+  // 交接标题保留词间空格：折叠空白为单个空格、截 24 个码点、去掉尾部空格。
+  // 英文请求不能再粘成 Runoneshell… 这样的不可读串（前台拒绝同轮交接的任务名）。
+  describe('handoff title keeps word spaces', () => {
+    async function titleFromHandoff(prompt: string): Promise<string> {
+      const ctx = prepare(prompt);
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(
+        ctx as unknown as RuntimeContext,
+        deps.contextAssembly as unknown as ContextAssembly,
+        deps.runFinalizer as unknown as RunFinalizer,
+        toolEngine as unknown as ToolExecutionEngine,
+      );
+      const action = await processor.handleToolResponse(responseOf([
+        { id: 'bash-title', name: 'Bash', arguments: { command: 'ls' } },
+      ]), false, 1, EVENT_PROC);
+      expect(action).toBe('break');
+      const tasks = getSessionCommandCenter().list(ctx.sessionId);
+      expect(tasks).toHaveLength(1);
+      return tasks[0]?.title ?? '';
+    }
+
+    it('english request keeps single spaces, <=24 code points, no glued run', async () => {
+      const title = await titleFromHandoff('Run one shell command that watches the downloads folder');
+      expect(title).toBe('Run one shell command th');
+      expect(Array.from(title).length).toBeLessThanOrEqual(24);
+      expect(title).toContain(' ');
+      expect(title).not.toContain('Runoneshell');
+    });
+
+    it('pure chinese prompt keeps its first 24 code points unchanged', async () => {
+      const prompt = '请帮我整理项目根目录下面的所有临时文件并且把结果汇总成一份简短的报告发给我';
+      const title = await titleFromHandoff(prompt);
+      expect(title).toBe(Array.from(prompt).slice(0, 24).join(''));
+    });
+
+    it('mixed zh/en prompt keeps single spaces around latin words', async () => {
+      const title = await titleFromHandoff('帮我把 README 里面的安装步骤   翻译成英文，然后写到 notes.txt');
+      expect(title).toBe('帮我把 README 里面的安装步骤 翻译成英文');
+      expect(Array.from(title).length).toBeLessThanOrEqual(24);
+    });
+
+    it('newlines, tabs and space runs collapse to single spaces without edge spaces', async () => {
+      const title = await titleFromHandoff('  Run\tone  shell\ncommand  that   watches\tthe folder  ');
+      expect(title).toBe('Run one shell command th');
+      expect(title.startsWith(' ')).toBe(false);
+      expect(title.endsWith(' ')).toBe(false);
+      expect(title).not.toMatch(/\s{2,}/);
+    });
+
+    it('a cut falling on a space does not leave a trailing space', async () => {
+      const title = await titleFromHandoff('Weekly sync notes for q 403 review please');
+      expect(title).toBe('Weekly sync notes for q');
+      expect(title.endsWith(' ')).toBe(false);
+    });
+  });
+
   it('delegate handler failure keeps the guidance path and the pending reply', async () => {
     const prompt = '明天上午 9 点提醒我交报告，请用 Bash 执行多行 osascript 建提醒';
     const ctx = prepare(prompt, { workspaceScope: undefined, maxToolCallRetries: 0 });

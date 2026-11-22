@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, renderHook, screen, fireEvent } from '@testing-library/react';
 
 const showToast = vi.hoisted(() => vi.fn());
-const ipc = vi.hoisted(() => ({ getPathForFile: vi.fn() }));
+const ipc = vi.hoisted(() => ({
+  getPathForFile: vi.fn(),
+  extractPdfText: vi.fn(async () => ({ text: 'pdf', pageCount: 1 })),
+}));
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: { show: (...args: unknown[]) => showToast(...args) },
@@ -14,7 +17,6 @@ vi.mock('../../../src/renderer/components/features/chat/ChatInput/utils', () => 
   MAX_FILE_SIZE: 10 * 1024 * 1024,
   MAX_FOLDER_FILES: 100,
   generateAttachmentId: () => 'attachment-1',
-  extractPdfText: vi.fn(async () => ({ text: 'pdf', pageCount: 1 })),
   readDirectoryEntry: vi.fn(),
   getFileCategory: (file: File) => ({
     category: file.name.endsWith('.pdf') ? 'pdf' : file.name.endsWith('.txt') ? 'code' : 'video',

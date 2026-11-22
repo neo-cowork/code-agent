@@ -1,5 +1,6 @@
 import { detectScreenshotFailureCause } from '../../permissions/envAssist/screenshotFailureCause';
 import { isAppleEventsDenied } from '../../connectors/native/appleScriptFailure';
+import { containsAppleScriptCommand } from '../../permissions/shellDesktopAutomation';
 
 const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
 
@@ -222,8 +223,6 @@ export interface BashFailureDiagnosticsInput {
 // are ambiguous; only the wording or the unambiguous AX code -25211 counts.
 const ACCESSIBILITY_DENIAL_PATTERN = /(?<!\d)-25211(?!\d)|not allowed assistive access|not allowed to send keystrokes/i;
 const SCREENCAPTURE_COMMAND_PATTERN = /(?:^|[\s;&|(`/])screencapture\b/;
-// `osa(?:script)`: the static no-prompt scan flags the bare tool name in this module.
-const OSASCRIPT_COMMAND_PATTERN = /(?:^|[\s;&|(`/])osa(?:script)\b/;
 
 /**
  * One 诊断 line naming the System Settings page when macOS privacy (TCC)
@@ -238,7 +237,7 @@ function diagnoseTccDenial(input: {
 }): string | undefined {
   if (input.platform !== 'darwin') return undefined;
   const usesScreencapture = SCREENCAPTURE_COMMAND_PATTERN.test(input.command);
-  const usesOsascript = OSASCRIPT_COMMAND_PATTERN.test(input.command);
+  const usesOsascript = containsAppleScriptCommand(input.command);
   if (!usesScreencapture && !usesOsascript) return undefined;
   const cause = detectScreenshotFailureCause({ platform: input.platform, env: input.env, message: input.failureText });
   if (cause.kind === 'ssh_session_no_gui') return undefined;
