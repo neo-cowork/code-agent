@@ -728,3 +728,150 @@ describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
     expect(result.current.fileRows.map((row) => row.path)).toEqual(['/tmp/proj-a/src/foo.ts', '/tmp/proj-a/notes.md']);
   });
 });
+
+describe('buildSessionRows 无项目时 projectName 是文件夹名', () => {
+  function directorySession(
+    id: string,
+    fields: { projectId?: string; workspace?: string; workingDirectory?: string; title?: string } = {},
+  ): Session & { messageCount: number } {
+    return {
+      id,
+      title: fields.title ?? '设计回顾',
+      ...(fields.projectId ? { projectId: fields.projectId } : {}),
+      ...(fields.workspace !== undefined ? { workspace: fields.workspace } : {}),
+      ...(fields.workingDirectory !== undefined ? { workingDirectory: fields.workingDirectory } : {}),
+      modelConfig: {} as Session['modelConfig'],
+      createdAt: 1,
+      updatedAt: 2,
+      messageCount: 4,
+    };
+  }
+
+  it('(a) 无 projectId、无 workspace、workingDirectory 为绝对路径时 projectName 等于文件夹名', () => {
+    const rows = buildSessionRows([
+      directorySession('s-wd', { workingDirectory: '/Users/example/work/my-project' }),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('my-project');
+  });
+
+  it('(b) workspace 为绝对路径时 projectName 是该路径的文件夹名', () => {
+    const rows = buildSessionRows([
+      directorySession('s-ws', {
+        workspace: '/Users/example/work/demo-app',
+        workingDirectory: '/Users/example/work/my-project',
+      }),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('demo-app');
+  });
+
+  it('(c) 尾部分隔符与 Windows 路径都只留文件夹名', () => {
+    const rows = buildSessionRows([
+      directorySession('s-win', { workingDirectory: 'C:\\Users\\example\\my-project\\' }),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('my-project');
+  });
+
+  it('(d) projectId 在名称表里时仍用项目名，不退回目录', () => {
+    const rows = buildSessionRows([
+      directorySession('s-proj', {
+        projectId: 'proj-1',
+        workspace: '/Users/example/work/demo-app',
+        workingDirectory: '/Users/example/work/my-project',
+      }),
+    ], new Map([['proj-1', 'Neo 项目']]), '', null);
+    expect(rows[0]?.projectName).toBe('Neo 项目');
+  });
+
+  it('(e) workspace 与 workingDirectory 都空时 projectName 是空串', () => {
+    const rows = buildSessionRows([
+      directorySession('s-empty'),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('');
+  });
+
+  it('(f) 按文件夹名能搜到，主目录段不再命中', () => {
+    const sessions = [
+      directorySession('s-search', { workingDirectory: '/Users/example/work/my-project' }),
+    ];
+    expect(buildSessionRows(sessions, new Map(), 'my-proj', null).map((row) => row.id)).toEqual(['s-search']);
+    expect(buildSessionRows(sessions, new Map(), 'users', null)).toEqual([]);
+  });
+});
+
+describe('AtMentionPopover 会话行 meta 只显示文件夹名', () => {
+  const PAST_DIR = '/Users/example/work/my-project';
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mocks.language = 'zh';
+    mocks.listLibraryItems.mockResolvedValue([]);
+    mocks.getSessionPin.mockResolvedValue({ sessionId: 'current', itemIds: [] });
+    mocks.listProjects.mockResolvedValue([]);
+    mocks.getProjectArtifacts.mockResolvedValue([]);
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: 'current' });
+    (window as { domainAPI?: unknown }).domainAPI = {
+      invoke: vi.fn().mockImplementation((_domain: string, action: string) => Promise.resolve({
+        success: true,
+        data: action === 'list'
+          ? [{
+              id: 'past-dir',
+              title: '设计回顾',
+              workingDirectory: PAST_DIR,
+              modelConfig: {},
+              createdAt: 1,
+              updatedAt: Date.now(),
+              messageCount: 4,
+            }]
+          : [],
+      })),
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    mocks.language = 'zh';
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
+  });
+
+  async function renderedMeta(language: 'zh' | 'en'): Promise<string> {
+    mocks.language = language;
+    const { result } = renderHook(() => useAtMentionPanel({
+      sessionId: 'current',
+      projectId: null,
+      onFileSelect: vi.fn(),
+      onSessionSelect: vi.fn(),
+      onArtifactSelect: vi.fn(),
+    }));
+    await act(async () => {
+      result.current.search('@', 1);
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    const view = render(
+      <AtMentionPopover
+        query={result.current.query}
+        libraryRows={result.current.libraryRows}
+        fileRows={result.current.fileRows}
+        sessionRows={result.current.sessionRows}
+        artifactRows={result.current.artifactRows}
+        activeTab={result.current.activeTab}
+        selectedIndex={result.current.selectedIndex}
+        onTabChange={result.current.setActiveTab}
+        onSelect={result.current.selectRow}
+        onHover={result.current.setSelectedIndex}
+      />,
+    );
+    const meta = view.container.querySelector('button span.text-zinc-500');
+    return meta?.textContent ?? '';
+  }
+
+  it('输入 @ 后，无项目的会话行 meta 显示文件夹名（zh / en）', async () => {
+    expect(await renderedMeta('zh')).toBe('刚刚 · 4 条消息 · my-project');
+    cleanup();
+    expect(await renderedMeta('en')).toBe('just now · 4 messages · my-project');
+  });
+});
