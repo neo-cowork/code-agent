@@ -111,6 +111,7 @@ export interface DurableTerminalInput {
   now: number;
   status: 'completed' | 'failed' | 'cancelled';
   reason?: string;
+  abandonedParked?: true;
   event: RunEventAppend;
 }
 
@@ -374,6 +375,7 @@ export class DurableRunKernel implements RunKernelAdapter {
       expectedNextEventSeq: envelope.cursor.nextEventSeq,
       status: input.status,
       reason: input.reason,
+      abandonedParked: input.abandonedParked,
       event: input.event,
       terminalAt: input.now,
     });

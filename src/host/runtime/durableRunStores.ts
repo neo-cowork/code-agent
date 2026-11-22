@@ -158,6 +158,7 @@ export interface TerminalCommit {
   expectedNextEventSeq: number;
   status: 'completed' | 'failed' | 'cancelled';
   reason?: string;
+  abandonedParked?: true;
   event: RunEventAppend;
   terminalAt: number;
 }
