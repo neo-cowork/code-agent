@@ -10,6 +10,9 @@ export const cronRoutineRestateZh = {
   // 停用副本的第四行「状态」（N-ROLE-ROUTINE-RESTATE-FU1-FU1）
   savedRestateStatusLabel: '状态',
   savedRestateStatusPaused: '当前已停用，点启用后才会按时跑',
+  // 产出归档行（N-FIX-CRON-CONFIRM-CARD-OMITS-ARCHIVE-PROJECT）
+  savedRestateArchiveLabel: '产出归档到',
+  savedRestateArchiveUnknown: '所选项目（名称暂时读不到）',
   // 保存前确认卡（N-CRON-MORNING-TRIAGE-REST1）：无角色任务先复述再落库；
   // 行文案复用 chatInput 的 scheduleConfirm（what/when/notifyWhen/result）
   pendingRestateTitle: '保存前确认 · 这个自动化会这样做',
@@ -33,6 +36,8 @@ export const cronRoutineRestateEn = {
   savedRestateRolePrefix: 'Run by {role}: ',
   savedRestateStatusLabel: 'Status',
   savedRestateStatusPaused: 'Currently paused — it will only run on schedule after you turn it on.',
+  savedRestateArchiveLabel: 'Archive output to',
+  savedRestateArchiveUnknown: 'The project you picked (name unavailable)',
   pendingRestateTitle: 'Before saving · what this automation will do',
   pendingRestateHint: 'Nothing is created yet — check it over, then save. Or go back and edit.',
   pendingRestateHintUpdate: 'Your changes are not saved yet — check them, then confirm. Or go back and edit.',
