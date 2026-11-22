@@ -31,6 +31,7 @@ import type { LibraryEvidenceProjection } from '@shared/contract/library';
 import { projectLibraryEvidence } from '../../../../../services/libraryClient';
 import {
   humanizeToolError,
+  isRemindersReadAuthorizationFailure,
   buildToolErrorActions,
   isToolInterruptionPlaceholder,
 } from '../../../../../utils/toolExecutionPresentation';
@@ -178,6 +179,8 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
     ? humanizeToolError(result.error, name, t, result.metadata)
     : null;
   const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
+  const remindersReadDenied = isRemindersReadAuthorizationFailure(name, result?.metadata);
+  const errorDetail = humanError?.detail ?? (remindersReadDenied ? undefined : copy.genericErrorDetail);
 
   const isEditFile = name === 'Edit';
   // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一聚合 old/new；legacy 平铺不变
@@ -214,6 +217,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const interruptionPlaceholder = isToolInterruptionPlaceholder(result?.error);
   const showGenericErrorActions = browserComputerNextSteps.length === 0
     && toolErrorActions.show
+    && !remindersReadDenied
     && !interruptionPlaceholder;
 
   const canPreviewCreated = isPreviewable(createdFilePath);
@@ -367,9 +371,9 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                   <div className="font-medium text-badge-warning/90">
                     {humanError?.summary ?? copy.genericErrorSummary}
                   </div>
-                  {(humanError?.detail ?? copy.genericErrorDetail) && (
+                  {errorDetail && (
                     <div className="mt-1 text-badge-warning/60">
-                      {humanError?.detail ?? copy.genericErrorDetail}
+                      {errorDetail}
                     </div>
                   )}
                   {humanError?.settingsHint && (
@@ -381,7 +385,7 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
                       {copy.settingsHint}
                     </button>
                   )}
-                  {!interruptionPlaceholder && !structuredHostReason && (
+                  {!interruptionPlaceholder && !structuredHostReason && !remindersReadDenied && (
                     <>
                       <button
                         type="button"
