@@ -18,6 +18,8 @@ import { toast } from '../../../hooks/useToast';
 import { buildStreamRecoveryMessage } from '../../../utils/streamRecoveryMessage';
 import { humanizeInterruptedToolAction } from '../../../utils/streamInterruptionPresentation';
 import { StallNoticeLine } from './StallNoticeLine';
+import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
+import { useAgentRowStallLevels } from '../../../hooks/useAgentRowStallLevels';
 import { Button } from '../../primitives';
 import { isEditableTarget } from '../../DecisionCard';
 import { PermissionCard } from '../../PermissionDialog/PermissionCard';
@@ -298,13 +300,22 @@ function LiveDecisionSlot({
   ].filter(Boolean).join('|');
   const expand = useCallback(() => setCollapsed(false), []);
 
+  // 子代理行已在提示「暂无进展」时，spawn_agent 的卡住提示让位给行徽标。放在早退之前常驻：
+  // 审批放行时刻要跨「有待决卡 / 没有」两种状态持续记录，否则和右栏面板算出的档位会不一致。
+  const { rows: agentRows } = useSessionAgentRows(currentSessionId);
+  const agentRowLevels = useAgentRowStallLevels(agentRows);
+  const agentRowFlagged = agentRows.some((row) => {
+    const level = agentRowLevels.get(row.key);
+    return level === 'quiet' || level === 'long';
+  });
+
   // 任何新请求进入可见队列都自动展开，包括当前卡未换但队尾新增的情况。
   useEffect(() => {
     if (requestSignature) setCollapsed(false);
   }, [requestSignature]);
 
   // 有待决卡时不挂这行。等审批或提问的时间由 host 停表，不算模型卡住。
-  if (decisionCount === 0) return <StallNoticeLine />;
+  if (decisionCount === 0) return <StallNoticeLine agentRowFlagged={agentRowFlagged} />;
 
   return (
     <section
