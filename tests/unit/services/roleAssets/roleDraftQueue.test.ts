@@ -11,6 +11,7 @@ const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const cadenceMocks = vi.hoisted(() => ({
   getMessages: vi.fn(),
   write: vi.fn(),
+  resolve: vi.fn(),
   warn: vi.fn(),
 }));
 
@@ -20,6 +21,10 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 
 vi.mock('../../../../src/host/services/roleAssets/roleProactivityWrite', () => ({
   writeRoleProactivityConfig: cadenceMocks.write,
+}));
+
+vi.mock('../../../../src/host/services/roleAssets/roleProactivity', () => ({
+  resolveRoleProactivityConfig: cadenceMocks.resolve,
 }));
 
 
@@ -60,6 +65,7 @@ describe('roleDraftQueue', () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-draft-'));
     vi.clearAllMocks();
     cadenceMocks.getMessages.mockReset().mockResolvedValue([]);
+    cadenceMocks.resolve.mockReset().mockResolvedValue({ level: 'silent' });
     cadenceMocks.write.mockReset().mockResolvedValue({ proactivity: { level: 'daily' } });
   });
 
@@ -215,6 +221,32 @@ describe('roleDraftQueue', () => {
 
       expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
       expect(cadenceMocks.write).not.toHaveBeenCalled();
+    });
+
+    it('keeps the silent default when a previous authoring request supplied the only time', async () => {
+      cadenceMocks.getMessages.mockResolvedValue([
+        { role: 'user', content: '/create-role 每天早上 9 点检查项目进度' },
+        { role: 'user', content: '/create-role 帮我建一位查看日历的专家' },
+        { role: 'user', content: '只列出需要准备的会议' },
+      ]);
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).not.toHaveBeenCalled();
+    });
+
+    it('sets 09:00 explicitly when a reused role ID retains a custom cadence', async () => {
+      cadenceMocks.resolve.mockResolvedValue({ level: 'silent', cadence: '0 0 20 * * *' });
+      cadenceMocks.getMessages.mockResolvedValue([
+        { role: 'user', content: '/create-role 每天早上 9 点查看日历' },
+      ]);
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', {
+        level: 'daily',
+        cadence: '0 0 9 * * *',
+      });
     });
 
     it('confirms even if reading the cadence source fails', async () => {

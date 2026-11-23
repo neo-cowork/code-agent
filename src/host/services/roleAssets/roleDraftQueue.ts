@@ -25,6 +25,7 @@ import { ensureRoleAssetDirs, isPersistentRole } from './roleAssetService';
 import { writeRolePersonalization } from './rolePersonalization';
 import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
 import { diffRoleDefinition } from './roleEditChange';
+import { matchRoleAuthoringSeed } from './roleCreationIntent';
 
 interface RoleDraftInstallResult {
   success: boolean;
@@ -293,18 +294,27 @@ async function applyInitialDailyCadence({ roleId, sessionId }: RoleDraftMeta): P
 
   for (const message of [...messages].reverse()) {
     if (message.role !== 'user' || message.isMeta || message.visibility === 'rewound') continue;
-    if (!EXPLICIT_DAILY_MARKER.test(message.content)) continue;
-    const schedule = parseSchedulePeriodWords(message.content);
-    if (!schedule?.time || schedule.freq) continue;
+    const schedule = EXPLICIT_DAILY_MARKER.test(message.content)
+      ? parseSchedulePeriodWords(message.content)
+      : null;
+    if (!schedule?.time || schedule.freq) {
+      // A new authoring request can reuse an existing chat.
+      if (matchRoleAuthoringSeed(message.content)) return;
+      continue;
+    }
 
     const [hour, minute] = schedule.time.split(':').map(Number);
     const cron = `0 ${minute} ${hour} * * *`;
     try {
       const { writeRoleProactivityConfig } = await import('./roleProactivityWrite');
-      await writeRoleProactivityConfig(roleId, {
-        level: 'daily',
-        ...(cron === ROLE_PROACTIVITY.DAILY_BRIEF_CRON ? {} : { cadence: cron }),
-      });
+      let cadence: string | undefined = cron;
+      if (cron === ROLE_PROACTIVITY.DAILY_BRIEF_CRON) {
+        const { resolveRoleProactivityConfig } = await import('./roleProactivity');
+        const previous = await resolveRoleProactivityConfig(roleId);
+        // Trashing a role retains its override for restore. A reused ID must honor the new time.
+        if (!previous.cadence || previous.cadence === cron) cadence = undefined;
+      }
+      await writeRoleProactivityConfig(roleId, { level: 'daily', ...(cadence ? { cadence } : {}) });
       logger.info('Role draft daily cadence saved', { roleId, sessionId, cron });
     } catch (error) {
       logger.warn('Role draft cadence settings write failed (install unaffected)', { roleId, sessionId, error: String(error) });
