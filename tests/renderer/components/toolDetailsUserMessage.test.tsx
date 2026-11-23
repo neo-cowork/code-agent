@@ -14,6 +14,9 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { remindersSchema } from '../../../src/host/tools/modules/connectors/reminders.schema';
 import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
 import { summarizeTool } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers';
+import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { hydrateToolCallResults } from '../../../src/renderer/utils/messageHydration';
+import { traceTerminalToolCall } from '../../../src/renderer/utils/toolCallTerminalState';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { buildToolErrorActions } from '../../../src/renderer/utils/toolExecutionPresentation';
 import type { Message, ToolCall, ToolResult } from '../../../src/shared/contract';
@@ -30,7 +33,14 @@ vi.mock('../../../src/host/agent/runtime/turnQuality', () => ({ attachTurnQualit
 const modelInstructions = /Use MemoryRead|memory_search|ToolSearch|Follow these five reply rules|五条回复规则|The complete user-facing answer is exactly/i;
 
 function expectCard(call: ToolCall, result: ToolResult, sentence: string) {
-  const toolCall = { ...call, result };
+  const messages = hydrateToolCallResults([
+    { id: 'request', role: 'user', content: '请帮我整理笔记。', timestamp: 1 },
+    { id: 'call', role: 'assistant', content: '', timestamp: 2, toolCalls: [call] },
+    { id: 'result', role: 'tool', content: '', timestamp: 3, toolResults: [result] },
+  ]);
+  const node = projectTurns(messages, 'session', false).turns[0].nodes.find((node) => node.type === 'tool_call');
+  expect(node?.toolCall).toBeDefined();
+  const toolCall = traceTerminalToolCall(node!.toolCall!);
   const html = renderToStaticMarkup(<ToolDetails toolCall={toolCall} />);
   expect(html).not.toMatch(modelInstructions);
   expect(html).toContain(sentence.replaceAll('>', '&gt;'));
