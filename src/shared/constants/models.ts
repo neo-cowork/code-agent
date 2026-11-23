@@ -229,8 +229,20 @@ const MODEL_LABELS: Record<string, string> = {
   ...RUNTIME_ONLY_MODEL_LABELS,
 };
 
+/**
+ * 未登记 id 的可读名回落：按 `-`/`_` 切词、丢弃空段、每词首字母大写、空格连接。
+ * my-custom-model-v2 → My Custom Model V2；空串 → 空串（保持原行为）。
+ */
+function readableModelIdFallback(modelId: string): string {
+  return modelId
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 export function getModelDisplayLabel(modelId: string): string {
-  return MODEL_LABELS[modelId] ?? modelId;
+  return MODEL_LABELS[modelId] ?? readableModelIdFallback(modelId);
 }
 
 /** 模型 id → 能力档（catalog 标注的唯一消费入口，未标注 = standard） */
