@@ -25,8 +25,8 @@ export function agentFailureCopy(code: AgentFailureCode | undefined, t: Translat
 /** Progress can include tool transcripts and provider errors. Use the explicit failure fact. */
 export function agentFailureReason(node: AgentTreeNode, t: Translations): string {
   const reason = node.failureReason?.trim();
-  const plainReason = reason && !/^Tool (?:results:|\w+:)/i.test(reason) && containsCjk(reason)
-    ? reason : undefined;
+  const internalReason = /^(?:Tool (?:results:|[\w-]+:)|(?:\w*Error|\w*Exception|HTTP)[: ]|Calling \S+\()/i;
+  const plainReason = reason && !internalReason.test(reason) ? reason : undefined;
   const code = node.failureCode
     ?? (!plainReason ? AgentFailureCode.Unknown : undefined);
   return agentFailureCopy(code, t, plainReason) ?? t.toolStepHumanize.agentFailureReasons.unknown;
