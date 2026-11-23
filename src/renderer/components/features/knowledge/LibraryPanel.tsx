@@ -24,6 +24,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { Project } from '@shared/contract/project';
 import { deleteLibraryItem, importLibraryFiles, listLibraryItems, retryLibraryLearn, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
+import { getProjectDisplayName } from '../../../utils/projectDisplayName';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -386,7 +387,7 @@ export const LibraryPanel: React.FC = () => {
             >
               <option value={GLOBAL_SCOPE}>{t.library.scopeGlobal}</option>
               {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
+                <option key={project.id} value={project.id}>{getProjectDisplayName(project, t)}</option>
               ))}
             </select>
             <Button

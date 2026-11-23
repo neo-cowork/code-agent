@@ -71,6 +71,7 @@ const traceRepoState = vi.hoisted(() => ({
 }));
 const databaseState = vi.hoisted(() => ({
   getSwarmRunDetailPreferLedger: vi.fn(),
+  getSession: vi.fn(),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -108,6 +109,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import {
   createScopedSwarmAgentId,
   createScopedSwarmMessageId,
+  createSwarmTraceStorageId,
   type SwarmRunScope,
 } from '../../../src/shared/contract/swarm';
 import type {
@@ -625,6 +627,40 @@ describe('swarm.ipc run-scoped control plane', () => {
     unregister();
   });
 
+  it('cancels a live single spawn addressed by the member view trace ID', async () => {
+    const agentId = 'subagent-bg-notes';
+    const scope: SwarmRunScope = {
+      sessionId: 'session-notes',
+      runId: `single_${agentId}`,
+      treeId: 'session-notes',
+      parentNativeRunId: 'native-parent',
+    };
+    const unregister = registerSingleSpawnVisibility(scope, agentId);
+    coordinatorRegistryState.getByRun.mockReturnValue(undefined);
+    coordinatorRegistryState.get.mockReturnValue(undefined);
+    spawnGuardState.cancel.mockReturnValueOnce(true);
+    const cancel = (sessionId: string, runId: string) => handler('swarm:cancel-agent')(
+      {}, { sessionId, runId, agentId } as never,
+    );
+
+    try {
+      await expect(cancel('other-session', createSwarmTraceStorageId(scope))).resolves.toBe(false);
+      await expect(cancel(scope.sessionId, createSwarmTraceStorageId({
+        ...scope,
+        treeId: 'other-tree',
+      }))).resolves.toBe(false);
+      expect(spawnGuardState.cancel).not.toHaveBeenCalled();
+
+      await expect(cancel(scope.sessionId, createSwarmTraceStorageId(scope))).resolves.toBe(true);
+      expect(spawnGuardState.cancel).toHaveBeenCalledWith(agentId, undefined);
+      expect(swarmEmitterState.agentCancelled).toHaveBeenCalledWith(scope, agentId, 'Cancelled by user');
+    } finally {
+      unregister();
+    }
+
+    await expect(cancel(scope.sessionId, createSwarmTraceStorageId(scope))).resolves.toBe(false);
+  });
+
   it('fails closed when terminal-run mutations are replayed after live cleanup', async () => {
     const first = await handler('swarm:cancel-run')({}, {
       sessionId: scopeA.sessionId,
@@ -798,5 +834,73 @@ describe('swarm.ipc run-scoped control plane', () => {
 
     expect(traceRepoState.getRunDetail).toHaveBeenCalledWith(opaqueStorageRunId);
     expect(result).toBeNull();
+  });
+
+  it('sanitizes agent dispatchedTask/finalOutput for display: relativize in-workspace paths, keep outside paths whole, drop replay lines', async () => {
+    databaseState.getSession.mockReturnValue({ workingDirectory: '/Users/x/ws' });
+    const agentRecord = {
+      runId: 'run-a',
+      agentId: agentA,
+      name: 'helper-C',
+      role: 'explore',
+      status: 'completed' as const,
+      startTime: 1,
+      endTime: 2,
+      durationMs: 1,
+      tokensIn: 1,
+      tokensOut: 1,
+      toolCalls: 1,
+      costUsd: 0,
+      error: null,
+      failureCategory: null,
+      filesChanged: [],
+      dispatchedTask: 'Read /Users/x/ws/notes.txt then write /tmp/outA/brief.md',
+      finalOutput: 'done, saved to /Users/x/ws/notes.txt and /Users/x/Downloads/out/report.pptx\n```\ncat /etc/hosts\n```\nTool Write: Success',
+    };
+    const detail = { ...traceDetail('run-a', scopeA.sessionId), agents: [agentRecord] };
+    databaseState.getSwarmRunDetailPreferLedger.mockReturnValueOnce(detail);
+
+    const result = await handler('swarm:get-trace-run-detail')({}, {
+      sessionId: scopeA.sessionId,
+      runId: 'run-a',
+    } as never) as SwarmRunDetail;
+
+    expect(result.agents[0].dispatchedTask).toBe('Read ./notes.txt then write /tmp/outA/brief.md');
+    expect(result.agents[0].finalOutput).toBe(
+      'done, saved to ./notes.txt and /Users/x/Downloads/out/report.pptx\n```\ncat /etc/hosts\n```',
+    );
+    expect(result.agents[0].finalOutput).not.toMatch(/^Tool \w+: (?:Success|Error|Failed)/m);
+  });
+
+  it('keeps absolute paths whole in full-text fields when the session root is unknown', async () => {
+    databaseState.getSession.mockReturnValue(null);
+    const agentRecord = {
+      runId: 'run-a',
+      agentId: agentA,
+      name: 'helper-C',
+      role: 'explore',
+      status: 'completed' as const,
+      startTime: 1,
+      endTime: 2,
+      durationMs: 1,
+      tokensIn: 1,
+      tokensOut: 1,
+      toolCalls: 1,
+      costUsd: 0,
+      error: null,
+      failureCategory: null,
+      filesChanged: [],
+      dispatchedTask: 'Read /Users/x/ws/notes.txt',
+      finalOutput: 'ok',
+    };
+    const detail = { ...traceDetail('run-a', scopeA.sessionId), agents: [agentRecord] };
+    databaseState.getSwarmRunDetailPreferLedger.mockReturnValueOnce(detail);
+
+    const result = await handler('swarm:get-trace-run-detail')({}, {
+      sessionId: scopeA.sessionId,
+      runId: 'run-a',
+    } as never) as SwarmRunDetail;
+
+    expect(result.agents[0].dispatchedTask).toBe('Read /Users/x/ws/notes.txt');
   });
 });

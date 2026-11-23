@@ -51,11 +51,14 @@ import { maybeClearCompletedArtifactRepairGuardBeforeAdmission } from './artifac
 import { ANTI_SCRAPING_HINT_MARKER } from '../../tools/modules/network/antiScrapingDetector';
 import { applyGroundTruthGate } from './groundTruthGate';
 import { applyDesktopActionClaimGate, collectRecentUserTexts } from './desktopActionClaimGate';
+import { applyBrowserKeepClaimGate, collectBrowserEngines } from './browserKeepClaimGate';
 import { isLikelyIncompleteStopText } from './incompleteStopDetector';
 import { finishHiddenWakeNoop, isTerminalWakeNoop as isTerminalWakeNoopCall } from './hiddenWakeNoop';
 import { extractArtifactFilePathFromMessages } from './artifactPathExtractor';
 import { getHandoffProposalService } from '../../handoff/handoffProposalService';
 import { extractHandoffProposalTail } from '../../handoff/handoffTail';
+import { collectProposedRoleIds, stripRoleOpenLinkTail } from './roleOpenLinkStrip';
+import { attachGuiTakeoverDisclosures } from './guiTakeoverDisclosure';
 import {
   buildSteerModelContent, buildForcedFinalAssistantContent,
   hasOnlySoftValidationFailures,
@@ -77,6 +80,7 @@ import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
 import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
+import { getHostUiLocale } from '../../config/hostUiLocale';
 const logger = createLogger('MessageProcessor');
 type LangfuseSpanFacade = { endSpan(spanId: string, output?: unknown, level?: 'DEBUG' | 'DEFAULT' | 'WARNING' | 'ERROR', statusMessage?: string): void };
 
@@ -93,6 +97,7 @@ export class MessageProcessor {
     toolCallRetryCount: 0,
     deliveryCriticBlockCount: 0,
     deliverableRepairCount: 0,
+    browserKeepClaimRetryCount: 0,
     artifactRenderRepairCount: 0,
     _consecutiveTruncations: 0,
   };
@@ -439,7 +444,9 @@ export class MessageProcessor {
 
     const strippedRawContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
     const handoffTail = extractHandoffProposalTail(strippedRawContent);
-    const strippedContent = handoffTail.cleanedContent;
+    const roleOpenStrip = stripRoleOpenLinkTail(handoffTail.cleanedContent, collectProposedRoleIds(this.ctx.messages));
+    const strippedContent = roleOpenStrip.content;
+    if (roleOpenStrip.removedLine) logger.info('[RoleOpenLinkStrip] dropped stray open-link tail line', { roleId: roleOpenStrip.roleId, length: roleOpenStrip.removedLine.length, sessionId: this.ctx.sessionId });
     const latestUserMessage = [...this.ctx.messages].reverse()
       .find((message) => message.role === 'user' && message.visibility !== 'rewound');
     const latestUserContent = latestUserMessage?.content;
@@ -467,6 +474,24 @@ export class MessageProcessor {
       return 'continue';
     }
 
+    const browserKeepGate = await applyBrowserKeepClaimGate({
+      sessionId: this.ctx.sessionId,
+      recentUserMessages: collectRecentUserTexts(this.ctx.messages),
+      assistantContent: desktopClaimGate.content,
+      usedBrowserTool: this.ctx.turn.toolsUsedInTurn.some((name) => name === 'Browser' || name === 'browser_action'),
+      browserEngines: collectBrowserEngines(this.ctx.messages),
+      retriesDone: this.guardState.browserKeepClaimRetryCount,
+    });
+    if (browserKeepGate.action === 'retry') {
+      this.guardState.browserKeepClaimRetryCount += 1;
+      logger.warn('[BrowserKeepClaimGate] retrying: window-kept claim without a kept entry', { reason: browserKeepGate.reason, sessionId: this.ctx.sessionId });
+      this.contextAssembly.injectSystemMessage(browserKeepGate.repairPrompt, 'browser-keep-claim-guard');
+      return 'continue';
+    }
+    if (browserKeepGate.action === 'warn') {
+      logger.warn('[BrowserKeepClaimGate] warning prepended: window-kept claim without a kept entry', { reason: browserKeepGate.reason, sessionId: this.ctx.sessionId });
+    }
+
     // === Ground-truth gate ===
     // 如果用户首条消息含 URL 且本 run 命中反爬阈值，给"成功输出"加 disclaimer。
     // 不替换内容，只 prefix 提示——让用户看到"反爬限制下未必准确"。
@@ -474,7 +499,7 @@ export class MessageProcessor {
     const gated = applyGroundTruthGate(
       typeof userFirstMessage === 'string' ? userFirstMessage : undefined,
       this.guardState.antiScrapingHitsInRun,
-      desktopClaimGate.content,
+      browserKeepGate.content,
     );
     if (gated.applied) {
       logger.warn(
@@ -506,7 +531,7 @@ export class MessageProcessor {
       });
       if (gate.action === 'repair') {
         if (gate.kind === 'disk') this.guardState.deliverableRepairCount += 1; else this.guardState.artifactRenderRepairCount += 1;
-        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}) });
+        logger.warn(gate.logMessage, { sessionId: this.ctx.sessionId, ...(gate.missing ? { missing: gate.missing } : {}), ...(gate.items ? { items: gate.items } : {}) });
         this.contextAssembly.injectSystemMessage(gate.prompt, gate.tag);
         return 'continue';
       }
@@ -526,7 +551,7 @@ export class MessageProcessor {
     // extractHandoffProposalTail，而 transcriptReplayBuilder 无条件优先用 contentParts，
     // 原样落库会把 <handoff-proposal>{...}</handoff-proposal> 里的 JSON 当正文显示给用户，
     // survivorManifest 还会把它拼进压缩 manifest 回灌模型。
-    if (handoffTail.found && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
+    if ((handoffTail.found || roleOpenStrip.removedLine) && assistantMessage.contentParts?.length) assistantMessage.contentParts = [{ type: 'text', text: finalContent }];
 
     // forced-final 落盘正文为空（原文仅内部格式标记，被 stripInternalFormatMimicry 清掉）
     // 不算交付（ai-review R2 #2005）：不落空消息、不清 reason，保持循环尾部
@@ -711,7 +736,7 @@ export class MessageProcessor {
     // 推进目标文件。noProgressTurns 只在目标真被成功改动时清零（markTargetPatched）。
 
     this.ctx.stats.addToolCalls(toolCalls.length);
-    this.runFinalizer.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
+    this.runFinalizer.emitTaskProgress('tool_pending', getHostUiLocale() === 'en' ? `Preparing ${toolCalls.length} actions` : `正在准备 ${toolCalls.length} 项操作`, {
       toolTotal: toolCalls.length,
     });
 
@@ -740,6 +765,10 @@ export class MessageProcessor {
 
     // 清理模型输出中模仿内部格式的文本
     const cleanedContent = this.contextAssembly.stripInternalFormatMimicry(response.content || '');
+
+    // 本 run 首次直接驱动某 app 界面的调用：host 派发前先挂结构化披露（先于下方
+    // assistant 消息落库与 tool_call_start，审批卡在 executor 里照旧随后弹）。
+    await attachGuiTakeoverDisclosures(this.ctx, toolCalls);
 
     const isTerminalWakeNoop = isTerminalWakeNoopCall(toolCalls, this.ctx.allowedToolNames);
     const assistantMessage: Message = {

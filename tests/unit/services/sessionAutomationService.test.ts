@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatCronScheduleLabel, recordCronAutomationCreated } from '../../../src/host/cron/cronAutomationBridge';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
+import { TaskManager } from '../../../src/host/task/TaskManager';
+import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../src/host/app/applicationRunRegistry';
 import type { Message } from '../../../src/shared/contract';
 
 type Row = {
@@ -30,7 +32,8 @@ const state = vi.hoisted(() => ({
   sessionStatus: 'idle' as string,
 }));
 
-vi.mock('../../../src/host/platform', () => ({
+vi.mock('../../../src/host/platform', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/platform')>(),
   broadcastToRenderer: (channel: string, data: unknown) => {
     state.broadcasts.push({ channel, data });
   },
@@ -118,12 +121,21 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }),
+vi.mock('../../../src/host/services/infra/logger', () => {
+  const logger = { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  return { logger, createLogger: () => logger };
+});
+
+let realTaskManager: TaskManager | undefined;
+vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
+  AgentOrchestrator: class {
+    setSessionId = vi.fn();
+    sendMessage = vi.fn();
+  },
 }));
 
 vi.mock('../../../src/host/task', () => ({
-  getTaskManager: () => ({
+  getTaskManager: () => realTaskManager ?? ({
     getSessionState: () => ({ status: state.sessionStatus }),
     startTask: async (
       sessionId: string,
@@ -163,6 +175,8 @@ describe('SessionAutomationService', () => {
   });
 
   afterEach(() => {
+    realTaskManager = undefined;
+    resetApplicationRunRegistryForTests();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -380,8 +394,18 @@ describe('SessionAutomationService', () => {
     });
   });
 
-  it('defers the handoff to a visible message instead of interrupting a busy session', async () => {
-    state.sessionStatus = 'running';
+  it.each(['TaskManager', 'web-direct'] as const)('defers the handoff while a %s parent is busy', async (owner) => {
+    const started = vi.fn();
+    if (owner === 'web-direct') {
+      const runRegistry = getApplicationRunRegistry();
+      runRegistry.start({ sessionId: 'session-1', runId: 'web-direct-parent', workspace: process.cwd() });
+      realTaskManager = new TaskManager();
+      realTaskManager.initialize({ configService: {} as never, runRegistry, onAgentEvent: vi.fn() });
+      realTaskManager.on('task_started', started);
+      expect(realTaskManager.getSessionState('session-1').status).toBe('idle');
+    } else {
+      state.sessionStatus = 'running';
+    }
     const service = new SessionAutomationService();
     service.upsert({
       id: 'loop:run-1',
@@ -415,6 +439,7 @@ describe('SessionAutomationService', () => {
     });
     // 忙会话绝不打断：不调用 startTask / interruptAndContinue。
     expect(state.taskStarts).toHaveLength(0);
+    expect(started).not.toHaveBeenCalled();
   });
 
   it('broadcasts every automation message to the renderer for live visibility', async () => {

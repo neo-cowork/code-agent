@@ -62,6 +62,16 @@ afterEach(() => {
 });
 
 describe('RoleWakeLedger', () => {
+  it('a flat-fee wake reads "not billed in USD" in the row and the daily line', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    getExecutions.mockResolvedValue([
+      wakeExecution('w1', { flatFee: true, result: { roleId: 'role-a', trigger: 'cadence', status: 'completed', sessionId: 'session-1' } }),
+    ]);
+    render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent)).toContain('不按美元计费'));
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).toContain('不按美元计费 · 1 次');
+    expect(screen.getByTestId('role-wake-daily-cost').textContent).not.toContain('成本未完整记录');
+  });
   it('does not infer no model call or a zero total from a missing cost', async () => {
     listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
     getExecutions.mockResolvedValue([

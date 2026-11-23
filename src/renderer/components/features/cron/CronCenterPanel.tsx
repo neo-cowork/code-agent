@@ -36,7 +36,7 @@ import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronDailyCostSummary } from './CronDailyCostSummary';
-import { getJobDisplayName } from './builtinJobDisplay';
+import { getJobDisplayName, isBuiltinMaintenanceJob } from './builtinJobDisplay';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -242,7 +242,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       const matched = visibleJobs.find((job) => job.id === selectedJobId);
       if (matched) return matched;
     }
-    return visibleJobs[0] ?? null;
+    return visibleJobs.find((job) => !isBuiltinMaintenanceJob(job)) ?? null;
   }, [visibleJobs, selectedJobId]);
 
   useEffect(() => {

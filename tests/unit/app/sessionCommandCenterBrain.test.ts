@@ -491,6 +491,17 @@ describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — �
     }
   });
 
+  it.each([
+    '提醒我明天早上九点给阳台的花浇水。',
+    '帮我加个待办，明早九点给阳台的花浇水。',
+    'Remind me tomorrow at 9 AM to water the balcony flowers.',
+  ])('exposes direct reminder creation for %s', (prompt) => {
+    connectorMocks.enabledNative = ['reminders'];
+    getConnectorRegistry().configure(['reminders']);
+
+    expect(getTextForegroundToolNamesForPrompt(prompt)).toContain('reminders_create');
+  });
+
   it('withSessionCommandCenterBrain 带 prompt 时把连接器工具写进 allowlist（桌面路）', () => {
     connectorMocks.enabledNative = ['mail'];
     getConnectorRegistry().configure(['mail']);

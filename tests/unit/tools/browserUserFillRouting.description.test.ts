@@ -22,4 +22,18 @@ describe('user-operated browser task handoff descriptions', () => {
     expect(descriptions[0]).toBeDefined();
     expect(new Set(descriptions).size).toBe(1);
   });
+
+  const keepGuidance = (description: string) => description.split('\n').find((line) => line.startsWith('Keep-page requests:'));
+
+  it.each(tools)('$name tells the model when to call keep_result_page and not to claim a kept window without it', (tool) => {
+    const text = keepGuidance(tool.description);
+    expect(text).toBeDefined();
+    for (const phrase of ['把结果页留给我', '别关窗口', '我自己看', 'leave it open for me']) expect(text).toContain(phrase);
+    expect(text).toContain('Never tell the user the managed window is kept or still open unless keep_result_page succeeded');
+    expect(text).toContain('On the relay engine keep_result_page is unavailable and the tab simply stays open in the user\'s own Chrome');
+  });
+
+  it('keeps the keep-page guidance identical across the four copies', () => {
+    expect(new Set(tools.map((tool) => keepGuidance(tool.description))).size).toBe(1);
+  });
 });

@@ -4,11 +4,6 @@ import { COMPANION_LIMITS } from '../../../../src/shared/constants/companion';
 
 const logs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
 
-// Keep the real web-mode live-window registry and renderer event bus.
-vi.mock('../../../../src/host/platform', async () => ({
-  ...await import('../../../../src/host/platform/windowBridge'),
-  Notification: { isSupported: () => true },
-}));
 vi.mock('../../../../src/host/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({ register: vi.fn() }),
 }));
@@ -29,15 +24,22 @@ let unsubscribe: () => void;
 
 beforeEach(async () => {
   vi.resetModules();
+  // Use the same live-window registry and event bus as the service after the module reset.
+  const bridge = await import('../../../../src/host/platform/windowBridge');
+  vi.doMock('../../../../src/host/platform', () => ({
+    ...bridge,
+    Notification: { isSupported: () => true },
+  }));
   vi.stubEnv('CODE_AGENT_NOTIFICATION_DRY_RUN', '');
   vi.clearAllMocks();
   ({ notificationService } = await import('../../../../src/host/services/infra/notificationService'));
   ({ desktopPresence } = await import('../../../../src/host/services/companion/desktopPresence'));
   policy = await import('../../../../src/host/services/infra/notificationPolicy');
-  const { AppWindow, onRendererPush } = await import('../../../../src/host/platform');
+  const { AppWindow, hasInteractiveUi, onRendererPush } = bridge;
   window = new AppWindow();
   expect(AppWindow.getAllWindows()).toEqual([window]);
   expect(AppWindow.getFocusedWindow()).toBe(window);
+  expect(hasInteractiveUi()).toBe(true);
   unsubscribe = onRendererPush(broadcastToRenderer);
 });
 

@@ -11,6 +11,7 @@ import React from 'react';
 import { useI18n } from '../hooks/useI18n';
 import { useServerConnectionStore } from '../stores/serverConnectionStore';
 import { retryNow } from '../utils/serverConnectionMonitor';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { isTauriMode } from '../utils/platform';
 import { COLLAPSED_TRAFFIC_LIGHT_INSET } from './features/shared/trafficLightInset';
 import { Button } from './primitives';
@@ -25,6 +26,11 @@ export const ServerConnectionBanner: React.FC = () => {
   const text = t.serverConnection;
   const unavailable = status === 'unavailable';
   const tauriMode = isTauriMode();
+  const hint = !tauriMode
+    ? text.unavailableHintWeb
+    : getCurrentKeybindingPlatform() === 'darwin'
+      ? text.unavailableHintTauriMac
+      : text.unavailableHintTauri;
 
   return (
     <div
@@ -43,10 +49,10 @@ export const ServerConnectionBanner: React.FC = () => {
       </div>
       {unavailable && (
         <>
-          {/* Tauri 模式页面未必能自愈（服务由壳拉起），重试检查连接，退出再重开才启动服务；
-              web 模式刷新页面即可。 */}
+          {/* 「重试」只重新检查连接；macOS 壳按 ⌘R 会重启服务并重新载入窗口；
+              退出后重新打开 Neo 是兜底；web 模式刷新页面即可。 */}
           <span className="min-w-0 flex-1">
-            {tauriMode ? text.unavailableHintTauri : text.unavailableHintWeb}
+            {hint}
           </span>
           <Button size="sm" variant="secondary" onClick={retryNow} loading={retryState === 'checking'}>
             {retryState === 'checking' ? text.checking : text.retry}

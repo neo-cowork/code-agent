@@ -504,7 +504,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                     </div>
                     {parkedArgs(item)}
                     <div className="text-[11px] text-zinc-500">
-                      {cc.parkedVoidedLabel}：{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
+                      {cc.parkedVoidedLabel}{localizeParkedApprovalClosureText(item.voidReason, t) ?? item.voidReason}
                     </div>
                   </div>
                 ))}

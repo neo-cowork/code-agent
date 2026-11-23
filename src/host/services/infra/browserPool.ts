@@ -66,6 +66,15 @@ export class BrowserPool {
     return service;
   }
 
+  touch(service: BrowserService): void {
+    for (const entry of this.entries.values()) {
+      if (entry.service === service) {
+        entry.lastUsedAt = Date.now();
+        return;
+      }
+    }
+  }
+
   /**
    * Mark a named pool entry in use. In-use entries are never evicted.
    * The personal `__default__` key is not a named slot and is ignored.

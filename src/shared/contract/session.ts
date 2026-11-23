@@ -11,7 +11,7 @@ import type { RunEnvelope, RunInterruptCause } from './durableRun';
 /**
  * 会话运行状态
  */
-export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelling' | 'completed' | 'error' | 'interrupted' | 'orphaned' | 'archived';
+export type SessionStatus = 'idle' | 'running' | 'queued' | 'paused' | 'cancelling' | 'completed' | 'cancelled' | 'error' | 'interrupted' | 'orphaned' | 'archived';
 
 type DurableResumeMode = 'auto-resuming' | 'queued' | 'continue';
 

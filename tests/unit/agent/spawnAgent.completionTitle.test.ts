@@ -38,7 +38,7 @@ function context(): SubagentExecutionContext {
     runId: 'run-completion-title', sessionId, workspace: '/tmp', cwd: '/tmp',
     modelConfig: { provider: 'test', model: 'test-model' },
     permission: { request: async () => true }, events: { emit: () => undefined },
-    abortSignal: new AbortController().signal, suppressBackgroundSubagentIdleWake: true,
+    abortSignal: new AbortController().signal,
   } as unknown as SubagentExecutionContext;
 }
 
@@ -71,25 +71,19 @@ describe('background completion title sources', () => {
       expect(execution.config.name).toBe(name?.trim() || 'Explorer');
 
       finish({ success: true, output: '产品、客户、运营各 8 份，共 24 份。', iterations: 1, toolsUsed: ['Read'] });
-      await pending;
       const registry = getBackgroundSubagentRegistry();
-      if (mode === 'adopted') await registry.await(agentId);
-
+      await registry.await(agentId);
       const guard = getSpawnGuard();
-      const notifications = guard.drainNotifications();
-      const records = registry.drainCompletionNotifications({ sessionId });
-      expect(notifications).toHaveLength(1);
-      expect(notifications[0]).not.toContain('Explorer');
+      expect(guard.drainNotifications()).toEqual([]);
       expect(guard.get(agentId)?.completion?.title).toBe(name?.trim() || '文档主题统计');
-      expect(notifications[0]).toContain(`只能使用通知中的标题「${name?.trim() || '文档主题统计'}」`);
 
-      if (mode === 'adopted') {
-        expect(records).toHaveLength(1);
-        expect(records[0].title).toBe(name?.trim() || '文档主题统计');
-        const reminder = formatSystemReminderForCompletions(records);
-        expect(reminder).not.toContain('Explorer');
-        expect(reminder).toContain(`- ${name?.trim() || '文档主题统计'}: completed`);
-      }
+      const records = registry.drainCompletionNotifications({ sessionId });
+      expect(records).toHaveLength(1);
+      expect(records[0].title).toBe(name?.trim() || '文档主题统计');
+      const reminder = formatSystemReminderForCompletions(records);
+      expect(reminder).not.toContain('Explorer');
+      expect(reminder).toContain(`- ${name?.trim() || '文档主题统计'}: completed`);
+      expect(reminder).toContain(`只能使用通知中的标题「${name?.trim() || '文档主题统计'}」`);
     });
   });
 });

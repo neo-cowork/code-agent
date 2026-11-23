@@ -6,10 +6,10 @@ import type { ToolCall } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      openPreview: vi.fn(),
-    }),
+  useAppStore: Object.assign(
+    (selector: (state: unknown) => unknown) => selector({ openPreview: vi.fn() }),
+    { getState: () => ({ language: 'zh' }) },
+  ),
 }));
 // humanizeToolError 迁 i18n 后 ToolDetails 新接了 useI18n，同 turnDiffSummary.confirmation.test.tsx 先例直接 mock。
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {

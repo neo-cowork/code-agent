@@ -9,6 +9,7 @@ export const previewWorkspaceZh = {
   previewWorkspace: {
     preview: {
       loadFileFailed: '加载文件失败',
+      loadFileFailedNamed: '加载文件失败：{name}',
       saveFailed: '保存失败',
       previewDocAccessFailed: '无法访问预览文档（可能是跨域限制）',
       screenshotFailed: '生成截图失败',
@@ -156,6 +157,7 @@ export const previewWorkspaceEn: typeof previewWorkspaceZh = {
   previewWorkspace: {
     preview: {
       loadFileFailed: 'Failed to load file',
+      loadFileFailedNamed: 'Failed to load file: {name}',
       saveFailed: 'Save failed',
       previewDocAccessFailed: 'Cannot access the preview document (possibly a cross-origin restriction)',
       screenshotFailed: 'Failed to generate screenshot',

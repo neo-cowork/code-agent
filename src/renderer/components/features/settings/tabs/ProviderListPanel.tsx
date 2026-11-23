@@ -157,6 +157,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
 }) => {
   const { t } = useI18n();
   const listText = t.settings.model.list;
+  const webNote = isWebMode() ? t.settings.webModeBanner.modelManageDesktopOnly : undefined;
   const [search, setSearch] = useState('');
   // 选中项在待添加 Key 组里时自动展开该组
   const selectedInUnconfigured = unconfiguredRows.some((row) => row.id === selectedProviderId);
@@ -189,6 +190,7 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
           variant="secondary"
           onClick={onOpenDoctor}
           disabled={isWebMode()}
+          title={webNote}
           leftIcon={<Stethoscope className="h-3 w-3" />}
           fullWidth
         >

@@ -64,6 +64,7 @@ import { applyPendingCommandPrefix } from './pendingCommand';
 import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
+import { routeEnvelopeToQuestionCard } from './questionCardAnswer';
 import type { ComposerDraftSendOutcome } from './composerDraftStore';
 import { useComposerRejectedUploadsStore } from '../../../../stores/composerRejectedUploadsStore';
 import { dismissAttachmentLimitToast } from './attachmentMergeToast';
@@ -767,6 +768,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
+        if (!opts?.steer && !opts?.toBackground) {
+          const routing = routeEnvelopeToQuestionCard(currentSessionId, stamped, t.userQuestion.composerHint);
+          if (routing) return routing;
+        }
         if (isProcessing && !neverQueueToSession && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
           const queuedEnvelope: ConversationEnvelope = {

@@ -15,6 +15,7 @@ import { runRoleWriteBack } from './roleWriteBack';
 import {
   formatTopicPreferencePrompt,
   parseWakeRationale,
+  plainWakeSummary,
   stripWakeMarkup,
   topicExcludeHits,
 } from './wakeRationale';
@@ -279,7 +280,14 @@ export async function wakeRole(
   if (trigger === 'cadence') {
     const allHistory = await loadRoleHistory(roleId, Number.MAX_SAFE_INTEGER);
     const productEntries = allHistory.filter((l) => !l.includes(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX));
-    externalDelta = await resolveWakeExternalDelta({ roleId, hasProducts: productEntries.length > 0, lastWakeDate: lastWakeDateFromHistory(allHistory), config });
+    const { allowedToolNames: declaredWakeTools } = await resolveWakeRunToolScope(roleId);
+    externalDelta = await resolveWakeExternalDelta({
+      roleId,
+      hasProducts: productEntries.length > 0,
+      lastWakeDate: lastWakeDateFromHistory(allHistory),
+      config,
+      ...(declaredWakeTools ? { roleToolNames: declaredWakeTools } : {}),
+    });
     if (productEntries.length === 0 && externalDelta.sourceNames.length === 0) {
       logger.info('Wake resolved to silence: no products in history', { roleId, trigger });
       await appendRoleHistory(roleId, {
@@ -415,7 +423,7 @@ export async function wakeRole(
     if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
     await storeWakeProposalsFromWake({ roleId, finalOutput, config });
     const wakeText = stripWakeMarkup(finalOutput);
-    let summary = wakeText.slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+    let summary = plainWakeSummary(wakeText, parsedRationale.rationale);
     if (inferredAdvanceProposal && !excluded) {
       logger.info('Wake decision inferred as advance from verifiable next-step signals', {
         roleId,
@@ -459,7 +467,7 @@ export async function wakeRole(
         notificationService.notifyRoleWakeOutput({
           sessionId: session.id,
           title: `${roleId} · ${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}`,
-          body: (advanceGoalStatus ? summary : wakeText) || `角色 ${roleId} 醒来产出了新内容`,
+          body: summary || `角色 ${roleId} 醒来产出了新内容`,
         });
       }
       logger.info('Wake completed with output', { roleId, trigger, decision, sessionId: session.id });

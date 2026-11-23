@@ -1,3 +1,4 @@
+import { RunSessionConflictError } from '../../runtime/runRegistry';
 // ============================================================================
 // SessionAutomationService — 会话级自动化状态与回流消息
 // ============================================================================
@@ -837,8 +838,12 @@ export class SessionAutomationService {
       const taskManager = getTaskManager();
       const state = taskManager.getSessionState(record.sourceSessionId);
       if (state.status === 'idle' || state.status === 'error') {
-        await taskManager.startTask(record.sourceSessionId, prompt, undefined, undefined, messageMetadata, clientMessageId);
-        return;
+        try {
+          await taskManager.startTask(record.sourceSessionId, prompt, undefined, undefined, messageMetadata, clientMessageId);
+          return;
+        } catch (error) {
+          if (!(error instanceof RunSessionConflictError)) throw error;
+        }
       }
       // 源会话正忙：不打断用户当前任务（旧实现走 interruptAndContinue 属敌意行为），
       // 把交接提示词留成可见的待办提示，等空闲后由用户手动发送。

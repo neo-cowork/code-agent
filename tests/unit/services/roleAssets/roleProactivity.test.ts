@@ -270,7 +270,19 @@ describe('roleProactivity', () => {
     it('解析 rationale/evidence；缺失或格式坏时只记 missing，不编理由', () => {
       expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>history.md</evidence>')).toEqual({
         rationale: '该提醒周报过期。',
-        evidence: 'history.md',
+        evidence: 'history',
+        missing: false,
+      });
+      // 裸路径 evidence 在源头即被压成文件名主干：不带 / 路径、.md、反引号
+      expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>`workspace/weekly/2026-W46.md`</evidence>')).toEqual({
+        rationale: '该提醒周报过期。',
+        evidence: '2026-W46',
+        missing: false,
+      });
+      // r2 复判：无空格的「中文+单斜杠缩写」不是路径，原样保留，不被吞段
+      expect(parseWakeRationale('<rationale>该提醒周报过期。</rationale><evidence>周会CI/CD流水线两周没跑</evidence>')).toEqual({
+        rationale: '该提醒周报过期。',
+        evidence: '周会CI/CD流水线两周没跑',
         missing: false,
       });
       expect(parseWakeRationale('没有任何标记的输出')).toEqual({ missing: true });
@@ -372,8 +384,52 @@ describe('roleProactivity', () => {
         const [notice] = notificationService.getRecentNotifications();
         expect(notice.body).not.toMatch(/\*\*|#|`|\]\(/);
         expect(notice.body).toContain('观测数量明显上升：12 → 18');
-        expect(notice.body).toMatch(/栖息点 与 报告 的变化.*…$/);
-        expect(notice.body.length).toBeLessThanOrEqual(320);
+        expect(notice.body).toMatch(/栖息点 与 报告 的变化/);
+        expect(notice.body.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
+      });
+
+      it.each(['suggest', 'report'] as const)('FB-2119 raw table/path output: %s summary, history and banner are plain text', async (decision) => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        const raw = [
+          '巡检完成。检查了我经手的两份周报，没有动任何文件。',
+          '',
+          '## 实测现状',
+          '| 检查项 | 结论 |',
+          '|---|---|',
+          '| `workspace/weekly/weekly-47.md` | 已更新 |',
+          '| `workspace/weekly/weekly-46.md` | 缺少下周计划 |',
+          '',
+          '---',
+          `<decision>${decision}</decision>`,
+        ].join('\n');
+        mockSessionManager.createSession.mockResolvedValue({ id: 'wake-fb2119', workingDirectory: undefined });
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-fb2119', messages: [
+          { id: 'm-fb', role: 'assistant', content: raw, timestamp: 2 },
+        ] });
+        mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        const historyLine = (await loadRoleHistory(RESEARCHER, 100)).find((line) => line.includes(`[${decision}]`)) ?? '';
+        const history = historyLine.split(`[${decision}] `)[1]?.split(' | why:')[0] ?? '';
+        const [notice] = notificationService.getRecentNotifications();
+        for (const text of [result.summary ?? '', history, notice.body]) {
+          expect(text).not.toMatch(/\||##|---|workspace\//);
+        }
+        expect(result.decision).toBe(decision);
+        expect(result.summary).toBe('巡检完成。检查了我经手的两份周报，没有动任何文件。');
+        expect(history).toBe(result.summary);
+        expect(notice.body).toBe(result.summary);
+      });
+
+      it('table-only suggest falls back to the rationale, still without table or path symbols', async () => {
+        mockSettings.value = { roleAssets: { proactivity: { defaultLevel: 'realtime' } } };
+        await seedProductHistory(RESEARCHER);
+        const raw = '| 检查项 | 结论 |\n|---|---|\n| `workspace/weekly/weekly-47.md` | 已更新 |\n<rationale>周报 weekly-47.md 已更新，下周计划还空着。</rationale><decision>suggest</decision>';
+        mockSessionManager.getSession.mockResolvedValue({ id: 'wake-session-1', messages: [
+          { id: 'm-fb', role: 'assistant', content: raw, timestamp: 2 },
+        ] });
+        const result = await wakeRole(RESEARCHER, 'cadence');
+        expect(result.summary).toBe('周报 weekly-47.md 已更新，下周计划还空着。');
       });
 
       it.each(['met', 'aborted'] as const)('realtime advance %s notice uses a human outcome, not internal goal markup', async (status) => {
@@ -606,7 +662,7 @@ describe('roleProactivity', () => {
 
       expect(result.decision).toBe('suggest');
       expect(result.rationale).toContain('连续两周没更新');
-      expect(result.evidence).toBe('history.md · 周报.md');
+      expect(result.evidence).toBe('history · 周报');
       expect(result.rationaleMissing).toBe(false);
       expect(mockSessionManager.updateMessage).toHaveBeenCalledWith(
         'm-suggest',
@@ -622,6 +678,39 @@ describe('roleProactivity', () => {
       const history = await loadRoleHistory(RESEARCHER, 100);
       expect(history.some((line) => line.includes('[suggest]') && line.includes('why:'))).toBe(true);
       expect(history.some((line) => line.includes('why:') && line.includes('连续两周没更新'))).toBe(true);
+    });
+
+    it('suggest 带裸路径 evidence：履历行与结果只留文件名主干，无 workspace/、.md、反引号', async () => {
+      await seedProductHistory(RESEARCHER);
+      const body = [
+        '建议把周报改成自动生成。',
+        '<rationale>履历里的周报已经连续两周没更新。</rationale>',
+        '<evidence>`workspace/weekly/2026-W46.md`</evidence>',
+        '<decision>suggest</decision>',
+      ].join('\n');
+      mockSessionManager.createSession.mockResolvedValue({ id: 'wake-ev-path', workingDirectory: undefined });
+      mockSessionManager.getSession.mockResolvedValue({
+        id: 'wake-ev-path',
+        messages: [{ id: 'm-evpath', role: 'assistant', content: body, timestamp: 2 }],
+      });
+      mockOrchestrator.sendMessage.mockResolvedValue(undefined);
+
+      const result = await wakeRole(RESEARCHER, 'cadence');
+
+      expect(result.evidence).toBe('2026-W46');
+      const wakeLine = (await loadRoleHistory(RESEARCHER, 100)).find((line) => line.includes('[suggest]'));
+      expect(wakeLine).toContain('evidence: 2026-W46');
+      expect(wakeLine).not.toContain('workspace/');
+      expect(wakeLine).not.toContain('.md');
+      expect(wakeLine).not.toContain('`');
+      expect(mockSessionManager.updateMessage).toHaveBeenCalledWith(
+        'm-evpath',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            wakeRationale: expect.objectContaining({ evidence: '2026-W46' }),
+          }),
+        }),
+      );
     });
 
     it('多行 + 超长 suggest 产出写入履历后 why 完整可读', async () => {
@@ -650,7 +739,7 @@ describe('roleProactivity', () => {
       expect(wakeLine).toBeDefined();
       expect(wakeLine?.includes('\n')).toBe(false);
       expect(wakeLine).toContain(`why: ${why}`);
-      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      expect(wakeLine).toContain('evidence: history · 周报');
       const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
       expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     });
@@ -670,7 +759,7 @@ describe('roleProactivity', () => {
       const wakeLine = lines.find((line) => line.includes('[suggest]'));
       expect(wakeLine?.includes('\n')).toBe(false);
       expect(wakeLine).toContain(`why: ${why}`);
-      expect(wakeLine).toContain('evidence: history.md · 周报.md');
+      expect(wakeLine).toContain('evidence: history · 周报');
       const summaryPart = wakeLine?.split(' | why: ')[0].split(' | ').slice(2).join(' | ') ?? '';
       expect(summaryPart.length).toBeLessThanOrEqual(ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
     });
@@ -691,7 +780,7 @@ describe('roleProactivity', () => {
       const lines = await loadRoleHistory(RESEARCHER);
       expect(lines[0]?.startsWith('- ')).toBe(true);
       expect(lines[0]).toContain(`why: ${why}`);
-      expect(lines[0]).toContain('evidence: history.md');
+      expect(lines[0]).toContain('evidence: history');
     });
 
     it('rationale 缺失时仍保留原决策，只记 missing', async () => {

@@ -232,6 +232,27 @@ export type ConnectorLifecycleAction =
   | 'disconnect'
   | 'remove';
 
+/**
+ * 原生连接器（calendar/mail/reminders/photos）状态句的稳定 code。host 只下发 code，
+ * 句子由 renderer i18n 目录翻译；host 不再为这四个连接器写面向用户的 detail/error 文案。
+ */
+export type NativeConnectorDetailCode =
+  | 'platform_unsupported'
+  | 'unchecked'
+  | 'ready'
+  | 'automation_not_authorized'
+  | 'not_found'
+  | 'timeout'
+  | 'read_failed'
+  | 'probe_failed'
+  | 'calendar_undecided'
+  | 'calendar_denied'
+  | 'calendar_write_only'
+  | 'calendar_restricted'
+  | 'calendar_desktop_only'
+  | 'photos_failed'
+  | 'photos_unavailable';
+
 export interface ConnectorStatusSummary {
   id: string;
   label: string;
@@ -244,6 +265,10 @@ export interface ConnectorStatusSummary {
   noAccessibleItems?: boolean;
   /** failed 时的结构化原因：not_authorized = macOS 自动化授权被拒 */
   errorCode?: 'not_authorized';
+  /** 原生连接器状态句的稳定 code；renderer 按 code 查文案目录，无 code 则不显示状态句 */
+  detailCode?: NativeConnectorDetailCode;
+  /** EventKit pane. Calendar sets it when access is denied or write-only. */
+  settingsPane?: 'calendars';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }

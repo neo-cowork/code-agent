@@ -23,6 +23,7 @@ import { useSessionStore } from '../../../../stores/sessionStore';
 import { notifyLibraryPinChanged } from '../../knowledge/libraryPinEvents';
 import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
+import { getProjectDisplayName } from '../../../../utils/projectDisplayName';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 import {
   buildArtifactRows,
@@ -112,7 +113,7 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AtMentionTab>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingSearchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Esc 关闭后记录当前文本：文本不变就不因下一次 search 调用把面板弹回来
   // （与 agent mention 的 dismissedAgentAutocompleteValue 同一思路）。
   const dismissedTextRef = useRef<string | null>(null);
@@ -164,13 +165,14 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
         ? sessionsResult.value.data ?? []
         : [],
     );
+    // 未分类桶的 host 存名是 zh 常量「未分类」，直出会漏进英文界面；按 id 换 i18n 文案
     setProjectNames(new Map(
       projectsResult.status === 'fulfilled'
-        ? projectsResult.value.map((project) => [project.id, project.name])
+        ? projectsResult.value.map((project) => [project.id, getProjectDisplayName(project, t)])
         : [],
     ));
     setArtifacts(artifactsResult.status === 'fulfilled' ? artifactsResult.value : []);
-  }, []);
+  }, [t]);
 
   // 换会话后 pin 是真源在会话上的，重拉一次避免拿上个会话的选中态
   useEffect(() => {
@@ -184,7 +186,8 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
 
   const search = useCallback((text: string, cursorPos: number) => {
     // 先取消上一次挂起的防抖请求，否则清空输入后它仍会回调 setIsOpen(true) 把 popup 弹回来。
-    clearTimeout(debounceRef.current);
+    clearTimeout(pendingSearchRef.current);
+    pendingSearchRef.current = undefined;
     lastTextRef.current = text;
 
     const beforeCursor = text.slice(0, cursorPos);
@@ -212,7 +215,7 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       void refreshReferences(projectId);
     }
 
-    debounceRef.current = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       const baseDir = resolveAtMentionBaseDir(sessionId);
       let entries: AtMentionFileMatch[] = [];
       if (baseDir) {
@@ -222,15 +225,19 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
           entries = [];
         }
       }
+      if (pendingSearchRef.current !== timer) return;
       // 无工作目录（草稿/空间槽）也不发 listFiles：files 恒空，面板仍打开展示其他组
       setFiles(entries);
       setIsOpen(true);
+      pendingSearchRef.current = undefined;
       wasOpenRef.current = true;
     }, 200);
+    pendingSearchRef.current = timer;
   }, [projectId, refreshLibrary, refreshReferences, sessionId]);
 
   const dismiss = useCallback((untilTextChange = false) => {
-    clearTimeout(debounceRef.current);
+    clearTimeout(pendingSearchRef.current);
+    pendingSearchRef.current = undefined;
     if (untilTextChange) dismissedTextRef.current = lastTextRef.current;
     setIsOpen(false);
     wasOpenRef.current = false;
@@ -312,6 +319,12 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
   }, [dismiss, togglePin]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>): boolean => {
+    const isSelectionEnter = e.key === 'Enter' && !e.shiftKey && !isImeKeyEvent(e.nativeEvent, isComposingRef);
+    if (!isOpen && pendingSearchRef.current !== undefined && isSelectionEnter) {
+      // Swallow Enter while results load so it cannot send a half-written @ reference.
+      e.preventDefault();
+      return true;
+    }
     if (!isOpen) return false;
 
     // FB-586：工作区列表拉取失败时面板可能开着但 0 行。方向键在这里吞掉，
@@ -334,7 +347,7 @@ export function useAtMentionPanel(params: UseAtMentionPanelParams) {
       return true;
     }
     // IME 组合中的 Enter 是确认候选词（如中文选字），不能当成选择面板项
-    if (e.key === 'Enter' && !e.shiftKey && !isImeKeyEvent(e.nativeEvent, isComposingRef)) {
+    if (isSelectionEnter) {
       const selected = flatRows[Math.min(selectedIndex, flatRows.length - 1)];
       if (selected) {
         e.preventDefault();

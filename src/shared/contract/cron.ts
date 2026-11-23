@@ -519,6 +519,8 @@ export interface CronJobExecution {
   exitCode?: number;
   /** Actual model cost of this run in USD (local runs, from the scoped cost meter); undefined = no model call happened or a cloud run. */
   cost?: number;
+  /** True when the run used a flat-fee / free-quota (zero-priced) model and measured no USD cost: show "not billed in USD", never a dollar figure. Unset on rows recorded before this field existed. */
+  flatFee?: true;
   /** Trigger descriptor: why this run happened (event runs only). */
   trigger?: CronExecutionTrigger;
   /** Result-push outcome when a push target is configured and nothing failed: pushed, or why nothing was sent. Not a failure. */
