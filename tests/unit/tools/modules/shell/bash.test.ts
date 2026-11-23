@@ -2968,6 +2968,21 @@ describe('COMMAND_FAILED is a command result, not a file lock', () => {
     expect(enCopy).not.toContain('被占用');
     expect(enCopy).not.toContain('file');
     expect(zhCopy).not.toBe(FILE_LOCK_ZH);
+
+    // Linux CI 的真实结果自带 OS_SANDBOX_DEGRADED。这里在生产结果上再盖一层，macOS 也能钉住同一条。
+    const withHostReason = (code: string, modelText: string): ToolCall => presentedCall('Bash', { command: 'exit 3' }, {
+      error: result.error,
+      code: result.code,
+      meta: { ...(result.meta ?? {}), hostReason: { code, modelText } },
+    });
+    const degraded = withHostReason('OS_SANDBOX_DEGRADED', 'OS sandbox degraded');
+    expect(humanizeToolFailureReason(degraded, zh)).toBe(ZH_SENTENCE);
+    expect(humanizeToolFailureReason(degraded, en)).toBe(EN_SENTENCE);
+    expect(humanizeToolError(result.error, 'Bash', zh, degraded.result?.metadata)?.detail).toBe(ZH_SENTENCE);
+    expect(humanizeToolError(result.error, 'Bash', en, degraded.result?.metadata)?.detail).toBe(EN_SENTENCE);
+    const refused = withHostReason('OS_SANDBOX_UNAVAILABLE', 'OS sandbox is required but unavailable');
+    expect(humanizeToolFailureReason(refused, zh)).toBe('操作系统沙箱不可用，已拒绝执行');
+    expect(humanizeToolFailureReason(refused, en)).toBe('The OS sandbox is unavailable, so the command was refused');
   });
 
   it('pty wait_for_completion non-zero exit returns COMMAND_FAILED', async () => {

@@ -372,7 +372,14 @@ export function humanizeToolError(
     };
   }
   const hostReason = readHostReasonFromMetadata(metadata);
-  const hostReasonCopy = resolveHostReasonCopy(hostReason, t);
+  // Linux 上每条已执行的命令都带 OS_SANDBOX_DEGRADED（环境说明，不是退出原因）。
+  // 结果码已是 COMMAND_FAILED 时，折叠行和琥珀框说命令失败；沙箱不可用（拒绝执行）仍走 hostReason。
+  const commandResultOutranksSandboxNote = metadata?.code === 'COMMAND_FAILED'
+    && typeof hostReason !== 'string'
+    && hostReason?.code === HostReasonCode.OsSandboxDegraded;
+  const hostReasonCopy = commandResultOutranksSandboxNote
+    ? null
+    : resolveHostReasonCopy(hostReason, t);
   if (hostReasonCopy) {
     const structuredFailureCode = inferAgentFailureCode({
       failureCode: metadata?.failureCode,
