@@ -117,6 +117,8 @@ export class BackgroundSubagentRegistry {
 
   /** 记一次真人在审批卡上的决定；调用方只传真人的决定，机器放行/拒绝不要调。 */
   recordUserApprovalDecision(agentId: string, decision: 'approved' | 'denied'): void {
+    // 前台子代理也会经过审批点；不是后台登记过的 run 不记，免得计数表只增不减。
+    if (!this.entries.has(agentId)) return;
     const tally = this.userApprovalsByAgent.get(agentId) ?? { approved: 0, denied: 0 };
     tally[decision] += 1;
     this.userApprovalsByAgent.set(agentId, tally);
