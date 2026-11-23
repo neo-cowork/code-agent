@@ -1,5 +1,7 @@
 import { isClosedTaskStatus, statusRequiresWaitReason } from '@shared/contract/planning';
 import type { RunUiState, TaskRecord } from '../types/runWorkbench';
+import { languages } from '../i18n';
+import { backgroundTaskLabel } from './agentRoleLabel';
 import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 
 type TaskRailMode = 'simple' | 'checklist';
@@ -100,10 +102,10 @@ function runStatusLabel(run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): 
   }
 }
 
-function simpleTitle(task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): string {
+function simpleTitle(title: string, task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): string {
   // 有明确标题优先显示标题（行内已单独展示状态标签，无需用状态词顶替标题）——
   // 否则终态的后台任务（如"循环 · …"失败）会丢掉名字、只剩"已阻塞/已取消"。
-  if (task.title) return task.title;
+  if (title) return title;
   if (isClosedTaskStatus(task.status) || statusRequiresWaitReason(task.status)) {
     return statusLabel(task.status);
   }
@@ -125,6 +127,7 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
 }
 
 export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null, language: 'zh' | 'en' = 'zh'): TaskRailView {
+  const title = task.displayTitle ?? backgroundTaskLabel(task, languages[language]);
   const taskSteps = toStepViews(task);
   const waitingCount = taskSteps.filter((step) => (step.blockedByTitles?.length ?? 0) > 0).length;
   const unlockingCount = taskSteps.filter((step) => (step.blockedTaskTitles?.length ?? 0) > 0).length;
@@ -145,7 +148,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null, la
   if (!isChecklist) {
     return {
       mode: 'simple',
-      title: simpleTitle(task, run, language),
+      title: simpleTitle(title, task, run, language),
       status: task.status,
       failed: task.failed,
       visibleSteps: [],
@@ -163,7 +166,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null, la
 
   return {
     mode: 'checklist',
-    title: task.title || runStatusLabel(run, language) || statusLabel(task.status),
+    title: title || runStatusLabel(run, language) || statusLabel(task.status),
     status: task.status,
     failed: task.failed,
     visibleSteps: taskSteps,
