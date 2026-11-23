@@ -123,6 +123,13 @@ describe('first-run wizard source status copy', () => {
     // 卡片文字列约 250px：超过这个长度会被省略号截断（r2 实测 44 字符的英文版截断）
     expect(s03).toBe(language === 'zh' ? '已检测到 · 还没登录 · 暂未支持' : 'Detected · No sign-in · Not supported yet');
     if (language === 'en') expect(dialog.textContent).not.toMatch(/[㐀-鿿]/u);
+    // 不支持的来源不邀请登录：徽标与「检测到、未登录以外」的未支持卡一致
+    const badgeOf = (id: string) => cards.find((card) => card.id === id)!.badge;
+    const comingSoon = language === 'zh' ? '待开放' : 'Coming soon';
+    expect(badgeOf('s03_detected_unverified_needs_login')).toBe(comingSoon);
+    expect(badgeOf('s03_detected_unverified_needs_login')).toBe(badgeOf('s04_detected_local_spike'));
+    // 受支持的客户端需要登录时仍提示登录
+    expect(badgeOf('s06_detected_production_needs_login')).toBe(language === 'zh' ? '需登录' : 'Sign in required');
   });
 
   it('maps the same states to the same badges and statuses in zh and en', async () => {
