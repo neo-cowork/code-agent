@@ -158,6 +158,40 @@ describe('成员对话页', () => {
     expect(output.textContent).not.toContain(progress);
   });
 
+  it('keeps process messages, run trail and ledger output for a background Team member', async () => {
+    const runId = createSwarmTraceStorageId({ sessionId: 'session-1', runId: 'team-run', treeId: 'team-tree' });
+    const run = { ...ledgerRun, id: runId, status: 'running' as const };
+    const teamMember = { ...record, runId, name: '市场组调研员', role: 'explore', status: 'running' as const };
+    const detail: SwarmRunDetail = {
+      run: { ...ledgerDetail.run, ...run },
+      agents: [teamMember, { ...writerRecord, runId }],
+      events: [{
+        id: 1, runId, seq: 1, timestamp: 1_000, eventType: 'swarm:agent:updated',
+        agentId: teamMember.agentId, level: 'info', title: '市场组已开始核对口径', summary: '', payload: null,
+      }],
+    };
+    invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
+      channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [run] : detail,
+    ));
+    invokeDomainMock.mockResolvedValue(treeSnapshot({
+      id: teamMember.agentId, role: teamMember.role, displayName: teamMember.name, background: true,
+      status: 'running', statusLabel: '', progress: '正在搜索资料',
+      children: [], worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [],
+      sources: ['parallelCoordinator', 'backgroundRegistry'],
+    }));
+    swarmState.messages = [{
+      id: 'market-progress', from: teamMember.agentId, to: 'lead', content: '已找到原始统计表',
+      timestamp: 1, messageType: 'result',
+    }];
+    useMemberViewStore.setState({ viewingMemberId: teamMember.agentId });
+    await act(async () => { render(<MemberConversationView sessionId="session-1" />); });
+
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(teamMember.name);
+    expect(screen.getByTestId('member-process-messages').textContent).toContain('已找到原始统计表');
+    expect(screen.getByTestId('member-run-trail').textContent).toContain('市场组已开始核对口径');
+    expect(screen.getByTestId('member-final-output').textContent).toContain(teamMember.finalOutput);
+  });
+
   it('进入成员对话页，展示下发任务和产出', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });
 

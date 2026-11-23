@@ -13,7 +13,6 @@
 
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Bot, Clock, Square, Wrench, Zap } from 'lucide-react';
-import { createSingleSpawnRunId, parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useAppStore } from '../../../stores/appStore';
@@ -23,6 +22,7 @@ import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { agentNodeLabel, backgroundTaskLabel } from '../../../utils/agentRoleLabel';
 import { agentFailureReason } from '../../../utils/agentFailureCopy';
+import { isStandaloneSpawnTrace } from '../../../utils/agentNodeLifecycle';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
   describeLastToolFailure,
@@ -119,8 +119,9 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   ), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
 
   const viewingNode = snapshot?.nodes?.find((node) => node.id === viewingMemberId);
-  // A standalone helper also has a swarm trace. Its execution node owns the member view.
-  const member = viewingNode?.background ? undefined : members.find((item) => item.key === viewingMemberId);
+  const tracedMember = members.find((item) => item.key === viewingMemberId);
+  const standalone = tracedMember && isStandaloneSpawnTrace(tracedMember.key, tracedMember.record?.runId);
+  const member = viewingNode?.background && standalone ? undefined : tracedMember;
   const agent = member?.agent;
   // useSessionMembers 以持久化账本为状态真相源，而 contextSnapshot 只活在 stream 里
   // （账本不落它）。最近动作要的是「他此刻在干嘛」，所以这一项单独从 store 取实时的。
@@ -174,9 +175,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     [member, plainNode, backgroundTasks, viewingMemberId],
   );
 
-  const awaitingSingleSpawn = !snapshot && member?.record
-    && parseSwarmTraceStorageId(member.record.runId)?.runId === createSingleSpawnRunId(member.key);
-  if (awaitingSingleSpawn || (!member && !plainNode && !plainTask)) return null;
+  if ((!snapshot && standalone) || (!member && !plainNode && !plainTask)) return null;
 
     // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
     if (!member || !agent) {
