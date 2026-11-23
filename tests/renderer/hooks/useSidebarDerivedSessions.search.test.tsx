@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -44,7 +44,8 @@ const projectClient = vi.hoisted(() => ({
   getProjectArtifacts: vi.fn(async () => []),
 }));
 
-vi.mock('../../../src/renderer/stores/sessionStore', () => ({
+vi.mock('../../../src/renderer/stores/sessionStore', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/renderer/stores/sessionStore')>(),
   useSessionStore: (selector: (store: unknown) => unknown) => selector(state.session),
 }));
 vi.mock('../../../src/renderer/stores/sessionUIStore', () => ({
@@ -75,10 +76,20 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 import { useSidebarDerivedSessions } from '../../../src/renderer/components/features/sidebar/useSidebarDerivedSessions';
+import {
+  composerDraftStorageKey,
+  removeComposerDraft,
+  writeComposerDraftIfAbsent,
+} from '../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
 import { SidebarSearchDialog } from '../../../src/renderer/components/features/sidebar/SidebarSearchDialog';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  state.ui.searchQuery = 'needle';
+  state.session.currentSessionId = 'message-hit';
+  state.session.sessionRuntimes = new Map();
+  state.task.sessionStates = {};
   state.session.sessions = [
     {
       id: 'message-hit',
@@ -381,5 +392,90 @@ describe('useSidebarDerivedSessions search results', () => {
       expect(screen.queryByText(zh.sidebar.noMatchedSessions)).not.toBeNull();
     });
     expect(screen.queryByText(zh.sidebar.searchFailed)).toBeNull();
+  });
+});
+
+describe('useSidebarDerivedSessions blank rows', () => {
+  const blank = {
+    id: 'blank',
+    title: '新对话',
+    status: 'active',
+    messageCount: 0,
+    turnCount: 0,
+    createdAt: 10,
+    updatedAt: 10,
+  };
+
+  beforeEach(() => {
+    state.ui.searchQuery = '';
+    state.session.currentSessionId = blank.id;
+    state.session.sessions.push(blank);
+  });
+
+  const renderSidebar = () => renderHook(() => useSidebarDerivedSessions({ canOpenSessionReplay: false }));
+
+  it('keeps the selected blank row hidden from the list and workspace groups', () => {
+    const { result } = renderSidebar();
+
+    expect(result.current.filteredSessions.map((session) => session.id)).not.toContain(blank.id);
+    expect(result.current.workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)))
+      .not.toContain(blank.id);
+  });
+
+  it('shows the blank row when a draft is persisted and hides it when removed', () => {
+    const { result } = renderSidebar();
+    const key = composerDraftStorageKey(blank.id, false);
+
+    act(() => { writeComposerDraftIfAbsent(key, 'Summarize the release notes'); });
+    expect(result.current.filteredSessions.map((session) => session.id)).toContain(blank.id);
+
+    act(() => { removeComposerDraft(key); });
+    expect(result.current.filteredSessions.map((session) => session.id)).not.toContain(blank.id);
+  });
+
+  it('keeps a blank row with a runtime or non-idle task state visible before the count updates', () => {
+    state.session.sessionRuntimes.set(blank.id, { lastActivityAt: 20 });
+    state.session.sessions.push({ ...blank, id: 'running' }, { ...blank, id: 'idle' });
+    state.task.sessionStates = { running: { status: 'running' }, idle: { status: 'idle' } };
+
+    const { result } = renderSidebar();
+    const ids = result.current.filteredSessions.map((session) => session.id);
+    expect(ids).toContain(blank.id);
+    expect(ids).toContain('running');
+    expect(ids).not.toContain('idle');
+  });
+
+  it('keeps placeholder titles with messages and preserves archived and named empty rows', () => {
+    state.session.sessions.push(
+      { ...blank, id: 'has-messages', messageCount: 1 },
+      { ...blank, id: 'archived', status: 'archived' },
+      { ...blank, id: 'named', title: 'Release planning' },
+    );
+
+    const { result } = renderSidebar();
+    expect(result.current.filteredSessions.map((session) => session.id))
+      .toEqual(expect.arrayContaining(['has-messages', 'archived', 'named']));
+    expect(result.current.searchResultSessions.map((session) => session.id)).not.toContain('archived');
+  });
+
+  it('does not resurrect blanks through local title search or host title matches', async () => {
+    state.ui.searchQuery = blank.title;
+    const titleMatch = { title: blank.title, updatedAt: 10 };
+    ipc.invoke.mockImplementation(async (channel: string) => channel === IPC_CHANNELS.SESSION_SEARCH
+      ? {
+          results: [],
+          titleMatches: [
+            { ...titleMatch, sessionId: blank.id, messageCount: 0 },
+            { ...titleMatch, sessionId: 'unloaded-blank', messageCount: 0 },
+            { ...titleMatch, sessionId: 'unloaded-with-messages', messageCount: 2 },
+          ],
+        }
+      : {});
+
+    const { result } = renderSidebar();
+    expect(result.current.filteredSessions).toEqual([]);
+    await waitFor(() => {
+      expect(result.current.searchResultSessions.map((session) => session.id)).toEqual(['unloaded-with-messages']);
+    });
   });
 });
