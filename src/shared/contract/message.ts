@@ -329,7 +329,7 @@ export interface InputRedirectReceiptMetadata {
 
 export interface MessageMetadata {
   /** Host-generated preamble only; never infer this marker from assistant prose. */
-  backgroundTaskPreannounce?: { text: string; title?: string };
+  backgroundTaskPreannounce?: { text: string; title?: string; toolCallId?: string };
   /** Foreground turn ended at its step limit; a new user turn can continue it. */
   stoppedByStepLimit?: true;
   /**

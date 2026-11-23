@@ -313,7 +313,8 @@ export function useSurfaceExecutionPip(): void {
           if (currentControls && surfaceExecutionScopeKeyV1(currentControls.scope) === frame.scopeKey) {
             await invokeNativeCommandAction('setPipControls', { controls: currentControls });
           }
-        } catch {
+        } catch (error) {
+          console.warn('[surfacePip] native pip command failed, hiding pip window', error);
           if (!fenceRef.current.isCurrent(token)) return;
           visibleRef.current = false;
           await invokeNativeCommandAction('hidePip').catch(() => undefined);
