@@ -34,6 +34,11 @@ function bashExecuteSuccessCounts(command: unknown): boolean {
   return compileReadOnlyProbePlan(command, { homeDir: os.homedir(), platform: process.platform }) === null;
 }
 
+/** 成功的执行类工具是否算「有进展」：证明得了只读的 Bash 不算。判决与失败文案共用这一条清零规则。 */
+function executeSuccessClearsFailure(toolName: string, command: unknown): boolean {
+  return !isBashToolName(toolName) || bashExecuteSuccessCounts(command);
+}
+
 export function getTaskDeliveryFailure(
   messages: readonly Message[],
   deliverableArtifactCount: number,
@@ -66,7 +71,7 @@ export function getTaskDeliveryFailure(
       if (!isWrite && permissionLevel !== 'execute') continue;
       if (result.success) {
         if (isWrite) writeSucceeded = true;
-        else if (!isBashToolName(toolName) || bashExecuteSuccessCounts(call.arguments?.command)) {
+        else if (executeSuccessClearsFailure(toolName, call.arguments?.command)) {
           executeSucceeded = true;
           commandFailed = false;
         }
@@ -101,17 +106,22 @@ export function describeFailedCommand(
   workspaceRoot: string | undefined,
   locale: 'zh' | 'en',
 ): string | undefined {
-  const callsById = new Map<string, Record<string, unknown>>();
+  const callsById = new Map<string, { name: string; arguments: Record<string, unknown> }>();
+  const resolver = getToolResolver();
   let failed: { command: string; result: ToolResult } | undefined;
   for (const message of messages) {
     for (const call of message.toolCalls ?? []) {
-      if (isBashToolName(call.name)) callsById.set(call.id, call.arguments ?? {});
+      callsById.set(call.id, { name: call.name, arguments: call.arguments ?? {} });
     }
     for (const result of message.toolResults ?? []) {
-      const args = callsById.get(result.toolCallId);
-      if (!args) continue;
-      if (result.success) failed = undefined;
-      else if (result.metadata?.code === 'COMMAND_FAILED' && typeof args.command === 'string') failed = { command: args.command, result };
+      const call = callsById.get(result.toolCallId);
+      if (!call) continue;
+      if (result.success) {
+        if (resolver.getDefinition(call.name)?.permissionLevel === 'execute'
+          && executeSuccessClearsFailure(call.name, call.arguments.command)) failed = undefined;
+      } else if (isBashToolName(call.name) && result.metadata?.code === 'COMMAND_FAILED' && typeof call.arguments.command === 'string') {
+        failed = { command: call.arguments.command, result };
+      }
     }
   }
   if (!failed) return undefined;

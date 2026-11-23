@@ -343,6 +343,18 @@ describe('TaskManager background delivery verdict', () => {
     }
   });
 
+  it('still names the failed command when only a read-only Bash probe ran afterwards', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [
+        { id: 'bash-1', name: 'Bash', success: false, command: './check.sh', failedOutput: 'missing: brief.pdf' },
+        { id: 'bash-2', name: 'Bash', success: true, command: 'ls -la' },
+      ],
+      conclusion: '看了一下目录。',
+    }));
+    expect(event.type).toBe('task_error');
+    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
+  });
+
   it('keeps a failed Bash completed when a later non-probe Bash succeeded', async () => {
     const event = await runBackgroundTask(messages({
       calls: [
