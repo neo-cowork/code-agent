@@ -186,14 +186,9 @@ function isInternalContextPath(path?: string): boolean {
   return /tool[-_]?result/i.test(name);
 }
 
-/** MCP 按 server 去重：tool:mcp__<server>__<tool> → server 名 */
-function mcpServerName(toolId: string, label: string): string {
-  const name = toolId.startsWith('tool:') ? toolId.slice('tool:'.length) : label;
-  if (name.startsWith('mcp__')) {
-    const server = name.split('__')[1];
-    if (server) return server;
-  }
-  return label;
+/** MCP 行取完整工具名（tool:mcp__<server>__<tool> → mcp__<server>__<tool>），人话名统一走 getHumanToolLabel。 */
+function mcpToolName(toolId: string, label: string): string {
+  return toolId.startsWith('tool:') ? toolId.slice('tool:'.length) : label;
 }
 
 export interface OverviewContextFallbacks {
@@ -259,9 +254,10 @@ export function buildOverviewContextRows(args: {
     if (!invoked && tool.callable) continue;
     // 连接器行显示的是内部工具名（mail_send / calendar_create_event），对非程序员是噪音；
     // 走与「已执行」「来源」两区同一个 helper 出人话名（邮件 / 日历 / 提醒事项）。
-    // mcp 保留既有的 server 名解析，其余种类不动。
+    // mcp 行同走 getHumanToolLabel：cua-driver → 电脑操作，其余 server → 展示名，
+    // 不再出现 mcp__ 原文或裸 server slug（FB-2291）。
     const rawLabel = kind === 'mcp'
-      ? mcpServerName(tool.id, tool.label)
+      ? getHumanToolLabel({ toolName: mcpToolName(tool.id, tool.label), labels: fallbacks.humanToolLabels })
       : kind === 'connector'
         ? getHumanToolLabel({ toolName: tool.label, labels: fallbacks.humanToolLabels })
         : tool.label;

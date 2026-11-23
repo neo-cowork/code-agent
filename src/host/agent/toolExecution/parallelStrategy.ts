@@ -6,6 +6,7 @@
 // never shares a segment with any write (fail closed).
 // ============================================================================
 
+import { toolProgressLabel } from '../../../shared/utils/toolProgressLabel';
 import type { ToolCall } from '../../../shared/contract';
 import type { MCPToolAnnotations } from '../../mcp/types';
 import type { ToolClassification } from '../loopTypes';
@@ -92,10 +93,16 @@ export function classifyToolCalls(
   return { segments, deferred };
 }
 
-export function toolBatchLabel(toolName: string, batchSize: number, researchMode: boolean): string {
-  if (batchSize > 1) return `并行执行 ${batchSize} 个工具`;
-  if (researchMode && toolName === 'web_fetch') return '正在抓取详情...';
-  return `执行 ${toolName}`;
+export function toolBatchLabel(
+  toolName: string,
+  batchSize: number,
+  researchMode: boolean,
+  locale: 'zh' | 'en',
+): string {
+  const en = locale === 'en';
+  if (batchSize > 1) return en ? `Running ${batchSize} actions at once` : `正在同时执行 ${batchSize} 项操作`;
+  if (researchMode && toolName === 'web_fetch') return en ? 'Fetching details' : '正在抓取详情';
+  return toolProgressLabel(toolName, locale);
 }
 
 /** 段内按上限切片。取消或需要重推理时停在下一片之前；屏障后的调用始终补结果。 */

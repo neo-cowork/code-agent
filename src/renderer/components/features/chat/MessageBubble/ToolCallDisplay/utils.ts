@@ -40,6 +40,7 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
+import { formatMcpServerName, isComputerUseMcpServer, parseMcpToolName } from '../../../../../utils/mcpServerLabel';
 
 // ============================================================================
 // Tool Icon Mapping
@@ -291,32 +292,8 @@ function shortenUrl(url: string): string {
 // ============================================================================
 // MCP Server Display Names
 // ============================================================================
-// 已知 MCP server 的显示名映射。命中走 Title Case 友好名，未命中按 hyphen-case
-// 自动转 Title Case 兜底（如 my-server → My Server）。新增 server 不需要改这里
-// 也能正常显示，只是命中映射表的会更精致（如 chrome-devtools → Chrome DevTools）。
-const MCP_SERVER_DISPLAY_NAMES: Record<string, string> = {
-  'better-icons': 'Better Icons',
-  'chrome-devtools': 'Chrome DevTools',
-  'computer-use': 'Computer Use',
-  'deepwiki': 'DeepWiki',
-  'exa': 'Exa',
-  'firecrawl': 'Firecrawl',
-  'github': 'GitHub',
-  'memory': 'Memory',
-  'obsidian': 'Obsidian',
-  'pencil': 'Pencil',
-};
-
-function formatMcpServerName(serverSlug: string): string {
-  const known = MCP_SERVER_DISPLAY_NAMES[serverSlug];
-  if (known) return known;
-  // 兜底：hyphen/underscore-case → Title Case
-  return serverSlug
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
+// 已知 MCP server 的显示名映射与 Title Case 兜底、mcp__ / mcp_ 双形态解析都在
+// utils/mcpServerLabel.ts（humanizeToolStep 步骤行与 getHumanToolLabel 共用同一套）。
 
 // ============================================================================
 // Tool Name Display
@@ -357,16 +334,18 @@ export function getToolDisplayName(name: string): string {
     plan_update: 'Plan',
     plan_read: 'ReadPlan',
     findings_write: 'Finding',
+    library_add: 'Library',
   };
 
   if (name.startsWith('mcp_')) {
-    // Parse MCP tool name: mcp_<serverName>_<toolName>
-    // 显示 server 名作为主标题（如 "Exa"），tool 名走 formatParams 当副标题
-    const parts = name.match(/^mcp_([^_]+)_(.+)$/);
-    if (parts) {
-      return formatMcpServerName(parts[1]);
-    }
-    return name;
+    // MCP 工具名两种形态都解析：现行 mcp__<server>__<tool>，历史 mcp_<server>_<tool>。
+    // 任何分支都不把 mcp__ 原文漏给用户（FB-2291）：cua-driver 走 Computer Use
+    // 人话短名（语言感知版在 getHumanToolLabel），已知/未知 server 走 Title Case
+    // 展示名，解不动的 mcp__ 名给中性兜底。
+    const parsed = parseMcpToolName(name);
+    if (!parsed) return 'Tool';
+    if (isComputerUseMcpServer(parsed.server)) return 'Computer';
+    return formatMcpServerName(parsed.server);
   }
 
   return displayNames[name] || name;

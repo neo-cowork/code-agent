@@ -194,6 +194,7 @@ export function applyToolExecutionEvent(
           : deps.getMessages()[deps.getMessages().length - 1];
 
         const toolIndex = event.data._index;
+        const guiTakeoverDisclosure = event.data.guiTakeoverDisclosure;
         deps.debug('tool_call_start', {
           index: toolIndex,
           id: event.data.id,
@@ -213,6 +214,7 @@ export function applyToolExecutionEvent(
                 });
                 return {
                   ...tc,
+                  ...(guiTakeoverDisclosure && { guiTakeoverDisclosure }),
                   id: event.data.id,
                   name: event.data.name || tc.name,
                   arguments: tc.arguments && Object.keys(tc.arguments).length > 0
@@ -243,7 +245,12 @@ export function applyToolExecutionEvent(
             if (matchedIndex >= 0) {
               const updatedToolCalls = targetMessage.toolCalls.map((tc: ToolCall, idx: number) => {
                 if (idx === matchedIndex) {
-                  return { ...tc, id: event.data.id, _streaming: false };
+                  return {
+                    ...tc,
+                    ...(guiTakeoverDisclosure && { guiTakeoverDisclosure }),
+                    id: event.data.id,
+                    _streaming: false,
+                  };
                 }
                 return tc;
               });

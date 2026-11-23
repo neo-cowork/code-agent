@@ -1,6 +1,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import type { ToolCall } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -12,13 +12,15 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
     processingSessionIds: new Set<string>(),
     openPreview: vi.fn(),
     workingDirectory: '/repo/app',
-    language: 'zh' as const,
+    language: 'zh' as 'zh' | 'en',
     setLanguage: vi.fn(),
     cloudUIStrings: undefined,
   };
   return {
-    useAppStore: (selector?: (s: typeof state) => unknown) =>
-      (selector ? selector(state) : state),
+    useAppStore: Object.assign(
+      (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
+      { getState: () => state },
+    ),
   };
 });
 
@@ -30,8 +32,14 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 }));
 
 import { ToolCallDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay';
+import { ToolDetails } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/ToolDetails';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+afterEach(() => {
+  useAppStore.getState().language = 'zh';
+});
 
 function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
   return {
@@ -48,6 +56,56 @@ function makeToolCall(overrides: Partial<ToolCall>): ToolCall {
 }
 
 describe('browser/computer action preview rendering', () => {
+  const browserActions = [
+    ['launch', {}, 'Started the managed browser', 'Managed browser action'],
+    ['navigate', { url: 'https://example.com' }, 'Opened a page', 'Managed browser action'],
+    ['click', { selector: '#submit' }, 'Clicked a page element', 'Managed browser action'],
+    ['type', { text: 'sample' }, 'Typed 6 chars', 'Managed browser action'],
+    ['screenshot', {}, 'Took a page screenshot', 'Read-only'],
+  ] as const;
+
+  it.each([
+    ...browserActions.map(row => ['browser_action', ...row] as const),
+    ...browserActions.map(row => ['Browser', ...row] as const),
+    ['computer_use', 'observe', {}, 'Looked at the front window', 'Read-only'],
+    ['computer_use', 'get_windows', {}, 'Listed window candidates', 'Read-only'],
+  ] as const)('renders English chat preview for %s.%s', (name, action, args, summary, riskLabel) => {
+    useAppStore.getState().language = 'en';
+    const html = renderToStaticMarkup(
+      React.createElement(ToolCallDisplay, {
+        toolCall: makeToolCall({ name, arguments: { action, ...args } }),
+        index: 0,
+        total: 1,
+      }),
+    );
+
+    expect(html).toContain(summary);
+    expect(html).toContain(riskLabel);
+    expect(html).not.toMatch(/\p{Script=Han}/u);
+    if (action === 'screenshot') expect(html).toContain('Screenshot saved');
+  });
+
+  it('localizes expanded Browser input failures without exposing the arguments or echoed input', () => {
+    useAppStore.getState().language = 'en';
+    const html = renderToStaticMarkup(
+      React.createElement(ToolDetails, {
+        toolCall: makeToolCall({
+          name: 'Browser',
+          arguments: { action: 'type', text: 'private-input', selector: '#email' },
+          result: {
+            toolCallId: 'tool-1',
+            success: false,
+            error: 'No element found after private-input',
+          },
+        }),
+      }),
+    );
+
+    expect(html).toContain('[redacted 13 chars]');
+    expect(html).toContain('Typed 13 chars -&gt; #email failed: Target element not found.');
+    expect(html).not.toContain('private-input');
+  });
+
   it('renders browser action preview without exposing trace metadata in the main row', () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
@@ -108,7 +166,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('桌面输入 18 chars');
+    expect(html).toContain('桌面输入 18 个字符');
     expect(html).toContain('Google Chrome');
     expect(html).toContain('桌面输入');
     expect(html).not.toContain('foreground_fallback');
@@ -143,7 +201,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('智能输入 18 chars');
+    expect(html).toContain('智能输入 18 个字符');
     expect(html).toContain('#email');
     expect(html).toContain('托管浏览器动作');
     expect(html).not.toContain('trace-browser-scoped-smart-type');
@@ -151,11 +209,11 @@ describe('browser/computer action preview rendering', () => {
     expect(html).not.toContain('secret@example.com');
   });
 
-  it('redacts browser typed text from collapsed result summary markup', () => {
+  it.each(['browser_action', 'Browser'])('keeps Chinese %s type copy and redacts the collapsed result', (name) => {
     const html = renderToStaticMarkup(
       React.createElement(ToolCallDisplay, {
         toolCall: makeToolCall({
-          name: 'browser_action',
+          name,
           arguments: {
             action: 'type',
             selector: '#email',
@@ -178,7 +236,7 @@ describe('browser/computer action preview rendering', () => {
       }),
     );
 
-    expect(html).toContain('输入 18 chars');
+    expect(html).toContain('输入 18 个字符');
     expect(html).toContain('#email');
     expect(html).not.toContain('trace-browser-type');
     expect(html).not.toContain('secret@example.com');
@@ -212,9 +270,9 @@ describe('browser/computer action preview rendering', () => {
     );
 
     // 工具行默认折叠：错误回合不再自动展开详情。脱敏仍成立——折叠态只显示已脱敏的
-    // 动作摘要（"输入 18 chars"）+ 失败状态词，原始输入文本绝不出现。
+    // 动作摘要（"输入 18 个字符"）+ 失败状态词，原始输入文本绝不出现。
     // N-TOOLFAIL-ONELINE：有可读失败态时不再叠 fallbackSummary「执行时出了问题」。
-    expect(html).toContain('输入 18 chars');
+    expect(html).toContain('输入 18 个字符');
     // #1-story-A 2c44c0cf9 重写了 failureReasonMissing 文案（同一把 key，纯措辞优化，
     // 加了"可展开详情查看记录"的引导），断言改用 i18n 常量，别再硬编码旧字面量。
     expect(html).toContain(zh.toolStepHumanize.failureReasonMissing);
@@ -425,7 +483,7 @@ describe('browser/computer action preview rendering', () => {
     expect(collapsedHtml).toContain('aria-expanded="false"');
     expect(collapsedHtml).not.toContain('app-host-secret@example.com');
 
-    // 折叠不等于信息丢失：展开后仍能看到脱敏摘要"智能输入 27 chars"，原始邮箱地址依旧不泄漏。
+    // 折叠不等于信息丢失：展开后仍能看到脱敏摘要"智能输入 27 个字符"，原始邮箱地址依旧不泄漏。
     const expandedHtml = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes, defaultExpanded: true }),
     );
@@ -433,7 +491,7 @@ describe('browser/computer action preview rendering', () => {
     // 断言跟着改的是「展开后这一步仍认得出是谁干的」，不是放宽脱敏要求。
     expect(expandedHtml).toContain('操作电脑未成功');
     expect(expandedHtml).toContain('trace-computer-failure');
-    expect(expandedHtml).toContain('智能输入 27 chars');
+    expect(expandedHtml).toContain('智能输入 27 个字符');
     expect(expandedHtml).not.toContain('app-host-secret@example.com');
   });
 
@@ -481,11 +539,11 @@ describe('browser/computer action preview rendering', () => {
     );
     expect(collapsedHtml).not.toContain('app-host-secret@example.com');
 
-    // 折叠不等于信息丢失：点开工具组后依旧只看到脱敏摘要"智能输入 27 chars"，不是原文。
+    // 折叠不等于信息丢失：点开工具组后依旧只看到脱敏摘要"智能输入 27 个字符"，不是原文。
     const expandedGroupHtml = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes: [turn.nodes[1]], defaultExpanded: true }),
     );
-    expect(expandedGroupHtml).toContain('智能输入 27 chars');
+    expect(expandedGroupHtml).toContain('智能输入 27 个字符');
     expect(expandedGroupHtml).not.toContain('app-host-secret@example.com');
   });
 

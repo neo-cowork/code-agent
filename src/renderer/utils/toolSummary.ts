@@ -254,13 +254,17 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 
     // Gen 7 工具
     case 'spawn_agent': {
-      const agentType = (args?.type as string) || '';
-      return `创建代理: ${agentType}`;
+      const agentType = (typeof args?.type === 'string' && args.type)
+        || (typeof args?.role === 'string' && args.role)
+        || '';
+      if (agentType) return `创建代理: ${agentType}`;
+      const parallelCount = args?.parallel === true && Array.isArray(args?.agents) ? args.agents.length : 0;
+      return parallelCount > 0 ? `创建 ${parallelCount} 个代理` : '创建代理';
     }
 
     case 'agent_message': {
       const targetAgent = (args?.target as string) || '';
-      return `发送消息给: ${targetAgent}`;
+      return targetAgent ? `发送消息给: ${targetAgent}` : '发送消息给代理';
     }
 
     case 'workflow_orchestrate': {

@@ -31,6 +31,8 @@ import {
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../utils/agentActivity';
+import { GuiTakeoverDisclosureRows } from '../GuiTakeoverDisclosureRows';
+import { MemberOutputMarkdown } from './MemberOutputMarkdown';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
@@ -141,7 +143,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     // 逐条过 humanizeToolStep 的描述过滤（命令样/错语种退通用文案），连续命令才分得清。
     const bashRows = [...(snapshot?.bashSteps ?? [])].reverse().map((step, index) => ({
       key: `Bash-step-${index}`,
-      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
     return [...(snapshot?.tools ?? [])].reverse().flatMap((tool, index) => (
       (tool === 'Bash' || tool === 'bash') && bashRows.length > 0
@@ -200,10 +202,14 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
     const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
       key: `step-${index}`,
-      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
-    const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
+    // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
+    const taskResultMarkdown = plainTask?.metadata?.resultMarkdown;
+    const finalOutput = plainNode?.progress
+      ?? (typeof taskResultMarkdown === 'string' && taskResultMarkdown ? taskResultMarkdown : plainTask?.summary)
+      ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
     // 终态工具失败出路（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：只在任务收尾后亮，运行中不亮
     const toolFailure = isLastToolFailureVisible(plainTask?.status)
@@ -236,6 +242,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </header>
 
         <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+          <GuiTakeoverDisclosureRows disclosures={plainNode?.guiDisclosures ?? plainTask?.progress?.guiDisclosures} />
           {/* 当前动作置顶高亮（S3）；没有真实工具步时不编造活动。 */}
           {currentAction && (
             <section data-testid="member-current-action">
@@ -275,7 +282,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
           <section data-testid="member-final-output">
             <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>
             <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-              <pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{finalOutput || text.noOutput}</pre>
+              <MemberOutputMarkdown output={finalOutput} fallback={text.noOutput} />
               {outputRefs.length > 0 && (
                 <ul className="mt-2 space-y-0.5">
                   {outputRefs.map((ref) => (
@@ -338,6 +345,9 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       </header>
 
       <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+        <GuiTakeoverDisclosureRows disclosures={liveContextSnapshot?.guiDisclosures
+          ?? agent.contextSnapshot?.guiDisclosures
+          ?? snapshot?.nodes?.find((node) => node.id === viewingMemberId)?.guiDisclosures} />
         {/* 当前动作置顶高亮（S3）：最近一条动作 = 他此刻在干嘛 */}
         {recentActions.length > 0 && (
           <section data-testid="member-current-action">
@@ -412,7 +422,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         <section data-testid="member-final-output">
           <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>
           <div className="rounded-lg bg-zinc-950/60 px-3 py-2 text-xs leading-relaxed text-zinc-300">
-            <pre className="whitespace-pre-wrap break-words font-sans text-zinc-200">{agent.finalOutput || text.noOutput}</pre>
+            <MemberOutputMarkdown output={agent.finalOutput} fallback={text.noOutput} />
           </div>
         </section>
 

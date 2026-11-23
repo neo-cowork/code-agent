@@ -19,6 +19,7 @@ import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
+import { TaskManagerReadiness } from './taskManagerReadiness';
 import type { PlanningService } from '../planning';
 import { getPermissionModeManager } from '../permissions/modes';
 import { Semaphore } from './Semaphore';
@@ -31,7 +32,7 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
-import type { RunRegistry } from '../runtime/runRegistry';
+import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
@@ -134,6 +135,7 @@ export class TaskManager extends EventEmitter {
 
   // 依赖注入
   private configService: ConfigService | null = null;
+  private readonly readiness = new TaskManagerReadiness();
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
   /**
@@ -177,7 +179,12 @@ export class TaskManager extends EventEmitter {
     this.planningService = deps.planningService;
     this.runRegistry = deps.runRegistry;
     this.onAgentEvent = deps.onAgentEvent;
+    this.readiness.markReady();
     logger.info('TaskManager dependencies initialized');
+  }
+
+  waitUntilReady(timeoutMs: number): Promise<boolean> {
+    return this.readiness.wait(timeoutMs);
   }
 
   /**
@@ -217,6 +224,10 @@ export class TaskManager extends EventEmitter {
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
+    }
+
+    if (this.hasActivePrimaryRun(sessionId)) {
+      throw new RunSessionConflictError(sessionId, this.runRegistry?.getBySessionId(sessionId)?.context.runId);
     }
 
     // 检查是否已经在运行或排队
@@ -1282,6 +1293,7 @@ export class TaskManager extends EventEmitter {
       backgroundPermissionOwners: this.backgroundPermissionOwners,
       backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
       messageDeltaAccumulator: this.messageDeltaAccumulator,
+      isPrimaryRunActive: () => this.getSessionState(sessionId).status === 'running' || this.hasActivePrimaryRun(sessionId),
     }, sessionId, event, snapshot, eventKey);
   }
 

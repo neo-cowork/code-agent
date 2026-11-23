@@ -136,6 +136,11 @@ export interface AppServiceRunOptions {
 export interface CreateSessionConfig {
   title?: string;
   workingDirectory?: string | null;
+  /**
+   * 创建时显式指定的协作空间。给出后 host 校验存在且未归档/未删除，
+   * 写入会话并钉住归属；空目录不再反查成未分类。
+   */
+  projectId?: string;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   metadata?: Record<string, unknown>;
   /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
@@ -234,6 +239,8 @@ export type SteerOrQueueOutcome =
 export interface SessionListQueryOptions {
   includeArchived?: boolean;
   archivedOnly?: boolean;
+  /** 仅与 archivedOnly 配合：只取某个项目的归档会话（SQL 层过滤，分页才不会被其他项目摊薄） */
+  projectScope?: { projectId?: string; workingDirectory?: string };
   limit?: number;
   offset?: number;
 }
@@ -249,7 +256,7 @@ export interface SessionListQueryOptions {
 export interface AgentApplicationService {
   // === Agent Operations ===
   sendMessage(envelope: ConversationEnvelope): Promise<void>;
-  cancel(sessionId?: string, reason?: 'user' | 'session-switch', options?: { abandonParked?: boolean }): Promise<void>;
+  cancel(sessionId?: string, reason?: 'user' | 'session-switch', options?: { abandonParked?: boolean; runId?: string }): Promise<void>;
   /** 回报投递结果：'no_orchestrator'/'unknown_request' = 停车审批宿主已死，行已被标 orphaned */
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome;
   interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome>;
@@ -267,7 +274,7 @@ export interface AgentApplicationService {
   findExpertThreadSession(roleId: string): Promise<{ sessionId: string | null }>;
   updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
   archiveSession(sessionId: string): Promise<Session | null>;
-  unarchiveSession(sessionId: string): Promise<Session | null>;
+  unarchiveSession(sessionId: string, updatedAt?: number): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;
   /** 只读存在性探测：不 restore、不切 currentSessionId、不写审计（loadSession 有这些副作用） */
   sessionExists(sessionId: string): Promise<boolean>;

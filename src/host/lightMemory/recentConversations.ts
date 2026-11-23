@@ -8,6 +8,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { UNSORTED_PROJECT_ID } from '../../shared/contract/project';
+import { isTelemetryRecoveryNoticeResidue } from '../../shared/telemetryRecovery';
 import { ensureMemoryDir, getMemoryDir } from './indexLoader';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import { createLogger } from '../services/infra/logger';
@@ -84,6 +85,13 @@ async function loadSummaries(): Promise<ConversationSummary[]> {
  * Format:
  * - **Dec 8**: "Building a load balancer" — connection pooling, Go concurrency
  */
+function dropRecoveryNoticeResidue(summary: ConversationSummary): ConversationSummary | null {
+  const highlights = summary.highlights.filter((h) => !isTelemetryRecoveryNoticeResidue(h));
+  if (!isTelemetryRecoveryNoticeResidue(summary.title)) return { ...summary, highlights };
+  if (highlights.length === 0) return null;
+  return { ...summary, title: highlights[0], highlights: highlights.slice(1) };
+}
+
 function parseSummaries(content: string): ConversationSummary[] {
   const entries: ConversationSummary[] = [];
   const lines = content.split('\n').filter(l => l.startsWith('- **'));
@@ -93,12 +101,13 @@ function parseSummaries(content: string): ConversationSummary[] {
     // Legacy: - **2026-03-15**: "Title" — highlight1, highlight2
     const match = line.match(/^- \*\*(.+?)\*\*(?: \[project:([^\]]+)\])?: "(.+?)" — (.*)$/);
     if (match) {
-      entries.push({
+      const entry = dropRecoveryNoticeResidue({
         date: match[1],
         ...(normalizeProjectId(match[2]) ? { projectId: normalizeProjectId(match[2]) } : {}),
         title: match[3],
         highlights: match[4] ? match[4].split(', ').map(s => s.trim()) : [],
       });
+      if (entry) entries.push(entry);
     }
   }
   return entries;
@@ -145,7 +154,12 @@ export async function appendConversationSummary(
     let summaries = await loadSummaries();
     summaries = summaries.filter((item) => !isLoopAutomationSummary(item));
 
-    const normalizedSummary: ConversationSummary = { ...summary };
+    const cleanedSummary = dropRecoveryNoticeResidue(summary);
+    if (!cleanedSummary) {
+      logger.debug('Skipping summary that only carries a recovery notice');
+      return;
+    }
+    const normalizedSummary: ConversationSummary = { ...cleanedSummary };
     const normalizedProjectId = normalizeProjectId(summary.projectId);
     if (normalizedProjectId) normalizedSummary.projectId = normalizedProjectId;
     else delete normalizedSummary.projectId;

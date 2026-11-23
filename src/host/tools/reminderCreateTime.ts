@@ -9,7 +9,10 @@ function formatLocal(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-function rejectIfPast(args: Record<string, unknown>): { ok: false; code: 'REMINDER_TIME_IN_PAST'; error: string } | null {
+function rejectIfPast(
+  args: Record<string, unknown>,
+  action: 'create' | 'update',
+): { ok: false; code: 'REMINDER_TIME_IN_PAST'; error: string } | null {
   const ms = args.remind_at_ms;
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
   const nowMs = Date.now();
@@ -18,13 +21,13 @@ function rejectIfPast(args: Record<string, unknown>): { ok: false; code: 'REMIND
   const tomorrow = new Date(ms);
   tomorrow.setFullYear(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return {
-    ok: false,
-    code: 'REMINDER_TIME_IN_PAST',
-    error: `The requested reminder time ${formatLocal(new Date(ms))} has already passed (current local time: ${formatLocal(now)}, time zone ${zone}). `
-      + 'Do not create this reminder. Ask the user whether they mean the same time tomorrow '
-      + `(${formatLocal(tomorrow)}) or a different time, and only create it after they answer.`,
-  };
+  const lead = `The requested reminder time ${formatLocal(new Date(ms))} has already passed (current local time: ${formatLocal(now)}, time zone ${zone}). `;
+  const advice = action === 'update'
+    ? 'The reminder was not changed. Ask the user whether they mean the same time tomorrow '
+      + `(${formatLocal(tomorrow)}) or a different time, and retry only after they confirm.`
+    : 'Do not create this reminder. Ask the user whether they mean the same time tomorrow '
+      + `(${formatLocal(tomorrow)}) or a different time, and only create it after they answer.`;
+  return { ok: false, code: 'REMINDER_TIME_IN_PAST', error: lead + advice };
 }
 
 /** Normalize reminder wall-clock input before approval, and at direct module entry. */
@@ -32,9 +35,12 @@ export function normalizeReminderCreateTime(
   toolName: string,
   args: Record<string, unknown>,
 ): { ok: true; args: Record<string, unknown> } | { ok: false; code: 'INVALID_ARGS' | 'REMINDER_TIME_IN_PAST'; error: string } {
+  if (toolName === 'reminders_update') {
+    return rejectIfPast(args, 'update') ?? { ok: true, args };
+  }
   if (toolName !== 'reminders_create') return { ok: true, args };
   if (!Object.prototype.hasOwnProperty.call(args, 'remind_at_local')) {
-    return rejectIfPast(args) ?? { ok: true, args };
+    return rejectIfPast(args, 'create') ?? { ok: true, args };
   }
   const invalid = {
     ok: false as const,
@@ -57,5 +63,5 @@ export function normalizeReminderCreateTime(
   // and must not be overwritten by a second normalization during dispatch.
   const { remind_at_local: _local, ...rest } = args;
   const normalized = { ...rest, remind_at_ms: date.getTime() };
-  return rejectIfPast(normalized) ?? { ok: true, args: normalized };
+  return rejectIfPast(normalized, 'create') ?? { ok: true, args: normalized };
 }

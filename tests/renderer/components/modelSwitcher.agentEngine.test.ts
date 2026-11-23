@@ -353,7 +353,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       effort: { label: 'High', shortLabel: '高' },
       thinkingLabel: '思考',
     })).toBe(
-      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
+      '自动路由（按任务、成本和能力切换，当前主任务 MiMo v2.5 Pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
     );
   });
 
@@ -369,7 +369,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
-      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
+      '已覆盖: zhipu/glm-4.5v (原主任务: Kimi K2.5) · 计费: 计费未知 · 推理强度: 默认',
     );
   });
 

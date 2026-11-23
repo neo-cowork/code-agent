@@ -111,6 +111,8 @@ export interface SessionAutomationOwnerIdentity {
 
 export interface SessionAutomationConfig extends Record<string, unknown> {
   createdVia?: string;
+  /** 绑定的专家（cron 任务绑定了角色时由桥写入；收件箱据此显示专家名）。 */
+  roleId?: string;
   /** Execution location snapshot for review-inbox presentation. */
   runsOn?: 'local' | 'cloud';
   /** 进程归属戳（见 SessionAutomationOwnerStamp）；进入终态时清除。 */

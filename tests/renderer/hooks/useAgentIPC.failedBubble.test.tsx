@@ -322,7 +322,7 @@ describe('useAgentIPC 失败气泡保留 + clientMessageId 幂等', () => {
   // （会话被旧 run 占着）时，必须给失败气泡 + 带重试锚点的错误卡，正文说清楚旧任务占着和怎么办。
   it('撞 409 改走 interrupt 也失败：用户气泡标失败、错误卡带重试锚点和「旧任务占着」提示', async () => {
     invokeMock.mockRejectedValueOnce(Object.assign(new Error('409'), { status: 409, code: 'RUN_SESSION_CONFLICT' }));
-    const conflictCopy = '这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「放弃」结束旧任务，再点「重试」。';
+    const conflictCopy = '这条消息没发出去：这个会话里还有一个在等你确认的旧任务。点「重试」会先结束旧任务，再把你的消息重新发送。';
     // transport 已把 409 + RUN_SESSION_CONFLICT 的域信封换成人话（domainFailureMessage）。
     invokeDomainMock.mockRejectedValueOnce(Object.assign(new Error(conflictCopy), { code: 'RUN_SESSION_CONFLICT' }));
     const hook = renderSendHook();

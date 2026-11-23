@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveTaskRailView } from '../../../src/renderer/utils/taskRailPresentation';
-import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
+import type { RunUiState, TaskRecord } from '../../../src/renderer/types/runWorkbench';
 
 function makeTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
   return {
@@ -198,5 +198,12 @@ describe('deriveTaskRailView', () => {
     expect(view.completed).toBe(1);
     expect(view.total).toBe(2);
     expect(view.taskCount).toBe(3);
+  });
+
+  it('waiting_approval label follows UI language via the shared copy source', () => {
+    const run = { identity: { sessionId: 's', turnId: 't', runId: 'r', streamRunId: null, status: 'waiting_approval' }, status: 'waiting_approval', phase: '' } as unknown as RunUiState;
+    const task = makeTask({ title: '' });
+    expect(deriveTaskRailView(task, run).title).toBe('等你确认');
+    expect(deriveTaskRailView(task, run, 'en').title).toBe('Needs your approval');
   });
 });

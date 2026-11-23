@@ -68,7 +68,7 @@ describe('buildOverviewContextRows 准入规则', () => {
     expect(rows).toEqual([]);
   });
 
-  it('真被调用过的 MCP 按 server 去重成行，显示 server 名而不是每次调用', () => {
+  it('真被调用过的 MCP 按 server 去重成行，显示 server 展示名而不是每次调用（FB-2291 改走 getHumanToolLabel）', () => {
     const rows = build({
       tools: [
         tool({ id: 'tool:mcp__filesystem__read_file', label: 'mcp__filesystem__read_file', source: 'mcp' }),
@@ -77,7 +77,7 @@ describe('buildOverviewContextRows 准入规则', () => {
       ],
     });
     const mcpRows = rows.filter((row) => row.kind === 'mcp');
-    expect(mcpRows.map((row) => row.label)).toEqual(['browser', 'filesystem']);
+    expect(mcpRows.map((row) => row.label)).toEqual(['Browser', 'Filesystem']);
   });
 
   it('调用被拒/失败的 MCP 仍算「发生过」，标黄保留', () => {
@@ -177,7 +177,8 @@ describe('buildOverviewContextRows 准入规则', () => {
     }
     expect(rows.map((row) => [row.kind, row.label])).toEqual([
       ['computer', '未知能力'],
-      ['mcp', 'browser'],
+      // FB-2291：mcp 行走 getHumanToolLabel → server 展示名
+      ['mcp', 'Browser'],
       ['memory', '未知能力'],
     ]);
   });

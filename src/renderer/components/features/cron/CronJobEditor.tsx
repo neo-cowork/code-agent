@@ -42,6 +42,7 @@ import { CronResultChannelField } from './CronResultChannel';
 import { CronRunBudgetField } from './CronRunBudgetField';
 import { FlatFeeBudgetNote } from './FlatFeeBudgetNote';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
+import { CronEventLimitFields } from './CronEventLimitFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
 import { CronTemplateRoleField } from './CronTemplateRoleField';
@@ -316,6 +317,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           accountId: draft.eventAccountId,
           chatId: draft.eventChatId,
           budget: draft.maxRunBudget,
+          prefilter: draft.eventPrefilter,
+          maxRunsPerHour: draft.eventMaxRunsPerHour,
         }, templateLanguage)
         : selectedTemplate.generate(templateValues, templateLanguage);
       // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
@@ -609,6 +612,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           ))}
 
           {selectedTemplate.event ? (
+            <>
             <CronEventScheduleFields
               accountId={draft.eventAccountId}
               chatId={draft.eventChatId}
@@ -621,6 +625,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 return violation ? cc.eventValidation[violation.reason] : null;
               })()}
             />
+            <CronEventLimitFields
+              prefilter={draft.eventPrefilter}
+              maxRunsPerHour={draft.eventMaxRunsPerHour}
+              onPrefilterChange={(value) => setEventField('eventPrefilter', value)}
+              onMaxRunsPerHourChange={(value) => setEventField('eventMaxRunsPerHour', value)}
+            />
+            </>
           ) : (
             <>
               <CronRunsOnSelector
@@ -795,6 +806,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   onBudgetChange={(maxRunBudget) => setEventField('maxRunBudget', maxRunBudget)}
                   // 与通道分支同一道显示闸门：光选「新邮件」不填不挨红框（r2 口径）。
                   violation={eventValidationArmed ? eventViolation : null}
+                />
+              )}
+
+              {isEventScheduleKind(draft.scheduleType) && (
+                <CronEventLimitFields
+                  prefilter={draft.eventPrefilter}
+                  maxRunsPerHour={draft.eventMaxRunsPerHour}
+                  onPrefilterChange={(value) => setEventField('eventPrefilter', value)}
+                  onMaxRunsPerHourChange={(value) => setEventField('eventMaxRunsPerHour', value)}
                 />
               )}
             </div>

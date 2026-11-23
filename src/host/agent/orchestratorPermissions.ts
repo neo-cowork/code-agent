@@ -828,6 +828,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         ...(fullRequest.forceConfirm === true ? { forceConfirm: true } : {}),
+        ...(hasBackgroundRunIdentity(fullRequest) ? { backgroundLane: true as const } : {}),
         ...pickApprovalOrigin(fullRequest.details),
         requestedAt: fullRequest.timestamp,
         argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
@@ -879,10 +880,11 @@ export class OrchestratorPermissionIsland {
         const ownChat = this.isDetachedRun()
           && !modes.isUnattendedSession(fullRequest.sessionId)
           && !modes.isLiveVoiceSession(fullRequest.sessionId);
+        const noticeContext = modes.isFirstWakeSession(fullRequest.sessionId) ? 'first_wake' : ownChat ? 'approval' : 'parked';
         try {
           notificationService.notifyNeedsInput({
             sessionId: fullRequest.sessionId,
-            ...buildApprovalNotification(fullRequest.tool, ownChat ? 'approval' : 'parked'),
+            ...buildApprovalNotification(fullRequest.tool, noticeContext),
             tool: fullRequest.tool,
             // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
             // 同键去重，用户只看到这一条更具体的「到自动化的运行记录处理」横幅。

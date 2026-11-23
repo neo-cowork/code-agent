@@ -5,7 +5,7 @@
 
 import { useEffect, useCallback, useState } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { MemoryLearnedEvent, MemoryConfirmRequest } from '@shared/contract/memory';
+import type { MemoryLearnedEvent, MemoryConfirmRequest, MemoryConfirmView } from '@shared/contract/memory';
 import { toast } from './useToast';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
@@ -23,6 +23,7 @@ export interface PendingMemoryConfirm {
   confidence: number;
   timestamp: number;
   authority?: 'directive' | 'memory';
+  view?: MemoryConfirmView;
 }
 
 /**
@@ -95,6 +96,7 @@ export function useMemoryLearning() {
           confidence: request.confidence,
           timestamp: request.timestamp,
           authority: request.authority ?? 'memory',
+          view: request.view,
         },
       ]);
     },

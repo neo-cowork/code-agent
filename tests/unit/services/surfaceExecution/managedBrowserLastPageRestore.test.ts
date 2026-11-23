@@ -17,6 +17,7 @@ import {
   type SurfaceRuntimeIdentityV1,
 } from '../../../../src/host/services/surfaceExecution/SurfaceExecutionRuntime';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
+import { finishManagedBrowserLaunchResume } from '../../../../src/host/services/infra/browser/launchResumeHook';
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ getSession: async () => undefined }),
@@ -55,6 +56,7 @@ function createMemorySecureStorage() {
 function createFakeWindow(initialUrl = 'about:blank') {
   let running = false;
   let snapshotSeq = 0;
+  let resumeOwner: string | null = null;
   const tab = { id: 'tab-1', url: initialUrl, title: 'Fixture' };
   const callOrder: string[] = [];
   const importedStates: string[] = [];
@@ -63,16 +65,28 @@ function createFakeWindow(initialUrl = 'about:blank') {
     tab.url = url;
   });
   const service = {
-    ensureSession: vi.fn(async (url = 'about:blank') => {
+    ensureSession: vi.fn(async (url = 'about:blank', options?: { conversationId?: string; profileMode?: 'isolated' | 'persistent' }) => {
       callOrder.push(`ensureSession:${url}`);
+      const launchedFresh = !running;
       if (!running) {
         running = true;
         tab.url = url;
       }
+      await finishManagedBrowserLaunchResume(service as never, {
+        conversationId: options?.conversationId,
+        profileMode: options?.profileMode ?? (options?.conversationId ? 'isolated' : undefined),
+      }, launchedFresh);
       return {};
     }),
     isRunning: () => running,
     isProcessAlive: () => running,
+    isLaunchResumeSuppressed: () => false,
+    isLeaseInUse: () => false,
+    getResumeOwner: () => resumeOwner,
+    setResumeOwner: (conversationId: string) => { resumeOwner = conversationId; },
+    notifyLaunchResume: () => undefined,
+    getLiveTabUrl: () => tab.url,
+    relaunchIsolatedForResume: vi.fn(async () => { running = true; }),
     getActiveTab: () => (running ? { ...tab } : null),
     listTabs: () => (running ? [{ ...tab }] : []),
     navigate,
@@ -281,8 +295,9 @@ describe('managed browser cross-turn last page restore', () => {
         'navigate:https://host/a/b',
       ]);
       expect(h.resumeLogger.info).toHaveBeenCalledWith(
-        'Restored managed browser last page',
+        'Managed browser launch resume',
         expect.objectContaining({
+          phase: 'cold',
           reason: 'last_page_restored',
           url: 'https://host/a/b',
         }),
@@ -503,8 +518,9 @@ describe('managed browser cross-turn last page restore', () => {
       expect(observed.output).toBe('URL: about:blank');
       expect(h.resumeLogger.warn).toHaveBeenCalledTimes(1);
       expect(h.resumeLogger.warn).toHaveBeenCalledWith(
-        'Failed to navigate to managed browser last page; continuing on blank page',
+        'Managed browser launch resume',
         expect.objectContaining({
+          phase: 'cold',
           reason: 'last_page_navigation_failed',
           url: 'https://host/a/b',
           error: 'net::ERR_CONNECTION_REFUSED',

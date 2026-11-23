@@ -4,8 +4,6 @@
 
 import type { AttachmentCategory, MessageAttachment } from '../../../../../shared/contract';
 import { createLogger } from '../../../../utils/logger';
-import ipcService from '../../../../services/ipcService';
-import type { Translations } from '../../../../i18n/zh';
 import { isSkillZipFileName } from '../../../../services/skillLocalZip';
 
 const logger = createLogger('ChatInputUtils');
@@ -289,23 +287,6 @@ async function attachmentsFromEntries(
     if (attachment) attachments.push(attachment);
   }
   return attachments;
-}
-
-/**
- * 从 PDF 文件中提取文本内容 - 通过主进程 IPC 处理
- */
-export async function extractPdfText(t: Translations, filePath: string): Promise<{ text: string; pageCount: number }> {
-  try {
-    const result = await ipcService.extractPdfText(filePath);
-    if (result) return result;
-    return { text: t.chatInput.pdfExtractIpcFailed, pageCount: 0 };
-  } catch (error) {
-    logger.error('PDF text extraction failed', error);
-    return {
-      text: t.chatInput.pdfExtractFailedPrefix.replace('{err}', error instanceof Error ? error.message : t.chatInput.unknownError),
-      pageCount: 0,
-    };
-  }
 }
 
 /**

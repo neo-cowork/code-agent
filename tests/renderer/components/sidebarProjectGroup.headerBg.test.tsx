@@ -106,7 +106,7 @@ describe('SidebarProjectGroup 组头底色制度（批P 第五波③）', () => 
     expect(cls).not.toMatch(/(?<!hover:)bg-zinc-900/);
     expect(cls).not.toMatch(/(?<!hover:)bg-zinc-800(?!\/)/);
     // 只允许栏面本色（sticky 覆盖用途），肉眼即无底色
-    expect(cls).toContain('bg-zinc-950');
+    expect(cls).toContain('bg-[var(--sidebar-bg)]');
   });
 
   it('hover 提亮制度保留（hover:bg-zinc-800/40）', () => {
@@ -118,6 +118,6 @@ describe('SidebarProjectGroup 组头底色制度（批P 第五波③）', () => 
     const { container } = renderGroup('session-other');
     const cls = groupHeaderClassName(container);
     expect(cls).not.toMatch(/(?<!hover:)bg-zinc-900/);
-    expect(cls).toContain('bg-zinc-950');
+    expect(cls).toContain('bg-[var(--sidebar-bg)]');
   });
 });

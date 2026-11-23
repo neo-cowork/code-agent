@@ -587,6 +587,58 @@ prompt builder 要求 _meta
 - **"Direct routing 是 renderer-only 短路"** — 不是。renderer 先写 optimistic，但主进程 `swarm:send-user-message` 会先持久化再 fanout。失败回滚，不假装成功。
 - **"Auto routing 靠解析 notification 文案"** — 不是。主进程发出结构化 `routing_resolved` 事件，renderer 写进 `turnExecutionStore`。
 - **"Phase 1-6 都还没开始"** — 错。Phase 1-2 已关账，Phase 3 有基础骨架、native connector 最小 lifecycle 和设置页入口；Phase 4/5 已有最小闭环；Phase 6.1/6.2 已落，6.3/6.4 有 failure asset draft、preset 资产化和 recipe store。剩下的是 backlog，不是主实现。
+- **"未聚焦时点窗口，要么拖不动，要么会误触危险按钮，所以该关掉 `acceptFirstMouse`"** — 见 7.1。静态结论是保持打开，不加第二步确认。
+
+### 7.1 未聚焦窗口的第一次点击（acceptFirstMouse）
+
+主窗口打开 `acceptFirstMouse`（`src-tauri/tauri.conf.json:23`；重建路径 `src-tauri/src/main.rs:2424`）。wry 0.55.1（`src-tauri/Cargo.lock`）的 `with_accept_first_mouse` 写明这只影响 macOS，默认 false：为 true 时，点一个还不是前台的窗口，这次点击进入网页。WKWebView 的 `acceptsFirstMouse:` 返回该标志。关掉时系统把窗口调到前面并丢掉这次点击，按钮和拖拽脚本都看不到它。
+
+拖拽由 Tauri 2.11.2（`src-tauri/Cargo.lock:3920`）自带的 `src/window/scripts/drag.js` 决定：
+
+- 裸属性或 `"true"`：事件目标就是该元素才拖（66 行）。`"deep"`：子树里的非可点元素也会拖（64 行）。`"false"`：本元素和祖先都不拖（62 行）。渲染层没有 `"false"`。
+- `A` / `BUTTON` / `INPUT` / `SELECT` / `TEXTAREA` / `LABEL` / `SUMMARY`，以及 `role` 为 button、link、menuitem、tab、checkbox、radio、switch、option 的元素，自己没写该属性时不拖，点击交给页面（12–39、57–58 行）。`WebkitAppRegion: 'no-drag'` 不参与判断（`TitleBar.tsx:33-34`）。
+- 落在拖拽区的左键 mousedown 会 `preventDefault` 并调用 `start_dragging`（78–104 行）。macOS 上双击且指针没移动时，mouseup 切换最大化（109–127 行）。
+
+开关只改变「窗口还不是前台」的那一次：
+
+| 落点 | 关掉 | 打开 |
+|---|---|---|
+| 拖拽区空白（裸属性须直接点在该元素上） | 窗口调到前面，点击被丢掉 | 窗口调到前面，页面收到 mousedown，开始拖 |
+| 按钮（拖拽区内外相同） | 窗口调到前面，按钮不执行 | 窗口调到前面，并执行该按钮 |
+| 没有处理函数的空白 | 窗口调到前面 | 页面收到点击，没有处理函数，窗口同样只是到前面 |
+
+`grep -rn data-tauri-drag-region src/renderer` 的持有者只有这些（注释行除外）：
+
+| 组件 | 位置 | 模式 | 打开时，未聚焦的第一次点击 |
+|---|---|---|---|
+| TitleBar | `TitleBar.tsx:39` | 裸 | 直接点在这一行上开始拖。展开侧栏、会话菜单、右栏开关是按钮，执行点击 |
+| Sidebar 顶行 | `Sidebar.tsx:699` | 裸 | 直接点在这一行上开始拖。搜索、筛选、收起是按钮。删除会话不在这行 |
+| FullScreenPage `bar` / `page` | `FullScreenPage.tsx:133`、`:161` | deep | 点标题文字也开始拖。返回和 `actions` 是按钮，执行点击 |
+| SettingsModal 左栏顶 | `SettingsModal.tsx:508` | 裸 | 直接点在这层才拖。返回和搜索在子节点上，执行点击 |
+| SettingsModal 标题行 | `SettingsModal.tsx:600` | deep | 点标题开始拖。关闭是按钮 |
+| HubTabHeader | `HubTabHeader.tsx:34` | deep | 点标题开始拖。放进 `actions` 的按钮执行点击 |
+| CapabilityHubPage 顶栏 | `CapabilityHubPage.tsx:58` | deep | 点空白开始拖。tab 是 `role="tab"` 的按钮，执行切换 |
+| ServerConnectionBanner | `ServerConnectionBanner.tsx:33` | 仅 Tauri 为 deep | 点横幅文字开始拖。「重试」是按钮。网页模式不挂该属性 |
+
+下面这些一击就改状态。它们都不在拖拽区里；点拖拽区空白只会开始拖。误点要求光标正好在按钮上。
+
+| 控件 | 位置 | 撤销或确认 | 判断 |
+|---|---|---|---|
+| 审批允许 / 拒绝 | `DecisionCard.tsx:248`，权限卡 `PermissionCard.tsx:699-708` | 无。危险卡只禁用回车（`:694`） | 可接受。这是该开关要放行的点击 |
+| 停车审批、定时任务状态行、任务详情、自动化收件箱、敏感步骤跳过 | `ParkedApprovalCards.tsx:75-78`，`CronRunSessionStatusBar.tsx:246-256`，`CronJobApprovalHint.tsx:54-58`，`AutomationReviewInbox.tsx:477`，`SensitiveStepHandbackCard.tsx:146-156` | 无，与上表同一裁决口 | 可接受，同上 |
+| 中断条放弃 / 继续 | `DecisionSlot.tsx:161`、`:175` | 无。放弃调用 `interrupt()` | 可接受。运行已经中断；放弃是收掉，继续才重放 |
+| 会话冲突放弃 | `SessionConflictCard.tsx:79` | 无 | 可接受。结束占着会话的旧运行，不删文件 |
+| 计划取消、生成界面拒绝、死循环停止 | `PlanApprovalCard.tsx:595`，`GenerativeUIHost.tsx:89`，`DoomLoopHandbackBar.tsx:44` | 无 | 可接受。都是决策条上的一下 |
+| 停靠运行放弃 | `durableResume.tsx:173-186`，入口 `SendButton.tsx:135` | 第一下只打开确认框 | 可接受 |
+| 作曲家停止 | `SendButton.tsx:122`，`ChatView.tsx:401-404` | 用户停止后还能继续；终态化要再走确认放弃 | 可接受 |
+| 长工具强制停止 | `StreamingIndicator.tsx:183` | — | 可接受。没有任何调用方传入 `onForceStop`，按钮不出现 |
+| 删除会话 | `sessionUIStore.ts:191-217`；入口是 `sessionContextMenuItems.ts:517` 或多选栏 `Sidebar.tsx:823` | 5 秒后才真正删除；`undoDelete`（`sessionUIStore.ts:239`）和撤销条（`Sidebar.tsx:990`） | 可接受。平常的第一次左键到不了删除 |
+| 资料库删除，以及要第二下的删除 | `LibraryPanel.tsx:231-233`；专家团删除、还原出厂、定时任务 `window.confirm`、分享链接撤销同理 | 第一下只进入确认 | 可接受 |
+| 草稿拒绝 | `SkillDraftCard.tsx:178`，`RoleDraftCard.tsx:345`，`TeamRecipeDraftCard.tsx:93` | 无 | 可接受。丢掉的是未保存草稿 |
+| 后台会话停止 / 清掉，协作面板停止全部 | `BackgroundSessionPanel.tsx:140`、`:149`，`SessionAgentsPanel.tsx:198`、`:209` | 停止与作曲家停止同类；清掉的是面板上已结束的行 | 可接受。不在拖拽区 |
+| 剪藏删除 | `CaptureCard.tsx:88` | 无。图标默认隐藏，悬停才出现 | 可接受。不在拖拽区，点标题栏碰不到 |
+
+没有「不能恢复、没有确认、又铺在标题或拖拽空白上」的项。保持 `acceptFirstMouse`，不加第二步确认，本单不改行为。同一取舍的上游讨论是 tauri-apps/tauri#4316：打开之后，窗口里的控件会在第一次点击时生效；拖拽区空白则开始拖，点击不会被丢掉。
 
 ## 8. 外部参考
 

@@ -23,6 +23,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getLSPManager, type LSPDiagnostic } from '../../../lsp';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { diagnosticsSchema as schema } from './diagnostics.schema';
 
 type SeverityFilter = 'error' | 'warning' | 'all';
@@ -98,7 +99,7 @@ export async function executeDiagnostics(
   let scope: string;
 
   if (filePath) {
-    const resolvedPath = path.resolve(ctx.workingDir, filePath as string);
+    const resolvedPath = path.resolve(resolveInputPath(filePath as string, ctx.workingDir));
     diagnostics = manager.getFileDiagnostics(resolvedPath);
     scope = path.relative(ctx.workingDir, resolvedPath) || resolvedPath;
   } else {

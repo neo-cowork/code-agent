@@ -1,0 +1,2 @@
+{"id":"session-task-result-session-work-1795075980506-mvcbze","role":"system","content":"[任务结果] 权限｜已取消｜任务已取消。","metadata":"{\"backgroundTaskResult\":{\"source\":\"agent-result\",\"taskId\":\"session-work-1795075980506-mvcbze\",\"shortName\":\"权限\",\"status\":\"cancelled\",\"summary\":\"任务已取消。\"}}"}
+{"id":"background-task-stopped-session-work-1795075980506-mvcbze","role":"system","content":"「权限」：这个后台任务已取消。","metadata":"{\"backgroundTaskStopped\":{\"taskId\":\"session-work-1795075980506-mvcbze\",\"kind\":\"cancelled\"}}"}

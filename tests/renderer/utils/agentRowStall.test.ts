@@ -7,7 +7,7 @@
 // ============================================================================
 import { describe, expect, it } from 'vitest';
 import { WORKFLOW_STALL_THRESHOLDS } from '../../../src/shared/constants';
-import { isAgentRowQuiet } from '../../../src/renderer/utils/agentRowStall';
+import { agentRowStallLevel } from '../../../src/renderer/utils/agentRowStall';
 import type { AgentRow, MemberRowSource } from '../../../src/renderer/utils/agentRows';
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import type { SwarmAgentContextSnapshot, SwarmAgentState } from '../../../src/shared/contract/swarm';
@@ -72,58 +72,88 @@ function nodeRow(node: Partial<AgentTreeNode> = {}, overrides: Partial<AgentRow>
   };
 }
 
-describe('isAgentRowQuiet（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
+describe('agentRowStallLevel（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
+  // N-WF-STALL-SPAWN-AGENT-REST1：两档（quiet > N_SOFT_MS，long > N_HARD_MS），专家行与纯节点行同一组边界。
+  describe.each([
+    ['专家行', () => row()],
+    ['纯节点 spawn_agent 行', () => nodeRow({ updatedAt: T0 })],
+  ])('%s 两档边界', (_name, make) => {
+    it('119s none / 121s quiet / 599s quiet / 601s long', () => {
+      expect(agentRowStallLevel(make(), T0 + 119_000)).toBe('none');
+      expect(agentRowStallLevel(make(), T0 + 121_000)).toBe('quiet');
+      expect(agentRowStallLevel(make(), T0 + 599_000)).toBe('quiet');
+      expect(agentRowStallLevel(make(), T0 + 601_000)).toBe('long');
+    });
+
+    it('硬阈值正好压线仍是 quiet（严格大于才升 long）', () => {
+      expect(agentRowStallLevel(make(), T0 + WORKFLOW_STALL_THRESHOLDS.N_HARD_MS)).toBe('quiet');
+      expect(agentRowStallLevel(make(), T0 + WORKFLOW_STALL_THRESHOLDS.N_HARD_MS + 1)).toBe('long');
+    });
+
+    it('审批 hold 跨过 10 分钟也不出任何档；放行后两档都从放行时刻重新计', () => {
+      const held = make();
+      held.hold = 'approval';
+      expect(agentRowStallLevel(held, T0 + 601_000)).toBe('none');
+      expect(agentRowStallLevel(held, T0 + 3_600_000)).toBe('none');
+      const releasedAt = T0 + 700_000;
+      expect(agentRowStallLevel(make(), releasedAt + 119_000, releasedAt)).toBe('none');
+      expect(agentRowStallLevel(make(), releasedAt + 121_000, releasedAt)).toBe('quiet');
+      expect(agentRowStallLevel(make(), releasedAt + 599_000, releasedAt)).toBe('quiet');
+      expect(agentRowStallLevel(make(), releasedAt + 601_000, releasedAt)).toBe('long');
+    });
+  });
+
   it('working 行空转越过软阈值才报：119s 不报 / 121s 报', () => {
-    expect(isAgentRowQuiet(row(), T0 + 119_000)).toBe(false);
-    expect(isAgentRowQuiet(row(), T0 + 121_000)).toBe(true);
+    expect(agentRowStallLevel(row(), T0 + 119_000)).toBe('none');
+    expect(agentRowStallLevel(row(), T0 + 121_000)).not.toBe('none');
   });
 
   it('阈值取单一真源 N_SOFT_MS：正好压线不算（严格大于才报）', () => {
     expect(WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS).toBe(120_000);
-    expect(isAgentRowQuiet(row(), T0 + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS)).toBe(false);
+    expect(agentRowStallLevel(row(), T0 + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS)).toBe('none');
   });
 
   it('等审批不算卡住：用户在等，不是代理在等', () => {
-    expect(isAgentRowQuiet(row({ hold: 'approval' }), T0 + 121_000)).toBe(false);
+    expect(agentRowStallLevel(row({ hold: 'approval' }), T0 + 121_000)).toBe('none');
   });
 
   // N-WF-STALL-SPAWN-AGENT-APPROVAL-VERIFY：审批期间锚点不动，放行后必须重开一个完整窗口。
   it('审批 hold 整段等待（5 分钟）都不报；放行瞬间不闪，放行后满 120s 才报', () => {
     const held = row({ hold: 'approval' });
     for (let t = 0; t <= 300_000; t += 5_000) {
-      expect(isAgentRowQuiet(held, T0 + t)).toBe(false);
+      expect(agentRowStallLevel(held, T0 + t)).toBe('none');
     }
     const releasedAt = T0 + 300_000;
     const released = row();
     // 放行 tick：锚点还是 5 分钟前的 T0，但有效锚点应取 max(锚点, 放行时刻)
-    expect(isAgentRowQuiet(released, releasedAt, releasedAt)).toBe(false);
-    expect(isAgentRowQuiet(released, releasedAt + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS, releasedAt)).toBe(false);
-    expect(isAgentRowQuiet(released, releasedAt + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS + 1, releasedAt)).toBe(true);
+    expect(agentRowStallLevel(released, releasedAt, releasedAt)).toBe('none');
+    expect(agentRowStallLevel(released, releasedAt + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS, releasedAt)).toBe('none');
+    expect(agentRowStallLevel(released, releasedAt + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS + 1, releasedAt)).not.toBe('none');
   });
 
   it('放行后真实进展比放行时刻还新：以进展锚点为准', () => {
     const fresh = row({ member: memberRow({ live: liveAgentState({ contextSnapshot: liveSnapshot(T0 + 400_000) }) }) });
-    expect(isAgentRowQuiet(fresh, T0 + 400_000 + 121_000, T0 + 300_000)).toBe(true);
-    expect(isAgentRowQuiet(fresh, T0 + 400_000 + 119_000, T0 + 300_000)).toBe(false);
+    expect(agentRowStallLevel(fresh, T0 + 400_000 + 121_000, T0 + 300_000)).not.toBe('none');
+    expect(agentRowStallLevel(fresh, T0 + 400_000 + 119_000, T0 + 300_000)).toBe('none');
   });
 
   it('非 working 状态不报：waiting / done / failed / cancelled / standby', () => {
-    expect(isAgentRowQuiet(row({ status: 'waiting' }), T0 + 121_000)).toBe(false);
-    expect(isAgentRowQuiet(row({ status: 'done' }), T0 + 121_000)).toBe(false);
-    expect(isAgentRowQuiet(row({ status: 'failed' }), T0 + 121_000)).toBe(false);
-    expect(isAgentRowQuiet(row({ status: 'cancelled' }), T0 + 121_000)).toBe(false);
-    expect(isAgentRowQuiet(row({ status: 'standby' }), T0 + 121_000)).toBe(false);
+    expect(agentRowStallLevel(row({ status: 'waiting' }), T0 + 121_000)).toBe('none');
+    expect(agentRowStallLevel(row({ status: 'done' }), T0 + 121_000)).toBe('none');
+    expect(agentRowStallLevel(row({ status: 'failed' }), T0 + 121_000)).toBe('none');
+    expect(agentRowStallLevel(row({ status: 'cancelled' }), T0 + 121_000)).toBe('none');
+    expect(agentRowStallLevel(row({ status: 'standby' }), T0 + 121_000)).toBe('none');
   });
 
   it('没有活锚点 fail-closed 不报：后台任务行、无锚点的节点行、只有账本记录的成员（不回落 startTime）', () => {
-    expect(isAgentRowQuiet(row({ member: undefined }), T0 + 121_000)).toBe(false);
-    expect(isAgentRowQuiet(nodeRow(), T0 + 121_000)).toBe(false);
-    expect(isAgentRowQuiet(row({ kind: 'task', member: undefined }), T0 + 121_000)).toBe(false);
+    expect(agentRowStallLevel(row({ member: undefined }), T0 + 121_000)).toBe('none');
+    expect(agentRowStallLevel(nodeRow(), T0 + 121_000)).toBe('none');
+    expect(agentRowStallLevel(row({ kind: 'task', member: undefined }), T0 + 121_000)).toBe('none');
     // 生产形状：持久化记录 startTime 很老，但没有流状态 → 无活锚点 → 不报
-    expect(isAgentRowQuiet(
+    expect(agentRowStallLevel(
       row({ member: memberRow({ record: { startTime: T0 - 500_000 }, live: null }) }),
       T0 + 121_000,
-    )).toBe(false);
+    )).toBe('none');
   });
 
   it('r4 回归：跑了 >2 分钟但活锚点 10s 前（正在干活）不报', () => {
@@ -131,14 +161,14 @@ describe('isAgentRowQuiet（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
       record: { startTime: T0 - 500_000 },
       live: liveAgentState({ contextSnapshot: liveSnapshot(T0 + 110_000) }),
     });
-    expect(isAgentRowQuiet(row({ member }), T0 + 121_000)).toBe(false);
+    expect(agentRowStallLevel(row({ member }), T0 + 121_000)).toBe('none');
   });
 
   it('锚点前进即清：流状态 lastUpdated 刷到近期就不再报（新进展清提示）', () => {
-    expect(isAgentRowQuiet(
+    expect(agentRowStallLevel(
       row({ member: memberRow({ live: liveAgentState({ contextSnapshot: liveSnapshot(T0 + 120_000) }) }) }),
       T0 + 121_000,
-    )).toBe(false);
+    )).toBe('none');
   });
 
   it('memberProgressAnchor 装配口径：账本 state 无快照 → undefined；两路快照取最新；自带快照也算', () => {
@@ -161,27 +191,27 @@ describe('isAgentRowQuiet（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
   describe('agentTree 节点行（前台 spawn_agent，无 member）', () => {
     it('updatedAt 锚点：119s 不报 / 121s 报', () => {
       const r = nodeRow({ updatedAt: T0 });
-      expect(isAgentRowQuiet(r, T0 + 119_000)).toBe(false);
-      expect(isAgentRowQuiet(r, T0 + 121_000)).toBe(true);
+      expect(agentRowStallLevel(r, T0 + 119_000)).toBe('none');
+      expect(agentRowStallLevel(r, T0 + 121_000)).not.toBe('none');
     });
 
     it('锚点优先级 lastToolStep.at > updatedAt > createdAt', () => {
-      expect(isAgentRowQuiet(nodeRow({ createdAt: T0 }), T0 + 121_000)).toBe(true);
-      expect(isAgentRowQuiet(nodeRow({ createdAt: T0, updatedAt: T0 + 100_000 }), T0 + 121_000)).toBe(false);
-      expect(isAgentRowQuiet(
+      expect(agentRowStallLevel(nodeRow({ createdAt: T0 }), T0 + 121_000)).not.toBe('none');
+      expect(agentRowStallLevel(nodeRow({ createdAt: T0, updatedAt: T0 + 100_000 }), T0 + 121_000)).toBe('none');
+      expect(agentRowStallLevel(
         nodeRow({ createdAt: T0, updatedAt: T0, lastToolStep: { tool: 'Read', at: T0 + 100_000 } }),
         T0 + 121_000,
-      )).toBe(false);
+      )).toBe('none');
     });
 
     it('锚点前进即清', () => {
-      expect(isAgentRowQuiet(nodeRow({ updatedAt: T0 }), T0 + 121_000)).toBe(true);
-      expect(isAgentRowQuiet(nodeRow({ updatedAt: T0 + 60_000 }), T0 + 121_000)).toBe(false);
+      expect(agentRowStallLevel(nodeRow({ updatedAt: T0 }), T0 + 121_000)).not.toBe('none');
+      expect(agentRowStallLevel(nodeRow({ updatedAt: T0 + 60_000 }), T0 + 121_000)).toBe('none');
     });
 
     it('等审批不报；非 working 不报', () => {
-      expect(isAgentRowQuiet(nodeRow({ updatedAt: T0 }, { hold: 'approval' }), T0 + 121_000)).toBe(false);
-      expect(isAgentRowQuiet(nodeRow({ updatedAt: T0 }, { status: 'done' }), T0 + 121_000)).toBe(false);
+      expect(agentRowStallLevel(nodeRow({ updatedAt: T0 }, { hold: 'approval' }), T0 + 121_000)).toBe('none');
+      expect(agentRowStallLevel(nodeRow({ updatedAt: T0 }, { status: 'done' }), T0 + 121_000)).toBe('none');
     });
   });
 
@@ -191,14 +221,14 @@ describe('isAgentRowQuiet（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
         node: nodeRow({ updatedAt: T0 - 500_000, lastToolStep: { tool: 'Read', at: T0 - 500_000 } }).node,
         member: memberRow({ live: liveAgentState({ contextSnapshot: liveSnapshot(T0 + 100_000) }) }),
       });
-      expect(isAgentRowQuiet(merged, T0 + 121_000)).toBe(false);
+      expect(agentRowStallLevel(merged, T0 + 121_000)).toBe('none');
     });
 
     it('节点 lastToolStep.at 必须算进展：无流状态时它是唯一锚点，老则报、新则清', () => {
       const nodeStale = nodeRow({ lastToolStep: { tool: 'Read', at: T0 } }).node;
-      expect(isAgentRowQuiet(row({ node: nodeStale, member: memberRow({ live: null }) }), T0 + 121_000)).toBe(true);
+      expect(agentRowStallLevel(row({ node: nodeStale, member: memberRow({ live: null }) }), T0 + 121_000)).not.toBe('none');
       const nodeFresh = nodeRow({ lastToolStep: { tool: 'Read', at: T0 + 110_000 } }).node;
-      expect(isAgentRowQuiet(row({ node: nodeFresh, member: memberRow({ live: null }) }), T0 + 121_000)).toBe(false);
+      expect(agentRowStallLevel(row({ node: nodeFresh, member: memberRow({ live: null }) }), T0 + 121_000)).toBe('none');
     });
 
     it('成员行不用 node.updatedAt 当锚点（心跳风险）：updated 新也不能压住老的工具步', () => {
@@ -206,7 +236,7 @@ describe('isAgentRowQuiet（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
         node: nodeRow({ updatedAt: T0 + 110_000, lastToolStep: { tool: 'Read', at: T0 } }).node,
         member: memberRow({ live: null }),
       });
-      expect(isAgentRowQuiet(merged, T0 + 121_000)).toBe(true);
+      expect(agentRowStallLevel(merged, T0 + 121_000)).not.toBe('none');
     });
   });
 });

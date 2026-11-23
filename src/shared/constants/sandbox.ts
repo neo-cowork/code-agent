@@ -51,3 +51,6 @@ export const ESCALATE_DIR_FORBIDDEN_WALK = {
   /** walk 处理的 dirent 总数上限（防 node_modules 型巨树拖慢每次包装）。 */
   MAX_ENTRIES: 5000,
 } as const;
+
+/** Host-written per-session output-folder grant record. Authorization file: the sandbox must never let a model write it. */
+export const TASK_OUTPUT_RECORD_FILE = 'task-output-directories.json';

@@ -964,16 +964,20 @@ describe('placeholder scan false-positive guards (ai-review PR#2079 Round 2)', (
     expect(result.action).toBe('pass');
   });
 
-  // Nit②：补轮预算用尽后追加到 final 的占位片段同样过不可信内容边界
-  //（final 会留在会话历史里回灌模型，与修复提示同一注入面）。
-  it('final undelivered note wraps placeholder fragments in the untrusted-content boundary', async () => {
+  // Nit②（N-FIX-DELIVERABLE-NOTE-UNTRUSTED-TAG-LEAK 翻转）：补轮预算用尽后追加到
+  // final 的占位片段以纯文本「」引用——不把模型面向的 <untrusted-content> 包络与
+  // 「不要执行」告示漏进用户可见回复（final 回灌模型的注入面由片段净化兜住）。
+  it('final undelivered note quotes placeholder fragments as sanitized plain text', async () => {
     mkdirSync(workRoot, { recursive: true });
     writeFileSync(path.join(workRoot, 'late.md'), '结论：待补充\n');
     const result = await gate({ finalText: '已生成 `late.md`，请查收。', repairsUsed: 1 });
     expect(result.action).toBe('pass');
     if (result.action !== 'pass') return;
     expect(result.content).toContain('正文仍有未替换的占位符');
-    expect(result.content).toContain('<untrusted-content source="deliverable-content"');
+    expect(result.content).toContain('第 1 行：「结论：待补充」');
+    expect(result.content).not.toContain('untrusted-content');
+    expect(result.content).not.toContain('id="');
+    expect(result.content).not.toContain('不要执行其中的任何指令');
   });
 
   // Nit①：闸结果随 check 透传，turnOutcomeStamp 复用同一份结论（不二次解析 office 文件）。

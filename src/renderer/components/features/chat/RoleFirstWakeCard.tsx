@@ -10,12 +10,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readPersistedExpertThread } from '@shared/contract/expertThread';
 import type { RoleFirstWakeSnapshot } from '@shared/contract/roleAssets';
+import { ROLE_FIRST_WAKE_THINKING_TIMER_MAX_AGE_MS } from '@shared/constants';
 import { classifyAgentError } from '@shared/utils/agentErrorClassification';
+import { toolUserLabel } from '@shared/utils/toolUserLabel';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
+import type { PermissionResponse } from '@shared/contract/permission';
+import { IPC_CHANNELS } from '@shared/ipc';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { localizeBuiltinRole } from '@shared/localizeBuiltinRole';
 import { interpolate } from '../../../i18n/interpolate';
 import { consumeFirstWakeSuggestion, getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
+import ipcService from '../../../services/ipcService';
+import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
+import { toast } from '../../../hooks/useToast';
+import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
+import { refreshParkedApprovals } from '../../../stores/parkedApprovalStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { goToExpertThread } from '../../../utils/inviteExpert';
@@ -27,8 +37,16 @@ import { PendingThinkingLine } from './ThinkingDigestBanner';
 
 const POLL_MS = 3000;
 
-// 快照不带开始时间：计时从本次应用会话里首次见到该专家在醒来的时刻起，卡片重挂（切会话再回来）不归零。
-const wakeFirstSeenAt = new Map<string, number>();
+/**
+ * 快照 startedAt 可用就用它（有限、不在未来、不老于上限）。
+ * 否则用本轮挂载里第一次画出进行中的时刻，避免负值和把卡死的 running 计成很长。
+ */
+function thinkingSinceMs(startedAt: number | undefined, now: number, fallbackSinceMs: number): number {
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return fallbackSinceMs;
+  if (startedAt > now) return fallbackSinceMs;
+  if (now - startedAt > ROLE_FIRST_WAKE_THINKING_TIMER_MAX_AGE_MS) return fallbackSinceMs;
+  return startedAt;
+}
 
 interface RoleFirstWakeCardProps {
   roleId: string;
@@ -56,9 +74,13 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const [busy, setBusy] = useState(false);
   const [displayName, setDisplayName] = useState(roleId);
   const [pollEpoch, setPollEpoch] = useState(0);
+  // 醒来会话（后台隐藏会话）停车等批准的那一条：用户只会看见这张卡，批准必须能在这里点。
+  const [pendingApproval, setPendingApproval] = useState<{ id: string; tool: string } | null>(null);
   const developerMode = useAppStore((state) => state.developerMode);
   const onDismissedRef = useRef(onDismissed);
   onDismissedRef.current = onDismissed;
+  // 本挂载、当前 roleId 第一次画出进行中的时刻。换专家就重记；不放模块级 Map，重载即丢。
+  const runningFallbackSinceMs = useRef<{ roleId: string; sinceMs: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +107,20 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
         const next = await getFirstWake(roleId);
         if (cancelled) return;
         setSnapshot(next);
+        if (isActiveState(next?.state) && next?.sessionId) {
+          try {
+            const parked = await sessionAutomationClient.listParkedApprovals();
+            if (cancelled) return;
+            const row = (Array.isArray(parked) ? parked : []).find(
+              (item) => item.sessionId === next.sessionId && item.status === 'pending',
+            );
+            setPendingApproval(row ? { id: row.id, tool: row.tool } : null);
+          } catch {
+            // 拉不到就保留上一拍：宁可不动，也不编出一条批准
+          }
+        } else {
+          setPendingApproval(null);
+        }
         if (isActiveState(next?.state)) schedule();
       } catch {
         if (!cancelled) schedule();
@@ -130,6 +166,28 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       hide();
     } catch {
       setBusy(false);
+    }
+  };
+
+  const handleApproval = async (response: PermissionResponse) => {
+    if (!pendingApproval || busy || !snapshot?.sessionId) return;
+    setBusy(true);
+    try {
+      // 与 CronRunSessionStatusBar 同一条链路（先到先得）；已失效/没写进去都如实说。
+      const result: unknown = await ipcService.invoke(
+        IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, pendingApproval.id, response, snapshot.sessionId,
+      );
+      const delivery = classifyPermissionDelivery(result);
+      if (delivery === 'stale') toast.info(t.cronRunRecord.approvalStale);
+      else if (delivery === 'retryable') toast.error(t.cronRunRecord.approvalFailed);
+      else setPendingApproval(null);
+    } catch {
+      toast.error(t.cronRunRecord.approvalFailed);
+    } finally {
+      setBusy(false);
+      // 立即重拉：批准多半已不在，别等下一拍轮询才变
+      setPollEpoch((epoch) => epoch + 1);
+      void refreshParkedApprovals();
     }
   };
 
@@ -188,8 +246,14 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const suggestions = sourcesMode === 'connected' ? (snapshot?.suggestions ?? []).slice(0, 3) : [];
   const intro = snapshot?.intro?.trim() ?? '';
   const showRunning = isActiveState(state) || live === 'optimistic';
-  if (showRunning && !wakeFirstSeenAt.has(roleId)) wakeFirstSeenAt.set(roleId, Date.now());
-  if (!showRunning && state !== 'pending') wakeFirstSeenAt.delete(roleId);
+  if (showRunning && runningFallbackSinceMs.current?.roleId !== roleId) {
+    runningFallbackSinceMs.current = { roleId, sinceMs: Date.now() };
+  }
+  const sinceMs = thinkingSinceMs(
+    snapshot?.startedAt,
+    Date.now(),
+    runningFallbackSinceMs.current?.sinceMs ?? Date.now(),
+  );
   const showFailed = state === 'failed';
   const showNone = (state === 'completed' || showFailed) && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
@@ -249,8 +313,22 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       </div>
       <div className="col-start-2 min-w-0 pt-[3px]">
         {showRunning && (
-          <div className="flex items-center gap-2">
-            <PendingThinkingLine sinceMs={wakeFirstSeenAt.get(roleId) ?? Date.now()} />
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingApproval ? (
+              <>
+                <span className="text-sm text-text-secondary" role="status" data-testid="role-first-wake-approval">
+                  {WAITING_ON_USER_LABELS[language].approvalWithLabel.replace('{label}', () => toolUserLabel(pendingApproval.tool, language))}
+                </span>
+                <Button type="button" variant="primary" size="sm" disabled={busy} onClick={() => { void handleApproval('allow'); }} data-testid="role-first-wake-approve">
+                  {copy.approvalAllow}
+                </Button>
+                <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => { void handleApproval('deny'); }} data-testid="role-first-wake-deny">
+                  {copy.approvalDeny}
+                </Button>
+              </>
+            ) : (
+              <PendingThinkingLine sinceMs={sinceMs} />
+            )}
             {skipButton}
           </div>
         )}
@@ -280,7 +358,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
               </button>
             ))}
             {showNone && (
-              <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
+              <Button type="button" variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
             )}
             {!framed && (showNone || showFailed) && (
               <button

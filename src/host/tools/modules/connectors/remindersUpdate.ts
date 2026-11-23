@@ -15,6 +15,8 @@ import { formatConnectorUnavailableMessage } from './connectorStatusText';
 import { createFailedReceiptArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { describeAppleScriptWriteFailure } from './appleScriptWriteFailure';
 import { remindersUpdateSchema as schema } from './remindersUpdate.schema';
+import { remindersUpdateNoChangeError } from './remindersApprovalDetails';
+import { normalizeReminderCreateTime } from '../../reminderCreateTime';
 import { captureReminderBefore } from './undoMetadata';
 
 async function executeRemindersUpdate(
@@ -29,6 +31,13 @@ async function executeRemindersUpdate(
   if (typeof args.reminder_id !== 'string' || args.reminder_id.length === 0) {
     return { ok: false, error: 'reminder_id must be a non-empty string', code: 'INVALID_ARGS' };
   }
+  // 空更新（没带任何有效变更字段）在审批前拒绝：覆盖审批被预授/跳过的轮次，别等连接器兜底。
+  const noChangeError = remindersUpdateNoChangeError(args);
+  if (noChangeError) {
+    return { ok: false, error: noChangeError, code: 'INVALID_ARGS' };
+  }
+  const reminderTime = normalizeReminderCreateTime(schema.name, args);
+  if (!reminderTime.ok) return reminderTime;
 
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {

@@ -19,6 +19,7 @@ import type { ProbeResult, ReadOnlyProbe } from '../permissions/envAssist/probes
 import { resolveShellBridgeClientFromEnv } from '../permissions/envAssist/shellBridge/client';
 import { resolveEnvAssistNotice } from '../permissions/envAssist/toolNotice';
 import { createLogger } from '../services/infra/logger';
+import { isAutomationDenialOverridden } from '../services/infra/devFaultLoader';
 import { armEnvResumeOnSessionReturn, type EnvResumeProbeFactory } from '../runtime/envResumeWaiter';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
@@ -120,7 +121,11 @@ function noticeProbe(deps: EnvAssistDependencies, notice: EnvAssistNotice, pane:
   if (notice.target?.id.startsWith('helper')) {
     return pane === 'accessibility' || pane === 'screenCapture' ? cuaHelperProbe(deps.cuaHelperState ?? readCuaHelperPermissionState, pane) : null;
   }
-  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(notice.target?.id));
+  const targetId = notice.target?.id;
+  if (pane === 'automation' && targetId && isAutomationDenialOverridden(targetId)) {
+    return async () => ({ status: 'denied' });
+  }
+  return resolveGrantProbe(pane, deps.passiveBridge, automationBundleId(targetId));
 }
 
 /** Every probe that reads granted closes the card, whether the grant came from the button or from System Settings. */
@@ -209,6 +214,8 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
       return settle(deps, notice, { status: 'checked', outcome: calendarOutcome(asked.access) });
     }
     if (request.actionKind === 'request_grant') {
+      // No grant API exists for files: Settings is the only route.
+      if (request.payload.pane === 'filesAndFolders') return { status: 'rejected' };
       const targetBundleId = automationBundleId(notice.target?.id);
       const probe = noticeProbe(deps, notice, request.payload.pane);
       if (!probe) return { status: 'rejected' };
@@ -222,7 +229,7 @@ const routes = defineDomainRoutes(EnvAssistSchemas.REQUEST, {
         }
       }
       const token = mintClickToken(notice.id, deps.now);
-      const grant = await requestGrant(token, { ...request.payload, targetBundleId }, deps.grantBridge ?? null, deps.now);
+      const grant = await requestGrant(token, { pane: request.payload.pane, targetBundleId }, deps.grantBridge ?? null, deps.now);
       return settle(deps, notice, { status: grant === 'requested' ? 'checked' : grant, outcome: await probe() });
     }
     if (!deps.available()) return { status: 'not_available' };

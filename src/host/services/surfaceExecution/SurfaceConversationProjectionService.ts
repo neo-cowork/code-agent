@@ -418,6 +418,71 @@ function sanitizedConversationSnapshot(
   };
 }
 
+const BROWSER_OCCUPANCY_STATES: ReadonlySet<SurfaceSessionViewV1['state']> = new Set([
+  'preparing',
+  'running',
+  'stopping',
+]);
+
+function isBrowserOccupancy(projection: SurfaceSessionProjectionV1): boolean {
+  return projection.session.surface === 'browser'
+    && BROWSER_OCCUPANCY_STATES.has(projection.session.state);
+}
+
+function terminalBrowserState(
+  projection: SurfaceSessionProjectionV1,
+): 'completed' | 'failed' | null {
+  if (projection.session.surface !== 'browser') return null;
+  if (projection.session.state === 'failed') return 'failed';
+  if (projection.session.state === 'completed') return 'completed';
+  return null;
+}
+
+/** A stored mid-run snapshot must not outrank a terminal record of the same session. */
+function preferTerminalBrowserSession(
+  authoritative: SurfaceSessionProjectionV1,
+  secondary: SurfaceSessionProjectionV1,
+): SurfaceSessionViewV1 {
+  if (authoritative.source === 'live' || !isBrowserOccupancy(authoritative)) {
+    return authoritative.session;
+  }
+  const terminal = terminalBrowserState(secondary);
+  if (!terminal) return authoritative.session;
+  return { ...authoritative.session, state: terminal };
+}
+
+function terminalStateFromEvents(
+  events: readonly SurfaceExecutionEventV1[],
+): 'completed' | 'failed' | null {
+  const last = events.at(-1);
+  if (!last) return null;
+  if (last.sessionState === 'failed' || last.status === 'failed') return 'failed';
+  if (last.sessionState === 'completed') return 'completed';
+  if (last.phase === 'cleanup' && (last.status === 'succeeded' || last.status === 'cancelled')) {
+    return 'completed';
+  }
+  return null;
+}
+
+/**
+ * After the owning run is gone, a browser snapshot left at preparing/running/stopping
+ * is not occupancy. Live sessions are untouched so an in-process run still reads as working.
+ */
+function settleEndedBrowserOccupancy(
+  projection: SurfaceSessionProjectionV1,
+  liveSessionIds: ReadonlySet<string>,
+): SurfaceSessionProjectionV1 {
+  if (projection.source === 'live' || liveSessionIds.has(projection.session.sessionId)) return projection;
+  if (!isBrowserOccupancy(projection)) return projection;
+  const state = terminalStateFromEvents(projection.events) ?? 'completed';
+  if (state === projection.session.state) return projection;
+  return {
+    ...projection,
+    session: { ...projection.session, state },
+    writable: false,
+  };
+}
+
 function mergeProjection(
   current: SurfaceSessionProjectionV1 | undefined,
   incoming: SurfaceSessionProjectionV1,
@@ -435,8 +500,10 @@ function mergeProjection(
     [...outputsFromEvents(events), ...secondary.outputs, ...authoritative.outputs],
     (item) => item.ref,
   );
+  const session = preferTerminalBrowserSession(authoritative, secondary);
   return {
     ...structuredClone(authoritative),
+    session,
     events,
     evidence,
     outputs,
@@ -628,6 +695,7 @@ export class SurfaceConversationProjectionService {
       this.runtime.snapshotConversation(conversationId),
       conversationId,
     );
+    const liveSessionIds = new Set((live?.sessions ?? []).map((projection) => projection.session.sessionId));
     const snapshot = mergeConversationSnapshot({
       conversationId,
       persisted,
@@ -639,12 +707,13 @@ export class SurfaceConversationProjectionService {
     return {
       ...snapshot,
       sessions: snapshot.sessions.map((projection) => {
+        const settled = settleEndedBrowserOccupancy(projection, liveSessionIds);
         const pending = this.continuations.peek(
-          projection.session.conversationId,
-          projection.session.agentId,
+          settled.session.conversationId,
+          settled.session.agentId,
         );
-        if (pending?.parentSessionId !== projection.session.sessionId) return projection;
-        return { ...projection, availableControls: [] };
+        if (pending?.parentSessionId !== settled.session.sessionId) return settled;
+        return { ...settled, availableControls: [] };
       }),
     };
   }
