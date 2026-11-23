@@ -144,6 +144,22 @@ describe('systemContextStack.addAndPersistMessage', () => {
       expect(visible[0].toolCalls?.[0].arguments).toEqual({ command: './check.sh' });
     });
 
+    it('does not leak the background run narration next to the failed command', async () => {
+      const { ctx, visibleReplay } = makeLedgerCtx();
+      await addAndPersistMessage(ctx, { ...bashCall, content: 'The blocked call used command substitution; rerunning in plain form.' });
+      await addAndPersistMessage(ctx, {
+        id: 'tool-result',
+        role: 'tool',
+        content: '',
+        timestamp: 3,
+        toolResults: [{ toolCallId: 'call-1', success: false, error: 'exit 3', metadata: { code: 'COMMAND_FAILED', output: 'missing: brief.pdf' } }],
+      });
+
+      const visible = visibleReplay();
+      expect(visible[0].toolCalls?.[0].arguments).toEqual({ command: './check.sh' });
+      expect(JSON.stringify(visible)).not.toContain('rerunning in plain form');
+    });
+
     it('keeps the delegated prompt and a successful probe hidden', async () => {
       const { ctx, visibleReplay } = makeLedgerCtx();
       await addAndPersistMessage(ctx, { ...delegatedPrompt });

@@ -410,15 +410,18 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
   }
 }
 
-/** 把发起失败命令的助手消息（先前按 meta 落库）改成对用户可见并重写一次；落库失败只告警，不挡后续。 */
+/**
+ * 发起失败命令的助手消息（先前按 meta 落库）：重写一份对用户可见、但不带旁白正文的副本，
+ * 只露命令行本身（模型对后台 run 的自述不给用户看）。运行时内存里的原消息不动。落库失败只告警，不挡后续。
+ */
 async function revealCommandCallMessages(ctx: ContextAssemblyCtx, toolCallIds: string[]): Promise<void> {
   for (const assistant of ctx.runtime.messages) {
     if (assistant.role !== 'assistant' || !assistant.isMeta) continue;
     if (!assistant.toolCalls?.some((call) => toolCallIds.includes(call.id))) continue;
-    assistant.isMeta = false;
+    const visibleCopy: Message = { ...assistant, content: '', isMeta: false };
     try {
-      if (ctx.runtime.persistMessage) await ctx.runtime.persistMessage(assistant);
-      else if (ctx.runtime.sessionId) await getSessionManager().addMessageToSession(ctx.runtime.sessionId, assistant);
+      if (ctx.runtime.persistMessage) await ctx.runtime.persistMessage(visibleCopy);
+      else if (ctx.runtime.sessionId) await getSessionManager().addMessageToSession(ctx.runtime.sessionId, visibleCopy);
     } catch (error) {
       logger.warn('[ContextAssembly] failed to reveal failed-command call message', {
         reason: 'failed_command_reveal_error',
