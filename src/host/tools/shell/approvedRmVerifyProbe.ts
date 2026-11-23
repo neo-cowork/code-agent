@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { homedir } from 'node:os';
 import { parseShellCommand } from '../../security/commandParse';
 import { createLogger } from '../../services/infra/logger';
 
@@ -33,11 +32,10 @@ export function isApprovedRmVerifyProbe(command: string, workingDirectory: strin
   if (parsed.parsingFailed || parsed.trailingOperator || parsed.uncertain.length > 0
     || parsed.writeTargets.length > 0 || parsed.segments.length === 0) return false;
   let pathOperands = 0;
-  const home = homedir();
-  const approved = (word: string) => {
-    const literal = word === '~' ? home : word.startsWith('~/') ? path.join(home, word.slice(2)) : word;
-    return bucket.has(path.resolve(workingDirectory, literal));
-  };
+  // The parser drops quotes, so `~` could be expanded or literal in bash, and `..` can cross a symlink that
+  // path.resolve folds away: only plain spellings are compared with the approved files.
+  const approved = (word: string) => !word.startsWith('~') && !word.split('/').includes('..')
+    && bucket.has(path.resolve(workingDirectory, word));
   // `for f in <approved files>; do if [ -e "$f" ]; ...; fi; done`: the list is only approved files, so "$f" is too.
   const loopVars = new Set<string>();
   for (const segment of parsed.segments) {

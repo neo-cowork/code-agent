@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const logs = vi.hoisted(() => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
@@ -339,6 +339,21 @@ describe('approved rm production approval boundary', () => {
       expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(spaced);
       expect(isApprovedRmVerifyProbe(`for p in "${spaced}"; do ls -la $p; done`, cwd, SESSION)).toBe(false);
       expect(isApprovedRmVerifyProbe(`ls -la "${spaced}"`, cwd, SESSION)).toBe(true);
+    });
+
+    it('does not treat ~ or .. spellings as the approved file (bash reads a different path)', () => {
+      const homeFile = join(homedir(), `approved-rm-tilde-${process.pid}.tmp`);
+      writeFileSync(homeFile, 'x');
+      try {
+        input.params.command = `rm -- '${homeFile}'`;
+        expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(homeFile);
+        const name = homeFile.slice(homedir().length + 1);
+        expect(isApprovedRmVerifyProbe(`test -e ${homeFile}`, cwd, SESSION)).toBe(true);
+        expect(isApprovedRmVerifyProbe(`if [ -e "~/${name}" ]; then echo STILL; else echo GONE; fi`, cwd, SESSION)).toBe(false);
+        expect(isApprovedRmVerifyProbe(`for p in "~/${name}"; do ls -l "$p"; done`, cwd, SESSION)).toBe(false);
+        expect(isApprovedRmVerifyProbe(`ls ~/${name}`, cwd, SESSION)).toBe(false);
+        expect(isApprovedRmVerifyProbe(`[ -e /tmp/../${homeFile.slice(1)} ]`, cwd, SESSION)).toBe(false);
+      } finally { rmSync(homeFile, { force: true }); }
     });
 
     it('does not remember files when the approval is refused', () => {
