@@ -106,7 +106,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: Object.assign(
-    (selector: (state: { currentSessionId: string | null; messages: Message[] }) => unknown) => (
+    (selector: (state: { currentSessionId: string | null; messages: Message[]; sessions: never[] }) => unknown) => (
       selector({ currentSessionId: currentSession.id, messages: [], sessions: [] })
     ),
     { getState: () => ({ currentSessionId: currentSession.id, messages: [], sessions: [] }) },
