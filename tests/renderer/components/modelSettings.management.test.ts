@@ -513,7 +513,7 @@ describe('ModelSettings management helpers', () => {
   it.each([
     { listed: ['gateway-chat', 'mimo-v2.6-flash'], selected: 'mimo-v2.6-flash' },
     { listed: ['mimo-v2.6-flash', getProviderInfo('xiaomi')!.defaultModel], selected: getProviderInfo('xiaomi')!.defaultModel },
-    { listed: ['gateway-chat', 'another-gateway-chat'], selected: 'gateway-chat' },
+    { listed: ['__proto__', 'gateway-chat', 'another-gateway-chat'], selected: 'gateway-chat' },
   ])('picks $selected from discovery for promotion', async ({ listed, selected }) => {
     const discover = vi.spyOn(ipcService, 'invokeDomain').mockResolvedValueOnce({
       success: true,
@@ -525,6 +525,7 @@ describe('ModelSettings management helpers', () => {
       const settings = {
         models: { default: 'openai', providers: { openai: { enabled: true } } },
       } as unknown as AppSettings;
+      discover.mockResolvedValueOnce(settings);
       const config = { enabled: true, apiKeyConfigured: true, baseUrl: 'https://subscription.test/v1' };
       const promotion = await buildProviderSavePromotion('xiaomi', config, settings, settings);
       expect(promotion?.update.models?.providers.xiaomi.model).toBe(selected);

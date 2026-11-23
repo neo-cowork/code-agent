@@ -204,31 +204,36 @@ async function resolvePromotionModel(
   try {
     // The provider key has already been saved. Discovery resolves it in the host.
     const result = await ipcService.invokeDomain<DiscoverModelsResult>(IPC_DOMAINS.PROVIDER, 'discover_models', {
-      provider, baseUrl: config.baseUrl, protocol: config.protocol,
+      provider, baseUrl: config.baseUrl, protocol: config.protocol, includeAllModels: true,
     });
     if (!result?.success) {
       logger.warn('Default model discovery failed during provider save', { provider, code: result?.error?.code });
       return config;
     }
 
-    const model = pickDiscoveredDefaultModel(provider, result.models);
-    if (!model) {
+    if (!result.models.length) {
       logger.warn('Default model discovery returned no models during provider save', { provider });
+      return config;
+    }
+
+    // Discovered IDs can become keys in the persisted model settings object.
+    const selectableModels = result.models.filter(({ id }) =>
+      !Object.hasOwn(Object.prototype, id) && config.models?.[id]?.enabled !== false
+    );
+    const model = pickDiscoveredDefaultModel(provider, selectableModels);
+    if (!model) {
+      logger.warn('Default model discovery returned no selectable models during provider save', { provider });
       return config;
     }
     const existing = config.models?.[model.id];
     const catalog = PROVIDER_MODELS_MAP[provider]?.models;
-    if (catalog?.some(({ id }) => id === model.id) && existing?.enabled !== false) {
-      return { ...config, model: model.id };
-    }
+    if (existing?.enabled || catalog?.some(({ id }) => id === model.id)) return { ...config, model: model.id };
     return {
       ...config,
       model: model.id,
       models: {
         ...config.models,
-        [model.id]: existing
-          ? { ...existing, enabled: true }
-          : mergeDiscoveredModelEntry(undefined, model, true, config.updatedAt ?? Date.now()),
+        [model.id]: mergeDiscoveredModelEntry(existing, model, true, config.updatedAt ?? Date.now()),
       },
     };
   } catch (error) {
@@ -249,18 +254,32 @@ export async function buildProviderSavePromotion(
     && hasCustomEndpointOverride(provider, config.baseUrl, config.protocol);
 
   // The just-saved key can make a factory default on this same provider look already configured.
-  const settingsForPromotion = shouldDiscover && previousSettings ? {
-    ...latestSettings,
+  const beforeKeySave = (settings: AppSettings): AppSettings => ({
+    ...settings,
     models: {
-      ...latestSettings.models,
-      providers: { ...latestSettings.models.providers, [provider]: previousConfig ?? { enabled: false } },
+      ...settings.models,
+      providers: { ...settings.models.providers, [provider]: previousConfig ?? { enabled: false } },
     },
-  } : latestSettings;
-  if (!shouldPromoteProviderToDefault(provider, config, settingsForPromotion)) return undefined;
+  });
+  const usePreviousAvailability = shouldDiscover && Boolean(previousSettings);
+  if (!shouldPromoteProviderToDefault(provider, config, usePreviousAvailability ? beforeKeySave(latestSettings) : latestSettings)) return undefined;
 
   const resolvedConfig = shouldDiscover ? await resolvePromotionModel(provider, config) : config;
-  if (resolvedConfig === config && !shouldPromoteProviderToDefault(provider, config, latestSettings)) return undefined;
-  return { config: resolvedConfig, update: buildDefaultModelSettingsUpdate(provider, resolvedConfig, settingsForPromotion) };
+  // Read again after the network request so the promotion respects changes made during discovery.
+  const currentSettings = shouldDiscover ? await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get') : latestSettings;
+  const currentConfig = currentSettings.models.providers[provider];
+  const latestConfig = latestSettings.models.providers[provider];
+  if (currentConfig?.model !== latestConfig?.model
+    || currentConfig?.baseUrl !== latestConfig?.baseUrl
+    || currentConfig?.updatedAt !== latestConfig?.updatedAt) return undefined;
+
+  const settingsForPromotion = usePreviousAvailability && resolvedConfig !== config ? beforeKeySave(currentSettings) : currentSettings;
+  if (!shouldPromoteProviderToDefault(provider, resolvedConfig, settingsForPromotion)) return undefined;
+  const currentMain = currentSettings.models.taskStrategy?.profiles.main;
+  const latestMain = latestSettings.models.taskStrategy?.profiles.main;
+  const mainChanged = currentMain?.provider !== latestMain?.provider || currentMain?.model !== latestMain?.model;
+  const update = buildDefaultModelSettingsUpdate(provider, resolvedConfig, mainChanged ? null : settingsForPromotion);
+  return { config: resolvedConfig, update };
 }
 
 /** promote 时一并接管的「任务主模型」档（FB-1800）：运行时的代码/文件/产物任务走

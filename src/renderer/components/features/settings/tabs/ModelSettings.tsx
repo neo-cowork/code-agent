@@ -466,12 +466,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     try {
       const providerConfigForSave = buildCurrentProviderConfigForSave(currentProviderConfig?.model || config.model);
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', buildProviderSettingsUpdate(config.provider, providerConfigForSave));
-      setProviderConfigs((prev) => ({
-        ...prev,
-        [config.provider]: providerConfigForSave,
-      }));
-      // 主任务模型指针与已配置 provider 解耦修复：出厂默认没 key 时，配好的 provider 自动接管主任务模型，
-      // 否则发送被门禁拦下（"当前主任务模型未配置 API Key"）。
+      setProviderConfigs((prev) => ({ ...prev, [config.provider]: providerConfigForSave }));
       setAppSettings((prev) => prev ? {
         ...prev,
         models: {
@@ -491,6 +486,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', promotion.update);
           const promotedModel = promotion.config.model || config.model;
           patchCurrentProviderConfig({ model: promotedModel, models: promotion.config.models });
+          if (promotion.config !== providerConfigForSave && promotedModel !== config.model) {
+            const model = getProviderRuntimeModels(currentProviderInfo, promotion.config).find(({ id }) => id === promotedModel);
+            onChange({ ...config, model: promotedModel, capabilities: model?.capabilities, maxTokens: model?.maxTokens ?? config.maxTokens });
+          }
           const promotedTaskStrategy = promotion.update.models?.taskStrategy;
           if (promotedTaskStrategy) setTaskStrategy(promotedTaskStrategy);
           setDefaultSelection({ provider: config.provider, model: promotedModel });

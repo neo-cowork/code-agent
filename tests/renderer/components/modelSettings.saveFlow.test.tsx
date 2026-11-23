@@ -135,9 +135,12 @@ async function freshSettingsGet(): Promise<AppSettings> {
   return (await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'get')) as AppSettings;
 }
 
-function Settings({ initialProvider = 'deepseek' as ModelConfig['provider'] }: { initialProvider?: ModelConfig['provider'] }) {
+function Settings({
+  initialProvider = 'deepseek',
+  onModelChange,
+}: { initialProvider?: ModelConfig['provider']; onModelChange?: (config: ModelConfig) => void }) {
   const [config, setConfig] = useState<ModelConfig>({ provider: initialProvider, model: getProviderInfo(initialProvider)!.defaultModel, apiKey: '', temperature: 0.7 });
-  return <ModelSettings config={config} onChange={setConfig} />;
+  return <ModelSettings config={config} onChange={onModelChange ? (next) => { setConfig(next); onModelChange(next); } : setConfig} />;
 }
 
 const DEEPSEEK_KEY = 'sk-hermetic-save-flow-key';
@@ -217,8 +220,8 @@ function discoveredModels(...ids: string[]): DiscoverModelsResult {
   };
 }
 
-async function saveXiaomiKey(baseUrl = customEndpoint) {
-  const view = render(<Settings initialProvider="xiaomi" />);
+async function saveXiaomiKey(baseUrl = customEndpoint, onModelChange?: (config: ModelConfig) => void) {
+  const view = render(<Settings initialProvider="xiaomi" onModelChange={onModelChange} />);
   const keyInput = await waitFor(() => {
     expect(view.container.querySelector('[data-model-key-status]')?.textContent).toBe('Waiting for API Key');
     const input = view.container.querySelector<HTMLInputElement>('input[data-model-api-key]');
@@ -241,13 +244,15 @@ describe('ModelSettings custom endpoint promotion', () => {
   ])('$name', async ({ ids, expected }) => {
     const discover = vi.fn().mockResolvedValue(discoveredModels(...ids));
     await startRealHost(discover);
-    const settings = await saveXiaomiKey();
+    const onModelChange = vi.fn();
+    const settings = await saveXiaomiKey(customEndpoint, onModelChange);
     expect(settings.models.providers.xiaomi.model).toBe(expected);
+    expect(onModelChange).toHaveBeenLastCalledWith(expect.objectContaining({ model: expected }));
     expect(getSecureStorage().getApiKey('xiaomi')).toBe(xiaomiKey);
     if (expected !== endpointOnlyModel) expect(settings.models.providers.xiaomi.models?.[expected]).toBeUndefined();
     if (expected === listedMiMo) expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('MiMo v2.6 Flash'));
     expect(discover).toHaveBeenCalledExactlyOnceWith({
-      provider: 'xiaomi', baseUrl: customEndpoint, protocol: 'openai',
+      provider: 'xiaomi', baseUrl: customEndpoint, protocol: 'openai', includeAllModels: true,
     });
     expect(settings.models.default).toBe('xiaomi');
     expect(settings.models.taskStrategy?.profiles.main).toMatchObject({ provider: 'xiaomi', model: expected });
@@ -306,6 +311,36 @@ describe('ModelSettings custom endpoint promotion', () => {
     expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
     expect(settings.models.taskStrategy?.profiles.main).toMatchObject({ provider: 'xiaomi', model: listedMiMo });
     expect(discover).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the registry default when it is disabled', async () => {
+    await startRealHost(vi.fn().mockResolvedValue(discoveredModels(xiaomiDefault, listedMiMo)));
+    await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+      models: { providers: { xiaomi: { enabled: true, models: { [xiaomiDefault]: { enabled: false } } } } },
+    });
+    const settings = await saveXiaomiKey();
+    expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
+    expect(settings.models.providers.xiaomi.models?.[xiaomiDefault]?.enabled).toBe(false);
+  });
+
+  it('preserves a task model selection saved while discovery is pending', async () => {
+    const newMain = { provider: 'zhipu', model: getProviderInfo('zhipu')!.defaultModel, reasoningEffort: 'low', maxTokens: 4096 };
+    await startRealHost(async () => {
+      const pending = await freshSettingsGet();
+      await mocks.bridgeInvokeDomain!(IPC_DOMAINS.SETTINGS, 'set', {
+        models: {
+          providers: { zhipu: { enabled: true, apiKey: 'test-zhipu-key-during-discovery' } },
+          taskStrategy: {
+            ...pending.models.taskStrategy!,
+            profiles: { ...pending.models.taskStrategy!.profiles, main: newMain },
+          },
+        },
+      });
+      return discoveredModels(listedMiMo);
+    });
+    const settings = await saveXiaomiKey();
+    expect(settings.models.providers.xiaomi.model).toBe(listedMiMo);
+    expect(settings.models.taskStrategy?.profiles.main).toEqual(newMain);
   });
 
   it('keeps the official endpoint behavior', async () => {
