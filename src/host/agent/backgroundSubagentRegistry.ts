@@ -500,24 +500,26 @@ export class BackgroundSubagentRegistry {
     progressRecorded?: boolean;
   } & (
     | { status: 'cancelled'; failureCode: AgentFailureCode.CancelledByUser }
-    | { status: 'failed'; failureCode: AgentFailureCode.ParentGone }
+    | { status?: 'failed'; failureCode?: AgentFailureCode.ParentGone }
   )): SubagentCompletionRecord {
     const interrupted = 'Background subagent was interrupted by an application restart before it finished '
       + '(interrupted_by_restart). Its final result is unavailable; inspect the session and '
       + 'decide whether to spawn it again.';
-    const cancelled = input.status === 'cancelled';
+    const status = input.status ?? 'failed';
+    const failureCode = input.failureCode ?? AgentFailureCode.ParentGone;
+    const cancelled = status === 'cancelled';
     const record = buildSubagentCompletionRecord({
       agentId: input.agentId,
       title: input.title,
       role: input.role,
       kind: input.completionKind,
-      status: input.status,
+      status,
       ...(cancelled ? { output: 'Stopped by the user.' } : {
         error: input.progressRecorded ? interrupted : `${interrupted} no progress recorded`,
       }),
       startedAt: input.startedAt,
       finishedAt: this.now(),
-      failureCode: input.failureCode,
+      failureCode,
       cost: input.cost,
       iterations: input.iterations,
       toolCallCount: input.toolCalls,
@@ -540,7 +542,7 @@ export class BackgroundSubagentRegistry {
         startedAt,
         finishedAt: this.now(),
         ...(!cancelled ? { error: 'interrupted_by_restart: background subagent was interrupted by an application restart' } : {}),
-        failureCode: input.failureCode,
+        failureCode,
         durableSession: null,
         done: Promise.resolve(undefined),
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
