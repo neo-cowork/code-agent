@@ -27,11 +27,15 @@ export function useToolCallTerminalResolver(
   const pendingPermissionRequest = useAppStore(state => state.pendingPermissionRequest);
   const pendingPermissionSessionId = useAppStore(state => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore(state => state.queuedPermissionRequests);
+  const resolvedPermissionRequests = useAppStore(state => state.resolvedPermissionRequests);
   const parkedToolCallIdsBySession = useParkedToolCallIds(sessionId, calls.some(call => call.toolCall?.result === undefined));
   return useCallback((toolCall: ToolCall, interruptionReason?: StreamInterruptionReason, agentId?: string, sessionLive?: boolean,
     delegatedWork?: 'working' | 'completed' | 'failed' | 'cancelled') =>
     resolveToolCallTerminalState({ toolCall, sessionId, tasks, agentRows: rows, agentId, sessionLive: sessionLive ?? live,
-      interruptionReason, delegatedWork, awaitingApproval: isToolCallAwaitingApproval(toolCall.id, sessionId, {
+      interruptionReason, delegatedWork,
+      // 审批刚答完、结果还没到：旁观他端发起的 run 时本页收不到该 run 的 tool_result，不能因终态广播清了 live 就读成「已中断」。
+      approvalAnswered: Boolean(sessionId && resolvedPermissionRequests?.[sessionId ?? '']?.some(request => request.parentToolUseId === toolCall.id)),
+      awaitingApproval: isToolCallAwaitingApproval(toolCall.id, sessionId, {
         pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession,
-      }) }), [sessionId, tasks, rows, live, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession]);
+      }) }), [sessionId, tasks, rows, live, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests, parkedToolCallIdsBySession, resolvedPermissionRequests]);
 }

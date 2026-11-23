@@ -7,7 +7,12 @@ import { AgentFailureCode, HostReasonCode, type PermissionRequest } from '../../
 import type { TraceNode } from '../../../src/shared/contract/trace';
 import { en } from '../../../src/renderer/i18n/en';
 
-const state = vi.hoisted(() => ({ pending: null as PermissionRequest | null, live: false }));
+const state = vi.hoisted(() => ({
+  pending: null as PermissionRequest | null,
+  live: false,
+  resolved: [] as PermissionRequest[],
+  parked: {} as Record<string, ReadonlySet<string>>,
+}));
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { en } = await import('../../../src/renderer/i18n/en');
@@ -15,7 +20,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (value: Record<string, unknown>) => unknown) => selector({
-    resolvedPermissionRequests: {},
+    resolvedPermissionRequests: { 'session-1': state.resolved },
     pendingPermissionRequest: state.pending,
     pendingPermissionSessionId: state.pending ? 'session-1' : null,
     queuedPermissionRequests: {},
@@ -23,6 +28,10 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     openPreview: vi.fn(),
     openSettingsTab: vi.fn(),
   }),
+}));
+vi.mock('../../../src/renderer/stores/parkedApprovalStore', () => ({
+  useParkedToolCallIds: () => state.parked,
+  useParkedApprovals: () => [],
 }));
 vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   useMessageActionStore: (selector: (value: { sendPrompt: () => void }) => unknown) => selector({ sendPrompt: vi.fn() }),
@@ -55,12 +64,12 @@ function failed(code: HostReasonCode): TraceNode {
   });
 }
 
-function rowText(node: TraceNode) {
-  const { container } = render(<ToolStepGroup nodes={[node]} />);
+function rowText(node: TraceNode, sessionId?: string) {
+  const { container } = render(<ToolStepGroup nodes={[node]} sessionId={sessionId} />);
   return container.textContent ?? '';
 }
 
-afterEach(() => { cleanup(); state.pending = null; state.live = false; });
+afterEach(() => { cleanup(); state.pending = null; state.live = false; state.resolved = []; state.parked = {}; });
 
 describe('parked Write row states', () => {
   it('approval timed out: not-written title + timeout reason, no "denied"', () => {
@@ -75,6 +84,7 @@ describe('parked Write row states', () => {
   it('user denied: keeps the approval-denied reason', () => {
     const text = rowText(failed(HostReasonCode.PermissionDeniedByUser));
     expect(text).toContain(en.deliveryExperience.notWritten);
+    expect(text).toContain(WORDS.denied);
     expect(text).not.toContain(WORDS.timeout);
     expect(text).not.toContain(WORDS.pending);
   });
@@ -95,5 +105,24 @@ describe('parked Write row states', () => {
     expect(text).toContain(WORDS.interrupted);
     expect(text).not.toContain(WORDS.pending);
     expect(text).not.toContain(WORDS.denied);
+  });
+
+  it('parked (persisted) approval id: only "Approval needed", never interrupted', () => {
+    state.parked = { 'session-1': new Set(['call-w']) };
+    const text = rowText(writeNode({}), 'session-1');
+    expect(text).toContain(WORDS.pending);
+    expect(text).not.toContain(WORDS.interrupted);
+    expect(text).not.toContain(WORDS.denied);
+  });
+
+  it('answered approval, result not here yet, session no longer live: not "Interrupted"', () => {
+    state.resolved = [{
+      id: 'p1', sessionId: 'session-1', parentToolUseId: 'call-w', tool: 'Write', type: 'file_write',
+      details: { path: '/outside/summary-en.md' } as PermissionRequest['details'], timestamp: 1,
+      resolved: true, decision: 'deny',
+    } as PermissionRequest];
+    const text = rowText(writeNode({}), 'session-1');
+    expect(text).not.toContain(WORDS.interrupted);
+    expect(text).not.toContain(WORDS.pending);
   });
 });
