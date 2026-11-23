@@ -6,6 +6,7 @@ import { resolveCanonicalRunPath } from '../../runtime/runContext';
 import { parseShellCommand } from '../../security/commandParse';
 import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
+import { rememberApprovedRmTargets } from './approvedRmVerifyProbe';
 import { createLogger } from '../../services/infra/logger';
 
 const approvedRmLogger = createLogger('ApprovedRmGrant');
@@ -184,6 +185,8 @@ export interface SandboxEscalationEligibilityInput {
    * have rebound it. undefined = nobody bound one = hard deny.
    */
   policyEnforcer: PolicyEnforcer | null | undefined;
+  /** Session the approval belongs to; keys the short-lived record of what the user approved deleting. */
+  sessionId?: string;
 }
 
 type EscalationTarget = 'file' | 'missing' | 'other';
@@ -357,6 +360,7 @@ export function approvedSingleFileRmGrant(
     return undefined;
   }
   approvedRmLogger.info(`APPROVED_RM_GRANT_MINTED ${JSON.stringify(diagnostic)}`);
+  rememberApprovedRmTargets(input.sessionId, [...(parsed.targets ?? []), ...grants]);
   return grants.length === 1 && parsed.operandCount === 1 ? grants[0] : grants;
 }
 

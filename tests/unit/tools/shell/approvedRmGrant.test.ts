@@ -11,6 +11,7 @@ import { getPolicyEngine, resetPolicyEngine } from '../../../../src/host/permiss
 import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../src/host/security/policyEnforcer';
 import { resolveCanonicalRunPath } from '../../../../src/host/runtime/runContext';
 import { approvedSingleFileRmGrantForToolApproval } from '../../../../src/host/tools/shell/approvedRmGrant';
+import { isApprovedRmVerifyProbe } from '../../../../src/host/tools/shell/approvedRmVerifyProbe';
 
 type Input = Parameters<typeof approvedSingleFileRmGrantForToolApproval>[0];
 
@@ -237,4 +238,47 @@ describe('approved rm production approval boundary', () => {
       refused(condition === 'unattended_background' ? 'unattended' : condition);
     },
   );
+  describe('post-delete existence check of exactly the approved files', () => {
+    const SESSION = 'approved-rm-public-entry';
+    const approveDelete = (command = `rm -v -- '${files[0]}' '${files[1]}'`) => {
+      input.params.command = command;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+    };
+
+    it.each([
+      (f: string[]) => `test ! -e "${f[0]}" && echo gone`,
+      (f: string[]) => `[ -e "${f[0]}" ] && echo STILL || echo GONE; ls -l ${f[1]} 2>&1; echo "exit=$?"`,
+      (f: string[]) => `stat "${f[0]}"; test -f ${f[1]}`,
+    ])('answers %# without a card after the approved delete', (build) => {
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(true);
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_VERIFY_EXEMPTION'));
+    });
+
+    it.each([
+      (f: string[]) => `ls -l ${f[2]}`,
+      (f: string[]) => `test -e "${f[0]}" && cat "${f[0]}"`,
+      (f: string[]) => `ls ${f[0]} > ${f[1]}`,
+      (f: string[]) => `ls ${f[0]} $(printf x)`,
+      (f: string[]) => `for p in ${f[0]}; do test -e "$p"; done`,
+      (f: string[]) => `ls ${join(cwd, '*.tmp')}`,
+      () => 'echo done',
+    ])('keeps asking for %#: unrelated path, other program, redirect, expansion, loop, glob', (build) => {
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(build(files), cwd, SESSION)).toBe(false);
+    });
+
+    it('does not answer for another session, before any approval, or after the window', () => {
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION)).toBe(false);
+      approveDelete();
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, 'another-session')).toBe(false);
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION, Date.now() + 6 * 60 * 1000)).toBe(false);
+    });
+
+    it('does not remember files when the approval is refused', () => {
+      input.params.command = `rm -rf ${files[0]}`;
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(isApprovedRmVerifyProbe(`test -e ${files[0]}`, cwd, SESSION)).toBe(false);
+    });
+  });
 });

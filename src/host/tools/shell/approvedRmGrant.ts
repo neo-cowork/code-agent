@@ -52,5 +52,6 @@ export function approvedSingleFileRmGrantForToolApproval(
     newFileGrantSupported: getSandboxManager().supportsNewFileWriteGrant(),
     workingDirectory: input.workingDirectory,
     policyEnforcer: input.policyEnforcer,
+    sessionId: input.sessionId,
   });
 }
