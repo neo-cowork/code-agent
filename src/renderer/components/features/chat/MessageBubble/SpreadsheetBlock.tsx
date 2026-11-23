@@ -22,6 +22,7 @@ interface SheetData {
   rows: unknown[][];
   rowCount: number;
   rangeStart?: SheetRangeStart;
+  headerless?: boolean;
 }
 
 interface SpreadsheetSpec {
@@ -73,6 +74,7 @@ function isSheetData(value: unknown): value is SheetData {
     && value.rows.every(Array.isArray)
     && typeof value.rowCount === 'number'
     && (rangeStart === undefined || isSheetRangeStart(rangeStart))
+    && (value.headerless === undefined || typeof value.headerless === 'boolean')
   );
 }
 
@@ -325,6 +327,9 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
   const selectedStats = selectedColumns.length === 1
     ? getColumnStats(allRows, selectedColumns[0], columnTypes[selectedColumns[0]], statsLabels)
     : '';
+  const { rowUnit, columnUnit, singleRowUnit, singleColumnUnit, columns } = t.generativeUI;
+  const displayedRowUnit = sheet.headerless && totalRows === 1 ? singleRowUnit : rowUnit;
+  const displayedColumnUnit = sheet.headerless ? (headers.length === 1 ? singleColumnUnit : columns) : columnUnit;
 
   return (
     <div className="my-3 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-lg">
@@ -336,7 +341,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
             {parsedSpec.title || sheet.name || t.generativeUI.spreadsheet}
           </span>
           <span className="text-xs text-zinc-500">
-            {totalRows} {t.generativeUI.rowUnit} · {headers.length} {t.generativeUI.columnUnit}
+            {totalRows} {displayedRowUnit} · {headers.length} {displayedColumnUnit}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -418,7 +423,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                     const isNum = typeof value === 'number';
                     // A1 引用走共享口径：DocEdit 会照着这个引用直接改源文件，
                     // 换算只能有一份，验收脚本和单测都从同一个函数取。
-                    const cellRef = sheetCellRef(dataRowIndex, ci, sheet.rangeStart);
+                    const cellRef = sheetCellRef(dataRowIndex, ci, sheet.rangeStart, sheet.headerless);
                     const isCellSelected = filePath != null && selectedCell === cellRef;
 
                     return (

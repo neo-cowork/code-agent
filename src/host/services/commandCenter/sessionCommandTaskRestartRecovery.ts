@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Message } from '../../../shared/contract';
+import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import { getUserConfigDir } from '../../config/configPaths';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -156,6 +157,7 @@ export function buildSessionTaskResultMessage(
   resultText: string | undefined,
   id: string = `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   locale: SessionTaskResultStatusWordLocale = 'zh',
+  artifacts: NormalizedToolArtifactMeta[] = [],
 ): Message {
   const cleanResultText = resultText === undefined ? undefined : stripCardToolCallMarkup(resultText);
   return {
@@ -170,6 +172,7 @@ export function buildSessionTaskResultMessage(
         shortName: task.shortName,
         status,
         summary: cleanResultText === undefined ? '' : clampTaskResultCardSummary(cleanResultText),
+        ...(artifacts.length ? { artifacts } : {}),
       },
     },
   };

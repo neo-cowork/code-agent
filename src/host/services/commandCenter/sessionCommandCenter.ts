@@ -1,4 +1,5 @@
 import { readableBrowserPage, browserPageFromOutput } from '../../agent/subagentStepCapConclusion';
+import { collectDeliverableFileArtifacts } from '../../tools/artifacts/collectDeliverableFileArtifacts';
 import { RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../shared/constants';
 import { getMaxIterations } from '../cloud/featureFlagService';
 import { resolveStoppedTaskOutcome } from './sessionTaskStopConclusion';
@@ -76,6 +77,8 @@ export interface SessionCommandTask {
   /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
   resultText?: string;
   stopped?: { content: string; kind: 'step_cap' | 'no_conclusion' | 'error' };
+  /** 这个任务自己的工具调用确认产出的文件交付物（按 taskId 归属的 tool_call_end 累积，终态写进 [任务结果]）。 */
+  deliverableArtifacts?: NormalizedToolArtifactMeta[];
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -654,6 +657,11 @@ export class SessionCommandCenter {
       if ((tool === 'Browser' || tool === 'browser_action' || tool === 'browser_navigate') && typeof result.output === 'string') {
         const page = browserPageFromOutput(result.output);
         if (page) this.lastUrlByTask.set(taskId, page);
+      }
+      const produced = collectDeliverableFileArtifacts([result]);
+      if (produced.length) {
+        const known = task.deliverableArtifacts ?? [];
+        task.deliverableArtifacts = [...known, ...produced.filter((a) => !known.some((k) => k.path === a.path))];
       }
       this.applyToolCallEnd(task, result);
       return;

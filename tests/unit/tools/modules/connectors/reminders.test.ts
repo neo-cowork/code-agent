@@ -96,6 +96,19 @@ describe('remindersModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('ABORTED');
     });
 
+    it('get_status not_authorized carries System Settings guidance from detailCode', async () => {
+      execMock.mockResolvedValue({
+        data: { connected: false, errorCode: 'not_authorized', detailCode: 'automation_not_authorized', capabilities: [] },
+      });
+      const result = await run({ action: 'get_status' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('not_authorized');
+        expect(result.error).toContain('System Settings');
+        expect(result.error).not.toBe('Reminders access denied');
+      }
+    });
+
     it('returns unavailable status when get_status connector is missing', async () => {
       getMock.mockReturnValue(undefined);
       const result = await run({ action: 'get_status' });

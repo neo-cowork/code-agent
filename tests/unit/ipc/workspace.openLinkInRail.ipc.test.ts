@@ -181,7 +181,13 @@ describe('workspace openLinkInRail wiring', () => {
         surfaceSessionId: 'surface-user',
         snapshot: snapshot('conversation-a'),
       })),
-      keptState: vi.fn(() => ({ state: 'kept' as const, url: 'https://example.test/result', title: 'Result', reason: 'keep_result_page' as const })),
+      keptState: vi.fn(() => ({
+        state: 'kept' as const,
+        url: 'https://example.test/result',
+        title: 'Result',
+        reason: 'keep_result_page' as const,
+        reopenMode: 'url' as const,
+      })),
     };
   }
 
@@ -213,6 +219,7 @@ describe('workspace openLinkInRail wiring', () => {
       url: 'https://example.test/result',
       title: 'Result',
       reason: 'keep_result_page',
+      reopenMode: 'url',
     });
     expect(links.keptState).toHaveBeenCalledWith('conversation-a');
   });
