@@ -17,6 +17,19 @@ describe('subagent failure guidance', () => {
     }
   });
 
+  it('tells the parent to narrow a step-capped child instead of raising spend', () => {
+    const result = withMultiagentMeta(
+      { ok: false, error: 'Max iterations reached', meta: { failureCode: AgentFailureCode.StepCapReached } },
+      ctx, 'Task', { failureCode: AgentFailureCode.StepCapReached },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Narrow the task or split it into smaller steps.');
+      expect(result.error).not.toContain('maxBudget');
+      expect(result.error.toLowerCase()).not.toContain('quota');
+    }
+  });
+
   it('includes actionable budget guidance in parent-visible successful envelopes', () => {
     const result = withMultiagentMeta({ ok: true, output: 'Child failed' }, ctx, 'Task', { result: { failureCode: AgentFailureCode.BudgetExhausted } });
     expect(result).toMatchObject({ output: expect.stringContaining('maxBudget') });

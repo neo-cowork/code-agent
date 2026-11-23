@@ -11,9 +11,8 @@ import { toast } from '../../../../hooks/useToast';
 import { useAppStore, type DisclosureLevel } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
+import { applyFontSizeBase, FONT_SIZE_PX, getFontSizeName } from '../../../../utils/fontSize';
 import { createLogger } from '../../../../utils/logger';
-import { isWebMode } from '../../../../utils/platform';
-import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 import { Toggle } from '../../../primitives/Toggle';
 
@@ -31,19 +30,6 @@ interface ThemeOption {
   icon: React.ReactNode;
   description: string;
   preview: React.ReactNode;
-}
-
-function getFontSizeName(fontSize: number): 'small' | 'medium' | 'large' | null {
-  switch (fontSize) {
-    case 13:
-      return 'small';
-    case 14:
-      return 'medium';
-    case 16:
-      return 'large';
-    default:
-      return null;
-  }
 }
 
 // ============================================================================
@@ -205,12 +191,11 @@ export const AppearanceSettings: React.FC = () => {
     const previousCssFontSize = document.documentElement.style.getPropertyValue('--font-size-base');
     setFontSize(size);
     // 应用字体大小
-    const sizeMap = { small: 13, medium: 14, large: 16 };
-    document.documentElement.style.setProperty('--font-size-base', `${sizeMap[size]}px`);
+    applyFontSizeBase(FONT_SIZE_PX[size]);
 
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        ui: { fontSize: sizeMap[size] },
+        ui: { fontSize: FONT_SIZE_PX[size] },
       } as Partial<AppSettings>);
       logger.info('Font size saved', { size });
     } catch (error) {
@@ -227,7 +212,6 @@ export const AppearanceSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <WebModeBanner />
       {/* Theme Selection */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{appearanceText.theme}</h3>
@@ -241,7 +225,6 @@ export const AppearanceSettings: React.FC = () => {
             return (
               <button
                 key={option.id}
-                disabled={isWebMode()}
                 onClick={() => handleThemeChange(option.id)}
                 className={`relative p-3 rounded-lg border text-left transition-all ${
                   isActive
@@ -290,16 +273,15 @@ export const AppearanceSettings: React.FC = () => {
         </p>
         <div className="grid grid-cols-3 gap-2">
           {([
-            { id: 'small', label: appearanceText.fontSizes.small, size: '13px' },
-            { id: 'medium', label: appearanceText.fontSizes.medium, size: '14px' },
-            { id: 'large', label: appearanceText.fontSizes.large, size: '16px' },
+            { id: 'small', label: appearanceText.fontSizes.small },
+            { id: 'medium', label: appearanceText.fontSizes.medium },
+            { id: 'large', label: appearanceText.fontSizes.large },
           ] as const).map((option) => {
             const isActive = fontSize === option.id;
 
             return (
               <button
                 key={option.id}
-                disabled={isWebMode()}
                 onClick={() => handleFontSizeChange(option.id)}
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive
@@ -309,7 +291,7 @@ export const AppearanceSettings: React.FC = () => {
               >
                 <span
                   className={`block ${isActive ? 'text-zinc-200' : 'text-zinc-400'}`}
-                  style={{ fontSize: option.size }}
+                  style={{ fontSize: `${FONT_SIZE_PX[option.id]}px` }}
                 >
                   Aa
                 </span>
@@ -332,7 +314,6 @@ export const AppearanceSettings: React.FC = () => {
           {availableLanguages.map((lang) => (
             <button
               key={lang.code}
-              disabled={isWebMode()}
               onClick={() => handleLanguageChange(lang.code as Language)}
               className={`w-full p-3 rounded-lg border text-left transition-all ${
                 language === lang.code
@@ -381,7 +362,6 @@ export const AppearanceSettings: React.FC = () => {
                 key={level}
                 role="radio"
                 aria-checked={isActive}
-                disabled={isWebMode()}
                 onClick={() => handleDisclosureLevelChange(level)}
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive

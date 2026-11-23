@@ -24,7 +24,7 @@ import { resolveAgent } from '../agent/agentRegistry';
 import { resolveSessionConnectorIds } from '../../shared/contract/expertConnectors';
 import { trackNode } from '../observability/posthogNode';
 import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
-import { getConnectorRegistry } from '../connectors';
+import { getConnectorRegistry, type ConnectorStatus } from '../connectors';
 import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
 import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasProposal';
 import { formatDesignCanvasSessionReminder } from '../../shared/design/canvasSessionReminder';
@@ -442,29 +442,41 @@ function buildDesignAcceptanceBrandRefs(context?: ConversationEnvelopeContext): 
   return refs;
 }
 
-function isConnectorReadyForTurnScope(connectorId: string): boolean {
+function getConnectorTurnScopeStatus(connectorId: string): {
+  ready: boolean;
+  connected?: boolean;
+  readiness?: ConnectorStatus['readiness'];
+  cause?: string;
+} {
   if (isCliConnectorId(connectorId)) {
     const cachedStatus = getCachedCliConnectorConnectionStatus(connectorId);
-    return cachedStatus?.connected ?? true;
+    return {
+      ready: cachedStatus?.connected ?? true,
+      connected: cachedStatus?.connected,
+      cause: cachedStatus?.connected === false ? 'not_connected' : undefined,
+    };
   }
 
   const connector = getConnectorRegistry().get(connectorId);
-  if (!connector) {
-    return false;
-  }
+  if (!connector) return { ready: false, cause: 'not_registered' };
 
   const cachedStatus = connector.getCachedStatus?.();
-  if (!cachedStatus) {
-    return true;
-  }
+  if (!cachedStatus) return { ready: true };
 
-  if (cachedStatus.readiness) {
-    // unchecked = 重启后尚未探测，按需探测口径下视为可用（cron.ipc / cronMailPoller 同规则）；failed / unavailable 排除
-    return cachedStatus.readiness === 'unchecked'
-      || (cachedStatus.connected && cachedStatus.readiness === 'ready');
-  }
+  const { readiness, connected } = cachedStatus;
+  // unchecked = 重启后尚未探测，按需探测口径下视为可用（cron.ipc / cronMailPoller 同规则）；failed / unavailable 排除
+  const ready = readiness
+    ? readiness === 'unchecked' || (connected && readiness === 'ready')
+    : connected;
+  return {
+    ready, readiness, connected,
+    cause: ready ? undefined : readiness === 'failed' || readiness === 'unavailable'
+      ? `readiness_${readiness}` : 'not_connected',
+  };
+}
 
-  return cachedStatus.connected;
+function isConnectorReadyForTurnScope(connectorId: string): boolean {
+  return getConnectorTurnScopeStatus(connectorId).ready;
 }
 
 /**
@@ -481,14 +493,14 @@ function getReadySelectedConnectorIds(selectedConnectorIds?: string[], source: '
     .map((connectorId) => connectorId.trim())
     .filter(Boolean)
     .filter((connectorId) => {
-      const ready = isConnectorReadyForTurnScope(connectorId);
+      const { ready, ...status } = getConnectorTurnScopeStatus(connectorId);
       if (!ready) {
         // 两路的日志要分清：用户手选的 vs 专家声明的——排障时指错方向会白查半天
         logger.info(
           source === 'expert'
             ? '[WorkbenchTurnContext] Expert-declared connector omitted from turn scope'
             : '[WorkbenchTurnContext] Selected connector omitted from turn scope',
-          { connectorId },
+          { connectorId, ...status },
         );
       }
       return ready;

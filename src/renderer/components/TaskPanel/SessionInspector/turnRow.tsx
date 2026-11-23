@@ -65,6 +65,8 @@ function resolveTerminalOutcome(segment: TurnSegment, t: Translations) {
         ? t.outcomeWords['failed-tool'].badge
         : failedCode === AgentFailureCode.BudgetExhausted
           ? t.outcomeWords['failed-budget'].badge
+          : failedCode === AgentFailureCode.StepCapReached
+            ? t.outcomeWords['failed-step-cap'].badge
           : failedCode === AgentFailureCode.DependencyFailed || failedCode === AgentFailureCode.DependencyMissing
             ? t.outcomeWords['failed-dependency'].badge
             : failedCode === AgentFailureCode.ModelError

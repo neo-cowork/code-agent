@@ -290,7 +290,8 @@ describe('设置 → 记忆：Knowledge Inbox 与诊断分区（自 KnowledgeMem
 
     expect(html).toContain('Light Memory');
     expect(html).toContain('3 项');
-    expect(html).toContain('未进索引: project_rules.md');
+    expect(html).toContain('1 条记忆还没进目录');
+    expect(html).not.toContain('project_rules.md');
     expect(html).toContain('已索引 2/3');
   });
 

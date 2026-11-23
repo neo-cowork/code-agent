@@ -4,6 +4,12 @@
 > 每个改了代码的 PR 都由另一家模型按本文审一遍，结果落成 `ai-review` 提交状态；
 > 有一条 Important 就红，`ship merge` 拒合。本文的改动走 PR，像代码一样审。
 
+## 先跑匹配
+
+三遍之前先跑 `node scripts/review/checklist-match.mjs --base origin/main`（`--json` 可机读）。它按
+`docs/review/reliability-checklist.md` 把 diff 对到踩过坑的条目：**逐条对照 diff 核实每个命中条目**，
+在报告里注明「已核：RC-xx」；没命中的条目不用再查。脚本退出码 2 = 清单格式坏了，先报出来。
+
 ## 三遍怎么过
 
 ### 第一遍：bug 与逻辑错误

@@ -364,6 +364,7 @@ class SpawnGuard {
       background: options.background,
       id,
       completion: options.completion,
+      completionByBackgroundRegistry: options.completionByBackgroundRegistry,
       role,
       treeId,
       sessionId: scope?.sessionId,
@@ -754,12 +755,14 @@ class SpawnGuard {
     if (agent.parentRunId || agent.background !== undefined) finishManagedAgentChildren(agent, this.agents, (child) => this.cancelAgent(child, 'parent-cancel'));
     persistManagedAgentTerminal(agent);
     // Auto-queue notification for parent agent (Codex-style async notification)
-    this.pendingNotifications.push({
-      sessionId: agent.sessionId,
-      runId: agent.runId,
-      treeId: agent.treeId,
-      content: this.formatNotification(agent),
-    });
+    if (!agent.completionByBackgroundRegistry) {
+      this.pendingNotifications.push({
+        sessionId: agent.sessionId,
+        runId: agent.runId,
+        treeId: agent.treeId,
+        content: this.formatNotification(agent),
+      });
+    }
 
     for (const cb of this.onCompleteCallbacks) {
       try {

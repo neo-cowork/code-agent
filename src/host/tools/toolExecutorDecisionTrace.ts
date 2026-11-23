@@ -5,16 +5,18 @@
 
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { AUTO_MODE_RATE_LIMIT } from '../../shared/constants/timeouts';
+import { AgentFailureCode } from '../../shared/contract';
 import {
   createHostReason,
   HostReasonCode,
   type PermissionAskResult,
   type PermissionDenialSource,
 } from '../../shared/contract/permission';
-import type { PermissionRequestData } from './types';
-import { getToolLedgerSink } from './toolLedgerSink';
+import type { HookManager } from '../hooks/hookManager';
 import { getPermissionModeManager } from '../permissions/modes';
 import { computePolicyHash } from '../permissions/policyHash';
+import { getAuditLogger } from '../security';
+import { getDenialRegistry } from '../security/denialRegistry';
 import {
   getDecisionHistory,
   isAutoDenyOutcome,
@@ -25,7 +27,14 @@ import type {
   DecisionOutcome as TraceDecisionOutcome,
   DecisionTrace,
 } from '../../shared/contract/decisionTrace';
-import { createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceStep, type DecisionTraceBuilder } from '../security/decisionTraceBuilder';
+import { createLogger } from '../services/infra/logger';
+import { sanitizeToolParams } from './toolExecutorHelpers';
+import { getToolLedgerSink } from './toolLedgerSink';
+import { commandAnalysisDenialError, userDeniedGoalStickyError } from './toolPermissionClassification';
+import type { PermissionRequestData, ToolExecutionResult } from './types';
+
+const logger = createLogger('ToolExecutor');
 
 /** Record a permission decision to the history buffer (+ append-only ledger, ADR-022 第一期) */
 export function recordDecision(
@@ -121,6 +130,91 @@ export function recordInToolPermissionAsk(
     { toolName: request.tool, finalOutcome: approved ? 'allow' : 'deny', steps: [step], totalDurationMs: Date.now() - startTime },
     sessionId, origin, waitMs,
   );
+}
+
+export interface UnanalyzableCommandDenialInput {
+  toolName: string;
+  params: Record<string, unknown>;
+  reason: string;
+  permStartTime: number;
+  traceBuilder: DecisionTraceBuilder;
+  sessionId?: string;
+  sourceMessageId?: string;
+  runId?: string;
+  ledgerOrigin: ToolLedgerOrigin;
+  auditEnabled: boolean;
+  hookManager?: HookManager;
+}
+
+/**
+ * Unanalyzable shell commands (e.g. `$(...)`, backticks, unclosed quotes) can never
+ * be approved from the session: deny before building/raising a pointless approval card.
+ */
+export async function denyUnanalyzableCommand(input: UnanalyzableCommandDenialInput): Promise<ToolExecutionResult> {
+  // Preserve the goal/effect sticky guard without invoking an approval handler.
+  // analysisFailed binds the distinct log reason and prevents user-denial registration.
+  const registry = getDenialRegistry();
+  const decision = await registry.observeApproval({
+    sessionId: input.sessionId, sourceMessageId: input.sourceMessageId, runId: input.runId,
+    toolName: input.toolName, enabled: true, analysisFailed: true,
+    ask: async () => registry.refuseIfGoalDenied({ tool: input.toolName, details: input.params })
+      ?? { approved: false, denialSource: 'fail-closed' },
+  });
+  const hostReason = decision.denialSource === 'goal-sticky-host'
+    ? userDeniedGoalStickyError(input.toolName)
+    : commandAnalysisDenialError(input.toolName);
+  const denialError = hostReason.modelText;
+  logger.warn('Unanalyzable command denied before permission request', {
+    tool: input.toolName,
+    sessionId: input.sessionId,
+    reason: input.reason,
+    denialSource: decision.denialSource,
+  });
+  if (input.auditEnabled) {
+    getAuditLogger().log({
+      eventType: 'permission_check',
+      sessionId: input.sessionId || 'unknown',
+      toolName: input.toolName,
+      input: sanitizeToolParams(input.params),
+      duration: 0,
+      success: false,
+      error: denialError,
+    });
+  }
+  input.hookManager?.triggerPermissionDenied(
+    input.toolName,
+    denialError,
+    'runtime',
+    input.sessionId || 'unknown',
+  ).catch(() => {});
+  input.traceBuilder.addStep(
+    'permission_classifier',
+    'command_analysis_failed',
+    'deny',
+    createHostReason(
+      HostReasonCode.PermissionCommandAnalysisFailed,
+      `Unanalyzable shell command denied before permission request: ${input.reason}`,
+      { toolName: input.toolName },
+    ),
+  );
+  recordDecision(
+    input.toolName,
+    input.params,
+    'policy-deny',
+    `command_analysis_failed/${decision.denialSource}`,
+    input.permStartTime,
+    input.traceBuilder.build('deny'),
+    input.sessionId,
+    input.ledgerOrigin,
+  );
+  return {
+    success: false,
+    error: denialError,
+    metadata: {
+      failureCode: AgentFailureCode.PermissionDenied,
+      hostReason,
+    },
+  };
 }
 
 function historyOutcomeToLayer(outcome: HistoryDecisionOutcome): DecisionLayer {

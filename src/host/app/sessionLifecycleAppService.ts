@@ -39,7 +39,9 @@ export class SessionLifecycleAppService {
           message: error instanceof Error ? error.message : String(error),
         });
       });
-      await getManagedBrowserProviderAdapter().clearConversationResumeState(previousSessionId, { keepLastPage: true });
+      // The login archive stays with the conversation. Switching chats ends the
+      // user-browser run only. The next isolated launch seeds a fresh jar from
+      // that archive. Deleting the session still clears it.
     }
     getManagedBrowserProviderAdapter().activateConversationResumeState(nextSessionId);
   }
@@ -65,6 +67,7 @@ export class SessionLifecycleAppService {
       title: config?.title || 'New Session',
       modelConfig: resolveSessionDefaultModelConfig(),
       workingDirectory,
+      projectId: config?.projectId?.trim() || undefined,
       engine: config?.engine ? requestedEngine : undefined,
       metadata: config?.metadata,
       memoryMode: config?.memoryMode,

@@ -54,6 +54,7 @@ const orchestrator = vi.hoisted(() => ({
 }));
 
 const taskManager = vi.hoisted(() => ({
+  waitUntilReady: vi.fn(async () => true),
   getOrCreateCurrentOrchestrator: vi.fn(() => orchestrator),
   setWorkingDirectory: vi.fn(),
   cleanup: vi.fn(),

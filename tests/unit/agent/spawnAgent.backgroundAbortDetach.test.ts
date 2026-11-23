@@ -46,6 +46,7 @@ vi.mock('../../../src/host/agent/multiagentTools/spawnAgentForegroundBackground'
   delegateSpawnAgentWorktreeCleanup: vi.fn(),
   finalizeForegroundSpawnAgentWorktree: harness.finalizeForegroundSpawnAgentWorktree,
   publishBackgroundSubagentVisibility: vi.fn(),
+  registerDetachedSubagent: vi.fn(),
   raceForegroundBlockingBudget: harness.raceForegroundBlockingBudget,
   resolveForegroundBlockingBudgetMs: () => 600_000,
   resolveSingleSpawnRunScope: () => ({}),

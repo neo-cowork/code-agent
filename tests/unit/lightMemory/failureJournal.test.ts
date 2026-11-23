@@ -34,6 +34,9 @@ import {
   buildFailureJournalBlock,
   type FailurePattern,
 } from '../../../src/host/lightMemory/failureJournal';
+import { extractFailurePatterns } from '../../../src/host/agent/runtime/learningPipeline';
+import { readMemoryFile } from '../../../src/host/lightMemory/lightMemoryIpc';
+import type { TelemetryToolCall } from '../../../src/shared/contract/telemetry';
 import { LEARNING_PIPELINE } from '../../../src/shared/constants';
 
 function makePattern(overrides: Partial<FailurePattern> = {}): FailurePattern {
@@ -114,12 +117,95 @@ describe('failureJournal', () => {
       const journalPath = path.join(tmpDir, 'memory', LEARNING_PIPELINE.JOURNAL_FILENAME);
       const content = await fs.readFile(journalPath, 'utf-8');
       expect(content).toContain('name: failure-journal');
-      expect(content).toContain('Bash · command_failure');
+      expect(content).toContain('## 运行命令 · 命令执行失败');
       expect(content).toContain('FAILURE_JOURNAL_JSON');
 
       const entries = await loadFailureJournalEntries();
       expect(entries).toHaveLength(1);
       expect(entries[0].count).toBe(3);
+    });
+
+    it.each(['unknown', 'unregistered_category', 'constructor'])(
+      'shows a plain-language heading for Write with category %s',
+      async (errorCategory) => {
+        const message = '无法保存文件';
+        await recordFailurePatterns([makePattern({
+          key: buildFailurePatternKey('Write', errorCategory, message),
+          toolName: 'Write',
+          errorCategory,
+          pattern: message,
+          sampleError: message,
+        })], 5000);
+
+        const file = await readMemoryFile(LEARNING_PIPELINE.JOURNAL_FILENAME);
+        const visible = file?.content.split('\n')
+          .filter((line) => !line.startsWith('<!-- FAILURE_JOURNAL_JSON:'))
+          .join('\n');
+        expect(visible).not.toContain('Write · unknown');
+        expect(visible).not.toContain('Write');
+        expect(visible).not.toContain(errorCategory);
+        expect(visible).toContain('## 写入文件 · 未分类');
+        expect(visible).toContain('- **模式**: 无法保存文件');
+        expect(visible?.trimEnd().split('\n').at(-1)).toBe('- **原始报错（排查用）**: 无法保存文件');
+      },
+    );
+
+    it('rewrites a generated old-format journal and accumulates the stored count', async () => {
+      const journalPath = path.join(tmpDir, 'memory', LEARNING_PIPELINE.JOURNAL_FILENAME);
+      await fs.mkdir(path.dirname(journalPath), { recursive: true });
+      await fs.copyFile(new URL('../../fixtures/failure-journal-old-format.md', import.meta.url), journalPath);
+      expect(await fs.readFile(journalPath, 'utf-8')).toContain('## Write · unknown');
+
+      const message = '无法保存文件';
+      await recordFailurePatterns([makePattern({
+        key: buildFailurePatternKey('Write', 'unknown', message),
+        toolName: 'Write',
+        errorCategory: 'unknown',
+        pattern: message,
+        sampleError: message,
+        sessions: ['session-2'],
+      })], 6000);
+
+      const content = await fs.readFile(journalPath, 'utf-8');
+      expect(content).toContain('## 写入文件 · 未分类');
+      expect(content).not.toContain('## Write · unknown');
+      const marker = content.split('\n').find((line) => line.startsWith('<!-- FAILURE_JOURNAL_JSON:'));
+      expect(marker).toContain('"toolName":"Write"');
+      expect(marker).toContain('"errorCategory":"unknown"');
+      expect(await loadFailureJournalEntries()).toMatchObject([
+        { toolName: 'Write', errorCategory: 'unknown', count: 6, sessions: ['session-1', 'session-2'] },
+      ]);
+    });
+
+    it('reads the journal written from three missing-file telemetry calls', async () => {
+      const calls = ['q1.md', 'q2.md', 'q3.md'].map((filename, index): TelemetryToolCall => {
+        const filePath = `/reports/${filename}`;
+        const error = `找不到文件 "${filePath}"`;
+        return {
+          id: `call-${index}`,
+          toolCallId: `tool-${index}`,
+          name: 'Read',
+          arguments: JSON.stringify({ file_path: filePath }),
+          resultSummary: error,
+          success: false,
+          error,
+          errorCategory: 'file_not_found',
+          durationMs: 1,
+          timestamp: 5000 + index,
+          index,
+          parallel: false,
+        };
+      });
+
+      const patterns = extractFailurePatterns(calls, 'reports-session');
+      expect(patterns).toMatchObject([{ toolName: 'Read', errorCategory: 'file_not_found', count: 3 }]);
+      expect(await recordFailurePatterns(patterns, 6000)).toBe(1);
+
+      const file = await readMemoryFile(LEARNING_PIPELINE.JOURNAL_FILENAME);
+      expect(file?.content).toContain('## 读取文件 · 找不到文件');
+      expect(file?.content).toContain('- **模式**: 找不到文件 "..."');
+      expect(file?.content).toContain('- **累计次数**: 3');
+      expect(file?.content).toContain('- **原始报错（排查用）**: 找不到文件 "/reports/q1.md"');
     });
 
     it('should update INDEX.md with journal entry', async () => {

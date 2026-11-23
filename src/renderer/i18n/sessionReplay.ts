@@ -1,10 +1,13 @@
 // ============================================================================
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { backgroundPanelEn, backgroundPanelZh } from './backgroundPanel';
 // Session Replay 弹层词典（zh/en）— 从 zh.ts/en.ts 分域抽出，过 god-file 债务门
 // ============================================================================
 
 export const sessionReplayZh = {
+  shellCommandFailed: backgroundPanelZh.backgroundPanel.shellCommandFailed,
+  shellTaskStarted: backgroundPanelZh.backgroundPanel.shellTaskStarted,
   trajectory: '轨迹',
   dataset: '数据集',
   evidenceControl: '证据控制',
@@ -126,6 +129,8 @@ export const sessionReplayZh = {
 };
 
 export const sessionReplayEn: typeof sessionReplayZh = {
+  shellCommandFailed: backgroundPanelEn.backgroundPanel.shellCommandFailed,
+  shellTaskStarted: backgroundPanelEn.backgroundPanel.shellTaskStarted,
   trajectory: 'Trajectory',
   dataset: 'Dataset',
   evidenceControl: 'Evidence Control',

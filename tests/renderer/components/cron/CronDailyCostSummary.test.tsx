@@ -67,4 +67,29 @@ describe('CronDailyCostSummary missing cost', () => {
     expect(days[0].textContent).toContain('$0.0300');
     expect(days[1].textContent).toContain('成本未完整记录');
   });
+
+  describe('flat-fee (zero-priced model) runs', () => {
+    const flat = (overrides: Partial<CronJobExecution> = {}) => execution({ flatFee: true, sessionId: 'flat-session', ...overrides });
+
+    it('a day of only flat-fee runs reads "not billed in USD" with the run count, not "not fully recorded"', () => {
+      render(<CronDailyCostSummary executions={[flat({ id: 'a' }), flat({ id: 'b' }), flat({ id: 'c', status: 'failed' })]} />);
+      const text = screen.getByTestId('cron-daily-cost-summary').textContent;
+      expect(text).toContain('不按美元计费 · 3 次');
+      expect(text).not.toContain('成本未完整记录');
+      expect(text).not.toContain('$');
+    });
+
+    it('a mixed day shows the USD sum of the priced runs only', () => {
+      render(<CronDailyCostSummary executions={[execution({ cost: 0.03 }), flat()]} />);
+      const text = screen.getByTestId('cron-daily-cost-summary').textContent;
+      expect(text).toContain('$0.0300');
+      expect(text).not.toContain('不按美元计费');
+      expect(text).not.toContain('成本未完整记录');
+    });
+
+    it('an unmarked finished session with empty cost still makes the day incomplete next to flat-fee runs', () => {
+      render(<CronDailyCostSummary executions={[flat(), execution({ id: 'lost', sessionId: 'priced-session' })]} />);
+      expect(screen.getByTestId('cron-daily-cost-summary').textContent).toContain('成本未完整记录');
+    });
+  });
 });

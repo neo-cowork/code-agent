@@ -105,6 +105,7 @@ const agentRunState = vi.hoisted(() => ({
 
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: () => undefined,
       sendMessage: agentRunState.sendMessage,

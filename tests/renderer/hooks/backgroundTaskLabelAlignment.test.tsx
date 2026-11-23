@@ -56,8 +56,8 @@ describe('background task 「助手 N」 is the same task-to-name mapping in eve
     const rows = renderHook(() => useSessionAgentRows(SESSION)).result.current.rows;
     const rowNames = Object.fromEntries(rows.map((row) => [row.key, row.name]));
 
-    const rail = Object.fromEntries(buildLedgerTaskRecords(LEDGER, SESSION, languages.zh)
-      .map((record) => [record.id.replace('background:', ''), deriveTaskRailView(record, null, languages.zh).title]));
+    const rail = Object.fromEntries(buildLedgerTaskRecords(LEDGER, SESSION, 'zh')
+      .map((record) => [record.id.replace('background:', ''), deriveTaskRailView(record, null, 'zh').title]));
 
     expect(rail).toEqual({ 'task-z': '助手 3', 'task-y': '助手 2', 'task-x': '助手 1' });
     expect(rowNames['task-y']).toBe(rail['task-y']);

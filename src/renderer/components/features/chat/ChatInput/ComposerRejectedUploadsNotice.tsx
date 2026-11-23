@@ -31,6 +31,7 @@ export const ComposerRejectedUploadsNotice: React.FC = () => {
               .replace('{size}', formatFileSize(item.size))}
           </span>
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             aria-label={t.chatInput.rejectedUploadDismiss}

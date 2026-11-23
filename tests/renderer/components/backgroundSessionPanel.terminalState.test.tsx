@@ -223,3 +223,29 @@ describe('后台行的失败判定（唯一一步失败不能写「已完成」�
     expect(itemLine()).toBe('已完成');
   });
 });
+
+describe('面板行主名读实时会话标题', () => {
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ backgroundSessions: [], sessions: [] });
+  });
+
+  it('会话 store 里的实时标题优先于 host 快照；不在 store 时回落快照；改名后无需重载', () => {
+    useSessionStore.setState({
+      sessions: [{ id: 's1', title: '服务合同要点' }] as never,
+      backgroundSessions: [backgroundTask({ title: '看看 workspace' })],
+    });
+    render(<BackgroundSessionPanel />);
+    const row = () => screen.getByTestId('background-session-foreground').textContent ?? '';
+    expect(row()).toContain('服务合同要点');
+    expect(row()).not.toContain('看看 workspace');
+
+    act(() => {
+      useSessionStore.setState({ sessions: [{ id: 's1', title: '合同摘要（改名）' }] as never });
+    });
+    expect(row()).toContain('合同摘要（改名）');
+
+    act(() => { useSessionStore.setState({ sessions: [] }); });
+    expect(row()).toContain('看看 workspace');
+  });
+});

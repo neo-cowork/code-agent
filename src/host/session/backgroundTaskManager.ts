@@ -142,6 +142,10 @@ class BackgroundTaskManager extends EventEmitter {
     // Keep background settlement, while a running role wake owns its output notification.
     if (isRoleWakeRunActive(sessionId)) return;
 
+    // 终态与 running-guard 已同步落定；标题读取慢/卡住不拖面板收线。读完后条目被切前台/
+    // 重新入后台（map 里已不是这个对象）就不再通知，免得盖掉新条目。
+    if (!(await this.refreshLiveTitle(sessionId, task))) return;
+
     // 发送系统通知。force：后台完成提醒绕过焦点门——用户可能正停在 app 里聊别的会话
     // （与 loop/定时任务同一档「默默长跑、完成才冒头」）。通知摘要不吃裸 code
     // （USER_CANCELLED 由 renderer 翻译面板行；系统通知这头就地给人话）。
@@ -163,7 +167,7 @@ class BackgroundTaskManager extends EventEmitter {
    * 失败与完成同一档「默默长跑、终态才冒头」——焦点门不该吞掉失败提醒
    * （2026-10-11 验收：撞 max-step 上限的失败轮无任何提示）。
    */
-  markFailed(sessionId: string, error?: string, duration?: number): void {
+  async markFailed(sessionId: string, error?: string, duration?: number): Promise<void> {
     const task = this.backgroundSessions.get(sessionId);
     if (task?.status !== 'running') return;
 
@@ -177,6 +181,8 @@ class BackgroundTaskManager extends EventEmitter {
       task,
     });
 
+    if (!(await this.refreshLiveTitle(sessionId, task))) return;
+
     // 发送系统通知。succeeded:false → 标题「任务失败」；MAX_ITERATIONS code 就地翻人话。
     notificationService.notifyTaskComplete({
       sessionId,
@@ -188,6 +194,22 @@ class BackgroundTaskManager extends EventEmitter {
       toolsUsed: [],
       succeeded: false,
     }, { force: true });
+  }
+
+  /**
+   * 终态后按实时会话标题刷新条目标题（改名/智能标题后快照已过期），取不到回落快照。
+   * 返回 false = 读取期间条目已被移出/替换，调用方不应再通知。
+   */
+  private async refreshLiveTitle(sessionId: string, task: BackgroundSessionInfo): Promise<boolean> {
+    try {
+      const session = await getSessionManager().getSession(sessionId);
+      const live = session?.title?.trim();
+      if (this.backgroundSessions.get(sessionId) !== task) return false;
+      if (live) task.title = live;
+      return true;
+    } catch {
+      return this.backgroundSessions.get(sessionId) === task;
+    }
   }
 
   /**

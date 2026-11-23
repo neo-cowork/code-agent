@@ -238,7 +238,7 @@ export function sensitiveStepHandbackResolution(
     ? '\nThe hand-back expired unanswered (parked approval backstop), so it counts as skipped.'
     : '';
   return {
-    result: `SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose to skip "${label}" (${step.kind}). Continue the rest of the task without it, or ask the user how to proceed. Do not retry this step.${expiryLine}`,
+    result: `SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose to skip "${label}" (${step.kind}). Continue the rest of the task without this step if that is possible; if the task cannot continue without it, state plainly in the final reply which step is missing. Do not ask a question or call a question tool. Do not retry this step.${expiryLine}`,
     metadata: { code: 'SENSITIVE_STEP_HANDBACK', outcome },
   };
 }

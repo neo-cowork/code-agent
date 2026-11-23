@@ -26,6 +26,7 @@ import {
   runDeliverableDiskCheckGate,
   type DeliverableClaim,
   type DeliverableDiskCheckResult,
+  type DeliverableMissing,
 } from './deliverableDiskCheck';
 import type { ArtifactRenderReviewStamp, DeclaredDeliverables } from './artifactState';
 
@@ -430,7 +431,7 @@ async function runArtifactRenderReviewGate(input: {
     declaredDeliverables: input.declaredDeliverables,
     finalText: input.finalText,
     nudgeManager: input.nudgeManager,
-  }).filter(isRenderableClaim);
+  }).filter((claim) => claim.source !== 'written' && isRenderableClaim(claim));
 
   const claimedFiles = claims.map((claim) => claim.resolved);
   const previousIssues = input.repairsUsed > 0 ? (input.previousStamp?.issues ?? []) : [];
@@ -466,6 +467,14 @@ async function runArtifactRenderReviewGate(input: {
   return { action: 'pass', content: appendVisualFailureNote(input.finalText, blocking), stamp };
 }
 
+/** 落盘核对补轮日志明细：每条缺漏的 kind + path，placeholder 附首个命中定位与片段（≤60 字）。 */
+type DeliverableRepairLogItem = {
+  kind: DeliverableMissing['kind'];
+  path: string;
+  location?: string;
+  fragment?: string;
+};
+
 export type DeliverableCloseGateResult =
   | { action: 'pass'; content: string }
   | {
@@ -475,6 +484,7 @@ export type DeliverableCloseGateResult =
     tag: ContextInjectionSource;
     logMessage: string;
     missing?: string[];
+    items?: readonly DeliverableRepairLogItem[];
   };
 
 /** 落盘核对之后接渲染审查。messageProcessor 只调这一处，避免两套补轮分叉。 */
@@ -504,13 +514,25 @@ export async function applyDeliverableCloseGates(input: {
     artifact: input.artifact,
   });
   if (disk.action === 'repair') {
+    // 补轮日志逐条带 kind/path（placeholder 附首个命中定位与片段）：调试的人一条日志就能
+    // 分辨占位残留/空文件/Markdown 残留/真缺文件；「not on disk」措辞只在真有缺文件时出现。
+    const items = disk.missing.map((item): DeliverableRepairLogItem => {
+      const firstHit = item.kind === 'placeholder' ? item.placeholderHits?.[0] : undefined;
+      return {
+        kind: item.kind,
+        path: item.requestedFormat ?? item.claim.resolved,
+        ...(firstHit ? { location: firstHit.location, fragment: firstHit.fragment } : {}),
+      };
+    });
+    const hasMissingFile = items.some((item) => item.kind === 'not_on_disk');
     return {
       action: 'repair',
       kind: 'disk',
       prompt: disk.prompt,
       tag: 'deliverable-disk-check',
-      logMessage: '[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back',
+      logMessage: `[DeliverableDiskCheck] deliverables ${hasMissingFile ? 'not on disk' : 'need repair'}, bounded repair round fed back`,
       missing: disk.missing.map((item) => item.requestedFormat ?? item.claim.resolved),
+      items,
     };
   }
 

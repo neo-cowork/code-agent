@@ -234,6 +234,11 @@ describe('RoleRoutinesSection 上次运行口径与运行记录一致（zh，N-U
     expect(line).not.toContain('命令被拒绝');
   });
 
+  it('无人值守额度用完的失败显示「没跑成：无人值守额度已用完」', () => {
+    renderSection(lastRunJob({ lastStatus: 'failed', lastError: '无人值守额度已用完' }));
+    expectLastLine(`上次运行：${lastLabel} · 没跑成：无人值守额度已用完`);
+  });
+
   it('取消显示「已取消」', () => {
     renderSection(lastRunJob({ lastStatus: 'cancelled' }));
     expectLastLine(`上次运行：${lastLabel} · 已取消`);

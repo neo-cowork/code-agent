@@ -74,6 +74,7 @@ export function hasIncompleteStreamSnapshot(
   }
   return turn.nodes.some((node) =>
     node.messageId === snapshot.turnId ||
+    node.metadata?.correlation?.turnId === snapshot.turnId ||
     node.id === snapshot.turnId ||
     node.id.startsWith(`${snapshot.turnId}-`),
   );

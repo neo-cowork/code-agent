@@ -1,3 +1,5 @@
+import { EXCEL_READ_ACTIONS, EXCEL_WRITE_ACTIONS } from '@shared/constants/excelActions';
+import { describeHelperOutcomes, type HelperOutcome } from './helperOutcomeCopy';
 import { resolveSkillName } from '@shared/resolveSkillName';
 import { catalogConnectorToolPhrase } from '@shared/utils/catalogConnectorToolLabel';
 import { humanizeInternalText } from '@shared/humanizeInternalText';
@@ -11,8 +13,10 @@ import { agentRoleLabel } from './agentRoleLabel';
 import { isSemanticToolUIEnabled } from './featureFlags';
 import { formatDisplayPath } from './displayPath';
 import type { Translations } from '../i18n';
+import type { OfficeToolKind } from '../i18n/toolStepVerbs';
 import type { ToolCallTargetContext, ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
 import { getHumanToolLabel } from './toolHumanLabel';
+import { isComputerUseMcpServer, parseMcpToolName, shouldHideMcpServerSlug } from './mcpServerLabel';
 import {
   extractWorkbenchReferenceFromToolCall,
   findConnectorToolMetadata,
@@ -76,27 +80,13 @@ export function getToolFilePath(
   return null;
 }
 
-// mcp 工具命名：现行 mcp__server__tool（双下划线），历史遗留 mcp_server_tool（单下划线），
-// 与 ToolCallDisplay/utils.ts 的 formatMcpServerName 同款解析口径。
-function parseMcpName(name: string): { server: string; tool: string } | null {
-  if (name.startsWith('mcp__')) {
-    const rest = name.slice('mcp__'.length);
-    const idx = rest.indexOf('__');
-    if (idx > 0) return { server: rest.slice(0, idx), tool: rest.slice(idx + 2) };
-    return null;
-  }
-  const legacy = name.match(/^mcp_([^_]+)_(.+)$/);
-  if (legacy) return { server: legacy[1], tool: legacy[2] };
-  return null;
-}
-
 /**
  * 未声明工具写盘披露（undeclared-tool:<name>）的展示名：mcp__server__tool →
  * 「server / tool」，解不动（无 server/tool 段、非 mcp 前缀）原样展示。
  * 消费方：RewindPanel 与 TraceNodeRenderer 的回退披露行（turnCheckoutNoteUndeclaredTool）。
  */
 export function undeclaredToolDisplayName(name: string): string {
-  const parsed = parseMcpName(name);
+  const parsed = parseMcpToolName(name);
   return parsed && parsed.tool !== '' ? `${parsed.server} / ${parsed.tool}` : name;
 }
 
@@ -111,7 +101,7 @@ function isMessagingMcpTool(server: string, tool: string): boolean {
 }
 
 type ToolCategory =
-  | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir'
+  | 'read' | 'write' | 'edit' | 'bash' | 'search' | 'listDir' | 'office' | 'fileStat'
   | 'webSearch' | 'webFetch' | 'mcpChannel' | 'mcp'
   | 'subagentSpawn' | 'subagentMessage' | 'agentConversation' | 'todo' | 'planUpdate' | 'planRead'
   | 'delegateSession' | 'listSessionCandidates' | 'delegateTask' | 'taskStatus' | 'steerTask' | 'cancelTask'
@@ -126,7 +116,18 @@ const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'edit_file', 'NotebookEdit', 'n
 // 不并进来——它们不是「运行了命令」，混进 ran 桶会谎报动作。
 const BASH_TOOLS = new Set(['Bash', 'bash', 'Process', 'code_execute', 'terminal_write']);
 const SEARCH_TOOLS = new Set(['Grep', 'Glob', 'grep', 'glob', 'academic_search', 'ocr_search']);
-const LISTDIR_TOOLS = new Set(['LS', 'list_directory']);
+// ListDirectory 是 schema 注册名（modules/file/listDirectory.schema.ts）；LS/list_directory 是历史名。
+const LISTDIR_TOOLS = new Set(['LS', 'list_directory', 'ListDirectory']);
+// Office 文档工具（生成/编辑表格、文档、演示稿、PDF、图表）：步骤行按文档种类给专句，
+// 有输出/目标路径时带文件名（见 buildToolStep 的 office 分支）。词表在 toolStepVerbs 的 office 表。
+const OFFICE_TOOLS: Record<string, OfficeToolKind> = {
+  excel_generate: 'excel',
+  docx_generate: 'docx',
+  ppt_generate: 'ppt',
+  pdf_generate: 'pdf',
+  chart_generate: 'chart',
+  DocEdit: 'docEdit',
+};
 const WEBSEARCH_TOOLS = new Set(['WebSearch']);
 const WEBFETCH_TOOLS = new Set(['WebFetch', 'web_fetch', 'http_request', 'screenshot_page', 'twitter_fetch', 'youtube_transcript']);
 const SUBAGENT_SPAWN_TOOLS = new Set(['spawn_agent', 'AgentSpawn', 'Task', 'Explore']);
@@ -152,6 +153,33 @@ const MEMORY_SEARCH_TOOLS = new Set(['memory_search']);
 // ToolSearch：工具目录检索，对用户零意义的纯内部动作，不进主流聚合行
 const TOOL_SEARCH_TOOLS = new Set(['ToolSearch', 'tool_search']);
 
+
+
+/** 带入参的分类：ExcelAutomate / Blob 按 action 落到既有或专属步骤；其余沿用按工具名分类。 */
+export function classifyToolCall(name: string, args: Record<string, unknown> | undefined): ToolCategory {
+  if (name === 'ExcelAutomate') {
+    const action = args?.action;
+    if (typeof action === 'string' && EXCEL_READ_ACTIONS.has(action)) return 'read';
+    if (typeof action === 'string' && EXCEL_WRITE_ACTIONS.has(action)) return 'write';
+  }
+  // Blob 是文件查看族：stat 只看元信息（大小/时间/hash，不读内容），落专属「文件信息」句；
+  // read_text/read_base64 是读内容，与 Read 同句。缺 action 的形状按读取兜（schema 本要求必填）。
+  if (name === 'Blob') return args?.action === 'stat' ? 'fileStat' : 'read';
+  return classifyToolName(name);
+}
+
+/** ExcelAutomate 的步骤只显示文件名（不露完整路径）；generate 用 output_path。 */
+function excelFileName(args: Record<string, unknown>): string {
+  const raw = (args.action === 'generate' ? [args.output_path] : [args.file_path]).find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return raw?.trim().split(/[\\/]/).filter(Boolean).pop() ?? '';
+}
+
+/** Office 工具的文件名（basename，不露完整路径）：generate 系用 output_path，DocEdit 用 file_path。 */
+function officeFileName(args: Record<string, unknown>): string {
+  const raw = [args.output_path, args.file_path, args.path].find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return raw?.trim().split(/[\\/]/).filter(Boolean).pop() ?? '';
+}
+
 export function classifyToolName(name: string): ToolCategory {
   if (READ_TOOLS.has(name)) return 'read';
   if (WRITE_TOOLS.has(name)) return 'write';
@@ -159,6 +187,7 @@ export function classifyToolName(name: string): ToolCategory {
   if (BASH_TOOLS.has(name)) return 'bash';
   if (SEARCH_TOOLS.has(name)) return 'search';
   if (LISTDIR_TOOLS.has(name)) return 'listDir';
+  if (OFFICE_TOOLS[name]) return 'office';
   if (WEBSEARCH_TOOLS.has(name)) return 'webSearch';
   if (WEBFETCH_TOOLS.has(name)) return 'webFetch';
   if (SUBAGENT_SPAWN_TOOLS.has(name)) return 'subagentSpawn';
@@ -182,7 +211,7 @@ export function classifyToolName(name: string): ToolCategory {
   if (MEMORY_STORE_TOOLS.has(name)) return 'memoryStore';
   if (MEMORY_SEARCH_TOOLS.has(name)) return 'memorySearch';
   if (TOOL_SEARCH_TOOLS.has(name)) return 'toolSearch';
-  const mcp = parseMcpName(name);
+  const mcp = parseMcpToolName(name);
   if (mcp) return isMessagingMcpTool(mcp.server, mcp.tool) ? 'mcpChannel' : 'mcp';
   return 'unknown';
 }
@@ -473,7 +502,13 @@ export function humanizeToolStep(...args: Parameters<typeof buildToolStep>): str
   const language = CJK_PATTERN.test(t.toolStepHumanize.writeFallback) ? 'zh' : 'en';
   // 被自动收口、从未执行的步骤：用「请求…」词表加「未执行 ·」前缀，不走任何 failed 词表。
   const notRun = args[4] === 'failed' && args[6]?.notRun === true;
-  const step = notRun
+  const skippedBash = args[6]?.skipped === true && classifyToolName(args[0]) === 'bash';
+  const skippedDescription = skippedBash ? usableBashDescription(args[0], args[1], t) : undefined;
+  const step = args[6]?.handedOff === true
+    ? t.toolStepHumanize.handedOffStep
+    : skippedBash
+    ? (skippedDescription ? `${t.toolStepHumanize.notRunPrefix} · ${skippedDescription}` : t.toolStepHumanize.skippedCommands.one)
+    : notRun
     ? `${t.toolStepHumanize.notRunPrefix} · ${buildToolStep(args[0], args[1], t, args[3], 'pending-approval', args[5], args[6])}`
     : buildToolStep(...args);
   return humanizeInternalText(step, language).text;
@@ -486,13 +521,13 @@ function buildToolStep(
   shortDescription?: string,
   status: ToolStepStatus = 'completed',
   stepLabel?: ToolStepLabelKey,
-  renderContext: { notRun?: boolean; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
+  renderContext: { notRun?: boolean; skipped?: boolean; handedOff?: boolean; helperOutcomes?: HelperOutcome[]; connectorPrefixRendered?: boolean; delegationReceipt?: ReturnType<typeof parseDelegateSessionReceipt> } = {},
 ): string {
   // ponytail: 只认 pattern 恰好是单个 U+FFFD（替换字符）这一种形状——搜「文档里有没有乱码」
   // 是目前唯一会这么调的用法，写成规则集反而要先编出一批还不存在的用法。天花板：出现第二种
   // 「按字符类排查」的搜索（控制字符、零宽空格）时，换成一张 pattern → 文案的小表。
-  if (classifyToolName(name) === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
-  const toolKind = classifyToolName(name);
+  const toolKind = classifyToolCall(name, args);
+  if (toolKind === 'search' && args?.pattern === '\uFFFD' && status === 'completed') return t.deliveryExperience.checkCharacters;
   if (toolKind === 'delegateSession' || toolKind === 'listSessionCandidates') {
     const h = status === 'completed' ? t.toolStepHumanize : t.toolStepHumanize.statusForms[status];
     if (toolKind === 'listSessionCandidates') return h.listSessionCandidates;
@@ -537,6 +572,7 @@ function buildToolStep(
     : schemaDescription;
   if (
     isSemanticToolUIEnabled()
+    && !(name === 'ExcelAutomate' && (toolKind === 'read' || toolKind === 'write'))
     && status === 'completed'
     && preferredDescription
     && matchesUiScript(preferredDescription, t)
@@ -552,12 +588,12 @@ function buildToolStep(
 
   switch (toolKind) {
     case 'read': {
-      const target = firstPath(a, ['file_path', 'path']);
-      return target ? h.read.replace('{target}', target) : h.readFallback;
+      const target = name === 'ExcelAutomate' ? excelFileName(a) : firstPath(a, ['file_path', 'path']);
+      return target ? (name === 'ExcelAutomate' && status === 'completed' ? t.toolStepHumanize.excelRead : h.read).replace('{target}', target) : h.readFallback;
     }
     case 'write': {
-      const target = firstPath(a, ['file_path', 'path']);
-      return target ? h.write.replace('{target}', target) : h.writeFallback;
+      const target = name === 'ExcelAutomate' ? excelFileName(a) : firstPath(a, ['file_path', 'path']);
+      return target ? (name === 'ExcelAutomate' && status === 'completed' ? t.toolStepHumanize.excelWrite : h.write).replace('{target}', target) : h.writeFallback;
     }
     case 'edit': {
       const target = firstPath(a, ['file_path', 'path']);
@@ -568,8 +604,25 @@ function buildToolStep(
       return query ? h.search.replace('{query}', query) : h.searchFallback;
     }
     case 'listDir': {
+      // "."/"./"/缺省 = 工作目录本身（ListDirectory schema：path 默认 workingDir）；
+      // "~"/"~/" = 主目录。裸符号「查看了 . 目录」「查看了 ~ 目录」对用户不可读，
+      // 换成对应的人话目标；其余路径照旧走 {target} 模板。
+      const rawPath = typeof a.path === 'string' ? a.path.trim() : '';
+      if (rawPath === '' || rawPath === '.' || rawPath === './') return h.listDirWorking;
+      if (rawPath === '~' || rawPath === '~/') return h.listDirHome;
       const target = firstPath(a, ['path']);
       return target ? h.listDir.replace('{target}', target) : h.listDirFallback;
+    }
+    case 'fileStat': {
+      const target = firstPath(a, ['file_path', 'path']);
+      return target ? h.fileStat.replace('{target}', target) : h.fileStatFallback;
+    }
+    case 'office': {
+      const kind = OFFICE_TOOLS[name];
+      const sentence = h.office[kind];
+      // 失败行不带文件名：与既有「…未成功」句式一致，文件名留给详情/错误行。
+      const file = status === 'failed' ? '' : officeFileName(a);
+      return file ? `${sentence} ${file}` : sentence;
     }
     case 'webSearch': {
       const query = takePreview(a.query);
@@ -580,19 +633,52 @@ function buildToolStep(
       return target ? h.webFetch.replace('{target}', target) : h.webFetchFallback;
     }
     case 'mcpChannel': {
-      const mcp = parseMcpName(name);
+      const mcp = parseMcpToolName(name);
       if (!mcp) return h.fallbackNeutral;
       const channel = t.toolStepHumanize.channelNames[mcp.server] || mcp.server;
       return h.channelMessage.replace('{channel}', channel);
     }
     case 'mcp': {
-      const mcp = parseMcpName(name);
+      const mcp = parseMcpToolName(name);
       if (!mcp) return h.fallbackNeutral;
       const catalogPhrase = catalogConnectorStepPhrase(name, status, CJK_PATTERN.test(h.writeFallback) ? 'zh' : 'en');
       if (catalogPhrase) return catalogPhrase;
+      // cua-driver 是 Computer Use 后端：整套复用 computer 域既有四态人话，
+      // server slug 与 mcp__ 前缀都不出现在步骤行（FB-2291）。
+      if (isComputerUseMcpServer(mcp.server)) {
+        return buildDomainActionSentence('computer', mcp.tool, status, a, t);
+      }
+      // 未知且 slug 脏（带 - / _ 或纯数字）的 server 不拼进句子，走通用工具句；
+      // 已知友好 server（exa / github…）与频道名照旧走 mcp 句式。
+      if (shouldHideMcpServerSlug(mcp.server, t.toolStepHumanize.channelNames)) {
+        return buildDomainActionSentence('tool', mcp.tool, status, a, t);
+      }
       return buildDomainActionSentence('mcp', mcp.tool, status, a, t, mcp.server);
     }
     case 'subagentSpawn': {
+      const helperSentence = renderContext.helperOutcomes && status === 'failed'
+        ? describeHelperOutcomes(renderContext.helperOutcomes, t) : null;
+      if (helperSentence) return helperSentence;
+      const parallelEntries = a.parallel === true && Array.isArray(a.agents)
+        ? a.agents.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
+        : [];
+      if (name !== 'Task' && name !== 'Explore' && parallelEntries.length > 0) {
+        const labels = parallelEntries.map((entry) => {
+          const given = typeof entry.name === 'string' ? entry.name.trim() : '';
+          if (given) return given;
+          const entryRole = typeof entry.role === 'string' ? entry.role.trim() : '';
+          return entryRole ? agentRoleLabel(entryRole, t.agentRoleLabels) : '';
+        }).filter(Boolean);
+        if (parallelEntries.length === 1) {
+          if (labels[0]) return h.subagentSpawn.replace('{description}', labels[0]);
+        } else if (labels.length > 0) {
+          const shown = labels.slice(0, 3).join(CJK_PATTERN.test(h.writeFallback) ? '、' : ', ');
+          const names = labels.length > 3 ? `${shown}…` : shown;
+          return h.subagentSpawnParallel
+            .replace('{count}', String(parallelEntries.length))
+            .replace('{names}', names);
+        }
+      }
       const roleArg = name === 'Task' ? a.subagent_type : a.role;
       const role = name === 'Explore' ? 'explore' : typeof roleArg === 'string' ? roleArg.trim() : '';
       const description = (name === 'Task' ? firstString(a, ['description']) : '')
@@ -730,7 +816,16 @@ export function humanizeToolGroupLabel(
   t: Translations,
   status: ToolStepStatus = 'completed',
   notRun = false,
+  skippedBashCount = 0,
 ): string {
+  if (skippedBashCount > 0) {
+    const ran = humanizeToolGroupLabel(toolNames, t, status, notRun);
+    const h = t.toolStepHumanize;
+    const skipped = ran
+      ? h.skippedCount[skippedBashCount === 1 ? 'one' : 'other']
+      : h.skippedCommands[skippedBashCount === 1 ? 'one' : 'other'];
+    return [ran, skipped.replace('{count}', String(skippedBashCount))].filter(Boolean).join(t.deliveryExperience.labelSeparator);
+  }
   if (notRun && status === 'failed') {
     const label = humanizeToolGroupLabel(toolNames, t, 'pending-approval');
     return label ? `${t.toolStepHumanize.notRunPrefix} · ${label}` : '';
@@ -801,7 +896,7 @@ function targetLabelFor(
   name: string,
   args: Record<string, unknown> | undefined,
 ): string | undefined {
-  if (kind === 'mcp_server') return parseMcpName(name)?.server;
+  if (kind === 'mcp_server') return parseMcpToolName(name)?.server;
   if (kind === 'file') {
     const path = getToolFilePath(name, args) ?? firstPath(args ?? {}, ['file_path', 'path', 'pattern']);
     if (!path) return undefined;

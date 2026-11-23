@@ -10,6 +10,8 @@ import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import {
+  deriveFallbackSessionTitle,
+  deriveRuleSummaryTitle,
   isProvisionalAutoTitle,
   resolveSessionTitle,
 } from '../../../src/shared/sessionTitlePlaceholder';
@@ -48,8 +50,21 @@ import { SessionManager } from '../../../src/host/services/infra/sessionManager'
 const LOG = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 const NOOP_LOG = { info: vi.fn(), warn: vi.fn() };
-const deriveRuleSummaryTitle = (source: string) =>
+const ruleSummary = (source: string) =>
   resolveSessionTitle(source, 'zh', async () => ({ title: null, unavailable: true }), NOOP_LOG);
+const FUNCTION_WORDS = new Set([
+  'the', 'a', 'an', 'of', 'to', 'for', 'and', 'or', 'in', 'on', 'at',
+  'with', 'by', 'from', 'into', 'about', 'as', 'is', 'are', 'be',
+]);
+const SAMPLE_MEAN = 'Write the sample-mean formula in LaTeX. Use single dollars for inline math.';
+
+function assertReadableTitle(title: string): void {
+  const words = title.split(' ').filter((word) => word.length > 0);
+  const last = words[words.length - 1]?.replace(/\.+$/g, '').toLowerCase() ?? '';
+  expect(FUNCTION_WORDS.has(last), title).toBe(false);
+  const contentWords = words.filter((word) => !FUNCTION_WORDS.has(word.replace(/\.+$/g, '').toLowerCase()));
+  expect(contentWords.length, title).toBeGreaterThanOrEqual(2);
+}
 /** 模型两次都给同一个标题：被接受 = 不是回声；被换成规则摘要 = 回声。 */
 async function isEchoSessionTitle(title: string, source: string): Promise<boolean> {
   return (await resolveSessionTitle(source, 'zh', async () => ({ title }), NOOP_LOG)) !== title;
@@ -72,14 +87,100 @@ describe('echo check', () => {
 
 describe('rule summary', () => {
   it('strips zh request boilerplate and cuts at the first clause', async () => {
-    expect(await deriveRuleSummaryTitle('请帮我分析这个 sales.csv，按地区汇总金额')).toBe('分析这个 sales.csv');
-    expect(await deriveRuleSummaryTitle('帮我汇总销售表')).toBe('汇总销售表');
+    expect(await ruleSummary('请帮我分析这个 sales.csv，按地区汇总金额')).toBe('分析这个 sales.csv');
+    expect(await ruleSummary('帮我汇总销售表')).toBe('汇总销售表');
   });
   it('strips en boilerplate, never ends with ellipsis, max 20 chars', async () => {
-    const out = await deriveRuleSummaryTitle('Can you help me draft the weekly report about the release, thanks');
+    const out = await ruleSummary('Can you help me draft the weekly report about the release, thanks');
     expect(out).toBe('draft the weekly');
     expect(out.length).toBeLessThanOrEqual(20);
-    expect(await deriveRuleSummaryTitle('一二三四五六七八九十一二三四五六七八九十一二三四五')).toHaveLength(20);
+    expect(await ruleSummary('一二三四五六七八九十一二三四五六七八九十一二三四五')).toHaveLength(20);
+  });
+
+  it('quick model returned no title -> rule summary yields Write the sample-mean', async () => {
+    const warn = vi.fn();
+    const title = await resolveSessionTitle(
+      SAMPLE_MEAN,
+      'zh',
+      async () => ({ title: null }),
+      { info: vi.fn(), warn },
+    );
+    expect(warn).toHaveBeenCalledWith('quick model returned no title -> rule summary');
+    expect(title).toBe('Write the sample-mean');
+    assertReadableTitle(title);
+  });
+
+  it('quick model unavailable -> rule summary yields Write the sample-mean', async () => {
+    const warn = vi.fn();
+    const title = await resolveSessionTitle(
+      SAMPLE_MEAN,
+      'zh',
+      async () => ({ title: null, unavailable: true }),
+      { info: vi.fn(), warn },
+    );
+    expect(warn).toHaveBeenCalledWith('quick model unavailable -> rule summary');
+    expect(title).toBe('Write the sample-mean');
+    assertReadableTitle(title);
+    const plan = await resolveSessionTitle(
+      'Write the comprehensive plan for launch',
+      'zh',
+      async () => ({ title: null, unavailable: true }),
+      NOOP_LOG,
+    );
+    expect(plan).toBe('Write the comprehensive');
+    assertReadableTitle(plan);
+  });
+
+  it('retry still echo -> rule summary also avoids a function-word fragment', async () => {
+    const echo = 'Write the sample-mean formula in LaTeX';
+    const warn = vi.fn();
+    const title = await resolveSessionTitle(
+      SAMPLE_MEAN,
+      'zh',
+      async () => ({ title: echo }),
+      { info: vi.fn(), warn },
+    );
+    expect(warn).toHaveBeenCalledWith('retry still echo -> rule summary', { title: echo });
+    expect(title).toBe('Write the sample-mean');
+  });
+
+  it('a long run of function words then a very long word falls back within 53 chars', async () => {
+    const source = `the a an of to for and or in on ${'Supercalifragilisticexpialidocious'.repeat(2)} explains the mean`;
+    const title = await resolveSessionTitle(
+      source,
+      'zh',
+      async () => ({ title: null }),
+      NOOP_LOG,
+    );
+    expect(title).toBe(deriveFallbackSessionTitle(source, 'zh'));
+    expect(title.length).toBeLessThanOrEqual(53);
+    expect(title.endsWith('...')).toBe(true);
+    const last = title.split(' ').pop()?.replace(/\.+$/g, '').toLowerCase() ?? '';
+    expect(FUNCTION_WORDS.has(last), title).toBe(false);
+  });
+
+  it('a Chinese first sentence of 20+ chars stays exactly 20 chars', async () => {
+    const source = '一二三四五六七八九十一二三四五六七八九十一二三四五';
+    const expected = '一二三四五六七八九十一二三四五六七八九十';
+    expect(await resolveSessionTitle(source, 'zh', async () => ({ title: null }), NOOP_LOG)).toBe(expected);
+    expect(await ruleSummary(source)).toBe(expected);
+    expect(expected).toHaveLength(20);
+  });
+
+  it('deriveRuleSummaryTitle without avoidFragment stays Write the for folder naming', () => {
+    expect(deriveRuleSummaryTitle(SAMPLE_MEAN)).toBe('Write the');
+    expect(deriveRuleSummaryTitle(SAMPLE_MEAN, 'zh')).toBe('Write the');
+    expect(deriveRuleSummaryTitle(SAMPLE_MEAN, 'en', { avoidFragment: false })).toBe('Write the');
+  });
+
+  it('a model title that is literally Write the is left unchanged', async () => {
+    const title = await resolveSessionTitle(
+      SAMPLE_MEAN,
+      'zh',
+      async () => ({ title: 'Write the' }),
+      NOOP_LOG,
+    );
+    expect(title).toBe('Write the');
   });
 });
 
@@ -152,6 +253,11 @@ describe('SessionManager.addMessage -> title update', () => {
     quick.available = false;
     const text = '请帮我分析这个 sales.csv，按地区汇总金额并告诉我哪个地区最高，最好再给出同比变化';
     expect(await sendFirst(text.slice(0, 30) + '...', text)).toBe('分析这个 sales.csv');
+  });
+
+  it('no quick model: sample-mean prompt becomes Write the sample-mean', async () => {
+    quick.available = false;
+    expect(await sendFirst(SAMPLE_MEAN.slice(0, 30) + '...', SAMPLE_MEAN)).toBe('Write the sample-mean');
   });
 
   describe('/init-memory deterministic title', () => {

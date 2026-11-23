@@ -23,6 +23,7 @@ import {
 import ipcService from '../../../services/ipcService';
 import { gatedItemsOf, type FolderTrustEvaluationView } from '../../FolderTrustDialog';
 import { FolderTrustDangerList } from '../../FolderTrustDangerList';
+import { FolderTrustFolderInfo } from '../../FolderTrustFolderInfo';
 import { pickNativeDirectory } from '../../../services/tauriPluginFacade';
 import { toast } from '../../../hooks/useToast';
 import { deriveProjectActivityStatus, type ProjectActivityStatus } from './projectSpaceData';
@@ -393,7 +394,11 @@ export const ProjectListView = React.forwardRef<ProjectListViewHandle, ProjectLi
         {trustConfirm ? (
           <div className="grid gap-3" data-testid="project-space-create-trust-confirm">
             <p className="text-sm leading-6 text-zinc-400">{ps.trustConfirmHint}</p>
-            <p className="font-mono text-xs text-zinc-100 break-all">{trustConfirm.displayPath}</p>
+            <FolderTrustFolderInfo
+              displayPath={trustConfirm.displayPath}
+              canonicalRealpath={trustConfirm.canonicalRealpath}
+              files={gatedItemsOf(trustConfirm).map((item) => item.displayPath)}
+            />
             <FolderTrustDangerList items={gatedItemsOf(trustConfirm)} />
           </div>
         ) : (

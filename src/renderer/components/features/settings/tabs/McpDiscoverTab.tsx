@@ -5,10 +5,11 @@
 import React, { useMemo, useState } from 'react';
 import { Check, Link2, Loader2, Plug } from 'lucide-react';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
-import { getMcpRuntimeBadge, groupRecommendedMcpServersByCategory } from '@shared/constants/mcpCatalog';
+import { getMcpRuntimeBadge, groupRecommendedMcpServersByCategory, MCP_OAUTH_CREDENTIAL } from '@shared/constants/mcpCatalog';
 import { Button, Modal } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { notionDiscoverDescriptionEn } from '../../../../i18n/mcpDiscoverCatalog';
 import { zh } from '../../../../i18n/zh';
 import { ConnectorLogo } from '../../connectors/ConnectorLogo';
 
@@ -59,7 +60,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
   onAdd,
   onEnableBuiltin,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const labels = t.settings.mcp.discover;
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const entries = useMemo(
@@ -130,6 +131,29 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
           const action = getEntryAction(activeEntry, existingServerIds, enabledServerIds);
           const runtimeBadgeLabel = getRuntimeBadgeLabel(activeEntry, labels);
           const isLoading = actionLoading.has(activeEntry.id);
+          const isEnable = action === 'enable-builtin';
+          const isAdded = action === 'enabled' || action === 'connected';
+          let disabledReason: string | undefined;
+          if (!isAdded) {
+            if (isWebMode()) {
+              disabledReason = isEnable ? labels.grid.enableDesktopOnly : labels.grid.addDesktopOnly;
+            } else if (!canManageMcp) {
+              disabledReason = labels.grid.addRequiresAdmin;
+            }
+          }
+          const reasonId = `mcp-discover-add-disabled-reason-${activeEntry.id}`;
+          const credentials = activeEntry.requiredCredentials;
+          let setupText = labels.noConfig;
+          if (credentials?.length) {
+            setupText = labels.grid.secretInNextStep;
+            if (disabledReason !== undefined) {
+              const names = credentials.map((name) => name === MCP_OAUTH_CREDENTIAL ? labels.grid.browserSignIn : name);
+              setupText = labels.requiredCredentialsPrefix + names.join(language === 'zh' ? '、' : ', ');
+            }
+          }
+          const description = disabledReason !== undefined && language === 'en' && activeEntry.id === 'notion'
+            ? notionDiscoverDescriptionEn
+            : activeEntry.description;
           return (
             <div className="space-y-4 p-5" data-testid={`mcp-discover-detail-${activeEntry.id}`}>
               <div className="text-center">
@@ -141,7 +165,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                     className="h-8 w-8"
                   />
                 </span>
-                <p className="mt-3 text-xs leading-relaxed text-zinc-400">{activeEntry.description}</p>
+                <p className="mt-3 text-xs leading-relaxed text-zinc-400">{description}</p>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2">
@@ -163,9 +187,9 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
               <div className="rounded-md border border-zinc-700 bg-zinc-950/40 p-3">
                 <div className="text-[11px] font-medium text-zinc-400">{labels.grid.connectionSetup}</div>
                 <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                  {activeEntry.requiredCredentials?.length ? labels.grid.secretInNextStep : labels.noConfig}
+                  {setupText}
                 </p>
-                {action === 'enabled' || action === 'connected' ? (
+                {isAdded ? (
                   <span
                     data-testid={`mcp-discover-added-${activeEntry.id}`}
                     className="mt-3 flex items-center gap-1 text-xs text-zinc-500"
@@ -173,20 +197,28 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                     <Check className="h-3 w-3" />{labels.added}
                   </span>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    className="mt-3"
-                    data-testid={action === 'add' ? `mcp-discover-add-${activeEntry.id}` : undefined}
-                    onClick={() => {
-                      if (action === 'enable-builtin') onEnableBuiltin(activeEntry.id);
-                      else onAdd(activeEntry);
-                    }}
-                    loading={isLoading}
-                    disabled={isWebMode() || !canManageMcp}
-                  >
-                    {action === 'enable-builtin' ? labels.enable : labels.add}
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      className="mt-3"
+                      data-testid={action === 'add' ? `mcp-discover-add-${activeEntry.id}` : undefined}
+                      onClick={() => {
+                        if (isEnable) onEnableBuiltin(activeEntry.id);
+                        else onAdd(activeEntry);
+                      }}
+                      loading={isLoading}
+                      disabled={disabledReason !== undefined}
+                      aria-describedby={disabledReason !== undefined ? reasonId : undefined}
+                    >
+                      {isEnable ? labels.enable : labels.add}
+                    </Button>
+                    {disabledReason !== undefined && (
+                      <p id={reasonId} data-testid={reasonId} className="mt-1 text-xs leading-relaxed text-zinc-400">
+                        {disabledReason}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 

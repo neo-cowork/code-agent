@@ -76,7 +76,7 @@ describe('parent terminal settles member and background panel together', () => {
       } else {
         // A failed parent must leave the root entry to the TaskManager rejection path (real error, no "stopped").
         expect(notificationService.notifyTaskComplete).not.toHaveBeenCalled();
-        settleBackgroundRunOnRejection(sessionId, 'provider exploded');
+        await settleBackgroundRunOnRejection(sessionId, 'provider exploded');
         expect(panel.getAllTasks()).toEqual([expect.objectContaining({ sessionId, status: 'failed', completionMessage: 'provider exploded' })]);
         expect(panel.getAllTasks()[0].completionMessage).not.toBe(BACKGROUND_TASK_CANCELLED);
         expect(notificationService.notifyTaskComplete).toHaveBeenCalledTimes(1);

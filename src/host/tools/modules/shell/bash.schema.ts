@@ -4,17 +4,18 @@ import type { ToolSchema } from '../../../protocol/tools';
 export const bashSchema: ToolSchema = {
   name: 'Bash',
   description: `Executes a bash command. Working directory persists across calls.
+Command substitution \`$(...)\`, backticks, and process substitution are always refused; run the inner command as its own Bash call and reuse its output.
 
 Returns: stdout/stderr (combined), exit code if non-zero, signal if terminated, background PIDs if started.
 
-For common file/search operations, dedicated tools are faster and more reliable:
+Prefer dedicated tools for file/search ops:
 - File listing: Glob (instead of \`find\` / \`ls\`)
 - Content search: Grep (instead of \`grep\` / \`rg\`)
 - Read files: Read (instead of \`cat\` / \`head\` / \`tail\` / \`sed -n\`)
 - Edit files: Edit (instead of \`sed\` / \`awk\`)
 - Write files: Write (instead of \`echo >\` / \`cat <<EOF\`)
 
-For everything else — running scripts, git, build/install, invoking any CLI on PATH (jq, ffmpeg, opencli, jina, mineru, pdftotext ...), or probing the environment with \`which\` / \`<cli> --help\` to learn what tools are available — Bash is your tool. When the built-in tools fall short (anti-scraping responses, niche formats, structured data wrangling), fall back to Bash and explore. The <env-capabilities> block in your context lists CLIs already detected locally; if a needed one is missing, \`command -v X\` confirms availability before use.
+For everything else — scripts, git, build/install, CLIs on PATH (jq, ffmpeg, opencli, jina, mineru, pdftotext ...), or probing with \`which\` / \`<cli> --help\` — use Bash. When built-in tools fall short (anti-scraping responses, niche formats, structured data wrangling), fall back to Bash and explore. <env-capabilities> lists locally detected CLIs; check others with \`command -v X\`.
 
 Git: never \`--force\` push, \`--no-verify\`, \`--no-gpg-sign\`, or change git config unless explicitly requested. Avoid \`commit --amend\` — only when the user asks for it or a pre-commit hook rewrote files, and never on a commit already pushed. Commit messages say why, not what. Before drafting a PR, read every commit on the branch, not just the last one.
 
@@ -29,7 +30,7 @@ A failed command tells you what to do next. A permission or workspace-scope deni
       },
       timeout: {
         type: 'number',
-        description: 'Timeout in milliseconds (default: 120000, max: 600000)',
+        description: 'Timeout in ms (default 120000, max 600000)',
       },
       working_directory: {
         type: 'string',
@@ -37,23 +38,23 @@ A failed command tells you what to do next. A permission or workspace-scope deni
       },
       run_in_background: {
         type: 'boolean',
-        description: 'Run command in background and return immediately with task_id',
+        description: 'Run in background and return task_id immediately',
       },
       pty: {
         type: 'boolean',
-        description: 'Use PTY (pseudo-terminal) for interactive commands like vim, ssh, etc.',
+        description: 'Use PTY for interactive commands (vim, ssh)',
       },
       cols: {
         type: 'number',
-        description: 'Terminal columns for PTY mode (default: 80)',
+        description: 'PTY columns (default 80)',
       },
       rows: {
         type: 'number',
-        description: 'Terminal rows for PTY mode (default: 24)',
+        description: 'PTY rows (default 24)',
       },
       wait_for_completion: {
         type: 'boolean',
-        description: 'For PTY mode: wait for command to complete before returning (default: false)',
+        description: 'PTY mode: wait for completion before returning (default false)',
       },
       description: {
         type: 'string',

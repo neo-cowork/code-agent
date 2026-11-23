@@ -70,6 +70,8 @@ function formatBackgroundDuration(startedAt: number, now: number, labels: Durati
 
 interface BackgroundSessionItemProps {
   session: BackgroundSessionInfo;
+  /** 显示用主名：会话 store 里的实时标题优先，host 快照标题兜底 */
+  title: string;
   onForeground: () => void;
   onStop: () => void;
   onClear: () => void;
@@ -81,6 +83,7 @@ interface BackgroundSessionItemProps {
 
 const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
   session,
+  title,
   onForeground,
   onStop,
   onClear,
@@ -89,7 +92,6 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
   stopAria,
   clearAria,
 }) => {
-  const { language } = useI18n();
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-badge-info" />,
     completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
@@ -112,7 +114,7 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
         {statusIcon}
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-zinc-200 truncate">
-            {getDisplaySessionTitle(session.title, language)}
+            {title}
           </div>
           <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
             <HumanizedText text={line} />
@@ -154,6 +156,12 @@ const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
 export const BackgroundSessionPanel: React.FC = () => {
   const { backgroundSessions, moveToForeground, stopBackgroundSession, dismissBackgroundSession } = useSessionStore();
   const { t, language } = useI18n();
+  const liveSessions = useSessionStore((state) => state.sessions);
+  // 实时标题：智能标题落地 / 用户改名后，host 快照里的标题是旧的
+  const titleOf = (session: BackgroundSessionInfo): string => getDisplaySessionTitle(
+    liveSessions.find((item) => item.id === session.sessionId)?.title || session.title,
+    language,
+  );
   // 前台已判定停止、但后台条目还没被 host 收尾时，行里的词先跟终态走（只改词，不动 Stop/Clear 按钮）
   const sessionStates = useTaskStore((state) => state.sessionStates);
   const stepOutcomes = useBackgroundStepOutcomes(backgroundSessions);
@@ -246,13 +254,14 @@ export const BackgroundSessionPanel: React.FC = () => {
                 <BackgroundSessionItem
                   key={session.sessionId}
                   session={session}
+                  title={titleOf(session)}
                   onForeground={() => moveToForeground(session.sessionId)}
                   onStop={() => void stopBackgroundSession(session.sessionId)}
                   onClear={() => void dismissBackgroundSession(session.sessionId)}
                   line={isRunning ? formatBackgroundDuration(session.startedAt, now, durationLabels) : line}
-                  foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
-                  stopAria={t.backgroundPanel.stopAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
-                  clearAria={t.backgroundPanel.clearAria.replace('{title}', getDisplaySessionTitle(session.title, language))}
+                  foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', titleOf(session))}
+                  stopAria={t.backgroundPanel.stopAria.replace('{title}', titleOf(session))}
+                  clearAria={t.backgroundPanel.clearAria.replace('{title}', titleOf(session))}
                 />
               );
             })}

@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Message } from '../../../shared/contract';
+import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import { getUserConfigDir } from '../../config/configPaths';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -20,6 +21,7 @@ import { SqliteBackgroundTaskStore } from '../../task/backgroundTaskStore';
 import { formatSessionTaskResultStatusWord } from '../../../shared/constants/sessionCommandCenter';
 import type { SessionTaskResultStatusWordLocale } from '../../../shared/constants/sessionCommandCenter';
 import { createSessionAccessRetry, isSessionNotAccessibleError } from './sessionAccessRetry';
+import { clampTaskResultCardSummary } from './taskResultHandback';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
 
 const logger = createLogger('SessionCommandRestartRecovery');
@@ -155,6 +157,7 @@ export function buildSessionTaskResultMessage(
   resultText: string | undefined,
   id: string = `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   locale: SessionTaskResultStatusWordLocale = 'zh',
+  artifacts: NormalizedToolArtifactMeta[] = [],
 ): Message {
   const cleanResultText = resultText === undefined ? undefined : stripCardToolCallMarkup(resultText);
   return {
@@ -168,7 +171,8 @@ export function buildSessionTaskResultMessage(
         taskId: task.id,
         shortName: task.shortName,
         status,
-        summary: cleanResultText ?? '',
+        summary: cleanResultText === undefined ? '' : clampTaskResultCardSummary(cleanResultText),
+        ...(artifacts.length ? { artifacts } : {}),
       },
     },
   };

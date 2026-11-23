@@ -1,15 +1,24 @@
 // ADR-068 刀 4：断流续接的词表消费 —— host 落库的 [连接中断]/[生成中断] 正文标记（刀 3）
 // 进 StreamInterruptionReason 稳定枚举；重载视图剥裸协议标记、断点段正文保留（不 suppression），
-// cancelled/session-switch 的既有 suppression 行为零漂移；DecisionSlot 文案按词表派生。
+// 用户停止前的可见正文也保留；DecisionSlot 文案按词表派生。
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+import { buildStreamRecoveryMessage } from '../../../src/renderer/utils/streamRecoveryMessage';
 import { resolveStreamInterruptionOutcomeKey, outcomeWordsZh } from '../../../src/renderer/i18n/outcomeWords';
 import {
   deriveStreamInterruptionReason,
   streamInterruptionReasonFromContent,
   stripStreamBreakMarker,
 } from '../../../src/renderer/utils/streamInterruptionPresentation';
+
+const USER: Message = { id: 'u1', role: 'user', content: '写一段', timestamp: 1_000 };
+const STOPPED_PARTIAL: Message = {
+  id: 'a1',
+  role: 'assistant',
+  content: 'partial text\n\n[cancelled]',
+  timestamp: 2_000,
+};
 
 const BREAK_PARTIAL: Message = {
   id: 'a1',
@@ -86,14 +95,64 @@ describe('重载视图投影：断点段保留 + 裸标记不上屏（ADR-068 �
     expect(textNodes[1].content).toBe('PART2__续答正文。');
   });
 
-  it('cancelled 中断消息的既有 suppression 行为零漂移（不因词表扩展误放开）', () => {
-    const projection = projectTurns([
-      { id: 'u1', role: 'user', content: '写一段', timestamp: 1_000 },
-      { id: 'a1', role: 'assistant', content: '半截回答\n\n[cancelled]', timestamp: 2_000 },
-    ], 'session-1', false);
+  it.each(['live draft', 'persisted reload'])('keeps the partial reply after Stop (%s)', (shape) => {
+    const assistant = shape === 'live draft' ? {
+      ...STOPPED_PARTIAL,
+      id: 'turn-1',
+      toolCalls: [],
+      metadata: { correlation: { turnId: 'turn-1' } },
+    } : STOPPED_PARTIAL;
+    const projection = projectTurns([USER, assistant], 'session-1', false);
 
     const textNodes = projection.turns.flatMap((turn) => turn.nodes)
       .filter((node) => node.type === 'assistant_text');
-    expect(textNodes).toHaveLength(0); // cancelled 维持原规则：唯一信号由中断呈现承载
+    expect(textNodes.map((node) => node.content)).toEqual(['partial text']);
+  });
+
+  const recovery = buildStreamRecoveryMessage({
+    sessionId: 'session-1',
+    turnId: 'recovery-turn',
+    content: 'partial text',
+    reasoning: '',
+    toolCalls: [{ id: 'write-1', name: 'Write', arguments: '{"file_path":"draft.md"}' }],
+    estimatedTokens: 2,
+    timestamp: 3_000,
+    isFinal: false,
+    streamStatus: 'incomplete',
+    stableForExecution: false,
+    incompleteToolCallIds: [],
+  }, 'user');
+
+  it('defers to a recovery snapshot in the same turn', () => {
+    const persisted: Message = {
+      ...STOPPED_PARTIAL,
+      metadata: { correlation: { turnId: 'recovery-turn' } },
+    };
+    const { turns } = projectTurns([USER, persisted, recovery], 'session-1', false);
+    const nodes = turns.flatMap((turn) => turn.nodes);
+    expect(nodes.filter((node) => node.type === 'assistant_text')).toHaveLength(0);
+    const toolNodes = nodes.filter((node) => node.type === 'tool_call');
+    expect(toolNodes).toHaveLength(1);
+    expect(toolNodes[0].metadata?.streamRecovery?.turnId).toBe('recovery-turn');
+  });
+
+  it('keeps the persisted partial over its text-only snapshot on reload', () => {
+    const textOnlyRecovery: Message = { ...recovery, content: 'partial', toolCalls: [] };
+    const persisted: Message = {
+      ...STOPPED_PARTIAL,
+      metadata: { correlation: { turnId: 'recovery-turn' } },
+    };
+    const { turns } = projectTurns([USER, persisted, textOnlyRecovery], 'session-1', false);
+    const nodes = turns.flatMap((turn) => turn.nodes);
+    expect(nodes.filter((node) => node.type === 'assistant_text').map((node) => node.content))
+      .toEqual(['partial text']);
+  });
+
+  it('keeps the partial when recovery belongs to another turn', () => {
+    const nextUser: Message = { ...USER, id: 'u2', timestamp: 2_500 };
+    const { turns } = projectTurns([USER, STOPPED_PARTIAL, nextUser, recovery], 'session-1', false);
+    const nodes = turns.flatMap((turn) => turn.nodes);
+    expect(nodes.filter((node) => node.type === 'assistant_text').map((node) => node.content))
+      .toEqual(['partial text']);
   });
 });

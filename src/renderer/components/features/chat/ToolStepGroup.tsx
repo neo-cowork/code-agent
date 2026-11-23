@@ -1,4 +1,5 @@
 import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
+import { readHelperOutcomes } from '../../../utils/helperOutcomeCopy';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
@@ -20,6 +21,7 @@ import {
   classifyToolName,
   humanizeToolGroupLabel,
   humanizeToolStep,
+  classifyToolCall,
   parseDelegateSessionReceipt,
   isInternalStreamTool,
 } from '../../../utils/humanizeToolStep';
@@ -127,7 +129,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         }
         const stepStatus = terminal.stepStatus;
         const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
-          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result,
+          metadata: tc.recovered ? { ...tc.metadata, recovered: true } : tc.metadata,
         } }, t);
         const step = preflight?.action ?? humanizeToolStep(
           tc.name,
@@ -136,7 +139,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { notRun: terminal.notRun, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, skipped: terminal.skipped, handedOff: terminal.handedOff, helperOutcomes: readHelperOutcomes(tc.metadata), connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
@@ -157,6 +160,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const byStatus = new Map<ToolStepStatus, string[]>();
     let blockedCommands = 0;
     let blockedSteps = 0;
+    let skippedBash = 0;
     let staleUnfinished = 0;
     const notRunNames: string[] = [];
     let envWaiting: string | undefined;
@@ -185,14 +189,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         else staleUnfinished += 1;
         continue;
       }
+      if (terminalById.get(tc.id)?.skipped) {
+        skippedBash += 1;
+        continue;
+      }
       const stepStatus = benign
         ? 'completed'
         : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
       if (!benign && terminalById.get(tc.id)?.notRun) notRunNames.push(tc.name);
     }
+    if (skippedBash && !byStatus.has('completed')) byStatus.set('completed', []);
     return [
       ...Array.from(byStatus, ([stepStatus, names]) => {
+        if (stepStatus === 'completed') return humanizeToolGroupLabel(names, t, stepStatus, false, skippedBash);
         if (stepStatus !== 'failed' || notRunNames.length === 0) return humanizeToolGroupLabel(names, t, stepStatus);
         const rest = [...names];
         for (const name of notRunNames) rest.splice(rest.indexOf(name), 1);
@@ -315,8 +325,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         : humanizedStep;
     const details = redactCredentialText(JSON.stringify(request.details, null, 2));
 
-    return [{ request, statusLabel, stepLabel, details, timedOut, denied }];
+    const allowed = !denied && !timedOut && !superseded;
+    return [{ request, statusLabel, stepLabel, details, timedOut, denied, nodeIndex: nodes.indexOf(node), foldKey: allowed && request.tool === 'ExcelAutomate' ? `${request.tool}:${classifyToolCall(request.tool, requestDetails)}` : null }];
   }), [nodes, resolvedPermissionRequests, t]);
+  // 连续、同工具同步骤类的「你已允许」折成一行带次数；拒绝 / 超时 / 被顶替从不折叠。
+  const permissionEvidenceRows = useMemo(() => permissionEvidence.reduce<Array<typeof permissionEvidence[number] & { count: number }>>((rows, item) => {
+    const last = rows[rows.length - 1];
+    if (last && item.foldKey && last.foldKey === item.foldKey && last.nodeIndex + last.count === item.nodeIndex) {
+      last.count += 1;
+      last.details = `${last.details}\n${item.details}`;
+      return rows;
+    }
+    rows.push({ ...item, count: 1 });
+    return rows;
+  }, []), [permissionEvidence]);
   // 来自本组里一条已解析的 PermissionRequest——真的「有人/有界面做了这个决定」。
   // 只有它才可以抢在 failureReason 之前：仅凭 metadata.failureCode 的那种猜测（很可能是
   // CLI auto 档 fail-closed、从没到过人眼）由 humanizeToolFailureReason / preflight
@@ -409,9 +431,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
   // 结局优先：这组里有多少次失败已被后续成功恢复——只用于安静地标个「已恢复」，不顶红。
+  // skipped（从未执行）的行虽会被投影层降级成 recovered，但不是「失败后恢复」，不计入。
   const recoveredCount = useMemo(
-    () => nodes.filter((n) => n.toolCall?.recovered).length,
-    [nodes],
+    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped).length,
+    [nodes, terminalById],
   );
   const totalDuration = useMemo(() => {
     const total = toolCalls.reduce((sum, toolCall) => sum + (toolCall.result?.duration ?? 0), 0);
@@ -526,7 +549,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
               {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
@@ -552,7 +574,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      {permissionEvidence.map(({ request, statusLabel, stepLabel, details, timedOut, denied }) => (
+      {permissionEvidenceRows.map(({ request, statusLabel, stepLabel, details, timedOut, denied, count }) => (
         <div
           key={request.id}
           className="ml-4 flex items-start gap-2 pl-3 text-[11px] leading-5 text-zinc-500"
@@ -564,7 +586,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
                 ? `${t.outcomeWords['failed-approval-denied'].timeline.label} · ${t.outcomeWords['failed-approval-denied'].timeline.reason} · ${stepLabel}`
                 : timedOut
                   ? `${t.outcomeWords['failed-timeout'].timeline.label} · ${t.outcomeWords['failed-timeout'].timeline.reason} · ${stepLabel}`
-                  : `${statusLabel} · ${stepLabel}`}
+                  : `${statusLabel} · ${stepLabel}${count > 1 ? ` · ${t.decisionCard.permission.settledAllowedFolded.replace('{count}', String(count))}` : ''}`}
             </summary>
             <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-primary px-2 py-1.5 text-[10px] leading-4 text-zinc-500">
               {details}
@@ -666,6 +688,7 @@ function isReadOrSearchTool(name: string): boolean {
     'Glob',
     'LS',
     'list_directory',
+    'ListDirectory',
   ].includes(name);
 }
 

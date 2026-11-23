@@ -401,6 +401,7 @@
     "private": 30000,
     "src-typecheck": 45000,
     "shell": 10000,
+    "no-direct-app-exec": 10000,
     "commit-checks": 45000,
     "vitest": 90000,
     "package-typechecks": 45000,

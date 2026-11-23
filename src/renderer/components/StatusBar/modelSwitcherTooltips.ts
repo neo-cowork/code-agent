@@ -1,6 +1,12 @@
+import { getModelDisplayLabel } from '@shared/constants';
 import type { ModelProvider } from '@shared/contract';
 import { languages, type Language } from '../../i18n';
+import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
+
+function shownModelLabel(modelId: string, language: Language): string {
+  return localizeModelLabel(modelId, getModelDisplayLabel(modelId), language);
+}
 
 export function formatNativeModelSwitcherTooltip(args: {
   language?: Language;
@@ -22,15 +28,16 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
+  // 模型 id 统一走共享标签表（未登记 id 原样回落）；provider 部分保持原样。
   const modelLine = args.switchedFrom
     ? labels.switched
-        .replace('{shown}', `${args.shownProvider}/${args.shownModel}`)
-        .replace('{original}', `${args.switchedFrom.provider}/${args.switchedFrom.model}`)
+        .replace('{shown}', `${args.shownProvider}/${shownModelLabel(args.shownModel ?? '', language)}`)
+        .replace('{original}', `${args.switchedFrom.provider}/${shownModelLabel(args.switchedFrom.model, language)}`)
     : args.adaptive
-      ? labels.adaptive.replace('{model}', args.currentModel)
+      ? labels.adaptive.replace('{model}', shownModelLabel(args.currentModel, language))
       : args.overridden
-        ? labels.overridden.replace('{model}', `${args.displayProvider}/${args.displayModel}`).replace('{original}', args.currentModel)
-        : labels.model.replace('{model}', `${args.displayProvider}/${args.displayModel}`);
+        ? labels.overridden.replace('{model}', `${args.displayProvider}/${shownModelLabel(args.displayModel, language)}`).replace('{original}', shownModelLabel(args.currentModel, language))
+        : labels.model.replace('{model}', `${args.displayProvider}/${shownModelLabel(args.displayModel, language)}`);
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,

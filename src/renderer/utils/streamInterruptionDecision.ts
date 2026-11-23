@@ -1,5 +1,6 @@
 import type { Message, StreamRecoverySnapshot } from '@shared/contract';
 import { deriveStreamInterruptionReason } from './streamInterruptionPresentation';
+import { getStreamRecoveryTurnEnd } from './streamRecoveryMessage';
 
 /**
  * 中断决策槽只在流真正断掉时出现。
@@ -19,7 +20,10 @@ export function deriveStreamInterruptionDecision(
     snapshot: {
       ...streamSnapshot,
       interruptionReason: streamSnapshot.interruptionReason
-        ?? deriveStreamInterruptionReason(messages, streamSnapshot.turnId),
+        ?? deriveStreamInterruptionReason(
+          messages.slice(0, getStreamRecoveryTurnEnd(messages, streamSnapshot)),
+          streamSnapshot.turnId,
+        ),
     },
     retryMessage,
   };

@@ -107,6 +107,40 @@ describe('applyEditedArgs（共享合同）', () => {
     expect(applyEditedArgs('calendar_update_event', original, { event_uid: 'event-2' }).ok).toBe(false);
   });
 
+  // FB-2606 复现路径：模型省略了工具 schema 里可选、字段表标成 required+readonly 的
+  // calendar / event_uid，用户在卡上改 notes 不该因为「原参数就没带这个字段」被整体拒。
+  it('原参数没带的只读必填字段不拦编辑：calendar_create_event 省略 calendar', () => {
+    const original = {
+      title: 'Project review',
+      start_ms: 1_795_543_200_000,
+      end_ms: 1_795_546_800_000,
+      notes: 'bring the quarterly report',
+    };
+    const result = applyEditedArgs('calendar_create_event', original, {
+      notes: 'line 1: bring the quarterly report\nline 2: arrive ten minutes early',
+    });
+    expect(result).toEqual({
+      ok: true,
+      params: { ...original, notes: 'line 1: bring the quarterly report\nline 2: arrive ten minutes early' },
+      changedKeys: ['notes'],
+    });
+    // 只读字段本体仍然改不动
+    expect(applyEditedArgs('calendar_create_event', original, { calendar: 'Other' }).ok).toBe(false);
+    // 原参数显式带了空 calendar（字段在、只是空）仍然按必填拒
+    expect(applyEditedArgs('calendar_create_event', { ...original, calendar: '' }, { notes: 'x' }).ok).toBe(false);
+  });
+
+  it('原参数没带的只读必填字段不拦编辑：calendar_update_event 省略 event_uid / calendar', () => {
+    const original = { title: '评审会', start_ms: 1_777_346_400_000 };
+    const result = applyEditedArgs('calendar_update_event', original, { title: '季度评审会' });
+    expect(result).toEqual({
+      ok: true,
+      params: { ...original, title: '季度评审会' },
+      changedKeys: ['title'],
+    });
+    expect(applyEditedArgs('calendar_update_event', original, { event_uid: 'event-2' }).ok).toBe(false);
+  });
+
   it.each([
     ['原生日历 end 早于 start', 'calendar_create_event', {
       calendar: '工作', title: '评审会', start_ms: 1_777_346_400_000, end_ms: 1_777_348_200_000,

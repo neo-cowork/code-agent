@@ -156,7 +156,7 @@ describe('ModelSwitcher 显示 host 实际调用的模型', () => {
 
     await waitFor(() => expect(trigger().textContent).toContain('（已换）'));
     expect(trigger().textContent).toContain('GLM');
-    expect(trigger().getAttribute('title')).toContain('你选的是 custom-tokenrhythm/mimo-v2.6-flash');
+    expect(trigger().getAttribute('title')).toContain('你选的是 custom-tokenrhythm/MiMo v2.6 Flash');
   });
 });
 

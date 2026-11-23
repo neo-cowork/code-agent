@@ -21,7 +21,7 @@ export function ModelSlot({ currentModel }: { currentModel: string }) {
   if (!settingsLoaded) {
     return <div className="flex items-center gap-2">
       <span role="status" className="text-xs text-zinc-500" data-testid="model-loading">{t.sidebar.modelLoading}</span>
-      <Button variant="ghost" size="sm" disabled={retrying} onClick={() => void retry()}>{t.sidebar.connectionRetry}</Button>
+      <Button type="button" variant="ghost" size="sm" disabled={retrying} onClick={() => void retry()}>{t.sidebar.connectionRetry}</Button>
     </div>;
   }
   return <ModelSwitcher currentModel={currentModel} />;

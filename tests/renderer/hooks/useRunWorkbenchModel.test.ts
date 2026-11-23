@@ -9,6 +9,12 @@ import {
 import type { ScriptRunSnapshot } from '../../../src/shared/contract/scriptRun';
 import type { SessionState } from '../../../src/renderer/stores/taskStore';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
+import { formatBlockDetail, formatTaskStatus } from '../../../src/renderer/components/features/sidebar/sessionReplayFormatters';
+import { languages } from '../../../src/renderer/i18n';
+import { backgroundTaskFailureCopy } from '../../../src/renderer/utils/agentFailureCopy';
+import { buildAgentRows } from '../../../src/renderer/utils/agentRows';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { buildSessionReplayContext } from '../../../src/renderer/utils/sessionReplayContext';
 
 describe('buildGlobalTaskRecords', () => {
   it('does not mirror the current session into background tasks', () => {
@@ -117,6 +123,41 @@ describe('buildDurableSubagentViews', () => {
 });
 
 describe('buildLedgerTaskRecords', () => {
+  it.each([
+    ['zh', 'shell', '命令未能成功完成', '失败：命令未能成功完成'],
+    ['en', 'pty', 'The command did not finish successfully', 'Failed: The command did not finish successfully'],
+  ] as const)('routes %s %s failure rows through localized copy', (language, source, reason, replayText) => {
+    const raw = 'Process exited with code 1';
+    const task = makeLedgerTask({
+      id: `${source}:copy`, source, sessionId: 'session-1', status: 'failed',
+      failure: { message: raw, exitCode: 1, reason: 'shell_command_failed', category: 'command_failed' },
+      metadata: { recoveryPlan: { summary: '任务失败，退出码 1' } },
+      summary: '/private/tasks/copy.log',
+      outputRefs: [{ id: 'log', taskId: `${source}:copy`, type: 'log', path: '/private/tasks/copy.log', createdAt: 1 }],
+    });
+    const t = languages[language];
+    expect(backgroundTaskFailureCopy(task, t)).toBe(reason);
+    expect(backgroundTaskFailureCopy({ ...task, failure: { message: raw } }, t)).toBe(reason);
+    const previousLanguage = useAppStore.getState().language;
+    useAppStore.setState({ language });
+    try {
+      expect(buildAgentRows({ tasks: [task], nodes: [], members: [] })[0]?.failureReason).toBe(reason);
+    } finally {
+      useAppStore.setState({ language: previousLanguage });
+    }
+    expect(formatTaskStatus(task, t.sessionReplay)).toBe(replayText);
+    expect(buildSessionReplayContext('session-1', {}, [task], t).backgroundTasks[0]?.outputRefs).toEqual([]);
+    expect(formatBlockDetail({
+      type: 'tool_result',
+      timestamp: 1,
+      content: 'Background task started.\n\n<task-id>copy</task-id>\n<output-file>/private/tasks/copy.log</output-file>',
+    }, t.sessionReplay)).toBe(t.backgroundPanel.shellTaskStarted);
+    const [record] = buildLedgerTaskRecords([task], 'session-1', language);
+    expect(record.resumeHint).toBe(reason);
+    expect(record.outputRefs).toEqual([expect.objectContaining({ id: 'log', label: t.taskStatusPanels.runWorkbench.viewLog })]);
+    expect(JSON.stringify(record)).not.toMatch(/Process exited|退出码|copy\.log/);
+  });
+
   it('projects only current-session agent engine ledger status and output refs for TaskPanel', () => {
     const tasks = buildLedgerTaskRecords([
       makeLedgerTask({

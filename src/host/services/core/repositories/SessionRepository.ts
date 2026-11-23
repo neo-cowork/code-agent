@@ -58,6 +58,7 @@ import {
 } from './sessionRepositoryBoundary';
 import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
 import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
+import { pushProjectScopeCondition } from './sessionProjectScope';
 
 export type { StoredSession, StoredMessage };
 export type {
@@ -1043,11 +1044,12 @@ export class SessionRepository {
   // Session Archive
   // --------------------------------------------------------------------------
 
-  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): StoredSession[] {
+  listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null, projectScope?: import('../../../../shared/ipc/types').CrossSessionSearchProjectScope): StoredSession[] {
     const filters = ["s.status = 'archived'", 's.is_deleted = 0'];
     const params: unknown[] = [];
     this.applyOwnerFilter(filters, params, userId);
-    const rows = this.db
+    pushProjectScopeCondition(filters, params, projectScope);
+    return (this.db
       .prepare(
         `
       SELECT s.*,
@@ -1059,9 +1061,7 @@ export class SessionRepository {
       LIMIT ? OFFSET ?
     `,
       )
-      .all(...params, limit, offset) as SQLiteRow[];
-
-    return rows.map((row) => rowToSession(row));
+      .all(...params, limit, offset) as SQLiteRow[]).map((row) => rowToSession(row));
   }
 
   archiveSession(sessionId: string, updatedAt?: number): StoredSession | null {
