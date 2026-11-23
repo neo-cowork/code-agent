@@ -198,6 +198,13 @@ describe('PermissionGrantList localized fallback titles', () => {
   }
 
   describe.each(['zh', 'en'] as const)('%s', (language) => {
+    it.each([
+      ['mcp__github__create_issue', 'GitHub'],
+      ['mcp__obsidian__read_note', 'Obsidian'],
+    ])('%s keeps its registered server display name', async (label, name) => {
+      expect(await renderGrantTitle(language, 'tool-session', label)).toBe(name);
+    });
+
     it.each(['app', 'tool-target', 'tool-session', 'tool-timed'] as const)(
       '%s uses the network approval title for http_request',
       async (kind) => {
