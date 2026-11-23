@@ -1,4 +1,5 @@
 import { detectStructuredToolFailure } from '../agent/runtime/toolResultNormalization';
+import { formatConnectorTime } from './modules/connectors/connectorTime';
 import type { ToolExecutionResult } from './types';
 
 const MAX_VALUE_LENGTH = 500;
@@ -25,7 +26,7 @@ export function appendUserEditedArgsNote(
     const label = FIELD_LABELS[key] ?? key[0].toUpperCase() + key.slice(1);
     const value = args[key];
     const display = typeof value === 'number' && key.endsWith('_ms')
-      ? new Date(value).toISOString()
+      ? formatConnectorTime(value)
       : JSON.stringify(value);
     const preview = display.length > MAX_VALUE_LENGTH
       ? `${display.slice(0, MAX_VALUE_LENGTH - 1)}…`
