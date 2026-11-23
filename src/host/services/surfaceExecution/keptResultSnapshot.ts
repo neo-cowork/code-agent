@@ -4,7 +4,7 @@
 // query (PRG id) keeps today's navigate-to-URL behaviour. The HTML stays on the
 // registry entry only: never written to disk, dropped when the entry is replaced.
 
-import { KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS } from '../../../shared/constants';
+import { BROWSER_TIMEOUTS, KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS } from '../../../shared/constants';
 import type { KeptResultReopenMode } from '../../../shared/ipc/types';
 import { createLogger } from '../infra/logger';
 
@@ -51,9 +51,30 @@ function warnCaptureFailed(phase: KeptResultSnapshotPhase, error: unknown): void
   });
 }
 
+/** Bound page.content() so run cleanup cannot wait on a stuck page. */
+async function readPageHtml(getPageHTML: () => Promise<string>): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pending = getPageHTML();
+  // A read that loses the race must not surface later as an unhandled rejection.
+  void pending.catch(() => undefined);
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('kept result snapshot capture timed out'));
+        }, BROWSER_TIMEOUTS.KEPT_RESULT_SNAPSHOT_CAPTURE);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /**
  * Read the live page and store it on the keep_result_page entry.
- * Never throws. Over-cap and empty pages are not stored. Takeover and
+ * Never throws. Over-cap, empty, and timed-out reads are not stored. A failed
+ * reread leaves a snapshot already stored for the same URL. Takeover and
  * parked-for-user entries are left alone.
  */
 export async function captureKeptResultSnapshot(input: {
@@ -70,7 +91,7 @@ export async function captureKeptResultSnapshot(input: {
 
     let html: string;
     try {
-      html = await input.getPageHTML();
+      html = await readPageHtml(input.getPageHTML);
     } catch (error) {
       warnCaptureFailed(input.phase, error);
       return;

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BrowserPool } from '../../../../src/host/services/infra/browserPool';
 import { BrowserService } from '../../../../src/host/services/infra/browserService';
-import { KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS } from '../../../../src/shared/constants';
+import { BROWSER_TIMEOUTS, KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS } from '../../../../src/shared/constants';
 import {
   KeptBrowserRegistry,
   type KeptBrowserPoolFacade,
@@ -368,6 +368,66 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     const view = registry.snapshot('conversation-a', { includeSnapshot: true });
     expect(view).toMatchObject({ state: 'kept', reopenMode: 'url' });
     expect(view).not.toHaveProperty('snapshotHtml');
+  });
+
+  it('keeps a same-URL snapshot when a later read fails, and drops it when the final URL changes', async () => {
+    const registry = new KeptBrowserRegistry(createFakePool().pool);
+    registry.register(baseInput({ url: 'http://127.0.0.1/page-a' }));
+    const capture = (getPageHTML: () => Promise<string>, phase: 'keep' | 'release' = 'release') => captureKeptResultSnapshot({
+      registry,
+      conversationId: 'conversation-a',
+      serviceKey: 'surface-key-1',
+      getPageHTML,
+      phase,
+    });
+
+    await capture(async () => '<h1>Page A</h1>', 'keep');
+    registry.refreshTarget('conversation-a', 'http://127.0.0.1/page-a', 'Same');
+    await capture(async () => { throw new Error('page gone'); });
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      url: 'http://127.0.0.1/page-a',
+      reopenMode: 'snapshot',
+      snapshotHtml: '<h1>Page A</h1>',
+    });
+
+    registry.refreshTarget('conversation-a', 'http://127.0.0.1/page-b', 'Page B');
+    const dropped = registry.snapshot('conversation-a', { includeSnapshot: true });
+    expect(dropped).toMatchObject({ url: 'http://127.0.0.1/page-b', reopenMode: 'url' });
+    expect(dropped).not.toHaveProperty('snapshotHtml');
+
+    await capture(async () => 'x'.repeat(KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS + 1));
+    const stillDropped = registry.snapshot('conversation-a', { includeSnapshot: true });
+    expect(stillDropped).toMatchObject({ reopenMode: 'url' });
+    expect(stillDropped).not.toHaveProperty('snapshotHtml');
+
+    await capture(async () => '<h1>Page B</h1>');
+    expect(registry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      url: 'http://127.0.0.1/page-b',
+      reopenMode: 'snapshot',
+      snapshotHtml: '<h1>Page B</h1>',
+    });
+  });
+
+  it('a hung page read stops at the capture timeout and does not store HTML', async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new KeptBrowserRegistry(createFakePool().pool);
+      registry.register(baseInput({ url: 'http://127.0.0.1/page-a' }));
+      const hung = captureKeptResultSnapshot({
+        registry,
+        conversationId: 'conversation-a',
+        serviceKey: 'surface-key-1',
+        getPageHTML: () => new Promise(() => undefined),
+        phase: 'release',
+      });
+      await vi.advanceTimersByTimeAsync(BROWSER_TIMEOUTS.KEPT_RESULT_SNAPSHOT_CAPTURE);
+      await hung;
+      const view = registry.snapshot('conversation-a', { includeSnapshot: true });
+      expect(view).toMatchObject({ state: 'kept', reopenMode: 'url' });
+      expect(view).not.toHaveProperty('snapshotHtml');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

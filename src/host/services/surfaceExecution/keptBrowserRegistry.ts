@@ -4,7 +4,8 @@
 // 结束时不随 binding 清理关掉：注册表记录 {conversationId, serviceKey, url, title,
 // keptAt, reason}，窗口保持存活（不 in use），用户从聊天里一键认领（adopt）继续操作同一页。
 // 闲置 30 分钟（lease 到期）/ 池满驱逐 / 用户关闭后翻成 `closed`，URL 留存供重开。
-// 无 query 的结果页另存一份内存 HTML（keptResultSnapshot）；替换或清掉条目时快照一起丢。
+// 无 query 的结果页另存一份内存 HTML（keptResultSnapshot）。快照只属于当时那个地址：
+// 替换条目、清掉条目，或收尾时地址变了，快照一起丢。
 //
 // Each conversation retains an explicit result and a separate timed-out human wait
 // （wait_for_user 超时停靠进 parkedForUser 槽，对 keep-result-page 的 IPC 快照不可见）。
@@ -190,11 +191,15 @@ export class KeptBrowserRegistry {
     if (target) this.markClosedIfService(conversationId, target);
   }
 
-  /** run 收尾时用窗的最终地址刷新 kept 条目（keep 之后模型又导航过的场景）。 */
+  /**
+   * run 收尾时用窗的最终地址刷新 kept 条目（keep 之后模型又导航过的场景）。
+   * 地址变了就丢掉旧快照：新页面若读不到，不能把上一页显示成新地址的保存页。
+   */
   refreshTarget(conversationId: string, url: string, title: string, serviceKey?: string): void {
     const target = serviceKey ?? this.get(conversationId)?.serviceKey;
     for (const entry of this.entries.values()) {
       if (entry.conversationId !== conversationId || entry.serviceKey !== target || entry.state !== 'kept') continue;
+      if (entry.url !== url) delete entry.snapshotHtml;
       entry.url = url;
       entry.title = title;
     }
