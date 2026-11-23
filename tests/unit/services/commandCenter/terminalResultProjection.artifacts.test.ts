@@ -77,7 +77,6 @@ void (async()=>{const p=new Pptx();p.addSlide().addText('Sales',{x:1,y:1,w:5,h:1
     await projectTerminalResult(finished, 'completed');
 
     const result = harness.added[0].message.metadata?.backgroundTaskResult;
-    console.log('BG_TASK_PPTX_ARTIFACTS', JSON.stringify(result?.artifacts));
     expect(result?.artifacts).toHaveLength(1);
     expect(result?.artifacts?.[0]).toMatchObject({
       kind: 'document',

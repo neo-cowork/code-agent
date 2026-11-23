@@ -98,7 +98,6 @@ void (async()=>{const p=new Pptx();p.addSlide().addText('Sales',{x:1,y:1,w:5,h:1
     if (!result.ok) return;
     const artifacts = collectToolArtifactsFromMetadata(result.meta as Record<string, unknown>);
     const pptx = artifacts.find((a) => a.path?.endsWith('sales.pptx'));
-    console.log('BASH_PPTX_ARTIFACT', JSON.stringify(pptx));
     expect(pptx).toMatchObject({
       kind: 'document',
       role: 'deliverable',
