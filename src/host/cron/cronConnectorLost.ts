@@ -37,7 +37,7 @@ function coreCliConnectorIds(roleId: string | undefined): string[] {
 }
 
 /** 运行前预检：任务角色声明的 CLI 连接器里，探测确认登录丢失的 id。 */
-export function precheckLostCliConnectors(roleId: string | undefined): string[] {
+function precheckLostCliConnectors(roleId: string | undefined): string[] {
   return coreCliConnectorIds(roleId).filter((id) => getCachedCliConnectorConnectionStatus(id)?.lostReason);
 }
 

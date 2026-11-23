@@ -34,7 +34,8 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   }),
 }));
 vi.mock('../../../src/host/cron/cronAgentSession', () => ({
-  createCronAgentSession: (...args: unknown[]) => state.createSession(...args),
+  createCronAgentSession: (def: unknown, action: unknown, executionId?: string) =>
+    state.createSession(def, action, executionId),
 }));
 vi.mock('../../../src/host/cron/cronAgentRoleContext', () => ({ buildCronAgentRunOptions: async () => ({}) }));
 vi.mock('../../../src/host/task', () => ({
@@ -42,7 +43,7 @@ vi.mock('../../../src/host/task', () => ({
     waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: vi.fn(),
-      sendMessage: (...args: unknown[]) => state.sendMessage(...args),
+      sendMessage: () => state.sendMessage(),
       getMessages: () => state.orchestratorMessages,
     }),
     setWorkingDirectory: vi.fn(),
