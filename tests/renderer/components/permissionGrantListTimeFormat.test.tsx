@@ -7,6 +7,8 @@
 import React from 'react';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PermissionGrantEntry } from '@shared/contract';
+import { en, zh } from '../../../src/renderer/i18n';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
 
@@ -180,6 +182,46 @@ describe('PermissionGrantList human tool names', () => {
     const row = await view.findByTestId('permission-grant-row');
     expect(row.querySelector('.text-sm')?.textContent).toBe('Bash');
     expect(row.textContent).toContain(language === 'zh' ? `有效期至 ${ZH_EXPIRES}` : `Valid until ${EN_EXPIRES}`);
+  });
+});
+
+describe('PermissionGrantList localized fallback titles', () => {
+  async function renderGrantTitle(language: 'zh' | 'en', kind: PermissionGrantEntry['kind'], label: string) {
+    useAppStore.setState({ language });
+    const grant: PermissionGrantEntry = {
+      id: 'grant', kind, label, source: 'conversation', grantedAt: GRANTED_AT, expiresAt: null,
+    };
+    invokeDomain.mockResolvedValue([grant]);
+    const { findByTestId } = render(<PermissionGrantList />);
+    const row = await findByTestId('permission-grant-row');
+    return row.querySelector('.text-sm')?.textContent;
+  }
+
+  describe.each(['zh', 'en'] as const)('%s', (language) => {
+    it.each(['app', 'tool-target', 'tool-session', 'tool-timed'] as const)(
+      '%s uses the network approval title for http_request',
+      async (kind) => {
+        const title = await renderGrantTitle(language, kind, 'http_request');
+        const copy = language === 'zh' ? zh : en;
+        expect(title).toBe(copy.decisionCard.permission.titleNetwork);
+        expect(title).not.toContain('http_request');
+      },
+    );
+
+    it.each([
+      ['http_request', '网络请求', 'Network request'],
+      ['excel_generate', '导出表格', 'Export spreadsheet'],
+      ['ppt_generate', '操作', 'Action'],
+      ['spawn_agent', '操作', 'Action'],
+      ['mcp__srv__tool', '外部工具', 'External tool'],
+      ['some_future_tool', '操作', 'Action'],
+      ['constructor', '操作', 'Action'],
+    ])('%s renders a plain-language title', async (label, zhTitle, enTitle) => {
+      const title = await renderGrantTitle(language, 'tool-timed', label);
+      expect(title).toBe(language === 'zh' ? zhTitle : enTitle);
+      expect(title).not.toMatch(/\w_+\w/);
+      if (language === 'zh') expect(title).toMatch(/\p{Script=Han}/u);
+    });
   });
 });
 

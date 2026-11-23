@@ -55,11 +55,12 @@ export function getHumanToolLabel(args: {
   connector?: string;
   toolName?: string;
   labels: HumanToolLabels;
+  fallback?: () => string;
 }): string {
   const toolName = bareToolName(args.toolName);
   const connectorId = args.connector || findConnectorIdForToolName(toolName);
-  const connectorKey = CONNECTOR_LABEL_KEYS[normalizedLabelKey(connectorId)];
-  if (connectorKey) return args.labels.connectors[connectorKey];
+  const connector = normalizedLabelKey(connectorId);
+  if (Object.hasOwn(CONNECTOR_LABEL_KEYS, connector)) return args.labels.connectors[CONNECTOR_LABEL_KEYS[connector]];
 
   // mcp__server__tool / mcp_server_tool：cua-driver 走 Computer Use 人话，
   // 解不动的 mcp__ 名给中性词，都不漏原文（FB-2291）；其余 server 由
@@ -70,13 +71,12 @@ export function getHumanToolLabel(args: {
     if (!parsed) return args.labels.unknownTool;
   }
 
-  const toolKey = TOOL_LABEL_KEYS[normalizedLabelKey(toolName)];
-  if (toolKey) return args.labels.tools[toolKey];
+  const name = normalizedLabelKey(toolName);
+  if (Object.hasOwn(TOOL_LABEL_KEYS, name)) return args.labels.tools[TOOL_LABEL_KEYS[name]];
 
-  const objectKey = READ_OBJECT_KEYS[normalizedLabelKey(toolName)];
-  if (objectKey) return args.labels.readObjects[objectKey];
+  if (Object.hasOwn(READ_OBJECT_KEYS, name)) return args.labels.readObjects[READ_OBJECT_KEYS[name]];
 
-  return getToolDisplayName(toolName || args.labels.unknownTool);
+  return args.fallback?.() ?? getToolDisplayName(toolName || args.labels.unknownTool);
 }
 
 // Background task details are not approval labels and may localize file actions.
