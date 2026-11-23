@@ -27,6 +27,7 @@ import { BrowserResumeStateError, installManagedBrowserLaunchResume } from './br
 import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
 import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
 import { getKeptBrowserRegistry, type KeptBrowserRegistry } from './keptBrowserRegistry';
+import { captureKeptResultSnapshot } from './keptResultSnapshot';
 import { releaseManagedBrowserWindow, withTakeoverHandoffNote } from './managedBrowserWindowLifecycle';
 import { compactSurfaceExecutionMetadata } from '../../../shared/utils/surfaceExecutionProjection';
 
@@ -745,6 +746,13 @@ export class ManagedBrowserProviderAdapter {
       url: target.url,
       title: target.title,
       browserService: binding.browserService,
+    });
+    void captureKeptResultSnapshot({
+      registry: this.keptRegistry,
+      conversationId: identity.conversationId,
+      serviceKey: binding.serviceKey,
+      getPageHTML: () => binding.browserService.getPageHTML(),
+      phase: 'keep',
     });
     return { ok: true, serviceKey: binding.serviceKey };
   }
