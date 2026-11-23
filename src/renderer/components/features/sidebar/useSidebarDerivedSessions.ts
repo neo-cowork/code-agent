@@ -101,6 +101,7 @@ export interface SidebarDerivedSessions {
   reviewItemsBySessionId: Record<string, AdminReviewQueueItem[]>;
   trajectoryQualityBySessionId: Record<string, AgentTrajectorySessionQualitySummary>;
   mergeTrajectoryQualitySummary: (sessionId: string, summary: AgentTrajectorySessionQualitySummary) => void;
+  hasAnySessions: boolean;
   filteredSessions: SessionWithMeta[];
   workspaceGroupedSessions: ReturnType<typeof groupByWorkspace>;
   visibleProjectIds: string[];
@@ -725,6 +726,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
     mergeTrajectoryQualitySummary,
+    hasAnySessions: sidebarSessions.length > 0,
     filteredSessions,
     workspaceGroupedSessions,
     visibleProjectIds,

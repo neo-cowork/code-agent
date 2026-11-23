@@ -324,6 +324,7 @@ export const Sidebar: React.FC = () => {
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
     mergeTrajectoryQualitySummary,
+    hasAnySessions,
     filteredSessions,
     workspaceGroupedSessions,
     projectMetaById,
@@ -564,7 +565,6 @@ export const Sidebar: React.FC = () => {
       t,
     ],
   );
-  const hasAnySessions = sessions.length > 0;
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
   const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter;

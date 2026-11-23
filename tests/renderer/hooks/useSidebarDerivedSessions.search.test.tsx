@@ -415,11 +415,13 @@ describe('useSidebarDerivedSessions blank rows', () => {
   const renderSidebar = () => renderHook(() => useSidebarDerivedSessions({ canOpenSessionReplay: false }));
 
   it('keeps the selected blank row hidden from the list and workspace groups', () => {
+    state.session.sessions = [blank];
     const { result } = renderSidebar();
 
     expect(result.current.filteredSessions.map((session) => session.id)).not.toContain(blank.id);
     expect(result.current.workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)))
       .not.toContain(blank.id);
+    expect(result.current.hasAnySessions).toBe(false);
   });
 
   it('shows the blank row when a draft is persisted and hides it when removed', () => {
