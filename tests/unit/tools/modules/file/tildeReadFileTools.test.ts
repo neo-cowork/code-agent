@@ -114,9 +114,10 @@ describe('registered read-file tools share home path resolution', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  function expectNoFakeTildePath(text: string | undefined) {
-    expect(text ?? '').not.toContain(path.join(workspace, '~'));
-    expect(text ?? '').not.toContain(`${workspace}/~`);
+  function expectNoFakeTildePath(text: unknown) {
+    const rendered = String(text ?? '');
+    expect(rendered).not.toContain(path.join(workspace, '~'));
+    expect(rendered).not.toContain(`${workspace}/~`);
   }
 
   it('read_pdf finds ~/note.txt (reaches the real not-a-pdf branch)', async () => {
