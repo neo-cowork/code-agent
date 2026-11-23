@@ -457,7 +457,7 @@ export class AgentOrchestrator {
     this.isInterrupting = false;
 
     const pending = this.pendingSteerMessages.splice(0);
-    await this.sendMessage(newMessage, attachments, options, messageMetadata, clientMessageId);
+    await this.sendMessage(newMessage, attachments, options?.displayContent ? { ...options, displayContent: newMessage } : options, messageMetadata, clientMessageId);
     this.queuePendingSteer(pending, sessionId, 'after interrupt');
     return { outcome: 'steered' };
   }
@@ -1056,7 +1056,7 @@ export class AgentOrchestrator {
       logger.info('========== Starting agent loop ==========');
       // 第二个参数是用户原话：telemetry 的 user_prompt 只能存它，别存拼了
       // turnSystemContext 的 effectiveContent（backfill 会把那一列写回消息流）。
-      const runPromise = runLoop.run(effectiveContent, content);
+      const runPromise = runLoop.run(effectiveContent, options?.historyVisibility === 'meta' ? options.displayContent ?? content : content);
       this.activeRunPromise = runPromise;
       await runPromise;
       runCompletedNormally = true;
