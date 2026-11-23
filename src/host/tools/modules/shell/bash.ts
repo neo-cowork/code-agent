@@ -535,7 +535,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: false,
           error: `Failed to create PTY session: ${error instanceof Error ? error.message : String(error)}`,
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
 
@@ -544,7 +544,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: false,
           error: result.error || 'Failed to create PTY session',
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
 
@@ -554,7 +554,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error: 'PTY session started without a session id',
-            code: 'FS_ERROR',
+            code: 'COMMAND_FAILED',
           };
         }
         const output = await getPtySessionOutput(sessionId, true, timeout);
@@ -562,7 +562,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error: 'PTY session ended unexpectedly',
-            code: 'FS_ERROR',
+            code: 'COMMAND_FAILED',
           };
         }
 
@@ -596,7 +596,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           ok: false,
           // 把命令输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
           error: appendFailureDiagnostics(failureMessage, diagnostics),
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
           meta: { ...meta, output: outputText },
         };
       }
@@ -676,7 +676,7 @@ Use process_kill to terminate the session.`;
         return {
           ok: false,
           error: `Failed to start background task: ${error instanceof Error ? error.message : String(error)}`,
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
       if (!result.success) {
@@ -689,7 +689,7 @@ Use process_kill to terminate the session.`;
         return {
           ok: false,
           error: appendFailureDiagnostics(message, diagnostics),
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
 
@@ -1077,7 +1077,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       return {
         ok: false,
         error: withEscalation(withDiagnostics(withOutput(errMsg || 'Command execution failed'))),
-        code: 'FS_ERROR',
+        code: 'COMMAND_FAILED',
         meta: { ...buildSandboxMeta(sandboxDecision), ...(ctx.approvedSandboxWriteFile && sandboxDecision.sandboxed && sandboxDeniedWritePath([errMsg, String(errObj.stdout || ''), String(errObj.stderr || '')].join('\n')) ? { failureCode: SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } : {}), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {
