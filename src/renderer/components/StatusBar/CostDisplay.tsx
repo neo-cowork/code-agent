@@ -10,6 +10,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { interpolatePlural } from '../../i18n/interpolate';
 import type { Translations } from '../../i18n';
 import { useStatusStore, type TurnCostInfo } from '../../stores/statusStore';
+import { getModelDisplayLabel } from '@shared/constants';
 
 /**
  * 格式化费用显示
@@ -73,8 +74,8 @@ export function buildCostTitle(
     lines.push(lastTurnCost.usd !== null
       ? t.turnCostLine
           .replace('{cost}', `$${lastTurnCost.usd.toFixed(4)}`)
-          .replace('{model}', lastTurnCost.modelId)
-      : t.turnCostUnknownLine.replace('{model}', lastTurnCost.modelId));
+          .replace('{model}', getModelDisplayLabel(lastTurnCost.modelId))
+      : t.turnCostUnknownLine.replace('{model}', getModelDisplayLabel(lastTurnCost.modelId)));
   }
   if (unknownCostTurns > 0) {
     lines.push(interpolatePlural(t.unknownTurnsNote, unknownCostTurns));

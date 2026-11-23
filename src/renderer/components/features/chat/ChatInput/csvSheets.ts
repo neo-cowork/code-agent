@@ -1,13 +1,14 @@
 // ============================================================================
 // csvSheets - .csv 文本 → SpreadsheetBlock 的 sheetsJson（与 xlsx 附件同款交互预览）
 // ----------------------------------------------------------------------------
-// 形状对齐 host 侧 extract-excel-json（settings.ipc.ts）：首行是表头、数据行
+// 形状对齐 host 侧 extract-excel-json（settings.ipc.ts）：单行表用列字母，多行表首行是表头，数据行
 // 上限 500、rowCount 记完整数据行数。category 保持 data，模型侧 converter 不变。
 // 注意：本模块 import papaparse，消费方必须动态 import，别把它拉进主 bundle
 // （同 CsvTable 的懒加载拆包策略）。
 // ============================================================================
 
 import Papa from 'papaparse';
+import { columnLetter } from '@shared/livePreview/sheetCoords';
 
 /** UI 渲染行数上限，与 extract-excel-json 的 `slice(1, 501)` 同口径 */
 const MAX_SHEET_ROWS = 500;
@@ -50,12 +51,16 @@ export function buildCsvSheetsJson(fileName: string, text: string): string | und
   const trimmed = parsed.data.slice(0, end);
   if (trimmed.length === 0) return undefined;
 
-  const headers = (trimmed[0] || []).map((cell) => (cell === null || cell === undefined ? '' : String(cell)));
-  const rows = trimmed.slice(1, MAX_SHEET_ROWS + 1).map((row) => row.map((cell) => toCell(String(cell ?? ''))));
+  const headerless = trimmed.length === 1;
+  const headers = headerless ? trimmed[0].map((_, index) => columnLetter(index))
+    : trimmed[0].map((cell) => String(cell ?? ''));
+  const firstDataRow = headerless ? 0 : 1;
+  const rows = trimmed.slice(firstDataRow, firstDataRow + MAX_SHEET_ROWS)
+    .map((row) => row.map((cell) => toCell(String(cell ?? ''))));
   const name = (fileName.split('/').pop() || fileName).replace(/\.csv$/i, '') || 'csv';
 
   return JSON.stringify({
-    sheets: [{ name, headers, rows, rowCount: Math.max(trimmed.length - 1, 0) }],
+    sheets: [{ name, headers, rows, rowCount: trimmed.length - firstDataRow, ...(headerless ? { headerless } : {}) }],
     sheetCount: 1,
   });
 }
