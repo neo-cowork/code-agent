@@ -294,7 +294,13 @@ export async function performCrossSessionSearch(
       titleMatches = database
         .searchSessionTitles(query, ownerUserId, SESSION_SEARCH.TITLE_MATCH_LIMIT, options?.projectScope, ...(options?.includeArchived ? [true as const] : []))
         .filter((row) => !allowed || allowed.has(row.sessionId))
-        .map((row) => ({ sessionId: row.sessionId, title: row.title, updatedAt: row.updatedAt, ...(row.archived ? { archived: true } : {}) }));
+        .map((row) => ({
+          sessionId: row.sessionId,
+          title: row.title,
+          updatedAt: row.updatedAt,
+          messageCount: row.messageCount,
+          ...(row.archived ? { archived: true } : {}),
+        }));
     } catch (error) {
       logger.warn('Cross-session search: session title match failed', { error });
     }

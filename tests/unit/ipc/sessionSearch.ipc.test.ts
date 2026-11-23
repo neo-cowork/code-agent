@@ -221,11 +221,11 @@ describe('cross-session search hydration', () => {
 
   it('returns title matches from the DB and logs which step failed instead of swallowing it', async () => {
     mocks.database.searchSessionTitles.mockReturnValue([
-      { sessionId: 'old-title', title: 'Browser 采集 任务', updatedAt: 9, createdAt: 1, archived: false },
+      { sessionId: 'old-title', title: 'Browser 采集 任务', updatedAt: 9, messageCount: 1, createdAt: 1, archived: false },
     ]);
     const ok = await performCrossSessionSearch('采集', undefined);
     expect(mocks.database.searchSessionTitles).toHaveBeenCalledWith('采集', null, 20, undefined);
-    expect(ok.titleMatches).toEqual([{ sessionId: 'old-title', title: 'Browser 采集 任务', updatedAt: 9 }]);
+    expect(ok.titleMatches).toEqual([{ sessionId: 'old-title', title: 'Browser 采集 任务', updatedAt: 9, messageCount: 1 }]);
 
     mocks.database.searchSessionTitles.mockImplementation(() => { throw new Error('title query broke'); });
     mocks.database.getSessionSearchMeta.mockImplementation(() => { throw new Error('meta query broke'); });
