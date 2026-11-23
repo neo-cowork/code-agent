@@ -31,6 +31,7 @@ import {
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../utils/agentActivity';
+import { GuiTakeoverDisclosureRows } from '../GuiTakeoverDisclosureRows';
 import { MemberOutputMarkdown } from './MemberOutputMarkdown';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
@@ -241,6 +242,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </header>
 
         <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+          <GuiTakeoverDisclosureRows disclosures={plainNode?.guiDisclosures ?? plainTask?.progress?.guiDisclosures} />
           {/* 当前动作置顶高亮（S3）；没有真实工具步时不编造活动。 */}
           {currentAction && (
             <section data-testid="member-current-action">
@@ -343,6 +345,9 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       </header>
 
       <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+        <GuiTakeoverDisclosureRows disclosures={liveContextSnapshot?.guiDisclosures
+          ?? agent.contextSnapshot?.guiDisclosures
+          ?? snapshot?.nodes?.find((node) => node.id === viewingMemberId)?.guiDisclosures} />
         {/* 当前动作置顶高亮（S3）：最近一条动作 = 他此刻在干嘛 */}
         {recentActions.length > 0 && (
           <section data-testid="member-current-action">

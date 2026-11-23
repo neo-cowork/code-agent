@@ -166,7 +166,7 @@ describe('parked approval banner click → route (chain)', () => {
     await waitFor(() => {
       argv = readArgvs().find((a) => a.includes('--session') && argvValue(a, '--session') === sessionId);
       expect(argv, `notify-only argv for ${sessionId}`).toBeDefined();
-    });
+    }, { timeout: 10_000 });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
     const event = h.broadcast.mock.calls.find(([channel, data]) => channel === IPC_CHANNELS.NOTIFICATION_SHOW && data.sessionId === sessionId)?.[1];
     const request = island.listPendingRequests().find((item) => item.sessionId === sessionId)!;

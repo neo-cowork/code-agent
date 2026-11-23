@@ -13,6 +13,7 @@ import { deriveDelegationPresentation } from '../../../src/renderer/components/f
 import type { PermissionRequest } from '../../../src/shared/contract/permission';
 
 const mocks = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
   tasks: [] as Task[],
   snapshot: null as AgentTreeSnapshot | null,
   openPreview: vi.fn(),
@@ -49,7 +50,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: Object.assign((selector?: (state: {
     processingSessionIds: Set<string>;
     openPreview: typeof mocks.openPreview;
-    language: 'zh';
+    language: 'zh' | 'en';
     setLanguage: ReturnType<typeof vi.fn>;
     cloudUIStrings: undefined;
     pendingPermissionRequest: PermissionRequest | null;
@@ -60,7 +61,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     const state = {
       processingSessionIds: new Set<string>(),
       openPreview: mocks.openPreview,
-      language: 'zh' as const,
+      language: mocks.language,
       setLanguage: vi.fn(),
       cloudUIStrings: undefined as undefined,
       pendingPermissionRequest: mocks.pendingPermissionRequest,
@@ -68,7 +69,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
       queuedPermissionRequests: mocks.queuedPermissionRequests,
     };
     return selector ? selector(state) : state;
-  }, { getState: () => ({ language: 'zh' as const }) }),
+  }, { getState: () => ({ language: mocks.language }) }),
 }));
 
 function delegateCall(): ToolCall {
@@ -625,4 +626,24 @@ describe('delegation receipt — cancelled retry and details', () => {
       clientMessageId: expect.stringMatching(/^delegation-retry-execution-compare-/),
     });
   });
+});
+
+
+it.each([
+  ['zh', '接下来我会直接操作「Keynote」的界面——这件事没有现成的连接器或网页路径可用。'],
+  ['en', "Next I'll operate Keynote directly on screen — there's no connector or browser route for this."],
+] as const)('shows the host disclosure once in the live and completed delegation receipt (%s)', (language, expected) => {
+  mocks.language = language;
+  try {
+    const progress = { guiDisclosures: [{ app: 'Keynote', callId: 'keynote-call' }] };
+    mocks.tasks = [task({ status: 'running', progress })];
+    const view = renderCall();
+    expect(view.getAllByTestId('gui-takeover-disclosure').map((row) => row.textContent)).toEqual([expected]);
+    mocks.tasks = [task({ status: 'completed', progress })];
+    view.rerender(<ToolCallDisplay toolCall={delegateCall()} index={0} total={1} />);
+    expect(view.getAllByTestId('gui-takeover-disclosure').map((row) => row.textContent)).toEqual([expected]);
+  } finally {
+    mocks.language = 'zh';
+    cleanup();
+  }
 });

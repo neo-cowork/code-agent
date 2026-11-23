@@ -12,6 +12,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
@@ -19,13 +20,14 @@ import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunDetail, SwarmRunListItem } from '../../../src/shared/contract/swarmTrace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
+let translations: typeof zh = zh;
 const invokeMock = vi.fn();
 const invokeDomainMock = vi.fn();
 const swarmState: { agents: SwarmAgentState[]; activeSessionId: string | undefined; messages: Array<{ id: string; from: string; to: string; content: string; timestamp: number; messageType: string }> } = {
   agents: [], activeSessionId: undefined, messages: [],
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: translations }) }));
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({ useSwarmStore: (selector: (state: typeof swarmState) => unknown) => selector(swarmState) }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -84,6 +86,7 @@ function treeSnapshot(node: AgentTreeNode): AgentTreeSnapshot {
 
 describe('成员对话页', () => {
   beforeEach(() => {
+    translations = zh;
     invokeMock.mockReset();
     invokeMock.mockImplementation((channel: unknown) => {
       if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([ledgerRun]);
@@ -113,6 +116,38 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-final-output').textContent).toContain('三处口径不一致');
     // 只显示这一位，不串到别人
     expect(screen.getByTestId('member-conversation-view').textContent).not.toContain('初稿');
+  });
+
+  it.each([
+    ['zh', zh, '接下来我会直接操作「Keynote」的界面——这件事没有现成的连接器或网页路径可用。'],
+    ['en', en, "Next I'll operate Keynote directly on screen — there's no connector or browser route for this."],
+  ] as const)('shows the host disclosure once on Team and plain member pages (%s)', async (_locale, t, expected) => {
+    translations = t;
+    const guiDisclosures = [{ app: 'Keynote', callId: 'keynote-call' }];
+    swarmState.agents = [agentOf({
+      finalOutput: '',
+      contextSnapshot: {
+        currentTokens: 1, maxTokens: 100, usagePercent: 1, messageCount: 1, warningLevel: 'normal',
+        lastUpdated: 1, tools: [], attachments: [], previews: [], truncatedMessages: 0, guiDisclosures,
+      },
+    })];
+    const detail = { ...ledgerDetail, agents: [{ ...record, finalOutput: '' }] };
+    invokeMock.mockImplementation((channel: unknown) => Promise.resolve(
+      channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS ? [ledgerRun] : detail,
+    ));
+
+    useMemberViewStore.setState({ viewingMemberId: 'researcher' });
+    const team = render(<MemberConversationView sessionId="session-1" />);
+    expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
+    team.unmount();
+
+    invokeDomainMock.mockResolvedValue(treeSnapshot({
+      id: 'plain-agent', role: 'Coder', status: 'running', statusLabel: '', children: [],
+      worktreeState: { status: 'none' }, budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'], guiDisclosures,
+    }));
+    useMemberViewStore.setState({ viewingMemberId: 'plain-agent' });
+    render(<MemberConversationView sessionId="session-1" />);
+    expect((await screen.findAllByTestId('gui-takeover-disclosure')).map((row) => row.textContent)).toEqual([expected]);
   });
 
   it('点顶部「← 返回主会话」回主会话', async () => {
