@@ -42,9 +42,18 @@ interface CronWorkingFolderRowProps {
 
 export const CronWorkingFolderRow: React.FC<CronWorkingFolderRowProps> = ({ runsOn, metadata, onMetadataChange }) => {
   const copy = useI18n().t.cronWorkingFolder;
-  if (runsOn !== 'local') return null;
-
   const folder = cronWorkingDirectoryFromMetadata(metadata);
+  if (runsOn !== 'local') {
+    if (runsOn !== 'cloud' || !folder) return null;
+    return (
+      <FormField label={copy.label}>
+        <p className="text-sm text-zinc-400" data-testid="cron-working-folder-cloud-notice">
+          {copy.cloudNotCarried.replace('{name}', cronFolderDisplayName(folder))}
+        </p>
+      </FormField>
+    );
+  }
+
   const rawFolder = metadata?.[CRON_WORKING_DIRECTORY_METADATA_KEY];
   const setFolder = (next: string | undefined) => onMetadataChange(withCronWorkingDirectory(metadata, next));
   const handlePick = async () => {
