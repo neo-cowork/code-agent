@@ -31,6 +31,7 @@ export interface DelegationPresentation {
   outcomeKey?: OutcomeKey;
   title: string;
   lastToolStep?: LastToolStep;
+  guiDisclosures?: AgentTreeNode['guiDisclosures'];
   stepCount?: number;
   outputs: DelegationReceiptOutput[];
   failure?: string;
@@ -221,6 +222,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     state,
     title: displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
+    guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
     stepCount: terminal
@@ -270,6 +272,7 @@ function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation
     outcomeKey,
     title: agentNodeLabel(node, t.agentRoleLabels),
     lastToolStep: node.lastToolStep,
+    guiDisclosures: node.guiDisclosures,
     activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,
     outputs: node.evidenceRefs.flatMap((ref) => {

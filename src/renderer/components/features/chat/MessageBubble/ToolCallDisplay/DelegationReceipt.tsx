@@ -12,6 +12,7 @@ import { openExternalLink } from '../../../../../utils/platform';
 import { useMemberViewStore } from '../../../../../stores/memberViewStore';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { useSessionTurnActive } from '../../../../../hooks/useSessionTurnActive';
+import { GuiTakeoverDisclosureRows } from '../../../GuiTakeoverDisclosureRows';
 import type { DelegationPresentation } from './delegationPresentation';
 
 /**
@@ -80,9 +81,12 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
     ? undefined
     : describeLastToolFailure(presentation.toolFailure, t);
 
+  const guiDisclosures = <GuiTakeoverDisclosureRows disclosures={presentation.guiDisclosures} />;
+
   if (superseded && presentation.state === 'failed') {
     return (
       <div className="ml-6 mt-0.5 text-xs text-zinc-500" data-testid="delegation-failure-superseded">
+        {guiDisclosures}
         {t.delegationFailedActions.superseded}
       </div>
     );
@@ -98,6 +102,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
     });
     return (
       <div className="ml-6 mt-0.5 truncate text-xs text-zinc-500" data-testid="delegation-activity">
+        {guiDisclosures}
         {describeLastToolStep(presentation.lastToolStep, t, status)}
       </div>
     );
@@ -105,6 +110,7 @@ export function DelegationReceipt({ presentation, superseded = false }: { presen
 
   return (
     <div className="ml-6 mt-0.5 space-y-0.5 text-xs text-zinc-500" data-testid="delegation-receipt">
+      {guiDisclosures}
       {presentation.stepCount !== undefined && (
         <div>{t.chat.delegationReceipt.steps.replace('{count}', String(presentation.stepCount))}</div>
       )}
