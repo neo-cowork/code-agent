@@ -6,6 +6,7 @@
 
 import { ROLE_PROACTIVITY } from '../../../shared/constants';
 import type { RoleProactivityConfig } from '../../../shared/contract/roleAssets';
+import { plainEvidenceText } from '../../../shared/plainEvidenceText';
 import { sanitizeTopicList } from '../../../shared/roleTopicList';
 
 export interface ParsedWakeRationale {
@@ -25,7 +26,7 @@ export function parseWakeRationale(finalOutput: string): ParsedWakeRationale {
   const rationale = rationaleRaw
     ? rationaleRaw.slice(0, ROLE_PROACTIVITY.RATIONALE_MAX_CHARS)
     : undefined;
-  const evidence = evidenceRaw || undefined;
+  const evidence = plainEvidenceText(evidenceRaw) || undefined;
   return {
     ...(rationale ? { rationale } : {}),
     ...(evidence ? { evidence } : {}),

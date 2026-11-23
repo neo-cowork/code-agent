@@ -1,4 +1,5 @@
 import { toolPreflightCopy } from './toolPreflightPresentation';
+import { describeHelperFailureReasons, readHelperOutcomes } from './helperOutcomeCopy';
 import type { ToolCall } from '@shared/contract';
 import { AgentFailureCode, HostReasonCode, inferAgentFailureCode } from '@shared/contract';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
@@ -250,6 +251,7 @@ type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
 const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Set([
   'DIRECTIVE_MEMORY_CONFIRMATION_REQUIRED',
   'TOOL_DISABLED_FOR_RUN',
+  'HANDED_OFF_TO_BACKGROUND',
   'TOOL_BATCH_SKIPPED',
   'WORKBENCH_SCOPE_DENIED',
   'PROJECT_SOURCE_READ_ONLY',
@@ -337,6 +339,13 @@ function interpolateCodeCopy(
   });
 }
 
+export function isRemindersReadAuthorizationFailure(
+  toolName: string | undefined,
+  metadata?: Record<string, unknown> | null,
+): boolean {
+  return toolName === 'reminders' && metadata?.code === 'not_authorized' && metadata.accessProbeDenied === true;
+}
+
 /**
  * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
  * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
@@ -348,10 +357,13 @@ function interpolateCodeCopy(
  */
 export function humanizeToolError(
   error: string | undefined,
-  _toolName: string | undefined,
+  toolName: string | undefined,
   t: Translations,
   metadata?: Record<string, unknown> | null,
 ): HumanizedToolError | null {
+  if (isRemindersReadAuthorizationFailure(toolName, metadata)) {
+    return { summary: t.toolErrors.remindersReadDenied };
+  }
   if (isToolInterruptionPlaceholder(error)) {
     const outcome = t.outcomeWords[resolveToolInterruptionPlaceholderOutcomeKey(error)].badge;
     return {
@@ -423,7 +435,7 @@ export function humanizeToolError(
   // 结构化 hostReason/failureCode/code 都没命中，才轮到 preflight 这条「历史呈现」兜底
   // ——它读的是自由文本（Bash 里是被执行程序自己的 stdout/stderr），必须排在所有结构化
   // 证据之后，否则一条不相关的程序输出就能顶掉更准确的结构化判断。
-  const preflight = toolPreflightCopy({ name: _toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
+  const preflight = toolPreflightCopy({ name: toolName ?? '', result: { toolCallId: '', success: false, error, metadata: metadata ?? undefined } }, t);
   if (preflight) return { summary: preflight.action, detail: preflight.reason };
   // 2. 正则兜底（原有分类，逐条不变）
   if (!error?.trim()) return null;
@@ -537,6 +549,9 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   if (isDeclinedSandboxEscalation(metadata)) {
     return t.decisionCard.permission.sandboxEscalationDeclined;
   }
+  const helperOutcomes = toolCall.name === 'spawn_agent' ? readHelperOutcomes(metadata) : undefined;
+  const helperReason = helperOutcomes ? describeHelperFailureReasons(helperOutcomes, t) : null;
+  if (helperReason) return helperReason;
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t, toolCall.name, error);
   if (mappedFailureCode) return mappedFailureCode;

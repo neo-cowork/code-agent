@@ -21,7 +21,6 @@ vi.mock('../../../src/renderer/components/features/chat/ChatInput/utils', () => 
   MAX_FILE_SIZE: 10,
   MAX_FOLDER_FILES: 100,
   generateAttachmentId: () => 'attachment-1',
-  extractPdfText: vi.fn(),
   readDirectoryEntry,
   getFileCategory: (file: File) => {
     const extension = file.name.split('.').pop()?.toLowerCase();

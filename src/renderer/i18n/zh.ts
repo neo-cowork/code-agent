@@ -21,7 +21,7 @@ import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { serverConnectionZh } from './serverConnection';
-import { envAssistZh } from './envAssist';
+import { envAssistZh } from './envAssist'; import { guiTakeoverZh } from './guiTakeover';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -601,7 +601,7 @@ export const zh = {
       engineCountLabel: 'Engine 数量',
       engineCountCaption: 'Codex / Claude',
       // 引擎行
-      remoteDefaultLabel: '远程默认',
+      remoteDefaultLabel: '远程默认：',
       localDefaultLabel: '本机默认选择',
       modelSelectableSummary: '{enabled}/{total} 个模型可选',
       loading: '正在读取模型目录…',
@@ -961,7 +961,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
-  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh,
+  ...serverConnectionZh, ...agentErrorZh, env: envAssistZh, guiTakeover: guiTakeoverZh,
   ...labZh,
   ...labGpt1Zh,
   ...labNanogptZh,

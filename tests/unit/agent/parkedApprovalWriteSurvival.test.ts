@@ -75,10 +75,10 @@ describe('Write through boot hydration and approved ledger replay', () => {
   });
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
 
-  function seed(input = args) {
+  function seed(input = args, requestContent = '新建 weekly.md 写三条要点') {
     state.messages = [
       { id: 'old-user', role: 'user', content: '整理上周账单', timestamp: 1 },
-      { id: 'request', role: 'user', content: '新建 weekly.md 写三条要点', timestamp: 2 },
+      { id: 'request', role: 'user', content: requestContent, timestamp: 2 },
       { id: 'assistant', role: 'assistant', content: '', timestamp: 3,
         toolCalls: [{ id: 'write-call', name: 'Write', arguments: ledgerArgs('Write', input) }] },
       { id: 'later-user', role: 'user', content: '这是后来的其他任务', timestamp: 4 },
@@ -124,9 +124,19 @@ describe('Write through boot hydration and approved ledger replay', () => {
     seed();
     const service = new SessionAutomationService();
     const pending = service.listParkedApprovals()[0];
-    expect(pending).toMatchObject({ status: 'pending', taskTitle: '新建 weekly' });
+    expect(pending).toMatchObject({ status: 'pending', taskTitle: '新建 weekly.md 写三条要点' });
     repo.resolve({ id: 'approval', status: 'rejected', feedback: 'Auto-rejected after restart: args_unavailable', resolvedAt: Date.now() });
     expect(service.listParkedApprovals()[0]).toMatchObject({ status: 'voided', taskTitle: pending.taskTitle });
+  });
+
+  it('channel inbox keeps the file extension, so weekly.md and weekly.csv are different tasks', () => {
+    seed();
+    const mdTitle = new SessionAutomationService().listParkedApprovals()[0].taskTitle;
+    expect(mdTitle).toBe('新建 weekly.md 写三条要点');
+    seed(args, '新建 weekly.csv 写三条要点');
+    const csvTitle = new SessionAutomationService().listParkedApprovals()[0].taskTitle;
+    expect(csvTitle).toBe('新建 weekly.csv 写三条要点');
+    expect(csvTitle).not.toBe(mdTitle);
   });
 
   it('other sessions keep their session title; missing call never borrows another request', () => {

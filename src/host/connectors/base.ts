@@ -1,4 +1,4 @@
-import type { ConnectorLifecycleAction } from '../../shared/ipc';
+import type { ConnectorLifecycleAction, NativeConnectorDetailCode } from '../../shared/ipc';
 
 // ============================================================================
 // Connector Base Types - Office connector runtime primitives
@@ -16,6 +16,10 @@ export interface ConnectorStatus {
   noAccessibleItems?: boolean;
   // failed 时的结构化原因（来自 describeAppleScriptFailure().code）；渲染层据此显示「打开系统设置」，不做文案匹配
   errorCode?: 'not_authorized';
+  /** 原生连接器状态句的稳定 code（见 shared NativeConnectorDetailCode）；这四个连接器不再写 detail/error 文案 */
+  detailCode?: NativeConnectorDetailCode;
+  /** EventKit pane. Set only when calendar access is denied or write-only. */
+  settingsPane?: 'calendars';
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }

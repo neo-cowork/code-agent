@@ -146,6 +146,20 @@ describe('Reminders read readiness', () => {
     }
   });
 
+  it.each(['list_lists', 'list_reminders'])('%s records a revoked automation permission without exposing prose', async (action) => {
+    mocks.runAppleScript.mockResolvedValueOnce('Home');
+    await remindersConnector.execute('list_lists', {});
+    const failure = Object.assign(new Error('Command failed: private script'), { stderr: 'Not authorized (-1743)' });
+    mocks.runAppleScript.mockRejectedValueOnce(failure);
+    await expect(remindersConnector.execute(action, {})).rejects.toBe(failure);
+    expect(await remindersConnector.getStatus()).toMatchObject({
+      connected: false, readiness: 'failed', errorCode: 'not_authorized', detailCode: 'automation_not_authorized',
+    });
+    const status = await remindersConnector.getStatus();
+    expect(status.detail).toBeUndefined();
+    expect(status.error).toBeUndefined();
+  });
+
   it('only list_lists emptiness means no accessible lists; an empty filtered reminder read does not', async () => {
     mocks.runAppleScript.mockResolvedValue('');
     await remindersConnector.execute('list_lists', {});

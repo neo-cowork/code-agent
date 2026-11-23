@@ -21,7 +21,7 @@ import { planApprovalEn } from './planApproval';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { serverConnectionEn } from './serverConnection';
-import { envAssistEn } from './envAssist';
+import { envAssistEn } from './envAssist'; import { guiTakeoverEn } from './guiTakeover';
 import { agentErrorEn } from './agentError';
 import { labEn } from './lab';
 import { labGpt1En } from './labGpt1';
@@ -585,7 +585,7 @@ export const en = {
       engineCountLabel: 'Engine Count',
       engineCountCaption: 'Codex / Claude',
       // Engine rows
-      remoteDefaultLabel: 'Remote default',
+      remoteDefaultLabel: 'Remote default: ',
       localDefaultLabel: 'Local default selection',
       modelSelectableSummary: '{enabled}/{total} models available',
       loading: 'Loading model catalog...',
@@ -954,7 +954,7 @@ export const en = {
   ...planApprovalEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
-  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn,
+  ...serverConnectionEn, ...agentErrorEn, env: envAssistEn, guiTakeover: guiTakeoverEn,
   ...labEn,
   ...labGpt1En,
   ...labNanogptEn,

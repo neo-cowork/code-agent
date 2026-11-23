@@ -9,6 +9,8 @@ import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import type { RunHandle } from '../../runtime/runContext';
 import type { RunRegistry } from '../../runtime/runRegistry';
 import { dispatchUserBrowserInputOnPage } from '../infra/browser/userBrowserInputDispatch';
+import { browserPool } from '../infra/browserPool';
+import type { BrowserService } from '../infra/browserService';
 import {
   getManagedBrowserProviderAdapter,
   type ManagedBrowserProviderAdapter,
@@ -102,6 +104,11 @@ function browserActionForInput(payload: UserBrowserInputPayload): string {
   }
 }
 
+function noteUserActivity(browserService: BrowserService): void {
+  browserService.noteUserActivity();
+  browserPool.touch(browserService);
+}
+
 export class UserBrowserLinkService {
   private readonly runs = new Map<string, UserBrowserRun>();
 
@@ -154,6 +161,7 @@ export class UserBrowserLinkService {
           const activeTab = browserService.getActiveTab();
           if (activeTab) await browserService.navigate(url, activeTab.id);
           else await browserService.newTab(url);
+          noteUserActivity(browserService);
           return { success: true, output: `Navigated to ${url}` };
         },
       });
@@ -206,6 +214,7 @@ export class UserBrowserLinkService {
         if (action === 'back') await browserService.goBack(activeTab.id);
         else if (action === 'forward') await browserService.goForward(activeTab.id);
         else await browserService.reload(activeTab.id);
+        noteUserActivity(browserService);
         return { success: true, output: `Browser ${action}` };
       },
     });
@@ -242,6 +251,7 @@ export class UserBrowserLinkService {
         params: { action: 'list_tabs' },
         async executeProvider(_signal, browserService) {
           const tabs = browserService.listTabs();
+          noteUserActivity(browserService);
           return {
             success: true,
             output: `Attached to kept result page (${tabs.length} tab(s)): ${kept.url}`,
@@ -273,9 +283,9 @@ export class UserBrowserLinkService {
     };
   }
 
-  /** kept 结果页三态（none/kept/closed + url/title），getKeptResultPage IPC 真源。 */
-  keptState(conversationId: string): KeptResultPageSnapshot {
-    return this.keptRegistry.snapshot(conversationId.trim());
+  /** kept 结果页三态。includeSnapshot 才附带 HTML；30 秒轮询不带。 */
+  keptState(conversationId: string, options?: { includeSnapshot?: boolean }): KeptResultPageSnapshot {
+    return this.keptRegistry.snapshot(conversationId.trim(), options);
   }
 
   /**
@@ -354,6 +364,7 @@ export class UserBrowserLinkService {
           });
           if (!again.ok) throw new Error(again.error);
           await dispatchUserBrowserInputOnPage(activeTab.page, again.payload);
+          noteUserActivity(browserService);
           return { success: true, output: `User browser ${payload.kind}` };
         },
       });

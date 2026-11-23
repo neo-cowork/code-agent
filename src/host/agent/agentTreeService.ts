@@ -34,8 +34,10 @@ import {
 import type { SubagentResult } from './subagentExecutorTypes';
 import { listAgentWorktreeArtifacts } from './agentWorktree';
 import { bashStepDescription, extractToolStepAction, extractToolStepTarget } from './toolStepTarget';
+import { toolNotRunCallIds } from './bashStepOutcome';
 import { getFileOwnershipRegistry } from '../services/infra/fileOwnershipRegistry';
 import { stripWorkdirPrefix } from './workdirPrefix';
+import { cleanDisplayText, resolveSessionWorkspaceRoot, shortenDisplayPaths } from './workspacePathDisplay';
 
 export interface AgentTreeSpawnAgentSource {
   background?: boolean;
@@ -63,6 +65,8 @@ export interface AgentTreeSnapshotSources {
   worktrees?: AgentWorktreeArtifact[];
   /** 文件所有权冲突（调用方从 fileOwnershipRegistry 取；缺省 = 无冲突）。 */
   ownershipConflicts?: Array<{ path: string; ownerAgentId: string; requesterAgentId: string }>;
+  /** 会话工作区根：展示侧把区内绝对路径改写成 ./相对路径；缺省时所有绝对路径按「区外」处理。 */
+  workspaceRoot?: string;
 }
 
 export interface GetAgentTreeSnapshotOptions {
@@ -311,11 +315,14 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
       const target = extractToolStepTarget(call.arguments, call.name);
       const action = extractToolStepAction(call.arguments);
       const description = bashStepDescription(call.name, call.arguments);
+      const isBash = call.name === 'Bash' || call.name === 'bash';
       return {
         tool,
         ...(target ? { target } : {}),
         ...(action ? { action } : {}),
         ...(description ? { description } : {}),
+        ...(isBash ? { callId: call.id } : {}),
+        ...(isBash && toolNotRunCallIds(record.messages, record.snapshot?.bashSteps).has(call.id) ? { notRun: true } : {}),
         at: message.timestamp || record.snapshot?.lastUpdated || record.updatedAt,
       };
     }
@@ -329,11 +336,17 @@ function lastToolStepFromContext(record: SubagentContextRecord) {
 
 function bashStepsFromContext(record: SubagentContextRecord): BashStep[] | undefined {
   const steps: BashStep[] = [];
+  const notRun = toolNotRunCallIds(record.messages, record.snapshot?.bashSteps);
   for (const message of record.messages) {
     for (const call of message.toolCalls ?? []) {
       if (call.name !== 'Bash' && call.name !== 'bash') continue;
       const description = bashStepDescription(call.name, call.arguments);
-      steps.push({ ...(description ? { description } : {}), command: extractToolStepTarget(call.arguments) ?? '' });
+      steps.push({
+        ...(description ? { description } : {}),
+        command: extractToolStepTarget(call.arguments) ?? '',
+        callId: call.id,
+        ...(notRun.has(call.id) ? { notRun: true } : {}),
+      });
     }
   }
   return steps.length > 0 ? steps.slice(-20) : undefined;
@@ -346,12 +359,27 @@ function isToolCallObservation(text: string | undefined): boolean {
   return lines.length > 0 && lines.every((line) => /^Calling \S+\(/.test(line));
 }
 
-function progressFromContext(record: SubagentContextRecord): string | undefined {
+/**
+ * 模型/工具文本 → 卡片可显文本：cleanDisplayText（剥前缀、丢回放行、缩短路径）
+ * 之后再截断到卡片长度。拿不到自然语言剩余时返回 undefined——调用方保留
+ * 上一条好值或中性兜底，绝不把回放怼到卡片上。
+ */
+function toDisplayText(text: string | undefined, workspaceRoot: string | undefined): string | undefined {
+  const cleaned = cleanDisplayText(text, workspaceRoot);
+  return cleaned === undefined ? undefined : truncate(cleaned);
+}
+
+function progressFromContext(
+  record: SubagentContextRecord,
+  workspaceRoot: string | undefined,
+): string | undefined {
   const previews = record.snapshot?.previews;
   if (previews && previews.length > 0) {
     for (let i = previews.length - 1; i >= 0; i -= 1) {
       const text = previews[i]?.contentPreview;
-      if (!isToolCallObservation(text)) return truncate(text);
+      if (isToolCallObservation(text)) continue;
+      const cleaned = toDisplayText(text, workspaceRoot);
+      if (cleaned) return cleaned;
     }
     return undefined;
   }
@@ -359,13 +387,17 @@ function progressFromContext(record: SubagentContextRecord): string | undefined 
     const message = record.messages[i];
     const text = typeof message?.content === 'string' ? message.content : undefined;
     if (isToolCallObservation(text)) continue;
-    return truncate(text);
+    const cleaned = toDisplayText(text, workspaceRoot);
+    if (cleaned) return cleaned;
   }
   return undefined;
 }
 
-function resultProgress(result?: SubagentResult | AgentTaskResult): string | undefined {
-  return truncate(result?.success ? result.output : result?.error);
+function resultProgress(
+  result: SubagentResult | AgentTaskResult | undefined,
+  workspaceRoot: string | undefined,
+): string | undefined {
+  return toDisplayText(result?.success ? result.output : result?.error, workspaceRoot);
 }
 
 function addEvidenceRefs(node: AgentTreeNode, refs?: EvidenceRef[]): void {
@@ -382,13 +414,14 @@ function mergeSpawnAgent(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   agent: AgentTreeSpawnAgentSource,
+  workspaceRoot: string | undefined,
 ): void {
   const node = ensureNode(nodes, agent.id, agent.role);
   addSource(node, 'spawnGuard');
   node.background = agent.background ?? false;
   node.role = agent.role;
   node.displayName = agent.completion?.title ?? node.displayName;
-  node.task = stripWorkdirPrefix(agent.task);
+  node.task = shortenDisplayPaths(stripWorkdirPrefix(agent.task), workspaceRoot);
   if (agent.parentId) node.parentId = agent.parentId;
   if (agent.createdAt) node.createdAt = agent.createdAt;
   if (agent.completedAt) node.completedAt = agent.completedAt;
@@ -410,16 +443,17 @@ function mergeSpawnAgent(
     : undefined;
   applyFailure(node, code);
 
-  const progress = resultProgress(agent.result) ?? truncate(stripWorkdirPrefix(agent.task));
+  const taskDisplay = toDisplayText(agent.task, workspaceRoot);
+  const progress = resultProgress(agent.result, workspaceRoot) ?? taskDisplay;
   if (progress) node.progress = progress;
   setLastEvent(node, {
     summary: agent.status === 'completed'
       ? `已完成：${progress ?? agent.role}`
       : agent.status === 'failed'
-        ? `遇到问题：${progress ?? agent.error ?? agent.role}`
+        ? `遇到问题：${progress ?? toDisplayText(agent.error, workspaceRoot) ?? agent.role}`
         : agent.status === 'cancelled'
           ? `已取消：${progress ?? agent.role}`
-          : `正在处理：${truncate(stripWorkdirPrefix(agent.task)) ?? agent.role}`,
+          : `正在处理：${taskDisplay ?? agent.role}`,
     at: agent.completedAt ?? agent.createdAt,
     source: 'spawnGuard',
   });
@@ -429,10 +463,11 @@ function mergeParallelTask(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   task: ParallelAgentTaskSnapshot,
+  workspaceRoot: string | undefined,
 ): void {
   const node = ensureNode(nodes, task.taskId, task.role);
   addSource(node, 'parallelCoordinator');
-  if (!node.task && task.task) node.task = stripWorkdirPrefix(task.task);
+  if (!node.task && task.task) node.task = shortenDisplayPaths(stripWorkdirPrefix(task.task), workspaceRoot);
   if (task.startedAt && !node.createdAt) node.createdAt = task.startedAt;
   if (task.completedAt) node.completedAt = task.completedAt;
   node.updatedAt = task.completedAt ?? task.startedAt ?? node.updatedAt;
@@ -442,16 +477,17 @@ function mergeParallelTask(
   }
   applyFailure(node, task.failureCode);
 
-  const progress = resultProgress(task.result)
+  const taskDisplay = toDisplayText(task.task, workspaceRoot);
+  const progress = resultProgress(task.result, workspaceRoot)
     ?? (task.dependsOn && task.dependsOn.length > 0
       ? truncate(`等待这些任务完成：${task.dependsOn.join(', ')}`)
-      : truncate(stripWorkdirPrefix(task.task)));
+      : taskDisplay);
   if (progress) node.progress = progress;
   setLastEvent(node, {
     summary: task.error
-      ? `遇到问题：${truncate(task.error) ?? task.role}`
+      ? `遇到问题：${toDisplayText(task.error, workspaceRoot) ?? task.role}`
       : task.status === 'pending'
-        ? `等待开始：${truncate(stripWorkdirPrefix(task.task)) ?? task.role}`
+        ? `等待开始：${taskDisplay ?? task.role}`
         : `${statusLabel(parallelStatusToTree(task.status))}：${progress ?? task.role}`,
     at: task.completedAt ?? task.startedAt,
     source: 'parallelCoordinator',
@@ -462,15 +498,16 @@ function mergeContextRecord(
   nodes: Map<string, AgentTreeNode>,
   statusPriorities: Map<string, number>,
   record: SubagentContextRecord,
+  workspaceRoot: string | undefined,
 ): void {
   const role = record.snapshot?.previews[0]?.role ?? 'agent';
   const node = ensureNode(nodes, record.agentId, role);
   addSource(node, 'subagentContext');
   const lifecycle = record.lifecycle;
-  // Explicit graph terminal (parent-run settlement) wins; then persisted lifecycle (executor exit, tells cancelled
-  // from failed) survives restart; then SpawnGuard's completion fact survives late context flushes; only
-  // unfinished records use the orphan heuristic.
+  // A guard cancellation is persisted before the aborted executor settles.
+  // Its late failure must not replace the stop after rehydration.
   const status: AgentTreeNodeStatus = record.terminalStatus
+    ?? (record.lifecycleStatus === 'cancelled' ? record.lifecycleStatus : undefined)
     ?? (lifecycle && lifecycle.status !== 'running'
       ? lifecycle.status
       : record.lifecycleStatus ?? (record.updatedAt < HOST_PROCESS_BOOT_MS ? 'cancelled' : 'unknown'));
@@ -478,7 +515,7 @@ function mergeContextRecord(
     node.displayName = lifecycle.displayName;
     node.role = lifecycle.role ?? node.role;
     node.background = lifecycle.background || node.background;
-    node.task ??= stripWorkdirPrefix(lifecycle.task);
+    node.task ??= shortenDisplayPaths(stripWorkdirPrefix(lifecycle.task), workspaceRoot);
     node.createdAt ??= lifecycle.startedAt;
     node.completedAt ??= lifecycle.finishedAt;
   }
@@ -488,11 +525,12 @@ function mergeContextRecord(
   if (activeTool) node.activeTool = activeTool;
   const lastToolStep = lastToolStepFromContext(record);
   if (lastToolStep) node.lastToolStep = lastToolStep;
+  if (record.snapshot?.guiDisclosures) node.guiDisclosures = record.snapshot.guiDisclosures;
   const bashSteps = bashStepsFromContext(record);
   if (bashSteps) node.bashSteps = bashSteps;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));
 
-  const progress = progressFromContext(record);
+  const progress = progressFromContext(record, workspaceRoot);
   if (progress) {
     node.progress = progress;
     setLastEvent(node, {
@@ -508,13 +546,14 @@ function mergeBackgroundAgent(
   statusPriorities: Map<string, number>,
   handle: BackgroundSubagentHandle,
   backgroundAgentId = handle.agentId,
+  workspaceRoot?: string,
 ): void {
   const node = ensureNode(nodes, handle.agentId, 'background');
   addSource(node, 'backgroundRegistry');
   node.background = true;
   node.backgroundAgentId = backgroundAgentId;
   node.displayName ||= handle.displayName;
-  node.task ??= handle.title;
+  node.task ??= handle.title ? shortenDisplayPaths(stripWorkdirPrefix(handle.title), workspaceRoot) : handle.title;
   if (node.role === 'background' && handle.role) node.role = handle.role;
   if (handle.startedAt && !node.createdAt) node.createdAt = handle.startedAt;
   if (handle.finishedAt) node.completedAt = handle.finishedAt;
@@ -524,11 +563,11 @@ function mergeBackgroundAgent(
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromResult(handle.result));
   applyFailure(node, handle.failureCode);
 
-  const progress = resultProgress(handle.result) ?? truncate(handle.error);
+  const progress = resultProgress(handle.result, workspaceRoot) ?? toDisplayText(handle.error, workspaceRoot);
   if (progress) node.progress = progress;
   setLastEvent(node, {
     summary: handle.error && treeStatus !== 'cancelled'
-      ? `遇到问题：${truncate(handle.error) ?? handle.agentId}`
+      ? `遇到问题：${toDisplayText(handle.error, workspaceRoot) ?? handle.agentId}`
       : `${statusLabel(treeStatus)}：${progress ?? handle.agentId}`,
     at: handle.finishedAt ?? handle.startedAt,
     source: 'backgroundRegistry',
@@ -538,6 +577,7 @@ function mergeBackgroundAgent(
 function mergeWorktree(
   nodes: Map<string, AgentTreeNode>,
   worktree: AgentWorktreeArtifact,
+  workspaceRoot: string | undefined,
 ): void {
   const node = ensureNode(nodes, worktree.agentId);
   addSource(node, 'agentWorktree');
@@ -553,7 +593,7 @@ function mergeWorktree(
   if (worktree.updatedAt) {
     node.updatedAt = Math.max(node.updatedAt ?? 0, worktree.updatedAt);
     setLastEvent(node, {
-      summary: worktree.path ? `产物保留在 ${worktree.path}` : '产物工作区状态已更新',
+      summary: worktree.path ? `产物保留在 ${shortenDisplayPaths(worktree.path, workspaceRoot)}` : '产物工作区状态已更新',
       at: worktree.updatedAt,
       source: 'agentWorktree',
     });
@@ -624,6 +664,7 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
   const nodes = new Map<string, AgentTreeNode>();
   const statusPriorities = new Map<string, number>();
   const sessionId = sources.sessionId?.trim() || undefined;
+  const workspaceRoot = sources.workspaceRoot?.trim() || undefined;
   const registryAliases = new Map<string, string>();
   for (const record of sources.contextRecords ?? []) {
     if ((!sessionId || record.sessionId === sessionId) && record.lifecycle?.backgroundAgentId) {
@@ -636,23 +677,23 @@ export function buildAgentTreeSnapshot(sources: AgentTreeSnapshotSources = {}): 
     if (sessionId && (agent.sessionId ? agent.sessionId !== sessionId : agent.treeId !== sessionId && !contextAgentIds.has(agent.id))) {
       continue;
     }
-    mergeSpawnAgent(nodes, statusPriorities, agent);
+    mergeSpawnAgent(nodes, statusPriorities, agent, workspaceRoot);
   }
   for (const task of sources.parallelTasks ?? []) {
-    mergeParallelTask(nodes, statusPriorities, task);
+    mergeParallelTask(nodes, statusPriorities, task, workspaceRoot);
   }
   for (const handle of sources.backgroundAgents ?? []) {
     if (sessionId && handle.sessionId !== sessionId) continue;
     mergeBackgroundAgent(nodes, statusPriorities, {
       ...handle, agentId: registryAliases.get(handle.agentId) ?? handle.agentId,
-    }, handle.agentId);
+    }, handle.agentId, workspaceRoot);
   }
   for (const record of sources.contextRecords ?? []) {
     if (sessionId && record.sessionId !== sessionId) continue;
-    mergeContextRecord(nodes, statusPriorities, record);
+    mergeContextRecord(nodes, statusPriorities, record, workspaceRoot);
   }
   for (const worktree of sources.worktrees ?? []) {
-    mergeWorktree(nodes, worktree);
+    mergeWorktree(nodes, worktree, workspaceRoot);
   }
 
   const { roots, flat } = attachChildren(Array.from(nodes.values()));
@@ -676,6 +717,7 @@ export function getAgentTreeSnapshot(options: GetAgentTreeSnapshotOptions = {}):
   const sources: AgentTreeSnapshotSources = {
     sessionId,
     now: options.now,
+    workspaceRoot: resolveSessionWorkspaceRoot(sessionId),
     spawnAgents: getSpawnGuard().list(),
     parallelTasks: [
       ...getParallelAgentCoordinator().getTaskSnapshots(),

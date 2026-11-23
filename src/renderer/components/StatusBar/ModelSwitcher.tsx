@@ -13,7 +13,7 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
-import { isAgenticVerifiedModel } from '@shared/constants';
+import { getModelDisplayLabel, isAgenticVerifiedModel } from '@shared/constants';
 import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
@@ -55,7 +55,7 @@ import {
   ProviderLogo,
   QUICK_SWITCH_PROVIDERS,
   sortProviderGroupsByModelStrategy,
-  buildModelSwitcherEngineSelection,
+  buildModelSwitcherEngineSelection, narrowOptionsBeforeHydrate,
 } from './modelSwitcherHelpers';
 import {
   EngineScopedModelPanel,
@@ -218,7 +218,9 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     modelSettings,
     nativeHasConfiguredModels,
   );
-  const visibleModelOptions = showModelSettingsPrompt ? [] : modelOptions;
+  const displayModel = overrideModel || hostModel?.model || currentModel;
+  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
+  const visibleModelOptions = showModelSettingsPrompt ? [] : narrowOptionsBeforeHydrate(modelOptions, modelSettings !== null || settingsLoaded, displayProvider, displayModel);
   const filteredOptions = useMemo(() => {
     if (!searchQuery.trim()) return visibleModelOptions;
     const q = searchQuery.toLowerCase();
@@ -564,9 +566,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   ]);
 
   // 没有会话 override 时显示 host 算出的下一轮模型；host 还没回话的首帧才用渲染层设置快照。
-  const displayModel = overrideModel || hostModel?.model || currentModel;
   const isOverridden = engine.kind === 'native' && !!overrideModel;
-  const displayProvider = overrideProvider || hostModel?.provider || defaultProvider;
 
   // 打开面板时锚定到当前选中模型：等 modelSettings IPC 返回、列表二次渲染后执行一次。
   // 用 anchorPendingRef 保证每次打开只锚一次，搜索过滤（groupedFilteredOptions 变化）不重复锚定。
@@ -924,12 +924,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                   );
                                 })}
                                 {(() => {
-                                  const badge = getModelPriceBadge(opt.provider, opt.model);
+                                  // internal-text-leak 门不许渲染位表达式里出现裸 *.modelId 属性访问，
+                                  // 基准 id 取成局部量 baselineModel 再走标签管线。
+                                  const badge = getModelPriceBadge(opt.provider, opt.model), baselineModel = PRICING_BASELINE_DEFAULT.modelId;
                                   return (
                                     <span
                                       className={`ml-auto text-[10px] tabular-nums ${badge.known ? 'text-zinc-400' : 'text-zinc-600'}`}
                                       title={badge.known
-                                        ? modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)
+                                        // 价格基准 hover 用展示名（不再裸 id）；限定词本地化走
+                                        // localizeModelLabel（zh 还原中文限定词、en 用目录英文限定词），
+                                        // 与下拉行标签同管线。
+                                        ? modelText.priceCoefTitle.replace('{baseline}', localizeModelLabel(
+                                          baselineModel, getModelDisplayLabel(baselineModel), language))
                                         : modelText.priceUnknownTitle}
                                     >
                                       {badge.label}

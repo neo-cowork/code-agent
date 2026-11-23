@@ -249,6 +249,104 @@ describe('审批响应投递链路（web 路径）', () => {
     }
   });
 
+  describe('审批卡上改过的参数（updatedArgs）随响应送达', () => {
+    const edited = { title: 'Quarterly review (final)' };
+    const invoke4 = (requestId: string, response: string, sessionId: string, updatedArgs?: unknown) =>
+      handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, requestId, response, sessionId, updatedArgs) as Promise<IpcResult>;
+    const infoText = () => JSON.stringify(logger.info.mock.calls);
+
+    function makeIsland() {
+      return new OrchestratorPermissionIsland({
+        getSettings: configServiceStub.getSettings as never,
+        isDevModeAutoApproveEnabled: () => false,
+        getExecutionTopology: () => 'main',
+        hasApprovalUi: () => true,
+        onEvent: () => {},
+      });
+    }
+
+    it('前台岛路径：4 参应答让等待中的 Promise 带着 updatedArgs 放行，日志 edited:true', async () => {
+      const sessionId = 'sess-edit-fg';
+      const island = makeIsland();
+      registerForegroundPermissionIsland(sessionId, island);
+      install();
+      try {
+        const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+        await Promise.resolve();
+        const requestId = island.listPendingRequests()[0]!.id;
+        await expect(invoke4(requestId, 'allow', sessionId, edited)).resolves.toMatchObject({
+          success: true,
+          data: { source: 'foreground-permission-island' },
+        });
+        await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user', updatedArgs: edited });
+        expect(infoText()).toContain('Permission response delivered (web foreground)');
+        expect(infoText()).toContain('"edited":true');
+      } finally {
+        island.drainPendingPermissions();
+        unregisterForegroundPermissionIsland(sessionId, island);
+      }
+    });
+
+    it('TaskManager 路径：4 参应答让等待中的 Promise 带着 updatedArgs 放行，日志 edited:true', async () => {
+      const sessionId = 'sess-edit-tm';
+      const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+      install();
+      const approval = requestPermission(orchestrator)({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate' });
+      await Promise.resolve();
+      const [requestId] = pendingIds(orchestrator);
+      await expect(invoke4(requestId, 'allow', sessionId, edited)).resolves.toMatchObject({
+        success: true,
+        data: { source: 'task-manager' },
+      });
+      await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user', updatedArgs: edited });
+      expect(infoText()).toContain('Permission response delivered (web)');
+      expect(infoText()).toContain('"edited":true');
+    });
+
+    it("'allow_session' + updatedArgs 仍 fail-closed", async () => {
+      const sessionId = 'sess-edit-session';
+      const island = makeIsland();
+      registerForegroundPermissionIsland(sessionId, island);
+      install();
+      try {
+        const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+        await Promise.resolve();
+        const requestId = island.listPendingRequests()[0]!.id;
+        await invoke4(requestId, 'allow_session', sessionId, edited);
+        await expect(approval).resolves.toMatchObject({ approved: false, denialSource: 'fail-closed' });
+      } finally {
+        island.drainPendingPermissions();
+        unregisterForegroundPermissionIsland(sessionId, island);
+      }
+    });
+
+    it('没有第 4 参时正常批准；无效参数拒绝且请求仍可裁决，日志 edited:false', async () => {
+      const sessionId = 'sess-edit-none';
+      const island = makeIsland();
+      registerForegroundPermissionIsland(sessionId, island);
+      install();
+      try {
+        for (const bad of [undefined, 'x', ['a']]) {
+          const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
+          await Promise.resolve();
+          const requestId = island.listPendingRequests()[0]!.id;
+          const result = await invoke4(requestId, 'allow', sessionId, bad);
+          if (bad !== undefined) {
+            expect(result).toMatchObject({ success: false, error: { code: 'INVALID_UPDATED_ARGS' } });
+            expect(island.listPendingRequests().map((request) => request.id)).toContain(requestId);
+            await invoke4(requestId, 'allow', sessionId);
+          }
+          await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
+        }
+        expect(infoText()).toContain('"edited":false');
+        expect(infoText()).not.toContain('"edited":true');
+      } finally {
+        island.drainPendingPermissions();
+        unregisterForegroundPermissionIsland(sessionId, island);
+      }
+    });
+  });
+
   describe('后台 helper 的审批按 requestId 找属主，不信调用方的会话 id（FB-1408）', () => {
     const ownerSession = 'sess-owner';
     const otherSession = 'sess-other';

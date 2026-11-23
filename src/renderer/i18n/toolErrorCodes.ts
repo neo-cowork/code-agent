@@ -14,6 +14,10 @@ export const toolErrorCodesZh = {
     summary: '这一步没有执行，这一轮对话里没有开放这个操作',
     detail: '请在新消息里再告诉 Neo 你想做什么（比如具体的时间或内容），它会重新发起。',
   },
+  HANDED_OFF_TO_BACKGROUND: {
+    summary: '这一步已交给后台任务去做',
+    detail: '不需要处理；完成后会在后台任务里给你结果，也可以在任务列表里查看进度。',
+  },
   TOOL_BATCH_SKIPPED: {
     summary: '这一步没有执行，同一批里的另一个操作没有开放',
     detail: '不需要处理；如果还需要这一步，请在新消息里告诉 Neo。',
@@ -128,6 +132,10 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   TOOL_DISABLED_FOR_RUN: {
     summary: 'This step did not run: that action was not available in this turn',
     detail: 'Tell Neo again in a new message what you want (for example the exact time or details) and it will retry.',
+  },
+  HANDED_OFF_TO_BACKGROUND: {
+    summary: 'This step was handed to a background task',
+    detail: 'Nothing to do; the result will show up in the background task, and you can follow its progress in the task list.',
   },
   TOOL_BATCH_SKIPPED: {
     summary: 'This step did not run: another action in the same batch was not available',

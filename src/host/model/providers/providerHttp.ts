@@ -1,4 +1,5 @@
 import { noteFirstModelRequestDispatched } from '../../agent/runtime/firstModelRequestWatch';
+import { devFaultCheckOutbound } from '../../services/infra/devFaultLoader';
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
@@ -103,6 +104,7 @@ export async function electronFetch<T = unknown>(
   options: ElectronFetchOptions,
 ): Promise<ElectronFetchResponse<T>> {
   try {
+    devFaultCheckOutbound(url);
     noteFirstModelRequestDispatched(options.provider);
     const response: AxiosResponse<T> = await axios({
       url,

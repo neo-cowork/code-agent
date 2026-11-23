@@ -11,6 +11,7 @@ import { toast } from '../../../../hooks/useToast';
 import { useAppStore, type DisclosureLevel } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
+import { applyFontSizeBase, FONT_SIZE_PX, getFontSizeName } from '../../../../utils/fontSize';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { Toggle } from '../../../primitives/Toggle';
@@ -29,19 +30,6 @@ interface ThemeOption {
   icon: React.ReactNode;
   description: string;
   preview: React.ReactNode;
-}
-
-function getFontSizeName(fontSize: number): 'small' | 'medium' | 'large' | null {
-  switch (fontSize) {
-    case 13:
-      return 'small';
-    case 14:
-      return 'medium';
-    case 16:
-      return 'large';
-    default:
-      return null;
-  }
 }
 
 // ============================================================================
@@ -203,12 +191,11 @@ export const AppearanceSettings: React.FC = () => {
     const previousCssFontSize = document.documentElement.style.getPropertyValue('--font-size-base');
     setFontSize(size);
     // 应用字体大小
-    const sizeMap = { small: 13, medium: 14, large: 16 };
-    document.documentElement.style.setProperty('--font-size-base', `${sizeMap[size]}px`);
+    applyFontSizeBase(FONT_SIZE_PX[size]);
 
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        ui: { fontSize: sizeMap[size] },
+        ui: { fontSize: FONT_SIZE_PX[size] },
       } as Partial<AppSettings>);
       logger.info('Font size saved', { size });
     } catch (error) {
@@ -286,9 +273,9 @@ export const AppearanceSettings: React.FC = () => {
         </p>
         <div className="grid grid-cols-3 gap-2">
           {([
-            { id: 'small', label: appearanceText.fontSizes.small, size: '13px' },
-            { id: 'medium', label: appearanceText.fontSizes.medium, size: '14px' },
-            { id: 'large', label: appearanceText.fontSizes.large, size: '16px' },
+            { id: 'small', label: appearanceText.fontSizes.small },
+            { id: 'medium', label: appearanceText.fontSizes.medium },
+            { id: 'large', label: appearanceText.fontSizes.large },
           ] as const).map((option) => {
             const isActive = fontSize === option.id;
 
@@ -304,7 +291,7 @@ export const AppearanceSettings: React.FC = () => {
               >
                 <span
                   className={`block ${isActive ? 'text-zinc-200' : 'text-zinc-400'}`}
-                  style={{ fontSize: option.size }}
+                  style={{ fontSize: `${FONT_SIZE_PX[option.id]}px` }}
                 >
                   Aa
                 </span>

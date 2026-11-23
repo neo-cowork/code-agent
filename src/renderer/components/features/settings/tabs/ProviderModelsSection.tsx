@@ -208,6 +208,7 @@ export function ProviderModelsSection({
 }: ProviderModelsSectionProps) {
   const { t } = useI18n();
   const modelText = t.settings.model.models;
+  const webNote = isWebMode() ? t.settings.webModeBanner.modelManageDesktopOnly : undefined;
   const { verified, unverified } = partitionByAgenticVerified(filteredCurrentModels);
   const renderRow = (model: RuntimeProviderModel) => (
     <ModelRow
@@ -242,6 +243,7 @@ export function ProviderModelsSection({
           variant="secondary"
           onClick={() => onDiscoverModels()}
           disabled={isWebMode() || !effectiveBaseUrl}
+          title={webNote}
           loading={isDiscovering}
           leftIcon={<RefreshCw className="h-3 w-3" />}
         >

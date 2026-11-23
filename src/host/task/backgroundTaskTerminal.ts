@@ -40,10 +40,16 @@ export async function settleBackgroundOnTaskComplete(
   sessionId: string,
   eventKey: string,
   data: { summary?: string; duration?: number; toolsUsed?: string[] },
+  isPrimaryRunActive?: () => boolean,
 ): Promise<void> {
+  const isSubTask = eventKey !== sessionId;
   const backgroundManager = getBackgroundTaskManager();
-  if (eventKey === sessionId && backgroundManager.isInBackground(sessionId)) {
+  if (!isSubTask && backgroundManager.isInBackground(sessionId)) {
     await backgroundManager.markCompleted(sessionId, data.summary, data.duration);
+    return;
+  }
+  if (isSubTask && isPrimaryRunActive?.()) {
+    logger.info('sub-task completion banner skipped: primary run active', { sessionId, eventKey });
     return;
   }
   // A running role wake publishes its own summary; do not spend its notice budget here.
@@ -54,7 +60,7 @@ export async function settleBackgroundOnTaskComplete(
       sessionId: session.id,
       sessionTitle: session.title,
       summary: data.summary,
-      duration: data.duration,
+      ...(!isSubTask ? { duration: data.duration } : {}),
       toolsUsed: data.toolsUsed || [],
     });
   }

@@ -252,6 +252,7 @@ describe('CronJobList 内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB
     useAppStore.setState({ language: 'zh' });
     useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
     const { container } = render(<CronJobList />);
+    fireEvent.click(screen.getByTestId('cron-builtin-group-toggle'));
 
     expect(screen.getByText('记忆整理')).toBeTruthy();
     expect(screen.getByText('定期整理你的记忆文件，合并重复内容，不会丢失信息。')).toBeTruthy();
@@ -267,6 +268,7 @@ describe('CronJobList 内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB
     useAppStore.setState({ language: 'en' });
     useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
     render(<CronJobList />);
+    fireEvent.click(screen.getByTestId('cron-builtin-group-toggle'));
 
     expect(screen.getByText('Memory cleanup')).toBeTruthy();
     expect(screen.getByText('Regularly tidies your memory files and merges duplicates without losing information.')).toBeTruthy();
@@ -285,5 +287,50 @@ describe('CronJobList 内置维护任务本地化展示（N-FIX-BUILTIN-CRON-JOB
     });
     rerender(<CronJobList />);
     expect(screen.getByText('记忆整理')).toBeTruthy();
+  });
+
+  it('默认视图：用户任务在前，内置维护任务收在折叠分组里，展开前不可见', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob] });
+    const { container } = render(<CronJobList />);
+
+    const rows = container.querySelectorAll('[data-testid="cron-job-schedule-summary"]');
+    expect(rows).toHaveLength(1);
+    expect(container.textContent).toContain('每日英语单词');
+    expect(container.textContent).not.toContain('记忆整理');
+    expect(screen.getByTestId('cron-builtin-group-toggle').textContent).toBe('系统自动维护（1）');
+    expect(screen.getByTestId('cron-builtin-group-toggle').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('展开分组后三类内置任务都可达；英文标题带数量', () => {
+    useAppStore.setState({ language: 'en' });
+    const dream = makeJob({ id: 'b-dream', name: '[Maintenance] Dream', tags: ['dream-memory-consolidation'] });
+    const distill = makeJob({ id: 'b-distill', name: '[Maintenance] Distill', tags: ['distill-workflow-packaging'] });
+    useCronStore.setState({ jobs: [builtinMemoryJob, dream, distill, userJob] });
+    render(<CronJobList />);
+
+    const toggle = screen.getByTestId('cron-builtin-group-toggle');
+    expect(toggle.textContent).toBe('System maintenance (3)');
+    fireEvent.click(toggle);
+    expect(screen.getByText('Memory cleanup')).toBeTruthy();
+    expect(screen.getByText('Conversation review')).toBeTruthy();
+    expect(screen.getByText('Workflow refinement')).toBeTruthy();
+  });
+
+  it('搜索内置任务名时分组自动展开并命中', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob, userJob], searchQuery: '记忆' });
+    render(<CronJobList />);
+    expect(screen.getByText('记忆整理')).toBeTruthy();
+    expect(screen.getByTestId('cron-builtin-group-toggle').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('只有内置任务时显示「还没有自动化任务」，且不自动选中内置任务', () => {
+    useAppStore.setState({ language: 'zh' });
+    useCronStore.setState({ jobs: [builtinMemoryJob] });
+    render(<CronJobList />);
+    expect(screen.getByText('还没有自动化任务')).toBeTruthy();
+    expect(screen.getByTestId('cron-builtin-group')).toBeTruthy();
+    expect(screen.queryByText('记忆整理')).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import type {
   WorkbenchActionTrace,
 } from '../services/nativeDesktop';
 import { interpolate } from '../i18n/interpolate';
+import type { Language } from '../i18n';
 import type { localOpsZh } from '../i18n/localOps';
 import {
   buildBrowserComputerActionPreview,
@@ -293,6 +294,7 @@ function explainFailureKind(kind: string, copy: ComputerUseCopy): Omit<ComputerU
 
 export function buildRecentComputerUseAction(
   surface: ComputerSurfaceState | null | undefined,
+  locale?: Language,
 ): ComputerUseActionTraceSummary | null {
   const trace = surface?.lastAction;
   if (!trace) {
@@ -321,7 +323,9 @@ export function buildRecentComputerUseAction(
 
   const toolCall: ToolCall = {
     id: trace.id,
-    name: 'computer_use',
+    name: trace.targetKind === 'browser' && trace.toolName === 'browser_action'
+      ? 'browser_action'
+      : 'computer_use',
     arguments: {
       action: trace.action || 'get_state',
       targetApp: surface?.targetApp || undefined,
@@ -337,8 +341,8 @@ export function buildRecentComputerUseAction(
 
   return {
     trace,
-    preview: buildBrowserComputerActionPreview(toolCall),
-    resultSummary: summarizeBrowserComputerActionResult(toolCall),
+    preview: buildBrowserComputerActionPreview(toolCall, locale),
+    resultSummary: summarizeBrowserComputerActionResult(toolCall, locale),
   };
 }
 

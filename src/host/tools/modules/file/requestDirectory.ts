@@ -27,7 +27,10 @@ import type {
 } from '../../../protocol/tools';
 import { resolveWorkspacePath, canonicalizeWorkspacePath } from '../../../runtime/workspaceScope';
 import { getProjectService } from '../../../services/project/projectService';
+import { getPermissionModeManager } from '../../../permissions/modes';
+import { isTaskOutputPathAuthorized } from '../../../permissions/taskOutputDirectory';
 import { setFolderTrust } from '../../../security/folderTrustService';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import type { ProjectSourceInput, ProjectSourceAccess } from '../../../../shared/contract/project';
 import { requestDirectorySchema as schema } from './requestDirectory.schema';
 
@@ -48,7 +51,7 @@ async function executeRequestDirectory(
     return { ok: false, error: 'reason must be a non-empty string', code: 'INVALID_ARGS' };
   }
 
-  const resolvedPath = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(ctx.workingDir, rawPath);
+  const resolvedPath = path.resolve(resolveInputPath(rawPath, ctx.workingDir));
 
   let stats;
   try {
@@ -62,6 +65,18 @@ async function executeRequestDirectory(
 
   // 已在可访问范围内（含已满足所需档位）→ 无需申请，直接放行。
   if (ctx.workspaceScope && resolveWorkspacePath(ctx.workspaceScope, resolvedPath, access)) {
+    return { ok: true, output: `已经可以访问 ${resolvedPath}，无需申请。` };
+  }
+
+  // 本任务的输出目录授权（用户在任务首行亲自写下、租约期内、bypassPermissions 会话）已覆盖它：
+  // 写入侧本就免确认放行，这里再停车等授权只会让走开的用户永远收不到成品（RR50 路径）。
+  // 租约过期、目录在授权之外、非 bypass 会话都不走这里，仍然停车等用户。
+  if (ctx.sessionId && isTaskOutputPathAuthorized({
+    sessionId: ctx.sessionId,
+    mode: getPermissionModeManager().getModeForSession(ctx.sessionId),
+    target: resolvedPath,
+    cwd: ctx.workingDir,
+  })) {
     return { ok: true, output: `已经可以访问 ${resolvedPath}，无需申请。` };
   }
 

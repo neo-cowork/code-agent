@@ -145,7 +145,7 @@ export const agentErrorZh = {
       },
       model_not_found: {
         title: '模型接口或模型名称不匹配',
-        suggestion: '当前模型供应商返回 404/Not Found。请检查自定义模型的 Base URL、路径是否包含 /v1、模型 ID 是否正确；也可以先切换到其他模型后重试。',
+        suggestion: '当前模型供应商找不到这个接口或模型（404）。如果用的是自定义模型，请检查接口地址和模型名称是否填对；也可以先切换到其他模型后重试。',
       },
       forbidden: {
         title: '模型服务拒绝了这次请求',
@@ -172,7 +172,7 @@ export const agentErrorZh = {
       },
       network: {
         title: '暂时连不上模型服务',
-        suggestion: '当前模型请求没有成功到达供应商。请检查网络、代理或自定义模型 Base URL，稍后再重试。',
+        suggestion: '当前模型请求没有成功到达供应商。请检查网络连接或代理设置，稍后再重试。',
       },
       context_length: {
         title: '对话长度超出模型上下文限制',
@@ -268,7 +268,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       },
       model_not_found: {
         title: 'Model endpoint or model name mismatch',
-        suggestion: 'The model provider returned 404/Not Found. Check the custom model Base URL, whether the path includes /v1, and whether the model ID is correct — or switch to another model and retry.',
+        suggestion: 'The model provider could not find this endpoint or model (404). If you use a custom model, check that its service address and model name are correct — or switch to another model and retry.',
       },
       forbidden: {
         title: 'The model service rejected this request',
@@ -295,7 +295,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       },
       network: {
         title: 'Cannot reach the model service',
-        suggestion: 'The request never reached the provider. Check your network, proxy, or custom model Base URL, then retry.',
+        suggestion: 'The request never reached the provider. Check your network connection or proxy settings, then retry.',
       },
       context_length: {
         title: 'Conversation exceeds the model context limit',

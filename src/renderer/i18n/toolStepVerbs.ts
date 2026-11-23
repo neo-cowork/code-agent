@@ -111,6 +111,10 @@ interface ToolStepVerbBundle {
   failureCode: string;
   failureReasonMissing: string;
   notRunPrefix: string;
+  /** 同一轮已交给后台任务的步骤（HANDED_OFF_TO_BACKGROUND）：整句 */
+  handedOffStep: string;
+  /** 并行助手各自结局：done / notDone 带 {name}，notDone 的 {reason} 是人话原因 */
+  helperOutcome: { done: string; notDone: string; notDoneTitle: string; separator: string };
   /** 主机封存、从未执行的命令（metadata.skipped）：整句 / 混合组里的未执行计数 */
   skippedCommands: { one: string; other: string };
   skippedCount: { one: string; other: string };
@@ -252,6 +256,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   failureCode: '错误码 {code}',
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   notRunPrefix: '未执行',
+  handedOffStep: '这一步已交给后台任务去做',
+  helperOutcome: { done: '{name}已完成', notDone: '{name}未完成 — {reason}', notDoneTitle: '{name}未完成', separator: '；' },
   skippedCommands: { one: '有一条命令没有执行', other: '有 {count} 条命令没有执行' },
   skippedCount: { one: '{count} 条未执行', other: '{count} 条未执行' },
   rawFailureCodes: {
@@ -347,6 +353,8 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   failureCode: 'Error code {code}',
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   notRunPrefix: 'Not run',
+  handedOffStep: 'Handed to a background task',
+  helperOutcome: { done: '{name} done', notDone: '{name} not done — {reason}', notDoneTitle: '{name} not done', separator: '; ' },
   skippedCommands: { one: 'A command did not run', other: '{count} commands did not run' },
   skippedCount: { one: '{count} not run', other: '{count} not run' },
   rawFailureCodes: {

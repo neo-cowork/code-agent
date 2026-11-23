@@ -33,7 +33,7 @@ import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
 import { CronJobApprovalHint } from './CronJobApprovalHint';
-import { getJobDisplayName, getBuiltinJobDisplay, getVisibleJobTags, getRoleWakeJobDescription } from './builtinJobDisplay';
+import { getJobDisplayName, getBuiltinJobDisplay, isBuiltinMaintenanceJob, getVisibleJobTags, getRoleWakeJobDescription } from './builtinJobDisplay';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import { CronWriteScopePanel } from './CronWriteScopePanel';
 import { CronJobWorkingFolderStatus } from './CronWorkingFolderStatus';
@@ -114,6 +114,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
   const displayName = getJobDisplayName(job, language);
   const displayDescription = builtinDisplay?.description ?? getRoleWakeJobDescription(job, language) ?? job.description;
   const displayTags = getVisibleJobTags(job);
+  const isBuiltin = isBuiltinMaintenanceJob(job);
   const cronTimeZone = job.schedule.type === 'cron' ? job.schedule.timezone : undefined;
   const scheduleSummary = job.schedule.type === 'cron'
     ? formatCronScheduleLabelWithZone(job.schedule.expression, job.schedule.timezone, language)
@@ -213,15 +214,20 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
               <Play className="h-3.5 w-3.5" />
               {isTriggering ? cc.triggering : cc.trigger}
             </button>
-            <button /* ds-allow:button: 同上，超小文本按钮组（红色语义） */
+            {!isBuiltin && <button /* ds-allow:button: 同上，超小文本按钮组（红色语义） */
               onClick={handleDelete}
               className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-badge-danger"
             >
               <Trash2 className="h-3.5 w-3.5" />
               {cc.delete}
-            </button>
+            </button>}
           </div>
         </div>
+        {isBuiltin && (
+          <div className="mt-2 text-xs text-zinc-500" data-testid="cron-detail-builtin-note">
+            {cc.builtinMaintenanceNote}
+          </div>
+        )}
         {toggleError && (
           <div role="alert" data-testid="cron-detail-toggle-error" className="mt-2 text-xs text-badge-danger">
             {toggleError}
