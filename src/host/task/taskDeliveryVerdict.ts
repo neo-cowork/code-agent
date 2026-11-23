@@ -5,8 +5,13 @@ import type { SessionTaskDeliveryFailure } from '../../shared/constants/sessionC
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import { isBashToolName } from '../tools/toolNames';
+import { shortenDisplayPaths } from '../agent/workspacePathDisplay';
+import { formatSessionTaskCommandFailed } from '../../shared/constants/sessionCommandCenter';
 
-export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed' | 'user_denied';
+export type TaskDeliveryFailure = SessionTaskDeliveryFailure | 'write_failed' | 'user_denied' | 'command_failed';
+
+const FAILED_COMMAND_MAX_CHARS = 200;
+const FAILED_REASON_MAX_CHARS = 120;
 
 function terminalDeliveryFailure(messages: readonly Message[]): SessionTaskDeliveryFailure | undefined {
   let lastResult: ToolResult | undefined;
@@ -49,6 +54,7 @@ export function getTaskDeliveryFailure(
   let writeFailed = false;
   let writeDeniedByUser = false;
   let executeDeniedByUser = false;
+  let commandFailed = false;
   const resolver = getToolResolver();
   for (const message of messages) {
     for (const result of message.toolResults ?? []) {
@@ -60,7 +66,10 @@ export function getTaskDeliveryFailure(
       if (!isWrite && permissionLevel !== 'execute') continue;
       if (result.success) {
         if (isWrite) writeSucceeded = true;
-        else if (!isBashToolName(toolName) || bashExecuteSuccessCounts(call.arguments?.command)) executeSucceeded = true;
+        else if (!isBashToolName(toolName) || bashExecuteSuccessCounts(call.arguments?.command)) {
+          executeSucceeded = true;
+          commandFailed = false;
+        }
         continue;
       }
       const hostReason = result.metadata?.hostReason as { code?: unknown } | undefined;
@@ -69,6 +78,7 @@ export function getTaskDeliveryFailure(
         writeFailed = true;
         if (deniedByUser) writeDeniedByUser = true;
       } else if (deniedByUser) executeDeniedByUser = true;
+      else if (isBashToolName(toolName) && result.metadata?.code === 'COMMAND_FAILED') commandFailed = true;
     }
   }
 
@@ -77,5 +87,41 @@ export function getTaskDeliveryFailure(
   if (writeFailed) return writeDeniedByUser ? 'user_denied' : 'write_failed';
   // 仅被拒的执行类工具：之后认不出只读的成功执行才算有进展。证明只读的 Bash 不救。
   if (executeDeniedByUser && !executeSucceeded) return 'user_denied';
+  // 最后一条会算进展的执行是失败的 Bash（COMMAND_FAILED），之后没有成功的执行也没有交付物。
+  if (commandFailed) return 'command_failed';
   return undefined;
+}
+
+/**
+ * 最后一条失败的 Bash（COMMAND_FAILED）→ 给用户看的白话句：命令行 + 原因首行。
+ * 绝对路径一律缩成 ./相对 或末两段，不外露家目录。
+ */
+export function describeFailedCommand(
+  messages: readonly Message[],
+  workspaceRoot: string | undefined,
+  locale: 'zh' | 'en',
+): string | undefined {
+  const callsById = new Map<string, Record<string, unknown>>();
+  let failed: { command: string; result: ToolResult } | undefined;
+  for (const message of messages) {
+    for (const call of message.toolCalls ?? []) {
+      if (isBashToolName(call.name)) callsById.set(call.id, call.arguments ?? {});
+    }
+    for (const result of message.toolResults ?? []) {
+      const args = callsById.get(result.toolCallId);
+      if (!args) continue;
+      if (result.success) failed = undefined;
+      else if (result.metadata?.code === 'COMMAND_FAILED' && typeof args.command === 'string') failed = { command: args.command, result };
+    }
+  }
+  if (!failed) return undefined;
+  const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+  const show = (text: string) => shortenDisplayPaths(text, workspaceRoot);
+  const output = typeof failed.result.metadata?.output === 'string' ? failed.result.metadata.output : '';
+  const reasonLine = output.split('\n').map((line) => line.trim()).find(Boolean);
+  return formatSessionTaskCommandFailed(
+    locale,
+    clip(show(failed.command.replace(/\s+/g, ' ').trim()), FAILED_COMMAND_MAX_CHARS),
+    reasonLine ? clip(show(reasonLine), FAILED_REASON_MAX_CHARS) : undefined,
+  );
 }

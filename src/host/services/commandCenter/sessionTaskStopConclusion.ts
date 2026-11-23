@@ -14,7 +14,7 @@ import type { MessageMetadata } from '../../../shared/contract';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
 import { formatBackgroundTaskStop } from '../../../shared/i18n/backgroundTaskStop';
 import { describeSubagentStopReason } from '../../agent/subagentFailureReason';
-import { formatSessionTaskDeliveryFailure } from '../../../shared/constants/sessionCommandCenter';
+import { formatSessionTaskDeliveryFailure, isSessionTaskCommandFailedDetail } from '../../../shared/constants/sessionCommandCenter';
 
 type StoppedTaskStatus = 'completed' | 'failed';
 
@@ -105,7 +105,7 @@ export function resolveStoppedTaskOutcome(input: {
   const isTerminalDeliveryFailure = (['approval_timeout', 'repair_exhausted'] as const).some((reason) => (
     (['zh', 'en'] as const).some((locale) => formatSessionTaskDeliveryFailure(reason, locale) === detail)
   ));
-  if (isTerminalDeliveryFailure) return { status: 'failed', detail, notice: detail, kind: 'error' };
+  if (isTerminalDeliveryFailure || isSessionTaskCommandFailedDetail(detail)) return { status: 'failed', detail, notice: detail, kind: 'error' };
   const code = inferAgentFailureCode({ error: detail, defaultCode: AgentFailureCode.Unknown });
   const reason = describeSubagentStopReason(detail || '执行失败', code);
   const failedDetail = input.lastUrl ? `${reason} 最后停留在页面${input.lastUrl}。` : reason;
