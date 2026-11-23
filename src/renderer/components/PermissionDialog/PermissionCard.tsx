@@ -84,6 +84,7 @@ function normalizeRequest(
       purpose: request.details.purpose,
       userRequest: request.details.userRequest,
       startedByAutomation: request.details.startedByAutomation,
+      startedByFirstWake: request.details.startedByFirstWake,
       scheduledTaskName: request.details.scheduledTaskName,
       commandRiskLevel: request.details.commandRiskLevel,
       commandSecurityFlags: request.details.commandSecurityFlags,

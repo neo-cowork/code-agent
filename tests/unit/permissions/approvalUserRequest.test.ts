@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type { Message, PermissionRequest } from '../../../src/shared/contract';
-import { APPROVAL_USER_REQUEST_MAX_CHARS } from '../../../src/shared/constants';
+import { APPROVAL_USER_REQUEST_MAX_CHARS, ROLE_PROACTIVITY } from '../../../src/shared/constants';
 
 const state = vi.hoisted(() => ({ repo: null as unknown, session: null as unknown, automationTitle: null as string | null, warn: vi.fn() }));
 vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
@@ -24,6 +24,7 @@ vi.mock('../../../src/host/services/sessionAutomation/sessionAutomationService',
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { withUserRequestQuote } from '../../../src/host/permissions/approvalUserRequest';
 import { resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
 const write = 'mcp__lark__calendar_v4_calendarEvent_create';
@@ -98,6 +99,28 @@ describe('approval card quotes the user from the DB, not the model', () => {
     const event = await emitted({ details: { userRequest: { text: 'forged', truncated: false } } as PermissionRequest['details'] });
     expect(event.details.userRequest).toBeUndefined();
     expect(event.details.startedByAutomation).toBe(true);
+  });
+
+  it('① withUserRequestQuote marks a first meeting and clears other origin fields', () => {
+    state.session = {
+      title: '日程管家 · 初次见面',
+      origin: { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } },
+    };
+    say('user', 'automatic first-meeting prompt');
+    const details = withUserRequestQuote('s1', {
+      startedByAutomation: true,
+      scheduledTaskName: 'forged task',
+      userRequest: { text: 'forged', truncated: false },
+    });
+    expect(details).toEqual({ startedByFirstWake: true });
+  });
+
+  it('① withUserRequestQuote keeps the name and automation flag for an actual cron job', () => {
+    state.session = { origin: { kind: 'cron', id: 'cron-1', name: '每日飞书日历周会' } };
+    expect(withUserRequestQuote('s1', { startedByFirstWake: true })).toEqual({
+      startedByAutomation: true,
+      scheduledTaskName: '每日飞书日历周会',
+    });
   });
 
   it('① cron origin attaches the origin name next to the flag, no userRequest; forged fields are discarded', async () => {

@@ -8,12 +8,15 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type { AgentEvent, Message, PermissionRequest, PermissionResponse } from '../../../src/shared/contract';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
+import { ROLE_PROACTIVITY } from '../../../src/shared/constants';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { DEFAULT_SETTINGS } from '../../../src/host/services/core/configDefaults';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 const state = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
   db: null as Database.Database | null,
   repo: null as unknown,
   pending: null as unknown,
@@ -34,7 +37,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
     getDb: () => state.db,
   }),
 }));
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: state.language === 'en' ? en : zh, language: state.language }) }));
 vi.mock('../../../src/renderer/stores/appStore', () => {
   const value = {
     pendingPermissionRequest: null, pendingPermissionSessionId: null,
@@ -74,11 +77,13 @@ let island: OrchestratorPermissionIsland;
 let events: AgentEvent[];
 const executor = vi.fn();
 
-function start(cron: boolean, parked = false, sameTitle = true) {
-  const origin = cron ? { kind: 'cron', id: 'cron-1', name: taskName } : { kind: 'manual' };
+function start(cron: boolean | 'first_wake', parked = false, sameTitle = true) {
+  const origin = cron === 'first_wake'
+    ? { kind: 'cron', name: ROLE_PROACTIVITY.CADENCE_JOB_TAG, metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } }
+    : cron ? { kind: 'cron', id: 'cron-1', name: taskName } : { kind: 'manual' };
   db.prepare(`INSERT INTO sessions (id,title,model_provider,model_name,working_directory,origin,created_at,updated_at)
     VALUES ('s1',?,'test','test','/tmp',?,1,1)`).run('同步下周会议', JSON.stringify(origin));
-  if (cron && sameTitle) {
+  if (cron === true && sameTitle) {
     db.prepare(`INSERT INTO session_automations (id,type,status,title,source_ref_id,created_at,updated_at)
       VALUES ('a1','cron','active',?,'cron-1',1,1)`).run(taskName);
   }
@@ -125,6 +130,7 @@ describe('Feishu connector approval host -> renderer chain', () => {
     state.repo = new SessionRepository(db);
     state.pending = new PendingApprovalRepository(db);
     state.items = [];
+    state.language = 'zh';
     state.respond.mockReset();
     executor.mockClear();
     events = [];
@@ -158,6 +164,47 @@ describe('Feishu connector approval host -> renderer chain', () => {
     expect(screen.queryAllByTestId('user-request-quote')).toHaveLength(0);
     expect(screen.queryAllByTestId('connector-purpose')).toHaveLength(sameTitle ? 0 : 1);
     await deny(completion);
+  });
+
+  it.each([
+    ['zh', '由专家首次见面自动发起'],
+    ['en', 'Started automatically at your first meeting with this expert'],
+  ] as const)('%s first wake: host details -> PermissionCard and parked DB -> ParkedApprovalCards', (language, label) => {
+    state.language = language;
+    const { payload } = start('first_wake', true);
+    function expectFirstWake(details: Pick<PermissionRequest['details'], 'startedByFirstWake' | 'startedByAutomation' | 'scheduledTaskName' | 'userRequest'>) {
+      expect(details.startedByFirstWake).toBe(true);
+      expect(details.startedByAutomation).toBeUndefined();
+      expect(details.scheduledTaskName).toBeUndefined();
+      expect(details.userRequest).toBeUndefined();
+    }
+    expectFirstWake(payload.details);
+    const card = render(<PermissionCard requestOverride={payload} sessionIdOverride="s1" />);
+    expect(screen.getByTestId('first-wake-origin').textContent).toBe(label);
+    expect(card.container.textContent).not.toMatch(/定时任务|scheduled task/i);
+    card.unmount();
+
+    const row = db.prepare('SELECT payload_json FROM pending_approvals').get() as { payload_json: string };
+    expectFirstWake(JSON.parse(row.payload_json));
+    state.items = getSessionAutomationService().listParkedApprovals();
+    expect(state.items).toHaveLength(1);
+    expectFirstWake(state.items[0]);
+    const parked = render(<ParkedApprovalCards />);
+    expect(screen.getByTestId('first-wake-origin').textContent).toBe(label);
+    expect(parked.container.textContent).not.toMatch(/定时任务|scheduled task/i);
+  });
+
+  it('represents a legacy first-meeting parked row with the first-wake origin', () => {
+    start('first_wake', true);
+    const row = db.prepare('SELECT payload_json FROM pending_approvals').get() as { payload_json: string };
+    const legacy = JSON.parse(row.payload_json);
+    delete legacy.startedByFirstWake;
+    legacy.startedByAutomation = true;
+    db.prepare('UPDATE pending_approvals SET payload_json = ?').run(JSON.stringify(legacy));
+
+    const [item] = getSessionAutomationService().listParkedApprovals();
+    expect(item.startedByFirstWake).toBe(true);
+    expect(item.startedByAutomation).toBeUndefined();
   });
 
   it('② parked DB -> listParkedApprovals -> ParkedApprovalCards retains task name, deny never executes', async () => {
