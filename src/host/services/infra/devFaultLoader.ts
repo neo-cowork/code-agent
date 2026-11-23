@@ -72,3 +72,8 @@ export function devFaultWrapConnector<T extends ConnectorLike>(connector: T): T 
 export function isAutomationDenialOverridden(connectorId: string): boolean {
   return load()?.isAutomationDenied?.(connectorId, context()) ?? false;
 }
+
+export function devFaultOverrideCurrentUser<T>(user: T | null): T | null {
+  const hooks = load();
+  return hooks?.overrideCurrentUser ? hooks.overrideCurrentUser(user, context()) : user;
+}

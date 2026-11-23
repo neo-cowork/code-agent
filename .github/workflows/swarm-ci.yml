@@ -730,7 +730,9 @@ jobs:
     # container Chromium/fonts yield commitCount=14 on long-session vs the 13 baseline
     # (see N-FIX-MAIN-RED-PERF-LONGSESSION-COMMITCOUNT).
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # 3 npm ci attempts capped at 6 min each + Playwright install (~3 min) + probes
+    # must fit: raised from 20 so a fully retried install can no longer eat the budget.
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -742,7 +744,33 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        # Post-merge gate: a transient registry ECONNRESET (run 44446906436) hung a bare
+        # `npm ci` for ~11 min and turned main red with no code cause. Retry in the same
+        # spirit as the setup-playwright action; each attempt is capped at 6 min so a
+        # silent hang cannot eat the job budget. Still `npm ci` only — never `npm install`
+        # (see the smoke job's 🔴 note: no online re-resolution of the tree).
+        run: |
+          failures=()
+          for attempt in 1 2 3; do
+            echo "npm ci: attempt $attempt/3"
+            if timeout 360 npm ci --ignore-scripts; then
+              for failure in "${failures[@]}"; do
+                echo "::warning::npm ci $failure; recovered on attempt $attempt/3"
+              done
+              exit 0
+            else
+              code=$?
+            fi
+            failure="attempt $attempt/3 failed (exit code $code)"
+            echo "$failure"
+            failures+=("$failure")
+            if [ "$attempt" -eq 3 ]; then
+              echo "npm ci: all 3 attempts failed"
+              exit "$code"
+            fi
+            rm -rf node_modules
+            sleep 15
+          done
 
       - name: Install Playwright browsers
         uses: ./.github/actions/setup-playwright
