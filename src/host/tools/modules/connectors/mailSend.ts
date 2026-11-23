@@ -105,6 +105,7 @@ async function executeMailSend(
       error,
       ctx.logger,
       schema.name,
+      false,
     );
     const to = (args.to as unknown[]).filter((item): item is string => typeof item === 'string');
     return {

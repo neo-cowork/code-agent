@@ -42,3 +42,10 @@ export function maskMailSendOutboundParams(
   }
   return redacted ? { params: next, redacted } : { params, redacted: false };
 }
+
+/** The source message and draft retain the body. Execution diagnostics only need its metadata. */
+export function omitMailBodyFromDiagnostics(toolName: string, params: Record<string, unknown>): Record<string, unknown> {
+  if (toolName !== MAIL_SEND_TOOL_NAME || !Object.hasOwn(params, 'content')) return params;
+  const { content: _body, ...metadata } = params;
+  return metadata;
+}

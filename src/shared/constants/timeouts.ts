@@ -117,6 +117,8 @@ export const INTERACTION_TIMEOUTS = {
   PARKED_APPROVAL: 86_400_000,
   /** cron/heartbeat 及断线续跑的停车审批无人应答降级期限（30 分钟）；channel/voice 仍走 24h 兜底。 */
   UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
+  /** Pending mail drafts remain available for seven days from creation. */
+  OUTBOUND_DRAFT_RETENTION: 7 * 24 * 60 * 60 * 1000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**

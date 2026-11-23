@@ -96,7 +96,7 @@ import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { appendUserEditedArgsNote } from './userEditedArgsNote';
 import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
-import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
+import { maskMailSendOutboundParams, omitMailBodyFromDiagnostics, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { isUnattendedRoleOwnMemoryWrite, ROLE_OWN_MEMORY_UNATTENDED_REASON } from './roleOwnMemoryAllow';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
@@ -642,7 +642,7 @@ export class ToolExecutor {
     logger.debug('Executing tool', {
       toolName: requestedToolName,
       normalizedToolName: normalizedRequestedToolName,
-      params: JSON.stringify(params).substring(0, 200),
+      params: JSON.stringify(omitMailBodyFromDiagnostics(normalizedRequestedToolName, params)).substring(0, 200),
     });
 
     const resolver = getToolResolver();
@@ -1488,7 +1488,7 @@ export class ToolExecutor {
         section: denied.section,
         reason: denied.reason,
       });
-      policyEnforcer?.logToolCall(executionToolName, params, 'blocked', denied.reason);
+      policyEnforcer?.logToolCall(executionToolName, omitMailBodyFromDiagnostics(executionToolName, params), 'blocked', denied.reason);
       options.hookManager?.triggerPermissionDenied(
         executionToolName, denied.reason || 'path policy', 'policy',
         effectiveSessionId || 'unknown',
@@ -1527,7 +1527,7 @@ export class ToolExecutor {
           section: policyCheck.section,
           reason: policyCheck.reason,
         });
-        policyEnforcer.logToolCall(executionToolName, params, 'blocked', policyCheck.reason);
+        policyEnforcer.logToolCall(executionToolName, omitMailBodyFromDiagnostics(executionToolName, params), 'blocked', policyCheck.reason);
 
         if (this.auditEnabled) {
           getAuditLogger().logSecurityIncident({
@@ -1562,7 +1562,7 @@ export class ToolExecutor {
           error: `Blocked by policy: ${policyCheck.reason}`,
         };
       }
-      policyEnforcer.logToolCall(executionToolName, params, 'allowed');
+      policyEnforcer.logToolCall(executionToolName, omitMailBodyFromDiagnostics(executionToolName, params), 'allowed');
     }
 
     // Policy tools.always_confirm: 强制走用户审批，无视预授权/安全白名单/classifier 放行
@@ -2593,7 +2593,7 @@ export class ToolExecutor {
             eventType: 'permission_check',
             sessionId: effectiveSessionId || 'unknown',
             toolName: executionToolName,
-            input: sanitizeToolParams(params),
+            input: sanitizeToolParams(omitMailBodyFromDiagnostics(executionToolName, params)),
             duration: 0,
             success: false,
             error: denialError,
@@ -2836,7 +2836,7 @@ export class ToolExecutor {
         auditLogger.logToolUsage({
           sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
-          input: sanitizeToolParams(params),
+          input: sanitizeToolParams(omitMailBodyFromDiagnostics(executionToolName, params)),
           output: result.result ? truncateToolOutput(String(result.result)) : undefined,
           duration,
           success: result.success,
@@ -2865,7 +2865,7 @@ export class ToolExecutor {
         auditLogger.logToolUsage({
           sessionId: effectiveSessionId || 'unknown',
           toolName: executionToolName,
-          input: sanitizeToolParams(params),
+          input: sanitizeToolParams(omitMailBodyFromDiagnostics(executionToolName, params)),
           duration,
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',

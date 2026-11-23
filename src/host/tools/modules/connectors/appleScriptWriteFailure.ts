@@ -16,18 +16,19 @@ export function describeAppleScriptWriteFailure(
   error: unknown,
   logger: Logger,
   toolName: string,
+  includeDetail = true,
 ): string {
   if (isAppleScriptFailure(error)) {
     const described = describeAppleScriptFailure(connectorLabel, error, { timeoutContext: 'write' });
     logger.warn(`${toolName} osascript failed`, {
       connector: connectorLabel.toLowerCase(),
       code: described.code,
-      detail: appleScriptFailureLogDetail(error),
+      ...(includeDetail ? { detail: appleScriptFailureLogDetail(error) } : {}),
     });
     return `${described.message} ${NO_BASH_GUIDANCE}`;
   }
 
-  return `${failurePrefix}: ${error instanceof Error ? error.message : String(error)}`;
+  return includeDetail ? `${failurePrefix}: ${error instanceof Error ? error.message : String(error)}` : failurePrefix;
 }
 
 /** Calendar writes go through EventKit (no Apple-events script); the failure keeps its machine code for the permission card. */
