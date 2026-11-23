@@ -166,11 +166,12 @@ function explicitSpaceProjectId(projectId?: string | null): string {
  */
 export function isBlankNewSession(
   session: Pick<SessionWithMeta, 'title' | 'messageCount' | 'turnCount' | 'isArchived' | 'status'>,
+  language = useAppStore.getState().language,
 ): boolean {
   if (session.isArchived || session.status === 'archived') {
     return false;
   }
-  if (getSessionTitlePlaceholder(session.title, useAppStore.getState().language) === null) {
+  if (getSessionTitlePlaceholder(session.title, language) === null) {
     return false;
   }
   return (session.messageCount ?? 0) === 0 && (session.turnCount ?? 0) === 0;

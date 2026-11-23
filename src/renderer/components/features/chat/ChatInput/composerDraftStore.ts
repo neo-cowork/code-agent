@@ -12,6 +12,7 @@ const COMPOSER_DRAFT_HOME_KEY = `${COMPOSER_DRAFT_KEY_PREFIX}home`;
 
 /** Fired after a draft is written from outside the composer (boot adopting the home draft). */
 export const COMPOSER_DRAFT_ADOPTED_EVENT = 'neo:composer-draft-adopted';
+export const COMPOSER_DRAFT_CHANGED_EVENT = 'neo:composer-draft-changed';
 
 /**
  * 「选择文件夹」入口建新任务时，输入框里已敲的字要带到新任务：入口在选完目录后、建会话前
@@ -278,7 +279,9 @@ function writeComposerDraft(
   }
 
   try {
+    const hadDraft = readComposerDraftEntry(key, storage) !== null;
     storage.setItem(key, JSON.stringify(buildStoredDraftV2(text, kept, dropped)));
+    if (!hadDraft) globalThis.window?.dispatchEvent(new Event(COMPOSER_DRAFT_CHANGED_EVENT));
     return { text, attachments: kept, dropped };
   } catch {
     if (kept.length === 0) return null;
@@ -287,7 +290,9 @@ function writeComposerDraft(
       ...attachments.map((att) => sanitizeAttachmentDisplayName(att.name)),
     ];
     try {
+      const hadDraft = readComposerDraftEntry(key, storage) !== null;
       storage.setItem(key, JSON.stringify(buildStoredDraftV2(text, [], allDropped)));
+      if (!hadDraft) globalThis.window?.dispatchEvent(new Event(COMPOSER_DRAFT_CHANGED_EVENT));
       return { text, attachments: [], dropped: allDropped };
     } catch {
       return null;
@@ -314,7 +319,9 @@ export function removeComposerDraft(
   try {
     // Session delete also runs where localStorage does not exist (node tests, SSR).
     const target = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+    const hadDraft = target === globalThis.localStorage && readComposerDraftEntry(key) !== null;
     target?.removeItem(key);
+    if (hadDraft) globalThis.window?.dispatchEvent(new Event(COMPOSER_DRAFT_CHANGED_EVENT));
   } catch {
     // Private mode and quota failures leave the in-memory composer as the source of truth.
   }
