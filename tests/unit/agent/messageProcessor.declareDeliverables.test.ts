@@ -409,7 +409,7 @@ describe('declare_deliverables 不吞整批', () => {
 
     const injection = deps.injected.find((text) => text.startsWith('<tool-run-policy>'));
     const guidance = getInabilityReplyGuidance(prompt);
-    expect(injection).toContain(guidance);
+    expect(injection?.split(guidance)).toHaveLength(3);
     expect(injection).toContain('If user input is needed, state the missing input');
     const toolMessage = deps.persisted.find((message) => message.role === 'tool');
     expect(toolMessage?.toolResults?.[0]).toMatchObject({

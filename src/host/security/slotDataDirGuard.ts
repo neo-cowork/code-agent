@@ -21,6 +21,7 @@
 // ============================================================================
 
 import { FOREIGN_SLOT_DENIAL_ZH } from '../../shared/i18n/foreignSlotDenial';
+import { redactSecrets } from './secretRedaction';
 import { readdirSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -365,7 +366,7 @@ function isMemoryPath(candidatePaths: string[], slot: FamilySlot): boolean {
 function denyReason(slotName: string, candidatePaths: string[], slot: FamilySlot): { reason: string; userMessage: string } {
   const base = FOREIGN_SLOT_DENIAL_ZH.replace('{slotName}', () => slotName);
   return {
-    userMessage: base,
+    userMessage: redactSecrets(base),
     reason: isMemoryPath(candidatePaths, slot)
       ? `${base}。 Use MemoryRead or memory_search instead of reading the memory directory directly; load the tool with ToolSearch if it is not visible.`
       : base,
