@@ -1,5 +1,6 @@
 import type { Translations } from '../i18n';
 import { findConnectorIdForToolName, findConnectorToolMetadata } from '@shared/contract/workbenchTools';
+import { isComputerUseMcpServer, parseMcpToolName } from './mcpServerLabel';
 import { getToolDisplayName } from '../components/features/chat/MessageBubble/ToolCallDisplay/utils';
 
 type HumanToolLabels = Translations['receiptPresentation']['humanToolLabels'];
@@ -59,6 +60,15 @@ export function getHumanToolLabel(args: {
   const connectorId = args.connector || findConnectorIdForToolName(toolName);
   const connectorKey = CONNECTOR_LABEL_KEYS[normalizedLabelKey(connectorId)];
   if (connectorKey) return args.labels.connectors[connectorKey];
+
+  // mcp__server__tool / mcp_server_tool：cua-driver 走 Computer Use 人话，
+  // 解不动的 mcp__ 名给中性词，都不漏原文（FB-2291）；其余 server 由
+  // getToolDisplayName 出 server 展示名。
+  if (toolName.startsWith('mcp_')) {
+    const parsed = parseMcpToolName(toolName);
+    if (parsed && isComputerUseMcpServer(parsed.server)) return args.labels.tools.computerUse;
+    if (!parsed) return args.labels.unknownTool;
+  }
 
   const toolKey = TOOL_LABEL_KEYS[normalizedLabelKey(toolName)];
   if (toolKey) return args.labels.tools[toolKey];

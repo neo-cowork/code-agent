@@ -1,10 +1,11 @@
+import type { CronJobExecution } from '../../../src/shared/contract/cron';
 import { describe, expect, it } from 'vitest';
 import { recordScopedCost } from '../../../src/host/services/core/scopedCostLimit';
 import { runWithCronJobBudget } from '../../../src/host/cron/cronExecutionPolicy';
 import {
   attachCronRunCost,
   createCronRunCostMeterForExecution,
-  readCronRunCostUsd,
+  applyCronRunOutcome,
 } from '../../../src/host/cron/cronRunCostMeter';
 
 // 统一走公开入口 createCronRunCostMeterForExecution（executionId 缺席 = 纯计量，
@@ -54,6 +55,13 @@ describe('createCronRunCostMeterForExecution（executionId 缺席 = 纯计量）
     expect(meter.getCostUsd()).toBeCloseTo(0.02);
   });
 });
+
+// 经生产入口 applyCronRunOutcome 读单次尝试成本（读取函数本身不导出）。
+function readCronRunCostUsd(source: unknown): number | undefined {
+  const execution = { id: 'e', jobId: 'j', status: 'completed', scheduledAt: 0, retryAttempt: 0 } as CronJobExecution;
+  applyCronRunOutcome(execution, source);
+  return execution.cost;
+}
 
 describe('readCronRunCostUsd', () => {
   it('CronAgentActionResult 形状读出 costUsd', () => {

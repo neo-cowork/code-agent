@@ -1,7 +1,23 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const logSpy = vi.hoisted(() => ({
+  infos: [] as Array<{ message: string; meta?: unknown }>,
+  warns: [] as Array<{ message: string; meta?: unknown }>,
+}));
+
+vi.mock('../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({
+    info: (message: string, meta?: unknown) => { logSpy.infos.push({ message, meta }); },
+    warn: (message: string, meta?: unknown) => { logSpy.warns.push({ message, meta }); },
+    debug: () => {},
+    error: () => {},
+  }),
+  LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
+}));
+
 import { getPermissionModeManager, resetPermissionModeManager, type PermissionMode } from '../../../src/host/permissions/modes';
 import { isTaskOutputPathAuthorized, taskOutputDirectoryForShell, withTaskOutputDirectory } from '../../../src/host/permissions/taskOutputDirectory';
 import { PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
@@ -11,17 +27,26 @@ import type { MessageMetadata } from '../../../src/shared/contract';
 
 const SESSION = 'task-output-session';
 let directory: string;
+let dataDir: string;
+const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
 const authorized = (target = path.join(directory, 'minutes.md'), mode: PermissionMode = 'bypassPermissions', sessionId = SESSION) =>
   isTaskOutputPathAuthorized({ sessionId, mode, target, cwd: directory });
 const task = (userText: string, run: () => Promise<void>, metadata?: MessageMetadata, internal = false) =>
   withTaskOutputDirectory({ sessionId: SESSION, userText, metadata, internal }, run);
 
 beforeEach(() => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-output-data-'));
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
   directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'task-output-')));
+  logSpy.infos.length = 0;
+  logSpy.warns.length = 0;
   resetPermissionModeManager();
   getPermissionModeManager().setSessionMode(SESSION, 'bypassPermissions', true);
 });
-afterEach(() => { fs.rmSync(directory, { recursive: true, force: true }); resetPermissionModeManager(); });
+afterEach(() => {
+  if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR; else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+  fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.rmSync(directory, { recursive: true, force: true }); resetPermissionModeManager(); });
 
 describe('explicit task output directory authorization', () => {
   it('covers only the named directory, current session and full-access mode', async () => {
@@ -50,9 +75,36 @@ describe('explicit task output directory authorization', () => {
     expect(await detached).toBe(false);
   });
 
-  it('expires after failure and is not inherited by a new task', async () => {
+  it('expires after failure; a later run of the SAME session restores it from the host record, never from history text', async () => {
     await expect(task(`输出目录：${directory}`, async () => { throw new Error('task failed'); })).rejects.toThrow('task failed');
-    await task('继续处理会议纪要', async () => { expect(authorized()).toBe(false); });
+    await task('继续处理会议纪要', async () => { expect(authorized()).toBe(true); });
+    await task('继续处理会议纪要', async () => { expect(authorized()).toBe(true); }, undefined, true);
+    // other session / other mode / automated or unattended input never restore
+    await withTaskOutputDirectory({ sessionId: 'other-session', userText: 'x', internal: false }, async () => {
+      expect(authorized(undefined, 'bypassPermissions', 'other-session')).toBe(false);
+    });
+    await task('x', async () => { expect(authorized()).toBe(false); }, { automation: { automationType: 'role_wake' } } as MessageMetadata);
+    await task('x', async () => { expect(authorized()).toBe(false); }, { channel: {} } as MessageMetadata);
+    await withTaskOutputDirectory({ sessionId: SESSION, userText: 'x', internal: true, unattended: true }, async () => {
+      expect(authorized()).toBe(false);
+    });
+    getPermissionModeManager().setSessionMode(SESSION, 'default');
+    await task('x', async () => { expect(authorized()).toBe(false); });
+  });
+
+  it('does not restore when the recorded folder became a symlink elsewhere, and a new directive replaces the record', async () => {
+    const inside = path.join(directory, 'original');
+    const elsewhere = path.join(directory, 'elsewhere');
+    const link = path.join(directory, 'selected');
+    fs.mkdirSync(inside); fs.mkdirSync(elsewhere); fs.symlinkSync(inside, link);
+    await task(`输出目录：${link}`, async () => undefined);
+    fs.unlinkSync(link); fs.symlinkSync(elsewhere, link);
+    await task('继续', async () => { expect(authorized(path.join(elsewhere, 'a.md'))).toBe(false); });
+    await task(`输出目录：${elsewhere}`, async () => undefined);
+    await task('继续', async () => {
+      expect(authorized(path.join(elsewhere, 'a.md'))).toBe(true);
+      expect(authorized(path.join(inside, 'a.md'))).toBe(false);
+    });
   });
 
   it.each([
@@ -67,6 +119,55 @@ describe('explicit task output directory authorization', () => {
     '输出目录：/',
   ])('does not infer consent from a mention or ambiguous instruction: %s', async (prompt) => {
     await task(prompt.replaceAll('PATH', directory), async () => { expect(authorized()).toBe(false); });
+  });
+
+  it('a negated directive turn grants neither the new folder nor the session\'s previous folder', async () => {
+    const dirA = path.join(directory, 'out-a');
+    const dirB = path.join(directory, 'out-b');
+    fs.mkdirSync(dirA); fs.mkdirSync(dirB);
+    await task(`输出目录：${dirA}`, async () => { expect(authorized(path.join(dirA, 'x.md'))).toBe(true); });
+    await task(`输出目录：${dirB}\n不要覆盖旧文件`, async () => {
+      expect(authorized(path.join(dirA, 'x.md'))).toBe(false);
+      expect(authorized(path.join(dirB, 'x.md'))).toBe(false);
+    });
+    expect(logSpy.warns).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining('directive refused'),
+        meta: { sessionId: SESSION, reason: 'negation_or_fence' },
+      }),
+    ]);
+    // The persisted record is untouched by the refused turn: a plain continue restores A.
+    logSpy.warns.length = 0; logSpy.infos.length = 0;
+    await task('继续', async () => { expect(authorized(path.join(dirA, 'x.md'))).toBe(true); });
+    expect(logSpy.warns).toHaveLength(0);
+    expect(logSpy.infos.some((e) => e.message === 'Task output directory restored for session')).toBe(true);
+  });
+
+  it('any refused directive revives neither folder; the refusal reason is logged', async () => {
+    const dirA = path.join(directory, 'out-a');
+    const dirB = path.join(directory, 'out-b');
+    fs.mkdirSync(dirA); fs.mkdirSync(dirB);
+    const cases: Array<[string, string]> = [
+      ['```text\n输出目录：' + dirB + '\n```', 'negation_or_fence'],
+      ['输出目录：' + dirB + '\n输出目录：' + dirA, 'multiple_directives'],
+      ['输出目录：relative/deliver', 'invalid_path'],
+      ['输出目录：' + path.join(dataDir, 'hooks'), 'root_or_protected'],
+    ];
+    for (const [prompt, reason] of cases) {
+      // re-mint A each round: the refusal must hold on top of a live previous grant
+      await task(`输出目录：${dirA}`, async () => { expect(authorized(path.join(dirA, 'x.md'))).toBe(true); });
+      logSpy.warns.length = 0;
+      await task(prompt, async () => {
+        expect(authorized(path.join(dirA, 'x.md'))).toBe(false);
+        expect(authorized(path.join(dirB, 'x.md'))).toBe(false);
+      });
+      expect(logSpy.warns).toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining('directive refused'),
+          meta: { sessionId: SESSION, reason },
+        }),
+      ]);
+    }
   });
 
   it.each([
@@ -111,6 +212,16 @@ describe('explicit task output directory authorization', () => {
       expect(taskOutputDirectoryForShell('other-session', 'bypassPermissions', 'cp report.pptx output.pptx')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx "$(pwd)/output.pptx"')).toBeUndefined();
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx `pwd`/output.pptx')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx; echo "exit=$? $# $$ $!"')).toBe(directory);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx $HOME/output.pptx')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "python3 - <<'PY'\nprint('$HOME', `x`)\nPY")).toBe(directory);
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "cat <<'X' | bash\ncp a $HOME/b\nX")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "cat <<'X' | sh\ncp a $HOME/b\nX")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "cat <<'X' | xargs sh -c\ncp a $HOME/b\nX")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', "bash <<'SH'\ncp a $HOME/b\nSH")).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'python3 - <<PY\nprint("$HOME")\nPY')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx ${X}/output.pptx')).toBeUndefined();
+      expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx; echo $?$X')).toBeUndefined();
       const primary = { sourceId: 'primary', role: 'primary' as const, access: 'read_write' as const, path: `${directory}-workspace` };
       const scope = createWorkspaceScope('project', [primary, { sourceId: 'readonly', role: 'additional', access: 'read_only', path: directory }]);
       expect(taskOutputDirectoryForShell(SESSION, 'bypassPermissions', 'cp report.pptx output.pptx', scope)).toBeUndefined();
@@ -119,19 +230,20 @@ describe('explicit task output directory authorization', () => {
     });
   });
 
-  it('never caches a task grant into the next task or a concurrent ungranted scope', async () => {
+  it('never caches a task grant into another session or an ungranted scope', async () => {
     const virtualRoot = path.join(path.parse(directory).root, `neo-output-${path.basename(directory)}`);
     const classifier = new PermissionClassifier({ enableLlm: false });
     const args = { file_path: path.join(virtualRoot, 'minutes.md'), content: '# minutes' };
     const context = { sessionId: SESSION, permissionMode: 'bypassPermissions' as const, workingDirectory: directory, workspaceRoot: directory };
+    const otherContext = { ...context, sessionId: 'other-session' };
     await task(`输出目录：${virtualRoot}`, async () => {
       expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'approve', bypassCache: true });
-      await task('请整理会议纪要', async () => {
-        expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'ask', trustBoundary: true });
+      await withTaskOutputDirectory({ sessionId: 'other-session', userText: '请整理会议纪要', internal: false }, async () => {
+        expect(await classifier.classify('Write', args, otherContext)).toMatchObject({ decision: 'ask', trustBoundary: true });
       });
       expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'approve', bypassCache: true });
     });
-    expect(await classifier.classify('Write', args, context)).toMatchObject({ decision: 'ask', trustBoundary: true, cached: false });
+    expect(await classifier.classify('Write', args, otherContext)).toMatchObject({ decision: 'ask', trustBoundary: true, cached: false });
   });
 
   it('rejects symlink escapes and root retargets while retaining the frozen directory', async () => {

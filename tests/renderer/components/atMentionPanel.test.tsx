@@ -304,6 +304,75 @@ describe('useAtMentionPanel', () => {
     });
   }
 
+  it.each([{}, { metaKey: true }, { ctrlKey: true }])(
+    'consumes fast Enter before the @ panel opens (%j), then selects the file on a later Enter',
+    async (modifiers) => {
+      const onFileSelect = vi.fn();
+      const { result } = setup(onFileSelect);
+      await act(async () => { result.current.search('@alpha', 6); });
+      expect(result.current.isOpen).toBe(false);
+      const enter = { ...keyEvent('Enter'), ...modifiers };
+      expect(result.current.handleKeyDown(enter)).toBe(true);
+      expect(enter.preventDefault).toHaveBeenCalledOnce();
+      expect(onFileSelect).not.toHaveBeenCalled();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+      expect(result.current.isOpen).toBe(true);
+      const select = keyEvent('Enter');
+      act(() => { expect(result.current.handleKeyDown(select)).toBe(true); });
+      expect(select.preventDefault).toHaveBeenCalledOnce();
+      expect(onFileSelect).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.ts' }));
+    },
+  );
+
+  it('consumes fast Enter in the new debounce window after clearing and retyping', async () => {
+    const { result } = setup();
+    await act(async () => { result.current.search('@alpha', 6); });
+    act(() => { result.current.search('', 0); });
+    expect(result.current.handleKeyDown(keyEvent('Enter'))).toBe(false);
+    await act(async () => { result.current.search('@docs', 5); });
+    const enter = keyEvent('Enter');
+    expect(result.current.handleKeyDown(enter)).toBe(true);
+    expect(enter.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('leaves Shift+Enter and IME Enter alone while the @ panel is pending', async () => {
+    const { result } = setup();
+    await act(async () => { result.current.search('@alpha', 6); });
+    const shift = { ...keyEvent('Enter'), shiftKey: true };
+    const ime = { ...keyEvent('Enter'), nativeEvent: { ...keyEvent('Enter').nativeEvent, isComposing: true } };
+    for (const enter of [shift, ime]) {
+      expect(result.current.handleKeyDown(enter)).toBe(false);
+      expect(enter.preventDefault).not.toHaveBeenCalled();
+    }
+  });
+
+  it('consumes Enter while listFiles is unresolved and after a superseded lookup resolves', async () => {
+    const files = Promise.withResolvers<{ success: boolean; data: [] }>();
+    const invoke = vi.mocked(window.domainAPI!.invoke);
+    const originalInvoke = invoke.getMockImplementation()!;
+    invoke.mockImplementation((...args) => args[1] === 'listFiles'
+      ? files.promise as ReturnType<typeof originalInvoke>
+      : originalInvoke(...args));
+    const { result } = setup();
+    await act(async () => {
+      result.current.search('@alpha', 6);
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(invoke).toHaveBeenCalledWith(IPC_DOMAINS.WORKSPACE, 'listFiles', expect.anything());
+    expect(result.current.isOpen).toBe(false);
+    const enter = keyEvent('Enter');
+    expect(result.current.handleKeyDown(enter)).toBe(true);
+    expect(enter.preventDefault).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      result.current.search('@docs', 5);
+      files.resolve({ success: true, data: [] });
+    });
+    expect(result.current.isOpen).toBe(false);
+    expect(result.current.handleKeyDown(keyEvent('Enter'))).toBe(true);
+  });
+
   it('打开后同时给出资料库组与工作区文件组，pin 态来自 getSessionPin', async () => {
     const { result } = setup();
     await openPanel(result);
@@ -433,7 +502,7 @@ describe('useAtMentionPanel', () => {
     expect(mocks.setSessionPin).not.toHaveBeenCalled();
   });
 
-  it('Esc 关闭后面板不因同一段文本再次弹开', async () => {
+  it('Esc 关闭后面板不因同一段文本再次弹开，Enter 留给提交', async () => {
     const { result } = setup();
     await openPanel(result);
 
@@ -445,6 +514,10 @@ describe('useAtMentionPanel', () => {
       await vi.advanceTimersByTimeAsync(250);
     });
     expect(result.current.isOpen).toBe(false);
+
+    const enter = keyEvent('Enter');
+    expect(result.current.handleKeyDown(enter)).toBe(false);
+    expect(enter.preventDefault).not.toHaveBeenCalled();
 
     // 文本变了（继续输入 query）则重新打开
     await act(async () => {
@@ -464,6 +537,71 @@ describe('useAtMentionPanel', () => {
     await act(async () => { await Promise.resolve(); });
     expect(result.current.libraryRows[0]?.pinned).toBe(false);
     expect(mocks.toast.error).toHaveBeenCalled();
+  });
+
+  // ============================================================================
+  // N-FIX-EN-ATMENTION-SESSION-ROW-UNSORTED-ZH：未分类桶（proj_unsorted）的 host 存名
+  // 是 zh 常量「未分类」，会话行 meta 不得把它直出进英文界面。经真实 hook 拉项目表
+  // （listProjects 含桶）+ AtMentionPopover 渲染断言，路径即 refreshReferences →
+  // buildSessionRows → AtMentionPopover sessionMeta。
+  // ============================================================================
+  async function renderSessionMeta(): Promise<string> {
+    // 清掉库/文件/产物行，面板里唯一剩下的行就是会话行，第一个按钮内的灰字即其 meta
+    mocks.listLibraryItems.mockResolvedValue([]);
+    mocks.getProjectArtifacts.mockResolvedValue([]);
+    Element.prototype.scrollIntoView = vi.fn();
+    useAppStore.setState({ workingDirectory: null });
+    const { result } = setup();
+    await openPanel(result);
+    const view = render(
+      <AtMentionPopover
+        query={result.current.query}
+        libraryRows={result.current.libraryRows}
+        fileRows={result.current.fileRows}
+        sessionRows={result.current.sessionRows}
+        artifactRows={result.current.artifactRows}
+        activeTab={result.current.activeTab}
+        selectedIndex={result.current.selectedIndex}
+        onTabChange={result.current.setActiveTab}
+        onSelect={result.current.selectRow}
+        onHover={result.current.setSelectedIndex}
+      />,
+    );
+    // 清掉库/文件/产物行后，面板里第一个按钮内的灰字就是会话行 meta
+    return view.container.querySelector('button span.text-zinc-500')?.textContent ?? '';
+  }
+
+  function mockUnsortedSession(): void {
+    mocks.listProjects.mockResolvedValue([{ id: 'proj_unsorted', name: '未分类' }]);
+    vi.mocked(window.domainAPI!.invoke).mockImplementation((_domain: string, action: string) => Promise.resolve({
+      success: true,
+      data: action === 'list' ? [session('past-unsorted', '今日计划', 'proj_unsorted')] : [],
+    }));
+  }
+
+  it('未分类会话行 meta（en）显示 Unsorted，不含任何中文字符', async () => {
+    mocks.language = 'en';
+    mockUnsortedSession();
+    const meta = await renderSessionMeta();
+    expect(meta).toMatch(/6 messages · Unsorted$/);
+    expect(meta).not.toMatch(/[一-鿿]/);
+    cleanup();
+    mocks.language = 'zh';
+  });
+
+  it('未分类会话行 meta（zh）仍显示 未分类', async () => {
+    mocks.language = 'zh';
+    mockUnsortedSession();
+    const meta = await renderSessionMeta();
+    expect(meta).toMatch(/6 条消息 · 未分类$/);
+    cleanup();
+  });
+
+  it('普通项目会话行 meta 不受影响（zh：Neo 项目）', async () => {
+    mocks.language = 'zh';
+    const meta = await renderSessionMeta();
+    expect(meta).toMatch(/6 条消息 · Neo 项目$/);
+    cleanup();
   });
 });
 
@@ -653,5 +791,152 @@ describe('useAtMentionPanel 工作目录来源（FB-1531）', () => {
       ['notes.md', ''],
     ]);
     expect(result.current.fileRows.map((row) => row.path)).toEqual(['/tmp/proj-a/src/foo.ts', '/tmp/proj-a/notes.md']);
+  });
+});
+
+describe('buildSessionRows 无项目时 projectName 是文件夹名', () => {
+  function directorySession(
+    id: string,
+    fields: { projectId?: string; workspace?: string; workingDirectory?: string; title?: string } = {},
+  ): Session & { messageCount: number } {
+    return {
+      id,
+      title: fields.title ?? '设计回顾',
+      ...(fields.projectId ? { projectId: fields.projectId } : {}),
+      ...(fields.workspace !== undefined ? { workspace: fields.workspace } : {}),
+      ...(fields.workingDirectory !== undefined ? { workingDirectory: fields.workingDirectory } : {}),
+      modelConfig: {} as Session['modelConfig'],
+      createdAt: 1,
+      updatedAt: 2,
+      messageCount: 4,
+    };
+  }
+
+  it('(a) 无 projectId、无 workspace、workingDirectory 为绝对路径时 projectName 等于文件夹名', () => {
+    const rows = buildSessionRows([
+      directorySession('s-wd', { workingDirectory: '/Users/example/work/my-project' }),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('my-project');
+  });
+
+  it('(b) workspace 为绝对路径时 projectName 是该路径的文件夹名', () => {
+    const rows = buildSessionRows([
+      directorySession('s-ws', {
+        workspace: '/Users/example/work/demo-app',
+        workingDirectory: '/Users/example/work/my-project',
+      }),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('demo-app');
+  });
+
+  it('(c) 尾部分隔符与 Windows 路径都只留文件夹名', () => {
+    const rows = buildSessionRows([
+      directorySession('s-win', { workingDirectory: 'C:\\Users\\example\\my-project\\' }),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('my-project');
+  });
+
+  it('(d) projectId 在名称表里时仍用项目名，不退回目录', () => {
+    const rows = buildSessionRows([
+      directorySession('s-proj', {
+        projectId: 'proj-1',
+        workspace: '/Users/example/work/demo-app',
+        workingDirectory: '/Users/example/work/my-project',
+      }),
+    ], new Map([['proj-1', 'Neo 项目']]), '', null);
+    expect(rows[0]?.projectName).toBe('Neo 项目');
+  });
+
+  it('(e) workspace 与 workingDirectory 都空时 projectName 是空串', () => {
+    const rows = buildSessionRows([
+      directorySession('s-empty'),
+    ], new Map(), '', null);
+    expect(rows[0]?.projectName).toBe('');
+  });
+
+  it('(f) 按文件夹名能搜到，主目录段不再命中', () => {
+    const sessions = [
+      directorySession('s-search', { workingDirectory: '/Users/example/work/my-project' }),
+    ];
+    expect(buildSessionRows(sessions, new Map(), 'my-proj', null).map((row) => row.id)).toEqual(['s-search']);
+    expect(buildSessionRows(sessions, new Map(), 'users', null)).toEqual([]);
+  });
+});
+
+describe('AtMentionPopover 会话行 meta 只显示文件夹名', () => {
+  const PAST_DIR = '/Users/example/work/my-project';
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mocks.language = 'zh';
+    mocks.listLibraryItems.mockResolvedValue([]);
+    mocks.getSessionPin.mockResolvedValue({ sessionId: 'current', itemIds: [] });
+    mocks.listProjects.mockResolvedValue([]);
+    mocks.getProjectArtifacts.mockResolvedValue([]);
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: 'current' });
+    (window as { domainAPI?: unknown }).domainAPI = {
+      invoke: vi.fn().mockImplementation((_domain: string, action: string) => Promise.resolve({
+        success: true,
+        data: action === 'list'
+          ? [{
+              id: 'past-dir',
+              title: '设计回顾',
+              workingDirectory: PAST_DIR,
+              modelConfig: {},
+              createdAt: 1,
+              updatedAt: Date.now(),
+              messageCount: 4,
+            }]
+          : [],
+      })),
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    mocks.language = 'zh';
+    useAppStore.setState({ workingDirectory: null });
+    useSessionStore.setState({ sessions: [], currentSessionId: null });
+  });
+
+  async function renderedMeta(language: 'zh' | 'en'): Promise<string> {
+    mocks.language = language;
+    const { result } = renderHook(() => useAtMentionPanel({
+      sessionId: 'current',
+      projectId: null,
+      onFileSelect: vi.fn(),
+      onSessionSelect: vi.fn(),
+      onArtifactSelect: vi.fn(),
+    }));
+    await act(async () => {
+      result.current.search('@', 1);
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    const view = render(
+      <AtMentionPopover
+        query={result.current.query}
+        libraryRows={result.current.libraryRows}
+        fileRows={result.current.fileRows}
+        sessionRows={result.current.sessionRows}
+        artifactRows={result.current.artifactRows}
+        activeTab={result.current.activeTab}
+        selectedIndex={result.current.selectedIndex}
+        onTabChange={result.current.setActiveTab}
+        onSelect={result.current.selectRow}
+        onHover={result.current.setSelectedIndex}
+      />,
+    );
+    const meta = view.container.querySelector('button span.text-zinc-500');
+    return meta?.textContent ?? '';
+  }
+
+  it('输入 @ 后，无项目的会话行 meta 显示文件夹名（zh / en）', async () => {
+    expect(await renderedMeta('zh')).toBe('刚刚 · 4 条消息 · my-project');
+    cleanup();
+    expect(await renderedMeta('en')).toBe('just now · 4 messages · my-project');
   });
 });

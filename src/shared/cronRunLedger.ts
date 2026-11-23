@@ -68,6 +68,8 @@ export interface CronRunCostEntry {
   startedAt?: number;
   /** 本次运行实测成本（USD）；null/undefined = 无模型调用（展示 dash，不加钱）。 */
   cost?: number;
+  /** 包月/免费额度模型运行（不按美元计费）；无 cost 时据此区分「没记到」与「本就不计美元」。 */
+  flatFee?: boolean;
   runsOn?: 'local' | 'cloud';
   /** 跳过的唤醒（无成本，但计数）。 */
   skipped?: boolean;
@@ -81,6 +83,8 @@ export interface CronRunCostDayTotal {
   runCount: number;
   /** 其中跳过的唤醒次数。 */
   skippedCount: number;
+  /** 其中包月运行（无美元成本）条数。 */
+  flatFeeCount: number;
 }
 
 function localDayKey(time: number): string {
@@ -104,11 +108,13 @@ export function cronDailyCostTotals(
   for (const entry of entries) {
     if (entry.runsOn === 'cloud') continue;
     const dayKey = localDayKey(entry.startedAt ?? entry.scheduledAt);
-    const bucket = buckets.get(dayKey) ?? { dayKey, totalUsd: 0, runCount: 0, skippedCount: 0 };
+    const bucket = buckets.get(dayKey) ?? { dayKey, totalUsd: 0, runCount: 0, skippedCount: 0, flatFeeCount: 0 };
     bucket.runCount += 1;
     if (entry.skipped) bucket.skippedCount += 1;
     if (typeof entry.cost === 'number' && Number.isFinite(entry.cost) && entry.cost > 0) {
       bucket.totalUsd += entry.cost;
+    } else if (entry.flatFee) {
+      bucket.flatFeeCount += 1;
     }
     buckets.set(dayKey, bucket);
   }
@@ -132,4 +138,13 @@ export function addCronRunCostUsd(
 ): number | undefined {
   if (attempt === undefined || !Number.isFinite(attempt) || attempt <= 0) return existing;
   return Math.round(((existing ?? 0) + attempt) * 1e6) / 1e6;
+}
+
+/**
+ * 一天的成本显示档：flat-fee = 当天所有有成本口径的运行都是包月（只显示「不按美元计费」）；
+ * usd = 显示美元合计（含包月与计价混合日，合计只含计价运行）。
+ * 「成本未完整记录」由调用方按未打标的已完成会话另行判定，优先于这里。
+ */
+export function cronDayCostKind(bucket: CronRunCostDayTotal): 'flat-fee' | 'usd' {
+  return bucket.flatFeeCount > 0 && bucket.totalUsd <= 0 ? 'flat-fee' : 'usd';
 }

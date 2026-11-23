@@ -12,6 +12,7 @@ import {
   surfaceExecutionArgumentsForExport,
 } from '@shared/utils/surfaceExecutionExportProjection';
 import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
+import { normalizeBrowserComputerCatalogToolName } from '@shared/utils/browserComputerActionCatalog';
 import {
   formatBrowserComputerActionResultDetails,
   summarizeBrowserComputerActionResult,
@@ -66,6 +67,12 @@ function buildBrowserComputerExportMetadata(
   });
 }
 
+// Alias names (e.g. "Browser") are normalized by the chat-card formatters; export keeps them raw.
+function isAliasedBrowserComputerToolName(name: string): boolean {
+  const catalogTool = normalizeBrowserComputerCatalogToolName(name);
+  return catalogTool !== null && catalogTool !== name;
+}
+
 function sanitizeBrowserComputerToolCallForExport(
   call: ToolCall,
   resultMetadata?: Record<string, unknown>,
@@ -81,11 +88,13 @@ function sanitizeBrowserComputerToolCallForExport(
     : call.arguments;
   const safeResultSummary = (isBrowserComputerToolName(call.name)
     ? formatToolResultForBrowserComputerExport(call)
-    : formatBrowserComputerActionResultDetails({
-        name: call.name,
-        arguments: rawArguments,
-        result: call.result,
-      })) ?? undefined;
+    : isAliasedBrowserComputerToolName(call.name)
+      ? undefined
+      : formatBrowserComputerActionResultDetails({
+          name: call.name,
+          arguments: rawArguments,
+          result: call.result,
+        })) ?? undefined;
 
   return {
     ...call,

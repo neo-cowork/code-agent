@@ -77,6 +77,7 @@ vi.mock('../../../../src/host/task/TaskManager', async (importOriginal) => ({
   getTaskManager: () => taskManagerHolder.manager,
 }));
 
+import { getPermissionModeManager, resetPermissionModeManager } from '../../../../src/host/permissions/modes';
 import { MessageProcessor } from '../../../../src/host/agent/runtime/messageProcessor';
 import { getTextForegroundToolNamesForPrompt } from '../../../../src/host/app/sessionCommandCenterBrain';
 import {
@@ -272,9 +273,64 @@ describe('foreground narrowing gate', () => {
     expect(tasks[0]?.prompt.match(/<original_user_request /g)).toHaveLength(1);
     expect(tasks[0]?.toolCallId).toBe('host-handoff:turn-1');
     const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
-    expect(sealed?.metadata).toMatchObject({ code: 'TOOL_DISABLED_FOR_RUN', bounced: true });
+    expect(sealed?.metadata).toMatchObject({ code: 'HANDED_OFF_TO_BACKGROUND', bounced: true, skipped: true });
     expect(ledgerEvents.some((row) => row.phase === 'begin' && row.toolName === 'delegate_task' && row.toolCallId === 'host-handoff:turn-1')).toBe(true);
     expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
+  });
+
+  // 全权限（bypassPermissions）会话：前台工具面不含 Bash / 非读 Excel（ADR-059），拒绝与权限档无关。
+  // 交接成功后封口码必须是 HANDED_OFF_TO_BACKGROUND；交接失败仍是 TOOL_DISABLED_FOR_RUN。
+  describe('bypassPermissions session', () => {
+    beforeEach(() => {
+      resetPermissionModeManager();
+      getPermissionModeManager().setMode('bypassPermissions', true, 'external');
+    });
+    afterEach(() => resetPermissionModeManager());
+
+    it.each([
+      ['Bash', { id: 'bp-bash', name: 'Bash', arguments: { command: 'ls' } }],
+      ['non-read ExcelAutomate', { id: 'bp-xl', name: 'ExcelAutomate', arguments: { action: 'edit', file_path: '/tmp/a.xlsx' } }],
+    ] as const)('%s: handed off, sealed with the handed-off code, not TOOL_DISABLED_FOR_RUN', async (_label, call) => {
+      const prompt = '把这份表格和会议记录做成演示稿和纪要，成品都存到同一目录：/tmp/out';
+      const ctx = prepare(prompt);
+      expect(getPermissionModeManager().getModeForSession(ctx.sessionId)).toBe('bypassPermissions');
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      const action = await processor.handleToolResponse(responseOf([call]), false, 1, EVENT_PROC);
+      expect(action).toBe('break');
+      const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+      expect(sealed?.metadata?.code).toBe('HANDED_OFF_TO_BACKGROUND');
+      expect(JSON.stringify(sealed)).not.toContain('TOOL_DISABLED_FOR_RUN');
+      expect(logState.info.mock.calls.map(([line]) => line)).toContain('Foreground denial handed off in the same turn');
+    });
+
+    it('a same-batch sibling skipped by the handoff is also sealed as handed off', async () => {
+      const prompt = '把这份表格做成演示稿，成品都存到同一目录：/tmp/out';
+      const ctx = prepare(prompt);
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      await processor.handleToolResponse(responseOf([
+        { id: 'sib-bash', name: 'Bash', arguments: { command: 'ls' } },
+        { id: 'sib-read', name: 'Read', arguments: { file_path: '/tmp/a.csv' } },
+      ]), false, 1, EVENT_PROC);
+      const results = deps.persisted.find((message) => message.role === 'tool')?.toolResults ?? [];
+      expect(results.map((r) => r.metadata?.code)).toEqual(['HANDED_OFF_TO_BACKGROUND', 'HANDED_OFF_TO_BACKGROUND']);
+    });
+
+    it('failed handoff keeps TOOL_DISABLED_FOR_RUN', async () => {
+      const prompt = '明天上午 9 点提醒我交报告，请用 Bash 执行多行 osascript 建提醒';
+      const ctx = prepare(prompt, { workspaceScope: undefined, maxToolCallRetries: 0 });
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(ctx as unknown as RuntimeContext, deps.contextAssembly as unknown as ContextAssembly, deps.runFinalizer as unknown as RunFinalizer, toolEngine as unknown as ToolExecutionEngine);
+      await processor.handleToolResponse(responseOf([
+        { id: 'bp-fail', name: 'Bash', arguments: { command: 'osascript' } },
+      ]), false, 1, EVENT_PROC);
+      const sealed = deps.persisted.find((message) => message.role === 'tool')?.toolResults?.[0];
+      expect(sealed?.metadata?.code).toBe('TOOL_DISABLED_FOR_RUN');
+    });
   });
 
   // plan-exit 兜底：写工具被兜底窗口拦住，不因「可交后台」改道。
@@ -376,6 +432,63 @@ describe('foreground narrowing gate', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]?.options?.toolScope).toEqual(toolScope);
     expect(tasks[0]?.options?.executionIntent).toEqual(executionIntent);
+  });
+
+  // 交接标题保留词间空格：折叠空白为单个空格、截 24 个码点、去掉尾部空格。
+  // 英文请求不能再粘成 Runoneshell… 这样的不可读串（前台拒绝同轮交接的任务名）。
+  describe('handoff title keeps word spaces', () => {
+    async function titleFromHandoff(prompt: string): Promise<string> {
+      const ctx = prepare(prompt);
+      const deps = buildDeps(ctx);
+      const toolEngine = { executeToolsWithHooks: vi.fn() };
+      const processor = new MessageProcessor(
+        ctx as unknown as RuntimeContext,
+        deps.contextAssembly as unknown as ContextAssembly,
+        deps.runFinalizer as unknown as RunFinalizer,
+        toolEngine as unknown as ToolExecutionEngine,
+      );
+      const action = await processor.handleToolResponse(responseOf([
+        { id: 'bash-title', name: 'Bash', arguments: { command: 'ls' } },
+      ]), false, 1, EVENT_PROC);
+      expect(action).toBe('break');
+      const tasks = getSessionCommandCenter().list(ctx.sessionId);
+      expect(tasks).toHaveLength(1);
+      return tasks[0]?.title ?? '';
+    }
+
+    it('english request keeps single spaces, <=24 code points, no glued run', async () => {
+      const title = await titleFromHandoff('Run one shell command that watches the downloads folder');
+      expect(title).toBe('Run one shell command th');
+      expect(Array.from(title).length).toBeLessThanOrEqual(24);
+      expect(title).toContain(' ');
+      expect(title).not.toContain('Runoneshell');
+    });
+
+    it('pure chinese prompt keeps its first 24 code points unchanged', async () => {
+      const prompt = '请帮我整理项目根目录下面的所有临时文件并且把结果汇总成一份简短的报告发给我';
+      const title = await titleFromHandoff(prompt);
+      expect(title).toBe(Array.from(prompt).slice(0, 24).join(''));
+    });
+
+    it('mixed zh/en prompt keeps single spaces around latin words', async () => {
+      const title = await titleFromHandoff('帮我把 README 里面的安装步骤   翻译成英文，然后写到 notes.txt');
+      expect(title).toBe('帮我把 README 里面的安装步骤 翻译成英文');
+      expect(Array.from(title).length).toBeLessThanOrEqual(24);
+    });
+
+    it('newlines, tabs and space runs collapse to single spaces without edge spaces', async () => {
+      const title = await titleFromHandoff('  Run\tone  shell\ncommand  that   watches\tthe folder  ');
+      expect(title).toBe('Run one shell command th');
+      expect(title.startsWith(' ')).toBe(false);
+      expect(title.endsWith(' ')).toBe(false);
+      expect(title).not.toMatch(/\s{2,}/);
+    });
+
+    it('a cut falling on a space does not leave a trailing space', async () => {
+      const title = await titleFromHandoff('Weekly sync notes for q 403 review please');
+      expect(title).toBe('Weekly sync notes for q');
+      expect(title.endsWith(' ')).toBe(false);
+    });
   });
 
   it('delegate handler failure keeps the guidance path and the pending reply', async () => {

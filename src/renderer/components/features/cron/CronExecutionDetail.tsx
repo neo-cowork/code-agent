@@ -2,6 +2,7 @@ import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 import React, { useEffect, useState } from 'react';
 import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
+import { findConnectorToolMetadata } from '@shared/contract/workbenchTools';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
@@ -30,6 +31,7 @@ import { wakeDecisionOf } from './wakeDecision';
 import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 import { cronRunResultView } from './cronRunResultView';
 import { localizeParkedApprovalClosureText } from '../../../utils/toolExecutionPresentation';
+import { getHumanToolLabel } from '../../../utils/toolHumanLabel';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -269,7 +271,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt, language)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt, language)} />
         <Info label={cc.colDuration} value={formatDuration(execution.duration, language)} />
-        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
+        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn, execution.flatFee ? cc.costFlatFee : undefined)} testId="cron-execution-cost" />
       </div>
       {(execution.status === 'failed' || (execution.status === 'completed' && !wakeSkip && !permissionDenied)) && execution.retryAttempt > 0 && (
         <p className="mt-3 text-sm text-zinc-300" data-testid="cron-exec-retry-note">
@@ -319,13 +321,19 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
       {permissionDenied && (
         <section className="mt-4" data-testid="cron-permission-denied-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-warning">{cc.permissionDeniedTitle}</h5>
-          {permissionDenied.steps.map((step, index) => (
-            <p key={`${step.tool}-${index}`} className="text-sm text-zinc-100" data-testid="cron-permission-denied-sentence">
-              {cc.permissionDeniedSentence
-                .replace('{summary}', step.summary)
-                .replace('{reason}', permissionDeniedReasonText(cc, step.reason))}
-            </p>
-          ))}
+          {permissionDenied.steps.map((step, index) => {
+            const labels = t.receiptPresentation.humanToolLabels;
+            const label = step.summary === step.tool
+              ? findConnectorToolMetadata(step.tool)?.action?.[language] ?? getHumanToolLabel({ toolName: step.tool, labels })
+              : step.summary;
+            return (
+              <p key={`${step.tool}-${index}`} className="text-sm text-zinc-100" data-testid="cron-permission-denied-sentence">
+                {cc.permissionDeniedSentence
+                  .replace('{summary}', label === step.tool ? labels.unknownTool : label)
+                  .replace('{reason}', permissionDeniedReasonText(cc, step.reason))}
+              </p>
+            );
+          })}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
               type="button"

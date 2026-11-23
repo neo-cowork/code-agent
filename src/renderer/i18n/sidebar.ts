@@ -20,7 +20,7 @@ export const sidebarZh = {
 
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.zh,
-    scheduleSessionPrefix: '[定时]',
+    scheduleSessionPrefix: cronSessionTitlePrefixes.zh.schedule,
     heartbeatSessionPrefix: '[心跳]',
     // 顶部 / 搜索
     newTask: '新任务',
@@ -136,6 +136,7 @@ export const sidebarZh = {
       librarySubtitle: '任务产出与上传的文件，可带进对话',
       capabilityHub: '能力中心',
       capabilityHubSubtitle: '专家 · 技能 · 连接器',
+      localOpsSubtitle: '电脑操作与授权 · 浏览器',
       doctorIssues: '{count} 项检查未通过',
       doctorIssuesSubtitle: '点击查看完整诊断',
     },
@@ -440,7 +441,7 @@ export const sidebarEn: typeof sidebarZh = {
 
   sidebar: {
     cronTitlePrefixes: cronSessionTitlePrefixes.en,
-    scheduleSessionPrefix: '[Schedule]',
+    scheduleSessionPrefix: cronSessionTitlePrefixes.en.schedule,
     heartbeatSessionPrefix: '[Heartbeat]',
     newTask: 'New task',
     collapseSidebar: 'Collapse sidebar',
@@ -542,6 +543,7 @@ export const sidebarEn: typeof sidebarZh = {
       librarySubtitle: 'Project assets · pin into chats',
       capabilityHub: 'Capability Hub',
       capabilityHubSubtitle: 'Experts · Skills · Connectors',
+      localOpsSubtitle: 'Computer control & permissions · browser',
       doctorIssues: '{count} checks failing',
       doctorIssuesSubtitle: 'Click to open full diagnostics',
     },

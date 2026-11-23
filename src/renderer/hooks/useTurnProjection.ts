@@ -21,7 +21,7 @@ import { isModelFallbackNoticeContent } from '../components/features/chat/fallba
 import { isContextCompressionSignalContent } from '../components/features/chat/contextCompressionSignal';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
-import { bareInterruptionNode } from '../utils/bareInterruptionNode';
+import { bareInterruptionNode, stoppedPartialText } from '../utils/bareInterruptionNode';
 import { isStreamRecoveryMessage, stripStreamRecoveryMarker } from '../utils/streamRecoveryMessage';
 import {
   isPersistedStreamInterruptionMessage,
@@ -559,19 +559,21 @@ export function projectTurns(
       let reasoningAttachedForMessage = false;
 
       const pushAssistantTextNode = (content: string, index?: number, includeAgentError = false) => {
-        // 中断轮的唯一时间线信号由 recovery 工具节点承载。落库 marker 前的 partial
-        // 与 snapshot.content 是同一段流式正文，二者都继续投影会在重载后重复两遍，
-        // 也会破坏“灰字一行 + 决策槽一行”的单信号形态。
-        // ADR-068 刀 4 例外：断流续接的断点段（stream-break）不 suppression——它的
-        // 正文是真实答案的前半段（recovery 消息自己的文本仍被上方原规则压掉，不会
-        // 双渲染），只剥掉正文尾部的裸协议标记，中断语义走样式行。
+        // 保留 Stop 前的正文；同轮已有 recovery 时，继续由 recovery 承载中断信号。
         const streamBreakKeptSegment = streamInterruptionReason === 'stream-break' && !recoveryMessage;
+        let projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
+        let textMetadata = includeAgentError ? projectedMetadata : contentMetadata;
         if (streamInterruptionReason && !streamBreakKeptSegment && (recoveryMessage || isPersistedStreamInterruptionMessage(msg))) {
-          const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
-          if (bare) turn.nodes.push(bare);
-          return;
+          const partial = streamInterruptionReason === 'user' ? stoppedPartialText(msg, messages, content) : null;
+          if (partial === null) {
+            const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
+            if (bare) turn.nodes.push(bare);
+            return;
+          }
+          projectedContent = partial;
+          // 停止原因由输入框上方通知呈现，正文节点不参与中断信号判断。
+          textMetadata = { ...textMetadata, streamInterruptionReason: undefined };
         }
-        const projectedContent = streamBreakKeptSegment ? stripStreamBreakMarker(content) : content;
         if (streamBreakKeptSegment && !projectedContent.trim()) {
           const bare = bareInterruptionNode(msg, messages, streamInterruptionReason);
           if (bare) turn.nodes.push(bare);
@@ -612,9 +614,9 @@ export function projectTurns(
           thinking: attachReasoning ? msg.thinking : undefined,
           artifacts: msg.artifacts,
           modelDecision,
-          metadata: index && index > 1 && (includeAgentError ? projectedMetadata : contentMetadata)?.backgroundTaskPreannounce
-            ? { ...(includeAgentError ? projectedMetadata : contentMetadata), backgroundTaskPreannounce: undefined }
-            : includeAgentError ? projectedMetadata : contentMetadata,
+          metadata: index && index > 1 && textMetadata?.backgroundTaskPreannounce
+            ? { ...textMetadata, backgroundTaskPreannounce: undefined }
+            : textMetadata,
         });
       };
 
@@ -652,6 +654,7 @@ export function projectTurns(
             stepLabel: tc.stepLabel,
             targetContext: tc.targetContext,
             expectedOutcome: tc.expectedOutcome,
+            guiTakeoverDisclosure: tc.guiTakeoverDisclosure,
           },
           metadata: nodeMetadata,
         });

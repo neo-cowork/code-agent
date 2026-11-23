@@ -4,6 +4,7 @@ import {
   describeAppleScriptFailure,
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
+import { isAppleEventsDenied } from '../../../connectors/native/appleScriptFailure';
 import { isCalendarFailure } from '../../../connectors/native/calendar';
 
 const NO_BASH_GUIDANCE =
@@ -40,4 +41,16 @@ export function describeCalendarWriteFailure(failurePrefix: string, error: unkno
 
 export function calendarFailureCode(error: unknown): { code?: string } {
   return isCalendarFailure(error) ? { code: error.code } : {};
+}
+
+/**
+ * Machine code of a refused AppleScript write; only `not_authorized` is surfaced (it drives the permission card / park, and
+ * the resume text then states nothing was saved). Read from the script runner's own stderr only: `error.message` embeds the script
+ * (the draft body), and a timed-out/killed run may already have saved, so neither may be classified as a refusal.
+ */
+export function appleScriptWriteFailureCode(error: unknown): { code?: 'not_authorized' } {
+  if (!isAppleScriptFailure(error)) return {};
+  const { stderr, killed, signal } = error as { stderr?: unknown; killed?: unknown; signal?: unknown };
+  if (killed === true || (typeof signal === 'string' && signal !== '')) return {};
+  return typeof stderr === 'string' && isAppleEventsDenied(stderr) ? { code: 'not_authorized' } : {};
 }

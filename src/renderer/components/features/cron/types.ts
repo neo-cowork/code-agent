@@ -548,9 +548,13 @@ export function formatDuration(ms?: number | null, lang: CronHumanLang = 'zh'): 
   return text.join(' ');
 }
 
-/** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
-export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud'): string {
-  if (runsOn === 'cloud' || value == null || !Number.isFinite(value)) return '—';
+/**
+ * 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash；
+ * 包月运行（无美元读数）传入 flatFeeLabel 显示「不按美元计费」，不编造美元数。
+ */
+export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud', flatFeeLabel?: string): string {
+  if (runsOn === 'cloud') return '—';
+  if (value == null || !Number.isFinite(value)) return flatFeeLabel ?? '—';
   return `$${value.toFixed(4)}`;
 }
 

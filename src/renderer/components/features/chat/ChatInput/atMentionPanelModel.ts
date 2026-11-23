@@ -167,6 +167,14 @@ export function buildFileRows(
 
 type SessionMatch = Session & { messageCount?: number };
 
+/** 目录回退只留最后一段，会话行不展示绝对路径。`/` 与 `\` 都算分隔符，尾部分隔符先去掉。 */
+function folderNameOf(value: string | undefined): string {
+  const trimmed = (value ?? '').replace(/[\\/]+$/, '');
+  if (!trimmed) return '';
+  const segments = trimmed.split(/[\\/]/);
+  return segments[segments.length - 1] ?? '';
+}
+
 export function buildSessionRows(
   sessions: SessionMatch[],
   projectNames: ReadonlyMap<string, string>,
@@ -184,8 +192,8 @@ export function buildSessionRows(
       updatedAt: session.updatedAt,
       messageCount: session.messageCount ?? 0,
       projectName: (session.projectId && projectNames.get(session.projectId))
-        || session.workspace
-        || session.workingDirectory
+        || folderNameOf(session.workspace)
+        || folderNameOf(session.workingDirectory)
         || '',
     }))
     .filter((row) => !normalized || [row.title, row.projectName].some((value) => value.toLowerCase().includes(normalized)))

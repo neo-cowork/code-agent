@@ -3,7 +3,8 @@
 // 状态 pill / 按钮文案全部走 i18n——zh 与 en 各自不出现对方的语言。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import type { WorkbenchActionTrace } from '../../../src/renderer/services/nativeDesktop';
 
 // 只 mock 桥接边缘（native desktop 服务），组件本体真渲染。
 vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
@@ -39,7 +40,10 @@ const CJK = /[㐀-䶿一-鿿豈-﫿]/u;
 const ENGLISH_PERMISSION_NAMES = /Accessibility|Screen Recording|Automation/;
 const NATIVE_DETAIL = 'AXIsProcessTrusted() returned false. Enable in System Settings';
 
-function seedPermissionSnapshot(statuses: { accessibility: string; screenCapture: string }): void {
+function seedPermissionSnapshot(
+  statuses: { accessibility: string; screenCapture: string },
+  lastAction: WorkbenchActionTrace | null = null,
+): void {
   setComputerUseSnapshot({
     capturedAtMs: Date.now(),
     nativeAvailable: true,
@@ -80,7 +84,7 @@ function seedPermissionSnapshot(statuses: { accessibility: string; screenCapture
       targetApp: 'Safari',
       approvedApps: [],
       deniedApps: [],
-      lastAction: null,
+      lastAction,
       lastSnapshot: null,
       failureKind: null,
       blockingReasons: [],
@@ -224,5 +228,53 @@ describe('ComputerUseContent permission copy i18n (en)', () => {
     expect(text).toContain('You are in the web build');
     expect(text).toContain('Desktop state is not readable in the web build');
     expect(text).not.toMatch(CJK);
+  });
+});
+
+function seedLastAction(toolName: string, action: string): void {
+  seedPermissionSnapshot({ accessibility: 'granted', screenCapture: 'granted' }, {
+    id: 'last-action',
+    targetKind: toolName === 'browser_action' ? 'browser' : 'computer',
+    toolName,
+    action,
+    mode: toolName === 'browser_action' ? 'managed' : 'background_ax',
+    startedAtMs: 1000,
+  });
+}
+
+describe('ComputerUseContent Last action localization', () => {
+  it.each([
+    ['browser_action', 'launch', 'Started the managed browser', 'Managed browser action'],
+    ['browser_action', 'navigate', 'Opened a page', 'Managed browser action'],
+    ['browser_action', 'click', 'Clicked a page element', 'Managed browser action'],
+    ['browser_action', 'type', 'Typed text', 'Managed browser action'],
+    ['browser_action', 'screenshot', 'Took a page screenshot', 'Read-only'],
+    ['computer_use', 'observe', 'Looked at the target app', 'Read-only'],
+    ['computer_use', 'get_windows', 'Listed window candidates', 'Read-only'],
+  ])('renders English Last action for %s.%s', async (toolName, action, summary, riskLabel) => {
+    useAppStore.getState().setLanguage('en');
+    seedLastAction(toolName, action);
+    await act(async () => { render(<ComputerUseContent />); });
+
+    const html = screen.getByRole('heading', { name: 'Last action' }).closest('section')?.innerHTML;
+    expect(html).toContain(summary);
+    expect(html).toContain(riskLabel);
+    expect(html).not.toMatch(CJK);
+    if (action === 'screenshot') expect(html).toContain('Screenshot saved');
+  });
+
+  it('updates the mounted card when the language changes', async () => {
+    seedLastAction('computer_use', 'get_windows');
+    await act(async () => { render(<ComputerUseContent />); });
+    const card = screen.getByRole('heading', { name: '最近一次操作' }).closest('section');
+    expect(card?.textContent).toContain('读取窗口候选');
+    expect(card?.textContent).toContain('只读');
+
+    await act(async () => useAppStore.getState().setLanguage('en'));
+
+    expect(screen.getByRole('heading', { name: 'Last action' }).closest('section')).toBe(card);
+    expect(card?.textContent).toContain('Listed window candidates');
+    expect(card?.textContent).toContain('Read-only');
+    expect(card?.textContent).not.toMatch(CJK);
   });
 });

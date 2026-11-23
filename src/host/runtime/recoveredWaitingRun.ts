@@ -5,7 +5,10 @@ import {
   type RunEnvelope,
 } from '../../shared/contract/durableRun';
 import type { RunRegistry } from './runRegistry';
+import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { clearStreamSnapshot } from '../session/streamSnapshot';
 
 const logger = createLogger('RecoveredWaitingRun');
 
@@ -90,6 +93,32 @@ export function findSupersededSessionRoots(
 
 type RecoveredWaitingCancel = { runId: string; sessionId: string };
 
+function clearAbandonedRunSnapshot({ runId, sessionId }: RecoveredWaitingCancel): void {
+  const db = getDatabase();
+  const session = db.isReady ? db.getSession(sessionId) : null;
+  if (session) clearStreamSnapshot({ runId, sessionId, workingDir: session.workingDirectory });
+  if (db.isReady) rejectAbandonedSessionApprovals(db.getPendingApprovalRepo(), sessionId);
+}
+
+// 放弃停靠 run 后，它名下仍 pending 的工具审批行没有主人了：不收尾的话聊天底部会留着点了也
+// 没用的「请求批准」卡。与 drainPendingPermissions 的取消收尾同口径（rejected / 'run cancelled'）。
+type ApprovalSessionRefs = { sessionId?: unknown; argsRef?: { sessionId?: unknown }; backgroundLane?: unknown };
+
+function rejectAbandonedSessionApprovals(repo: PendingApprovalRepository, sessionId: string): void {
+  try {
+    for (const row of repo.listByKindAndStatus('tool_approval', 'pending')) {
+      let payload: ApprovalSessionRefs | null = null;
+      try { payload = JSON.parse(row.payloadJson) as ApprovalSessionRefs | null; } catch { /* 损坏 payload 用列兜底 */ }
+      // 后台 lane 的审批内存等待者仍活着，作废行会让它永远等不到裁决（与 drainPendingPermissions 的 skipBackgroundLanes 同口径）。
+      if (payload?.backgroundLane === true) continue;
+      const rowSession = payload?.argsRef?.sessionId ?? payload?.sessionId ?? row.coordinatorId;
+      if (rowSession === sessionId) repo.resolve({ id: row.id, status: 'rejected', feedback: 'run cancelled', resolvedAt: Date.now() });
+    }
+  } catch (error) {
+    logger.warn('Abandoned run approval cleanup failed', { sessionId, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 /**
  * 把 findRecoveredWaitingRun 命中的 run 沿 terminalDurable 规范路径（owner/attempt fence + 事件序号）终态化成 cancelled。
  *
@@ -110,17 +139,24 @@ export function terminalRecoveredWaitingRunOnce(
   // 并到同一次提交上，而不是再提交一次撞 cancelled -> cancelled 冲突抛错（桌面 500）。
   // joined 标给后到者：终态事件只由真正提交的一方补发，手机不会收两条 agent_cancelled。
   const inFlight = inFlightCancels.get(recovered.runId);
-  if (inFlight) return inFlight.then((settled) => ({ ...settled, joined: true as const }));
+  if (inFlight) return inFlight.then((settled) => {
+    if (options?.abandonParked) clearAbandonedRunSnapshot(settled);
+    return { ...settled, joined: true as const };
+  });
   const cancel = registry.terminalDurable(recovered.runId, {
     now,
     status: 'cancelled',
     reason: 'recovered_waiting_run_cancelled',
+    ...(options?.abandonParked ? { abandonedParked: true as const } : {}),
     event: {
       type: 'run_cancelled',
       payload: { sessionId: recovered.sessionId, reason: 'recovered_waiting_run_cancelled' },
       recordedAt: now,
     },
-  }).then(() => recovered).finally(() => {
+  }).then(() => {
+    if (options?.abandonParked) clearAbandonedRunSnapshot(recovered);
+    return recovered;
+  }).finally(() => {
     inFlightCancels.delete(recovered.runId);
   });
   inFlightCancels.set(recovered.runId, cancel);
