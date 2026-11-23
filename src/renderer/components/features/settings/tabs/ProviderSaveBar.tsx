@@ -29,7 +29,7 @@ export function ProviderSaveBar({
       {(dirty || apiKeyUnsaved) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {dirty && (
-            <span className="inline-flex w-fit items-center rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning">
+            <span className="inline-flex w-fit items-center whitespace-nowrap rounded border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-badge-warning">
               {text.unsavedBadge}
             </span>
           )}
