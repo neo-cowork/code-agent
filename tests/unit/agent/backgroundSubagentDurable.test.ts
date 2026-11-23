@@ -36,6 +36,7 @@ import {
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
 import { createBackgroundSubagentRecoveryHandler } from '../../../src/host/runtime/durableRecoveryHandlers';
 import { DurableRunKernel, DurableRunPersistenceUnavailableError } from '../../../src/host/runtime/durableRunKernel';
+import { stopSessionBackgroundWork } from '../../../src/host/task/sessionBackgroundStop';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
@@ -273,6 +274,69 @@ describe('BackgroundSubagent durable ledger (N-BGSPAWN-DURABLE)', () => {
       status: 'failed',
       failureCode: AgentFailureCode.ParentGone,
     });
+    db.close();
+  });
+
+  it('waits for the user-stop checkpoint beyond the settlement deadline and recovers as cancelled', async () => {
+    const { db, repository, kernel, ledger } = createStack();
+    configureBackgroundSubagentDurableLedger(ledger);
+    const registry = getBackgroundSubagentRegistry();
+    const neverFinishes = deferred<SubagentResult>();
+    const abort = vi.fn();
+    const agentId = registry.spawn(() => neverFinishes.promise, {
+      sessionId: 'session-stop-crash',
+      runId: 'run-parent',
+      role: 'explore',
+      abort,
+    });
+    const startedWrite = deferred<void>();
+    const releaseWrite = deferred<void>();
+    const checkpoint = kernel.checkpoint.bind(kernel);
+    vi.spyOn(kernel, 'checkpoint').mockImplementation(async (input) => {
+      startedWrite.resolve();
+      await releaseWrite.promise;
+      return checkpoint(input);
+    });
+
+    let returned = false;
+    const stop = stopSessionBackgroundWork({
+      sessionId: 'session-stop-crash',
+      backgroundRuns: new Map(),
+      cancelBackgroundTask: async () => false,
+      settleWaitMs: 0,
+    }).then(() => { returned = true; });
+    expect(abort).toHaveBeenCalledOnce();
+    // The child was stopped before its initial ledger write settled.
+    await Promise.race([startedWrite.promise, stop]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const returnedBeforeWrite = returned;
+    releaseWrite.resolve();
+    await stop;
+    expect((await repository.get(agentId))?.cursor.engineCursor).toMatchObject({ userStopped: true });
+    expect(returnedBeforeWrite).toBe(false);
+
+    const recoveredRegistry = new RunRegistry();
+    recoveredRegistry.configureDurableKernel(new DurableRunKernel({
+      stores: repository,
+      ownerId: 'native-host',
+      processInstanceId: 'process-2',
+      leaseDurationMs: 60_000,
+    }));
+    const now = Date.now() + 120_000;
+    const plans = await recoveredRegistry.recoverDurable(now);
+    expect(plans).toHaveLength(1);
+    const handler = createBackgroundSubagentRecoveryHandler({ registry: recoveredRegistry });
+    scheduleIdleWakeMock.mockClear();
+    await handler.recover(plans[0], now);
+    const closed = await repository.get(agentId);
+    expect(closed).toMatchObject({
+      status: 'cancelled',
+      terminal: { reason: AgentFailureCode.CancelledByUser },
+    });
+    const [record] = registry.drainCompletionNotifications({ sessionId: 'session-stop-crash' });
+    expect(record).toMatchObject({ agentId, status: 'cancelled', failureCode: AgentFailureCode.CancelledByUser });
+    expect(record.content).not.toContain('interrupted_by_restart');
+    expect(scheduleIdleWakeMock).not.toHaveBeenCalled();
     db.close();
   });
 

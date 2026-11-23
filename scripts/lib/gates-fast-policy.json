@@ -377,6 +377,19 @@
         "tests/unit/scripts/acceptance/jevRealSitesLib.test.ts",
         "tests/unit/scripts/acceptance/jevRealSitesArtifact.test.ts"
       ]
+    },
+    {
+      "id": "tauri-native-command-acl",
+      "note": "Every generate_handler! registration needs exactly one permissions/*.toml grant; the renderer facade is the third enum point that must stay in sync. A missing grant only surfaces as a packaged-build silent failure, so any touch of either side re-runs the reconciliation test.",
+      "paths": [
+        "src-tauri/src/main.rs",
+        "src-tauri/permissions/**",
+        "src-tauri/src/native_*.rs",
+        "src/renderer/services/nativeCommandFacade.ts"
+      ],
+      "files": [
+        "tests/scripts/tauriCommandAcl.test.ts"
+      ]
     }
   ],
   "sharedPackageInputs": [
