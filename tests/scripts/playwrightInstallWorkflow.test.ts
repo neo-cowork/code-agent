@@ -107,6 +107,7 @@ describe('swarm-ci Playwright jobs use the pinned Playwright image instead of ap
       container?: string | { image?: string; options?: string; volumes?: string[] };
       env?: Record<string, string>;
       needs?: string | string[];
+      'timeout-minutes'?: number;
       steps?: WorkflowStep[];
     }>;
   };
@@ -130,6 +131,20 @@ describe('swarm-ci Playwright jobs use the pinned Playwright image instead of ap
     expect(setupIdx).toBeGreaterThan(installIdx);
     expect(probeIdx).toBeGreaterThan(setupIdx);
     expect(wantsDeps(steps[setupIdx])).toBe(true);
+  });
+
+  it('perf-journey-ratchet npm ci retries with a per-attempt timeout (ECONNRESET run 44446906436)', () => {
+    const perfJob = doc.jobs['perf-journey-ratchet'];
+    // 3 attempts capped at 6 min + Playwright install + probes must fit the job budget.
+    expect(perfJob['timeout-minutes']).toBeGreaterThanOrEqual(25);
+    const install = (perfJob.steps ?? []).find((step) => step.name === 'Install dependencies');
+    expect(typeof install?.run).toBe('string');
+    const run = String(install?.run);
+    expect(run).toContain('npm ci --ignore-scripts');
+    expect(run).toContain('for attempt in 1 2 3');
+    expect(run).toContain('timeout 360');
+    // Only npm ci — an online re-resolution of the tree is forbidden (N-CI-XYFLOW-DEPOPT).
+    expect(run).not.toContain('npm install');
   });
 
   it.each(containerJobs)('%s runs in mcr playwright image matching package-lock', (name) => {

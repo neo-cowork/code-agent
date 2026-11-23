@@ -283,9 +283,9 @@ export class UserBrowserLinkService {
     };
   }
 
-  /** kept 结果页三态（none/kept/closed + url/title），getKeptResultPage IPC 真源。 */
-  keptState(conversationId: string): KeptResultPageSnapshot {
-    return this.keptRegistry.snapshot(conversationId.trim());
+  /** kept 结果页三态。includeSnapshot 才附带 HTML；30 秒轮询不带。 */
+  keptState(conversationId: string, options?: { includeSnapshot?: boolean }): KeptResultPageSnapshot {
+    return this.keptRegistry.snapshot(conversationId.trim(), options);
   }
 
   /**

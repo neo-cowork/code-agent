@@ -22,6 +22,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { formatFileSize } from '../../utils/fileSize';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { pdfCompressSchema as schema } from './pdfCompress.schema';
 
@@ -92,9 +93,7 @@ export async function executePdfCompress(
   const output_path = params.output_path;
 
   try {
-    const absInputPath = path.isAbsolute(input_path)
-      ? input_path
-      : path.join(ctx.workingDir, input_path);
+    const absInputPath = resolveInputPath(input_path, ctx.workingDir);
 
     if (!fs.existsSync(absInputPath)) {
       return { ok: false, error: `文件不存在: ${absInputPath}` };
@@ -125,9 +124,7 @@ Windows: 从 https://www.ghostscript.com 下载安装`,
     let absOutputPath: string;
 
     if (output_path) {
-      absOutputPath = path.isAbsolute(output_path)
-        ? output_path
-        : path.join(ctx.workingDir, output_path);
+      absOutputPath = resolveInputPath(output_path, ctx.workingDir);
     } else {
       absOutputPath = path.join(inputDir, `${inputBaseName}_compressed.pdf`);
     }

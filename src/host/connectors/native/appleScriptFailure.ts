@@ -1,4 +1,5 @@
 // Failure classification and display text only; native execution stays in the connector executor.
+import type { NativeConnectorDetailCode } from '../../../shared/ipc';
 import { getConfigService } from '../../services/core/configService';
 
 // TCC 拒绝 Apple Events 自动化时执行进程以 errno -1743 退出（典型文案
@@ -134,3 +135,10 @@ export function appleScriptFailureLogDetail(error: unknown): string {
   return message.slice(0, 300);
 }
 
+
+/** 探测失败 → 状态句 code（renderer 按 code 翻译）；非 AppleScript 错误一律 probe_failed，原文只进日志。 */
+export function probeFailureDetailCode(error: unknown, connectorLabel: string): NativeConnectorDetailCode {
+  if (!isAppleScriptFailure(error)) return 'probe_failed';
+  const { code } = describeAppleScriptFailure(connectorLabel, error);
+  return code === 'not_authorized' ? 'automation_not_authorized' : code;
+}

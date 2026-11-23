@@ -83,6 +83,8 @@ function authInvalidError(label: string): Error {
 
 const unsupportedLogged = new Set<string>();
 let globalFetchPatched = false;
+// auth_user_blank 窗口的截止时刻；null = 窗口未开（等 .start 文件出现）。
+let authUserBlankUntil: number | null = null;
 
 function patchGlobalFetch(ctx: FaultContext): void {
   if (globalFetchPatched) return;
@@ -213,6 +215,37 @@ export const devFaultHooks: DevFaultHooks = {
     if (!Object.hasOwn(APPLE_EVENTS_CONNECTORS, connectorId) || authInvalidTarget() !== connectorId) return false;
     hit(ctx, 'connector_auth_invalid', `${connectorId} passive_automation_denied`);
     return true;
+  },
+
+  // auth_user_blank:<ms>：env 布防，<dataDir>/dev-fault/auth_user_blank.start 出现即触发——
+  // 消费（删除）该文件并以此刻为起点，接下来 <ms> 毫秒把读到的登录用户换成 null，窗口过后放行真实用户。
+  // 开窗与关窗各留一行 dev_fault_inject 日志；只在 ctx.active() 为真（Dev 槽）时生效。
+  overrideCurrentUser<T>(user: T | null, ctx: FaultContext): T | null {
+    if (!ctx.active()) {
+      authUserBlankUntil = null;
+      return user;
+    }
+    const rawMs = parseFaults().get('auth_user_blank');
+    const ms = rawMs === undefined ? NaN : Number.parseInt(rawMs, 10);
+    if (!Number.isFinite(ms) || ms <= 0) {
+      authUserBlankUntil = null;
+      return user;
+    }
+    if (authUserBlankUntil === null) {
+      const startFile = stateFile(ctx.dataDir, 'auth_user_blank.start');
+      if (!fs.existsSync(startFile)) return user;
+      try {
+        fs.rmSync(startFile, { force: true });
+      } catch {
+        // 消费失败也照常开窗：窗口计时已记录，残留文件最多让窗口结束后再开一次。
+      }
+      authUserBlankUntil = Date.now() + ms;
+      hit(ctx, 'auth_user_blank', `blank ${ms}ms`);
+    }
+    if (Date.now() < authUserBlankUntil) return null;
+    authUserBlankUntil = null;
+    hit(ctx, 'auth_user_blank', 'recovered');
+    return user;
   },
 };
 

@@ -7,6 +7,8 @@ const SETTINGS_PANES = {
   screenCapture: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
   inputMonitoring: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
   calendars: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars',
+  // Not confirmed on a real Mac; same URL format as the panes above.
+  filesAndFolders: 'x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders',
 } as const;
 
 /** Local macOS web builds can open settings too, provided there is a logged-in desktop. */
