@@ -174,6 +174,22 @@ describe('useCronRunFollowUpSend', () => {
     }
   });
 
+  it('continues an incomplete first meeting with its title and no automatic prompt', async () => {
+    useSessionStore.setState({
+      sessions: [{
+        ...cronRunSession,
+        title: '日程管家 · 初次见面',
+        origin: { kind: 'cron', name: 'role-cadence', metadata: { roleId: 'calendar-expert', trigger: 'first_wake' } },
+      } as SessionWithMeta],
+    });
+    const send = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() => useCronRunFollowUpSend(send, () => [userMessage('internal first-meeting prompt')]));
+    await act(async () => { await result.current(envelope('后来呢？')); });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      content: '我想接着聊「日程管家 · 初次见面」。下面是我的问题：\n\n后来呢？',
+    }));
+  });
+
   it('fork 失败：返回 false（草稿回滚）并出声，不切会话', async () => {
     const messages = [userMessage('任务'), assistantMessage('a-1', '结果')];
     const send = vi.fn().mockResolvedValue(true);
