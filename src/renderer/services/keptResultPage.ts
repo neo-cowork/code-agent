@@ -49,12 +49,15 @@ export async function getKeptResultPage(
       'getKeptResultPage',
       payload,
     );
-    if (!response?.success || !response.data) {
-      return NONE_KEPT_RESULT_PAGE;
-    }
+    const data = response?.success ? response.data : undefined;
+    if (!data || data.state === 'none') return NONE_KEPT_RESULT_PAGE;
     return {
-      ...response.data,
-      reason: response.data.reason ?? null,
+      state: data.state,
+      url: data.url,
+      title: data.title,
+      reason: data.reason,
+      reopenMode: data.reopenMode,
+      ...(data.snapshotHtml ? { snapshotHtml: data.snapshotHtml } : {}),
     };
   } catch (error) {
     logger.error('Failed to fetch kept result page state', error, { conversationId: normalized });
