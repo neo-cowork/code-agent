@@ -278,6 +278,11 @@ export const BROWSER_TIMEOUTS = {
   PARENT_WATCHDOG_POLL_SEC: 2,
   /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
   PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
+  /**
+   * 保留结果页读取 page.content() 的上限。
+   * 回收路径在放回池子之前要等这次读取；页面主线程卡住时不能把清理挂死。
+   */
+  KEPT_RESULT_SNAPSHOT_CAPTURE: 5_000,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
