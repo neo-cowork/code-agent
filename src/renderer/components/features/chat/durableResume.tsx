@@ -140,7 +140,7 @@ export const DurableParkedNotice: React.FC<{ interruptCause?: string; envBlocked
  * 真实取消链路（agent:cancel → web /api/cancel 的 terminalRecoveredWaitingRun）终态化。
  * selector 带 durableResume.runId + abandonParked，web 路由据此终止停靠的那个 run
  * （重复 Stop 不带 abandonParked，对 user_stop 停靠是 no-op）；桌面 appService.cancel
- * 按 sessionId 落到同一 registry 方法。取消（模态的取消）不动 run。
+ * 按 sessionId + runId 落到同一 registry 方法。取消（模态的取消）不动 run。
  */
 export function useAbandonParkedRun(
   sessionId: string | null | undefined,
@@ -159,12 +159,20 @@ export function useAbandonParkedRun(
       // 「可继续」投影原样复活，停靠行只能靠整页重载才消失（真跑 Rework r1 撞出）。
       useSessionStore.setState((state) => ({
         sessions: state.sessions.map((session) => (
-          session.id === sessionId && session.durableResume
+          session.id === sessionId && session.durableResume?.runId === runId
             ? { ...session, durableResume: undefined }
             : session
         )),
+        streamSnapshot: state.streamSnapshot?.sessionId === sessionId && state.streamSnapshot.runId === runId
+          ? null
+          : state.streamSnapshot,
       }));
-      void useSessionStore.getState().loadSessions({ silent: true });
+      const state = useSessionStore.getState();
+      // Invalidate a session load that may already have read the pre-abandon snapshot.
+      if (state.currentSessionId === sessionId && state.isHydratingSession) {
+        void state.switchSession(sessionId, { force: true });
+      }
+      void state.loadSessions({ silent: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     }

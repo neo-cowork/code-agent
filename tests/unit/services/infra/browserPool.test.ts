@@ -172,6 +172,25 @@ describe('BrowserPool', () => {
     vi.useRealTimers();
   });
 
+  it('evicts an older kept window before a recently touched kept window', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const timed = new BrowserPool(2);
+    const touched = timed.acquire('kept-touched');
+    timed.setKept('kept-touched', true);
+    vi.setSystemTime(Date.now() + 1000);
+    const older = timed.acquire('kept-older');
+    timed.setKept('kept-older', true);
+    const olderClose = vi.spyOn(older, 'close');
+    vi.setSystemTime(Date.now() + 1000);
+    timed.touch(touched);
+
+    timed.acquire('agent-new');
+
+    expect(olderClose).toHaveBeenCalledOnce();
+    expect(timed.hasAgent('kept-older')).toBe(false);
+    expect(timed.hasAgent('kept-touched')).toBe(true);
+  });
+
   it('a kept entry marked in use (user adopted the result page) is never evicted', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));

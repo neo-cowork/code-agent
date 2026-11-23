@@ -49,6 +49,8 @@ export interface ToolApprovalPayload {
    * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
    */
   standingGrantTarget?: string | null;
+  /** 后台任务/子代理 lane 发起的审批（请求带 runId/agentId）：放弃前台停靠 run 时不得连带作废，它的内存等待者仍活着。 */
+  backgroundLane?: true;
   /** Must-confirm requests offer only one-time approval. */
   forceConfirm?: boolean;
   /** Host-owned origin of the request (copied from permission details): scheduled-task flag/name or the user's own quote. */

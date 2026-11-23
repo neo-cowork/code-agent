@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { BackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 import type { SubagentResult } from '../../../src/host/agent/subagentExecutorTypes';
+import { resolveStoppedTaskOutcome } from '../../../src/host/services/commandCenter/sessionTaskStopConclusion';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import { appendSubagentLeftoverShellReport } from '../../../src/host/agent/subagentLeftoverShells';
 import { formatSubagentLeftoverShellReport } from '../../../src/shared/i18n/subagentLeftoverShells';
@@ -289,6 +290,23 @@ describe('BackgroundSubagentRegistry', () => {
       expect(output).toContain('shell-task-42');
       // 判定与错误文本不动：error 仍只是结论，不混入报告。
       expect(reg.getStatus(agentId)).toMatchObject({ status: 'failed', error: conclusion });
+    });
+
+    it.each(['<tool_call>x</tool_call>', '<tool_call>{'])('fails a success whose output is only tool-call markup (%s)', async (output) => {
+      const reg = new BackgroundSubagentRegistry();
+      const agentId = reg.spawn(async () => ({ success: true, output, toolsUsed: [], iterations: 1 }));
+      const result = await reg.await(agentId);
+      const sentence = resolveStoppedTaskOutcome({ status: 'completed', detail: '' }).detail;
+      expect(result).toMatchObject({ success: false, error: sentence, stopKind: 'no_conclusion' });
+      expect(reg.getStatus(agentId)?.status).toBe('failed');
+    });
+
+    it('keeps prose mixed with tool-call markup as completed', async () => {
+      const reg = new BackgroundSubagentRegistry();
+      const agentId = reg.spawn(async () => fakeResult('页面标题是 Example Domain。<tool_call>x</tool_call>'));
+      const result = await reg.await(agentId);
+      expect(result?.success).toBe(true);
+      expect(reg.getStatus(agentId)?.status).toBe('completed');
     });
 
     it('a user Stop that settles with empty output stays a cancellation, never a "stopped without conclusion" failure', async () => {

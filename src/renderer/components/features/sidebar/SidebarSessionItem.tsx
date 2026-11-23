@@ -1,6 +1,8 @@
 import { formatDateTime } from '../../../utils/formatDateTime';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useCronStore } from '../../../stores/cronStore';
+import { useAppStore } from '../../../stores/appStore';
+import { isSecondaryPageActive } from '../../../utils/secondaryPageActive';
 import { getLatestExecutionStatus, isPermissionDeniedExecution } from '../cron/types';
 import { hasFailedCurrentRequest } from '../../../utils/overviewRunHeader';
 import { useLiveBackgroundAgentCount } from '../../../hooks/useLiveBackgroundAgentCount';
@@ -148,10 +150,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         ?? state.executionsByJobId[cronTaskId]?.find((execution) => execution.sessionId === session.id);
   });
   const deniedStatus = cronExecution && isPermissionDeniedExecution(cronExecution)
-    ? getLatestExecutionStatus(cronExecution, t.cronCenter)
+    ? getLatestExecutionStatus(cronExecution, t.cronCenter, t.cronWakeCadence)
     : undefined;
   const isUnread = unreadSessionIds.has(session.id);
-  const isSelected = currentSessionId === session.id;
+  // 二级页（Spaces/能力中心/设置等）盖住会话区时，旧会话行不再高亮；选一个布尔避免无谓重渲染。
+  const secondaryPageActive = useAppStore((state) => isSecondaryPageActive(state));
+  const isSelected = !secondaryPageActive && currentSessionId === session.id;
   const isChecked = selectedSessionIds.has(session.id);
   const isPinned = pinnedSessionIds.has(session.id);
   const isRenaming = renamingId === session.id;

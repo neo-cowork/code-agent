@@ -323,4 +323,28 @@ describe('SubagentExecutor step cap conclusion', () => {
     expect(result).toMatchObject({ success: true, output: 'done' });
     expect(result.stopHint).toBeUndefined();
   });
+  const MARKUP = '<tool_call>{"name":"Read","arguments":{"path":"a"}}</tool_call>';
+  const textResponse = (content: string) => ({ type: 'text', content, usage: { inputTokens: 1, outputTokens: 1 } });
+
+  it('treats a markup-only final answer as no conclusion while staying a success', async () => {
+    mocks.responses.push(textResponse(MARKUP));
+    const result = await new SubagentExecutor().execute(createRequest(5));
+    expect(result.success).toBe(true);
+    expect(result.stopHint?.kind).toBe('no_conclusion');
+    expect(result.stopHint?.conclusion).toContain('没有留下最终结果');
+  });
+
+  it('treats a markup-only answer on the last allowed iteration as step_cap', async () => {
+    mocks.responses.push(browserResponse(1), textResponse(MARKUP));
+    const result = await new SubagentExecutor().execute(createRequest(2));
+    expect(result.success).toBe(true);
+    expect(result.stopHint?.kind).toBe('step_cap');
+  });
+
+  it('keeps prose mixed with markup as a plain success without stopHint', async () => {
+    mocks.responses.push(textResponse(`页面标题是 Example Domain。${MARKUP}`));
+    const result = await new SubagentExecutor().execute(createRequest(5));
+    expect(result.success).toBe(true);
+    expect(result.stopHint).toBeUndefined();
+  });
 });

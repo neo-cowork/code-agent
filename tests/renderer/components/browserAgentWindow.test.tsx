@@ -174,7 +174,7 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(screen.getByLabelText(/Search/)).toBeTruthy();
   });
 
-  it('右上菜单的高级设置外链图标使用紧凑尺寸，不压住文字', () => {
+  it('右上菜单的「电脑操作与授权」外链图标使用紧凑尺寸，不压住文字', () => {
     render(<BrowserAgentWindow />);
 
     fireEvent.click(screen.getByTestId('browser-agent-window-more'));
@@ -316,17 +316,18 @@ describe('BrowserAgentWindow（B1-R·R1 图形化现场）', () => {
     expect(screen.queryByTestId('browser-agent-window-repair-launch_managed_browser')).toBeNull();
   });
 
-  it('高级设置收进 ⋯ 溢出菜单，深链到 LocalOps 浏览器 tab', () => {
+  it('「电脑操作与授权」收进 ⋯ 溢出菜单，深链到 LocalOps 桌面 tab', () => {
     render(<BrowserAgentWindow />);
     // 未展开菜单时深链入口不在 DOM 里 —— chrome 条上不该常驻管理按钮
     expect(screen.queryByTestId('browser-agent-window-open-local-ops')).toBeNull();
 
     fireEvent.click(screen.getByTestId('browser-agent-window-more'));
+    expect(screen.getByTestId('browser-agent-window-open-local-ops').textContent).toContain('电脑操作与授权');
     fireEvent.click(screen.getByTestId('browser-agent-window-open-local-ops'));
 
     expect(useAppStore.getState()).toMatchObject({
       showLocalOpsPanel: true,
-      localOpsTab: 'browser',
+      localOpsTab: 'desktop',
     });
   });
 });

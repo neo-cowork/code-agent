@@ -792,3 +792,147 @@ describe('mail schedule creation through the chat input pipeline', () => {
     expect(payload.schedule).not.toHaveProperty('mailbox');
   });
 });
+
+// N-FIX-CRON-EVENT-CHAT-CREATE-PREFILTER-CAP-WIRE：/schedule 草案带「一句话筛选 + 每小时上限」。
+describe('event draft prefilter + hourly cap (chat create path)', () => {
+  const channelWithLimits = {
+    ...eventDraftFromModel,
+    schedule: { ...eventDraftFromModel.schedule, prefilter: '  只处理催款的消息  ', maxRunsPerHour: 10.7 },
+  };
+  const mailWithLimits = {
+    ...mailDraftFromModel,
+    schedule: { ...mailDraftFromModel.schedule, prefilter: '只处理发票邮件', maxRunsPerHour: 5 },
+  };
+
+  function scheduleOf(draft: PendingScheduleDraft | null): Record<string, unknown> {
+    return (draft?.input as CreateCronJobInput).schedule as unknown as Record<string, unknown>;
+  }
+
+  /** 暴露最新草案的有状态宿主。 */
+  function CaptureHost({ initial, onLatest }: { initial: PendingScheduleDraft; onLatest: (d: PendingScheduleDraft) => void }) {
+    const [draft, setDraft] = useState(initial);
+    onLatest(draft);
+    return (
+      <ScheduleConfirmCard
+        draft={draft}
+        confirming={false}
+        onConfirm={() => undefined}
+        onDismiss={() => undefined}
+        onDraftChange={setDraft}
+      />
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChannelCatalog();
+    mocks.listMailSources.mockResolvedValue(mailSourcesOk);
+  });
+
+  it('normalizeScheduleDraft keeps trimmed prefilter and floored/clamped cap for channel and mail', () => {
+    expect(scheduleOf(normalizeScheduleDraft(channelWithLimits) as unknown as PendingScheduleDraft)).toEqual({
+      type: 'event', source: 'channel', eventName: 'message', accountId: '', prefilter: '只处理催款的消息', maxRunsPerHour: 10,
+    });
+    expect(scheduleOf(normalizeScheduleDraft(mailWithLimits) as unknown as PendingScheduleDraft)).toMatchObject({
+      prefilter: '只处理发票邮件', maxRunsPerHour: 5,
+    });
+    const clamped = normalizeScheduleDraft({
+      ...channelWithLimits,
+      schedule: { ...channelWithLimits.schedule, prefilter: 'x'.repeat(500), maxRunsPerHour: 9999 },
+    });
+    const s = (clamped?.input as CreateCronJobInput).schedule as unknown as Record<string, unknown>;
+    expect((s.prefilter as string).length).toBe(200);
+    expect(s.maxRunsPerHour).toBe(60);
+    const low = normalizeScheduleDraft({ ...channelWithLimits, schedule: { ...channelWithLimits.schedule, maxRunsPerHour: -3 } });
+    expect(((low?.input as CreateCronJobInput).schedule as unknown as Record<string, unknown>).maxRunsPerHour).toBe(1);
+  });
+
+  it('blank / non-numeric limits drop the keys', () => {
+    const normalized = normalizeScheduleDraft({
+      ...channelWithLimits,
+      schedule: { ...channelWithLimits.schedule, prefilter: '   ', maxRunsPerHour: 'lots' },
+    });
+    const s = (normalized?.input as CreateCronJobInput).schedule as unknown as Record<string, unknown>;
+    expect(s).not.toHaveProperty('prefilter');
+    expect(s).not.toHaveProperty('maxRunsPerHour');
+  });
+
+  it.each([
+    ['channel', channelWithLimits, makeEventPending],
+    ['mail', mailWithLimits, makeMailPending],
+  ] as const)('%s card shows both prefilled, edits write into draft.input.schedule, blank drops the key', async (_name, model, _make) => {
+    const normalized = normalizeScheduleDraft(model)!;
+    const initial: PendingScheduleDraft = {
+      input: normalized.input,
+      restatement: normalized.restatement,
+      description: 'd',
+      sourceSessionId: 'session-1',
+      eventGroupName: normalized.eventGroupName,
+    };
+    let latest = initial;
+    render(<CaptureHost initial={initial} onLatest={(d) => { latest = d; }} />);
+    const block = document.querySelector('[data-schedule-event-fields]') as HTMLElement;
+    expect(block.querySelector('[data-testid="cron-event-limit-fields"]')).not.toBeNull();
+    const prefilter = screen.getByTestId('cron-event-prefilter-input') as HTMLInputElement;
+    const cap = screen.getByTestId('cron-event-max-runs-input') as HTMLInputElement;
+    expect(prefilter.value).toBe(model.schedule.prefilter.trim());
+    expect(cap.value).toBe(String(Math.floor(model.schedule.maxRunsPerHour)));
+
+    fireEvent.change(prefilter, { target: { value: '只要催款' } });
+    fireEvent.change(cap, { target: { value: '3' } });
+    expect(scheduleOf(latest)).toMatchObject({ prefilter: '只要催款', maxRunsPerHour: 3 });
+
+    fireEvent.change(prefilter, { target: { value: '  ' } });
+    fireEvent.change(cap, { target: { value: '' } });
+    expect(scheduleOf(latest)).not.toHaveProperty('prefilter');
+    expect(scheduleOf(latest)).not.toHaveProperty('maxRunsPerHour');
+  });
+
+  it('account switch on the channel card keeps the typed limits', async () => {
+    const normalized = normalizeScheduleDraft(channelWithLimits)!;
+    const initial: PendingScheduleDraft = {
+      input: normalized.input, restatement: normalized.restatement, description: 'd', sourceSessionId: 'session-1',
+      eventGroupName: normalized.eventGroupName,
+    };
+    let latest = initial;
+    render(<CaptureHost initial={initial} onLatest={(d) => { latest = d; }} />);
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    await waitFor(() => expect(scheduleOf(latest).accountId).toBe(feishuAccount.id));
+    expect(scheduleOf(latest)).toMatchObject({ prefilter: '只处理催款的消息', maxRunsPerHour: 10 });
+  });
+
+  it('createJob payload on confirm carries both; blank drafts ship neither key', async () => {
+    mocks.createJob.mockResolvedValue(createdJob);
+    mocks.generateFromPrompt.mockResolvedValue(channelWithLimits);
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+    await act(async () => { await result.current.runScheduleCreation('盯发布群'); });
+    const pending = result.current.pendingScheduleDraft!;
+    act(() => {
+      result.current.storePendingScheduleDraft({
+        ...pending,
+        input: { ...pending.input, schedule: { ...scheduleOf(pending), accountId: 'account-feishu' } as unknown as CreateCronJobInput['schedule'] },
+      });
+    });
+    await act(async () => { await result.current.confirmScheduleCreation(); });
+    expect((mocks.createJob.mock.calls[0]?.[0] as Record<string, unknown>).schedule).toEqual({
+      type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu', prefilter: '只处理催款的消息', maxRunsPerHour: 10,
+    });
+
+    vi.clearAllMocks();
+    mocks.createJob.mockResolvedValue(createdJob);
+    mocks.generateFromPrompt.mockResolvedValue(eventDraftFromModel);
+    const second = renderHook(() => useScheduleSubmitHarness());
+    await act(async () => { await second.result.current.runScheduleCreation('盯发布群'); });
+    const p2 = second.result.current.pendingScheduleDraft!;
+    act(() => {
+      second.result.current.storePendingScheduleDraft({
+        ...p2,
+        input: { ...p2.input, schedule: { ...scheduleOf(p2), accountId: 'account-feishu' } as unknown as CreateCronJobInput['schedule'] },
+      });
+    });
+    await act(async () => { await second.result.current.confirmScheduleCreation(); });
+    const blankSchedule = (mocks.createJob.mock.calls[0]?.[0] as Record<string, unknown>).schedule as Record<string, unknown>;
+    expect(blankSchedule).not.toHaveProperty('prefilter');
+    expect(blankSchedule).not.toHaveProperty('maxRunsPerHour');
+  });
+});

@@ -14,7 +14,8 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 
-vi.mock('../../../src/shared/constants/sandbox', () => ({
+vi.mock('../../../src/shared/constants/sandbox', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   isOsSandboxEnabled: () => false,
 }));
 

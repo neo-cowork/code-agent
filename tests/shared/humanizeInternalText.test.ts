@@ -103,6 +103,29 @@ describe('humanizeInternalText', () => {
     },
   );
 
+  // /private 前缀必须与路径在同一个 match 里整体吃掉，不允许残留孤儿 "/private"；
+  // /var/tmp 也属于临时目录（N-FIX-HUMANIZE-TEMP-PATH-PRIVATE-PREFIX-LEFTOVER）。
+  it.each([
+    { raw: '/private/var/folders/xx/yyyy/T/neo/uploads/dogfood-upload-test.txt', name: 'dogfood-upload-test.txt' },
+    { raw: '/var/folders/xx/yyyy/T/neo/uploads/dogfood-upload-test.txt', name: 'dogfood-upload-test.txt' },
+    { raw: '/private/tmp/neo-run-98123/report.pdf', name: 'report.pdf' },
+    { raw: '/tmp/neo-run-98123/report.pdf', name: 'report.pdf' },
+    { raw: '/private/var/tmp/neo-upload/r.pdf', name: 'r.pdf' },
+    { raw: '/var/tmp/neo-upload/r.pdf', name: 'r.pdf' },
+  ])('rewrites macOS temp path $raw as one whole match in both zh and en', ({ raw, name }) => {
+    const zh = humanizeInternalText(raw, 'zh');
+    expect(zh.text).toBe(`临时文件（${name}）`);
+    expect(zh.text).not.toContain('/private');
+    expect(zh.text).not.toContain('/var');
+    expect(detectInternalTextLeaks(zh.text)).toEqual([]);
+
+    const en = humanizeInternalText(raw, 'en');
+    expect(en.text).toBe(`temporary file (${name})`);
+    expect(en.text).not.toContain('/private');
+    expect(en.text).not.toContain('/var');
+    expect(detectInternalTextLeaks(en.text)).toEqual([]);
+  });
+
   it('recognizes additional variants across the 9 formats (session-work-*, call_*, oc_*, etc.)', () => {
     expect(detectInternalTextLeaks('session-work-20261107-alpha')[0]?.format).toBe('session_id');
     expect(detectInternalTextLeaks('call_abc123xyz789')[0]?.format).toBe('call_id');

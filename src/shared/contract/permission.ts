@@ -168,7 +168,7 @@ export interface PermissionRequest {
     pluginId?: string;
     /** Host-resolved display name of the plugin that registered this tool. */
     pluginName?: string;
-    /** Host-only snapshot field names: prefilled context, not proposed calendar update arguments. */
+    /** Host-only snapshot field names: prefilled context, not proposed update arguments. */
     calendarApprovalSnapshotFields?: string[];
     /** Host-resolved only; true when outbound sensitive data was masked. */
     outboundMasked?: boolean;

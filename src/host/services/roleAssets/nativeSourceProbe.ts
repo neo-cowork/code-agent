@@ -18,8 +18,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** 探测所有 unchecked 的已注册 native 连接器；永不抛错，缺席原因逐项落日志。 */
-export async function probeUncheckedNativeConnectors(): Promise<void> {
+/**
+ * 探测 unchecked 的已注册 native 连接器；永不抛错，缺席原因逐项落日志。
+ * onlyIds 给定时只碰这些连接器（角色声明了工具时，没有对应工具的连接器不探，免得弹无关授权）。
+ */
+export async function probeUncheckedNativeConnectors(onlyIds?: ReadonlySet<string>): Promise<void> {
   try {
     const { getConnectorRegistry } = await import('../../connectors');
     const registered = new Map(getConnectorRegistry().list().map((connector) => [connector.id, connector]));
@@ -28,6 +31,7 @@ export async function probeUncheckedNativeConnectors(): Promise<void> {
     const probeTargets: Array<{ id: string; execute: () => Promise<unknown> }> = [];
 
     for (const id of NATIVE_CONNECTOR_IDS) {
+      if (onlyIds && !onlyIds.has(id)) continue;
       const connector = registered.get(id);
       if (!connector) {
         notEnabled.push(id);

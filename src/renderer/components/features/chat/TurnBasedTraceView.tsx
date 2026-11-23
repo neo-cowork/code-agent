@@ -15,7 +15,7 @@ import { getActiveConversationTurnIndex, getLastConversationTurnIndex } from '..
 import { TurnRail } from './TurnRail';
 import { useTurnRailJump } from './useTurnRailJump';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
-import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, isContentHiddenBelow, useListResizeFollow, useScrollGeometryChange, useSessionEntryScroll } from './useSessionEntryScroll';
+import { isScrollerNearBottom, revealTurnEnd, scheduleAfterLayout, startBottomSettlement, isContentHiddenBelow, useListResizeFollow, useScrollGeometryChange, useSessionEntryScroll, useToastReserveBottomKeep } from './useSessionEntryScroll';
 export { isScrollerNearBottom } from './useSessionEntryScroll';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -949,6 +949,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     scroller: scrollerElement, virtuosoRef, projectionTurnsRef, keepActiveOutputVisibleRef,
     outputFollowStreamingRef, sessionEntrySettlingRef, historyPrependInProgressRef, isUserScrollSuppressed,
   });
+  // toast 让位带长出时贴底列表同帧钉底（Virtuoso 不会因 Footer 变高自己滚），见该钩子注释。
+  useToastReserveBottomKeep(scrollerElement);
 
   // 输入框变高（多行草稿、附件条、待决卡槽）会把消息区压矮：原本贴底的就重新落到底，
   // 末张卡不被吃掉；用户已上滚阅读（离底超出阈值+压缩量）时不动。
@@ -1114,8 +1116,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   }, [hasOlderMessages, isLoadingOlder, t]);
 
   // Footer 只保留呼吸间距；待决权限在 DecisionSlot，已决结果归属到对应工具步骤旁。
+  // 高度另吃 --toast-reserve（ToastContainer 发布，无 toast 时 0px）：toast 显示期间
+  // 把末条消息的操作行顶到 toast 上缘之上，不被底部居中的全局 toast 盖住。
   const Footer = useCallback(() => (
-    <div className="h-6" aria-hidden="true" />
+    <div aria-hidden="true" style={{ height: 'calc(1.5rem + var(--toast-reserve, 0px))' }} />
   ), []);
 
   return (

@@ -41,8 +41,7 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { executeCronAgentAction } from './cronAgentAction';
-import { attachCronRunCost, createCronRunCostMeterForExecution, readCronRunCostUsd } from './cronRunCostMeter';
-import { addCronRunCostUsd } from '../../shared/cronRunLedger';
+import { applyCronRunOutcome, attachCronRunCost, createCronRunCostMeterForExecution, markWakeFlatFee } from './cronRunCostMeter';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
@@ -709,8 +708,8 @@ export class CronService implements Disposable {
    */
   getStats(): CronServiceStats {
     const allJobs = Array.from(this.jobs.values());
-    const allExecutions = Array.from(this.executions.values()).flat();
-
+    // 执行统计读 DB 权威窗（getRecentExecutions 同源同默认 50 条，与「运行记录」tab 一致）：重启后 this.executions 为空曾显示 0%。只读不写回：连败停机仍只看本进程尾部。
+    const allExecutions = this.getRecentExecutions();
     const successfulExecutions = allExecutions.filter((e) => e.status === 'completed').length;
     const failedExecutions = allExecutions.filter((e) => e.status === 'failed').length;
 
@@ -908,7 +907,7 @@ export class CronService implements Disposable {
         }
         execution.status = 'completed';
         execution.result = result;
-        execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(result));
+        applyCronRunOutcome(execution, result);
         if (definition.action.type !== 'agent') {
           await this.deliverCronResult(definition, result, execution.id);
         }
@@ -916,7 +915,7 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
-      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(error));
+      applyCronRunOutcome(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 
       if (failureKind === 'capacity-wait') {
@@ -1100,7 +1099,7 @@ export class CronService implements Disposable {
           + ` startedAt=${wakeStartedAt} completedAt=${new Date().toISOString()}`
           + (wakeResult.skipReason ? `: ${wakeResult.skipReason}` : ''),
         );
-        return wakeCostUsd > 0 ? { ...wakeResult, costUsd: wakeCostUsd } : wakeResult;
+        return wakeCostUsd > 0 ? { ...wakeResult, costUsd: wakeCostUsd } : markWakeFlatFee(wakeResult);
       }
 
       default:
@@ -1157,12 +1156,12 @@ export class CronService implements Disposable {
       }
       execution.status = 'completed';
       execution.result = result;
-      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(result));
+      applyCronRunOutcome(execution, result);
     } catch (error) {
       execution.status = 'failed';
       execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
-      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(error));
+      applyCronRunOutcome(execution, error);
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
       if (classifyCronFailure(execution.error) === 'permanent' || classifyCronFailure(execution.error) === 'login-wall') return;
 

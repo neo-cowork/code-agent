@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
-import { ESCALATE_DIR_FORBIDDEN_WALK } from '../../shared/constants/sandbox';
+import { ESCALATE_DIR_FORBIDDEN_WALK, TASK_OUTPUT_RECORD_FILE } from '../../shared/constants/sandbox';
 import { MAX_DEV_SLOT, devSlotDataDirName } from '../../shared/devSlot';
 import { createLogger } from '../services/infra/logger';
 
@@ -188,6 +188,7 @@ interface ProtectedWritePathOptions {
 const PROTECTED_DATA_DIR_FILES = [
   'policy.toml',
   'session-permission-modes.json',
+  TASK_OUTPUT_RECORD_FILE,
   'exec-policy.json',
   'hooks.json',
   'permissions.json',

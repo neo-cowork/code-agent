@@ -4,10 +4,9 @@
 
 import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
-import { NATIVE_APP_NAMES } from './appNames';
+import { appleScriptFailureLogDetail, probeFailureDetailCode } from './appleScriptFailure';
 import { createLogger } from '../../services/infra/logger';
 import {
-  appleScriptFailureLogDetail,
   describeAppleScriptFailure,
   escapeAppleScriptString,
   isAppleScriptFailure,
@@ -63,7 +62,7 @@ function initialMailReadiness(): NativeReadiness {
 }
 
 let mailReadiness: NativeReadiness = initialMailReadiness();
-let mailProbeError: string | undefined;
+let mailProbeDetailCode: ConnectorStatus['detailCode'];
 let mailProbeErrorCode: ConnectorStatus['errorCode'];
 let mailProbeCheckedAt: number | undefined;
 // 最近一次探测拿到的账户列表是否为空（授权通过但 Mail 无账号）——getStatus 的
@@ -72,7 +71,7 @@ let mailProbeListEmpty = false;
 
 export function resetMailConnectorReadiness(): void {
   mailReadiness = initialMailReadiness();
-  mailProbeError = undefined;
+  mailProbeDetailCode = undefined;
   mailProbeErrorCode = undefined;
   mailProbeCheckedAt = undefined;
   mailProbeListEmpty = false;
@@ -82,18 +81,12 @@ function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
 }
 
-function errorMessage(error: unknown): string {
-  return isAppleScriptFailure(error)
-    ? describeAppleScriptFailure(NATIVE_APP_NAMES.mail, error).message
-    : error instanceof Error ? error.message : String(error);
-}
-
 function buildMailStatus(capabilities: string[]): ConnectorStatus {
   if (process.platform !== 'darwin') {
     return {
       connected: false,
       readiness: 'unavailable',
-      detail: 'Mail connector 仅在 macOS 可用。',
+      detailCode: 'platform_unsupported',
       actions: [],
       capabilities,
     };
@@ -104,7 +97,7 @@ function buildMailStatus(capabilities: string[]): ConnectorStatus {
       connected: true,
       readiness: 'ready',
       checkedAt: mailProbeCheckedAt,
-      detail: 'Mail connector 已通过本地授权/可用性检查。',
+      detailCode: 'ready',
       noAccessibleItems: mailProbeListEmpty,
       actions: ['disconnect', 'remove'],
       capabilities,
@@ -115,10 +108,9 @@ function buildMailStatus(capabilities: string[]): ConnectorStatus {
     return {
       connected: false,
       readiness: 'failed',
-      error: mailProbeError,
       errorCode: mailProbeErrorCode,
       checkedAt: mailProbeCheckedAt,
-      detail: `Mail 授权/可用性检查失败：${mailProbeError || '未知错误'}`,
+      detailCode: mailProbeDetailCode ?? 'probe_failed',
       actions: ['repair_permissions', 'disconnect', 'remove'],
       capabilities,
     };
@@ -127,7 +119,7 @@ function buildMailStatus(capabilities: string[]): ConnectorStatus {
   return {
     connected: false,
     readiness: 'unchecked',
-    detail: 'Mail connector 已启用，但还未检查本地授权；点“检查/授权”时才会拉起 Mail 或触发系统授权。',
+    detailCode: 'unchecked',
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities,
   };
@@ -391,24 +383,23 @@ async function probeMailAccess(): Promise<MailAccountItem[]> {
   if (process.platform !== 'darwin') {
     mailReadiness = 'unavailable';
     mailProbeCheckedAt = Date.now();
-    mailProbeError = 'Mail connector 仅在 macOS 可用。';
-    throw new Error(mailProbeError);
+    mailProbeDetailCode = 'platform_unsupported';
+    throw new Error('Mail connector is only available on macOS.');
   }
 
   try {
     const accounts = await listAccounts();
     mailReadiness = 'ready';
     mailProbeCheckedAt = Date.now();
-    mailProbeError = undefined;
-  mailProbeErrorCode = undefined;
+    mailProbeDetailCode = undefined;
     mailProbeListEmpty = accounts.length === 0;
     return accounts;
   } catch (error) {
     mailReadiness = 'failed';
     mailProbeCheckedAt = Date.now();
-    mailProbeError = errorMessage(error);
-    mailProbeErrorCode = isAppleScriptFailure(error)
-      && describeAppleScriptFailure('Mail', error).code === 'not_authorized' ? 'not_authorized' : undefined;
+    mailProbeDetailCode = probeFailureDetailCode(error, 'Mail');
+    logger.warn('Mail access probe failed', { detail: appleScriptFailureLogDetail(error) });
+    mailProbeErrorCode = mailProbeDetailCode === 'automation_not_authorized' ? 'not_authorized' : undefined;
     throw error;
   }
 }

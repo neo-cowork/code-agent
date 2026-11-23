@@ -233,6 +233,7 @@ export class PermissionModeManager {
   private sessionModesLoaded = false;
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
+  private firstWakeSessions: Set<string> = new Set();
   /**
    * 兼容旧的显式 60s 终态调用。cron/heartbeat 不再登记到这里，统一走 PARKED_APPROVAL
    * 的 24h 停车等人；channel 也继续只进 unattendedSessions。
@@ -443,6 +444,15 @@ export class PermissionModeManager {
    */
   markUnattendedSession(sessionId: string): void {
     this.unattendedSessions.add(sessionId);
+  }
+
+  /** 新专家首次醒来的后台会话：停车通知要指回创建专家的对话，而不是运行记录。 */
+  markFirstWakeSession(sessionId: string): void {
+    this.firstWakeSessions.add(sessionId);
+  }
+
+  isFirstWakeSession(sessionId?: string): boolean {
+    return !!sessionId && this.firstWakeSessions.has(sessionId);
   }
 
   /** cron/heartbeat 会话：停车审批 30 分钟无人应答则降级拒绝（与 60s 旧终态互不相干）。 */

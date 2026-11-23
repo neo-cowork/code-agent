@@ -48,7 +48,14 @@ const mocks = vi.hoisted(() => {
     recordTokenUsage: vi.fn(),
     recordToolUsage: vi.fn(),
   };
-  return { responses, inference, pipeline, pipelineContext };
+  const startTask = vi.fn();
+  const observeAgentEvents = vi.fn<(observer: (
+    sessionId: string,
+    event: { type: string; data: { role: string; content: string } },
+  ) => void) => () => void>(() => () => undefined);
+  const getSessionState = vi.fn((): { status: 'idle' | 'running'; startTime?: number } => ({ status: 'idle' }));
+  const executeTool = vi.fn(async () => ({ success: true, output: 'Read partial output' }));
+  return { responses, inference, pipeline, pipelineContext, startTask, observeAgentEvents, getSessionState, executeTool };
 });
 
 vi.mock('../../../src/host/model/modelRouter', () => ({
@@ -71,7 +78,7 @@ vi.mock('../../../src/host/agent/subagentPipeline', () => ({
 
 vi.mock('../../../src/host/agent/subagentToolRuntime', () => ({
   createSubagentToolRuntime: () => ({
-    executor: { execute: vi.fn(async () => ({ success: true, output: 'Read partial output' })) },
+    executor: { execute: mocks.executeTool },
     policy: {},
   }),
 }));
@@ -119,6 +126,7 @@ vi.mock('../../../src/host/agent/subagentProtocolContext', () => ({
 }));
 
 vi.mock('../../../src/host/agent/childContext', () => ({
+  checkReadonlyParentRule: () => ({ allowed: true }),
   buildChildContext: (child: { allowedTools: string[] }) => ({
     toolPool: child.allowedTools,
     permissions: {
@@ -131,6 +139,7 @@ vi.mock('../../../src/host/agent/childContext', () => ({
 
 vi.mock('../../../src/host/agent/subagentExecutorCancellation', () => ({
   getChildSubagentExecutionTimeout: () => 60_000,
+  getSubagentExecutionTimeout: () => 900_000,
   getSubagentIdleTimeout: () => 30_000,
   createSubagentCancellationLifecycle: () => {
     const controller = new AbortController();
@@ -183,21 +192,22 @@ vi.mock('../../../src/host/services/roleAssets', () => ({
   applyRoleBoundaryToSubagentRequest: vi.fn((request: unknown) => request),
 }));
 
-vi.mock('../../../src/host/agent/spawnGuard', () => ({
-  getSpawnGuard: () => ({
-    drainMessages: () => [],
-    peekMessages: () => [],
-    cancelDescendants: vi.fn(),
+vi.mock('../../../src/host/task/TaskManager', () => ({
+  getTaskManager: () => ({
+    getSessionState: mocks.getSessionState,
+    observeAgentEvents: mocks.observeAgentEvents,
+    startTask: mocks.startTask,
   }),
 }));
 
-vi.mock('../../../src/host/agent/backgroundSubagentRegistry', () => ({
-  getBackgroundSubagentRegistry: () => ({
-    noteLiveProgress: vi.fn(),
-    getStatus: () => undefined,
-  }),
+vi.mock('../../../src/host/agent/agentWorktree', () => ({
+  cleanupOrphanedWorktrees: vi.fn().mockResolvedValue(undefined),
+  resolveAgentWorktreeIsolation: vi.fn().mockResolvedValue('none'),
 }));
 
+import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import { executeSingleSpawnAgent } from '../../../src/host/agent/multiagentTools/spawnSingleAgent';
+import { getSpawnGuard } from '../../../src/host/agent/spawnGuard';
 import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
 import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 import { getSubagentContextStore } from '../../../src/host/context/subagentContextStore';
@@ -300,4 +310,152 @@ describe('SubagentExecutor context publishing (side chat stays out of agent acti
     expect(getSubagentContextStore().list(SIDE_CHAT_SESSION)).toHaveLength(0);
     expect(workingAgentCount(SIDE_CHAT_SESSION)).toBe(0);
   });
+});
+
+describe('detached single subagent completion', () => {
+  it('wakes the idle parent exactly once after waitForCompletion:false settles', async () => {
+    vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
+    mocks.startTask.mockClear();
+    mocks.getSessionState.mockReturnValue({ status: 'running', startTime: 1 });
+    const sessionId = 'detached-report-session';
+    const task = 'Find the rollback plan';
+    const report = 'The rollback plan is in release.txt.';
+    mocks.startTask.mockImplementation(async () => {
+      const observe = mocks.observeAgentEvents.mock.lastCall?.[0];
+      if (!observe) throw new Error('Expected the wake observer');
+      observe(sessionId, { type: 'message', data: { role: 'assistant', content: report } });
+    });
+    const approvalRequested = Promise.withResolvers<void>();
+    const approval = Promise.withResolvers<boolean>();
+    const { context } = sideChatRequest(sessionId);
+    const childContext = {
+      ...context,
+      suppressContextPublishing: false,
+      runId: 'detached-report-parent',
+      permission: {
+        request: () => {
+          approvalRequested.resolve();
+          return approval.promise;
+        },
+      },
+      resolver: {
+        getDefinition: (name: string) => ({
+          name,
+          description: 'Read a workspace file',
+          inputSchema: { type: 'object' as const },
+          outputSchema: { type: 'object' as const },
+          requiresPermission: true,
+          permissionLevel: 'read' as const,
+        }),
+      },
+    };
+    mocks.executeTool.mockImplementationOnce(async () => ({
+      success: await childContext.permission.request(),
+      output: report,
+    }));
+    mocks.responses.push({
+      type: 'tool_use',
+      content: '',
+      toolCalls: [{ id: 'read-rollback', name: 'Read', arguments: { path: 'release.txt' } }],
+      usage: { inputTokens: 4, outputTokens: 5 },
+    }, textResponse(report));
+
+    try {
+      const receipt = await executeSingleSpawnAgent({
+        task, customPrompt: 'Identify the file.', customTools: ['Read'], waitForCompletion: false,
+      }, childContext, 1, sessionId);
+      expect(receipt).toMatchObject({ success: true, metadata: { background: true } });
+      expect(receipt.output).toContain('Status: running');
+
+      await approvalRequested.promise;
+      const child = getSpawnGuard().list().find((agent) => agent.task === task);
+      expect(child?.status).toBe('running');
+      expect(getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId })).toEqual([]);
+      expect(getSpawnGuard().drainNotifications({ sessionId })).toEqual([]);
+      expect(mocks.startTask).not.toHaveBeenCalled();
+
+      mocks.getSessionState.mockReturnValue({ status: 'idle' });
+      approval.resolve(true);
+      await expect(child?.promise).resolves.toMatchObject({ success: true });
+      await vi.waitFor(() => expect(mocks.startTask).toHaveBeenCalledTimes(1));
+      expect(mocks.startTask).toHaveBeenCalledWith(
+        sessionId,
+        expect.stringContaining(report),
+        undefined,
+        expect.objectContaining({ completionReportOnly: true }),
+        expect.objectContaining({ automation: expect.objectContaining({ automationType: 'role_wake' }) }),
+        expect.any(String),
+      );
+      expect(getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId })).toEqual([]);
+      expect(getSpawnGuard().drainNotifications({ sessionId })).toEqual([]);
+    } finally {
+      approval.resolve(false);
+      mocks.getSessionState.mockReset();
+      mocks.startTask.mockReset();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([
+    { sessionId: 'team-detached-session', swarmRunScope: { sessionId: 'team-detached-session', runId: 'team-run', treeId: 'team-tree' } },
+    { sessionId: 'goal-detached-session', suppressBackgroundSubagentIdleWake: true },
+  ])('keeps the scoped SpawnGuard completion for $sessionId', async (scope) => {
+    vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
+    mocks.startTask.mockClear();
+    const { context } = sideChatRequest(scope.sessionId);
+    const treeId = scope.swarmRunScope?.treeId ?? scope.sessionId;
+    const task = 'Find the owner of the release plan';
+    const report = 'The release manager owns the plan.';
+    mocks.responses.push(textResponse(report));
+
+    try {
+      const receipt = await executeSingleSpawnAgent({
+        task, customPrompt: 'Identify the owner.', customTools: [], waitForCompletion: false,
+      }, { ...context, ...scope }, 1, treeId);
+      expect(receipt.success).toBe(true);
+      const child = getSpawnGuard().list().find((agent) => agent.id === receipt.metadata?.agentId);
+      await expect(child?.promise).resolves.toMatchObject({ success: true, output: report });
+
+      const registry = getBackgroundSubagentRegistry();
+      expect(registry.getStatus(String(receipt.metadata?.agentId))).toBeUndefined();
+      expect(registry.drainCompletionNotifications({ sessionId: scope.sessionId })).toEqual([]);
+      expect(getSpawnGuard().drainNotifications(scope.swarmRunScope ?? { sessionId: scope.sessionId })).toEqual([
+        expect.stringContaining(report),
+      ]);
+      expect(mocks.startTask).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps adopted goal work collectable and sends its completion through SpawnGuard', async () => {
+    vi.stubEnv('CODE_AGENT_MODEL_ENGINE', 'legacy');
+    mocks.startTask.mockClear();
+    const sessionId = 'adopted-goal-session';
+    const { context } = sideChatRequest(sessionId);
+    const output = 'The release plan is ready for review.';
+    const inference = Promise.withResolvers<ReturnType<typeof textResponse>>();
+    mocks.inference.mockImplementationOnce(() => inference.promise);
+
+    try {
+      const receipt = await executeSingleSpawnAgent({
+        task: 'Review the release plan',
+        customPrompt: 'Summarize your review.',
+        customTools: [],
+        foregroundBlockingBudgetMs: 1,
+      }, { ...context, suppressBackgroundSubagentIdleWake: true }, 1, sessionId);
+      expect(receipt).toMatchObject({ success: true, metadata: { transferredToBackground: true } });
+      const registry = getBackgroundSubagentRegistry();
+      inference.resolve(textResponse(output));
+      await expect(registry.await(String(receipt.metadata?.agentId))).resolves.toMatchObject({ success: true, output });
+
+      expect(getSpawnGuard().drainNotifications({ sessionId })).toEqual([expect.stringContaining(output)]);
+      expect(registry.drainCompletionNotifications({ sessionId })).toEqual([]);
+      expect(mocks.startTask).not.toHaveBeenCalled();
+    } finally {
+      inference.resolve(textResponse(output));
+      vi.unstubAllEnvs();
+    }
+  });
+
 });

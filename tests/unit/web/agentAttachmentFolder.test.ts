@@ -1,12 +1,13 @@
 import express from 'express';
 import type { Server } from 'node:http';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message, Session } from '../../../src/shared/contract';
 import { createAgentRouter } from '../../../src/web/routes/agent';
 import { createCLIAgent } from '../../../src/cli/adapter';
+import { materializeRunWorkDirectoryOnce } from '../../../src/host/agent/runtime/workDirectoryMaterializer';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
 import { setDbAvailable } from '../../../src/web/helpers/sessionCache';
@@ -208,6 +209,36 @@ describe('POST /api/run first-turn task folder summary wiring', () => {
     expect(mocks.quickTask).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(prompt), undefined, expect.any(AbortSignal));
     expect(session.workingDirectory).toBe(path.join(home, 'Neo', `任务_${today()}_合同文件夹逐份摘要`));
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: session.workingDirectory }));
+  });
+
+  it.each([
+    'What does the weekly report say about release?',
+    '请解释这份周报为什么把发布日期列为主要风险？',
+    'Summarize the weekly handover notes (notes.txt) in three sentences',
+    '请总结一下这份团队交接记录里的主要进展，三句话以内',
+  ])('starts a simple task without waiting for a folder title (%s)', async (prompt) => {
+    mocks.isQuickModelAvailable.mockReturnValue(true);
+    mocks.quickTask.mockImplementation(() => new Promise(() => {}));
+    await run(prompt);
+    expect(mocks.quickTask).not.toHaveBeenCalled();
+    expect(session.workingDirectory).toBeDefined();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: session.workingDirectory }));
+    expect(mocks.run).toHaveBeenCalledOnce();
+  });
+
+  it('keeps model naming when the short summary is a file deliverable', async () => {
+    const prompt = 'Summarize the weekly handover notes in three sentences and save to summary.txt';
+    mocks.isQuickModelAvailable.mockReturnValue(true);
+    mocks.quickTask.mockResolvedValue({ success: true, content: 'Handover recap' });
+    const smartDirectory = path.join(home, 'Neo', `任务_${today()}_Handover recap`);
+    mocks.run.mockImplementationOnce(async () => {
+      const [options] = vi.mocked(createCLIAgent).mock.calls[0] ?? [];
+      await materializeRunWorkDirectoryOnce(options?.project, { sessionId: session.id });
+    });
+    await run(prompt);
+    expect(mocks.quickTask).toHaveBeenCalledOnce();
+    expect(session.workingDirectory).toBe(smartDirectory);
+    expect((await stat(smartDirectory)).isDirectory()).toBe(true);
   });
 
   it('uses the rule summary when the quick model is unavailable', async () => {

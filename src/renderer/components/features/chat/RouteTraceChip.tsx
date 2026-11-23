@@ -14,6 +14,7 @@ import type {
 } from '@shared/contract';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
+import { mcpServerDisplayName } from '../../../utils/mcpServerLabel';
 
 const REASON_LABELS: Record<ModelDecisionReason, string> = {
   'user-selected': '用户选择',
@@ -253,11 +254,14 @@ function formatVisibleTools(decision: ModelDecisionEventData): string | null {
   return `${strategy.visibleToolCount} 个可见工具${preview}`;
 }
 
-function formatMcpTools(decision: ModelDecisionEventData): string | null {
+function formatMcpTools(decision: ModelDecisionEventData, computerUseLabel: string): string | null {
   const strategy = decision.toolStrategy;
   if (!strategy) return null;
   if (strategy.mcpToolCount <= 0) return '未使用外部工具';
-  const servers = strategy.mcpServerIds?.length ? ` · ${strategy.mcpServerIds.join(', ')}` : '';
+  // server id 不上屏：cua-driver → 「电脑操作」，其余走友好名（FB-2291）
+  const servers = strategy.mcpServerIds?.length
+    ? ` · ${strategy.mcpServerIds.map((id) => mcpServerDisplayName(id, computerUseLabel)).join(', ')}`
+    : '';
   return `${strategy.mcpToolCount} 个外部工具${servers}`;
 }
 
@@ -426,7 +430,7 @@ export const RouteTraceChip: React.FC<{
   const providerHealth = formatProviderHealth(decision);
   const providerIdentity = formatProviderIdentity(decision);
   const visibleTools = formatVisibleTools(decision);
-  const mcpTools = formatMcpTools(decision);
+  const mcpTools = formatMcpTools(decision, t.receiptPresentation.humanToolLabels.tools.computerUse);
   const programmaticTools = formatProgrammaticTools(decision);
   const toolPolicyDetail = formatToolPolicyDetail(decision);
   const toolTokenSavingsDetail = formatToolTokenSavingsDetail(decision);
