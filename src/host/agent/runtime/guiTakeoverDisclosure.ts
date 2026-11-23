@@ -101,19 +101,28 @@ function resolveShellGuiTargetApp(command: string): ComputerTargetApp | null {
 // 触发判定（不依赖模型输出）+ 每 run 每应用一次。
 // ----------------------------------------------------------------------------
 
-async function resolveDisclosureApp(toolName: string, args: Record<string, unknown> | undefined): Promise<ComputerTargetApp | null> {
+type DisclosureAppResolution =
+  | { kind: 'app'; app: ComputerTargetApp }
+  | { kind: 'unresolved'; reason: string }
+  | { kind: 'skip' };
+
+async function resolveDisclosureApp(toolName: string, args: Record<string, unknown> | undefined): Promise<DisclosureAppResolution> {
   // cua-driver 原生工具：app-grant 面（app action + app-content read）且反查到应用。
-  // list_apps / 整桌面读取等 metadata 工具在 cuaToolNeedsAppGrant 里就是 false。
+  // list_apps / 整桌面读取等 metadata 工具在 cuaToolNeedsAppGrant 里就是 false，保持安静。
+  // unresolved（该授权但身份没解析出来）必须单独返回，调用方打 WARN，不能和「不是接管」混成 null。
   if (cuaToolNeedsAppGrant(toolName)) {
     const resolution = await resolveCuaAppTarget(toolName, args);
-    return resolution.kind === 'app' ? resolution.app : null;
+    if (resolution.kind === 'app') return { kind: 'app', app: resolution.app };
+    if (resolution.kind === 'unresolved') return { kind: 'unresolved', reason: resolution.reason };
+    return { kind: 'skip' };
   }
   const computerTarget = extractComputerTargetApp(toolName, args);
-  if (computerTarget) return computerTarget;
+  if (computerTarget) return { kind: 'app', app: computerTarget };
   if (isBashToolName(toolName) && typeof args?.command === 'string') {
-    return resolveShellGuiTargetApp(args.command);
+    const shellTarget = resolveShellGuiTargetApp(args.command);
+    if (shellTarget) return { kind: 'app', app: shellTarget };
   }
-  return null;
+  return { kind: 'skip' };
 }
 
 const states = new WeakMap<RuntimeContext, Set<string>>();
@@ -135,11 +144,12 @@ export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<s
   const disclosed = memberRun ? scope : states.get(scope) ?? new Set<string>();
   if (!memberRun) states.set(scope, disclosed);
   for (const toolCall of toolCalls) {
-    let app: ComputerTargetApp | null;
+    let decision: DisclosureAppResolution;
     try {
-      app = await resolveDisclosureApp(toolCall.name, toolCall.arguments);
+      decision = await resolveDisclosureApp(toolCall.name, toolCall.arguments);
     } catch (error) {
-      // fail-open：披露判定失败不拦工具、不改行为，但必须留下可区分的原因。
+      // fail-open：披露判定抛错不拦工具、不改行为，但必须留下可区分的原因。
+      // 这条只覆盖抛错；unresolved 走下面单独的 WARN，避免同一调用打两次。
       logCollector.tool('WARN', 'GUI takeover disclosure resolution failed (tool runs without disclosure)', {
         toolCallId: toolCall.id,
         toolName: toolCall.name,
@@ -147,7 +157,16 @@ export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<s
       });
       continue;
     }
-    if (!app) continue;
+    if (decision.kind === 'unresolved') {
+      logCollector.tool('WARN', 'GUI takeover disclosure unresolved (tool runs without disclosure)', {
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        reason: decision.reason,
+      });
+      continue;
+    }
+    if (decision.kind !== 'app') continue;
+    const app = decision.app;
     // Member rows are per app name, including calls that switch between GUI transports.
     const key = memberRun ? app.name.trim().toLowerCase() : appGrantKey(app);
     if (disclosed.has(key)) continue;

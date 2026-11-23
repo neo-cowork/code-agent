@@ -203,14 +203,34 @@ vi.mock('../../../src/host/mcp/mcpClient', async (importOriginal) => ({
     callTool: async () => ({
       success: true,
       output: '',
-      metadata: { mcpStructuredContent: { apps: [{ pid: 123, name: 'Keynote', bundle_id: 'com.apple.iWork.Keynote' }] } },
+      metadata: {
+        mcpStructuredContent: {
+          apps: [
+            { pid: 123, name: 'Keynote', bundle_id: 'com.apple.iWork.Keynote' },
+            { pid: 456, name: 'Calculator', bundle_id: 'com.apple.calculator' },
+          ],
+          windows: [{ window_id: 77, app_name: 'Calculator' }],
+        },
+      },
     }),
   }),
 }));
 
+import { EventEmitter } from 'node:events';
 import { SubagentExecutor } from '../../../src/host/agent/subagentExecutor';
 import { buildAgentTreeSnapshot } from '../../../src/host/agent/agentTreeService';
 import { getSubagentContextStore } from '../../../src/host/context/subagentContextStore';
+import { logCollector } from '../../../src/host/mcp/logCollector.js';
+import type { AgentEvent } from '../../../src/shared/contract';
+import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import { TaskProgressSchema } from '../../../src/shared/ipc/schemas/backgroundTask';
+import { SessionCommandCenter } from '../../../src/host/services/commandCenter/sessionCommandCenter';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+import {
+  getBackgroundTaskLedger,
+  resetBackgroundTaskLedgerForTest,
+} from '../../../src/host/task/backgroundTaskLedger';
+import { resetSessionTaskConcurrencyPoolForTest } from '../../../src/host/services/commandCenter/sessionTaskSlotLedger';
 
 
 function bashCall(id: string, command: string, description: string) {
@@ -395,4 +415,184 @@ describe('member GUI disclosures through SubagentExecutor.execute', () => {
     expect(starts[0]?.guiTakeoverDisclosure).toEqual(keynote);
     expect(readRecord()?.snapshot?.guiDisclosures).toEqual([expected[0]]);
   });
+
+  function tool(id: string, name: string, args: Record<string, unknown>): ToolCall {
+    return { id, name, arguments: args };
+  }
+
+  async function runMember(agentId: string, toolCalls: ToolCall[]) {
+    const starts: ToolCall[] = [];
+    const ends: ToolResult[] = [];
+    mocks.responses.push(
+      { type: 'tool_use', content: '', toolCalls, usage },
+      { type: 'text', content: 'The display reads 0 and the 7 key is on the keypad.', usage },
+    );
+    const result = await new SubagentExecutor().execute({
+      prompt: 'Open Calculator, read the display, then check the same window for a 7 key',
+      config: {
+        name: 'calc-helper',
+        systemPrompt: 'Operate the Calculator app and report the display',
+        availableTools: [...new Set(toolCalls.map((call) => call.name))],
+        maxIterations: 4,
+      },
+      context: {
+        sessionId: SESSION,
+        executionAgentId: agentId,
+        cwd: '/tmp/work',
+        modelConfig: { provider: 'test', model: 'test-model' },
+        resolver: { getDefinition: (name: string) => ({ name, description: name, inputSchema: { type: 'object' as const }, outputSchema: { type: 'object' as const }, requiresPermission: false, permissionLevel: 'read' as const }) },
+        permission: { request: async () => true },
+        events: {
+          emit(event: string, data: unknown) {
+            if (event === 'tool_call_start') starts.push(data as ToolCall);
+            if (event === 'tool_call_end') ends.push(data as ToolResult);
+          },
+        },
+        abortSignal: new AbortController().signal,
+      },
+    } as never);
+    const record = getSubagentContextStore().list(SESSION).find((item) => item.agentId === agentId);
+    return { result, starts, ends, record, persisted: callsIn(record?.messages) };
+  }
+
+  it('attaches a disclosure only for shapes that name an app', async () => {
+    const toolSpy = vi.spyOn(logCollector, 'tool');
+    const shapes: Array<{ id: string; name: string; args: Record<string, unknown>; app: string | null }> = [
+      { id: 'open-en', name: 'computer_use', args: { action: 'open_application', targetApp: 'Calculator' }, app: 'Calculator' },
+      { id: 'open-zh', name: 'computer_use', args: { action: 'open_application', targetApp: '计算器' }, app: '计算器' },
+      { id: 'observe', name: 'computer_use', args: { action: 'observe' }, app: null },
+      { id: 'launch-name', name: 'mcp__cua-driver__launch_app', args: { name: 'Calculator' }, app: 'Calculator' },
+      { id: 'launch-bundle', name: 'mcp__cua-driver__launch_app', args: { bundle_id: 'com.apple.calculator' }, app: 'com.apple.calculator' },
+      { id: 'state-pid', name: 'mcp__cua-driver__get_window_state', args: { pid: 456 }, app: 'Calculator' },
+      { id: 'state-window', name: 'mcp__cua-driver__get_window_state', args: { window_id: 77 }, app: 'Calculator' },
+      { id: 'shot', name: 'mcp__cua-driver__screenshot', args: { window_id: 77 }, app: null },
+      { id: 'desktop', name: 'mcp__cua-driver__get_desktop_state', args: {}, app: null },
+      { id: 'apps', name: 'mcp__cua-driver__list_apps', args: {}, app: null },
+    ];
+    const matrix: Array<{ id: string; attached: { code: string; app: string } | null }> = [];
+    try {
+      for (const shape of shapes) {
+        const run = await runMember(`shape-${shape.id}`, [tool(shape.id, shape.name, shape.args)]);
+        const attached = run.starts[0]?.guiTakeoverDisclosure ?? null;
+        matrix.push({ id: shape.id, attached });
+        expect(run.result).toMatchObject({ success: true });
+        expect(attached).toEqual(shape.app ? { code: 'gui_takeover', app: shape.app } : null);
+        expect(run.persisted.find((call) => call.id === shape.id)?.guiTakeoverDisclosure ?? null).toEqual(attached);
+      }
+      console.info(`GUI_DISCLOSURE_SHAPE ${JSON.stringify(matrix)}`);
+      expect(toolSpy.mock.calls.filter((entry) => entry[0] === 'WARN')).toEqual([]);
+    } finally {
+      toolSpy.mockRestore();
+    }
+  });
+
+  it('dedups the same app across case and trim, discloses a different app, and projects task.progress.guiDisclosures', async () => {
+    const calls = [
+      tool('first', 'computer_use', { action: 'open_application', targetApp: 'Calculator' }),
+      tool('again', 'computer_use', { action: 'click', targetApp: ' calculator ' }),
+      tool('notes', 'mcp__cua-driver__launch_app', { name: 'Notes' }),
+      tool('reread', 'mcp__cua-driver__get_window_state', { pid: 456 }),
+      tool('shot', 'mcp__cua-driver__screenshot', { window_id: 77 }),
+      tool('observe', 'computer_use', { action: 'observe' }),
+    ];
+    const run = await runMember('calc-member', calls);
+    expect(run.result).toMatchObject({ success: true });
+    expect(run.starts.find((call) => call.id === 'first')?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Calculator' });
+    expect(run.starts.find((call) => call.id === 'again')?.guiTakeoverDisclosure).toBeUndefined();
+    expect(run.starts.find((call) => call.id === 'notes')?.guiTakeoverDisclosure).toEqual({ code: 'gui_takeover', app: 'Notes' });
+    for (const id of ['reread', 'shot', 'observe']) {
+      expect(run.starts.find((call) => call.id === id)?.guiTakeoverDisclosure).toBeUndefined();
+      expect(run.persisted.find((call) => call.id === id)?.guiTakeoverDisclosure).toBeUndefined();
+    }
+    expect(run.persisted.find((call) => call.id === 'again')?.guiTakeoverDisclosure).toBeUndefined();
+    const expected = [{ app: 'Calculator', callId: 'first' }, { app: 'Notes', callId: 'notes' }];
+    expect(run.record?.snapshot?.guiDisclosures).toEqual(expected);
+    console.info(`GUI_DISCLOSURE_DEDUP ${JSON.stringify({
+      first: run.starts.find((call) => call.id === 'first')?.guiTakeoverDisclosure ?? null,
+      again: run.starts.find((call) => call.id === 'again')?.guiTakeoverDisclosure ?? null,
+      notes: run.starts.find((call) => call.id === 'notes')?.guiTakeoverDisclosure ?? null,
+      guiDisclosures: run.record?.snapshot?.guiDisclosures ?? null,
+    })}`);
+
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    const manager = new DisclosureTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+    });
+    try {
+      const spawned = await center.spawn({
+        sessionId: 'session-gui',
+        title: '核对计算器显示',
+        shortName: '计算器',
+        laneKey: 'lane-calc',
+        submissionKey: 'submission-calc',
+        prompt: '打开计算器，读当前显示，再看同一个窗口有没有数字 7',
+        workspaceScope: createWorkspaceScope('project-gui', [{
+          sourceId: 'source-gui',
+          path: '/tmp/gui-project',
+          role: 'primary',
+          access: 'read_write',
+        }]),
+      });
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      for (const id of ['first', 'notes']) {
+        const data = run.starts.find((call) => call.id === id);
+        manager.emitAgent('session-gui', { type: 'tool_call_start', data } as AgentEvent, spawned.task.id);
+      }
+      const progress = TaskProgressSchema.parse(
+        getBackgroundTaskLedger().listTasks({ sessionId: 'session-gui' }).find((task) => task.id === spawned.task.id)?.progress,
+      );
+      expect(progress.guiDisclosures).toEqual(expected);
+      console.info(`GUI_DISCLOSURE_PROGRESS ${JSON.stringify(progress.guiDisclosures)}`);
+    } finally {
+      center.dispose();
+    }
+  });
+
+  it('unresolved cua call warns with the resolver reason and the tool call still ends', async () => {
+    const toolSpy = vi.spyOn(logCollector, 'tool');
+    try {
+      const run = await runMember('unresolved-member', [
+        tool('miss', 'mcp__cua-driver__click', { pid: 999, x: 1, y: 1 }),
+      ]);
+      expect(run.result).toMatchObject({ success: true });
+      expect(run.starts[0]?.guiTakeoverDisclosure).toBeUndefined();
+      expect(run.ends).toEqual([expect.objectContaining({ toolCallId: 'miss', success: true })]);
+      const warns = toolSpy.mock.calls.filter((entry) => entry[0] === 'WARN');
+      expect(warns).toEqual([[
+        'WARN',
+        'GUI takeover disclosure unresolved (tool runs without disclosure)',
+        expect.objectContaining({
+          toolCallId: 'miss',
+          toolName: 'mcp__cua-driver__click',
+          reason: expect.stringContaining('pid 999'),
+        }),
+      ]]);
+      console.info(`GUI_DISCLOSURE_UNRESOLVED ${JSON.stringify({ level: warns[0]?.[0], message: warns[0]?.[1], meta: warns[0]?.[2] })}`);
+    } finally {
+      toolSpy.mockRestore();
+    }
+  });
 });
+
+class DisclosureTaskManager extends EventEmitter {
+  startBackgroundTask = vi.fn().mockResolvedValue(undefined);
+  interruptBackgroundTask = vi.fn().mockResolvedValue(true);
+  cancelBackgroundTask = vi.fn().mockResolvedValue(true);
+  private readonly agentObservers = new Set<(sessionId: string, event: AgentEvent, taskId?: string) => void>();
+
+  observeAgentEvents(observer: (sessionId: string, event: AgentEvent, taskId?: string) => void): () => void {
+    this.agentObservers.add(observer);
+    return () => { this.agentObservers.delete(observer); };
+  }
+
+  emitAgent(sessionId: string, event: AgentEvent, taskId?: string): void {
+    for (const observer of this.agentObservers) observer(sessionId, event, taskId);
+  }
+
+  emitTask(event: TaskManagerEvent): void {
+    this.emit(event.type, event);
+  }
+}

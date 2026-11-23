@@ -180,3 +180,49 @@ describe('GUI 接管披露 · 每 run 每应用一次', () => {
     toolSpy.mockRestore();
   });
 });
+
+describe('GUI 接管披露 · unresolved 留痕，metadata / 整桌面读取保持安静', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('launch_app 没有 name/bundle_id：一条带 resolver reason 的 WARN，不挂披露，也不打抛错那条', async () => {
+    const toolSpy = vi.spyOn(logCollector, 'tool');
+    const calls = [
+      call('u1', 'mcp__cua-driver__launch_app', {}),
+      call('m1', 'mcp__cua-driver__list_apps', {}),
+      call('s1', 'mcp__cua-driver__screenshot', { window_id: 77 }),
+      call('d1', 'mcp__cua-driver__get_desktop_state', {}),
+      call('o1', 'computer_use', { action: 'observe' }),
+    ];
+    await attachGuiTakeoverDisclosures(makeCtx(), calls);
+    expect(calls.map((item) => item.guiTakeoverDisclosure ?? null)).toEqual([null, null, null, null, null]);
+    const warns = toolSpy.mock.calls.filter((entry) => entry[0] === 'WARN');
+    expect(warns).toEqual([[
+      'WARN',
+      'GUI takeover disclosure unresolved (tool runs without disclosure)',
+      expect.objectContaining({
+        toolCallId: 'u1',
+        toolName: 'mcp__cua-driver__launch_app',
+        reason: expect.stringContaining('neither bundle_id nor name'),
+      }),
+    ]]);
+    expect(toolSpy.mock.calls.some((entry) => String(entry[1]).includes('resolution failed'))).toBe(false);
+    toolSpy.mockRestore();
+  });
+
+  it('pid 反查失败：WARN 带上 resolver reason，调用本身不被披露层拦住', async () => {
+    const toolSpy = vi.spyOn(logCollector, 'tool');
+    const calls = [call('u2', 'mcp__cua-driver__get_window_state', { pid: 999 })];
+    await expect(attachGuiTakeoverDisclosures(makeCtx(), calls)).resolves.toBeUndefined();
+    expect(calls[0]?.guiTakeoverDisclosure).toBeUndefined();
+    const warns = toolSpy.mock.calls.filter((entry) => entry[0] === 'WARN');
+    expect(warns).toHaveLength(1);
+    expect(warns[0]?.[2]).toEqual(expect.objectContaining({
+      toolCallId: 'u2',
+      toolName: 'mcp__cua-driver__get_window_state',
+      reason: expect.stringContaining('pid 999'),
+    }));
+    toolSpy.mockRestore();
+  });
+});
