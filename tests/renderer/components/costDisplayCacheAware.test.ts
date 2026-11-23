@@ -6,6 +6,7 @@ import {
 import type { BudgetStatusView } from '../../../src/renderer/hooks/useBudgetStatus';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { interpolatePlural } from '../../../src/renderer/i18n/interpolate';
+import { getModelDisplayLabel } from '../../../src/shared/constants';
 
 // WP2-2a：CostDisplay cache-aware 口径的纯函数单测
 
@@ -75,14 +76,29 @@ describe('buildCostTitle', () => {
     const known = buildCostTitle(zh.statusBar, 0.5, null, {
       usd: 0.0123, source: 'catalog', modelId: 'deepseek-v4-pro', inputTokens: 1, outputTokens: 1,
     });
-    expect(known).toContain('deepseek-v4-pro');
+    // {model} 占位符一律走共享标签表：已知 id 用 curated 标签（不硬编码字面量，
+    // en-label 分支在改 catalog 标签），且裸 id 不再出现在 hover 里
+    expect(known).toContain(getModelDisplayLabel('deepseek-v4-pro'));
+    expect(known).not.toContain('deepseek-v4-pro');
     expect(known).toContain('$0.0123');
 
     const unknown = buildCostTitle(zh.statusBar, 0, null, {
       usd: null, source: 'unknown', modelId: 'my-relay-model', inputTokens: 1, outputTokens: 1,
     }, 3);
-    expect(unknown).toContain('my-relay-model');
+    expect(unknown).toContain('My Relay Model');
+    expect(unknown).not.toContain('my-relay-model');
     expect(unknown).toContain(interpolatePlural(zh.statusBar.unknownTurnsNote, 3));
     expect(unknown).not.toContain('$NaN');
+  });
+
+  it('shows the NeoHorse 1.5 Flash display name for the neohorse preview id in the cost hover', () => {
+    for (const lastTurnCost of [
+      { usd: 0.02, source: 'catalog' as const, modelId: 'neohorse-1.5-flash-preview', inputTokens: 1, outputTokens: 1 },
+      { usd: null, source: 'unknown' as const, modelId: 'neohorse-1.5-flash-preview', inputTokens: 1, outputTokens: 1 },
+    ]) {
+      const title = buildCostTitle(zh.statusBar, 0.5, null, lastTurnCost);
+      expect(title).toContain('NeoHorse 1.5 Flash');
+      expect(title).not.toContain('neohorse-1.5-flash-preview');
+    }
   });
 });
