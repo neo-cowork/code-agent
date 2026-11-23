@@ -3,6 +3,7 @@
 > 本文件给在仓内开工的 AI 工人（Claude Code / Codex / GLM 等 CLI agent）读，是机器读的硬约束。
 > 面向人的叙述在 `README.md`（产品）、`CLAUDE.md`（沟通与发版）、`docs/ARCHITECTURE.md`（架构索引）；两边互相引用、不重复。
 > 每条断言带仓内出处（`路径` 或 `路径:行号`）；读到与代码不符的，以代码为准并报回给派单方，不要静默照抄本文。
+> 无人值守队列（mini 工人机）派来的单：任务书末尾的「施工环境 / Build environment」段与本文件冲突时，以任务书为准（例如只 commit 不 push、不走 ship、不跑 gates:fast / gates:local）。
 
 ## 1. 这是什么产品
 
@@ -10,48 +11,11 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 
 ## 2. 技术栈与版本
 
-版本一律抄 `package.json` 与 `package-lock.json`，不许凭记忆写版本号。
-
-| 组件 | 版本（已锁定） | 出处 |
-|---|---|---|
-| Node 运行时 | >=24.0.0 | `package.json:381`（engines） |
-| 包管理器 | npm 11.12.1 | `package.json:4`（packageManager） |
-| TypeScript | 6.0.3；typecheck 走 typescript7（npm:typescript@7 native preview） | `package.json:362,364`，`package.json:42`（script） |
-| 前端框架 | React 19.2.6 | `package.json:343`，`package-lock.json:15630` |
-| 状态管理 | Zustand 5.0.13 | `package.json:375`，`package-lock.json:18940` |
-| 样式 | Tailwind CSS 4.3.0 | `package.json:359`，`package-lock.json:17280` |
-| 桌面壳 | Tauri 2（Rust） | `src-tauri/Cargo.toml:12` |
-| 构建 | esbuild 0.28.0（main/web/cli）+ Vite 8.0.13（renderer） | `package.json:306,368`，`esbuild.config.ts`、`vite.config.ts` |
-| 测试 | Vitest 4.1.7 + Playwright 1.60.0 | `package.json:369,226` |
-| 本地库 | SQLite（better-sqlite3 13.0.3），数据目录 `~/.code-agent/` | `package.json:221` |
-| 云端 | Supabase + pgvector（迁移在 `supabase/`） | [HLD 数据架构](docs/ARCHITECTURE.md#9-数据架构) |
-| 原生模块 | node-pty 1.1.0 / sharp 0.35.3 / keytar 7.9.0 / onnxruntime-node 1.24.3 / avr-vad 1.0.10 | `package.json:224,228,223,225,220` |
-
-新 provider / 模型 / 超时 / 价格只加在 `src/shared/constants/`，然后引用，见 §5 第 1 条。
+版本一律以 `package.json` 与 `package-lock.json` 为准，不许凭记忆写版本号。查不到的两点：typecheck 走 typescript7（`npm:typescript@7` native preview，`package.json` 的 `typecheck` script）；包管理器只用 npm（`packageManager` 字段），别用 pnpm。新 provider / 模型 / 超时 / 价格只加在 `src/shared/constants/`，然后引用，见 §5 第 1 条。
 
 ## 3. 目录结构与职责
 
-一级目录逐个说（完整导览见 `docs/architecture/repo-map.md`，`src/host` 领域归属见 `src/host/README.md`）：
-
-| 目录 | 职责 |
-|---|---|
-| `src/` | TS 主体，分七层（[HLD 目录结构](docs/ARCHITECTURE.md#目录结构)） |
-| `src/host/` | 后端主进程：Agent 运行时、工具、服务、权限、任务（工程层 core + 技能层 skills） |
-| `src/renderer/` | React 前端（呈现与交互，业务真源在 host） |
-| `src/shared/` | 前后端共享的类型（`contract/`）、常量（`constants/`）、IPC 协议（`ipc/`） |
-| `src/web/` | 本地 HTTP/SSE server |
-| `src/cli/` | CLI 入口与适配层 |
-| `src/design/`、`src/artifacts/` | 设计工作区共享逻辑 / 产物类型与处理 |
-| `src-tauri/` | Tauri Rust 桌面外壳 |
-| `admin-console/` | 独立管理后台（Next.js，`admin-console/README.md`） |
-| `packages/` | 复用包：bridge（本地桥接 :9527，[HLD 集成](docs/ARCHITECTURE.md#10-集成)）、eval-harness、internal（评测中心） |
-| `vercel-api/` | 官网、下载与控制面 API |
-| `supabase/` | 数据库迁移与云函数 |
-| `tests/` | unit / renderer / integration / e2e / smoke（约定见 `tests/README.md`） |
-| `scripts/` | 构建、发布、治理、验收、运维脚本（见 `scripts/README.md`） |
-| `config/` | 可入库的发布制品锁；不存 secret、不存用户配置 |
-| `docs/` | 架构、部署、API、审计、发布记录 |
-| `extension/` | 浏览器扩展（`extension/manifest.json`） |
+一级目录导览见 `docs/architecture/repo-map.md`，`src/host` 领域归属见 `src/host/README.md`，分层见 [HLD 目录结构](docs/ARCHITECTURE.md#目录结构)。
 
 三端入口：
 
@@ -67,7 +31,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 - **边界**：业务逻辑只在 `src/host/`；`src/renderer/` 做呈现与交互；跨端共享的类型、常量、协议一律放 `src/shared/`（[HLD 目录结构](docs/ARCHITECTURE.md#目录结构)）。改 `src/shared/**`、`src/web/webServer.ts`、`src/host/platform/**` 这类协议文件时两端必须对称（`REVIEW.md:12`）。
 - **IPC 消费**：通道与签名真源是 `src/shared/ipc/handlers.ts`（`IpcInvokeHandlers`）与 `src/shared/ipc/channels.ts`；领域通道「一个领域一个通道、action 参数分发」（`src/shared/ipc/domains.ts:10,13`）。renderer 统一走 `src/renderer/services/ipcService.ts`（window bridge 的类型安全封装）或 `src/renderer/services/typedInvoke.ts`（dev 态带 schema 校验），不各自手拼 fetch。Skill 域的范例是 `src/renderer/services/invokeSkillIPC.ts`：只读路径 `invokeSkillIPC`（失败吞为 undefined）、动作路径 `invokeSkillIPCOrThrow`（必须把真因抛给 UI）。
 - **store**：Zustand，一域一 store，全在 `src/renderer/stores/`（清单 `docs/architecture/frontend.md:380` 起；范例 `src/renderer/stores/appStore.ts`）。跨组件状态进 store，不散落组件；store 里引用常量走 `@shared/constants`（`src/renderer/stores/appStore.ts:21-26` 的 import 是范例）。
-- **i18n（文案不许硬编码）**：renderer 用户可见文案一律进 `src/renderer/i18n/`（按域拆 zh/en 文件，`src/renderer/i18n/index.ts` 聚合），组件里不写裸中文串。文案 lint 门是 `scripts/check-copy.mjs`：营销压力词（轻松/一键/只需/立即体验）与错误省略号基线为 0，工程黑话只警告。host 错误不许新增裸中文文案——用稳定 code，由 renderer i18n 翻译（`scripts/host-chinese-error-ratchet.mjs`）。
+- **i18n（文案不许硬编码）**：renderer 用户可见文案一律进 `src/renderer/i18n/`（按域拆 zh/en 文件，`src/renderer/i18n/index.ts` 聚合），组件里不写裸中文串。文案 lint 门是 `scripts/check-copy.mjs`：营销压力词（轻松/一键/只需/立即体验）与错误省略号基线为 0；工程黑话走逐词棘轮上限（`JARGON_WORD_CEILINGS`，未列出的词上限 0），任一词计数超上限即判失败、`process.exit(1)`——存量按上限封顶，只拦新增违规。host 错误不许新增裸中文文案——用稳定 code，由 renderer i18n 翻译（`scripts/host-chinese-error-ratchet.mjs`）。
 - **用户面术语**：叫「插件」，不叫「能力包」（范例 `src/renderer/i18n/capabilityHub.ts:9` `tabPlugins: '插件'`）。host 存量错误串里还有旧词（`src/host/plugins/pluginRegistry.ts:189` 起），那是待清存量不是先例，新文案不许沿用。
 - **密钥**：API key 不进源文件与 diff；桌面端存系统钥匙串（keytar，`package.json:223`）。密钥与脱敏细则见 `.claude/rules/security.md`。
 
@@ -93,7 +57,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 - **ship 硬规**：推分支、开 PR、合并 main 一律走机器级命令 `ship`（`ship --help` 看全量）。串行合并队列 = 无冲突 + CI 全绿 + 不落后 main（落后自动 update-branch 重验，最多 3 轮）。一切失败 fail-closed：ship 报错就停下如实汇报，禁止手工 `git push origin main`、`gh pr merge`、`--force` 类绕过；同因连挂 2 次转人工。
 - **汇报格式**：测试证词后加一行 `证据档位：<档位组合>`，四档定义在 `docs/testing-evidence-classes.md`；只有 static-contract + hermetic-protocol 时不许说「已验证」。汇报必须带全量测试计数与档位，缺一不可。
 - **多 agent 并行**：认领前 `git fetch origin`，工作分支基于 `origin/main` 新建；更新本地 main 只允许 `git merge --ff-only origin/main`，拒绝 ff 说明本地 main 已脏，另起分支不要 forward-fix。push 后在交接里写明 `git rev-parse HEAD` 的 sha，接力以 sha 对齐。验收一律 `origin/main` 新鲜构建，逐层核对产物指纹；禁止拿本地残留构建、renderer 热更新缓存、旧安装包下验证结论。
-- **桌面包启动红线**：禁止直接 exec `*.app/Contents/MacOS/code-agent-tauri`——沙箱里拿不到 WindowServer，`_RegisterApplication` abort 必崩（2026-09-25 实录）。构建+安装+启动只走 `scripts/run-dev-slot.sh`；`open` 被沙箱拦就把启动交回用户终端。细则见 `CLAUDE.md`「本地 dogfood 打包」。
+- **桌面包启动红线**：禁止直接 exec `*.app/Contents/MacOS/code-agent-tauri`——沙箱里拿不到 WindowServer，`_RegisterApplication` abort 必崩（2026-09-25 实录）。构建+安装+启动只走 `scripts/run-dev-slot.sh`；`open` 被沙箱拦就把启动交回用户终端。细则见 `docs/dev/local-dev-reference.md`「本地 dogfood 打包」。
 
 ## 7. 开工前检查清单
 

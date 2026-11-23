@@ -440,3 +440,39 @@ describe('CronJobEditor 保存后复述 · refresh 换 prop 身份（r2 回归�
     });
   });
 });
+
+describe('SavedRoutineRestate · 归档项目行', () => {
+  const archived = (id: string) => savedRoleJob({
+    action: { type: 'agent', agentType: 'default', prompt: '记录里的目标', roleId: 'role-x', libraryProjectId: id },
+  });
+
+  it('zh：archive 行显示项目名，不透出 id', async () => {
+    mocks.listProjects.mockResolvedValue([{ id: 'proj-abc', name: '季度复盘' }]);
+    render(<SavedRoutineRestate job={archived('proj-abc')} onDone={vi.fn()} />);
+    await waitFor(() => expect(rowValue('archive')).toBe('季度复盘'));
+    expect(screen.getByTestId('cron-saved-routine-restate').textContent).toContain('产出归档到');
+    expect(screen.getByTestId('cron-saved-routine-restate').textContent).not.toContain('proj-abc');
+    expect(rowCount()).toBe(4);
+  });
+
+  it('en：标签与兜底都是英文；项目已删时落兜底而非 id', async () => {
+    i18nState.language = 'en';
+    mocks.listProjects.mockResolvedValue([]);
+    render(<SavedRoutineRestate job={archived('proj-gone')} onDone={vi.fn()} />);
+    await waitFor(() => expect(rowValue('archive')).toBe('The project you picked (name unavailable)'));
+    expect(screen.getByTestId('cron-saved-routine-restate').textContent).toContain('Archive output to');
+    expect(screen.getByTestId('cron-saved-routine-restate').textContent).not.toContain('proj-gone');
+  });
+
+  it('listProjects 失败：兜底文案，不抛', async () => {
+    mocks.listProjects.mockRejectedValue(new Error('boom'));
+    render(<SavedRoutineRestate job={archived('proj-abc')} onDone={vi.fn()} />);
+    await waitFor(() => expect(rowValue('archive')).toBe('所选项目（名称暂时读不到）'));
+  });
+
+  it('无归档项目：不出 archive 行（三行不变）', async () => {
+    render(<SavedRoutineRestate job={savedRoleJob()} onDone={vi.fn()} />);
+    await waitFor(() => expect(rowValue('what')).toBe('由 小星 执行：记录里的目标'));
+    expect(rowCount()).toBe(3);
+  });
+});

@@ -430,7 +430,7 @@ export const MemoryTab: React.FC = () => {
 
     if (file) {
       setSelectedFile(file);
-      setMessage({ type: 'success', text: `${memoryText.files.focusFoundPrefix}${file.filename}` });
+      setMessage({ type: 'success', text: `${memoryText.files.focusFoundPrefix}${file.name}` });
     } else if (searchText) {
       setSelectedFile(null);
       setMessage({ type: 'error', text: `${memoryText.files.focusMissingPrefix}${searchText}` });
@@ -503,13 +503,15 @@ export const MemoryTab: React.FC = () => {
 
   // Delete file
   const handleDelete = async (filename: string) => {
+    // 归档成功提示展示人读名称；重载后列表查不到（陈旧行）时退回不带名称的前缀文案
+    const deletedName = files.find((item) => item.filename === filename)?.name;
     try {
       const result = await invokeLightMemory<boolean>({
         action: 'lightDelete',
         filename,
       });
-      if (result?.success) {
-        setMessage({ type: 'success', text: `${memoryText.files.deleteSuccessPrefix}${filename}` });
+      if (result?.success && result.data !== false) {
+        setMessage({ type: 'success', text: deletedName ? `${memoryText.files.deleteSuccessPrefix}${deletedName}` : memoryText.files.deleteSuccessPrefix.trim() });
         if (selectedFile?.filename === filename) setSelectedFile(null);
         setEntriesRefreshKey((key) => key + 1);
         await loadData();
@@ -882,9 +884,6 @@ export const MemoryTab: React.FC = () => {
                             <FileText className="h-4 w-4 shrink-0 text-zinc-500" />
                             <span className="truncate text-sm font-medium text-zinc-200">{row.name}</span>
                           </div>
-                          <div className="mt-1 max-w-[360px] truncate font-mono text-[11px] text-zinc-500" title={row.filename}>
-                            {row.filename}
-                          </div>
                           <div className="mt-1 max-w-[420px] truncate text-zinc-500">
                             {row.description || memoryText.files.noDescription}
                           </div>
@@ -937,7 +936,7 @@ export const MemoryTab: React.FC = () => {
       {selectedFile && (
         <SettingsSection
           title={memoryText.files.detailTitle}
-          description={`${selectedFile.filename} · ${formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}`}
+          description={`${selectedFile.name} · ${formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}`}
         >
           <div className="grid gap-4 rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
             <pre
@@ -1035,7 +1034,6 @@ export const MemoryTab: React.FC = () => {
         variant="warning"
         confirmText={memoryText.files.delete}
         cancelText={memoryText.files.cancel}
-        confirmDisabled={isWebMode()}
         onConfirm={() => {
           if (deletingFile) handleDelete(deletingFile);
         }}

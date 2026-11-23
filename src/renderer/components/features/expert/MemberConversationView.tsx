@@ -31,6 +31,7 @@ import {
   resolveAgentActivityStepStatus,
   taskActivityIds,
 } from '../../../utils/agentActivity';
+import { GuiTakeoverDisclosureRows } from '../GuiTakeoverDisclosureRows';
 import { MemberOutputMarkdown } from './MemberOutputMarkdown';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
@@ -142,7 +143,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     // 逐条过 humanizeToolStep 的描述过滤（命令样/错语种退通用文案），连续命令才分得清。
     const bashRows = [...(snapshot?.bashSteps ?? [])].reverse().map((step, index) => ({
       key: `Bash-step-${index}`,
-      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
     return [...(snapshot?.tools ?? [])].reverse().flatMap((tool, index) => (
       (tool === 'Bash' || tool === 'bash') && bashRows.length > 0
@@ -201,7 +202,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     // 委派任务的 Bash 步骤逐条一行（任务结束后仍在），描述过同一过滤，缺描述/命令样退通用文案。
     const stepRows = (plainNode?.bashSteps ?? plainTask?.progress?.bashSteps ?? []).map((step, index) => ({
       key: `step-${index}`,
-      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t),
+      label: humanizeToolStep('Bash', { command: step.command, description: step.description }, t, undefined, 'completed', undefined, step.notRun ? { skipped: true } : undefined),
     }));
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
@@ -241,6 +242,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
         </header>
 
         <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+          <GuiTakeoverDisclosureRows disclosures={plainNode?.guiDisclosures ?? plainTask?.progress?.guiDisclosures} />
           {/* 当前动作置顶高亮（S3）；没有真实工具步时不编造活动。 */}
           {currentAction && (
             <section data-testid="member-current-action">
@@ -343,6 +345,9 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       </header>
 
       <div className="mx-auto max-w-3xl space-y-4 py-4 text-sm">
+        <GuiTakeoverDisclosureRows disclosures={liveContextSnapshot?.guiDisclosures
+          ?? agent.contextSnapshot?.guiDisclosures
+          ?? snapshot?.nodes?.find((node) => node.id === viewingMemberId)?.guiDisclosures} />
         {/* 当前动作置顶高亮（S3）：最近一条动作 = 他此刻在干嘛 */}
         {recentActions.length > 0 && (
           <section data-testid="member-current-action">

@@ -322,9 +322,11 @@ async function buildTurnOutcome(
   // 顺带提及的既有文件（如 ./README.md）配上一个声称动词不该把 verdict 抬成 verified——
   // 它在盘上 ≠ 本 run 交付了它（ai-review #2007 Nit）。缺漏核对不受此限：声称了不存在的就是幻觉。
   const runPaths = workingDirectory ? currentRunFilePaths(ctx.messages, workingDirectory, ctx.nudgeManager) : new Set<string>();
-  const claimsDeliveredThisRun = deliverableCheck.claims.length > 0
+  // written 来源只做缺漏扫描，不算「模型声称交付」：不抬 verdict。
+  const statedClaims = deliverableCheck.claims.filter((claim) => claim.source !== 'written');
+  const claimsDeliveredThisRun = statedClaims.length > 0
     && deliverableCheck.missing.length === 0
-    && deliverableCheck.claims.every((claim) => runPaths.has(claim.resolved));
+    && statedClaims.every((claim) => runPaths.has(claim.resolved));
 
   return {
     terminal,

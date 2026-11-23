@@ -47,6 +47,7 @@ import {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { guardUnattendedInputPath, resolveInputPath } from '../../utils/resolveInputPath';
+import { appDataRootDiscoveryFilter, refuseAppDataDiscovery } from '../../utils/refuseAppDataDiscovery';
 
 const execFileAsync = promisify(execFile);
 const DISCOVERY_ARCHIVE_CHAR_LIMIT = 12_000;
@@ -503,6 +504,47 @@ function filterForeignSlotGrepOutput(
     .join('\n');
 }
 
+/**
+ * Result-side drop of the app data dir root and the regular files directly in
+ * it, for searches started above the data dir (e.g. path: ~). Same place and
+ * same shape as filterForeignSlotGrepOutput: never an rg --glob/exclude-dir,
+ * whose bare-dir-name semantics would also hide legitimate project folders
+ * that share the data dir name. Lines without a file:line prefix (engine
+ * notices such as "Binary file <path> matches") can still name a root file, so
+ * their whitespace-separated tokens go through the same predicate.
+ */
+function filterAppDataDiscoveryGrepOutput(
+  stdout: string,
+  searchPath: string,
+  appDataRootFilter: ((candidatePath: string) => boolean) | null,
+): string {
+  if (appDataRootFilter === null || !stdout) return stdout;
+  return stdout
+    .split('\n')
+    .filter((line) => {
+      if (!line || line === '--' || line.startsWith('... (') || line.startsWith('(showing ')) return true;
+      const match = line.match(/^(.*?)([:-])(\d+)([:-])(.*)$/);
+      // The lazy parse mis-splits filenames that themselves contain <sep><digits><sep>
+      // (e.g. "db-2024-11-x.json:3:hit" parses the file as "db"), so the file
+      // candidate is also taken from the greedy parse; a line is dropped when
+      // either extraction resolves to a data-dir root file.
+      if (match) {
+        const candidates = [match[1]];
+        const greedy = line.match(/^(.*)([:-])(\d+)([:-])(.*)$/);
+        if (greedy && greedy[1] !== match[1]) candidates.push(greedy[1]);
+        for (const rawFile of candidates) {
+          const file = path.isAbsolute(rawFile) ? rawFile : path.resolve(searchPath, rawFile);
+          if (appDataRootFilter(file)) return false;
+        }
+        return true;
+      }
+      return !line
+        .split(/\s+/)
+        .some((token) => appDataRootFilter(token.replace(/^["'(<[]+|["'()>\].:;,]+$/g, '')));
+    })
+    .join('\n');
+}
+
 function parseMatches(output: string, searchPath: string): GrepMatch[] {
   const matches: GrepMatch[] = [];
   const lines = output.split('\n').filter(Boolean);
@@ -590,7 +632,10 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
     // 参数解析
     const rawPath = (args.path as string | undefined) ?? ctx.workingDir;
     const searchPath = resolveInputPath(rawPath, ctx.workingDir);
+    const refused = refuseAppDataDiscovery(searchPath, ctx.logger);
+    if (refused) return refused;
     const slotExcludes = collectForeignSlotTraversalExcludes(searchPath);
+    const appDataRootFilter = appDataRootDiscoveryFilter(searchPath);
     const include = args.include as string | undefined;
     const fileType = args.type as string | undefined;
     const caseInsensitive = Boolean(args.case_insensitive);
@@ -644,7 +689,11 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
       );
 
       if (rgResult.found) {
-        stdout = filterForeignSlotGrepOutput(rgResult.stdout, searchPath, slotExcludes);
+        stdout = filterAppDataDiscoveryGrepOutput(
+          filterForeignSlotGrepOutput(rgResult.stdout, searchPath, slotExcludes),
+          searchPath,
+          appDataRootFilter,
+        );
         unreadablePaths = rgResult.unreadablePaths ?? [];
         engine = 'rg';
       } else if (rgResult.noMatches) {
@@ -671,7 +720,11 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
             include,
             ctx.abortSignal,
           );
-          stdout = filterForeignSlotGrepOutput(grepResult.stdout, searchPath, slotExcludes);
+          stdout = filterAppDataDiscoveryGrepOutput(
+            filterForeignSlotGrepOutput(grepResult.stdout, searchPath, slotExcludes),
+            searchPath,
+            appDataRootFilter,
+          );
           unreadablePaths = grepResult.unreadablePaths;
           engine = 'grep';
         } catch (grepErr: unknown) {
@@ -726,7 +779,10 @@ class GrepHandler implements ToolHandler<Record<string, unknown>, string> {
       });
       const outputText = output || 'No matches found';
       const matches = parseMatches(outputText, searchPath)
-        .filter((match) => !isListedPathInsideForeignSlot(match.file, slotExcludes.roots));
+        .filter((match) => (
+          !isListedPathInsideForeignSlot(match.file, slotExcludes.roots)
+          && !appDataRootFilter?.(match.file)
+        ));
       const archive = (meta.truncated || stdout.length > DISCOVERY_ARCHIVE_CHAR_LIMIT)
         ? spillToolResultArchive({
             content: stdout,

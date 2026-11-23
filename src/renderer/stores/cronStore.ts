@@ -8,7 +8,7 @@ import type {
 } from '@shared/contract';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
-import { getBuiltinJobDisplay } from '../components/features/cron/builtinJobDisplay';
+import { getBuiltinJobDisplay, isBuiltinMaintenanceJob } from '../components/features/cron/builtinJobDisplay';
 import type { Language } from '../i18n';
 import {
   cronClient,
@@ -52,7 +52,7 @@ function resolveSelectedCronJobId(
   if (selectedJobId && visibleJobs.some((job) => job.id === selectedJobId)) {
     return selectedJobId;
   }
-  return visibleJobs[0]?.id ?? null;
+  return visibleJobs.find((job) => !isBuiltinMaintenanceJob(job))?.id ?? null;
 }
 
 function currentLanguage(): Language {

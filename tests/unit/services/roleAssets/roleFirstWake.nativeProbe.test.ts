@@ -12,7 +12,8 @@ const harness = vi.hoisted(() => ({
   configDir: '',
   registry: null as null | import('../../../../src/host/connectors/registry').ConnectorRegistry,
   logs: { info: [] as string[], warn: [] as string[] },
-  runnerCalls: [] as Array<{ prompt: string }>,
+  runnerCalls: [] as Array<{ prompt: string; allowedToolNames?: string[] }>,
+  declaredTools: undefined as string[] | undefined,
 }));
 const mockSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
@@ -51,9 +52,11 @@ vi.mock('../../../../src/host/services/sessionAutomation', () => ({
     recordEvent: vi.fn().mockResolvedValue(undefined),
   }),
 }));
-vi.mock('../../../../src/host/agent/agentRegistry', () => ({ resolveAgent: () => undefined }));
+vi.mock('../../../../src/host/agent/agentRegistry', () => ({
+  resolveAgent: () => (harness.declaredTools ? { tools: harness.declaredTools } : undefined),
+}));
 vi.mock('../../../../src/host/tools/dispatch/toolDefinitions', () => ({
-  getAllToolDefinitions: () => [{ name: 'Read', permissionLevel: 'read' }],
+  getAllToolDefinitions: () => ['Read', 'calendar', 'mail', 'reminders', 'photos'].map((name) => ({ name, permissionLevel: 'read' })),
 }));
 vi.mock('../../../../src/host/mcp/mcpClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../src/host/mcp/mcpClient')>();
@@ -120,6 +123,7 @@ beforeEach(async () => {
   harness.registry = new ConnectorRegistry('darwin');
   resetCalendarConnectorReadiness();
   mockSettings.value = {};
+  harness.declaredTools = undefined;
 });
 
 afterEach(async () => {
@@ -195,5 +199,38 @@ describe('醒来前探测 unchecked 的 native 连接器', () => {
     expect(delta.sourceNames).toEqual(['Calendar']);
     expect(delta.section).toContain('Calendar');
     expect(calendarReads()).toBe(1);
+  });
+
+  it('(g) 角色只声明 calendar：首次醒来不探测、不列 reminders / mail（FB-2206）', async () => {
+    mockSettings.value = { connectors: { enabledNative: ['calendar', 'reminders', 'mail'] } };
+    harness.registry!.configure(['calendar', 'reminders', 'mail']);
+    const probes = { reminders: vi.spyOn(harness.registry!.get('reminders')!, 'execute'), mail: vi.spyOn(harness.registry!.get('mail')!, 'execute') };
+    harness.declaredTools = ['calendar'];
+
+    await enqueueFirstWake('cal-only-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: '你好。' };
+      },
+    });
+    const statePath = path.join(harness.configDir, 'roles', 'cal-only-role', 'first-wake.json');
+    await vi.waitFor(async () => {
+      expect(JSON.parse(await fs.readFile(statePath, 'utf-8'))).toMatchObject({ state: 'completed' });
+    });
+
+    expect(harness.runnerCalls[0]!.allowedToolNames).toContain('calendar');
+    expect(harness.runnerCalls[0]!.prompt).toContain('Calendar');
+    expect(harness.runnerCalls[0]!.prompt).not.toMatch(/Reminders|Mail/);
+    expect(probes.reminders).not.toHaveBeenCalled();
+    expect(probes.mail).not.toHaveBeenCalled();
+  });
+
+  it('(h) 角色没声明工具：沿用全量探测，所有已启用 native 连接器照旧列名', async () => {
+    mockSettings.value = { connectors: { enabledNative: ['calendar', 'reminders'] } };
+    harness.registry!.configure(['calendar', 'reminders']);
+    const reminders = vi.spyOn(harness.registry!.get('reminders')!, 'execute');
+
+    await listConnectedSourceNames();
+    expect(reminders).toHaveBeenCalledWith('probe_access', {});
   });
 });

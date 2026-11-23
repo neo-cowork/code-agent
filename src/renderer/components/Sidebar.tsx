@@ -39,6 +39,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
+import { sessionReplayBackgroundTasks } from '../utils/sessionReplayContext';
 import { cronRunAggregatesByTaskId, useCronRunGroups } from '../hooks/useCronRunGroups';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
@@ -52,6 +53,7 @@ import { SidebarAccountMenu } from './features/sidebar/SidebarAccountMenu';
 import { SidebarAccountStatus } from './features/sidebar/SidebarAccountStatus';
 import { useSidebarSearchShortcut } from './features/sidebar/useSidebarSearchShortcut';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
+import { ArchiveUndoToast } from './features/sidebar/ArchiveUndoToast';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { applySessionNotificationAttention } from './features/sidebar/sessionNotificationAttention';
 import {
@@ -562,7 +564,6 @@ export const Sidebar: React.FC = () => {
       t,
     ],
   );
-
   const hasAnySessions = sessions.length > 0;
   const hasActiveTrajectoryFilter =
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
@@ -930,7 +931,7 @@ export const Sidebar: React.FC = () => {
           sessionTitle={replayDialog.sessionTitle}
           replay={replayDialog.replay}
           workflowRuns={Object.values(workflowRuns).filter((run) => run.sessionId === replayDialog.sessionId)}
-          backgroundTasks={durableBackgroundTasks.filter((task) => task.sessionId === replayDialog.sessionId)}
+          backgroundTasks={sessionReplayBackgroundTasks(durableBackgroundTasks, replayDialog.sessionId)}
           evidence={replayEvidenceBySessionId.get(replayDialog.sessionId) ?? []}
           trajectorySummary={trajectoryQualityBySessionId[replayDialog.sessionId]}
           onUpdateTrajectoryDatasetRole={handleUpdateTrajectoryCollection}
@@ -990,12 +991,10 @@ export const Sidebar: React.FC = () => {
         <UndoToast
           message={sb.deletedCount.replace('{count}', String(pendingDelete.ids.length))}
           onUndo={undoDelete}
-          onDismiss={() => {
-            // timer 已经在 softDelete 中设置了，这里是视觉消失后的回调
-            // 不需要额外操作，confirmDelete 由 timer 触发
-          }}
+          onDismiss={() => {}} // confirmDelete 由 softDelete 的 timer 触发
         />
       )}
+      <ArchiveUndoToast />
     </div>
   );
 };

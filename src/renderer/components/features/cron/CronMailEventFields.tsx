@@ -118,12 +118,12 @@ export const CronMailEventFields: React.FC<CronMailEventFieldsProps> = ({
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {(state.reason === 'connector-not-enabled' || state.reason === 'not-authorized') && (
-              <Button size="sm" variant="ghost" onClick={() => openSettingsTab('mcp')}>
+              <Button type="button" size="sm" variant="ghost" onClick={() => openSettingsTab('mcp')}>
                 {cc.eventMailGoSettings}
               </Button>
             )}
             {state.reason === 'read-error' && (
-              <Button size="sm" variant="ghost" onClick={reload}>
+              <Button type="button" size="sm" variant="ghost" onClick={reload}>
                 {cc.eventMailRetry}
               </Button>
             )}

@@ -13,6 +13,7 @@ import { Clock3 } from 'lucide-react';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { useChannelCatalog } from './useChannelCatalog';
+import { useArchiveProjectName } from './useArchiveProjectName';
 import {
   buildSavedRoutineRestateRows,
   resolveSavedRoutineChannelLabel,
@@ -50,6 +51,8 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
     [input.resultChannel, accounts, conversationsByAccount],
   );
 
+  const archiveProjectName = useArchiveProjectName(input.action.type === 'agent' ? input.action.libraryProjectId : undefined);
+
   const rows = useMemo(() => buildSavedRoutineRestateRows({
     job: input,
     channelLabel,
@@ -65,10 +68,13 @@ export const PendingRoutineRestate: React.FC<PendingRoutineRestateProps> = ({
       savedRolePrefix: cc.savedRestateRolePrefix,
       savedStatusLabel: cc.savedRestateStatusLabel,
       savedStatusPaused: cc.savedRestateStatusPaused,
+      archiveLabel: cc.savedRestateArchiveLabel,
+      archiveUnknown: cc.savedRestateArchiveUnknown,
     },
+    archiveProjectName,
     lang: language,
     notifyWhenRow: true,
-  }), [input, channelLabel, sc, cc, language]);
+  }), [input, channelLabel, archiveProjectName, sc, cc, language]);
 
   return (
     <div data-testid="cron-pending-routine-restate" className="space-y-3">

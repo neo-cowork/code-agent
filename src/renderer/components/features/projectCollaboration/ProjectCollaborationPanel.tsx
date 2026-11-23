@@ -141,21 +141,13 @@ const NewNeoWorkCardModal: React.FC<NewNeoWorkCardModalProps> = ({
       const envelope = { content: `@neo ${userText}` };
       let conversationId = sourceConversationId;
       if (!conversationId) {
-        if (!workspacePath) {
-          setError(t.neoTopics.newWorkCardNoSession);
-          return;
-        }
         const createdSession = await useSessionStore.getState().createSession(t.neoTopics.newWorkCardTitle, {
-          workingDirectory: workspacePath,
+          workingDirectory: workspacePath ?? null,
+          projectId,
           preserveSecondaryPages: true,
         });
-        if (createdSession?.projectId !== projectId) {
-          if (createdSession?.id) {
-            await useSessionStore.getState().deleteSession(createdSession.id);
-          }
-          const message = t.neoTopics.newWorkCardNoSession;
-          toast.error(message);
-          setError(message);
+        if (!createdSession) {
+          setError(t.neoTopics.newWorkCardFailed);
           return;
         }
         conversationId = createdSession.id;
@@ -388,7 +380,7 @@ export const ProjectCollaborationPanel: React.FC<ProjectCollaborationPanelProps>
     if (current && isUsable(current)) return current;
     return sessions.find(isUsable) ?? null;
   }, [currentSessionId, projectId, projectWorkspacePath, runningSessionIds, sessions]);
-  const canCreateWorkCard = Boolean(projectId && (projectWorkspacePath?.trim() || projectSession));
+  const canCreateWorkCard = Boolean(projectId);
 
   useEffect(() => {
     ensureNeoWorkCardLiveUpdates();

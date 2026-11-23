@@ -44,6 +44,7 @@ function makeOperations(): SpaceOperations {
     list: vi.fn(() => [{
       ...space,
       activeTopicCount: 2,
+      visibleSessionCount: 2,
       lastActivityAt: 10,
     }]),
     query: vi.fn(async () => ({
@@ -80,7 +81,7 @@ describe('space tools', () => {
     expect((await registry.resolve('space_create')).schema.name).toBe('space_create');
   });
 
-  it('lists and aggregates collaboration spaces without requesting write approval', async () => {
+  it('lists and aggregates Spaces without requesting write approval', async () => {
     const operations = makeOperations();
     const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
     const listResult = await executeSpaceList({}, makeContext(), canUseTool, undefined, operations);

@@ -143,22 +143,8 @@ export function adoptForegroundSubagent(options: {
 }): MultiagentExecutionResult {
   const { promise, agentId, agentName, role, context, treeId, task, agentStartedAt, foregroundBlockingBudgetMs, childEvents } = options;
   childEvents.detached = true;
-  const managed = getSpawnGuard().get(agentId);
-  if (managed) managed.background = true;
   const visibilityScope = resolveSingleSpawnRunScope(context, treeId, agentId);
-  getBackgroundSubagentRegistry().adopt(promise, {
-    agentId,
-    title: options.completionTitle,
-    completionKind: 'user_visible',
-    sessionId: context.sessionId,
-    ...(context.runId ? { runId: context.runId } : {}),
-    ...(treeId ? { treeId } : {}),
-    role: role || 'dynamic',
-    startedAt: agentStartedAt,
-    suppressIdleWake: Boolean(context.suppressBackgroundSubagentIdleWake),
-    ...(context.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
-    onComplete: scheduleBackgroundSubagentIdleWake,
-  });
+  registerDetachedSubagent(options);
   publishBackgroundSubagentVisibility({
     promise,
     scope: visibilityScope,
@@ -187,6 +173,42 @@ Use collect_agent("${agentId}") to fetch the result.`,
       ...(visibilityScope ?? {}),
     },
   };
+}
+
+export function registerDetachedSubagent(options: {
+  promise: Promise<SubagentResult>;
+  agentId: string;
+  completionTitle: string;
+  role: string | undefined;
+  context: SubagentExecutionContext;
+  treeId: string;
+  agentStartedAt: number;
+  abort?: () => void;
+}): void {
+  const { promise, agentId, completionTitle, role, context, treeId, agentStartedAt, abort } = options;
+  getBackgroundSubagentRegistry().adopt(promise, {
+    agentId,
+    title: completionTitle,
+    completionKind: 'user_visible',
+    sessionId: context.sessionId,
+    ...(context.runId ? { runId: context.runId } : {}),
+    ...(treeId ? { treeId } : {}),
+    role: role || 'dynamic',
+    startedAt: agentStartedAt,
+    abort,
+    suppressIdleWake: Boolean(context.suppressBackgroundSubagentIdleWake),
+    ...(context.suppressBackgroundSubagentIdleWake ? {
+      suppressReason: 'goal-loop' as const,
+      // The goal loop receives the scoped SpawnGuard reminder in its next inference.
+      ...(!context.swarmRunScope ? { completionNotificationGate: { suppress: true } } : {}),
+    } : {}),
+    onComplete: scheduleBackgroundSubagentIdleWake,
+  });
+  const managed = getSpawnGuard().get(agentId);
+  if (managed) {
+    managed.background = true;
+    managed.completionByBackgroundRegistry = !context.swarmRunScope && !context.suppressBackgroundSubagentIdleWake;
+  }
 }
 
 export function delegateSpawnAgentWorktreeCleanup(options: {

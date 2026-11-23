@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import type { AgentEvent } from '../../../src/shared/contract/agent';
-import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
+import type { ModelConfig } from '../../../src/shared/contract';
+import { inference, buildAiSdkAdaptiveFallbackInfo } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { handleImagePayloadExceededError } from '../../../src/host/agent/runtime/contextAssembly/inferenceImagePayloadError';
 import { ContextLengthExceededError } from '../../../src/host/model/modelRouter';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
@@ -503,6 +504,8 @@ describe('contextAssembly inference artifact retry', () => {
         disabledToolNames: ['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write'],
       },
     });
+    // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：非耗尽事件不带 exhausted 标记
+    expect(fallbackEvent?.data).not.toHaveProperty('exhausted');
     const [, effectiveTools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     expect(effectiveTools).toEqual([]);
     expect(response).toMatchObject({
@@ -1359,5 +1362,73 @@ describe('contextAssembly inference artifact retry', () => {
         terminal: false,
       }),
     }));
+  });
+
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL ①：链耗尽的 model_fallback 事件必须
+  // 无 `to` 键、带 exhausted: true，且整个 payload JSON 不含任何 CJK 字符。
+  // ModelFallbackInfo 用生产构造器 buildAiSdkAdaptiveFallbackInfo（inference() 构造
+  // 主任务恢复 trace 的同一函数）搭建，事件经 inference() 的生产发射点发出。
+  it('exhausted chain emits model_fallback without `to`, with `exhausted: true`, and no CJK in the payload', async () => {
+    const ctx = buildCtx();
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'hello' },
+    ]);
+    const exhaustedInfo = buildAiSdkAdaptiveFallbackInfo(
+      { provider: 'zhipu', model: 'glm-4.7-flash', apiKey: 'zhipu-key' } as ModelConfig,
+      { provider: 'moonshot', model: 'kimi-k2.5', apiKey: 'main-key' } as ModelConfig,
+      new Error('Zhipu API error: 429 rate limit exceeded'),
+      'exhausted',
+      new Error('Moonshot API error: 503 service unavailable'),
+    );
+    ctx.runtime.modelRouter.inference = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Moonshot API error: 503 service unavailable'), { modelFallback: exhaustedInfo }),
+    );
+
+    await expect(inference(ctx)).rejects.toThrow('Moonshot API error: 503');
+
+    const fallbackEvents = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
+      .filter((event) => event.type === 'model_fallback');
+    expect(fallbackEvents).toHaveLength(1);
+    const data = fallbackEvents[fallbackEvents.length - 1].data as Record<string, unknown>;
+    expect(data).not.toHaveProperty('to');
+    expect(data.exhausted).toBe(true);
+    expect(/[一-龥]/.test(JSON.stringify(data))).toBe(false);
+  });
+
+  // N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL ①（selected 分支）：主任务恢复"已选回主模型"
+  // 的 trace payload（原 tried[1].detail 是中文串）现在整包不含 CJK。
+  it('selected main-task recovery payload contains no CJK anywhere in the event JSON', async () => {
+    const ctx = buildCtx();
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'hello' },
+    ]);
+    const selectedInfo = buildAiSdkAdaptiveFallbackInfo(
+      { provider: 'zhipu', model: 'glm-4.7-flash', apiKey: 'zhipu-key' } as ModelConfig,
+      { provider: 'moonshot', model: 'kimi-k2.5', apiKey: 'main-key' } as ModelConfig,
+      new Error('Zhipu API error: 429 rate limit exceeded'),
+      'selected',
+    );
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'ok',
+      finishReason: 'stop',
+      actualProvider: 'moonshot',
+      actualModel: 'kimi-k2.5',
+      fallback: selectedInfo,
+    });
+
+    await inference(ctx);
+
+    const fallbackEvents = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
+      .filter((event) => event.type === 'model_fallback');
+    expect(fallbackEvents).toHaveLength(1);
+    const data = fallbackEvents[fallbackEvents.length - 1].data as Record<string, unknown>;
+    expect(data.to).toBe('moonshot/kimi-k2.5');
+    expect(data.exhausted).toBeUndefined();
+    expect(/[一-龥]/.test(JSON.stringify(data))).toBe(false);
   });
 });

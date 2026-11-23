@@ -16,6 +16,7 @@ import { isCalendarFailure } from '../../../connectors/native/calendar';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
 import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
@@ -79,13 +80,15 @@ async function executeCalendar(
     return { ok: false, error: `Unsupported calendar action: ${action}`, code: 'INVALID_ARGS' };
   }
 
+  let connectorArgs = args;
   if (action === 'list_events') {
     const window = normalizeCalendarListWindow(args);
     if (!window.ok) return window;
-    args = window.args;
+    connectorArgs = window.args;
   }
 
-  const permit = await canUseTool(schema.name, args);
+  // Ask about the normalized window the connector will actually read.
+  const permit = await canUseTool(schema.name, connectorArgs);
   if (!permit.allow) {
     return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
   }
@@ -115,11 +118,11 @@ async function executeCalendar(
   }
 
   try {
-    const result = await connector.execute(action, args);
+    const result = await connector.execute(action, connectorArgs);
     ctx.logger.debug('calendar', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
       const output = formatConnectorStatusOutput('calendar', status);
       return {
         ok: true,

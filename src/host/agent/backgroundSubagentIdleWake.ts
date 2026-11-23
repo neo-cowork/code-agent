@@ -1,17 +1,13 @@
 import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import type { MessageMetadata } from '../../shared/contract';
 import { getAgentErrorMessage } from '../../shared/utils/agentErrorClassification';
+import { RunSessionConflictError } from '../runtime/runRegistry';
 import { classifyError } from '../model/errorClassifier';
 import { createLogger } from '../services/infra/logger';
 import { formatSystemReminderForCompletions, type SubagentCompletionRecord } from './subagentCompletionNotification';
 import { isSessionNotAccessibleError } from '../services/commandCenter/sessionAccessRetry';
 
 const logger = createLogger('BackgroundSubagentIdleWake');
-
-function isRunSessionConflict(error: unknown): boolean {
-  const candidate = error as { code?: unknown; name?: unknown } | null;
-  return candidate?.code === 'RUN_SESSION_CONFLICT' || candidate?.name === 'RunSessionConflictError';
-}
 
 interface PendingWakeBatch {
   timer: ReturnType<typeof setTimeout>;
@@ -51,7 +47,8 @@ async function flushWake(sessionId: string): Promise<void> {
     idleTransitionCleanupBySession.delete(sessionId);
 
     const { getBackgroundSubagentRegistry } = await import('./backgroundSubagentRegistry');
-    const records = getBackgroundSubagentRegistry().drainCompletionNotifications({ sessionId });
+    const registry = getBackgroundSubagentRegistry();
+    const records = registry.drainCompletionNotifications({ sessionId });
     const content = formatSystemReminderForCompletions(records, { delivery: 'wake' });
     if (!content) return;
 
@@ -117,6 +114,7 @@ async function flushWake(sessionId: string): Promise<void> {
       failureMessage = text;
       failureError = event.data;
     });
+    logger.info('Background subagent completion wake starting', { sessionId, agentIds: records.map((record) => record.agentId) });
     try {
       await taskManager.startTask(
         sessionId,
@@ -139,18 +137,21 @@ async function flushWake(sessionId: string): Promise<void> {
         messageMetadata,
         `background-subagent:${sessionId}:${Date.now()}`,
       );
+    } catch (error) {
+      if (!(error instanceof RunSessionConflictError)) throw error;
+      registry.restoreCompletionNotifications(records);
+      logger.info('Background subagent completion wake deferred: parent run won admission', { sessionId });
+      watchForIdleTransition(sessionId, runRegistry);
+      return;
     } finally {
       stopObserving();
     }
     if (failureMessage) await recordFailure(failureError ?? failureMessage);
+    else if (!reportedToUser) await recordFailure('Wake turn returned without an assistant report');
   } catch (error) {
     logger.warn('Failed to wake idle parent session for background subagent completion', {
       sessionId,
-      reason: isRunSessionConflict(error)
-        ? 'run_session_conflict'
-        : isSessionNotAccessibleError(error)
-          ? 'session_not_accessible_for_current_owner'
-          : 'wake_start_failed',
+      reason: isSessionNotAccessibleError(error) ? 'session_not_accessible_for_current_owner' : 'wake_start_failed',
       error: String(error),
     });
     await recordFailure?.(error);
@@ -178,6 +179,8 @@ function watchForIdleTransition(sessionId: string, runRegistry: { hasSession(id:
   };
   subscription.cleanup = runRegistry.onIdleTransition(onIdle);
   idleTransitionCleanupBySession.set(sessionId, subscription.cleanup);
+  // The parent can exit before a rejected startTask reaches its catch handler.
+  onIdle();
 }
 
 export function scheduleBackgroundSubagentIdleWake(record: SubagentCompletionRecord): void {

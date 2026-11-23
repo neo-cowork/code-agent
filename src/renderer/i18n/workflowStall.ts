@@ -8,6 +8,7 @@ export const workflowStallZh = {
   workflowStall: {
     quiet: '暂无进展',
     long: '长时间无进展，已提醒 Neo',
+    rowLong: '很久没动静',
   },
 };
 
@@ -17,5 +18,6 @@ export const workflowStallEn: typeof workflowStallZh = {
     // 硬档文案要单行塞进 max-w-3xl 卡片头（743px）且不挤计数：中文 148px，英文缩到同量级
     // （原句 'No progress for a long time; Neo has been notified' 50 字符会顶爆换行）。
     long: 'Stalled for a long time; Neo notified',
+    rowLong: 'Silent for a long time',
   },
 };

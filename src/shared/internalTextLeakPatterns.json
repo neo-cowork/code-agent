@@ -53,6 +53,6 @@
     "\\bActive:\\s*(\\d+)\\s*\\/\\s*\\d+d\\b"
   ],
   "sandboxExec": "\\bsandbox-exec\\b",
-  "tempPath": "(?:\\/private\\/tmp|\\/tmp|\\/var\\/folders)\\/[A-Za-z0-9._/-]+",
+  "tempPath": "(?:\\/private)?\\/(?:tmp|var\\/tmp|var\\/folders)\\/[A-Za-z0-9._/-]+",
   "rawJsonKeyValue": "\\\"[A-Za-z0-9_.-]+\\\"\\s*:\\s*(?:\\\"[^\\\"]*\\\"|-?\\d+(?:\\.\\d+)?|true|false|null|\\[[^\\]]*\\]|\\{[^}]*\\})"
 }

@@ -1,10 +1,70 @@
 // @vitest-environment jsdom
+// jsdom 没有布局：这里的用例锁「契约」（占位变量发布/清除、Footer 消费、贴底列表
+// 随占位增长同帧钉底、锚定与点击穿透 class），真实几何（盒子不相交、elementFromPoint、
+// 真滚动）由 web 构建的 Playwright 证据页证明（N-FIX-TOAST-COVERS-LAST-MESSAGE-ACTIONS ②）。
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastContainer } from '../../../src/renderer/components/Toast';
+import { setToastReserve } from '../../../src/renderer/components/toastReserve';
 import { SaaSConnectorFeedback } from '../../../src/renderer/components/features/settings/sections/SaaSConnectorFeedback';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
 import { Z_LAYERS } from '../../../src/renderer/styles/zLayers';
+
+vi.mock('react-virtuoso', async () => {
+  const ReactModule = await import('react');
+  return {
+    Virtuoso: ReactModule.forwardRef(function MockVirtuoso(props: Record<string, any>, ref) {
+      ReactModule.useImperativeHandle(ref, () => ({ scrollToIndex: vi.fn() }));
+      const scrollerRef = ReactModule.useRef<HTMLDivElement | null>(null);
+      ReactModule.useEffect(() => {
+        const el = scrollerRef.current;
+        if (!el || typeof props.scrollerRef !== 'function') return;
+        // jsdom 没有布局：喂出可判读的贴底几何（内容 600 / 视口 100 / 贴底 scrollTop 500）。
+        Object.defineProperty(el, 'scrollHeight', { value: 600, configurable: true });
+        Object.defineProperty(el, 'clientHeight', { value: 100, configurable: true });
+        Object.defineProperty(el, 'scrollTop', { value: 0, writable: true, configurable: true });
+        props.scrollerRef(el);
+      }, []);
+      const items = props.data.map((turn: any, index: number) => ReactModule.createElement(
+        ReactModule.Fragment,
+        { key: turn.turnId },
+        props.itemContent(props.firstItemIndex + index, turn),
+      ));
+      // Footer 是被测契约的一半（消费 --toast-reserve），mock 里必须真渲染出来。
+      return ReactModule.createElement(
+        'div',
+        { 'data-testid': 'virtuoso-scroller', ref: (el: HTMLDivElement | null) => { scrollerRef.current = el; } },
+        ...items,
+        props.components?.Footer ? ReactModule.createElement(props.components.Footer) : null,
+      );
+    }),
+  };
+});
+
+vi.mock('../../../src/renderer/stores/sessionStore', () => {
+  const state = { currentSessionId: 'session-1', sessions: [], messages: [], runningSessionIds: new Set<string>() };
+  const useSessionStore = (selector?: (value: typeof state) => unknown) => (
+    selector ? selector(state) : state
+  );
+  useSessionStore.getState = () => state;
+  return { useSessionStore };
+});
+
+vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
+  useMessageActionStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
+    createForkFromReply: vi.fn(),
+    sendPrompt: vi.fn(),
+  }),
+}));
+
+vi.mock('../../../src/renderer/components/PermissionDialog/PermissionCard', () => ({
+  PermissionCard: () => null,
+}));
+
+import { TurnBasedTraceView } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
+import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
+
+const RESERVE = '--toast-reserve';
 
 function expectBottomCenter(element: HTMLElement) {
   expect(element.classList.contains('fixed')).toBe(true);
@@ -18,7 +78,10 @@ function expectBottomCenter(element: HTMLElement) {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   useToastStore.setState({ toasts: [] });
+  document.documentElement.style.removeProperty(RESERVE);
 });
 
 describe('toast placement keeps page-header actions clear', () => {
@@ -49,5 +112,146 @@ describe('toast placement keeps page-header actions clear', () => {
   it.each(['info', 'success'] as const)('anchors connector %s feedback in the same position', (kind) => {
     render(<SaaSConnectorFeedback receipt={{ kind, text: 'Connection updated' }} error={null} />);
     expectBottomCenter(screen.getByTestId('saas-connector-toast'));
+  });
+});
+
+describe('toast reserve contract (toast yields to the chat list)', () => {
+  it('publishes --toast-reserve from real geometry while a toast shows and clears it after removal', () => {
+    vi.stubGlobal('innerHeight', 768);
+    render(<ToastContainer />);
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('0px');
+
+    act(() => {
+      useToastStore.getState().addToast('warning', 'Upload slowed down', 0);
+    });
+    // jsdom 无布局：栈顶/视口高都量不出真值，按实现同源的方式喂确定性几何
+    // （栈顶 600、视口底 768 → 占位 168px）。
+    const container = screen.getByRole('alert').parentElement!;
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({ top: 600 } as DOMRect);
+    act(() => {
+      useToastStore.getState().addToast('error', 'Could not save changes', 0);
+    });
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('168px');
+
+    act(() => {
+      for (const t of useToastStore.getState().toasts) useToastStore.getState().removeToast(t.id);
+    });
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('0px');
+
+    // 卸载也要归零：页面切走不留残余占位
+    act(() => {
+      useToastStore.getState().addToast('info', 'Still here', 0);
+    });
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).not.toBe('0px');
+    cleanup();
+    expect(document.documentElement.style.getPropertyValue(RESERVE)).toBe('0px');
+  });
+
+  it('the chat list Footer consumes the reserve on top of its breathing space', () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '帮我总结一下', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '这是总结内容。', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+
+    const scroller = screen.getByTestId('virtuoso-scroller');
+    const footer = scroller.lastElementChild as HTMLElement;
+    expect(footer.getAttribute('aria-hidden')).toBe('true');
+    expect(footer.getAttribute('style')).toContain('calc(1.5rem + var(--toast-reserve, 0px))');
+    // 变量发布后 Footer 不需要 React 参与：同一 DOM 节点的高度表达式由 CSS 解析
+    const other = scroller.querySelector('[data-trace-turn-id]');
+    expect(other).not.toBeNull();
+  });
+
+  it('re-pins the list to the bottom in the same frame when the reserve grows while it is at bottom', () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复，超出视口，列表贴底时操作行紧贴 composer 上缘）', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+
+    // 贴底：内容 600 / 视口 100 / scrollTop 500。toast 出现（占位 0 → 200）必须
+    // 同帧把长出的让位带滚出视口，末条消息的操作行才会升到 toast 上缘之上。
+    scroller.scrollTop = 500;
+    act(() => { setToastReserve(200); });
+    expect(scroller.scrollTop).toBe(600);
+
+    // 再叠一条 toast（占位继续增长）：仍贴底 → 继续钉住。
+    act(() => { setToastReserve(320); });
+    expect(scroller.scrollTop).toBe(600);
+
+    // 用户上滚阅读（离底 380 > 增量+容差）：占位变化不许拖拽视口。
+    scroller.scrollTop = 120;
+    act(() => { setToastReserve(400); });
+    expect(scroller.scrollTop).toBe(120);
+
+    // toast 消失（回落）：用户已上滚（离底 380），钩子不得把视口拽回底部。
+    act(() => { setToastReserve(0); });
+    expect(scroller.scrollTop).toBe(120);
+  });
+
+  it('guards the bottom through the dismissal shrink so the last row is not left below the fold', async () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复）', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    // 贴底 + toast：钉到底（600）。
+    scroller.scrollTop = 500;
+    act(() => { setToastReserve(200); });
+    expect(scroller.scrollTop).toBe(600);
+    // toast 消失：Footer 收缩（600 → 400）。真浏览器此刻把 scrollTop 钳到新底
+    // （jsdom 桩不钳，手动落一次模拟钳后状态），Virtuoso 随后的补偿由帧循环守回。
+    Object.defineProperty(scroller, 'scrollHeight', { value: 400, configurable: true });
+    scroller.scrollTop = 300;
+    act(() => { setToastReserve(0); });
+    // rAF 帧循环逐帧落底，稳定后停（jsdom 的 rAF 按定时器走，等够帧数）。
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(scroller.scrollTop).toBe(400);
+  });
+
+  it('still pins when the toast arrives together with a viewport shrink (composer grows)', () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复）', timestamp: 2_000 },
+    ], 'session-1', false);
+    render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    // 上传失败 toast 到来的真实形态：Footer 长出的同时 composer 因失败 chip 变高、
+    // 列表视口变矮——离底距离 = 增量 + 收缩量（100 + 46 = 146），只认增量会误判
+    // 成「用户已上滚」而放弃钉底。内容 700 / 视口收缩到 54 / scrollTop 500。
+    Object.defineProperty(scroller, 'scrollHeight', { value: 700, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 54, configurable: true });
+    Object.defineProperty(scroller, 'scrollTop', { value: 500, writable: true, configurable: true });
+    act(() => { setToastReserve(100); });
+    expect(scroller.scrollTop).toBe(700);
+  });
+
+  it('starts the delta from the reserve already published when the list mounts mid-toast', async () => {
+    const projection = projectTurns([
+      { id: 'u1', role: 'user', content: '写一篇长文', timestamp: 1_000 },
+      { id: 'a1', role: 'assistant', content: '（长回复）', timestamp: 2_000 },
+    ], 'session-1', false);
+    // toast 先显示（占位 200），列表之后才挂上。
+    setToastReserve(200);
+    const { unmount } = render(<TurnBasedTraceView projection={projection} />);
+    const scroller = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    // 用户上滚阅读（离底 380）：占位 200 → 400 真实增量只有 200，不得被当成 400 而拽到底。
+    scroller.scrollTop = 120;
+    act(() => { setToastReserve(400); });
+    expect(scroller.scrollTop).toBe(120);
+    unmount();
+
+    // toast 消失必须被识别为回落（200 → 0）并守底，而不是 delta 0 被跳过。
+    setToastReserve(200);
+    render(<TurnBasedTraceView projection={projection} />);
+    const next = screen.getByTestId('virtuoso-scroller') as HTMLElement;
+    Object.defineProperty(next, 'scrollHeight', { value: 400, configurable: true });
+    next.scrollTop = 300;
+    act(() => { setToastReserve(0); });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(next.scrollTop).toBe(400);
   });
 });

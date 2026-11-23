@@ -67,6 +67,7 @@ export class SessionLifecycleAppService {
       title: config?.title || 'New Session',
       modelConfig: resolveSessionDefaultModelConfig(),
       workingDirectory,
+      projectId: config?.projectId?.trim() || undefined,
       engine: config?.engine ? requestedEngine : undefined,
       metadata: config?.metadata,
       memoryMode: config?.memoryMode,

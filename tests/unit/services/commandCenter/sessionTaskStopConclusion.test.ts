@@ -51,6 +51,17 @@ describe('resolveStoppedTaskOutcome markup-only browser conclusion', () => {
   });
 });
 
+it.each([
+  { stepCap: { max: 8 }, kind: 'step_cap' },
+  { stepCap: undefined, kind: 'no_conclusion' },
+])('uses generic retry advice without a last page ($kind)', ({ stepCap, kind }) => {
+  const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail: '', stepCap });
+  expect(outcome).toMatchObject({ status: 'failed', kind });
+  expect(outcome.notice).toBe(outcome.detail);
+  expect(outcome.notice).not.toContain('网站');
+  expect(outcome.notice).toContain('或者把任务缩小一些再试一次');
+});
+
 const REAL_FAILED_ROWS = [
   '抓取失败了，没有任何定价内容可以总结——我不会编造要点。\n**请求的地址**：x',
   '**任务未能完成：定价表没有抓到，因此没有 3 条要点可交付。**\n- 抓取失败原因：DNS 直接失败。',
@@ -77,6 +88,10 @@ describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
     '- **任务失败**',
     'Unable to open the page.',
     'Failed to fetch the pricing table',
+    '抓取已实际发起，失败了，没有拿到任何页面内容。',
+    '抓取已发起，但是失败了，页面没有内容。',
+    '已尝试抓取，没有成功拿到页面。',
+    '抓取没能成功，页面内容拿不到，原因很明确：本机没有任何程序在监听 2 号端口。',
     ...REAL_FAILED_ROWS,
   ])('failure prose with completed status becomes failed: %s', (detail) => {
     const outcome = resolveStoppedTaskOutcome({ status: 'completed', detail });
@@ -94,6 +109,10 @@ describe('resolveStoppedTaskOutcome unfinished-opener conclusion', () => {
     '三条要点已整理好。其中一个子页面打不开，已跳过；任务未完成的只有附录。',
     '\n\n已完成。\n无法打开的链接有 1 个。',
     '无法访问英文版，以下是中文版定价页的三条要点：\n1. 基础版 99 元/月',
+    '已完成，之前那次失败已修复',
+    '已完成，上次没成功的步骤这次补上了。',
+    '页面标题是 Example Domain。\n另一次抓取失败了，已重试。',
+    '已完成。第二次抓取失败了，已跳过。',
     '未能找到官方折扣说明，但已核对标准价格：专业版 299 元/月。',
   ])('success prose stays completed: %s', (detail) => {
     expect(resolveStoppedTaskOutcome({ status: 'completed', detail }).status).toBe('completed');
