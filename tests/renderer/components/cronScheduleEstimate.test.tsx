@@ -107,7 +107,7 @@ describe.each([
   { path: 'chat confirmation', attr: 'data-schedule-row', card: (pending: PendingScheduleDraft) =>
     <ScheduleConfirmCard draft={pending} confirming={false} onConfirm={noop} onDismiss={noop} /> },
   { path: 'form confirmation', attr: 'data-pending-routine-row', card: (pending: PendingScheduleDraft) =>
-    <PendingRoutineRestate input={pending.input} confirming={false} onConfirm={noop} onBack={noop} /> },
+    <PendingRoutineRestate input={{ ...pending.input, runsOn: pending.input.runsOn ?? 'local' }} confirming={false} onConfirm={noop} onBack={noop} /> },
 ])('$path', ({ attr, card }) => {
   it.each(cases)('$name', async ({ draft: pending, history, value, highlight }) => {
     getRecentExecutions.mockResolvedValue(history);
