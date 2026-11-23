@@ -2842,7 +2842,7 @@ export class ToolExecutor {
       return { ...result, metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
       if (error instanceof EnvBlockedError) {
-        if (userApproved && executionToolName === 'mail_draft') error.approvedCallArgs = params;
+        error.approvedCallArgs = userApproved && executionToolName === 'mail_draft' ? params : undefined;
         throw error;
       }
       const duration = Date.now() - startTime;
