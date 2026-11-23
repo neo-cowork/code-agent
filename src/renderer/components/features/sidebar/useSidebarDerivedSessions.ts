@@ -40,9 +40,9 @@ import {
 } from '../../../utils/emptyCollaborationSpaces';
 import { useEmptyCollaborationSpaces } from './useEmptyCollaborationSpaces';
 import {
-  COMPOSER_DRAFT_CHANGED_EVENT,
   composerDraftStorageKey,
   readComposerDraft,
+  subscribeComposerDraftChanges,
 } from '../chat/ChatInput/composerDraftStore';
 
 const logger = createLogger('Sidebar');
@@ -204,12 +204,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const [remoteSearchSessions, setRemoteSearchSessions] = useState<SessionWithMeta[]>([]);
   const [draftRevision, refreshDrafts] = useReducer((revision: number) => revision + 1, 0);
 
-  useEffect(() => {
-    window.addEventListener(COMPOSER_DRAFT_CHANGED_EVENT, refreshDrafts);
-    return () => window.removeEventListener(COMPOSER_DRAFT_CHANGED_EVENT, refreshDrafts);
-  }, []);
+  useEffect(() => subscribeComposerDraftChanges(refreshDrafts), []);
 
-  const { sidebarSessions, remoteSidebarSessions } = useMemo(() => {
+  const { sidebarSessions, remoteSidebarSessions, projectIdsWithHiddenSessions } = useMemo(() => {
     const shouldShow = (session: SessionWithMeta) => {
       const taskState = sessionStates[session.id];
       return !isBlankNewSession(session, language)
@@ -217,10 +214,18 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         || (taskState !== undefined && taskState.status !== 'idle')
         || readComposerDraft(composerDraftStorageKey(session.id, false)) !== null;
     };
+    const projectIdsWithHiddenSessions = new Set<string>();
+    const sidebarSessions = sessions.filter((session) => {
+      if (shouldShow(session)) return true;
+      const projectId = session.projectId?.trim();
+      if (projectId) projectIdsWithHiddenSessions.add(projectId);
+      return false;
+    });
     // A host hit for a loaded row must use the local row's visibility and status.
     const loadedIds = new Set(sessions.map((session) => session.id));
     return {
-      sidebarSessions: sessions.filter(shouldShow),
+      sidebarSessions,
+      projectIdsWithHiddenSessions,
       remoteSidebarSessions: remoteSearchSessions.filter((session) => !loadedIds.has(session.id) && shouldShow(session)),
     };
   }, [draftRevision, language, remoteSearchSessions, sessionRuntimes, sessions, sessionStates]);
@@ -555,8 +560,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       sessionGroupedWorkspaces,
       collaborationSpaces,
       searchQuery.trim() !== '' || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter,
+      projectIdsWithHiddenSessions,
     ),
-    [collaborationSpaces, hasActiveTrajectoryFilter, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
+    [collaborationSpaces, hasActiveTrajectoryFilter, projectIdsWithHiddenSessions, searchQuery, sessionGroupedWorkspaces, sessionStatusFilter],
   );
   // 归档过滤之前取 id：详情回来把空间标成 archived 后组会从展示列表消失，
   // 若这里跟着消失，effect 会清掉 meta，组又出现，来回闪。

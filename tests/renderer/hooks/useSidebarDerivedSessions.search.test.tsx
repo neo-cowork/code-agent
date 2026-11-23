@@ -3,6 +3,7 @@ import React from 'react';
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import type { ProjectWithActivity } from '../../../src/shared/contract/project';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const state = vi.hoisted(() => ({
@@ -35,6 +36,7 @@ const ipc = vi.hoisted(() => ({
 }));
 
 const projectClient = vi.hoisted(() => ({
+  listProjectsWithActivity: vi.fn<() => Promise<ProjectWithActivity[]>>(),
   getProjectDetail: vi.fn(async (projectId: string) => ({
     project: { id: projectId, name: 'Project', status: 'active', description: '', updatedAt: 1 },
     goals: [],
@@ -85,6 +87,7 @@ import { SidebarSearchDialog } from '../../../src/renderer/components/features/s
 
 beforeEach(() => {
   vi.clearAllMocks();
+  projectClient.listProjectsWithActivity.mockResolvedValue([]);
   localStorage.clear();
   state.ui.searchQuery = 'needle';
   state.session.currentSessionId = 'message-hit';
@@ -433,6 +436,52 @@ describe('useSidebarDerivedSessions blank rows', () => {
 
     act(() => { removeComposerDraft(key); });
     expect(result.current.filteredSessions.map((session) => session.id)).not.toContain(blank.id);
+  });
+
+  it('refreshes draft visibility when another window changes the persisted draft', () => {
+    const { result } = renderSidebar();
+    const key = composerDraftStorageKey(blank.id, false);
+    if (!key) throw new Error('Expected a session draft key');
+    const draft = JSON.stringify({ v: 1, text: 'Draft from another window' });
+
+    act(() => {
+      localStorage.setItem(key, draft);
+      window.dispatchEvent(new StorageEvent('storage', { key, newValue: draft, storageArea: localStorage }));
+    });
+    expect(result.current.filteredSessions.map((session) => session.id)).toContain(blank.id);
+
+    act(() => {
+      localStorage.removeItem(key);
+      window.dispatchEvent(new StorageEvent('storage', { key, oldValue: draft, storageArea: localStorage }));
+    });
+    expect(result.current.filteredSessions.map((session) => session.id)).not.toContain(blank.id);
+  });
+
+  it('keeps the collaboration space visible when its only loaded session is hidden', async () => {
+    const space: ProjectWithActivity = {
+      id: 'blank-space',
+      name: 'Blank space',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+      spacePromotedAt: 1,
+      visibleSessionCount: 1,
+      activeTopicCount: 0,
+      lastActivityAt: null,
+    };
+    projectClient.listProjectsWithActivity.mockResolvedValue([
+      space,
+      { ...space, id: 'unloaded-space', name: 'Unloaded space' },
+    ]);
+    state.session.sessions = [{ ...blank, projectId: space.id }];
+
+    const { result } = renderSidebar();
+
+    await waitFor(() => {
+      expect(result.current.workspaceGroupedSessions.map((group) => group.projectId)).toEqual([space.id]);
+    });
+    expect(result.current.workspaceGroupedSessions[0]?.sessions).toEqual([]);
+    expect(result.current.visibleSessionIds).toEqual([]);
   });
 
   it('keeps a blank row with a runtime or non-idle task state visible before the count updates', () => {
