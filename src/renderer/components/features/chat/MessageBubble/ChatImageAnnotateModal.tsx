@@ -26,6 +26,8 @@ const MAX_BAKED_EDGE_PX = 1600;
 type RectShape = Extract<AnnotShape, { kind: 'rect' }>;
 
 async function readImageAsDataUrl(src: string): Promise<string> {
+  // 内联图（用户上传 / 粘贴）本身就是 data URL，不必再 fetch（页面 CSP 的 connect-src 不一定放行 data:）。
+  if (src.startsWith('data:image/')) return src;
   const response = await fetch(src);
   if (!response.ok) throw new Error('image fetch failed');
   const blob = await response.blob();
@@ -61,9 +63,10 @@ export function ChatImageAnnotateModal({
   const imgRef = useRef<HTMLImageElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  // 依赖字符串而不是 asset 对象：气泡每次重渲染都会重建 asset，按对象依赖会让读取不停被取消。
+  const src = getRenderableMediaSrc(asset);
   useEffect(() => {
     let cancelled = false;
-    const src = getRenderableMediaSrc(asset);
     if (!src) {
       setError(copy.loadFailed);
       return;
@@ -78,7 +81,7 @@ export function ChatImageAnnotateModal({
     return () => {
       cancelled = true;
     };
-  }, [asset, copy.loadFailed]);
+  }, [src, copy.loadFailed]);
 
   const pointerPoint = useCallback((event: React.PointerEvent) => {
     const bounds = overlayRef.current?.getBoundingClientRect();
