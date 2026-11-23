@@ -63,7 +63,7 @@ async function fitUnderPersistLimit(pngDataUrl: string): Promise<string> {
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     const ctx = canvas.getContext('2d');
     if (!ctx) break;
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = 'white'; // JPEG 无透明通道，底色垫白
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     result = canvas.toDataURL('image/jpeg', quality);
