@@ -464,9 +464,7 @@ describe('turn-disabled tool bounce in the real chat detail row', () => {
 
 describe('platform pin leaves no residue for later files in the same worker', () => {
   // 回归（Rework r1 / ai-review）：afterAll 曾把整个属性描述符对象当成 value 写回
-  // process.platform，之后的 process.platform 变成对象，同 worker 后续文件里
-  // === 'darwin' / === 'linux' 全为假（managerNpmEnv 的 it.runIf 沙箱用例被跳过、
-  // isDaemonLockSupported() 在 mac/linux 上返回 false 而门仍绿）。
+  // process.platform，导致同 worker 的后续测试拿到对象，平台判断全部失败。
   // 本组排在平台钉组之后：它一还原失真，这里立刻红。
   it('process.platform is the real platform string after the bounce group restored it', () => {
     expect(process.platform).toBe(fileLoadPlatform);
