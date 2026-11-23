@@ -80,4 +80,12 @@ describe('消息文本与 capture', () => {
     expect(xml).toContain('区域 1（左侧');
     expect(xml).not.toContain('快捷键');
   });
+  it('烘焙图被压成 JPEG 时附件类型与扩展名跟着变', () => {
+    const capture = buildChatImageAnnotationCapture({
+      regions, note: '', copy: zh, bakedPngDataUrl: 'data:image/jpeg;base64,/9j/AAAA', requestId: 'r2', capturedAtMs: 0,
+    });
+    const attachment = buildAppshotAttachment(capture)!;
+    expect(attachment.mimeType).toBe('image/jpeg');
+    expect(attachment.name).toBe('图片批注.jpg');
+  });
 });

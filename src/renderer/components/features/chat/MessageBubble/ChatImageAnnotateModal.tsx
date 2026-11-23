@@ -23,6 +23,14 @@ const MIN_REGION_PX = 8;
 /** 烘焙图长边上限：太大的图缩小后再发，避免超大 dataURL。 */
 const MAX_BAKED_EDGE_PX = 1600;
 
+/**
+ * 落库时超过 512K 字符（messageAttachments 的 MAX_PERSISTED_DATA_URL_CHARS）的内联图会被剥掉字节，
+ * 重载后就没图了；烘焙图要压在这条线下面（留一点余量）。
+ */
+const BAKED_MAX_DATA_URL_CHARS = 500_000;
+/** 依次尝试的 [缩放, JPEG 质量]：先只降质量，再缩小。 */
+const SHRINK_STEPS: ReadonlyArray<readonly [number, number]> = [[1, 0.85], [1, 0.7], [0.75, 0.7], [0.5, 0.7]];
+
 type RectShape = Extract<AnnotShape, { kind: 'rect' }>;
 
 async function readImageAsDataUrl(src: string): Promise<string> {
@@ -37,6 +45,31 @@ async function readImageAsDataUrl(src: string): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('image read failed'));
     reader.readAsDataURL(blob);
   });
+}
+
+/** PNG 太大时改存 JPEG 并逐级缩小，直到能随消息一起落库。 */
+async function fitUnderPersistLimit(pngDataUrl: string): Promise<string> {
+  if (pngDataUrl.length <= BAKED_MAX_DATA_URL_CHARS) return pngDataUrl;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = pngDataUrl;
+  });
+  let result = pngDataUrl;
+  for (const [scale, quality] of SHRINK_STEPS) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) break;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    result = canvas.toDataURL('image/jpeg', quality);
+    if (result.length <= BAKED_MAX_DATA_URL_CHARS) break;
+  }
+  return result;
 }
 
 function isRect(shape: AnnotShape): shape is RectShape {
@@ -153,12 +186,13 @@ export function ChatImageAnnotateModal({
         rect,
         { kind: 'text' as const, x: rect.x + 4, y: rect.y + 3, text: String(i + 1), color: rect.color },
       ]);
-      const baked = await exportAnnotatedPng(
+      const bakedPng = await exportAnnotatedPng(
         dataUrl,
         composeAnnotOps({ naturalW: outW, naturalH: outH, displayW, displayH, shapes: stamped }),
         outW,
         outH,
       );
+      const baked = await fitUnderPersistLimit(bakedPng);
       const regions: ChatImageAnnotationRegion[] = finished.map((rect, i) => ({
         index: i + 1,
         box: toRegionPercentBox(rect, displayW, displayH),

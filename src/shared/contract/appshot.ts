@@ -147,13 +147,14 @@ export function buildAppshotAttachment(capture: AppshotCapture): MessageAttachme
   if (!capture.screenshotDataUrl) return null;
   const approxBytes = Math.round((capture.screenshotDataUrl.length * 3) / 4);
   if (capture.asPlainImage) {
+    const isJpeg = capture.screenshotDataUrl.startsWith('data:image/jpeg');
     return {
       id: `annotated-${capture.requestId}`,
       type: 'image',
       category: 'image',
-      name: `${capture.appName}.png`,
+      name: `${capture.appName}.${isJpeg ? 'jpg' : 'png'}`,
       size: approxBytes,
-      mimeType: 'image/png',
+      mimeType: isJpeg ? 'image/jpeg' : 'image/png',
       data: capture.screenshotDataUrl,
       thumbnail: capture.screenshotDataUrl,
     };
