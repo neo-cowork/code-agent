@@ -95,3 +95,51 @@ export function parseSchedulePeriodWords(text: string): SchedulePeriodWords | nu
   if (!time && !week.freq) return null;
   return { ...week, ...(time ? { time } : {}), matchedWord: word };
 }
+
+const DAILY_FREQUENCY = /每天|每日|每早(?:上)?|每晚(?:上)?|每夜|\b(?:every\s+(?:day|morning|night|evening)|daily|nightly)\b/i;
+const NON_DAILY_FREQUENCY = /每周|每星期|每礼拜|周末|双休日|\b(?:weekly|every\s+week|weekends?)\b/i;
+const DAY_PERIOD = /^\s*(早上|早晨|上午|下午|傍晚|午后|中午|晚上|夜里)/;
+const CLOCK_AT = /^\s*(?:at\b|在|于)\s*/i;
+const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1,2})(?:\s*[:：]\s*(\d{2})|\s*(点)(?:钟)?(?:\s*(半|\d{1,2}(?:\s*分)?))?)?(?:\s*([ap])\.?m\b\.?)?(?!\s*[\d:：点])/i;
+
+/**
+ * Read a clock attached to an explicit daily phrase before enabling a wake.
+ * undefined means no scheduling phrase; null means a newer scheduling phrase
+ * is unsupported or has no explicit clock. The cron form keeps its own defaults.
+ */
+export function readExplicitDailySchedule(text: string): string | null | undefined {
+  if (readWeekday(text).freq || NON_DAILY_FREQUENCY.test(text)) return null;
+  const marker = DAILY_FREQUENCY.exec(text);
+  if (!marker) return undefined;
+
+  const tail = text.slice(marker.index + marker[0].length);
+  const period = DAY_PERIOD.exec(tail);
+  const afterPeriod = period ? tail.slice(period[0].length) : tail;
+  const at = CLOCK_AT.exec(afterPeriod);
+  const clockText = at ? afterPeriod.slice(at[0].length) : afterPeriod;
+  const clock = ADJACENT_CLOCK.exec(clockText);
+  if (!clock) return null;
+
+  const [, hourText, colonMinutes, chime, chineseMinutes, meridiem] = clock;
+  const dayPart = period?.[1] ?? marker[0];
+  const evening = /晚|夜|evening|night/i.test(dayPart);
+  const afternoon = /下午|傍晚|午后/.test(dayPart);
+  const morning = /早|上午|morning/i.test(dayPart);
+  const noon = dayPart === '中午';
+  if (!colonMinutes && !chime && !meridiem) {
+    // An unmarked number needs a time cue and must stand apart from task text.
+    if (!(at || evening || afternoon || morning || noon) || /^[\p{L}\p{N}]/u.test(clockText.slice(clock[0].length))) return null;
+  }
+
+  let hour = zhHour(hourText);
+  const minute = chineseMinutes === '半' ? 30 : parseInt(colonMinutes ?? chineseMinutes ?? '0', 10);
+  if (hour === null || hour >= 24 || minute >= 60 || (meridiem && (hour === 0 || hour > 12))) return null;
+
+  const amPm = meridiem?.toLowerCase();
+  if (amPm === 'p' && hour < 12) hour += 12;
+  else if (amPm === 'a' && hour === 12) hour = 0;
+  else if (!amPm && evening && hour === 12) hour = 0;
+  else if (!amPm && (evening || afternoon) && hour < 12) hour += 12;
+  else if (!amPm && noon && hour < 6) hour += 12;
+  return `${pad(hour)}:${pad(minute)}`;
+}

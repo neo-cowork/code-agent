@@ -235,6 +235,51 @@ describe('roleDraftQueue', () => {
       expect(cadenceMocks.write).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['new expert in a reused chat', '/create-role 每天早上 9 点检查项目进度', '再帮我建一个只看会议的专家'],
+      ['English new expert in a reused chat', '/create-role every morning at 9 check project progress', 'Create another expert that only checks meetings'],
+      ['weekday revision', '每天早上 8 点看邮件', '改成工作日每天早上 9 点'],
+      ['weekly revision', '每天早上 8 点看邮件', '改成每周一 9 点'],
+      ['weekend revision', '每天早上 8 点看邮件', '改成周末早上 9 点'],
+    ])('I1 does not carry an earlier schedule into %s', async (_case, earlier, latest) => {
+      cadenceMocks.getMessages.mockResolvedValue([
+        { role: 'user', content: earlier },
+        { role: 'user', content: latest },
+        { role: 'user', content: '简报越短越好' },
+      ]);
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['每晚 7', '0 0 19 * * *'],
+      ['every evening at 7', '0 0 19 * * *'],
+      ['每早8', '0 0 8 * * *'],
+      ['每日晚上 8 点半', '0 30 20 * * *'],
+      ['daily at 7:15 pm', '0 15 19 * * *'],
+      ['每天早上9点15', '0 15 9 * * *'],
+      ['每天晚上12点', '0 0 0 * * *'],
+    ])('I2 saves the explicit clock in %s', async (content, cadence) => {
+      cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content }]);
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', { level: 'daily', cadence });
+    });
+
+    it.each(['每天把第3点做完', '每天早上把第3点做完', 'every evening at 7:5', '每早 25', '每早8件事', 'every evening at 7th Street'])(
+      'I2 does not install a guessed clock for %s',
+      async (content) => {
+        cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content }]);
+        const { draft } = await enqueueRoleDraft(morningRole);
+
+        expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+        expect(cadenceMocks.write).not.toHaveBeenCalled();
+      },
+    );
+
     it('sets 09:00 explicitly when a reused role ID retains a custom cadence', async () => {
       cadenceMocks.resolve.mockResolvedValue({ level: 'silent', cadence: '0 0 20 * * *' });
       cadenceMocks.getMessages.mockResolvedValue([

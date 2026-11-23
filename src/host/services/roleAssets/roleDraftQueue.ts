@@ -16,7 +16,7 @@ import * as path from 'path';
 import { getUserConfigDir, getAgentsMdDir } from '../../config/configPaths';
 import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
 import type { Message } from '../../../shared/contract';
-import { parseSchedulePeriodWords } from '../../../shared/utils/schedulePeriodWords';
+import { readExplicitDailySchedule } from '../../../shared/utils/schedulePeriodWords';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import { scanSkillContent } from '../../security/skillContentGuard';
 import { createLogger } from '../infra/logger';
@@ -280,7 +280,15 @@ export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRo
   return { draft: prepared.draft };
 }
 
-const EXPLICIT_DAILY_MARKER = /每天|每日|每早|每晚|每夜|\b(?:every\s+(?:day|morning|night|evening)|daily|nightly)\b/i;
+// Recognize fresh requests even when a continuation prefix prevents routing
+// the turn as a new create-role skill invocation.
+const ROLE_REQUEST_CONTINUATION = /^(?:(?:再|另外|接着|然后|也|请)[\s，,]*)+/;
+const EN_ROLE_REQUEST = /^(?:please\s+)?(?:create|build|make|add|set up)\s+(?:(?:me|us)\s+)?(?:another|one more|an?)\s+(?:[\w-]+\s+){0,5}(?:expert|assistant|role)\b/i;
+
+function startsAnotherRoleRequest(text: string): boolean {
+  const request = text.trim().replace(ROLE_REQUEST_CONTINUATION, '');
+  return Boolean(matchRoleAuthoringSeed(request)) || EN_ROLE_REQUEST.test(request);
+}
 
 async function applyInitialDailyCadence({ roleId, sessionId }: RoleDraftMeta): Promise<void> {
   let messages: Message[];
@@ -294,16 +302,14 @@ async function applyInitialDailyCadence({ roleId, sessionId }: RoleDraftMeta): P
 
   for (const message of [...messages].reverse()) {
     if (message.role !== 'user' || message.isMeta || message.visibility === 'rewound') continue;
-    const schedule = EXPLICIT_DAILY_MARKER.test(message.content)
-      ? parseSchedulePeriodWords(message.content)
-      : null;
-    if (!schedule?.time || schedule.freq) {
-      // A new authoring request can reuse an existing chat.
-      if (matchRoleAuthoringSeed(message.content)) return;
+    const time = readExplicitDailySchedule(message.content);
+    if (time === null) return;
+    if (time === undefined) {
+      if (startsAnotherRoleRequest(message.content)) return;
       continue;
     }
 
-    const [hour, minute] = schedule.time.split(':').map(Number);
+    const [hour, minute] = time.split(':').map(Number);
     const cron = `0 ${minute} ${hour} * * *`;
     try {
       const { writeRoleProactivityConfig } = await import('./roleProactivityWrite');
