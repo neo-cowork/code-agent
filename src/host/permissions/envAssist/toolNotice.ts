@@ -9,8 +9,19 @@ import { readCuaHelperPermissionState } from './cua/helperPermissionState';
 import { canOpenEnvSettings } from './settingsPane';
 import { canRequestEnvGrant } from './shellBridge/client';
 
-// In-flight reservations close the parent/delegate race; persisted ids survive reloads.
+// Serialize publishes and resolutions for the same permission across runs.
 const pending = new Map<string, Promise<void>>();
+
+async function queueNoticeWrite(notice: EnvAssistNotice, write: () => Promise<void>): Promise<void> {
+  const key = JSON.stringify([notice.sessionId, notice.class, notice.target?.id]);
+  const previous = pending.get(key);
+  const operation = (async () => {
+    if (previous) await previous.catch(() => undefined);
+    await write();
+  })();
+  pending.set(key, operation);
+  try { await operation; } finally { if (pending.get(key) === operation) pending.delete(key); }
+}
 
 /** Both production tool executors pass here before observing or returning a failed result. */
 export async function publishEnvAssistToolNotice(input: {
@@ -48,44 +59,45 @@ export async function publishEnvAssistToolNotice(input: {
   input.result.output = undefined;
   input.result.metadata = { envAssist: notice };
   if (input.modelResult) Object.assign(input.modelResult, { error: input.result.error, output: undefined, metadata: input.result.metadata });
-  const key = `${input.sessionId}|${notice.id}`;
-  const previous = pending.get(key);
-  const persist = async () => {
-    if (previous) await previous;
+  await queueNoticeWrite(notice, async () => {
     const manager = getSessionManager();
+    const messages = await manager.getMessages(input.sessionId);
+    const live = notice.phase === 'needs_user' ? messages.find((m) => {
+      const candidate = m.metadata?.envAssist;
+      return candidate?.phase === 'needs_user' && candidate.class === notice.class && candidate.target?.id === notice.target?.id;
+    }) : undefined;
+    const liveNotice = live?.metadata?.envAssist;
+    if (liveNotice) notice.id = liveNotice.id;
+
     const messageId = `env-assist:${notice.id}`;
-    const persisted = (await manager.getMessages(input.sessionId)).find((m) => m.id === messageId);
+    const persisted = live ?? messages.find((m) => m.id === messageId);
+    if (persisted?.metadata?.envAssist?.phase === 'resolved') return;
     const message: Message = {
       id: messageId, role: 'assistant', content: '', timestamp: persisted?.timestamp ?? notice.updatedAt,
       metadata: { ...persisted?.metadata, envAssist: notice },
     };
     await manager.addMessageToSession(input.sessionId, message);
-    if (persisted) return;
-    input.onEvent({ type: 'env_assist_notice', data: notice });
-    input.onEvent({ type: 'message', data: message });
-  };
-  const operation = persist();
-  pending.set(key, operation);
-  try { await operation; } finally { if (pending.get(key) === operation) pending.delete(key); }
+    if (!persisted || (liveNotice && (liveNotice.runId !== notice.runId || liveNotice.parkedToolCallId !== notice.parkedToolCallId))) {
+      input.onEvent({ type: 'env_assist_notice', data: notice });
+    }
+    if (!persisted) input.onEvent({ type: 'message', data: message });
+  });
 }
 
 /** Once a probe reads granted: the card's persisted copy becomes "done" (survives reload) and open windows update live. */
 export async function resolveEnvAssistNotice(notice: EnvAssistNotice, now = Date.now()): Promise<void> {
-  // Same per-card queue as publishing: a mount recheck racing a focus recheck (or the button) resolves once.
-  const key = `${notice.sessionId}|${notice.id}`;
-  const previous = pending.get(key);
-  const operation = (async () => { if (previous) await previous.catch(() => undefined); await writeResolved(notice, now); })();
-  pending.set(key, operation);
-  try { await operation; } finally { if (pending.get(key) === operation) pending.delete(key); }
+  await queueNoticeWrite(notice, () => writeResolved(notice, now));
 }
 
 async function writeResolved(notice: EnvAssistNotice, now: number): Promise<void> {
   const manager = getSessionManager();
   const messageId = `env-assist:${notice.id}`;
   const persisted = (await manager.getMessages(notice.sessionId)).find((m) => m.id === messageId);
-  if (persisted?.metadata?.envAssist?.phase !== 'needs_user') return;
-  const { action: _action, ...rest } = notice;
-  const resolved: EnvAssistNotice = { ...rest, phase: 'resolved', doneKey: `env.done.${notice.target?.id ?? ''}`, updatedAt: now };
+  if (!persisted) return;
+  const current = persisted.metadata?.envAssist;
+  if (current?.phase !== 'needs_user') return;
+  const { action: _action, ...rest } = current;
+  const resolved: EnvAssistNotice = { ...rest, phase: 'resolved', doneKey: `env.done.${current.target?.id ?? ''}`, updatedAt: now };
   await manager.addMessageToSession(notice.sessionId, { ...persisted, metadata: { ...persisted.metadata, envAssist: resolved } });
   emitExternalAgentEvent(notice.sessionId, { type: 'env_assist_notice', data: resolved });
 }

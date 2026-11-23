@@ -134,9 +134,10 @@ describe('tool denial through the production env-assist bridge entries', () => {
       success: false, error: 'Permission denied', metadata: { ...failure.metadata },
     };
     await publish({ toolName: failure.toolName, result, sessionId, runId, onEvent: () => undefined });
-    const noticeId = `${runId}|${failure.klass}|${failure.target}`;
-    const messageId = `env-assist:${noticeId}`;
-    return db.getMessages(sessionId).find((message) => message.id === messageId);
+    return db.getMessages(sessionId).find(({ metadata }) => {
+      const notice = metadata?.envAssist;
+      return notice?.runId === runId && notice.class === failure.klass && notice.target?.id === failure.target;
+    });
   }
 
   it.each(failures)('persists the $toolName denial with a button', async (failure) => {
