@@ -16,7 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { isEditableTool } from '@shared/contract';
 import { toolUserLabel } from '@shared/utils/toolUserLabel';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
-import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
+import type { OutboundDraftInboxItem, ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
@@ -38,6 +38,7 @@ import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+import { OutboundDraftCard } from './OutboundDraftCard';
 import { AutomationRoleChip } from './AutomationRoleChip';
 import { folderDisplayName, ParkedArgsDisclosure } from './parkedArgsDisclosure';
 
@@ -141,6 +142,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
+  const [drafts, setDrafts] = useState<OutboundDraftInboxItem[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
   const [voidedExpanded, setVoidedExpanded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -189,16 +191,19 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
         setParked(list);
       })
       .catch(warnFailed('parked approvals'));
+    sessionAutomationClient.listOutboundDrafts()
+      .then(setDrafts)
+      .catch(warnFailed('mail drafts'));
   }, [onPendingCountChange, onParkedChange]);
 
   useEffect(() => {
     load();
   }, [load, refreshSignal]);
 
-  const parkedPendingCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length;
+  const pendingActionCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length + drafts.length;
   useEffect(() => {
-    onParkedPendingChange?.(parkedPendingCount);
-  }, [onParkedPendingChange, parkedPendingCount]);
+    onParkedPendingChange?.(pendingActionCount);
+  }, [onParkedPendingChange, pendingActionCount]);
 
   // 页面停着时定时任务跑完也要自动刷新：可见时低频轮询，切回前台/窗口聚焦立即重拉。
   useEffect(() => {
@@ -299,7 +304,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
 
   const voided = parked.filter((item) => item.status === 'voided');
   const foldVoided = voided.length >= 2;
-  const hasContent = items.length > 0 || parked.length > 0;
+  const hasContent = items.length > 0 || parked.length > 0 || drafts.length > 0;
   const urgencyGroups: Record<CronUrgency, SessionAutomationRecord[]> = {
     must_today: [],
     can_wait: [],
@@ -331,15 +336,16 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
         </div>
       ) : (
         <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3">
-          {parked.length > 0 && (
+          {(parked.length > 0 || drafts.length > 0) && (
             <div className="mb-3" data-testid="parked-approval-group">
-              {parked.some((item) => item.status !== 'voided') && (
+              {(drafts.length > 0 || parked.some((item) => item.status !== 'voided')) && (
                 <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
                   <ShieldAlert className="h-3.5 w-3.5" />
-                  {interpolatePlural(cc.parkedTitle, parkedPendingCount)}
+                  {interpolatePlural(cc.parkedTitle, pendingActionCount)}
                 </div>
               )}
               <div className="space-y-1.5">
+                {drafts.map((draft) => <OutboundDraftCard key={draft.id} draft={draft} onChange={load} />)}
                 {groupParkedWrites(parked).filter((item) => item.status !== 'voided').map((item) => {
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';

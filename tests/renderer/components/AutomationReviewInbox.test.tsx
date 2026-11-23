@@ -3,11 +3,13 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAutomationRecord } from '../../../src/shared/contract/sessionAutomation';
-import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
+import type { OutboundDraftActionCode, OutboundDraftInboxItem, ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { cronClient } from '../../../src/renderer/services/cronClient';
 
 const listPendingReview = vi.fn<() => Promise<SessionAutomationRecord[]>>();
+const listOutboundDrafts = vi.fn<() => Promise<OutboundDraftInboxItem[]>>();
+const resolveOutboundDraft = vi.fn<(id: string, decision: string, revision: string) => Promise<OutboundDraftActionCode>>();
 const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
 const countPendingReview = vi.fn<() => Promise<number | undefined>>();
 const markReviewed = vi.fn().mockResolvedValue(null);
@@ -50,6 +52,8 @@ vi.mock('../../../src/renderer/utils/platform', async () => {
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
     listPendingReview: () => listPendingReview(),
+    listOutboundDrafts: () => listOutboundDrafts(),
+    resolveOutboundDraft: (id: string, decision: string, revision: string) => resolveOutboundDraft(id, decision, revision),
     listParkedApprovals: () => listParkedApprovals(),
     countPendingReview: () => countPendingReview(),
     markReviewed: (id: string) => markReviewed(id),
@@ -144,6 +148,7 @@ beforeEach(() => {
   copyPathToClipboard.mockResolvedValue(true);
   listPendingReview.mockResolvedValue([]);
   listParkedApprovals.mockResolvedValue([]);
+  listOutboundDrafts.mockResolvedValue([]);
   countPendingReview.mockResolvedValue(undefined);
   ipcInvoke.mockResolvedValue(undefined);
   ipcInvokeDomain.mockReset();
@@ -1286,5 +1291,41 @@ describe('AutomationReviewInbox parked row origin (N-APPROVAL-CARD-USER-QUOTE-FU
     render(<AutomationReviewInbox />);
     await waitFor(() => expect(screen.getByTestId('scheduled-task-origin')).toBeTruthy());
     expect(screen.getByTestId('scheduled-task-origin').textContent).toBe(generic);
+  });
+});
+
+describe('outbound drafts in the review inbox', () => {
+  it('counts mail, shows all addresses, and sends only the refreshed revision on the second click', async () => {
+    i18nState.language = 'en';
+    const draft: OutboundDraftInboxItem = {
+      id: 'draft-weekly', revision: 'initial', scheduledTaskName: 'Weekly progress',
+      to: ['reviewer@example.invalid'], cc: ['team@example.invalid'], bcc: ['archive@example.invalid'],
+      subject: 'Weekly summary', body: 'The next review is on Tuesday.',
+      attachmentNames: ['schedule.txt'], needsReconfirm: false,
+    };
+    listOutboundDrafts.mockResolvedValue([draft]);
+    resolveOutboundDraft.mockImplementationOnce(async () => {
+      listOutboundDrafts.mockResolvedValue([{ ...draft, revision: 'updated', needsReconfirm: true }]);
+      return 'OUTBOUND_DRAFT_RECONFIRM';
+    }).mockImplementationOnce(async () => {
+      listOutboundDrafts.mockResolvedValue([]);
+      return 'OUTBOUND_DRAFT_SENT';
+    });
+    const pendingChange = vi.fn();
+    render(<AutomationReviewInbox onParkedPendingChange={pendingChange} />);
+    await screen.findByRole('heading', { name: 'Email draft ready for review' });
+    expect(pendingChange).toHaveBeenLastCalledWith(1);
+    for (const text of [...draft.to, ...draft.cc, ...draft.bcc, draft.subject, draft.body, ...draft.attachmentNames]) {
+      expect(screen.getByText(text)).toBeTruthy();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true }));
+    await screen.findByText('Review the recipients, message, and attachments, then select Send again.');
+    expect(resolveOutboundDraft).toHaveBeenCalledExactlyOnceWith(draft.id, 'send', 'initial');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true }));
+    await screen.findByTestId('automation-review-all-clear');
+    expect(resolveOutboundDraft).toHaveBeenLastCalledWith(draft.id, 'send', 'updated');
+    expect(pendingChange).toHaveBeenLastCalledWith(0);
+    expect(toastInfo).toHaveBeenLastCalledWith('Email sent.');
   });
 });

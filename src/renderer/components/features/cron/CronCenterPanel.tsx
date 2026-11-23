@@ -329,7 +329,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 }`}
               >
                 {label}
-                {key === 'runs' && (pendingReviewCount ?? 0) > 0 && (
+                {key === 'runs' && (pendingTotal ?? 0) > 0 && (
                   <span
                     data-testid="cron-center-runs-badge"
                     className="absolute -right-1 -top-1 rounded-full border border-badge-warning/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-badge-warning"
