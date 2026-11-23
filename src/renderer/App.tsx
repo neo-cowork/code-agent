@@ -41,6 +41,7 @@ import { MemoryLearningProvider } from './components/features/memory';
 import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
+import { SettingsShell } from './components/features/settings/SettingsShell';
 import { ServerConnectionBanner } from './components/ServerConnectionBanner';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
 import { CompanionPairRequestCard } from './components/CompanionPairRequestCard';
@@ -98,9 +99,6 @@ const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
 const WORKBENCH_MIN_VISIBLE_WIDTH = 900;
 const TASK_WORKBENCH_BACKGROUND_STATUSES = new Set(['queued', 'running', 'waiting_input', 'stalled', 'paused']);
 
-const SettingsModal = React.lazy(() => import('./components/SettingsModal').then((module) => ({
-  default: module.SettingsModal,
-})));
 const WorkflowPanel = React.lazy(() => import('./components/features/workflow/WorkflowPanel').then((module) => ({
   default: module.WorkflowPanel,
 })));
@@ -662,11 +660,15 @@ export const App: React.FC = () => {
   // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
   // Neo 协同/桌面状态）在位时，顶栏收敛。
   // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
-  // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
-  // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
-  const inlineSecondaryPageActive = isSecondaryPageActive({
+  // Settings overlays the chat. Keep the chat mounted if the Settings module fails to load.
+  // The account pages above Settings in the cascade still take precedence.
+  const settingsActive = showSettings && !(
+    showDesktopPanel || showProjectCollaborationPage || showActivityPanel
+    || showTimeCapabilityCenter || showLab || showPromptManager
+  );
+  const inlineSecondaryPageActive = !settingsActive && isSecondaryPageActive({
     expertDetailRoleId, showLibraryPanel, showCapabilityHub, showCronCenter, showLocalOpsPanel,
-    showInAppValidation, activeInternalFeatureId, showProjectSpacePage, showSettings,
+    showInAppValidation, activeInternalFeatureId, showProjectSpacePage, showSettings: false,
     showPromptManager, showLab, showTimeCapabilityCenter, showActivityPanel,
     showProjectCollaborationPage, showDesktopPanel,
   });
@@ -734,6 +736,8 @@ export const App: React.FC = () => {
               <TitleBar secondaryPageActive />
             )}
 
+            <SettingsShell active={settingsActive} />
+
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
               {/* 账号菜单打开的页面统一排进同一条互斥级联（2026-07-29 拍板），
@@ -766,32 +770,28 @@ export const App: React.FC = () => {
                 </React.Suspense>
               ) : showPromptManager ? (
                 <PromptManagerModal />
-              ) : showSettings ? (
-                <React.Suspense fallback={null}>
-                  <SettingsModal />
-                </React.Suspense>
-              ) : expertDetailRoleId ? (
+              ) : !settingsActive && expertDetailRoleId ? (
                 <RoleDetailPage roleId={expertDetailRoleId} />
-              ) : showLibraryPanel ? (
+              ) : !settingsActive && showLibraryPanel ? (
                 <React.Suspense fallback={null}>
                   <LibraryPanel />
                 </React.Suspense>
-              ) : showCapabilityHub ? (
+              ) : !settingsActive && showCapabilityHub ? (
                 <React.Suspense fallback={null}>
                   <CapabilityHubPage />
                 </React.Suspense>
-              ) : showProjectSpacePage ? (
+              ) : !settingsActive && showProjectSpacePage ? (
                 <ProjectSpacePage onClose={closeProjectSpacePage} />
-              ) : showCronCenter ? (
+              ) : !settingsActive && showCronCenter ? (
                 <React.Suspense fallback={null}>
                   <CronCenterPanel onClose={() => setShowCronCenter(false)} />
                 </React.Suspense>
-              ) : showLocalOpsPanel ? (
+              ) : !settingsActive && showLocalOpsPanel ? (
                 <React.Suspense fallback={null}>
                   <LocalOpsPage />
                 </React.Suspense>
               ) : (
-                <WorkspacePageSlotHost fallback={showInAppValidation
+                <WorkspacePageSlotHost fallback={!settingsActive && showInAppValidation
                   ? <React.Suspense fallback={null}><InAppValidationWorkspace /></React.Suspense>
                   : <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   {/* 专注态（2026-08-01 工单①）：聊天列整列收起，右栏占满窗口宽度；
