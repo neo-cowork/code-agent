@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { AgentEvent, Message, ToolResult } from '../../../shared/contract';
 import type { EnvAssistNotice } from '../../../shared/contract/envAssist';
 import { emitExternalAgentEvent } from '../../services/agentEngine/agentEngineEventSink';
@@ -62,22 +63,25 @@ export async function publishEnvAssistToolNotice(input: {
   await queueNoticeWrite(notice, async () => {
     const manager = getSessionManager();
     const messages = await manager.getMessages(input.sessionId);
-    const live = notice.phase === 'needs_user' ? messages.find((m) => {
+    const live = notice.phase === 'needs_user' ? messages.findLast((m) => {
       const candidate = m.metadata?.envAssist;
       return candidate?.phase === 'needs_user' && candidate.class === notice.class && candidate.target?.id === notice.target?.id;
     }) : undefined;
-    const liveNotice = live?.metadata?.envAssist;
-    if (liveNotice) notice.id = liveNotice.id;
-
+    let persisted = live ?? messages.find((m) => m.id === `env-assist:${notice.id}`);
+    if (live?.metadata?.envAssist) {
+      notice.id = live.metadata.envAssist.id;
+    } else if (persisted?.metadata?.envAssist?.phase === 'resolved') {
+      // A resumed run can lose access again. Keep its resolved history and leave the target as the ID suffix.
+      notice.id = `${notice.runId}|${notice.class}|${randomUUID()}|${notice.target?.id ?? ''}`;
+      persisted = undefined;
+    }
     const messageId = `env-assist:${notice.id}`;
-    const persisted = live ?? messages.find((m) => m.id === messageId);
-    if (persisted?.metadata?.envAssist?.phase === 'resolved') return;
     const message: Message = {
       id: messageId, role: 'assistant', content: '', timestamp: persisted?.timestamp ?? notice.updatedAt,
       metadata: { ...persisted?.metadata, envAssist: notice },
     };
     await manager.addMessageToSession(input.sessionId, message);
-    if (!persisted || (liveNotice && (liveNotice.runId !== notice.runId || liveNotice.parkedToolCallId !== notice.parkedToolCallId))) {
+    if (!persisted || live) {
       input.onEvent({ type: 'env_assist_notice', data: notice });
     }
     if (!persisted) input.onEvent({ type: 'message', data: message });

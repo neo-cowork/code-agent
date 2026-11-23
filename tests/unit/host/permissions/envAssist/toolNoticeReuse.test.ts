@@ -107,6 +107,27 @@ describe('env-assist live permission cards', () => {
     expect(events.map((event) => event.type)).toEqual(['env_assist_notice', 'message']);
   });
 
+  it('creates a fresh card when a resumed run loses permission again', async () => {
+    await deny('r1');
+    const first = cards()[0].metadata!.envAssist!;
+    await resolveEnvAssistNotice(first, 2_000);
+    vi.setSystemTime(3_000);
+
+    const firstRetry = await deny('r1');
+    const secondRetry = await deny('r1');
+    const stored = cards();
+    expect(stored).toHaveLength(2);
+    const [resolved, waiting] = stored;
+    expect(resolved.metadata?.envAssist).toMatchObject({ id: first.id, phase: 'resolved' });
+    expect(waiting.id).not.toBe(resolved.id);
+    expect(waiting.id).toMatch(/^env-assist:r1\|perm_calendars\|.+\|calendar$/);
+    expect(waiting.metadata?.envAssist).toMatchObject({ phase: 'needs_user', runId: 'r1' });
+    expect(firstRetry.map((event) => event.type)).toEqual(['env_assist_notice', 'message']);
+    expect(secondRetry).toEqual([{ type: 'env_assist_notice', data: waiting.metadata?.envAssist }]);
+    await settleCalendarGranted('calendar-reuse-test');
+    expect(cards().map((message) => message.metadata?.envAssist?.phase)).toEqual(['resolved', 'resolved']);
+  });
+
   it('keeps a separate card for each target in the same session, including targets of the same class', async () => {
     await deny('r1');
     await deny('r2', 's1', 'mail');
