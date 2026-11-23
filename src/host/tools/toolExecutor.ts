@@ -120,6 +120,7 @@ import { connectorWritePermissionRequest, findConnectorTokenWrite } from './conn
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine, isUserDenyRule } from '../permissions/policyEngine';
 import { resolveUserRuleOutcomeForTool, handbackDoneModelText } from '../permissions/userRuleOutcome';
+import { builtInRulesDeny } from './nlPreapproveBuiltInDeny';
 import { tryReadOnlyProbe } from './readOnlyProbeHook';
 import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
@@ -1775,7 +1776,7 @@ export class ToolExecutor {
     // N-PERM-NL-RULES-K2：deny>handback>ask>preapprove 未命中=ask>命中。ask/handback 强制进审批链；preapprove 命中并入 isPreApproved（同一份排除清单）。
     const nlRule = resolveUserRuleOutcomeForTool(effectiveSessionId, policyToolName, params);
     const nlForcesAsk = nlRule.kind === 'ask' || nlRule.kind === 'handback';
-    const nlPreapproved = nlRule.kind === 'preapproved' && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean);
+    const nlPreapproved = nlRule.kind === 'preapproved' && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean) && !(await builtInRulesDeny(policyToolName, params, { sessionId: effectiveSessionId, toolDefinition: toolDef, workingDirectory: canonicalBashWorkingDirectory, workspaceRoot: this.writeWorkspaceRoot, permissionLevel: toolDef.permissionLevel, workingDirectoryFromToolCall: true }));
     if (nlRule.kind === 'denied') return { success: false, error: `Blocked by your permission rule (${nlRule.rule}). Denied by your own settings; do not retry or achieve the same effect another way.` };
 
     // Check permission if required
