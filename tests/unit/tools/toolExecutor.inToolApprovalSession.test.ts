@@ -59,7 +59,7 @@ import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 import { resetDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { bindToolGrantDatabase } from '../../../src/host/permissions/toolGrantStore';
-import type { ToolContext } from '../../../src/host/tools/types';
+import type { PermissionRequestData, ToolContext } from '../../../src/host/tools/types';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import type {
   InsertPendingApprovalInput,
@@ -110,9 +110,9 @@ afterEach(() => {
 describe('ToolExecutor in-tool requestPermission session/run id normalisation', () => {
   it('(a) a request without ids is forwarded carrying the execution sessionId/runId', async () => {
     installProbe((context) => probeAsk(context, {}));
-    const received: Array<Record<string, unknown>> = [];
+    const received: PermissionRequestData[] = [];
     const executor = new ToolExecutor({
-      requestPermission: async (request) => { received.push(request as Record<string, unknown>); return true; },
+      requestPermission: async (request) => { received.push(request); return true; },
       workingDirectory: '/tmp/in-tool-approval-session-a',
     });
     executor.setAuditEnabled(false);
@@ -123,14 +123,14 @@ describe('ToolExecutor in-tool requestPermission session/run id normalisation', 
   });
 
   it('(b) a request that already carries other ids keeps them and its object identity', async () => {
-    let sent: Record<string, unknown> | undefined;
+    let sent: PermissionRequestData | undefined;
     installProbe((context) => {
       sent = { type: 'command', tool: 'probe_tool', details: {}, reason: 'probe', sessionId: 'other-sess', runId: 'other-run' };
-      return context.requestPermission(sent as Parameters<ToolContext['requestPermission']>[0]);
+      return context.requestPermission(sent);
     });
-    const received: Array<Record<string, unknown>> = [];
+    const received: PermissionRequestData[] = [];
     const executor = new ToolExecutor({
-      requestPermission: async (request) => { received.push(request as Record<string, unknown>); return true; },
+      requestPermission: async (request) => { received.push(request); return true; },
       workingDirectory: '/tmp/in-tool-approval-session-b',
     });
     executor.setAuditEnabled(false);
@@ -158,14 +158,14 @@ describe('ToolExecutor in-tool requestPermission session/run id normalisation', 
   });
 
   it('(d) an execution without session/run id forwards the request object unchanged', async () => {
-    let sent: Record<string, unknown> | undefined;
+    let sent: PermissionRequestData | undefined;
     installProbe((context) => {
       sent = { type: 'command', tool: 'probe_tool', details: {}, reason: 'probe' };
-      return context.requestPermission(sent as Parameters<ToolContext['requestPermission']>[0]);
+      return context.requestPermission(sent);
     });
-    const received: Array<Record<string, unknown>> = [];
+    const received: PermissionRequestData[] = [];
     const executor = new ToolExecutor({
-      requestPermission: async (request) => { received.push(request as Record<string, unknown>); return true; },
+      requestPermission: async (request) => { received.push(request); return true; },
       workingDirectory: '/tmp/in-tool-approval-session-d',
     });
     executor.setAuditEnabled(false);
