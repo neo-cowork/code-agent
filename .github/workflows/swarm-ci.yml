@@ -821,6 +821,8 @@ jobs:
             tests/unit/ipc/workspacePreviewFormats.test.ts \
             tests/unit/services/core/keytarAdapter.test.ts \
             tests/unit/agent/nativeConnectorPreload.test.ts \
+            tests/unit/agent/confirmationGate.test.ts \
+            tests/unit/tools/toolPathKind.test.ts \
             --retry=1
 
   # 不再写回 ci/swarm-health.json：streak 直接从 GitHub Actions API 派生，
