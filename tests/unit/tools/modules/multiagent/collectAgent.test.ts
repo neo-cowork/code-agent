@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
+import { AgentFailureCode } from '../../../../../src/shared/contract/agentFailure';
 import { executeCollectAgent } from '../../../../../src/host/tools/modules/multiagent/collectAgent';
 
 function makeLogger(): Logger {
@@ -50,6 +51,25 @@ describe('collect_agent', () => {
           }),
         }),
       });
+    }
+  });
+
+  it('reports a recovered user stop as cancelled when the parent collects the result', async () => {
+    const agentId = 'bg-user-stop-recovered';
+    getBackgroundSubagentRegistry().recordInterruptedCompletion({
+      agentId,
+      sessionId: 'sess-collect',
+      status: 'cancelled',
+      failureCode: AgentFailureCode.CancelledByUser,
+    });
+
+    const result = await executeCollectAgent({ agentId }, makeCtx(), allowAll);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toContain('Stopped by the user.');
+      expect(result.output).not.toContain('Error:');
+      expect(result.meta).toMatchObject({ status: 'cancelled', agentId });
     }
   });
 

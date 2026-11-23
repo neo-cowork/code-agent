@@ -2,7 +2,7 @@ import type { SubagentResult } from '../subagentExecutorTypes';
 import type { SubagentEventPort, SubagentExecutionContext } from '../subagentExecutorTypes';
 import { getSpawnGuard, type ManagedAgent } from '../spawnGuard';
 import type { MultiagentExecutionResult } from '../multiagentExecutionTypes';
-import type { SwarmRunScope } from '../../../shared/contract/swarm';
+import { createSingleSpawnRunId, type SwarmRunScope } from '../../../shared/contract/swarm';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { scheduleBackgroundSubagentIdleWake } from '../backgroundSubagentIdleWake';
 import { getSwarmEventEmitter } from '../swarmEventPublisher';
@@ -65,7 +65,7 @@ export function resolveSingleSpawnRunScope(
   if (!context.sessionId) return undefined;
   return {
     sessionId: context.sessionId,
-    runId: `single_${localAgentId}`,
+    runId: createSingleSpawnRunId(localAgentId),
     treeId,
     ...(context.runId ? { parentNativeRunId: context.runId } : {}),
   };
