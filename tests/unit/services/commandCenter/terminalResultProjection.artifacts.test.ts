@@ -8,13 +8,11 @@ import type { Message } from '../../../../src/shared/contract';
 import type { ToolContext, Logger } from '../../../../src/host/protocol/tools';
 
 const harness = vi.hoisted(() => ({
-  messages: [] as unknown[],
   added: [] as Array<{ sessionId: string; message: Message }>,
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    getSession: async () => ({ messages: harness.messages }),
     addMessageToSession: async (sessionId: string, message: Message) => { harness.added.push({ sessionId, message }); },
   }),
 }));
@@ -28,6 +26,7 @@ vi.mock('../../../../src/host/tools/shell/dynamicDescription', () => ({
 
 import { projectTerminalResult } from '../../../../src/host/services/commandCenter/terminalResultProjection';
 import type { SessionCommandTask } from '../../../../src/host/services/commandCenter/sessionCommandCenter';
+import { collectDeliverableFileArtifacts } from '../../../../src/host/tools/artifacts/collectDeliverableFileArtifacts';
 import { bashModule } from '../../../../src/host/tools/modules/shell/bash';
 
 function makeCtx(workingDir: string): ToolContext {
@@ -39,7 +38,6 @@ describe('projectTerminalResult carries background-run file artifacts', () => {
   let dir: string;
   beforeEach(() => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), 'bg-docx-')));
-    harness.messages = [];
     harness.added = [];
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -56,13 +54,9 @@ d.Packer.toBuffer(new d.Document({sections:[{children:[new d.Paragraph('minutes'
     const bash = await (await bashModule.createHandler()).execute({ command: 'node gen.cjs' }, makeCtx(dir), async () => ({ allow: true }));
     expect(bash.ok).toBe(true);
     if (!bash.ok) return;
-    harness.messages = [
-      // foreground tool message (not part of the task run) must be ignored
-      { id: 'fg', role: 'tool', isMeta: false, timestamp: createdAt + 1, toolResults: [{ toolCallId: 'x', success: true, metadata: { artifacts: [{ artifactId: 'fg', kind: 'document', role: 'deliverable', sourceTool: 'docx_generate', name: 'other.docx', path: '/elsewhere/other.docx' }] } }] },
-      { id: 'bg', role: 'tool', isMeta: true, timestamp: createdAt + 10, toolResults: [{ toolCallId: 'call-bash', success: true, metadata: bash.meta }] },
-    ];
+    const finished = { ...task(createdAt), deliverableArtifacts: collectDeliverableFileArtifacts([{ toolCallId: 'call-bash', success: true, metadata: bash.meta } as never]) };
 
-    await projectTerminalResult(task(createdAt), 'completed');
+    await projectTerminalResult(finished, 'completed');
 
     const result = harness.added[0].message.metadata?.backgroundTaskResult;
     console.log('BG_TASK_RESULT_ARTIFACTS', JSON.stringify(result?.artifacts));
@@ -71,7 +65,6 @@ d.Packer.toBuffer(new d.Document({sections:[{children:[new d.Paragraph('minutes'
   });
 
   it('writes no artifacts field when the run produced no file', async () => {
-    harness.messages = [{ id: 'bg', role: 'tool', isMeta: true, timestamp: Date.now(), toolResults: [{ toolCallId: 'c', success: true, metadata: {} }] }];
     await projectTerminalResult(task(Date.now() - 1000), 'completed');
     expect(harness.added[0].message.metadata?.backgroundTaskResult).not.toHaveProperty('artifacts');
   });

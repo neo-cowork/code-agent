@@ -594,6 +594,33 @@ describe('SessionCommandCenter', () => {
     }
   });
 
+  it('attributes file deliverables to the task whose own tool_call_end produced them, not to a sibling task in the same session', async () => {
+    const manager = new FakeTaskManager();
+    const projectTerminalResult = vi.fn();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, { projectTerminalResult });
+    const a = await center.spawn(input(1, 'lane-a'));
+    const b = await center.spawn(input(2, 'lane-b'));
+    if (a.outcome === 'requires_choice' || b.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    const docEnd = (callId: string, name: string) => ({
+      type: 'tool_call_end',
+      data: {
+        toolCallId: callId,
+        success: true,
+        output: 'ok',
+        metadata: { artifacts: [{ artifactId: name, kind: 'document', role: 'deliverable', sourceTool: 'Bash', name, path: `/work/${name}` }] },
+      },
+    }) as AgentEvent;
+    manager.emitAgent('session-a', docEnd('call-a', 'a.docx'), a.task.id);
+    manager.emitAgent('session-a', docEnd('call-b', 'b.docx'), b.task.id);
+    manager.emitTask({ type: 'task_completed', sessionId: 'session-a', data: { taskId: a.task.id, conclusion: 'done a' } });
+    manager.emitTask({ type: 'task_completed', sessionId: 'session-a', data: { taskId: b.task.id, conclusion: 'done b' } });
+    await vi.waitFor(() => expect(projectTerminalResult).toHaveBeenCalledTimes(2));
+    const byId = new Map(projectTerminalResult.mock.calls.map(([task]) => [task.id, task]));
+    expect(byId.get(a.task.id).deliverableArtifacts.map((x: { path: string }) => x.path)).toEqual(['/work/a.docx']);
+    expect(byId.get(b.task.id).deliverableArtifacts.map((x: { path: string }) => x.path)).toEqual(['/work/b.docx']);
+    center.dispose();
+  });
+
   it('writes progress.lastToolFailure from an allow-listed tool_call_end failure', async () => {
     const manager = new FakeTaskManager();
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
