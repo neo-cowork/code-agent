@@ -2177,7 +2177,7 @@ export class ToolExecutor {
         shouldForceConfirm = false;
         logger.debug('ConfirmationGate preview error:', error);
       }
-      const blockedExceptBoundary = Boolean(commandAnalysisFailedReason)
+      const blockedExceptBoundary = Boolean(commandAnalysisFailedReason) || classifierFailedReason !== undefined
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation

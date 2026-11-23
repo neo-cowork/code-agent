@@ -10,7 +10,14 @@ vi.unmock('better-sqlite3');
 import type { Message } from '../../../../src/shared/contract';
 import type { PassiveBridge } from '../../../../src/host/permissions/envAssist/probes/types';
 
-const store = vi.hoisted(() => ({ bridge: null as PassiveBridge | null, db: {} as Record<string, unknown> }));
+const store = vi.hoisted(() => ({ bridge: null as PassiveBridge | null, db: {} as Record<string, unknown>, classifierFails: false }));
+vi.mock('../../../../src/host/tools/toolPermissionClassification', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/tools/toolPermissionClassification')>();
+  return { ...actual, resolveToolPermissionClassification: async (...args: Parameters<typeof actual.resolveToolPermissionClassification>) => {
+    if (store.classifierFails) throw new Error('fixture classifier failure');
+    return actual.resolveToolPermissionClassification(...args);
+  } };
+});
 vi.mock('../../../../src/host/services/core/databaseService', () => ({ getDatabase: () => store.db }));
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
@@ -49,7 +56,7 @@ let fixture: Awaited<ReturnType<typeof harness>> | undefined;
 let workspace = '';
 afterEach(() => {
   fixture?.close(); fixture = undefined; registerEnvResumeContinuer(null); vi.useRealTimers(); vi.restoreAllMocks();
-  warn.mockClear(); store.bridge = null; asked.length = 0; emitted.length = 0;
+  warn.mockClear(); store.classifierFails = false; store.bridge = null; asked.length = 0; emitted.length = 0;
   if (workspace) rmSync(workspace, { recursive: true, force: true });
 });
 
@@ -170,6 +177,17 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
   it('mail_send never reuses the draft approval (2 cards)', async () => {
     const f = await resumed((x) => { x.reissue.tool = 'mail_send'; });
     expect(f.approvalCards()).toEqual(['mail_draft', 'mail_send']);
+  });
+
+  it('a classifier failure cannot consume the parked approval (2 cards)', async () => {
+    const f = await parkedMail();
+    f.wire(async () => 'green');
+    await f.park();
+    store.classifierFails = true;
+    f.green();
+    await vi.advanceTimersByTimeAsync(ENV_RESUME_POLL_INTERVAL_MS);
+    await settled(f);
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
   });
 
   it('a forced approval gate still asks again (2 cards)', async () => {
