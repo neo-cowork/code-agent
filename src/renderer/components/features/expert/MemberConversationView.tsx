@@ -117,7 +117,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests }
   ), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
 
-  const viewingNode = snapshot?.nodes.find((node) => node.id === viewingMemberId);
+  const viewingNode = snapshot?.nodes?.find((node) => node.id === viewingMemberId);
   // A standalone helper also has a swarm trace. Its execution node owns the member view.
   const member = viewingNode?.background ? undefined : members.find((item) => item.key === viewingMemberId);
   const agent = member?.agent;
