@@ -28,6 +28,7 @@ function hasStreamingBodyPrefix(left: string, right: string, minPrefix = 0): boo
   const b = right.trimStart();
   const shorter = a.length <= b.length ? a : b;
   const longer = a.length <= b.length ? b : a;
+  if (!shorter) return a === b || left === '' || right === '';
   return shorter.length >= minPrefix && longer.startsWith(shorter);
 }
 

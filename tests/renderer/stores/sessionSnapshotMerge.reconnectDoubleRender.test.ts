@@ -535,6 +535,22 @@ describe('findLiveCounterpart: correlation.turnId pairing', () => {
     ]);
   });
 
+  it('a whitespace-only live draft does not replace the persisted tool reply', () => {
+    const toolReply = '工具回复 A：先调用工具。';
+    const whitespace = '\n'.repeat(40);
+    const snapshot = [user('u-whitespace'), assistant('host-tool-reply', { turnId: 'turn-whitespace', content: toolReply })];
+    const live = [user('u-whitespace'), assistant('turn-whitespace', { turnId: 'turn-whitespace', content: whitespace })];
+
+    const merged = mergeSnapshotWithLiveTail(snapshot, live).messages;
+    const assistants = merged.filter((message) => message.role === 'assistant');
+
+    expect(assistants).toHaveLength(2);
+    expect(assistants.map((message) => [message.id, message.content])).toEqual([
+      ['host-tool-reply', toolReply],
+      ['turn-whitespace', whitespace],
+    ]);
+  });
+
   it('cross-id keyed pair with divergent bodies is not merged (same turn can persist tool reply A then final B)', () => {
     // ai-review #1706 第三轮：同一 turn 落库工具回复 A 再落最终回复 B；刷新若只拿到 A，
     // 而 live 已是 B，合并会用 A 覆盖用户已看到的 B。分叉 = 不是同一条消息，各留各的。
