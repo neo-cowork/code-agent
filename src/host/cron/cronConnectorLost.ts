@@ -2,7 +2,7 @@
 // cronConnectorLost —— 无人值守运行发现连接器登录丢失 → 待过目收件箱记一条（同连接器同日至多一条）
 // ============================================================================
 // 两个来源（都只认 CONFIRMED 信号，见 docs/architecture/connector-lost-login-signals.md）：
-//   ① 运行前预检：任务角色声明的 CLI 连接器，探测缓存带 lostReason；
+//   ① 运行前预检：角色声明的核心 CLI 连接器先等一次新探测，落定后缓存带 lostReason 才算；
 //   ② 运行后扫描：工具结果带 MCP 401 标记（mcpAuthorizationRequired）。
 // 去重键 = 连接器 + 本地日历日（eventId `connector_lost:<连接器>:<YYYY-MM-DD>`）：进程内集合 +
 // 记录上 pendingReview.connectorLost.days 双保险。时钟由调用方注入，这里不读系统时间。
@@ -12,10 +12,15 @@
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import type { Message } from '../../shared/contract/message';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../../shared/constants/cliConnectorDescriptors';
+import { CONNECTOR_CARD_TIMEOUTS } from '../../shared/constants/timeouts';
 import { resolveSessionConnectorIds } from '../../shared/contract/expertConnectors';
 import { resolveAgent } from '../agent/agentRegistry';
 import { MCP_AUTHORIZATION_REQUIRED_METADATA_KEY } from '../mcp/mcpErrors';
-import { getCachedCliConnectorConnectionStatus, isCliConnectorId } from '../connectors/cli/cliConnectorStatusCache';
+import {
+  awaitCliConnectorStatusProbe,
+  getCachedCliConnectorConnectionStatus,
+  isCliConnectorId,
+} from '../connectors/cli/cliConnectorStatusCache';
 import { getSessionAutomationService } from '../services/sessionAutomation';
 import { getCronAutomationType, localDayKey } from './cronAutomationBridge';
 
@@ -25,11 +30,42 @@ function displayName(connectorId: string): string {
   return CLI_CONNECTOR_DESCRIPTORS.find((item) => item.id === connectorId)?.displayName ?? connectorId;
 }
 
-/** 运行前预检：任务角色声明的 CLI 连接器里，探测确认登录丢失的 id。 */
-export function precheckLostCliConnectors(roleId: string | undefined): string[] {
+function coreCliConnectorIds(roleId: string | undefined): string[] {
   if (!roleId) return [];
   const ids = resolveSessionConnectorIds({ expertConnectors: resolveAgent(roleId)?.connectors });
-  return ids.filter((id) => isCliConnectorId(id) && getCachedCliConnectorConnectionStatus(id)?.lostReason);
+  return ids.filter((id) => isCliConnectorId(id));
+}
+
+/** 运行前预检：任务角色声明的 CLI 连接器里，探测确认登录丢失的 id。 */
+export function precheckLostCliConnectors(roleId: string | undefined): string[] {
+  return coreCliConnectorIds(roleId).filter((id) => getCachedCliConnectorConnectionStatus(id)?.lostReason);
+}
+
+/**
+ * 角色声明了核心 CLI 连接器时，先等一次新探测再读缓存。
+ * 没有核心 CLI 连接器 → none（不探测）。
+ * 探测超时 / 失败 / 没人注册入口 → fail-open（忽略可能过期的缓存，照常跑）。
+ * 探测落定后缓存仍带 lostReason → lost。
+ */
+export async function refreshLostCoreCliConnectors(roleId: string | undefined): Promise<
+  | { kind: 'none' }
+  | { kind: 'clear' }
+  | { kind: 'lost'; ids: string[] }
+  | { kind: 'fail-open'; probe: 'timeout' | 'error' | 'not-registered'; message?: string; waitMs: number }
+> {
+  if (coreCliConnectorIds(roleId).length === 0) return { kind: 'none' };
+  const waitMs = CONNECTOR_CARD_TIMEOUTS.CLI_STATUS_PROBE_WAIT_MS;
+  const probe = await awaitCliConnectorStatusProbe(waitMs);
+  if (probe.kind !== 'filled') {
+    return {
+      kind: 'fail-open',
+      probe: probe.kind,
+      ...(probe.kind === 'error' ? { message: probe.message } : {}),
+      waitMs,
+    };
+  }
+  const lostIds = precheckLostCliConnectors(roleId);
+  return lostIds.length > 0 ? { kind: 'lost', ids: lostIds } : { kind: 'clear' };
 }
 
 /** 运行后扫描：工具结果里带 MCP 401 标记的服务器名。 */
