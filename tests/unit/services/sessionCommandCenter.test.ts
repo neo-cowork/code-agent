@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
+import { TaskProgressSchema } from '../../../src/shared/ipc/schemas/backgroundTask';
 import type { AgentEvent } from '../../../src/shared/contract';
 import type { CanUseToolFn, ToolContext } from '../../../src/host/protocol/tools';
 import {
@@ -563,6 +564,35 @@ describe('SessionCommandCenter', () => {
       },
     } as AgentEvent;
   }
+
+  it('projects a GUI disclosure from tool start and keeps it after subsequent progress', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager);
+    try {
+      const spawned = await center.spawn(input(1));
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      const taskId = spawned.task.id;
+      const guiDisclosures = [{ app: 'Keynote', callId: 'keynote-call' }];
+      const start: AgentEvent = {
+        type: 'tool_call_start',
+        data: { id: 'keynote-call', name: 'Bash', arguments: {}, guiTakeoverDisclosure: { code: 'gui_takeover', app: 'Keynote' } },
+      };
+      const readProgress = () => TaskProgressSchema.parse(
+        getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' }).find((task) => task.id === taskId)?.progress,
+      );
+
+      manager.emitAgent('session-a', start, taskId);
+      expect(readProgress().guiDisclosures).toEqual(guiDisclosures);
+      manager.emitAgent('session-a', start, taskId);
+      manager.emitAgent('session-a', {
+        type: 'task_progress',
+        data: { turnId: 'turn-1', phase: 'tool_running', tool: 'Read', toolCallId: 'read-call' },
+      }, taskId);
+      expect(readProgress()).toMatchObject({ guiDisclosures, lastToolStep: { callId: 'read-call' } });
+    } finally {
+      center.dispose();
+    }
+  });
 
   it('writes progress.lastToolFailure from an allow-listed tool_call_end failure', async () => {
     const manager = new FakeTaskManager();
