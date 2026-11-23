@@ -702,7 +702,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       invokeNativeCommandAction('reportAppshotComposerSlot', {
           slot: { x: r.left, y: r.top, width: r.width, height: r.height },
         })
-        .catch(() => {});
+        .catch((error) => {
+          console.warn('[appshot] Failed to report composer slot to native shell', error);
+        });
     };
     const timer = window.setTimeout(report, 300);
     window.addEventListener('resize', report);

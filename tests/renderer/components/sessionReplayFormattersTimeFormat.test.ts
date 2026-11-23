@@ -69,7 +69,8 @@ describe('sessionReplayFormatters 时间口径（跟随 UI language）', () => {
 
   it('zh：task 元信息同样走 24 小时制', () => {
     const line = formatBackgroundTaskMeta(TASK, zh.sessionReplay, 'zh');
-    expect(line).toContain('task task-1');
+    expect(line).not.toContain('task-1');
+    expect(line).not.toMatch(/^task /);
     expect(line).toContain('开始 2026/11/09 16:05');
     expect(line).toContain('更新 2026/11/09 17:30');
     expect(line).not.toMatch(/AM|PM/);
