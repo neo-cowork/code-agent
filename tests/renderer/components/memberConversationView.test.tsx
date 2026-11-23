@@ -168,10 +168,18 @@ describe('成员对话页', () => {
     if (progress !== readable) expect(output.textContent).not.toContain(progress);
   });
 
-  it('keeps process messages, run trail and ledger output for a background Team member', async () => {
+  it.each([
+    ['zh', '市场组调研员', zh, '市场组调研员', '调研员'],
+    ['en', 'Market Research Lead', en, 'Market Research Lead', 'Researcher'],
+    ['zh', 'explore', zh, '调研员', undefined],
+    ['en', 'explore', en, 'Researcher', undefined],
+  ] as const)('localizes the background Team member header and preserves its report (%s, %s)', async (
+    _locale, instanceName, t, title, roleLabel,
+  ) => {
+    translations = t;
     const runId = createSwarmTraceStorageId({ sessionId: 'session-1', runId: 'team-run', treeId: 'team-tree' });
     const run = { ...ledgerRun, id: runId, status: 'running' as const };
-    const teamMember = { ...record, runId, name: '市场组调研员', role: 'explore', status: 'running' as const };
+    const teamMember = { ...record, runId, name: instanceName, role: 'explore', status: 'running' as const };
     const detail: SwarmRunDetail = {
       run: { ...ledgerDetail.run, ...run },
       agents: [teamMember, { ...writerRecord, runId }],
@@ -196,7 +204,12 @@ describe('成员对话页', () => {
     useMemberViewStore.setState({ viewingMemberId: teamMember.agentId });
     await act(async () => { render(<MemberConversationView sessionId="session-1" />); });
 
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(teamMember.name);
+    const heading = screen.getByRole('heading', { level: 2 });
+    const header = heading.closest('header');
+    expect(header?.textContent).not.toContain('explore');
+    expect(heading.textContent).toBe(title);
+    expect(header?.querySelector('p')?.textContent).toBe(roleLabel);
+    expect(screen.getByTestId('role-initial-avatar-explore').getAttribute('aria-label')).toBe(title);
     expect(screen.getByTestId('member-process-messages').textContent).toContain('已找到原始统计表');
     expect(screen.getByTestId('member-run-trail').textContent).toContain('市场组已开始核对口径');
     expect(screen.getByTestId('member-final-output').textContent).toContain(teamMember.finalOutput);
