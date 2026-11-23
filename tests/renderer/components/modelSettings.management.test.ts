@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AppSettings, ModelConfig, ModelProviderSettings } from '../../../src/shared/contract';
+import { getProviderInfo } from '../../../src/shared/constants';
+import { ipcService } from '../../../src/renderer/services/ipcService';
 import type { ProviderInfo } from '../../../src/shared/constants';
 import { PROVIDER_ICON_ASSET_URI_PREFIX } from '../../../src/shared/modelRuntime';
 import {
@@ -8,6 +10,7 @@ import {
   buildLegacyLongCatProviderMigration,
   buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSavePromotion,
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeProviderIconValidationError,
@@ -506,6 +509,27 @@ describe('ModelSettings management helpers', () => {
       },
     } as unknown as AppSettings;
     expect(shouldPromoteProviderToDefault('openai', savedConfig, settingsDefaultIsSelf)).toBe(false);
+  });
+
+  it.each([
+    { listed: ['gateway-chat', 'mimo-v2.6-flash'], selected: 'mimo-v2.6-flash' },
+    { listed: ['mimo-v2.6-flash', getProviderInfo('xiaomi')!.defaultModel], selected: getProviderInfo('xiaomi')!.defaultModel },
+    { listed: ['gateway-chat', 'another-gateway-chat'], selected: 'gateway-chat' },
+  ])('picks $selected from discovery for promotion', async ({ listed, selected }) => {
+    const discover = vi.spyOn(ipcService, 'invokeDomain').mockResolvedValueOnce({
+      success: true,
+      models: listed.map((id) => ({ id, label: id, capabilities: ['tool'] })),
+    });
+    try {
+      const settings = {
+        models: { default: 'openai', providers: { openai: { enabled: true } } },
+      } as unknown as AppSettings;
+      const config = { enabled: true, apiKeyConfigured: true, baseUrl: 'https://subscription.test/v1' };
+      const promotion = await buildProviderSavePromotion('xiaomi', config, settings, settings);
+      expect(promotion?.update.models?.providers.xiaomi.model).toBe(selected);
+    } finally {
+      discover.mockRestore();
+    }
   });
 
   it('treats local models as keyless and locks only built-in catalog metadata', () => {

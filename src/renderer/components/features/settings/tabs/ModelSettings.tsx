@@ -60,7 +60,7 @@ import {
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
-  shouldPromoteProviderToDefault,
+  buildProviderSavePromotion,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
@@ -464,9 +464,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
     setIsSaving(true);
     try {
       const providerConfigForSave = buildCurrentProviderConfigForSave(currentProviderConfig?.model || config.model);
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        ...buildProviderSettingsUpdate(config.provider, providerConfigForSave),
-      });
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', buildProviderSettingsUpdate(config.provider, providerConfigForSave));
       setProviderConfigs((prev) => ({
         ...prev,
         [config.provider]: providerConfigForSave,
@@ -487,13 +485,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         const latestSettings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         setProviderConfigs(latestSettings.models.providers);
         setAppSettings(latestSettings);
-        if (shouldPromoteProviderToDefault(config.provider, providerConfigForSave, latestSettings)) {
-          const promoteUpdate = buildDefaultModelSettingsUpdate(config.provider, providerConfigForSave, latestSettings);
-          await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', promoteUpdate);
-          // 只有 promote 真接管了任务主模型档才回灌 strategy 并提示「已切换」；仅默认指针切换而 main 已可用时不提示（那不是事实）。
-          const promotedTaskStrategy = promoteUpdate.models?.taskStrategy;
+        const promotion = await buildProviderSavePromotion(config.provider, providerConfigForSave, latestSettings, appSettings);
+        if (promotion) {
+          await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', promotion.update);
+          const promotedModel = promotion.config.model || config.model;
+          patchCurrentProviderConfig({ model: promotedModel, models: promotion.config.models });
+          const promotedTaskStrategy = promotion.update.models?.taskStrategy;
           if (promotedTaskStrategy) setTaskStrategy(promotedTaskStrategy);
-          const promotedModel = providerConfigForSave.model || config.model;
           setDefaultSelection({ provider: config.provider, model: promotedModel });
           if (promotedTaskStrategy) toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedModel}`);
         }

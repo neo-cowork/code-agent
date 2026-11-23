@@ -10,7 +10,7 @@ import type {
   ModelProviderSettings,
   TaskModelStrategySettings,
 } from '@shared/contract';
-import { getProviderEndpointForProtocol, getProviderInfo } from '@shared/constants';
+import { getProviderEndpointForProtocol, getProviderInfo, PROVIDER_MODELS_MAP } from '@shared/constants';
 import type { ProviderInfo, ProviderModelEntry } from '@shared/constants';
 import {
   getEnabledProviderModels,
@@ -25,7 +25,12 @@ import {
   type ProviderIconValidationResult,
   type RuntimeProviderModel,
 } from '@shared/modelRuntime';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { zh } from '../../../../i18n/zh';
+import { ipcService } from '../../../../services/ipcService';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('ModelSettings');
 
 export type ModelSettingsHelperLabels = typeof zh.settings.model.helpers;
 
@@ -179,6 +184,76 @@ export function shouldPromoteProviderToDefault(
   if (providerConfig.enabled === false) return false;
   if (!isRuntimeProviderAvailable(provider, providerConfig)) return false;
   return !hasConfiguredDefaultRuntimeModel(settings);
+}
+
+function pickDiscoveredDefaultModel(
+  provider: ModelProvider,
+  models: DiscoverModelsResult['models'],
+): DiscoverModelsResult['models'][number] | undefined {
+  const registryDefault = getProviderInfo(provider)?.defaultModel;
+  const catalog = PROVIDER_MODELS_MAP[provider]?.models;
+  return models.find(({ id }) => id === registryDefault)
+    ?? models.find(({ id }) => catalog?.some((model) => model.id === id))
+    ?? models[0];
+}
+
+async function resolvePromotionModel(
+  provider: ModelProvider,
+  config: ModelProviderSettings,
+): Promise<ModelProviderSettings> {
+  try {
+    // The provider key has already been saved. Discovery resolves it in the host.
+    const result = await ipcService.invokeDomain<DiscoverModelsResult>(IPC_DOMAINS.PROVIDER, 'discover_models', {
+      provider, baseUrl: config.baseUrl, protocol: config.protocol,
+    });
+    if (!result?.success) {
+      logger.warn('Default model discovery failed during provider save', { provider, code: result?.error?.code });
+      return config;
+    }
+
+    const model = pickDiscoveredDefaultModel(provider, result.models);
+    if (!model) {
+      logger.warn('Default model discovery returned no models during provider save', { provider });
+      return config;
+    }
+    return {
+      ...config,
+      model: model.id,
+      models: {
+        ...config.models,
+        [model.id]: mergeDiscoveredModelEntry(config.models?.[model.id], model, true, config.updatedAt ?? Date.now()),
+      },
+    };
+  } catch (error) {
+    logger.warn('Default model discovery failed during provider save', { provider, errorType: error instanceof Error ? error.name : typeof error });
+    return config;
+  }
+}
+
+export async function buildProviderSavePromotion(
+  provider: ModelProvider,
+  config: ModelProviderSettings,
+  latestSettings: AppSettings,
+  previousSettings: AppSettings | null,
+): Promise<{ config: ModelProviderSettings; update: Partial<AppSettings> } | undefined> {
+  const previousConfig = previousSettings?.models.providers[provider];
+  const shouldDiscover = !previousConfig?.model
+    && Boolean(config.baseUrl)
+    && hasCustomEndpointOverride(provider, config.baseUrl, config.protocol);
+
+  // The just-saved key can make a factory default on this same provider look already configured.
+  const settingsForPromotion = shouldDiscover && previousSettings ? {
+    ...latestSettings,
+    models: {
+      ...latestSettings.models,
+      providers: { ...latestSettings.models.providers, [provider]: previousConfig ?? { enabled: false } },
+    },
+  } : latestSettings;
+  if (!shouldPromoteProviderToDefault(provider, config, settingsForPromotion)) return undefined;
+
+  const resolvedConfig = shouldDiscover ? await resolvePromotionModel(provider, config) : config;
+  if (resolvedConfig === config && !shouldPromoteProviderToDefault(provider, config, latestSettings)) return undefined;
+  return { config: resolvedConfig, update: buildDefaultModelSettingsUpdate(provider, resolvedConfig, settingsForPromotion) };
 }
 
 /** promote 时一并接管的「任务主模型」档（FB-1800）：运行时的代码/文件/产物任务走
