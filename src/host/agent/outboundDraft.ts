@@ -66,7 +66,8 @@ function parseDraft(payloadJson: string): DraftPayload | null {
     if (draft?.tool !== MAIL_SEND || !isMailArgs(draft.args)
       || typeof draft.sessionId !== 'string' || typeof draft.revision !== 'string'
       || typeof draft.attachmentBase !== 'string' || !isStringList(draft.attachmentFingerprints)
-      || typeof draft.argsFingerprint !== 'string') return null;
+      || typeof draft.argsFingerprint !== 'string' || typeof draft.needsReconfirm !== 'boolean'
+      || (draft.scheduledTaskName !== undefined && typeof draft.scheduledTaskName !== 'string')) return null;
     return draft as DraftPayload;
   } catch {
     return null;

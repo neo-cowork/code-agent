@@ -141,6 +141,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       });
   }, []);
   const [parkedPendingCount, setParkedPendingCount] = useState(0);
+  const [draftPendingCount, setDraftPendingCount] = useState(0);
   const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
   // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：仅在面板挂载且存在 running
   // 执行时每 2s 拉「等批准」运行（批准/拒绝后下一轮即消失，任务行回到运行中）。
@@ -292,7 +293,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     ...Object.values(latestExecutions).flatMap((execution) => (execution?.status === 'running' ? [execution.id] : [])),
   ]).size;
 
-  const pendingTotal = pendingReviewCount === null ? null : pendingReviewCount + parkedPendingCount;
+  const pendingActionCount = parkedPendingCount + draftPendingCount;
+  const pendingTotal = (pendingReviewCount ?? 0) + pendingActionCount;
 
   const tabs: Array<{ key: CronCenterTab; label: string }> = [
     { key: 'jobs', label: cc.tabJobs },
@@ -329,7 +331,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
                 }`}
               >
                 {label}
-                {key === 'runs' && (pendingTotal ?? 0) > 0 && (
+                {key === 'runs' && pendingTotal > 0 && (
                   <span
                     data-testid="cron-center-runs-badge"
                     className="absolute -right-1 -top-1 rounded-full border border-badge-warning/40 bg-amber-500/20 px-1 text-[9px] leading-3 text-badge-warning"
@@ -352,8 +354,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           />
           <StatusTile
             label={cc.statPendingReview}
-            value={String(parkedPendingCount)}
-            attention={parkedPendingCount > 0}
+            value={String(pendingActionCount)}
+            attention={pendingActionCount > 0}
             testId="cron-status-pending"
           />
           <StatusTile
@@ -415,6 +417,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             onParkedResolved={handleApprovalResolved}
             onParkedChange={discoverParkedRun}
             onParkedPendingChange={setParkedPendingCount}
+            onDraftPendingChange={setDraftPendingCount}
             refreshSignal={inboxRefreshVersion ? `${awaitingRefreshSignal}:${inboxRefreshVersion}` : awaitingRefreshSignal}
           />
         </div>

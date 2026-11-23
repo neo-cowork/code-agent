@@ -1312,8 +1312,9 @@ describe('outbound drafts in the review inbox', () => {
       return 'OUTBOUND_DRAFT_SENT';
     });
     const pendingChange = vi.fn();
-    render(<AutomationReviewInbox onParkedPendingChange={pendingChange} />);
+    render(<AutomationReviewInbox onDraftPendingChange={pendingChange} />);
     await screen.findByRole('heading', { name: 'Email draft ready for review' });
+    expect(screen.getByTestId('parked-approval-group').textContent).toContain('1 action waiting for you to confirm');
     expect(pendingChange).toHaveBeenLastCalledWith(1);
     for (const text of [...draft.to, ...draft.cc, ...draft.bcc, draft.subject, draft.body, ...draft.attachmentNames]) {
       expect(screen.getByText(text)).toBeTruthy();

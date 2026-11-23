@@ -103,6 +103,7 @@ interface AutomationReviewInboxProps {
   onParkedChange?: () => void;
   /** 卡片里「N 个操作等你确认」的 N（status==='pending' 的停车审批数）；页首 tile 并入同一个数 */
   onParkedPendingChange?: (count: number) => void;
+  onDraftPendingChange?: (count: number) => void;
   /**
    * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
    * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
@@ -136,7 +137,7 @@ function groupParkedWrites(rows: ParkedApprovalInboxItem[]): ParkedDisplayItem[]
   return out;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, onParkedPendingChange, onDraftPendingChange, refreshSignal, onParkedResolved, onParkedChange }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -200,10 +201,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     load();
   }, [load, refreshSignal]);
 
-  const pendingActionCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length + drafts.length;
+  const parkedPendingCount = groupParkedWrites(parked).filter((item) => item.status === 'pending').length;
+  const pendingActionCount = parkedPendingCount + drafts.length;
   useEffect(() => {
-    onParkedPendingChange?.(pendingActionCount);
-  }, [onParkedPendingChange, pendingActionCount]);
+    onParkedPendingChange?.(parkedPendingCount);
+  }, [onParkedPendingChange, parkedPendingCount]);
+  useEffect(() => {
+    onDraftPendingChange?.(drafts.length);
+  }, [onDraftPendingChange, drafts.length]);
 
   // 页面停着时定时任务跑完也要自动刷新：可见时低频轮询，切回前台/窗口聚焦立即重拉。
   useEffect(() => {
