@@ -76,7 +76,9 @@ import { initTaskManager, type TaskManager } from '../../../src/host/task/TaskMa
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { AgentOrchestrator } from '../../../src/host/agent/agentOrchestrator';
 import type { PendingDevPermissionRequest } from '../../../src/web/routes/dev';
-import type { PermissionAskResult } from '../../../src/shared/contract';
+import type { Message, PermissionAskResult } from '../../../src/shared/contract';
+import { buildContextTranscriptEntries } from '../../../src/host/agent/runtime/contextAssembly/transcriptProjection';
+import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly/shared';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import type { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
@@ -345,7 +347,25 @@ describe('审批卡编辑参数经 web 投递链抵达工具调用（FB-2606）'
 
     const result = await invoke(requestId, 'allow', sessionId, EDITED_ARGS);
     expect(result).toMatchObject({ success: true, data: { source: 'task-manager' } });
-    await expect(execution).resolves.toMatchObject({ success: true });
+    const executed = await execution;
+    expect(executed.success).toBe(true);
+
+    const toolResults = [{ ...executed, toolCallId: 'calendar-call' }];
+    const messages: Message[] = [{ id: 'calendar-result', role: 'tool', content: JSON.stringify(toolResults), timestamp: Date.now(), toolResults }];
+    const ctx = { runtime: { messages }, getBudgetedPersistentSystemContext: () => [] } as unknown as ContextAssemblyCtx;
+    const [toolMessage] = buildContextTranscriptEntries(ctx, messages);
+    const receipt = await resolverState.execute.mock.results[0].value;
+    expect(toolMessage).toMatchObject({
+      role: 'tool',
+      toolCallId: 'calendar-call',
+      content: [
+        receipt.output,
+        '',
+        'The user edited these fields on the approval card. Report the executed values below in place of the ones you proposed.',
+        `- Start time: ${new Date(EDITED_START_MS).toISOString()}`,
+        `- Notes: ${JSON.stringify(EDITED_NOTES)}`,
+      ].join('\n'),
+    });
 
     // 判据就是连接器拿到的那一份：notes 是卡上改的两行、start_ms 是卡上改的时间
     expect(connectorExecute).toHaveBeenCalledWith('create_event', {
@@ -357,6 +377,25 @@ describe('审批卡编辑参数经 web 投递链抵达工具调用（FB-2606）'
       'Permission response delivered (web)',
       expect.objectContaining({ requestId, edited: true }),
     );
+  });
+
+  it.each([
+    ['allow without edits', undefined],
+    ['allow with no real change', { notes: ORIGINAL_ARGS.notes }],
+  ])('(g) %s preserves the receipt byte for byte', async (_label, updatedArgs) => {
+    const sessionId = 'sess-unchanged-chain';
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+    install();
+
+    const execution = toolExecutorOf(orchestrator).execute('calendar_create_event', { ...ORIGINAL_ARGS }, { sessionId });
+    await vi.waitFor(() => expect(pendingIds(orchestrator)).toHaveLength(1));
+    const [requestId] = pendingIds(orchestrator);
+    await expect(invoke(requestId, 'allow', sessionId, updatedArgs)).resolves.toMatchObject({ success: true });
+
+    const executed = await execution;
+    expect(executed.success).toBe(true);
+    const receipt = await resolverState.execute.mock.results[0].value;
+    expect(executed.output).toBe(receipt.output);
   });
 
   it('(f) 全链：原参数省略可选的 calendar（字面复现路径），编辑照样抵达连接器', async () => {
