@@ -19,6 +19,7 @@ import type { ModelResponse } from '../../agent/loopTypes';
 import {
   sanitizeToolCallsForHistory,
   sanitizeToolResultsForHistoryWithCalls,
+  serializeToolResultsForModel,
 } from '../../agent/messageHandling/converter';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
@@ -802,7 +803,7 @@ export class MessageProcessor {
         const historyResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
         await this.contextAssembly.addAndPersistMessage({
           id: `${assistantMessage.id}:env-blocked-results`, role: 'tool', timestamp: Date.now(),
-          content: JSON.stringify(historyResults), toolResults: historyResults,
+          content: serializeToolResultsForModel(historyResults), toolResults: historyResults,
         });
       }
       await persistCancelledToolCallClosures({
@@ -877,7 +878,7 @@ export class MessageProcessor {
     const toolMessage: Message = {
       id: this.contextAssembly.generateId(),
       role: 'tool',
-      content: JSON.stringify(artifactRepairResults),
+      content: serializeToolResultsForModel(artifactRepairResults),
       timestamp: Date.now(),
       toolResults: artifactRepairResults,
       ...(isTerminalWakeNoop ? { isMeta: true } : {}),

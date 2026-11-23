@@ -1,6 +1,6 @@
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
-import { sanitizeToolResultsForHistoryWithCalls } from '../../agent/messageHandling/converter';
+import { sanitizeToolResultsForHistoryWithCalls, serializeToolResultsForModel } from '../../agent/messageHandling/converter';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
@@ -34,7 +34,7 @@ export async function settleSteerDuringToolExecution(input: {
     const partialToolMessage: Message = {
       id: contextAssembly.generateId(),
       role: 'tool',
-      content: JSON.stringify(partialResults),
+      content: serializeToolResultsForModel(partialResults),
       timestamp: Date.now(),
       toolResults: partialResults,
     };

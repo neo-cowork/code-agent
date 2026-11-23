@@ -20,6 +20,7 @@
 // 需要换机制（下沉 seatbelt 沙箱），不在本模块。
 // ============================================================================
 
+import { FOREIGN_SLOT_DENIAL_ZH } from '../../shared/i18n/foreignSlotDenial';
 import { readdirSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,6 +41,7 @@ export type SlotDataDirAccess =
   | {
     allowed: false;
     reason: string;
+    userMessage?: string;
     slotName: string;
     slotRoot: string;
     candidatePath: string;
@@ -360,16 +362,20 @@ function isMemoryPath(candidatePaths: string[], slot: FamilySlot): boolean {
   return candidatePaths.some((candidate) => memoryRoots.some((memoryRoot) => isSameOrChild(candidate, memoryRoot)));
 }
 
-function denyReason(slotName: string, candidatePaths: string[], slot: FamilySlot): string {
-  const base = `这是另一个槽（${slotName}）的数据目录，当前槽无权读取`;
-  if (!isMemoryPath(candidatePaths, slot)) return base;
-  return `${base}。 Use MemoryRead or memory_search instead of reading the memory directory directly; load the tool with ToolSearch if it is not visible.`;
+function denyReason(slotName: string, candidatePaths: string[], slot: FamilySlot): { reason: string; userMessage: string } {
+  const base = FOREIGN_SLOT_DENIAL_ZH.replace('{slotName}', () => slotName);
+  return {
+    userMessage: base,
+    reason: isMemoryPath(candidatePaths, slot)
+      ? `${base}。 Use MemoryRead or memory_search instead of reading the memory directory directly; load the tool with ToolSearch if it is not visible.`
+      : base,
+  };
 }
 
 function denyAccess(slot: FamilySlot, candidatePath: string, candidateCanonical: string): SlotDataDirAccess {
   return {
     allowed: false,
-    reason: denyReason(slot.name, [candidatePath, candidateCanonical], slot),
+    ...denyReason(slot.name, [candidatePath, candidateCanonical], slot),
     slotName: slot.name,
     slotRoot: slot.lexicalRoot,
     candidatePath,

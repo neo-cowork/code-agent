@@ -122,6 +122,10 @@ export function sanitizeToolCallsForHistory(toolCalls: ToolCall[] | undefined): 
   });
 }
 
+export function serializeToolResultsForModel(results: ToolResult[]): string {
+  return JSON.stringify(results.map(({ userMessage: _userMessage, ...modelResult }) => modelResult));
+}
+
 /**
  * Sanitize a single tool result for history storage
  *
