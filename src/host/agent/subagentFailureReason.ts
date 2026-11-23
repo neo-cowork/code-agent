@@ -35,3 +35,41 @@ export function describeSubagentStopReason(rawError: string, code: AgentFailureC
   if (!RETRYABLE_CODES.has(code)) return `后台任务中途停止了：${reason}。`;
   return `后台任务中途停止了：${reason}。你可以回复「继续」让它重试，已经看过的内容不会丢。`;
 }
+
+export function agentFailureReasonText(code: AgentFailureCode): string {
+  switch (code) {
+    case AgentFailureCode.BlockedByParentRole:
+      return '上级角色规则不允许它继续';
+    case AgentFailureCode.PermissionDenied:
+      return '需要的权限没有通过';
+    case AgentFailureCode.ToolUnavailable:
+      return '需要的能力当前不可用';
+    case AgentFailureCode.InvalidArguments:
+      return '助手设置的等待时间超过了允许的上限，需要缩短';
+    case AgentFailureCode.BudgetExhausted:
+      return '可用预算已经用完';
+    case AgentFailureCode.StepCapReached:
+      return '执行步数已达上限';
+    case AgentFailureCode.Timeout:
+      return '处理时间超过了限制';
+    case AgentFailureCode.ParentGone:
+      return '父任务已经结束';
+    case AgentFailureCode.CancelledByUser:
+      return '用户取消了这个任务';
+    case AgentFailureCode.CancelledByParent:
+      return '父任务取消了这个任务';
+    case AgentFailureCode.DependencyFailed:
+      return '依赖的任务失败了';
+    case AgentFailureCode.DependencyMissing:
+      return '依赖的任务不存在';
+    case AgentFailureCode.WorkflowStageFailed:
+      return '工作流中的一个阶段失败了';
+    case AgentFailureCode.WorktreeCreateFailed:
+      return '无法创建隔离工作区';
+    case AgentFailureCode.ModelError:
+      return '模型调用没有成功完成';
+    case AgentFailureCode.Unknown:
+    default:
+      return '失败原因还不明确';
+  }
+}

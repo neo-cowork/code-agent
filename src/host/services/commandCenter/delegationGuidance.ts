@@ -38,6 +38,14 @@ export function isDelegatedTaskPrompt(text: string): boolean {
   return text.startsWith(DELEGATED_SCOPE_RULE);
 }
 
+/** The human-readable plan inside an already wrapped prompt; any other text is returned unchanged. */
+export function delegatedPlanText(text: string): string {
+  if (!isDelegatedTaskPrompt(text)) return text;
+  const start = text.lastIndexOf(DELEGATED_TASK_PLAN_TAG);
+  const end = text.lastIndexOf('</drafted_task_plan>');
+  return start < 0 || end < start ? text : text.slice(start + DELEGATED_TASK_PLAN_TAG.length, end).trim();
+}
+
 /**
  * The drafted plan is the task's scope (one request may be split across several tasks);
  * the user's message rides along only so a drafted fallback cannot replace the named method.

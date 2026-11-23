@@ -13,6 +13,7 @@
 
 import { useMemo } from 'react';
 import { languages, type Language, type Translations } from '../i18n';
+import { backgroundTaskLabels } from '../utils/agentRoleLabel';
 import { withAutomationPromptTimeoutHint } from '@shared/i18n/sessionTaskSlot';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore, type SessionWithMeta } from '../stores/sessionStore';
@@ -374,8 +375,10 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
   if (!currentSessionId) return [];
   const t = languages[language];
 
-  return tasks
-    .filter((task) => task.sessionId === currentSessionId)
+  const sessionTasks = tasks.filter((task) => task.sessionId === currentSessionId);
+  // 序号按会话账本全集算（与成员列表、回放摘要同源），不受下面 slice 影响
+  const labels = backgroundTaskLabels(sessionTasks, t);
+  return sessionTasks
     .slice(0, 8)
     .map((task) => {
       const status = backgroundTaskStatusToTaskStatus(task.status);
@@ -386,6 +389,8 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         id: `background:${task.id}`,
         scope: 'global' as const,
         title: task.title,
+        source: task.source,
+        displayTitle: labels.get(task.id),
         status,
         ...(status === 'blocked' ? { failed: true } : {}),
         steps: [

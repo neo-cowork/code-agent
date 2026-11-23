@@ -24,12 +24,6 @@
     "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
   },
   {
-    "file": "src/renderer/components/StatusBar/ModelSwitcher.tsx",
-    "rule": "uuid",
-    "sample": "modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-CHAT-APPROVAL"
-  },
-  {
     "file": "src/renderer/components/TaskPanel/orchestration/components.tsx",
     "rule": "uuid",
     "sample": "{review.agentId}",
@@ -368,8 +362,14 @@
   {
     "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
     "rule": "uuid",
-    "sample": "{focusedWorkflowRun ? focusedWorkflowRun.goal ? `Workflow: ${focusedWorkflowRun.goal}` : `Workflow ${focusedWorkflowRun.runId}` : focusedBackgroundTask?.title}",
-    "reason": "N-UX-INTERNAL-TEXT-LEAK-SYSTEMIC-CORE-FU1-FIX-SIDEBAR-PROJECT-KNOWLEDGE"
+    "sample": "{focusedWorkflowRun ? focusedWorkflowRun.goal ? `Workflow: ${focusedWorkflowRun.goal}` : `Workflow ${focusedWorkflowRun.runId}` : focusedBackgroundTask ? backgroundTaskDisplayLabels.get(focusedBackgroundTask.id) : undefined}",
+    "reason": "N-FIX-BGTASK-TITLE-ENGLISH-IN-OTHER-LISTS"
+  },
+  {
+    "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
+    "rule": "uuid",
+    "sample": "{backgroundTaskDisplayLabels.get(task.id)}",
+    "reason": "N-FIX-BGTASK-TITLE-ENGLISH-IN-OTHER-LISTS"
   },
   {
     "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
