@@ -30,6 +30,7 @@ import { getProjectService } from '../../../services/project/projectService';
 import { getPermissionModeManager } from '../../../permissions/modes';
 import { isTaskOutputPathAuthorized } from '../../../permissions/taskOutputDirectory';
 import { setFolderTrust } from '../../../security/folderTrustService';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import type { ProjectSourceInput, ProjectSourceAccess } from '../../../../shared/contract/project';
 import { requestDirectorySchema as schema } from './requestDirectory.schema';
 
@@ -50,7 +51,7 @@ async function executeRequestDirectory(
     return { ok: false, error: 'reason must be a non-empty string', code: 'INVALID_ARGS' };
   }
 
-  const resolvedPath = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(ctx.workingDir, rawPath);
+  const resolvedPath = path.resolve(resolveInputPath(rawPath, ctx.workingDir));
 
   let stats;
   try {

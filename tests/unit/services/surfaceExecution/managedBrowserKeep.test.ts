@@ -102,6 +102,7 @@ function createFakeBrowser(options?: { initialTabs?: FakeTab[] }) {
     emitSessionChangedForTest: (reason: string) => {
       for (const listener of listeners) listener(reason);
     },
+    getPageHTML: vi.fn(async () => '<html><body>Result</body></html>'),
     getDomSnapshot: vi.fn(async () => {
       snapshot += 1;
       const tab = service.getActiveTab();
@@ -328,5 +329,24 @@ describe('managed browser keep result page (N-BROWSER-KEEP-RESULT-PAGE)', () => 
     });
     expect(poolMocks.releaseAgent).toHaveBeenCalledWith(firstKey);
     await runtime.endRun(secondIdentity);
+  });
+
+  it('captures the result page at keep and replaces it with the page at release', async () => {
+    const { runtime, identity, fake, adapter, keptRegistry } = createHarness();
+    await executeAction(adapter, identity, 'nav-1');
+    fake.raw.getPageHTML.mockResolvedValueOnce('<html>keep</html>');
+    adapter.markResultPageKept(identity, { url: 'http://127.0.0.1/signup-direct', title: 'Done' });
+    await vi.waitFor(() => {
+      expect(keptRegistry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+        snapshotHtml: '<html>keep</html>',
+        reopenMode: 'snapshot',
+      });
+    });
+    fake.raw.getPageHTML.mockResolvedValue('<html>release</html>');
+    await runtime.endRun(identity);
+    expect(keptRegistry.snapshot('conversation-a', { includeSnapshot: true })).toMatchObject({
+      snapshotHtml: '<html>release</html>',
+      reopenMode: 'snapshot',
+    });
   });
 });

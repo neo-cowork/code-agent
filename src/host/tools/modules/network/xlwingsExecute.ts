@@ -12,7 +12,6 @@
 // 暴露 executeXlwingsExecute 给 modules/excel/excelAutomate dispatcher 复用。
 // ============================================================================
 
-import * as path from 'path';
 import type {
   ToolHandler,
   ToolModule,
@@ -22,6 +21,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { executePythonScript } from '../../utils/pythonBridge';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { xlwingsExecuteSchema as schema } from './xlwingsExecute.schema';
 
 type XlwingsOperation =
@@ -157,9 +157,7 @@ export async function executeXlwingsExecute(
 
     const pythonParams: Record<string, unknown> = {};
     if (file_path) {
-      pythonParams.file_path = path.isAbsolute(file_path)
-        ? file_path
-        : path.join(ctx.workingDir, file_path);
+      pythonParams.file_path = resolveInputPath(file_path, ctx.workingDir);
     }
     if (sheet) pythonParams.sheet = sheet;
 

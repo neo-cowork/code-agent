@@ -18,7 +18,7 @@ import {
   isAppleScriptFailure,
 } from '../../../connectors/native/osascript';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
-import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import { describeStatusDetail, formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 import { remindersSchema as schema } from './reminders.schema';
 
@@ -144,7 +144,7 @@ async function executeReminders(
         return {
           ok: false,
           code: status.errorCode,
-          error: status.error ?? 'Reminders access denied',
+          error: describeStatusDetail(status) || 'Reminders access denied',
           meta: { accessProbeDenied: true },
         };
       }
