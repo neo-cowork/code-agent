@@ -82,7 +82,7 @@ describe('backgroundTaskStopped after a finished foreground turn', () => {
 
     const failedTask: Task = {
       id: 't1', source: 'session_command_center', title: 'Summarize notes', status: 'failed',
-      failure: { reason: 'session_command_task_interrupted_by_restart' },
+      failure: { message: 'Interrupted', reason: 'session_command_task_interrupted_by_restart' },
       createdAt: 2, updatedAt: 3, events: [], outputRefs: [],
     };
     const withReceipt = projectBackgroundReceipts(
