@@ -138,7 +138,7 @@ describe('timed-out wait_for_user parks the window', () => {
     } as unknown as ToolContext);
     expect(result.metadata).toMatchObject({ code: 'WAIT_FOR_USER_TIMEOUT', windowParked: true });
     expect(poolMocks.releaseAgent).not.toHaveBeenCalledWith('prior-result');
-    const snapshot = { state: 'kept', url: 'https://portal.example.test/invoice', title: 'Prior invoice', reason: 'keep_result_page' as const };
+    const snapshot = { state: 'kept' as const, url: 'https://portal.example.test/invoice', title: 'Prior invoice', reason: 'keep_result_page' as const, reopenMode: 'url' as const };
     expect(h.keptRegistry.snapshot('conversation-p')).toEqual(snapshot);
     const parkedKey = h.adapter.getBinding(h.idA)!.serviceKey;
     await h.runtime.endRun(h.idA);

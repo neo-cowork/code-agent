@@ -57,6 +57,8 @@ import {
   contentHasImageParts,
   runVisionPreflightCandidates,
 } from './visionPreflight';
+import { formatVisionToolUnsupportedNotice } from '../../../../shared/i18n/visionPreflight';
+import { readPreviewHealthLocale } from '../browser/previewHealthLocale';
 import {
   writeAgentRecoveryNotice,
   persistStreamedPartialBeforeResend,
@@ -640,7 +642,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         await writeAgentRecoveryNotice(
           ctx,
           'vision_tool_unsupported',
-          `视觉模型 ${effectiveConfig.model} 不支持工具调用，本次请求将仅使用纯文本回复`,
+          formatVisionToolUnsupportedNotice(readPreviewHealthLocale()),
         );
       }
     }
