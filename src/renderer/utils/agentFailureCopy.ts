@@ -22,11 +22,13 @@ export function agentFailureCopy(code: AgentFailureCode | undefined, t: Translat
   return copy[inferred];
 }
 
-/** Progress can include tool transcripts and provider errors. Use the explicit failure fact. */
+/** A rehydrated context can end with tool output, so only its explicit failure fact is safe to use. */
 export function agentFailureReason(node: AgentTreeNode, t: Translations): string {
-  const reason = node.failureReason?.trim();
-  const internalReason = /^(?:Tool (?:results:|[\w-]+:)|(?:\w*Error|\w*Exception|HTTP)[: ]|Calling \S+\()/i;
-  const plainReason = reason && !internalReason.test(reason) ? reason : undefined;
+  const liveProgress = node.sources.includes('backgroundRegistry') && !node.sources.includes('subagentContext')
+    ? node.progress : undefined;
+  const reason = node.failureReason || liveProgress;
+  const internalReason = /^(?:Tool (?:results:|[\w-]+:)|(?:\w*Error|\w*Exception|HTTP)[: ]|Calling \S+\(|Max iterations reached)/i;
+  const plainReason = reason?.trim() && !internalReason.test(reason.trim()) ? reason : undefined;
   const code = node.failureCode
     ?? (!plainReason ? AgentFailureCode.Unknown : undefined);
   return agentFailureCopy(code, t, plainReason) ?? t.toolStepHumanize.agentFailureReasons.unknown;
