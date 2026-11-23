@@ -17,6 +17,7 @@ import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 
 const state = vi.hoisted(() => ({
   language: 'zh' as 'zh' | 'en',
+  sessions: [] as unknown[],
   db: null as Database.Database | null,
   repo: null as unknown,
   pending: null as unknown,
@@ -47,11 +48,17 @@ vi.mock('../../../src/renderer/stores/appStore', () => {
   return { useAppStore: (select?: (v: typeof value) => unknown) => select ? select(value) : value };
 });
 vi.mock('../../../src/renderer/stores/sessionStore', () => {
-  const value = { currentSessionId: 's1', loadSessions: vi.fn(), switchSession: vi.fn() };
+  const value = {
+    currentSessionId: 's1', loadSessions: vi.fn(), switchSession: vi.fn(),
+    get sessions() { return state.sessions; },
+  };
   return { useSessionStore: Object.assign((select: (v: typeof value) => unknown) => select(value), { getState: () => value }) };
 });
 vi.mock('../../../src/renderer/stores/parkedApprovalStore', () => ({
   useParkedApprovals: () => state.items, refreshParkedApprovals: vi.fn(),
+}));
+vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
+  sessionAutomationClient: { getRoleWakeRun: vi.fn().mockResolvedValue(null), listParkedApprovals: async () => state.items },
 }));
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({
   usePermissionStore: () => ({ checkMemory: () => null, saveMemory: vi.fn() }),
@@ -68,6 +75,7 @@ import { getPermissionModeManager, resetPermissionModeManager } from '../../../s
 import { getSessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
 import { ParkedApprovalCards } from '../../../src/renderer/components/features/chat/ParkedApprovalCards';
+import { CronRunSessionStatusBar } from '../../../src/renderer/components/features/chat/CronRunSessionStatusBar';
 
 const userWords = '明天上午10点在飞书日历加一个叫周会的日程';
 const taskName = '工作日飞书晨会';
@@ -83,6 +91,7 @@ function start(cron: boolean | 'first_wake', parked = false, sameTitle = true) {
     : cron ? { kind: 'cron', id: 'cron-1', name: taskName } : { kind: 'manual' };
   db.prepare(`INSERT INTO sessions (id,title,model_provider,model_name,working_directory,origin,created_at,updated_at)
     VALUES ('s1',?,'test','test','/tmp',?,1,1)`).run('同步下周会议', JSON.stringify(origin));
+  state.sessions = [(state.repo as SessionRepository).getSession('s1')];
   if (cron === true && sameTitle) {
     db.prepare(`INSERT INTO session_automations (id,type,status,title,source_ref_id,created_at,updated_at)
       VALUES ('a1','cron','active',?,'cron-1',1,1)`).run(taskName);
@@ -130,6 +139,7 @@ describe('Feishu connector approval host -> renderer chain', () => {
     state.repo = new SessionRepository(db);
     state.pending = new PendingApprovalRepository(db);
     state.items = [];
+    state.sessions = [];
     state.language = 'zh';
     state.respond.mockReset();
     executor.mockClear();
@@ -169,7 +179,7 @@ describe('Feishu connector approval host -> renderer chain', () => {
   it.each([
     ['zh', '由专家首次见面自动发起'],
     ['en', 'Started automatically at your first meeting with this expert'],
-  ] as const)('%s first wake: host details -> PermissionCard and parked DB -> ParkedApprovalCards', (language, label) => {
+  ] as const)('%s first wake: host details -> PermissionCard and parked DB -> awaiting status row', async (language, label) => {
     state.language = language;
     const { payload } = start('first_wake', true);
     function expectFirstWake(details: Pick<PermissionRequest['details'], 'startedByFirstWake' | 'startedByAutomation' | 'scheduledTaskName' | 'userRequest'>) {
@@ -189,8 +199,9 @@ describe('Feishu connector approval host -> renderer chain', () => {
     state.items = getSessionAutomationService().listParkedApprovals();
     expect(state.items).toHaveLength(1);
     expectFirstWake(state.items[0]);
-    const parked = render(<ParkedApprovalCards />);
-    expect(screen.getByTestId('first-wake-origin').textContent).toBe(label);
+    const parked = render(<CronRunSessionStatusBar sessionId="s1" />);
+    expect((await screen.findByTestId('first-wake-origin')).textContent).toBe(label);
+    expect(screen.getByTestId('cron-run-status').dataset.state).toBe('awaiting');
     expect(parked.container.textContent).not.toMatch(/定时任务|scheduled task/i);
   });
 
