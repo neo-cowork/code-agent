@@ -582,7 +582,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     <div className="min-w-0">
                       <div className="truncate font-medium text-badge-info">{backgroundTaskDisplayLabels.get(task.id)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-badge-info/60">{formatTaskStatus(task, labels)}</div>
-                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45" title={task.id}>
+                      <div className="mt-0.5 truncate text-[10px] text-badge-info/45">
                         {formatBackgroundTaskMeta(task, labels, language)}
                       </div>
                     </div>
