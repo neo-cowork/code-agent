@@ -13,7 +13,7 @@ import type {
   ExternalAgentEngineKind,
 } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
-import { isAgenticVerifiedModel } from '@shared/constants';
+import { getModelDisplayLabel, isAgenticVerifiedModel } from '@shared/constants';
 import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import { resolveProviderLabel } from '../../i18n/providerDisplay';
 import {
@@ -923,12 +923,18 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                   );
                                 })}
                                 {(() => {
-                                  const badge = getModelPriceBadge(opt.provider, opt.model);
+                                  // internal-text-leak 门不许渲染位表达式里出现裸 *.modelId 属性访问，
+                                  // 基准 id 取成局部量 baselineModel 再走标签管线。
+                                  const badge = getModelPriceBadge(opt.provider, opt.model), baselineModel = PRICING_BASELINE_DEFAULT.modelId;
                                   return (
                                     <span
                                       className={`ml-auto text-[10px] tabular-nums ${badge.known ? 'text-zinc-400' : 'text-zinc-600'}`}
                                       title={badge.known
-                                        ? modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)
+                                        // 价格基准 hover 用展示名（不再裸 id）；限定词本地化走
+                                        // localizeModelLabel（zh 还原中文限定词、en 用目录英文限定词），
+                                        // 与下拉行标签同管线。
+                                        ? modelText.priceCoefTitle.replace('{baseline}', localizeModelLabel(
+                                          baselineModel, getModelDisplayLabel(baselineModel), language))
                                         : modelText.priceUnknownTitle}
                                     >
                                       {badge.label}

@@ -49,16 +49,16 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
-  const identity = (provider: string, model: string) => `${providerName(provider, args.settings, language)}/${shownModelLabel(model, language)}`;
+  const identity = (provider: string, modelLabel: string) => `${providerName(provider, args.settings, language)}/${modelLabel}`;
   const modelLine = args.switchedFrom
     ? labels.switched
-        .replace('{shown}', identity(args.shownProvider ?? args.displayProvider, args.shownModel ?? args.displayModel))
-        .replace('{original}', identity(args.switchedFrom.provider, args.switchedFrom.model))
+        .replace('{shown}', identity(args.shownProvider ?? args.displayProvider, shownModelLabel(args.shownModel ?? args.displayModel, language)))
+        .replace('{original}', identity(args.switchedFrom.provider, shownModelLabel(args.switchedFrom.model, language)))
     : args.adaptive
       ? labels.adaptive.replace('{model}', shownModelLabel(args.currentModel, language))
       : args.overridden
-        ? labels.overridden.replace('{model}', identity(args.displayProvider, args.displayModel)).replace('{original}', shownModelLabel(args.currentModel, language))
-        : labels.model.replace('{model}', identity(args.displayProvider, args.displayModel));
+        ? labels.overridden.replace('{model}', identity(args.displayProvider, shownModelLabel(args.displayModel, language))).replace('{original}', shownModelLabel(args.currentModel, language))
+        : labels.model.replace('{model}', identity(args.displayProvider, shownModelLabel(args.displayModel, language)));
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,
@@ -82,7 +82,9 @@ export function formatExternalModelSwitcherTooltip(args: {
   const labels = languages[language].modelSwitcherTooltip;
   return [
     `${labels.engine}: ${args.engineLabel}`,
-    labels.model.replace('{model}', args.model ?? languages[language].settings.model.models.switcherTooltip.defaultModel),
+    labels.model.replace('{model}', args.model
+      ? getModelDisplayLabel(args.model)
+      : languages[language].settings.model.models.switcherTooltip.defaultModel),
     args.effort ? `${labels.effort}: ${language === 'zh' ? args.effort.shortLabel : args.effort.label}` : null,
     args.reliabilityLabel ? `${labels.service}: ${args.reliabilityLabel}` : null,
   ].filter(Boolean).join(' · ');
