@@ -374,7 +374,7 @@ export interface MemoryTidyRestoreResult {
 
 export interface MemoryEntryCreateRequest {
   content?: string;
-  /** 仅 user / feedback / project / reference；其余由 host 拒绝 */
+  /** 仅 user / feedback / project / people / reference；其余由 host 拒绝 */
   kind?: string;
   projectPath?: string | null;
 }

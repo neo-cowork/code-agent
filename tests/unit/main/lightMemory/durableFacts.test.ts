@@ -314,6 +314,7 @@ describe('默认助手长期事实写回', () => {
     const prompt = memoryModelMocks.memoryTask.mock.calls[0][0] as string;
     expect(prompt).toContain('type=people');
     expect(prompt).toContain('绝对日期');
+    expect(prompt).toMatch(/会话日期：\d{4}-\d{2}-\d{2}（/);
     await writeDurableFacts(judgment.durableFacts);
 
     expect(await fs.readFile(path.join(memoryDir, 'fact-1.md'), 'utf-8')).toContain('type: people');

@@ -80,7 +80,7 @@ const JUDGE_PROMPT = `你是会话归档判断器。根据下面这段会话，�
 - title 抓住会话主题；worthKnowledge 抓住用户真正想达成什么、定了什么。
 - durableFacts 只收用户在对话中顺带透露、下次仍然成立的稳定事实，例如所在城市、家庭构成、预算档位、口味或忌口、常用平台与账号、明确表达的工作偏好，或用户对你的纠正。
 - 最强信号：你为了完成任务向用户问了一个问题，用户回答了，而且这个答案下次仍然成立。这种事实必须收进 durableFacts。
-- 用户提到同事、客户、团队或组织是谁、做什么、负责什么，用 type=people 收（一人或一个组织一条）；某个项目的当前进展、里程碑、负责人用 type=project 收。这两类里的相对日期（下周三、明天）必须按会话时间换成绝对日期（如 2026-11-25）再写入 content。
+- 用户提到同事、客户、团队或组织是谁、做什么、负责什么，用 type=people 收（一人或一个组织一条）；某个项目的当前进展、里程碑、负责人用 type=project 收。这两类里的相对日期（下周三、明天）必须按下面给出的「会话日期」换成绝对日期（YYYY-MM-DD）再写入 content。
 - durableFacts 不收本次任务的临时状态、不收能从材料本身推导出的代码或文档或数据自带信息、不收闲聊和一次性调试细节。
 - durableFacts 返回空数组是正常结果，宁缺勿滥；绝大多数轮次都应该返回 []。
 - confidence 校准：用户亲口明说、且明确跨会话成立的给 0.5 以上；从措辞推断、可能只在本任务成立、或拿不准的给 0.5 以下——低于 0.5 的事实会被直接丢弃，不要为了写进而抬高。
@@ -249,7 +249,12 @@ function parseJudgment(raw: string): ConversationJudgment | null {
  */
 function buildConversationSnippet(userMessages: string[], lastAssistant?: string): string {
   const recent = userMessages.slice(-SESSION_JUDGE.RECENT_USER_TURNS);
-  const lines = recent.map((msg, i) => `用户消息${i + 1}：${msg.trim()}`);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const lines = [
+    `会话日期：${today}（${now.toLocaleDateString('zh-CN', { weekday: 'long' })}）`,
+    ...recent.map((msg, i) => `用户消息${i + 1}：${msg.trim()}`),
+  ];
   if (lastAssistant?.trim()) {
     lines.push(`助手最后回复：${truncate(lastAssistant, 300)}`);
   }

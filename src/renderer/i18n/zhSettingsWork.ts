@@ -520,6 +520,7 @@ export const zhSettingsWork = {
         user: '用户',
         feedback: '反馈',
         project: '项目',
+        people: '人与组织',
         reference: '引用',
         unknown: '未分类',
       },

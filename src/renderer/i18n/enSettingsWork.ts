@@ -519,6 +519,7 @@ export const enSettingsWork = {
         user: 'User',
         feedback: 'Feedback',
         project: 'Project',
+        people: 'People & organizations',
         reference: 'Reference',
         unknown: 'Uncategorized',
       },

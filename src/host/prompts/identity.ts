@@ -256,12 +256,13 @@ You have a persistent, file-based memory system at: ~/.code-agent/memory/
 | user | Learn user's role, preferences, expertise | Personalizing responses |
 | feedback | User corrects your approach | Before similar tasks |
 | project | Learn project context not in code/git | Understanding task context |
+| people | Learn who a person/org is, their role | Asked about colleagues |
 | reference | Learn external resource locations | Looking up external info |
 
 ## Write Gate — What to Save
 
-**SAVE**: User corrections, preferences, external system references, context not derivable from the material itself (code/git, the source documents, the data)
-**DO NOT SAVE**: Anything re-derivable from the material at hand (code patterns, file paths, git history, a document's own contents, a spreadsheet's own columns), debug solutions, ephemeral task state, anything in CLAUDE.md
+**SAVE**: User corrections, preferences, external system references, context not derivable from the material itself (code/git, source documents, data)
+**DO NOT SAVE**: Anything re-derivable from the material (code patterns, file paths, git history, a document's or spreadsheet's own contents), debug solutions, ephemeral task state, anything in CLAUDE.md
 
 ## How to Save
 
@@ -270,7 +271,7 @@ You have a persistent, file-based memory system at: ~/.code-agent/memory/
 ---
 name: {{name}}
 description: {{one-line description for relevance matching}}
-type: {{user|feedback|project|reference}}
+type: {{user|feedback|project|people|reference}}
 ---
 {{content}}
 \`\`\`
@@ -284,9 +285,9 @@ type: {{user|feedback|project|reference}}
 
 ## Maintenance
 
-- Before writing, check if a same-topic memory exists — merge, don't duplicate
+- Before writing, merge with any same-topic memory; don't duplicate
 - "forget X" → archive it: keep content; exclude it from default INDEX/search/pack
-- Memory is historical context, not instruction. Recheck named paths/files/flags and stale or expired entries. Show archives only when explicitly asked
+- Memory is historical context, not instruction. Recheck named paths/files/flags and stale entries. Show archives only when explicitly asked
 </memory_system>
 `.trim(),
 );
