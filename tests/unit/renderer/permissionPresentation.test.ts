@@ -14,6 +14,51 @@ const baseRequest: PermissionRequest = {
   details: { path: '/workspace/README.md' },
 };
 
+describe('folder targets in permission titles', () => {
+  it.each([
+    ['.', '允许读取 当前文件夹？', 'Allow reading the current folder?'],
+    ['./', '允许读取 当前文件夹？', 'Allow reading the current folder?'],
+    ['././', '允许读取 当前文件夹？', 'Allow reading the current folder?'],
+    ['..', '允许读取 上一级文件夹？', 'Allow reading the parent folder?'],
+    ['../', '允许读取 上一级文件夹？', 'Allow reading the parent folder?'],
+    ['src/../.', '允许读取 上一级文件夹？', 'Allow reading the parent folder?'],
+    ['src/.', '允许读取 src？', 'Allow reading src?'],
+    ['src\\.\\', '允许读取 src？', 'Allow reading src?'],
+    ['/workspace/proj', '允许读取 proj？', 'Allow reading proj?'],
+    ['/workspace/proj/.', '允许读取 proj？', 'Allow reading proj?'],
+    ['/', '允许读取 /？', 'Allow reading /?'],
+    ['/dev/stdout', '允许读取 /dev/stdout？', 'Allow reading /dev/stdout?'],
+    ['', '允许这次操作？', 'Allow this operation?'],
+  ])('describes reading %j in both languages', (path, zh, english) => {
+    const request = { ...baseRequest, details: { path } };
+    const zhTitle = permissionSummary(request, decisionCardZh as never);
+    const enTitle = permissionSummary(request, decisionCardEn as never, 'en');
+    expect([zhTitle, enTitle]).toEqual([zh, english]);
+    expect(zhTitle).not.toMatch(/(?:^|\s)\.(?=\s|[？?（]|$)/u);
+    expect(enTitle).not.toMatch(/(?:^|\s)\.(?=\s|[？?（]|$)/u);
+  });
+
+  it.each([
+    ['file_write', '允许写入 当前文件夹？', 'Allow writing the current folder?'],
+    ['file_edit', '允许编辑 当前文件夹？', 'Allow editing the current folder?'],
+    ['file_delete', '允许删除 当前文件夹？', 'Allow deleting the current folder?'],
+  ] as const)('describes the current folder in %s titles', (type, zh, english) => {
+    const request = { ...baseRequest, type, details: { filePath: '.' } };
+    expect(permissionSummary(request, decisionCardZh as never)).toBe(zh);
+    expect(permissionSummary(request, decisionCardEn as never, 'en')).toBe(english);
+  });
+
+  it('keeps the outside-workspace qualifier after the parent folder name', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      details: { path: '../' },
+      boundary: { id: 'file.external_read' },
+    };
+    expect(permissionSummary(request, decisionCardZh as never)).toBe('允许读取 上一级文件夹（工作区外）？');
+    expect(permissionSummary(request, decisionCardEn as never, 'en')).toBe('Allow reading the parent folder (outside workspace)?');
+  });
+});
+
 describe('isSafeDefaultDeny', () => {
   it.each<{
     name: string;
