@@ -23,6 +23,11 @@ import { getLangfuseService } from '../../../../src/host/services';
 import { DEFAULT_SETTINGS } from '../../../../src/host/services/core/configDefaults';
 import { settlePrimaryRunSessionStatus } from '../../../../src/host/task/backgroundTaskTerminal';
 import { ModelRouter } from '../../../../src/host/model/modelRouter';
+import { stampAssistantMessageCorrelation } from '../../../../src/host/session/assistantCorrelation';
+import { applyConversationStreamEvent } from '../../../../src/renderer/hooks/agent/effects/useConversationStreamEffects';
+import type { ConversationStreamEventActions } from '../../../../src/renderer/hooks/agent/effects/streamEventTypes';
+import { projectTurns } from '../../../../src/renderer/hooks/useTurnProjection';
+import { mergeSnapshotWithLiveTail } from '../../../../src/renderer/stores/sessionSnapshotMerge';
 
 const store = vi.hoisted(() => ({
   sessions: undefined as SessionRepository | undefined,
@@ -31,7 +36,10 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
     getCurrentSessionId: () => 'cancel-session',
     getSession: async (id: string) => store.sessions?.getSession(id),
-    addMessageToSession: async (id: string, message: Message) => store.sessions?.addMessage(id, message),
+    addMessageToSession: async (id: string, message: Message) => {
+      stampAssistantMessageCorrelation(message);
+      return store.sessions?.addMessage(id, message);
+    },
     updateSession: async (id: string, updates: Partial<Session>) => store.sessions?.updateSession(id, updates),
     getSessionMetadata: () => undefined,
     getTodos: async () => [],
@@ -178,6 +186,63 @@ describe('AgentOrchestrator Stop before first model packet', () => {
     expect(runtime.control.isSettled).toBe(true);
     expect(store.sessions?.getSession('cancel-session')?.status).toBe('interrupted');
     expect(store.sessions?.getMessages('cancel-session').filter((m) => m.content.includes('[cancelled]'))).toHaveLength(1);
+  });
+
+  it('Stop mid-stream keeps one partial through live events and session reload', async () => {
+    const run = orchestrator.sendMessage('Write a long picnic checklist.', undefined, { mode: 'normal', disableAutoAgent: true });
+    await vi.waitFor(() => expect(requestStarted).toBe(true));
+    const partial = '\n\n1. Pack the wicker basket.\n2. Bring the patched blanket.\n3.';
+    await onStream?.({ type: 'text', content: partial });
+    await orchestrator.cancel('user');
+    await run;
+    await Promise.all(writes);
+
+    const persisted = store.sessions?.getMessages('cancel-session') ?? [];
+    const userMessage = persisted.find((message) => message.role === 'user');
+    expect(userMessage).toBeDefined();
+    const persistedAssistants = persisted.filter((message) => message.role === 'assistant');
+    expect(persistedAssistants).toHaveLength(1);
+    expect(persistedAssistants[0]?.content.startsWith('1.')).toBe(true);
+    expect(persistedAssistants[0]?.metadata?.correlation?.turnId).toBe(runtime.turn.currentTurnId);
+
+    let liveMessages: Message[] = [userMessage!];
+    const actions: ConversationStreamEventActions = {
+      addMessage: (message) => { liveMessages = [...liveMessages, message]; },
+      updateMessage: (id, updates) => {
+        liveMessages = liveMessages.map((message) => message.id === id ? { ...message, ...updates } : message);
+      },
+      appendStreamingMessageDelta: (messageId, delta) => {
+        liveMessages = liveMessages.map((message) => message.id === messageId
+          ? { ...message, content: `${message.content ?? ''}${delta.content ?? ''}`, reasoning: `${message.reasoning ?? ''}${delta.reasoning ?? ''}` || undefined }
+          : message);
+      },
+      setMessages: (messages) => { liveMessages = messages; },
+      getMessages: () => liveMessages,
+      queueUpdate: () => {},
+      now: () => Date.now(),
+    };
+    const streamState = {
+      currentTurnMessageId: null as string | null,
+      committedAssistantMessageIds: new Set<string>(),
+      lastDeltaSeqByTurn: new Map<string, number>(),
+      segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>(),
+    };
+    for (const event of events.filter((event) => event.type === 'turn_start' || event.type === 'stream_chunk' || event.type === 'message')) {
+      applyConversationStreamEvent(event, streamState, actions);
+    }
+
+    const visiblePartialTexts = (messages: Message[]) => projectTurns(messages, 'cancel-session', false).turns
+      .flatMap((turn) => turn.nodes)
+      .filter((node) => node.type === 'assistant_text' && Boolean(node.content.trim()))
+      .map((node) => node.content);
+    expect(liveMessages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(liveMessages.find((message) => message.role === 'assistant')?.content.startsWith('\n\n1.')).toBe(true);
+    expect(visiblePartialTexts(liveMessages)).toHaveLength(1);
+
+    const reloaded = mergeSnapshotWithLiveTail(persisted, liveMessages).messages;
+    expect(reloaded.filter((message) => message.role === 'assistant')).toHaveLength(1);
+    expect(visiblePartialTexts(reloaded)).toHaveLength(1);
+    expect(visiblePartialTexts(mergeSnapshotWithLiveTail(persisted, []).messages)).toHaveLength(1);
   });
 
   it('a fast model finishes normally and Stop after settlement adds no marker', async () => {

@@ -320,7 +320,7 @@ describe('审批响应投递链路（web 路径）', () => {
       }
     });
 
-    it('没有第 4 参（或不是普通对象）时与此前完全一致，日志 edited:false', async () => {
+    it('没有第 4 参时正常批准；无效参数拒绝且请求仍可裁决，日志 edited:false', async () => {
       const sessionId = 'sess-edit-none';
       const island = makeIsland();
       registerForegroundPermissionIsland(sessionId, island);
@@ -330,7 +330,12 @@ describe('审批响应投递链路（web 路径）', () => {
           const approval = island.requestPermission({ type: 'file_write', tool: 'Write', sessionId, reason: 'gate', details: {} });
           await Promise.resolve();
           const requestId = island.listPendingRequests()[0]!.id;
-          await invoke4(requestId, 'allow', sessionId, bad);
+          const result = await invoke4(requestId, 'allow', sessionId, bad);
+          if (bad !== undefined) {
+            expect(result).toMatchObject({ success: false, error: { code: 'INVALID_UPDATED_ARGS' } });
+            expect(island.listPendingRequests().map((request) => request.id)).toContain(requestId);
+            await invoke4(requestId, 'allow', sessionId);
+          }
           await expect(approval).resolves.toEqual({ approved: true, approvalSource: 'user' });
         }
         expect(infoText()).toContain('"edited":false');

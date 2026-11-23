@@ -808,4 +808,73 @@ describe('SessionAgentsPanel', () => {
       expect(screen.getByTestId('agents-panel-quiet-researcher').textContent).toContain('暂无进展');
     });
   });
+  // N-WF-STALL-SPAWN-AGENT-REST1：10 分钟「很久没动静」档，替换 quiet（不叠加），Stop 同时醒目。
+  describe('很久没动静（long 档）', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('节点行静默 601s：只出 long 不出 quiet，Stop 变危险色，点击走 closeAgent 且行变已停止', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      let snapshot = snapshotOf([treeNode({ updatedAt: Date.now() - 119_000 })]);
+      invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+        if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(snapshot);
+        if (action === 'closeAgent') return Promise.resolve({ cancelled: true });
+        return Promise.resolve(null);
+      });
+      render(<SessionAgentsPanel />);
+      const tick = async (ms: number) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
+      await screen.findByTestId('agents-panel-row-agent-9');
+      expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+      expect(screen.queryByTestId('agents-panel-long-agent-9')).toBeNull();
+
+      await tick(10_000); // 129s
+      expect(screen.getByTestId('agents-panel-quiet-agent-9').textContent).toContain('暂无进展');
+      expect(screen.queryByTestId('agents-panel-long-agent-9')).toBeNull();
+      expect(screen.getByTestId('agents-panel-stop-agent-9').classList.contains('text-badge-danger')).toBe(false);
+
+      for (let i = 0; i < 48; i += 1) await tick(10_000); // 609s
+      expect(screen.getByTestId('agents-panel-long-agent-9').textContent).toContain('很久没动静');
+      expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+      const stop = screen.getByTestId('agents-panel-stop-agent-9');
+      expect(stop.classList.contains('text-badge-danger')).toBe(true);
+
+      snapshot = snapshotOf([treeNode({ status: 'cancelled', statusLabel: '已取消', updatedAt: Date.now() })]);
+      fireEvent.click(stop);
+      await tick(0);
+      expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.AGENT, 'closeAgent', {
+        agentId: 'agent-9',
+        sessionId: 'session-1',
+      });
+      await tick(10_000);
+      expect(screen.queryByTestId('agents-panel-long-agent-9')).toBeNull();
+      expect(screen.queryByTestId('agents-panel-stop-agent-9')).toBeNull();
+      expect(screen.getByTestId('agents-panel-status-agent-9').textContent).not.toBe('工作中');
+    });
+
+    it('专家行活锚点静默 601s：出 long，Stop 走 SWARM_CANCEL_AGENT', async () => {
+      invokeMock.mockReset();
+      mockLedger(
+        [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 900_000 })],
+        { status: 'running' },
+      );
+      const base = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((channel: string, ...rest: unknown[]) => (
+        channel === IPC_CHANNELS.SWARM_CANCEL_AGENT ? Promise.resolve(true) : base(channel, ...rest)
+      ));
+      useSwarmStore.setState({
+        activeRunId: 'logical-run-1',
+        agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 601_000) })],
+      });
+
+      render(<SessionAgentsPanel />);
+      expect((await screen.findByTestId('agents-panel-long-researcher')).textContent).toContain('很久没动静');
+      expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+      const stop = screen.getByTestId('agents-panel-stop-researcher');
+      expect(stop.classList.contains('text-badge-danger')).toBe(true);
+      fireEvent.click(stop);
+      await waitFor(() => expect(invokeMock).toHaveBeenCalledWith(
+        IPC_CHANNELS.SWARM_CANCEL_AGENT,
+        { sessionId: 'session-1', runId: 'logical-run-1', agentId: 'researcher' },
+      ));
+    });
+  });
 });
