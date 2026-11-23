@@ -238,6 +238,56 @@ describe('approved rm production approval boundary', () => {
       refused(condition === 'unattended_background' ? 'unattended' : condition);
     },
   );
+  describe('literal-path for loop around rm', () => {
+    const loop = (body: string, items = `${'${F0}'} ${'${F1}'}`) => {
+      input.params.command = `for f in ${items.replace('${F0}', `'${files[0]}'`).replace('${F1}', `"${files[1]}"`)}; do\n${body}\ndone`;
+    };
+
+    it.each([
+      'if rm -- "$f"; then echo "removed $f"; else echo "FAILED exit=$?"; fi',
+      'echo "--- rm: $f"; rm -f -v -- "$f"; printf "rm_exit=%s" "$?"',
+      'rm "$f"',
+    ])('mints exactly the two literal files for body %#', (body) => {
+      loop(body);
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
+      expect(logs.warn).not.toHaveBeenCalled();
+      expect(logs.info).toHaveBeenCalledWith(expect.stringContaining('APPROVED_RM_GRANT_MINTED'));
+    });
+
+    it.each([
+      ['rm -r "$f"', 'option'],
+      ['rm -rf "$f"', 'option'],
+      ['rm "$f" "${f}.bak"', 'literal_operand'],
+      ['rm "${f}.bak"', 'literal_operand'],
+      ['rm $f', 'expansion'],
+      ['rm "$g"', 'literal_operand'],
+      ['rm "$f"; touch "$f"', 'command_shape'],
+      ['rm "$f"; cat "$f"', 'command_shape'],
+      ['rm "$f" > out.txt', 'command_shape'],
+    ])('refuses body %s with reason and a log line', (body, reason) => {
+      loop(body);
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).toHaveBeenCalledTimes(1);
+      expect(logs.warn).toHaveBeenCalledWith(expect.stringContaining(reason));
+      expect(files.every(file => existsSync(file))).toBe(true);
+    });
+
+    it.each([
+      ['/tmp/*.tmp'], ['relative.tmp'], ['"/tmp/a b.tmp"'], ['~/x.tmp'], ['$HOME/x.tmp'],
+    ])('refuses non-literal loop item %s', (item) => {
+      loop('rm "$f"', item);
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).toHaveBeenCalledTimes(1);
+      expect(logs.warn).toHaveBeenCalledWith(expect.stringMatching(/loop_item|expansion/));
+    });
+
+    it('refuses a loop whose body has no rm, without claiming an rm refusal', () => {
+      loop('echo "$f"');
+      expect(approvedSingleFileRmGrantForToolApproval(input)).toBeUndefined();
+      expect(logs.warn).not.toHaveBeenCalled();
+    });
+  });
+
   describe('post-delete existence check of exactly the approved files', () => {
     const SESSION = 'approved-rm-public-entry';
     const approveDelete = (command = `rm -v -- '${files[0]}' '${files[1]}'`) => {
