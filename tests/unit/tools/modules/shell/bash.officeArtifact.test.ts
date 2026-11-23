@@ -86,6 +86,31 @@ d.Packer.toBuffer(new d.Document({sections:[{children:[new d.Paragraph('minutes'
     expect(docx?.sha256).toBeTruthy();
   });
 
+  it('attaches a deliverable document artifact for a pptx written by the script', async () => {
+    const script = join(dir, 'gen-pptx.cjs');
+    writeFileSync(
+      script,
+      `const Pptx=require(${JSON.stringify(require.resolve('pptxgenjs'))});
+void (async()=>{const p=new Pptx();p.addSlide().addText('Sales',{x:1,y:1,w:5,h:1,isTextBox:true});await p.writeFile({fileName:'sales.pptx'});})();`,
+    );
+    const result = await runScript('node gen-pptx.cjs');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const artifacts = collectToolArtifactsFromMetadata(result.meta as Record<string, unknown>);
+    const pptx = artifacts.find((a) => a.path?.endsWith('sales.pptx'));
+    console.log('BASH_PPTX_ARTIFACT', JSON.stringify(pptx));
+    expect(pptx).toMatchObject({
+      kind: 'document',
+      role: 'deliverable',
+      sourceTool: 'Bash',
+      label: 'sales.pptx',
+      path: join(dir, 'sales.pptx'),
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    });
+    expect(pptx?.sizeBytes).toBeGreaterThan(0);
+    expect(pptx?.sha256).toBeTruthy();
+  });
+
   it('ignores template docx files that a pip-installed Python package drops in the folder', async () => {
     const result = await runScript(
       `mkdir -p pylibs/docx/templates && touch pylibs/docx/__init__.py && echo x > pylibs/docx/templates/default.docx && echo y > real.docx`,
