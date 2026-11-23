@@ -168,6 +168,7 @@ describe('delegate_task persists only the drafted plan as the background run use
     ['an approved task book shown as displayContent never becomes output-folder consent', true, false],
   ])('%s', async (_name, directiveInDisplay, expectGrant) => {
     const out = path.join(root, 'task-out');
+    vi.stubEnv('CODE_AGENT_DATA_DIR', path.join(root, 'data'));
     const directive = `输出目录：${out}`;
     const settings = structuredClone(DEFAULT_SETTINGS);
     settings.models = { ...settings.models, default: 'xiaomi', providers: { xiaomi: { enabled: true, apiKey: 'fixture-key', model: 'mimo-v2.6-flash' } } };

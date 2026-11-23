@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildDelegatedTaskPrompt } from '../../../../src/host/services/commandCenter/delegationGuidance';
+import { buildDelegatedTaskPrompt, delegatedPlanText } from '../../../../src/host/services/commandCenter/delegationGuidance';
 import { DELEGATED_SCAFFOLDING_MARKERS } from '../../../utils/delegatedScaffoldingMarkers';
 
 const SRC = path.resolve(__dirname, '../../../../src');
@@ -18,6 +18,13 @@ function sourceFiles(dir: string): string[] {
 // Structural gate: every production entry that builds the delegated prompt must also hand the
 // plan to the run as displayContent, otherwise the scaffolding is persisted as a user row.
 describe('buildDelegatedTaskPrompt callers keep scaffolding model-facing only', () => {
+  it('the delegate_task tool module shows the plan, also when the prompt arrives pre-wrapped', () => {
+    const tool = readFileSync(path.join(SRC, 'host/tools/modules/commandCenter/sessionCommandCenter.ts'), 'utf8');
+    expect(tool).toMatch(/displayContent:\s*delegatedPlanText\(prompt\)/);
+    expect(delegatedPlanText(buildDelegatedTaskPrompt('PLAN', 'ORIGINAL'))).toBe('PLAN');
+    expect(delegatedPlanText('PLAN')).toBe('PLAN');
+  });
+
   it('the shared marker list matches what the builder really emits', () => {
     const prompt = buildDelegatedTaskPrompt('PLAN', 'ORIGINAL');
     for (const marker of DELEGATED_SCAFFOLDING_MARKERS) expect(prompt).toContain(marker);
@@ -30,6 +37,9 @@ describe('buildDelegatedTaskPrompt callers keep scaffolding model-facing only', 
     expect(callers.length).toBeGreaterThan(0);
     const offenders: string[] = [];
     for (const { file, text } of callers) {
+      // A caller that wraps first and then goes through delegate_task is covered there:
+      // the tool module derives displayContent with delegatedPlanText(prompt).
+      if (text.includes('executeDelegateTask(')) continue;
       for (const match of text.matchAll(/buildDelegatedTaskPrompt\(\s*([A-Za-z_$][\w$]*)/g)) {
         const plan = match[1];
         if (!new RegExp(`displayContent:\\s*${plan.replace(/\$/g, '\\$')}\\b`).test(text)) {

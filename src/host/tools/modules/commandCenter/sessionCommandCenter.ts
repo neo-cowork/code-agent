@@ -1,4 +1,4 @@
-import { buildDelegatedTaskPrompt, isDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
+import { buildDelegatedTaskPrompt, delegatedPlanText, isDelegatedTaskPrompt } from '../../../services/commandCenter/delegationGuidance';
 import type {
   CanUseToolFn,
   ToolContext,
@@ -188,7 +188,7 @@ export async function executeDelegateTask(
     attachments: ctx.subagent?.attachments as MessageAttachment[] | undefined,
     options: {
       mode: 'normal',
-      displayContent: prompt,
+      displayContent: delegatedPlanText(prompt),
       toolScope: ctx.toolScope,
       executionIntent: ctx.executionIntent,
     },
