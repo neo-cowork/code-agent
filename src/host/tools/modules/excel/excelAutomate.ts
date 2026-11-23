@@ -17,7 +17,6 @@
 //   * validate_formulas → executePythonScript('excel_recalc.py', ...)
 // ============================================================================
 
-import * as path from 'path';
 import type {
   ToolHandler,
   ToolModule,
@@ -381,9 +380,7 @@ export async function executeExcelAutomate(
         };
       }
       const filePathArg = args.file_path as string;
-      const filePath = path.isAbsolute(filePathArg)
-        ? filePathArg
-        : path.join(ctx.workingDir, filePathArg);
+      const filePath = resolveInputPath(filePathArg, ctx.workingDir);
 
       const pyArgs = ['--file', filePath];
       if (args.recalc) pyArgs.push('--recalc');
