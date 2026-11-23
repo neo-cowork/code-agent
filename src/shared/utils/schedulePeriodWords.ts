@@ -96,7 +96,7 @@ export function parseSchedulePeriodWords(text: string): SchedulePeriodWords | nu
   return { ...week, ...(time ? { time } : {}), matchedWord: word };
 }
 
-const DAILY_FREQUENCY = /每天|每日|每早(?:上)?|每晚(?:上)?|每夜|\b(?:every\s+(?:day|morning|night|evening)|daily|nightly)\b/i;
+const DAILY_FREQUENCY = /每天|每日|每早(?:上)?|每晚(?:上)?|每夜|\b(?:every\s+(?:day|morning|night|evening)|daily|nightly)\b/gi;
 const NON_DAILY_FREQUENCY = /每周|每星期|每礼拜|周末|双休日|\b(?:weekly|every\s+week|weekends?)\b/i;
 const DAY_PERIOD = /^\s*(早上|早晨|上午|下午|傍晚|午后|中午|晚上|夜里)/;
 const CLOCK_AT = /^\s*(?:at\b|在|于)\s*/i;
@@ -109,10 +109,17 @@ const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1
  */
 export function readExplicitDailySchedule(text: string): string | null | undefined {
   if (readWeekday(text).freq || NON_DAILY_FREQUENCY.test(text)) return null;
-  const marker = DAILY_FREQUENCY.exec(text);
-  if (!marker) return undefined;
+  let result: null | undefined;
+  for (const marker of text.matchAll(DAILY_FREQUENCY)) {
+    // A marker in the expert name or task text may precede the actual schedule.
+    const time = clockAfterDailyPhrase(marker[0], text.slice((marker.index ?? 0) + marker[0].length));
+    if (time) return time;
+    result = null;
+  }
+  return result;
+}
 
-  const tail = text.slice(marker.index + marker[0].length);
+function clockAfterDailyPhrase(marker: string, tail: string): string | null {
   const period = DAY_PERIOD.exec(tail);
   const afterPeriod = period ? tail.slice(period[0].length) : tail;
   const at = CLOCK_AT.exec(afterPeriod);
@@ -121,7 +128,7 @@ export function readExplicitDailySchedule(text: string): string | null | undefin
   if (!clock) return null;
 
   const [, hourText, colonMinutes, chime, chineseMinutes, meridiem] = clock;
-  const dayPart = period?.[1] ?? marker[0];
+  const dayPart = period?.[1] ?? marker;
   const evening = /晚|夜|evening|night/i.test(dayPart);
   const afternoon = /下午|傍晚|午后/.test(dayPart);
   const morning = /早|上午|morning/i.test(dayPart);
