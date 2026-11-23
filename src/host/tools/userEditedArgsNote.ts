@@ -28,10 +28,10 @@ export function appendUserEditedArgsNote(
     const display = typeof value === 'number' && key.endsWith('_ms')
       ? formatConnectorTime(value)
       : JSON.stringify(value);
-    const preview = display.length > MAX_VALUE_LENGTH
-      ? `${display.slice(0, MAX_VALUE_LENGTH - 1)}…`
-      : display;
-    return `- ${label}: ${preview}`;
+    if (display.length > MAX_VALUE_LENGTH) {
+      return `- ${label} (truncated preview): ${display.slice(0, MAX_VALUE_LENGTH - 1)}…`;
+    }
+    return `- ${label}: ${display}`;
   });
   const note = [
     'The user edited these fields on the approval card. Report the executed values below in place of the ones you proposed.',

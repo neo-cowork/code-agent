@@ -401,6 +401,23 @@ describe('审批卡编辑参数经 web 投递链抵达工具调用（FB-2606）'
     expect(executed.output).toBe(receipt.output);
   });
 
+  it('marks a capped edited value as a truncated preview', async () => {
+    const sessionId = 'sess-long-edited-notes';
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+    install();
+
+    const notes = 'x'.repeat(600);
+    const execution = toolExecutorOf(orchestrator).execute('calendar_create_event', { ...ORIGINAL_ARGS }, { sessionId });
+    await vi.waitFor(() => expect(pendingIds(orchestrator)).toHaveLength(1));
+    const [requestId] = pendingIds(orchestrator);
+    await expect(invoke(requestId, 'allow', sessionId, { notes })).resolves.toMatchObject({ success: true });
+
+    const executed = await execution;
+    expect(executed.success).toBe(true);
+    expect(executed.output?.split('\n').at(-1)).toBe(`- Notes (truncated preview): "${'x'.repeat(498)}…`);
+    expect(connectorExecute).toHaveBeenCalledWith('create_event', { ...ORIGINAL_ARGS, notes });
+  });
+
   it('(f) 全链：原参数省略可选的 calendar（字面复现路径），编辑照样抵达连接器', async () => {
     const sessionId = 'sess-edited-chain-no-calendar';
     const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
