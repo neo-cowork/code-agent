@@ -14,8 +14,8 @@ vi.mock('../../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getSession: () => ({ id: 'sess-1', title: '[Channel] companion' }),
     getMessages: () => [
-      { role: 'user', content: `${LEGACY_NOTICE}\n\n` },
       { role: 'user', content: `${LEGACY_NOTICE}\n\n整理合同并写摘要到 notes.md` },
+      { role: 'user', content: `${LEGACY_NOTICE}\n\n` },
       { role: 'assistant', content: '', toolCalls: [{ id: 'call-1' }] },
     ] as unknown as Message[],
   }),
@@ -29,8 +29,7 @@ import { approvalTaskTitle } from '../../../../src/host/services/sessionAutomati
 describe('approvalTaskTitle ignores the recovery notice', () => {
   it('skips the notice-only message and names the task from the real text', () => {
     const title = approvalTaskTitle('sess-1', { toolCallId: 'call-1' });
-    // deriveDelegatedSessionTitle 在句读断点（notes.md 的 `.`）处截断
-    expect(title).toBe('整理合同并写摘要到 notes');
+    expect(title).toBe('整理合同并写摘要到 notes.md');
     expect(title ?? '').not.toMatch(/历史恢复提示|telemetry|重建|脱敏/);
   });
 });
