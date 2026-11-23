@@ -267,6 +267,8 @@ function LiveDecisionSlot({
     pendingPermissionRequest,
     pendingPermissionSessionId,
     queuedPermissionRequests = {},
+    activeWorkbenchTab,
+    workbenchCollapsed,
   } = useAppStore();
   // 定时任务运行记录会话已由首气泡下方的 CronRunSessionStatusBar 原地承接「等你确认 · 批准/拒绝」，
   // 底部不再叠一张重复的 PermissionCard。
@@ -304,7 +306,9 @@ function LiveDecisionSlot({
   // 审批放行时刻要跨「有待决卡 / 没有」两种状态持续记录，否则和右栏面板算出的档位会不一致。
   const { rows: agentRows } = useSessionAgentRows(currentSessionId);
   const agentRowLevels = useAgentRowStallLevels(agentRows);
-  const agentRowFlagged = agentRows.some((row) => {
+  // 行徽标只画在右栏「专家」页签里：页签没打开（或右栏收起）时用户看不到徽标，输入框提示必须留着
+  const agentBadgeOnScreen = activeWorkbenchTab === 'experts' && workbenchCollapsed === false;
+  const agentRowFlagged = agentBadgeOnScreen && agentRows.some((row) => {
     const level = agentRowLevels.get(row.key);
     return level === 'quiet' || level === 'long';
   });

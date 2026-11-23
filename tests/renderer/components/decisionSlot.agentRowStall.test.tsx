@@ -19,6 +19,8 @@ const appState = vi.hoisted(() => ({
   pendingPermissionRequest: null as { resolved?: boolean; agentId?: string } | null,
   pendingPermissionSessionId: null as string | null,
   queuedPermissionRequests: {} as Record<string, never>,
+  activeWorkbenchTab: 'experts' as string | null,
+  workbenchCollapsed: false,
 }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
@@ -84,6 +86,8 @@ describe('DecisionSlot 与代理行「暂无进展」互让', () => {
     invokeDomainMock.mockResolvedValue(null);
     appState.pendingPermissionRequest = null;
     appState.pendingPermissionSessionId = null;
+    appState.activeWorkbenchTab = 'experts';
+    appState.workbenchCollapsed = false;
     useSwarmStore.setState({ activeSessionId: undefined, activeRunId: undefined, activeTreeId: undefined, lastEventAt: undefined, eventLog: [], agents: [] });
     useSessionStore.setState({ sessions: [], currentSessionId: 'session-1' });
   });
@@ -125,6 +129,25 @@ describe('DecisionSlot 与代理行「暂无进展」互让', () => {
     await renderBoth();
     emit(spawnNotice());
     expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+    expect(screen.queryByTestId('stall-notice')).not.toBeNull();
+  });
+
+  it('⑦ 专家页签没打开（面板未挂载）：行已静默 121s，输入框提示仍然显示；右栏收起同理', async () => {
+    mockTree([treeNode({ updatedAt: Date.now() - 121_000 })]);
+    appState.activeWorkbenchTab = 'logs';
+    render(<DecisionSlot />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    emit(spawnNotice());
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+    expect(screen.queryByTestId('stall-notice')).not.toBeNull();
+    cleanup();
+
+    // 页签是 experts 但右栏收起：徽标同样看不到
+    appState.activeWorkbenchTab = 'experts';
+    appState.workbenchCollapsed = true;
+    render(<DecisionSlot />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    emit(spawnNotice());
     expect(screen.queryByTestId('stall-notice')).not.toBeNull();
   });
 
