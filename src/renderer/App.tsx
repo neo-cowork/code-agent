@@ -791,7 +791,7 @@ export const App: React.FC = () => {
                   <LocalOpsPage />
                 </React.Suspense>
               ) : (
-                <WorkspacePageSlotHost fallback={!settingsActive && showInAppValidation
+                <WorkspacePageSlotHost fallback={showInAppValidation && !settingsActive
                   ? <React.Suspense fallback={null}><InAppValidationWorkspace /></React.Suspense>
                   : <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
                   {/* 专注态（2026-08-01 工单①）：聊天列整列收起，右栏占满窗口宽度；
