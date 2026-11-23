@@ -1331,19 +1331,18 @@ export class ToolExecutor {
       // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       permissionAskResults: new WeakMap(),
       requestPermission: async (rawRequest) => {
-        // 工具体内直发 requestPermission 的调用方（browserRiskGate 等）不带 sessionId/runId，
-        // 补上本次执行的 effective*：无人值守停车、用户原话引用、stall 时钟都靠它认会话。
+        // 工具体内直发 requestPermission 的调用方（browserRiskGate 等）不带 sessionId，
+        // 补上本次执行的 effectiveSessionId：无人值守停车、用户原话引用、stall 时钟都靠它认会话。
         // 已带值的不覆盖也不换对象——permissionAskResults 是 WeakMap，shadowAdapter 用同一引用回查。
         const sessionId = rawRequest.sessionId || effectiveSessionId;
-        // runId 是后台 lane 身份：orchestratorPermissions 的 hasBackgroundRunIdentity 凭它把
-        // 请求归到后台 lane（停车 backgroundExactFile、收线 drain 跳过）。main（前台交互）
-        // 执行的体内审批若带上它，前台 upload_file 会从当场确认被改判停车、本 run 自己的卡
-        // 也躲过收线清理——「前台请求无 run 身份」是这条链路的既有约定，只为非 main lane 补。
-        const runId = rawRequest.runId
-          || (this.getExecutionTopology() !== 'main' ? effectiveRunId : undefined);
-        const request = sessionId === rawRequest.sessionId && runId === rawRequest.runId
+        // runId 不补：它在审批链上是「后台 lane 身份」（hasBackgroundRunIdentity 凭它停车
+        // backgroundExactFile、收线 drain 跳过、停车行标 backgroundLane），只由 lane 边界
+        // 在跨 lane 转发时盖上（subagentToolRuntime 摊 identity、requestHint）。本 lane 自产
+        // 的请求带上它，哪个 lane 都受害：main 的前台 upload_file 从当场确认被改判停车、
+        // cron 自己的停车行标了 backgroundLane 躲过放弃清理成死卡。
+        const request = sessionId === rawRequest.sessionId
           ? rawRequest
-          : { ...rawRequest, sessionId, runId };
+          : { ...rawRequest, sessionId };
         if (browserApprovedAction && browserApprovedAction === request.tool && request.details?.action === params.action && request.forceConfirm !== true) return true;
         // 工具体内的开头授权（shadowAdapter 标 grantEligible）先消费已记住的工具级授权：
         // 此前这条路直接弹卡，点了「本次任务内允许」下一次照问（11-17 真机：读日程连弹三张）。

@@ -1,10 +1,10 @@
 // 工具体内审批（context.requestPermission）请求归一化：toolExecutor 包装器把空缺的
 // sessionId 补成本次执行的 effectiveSessionId（11-22 option A），让无人值守停车、
-// 用户原话引用、stall 时钟认得出会话；runId 只在非 main lane（async_agent 等后台
-// 执行）才补——runId 是 lane 身份，main（前台交互）请求带上它会被
-// hasBackgroundRunIdentity 误判成后台 lane（前台 upload_file 从当场确认改走停车）。
-// 已带值的请求（canUseTool→shadowAdapter 路径）不覆盖也不换对象——
-// permissionAskResults 是 WeakMap，靠同一引用回查。
+// 用户原话引用、stall 时钟认得出会话；runId 不补——runId/agentId 在审批链上是
+// 「后台 lane 身份」（hasBackgroundRunIdentity 据此停车/跳过收线清理/标 backgroundLane），
+// 只由 lane 边界在跨 lane 转发时盖上（subagentToolRuntime 摊 identity、requestHint），
+// 本 lane 自产的请求盖上就被误判后台 lane。已带值的请求（canUseTool→shadowAdapter、
+// 子代理转发路径）不覆盖也不换对象——permissionAskResults 是 WeakMap，靠同一引用回查。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const resolverState = vi.hoisted(() => ({
@@ -111,7 +111,7 @@ afterEach(() => {
 });
 
 describe('ToolExecutor in-tool requestPermission session/run id normalisation', () => {
-  it('(a) background lane: a request without ids is forwarded carrying the execution sessionId/runId', async () => {
+  it('(a) a request without ids is forwarded carrying the execution sessionId (runId is lane-crossing identity, not stamped)', async () => {
     installProbe((context) => probeAsk(context, {}));
     const received: PermissionRequestData[] = [];
     const executor = new ToolExecutor({
@@ -123,7 +123,10 @@ describe('ToolExecutor in-tool requestPermission session/run id normalisation', 
     const result = await executor.execute('probe_tool', {}, { sessionId: 'sess-a', runId: 'run-a' });
     expect(result.success).toBe(true);
     expect(received).toHaveLength(1);
-    expect(received[0]).toMatchObject({ sessionId: 'sess-a', runId: 'run-a', tool: 'probe_tool' });
+    expect(received[0]).toMatchObject({ sessionId: 'sess-a', tool: 'probe_tool' });
+    // runId 是跨 lane 时由边界盖的「后台 lane」身份；本 lane 自产请求带上它，
+    // cron/无人值守自己的停车行会被标 backgroundLane，躲过放弃清理成死卡。
+    expect(received[0].runId).toBeUndefined();
   });
 
   it('(a2) foreground main lane: sessionId is filled but runId stays empty', async () => {
@@ -241,7 +244,9 @@ describe('chain: in-tool approval reaches OrchestratorPermissionIsland with sess
     expect(payload.sessionId).toBe(sessionId);
     expect(payload.sessionId).toBeTruthy();
     expect(inserted[0].coordinatorId).toBe(sessionId);
-    expect(payload.backgroundLane).toBe(true);
+    // 本 lane 自产请求没有 run 身份：停车行不带 backgroundLane，
+    // 放弃已恢复 waiting run 时 rejectAbandonedSessionApprovals 才能正常作废它（不留死卡）。
+    expect(payload.backgroundLane).toBeUndefined();
   });
 
   it('attended session with a user message: the card quotes details.userRequest', async () => {
