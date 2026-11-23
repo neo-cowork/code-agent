@@ -476,6 +476,8 @@ export interface CrossSessionSearchTitleMatch {
   sessionId: string;
   title: string;
   updatedAt: number;
+  /** Visible history count. Older hosts may omit it. */
+  messageCount?: number;
   /** Present (true) only when the matched session is archived */
   archived?: boolean;
 }

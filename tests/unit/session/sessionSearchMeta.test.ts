@@ -18,6 +18,7 @@ vi.mock('../../../src/host/services/roleAssets/wakeRunGuard', () => ({ isRoleWak
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
 import {
   getSessionSearchMeta,
   searchSessionTitles,
@@ -27,15 +28,14 @@ let db: Database.Database;
 
 function seed(id: string, title: string, o: { status?: string; deleted?: number; user?: string | null; updated?: number } = {}): void {
   db.prepare(
-    'INSERT INTO sessions (id, title, status, is_deleted, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO sessions (id, title, model_provider, model_name, status, is_deleted, user_id, created_at, updated_at)
+     VALUES (?, ?, 'test', 'test', ?, ?, ?, ?, ?)`,
   ).run(id, title, o.status ?? 'idle', o.deleted ?? 0, o.user ?? null, 1, o.updated ?? 1);
 }
 
 beforeEach(() => {
   db = new Database(':memory:');
-  db.exec(`CREATE TABLE sessions (
-    id TEXT PRIMARY KEY, title TEXT, status TEXT, is_deleted INTEGER DEFAULT 0,
-    user_id TEXT, created_at INTEGER, updated_at INTEGER)`);
+  applyTestSessionSchema(db);
 });
 afterEach(() => db.close());
 
@@ -48,6 +48,17 @@ describe('searchSessionTitles', () => {
     seed('e', 'unrelated');
     expect(searchSessionTitles(db, 'needle', null, 20).map((r) => r.sessionId)).toEqual(['b', 'a']);
     expect(searchSessionTitles(db, 'needle', null, 1).map((r) => r.sessionId)).toEqual(['b']);
+  });
+
+  it('returns the same visible message count used by session history', () => {
+    seed('blank', 'New chat', { updated: 10 });
+    seed('sent', 'New chat', { updated: 1 });
+    db.exec(`INSERT INTO messages (id, session_id, role, content, timestamp, is_meta, visibility) VALUES
+      ('hidden', 'blank', 'user', 'hidden', 1, 1, 'active'),
+      ('visible', 'sent', 'user', 'hello', 2, 0, 'active'),
+      ('rewound', 'sent', 'user', 'rewound', 3, 0, 'rewound')`);
+
+    expect(searchSessionTitles(db, 'New chat', null, 20).map((row) => row.messageCount)).toEqual([0, 1]);
   });
 
   it('includeArchived adds archived rows (flagged) but still skips deleted; default is unchanged', () => {

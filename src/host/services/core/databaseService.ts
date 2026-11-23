@@ -3347,7 +3347,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     limit: number,
     projectScope?: import('../../../shared/ipc/types').CrossSessionSearchProjectScope,
     includeArchived?: boolean,
-  ): SessionSearchMetaRow[] {
+  ): ReturnType<typeof searchSessionTitleRows> {
     this.ensureDb();
     if (!this.db) throw new Error('Database not opened');
     return searchSessionTitleRows(this.db, query, userId, limit, projectScope, includeArchived);
