@@ -293,7 +293,8 @@ describe('two-step onboarding', () => {
     expect(card).toBeTruthy();
     expect(card?.querySelector('button')).toBeNull();
     expect(card?.textContent).toContain('已检测到 · 还没登录 · 暂未支持');
-    expect(card?.textContent).toContain('需登录');
+    expect(card?.textContent).toContain('待开放');
+    expect(card?.textContent).not.toContain('需登录');
   });
 
   it('offers Anthropic-compatible API and forwards the claude protocol to probing and saving', async () => {
@@ -395,7 +396,7 @@ describe('two-step onboarding', () => {
       'codex-cli 1.0.0 · 已支持 · 已登录',
       '可用',
       '已检测到 · 还没登录 · 暂未支持',
-      '需登录',
+      '待开放',
       '未安装 / 推荐项',
       '已支持 · 这台电脑上没找到',
       '未安装',
