@@ -1,5 +1,5 @@
 import type { SurfaceConversationSnapshotV1 } from '@shared/contract/surfaceExecution';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_DOMAINS, type KeptResultPageSnapshot } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useSurfaceExecutionStore } from '../stores/surfaceExecutionStore';
 import { createLogger } from '../utils/logger';
@@ -21,14 +21,10 @@ function domainBridge() {
  * kept 窗三态（N-BROWSER-KEEP-RESULT-PAGE / N-FIX-FIX-BROWSER-SECRETREF-HARDEN）：
  * none=无；kept=窗还活着；closed=已关、URL 留存。reason 区分停靠来由：
  * keep_result_page=模型保留的结果页（工作台条）；takeover=secretRef 接管停靠
- * （聊天「继续」卡）。
+ * （聊天「继续」卡）。reopenMode=snapshot 时重新打开先显示保存的页面。
+ * snapshotHtml 只在 includeSnapshot 时出现，30 秒轮询不带。
  */
-export interface KeptResultPage {
-  state: 'none' | 'kept' | 'closed';
-  url: string | null;
-  title: string | null;
-  reason: 'keep_result_page' | 'takeover' | null;
-}
+export type KeptResultPage = KeptResultPageSnapshot;
 
 const NONE_KEPT_RESULT_PAGE: KeptResultPage = {
   state: 'none',
@@ -40,15 +36,18 @@ const NONE_KEPT_RESULT_PAGE: KeptResultPage = {
 /** 查询本会话 kept 结果页状态；host 不可达或无会话按 none 处理（终态条不硬依赖 IPC）。 */
 export async function getKeptResultPage(
   conversationId: string | null | undefined,
+  options?: { includeSnapshot?: boolean },
 ): Promise<KeptResultPage> {
   const normalized = conversationId?.trim();
   const bridge = domainBridge();
   if (!bridge || !normalized) return NONE_KEPT_RESULT_PAGE;
   try {
+    const payload: { conversationId: string; includeSnapshot?: boolean } = { conversationId: normalized };
+    if (options?.includeSnapshot) payload.includeSnapshot = true;
     const response = await bridge.invoke<KeptResultPage>(
       IPC_DOMAINS.WORKSPACE,
       'getKeptResultPage',
-      { conversationId: normalized },
+      payload,
     );
     if (!response?.success || !response.data) {
       return NONE_KEPT_RESULT_PAGE;
