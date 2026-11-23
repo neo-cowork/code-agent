@@ -56,6 +56,7 @@ import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { approvedSingleFileRmGrantForToolApproval } from './shell/approvedRmGrant';
+import { isApprovedRmVerifyProbe } from './shell/approvedRmVerifyProbe';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -1844,6 +1845,13 @@ export class ToolExecutor {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+      }
+
+      // 2a. 用户刚批准删除的那几个文件，删完后的存在性检查（test/[/ls/stat 字面路径）不再出第二张卡。
+      if (!isSafeCommand && !this.forcePermissionHandler && !readArgumentForcesClassification && !protectedWriteForcesConfirmation && !policyForcesConfirmation && !readOnlyForcesConfirmation && !boundaryViolation && !unresolvedWriteTargetForcesAsk && !writeWithoutWorkspaceAuthority && !scheduleWriteGrantRequired && !consequenceForcesClassification
+        && isApprovedRmVerifyProbe(cmd, bashWorkingDirectory, effectiveSessionId)) {
+        isSafeCommand = true;
+        recordDecision(executionToolName, params, 'auto-approve', 'approved-rm-verify-probe', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
       }
 
       // 2b. 可证明只读的探测（N-UX-APPROVAL-CARD-REDESIGN-FU1）：编译成结构化计划在进程内执行，不出卡。
