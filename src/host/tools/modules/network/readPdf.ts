@@ -20,6 +20,7 @@ import { getConfigService } from '../../../services';
 import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { readPdfSchema as schema } from './readPdf.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
 import { extractSelectablePdfText } from './pdfTextExtract';
@@ -137,10 +138,7 @@ export async function executeReadPdf(
 
   onProgress?.({ stage: 'starting', detail: 'read_pdf' });
 
-  let filePath = filePathArg;
-  if (!path.isAbsolute(filePath)) {
-    filePath = path.join(ctx.workingDir, filePath);
-  }
+  const filePath = resolveInputPath(filePathArg, ctx.workingDir);
 
   try {
     await fs.access(filePath);
