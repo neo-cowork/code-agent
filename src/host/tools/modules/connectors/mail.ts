@@ -27,6 +27,7 @@ import {
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mailSchema as schema } from './mail.schema';
 import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 import { formatConnectorTime } from './connectorTime';
 
 type MailAction = 'get_status' | 'list_accounts' | 'list_mailboxes' | 'list_messages' | 'read_message';
@@ -121,7 +122,7 @@ async function executeMail(
     ctx.logger.debug('mail', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
       const output = formatConnectorStatusOutput('mail', status);
       return {
         ok: true,

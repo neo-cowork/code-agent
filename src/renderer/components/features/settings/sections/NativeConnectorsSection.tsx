@@ -119,6 +119,13 @@ export function buildRuntimeConnectorRows(
   return statuses.filter((status) => !nativeIds.has(status.id));
 }
 
+/** Catalogue lookup only: host prose is never printed for native rows; no code means no sentence. */
+function nativeDetailText(row: NativeConnectorRow, label: string, text: NativeConnectorsText): string | undefined {
+  const code = row.status?.detailCode;
+  const template = code ? text.grid.detailCode[code] : undefined;
+  return template?.replaceAll('{name}', label);
+}
+
 export function getNativeConnectorReadiness(
   row: NativeConnectorRow,
   labels: NativeConnectorsText['readiness'] = DEFAULT_NATIVE_CONNECTORS_TEXT.readiness,
@@ -289,8 +296,8 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
       const lifecycleActions = getNativeConnectorLifecycleActions(row);
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
       const checkedAt = formatCheckedAt(row.status?.checkedAt, locale);
-      const detail = row.status?.error || row.status?.detail;
       const label = text.grid.labels[row.id as keyof typeof text.grid.labels] ?? row.label;
+      const detail = nativeDetailText(row, label, text);
 
       return (
         <div
@@ -317,7 +324,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
                 </div>
               )}
               {detail && (
-                <div className={`mt-1 text-xs ${row.status?.error ? 'text-badge-danger' : 'text-zinc-400'}`}>
+                <div className={`mt-1 text-xs ${row.status?.readiness === 'failed' ? 'text-badge-danger' : 'text-zinc-400'}`}>
                   {detail}
                 </div>
               )}
@@ -591,7 +598,7 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
       const cardExplainsFailure = presentation === 'grid'
         && items.some((item) => item.id === id && item.enabled)
         && isAutomationDenied(nextStatus)
-        && nextStatus?.error;
+        && Boolean(nextStatus?.detailCode);
       if (!cardExplainsFailure) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -651,15 +658,9 @@ export const NativeConnectorsSection: React.FC<NativeConnectorsSectionProps> = (
           ] ?? ((row.status?.capabilities ?? []).length > 0
             ? `${connectorText.capabilitiesPrefix}${formatCapabilities(row.status?.capabilities ?? [], connectorText)}`
             : '');
-          const probedDetail = row.enabled
-            && row.status?.readiness === 'unchecked'
-            && typeof row.status.checkedAt === 'number'
-            && row.status.detail
-            ? row.status.detail
-            : null;
+          const codedDetail = row.enabled ? nativeDetailText(row, label, connectorText) : undefined;
           const automationDenied = row.enabled && isAutomationDenied(row.status);
-          const automationDetail = automationDenied ? row.status?.error || undefined : undefined;
-          const statusDetail = automationDetail ?? probedDetail
+          const statusDetail = codedDetail
             ?? (row.enabled && row.status?.readiness
               ? connectorText.grid.statusDetail[row.status.readiness]
               : description);

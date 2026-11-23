@@ -25,5 +25,9 @@ export interface DevFaultHooks {
   checkOutbound(url: string, ctx: FaultContext): void;
   /** 连接器注册表出口：connector_auth_invalid 在此改写目标连接器 */
   wrapConnector<T extends ConnectorLike>(connector: T, ctx: FaultContext): T;
+  /** Override the authorization card's passive automation read for the affected connector. */
+  isAutomationDenied?(connectorId: string, ctx: FaultContext): boolean;
+  /** 当前登录用户读出口：注入可在此把读到的身份短时改写（如返回 null）。 */
+  overrideCurrentUser?<T>(user: T | null, ctx: FaultContext): T | null;
 }
 

@@ -525,6 +525,7 @@ function mergeContextRecord(
   if (activeTool) node.activeTool = activeTool;
   const lastToolStep = lastToolStepFromContext(record);
   if (lastToolStep) node.lastToolStep = lastToolStep;
+  if (record.snapshot?.guiDisclosures) node.guiDisclosures = record.snapshot.guiDisclosures;
   const bashSteps = bashStepsFromContext(record);
   if (bashSteps) node.bashSteps = bashSteps;
   node.budgetSummary = mergeBudget(node.budgetSummary, budgetFromContext(record));

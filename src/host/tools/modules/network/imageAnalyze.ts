@@ -31,6 +31,7 @@ import { resolveSessionDefaultModelConfig } from '../../../services/core/session
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { ModelMessage } from '../../../model/types';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { expandTilde, resolveInputPath } from '../../utils/resolveInputPath';
 import { imageAnalyzeSchema as schema } from './imageAnalyze.schema';
 
 const CONFIG = {
@@ -326,11 +327,10 @@ async function expandPaths(patterns: string[], workingDir: string): Promise<stri
   const allPaths: string[] = [];
   for (const pattern of patterns) {
     if (!pattern.includes('*') && !pattern.includes('?')) {
-      const absPath = path.isAbsolute(pattern) ? pattern : path.join(workingDir, pattern);
-      allPaths.push(absPath);
+      allPaths.push(resolveInputPath(pattern, workingDir));
       continue;
     }
-    const matches = await glob(pattern, {
+    const matches = await glob(expandTilde(pattern), {
       cwd: workingDir,
       absolute: true,
       nodir: true,
@@ -393,9 +393,7 @@ export async function executeImageAnalyze(
 
   try {
     if (singlePath) {
-      const absPath = path.isAbsolute(singlePath)
-        ? singlePath
-        : path.join(ctx.workingDir, singlePath);
+      const absPath = resolveInputPath(singlePath, ctx.workingDir);
 
       try {
         await fsPromises.access(absPath);

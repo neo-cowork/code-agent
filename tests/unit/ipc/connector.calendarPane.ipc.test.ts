@@ -41,9 +41,7 @@ import { registerConnectorHandlers, stopConnectorStatusWatcher } from '../../../
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
-const DENIED_DETAIL = '日历访问被拒绝了：请在「系统设置 → 隐私与安全性 → 日历」里允许 Neo。';
-const UNDECIDED_DETAIL = '还没有允许 Neo 访问日历；用到日历时会请你允许一次。';
-const WRITE_ONLY_DETAIL = '日历只给了「仅添加事件」：请在「系统设置 → 隐私与安全性 → 日历」里改成「完全访问」。';
+const CJK = /[\u3400-\u9fff]/;
 
 function register() {
   const handlers = new Map<string, HandlerFn>();
@@ -96,7 +94,7 @@ describe('handleListStatuses + buildCalendarStatus', () => {
       id: 'calendar',
       readiness: 'unchecked',
       settingsPane: 'calendars',
-      detail: DENIED_DETAIL,
+      detailCode: 'calendar_denied',
     });
     expect(denied.readiness).not.toBe('failed');
     expect(typeof denied.checkedAt).toBe('number');
@@ -107,23 +105,54 @@ describe('handleListStatuses + buildCalendarStatus', () => {
     expect(writeOnly).toMatchObject({
       readiness: 'unchecked',
       settingsPane: 'calendars',
-      detail: WRITE_ONLY_DETAIL,
+      detailCode: 'calendar_write_only',
     });
 
     env.body = { status: 0, raw: 0, answer: null };
     resetCalendarConnectorReadiness();
     const undecided = ((await call('listStatuses')).data as Array<Record<string, unknown>>)[0];
-    expect(undecided).toMatchObject({ readiness: 'unchecked', detail: UNDECIDED_DETAIL });
+    expect(undecided).toMatchObject({ readiness: 'unchecked', detailCode: 'calendar_undecided' });
     expect(undecided.settingsPane).toBeUndefined();
     expect(typeof undecided.checkedAt).toBe('number');
 
     env.body = { status: 3, raw: 0, answer: true };
     resetCalendarConnectorReadiness();
     const granted = ((await call('listStatuses')).data as Array<Record<string, unknown>>)[0];
-    expect(granted).toMatchObject({ readiness: 'ready' });
+    expect(granted).toMatchObject({ readiness: 'ready', detailCode: 'ready' });
     expect(granted.settingsPane).toBeUndefined();
 
-    process.stdout.write(`③ denied=${JSON.stringify({ readiness: denied.readiness, settingsPane: denied.settingsPane, detail: denied.detail })} undecided.settingsPane=${String(undecided.settingsPane)} granted.settingsPane=${String(granted.settingsPane)} writeOnly.settingsPane=${String(writeOnly.settingsPane)}\n`);
+    process.stdout.write(`③ denied=${JSON.stringify({ readiness: denied.readiness, settingsPane: denied.settingsPane, detailCode: denied.detailCode })} undecided.settingsPane=${String(undecided.settingsPane)} granted.settingsPane=${String(granted.settingsPane)} writeOnly.settingsPane=${String(writeOnly.settingsPane)}\n`);
+  });
+});
+
+describe('calendar status states carry a code and no prose', () => {
+  it.each([
+    ['restricted', { status: 1, raw: 1, answer: null }, 'calendar_restricted'],
+    ['unavailable', { status: 99, raw: 99, answer: null }, 'calendar_desktop_only'],
+  ] as const)('%s', async (_name, body, detailCode) => {
+    const call = await registerQuietly();
+    env.body = { ...body };
+    resetCalendarConnectorReadiness();
+    const row = ((await call('listStatuses')).data as Array<Record<string, unknown>>)[0];
+    expect(row.detailCode).toBe(detailCode);
+    expect(row.detail).toBeUndefined();
+    expect(row.error).toBeUndefined();
+    expect(JSON.stringify(row)).not.toMatch(CJK);
+  });
+
+  it('enabled but never checked reports the unchecked code', () => {
+    const status = calendarConnector.getCachedStatus!();
+    expect(status).toMatchObject({ readiness: 'unchecked', detailCode: 'unchecked' });
+    expect(status.detail).toBeUndefined();
+    expect(JSON.stringify(status)).not.toMatch(CJK);
+  });
+
+  it('is unsupported off macOS', async () => {
+    const call = await registerQuietly();
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const row = ((await call('listStatuses')).data as Array<Record<string, unknown>>)[0];
+    expect(row).toMatchObject({ readiness: 'unavailable', detailCode: 'platform_unsupported' });
+    expect(JSON.stringify(row)).not.toMatch(CJK);
   });
 });
 

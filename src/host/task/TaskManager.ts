@@ -32,7 +32,7 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
-import type { RunRegistry } from '../runtime/runRegistry';
+import { RunSessionConflictError, type RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
@@ -224,6 +224,10 @@ export class TaskManager extends EventEmitter {
   ): Promise<void> {
     if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
+    }
+
+    if (this.hasActivePrimaryRun(sessionId)) {
+      throw new RunSessionConflictError(sessionId, this.runRegistry?.getBySessionId(sessionId)?.context.runId);
     }
 
     // 检查是否已经在运行或排队
@@ -575,12 +579,12 @@ export class TaskManager extends EventEmitter {
    *
    * @param sessionId - 会话 ID
    */
-  async cancelTask(sessionId: string, options?: { keepBackground?: boolean }): Promise<void> {
+  async cancelTask(sessionId: string, options?: { keepBackground?: boolean; persistUserStop?: boolean }): Promise<void> {
     // 后台级联必须先于下面所有按前台状态的 early-return：前台 idle（委派后的常态）时也要停后台。
     // keepBackground：只想摘掉前台（排队中被改道、切会话、进程收尾）的内部调用不是用户 Stop，不动后台。
     const backgroundSettled = options?.keepBackground
       ? Promise.resolve()
-      : this.cancelSessionBackgroundWork(sessionId);
+      : this.cancelSessionBackgroundWork(sessionId, options?.persistUserStop);
     try {
       await this.cancelForegroundTask(sessionId);
     } finally {
@@ -593,11 +597,12 @@ export class TaskManager extends EventEmitter {
    * run_in_background 子代理），返回的 promise 限时等待收线（永不 reject）。
    * 无前台 orchestrator 的入口（web /api/cancel 的 idle 会话）直接调用本方法。
    */
-  cancelSessionBackgroundWork(sessionId: string): Promise<void> {
+  cancelSessionBackgroundWork(sessionId: string, persistUserStop = true): Promise<void> {
     this.emit(SESSION_STOP_REQUESTED_EVENT, { type: SESSION_STOP_REQUESTED_EVENT, sessionId });
     return stopSessionBackgroundWork({
       sessionId,
       backgroundRuns: this.backgroundRuns,
+      persistUserStop,
       cancelBackgroundTask: (taskId) => this.cancelBackgroundTask(taskId),
     });
   }

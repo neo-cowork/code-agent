@@ -30,8 +30,8 @@ const busy: Record<Language, string> = {
 
 // 会话被一个没结束的旧任务占着（停住等授权/审批的 run 让不了位）：说清楚为什么没发出去、下一步怎么办。
 const sessionHeldByOldRun: Record<Language, string> = {
-  zh: `这条消息没发出去：这个会话里还有一个没结束的旧任务。先点「${sessionConflictLabels.zh.abandon}」结束旧任务，再点「${sessionConflictLabels.zh.retry}」。`,
-  en: `This message was not sent: an earlier task in this conversation is still open. Click "${sessionConflictLabels.en.abandon}" to end that task first, then "${sessionConflictLabels.en.retry}".`,
+  zh: `这条消息没发出去：这个会话里还有一个在等你确认的旧任务。点「${sessionConflictLabels.zh.retry}」会先结束旧任务，再把你的消息重新发送。`,
+  en: `This message was not sent: an earlier task in this conversation is still waiting for your confirmation. "${sessionConflictLabels.en.retry}" ends that task first, then sends your message again.`,
 };
 
 const tooManyRequests: Record<Language, string> = {

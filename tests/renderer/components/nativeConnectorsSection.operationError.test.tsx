@@ -23,6 +23,7 @@ const unchecked: ConnectorStatusSummary = {
   capabilities: ['list_mail'], actions: ['repair_permissions'],
 };
 const denied = '邮件 未获授权：请在「系统设置」中允许 Neo。';
+const deniedSentence = copy.grid.detailCode.automation_not_authorized.replaceAll('{name}', copy.grid.labels.mail);
 
 function setup(
   reason: string,
@@ -57,7 +58,7 @@ describe('NativeConnectorsSection operation error', () => {
     ['probe', 'probe'],
   ] as const)('shows only the card error after a denied %s', async (action, ipcAction) => {
     const refresh = setup(denied, [{
-      ...unchecked, readiness: 'failed', errorCode: 'not_authorized', error: denied,
+      ...unchecked, readiness: 'failed', errorCode: 'not_authorized', detailCode: 'automation_not_authorized',
     }]);
     const card = await screen.findByTestId('native-connector-card-mail');
     const grid = screen.getByTestId('native-connector-grid-items');
@@ -69,28 +70,29 @@ describe('NativeConnectorsSection operation error', () => {
 
     await refresh();
 
-    expect(within(card).getByText(denied)).toBeTruthy();
+    expect(within(card).getByText(deniedSentence)).toBeTruthy();
     expect(within(card).getByRole('button', { name: copy.openAutomationSettings })).toBeTruthy();
-    expect(screen.getAllByText(denied, { exact: false })).toEqual([within(card).getByText(denied)]);
+    expect(screen.queryByText(denied, { exact: false })).toBeNull();
+    expect(screen.getAllByText(deniedSentence, { exact: false })).toEqual([within(card).getByText(deniedSentence)]);
     expect(Array.from(grid.children)).toEqual([card]);
   });
 
   it('keeps the banner with no errorCode even if the failure text describes a denial', async () => {
-    const refresh = setup(denied, [{ ...unchecked, readiness: 'failed', error: denied }]);
+    const refresh = setup(denied, [{ ...unchecked, readiness: 'failed', detailCode: 'probe_failed' }]);
     const card = await screen.findByTestId('native-connector-card-mail');
     fireEvent.click(within(card).getByRole('button', { name: copy.actions.probe.label }));
     await refresh();
 
     const banner = await screen.findByText(copy.operationFailedPrefix + denied);
     expect(card.contains(banner)).toBe(false);
-    expect(within(card).getByText(copy.grid.statusDetail.failed)).toBeTruthy();
+    expect(within(card).getByText(copy.grid.detailCode.probe_failed.replaceAll('{name}', copy.grid.labels.mail))).toBeTruthy();
     expect(screen.queryByRole('button', { name: copy.openAutomationSettings })).toBeNull();
   });
 
   it('keeps the banner when only another connector has a denial code', async () => {
     const reason = '邮件响应超时，请稍后重试。';
     const refresh = setup(reason, [
-      { ...unchecked, readiness: 'failed', error: reason },
+      { ...unchecked, readiness: 'failed', detailCode: 'timeout' },
       { ...unchecked, id: 'reminders', readiness: 'failed', errorCode: 'not_authorized' },
     ]);
     const card = await screen.findByTestId('native-connector-card-mail');
@@ -103,7 +105,7 @@ describe('NativeConnectorsSection operation error', () => {
 
   it('keeps the diagnostic banner and its settings action for a denial', async () => {
     const refresh = setup(denied, [{
-      ...unchecked, readiness: 'failed', errorCode: 'not_authorized', error: denied,
+      ...unchecked, readiness: 'failed', errorCode: 'not_authorized', detailCode: 'automation_not_authorized',
     }], 'diagnostic');
     fireEvent.click(await screen.findByRole('button', { name: copy.actions.probe.label }));
     await refresh();

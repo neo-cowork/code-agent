@@ -121,6 +121,7 @@ import { connectorWritePermissionRequest, findConnectorTokenWrite } from './conn
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { tryReadOnlyProbe } from './readOnlyProbeHook';
+import { askInsteadOfApprove, readOnlyLookupMustAsk } from './readOnlyLookupAsk';
 import { compileReadOnlyProbePlan } from '../security/readOnlyProbePlan';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
@@ -1685,6 +1686,7 @@ export class ToolExecutor {
     let canonicalBashWorkingDirectory: string;
     let bashArgumentForcesClassification: boolean;
     let readArgumentForcesClassification: boolean;
+    const readOnlyLookupAsk = readOnlyLookupMustAsk(executionToolName);
     try {
       canonicalBashWorkingDirectory = resolveCanonicalRunPath(bashWorkingDirectory);
       bashArgumentForcesClassification = isBashToolName(policyToolName)
@@ -1729,6 +1731,7 @@ export class ToolExecutor {
     }
     // http_request 携带已连接连接器令牌的写调用必须进分类器强确认（skill 预授权不得跳过）。
     const connectorTokenWriteForcesClassification = findConnectorTokenWrite(policyToolName, params) !== undefined;
+    readArgumentForcesClassification ||= readOnlyLookupAsk;
     const argumentForcesClassification = bashArgumentForcesClassification
       || readArgumentForcesClassification
       || connectorTokenWriteForcesClassification;
@@ -1976,7 +1979,7 @@ export class ToolExecutor {
           // behind an approvable ask — same invariant as permissionClassifier.ts
           // holding outputRedirectionAsk until every deny has had its say.
           const workspaceRoot = this.writeWorkspaceRoot;
-          const classification: ClassificationResult = await resolveToolPermissionClassification({
+          const classification: ClassificationResult = askInsteadOfApprove(await resolveToolPermissionClassification({
             executionToolName,
             sessionId: effectiveSessionId,
             toolDefinition: toolDef,
@@ -2005,7 +2008,7 @@ export class ToolExecutor {
               const { getBrowserService } = await import('../services/infra/browserPool');
               return getBrowserService(context.agentId);
             },
-          });
+          }), readOnlyLookupAsk);
           // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
           // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
           // approve 路径另建 builder（见下），故其单独补一条。
@@ -2362,6 +2365,11 @@ export class ToolExecutor {
         ) {
           permissionRequest.forceConfirmBoundaryOnly = true;
         }
+      }
+      // 查询前免确认关闭：autoApprove.read 等便利放行不得吞掉这张卡。
+      if (readOnlyLookupAsk) {
+        permissionRequest.forceConfirm = true;
+        permissionRequest.forceConfirmBoundaryOnly = false;
       }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;

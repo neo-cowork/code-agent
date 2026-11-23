@@ -15,7 +15,7 @@
 //      再 terminal 成 completed/failed/cancelled（completed 的 envelope 断言
 //      不允许未决 operation，所以必须先 checkpoint）。
 //   3. 进程重启：残留 running 的行被 recoverOnStartup 认领后由
-//      createBackgroundSubagentRecoveryHandler 收口成 failed/interrupted_by_restart
+//      createBackgroundSubagentRecoveryHandler 将用户停止收成 cancelled，其余收成 failed/interrupted_by_restart
 //      并向父会话投影中断事实（见 durableRecoveryHandlers.ts）。
 //
 // 运行期间按租约 1/3 间隔 heartbeat，否则 sweeper 会在租约到期后把还在跑的
@@ -58,6 +58,7 @@ export interface BackgroundSubagentCursorMetadata {
   treeId?: string;
   completionKind?: SubagentCompletionKind;
   startedAt: number;
+  userStopped?: true;
   cost?: number;
   tokensUsed?: number;
   iterations?: number;
@@ -119,6 +120,7 @@ export function readBackgroundSubagentCursorMetadata(
     schemaVersion: 1,
     kind: 'background_subagent_single',
     startedAt: candidate.startedAt,
+    ...(candidate.userStopped === true ? { userStopped: true } : {}),
     ...(typeof candidate.title === 'string' ? { title: candidate.title } : {}),
     ...(typeof candidate.role === 'string' ? { role: candidate.role } : {}),
     ...(typeof candidate.treeId === 'string' ? { treeId: candidate.treeId } : {}),
@@ -142,6 +144,7 @@ interface LiveRun {
   lastFlushAt?: number;
   /** finalize 已开始。进度 flush 必须跳过；心跳续租不受影响。 */
   finalizing: boolean;
+  userStopWrite?: Promise<void>;
 }
 
 export class BackgroundSubagentDurableLedger {
@@ -207,6 +210,36 @@ export class BackgroundSubagentDurableLedger {
     live.pendingSnapshot = mergeProgressSnapshot(live.pendingSnapshot, normalized);
   }
 
+  async noteUserStop(agentId: string): Promise<void> {
+    const live = this.liveRuns.get(agentId);
+    if (!live || live.finalizing || live.metadata.userStopped) return;
+    live.userStopWrite ??= this.persistUserStop(agentId, live);
+    await live.userStopWrite;
+  }
+
+  private async persistUserStop(agentId: string, live: LiveRun): Promise<void> {
+    const metadata = mergeCursorMetadata({ ...live.metadata, userStopped: true }, live.pendingSnapshot ?? {});
+    try {
+      await this.kernel.checkpoint({
+        runId: agentId,
+        attempt: live.attempt,
+        owner: live.owner,
+        now: Date.now(),
+        status: 'running',
+        state: metadata,
+        engineCursor: metadata,
+        pendingOperations: [live.pendingOperation],
+        events: [],
+      });
+      live.metadata = metadata;
+      logger.info('Background subagent user stop persisted', { agentId });
+    } catch (error) {
+      logger.warn('Background subagent user stop persistence failed', { agentId, error });
+    } finally {
+      live.userStopWrite = undefined;
+    }
+  }
+
   /**
    * 收成终态：先 checkpoint 把 launch operation 收掉（completed 断言要求无未决
    * operation），再 terminal。进入本方法后立刻标 finalizing，心跳可以续租，
@@ -217,6 +250,7 @@ export class BackgroundSubagentDurableLedger {
     const live = this.liveRuns.get(agentId);
     if (!live) return;
     live.finalizing = true;
+    await live.userStopWrite;
     const now = input.finishedAt;
     const operationStatus: PendingOperation['status'] = input.outcome === 'completed'
       ? 'succeeded'
@@ -254,6 +288,7 @@ export class BackgroundSubagentDurableLedger {
         finishedAt: now,
         ...outcomePayload,
       },
+      ...(live.metadata.userStopped ? { engineCursor: live.metadata } : {}),
       pendingOperations: [resolvedOperation],
       events: [{ type: 'background_subagent_outcome', payload: outcomePayload, recordedAt: now }],
     });
@@ -320,7 +355,7 @@ export class BackgroundSubagentDurableLedger {
   private async flushProgress(agentId: string, live: LiveRun): Promise<void> {
     // 收口 checkpoint 与 terminal 之间如果再写进度，会把 launch operation 写回
     // dispatched，terminal(completed) 随即失败，行留在 running。
-    if (live.finalizing) return;
+    if (live.finalizing || live.userStopWrite) return;
     const snapshot = live.pendingSnapshot;
     if (!snapshot) return;
     const fingerprint = progressFingerprint(snapshot);
@@ -349,7 +384,7 @@ export class BackgroundSubagentDurableLedger {
       logger.warn(`background subagent durable progress checkpoint failed for ${agentId}:`, error);
       return;
     }
-    if (this.liveRuns.get(agentId) !== live || live.finalizing) return;
+    if (this.liveRuns.get(agentId) !== live || live.finalizing || live.userStopWrite) return;
     live.metadata = metadata;
     live.lastFlushedFingerprint = fingerprint;
     live.lastFlushAt = now;

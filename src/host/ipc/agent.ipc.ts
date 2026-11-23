@@ -21,6 +21,8 @@ import type {
   AgentTreeRequest,
   AgentWorktreeReviewRequest,
 } from '../../shared/contract/agentTree';
+import { getBackgroundSubagentRegistry } from '../agent/backgroundSubagentRegistry';
+import { getSubagentContextStore } from '../context/subagentContextStore';
 import { getAgentTreeSnapshot } from '../agent/agentTreeService';
 import { getAgentWorktreeReview } from '../agent/agentWorktree';
 import { getSpawnGuard } from '../agent/spawnGuard';
@@ -262,6 +264,12 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
       agentId,
       sessionId ? { sessionId } : undefined,
     );
+    if (cancelled) {
+      const backgroundAgentId = sessionId
+        ? getSubagentContextStore().get(sessionId, agentId)?.lifecycle?.backgroundAgentId
+        : undefined;
+      await getBackgroundSubagentRegistry().persistAgentUserStop(backgroundAgentId ?? agentId, sessionId);
+    }
     return { success: true, data: { cancelled } };
   },
   sendMemberInput: async (_getAppService, payload) => {
