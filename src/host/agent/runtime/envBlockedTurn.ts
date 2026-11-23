@@ -25,7 +25,7 @@ export function settleEnvBlockedTool(error: unknown, input: {
     class: error.class, target: error.target, toolCallId: error.toolCallId,
   });
   // The user already confirmed this call and it never ran: keep a one-shot credential for the resumed run (parkedCallApproval.ts).
-  if (input.toolName) recordParkedCallApproval({ sessionId: input.sessionId, runId: input.runId, tool: input.toolName, args: input.args });
+  if (input.toolName && error.approvedCallArgs !== undefined) recordParkedCallApproval({ sessionId: input.sessionId, runId: input.runId, tool: input.toolName, args: error.approvedCallArgs });
   input.markCancelled();
   return true;
 }

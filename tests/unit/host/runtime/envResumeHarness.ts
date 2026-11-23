@@ -53,7 +53,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   const seenCalls: string[] = [], seenRuns: string[] = [];
   const callArgs: Record<string, unknown> = mail ? MAIL_DRAFT_ARGS : {};
   /** mail only: how the resumed model turn re-issues the draft (default: identical arguments, same run, once). */
-  const reissue: { args?: Record<string, unknown>; runId?: string; twice?: boolean; tool?: string; force?: boolean } = {};
+  const reissue: { args?: Record<string, unknown>; runId?: string; twice?: boolean; tool?: string; force?: boolean; preapproveInitial?: boolean } = {};
   const schema: ToolSchema = { name, description: 'Environment recovery fixture', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'string' }, category: 'network', permissionLevel: sideEffect ? 'write' : 'read', readOnly: !sideEffect, requiresPermission: false };
   const mailConnector = {
     id: 'mail', label: 'Mail', capabilities: ['draft_message'], getStatus: async () => ({ connected: true, capabilities: [] }),
@@ -114,7 +114,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     appendToolExecutionComplete: (input: Parameters<typeof events.appendComplete>[0]) => events.appendComplete(input),
   };
   const executor = (forcePermissionHandler = false) => {
-    const instance = new ToolExecutor({ workingDirectory: workspace, forcePermissionHandler, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return true; } : async () => false });
+    const instance = new ToolExecutor({ workingDirectory: workspace, forcePermissionHandler, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return { approved: true, approvalSource: 'user' as const };  } : async () => false });
     instance.setAuditEnabled(false); return instance;
   };
   const ports = createApplicationNativeRecoveryPorts(registry, {
@@ -148,6 +148,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       const handle = await registry.startDurable({ runId, sessionId, workspace, cwd: workspace });
       const { ctx, engine } = makeEngine(executor().execute.bind(executor()) as never);
       Object.assign(ctx, { workingDirectory: workspace, runId, sessionId, messages: messages() });
+      if (reissue.preapproveInitial) ctx.control.preApprovedTools.add('mail_draft');
       const emitted: AgentEvent[] = []; Object.assign(ctx, { onEvent: (event: AgentEvent) => { emitted.push(event); } });
       await engine.executeToolsWithHooks([{ id: toolCallId, name, arguments: callArgs }]);
       if (!ctx.control.isCancelled) throw new Error(`Engine did not cancel: ${JSON.stringify(emitted)}`);

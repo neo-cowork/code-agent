@@ -683,7 +683,7 @@ export function normalizeStandaloneMessagePayload(data: unknown): Message | null
 
   const timestamp = getNumberField(data, 'timestamp');
   const notice = EnvAssistNoticeSchema.safeParse(data.metadata.envAssist);
-  if (timestamp === undefined || !notice.success || !notice.data.parkedToolCallId || id !== `env-assist:${notice.data.id}`) return null;
+  if (timestamp === undefined || !notice.success || (!notice.data.parkedToolCallId && notice.data.sentenceKey !== 'env.reused.mail') || id !== `env-assist:${notice.data.id}`) return null;
   return { id, role: 'assistant', content, timestamp, metadata: { ...data.metadata, envAssist: notice.data } };
 }
 

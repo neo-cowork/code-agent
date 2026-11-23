@@ -2841,7 +2841,10 @@ export class ToolExecutor {
       await durableCheckpoint.complete(result.success);
       return { ...result, metadata: { ...result.metadata, executionStarted, ...(userApproved ? { userApproved: true } : {}) } };
     } catch (error) {
-      if (error instanceof EnvBlockedError) throw error;
+      if (error instanceof EnvBlockedError) {
+        if (userApproved && executionToolName === 'mail_draft') error.approvedCallArgs = params;
+        throw error;
+      }
       const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName: executionToolName });
       executionLedger.complete('error', error instanceof Error ? error.message : 'Unknown error');

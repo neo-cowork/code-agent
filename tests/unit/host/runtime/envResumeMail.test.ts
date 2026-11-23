@@ -1,3 +1,4 @@
+import { normalizeStandaloneMessagePayload } from '../../../../src/renderer/hooks/agent/effects/streamEventNormalizers';
 // Evidence class: hermetic-protocol (SQLite durable kernel + production engine/resolver/mail_draft tool/continuation/IPC; fake Mail connector + fake TCC bridge).
 // N-ENV-ASSIST-S3-RESUME-REST2: a refused Mail draft parks the run; after the grant the host records a plain
 // "not run" result for the parked call and resumes the same run; the model saves the draft exactly once.
@@ -138,6 +139,8 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
     const notice = emitted.find((e) => e.type === 'env_assist_notice')?.data as { sentenceKey: string; phase: string };
     process.stdout.write(`REUSE_NOTICE ${JSON.stringify(notice)}\n`);
     expect(notice).toMatchObject({ sentenceKey: 'env.reused.mail', phase: 'resolved' });
+    const message = emitted.find((e) => e.type === 'message')?.data;
+    expect(normalizeStandaloneMessagePayload(message)).not.toBeNull();
   });
 
   it('a changed recipient / subject / body asks again (2 cards)', async () => {
@@ -157,6 +160,11 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
   it('a different run does not match (2 cards)', async () => {
     const f = await resumed((x) => { x.reissue.runId = 'other-run'; });
     expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+  });
+
+  it('a skill-preapproved parked call cannot create a reusable card approval', async () => {
+    const f = await resumed((x) => { x.reissue.preapproveInitial = true; });
+    expect(f.approvalCards()).toEqual(['mail_draft']);
   });
 
   it('mail_send never reuses the draft approval (2 cards)', async () => {
