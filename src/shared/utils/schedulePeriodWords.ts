@@ -104,7 +104,7 @@ const ADJACENT_CLOCK = /^\s*([零〇一二两三四五六七八九十]{1,3}|\d{1
 const CLOCK_REVISION = /(?:改成|改到|调到|换成|提前到|推迟到|延后到|\b(?:change|switch|move|reschedule)(?:\s+it)?\s+to)\s*/i;
 const SCHEDULE_CANCEL = /(?:取消|停止|关闭|不要|不用|无需|别再?)\s*(?:定时|按时|唤醒|醒来)|\b(?:cancel|stop|disable)\s+(?:the\s+)?(?:schedule|wake[- ]?up)\b/i;
 const NEGATED_DAILY = /(?:不要|不用|无需|别再?|取消|停止|不再|\b(?:do not|don't|no longer|cancel|stop)\b)[^，。！？；,.!?;\n]{0,12}$/i;
-const BARE_CLOCK_SUFFIX = /^(?:[\p{L}\p{N}]|\s+(?:封|件|条|项|个|次|份|人|页|张|篇))/u;
+const BARE_CLOCK_SUFFIX = /^(?:[\p{L}\p{N}]|\s+(?:封|件|条|项|个|次|份|人|页|张|篇|分|秒|小时|钟|天|周|月|年)|\s+(?:mins?|minutes?|hours?|hrs?|seconds?|secs?|days?)\b)/iu;
 
 
 /**
@@ -114,20 +114,32 @@ const BARE_CLOCK_SUFFIX = /^(?:[\p{L}\p{N}]|\s+(?:封|件|条|项|个|次|份|�
  */
 export function readExplicitDailySchedule(text: string): string | null | undefined {
   if (readWeekday(text).freq || NON_DAILY_FREQUENCY.test(text) || SCHEDULE_CANCEL.test(text)) return null;
-  let result: string | null | undefined;
-  for (const marker of text.matchAll(DAILY_FREQUENCY)) {
-    const index = marker.index ?? 0;
-    if (NEGATED_DAILY.test(text.slice(0, index))) return null;
-    // A marker in the expert name or task text may precede the actual schedule.
-    result ??= clockAfterDailyPhrase(marker[0], text.slice(index + marker[0].length));
+  // A later revision (改成/change to) supersedes everything said before it.
+  let revision: RegExpMatchArray | undefined;
+  for (const match of text.matchAll(new RegExp(CLOCK_REVISION.source, 'gi'))) revision = match;
+  const revisedFrom = revision ? (revision.index ?? 0) + revision[0].length : 0;
+
+  const markers = [...text.matchAll(DAILY_FREQUENCY)];
+  for (const marker of markers) {
+    if (NEGATED_DAILY.test(text.slice(0, marker.index ?? 0))) return null;
   }
-  if (result !== undefined) return result;
+  const scan = (from: number): string | null | undefined => {
+    let found: string | null | undefined;
+    for (const marker of markers) {
+      const index = marker.index ?? 0;
+      if (index < from) continue;
+      // A marker in the expert name or task text may precede the actual schedule.
+      found ??= clockAfterDailyPhrase(marker[0], text.slice(index + marker[0].length));
+    }
+    return found;
+  };
+  const revised = revision ? scan(revisedFrom) : undefined;
+  if (revised) return revised;
 
   // A clock-only revision supersedes the earlier request without establishing
   // that Neo should run it every day.
-  const revision = CLOCK_REVISION.exec(text);
-  if (revision && clockAfterDailyPhrase('', text.slice(revision.index + revision[0].length))) return null;
-  return undefined;
+  if (revision && clockAfterDailyPhrase('', text.slice(revisedFrom))) return null;
+  return scan(0);
 }
 
 function clockAfterDailyPhrase(marker: string, tail: string): string | null {
@@ -157,7 +169,7 @@ function clockAfterDailyPhrase(marker: string, tail: string): string | null {
   if (amPm === 'p' && hour < 12) hour += 12;
   else if (amPm === 'a' && hour === 12) hour = 0;
   else if (!amPm && evening && hour === 12) hour = 0;
-  else if (!amPm && (evening || afternoon) && hour < 12) hour += 12;
+  else if (!amPm && (evening || afternoon) && hour > 0 && hour < 12) hour += 12;
   else if (!amPm && noon && hour < 6) hour += 12;
   return `${pad(hour)}:${pad(minute)}`;
 }

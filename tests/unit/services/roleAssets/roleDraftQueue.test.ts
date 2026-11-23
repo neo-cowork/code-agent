@@ -266,12 +266,23 @@ describe('roleDraftQueue', () => {
       ['每天早上9点15', '0 15 9 * * *'],
       ['每天早上八点三十', '0 30 8 * * *'],
       ['每天晚上12点', '0 0 0 * * *'],
+      ['每天晚上零点汇总', '0 0 0 * * *'],
+      ['每天晚上0点汇总', '0 0 0 * * *'],
+      ['每天早上 9 点检查邮箱。改成每天晚上 8 点', '0 0 20 * * *'],
     ])('I2 saves the explicit clock in %s', async (content, cadence) => {
       cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content }]);
       const { draft } = await enqueueRoleDraft(morningRole);
 
       expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
       expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', { level: 'daily', cadence });
+    });
+
+    it('I3 skips a duration after a daily phrase and keeps the real 09:00 clock', async () => {
+      cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content: '创建「每晚 3 分钟」。每天早上 9 点查看日历' }]);
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', { level: 'daily' });
     });
 
     it.each([
@@ -281,6 +292,9 @@ describe('roleDraftQueue', () => {
       '每早 25',
       '每早8件事',
       '每天早上 3 封邮件',
+      '每天早上 10 分钟看邮件',
+      '每天早上 2 小时整理收件箱',
+      'daily at 10 minutes check mail',
       '每晚 2 封',
       'every evening at 7th Street',
       '不要每天早上 9 点了',
