@@ -60,6 +60,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-11-23 / PR #3234（N-TRIGGER-OBSERVE-ACTION-CONTRACT-DESIGN）/ 合入 main 后运行 `npm run acceptance:snapshot-replay:record`，7 会话 16 轮自验通过，与 main 快照零差异。inference.ts、toolDefinitions.ts 和 replyToEvent.schema.ts 的回复工具仅在有宿主事件目的地绑定的运行中注入，本语料均为非事件会话。
 - 2026-11-19 / N-FIX-EN-SPACE-TERM-UNIFY / 敏感变更：src/host/prompts/spaceContextPrompt.ts、spaceCreate/spaceList/spaceQuery.schema.ts（英文「collaboration space」统一为「Space」，仅描述文案；space_* 为延迟工具、录制语料未加载）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
 - 2026-11-18 / N-FIX-REMINDER-MODEL-ADDS-UNREQUESTED-NOTES / 敏感变更：src/host/tools/modules/connectors/remindersCreate.schema.ts；录制语料未触及该改动段，本机 `acceptance:snapshot-replay:record` 重录零漂移（收活循环代录，PR 号见 ship 回执）。
 - 2026-11-16 / N-FIX-ORPHAN-THINK-CLOSE-TAG-LEAK-IN-REPLY（分支 mq/fix-orphan-think-close-tag-leak-in-reply，未开 PR）/ 敏感变更：src/host/agent/runtime/contextAssembly/transcriptProjection.ts（stripToolCallProtocolMarkup 改委托 shared/modelMarkupStrip.stripLongcatMarkup，longcat 行为不变、刻意不剥 think；录制语料行为字节不变）。本机 `npm run acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过，快照目录 `git status` 零 diff。以本行作为同 PR 快照目录更新。
