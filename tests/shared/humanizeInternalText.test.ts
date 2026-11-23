@@ -192,6 +192,23 @@ describe('humanizeInternalText', () => {
     }
     expect(humanizeInternalText(`读取了 …/${STORAGE_UUID}/notes.txt`, 'zh').text).toBe('读取了 notes.txt');
     expect(humanizeInternalText(`Read …/${STORAGE_UUID}/notes.txt`, 'en').text).toBe('Read notes.txt');
+    expect(humanizeInternalText(`…/${STORAGE_UUID}/会议笔记.txt`, 'zh').text).toBe('会议笔记.txt');
+  });
+
+  it('keeps prose glued to a storage path and still drops the UUID directory', () => {
+    const glued = `我已经把文件保存到/Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt中`;
+    const text = humanizeInternalText(glued, 'zh').text;
+    expect(text).toBe('我已经把文件保存到notes.txt中');
+    expect(text).not.toContain(STORAGE_UUID);
+    expect(text).not.toContain('内部记录');
+    const comma = humanizeInternalText(`saved to /Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt, then left`, 'en').text;
+    expect(comma).toBe('saved to notes.txt, then left');
+    expect(humanizeInternalText(`file_path=/Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt`, 'en').text)
+      .toBe('file_path=notes.txt');
+    const url = humanizeInternalText(`https://example.com/uploads/${STORAGE_UUID}/notes.txt`, 'zh').text;
+    expect(url).toContain('https://');
+    expect(url).not.toContain(STORAGE_UUID);
+    expect(url).toContain('内部记录');
   });
 
   it('leaves a workspace-relative path unchanged', () => {

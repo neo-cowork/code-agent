@@ -141,12 +141,25 @@ const UUID_CONTAINED_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 const UUID_IN_TEXT_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const PATH_SPAN_DELIMITERS = new Set([
   '"', "'", '`', '<', '>', '|',
+  ',', ':', ';', '=',
   '，', '。', '；', '：', '、', '（', '）', '(', ')', '[', ']', '{', '}',
   '!', '?', '！', '？',
 ]);
+const CJK_PROSE_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 
 function isPathSpanDelimiter(ch: string): boolean {
   return /\s/.test(ch) || PATH_SPAN_DELIMITERS.has(ch);
+}
+
+/** Prose glued to a path (`保存到/Users/...`) is not part of the path token. */
+function leadingProseOffset(span: string): number {
+  const slash = span.indexOf('/');
+  if (slash <= 0) return 0;
+  let pathAt = slash;
+  if (span.startsWith('…', slash - 1)) pathAt = slash - 1;
+  else if (slash >= 3 && span.slice(slash - 3, slash) === '...') pathAt = slash - 3;
+  const head = span.slice(0, pathAt);
+  return head.length > 0 && CJK_PROSE_RE.test(head) ? pathAt : 0;
 }
 
 /**
@@ -178,8 +191,10 @@ function collapseUuidDirectoryPaths(text: string): string {
     let end = index + match[0].length;
     while (start > 0 && !isPathSpanDelimiter(text[start - 1] ?? '')) start -= 1;
     while (end < text.length && !isPathSpanDelimiter(text[end] ?? '')) end += 1;
+    start += leadingProseOffset(text.slice(start, end));
     const span = text.slice(start, end);
-    if (!span.includes('/') || span.includes('://')) continue;
+    // `:` is a delimiter, so a URL span is `//host/...` and must stay for step 6.
+    if (!span.includes('/') || span.includes('://') || span.startsWith('//')) continue;
     const previous = spans[spans.length - 1];
     if (previous && start <= previous.end) {
       previous.start = Math.min(previous.start, start);
