@@ -20,7 +20,8 @@ import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetai
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { useLocalizeRole } from '../../../hooks/useLocalizeRole';
+import { agentNodeLabel, backgroundTaskLabel } from '../../../utils/agentRoleLabel';
+import { agentFailureReason } from '../../../utils/agentFailureCopy';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
   describeLastToolFailure,
@@ -98,7 +99,6 @@ const LIVE_TASK_STATUSES = new Set(['queued', 'running']);
 
 export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const { t } = useI18n();
-  const localizeRole = useLocalizeRole();
   const text = t.expert.workRecord;
   const memberText = t.expert.memberBar;
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
@@ -117,7 +117,9 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests }
   ), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
 
-  const member = members.find((item) => item.key === viewingMemberId);
+  const viewingNode = snapshot?.nodes.find((node) => node.id === viewingMemberId);
+  // A standalone helper also has a swarm trace. Its execution node owns the member view.
+  const member = viewingNode?.background ? undefined : members.find((item) => item.key === viewingMemberId);
   const agent = member?.agent;
   // useSessionMembers 以持久化账本为状态真相源，而 contextSnapshot 只活在 stream 里
   // （账本不落它）。最近动作要的是「他此刻在干嘛」，所以这一项单独从 store 取实时的。
@@ -163,10 +165,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   }, [durableDetail?.events, agent?.id]);
 
   // ── 普通代理（S3）：agentTree 节点或 delegate_task 后台任务 ──
-  const plainNode = useMemo(
-    () => (member ? undefined : snapshot?.nodes.find((node) => node.id === viewingMemberId)),
-    [member, snapshot, viewingMemberId],
-  );
+  const plainNode = member ? undefined : viewingNode;
   const plainTask = useMemo(
     () => (member || plainNode
       ? undefined
@@ -174,11 +173,15 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     [member, plainNode, backgroundTasks, viewingMemberId],
   );
 
-  if (!member && !plainNode && !plainTask) return null;
+  const awaitingSingleSpawn = !snapshot && durableDetail?.run.sessionId === sessionId
+    && durableDetail?.run.trigger === 'llm-spawn' && durableDetail.run.totalAgents === 1
+    && durableDetail.agents[0]?.agentId === viewingMemberId;
+  if (awaitingSingleSpawn || (!member && !plainNode && !plainTask)) return null;
 
     // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
     if (!member || !agent) {
-      const name = plainNode?.role ?? plainTask?.title ?? viewingMemberId ?? '';
+      const name = plainNode ? agentNodeLabel(plainNode, t.agentRoleLabels)
+        : plainTask ? backgroundTaskLabel(plainTask, t) : '';
       // N-APPROVAL-PENDING-STATUS-COPY：审批未决亮「请求…」词形；连接器写工具在目标
       // 还在干活时亮「正在…」词形；终态/读类维持原词形。
       const activityStatus = plainNode
@@ -207,7 +210,9 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     // summary 是 240 字单行（侧栏/账本用）；成员页优先读保留换行的完整结果，围栏代码块才能成立
     const taskResultMarkdown = plainTask?.metadata?.resultMarkdown;
-    const finalOutput = plainNode?.progress
+    const nodeOutput = plainNode && (plainNode.status === 'failed' || plainNode.status === 'cancelled')
+      ? agentFailureReason(plainNode, t) : plainNode?.progress;
+    const finalOutput = nodeOutput
       ?? (typeof taskResultMarkdown === 'string' && taskResultMarkdown ? taskResultMarkdown : plainTask?.summary)
       ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
@@ -222,8 +227,8 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
       ?? (plainNode?.createdAt ? (plainNode.completedAt ?? Date.now()) - plainNode.createdAt : null);
 
     const plainTarget: MemberInputTarget = plainNode
-      ? { key: plainNode.id, kind: 'agent', name, live: LIVE_NODE_STATUSES.has(plainNode.status) }
-      : { key: plainTask?.id ?? viewingMemberId ?? '', kind: 'task', name, live: LIVE_TASK_STATUSES.has(plainTask?.status ?? '') };
+      ? { key: plainNode.id, kind: 'agent', name: plainNode.role, displayName: name, live: LIVE_NODE_STATUSES.has(plainNode.status) }
+      : { key: plainTask?.id ?? viewingMemberId ?? '', kind: 'task', name: plainTask?.title ?? '', displayName: name, live: LIVE_TASK_STATUSES.has(plainTask?.status ?? '') };
 
     return (
       <div data-testid="member-conversation-view" className="flex min-h-0 flex-1 flex-col">
@@ -236,7 +241,7 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
             <Bot className="h-4 w-4" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-zinc-100">{localizeRole(name, { name }).name}</h2>
+            <h2 className="truncate text-sm font-semibold text-zinc-100">{name}</h2>
           </div>
           <StopMemberButton target={plainTarget} sessionId={sessionId} runId={activeRunId} />
         </header>

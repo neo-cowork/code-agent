@@ -202,7 +202,7 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = candidate;
         row.outcomeKey = outcome;
-        if (node.background && t === languages.en) {
+        if (node.background) {
           row.name = agentNodeLabel(node, t.agentRoleLabels);
           row.displayName = undefined;
         }

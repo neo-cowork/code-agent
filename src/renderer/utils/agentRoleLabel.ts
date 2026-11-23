@@ -16,11 +16,14 @@ export function agentRoleLabel(
   return labels.assistant;
 }
 
-/** Background names are host/model bookkeeping; retain the existing Chinese display. */
+/** Background agents with a known role use its localized name instead of the execution name. */
 export function agentNodeLabel(
   node: Pick<AgentTreeNode, 'role' | 'displayName' | 'background'>,
   labels: Translations['agentRoleLabels'] = (languages[useAppStore.getState().language] ?? languages.zh).agentRoleLabels,
 ): string {
+  if (node.background && node.role !== 'background' && Object.hasOwn(labels.roles, node.role)) {
+    return agentRoleLabel(node.role, labels);
+  }
   return node.background && labels === languages.en.agentRoleLabels
     ? labels.roles.background
     : agentRoleLabel(node.displayName || node.role, labels);

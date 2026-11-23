@@ -1,3 +1,4 @@
+import type { AgentTreeNode } from '@shared/contract/agentTree';
 import type { Task } from '@shared/contract/backgroundTask';
 import { AgentFailureCode, inferAgentFailureCode, isAgentFailureCode } from '@shared/contract/agentFailure';
 import { languages, type Translations } from '../i18n';
@@ -19,6 +20,16 @@ export function agentFailureCopy(code: AgentFailureCode | undefined, t: Translat
     ? agentFailureHostPhrases[reason]
     : inferAgentFailureCode({ error: reason });
   return copy[inferred];
+}
+
+/** Progress can include tool transcripts and provider errors. Use the explicit failure fact. */
+export function agentFailureReason(node: AgentTreeNode, t: Translations): string {
+  const reason = node.failureReason?.trim();
+  const plainReason = reason && !/^Tool (?:results:|\w+:)/i.test(reason) && containsCjk(reason)
+    ? reason : undefined;
+  const code = node.failureCode
+    ?? (!plainReason ? AgentFailureCode.Unknown : undefined);
+  return agentFailureCopy(code, t, plainReason) ?? t.toolStepHumanize.agentFailureReasons.unknown;
 }
 
 /** Session-work recovery has its own stable reason, distinct from parent-gone. */

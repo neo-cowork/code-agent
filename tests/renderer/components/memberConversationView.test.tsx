@@ -14,6 +14,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
+import { DelegationHeader, DelegationReceipt } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/DelegationReceipt';
+import { deriveDelegationPresentation } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/delegationPresentation';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { SwarmAgentState } from '../../../src/shared/contract/swarm';
@@ -106,6 +109,51 @@ describe('成员对话页', () => {
     useAppStore.setState({ pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {} });
   });
   afterEach(() => cleanup());
+
+  it.each([
+    [zh, '调研员', 'Tool results: Read denied', AgentFailureCode.PermissionDenied],
+    [en, 'Researcher', 'Error: internal provider response', AgentFailureCode.Timeout],
+    [zh, '调研员', 'Tool results: Read denied', undefined],
+    [en, 'Researcher', 'Error: internal provider response', undefined],
+  ] as const)('uses one role label and localized failure copy across the receipt and member view (%#)', async (t, name, progress, failureCode) => {
+    translations = t;
+    const node: AgentTreeNode = {
+      id: 'report-agent', role: 'explore', displayName: 'explore-交接笔记', background: true, status: 'failed',
+      statusLabel: '', progress, failureCode, children: [], worktreeState: { status: 'none' },
+      budgetSummary: {}, evidenceRefs: [], sources: ['subagentContext'],
+    };
+    const run = { ...ledgerRun, totalAgents: 1 };
+    invokeMock.mockImplementation((channel: unknown) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) return Promise.resolve({
+        ...ledgerDetail, run: { ...ledgerDetail.run, ...run },
+        agents: [{ ...record, agentId: node.id, role: node.role, name: node.role, status: 'failed', finalOutput: progress }],
+      });
+      return Promise.resolve(null);
+    });
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => (
+      domain === IPC_DOMAINS.AGENT && action === 'getTree' ? Promise.resolve(treeSnapshot(node)) : Promise.resolve(null)
+    ));
+    useMemberViewStore.setState({ viewingMemberId: node.id });
+    const receipt = deriveDelegationPresentation({
+      id: 'report-call', name: 'spawn_agent', arguments: {},
+      result: { toolCallId: 'report-call', success: true, metadata: { agentId: node.id } },
+    }, [], [node], t);
+    expect(receipt).toBeTruthy();
+    if (!receipt) throw new Error('Expected delegation receipt');
+    render(<>
+      <DelegationHeader presentation={receipt} />
+      <DelegationReceipt presentation={receipt} />
+      <MemberConversationView sessionId="session-1" />
+    </>);
+    const output = await screen.findByTestId('member-final-output');
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe(name);
+    expect(screen.getByTestId('delegation-headline').textContent).toContain(`${name} · `);
+    const reason = t.toolStepHumanize.agentFailureReasons[failureCode ?? AgentFailureCode.Unknown];
+    expect(screen.getByTestId('delegation-failure').textContent).toBe(reason);
+    expect(output.textContent).toContain(reason);
+    expect(output.textContent).not.toContain(progress);
+  });
 
   it('进入成员对话页，展示下发任务和产出', async () => {
     useMemberViewStore.setState({ viewingMemberId: 'researcher' });

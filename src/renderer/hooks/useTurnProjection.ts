@@ -636,6 +636,7 @@ export function projectTurns(
           : contentMetadata;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
+          messageId: msg.id,
           type: 'tool_call',
           content: '',
           timestamp: msg.timestamp,
