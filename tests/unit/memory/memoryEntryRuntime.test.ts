@@ -288,6 +288,8 @@ Use current project patterns.
     });
     const db = {
       listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      findMemoryByEntryId: vi.fn(() => null as MemoryRecord | null),
+      listMemoriesWithInjectionFeedback: vi.fn(() => [] as MemoryRecord[]),
       createMemory: vi.fn(),
       updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
         ...mirror,
