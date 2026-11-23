@@ -61,7 +61,9 @@ export function formatExternalModelSwitcherTooltip(args: {
   const labels = languages[language].modelSwitcherTooltip;
   return [
     `${labels.engine}: ${args.engineLabel}`,
-    labels.model.replace('{model}', args.model ?? languages[language].settings.model.models.switcherTooltip.defaultModel),
+    labels.model.replace('{model}', args.model
+      ? getModelDisplayLabel(args.model)
+      : languages[language].settings.model.models.switcherTooltip.defaultModel),
     args.effort ? `${labels.effort}: ${language === 'zh' ? args.effort.shortLabel : args.effort.label}` : null,
     args.reliabilityLabel ? `${labels.service}: ${args.reliabilityLabel}` : null,
   ].filter(Boolean).join(' · ');
