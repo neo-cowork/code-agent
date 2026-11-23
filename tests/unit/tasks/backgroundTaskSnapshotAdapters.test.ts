@@ -128,6 +128,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
       durationMs: 1_500,
       failure: {
         message: 'Process exited with code 1',
+        reason: 'shell_command_failed',
         exitCode: 1,
         category: 'command_failed',
       },
@@ -178,8 +179,10 @@ describe('backgroundTaskSnapshotAdapters', () => {
         taskId: 'shell:shell-1',
         type: 'task_failed',
         message: expect.stringContaining('npm 失败'),
+        payload: expect.objectContaining({ source: 'shell', status: 'failed', label: 'npm', exitCode: 1, durationMs: 1_500 }),
       }),
     ]);
+    expect(notifications[0]?.message).not.toMatch(/退出码|exit code|\.log/);
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
@@ -428,18 +431,33 @@ describe('backgroundTaskSnapshotAdapters', () => {
     { status: 'failed' as const, exitCode: undefined, stoppedByRequest: true, expected: 'cancelled' },
   ])('public snapshot entries preserve $expected with missing logs', ({ status, exitCode, stoppedByRequest, expected }) => {
     const ledger = new BackgroundTaskLedger();
-    const shared = { status, exitCode, stoppedByRequest, command: 'true', cwd: '/repo', startTime: 1_000, duration: 100 };
-    syncShellTaskSnapshotToLedger({ ...shared, taskId: 'missing-shell', outputFile: '/missing/shell.log' }, ledger);
+    const shared = {
+      status, exitCode, stoppedByRequest, command: 'true', displayName: 'Archive meeting notes',
+      cwd: '/repo', startTime: 1_000, duration: 100,
+    };
+    syncShellTaskSnapshotToLedger({
+      ...shared, taskId: 'missing-shell', sessionId: 'session-1', outputFile: '/missing/shell.log',
+    }, ledger);
     syncPtySessionSnapshotToLedger({
-      ...shared, sessionId: 'missing-pty', args: [], cols: 80, rows: 24, outputFile: '',
+      ...shared, sessionId: 'missing-pty', ownerSessionId: 'session-1', args: [], cols: 80, rows: 24, outputFile: '',
     }, ledger);
 
     for (const id of ['shell:missing-shell', 'pty:missing-pty']) {
       expect(ledger.getTask(id)?.status).toBe(expected);
       expect(ledger.getTask(id)?.failure).toEqual(expected === 'failed'
-        ? { message: 'Process exited with code 3', exitCode: 3, category: 'command_failed' }
+        ? { message: 'Process exited with code 3', reason: 'shell_command_failed', exitCode: 3, category: 'command_failed' }
         : undefined);
       expect(ledger.getTask(id)?.outputRefs[0]?.size).toBeUndefined();
+    }
+    const notifications = ledger.drainNotifications('session-1');
+    expect(notifications).toHaveLength(2);
+    for (const source of ['shell', 'pty']) {
+      const notification = notifications.find((item) => item.taskId.startsWith(`${source}:`));
+      expect(notification).toMatchObject({
+        type: `task_${expected}`,
+        payload: { source, status: expected, label: 'Archive meeting notes', durationMs: 100 },
+      });
+      expect(notification?.message).not.toMatch(/退出码|exit code|\.log|Process exited/);
     }
   });
 

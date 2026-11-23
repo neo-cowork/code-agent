@@ -4,6 +4,7 @@ import { Readable, Transform } from 'node:stream';
 import { createLogger } from '../../services/infra/logger';
 import { APICallError, JSONParseError } from 'ai';
 import { getHttpsAgent } from '../providers/shared';
+import { devFaultCheckOutbound } from '../../services/infra/devFaultLoader';
 
 export const logger = createLogger('AiSdkAdapter');
 
@@ -150,6 +151,7 @@ export function makeAiSdkFetch(
   return async (input, init) => {
   const request = input instanceof Request ? input : undefined;
   const url = input instanceof URL ? input.toString() : request?.url ?? String(input);
+  devFaultCheckOutbound(url);
   const method = init?.method ?? request?.method ?? 'GET';
   const headers = headersToRecord(init?.headers ?? request?.headers);
   let body = requestBodyForAxios(init?.body ?? request?.body);

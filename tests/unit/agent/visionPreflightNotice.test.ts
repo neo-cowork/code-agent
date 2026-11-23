@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import type { ModelMessage } from '../../../src/host/agent/loopTypes';
-import { formatVisionPreflightNotice } from '../../../src/shared/i18n/visionPreflight';
+import { formatVisionPreflightNotice, formatVisionToolUnsupportedNotice } from '../../../src/shared/i18n/visionPreflight';
 import { runVisionPreflightCandidates } from '../../../src/host/agent/runtime/contextAssembly/visionPreflight';
 import { ZHIPU_VISION_MODEL } from '../../../src/shared/constants';
 
@@ -58,6 +58,13 @@ describe('vision preflight notice copy', () => {
   it('returns the zh and en notice without model ids', () => {
     expect(formatVisionPreflightNotice('zh')).toBe('已先读取图片内容，再继续回答。');
     expect(formatVisionPreflightNotice('en')).toBe('Read the image first, then continued with your answer.');
+  });
+
+  it('returns the zh and en tool-unsupported notice without model ids', () => {
+    expect(formatVisionToolUnsupportedNotice('zh')).toBe('识图模型不能调用工具，这次回答只用文字完成。');
+    expect(formatVisionToolUnsupportedNotice('en')).toBe("The image-reading model can't use tools, so this reply will be text only.");
+    expect(formatVisionToolUnsupportedNotice('zh')).not.toMatch(MODEL_ID_LEAK);
+    expect(formatVisionToolUnsupportedNotice('en')).not.toMatch(MODEL_ID_LEAK);
   });
 
   it('persists a zh notice without model ids when the UI language is zh', async () => {

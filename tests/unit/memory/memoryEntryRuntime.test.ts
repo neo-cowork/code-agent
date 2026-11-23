@@ -36,6 +36,7 @@ import {
   updateMemoryEntry,
   writeEntryToLightMemory,
 } from '../../../src/host/memory/memoryEntryRuntime';
+import { readMemoryFile } from '../../../src/host/lightMemory/lightMemoryIpc';
 
 function sectionForEntry(block: string, entryId: string): string {
   const lines = block.split('\n');
@@ -252,6 +253,77 @@ Use current project patterns.
         }),
       }),
     }), undefined);
+  });
+
+  it('keeps half-width colons in title and summary when updating through the production entry path', async () => {
+    await fs.writeFile(path.join(memDir, 'project-rule.md'), `---
+name: Project Rule
+description: Follow current project patterns
+type: project
+entry_id: mem_entry_project
+status: active
+source: knowledge_inbox
+schema_version: 2
+---
+
+Use current project patterns.
+`, 'utf-8');
+
+    const mirror = record({
+      id: 'mem-mirror',
+      content: 'Use current project patterns.',
+      summary: 'Project Rule',
+      metadata: {
+        memoryEntry: {
+          schemaVersion: 2,
+          id: 'mem_entry_project',
+          status: 'active',
+          kind: 'project',
+          scope: 'project',
+          sourceOfTruth: 'light_file',
+          filePath: 'project-rule.md',
+          evidence: [{ filePath: 'project-rule.md' }],
+        },
+      },
+    });
+    const db = {
+      listMemories: vi.fn(() => [mirror] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn((id: string, updates: Partial<MemoryRecord>) => record({
+        ...mirror,
+        id,
+        ...updates,
+        updatedAt: 1778667000000,
+      })),
+    };
+
+    await updateMemoryEntry(db, {
+      entryId: 'mem_entry_project',
+      title: 'Weekly sync: 08:30-09:45',
+      summary: '临时测试：时间 08:30，结束 09:45。',
+      content: 'Use current project patterns.',
+    });
+
+    // 全部记忆列表（Settings -> Memory 用的 listUnifiedMemoryEntries）
+    const listed = await listUnifiedMemoryEntries(db);
+    const entry = listed.entries.find((item) => item.id === 'mem_entry_project');
+    expect(entry).toBeDefined();
+    expect(entry!.title).toBe('Weekly sync: 08:30-09:45');
+    expect(entry!.summary).toBe('临时测试：时间 08:30，结束 09:45。');
+    expect(entry!.summary).not.toContain('08 -30');
+
+    // 记忆文件管理（listMemoryFiles / readMemoryFile 用的 lightMemoryIpc 读取面）
+    const file = await readMemoryFile('project-rule.md');
+    expect(file).not.toBeNull();
+    expect(file!.name).toBe('Weekly sync: 08:30-09:45');
+    expect(file!.description).toBe('临时测试：时间 08:30，结束 09:45。');
+
+    // 落盘的 frontmatter 值原样保留半角冒号
+    const raw = await fs.readFile(path.join(memDir, 'project-rule.md'), 'utf-8');
+    expect(raw).toContain('name: Weekly sync: 08:30-09:45');
+    expect(raw).toContain('description: 临时测试：时间 08:30，结束 09:45。');
+    expect(raw).not.toContain('08 -30');
+    expect(raw).not.toContain(' -45');
   });
 
   it('updates DB memory entries without creating Light Memory files', async () => {

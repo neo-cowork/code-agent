@@ -50,6 +50,7 @@ import {
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { getHumanToolLabel } from '../../../../../utils/toolHumanLabel';
 import { useEnvParkedTarget } from '../../../../../hooks/useEnvParkedTarget';
+import { finalizeSessionTaskStatus } from '../../../../../utils/sessionTaskStatusFinalize';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -157,7 +158,7 @@ export function ToolCallDisplay({
   agentId,
   sessionLive,
 }: ToolCallDisplayProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const toolCall = useMemo(() => getToolPreflightKind(originalToolCall) === 'question' && originalToolCall.result
     ? { ...originalToolCall, result: { ...originalToolCall.result, success: false, error: originalToolCall.result.error ?? originalToolCall.result.output } }
     : originalToolCall, [originalToolCall]);
@@ -212,9 +213,14 @@ export function ToolCallDisplay({
     ).has(toolCall.id);
   }, [delegationPresentation?.state, sessionMessages, sessionId, currentSessionId, backgroundTasks, t, toolCall.id]);
 
+  const taskStatusMessages = toolCall.name === 'task_status' && sessionId && sessionId === currentSessionId
+    ? sessionMessages
+    : undefined;
   const displayToolCall = useMemo(
-    () => toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
-    [toolCall, t, delegationPresentation],
+    () => taskStatusMessages
+      ? finalizeSessionTaskStatus(toolCall, taskStatusMessages)
+      : toDelegationDisplayToolCall(toolCall, t, delegationPresentation),
+    [toolCall, taskStatusMessages, t, delegationPresentation],
   );
 
   const resolveToolCallTerminalState = useToolCallTerminalResolver(sessionId, [{ toolCall, agentId }]);
@@ -241,6 +247,11 @@ export function ToolCallDisplay({
   // 不是需要用户关注的错误——安静展示，跟成功行视觉权重接近。真正需要用户介入的错误
   // （鉴权失效/额度耗尽/限流）保留醒目红色样式。
   const quietError = status === 'error' && !delegationPresentation && !isEscalatedToolError(toolCall);
+  const result = toolCall.result;
+  const backgroundShellLaunch = isBashTool(toolCall) && result?.success === true
+    && (result.metadata?.background === true
+      || (result.metadata?.pty === true && typeof result.metadata.outputFile === 'string'));
+  const canExpand = status !== 'interrupted' && !backgroundShellLaunch;
 
   // 工具行默认折叠（含 error）：失败回合常常一连十几条同样的报错，全展开会糊成
   // 一面墙（2026-06-25 dogfood：工件修复死锁 trace 不可读）。折叠态仍保留红左边框 +
@@ -249,8 +260,8 @@ export function ToolCallDisplay({
   // Track if user manually toggled
   const [userToggled, setUserToggled] = useState(false);
   const actionPreview = useMemo(
-    () => buildBrowserComputerActionPreview(toolCall),
-    [toolCall],
+    () => buildBrowserComputerActionPreview(toolCall, language),
+    [toolCall, language],
   );
   const workflowStagePreview = useMemo(
     () => buildWorkflowStagePreview(toolCall),
@@ -285,6 +296,7 @@ export function ToolCallDisplay({
   };
 
   if (terminal.state === 'hidden') return null;
+  const disclosedApp = toolCall.guiTakeoverDisclosure?.app;
 
   return (
     <div
@@ -296,20 +308,30 @@ export function ToolCallDisplay({
       data-testid={status === 'interrupted' ? 'interrupt-timeline-step' : undefined}
       style={{ animationDelay: `${index * 30}ms` }}
     >
+      {/* GUI 接管披露：host 在本 run 首次直接驱动该 app 界面前挂的话，卡前常驻
+          （直播与历史重放同渲染），与模型是否开口无关。 */}
+      {disclosedApp && (
+        <div
+          className="mb-0.5 ml-4 whitespace-normal break-words text-xs leading-5 text-zinc-400"
+          data-testid="gui-takeover-disclosure"
+        >
+          {t.guiTakeover.disclosure.replace('{app}', () => disclosedApp)}
+        </div>
+      )}
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
         data-testid={`tool-call-row-${toolCall.name}`}
-        role={status === 'interrupted' ? undefined : 'button'}
-        tabIndex={status === 'interrupted' ? -1 : 0}
-        aria-expanded={status === 'interrupted' ? undefined : expanded}
+        role={canExpand ? 'button' : undefined}
+        tabIndex={canExpand ? 0 : -1}
+        aria-expanded={canExpand ? expanded : undefined}
         className={`group/row flex items-center gap-1.5 rounded px-1 py-0.5 transition-colors ${
           status === 'interrupted'
             ? 'cursor-default text-xs text-zinc-500'
-            : 'cursor-pointer hover:bg-zinc-800'
+            : canExpand ? 'cursor-pointer hover:bg-zinc-800' : ''
         }`}
-        onClick={status === 'interrupted' ? undefined : toggleExpanded}
+        onClick={canExpand ? toggleExpanded : undefined}
         onKeyDown={(event) => {
-          if (status === 'interrupted') return;
+          if (!canExpand) return;
           if (event.target !== event.currentTarget) return;
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
@@ -326,7 +348,7 @@ export function ToolCallDisplay({
               awaitingApproval={awaitingApproval}
               interruptionReason={interruptionReason}
               envWaitingTarget={envWaitingTarget}
-              showDetailName={expanded}
+              showDetailName={canExpand && expanded}
               hideStatusLabel={Boolean(receipt) || status === 'error'}
             />}
         {receipt && (
@@ -389,15 +411,18 @@ export function ToolCallDisplay({
       )}
 
       {/* Bash inline output - when collapsed, show command output preview */}
-      {!expanded && isBashTool(toolCall) && toolCall.result && (
+      {backgroundShellLaunch && (
+        <div className="ml-6 text-xs text-zinc-500">{t.backgroundPanel.shellTaskStarted}</div>
+      )}
+      {!backgroundShellLaunch && !expanded && isBashTool(toolCall) && toolCall.result && (
         <BashOutputPreview toolCall={displayToolCall} status={status} quietError={quietError} />
       )}
 
       {/* Expanded details - indented under tool name */}
-      {expanded && receipt && (
+      {!backgroundShellLaunch && expanded && receipt && (
         <ReceiptDetail receipt={receipt} toolCall={displayToolCall} />
       )}
-      {expanded && !receipt && (
+      {!backgroundShellLaunch && expanded && !receipt && (
         <div className="ml-6 animate-fadeIn">
           <ToolDetails
             toolCall={displayToolCall}

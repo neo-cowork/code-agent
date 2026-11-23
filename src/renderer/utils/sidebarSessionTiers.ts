@@ -55,6 +55,10 @@ export function buildSidebarSessionTierSections(
   return SIDEBAR_SESSION_TIER_ORDER.flatMap((tier) => {
     const tierGroups = byTier.get(tier);
     if (!tierGroups || tierGroups.length === 0) return [];
+    // 快速对话层：无组头的未分类会话排最前，否则会视觉并入上方有头的文件夹组（收起该文件夹时像收起失效）。
+    if (tier === 'quick') {
+      tierGroups.sort((a, b) => Number(b.isUncategorized) - Number(a.isUncategorized));
+    }
     return [
       {
         tier,

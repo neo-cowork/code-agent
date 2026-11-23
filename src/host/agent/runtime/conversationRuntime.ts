@@ -234,8 +234,8 @@ export class ConversationRuntime {
     return bootstrapDesktopDerivedContext(this.ctx, this.contextAssembly, userMessage);
   }
 
-  private async injectActivityContext(options: { includeDesktopActivity: boolean }): Promise<void> {
-    return injectActivityContext(this.contextAssembly, options);
+  private async injectActivityContext(options: { includeDesktopActivity: boolean }, sink: Parameters<typeof injectActivityContext>[0] = this.contextAssembly): Promise<void> {
+    return injectActivityContext(sink, options);
   }
 
   setPlanMode(active: boolean): void {
@@ -1150,7 +1150,7 @@ export class ConversationRuntime {
       // 注入块里的词会把评分带偏（N-CAP-NOTICE-LEAK）。hook 仍收完整提交文本。
       analysisUserRequest: userRequest,
       isSimpleTask,
-      injectActivityContext: (options) => this.injectActivityContext(options),
+      injectActivityContext: (options, sink) => this.injectActivityContext(options, sink),
       bootstrapDesktopDerivedContext: () => this.bootstrapDesktopDerivedContext(userRequest),
     });
     if (assemblyStatus !== 'proceed') return null; // 'aborted'（装配期取消）或 'blocked'（hook 拦截）

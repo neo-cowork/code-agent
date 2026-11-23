@@ -2,6 +2,7 @@ import React from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { FolderTrustFolderInfo } from './FolderTrustFolderInfo';
 import { FolderTrustDangerList, type FolderTrustDangerousItem } from './FolderTrustDangerList';
 
 export type { FolderTrustDangerousItem };
@@ -73,12 +74,12 @@ export const FolderTrustDialog: React.FC<FolderTrustDialogProps> = ({
   const message = (
     <div className="space-y-4 text-sm text-zinc-300">
       <p>{copy.intro}</p>
-      <div className="space-y-1">
-        <p className="text-zinc-400">{copy.directory}</p>
-        <p className="font-mono text-xs text-zinc-100 break-all">{evaluation.displayPath}</p>
-        <p className="text-zinc-500">{copy.realpath}</p>
-        <p className="font-mono text-xs text-zinc-400 break-all">{evaluation.canonicalRealpath}</p>
-      </div>
+      <FolderTrustFolderInfo
+        displayPath={evaluation.displayPath}
+        canonicalRealpath={evaluation.canonicalRealpath}
+        files={gatedItems.map((item) => item.displayPath)}
+        showLabel
+      />
 
       {evaluation.identityChanged && (
         <div className="rounded border border-badge-warning/30 bg-amber-500/10 px-3 py-2 text-badge-warning">

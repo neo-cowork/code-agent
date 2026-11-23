@@ -138,7 +138,7 @@ describe('cron editor chrome localization', () => {
       expect(screen.getAllByPlaceholderText('可选')).toHaveLength(2);
     }
     if (scheduleType === 'cron') {
-      expect(screen.getByText('Cron 表达式')).toBeTruthy();
+      expect(screen.getByTestId('cron-editor-time')).toBeTruthy();
       expect(screen.getByText('时区')).toBeTruthy();
       expect(screen.getByText(/整点任务容易和其他任务扎堆触发/)).toBeTruthy();
     }

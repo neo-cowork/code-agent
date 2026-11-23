@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../primitives';
 import { UI } from '@shared/constants';
-import { TraceNodeRenderer } from './TraceNodeRenderer';
+import { TraceNodeRenderer } from './TraceNodeRenderer'; import { getFallbackDuplicateChipNodeIds } from '../../../utils/fallbackChipDedup';
 import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
@@ -68,7 +68,7 @@ import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
 import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
-import { resolveBusySignal } from '../../../utils/turnBusySignal';
+import { useBusySignal } from '../../../hooks/useBusySignal';
 import { useTurnCardExpansion } from './useTurnCardExpansion';
 import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
 import { getObservedCronRunStatusForSession, hasParkedApprovalClosure, isLiveCronRunStatusKind, subscribeObservedCronRunStatus } from './cronRunSessionStatus';
@@ -172,7 +172,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const foldedView = useMemo(() => ({
     userNode: getTurnUserNode(turn),
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
-    chipOwnerId: getTurnChipOwnerId(turn, isVoiceTurn, (node) => Boolean(node.metadata?.turnQuality && hasUsedMemory(node.metadata.turnQuality))),
+    chipOwnerId: getTurnChipOwnerId(turn, isVoiceTurn, (node) => Boolean(node.metadata?.turnQuality && hasUsedMemory(node.metadata.turnQuality))), dupChipIds: getFallbackDuplicateChipNodeIds(turn.nodes),
   }), [turn, isVoiceTurn]);
   const observedCronRunStatus = useSyncExternalStore(subscribeObservedCronRunStatus, () => getObservedCronRunStatusForSession(sessionId), () => null);
   const hasExternalStatusLine = Boolean(afterUserMessage) && !hasParkedApprovalClosure(turn); const hasLiveExternalStatusLine = hasExternalStatusLine && isLiveCronRunStatusKind(observedCronRunStatus?.kind);
@@ -191,7 +191,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const lastIndex = displayNodes.length - 1;
   const lastDisplay = displayNodes[lastIndex];
   const lastDisplayNode = lastDisplay && lastDisplay.kind !== 'tool_group' ? lastDisplay.node : null;
-  const busySignal = resolveBusySignal(turn);
+  const busySignal = useBusySignal(turn, sessionId);
   const lastNodeIsStreamingText =
     busySignal === 'text-caret' &&
     !!lastDisplayNode &&
@@ -446,7 +446,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                   node={node}
                   sessionId={sessionId}
                   attachments={node.attachments}
-                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined} showMemoryChip={node.id === foldedView.chipOwnerId}
+                  isStreaming={isNodeStreaming} unfinishedToolIsLive={hasLiveExternalStatusLine || undefined} showMemoryChip={node.id === foldedView.chipOwnerId} hideRouteChip={foldedView.dupChipIds.has(node.id)}
                   inVoiceDispatchCard={isVoiceTurn}
                   onStreamingDisplayUpdate={shouldReportDisplayUpdate ? handleAnchorStreamingDisplayUpdate : undefined}
                   onRewindUserPrompt={onRewindUserPrompt}
@@ -483,7 +483,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             node={foldedView.finalTextNode}
             sessionId={sessionId}
             attachments={foldedView.finalTextNode.attachments}
-            inVoiceDispatchCard={isVoiceTurn} showMemoryChip={foldedView.finalTextNode.id === foldedView.chipOwnerId}
+            inVoiceDispatchCard={isVoiceTurn} showMemoryChip={foldedView.finalTextNode.id === foldedView.chipOwnerId} hideRouteChip={!folded && foldedView.dupChipIds.has(foldedView.finalTextNode.id)}
             onStreamingDisplayUpdate={handleAnchorStreamingDisplayUpdate}
           />
         )}

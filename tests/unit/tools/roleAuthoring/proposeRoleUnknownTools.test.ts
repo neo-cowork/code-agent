@@ -9,6 +9,8 @@ import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const loaderErrorSpy = vi.hoisted(() => vi.fn());
+const loaderWarnSpy = vi.hoisted(() => vi.fn());
+const CREATE_CALENDAR_EXPERT = '/create-role 帮我建一个管日程的专家，能读我的日历，看看我今天有什么安排。';
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
@@ -16,12 +18,12 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: loaderErrorSpy, debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: loaderWarnSpy, error: loaderErrorSpy, debug: vi.fn() }),
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({
-    getMessages: async () => [{ id: 'u1', role: 'user', content: '帮我想想要不要建个日程助理', timestamp: 1 }],
+    getMessages: async () => [{ id: 'u1', role: 'user', content: CREATE_CALENDAR_EXPERT, timestamp: 1 }],
     getSession: async () => ({ origin: undefined }),
   }),
 }));
@@ -69,6 +71,7 @@ async function draftDirExists(): Promise<boolean> {
 describe('propose_role 工具名校验', () => {
   beforeEach(async () => {
     loaderErrorSpy.mockClear();
+    loaderWarnSpy.mockClear();
     getProtocolRegistry();
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'propose-role-tools-'));
   });
@@ -93,6 +96,12 @@ describe('propose_role 工具名校验', () => {
     const { result, ctx } = await propose(['calendar', 'reminders', 'MemoryRead', 'MemoryWrite']);
     expect(result.ok).toBe(true);
     expect(ctx.emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('create-role 技能：对用户说能力只用通俗说法，不复述工具名', () => {
+    const prompt = BUILTIN_SKILLS.find((s) => s.name === 'create-role')?.promptContent ?? '';
+    expect(prompt).toContain('对用户说能力时只用通俗说法');
+    expect(prompt).toContain('不要写工具名或反引号名字');
   });
 
   it('漂移门：create-role 常用映射里的每个工具名都在注册表里', () => {
@@ -127,16 +136,38 @@ describe('propose_role 工具名校验', () => {
     expect(missing).toEqual([]);
   });
 
-  it('端到端：真实名起草 → 确认 → loadAgentMdFiles 不报「不存在的工具」', async () => {
-    const { result } = await propose(['calendar', 'reminders', 'MemoryRead', 'MemoryWrite']);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const draftId = (result.meta as { draftId: string }).draftId;
+  it('/create-role without an explicit name queues a calendar expert and installs only known tools on confirmation', async () => {
+    const tools = ['calendar', 'MemoryRead'];
+    const { result, ctx } = await propose(tools);
+    if (!result.ok) throw new Error(result.error);
+    const draftId = result.meta?.draftId;
+    expect(typeof draftId).toBe('string');
+    if (typeof draftId !== 'string') throw new Error('Expected a queued draft id');
+    const draftDir = path.join(getRoleDraftsDir(), draftId);
+    const agentsDir = path.join(mockConfigDir.dir, 'agents');
+    const agentPath = path.join(agentsDir, '日程助理.md');
+    const draft = await fs.readFile(path.join(draftDir, 'agent.md'), 'utf8');
+    await expect(fs.access(agentPath)).rejects.toHaveProperty('code', 'ENOENT');
+    expect(ctx.emit).toHaveBeenCalledWith({
+      type: 'role_draft_pending',
+      data: {
+        sessionId: ctx.sessionId,
+        drafts: [expect.objectContaining({ id: draftId, roleId: '日程助理', tools })],
+      },
+    });
+
     const confirmed = await confirmRoleDraft(draftId);
     expect(confirmed.success).toBe(true);
+    await expect(fs.readFile(agentPath, 'utf8')).resolves.toBe(draft);
+    await expect(fs.access(draftDir)).rejects.toHaveProperty('code', 'ENOENT');
+
     loaderErrorSpy.mockClear();
-    const agents = await loadAgentMdFiles(path.join(mockConfigDir.dir, 'agents'));
-    expect(agents.length).toBeGreaterThan(0);
+    loaderWarnSpy.mockClear();
+    const agents = await loadAgentMdFiles(agentsDir);
+    expect(agents).toEqual([expect.objectContaining({ id: '日程助理', tools })]);
+    const known = getKnownToolNames();
+    expect(agents.flatMap((agent) => agent.tools).filter((name) => !known.has(name))).toEqual([]);
+    expect(loaderWarnSpy).not.toHaveBeenCalledWith(expect.stringContaining('不存在的工具'), expect.anything());
     expect(loaderErrorSpy).not.toHaveBeenCalled();
   });
 });

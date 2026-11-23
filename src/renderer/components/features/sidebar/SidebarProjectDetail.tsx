@@ -33,6 +33,7 @@ import {
   renameProject,
   setProjectStatus,
 } from '../../../services/projectClient';
+import { projectArtifactKindLabel } from '../../../utils/projectArtifactKind';
 
 export interface SidebarProjectDetailProps {
   projectId?: string;
@@ -68,18 +69,6 @@ function getGoalStatusLabel(status: SidebarProjectGoalMeta['status'], t: Transla
   }
 }
 
-function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Translations): string {
-  const k = t.sidebarProject.artifactKind;
-  switch (kind) {
-    case 'process-output':
-      return k.processOutput;
-    case 'process-log':
-      return k.processLog;
-    default:
-      return k[kind] ?? kind;
-  }
-}
-
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
   if (status === 'met') return <CheckCircle2 className="h-3 w-3 text-badge-success" />;
   if (status === 'aborted') return <XCircle className="h-3 w-3 text-badge-danger" />;
@@ -100,7 +89,7 @@ function getGoalCounts(goals: SidebarProjectGoalMeta[] | undefined): Record<Side
 }
 
 function formatRecentArtifactLine(artifact: SidebarProjectArtifactMeta, t: Translations, language: 'zh' | 'en'): string {
-  const parts = [getArtifactKindLabel(artifact.kind, t)];
+  const parts = [projectArtifactKindLabel(artifact.kind, t.sidebarProject.artifactKind)];
   if (artifact.toolName?.trim()) {
     parts.push(artifact.toolName.trim());
   }

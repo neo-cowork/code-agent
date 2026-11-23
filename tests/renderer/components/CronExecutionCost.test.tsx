@@ -44,6 +44,20 @@ afterEach(() => {
 });
 
 describe('CronExecutionList 成本列', () => {
+  it('flat-fee run shows "not billed in USD" in list and detail instead of a dash', () => {
+    render(
+      <CronExecutionList
+        executions={[execution({ id: 'f', flatFee: true, sessionId: 's' })]}
+        selectedExecutionId={null}
+        onSelectExecution={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('cron-execution-cost-cell').textContent).toBe('不按美元计费');
+    cleanup();
+    render(<CronExecutionDetail execution={execution({ flatFee: true, sessionId: 's' })} />);
+    expect(screen.getByTestId('cron-execution-cost').textContent).toContain('不按美元计费');
+  });
+
   it('有读数显示美元（4 位小数），无读数 dash', () => {
     render(
       <CronExecutionList

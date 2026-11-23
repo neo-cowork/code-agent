@@ -136,6 +136,11 @@ export interface AppServiceRunOptions {
 export interface CreateSessionConfig {
   title?: string;
   workingDirectory?: string | null;
+  /**
+   * 创建时显式指定的协作空间。给出后 host 校验存在且未归档/未删除，
+   * 写入会话并钉住归属；空目录不再反查成未分类。
+   */
+  projectId?: string;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   metadata?: Record<string, unknown>;
   /** 宿主创建后持久化为 sessions.metadata.expertThread。 */
@@ -251,7 +256,7 @@ export interface SessionListQueryOptions {
 export interface AgentApplicationService {
   // === Agent Operations ===
   sendMessage(envelope: ConversationEnvelope): Promise<void>;
-  cancel(sessionId?: string, reason?: 'user' | 'session-switch', options?: { abandonParked?: boolean }): Promise<void>;
+  cancel(sessionId?: string, reason?: 'user' | 'session-switch', options?: { abandonParked?: boolean; runId?: string }): Promise<void>;
   /** 回报投递结果：'no_orchestrator'/'unknown_request' = 停车审批宿主已死，行已被标 orphaned */
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome;
   interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome>;

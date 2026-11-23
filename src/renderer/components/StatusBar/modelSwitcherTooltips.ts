@@ -1,7 +1,12 @@
 import { getModelDisplayLabel } from '@shared/constants';
 import type { ModelProvider } from '@shared/contract';
 import { languages, type Language } from '../../i18n';
+import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
+
+function shownModelLabel(modelId: string, language: Language): string {
+  return localizeModelLabel(modelId, getModelDisplayLabel(modelId), language);
+}
 
 export function formatNativeModelSwitcherTooltip(args: {
   language?: Language;
@@ -26,13 +31,13 @@ export function formatNativeModelSwitcherTooltip(args: {
   // 模型 id 统一走共享标签表（未登记 id 原样回落）；provider 部分保持原样。
   const modelLine = args.switchedFrom
     ? labels.switched
-        .replace('{shown}', `${args.shownProvider}/${getModelDisplayLabel(args.shownModel ?? '')}`)
-        .replace('{original}', `${args.switchedFrom.provider}/${getModelDisplayLabel(args.switchedFrom.model)}`)
+        .replace('{shown}', `${args.shownProvider}/${shownModelLabel(args.shownModel ?? '', language)}`)
+        .replace('{original}', `${args.switchedFrom.provider}/${shownModelLabel(args.switchedFrom.model, language)}`)
     : args.adaptive
-      ? labels.adaptive.replace('{model}', getModelDisplayLabel(args.currentModel))
+      ? labels.adaptive.replace('{model}', shownModelLabel(args.currentModel, language))
       : args.overridden
-        ? labels.overridden.replace('{model}', `${args.displayProvider}/${getModelDisplayLabel(args.displayModel)}`).replace('{original}', getModelDisplayLabel(args.currentModel))
-        : labels.model.replace('{model}', `${args.displayProvider}/${getModelDisplayLabel(args.displayModel)}`);
+        ? labels.overridden.replace('{model}', `${args.displayProvider}/${shownModelLabel(args.displayModel, language)}`).replace('{original}', shownModelLabel(args.currentModel, language))
+        : labels.model.replace('{model}', `${args.displayProvider}/${shownModelLabel(args.displayModel, language)}`);
   return [
     modelLine,
     args.billingSummary ? labels.billing.replace('{billing}', languages[language].settings.model.models.switcherPanel.billing[args.billingSummary.mode]) : null,
@@ -56,7 +61,9 @@ export function formatExternalModelSwitcherTooltip(args: {
   const labels = languages[language].modelSwitcherTooltip;
   return [
     `${labels.engine}: ${args.engineLabel}`,
-    labels.model.replace('{model}', args.model ?? languages[language].settings.model.models.switcherTooltip.defaultModel),
+    labels.model.replace('{model}', args.model
+      ? getModelDisplayLabel(args.model)
+      : languages[language].settings.model.models.switcherTooltip.defaultModel),
     args.effort ? `${labels.effort}: ${language === 'zh' ? args.effort.shortLabel : args.effort.label}` : null,
     args.reliabilityLabel ? `${labels.service}: ${args.reliabilityLabel}` : null,
   ].filter(Boolean).join(' · ');

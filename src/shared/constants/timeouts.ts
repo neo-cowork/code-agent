@@ -252,6 +252,8 @@ export const BROWSER_TIMEOUTS = {
   /** Reject oversized or malformed owner metadata without an unbounded read. */
   ISOLATED_PROFILE_SWEEP_OWNER_MAX_BYTES: 1_024,
   ISOLATED_PROFILE_SWEEP_WALK_BUDGET: 2_000,
+  /** Minimum idle age before an empty, login-free managed-browser-profile-surface-* dir is reclaimed. */
+  SURFACE_PROFILE_SWEEP_RETENTION: 7 * 24 * 60 * 60_000,
   /** 浏览器操作默认超时 */
   ACTION_DEFAULT: 30_000,
   /** 等待选择器超时 */
@@ -276,6 +278,11 @@ export const BROWSER_TIMEOUTS = {
   PARENT_WATCHDOG_POLL_SEC: 2,
   /** Chrome 父进程看门狗：SIGTERM 之后到 SIGKILL 残留进程的宽限（秒） */
   PARENT_WATCHDOG_KILL_GRACE_SEC: 2,
+  /**
+   * 保留结果页读取 page.content() 的上限。
+   * 回收路径在放回池子之前要等这次读取；页面主线程卡住时不能把清理挂死。
+   */
+  KEPT_RESULT_SNAPSHOT_CAPTURE: 5_000,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
@@ -556,6 +563,8 @@ export const RENDERER_POLLING = {
    * 退避重试到这个次数仍失败，才认定状态确实读不出来。
    */
   BACKGROUND_TASK_READ_FAILURE_THRESHOLD: 3,
+  /** 已交接后台的调用出现后，等后台任务进入渲染端台账的最长时间；超时仍无任务则放回通用信号 */
+  HANDOFF_LEDGER_GRACE: 5_000,
   /** 任务状态同步轮询基础间隔 */
   TASK_SYNC_BASE: 5_000,
   /** 本地桥接健康检查轮询基础间隔 */

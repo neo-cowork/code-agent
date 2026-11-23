@@ -8,6 +8,7 @@ import {
   createScopedSwarmMessageId,
   isSameSwarmRun,
   parseScopedSwarmAgentId,
+  parseSwarmTraceStorageId,
   type SwarmAgentRef,
   type SwarmEvent,
   type SwarmRunRef,
@@ -26,6 +27,7 @@ import type { AgentMessage } from '../agent/messageOrigin';
 import type { SwarmRunDetail } from '../../shared/contract/swarmTrace';
 import { getSwarmServices } from '../agent/swarmServices';
 import { getSwarmEventEmitter } from '../agent/swarmEventPublisher';
+import { cleanDisplayText, resolveSessionWorkspaceRoot } from '../agent/workspacePathDisplay';
 import type { AgentMessageOrigin } from '../agent/messageOrigin';
 import {
   hasSingleSpawnVisibilityAgent,
@@ -424,23 +426,28 @@ export function registerSwarmHandlers(
   ipcHost.handle('swarm:cancel-agent', async (_, payload: SwarmAgentRef) => {
     try {
       const services = getSwarmServices();
-      const scope = resolveAgentScope(payload);
-      if (!scope) return false;
+      // The member view can address a live member by its durable trace key.
+      // Decode the key, then still require the live run and member to match.
+      const traceScope = parseSwarmTraceStorageId(payload.runId);
+      if (traceScope && traceScope.sessionId !== payload.sessionId) return false;
+      const ref = traceScope ? { ...payload, runId: traceScope.runId } : payload;
+      const scope = resolveAgentScope(ref);
+      if (!scope || (traceScope && traceScope.treeId !== scope.treeId)) return false;
       const coordinator = services.parallelCoordinators.get(scope);
-      const cancelledPlanCount = services.planApproval.cancelAgent(payload, 'user-cancel');
+      const cancelledPlanCount = services.planApproval.cancelAgent(ref, 'user-cancel');
       // Do not short-circuit these calls. One logical agent may be represented
       // in both SpawnGuard and the parallel coordinator while an approval is
       // pending, and every waiter/executor must receive the cancellation.
-      const singleSpawn = hasSingleSpawnVisibilityAgent(payload, payload.agentId);
+      const singleSpawn = hasSingleSpawnVisibilityAgent(ref, ref.agentId);
       const spawnCancelled = services.spawnGuard.cancel(
-        payload.agentId,
-        singleSpawn ? undefined : payload,
+        ref.agentId,
+        singleSpawn ? undefined : ref,
       );
-      const coordinatorCancelled = coordinator?.abortTask(payload.agentId) ?? false;
+      const coordinatorCancelled = coordinator?.abortTask(ref.agentId) ?? false;
       const cancelled = cancelledPlanCount > 0 || spawnCancelled || coordinatorCancelled;
 
       if (cancelled) {
-        getSwarmEventEmitter().agentCancelled(scope, payload.agentId, 'Cancelled by user');
+        getSwarmEventEmitter().agentCancelled(scope, ref.agentId, 'Cancelled by user');
       }
 
       return cancelled;
@@ -579,7 +586,19 @@ export function registerSwarmHandlers(
       }
       // runId is an opaque storage identity. Authorization is derived from the
       // stored record, never from parsing or rebuilding the caller-provided id.
-      return detail?.run.sessionId === payload.sessionId ? detail : null;
+      if (detail?.run.sessionId !== payload.sessionId) return null;
+      // 展示收口：dispatchedTask/finalOutput 是成员视图「收到的任务/产出」、
+      // 工作记录与 run 工作台直接渲染的字段，存储保持原样，只在出栈时清洗
+      // （剥注入前缀、丢回放行、绝对路径按会话工作区缩短）。
+      const workspaceRoot = resolveSessionWorkspaceRoot(payload.sessionId);
+      return {
+        ...detail,
+        agents: detail.agents.map((agent) => ({
+          ...agent,
+          dispatchedTask: cleanDisplayText(agent.dispatchedTask, workspaceRoot, 'keep'),
+          finalOutput: cleanDisplayText(agent.finalOutput, workspaceRoot, 'keep'),
+        })),
+      };
     } catch (error) {
       logger.error('swarm:get-trace-run-detail failed', { error: String(error) });
       return null;

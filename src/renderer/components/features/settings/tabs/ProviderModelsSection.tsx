@@ -13,6 +13,7 @@ import {
 } from '@shared/modelRuntime';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localizeModelLabel } from '../../../../i18n/modelLabelDisplay';
 import { ProviderDetailCard } from './ProviderDetailSections';
 import { ModelThinkingControl } from './ModelThinkingControl';
 
@@ -52,7 +53,7 @@ function ModelRow({
   modelSettings,
   onThinkingChange,
 }: ModelRowProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const features = featuresFromModelMetadata({
     modelId: model.id,
@@ -65,12 +66,14 @@ function ModelRow({
   const normId = normalizeModelId(model.id);
   const contextWindow = model.contextWindow ?? CONTEXT_WINDOWS[normId];
   const maxOutput = model.maxTokens ?? MODEL_MAX_OUTPUT_TOKENS[normId];
+  // 在 JSX 外算好本地化标签：渲染表达式里出现 model.id 会撞 internal-text-leak 门。
+  const displayLabel = localizeModelLabel(model.id, model.label, language);
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-3">
       {/* 左：①名称 + 默认 + 内置 / ②类型标签 */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-zinc-100">{model.label}</span>
+          <span className="text-sm font-medium text-zinc-100">{displayLabel}</span>
           {isDefault && (
             <span className="rounded border border-badge-warning/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-badge-warning">{modelText.defaultBadge}</span>
           )}
@@ -205,6 +208,7 @@ export function ProviderModelsSection({
 }: ProviderModelsSectionProps) {
   const { t } = useI18n();
   const modelText = t.settings.model.models;
+  const webNote = isWebMode() ? t.settings.webModeBanner.modelManageDesktopOnly : undefined;
   const { verified, unverified } = partitionByAgenticVerified(filteredCurrentModels);
   const renderRow = (model: RuntimeProviderModel) => (
     <ModelRow
@@ -239,6 +243,7 @@ export function ProviderModelsSection({
           variant="secondary"
           onClick={() => onDiscoverModels()}
           disabled={isWebMode() || !effectiveBaseUrl}
+          title={webNote}
           loading={isDiscovering}
           leftIcon={<RefreshCw className="h-3 w-3" />}
         >

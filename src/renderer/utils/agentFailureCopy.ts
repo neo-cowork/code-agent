@@ -24,5 +24,21 @@ export function agentFailureCopy(code: AgentFailureCode | undefined, t: Translat
 /** Session-work recovery has its own stable reason, distinct from parent-gone. */
 export function backgroundTaskFailureCopy(task: Task, t: Translations): string | null {
   if (task.failure?.reason === 'session_command_task_interrupted_by_restart') return t.backgroundPanel.interrupted;
+  const shellCopy = shellBackgroundTaskFailureCopy(task, t.backgroundPanel);
+  if (shellCopy || isShellBackgroundTask(task)) return shellCopy;
   return agentFailureCopy(isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary);
+}
+
+export function isShellBackgroundTask(task: Pick<Task, 'source'>): boolean {
+  return task.source === 'shell' || task.source === 'pty';
+}
+
+export function shellBackgroundTaskFailureCopy(
+  task: Task,
+  copy: Pick<Translations['backgroundPanel'], 'shellCommandFailed'>,
+): string | null {
+  if (task.failure?.reason === 'shell_command_failed' || (isShellBackgroundTask(task) && (task.status === 'failed' || task.failure))) {
+    return copy.shellCommandFailed;
+  }
+  return null;
 }

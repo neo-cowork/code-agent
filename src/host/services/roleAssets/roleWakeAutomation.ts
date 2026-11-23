@@ -9,6 +9,14 @@ import { roleWakeAutomationId } from '../../../shared/unattendedRunIdentity';
 
 const logger = createLogger('RoleProactivity');
 
+/** 「建议」待过目行的摘要：理由优先作一行摘要，全文为醒来产出摘要（与 cron 行同一 digest 形状）。 */
+function suggestDigest(result: RoleWakeResult): { digest?: { artifactCount: number; summaryLine?: string; summaryText?: string } } {
+  const text = result.summary?.trim();
+  const line = result.rationale?.trim() || text?.split(/\r?\n/).find((l) => l.trim())?.trim();
+  if (!text && !line) return {};
+  return { digest: { artifactCount: 0, ...(line ? { summaryLine: line } : {}), ...(text ? { summaryText: text } : {}) } };
+}
+
 /** Every wake, including one without a source conversation, owns a visible run record. */
 export async function withRoleWakeAutomation(input: {
   sessionId: string; roleId: string; trigger: RoleWakeTrigger; title: string;
@@ -42,16 +50,20 @@ export async function withRoleWakeAutomation(input: {
     const result = await run();
     const silent = result.decision === 'silence';
     const goalFailed = result.advanceGoalStatus === 'aborted';
+    // 「建议」要等用户拍板：落 pending_review 并带 config.pendingReview，进待审收件箱；advance/report 不进。
+    const awaitingUser = result.decision === 'suggest' && !goalFailed;
+    const finishedAt = Date.now();
     await recordEvent({
       automationId,
       event: silent ? 'skipped' : result.advanceGoalStatus === 'met' ? 'stage_ready' : 'completed',
       status: silent ? 'skipped' : goalFailed ? 'failed' : 'completed',
-      recordStatus: silent ? 'skipped' : goalFailed ? 'failed' : 'completed',
+      recordStatus: silent ? 'skipped' : goalFailed ? 'failed' : awaitingUser ? 'pending_review' : 'completed',
       resultSessionId: input.sessionId,
       summary: silent ? '巡检无需行动。' : `[${result.decision}] ${result.summary || '角色醒来产出了新内容'}`,
       eventId: `${automationId}:${result.decision}:${result.advanceGoalStatus ?? 'none'}`,
-      lastRunAt: Date.now(),
+      lastRunAt: finishedAt,
       configPatch: {
+        ...(awaitingUser ? { pendingReview: { resultSessionId: input.sessionId, at: finishedAt, ...suggestDigest(result) } } : {}),
         decision: result.decision, advanceGoalStatus: result.advanceGoalStatus,
         ...(result.rationale ? { rationale: result.rationale } : {}),
         ...(result.evidence ? { evidence: result.evidence } : {}),

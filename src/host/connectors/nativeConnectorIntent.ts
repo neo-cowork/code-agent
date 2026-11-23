@@ -48,9 +48,17 @@ export interface NativeConnectorIntentInput {
 // no other target: a correction cue or a date/time token. Topic changes stop the carry; a unique
 // prior connector is required, so ambiguous multi-connector turns do not guess a target.
 const FOLLOWUP_MAX_CHARS = 80;
-const FOLLOWUP_CUE_RE = /\b(?:make|move|change|reschedule|set|create|add|send|save|try|do|delete|cancel|instead|again|retry|please|okay|ok)\b|改|换|设|建|创|发|存|删|取消|再|重新|吧|帮我/iu;
+// 通用词（add/do/please/ok/okay/吧/帮我）刻意不进 cue：它们命中的短句大多是无关话题
+// （"帮我翻译这句话"/"please summarize this"/"好吧"），继承连接器工具会白打掉前缀缓存。
+const FOLLOWUP_CUE_RE = /\b(?:make|move|change|reschedule|set|create|send|save|try|delete|cancel|instead|again|retry)\b|改|换|设|建|创|发|存|删|取消|再|重新|重试|再试/iu;
 const FOLLOWUP_TIME_RE = /\d\s*(?:[:：]\d|点|時|时|号|日|月|am\b|pm\b|st\b|nd\b|rd\b|th\b)|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d|\bnoon\b|上午|下午|晚上|中午|今晚/iu;
 const OTHER_TARGET_RE = /\b(?:file|folder|report|spreadsheet|document|code|function|website|image|video)\b|文件|文件夹|报告|表格|代码|函数|网页|图片|视频/iu;
+// 整句只是应承（ok/okay/please/好/行/嗯…可带 吧/呀 等语气词与标点）：既不是话题切换也不是纠错。
+// 当前轮是纯应答时仍不继承（上面 FOLLOWUP_CUE_RE 已把通用词除名）；但回溯找上一轮连接器
+// 意图时要跳过它——否则「日历轮 → 好吧 → 改到下午4点」会在应答句上断链，修正句拿不到
+// 连接器工具，改期调用直接 TOOL_DISABLED_FOR_RUN。锚定整句，长句/换题句不会误中。
+// ponytail: 收尾标点只收 , ， . ! ！ 。 ~ ～ ? ？ …；顿号、括号、emoji 不再往里加，是这条白名单的天花板。
+const FOLLOWUP_ACK_RE = /^(?:ok|okay|sure|fine|please|yes|yeah|got it|好|好的|好嘞|行|可以|嗯|嗯嗯|哦|噢|明白|收到|了解|对|是的)(?:吧|呀|啦|哦|噢|诶)?[\s,，.!！。~～?？…]*$/iu;
 
 function isConnectorFollowup(text: string): boolean {
   const trimmed = text.trim();
@@ -77,7 +85,7 @@ function connectorIntent(input: NativeConnectorIntentInput): string[] {
       || (message.source && message.source !== 'user')) continue;
     const prior = explicitConnectorIntent(message.content);
     if (prior.length) return prior.length === 1 ? prior : [];
-    if (!isConnectorFollowup(message.content)) break;
+    if (!isConnectorFollowup(message.content) && !FOLLOWUP_ACK_RE.test(message.content.trim())) break;
   }
   return [];
 }
@@ -85,9 +93,8 @@ function connectorIntent(input: NativeConnectorIntentInput): string[] {
 /**
  * 意图 × 启用 × 就绪 → 连接器工具名（core 工具除外，它们本就常驻）。
  * 无意图命中时零副作用（不触 configService/registry），无关轮次的前缀缓存不受影响。
- * 就绪口径与 cron.ipc / cronMailPoller 一致：unchecked（重启后未探测）仍算可用，
- * failed / unavailable 才排除——已授权用户不该被逼去再点一次。
- * 未启用/未注册只放读工具（见循环内注释）；failed / unavailable 分支不动。
+ * unchecked（重启后未探测）仍算可用。未启用、未注册或 Reminders 授权被拒时，
+ * 只放读工具，让用户拿到对应的连接器指引。
  */
 export function getNativeConnectorToolNamesForIntent(input: NativeConnectorIntentInput): string[] {
   const matched = connectorIntent(input);
@@ -124,7 +131,12 @@ export function getNativeConnectorToolNamesForIntent(input: NativeConnectorInten
       exposeReadToolOnly(connectorId);
       continue;
     }
-    const readiness = connector.getCachedStatus?.().readiness;
+    const status = connector.getCachedStatus?.();
+    const readiness = status?.readiness;
+    if (connectorId === 'reminders' && readiness === 'failed' && status?.errorCode === 'not_authorized') {
+      exposeReadToolOnly(connectorId);
+      continue;
+    }
     if (readiness === 'failed' || readiness === 'unavailable') {
       logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: readiness-${readiness}): ${connectorId}`);
       continue;

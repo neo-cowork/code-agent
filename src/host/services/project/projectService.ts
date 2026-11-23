@@ -10,6 +10,7 @@
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { accessSync, constants as fsConstants } from 'fs';
+import { getAuthService } from '../auth/authService';
 import { getDatabase } from '../core/databaseService';
 import type { ProjectRepository } from '../core/repositories';
 import { getProjectKey } from '../roleAssets/roleAssetPaths';
@@ -18,7 +19,8 @@ import { createLogger } from '../infra/logger';
 import { extractArtifacts } from '../../agent/artifactExtractor';
 import { collectToolArtifactsFromMetadata } from '../../../shared/contract/artifactBlob';
 import type { GoalRunInput } from '../../../shared/contract/appService';
-import type { ToolCall } from '../../../shared/contract/tool';
+import type { ToolCall, ToolResult } from '../../../shared/contract/tool';
+import { attachStoredToolResults } from './projectArtifactMessages';
 import {
   FOLDER_TRUST_CONFIRM_REQUIRED_PREFIX,
   UNSORTED_PROJECT_ID,
@@ -103,6 +105,7 @@ type ProjectArtifactMessage = {
     content?: string;
   }>;
   toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
 };
 
 type ProjectArtifactSession = {
@@ -235,7 +238,7 @@ export function buildProjectArtifacts(
   const seen = new Set<string>();
   const items: ProjectArtifact[] = [];
   for (const session of sessions) {
-    for (const msg of loadMessages(session.id)) {
+    for (const msg of attachStoredToolResults(loadMessages(session.id))) {
       if (msg.role !== 'assistant') continue;
 
       for (const art of msg.artifacts ?? []) {
@@ -664,7 +667,8 @@ export class ProjectService {
   }
 
   listProjectsWithActivity(includeArchived = false, spacesOnly = false): ProjectWithActivity[] {
-    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly);
+    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
+    return this.repo().listProjectsWithActivity(includeArchived, spacesOnly, ownerUserId);
   }
 
   /** 中心视图数据源：project + goals + roles + sessionIds */
