@@ -2,7 +2,7 @@
 // N-FIX-MODEL-PICKER-SHOWS-WRONG-MODEL：输入框模型名必须跟 host 实际调用的模型一致。
 
 import React from 'react';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n';
 import { useStatusStore } from '../../../src/renderer/stores/statusStore';
@@ -97,6 +97,15 @@ afterEach(() => {
 });
 
 describe('ModelSwitcher 显示 host 实际调用的模型', () => {
+  it('keeps the task model in the closed picker until the user opens the unconfigured picker', async () => {
+    installDomainApi({ models: { providers: {} } });
+    await act(async () => { render(<Harness />); });
+
+    expect(trigger().textContent).toMatch(/longcat/i);
+    fireEvent.click(trigger());
+    await waitFor(() => expect(trigger().textContent).toBe(zh.settings.model.models.switcherPanel.configureModel));
+  });
+
   it('loads provider names and duplicate source labels before the picker is ever opened', async () => {
     mocks.hostOverride = { provider: 'custom-tokenrhythm', model: 'mimo-v2.5-pro' };
     const settings = { models: { providers: {

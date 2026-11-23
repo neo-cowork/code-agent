@@ -161,6 +161,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [hasLoadedPickerSettings, setHasLoadedPickerSettings] = useState(false);
   const { t, language } = useI18n();
   const modelText = t.settings.model.models;
   const panelText = modelText.switcherPanel;
@@ -214,7 +215,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   );
   const showModelSettingsPrompt = shouldShowModelSettingsPrompt(
     engine.kind,
-    modelSettings,
+    hasLoadedPickerSettings ? modelSettings : null,
     nativeHasConfiguredModels,
   );
   const displayModel = overrideModel || hostModel?.model || currentModel;
@@ -271,14 +272,17 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       setSettingsLoaded(true);
       return;
     }
+    let active = true;
     api.invoke<AppSettings>(IPC_DOMAINS.SETTINGS, 'get', {})
       .then((res) => {
-        if (res?.success && res.data) {
+        if (active && res?.success && res.data) {
           setModelSettings(res.data);
+          if (open) setHasLoadedPickerSettings(true);
         }
       })
       .catch(() => { /* 设置读取失败时保留内置模型列表兜底 */ })
-      .finally(() => setSettingsLoaded(true));
+      .finally(() => { if (active) setSettingsLoaded(true); });
+    return () => { active = false; };
   }, [open]);
   useEffect(() => {
     const domainAPI = window.domainAPI;
