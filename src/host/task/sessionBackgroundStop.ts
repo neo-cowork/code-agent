@@ -13,11 +13,13 @@ interface SessionBackgroundStopInput {
   backgroundRuns: ReadonlyMap<string, BackgroundTaskRun>;
   cancelBackgroundTask: (taskId: string) => Promise<boolean>;
   settleWaitMs?: number;
+  persistUserStop?: boolean;
 }
 
-/** 调用返回时所有 abort 已经发出；返回的 promise 在全部收线或超时后 resolve（永不 reject）。 */
+/** 调用返回时所有 abort 已经发出；返回的 promise 等用户停止写入，并限时等收线（永不 reject）。 */
 export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Promise<void> {
   const pending = new Map<string, Promise<unknown>>();
+  const persistence: Promise<void>[] = [];
 
   // detached/adopted spawn_agent 子代理登记在 SpawnGuard（不在 backgroundRuns/registry 的 abort 里）：
   // 与桌面 agentAppService.cancel 同款扇出，先放审批等待再 abort，避免审批挂住的子代理拖死收线。
@@ -51,8 +53,10 @@ export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Pr
     }
   }
   try {
-    for (const { agentId, settled } of getBackgroundSubagentRegistry().cancelSession(input.sessionId)) {
+    for (const { agentId, settled, persisted } of getBackgroundSubagentRegistry()
+      .cancelSession(input.sessionId, input.persistUserStop)) {
       pending.set(agentId, settled);
+      persistence.push(persisted);
     }
   } catch (error) {
     logger.warn('Background subagent cancel failed on session stop', {
@@ -84,5 +88,7 @@ export function stopSessionBackgroundWork(input: SessionBackgroundStopInput): Pr
         taskIds: [...unsettled],
       });
     }
-  }).finally(() => clearTimeout(timer));
+  }).finally(() => clearTimeout(timer)).then(async () => {
+    await Promise.allSettled(persistence);
+  });
 }
