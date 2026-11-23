@@ -229,7 +229,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
-    stepCount: terminal
+    stepCount: terminal && !incomplete
       ? completedStepCount(task.progress?.lastToolStep, task.progress?.current)
       : undefined,
     outputs: task.outputRefs.flatMap((ref) => {

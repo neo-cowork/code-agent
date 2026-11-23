@@ -660,6 +660,7 @@ it.each([
     title: '已完成删除 / Deleted all files',
     failure: { reason: BACKGROUND_TASK_DELETE_INCOMPLETE, message: 'rm output' },
     leftoverPaths: ['/temporary/exports/export.csv'],
+    progress: { current: 1 },
   })];
   const failed = renderCall();
   expect(failed.getByTestId('delegation-headline').textContent).toBe(`export.csv · ${incomplete}`);
