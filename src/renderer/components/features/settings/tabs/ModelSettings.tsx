@@ -999,21 +999,25 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
                   }}
                 />
               )}
-
-              <ProviderSaveBar
-                dirty={providerFormDirty}
-                apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, hasApiKey)}
-                saving={isSaving}
-                disabled={isWebMode()}
-                disabledTitle={webNote}
-                providerTitle={providerTitle}
-                onSave={handleSave}
-              />
             </>
           )}
         </div>
       </div>
       </SettingsSection>
+
+      {/* 吸底的包含块必须从视口内开始。窄屏下列表面板叠在表单上方，
+          表单列的顶边会落到折叠线附近，sticky 拉不出那一列。 */}
+      {!isAddingProvider && (
+        <ProviderSaveBar
+          dirty={providerFormDirty}
+          apiKeyUnsaved={isStagedApiKeyUnsaved(currentProviderConfig, needsApiKey, hasApiKey)}
+          saving={isSaving}
+          disabled={isWebMode()}
+          disabledTitle={webNote}
+          providerTitle={providerTitle}
+          onSave={handleSave}
+        />
+      )}
 
       <ProviderDoctorDialog
         isOpen={isDoctorOpen}
