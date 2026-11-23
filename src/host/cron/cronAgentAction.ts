@@ -120,7 +120,7 @@ export async function executeCronAgentAction(
       ...(connectorPrecheck.message ? { probeError: connectorPrecheck.message } : {}),
       waitMs: connectorPrecheck.waitMs,
     });
-  } else if (connectorPrecheck.kind === 'lost') {
+  } else if (connectorPrecheck.kind === 'lost' && definition.scheduleType !== 'at') {
     await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
     const skipReason = `connector_lost:${connectorPrecheck.ids.join(',')}`;
     logger.warn('Cron run skipped because a core CLI connector is signed out', {
@@ -130,6 +130,14 @@ export async function executeCronAgentAction(
       skipReason,
     });
     return { skipped: true, status: 'skipped', skipReason };
+  } else if (connectorPrecheck.kind === 'lost') {
+    // 一次性任务跑完就会停用。跳过它会留下「重新连接后会继续」，但任务已经没了。
+    logger.warn('One-time cron run continues despite a signed-out core CLI connector', {
+      jobId: definition.id,
+      roleId: action.roleId,
+      connectorIds: connectorPrecheck.ids,
+    });
+    await recordCronConnectorLost(definition, connectorPrecheck.ids, () => Date.now());
   }
   // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
   const { getTaskManager } = await import('../task');

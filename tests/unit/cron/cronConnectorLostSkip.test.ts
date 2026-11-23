@@ -343,6 +343,27 @@ describe('executeCronAgentAction connector-lost skip', () => {
     );
   });
 
+  it('一次性任务在核心 CLI 未登录时仍建会话并调模型，不返回跳过', async () => {
+    probeImpl = async () => {
+      lostFeishu();
+    };
+    const job = definition('job-at', 'feishu-expert');
+    job.scheduleType = 'at';
+    job.schedule = { type: 'at', datetime: '2031-09-01T09:00:00' };
+    const result = await executeCronAgentAction(host, job, actionOf(job), 'exec-at');
+    expect(result).toEqual(expect.objectContaining({ sessionId: 'cron-session-1' }));
+    expect(result).not.toEqual(expect.objectContaining({ status: 'skipped' }));
+    expect(agentState.createSession).toHaveBeenCalledTimes(1);
+    expect(agentState.sendMessage).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'One-time cron run continues despite a signed-out core CLI connector',
+      expect.objectContaining({ jobId: 'job-at', connectorIds: ['feishu'] }),
+    );
+    expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: expect.stringMatching(/^connector_lost:feishu:\d{4}-\d{2}-\d{2}$/),
+    }));
+  });
+
   it('心跳窗外先返回，不探测连接器', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 0, 1, 3, 0, 0));
@@ -426,5 +447,22 @@ describe('CronService.triggerJob connector-lost skip', () => {
     expect(resumed?.result).not.toEqual(expect.objectContaining({ skipped: true }));
     expect(agentState.createSession).toHaveBeenCalledTimes(1);
     expect(agentState.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('一次性任务未登录时照常跑完并停用，不留下还会继续的跳过', async () => {
+    probeImpl = async () => {
+      lostFeishu();
+    };
+    const job = definition('job-at-service', 'feishu-expert');
+    job.scheduleType = 'at';
+    job.schedule = { type: 'at', datetime: '2031-09-01T09:00:00' };
+    const service = serviceFor(job);
+    const execution = await service.triggerJob(job.id);
+    expect(execution?.status).toBe('completed');
+    expect(execution?.sessionId).toBe('cron-session-1');
+    expect(execution?.result).toEqual(expect.objectContaining({ sessionId: 'cron-session-1' }));
+    expect(execution?.result).not.toEqual(expect.objectContaining({ status: 'skipped' }));
+    expect(service.getJob(job.id)?.enabled).toBe(false);
+    expect(agentState.createSession).toHaveBeenCalledTimes(1);
   });
 });
