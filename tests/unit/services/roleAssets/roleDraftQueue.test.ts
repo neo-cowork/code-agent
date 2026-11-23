@@ -8,6 +8,20 @@ import * as path from 'path';
 import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const cadenceMocks = vi.hoisted(() => ({
+  getMessages: vi.fn(),
+  write: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({ getMessages: cadenceMocks.getMessages }),
+}));
+
+vi.mock('../../../../src/host/services/roleAssets/roleProactivityWrite', () => ({
+  writeRoleProactivityConfig: cadenceMocks.write,
+}));
+
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
   getUserConfigDir: () => mockConfigDir.dir,
@@ -15,7 +29,7 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: cadenceMocks.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 // 首次醒来：confirm 钩子只入队不等待；这里用 fake enqueue 观察调用（不真跑 run）
@@ -45,6 +59,8 @@ describe('roleDraftQueue', () => {
   beforeEach(async () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-draft-'));
     vi.clearAllMocks();
+    cadenceMocks.getMessages.mockReset().mockResolvedValue([]);
+    cadenceMocks.write.mockReset().mockResolvedValue({ proactivity: { level: 'daily' } });
   });
 
   afterEach(async () => {
@@ -162,6 +178,70 @@ describe('roleDraftQueue', () => {
   });
 
   describe('confirmRoleDraft', () => {
+    const morningRole = {
+      roleId: '晨间巡检',
+      description: '巡检日历和邮箱',
+      systemPrompt: '查看日历和邮箱',
+      sessionId: 'authoring-session',
+    };
+
+    it('schedules 每天早上 9 点 at the default daily cadence using the latest real match', async () => {
+      cadenceMocks.getMessages.mockResolvedValue([
+        { role: 'user', content: '每天晚上 8 点替我看日历' },
+        { role: 'user', content: '每天早上 9 点替我看一遍日历和邮箱' },
+        { role: 'user', content: '简报越短越好' },
+        { role: 'assistant', content: '每天早上 7 点' },
+        { role: 'user', content: '每天早上 6 点', isMeta: true },
+        { role: 'user', content: '每天早上 5 点', visibility: 'rewound' },
+      ]);
+      const { draft } = await enqueueRoleDraft(morningRole);
+      expect(cadenceMocks.write).not.toHaveBeenCalled();
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.getMessages).toHaveBeenCalledWith('authoring-session');
+      expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', { level: 'daily' });
+    });
+
+    it.each([
+      ['no time', '帮我看一遍日历和邮箱', '查看日历和邮箱'],
+      ['model-only 默认每天 9 点', '帮我看一遍日历和邮箱', '默认每天 9 点查看日历和邮箱'],
+      ['bare clock', '整理下午3点的会议', '查看日历'],
+      ['weekly', '每周一 9 点查看日历', '查看日历'],
+      ['weekdays', '工作日 9 点查看日历', '查看日历'],
+      ['weekdays mixed with a daily marker', '工作日每天早上 9 点查看日历', '查看日历'],
+    ])('keeps the silent default for %s', async (_case, content, systemPrompt) => {
+      cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content }]);
+      const { draft } = await enqueueRoleDraft({ ...morningRole, systemPrompt });
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).not.toHaveBeenCalled();
+    });
+
+    it('confirms even if reading the cadence source fails', async () => {
+      cadenceMocks.getMessages.mockRejectedValue(new Error('read failed'));
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).not.toHaveBeenCalled();
+      expect(cadenceMocks.warn).toHaveBeenCalledWith(
+        'Role draft cadence session read failed (install unaffected)',
+        expect.objectContaining({ error: 'Error: read failed' }),
+      );
+    });
+
+    it('confirms even if saving the cadence fails', async () => {
+      cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content: 'every morning at 9' }]);
+      cadenceMocks.write.mockRejectedValue(new Error('write failed'));
+      const { draft } = await enqueueRoleDraft(morningRole);
+
+      expect((await confirmRoleDraft(draft!.id)).success).toBe(true);
+      expect(cadenceMocks.write).toHaveBeenCalledExactlyOnceWith('晨间巡检', { level: 'daily' });
+      expect(cadenceMocks.warn).toHaveBeenCalledWith(
+        'Role draft cadence settings write failed (install unaffected)',
+        expect.objectContaining({ error: 'Error: write failed' }),
+      );
+    });
+
     it('确认 → 写 agents/<id>.md + 建 roles/<id>/ + 删草稿', async () => {
       const { draft } = await enqueueRoleDraft({
         roleId: '产品经理',
@@ -282,6 +362,7 @@ describe('roleDraftQueue', () => {
     });
 
     it('confirm 覆盖 agents/<id>.md 定义，但绝不动 roles/<id>/ 记忆与履历', async () => {
+      cadenceMocks.getMessages.mockResolvedValue([{ role: 'user', content: '改成每天早上 9 点' }]);
       // 预置一个真实存在的持久化角色：旧定义 + 用户积累的记忆 + 履历
       await fs.mkdir(agentsDir(), { recursive: true });
       await fs.writeFile(path.join(agentsDir(), '研究员.md'), 'OLD DEFINITION', 'utf-8');
@@ -304,6 +385,9 @@ describe('roleDraftQueue', () => {
       expect(draft).not.toBeNull();
       const result = await confirmRoleDraft(draft!.id);
       expect(result.success).toBe(true);
+
+      expect(cadenceMocks.getMessages).not.toHaveBeenCalled();
+      expect(cadenceMocks.write).not.toHaveBeenCalled();
 
       // 定义被覆盖为新内容
       const newDef = await fs.readFile(path.join(agentsDir(), '研究员.md'), 'utf-8');

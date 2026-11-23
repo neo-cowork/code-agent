@@ -8,6 +8,12 @@ import * as path from 'path';
 import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+const writeRoleCadence = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../src/host/services/roleAssets/roleProactivityWrite', () => ({
+  writeRoleProactivityConfig: writeRoleCadence,
+}));
+
 const sessionState = vi.hoisted(() => ({
   messages: [] as Array<{ id: string; role: 'user' | 'assistant' | 'system' | 'tool'; content: string; timestamp: number; isMeta?: boolean }>,
   origin: undefined as undefined | { kind: string },
@@ -95,6 +101,7 @@ describe('propose_role tool', () => {
     sessionState.unattended = false;
     sessionState.others = {};
     firstWake.enqueue.mockClear();
+    writeRoleCadence.mockReset().mockResolvedValue({ proactivity: { level: 'daily' } });
     toolExecutorState.config = undefined;
   });
   afterEach(async () => {
@@ -124,8 +131,8 @@ describe('propose_role tool', () => {
     expect(event.data.drafts[0].tools).toEqual(['WebSearch', 'WebFetch']);
   });
 
-  it('明确直接创建：安装角色、建资产、入队首醒、无待确认草稿并发完成事件', async () => {
-    setLatestUser('创建一个专家，名字叫「日历助理」，职责：每天帮我盯日程。直接创建，不用再问我问题。');
+  it('明确直接创建：安装角色、设置每天晚上 8 点、建资产、入队首醒、无待确认草稿并发完成事件', async () => {
+    setLatestUser('创建一个专家，名字叫「日历助理」，职责：每天晚上 8 点帮我盯日程。直接创建，不用再问我问题。');
     const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
     const result = await handler.execute(
@@ -153,6 +160,10 @@ describe('propose_role tool', () => {
     expect(await exists(path.join(mockConfigDir.dir, 'agents', '日历助理.md'))).toBe(true);
     expect(await exists(path.join(mockConfigDir.dir, 'roles', '日历助理', 'MEMORY.md'))).toBe(true);
     expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts')).catch(() => [])).toEqual([]);
+    expect(writeRoleCadence).toHaveBeenCalledExactlyOnceWith('日历助理', {
+      level: 'daily',
+      cadence: '0 0 20 * * *',
+    });
     expect(firstWake.enqueue).toHaveBeenCalledWith('日历助理');
     expect(ctx.emit).toHaveBeenCalledWith({
       type: 'role_created_direct',

@@ -8,7 +8,7 @@ import { localCronTimezone } from './localTimezone';
 import type { TemplateCopy } from '../../../i18n/cronWatchTemplateCopy';
 import { cronCenterEn } from '../../../i18n/cronCenter';
 import { enAgentPrompt, enTagsText, enUnregisteredCopy } from './cronTemplatesEn';
-import { parseSchedulePeriodWords } from './schedulePeriodWords';
+import { parseSchedulePeriodWords } from '@shared/utils/schedulePeriodWords';
 
 /** 模板草稿的语言档：zh 为存量行为；en 的 name/description 取 cronCenter.templates 英文词条，agentPrompt 取 cronTemplatesEn。 */
 type CronTemplateLanguage = 'zh' | 'en';

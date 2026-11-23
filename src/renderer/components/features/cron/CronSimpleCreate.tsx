@@ -37,7 +37,7 @@ import { stashCronEditorDraft } from './cronEditorDraftStash';
 import { openCloudCronSettings } from '../../../utils/cronCloudSettingsNavigation';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { PendingRoutineRestate } from './PendingRoutineRestate';
-import { parseSchedulePeriodWords } from './schedulePeriodWords';
+import { parseSchedulePeriodWords } from '@shared/utils/schedulePeriodWords';
 import { usePendingRoutineGate, type PendingRoutineSave } from './usePendingRoutineGate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';

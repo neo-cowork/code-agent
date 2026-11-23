@@ -14,7 +14,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getUserConfigDir, getAgentsMdDir } from '../../config/configPaths';
-import { ROLE_ASSETS } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
+import type { Message } from '../../../shared/contract';
+import { parseSchedulePeriodWords } from '../../../shared/utils/schedulePeriodWords';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import { scanSkillContent } from '../../security/skillContentGuard';
 import { createLogger } from '../infra/logger';
@@ -277,6 +279,40 @@ export async function enqueueRoleDraft(input: RoleDraftInput): Promise<EnqueueRo
   return { draft: prepared.draft };
 }
 
+const EXPLICIT_DAILY_MARKER = /每天|每日|每早|每晚|每夜|\b(?:every\s+(?:day|morning|night|evening)|daily|nightly)\b/i;
+
+async function applyInitialDailyCadence({ roleId, sessionId }: RoleDraftMeta): Promise<void> {
+  let messages: Message[];
+  try {
+    const { getSessionManager } = await import('../infra/sessionManager');
+    messages = await getSessionManager().getMessages(sessionId);
+  } catch (error) {
+    logger.warn('Role draft cadence session read failed (install unaffected)', { roleId, sessionId, error: String(error) });
+    return;
+  }
+
+  for (const message of [...messages].reverse()) {
+    if (message.role !== 'user' || message.isMeta || message.visibility === 'rewound') continue;
+    if (!EXPLICIT_DAILY_MARKER.test(message.content)) continue;
+    const schedule = parseSchedulePeriodWords(message.content);
+    if (!schedule?.time || schedule.freq) continue;
+
+    const [hour, minute] = schedule.time.split(':').map(Number);
+    const cron = `0 ${minute} ${hour} * * *`;
+    try {
+      const { writeRoleProactivityConfig } = await import('./roleProactivityWrite');
+      await writeRoleProactivityConfig(roleId, {
+        level: 'daily',
+        ...(cron === ROLE_PROACTIVITY.DAILY_BRIEF_CRON ? {} : { cadence: cron }),
+      });
+      logger.info('Role draft daily cadence saved', { roleId, sessionId, cron });
+    } catch (error) {
+      logger.warn('Role draft cadence settings write failed (install unaffected)', { roleId, sessionId, error: String(error) });
+    }
+    return;
+  }
+}
+
 /**
  * 安装已校验形状的角色定义。确认 IPC 与直接创建共用这一条安全/落盘路径。
  */
@@ -348,6 +384,7 @@ export async function installRoleDraft(
     // 新建角色 → 入队一次「首次醒来」（只读介绍 + 可委托建议）。改已有不入队。
     // 入队失败绝不把一次成功的 confirm 变成失败——只记日志。
     if (!isEdit) {
+      await applyInitialDailyCadence(meta);
       try {
         const { enqueueFirstWake } = await import('./roleFirstWake');
         const firstWake = await enqueueFirstWake(meta.roleId);
