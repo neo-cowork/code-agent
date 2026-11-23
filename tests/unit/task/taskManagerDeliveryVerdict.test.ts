@@ -90,7 +90,7 @@ function artifact(artifactId: string, path: string, role = 'deliverable') {
 }
 
 function messages(input: {
-  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; command?: string; failedOutput?: string; artifact?: ReturnType<typeof artifact> }>;
+  calls: Array<{ id: string; name: string; success: boolean; hostCode?: string; command?: string; failedOutput?: string; workspace?: string; artifact?: ReturnType<typeof artifact> }>;
   conclusion: string;
 }): Message[] {
   return [
@@ -116,7 +116,7 @@ function messages(input: {
         ...(call.success ? { output: 'ok' } : { error: 'save failed' }),
         ...(call.artifact ? { metadata: { artifact: call.artifact } } : {}),
         ...(call.hostCode ? { metadata: { hostReason: { code: call.hostCode } } } : {}),
-        ...(call.failedOutput !== undefined ? { metadata: { code: 'COMMAND_FAILED', output: call.failedOutput } } : {}),
+        ...(call.failedOutput !== undefined ? { metadata: { code: 'COMMAND_FAILED', output: call.failedOutput, ...(call.workspace ? { writeIsolation: { kind: 'workspace', targetPath: call.workspace } } : {}) } } : {}),
       })),
     },
     { id: 'assistant-final', role: 'assistant', content: input.conclusion, timestamp: 3 },
@@ -353,6 +353,15 @@ describe('TaskManager background delivery verdict', () => {
     }));
     expect(event.type).toBe('task_error');
     expect((event.data as EventData).error).toBe('后台任务没能完成：命令 ./check.sh 没有运行成功（missing: brief.pdf），已停止。');
+  });
+
+  it('shows the workspace as ./ from the result write root when the session has no working directory', async () => {
+    const event = await runBackgroundTask(messages({
+      calls: [{ id: 'bash-1', name: 'Bash', success: false, command: 'cd /Users/someone/proj/ws; sh check.sh', failedOutput: 'missing: brief.pdf', workspace: '/Users/someone/proj/ws' }],
+      conclusion: 'done',
+    }));
+    expect(event.type).toBe('task_error');
+    expect((event.data as EventData).error).toBe('后台任务没能完成：命令 cd ./; sh check.sh 没有运行成功（missing: brief.pdf），已停止。');
   });
 
   it('keeps a failed Bash completed when a later non-probe Bash succeeded', async () => {

@@ -126,7 +126,14 @@ export function describeFailedCommand(
   }
   if (!failed) return undefined;
   const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
-  const show = (text: string) => shortenDisplayPaths(text, workspaceRoot);
+  // 会话没带工作目录时（web），退回 Bash 结果自带的写入根——那就是这条命令实际跑的工作区。
+  const isolation = failed.result.metadata?.writeIsolation as { targetPath?: unknown } | undefined;
+  const root = workspaceRoot ?? (typeof isolation?.targetPath === 'string' ? isolation.targetPath : undefined);
+  // 路径匹配会把紧贴的 ; & | 一起吞掉（`cd /ws;`），按词剥掉尾部分隔符再缩路径。
+  const show = (text: string) => text.split(/(\s+)/).map((token) => {
+    const [, body = token, tail = ''] = token.match(/^(.*?)([;&|]+)$/) ?? [];
+    return shortenDisplayPaths(body, root) + tail;
+  }).join('');
   const output = typeof failed.result.metadata?.output === 'string' ? failed.result.metadata.output : '';
   const reasonLine = output.split('\n').map((line) => line.trim()).find(Boolean);
   return formatSessionTaskCommandFailed(
