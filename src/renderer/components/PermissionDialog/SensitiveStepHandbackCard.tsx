@@ -21,6 +21,7 @@ type HandbackPhase = 'asking' | 'waiting' | 'done' | 'skipped';
 
 interface SensitiveStepHandbackCardProps {
   request: PermissionRequest;
+  requesterLine?: string;
   /** 'once' → 一次性 allow（完成后继续）；'deny' → 拒绝（这步不做了）。走 PermissionCard 既有投递链。 */
   onRespond: (level: 'once' | 'deny') => void;
   onCollapse?: () => void;
@@ -43,6 +44,7 @@ function sensitiveStepBody(
 
 export const SensitiveStepHandbackCard: React.FC<SensitiveStepHandbackCardProps> = ({
   request,
+  requesterLine,
   onRespond,
   onCollapse,
 }) => {
@@ -78,6 +80,7 @@ export const SensitiveStepHandbackCard: React.FC<SensitiveStepHandbackCardProps>
       tone="amber"
       icon={<Hand size={20} />}
       title={copy.title}
+      headerLine={requesterLine}
       question={question}
       details={phase === 'waiting' ? (
         <p className="text-xs leading-5 text-zinc-400" data-testid="sensitive-step-waiting-hint">

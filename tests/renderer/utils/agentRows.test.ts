@@ -2,6 +2,7 @@
 // agentRows 单测（N-L6-AGENTVIEW）：九态→四态全表 + 三源合并去重
 // ============================================================================
 import { afterEach, describe, expect, it } from 'vitest';
+import { createSingleSpawnRunId, createSwarmTraceStorageId } from '../../../src/shared/contract/swarm';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import type { LastToolStep, Task } from '../../../src/shared/contract/backgroundTask';
@@ -102,6 +103,27 @@ describe('buildAgentRows 三源合并去重', () => {
     });
     expect(rows[0]).not.toHaveProperty('activity');
     expect(rows[0].node?.id).toBe('researcher');
+  });
+
+  it.each([
+    ['zh', '市场组调研员', '调研员'],
+    ['en', 'Market research lead', 'Researcher'],
+  ] as const)('keeps the background Team instance name and localizes a standalone spawn (%s)', (language, teamName, standaloneName) => {
+    useAppStore.setState({ language });
+    const key = 'researcher';
+    const rowsForRun = (runId: string) => buildAgentRows({
+      members: [member({
+        key, roleId: 'explore', name: '市场组调研员', displayName: teamName,
+        record: { runId: createSwarmTraceStorageId({ sessionId: 'session-1', runId, treeId: 'team-tree' }) },
+      })],
+      nodes: [node({ id: key, role: 'explore', background: true })],
+      tasks: [],
+    });
+
+    const teamRow = rowsForRun('team-run')[0];
+    expect(teamRow.displayName ?? teamRow.name).toBe(teamName);
+    const standaloneRow = rowsForRun(createSingleSpawnRunId(key))[0];
+    expect(standaloneRow.displayName ?? standaloneRow.name).toBe(standaloneName);
   });
 
   it('普通节点成 kind agent 行，状态走九态表', () => {

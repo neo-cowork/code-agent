@@ -135,7 +135,7 @@ function getOnboardingEngineStatus(
       if (source.authState === 'needs_login') {
         return {
           detail: s.cliNeedsLoginUnverifiedDetail,
-          badge: s.badgeNeedsLogin,
+          badge: s.badgeComingSoon,
         };
       }
       return {
