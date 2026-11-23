@@ -496,3 +496,24 @@ export interface CrossSessionSearchResults {
   /** Sessions whose title contains the query (non-archived); optional for older hosts */
   titleMatches?: CrossSessionSearchTitleMatch[];
 }
+
+/** Reopen a kept result page by navigating to its URL, or by showing the saved HTML. */
+export type KeptResultReopenMode = 'url' | 'snapshot';
+
+export type KeptResultPageReason = 'keep_result_page' | 'takeover';
+
+/**
+ * getKeptResultPage view. The `none` state is unchanged (no reopenMode).
+ * `snapshotHtml` is included only when the request sets includeSnapshot;
+ * the 30-second poll must not receive the HTML.
+ */
+export type KeptResultPageSnapshot =
+  | { state: 'none'; url: null; title: null; reason: null }
+  | {
+      state: 'kept' | 'closed';
+      url: string;
+      title: string;
+      reason: KeptResultPageReason;
+      reopenMode: KeptResultReopenMode;
+      snapshotHtml?: string;
+    };

@@ -39,6 +39,7 @@ import {
 import { getShellPathDiagnostics } from '../../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { findChangedOfficeFiles, snapshotOfficeFiles } from './newOfficeFiles';
 import { createEvalSafeShellEnv } from './evalSafeShellEnv';
 import { truncateMiddleErrorAware } from '../../../utils/truncate';
 import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolResultSpill';
@@ -534,7 +535,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: false,
           error: `Failed to create PTY session: ${error instanceof Error ? error.message : String(error)}`,
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
 
@@ -543,7 +544,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         return {
           ok: false,
           error: result.error || 'Failed to create PTY session',
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
 
@@ -553,7 +554,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error: 'PTY session started without a session id',
-            code: 'FS_ERROR',
+            code: 'COMMAND_FAILED',
           };
         }
         const output = await getPtySessionOutput(sessionId, true, timeout);
@@ -561,7 +562,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error: 'PTY session ended unexpectedly',
-            code: 'FS_ERROR',
+            code: 'COMMAND_FAILED',
           };
         }
 
@@ -595,7 +596,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           ok: false,
           // 把命令输出折进模型可见的 error（meta.output 不会被 messageProcessor 读到）
           error: appendFailureDiagnostics(failureMessage, diagnostics),
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
           meta: { ...meta, output: outputText },
         };
       }
@@ -675,7 +676,7 @@ Use process_kill to terminate the session.`;
         return {
           ok: false,
           error: `Failed to start background task: ${error instanceof Error ? error.message : String(error)}`,
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
       if (!result.success) {
@@ -688,7 +689,7 @@ Use process_kill to terminate the session.`;
         return {
           ok: false,
           error: appendFailureDiagnostics(message, diagnostics),
-          code: 'FS_ERROR',
+          code: 'COMMAND_FAILED',
         };
       }
 
@@ -933,6 +934,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       // 并行：生成动态描述（不阻塞命令执行）
       const descriptionPromise = generateBashDescription(normalizedCommand).catch(() => null);
 
+      const officeBefore = await snapshotOfficeFiles(workingDirectory).catch(() => null);
       const foregroundResult = await runForegroundAttempt();
 
       if (foregroundResult.handover) {
@@ -975,6 +977,13 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
 
       const cwdPrefix = `[cwd: ${workingDirectory}]\n`;
 
+      const changedOffice = officeBefore
+        ? await findChangedOfficeFiles(workingDirectory, officeBefore).catch(() => [])
+        : [];
+      const officeArtifacts = await Promise.all(
+        changedOffice.map((file) => createFileArtifact(file, schema.name, ctx, { role: 'deliverable' })),
+      );
+
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('Bash done', { command: normalizedCommand.slice(0, 80), hasStderr: !!stderr });
 
@@ -1002,6 +1011,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             preview: output.slice(0, 500),
             metadata: { cwd: workingDirectory, command: normalizedCommand.slice(0, 200) },
           }),
+          ...(officeArtifacts.length > 0 ? { artifacts: officeArtifacts } : {}),
         },
       };
     } catch (error: unknown) {
@@ -1067,7 +1077,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       return {
         ok: false,
         error: withEscalation(withDiagnostics(withOutput(errMsg || 'Command execution failed'))),
-        code: 'FS_ERROR',
+        code: 'COMMAND_FAILED',
         meta: { ...buildSandboxMeta(sandboxDecision), ...(ctx.approvedSandboxWriteFile && sandboxDecision.sandboxed && sandboxDeniedWritePath([errMsg, String(errObj.stdout || ''), String(errObj.stderr || '')].join('\n')) ? { failureCode: SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } : {}), ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}), ...(errorOutput ? { output: errorOutput } : {}), shellPath: shellPathMeta },
       };
     } finally {

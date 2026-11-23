@@ -60,6 +60,8 @@ export interface BackgroundSubagentHandle {
 interface BackgroundSubagentEntry extends BackgroundSubagentHandle {
   /** 用户 Stop 已对该 run 发出 abort：之后收线（哪怕返回空输出的「成功」）都是取消，不是「没有结论就停下」。 */
   cancelRequested?: boolean;
+  durableSession: Promise<BackgroundSubagentDurableLedger> | null;
+  userStopPersisted?: Promise<void>;
   /** 后台 run 的 promise——await(agentId) 复用它，不重复触发。 */
   done: Promise<SubagentResult | undefined>;
   /** 运行中快照，只给 durable 账本；不进 getStatus/list。 */
@@ -125,7 +127,6 @@ export class BackgroundSubagentRegistry {
       ...options,
       agentId,
       startedAt,
-      durableSession,
     });
 
     this.entries.set(agentId, {
@@ -133,6 +134,7 @@ export class BackgroundSubagentRegistry {
       status: 'running',
       startedAt,
       done,
+      durableSession,
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       ...(options.runId ? { runId: options.runId } : {}),
       ...(options.treeId ? { treeId: options.treeId } : {}),
@@ -152,22 +154,52 @@ export class BackgroundSubagentRegistry {
    * 用户 Stop：同步触发该会话所有运行中后台 subagent 的 abort（逐个 try/catch，不 await），
    * 返回各自的收线 promise 供调用方限时等待。
    */
-  cancelSession(sessionId: string): Array<{ agentId: string; settled: Promise<unknown> }> {
-    const fired: Array<{ agentId: string; settled: Promise<unknown> }> = [];
+  cancelSession(sessionId: string, persistUserStop = true): Array<{
+    agentId: string;
+    settled: Promise<unknown>;
+    persisted: Promise<void>;
+  }> {
+    const fired = [];
     for (const entry of this.entries.values()) {
       if (entry.sessionId !== sessionId || entry.status !== 'running' || !entry.abort) continue;
-      entry.cancelRequested = true;
-      try {
-        entry.abort();
-      } catch (error) {
-        logger.warn('Background subagent abort threw on session stop', {
-          agentId: entry.agentId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-      fired.push({ agentId: entry.agentId, settled: entry.done });
+      const persisted = this.requestStop(entry, persistUserStop);
+      fired.push({
+        agentId: entry.agentId,
+        settled: Promise.all([entry.done, persisted]),
+        persisted,
+      });
     }
     return fired;
+  }
+
+  /** The per-member UI stop shares the durable write with session Stop. */
+  async persistAgentUserStop(agentId: string, sessionId?: string): Promise<void> {
+    const entry = this.entries.get(agentId);
+    if (entry?.status !== 'running' || (sessionId && entry.sessionId !== sessionId)) return;
+    entry.cancelRequested = true;
+    await this.persistUserStop(entry);
+  }
+
+  private requestStop(entry: BackgroundSubagentEntry, persistUserStop: boolean): Promise<void> {
+    entry.cancelRequested = true;
+    const persisted = persistUserStop ? this.persistUserStop(entry) : Promise.resolve();
+    try {
+      entry.abort?.();
+    } catch (error) {
+      logger.warn('Background subagent abort threw on session stop', {
+        agentId: entry.agentId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return persisted;
+  }
+
+  private persistUserStop(entry: BackgroundSubagentEntry): Promise<void> {
+    return entry.userStopPersisted ??= Promise.resolve(entry.durableSession)
+      .then((ledger) => ledger?.noteUserStop(entry.agentId))
+      .catch((error: unknown) => {
+        logger.warn('Background subagent user stop persistence failed', { agentId: entry.agentId, error });
+      });
   }
 
   adopt(promise: Promise<SubagentResult>, options: BackgroundSubagentOptions & { agentId: string; startedAt?: number }):
@@ -184,7 +216,6 @@ export class BackgroundSubagentRegistry {
     })(), {
       ...options,
       startedAt,
-      durableSession,
     });
 
     this.entries.set(options.agentId, {
@@ -192,6 +223,7 @@ export class BackgroundSubagentRegistry {
       status: 'running',
       startedAt,
       done,
+      durableSession,
       ...(options.abort ? { abort: options.abort } : {}),
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       ...(options.runId ? { runId: options.runId } : {}),
@@ -217,7 +249,7 @@ export class BackgroundSubagentRegistry {
     agentId: string,
     options: BackgroundSubagentOptions,
     startedAt: number,
-  ): Promise<BackgroundSubagentDurableLedger | null> | null {
+  ): Promise<BackgroundSubagentDurableLedger> | null {
     if (!options.sessionId) return null;
     if (!options.runId) {
       logger.warn(`background subagent ${agentId} has no parent runId; skipping durable ledger`);
@@ -268,18 +300,15 @@ export class BackgroundSubagentRegistry {
     }
   }
 
-  private async finalizeDurable(
-    durableSession: Promise<BackgroundSubagentDurableLedger | null> | null,
-    entry: BackgroundSubagentEntry,
-  ): Promise<void> {
-    if (!durableSession) return;
-    let ledger: BackgroundSubagentDurableLedger | null;
+  private async finalizeDurable(entry: BackgroundSubagentEntry): Promise<void> {
+    if (!entry.durableSession) return;
+    let ledger: BackgroundSubagentDurableLedger;
     try {
-      ledger = await durableSession;
+      ledger = await entry.durableSession;
     } catch {
       return; // 落账本身就失败了，没有行可收。
     }
-    if (!ledger) return;
+    await entry.userStopPersisted;
     const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
       || entry.failureCode === AgentFailureCode.CancelledByParent
       || Boolean(entry.result?.cancellationReason);
@@ -305,7 +334,6 @@ export class BackgroundSubagentRegistry {
     promise: Promise<SubagentResult>,
     options: BackgroundSubagentOptions & {
       startedAt: number;
-      durableSession?: Promise<BackgroundSubagentDurableLedger | null> | null;
     },
   ): Promise<SubagentResult | undefined> {
     return (async (): Promise<SubagentResult | undefined> => {
@@ -340,7 +368,7 @@ export class BackgroundSubagentRegistry {
           }
           entry.finishedAt = this.now();
           await this.recordCompletion(entry, options);
-          await this.finalizeDurable(options.durableSession ?? null, entry);
+          await this.finalizeDurable(entry);
         }
         return result;
       } catch (err) {
@@ -352,7 +380,7 @@ export class BackgroundSubagentRegistry {
           entry.error = rawError;
           entry.finishedAt = this.now();
           await this.recordCompletion(entry, options);
-          await this.finalizeDurable(options.durableSession ?? null, entry);
+          await this.finalizeDurable(entry);
         }
         return undefined;
       }
@@ -442,7 +470,10 @@ export class BackgroundSubagentRegistry {
   }
 
   private toHandle(entry: BackgroundSubagentEntry): BackgroundSubagentHandle {
-    const { done: _done, liveProgress: _liveProgress, abort: _abort, cancelRequested: _cancelRequested, ...handle } = entry;
+    const {
+      done: _done, liveProgress: _liveProgress, abort: _abort, cancelRequested: _cancelRequested,
+      durableSession: _durableSession, userStopPersisted: _userStopPersisted, ...handle
+    } = entry;
     return handle;
   }
 
@@ -467,20 +498,28 @@ export class BackgroundSubagentRegistry {
     lastProgress?: string;
     /** 账本里至少有过一笔花费或进度。缺省视为什么都没记下。 */
     progressRecorded?: boolean;
-  }): SubagentCompletionRecord {
+  } & (
+    | { status: 'cancelled'; failureCode: AgentFailureCode.CancelledByUser }
+    | { status?: 'failed'; failureCode?: AgentFailureCode.ParentGone }
+  )): SubagentCompletionRecord {
     const interrupted = 'Background subagent was interrupted by an application restart before it finished '
       + '(interrupted_by_restart). Its final result is unavailable; inspect the session and '
       + 'decide whether to spawn it again.';
+    const status = input.status ?? 'failed';
+    const failureCode = input.failureCode ?? AgentFailureCode.ParentGone;
+    const cancelled = status === 'cancelled';
     const record = buildSubagentCompletionRecord({
       agentId: input.agentId,
       title: input.title,
       role: input.role,
       kind: input.completionKind,
-      status: 'failed',
-      error: input.progressRecorded ? interrupted : `${interrupted} no progress recorded`,
+      status,
+      ...(cancelled ? { output: 'Stopped by the user.' } : {
+        error: input.progressRecorded ? interrupted : `${interrupted} no progress recorded`,
+      }),
       startedAt: input.startedAt,
       finishedAt: this.now(),
-      failureCode: AgentFailureCode.ParentGone,
+      failureCode,
       cost: input.cost,
       iterations: input.iterations,
       toolCallCount: input.toolCalls,
@@ -502,8 +541,9 @@ export class BackgroundSubagentRegistry {
         status: 'failed',
         startedAt,
         finishedAt: this.now(),
-        error: 'interrupted_by_restart: background subagent was interrupted by an application restart',
-        failureCode: AgentFailureCode.ParentGone,
+        ...(!cancelled ? { error: 'interrupted_by_restart: background subagent was interrupted by an application restart' } : {}),
+        failureCode,
+        durableSession: null,
         done: Promise.resolve(undefined),
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.runId ? { runId: input.runId } : {}),

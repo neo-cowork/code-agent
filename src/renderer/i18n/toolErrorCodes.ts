@@ -114,6 +114,10 @@ export const toolErrorCodesZh = {
     summary: '这项功能还没有准备好',
     detail: '如果是邮件、日历这类连接，请在能力中心 > 连接器里打开后再试。',
   },
+  COMMAND_FAILED: {
+    summary: '命令运行失败',
+    detail: '命令运行失败，可展开查看输出',
+  },
 };
 
 export const toolErrorCodesEn: typeof toolErrorCodesZh = {
@@ -228,5 +232,9 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   NOT_INITIALIZED: {
     summary: 'This feature isn\'t ready yet',
     detail: 'For connections such as Mail or Calendar, turn them on in Capability Hub > Connectors, then try again.',
+  },
+  COMMAND_FAILED: {
+    summary: 'The command failed to run',
+    detail: 'The command failed to run; expand to see its output',
   },
 };
