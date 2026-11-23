@@ -310,6 +310,24 @@ describe('httpTransport domain API', () => {
     );
   });
 
+  it('keeps the headerless flag and host-converted headers while filtering extra fields', async () => {
+    const budget = { name: 'Budget', headers: ['A', 'B'], rows: [['Quarterly fee', 1200]], rowCount: 1, headerless: true };
+    const sales = { name: 'Sales', headers: ['', '1200'], rows: [['Item', 5]], rowCount: 1 };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        sheets: [{ ...budget, unknownField: 'ignored' }, { ...sales, headerless: 'true' }],
+        sheetCount: 2,
+        unknownField: 'ignored',
+      }),
+    });
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(api.extractExcelJson('/tmp/budget.xlsx')).resolves.toEqual({
+      sheets: [budget, sales], sheetCount: 2,
+    });
+  });
+
   it('promotes goal options to the /api/run goal contract for web sends', async () => {
     const api = createHttpCodeAgentAPI('http://localhost:8180');
 
