@@ -6,6 +6,10 @@ import { languages, type Language } from '../../i18n';
 import { localizeModelLabel } from '../../i18n/modelLabelDisplay';
 import type { EffortOption, ProviderBillingSummary, ProviderHealthSummary } from './modelSwitcherHelpers';
 
+function shownModelLabel(modelId: string, language: Language): string {
+  return localizeModelLabel(modelId, getModelDisplayLabel(modelId), language);
+}
+
 function providerName(provider: string, settings: AppSettings | null | undefined, language: Language): string {
   return resolveProviderLabel(provider,
     settings?.models?.providers?.[provider as ModelProvider]?.displayName
@@ -45,8 +49,7 @@ export function formatNativeModelSwitcherTooltip(args: {
 }): string {
   const language = args.language ?? 'zh';
   const labels = languages[language].modelSwitcherTooltip;
-  const shownModelLabel = (model: string) => localizeModelLabel(model, getModelDisplayLabel(model), language);
-  const identity = (provider: string, model: string) => `${providerName(provider, args.settings, language)}/${shownModelLabel(model)}`;
+  const identity = (provider: string, model: string) => `${providerName(provider, args.settings, language)}/${shownModelLabel(model, language)}`;
   const modelLine = args.switchedFrom
     ? labels.switched
         .replace('{shown}', identity(args.shownProvider ?? args.displayProvider, args.shownModel ?? args.displayModel))
@@ -54,7 +57,7 @@ export function formatNativeModelSwitcherTooltip(args: {
     : args.adaptive
       ? labels.adaptive.replace('{model}', shownModelLabel(args.currentModel, language))
       : args.overridden
-        ? labels.overridden.replace('{model}', identity(args.displayProvider, args.displayModel)).replace('{original}', shownModelLabel(args.currentModel))
+        ? labels.overridden.replace('{model}', identity(args.displayProvider, args.displayModel)).replace('{original}', shownModelLabel(args.currentModel, language))
         : labels.model.replace('{model}', identity(args.displayProvider, args.displayModel));
   return [
     modelLine,
