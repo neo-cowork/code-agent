@@ -53,6 +53,16 @@ describe('approved rm production approval boundary', () => {
     expect(logs.warn).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['rm -v cache-0.tmp', 1],
+    ['rm --verbose -- cache-0.tmp', 1],
+    ['rm -f -v cache-0.tmp cache-1.tmp', 2],
+  ])('treats verbose output flags like -f: %s', (command, count) => {
+    input.params.command = command;
+    expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(count === 1 ? files[0] : files.slice(0, count));
+    expect(logs.warn).not.toHaveBeenCalled();
+  });
+
   it('mints both literal files for explicitly approved attended background Bash', () => {
     input.params.run_in_background = true;
     expect(approvedSingleFileRmGrantForToolApproval(input)).toEqual(files.slice(0, 2));
@@ -172,6 +182,9 @@ describe('approved rm production approval boundary', () => {
     ['rm *.tmp', 'literal_operand'],
     ['rm cache-[01].tmp', 'literal_operand'],
     ['rm -rf cache-0.tmp', 'option'],
+    ['rm -i cache-0.tmp', 'option'],
+    ['rm -rv cache-0.tmp', 'option'],
+    ['rm -fv cache-0.tmp', 'option'],
     ['rm cache-0.tmp > output', 'command_shape'],
     ['rm cache-0.tmp; rm cache-1.tmp', 'command_shape'],
     ['rm cache-0.tmp &', 'command_shape'],

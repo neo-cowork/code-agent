@@ -124,7 +124,7 @@ function extractApprovedRmTargets(command: string, workingDirectory: string): {
         const arg = substitute(rawArg);
         if (!dashDash && arg === '--') { dashDash = true; continue; }
         if (!dashDash && arg.startsWith('-') && arg !== '-') {
-          if (arg !== '-f' && !(rmSegments.length === 1 && arg === '--force')) return refuse('option');
+          if (arg !== '-f' && arg !== '-v' && arg !== '--verbose' && !(rmSegments.length === 1 && arg === '--force')) return refuse('option');
           continue;
         }
         if (!arg || /[$`*?{}[\]]/.test(arg)) return refuse('literal_operand');
