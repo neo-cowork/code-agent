@@ -13,13 +13,17 @@ const KEPT_ADOPT_FAILED_MESSAGE = '这一页的浏览器窗口已经关闭，没
 
 type KeptResultPageLinks = Pick<UserBrowserLinkService, 'adopt' | 'keptState'>;
 
-/** getKeptResultPage：kept 结果页三态（none/kept/closed + url/title）。 */
+/** getKeptResultPage：kept 结果页三态。includeSnapshot 才返回 snapshotHtml。 */
 export function getKeptResultPageHandler(
   links: KeptResultPageLinks,
   payload: unknown,
 ): KeptResultPageSnapshot {
-  const keptPayload = payload as { conversationId?: string };
-  return links.keptState(keptPayload.conversationId || '');
+  const keptPayload = payload as { conversationId?: string; includeSnapshot?: boolean };
+  const conversationId = keptPayload.conversationId || '';
+  if (keptPayload.includeSnapshot === true) {
+    return links.keptState(conversationId, { includeSnapshot: true });
+  }
+  return links.keptState(conversationId);
 }
 
 /**

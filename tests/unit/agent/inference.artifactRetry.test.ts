@@ -15,7 +15,10 @@ import { POSTHOG_EVENTS } from '../../../src/shared/observability/posthog-events
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
-  mockGetSettings: vi.fn(() => ({ models: { providers: {} } })),
+  mockGetSettings: vi.fn((): {
+    ui?: { language?: string };
+    models: { providers: Record<string, { enabled?: boolean; displayName?: string; protocol?: string; baseUrl?: string }> };
+  } => ({ models: { providers: {} } })),
 }));
 
 vi.mock('../../../src/host/observability/posthogNode', () => ({ trackNode: vi.fn() }));
@@ -33,6 +36,12 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   },
+}));
+
+// readPreviewHealthLocale 直接 import configService，不走上面的 services barrel。
+// 两条入口共用 mockGetSettings：没有 ui.language 时 locale 读失败回落 zh。
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
 }));
 
 vi.mock('../../../src/host/services', () => ({
@@ -532,6 +541,97 @@ describe('contextAssembly inference artifact retry', () => {
       },
       toolPolicy: 'disabled-by-model',
     });
+  });
+
+  const MODEL_ID_LEAK = /glm-|mimo-|deepseek-|omni|flash/i;
+  const VISION_TOOL_UNSUPPORTED_COPY = {
+    zh: '识图模型不能调用工具，这次回答只用文字完成。',
+    en: "The image-reading model can't use tools, so this reply will be text only.",
+  } as const;
+
+  async function runVisionToolUnsupportedFallback(language: 'zh' | 'en') {
+    mockGetSettings.mockReturnValue({
+      ui: { language },
+      models: {
+        providers: {
+          zhipu: {
+            enabled: true,
+            displayName: 'Zhipu Relay',
+            protocol: 'openai',
+            baseUrl: 'https://relay.example.com/zhipu/v1',
+          },
+        },
+      },
+    });
+    const persistMessage = vi.fn().mockResolvedValue(undefined);
+    const ctx = buildCtx({
+      persistMessage,
+      modelConfig: {
+        provider: 'mock',
+        model: 'text-only',
+        apiKey: 'mock-key',
+        temperature: 0,
+        maxTokens: 4096,
+        adaptive: true,
+      },
+    });
+    vi.mocked(ctx.runtime.modelRouter.detectRequiredCapabilities).mockReturnValue(['vision']);
+    vi.mocked(ctx.runtime.modelRouter.getFallbackConfig).mockReturnValue({
+      provider: 'zhipu',
+      model: 'glm-4.5v',
+      apiKey: 'fallback-key',
+      maxTokens: 2048,
+    });
+    vi.mocked(ctx.runtime.modelRouter.getModelInfo).mockImplementation((provider: string, modelId: string) => {
+      if (provider === 'zhipu') {
+        return {
+          id: modelId, name: modelId, maxTokens: 4096, supportsStreaming: true,
+          supportsVision: true, supportsTool: false, capabilities: ['vision'],
+        };
+      }
+      return {
+        id: modelId, name: modelId, maxTokens: 4096, supportsStreaming: true,
+        supportsVision: false, supportsTool: true, capabilities: [],
+      };
+    });
+    ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
+      type: 'text',
+      content: 'vision answer',
+      finishReason: 'stop',
+    });
+    ctx.buildModelMessages = vi.fn().mockResolvedValue([
+      { role: 'system', content: 'system' },
+      { role: 'user', content: '请分析这张图片里的内容' },
+    ]);
+
+    const response = await inference(ctx);
+    const fallbackEvents = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
+      .filter((event) => event.type === 'model_fallback');
+    const notice = (ctx.runtime.messages as Array<{
+      role: string;
+      content: string;
+      metadata?: { agentRecoveryNotice?: { kind?: string } };
+    }>).find((message) => message.metadata?.agentRecoveryNotice?.kind === 'vision_tool_unsupported');
+    return { ctx, response, persistMessage, fallbackEvents, notice };
+  }
+
+  it.each(['zh', 'en'] as const)('persists the vision_tool_unsupported notice for UI language %s without the fallback model id', async (language) => {
+    const { persistMessage, fallbackEvents, notice } = await runVisionToolUnsupportedFallback(language);
+
+    expect(fallbackEvents).toHaveLength(1);
+    expect(fallbackEvents[0]?.data).toMatchObject({
+      to: 'zhipu/glm-4.5v',
+      toolPolicy: { reason: 'fallback_model_without_tool_support' },
+    });
+    expect(notice).toBeDefined();
+    expect(notice!.role).toBe('system');
+    expect(notice!.content).toBe(VISION_TOOL_UNSUPPORTED_COPY[language]);
+    expect(notice!.content).not.toMatch(MODEL_ID_LEAK);
+    expect(notice).toHaveProperty('metadata.agentRecoveryNotice.kind', 'vision_tool_unsupported');
+    expect(persistMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'system', content: notice!.content }),
+    );
   });
 
   it('caps main inference output tokens with per-run inferenceOptions', async () => {

@@ -6,6 +6,17 @@ function parseSheets(json: string) {
 }
 
 describe('buildCsvSheetsJson', () => {
+  it('previews a single row under column letters, with empty cells and numbers in place', () => {
+    const spec = parseSheets(buildCsvSheetsJson('budget.csv', ',1200,Quarterly fee\n\n')!);
+    expect(spec).toEqual({
+      name: 'budget',
+      headers: ['A', 'B', 'C'],
+      rows: [[null, 1200, 'Quarterly fee']],
+      rowCount: 1,
+      headerless: true,
+    });
+  });
+
   it('首行作表头，其余作数据行，数字列保持数值类型', () => {
     const spec = parseSheets(buildCsvSheetsJson('sales.csv', '月份,销售额\n一月,1000\n二月,2000')!);
     expect(spec.headers).toEqual(['月份', '销售额']);
