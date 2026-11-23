@@ -5,7 +5,9 @@ import { IPC_DOMAINS, type IPCRequest } from '../../../src/shared/ipc';
 import { registerWorkspaceHandlers } from '../../../src/host/ipc/workspace.ipc';
 import type { IpcMain } from '../../../src/host/platform';
 import type { UserBrowserLinkService } from '../../../src/host/services/surfaceExecution/UserBrowserLinkService';
+import { KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS } from '../../../src/shared/constants';
 import { KeptBrowserRegistry } from '../../../src/host/services/surfaceExecution/keptBrowserRegistry';
+import { captureKeptResultSnapshot } from '../../../src/host/services/surfaceExecution/keptResultSnapshot';
 
 type Links = Pick<
   UserBrowserLinkService,
@@ -24,7 +26,8 @@ function setup(adopt: Links['adopt']) {
   const links = {
     open: vi.fn(), end: vi.fn(), history: vi.fn(), dispatchUserInput: vi.fn(), setViewport: vi.fn(),
     adopt,
-    keptState: (conversationId: string) => registry.snapshot(conversationId.trim()),
+    keptState: (conversationId: string, options?: { includeSnapshot?: boolean }) =>
+      registry.snapshot(conversationId.trim(), options),
   } as unknown as Links;
   registerWorkspaceHandlers(ipcMain, () => null, () => null, () => null, () => links);
   const call = async (action: string, payload: unknown) =>
@@ -48,11 +51,83 @@ describe('workspace kept result page IPC', () => {
       browserService: { onSessionChanged: (listener: (reason: string) => void) => { unsubscribe.current = listener; return () => undefined; } } as never,
     });
     expect((await call('getKeptResultPage', { conversationId: 'c1' })).data)
-      .toEqual({ state: 'kept', url: 'https://example.test/done', title: 'Done', reason: 'keep_result_page' });
+      .toEqual({ state: 'kept', url: 'https://example.test/done', title: 'Done', reason: 'keep_result_page', reopenMode: 'url' });
 
     unsubscribe.current?.('close');
     expect((await call('getKeptResultPage', { conversationId: 'c1' })).data)
-      .toEqual({ state: 'closed', url: 'https://example.test/done', title: 'Done', reason: 'keep_result_page' });
+      .toEqual({ state: 'closed', url: 'https://example.test/done', title: 'Done', reason: 'keep_result_page', reopenMode: 'url' });
+  });
+
+  it('includeSnapshot returns HTML only on request, and a query URL stays on the url path', async () => {
+    const { registry, call } = setup(vi.fn());
+    registry.register({
+      conversationId: 'c1',
+      serviceKey: 'surface-1',
+      url: 'http://127.0.0.1/signup-direct',
+      title: 'Done',
+      browserService: { onSessionChanged: () => () => undefined } as never,
+    });
+    expect(registry.setSnapshot('c1', '<h1>Signup success, Lee</h1>', 'surface-1')).toBe(true);
+
+    const polled = await call('getKeptResultPage', { conversationId: 'c1' });
+    expect(polled.data).toEqual({
+      state: 'kept',
+      url: 'http://127.0.0.1/signup-direct',
+      title: 'Done',
+      reason: 'keep_result_page',
+      reopenMode: 'snapshot',
+    });
+    expect(polled.data).not.toHaveProperty('snapshotHtml');
+
+    const detailed = await call('getKeptResultPage', { conversationId: 'c1', includeSnapshot: true });
+    expect(detailed.data).toMatchObject({
+      reopenMode: 'snapshot',
+      snapshotHtml: '<h1>Signup success, Lee</h1>',
+    });
+
+    registry.register({
+      conversationId: 'c1',
+      serviceKey: 'surface-1',
+      url: 'http://127.0.0.1/done?id=abc',
+      title: 'Done',
+      browserService: { onSessionChanged: () => () => undefined } as never,
+    });
+    expect(registry.setSnapshot('c1', '<h1>Signup success, Lee</h1>', 'surface-1')).toBe(true);
+    const prg = await call('getKeptResultPage', { conversationId: 'c1' });
+    expect(prg.data).toMatchObject({ reopenMode: 'url' });
+    expect(prg.data).not.toHaveProperty('snapshotHtml');
+
+    registry.markClosed('c1');
+    const closed = await call('getKeptResultPage', { conversationId: 'c-missing' });
+    expect(closed.data).toEqual({ state: 'none', url: null, title: null, reason: null });
+  });
+
+  it('capture failure and an over-cap page do not promise a snapshot', async () => {
+    const { registry, call } = setup(vi.fn());
+    registry.register({
+      conversationId: 'c1',
+      serviceKey: 'surface-1',
+      url: 'http://127.0.0.1/done-flash',
+      title: 'Done',
+      browserService: { onSessionChanged: () => () => undefined } as never,
+    });
+    await captureKeptResultSnapshot({
+      registry,
+      conversationId: 'c1',
+      serviceKey: 'surface-1',
+      getPageHTML: async () => { throw new Error('tab closed'); },
+      phase: 'keep',
+    });
+    await captureKeptResultSnapshot({
+      registry,
+      conversationId: 'c1',
+      serviceKey: 'surface-1',
+      getPageHTML: async () => 'y'.repeat(KEPT_RESULT_PAGE_SNAPSHOT_MAX_CHARS + 1),
+      phase: 'release',
+    });
+    const view = await call('getKeptResultPage', { conversationId: 'c1', includeSnapshot: true });
+    expect(view.data).toMatchObject({ state: 'kept', reopenMode: 'url' });
+    expect(view.data).not.toHaveProperty('snapshotHtml');
   });
 
   it('adoptKeptResultPage forwards the conversation and workspace and returns the snapshot', async () => {
