@@ -17,6 +17,7 @@ import type {
 } from '../../../protocol/tools';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { readDocxSchema as schema } from './readDocx.schema';
 
 type DocxFormat = 'text' | 'markdown' | 'html';
@@ -47,7 +48,7 @@ export async function executeReadDocx(
 
   onProgress?.({ stage: 'starting', detail: `read_docx:${format}` });
 
-  const absPath = path.isAbsolute(filePath) ? filePath : path.join(ctx.workingDir, filePath);
+  const absPath = resolveInputPath(filePath, ctx.workingDir);
 
   if (!fs.existsSync(absPath)) {
     if (isChatUploadPath(absPath)) return buildExpiredChatUploadResult(absPath);
