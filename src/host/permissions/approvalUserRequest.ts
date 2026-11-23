@@ -4,6 +4,7 @@ import {
   APPROVAL_USER_REQUEST_LOOKBACK_MESSAGES,
   APPROVAL_USER_REQUEST_MAX_CHARS,
 } from '../../shared/constants';
+import { stripAppshotBlocks } from '../../shared/contract/appshot';
 import { isTelemetryRecoveredMessage } from '../../shared/telemetryRecovery';
 import { stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
 import { getDatabase } from '../services/core/databaseService';
@@ -64,7 +65,7 @@ export function withUserRequestQuote(
       // isMeta user rows are host/model-injected (e.g. a delegated-task brief the model wrote), not the human's words.
       if (message.role !== 'user' || message.isMeta || isTelemetryRecoveredMessage(message)) continue;
       if (typeof message.content !== 'string') continue;
-      const text = stripInlineAttachmentBlocks(message.content).replace(/\s+/g, ' ').trim();
+      const text = stripAppshotBlocks(stripInlineAttachmentBlocks(message.content)).replace(/\s+/g, ' ').trim();
       if (!text) continue;
       const chars = Array.from(text);
       const truncated = chars.length > APPROVAL_USER_REQUEST_MAX_CHARS;

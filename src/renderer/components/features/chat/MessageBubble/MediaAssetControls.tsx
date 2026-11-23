@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BoxSelect,
   Copy,
   Download,
   ExternalLink,
@@ -7,7 +8,6 @@ import {
   Maximize2,
   MoreHorizontal,
   Pencil,
-  PenLine,
   X,
 } from 'lucide-react';
 import {
@@ -373,7 +373,7 @@ export function MediaAssetActionBar({
             title={t.chatImageAnnotate.actionTitle}
             data-testid="media-asset-annotate"
           >
-            <PenLine className="h-3.5 w-3.5" />
+            <BoxSelect className="h-3.5 w-3.5" />
             {!compact && <span>{t.chatImageAnnotate.actionLabel}</span>}
           </button>
           // ds-allow:end
