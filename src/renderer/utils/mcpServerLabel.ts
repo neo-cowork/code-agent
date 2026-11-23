@@ -35,8 +35,12 @@ const MCP_SERVER_DISPLAY_NAMES: Record<string, string> = {
   'pencil': 'Pencil',
 };
 
+export function getKnownMcpServerName(serverSlug: string): string | undefined {
+  return Object.hasOwn(MCP_SERVER_DISPLAY_NAMES, serverSlug) ? MCP_SERVER_DISPLAY_NAMES[serverSlug] : undefined;
+}
+
 export function formatMcpServerName(serverSlug: string): string {
-  const known = MCP_SERVER_DISPLAY_NAMES[serverSlug];
+  const known = getKnownMcpServerName(serverSlug);
   if (known) return known;
   // 兜底：hyphen/underscore-case → Title Case
   return serverSlug
