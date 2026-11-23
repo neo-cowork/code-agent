@@ -4,6 +4,7 @@ import type { Browser, Page } from 'playwright';
 import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { loadPlaywrightChromium } from '../../../src/host/agent/runtime/browser/playwrightRuntime';
+import { waitForGlobalCss } from '../fixtures/waitForGlobalCss';
 
 // These fixtures contain a complete, already-loaded list; boot readiness is tested separately.
 vi.mock('../../../src/renderer/stores/sessionListPagination', () => ({
@@ -207,6 +208,9 @@ describe('Sidebar trailing 列全列双轴几何', () => {
       + `<body class="bg-zinc-950 text-zinc-200"><main style="width:240px;margin:40px">${renderSidebar()}</main></body></html>`,
       { waitUntil: 'networkidle' },
     );
+    // networkidle can return before the Tailwind stylesheet is compiled/applied under load;
+    // never measure an unstyled DOM.
+    await waitForGlobalCss(page);
     await page.locator('[data-sidebar-group-phase] > div:first-child').first().hover();
     geometry = await readGeometry(page);
   }, 30_000);
