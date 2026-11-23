@@ -141,7 +141,7 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
   });
 
   it('a changed recipient / subject / body asks again (2 cards)', async () => {
-    for (const change of [{ to: ['b@example.com'] }, { subject: 'Rollback plan!' }, { content: 'Steps to roll back' }]) {
+    for (const change of [{ to: ['b@example.com'] }, { subject: 'Rollback plan!' }, { content: 'Steps to roll back' }, { attachments: ['/tmp/meeting.txt'] }]) {
       const f = await resumed((x) => { x.reissue.args = { ...MAIL_DRAFT_ARGS, ...change }; });
       expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
       expect(emitted.filter((e) => e.type === 'env_assist_notice')).toHaveLength(0);
@@ -156,6 +156,16 @@ describe('③ the grant resumes the same run; the draft is saved once, without a
 
   it('a different run does not match (2 cards)', async () => {
     const f = await resumed((x) => { x.reissue.runId = 'other-run'; });
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
+  });
+
+  it('mail_send never reuses the draft approval (2 cards)', async () => {
+    const f = await resumed((x) => { x.reissue.tool = 'mail_send'; });
+    expect(f.approvalCards()).toEqual(['mail_draft', 'mail_send']);
+  });
+
+  it('a forced approval gate still asks again (2 cards)', async () => {
+    const f = await resumed((x) => { x.reissue.force = true; });
     expect(f.approvalCards()).toEqual(['mail_draft', 'mail_draft']);
   });
 

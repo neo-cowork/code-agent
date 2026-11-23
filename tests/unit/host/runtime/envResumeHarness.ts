@@ -16,6 +16,7 @@ import { getToolDefinitionWithCloudMeta } from '../../../../src/host/tools/dispa
 import { setToolLedgerSink } from '../../../../src/host/tools/toolLedgerSink';
 import { ToolExecutor } from '../../../../src/host/tools/toolExecutor';
 import { mailDraftSchema } from '../../../../src/host/tools/modules/connectors/mailDraft.schema';
+import { mailSendSchema } from '../../../../src/host/tools/modules/connectors/mailSend.schema';
 import { getConnectorRegistry } from '../../../../src/host/connectors';
 import { registerAgentContinueRoute } from '../../../../src/web/routes/registerAgentContinueRoute';
 import { makeEngine } from './envResumeContext';
@@ -52,7 +53,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   const seenCalls: string[] = [], seenRuns: string[] = [];
   const callArgs: Record<string, unknown> = mail ? MAIL_DRAFT_ARGS : {};
   /** mail only: how the resumed model turn re-issues the draft (default: identical arguments, same run, once). */
-  const reissue: { args?: Record<string, unknown>; runId?: string; twice?: boolean } = {};
+  const reissue: { args?: Record<string, unknown>; runId?: string; twice?: boolean; tool?: string; force?: boolean } = {};
   const schema: ToolSchema = { name, description: 'Environment recovery fixture', inputSchema: { type: 'object', properties: {} }, outputSchema: { type: 'string' }, category: 'network', permissionLevel: sideEffect ? 'write' : 'read', readOnly: !sideEffect, requiresPermission: false };
   const mailConnector = {
     id: 'mail', label: 'Mail', capabilities: ['draft_message'], getStatus: async () => ({ connected: true, capabilities: [] }),
@@ -68,6 +69,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   // The connector tools only register on darwin; CI runs Linux, so register the real module (and connector) explicitly there.
   const registeredMailDraft = mail && !protocol.has('mail_draft');
   if (registeredMailDraft) protocol.register(mailDraftSchema, async () => (await import('../../../../src/host/tools/modules/connectors/mailDraft')).mailDraftModule);
+  const registeredMailSend = mail && !protocol.has('mail_send');
+  if (registeredMailSend) protocol.register(mailSendSchema, async () => (await import('../../../../src/host/tools/modules/connectors/mailSend')).mailSendModule);
   if (mail) getConnectorRegistry().register(mailConnector);
   else protocol.register(schema, async () => ({ schema, createHandler: () => ({ schema, execute: async (_args, context) => {
     executions++; seenCalls.push(context.currentToolCallId!); seenRuns.push(context.runId!);
@@ -78,7 +81,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
   setToolLedgerSink({
     appendToolExecutionBegin: (input) => events.appendBegin(input),
     appendToolExecutionComplete: (input) => events.appendComplete(input),
-    appendPermissionDecision: () => {},
+    appendPermissionDecision: (input) => out('PERMISSION_DECISION', input),
   });
   const messages = () => sessions.getMessages(sessionId);
   const persist = async (_session: string, message: Message) => { sessions.addMessage(sessionId, message); };
@@ -94,7 +97,7 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       if (mail) {
         // The model's next turn: it reads the recorded "not run" result and issues mail_draft again, once, through the production executor.
         sessions.addMessage(sessionId, { id: 'env-assistant-2', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [{ id: 'env-call-2', name, arguments: callArgs }] });
-        const again = await executor().execute(name, reissue.args ?? callArgs, { runId: reissue.runId ?? runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
+        const again = await executor(reissue.force).execute(reissue.tool ?? name, reissue.args ?? callArgs, { runId: reissue.runId ?? runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-2' });
         sessions.addMessage(sessionId, { id: 'env-tool-2', role: 'tool', content: '', timestamp: Date.now(), toolResults: [{ toolCallId: 'env-call-2', success: again.success, output: again.output, error: again.error }] });
         if (reissue.twice) await executor().execute(name, reissue.args ?? callArgs, { runId, sessionId, sourceMessageId: sourceId, currentToolCallId: 'env-call-3' });
       }
@@ -110,8 +113,8 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
     addMessage: (id: string, message: Message) => sessions.addMessage(id, message),
     appendToolExecutionComplete: (input: Parameters<typeof events.appendComplete>[0]) => events.appendComplete(input),
   };
-  const executor = () => {
-    const instance = new ToolExecutor({ workingDirectory: workspace, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return true; } : async () => false });
+  const executor = (forcePermissionHandler = false) => {
+    const instance = new ToolExecutor({ workingDirectory: workspace, forcePermissionHandler, requestPermission: mail ? async (request) => { approvalCards.push(request.tool); return true; } : async () => false });
     instance.setAuditEnabled(false); return instance;
   };
   const ports = createApplicationNativeRecoveryPorts(registry, {
@@ -158,6 +161,6 @@ export async function harness(workspace: string, file = ':memory:', sideEffect =
       out('TOOL_EVENTS', db.prepare('SELECT * FROM tool_execution_events').all());
       out('COUNTS', { executions, resumes, seenCalls, seenRuns });
     },
-    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (!mail || registeredMailDraft) protocol.unregister(name); },
+    close: () => { registry.clear(); db.close(); if (mail) getConnectorRegistry().unregister('mail'); if (registeredMailSend) protocol.unregister('mail_send'); if (!mail || registeredMailDraft) protocol.unregister(name); },
   };
 }
