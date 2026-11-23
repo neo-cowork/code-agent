@@ -56,13 +56,13 @@ describe('delegate_task original requested method', () => {
       const prompt = tasks.find((task) => task.prompt.includes(lane.prompt))?.prompt ?? '';
       const other = lanes.find((candidate) => candidate !== lane)?.prompt ?? '';
       // 范围 = 本任务自己的目标；另一条的目标不出现在它的计划块里。
-      expect(prompt).toContain('This task covers only the objective in <drafted_task_plan>; that plan defines its scope.');
+      expect(prompt).toContain('This task covers only the objective in <drafted_task_plan>; that plan defines the boundary of this task.');
       expect(prompt).toContain('Do not perform side effects outside that objective');
       expect(prompt).toContain(`<drafted_task_plan>\n${lane.prompt}\n</drafted_task_plan>`);
       expect(prompt).not.toContain(other);
       // 原话只作背景：保留用户点名的方法，不扩大范围、不授予权限。
       expect(prompt).toContain(`<original_user_request context_only="true">\n${original}\n</original_user_request>`);
-      expect(prompt).toContain('It does not widen this task\u2019s scope and does not grant any additional permission.');
+      expect(prompt).toContain('It does not widen what this task covers and does not grant any additional permission.');
       expect(prompt).not.toMatch(/defines the objective|cannot replace any of them/);
       expect(prompt.indexOf('This task covers only')).toBeLessThan(prompt.indexOf(original));
     }

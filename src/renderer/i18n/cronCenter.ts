@@ -1,13 +1,10 @@
 import { parkedApprovalInboxEn, parkedApprovalInboxZh } from './parkedApprovalInbox';
 import { automationPresentationEn, automationPresentationZh } from './automationPresentation';
-import { cronCloudEn, cronCloudZh } from './cronCloud';
-import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
+import { cronCloudEn, cronCloudZh } from './cronCloud'; import { cronRoutineRestateEn, cronRoutineRestateZh } from './cronRoutineRestate';
 import { parkedApprovalVoidedEn, parkedApprovalVoidedZh } from './parkedApprovalVoided';
-// ============================================================================
-import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels'; import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
-import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
-import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied'; import { cronEditorChromeEn, cronEditorChromeZh } from './cronEditorChrome'; import { cronEventLimitsEn, cronEventLimitsZh } from './cronEventLimits';
 import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCopy';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
@@ -18,7 +15,7 @@ import { watchTemplateCopyEn, watchTemplateCopyZh } from './cronWatchTemplateCop
 export const cronCenterZh = {
   ...automationPresentationZh,
   cronCenter: {
-    ...cronEditorChromeZh,
+    ...cronEditorChromeZh, ...cronEventLimitsZh,
     ...cronCloudZh,
     parkedVoided: parkedApprovalVoidedZh,
     ...parkedApprovalInboxZh,
@@ -62,10 +59,10 @@ export const cronCenterZh = {
     enabled: '启用',
     disabled: '停用',
     latest: '最近: {label}',
-    awaitingApprovalBadge: '等你批准',
-    awaitingApprovalHint: '有一个运行中的任务正等你批准操作，处理前它会一直停在这里。',
+    awaitingApprovalBadge: WAITING_ON_USER_LABELS.zh.approval,
+    awaitingApprovalHint: '有一个运行中的任务正等你确认操作，处理前它会一直停在这里。',
     awaitingApprovalAction: '去处理',
-    awaitingApprovalWithPreview: '等你批准：{preview}',
+    awaitingApprovalWithPreview: WAITING_ON_USER_LABELS.zh.approvalWithLabel.replace('{label}', '{preview}'),
     nextRun: '下次 {time}',
     localNextRun: '你本机的时间 {time}',
     locationFilterAll: '全部',
@@ -198,7 +195,6 @@ export const cronCenterZh = {
     colScheduledAt: '计划时间',
     colStartedAt: '开始时间',
     colDuration: '耗时',
-    colRetry: '重试',
     colExitCode: '退出码',
     execSession: '运行会话',
     execLocation: '执行位置',
@@ -208,6 +204,9 @@ export const cronCenterZh = {
     triggerSourceMail: '邮件',
     execCompletedAt: '完成时间',
     execRetryCount: '重试次数',
+    // 默认层的重试一句话（N-FIX-CRON-EXEC-DETAIL-ENGINEERING-FIELDS-DEFAULT）：只说发生了什么，不出现工程字段名。
+    execRetryFailedNote: { one: '自动重试了 {count} 次后仍然失败', other: '自动重试了 {count} 次后仍然失败' },
+    execRetrySucceededNote: { one: '自动重试 {count} 次后成功', other: '自动重试 {count} 次后成功' },
     // 运行成本（N-CRON-RUN-LEDGER-VISIBLE）：单次成本 + 每日小计 + 唤醒未运行原因
     colCost: '成本',
     wakeSkipTitle: '未运行原因',
@@ -231,7 +230,7 @@ export const cronCenterZh = {
     roleWakeRecentDescription: '该角色定时唤醒的运行成本与未运行原因',
     roleWakeRecentEmpty: '还没有唤醒记录',
     roleWakeNoModel: '成本未记录',
-    dailyCostIncomplete: '成本未完整记录',
+    dailyCostIncomplete: '成本未完整记录', costFlatFee: '不按美元计费',
     execError: '错误',
     execResult: '结果',
     resultNoText: '本次运行未产生文字结果。',
@@ -277,7 +276,7 @@ export const cronCenterZh = {
     manualEditor: {
       oneTimeScheduleOption: '一次性',
       intervalScheduleOption: '间隔循环',
-      cronScheduleOption: '按固定时间重复（Cron 表达式）',
+      cronScheduleOption: '按计划重复（每天 / 每周 / 自定义）',
       retryDelayLabel: '重试间隔',
       timeoutLabel: '执行超时',
       retryDelayPlaceholder: '自动',
@@ -425,7 +424,7 @@ export const cronCenterZh = {
     parkedReject: '拒绝',
     parkedExternalBadge: '对外操作',
     parkedOrphaned: '已过期（应用重启）',
-    parkedVoidedLabel: '已作废',
+    parkedVoidedLabel: '已作废：',
     parkedResolveStale: '该审批已失效（发起它的运行已结束），已标记过期',
     parkedResolveFailed: '操作没有生效，请重试',
     parkedWaiting: '等待 {duration}',
@@ -546,7 +545,7 @@ export const cronCenterZh = {
 export const cronCenterEn: typeof cronCenterZh = {
   ...automationPresentationEn,
   cronCenter: {
-    ...cronEditorChromeEn,
+    ...cronEditorChromeEn, ...cronEventLimitsEn,
     ...cronCloudEn,
     parkedVoided: parkedApprovalVoidedEn,
     ...parkedApprovalInboxEn,
@@ -588,10 +587,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     enabled: 'Enabled',
     disabled: 'Disabled',
     latest: 'Last: {label}',
-    awaitingApprovalBadge: 'Needs your approval',
+    awaitingApprovalBadge: WAITING_ON_USER_LABELS.en.approval,
     awaitingApprovalHint: 'A running task is waiting for your approval; it stays parked until you review it.',
     awaitingApprovalAction: 'Review',
-    awaitingApprovalWithPreview: 'Needs your approval: {preview}',
+    awaitingApprovalWithPreview: WAITING_ON_USER_LABELS.en.approvalWithLabel.replace('{label}', '{preview}'),
     nextRun: 'Next {time}',
     localNextRun: 'Your local time {time}',
     locationFilterAll: 'All',
@@ -718,7 +717,6 @@ export const cronCenterEn: typeof cronCenterZh = {
     colScheduledAt: 'Scheduled',
     colStartedAt: 'Started',
     colDuration: 'Duration',
-    colRetry: 'Retries',
     colExitCode: 'Exit code',
     execSession: 'Session',
     execLocation: 'Execution location',
@@ -727,6 +725,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     triggerSourceMail: 'Mail',
     execCompletedAt: 'Completed',
     execRetryCount: 'Retry count',
+    execRetryFailedNote: { one: 'Retried automatically {count} time, then failed', other: 'Retried automatically {count} times, then failed' },
+    execRetrySucceededNote: { one: 'Succeeded after {count} automatic retry', other: 'Succeeded after {count} automatic retries' },
     // Run cost ledger (N-CRON-RUN-LEDGER-VISIBLE): per-run cost + daily subtotals + wake skip reasons
     colCost: 'Cost',
     wakeSkipTitle: 'Why it did not run',
@@ -750,7 +750,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     roleWakeRecentDescription: "Cost and skip reasons for this role's scheduled wakes",
     roleWakeRecentEmpty: 'No wakes yet',
     roleWakeNoModel: 'Cost not recorded',
-    dailyCostIncomplete: 'Cost not fully recorded',
+    dailyCostIncomplete: 'Cost not fully recorded', costFlatFee: 'Not billed in USD',
     execError: 'Error',
     execResult: 'Result',
     resultNoText: 'This run produced no text result.',
@@ -794,7 +794,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     manualEditor: {
       oneTimeScheduleOption: 'One-time',
       intervalScheduleOption: 'Repeat at an interval',
-      cronScheduleOption: 'Repeat at fixed times (Cron expression)',
+      cronScheduleOption: 'Repeat on a schedule (daily / weekly / custom)',
       retryDelayLabel: 'Retry interval',
       timeoutLabel: 'Execution timeout',
       retryDelayPlaceholder: 'Auto',
@@ -939,7 +939,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedReject: 'Reject',
     parkedExternalBadge: 'External',
     parkedOrphaned: 'Expired (app restarted)',
-    parkedVoidedLabel: 'Voided',
+    parkedVoidedLabel: 'Voided: ',
     parkedResolveStale: 'This approval is stale (its run has ended) and was marked expired',
     parkedResolveFailed: 'That did not go through — please retry',
     parkedWaiting: 'Waiting {duration}',

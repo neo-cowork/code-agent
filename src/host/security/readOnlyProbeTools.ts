@@ -11,8 +11,11 @@ export type ProbeToolCommand =
 
 const PROGRAM_NAME = /^[A-Za-z0-9._+][A-Za-z0-9._+-]*$/;
 const VERSION_FLAGS = new Set(['--version', '-V', '--help', '-h']);
-// `-v` 不是通用版本旗标（python3 -v 是 verbose），只对已知把它当版本的程序放行。
-const DASH_V_PROGRAMS = new Set(['pdftotext', 'pdfinfo', 'pdftoppm', 'pdfimages']);
+// poppler 系只认 -v/-h/--help；`--version`/`-V` 会被当成输入文件名（工作目录里有同名 PDF 时会真的读/写文件）。
+const POPPLER_PROGRAMS = new Set(['pdftotext', 'pdfinfo', 'pdftoppm', 'pdfimages', 'pdftohtml']);
+const POPPLER_FLAGS = new Set(['-v', '-h', '--help']);
+// npx 只有 --version 会立刻退出且不写盘；-h/--help/-V 会往 npm 缓存写日志。
+const NPX_FLAGS = new Set(['--version']);
 // 只有这里列出的程序，其 --version/-V/--help/-h 才免卡：已知只打印版本/用法、无副作用。
 // 其余程序（pbcopy 会清空剪贴板、pbpaste 会输出剪贴板、ps -h 会列进程命令行、ssh-keygen -h 等）一律不认，走原审批链。
 // 刻意保持很小：只放账本关心的 PDF / 运行时工具，新增前先确认该程序的这几个旗标在所有平台上都只读。
@@ -29,7 +32,8 @@ export function compileToolCommand(program: string, argv: string[]): { cmd: Prob
     if (argv.length < 1 || argv.length > 32 || argv.some((name) => !PROGRAM_NAME.test(name))) return null;
     return { program, cmd: { kind: 'which', names: argv } };
   }
-  if (argv.length === 1 && (VERSION_FLAGS.has(argv[0]) || (argv[0] === '-v' && DASH_V_PROGRAMS.has(program)))) {
+  const flagSet = POPPLER_PROGRAMS.has(program) ? POPPLER_FLAGS : program === 'npx' ? NPX_FLAGS : VERSION_FLAGS;
+  if (argv.length === 1 && flagSet.has(argv[0])) {
     if (!PROBEABLE_PROGRAMS.has(program)) return null;
     return { program, cmd: { kind: 'version-probe', name: program, flag: argv[0] } };
   }

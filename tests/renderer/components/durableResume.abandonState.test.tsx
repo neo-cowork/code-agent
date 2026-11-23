@@ -5,14 +5,16 @@
 // 装配方式镜像 ChatView 的接线（同 durableResume.continueState.test.tsx 的 ParkedComposer 先例），
 // composer 核心键（Stop/Continue）不在本单改动面，⑤ 只钉「没多出新的 composer 按钮」。
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const ipcInvoke = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invoke: ipcInvoke, invokeDomain: vi.fn(async () => undefined) },
-  invoke: ipcInvoke,
-}));
+vi.mock('../../../src/renderer/services/ipcService', () => {
+  const ipcService = { invoke: ipcInvoke, invokeDomain: vi.fn(async () => undefined), on: () => () => undefined };
+  return { default: ipcService, ipcService, invoke: ipcInvoke };
+});
 const toastError = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: toastError },
@@ -24,10 +26,15 @@ import {
   DurableParkedNotice,
   DurableResumeNotice,
   shouldShowParkedNotice,
+  suppressLegacyInterruptionDecision,
   useAbandonParkedRun,
   useDurableContinueVisible,
 } from '../../../src/renderer/components/features/chat/durableResume';
 import { SendButton } from '../../../src/renderer/components/features/chat/ChatInput/SendButton';
+import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
+import { deriveRetryTurnMessage } from '../../../src/renderer/components/ChatView';
+import { deriveStreamInterruptionDecision } from '../../../src/renderer/utils/streamInterruptionDecision';
+import { buildSidebarProjectSummary } from '../../../src/renderer/utils/sidebarProjectSummary';
 
 const SESSION_ID = 'session-parked';
 const PARKED = { mode: 'continue', canContinue: true, runId: 'run-parked-1' };
@@ -171,13 +178,43 @@ describe('abandon entry in the durable resume notice row', () => {
 // 只能整页重载才消。这里用真 loadSessions + 真 store 复刻该形状。
 describe('abandon clears the parked projection against the stale-guarded session refresh', () => {
   const UPDATED_AT = 1_000;
+  const session = { id: SESSION_ID, title: 't', updatedAt: UPDATED_AT, createdAt: UPDATED_AT, status: 'interrupted' };
+  const message: Message = { id: 'user-turn', role: 'user', content: 'Draft a library event guide', timestamp: UPDATED_AT };
+  const snapshot: StreamRecoverySnapshot = {
+    sessionId: SESSION_ID, runId: PARKED.runId, turnId: 'assistant-turn', content: 'Partial reply',
+    reasoning: '', toolCalls: [], estimatedTokens: 2, timestamp: UPDATED_AT + 1,
+    isFinal: false, streamStatus: 'incomplete', stableForExecution: false, incompleteToolCallIds: [],
+  };
+  function unfinishedCount(): number {
+    return buildSidebarProjectSummary({
+      group: {
+        key: 'library',
+        name: 'Library',
+        paths: [],
+        isUncategorized: false,
+        sessions: useSessionStore.getState().sessions,
+        latestActivityAt: UPDATED_AT,
+      },
+      backgroundSessionMap: new Map(),
+      sessionRuntimes: new Map(),
+      sessionStates: {},
+    }).unfinishedCount;
+  }
   function StoreDrivenRow({ turnActive }: { turnActive: boolean }) {
     const resume = useSessionStore((state) => state.sessions.find((session) => session.id === SESSION_ID)?.durableResume);
+    const streamSnapshot = useSessionStore((state) => state.streamSnapshot);
+    const messages = useSessionStore((state) => state.messages);
     const show = useDurableContinueVisible(resume, turnActive);
     const abandon = useAbandonParkedRun(SESSION_ID, resume?.runId);
+    const decision = deriveStreamInterruptionDecision(
+      streamSnapshot, deriveRetryTurnMessage(streamSnapshot, messages), turnActive, messages,
+    );
     return (
       <>
         {show && <DurableParkedNotice interruptCause={resume?.interruptCause} />}
+        <DecisionSlot streamInterruption={suppressLegacyInterruptionDecision(
+          decision && { ...decision, onContinue: async () => false }, resume?.mode,
+        )} />
         <SendButton hasContinuation={show} onContinue={() => undefined} onAbandon={abandon.onAbandon} />
         {abandon.confirmDialog}
       </>
@@ -190,13 +227,11 @@ describe('abandon clears the parked projection against the stale-guarded session
     useSessionStore.setState({
       currentSessionId: SESSION_ID,
       loadSessions: realLoadSessions,
+      streamSnapshot: snapshot,
+      messages: [message],
       // 停靠会话行：mode continue + canContinue（与 ChatView 从 sessions.find 取的投影同源）
       sessions: [{
-        id: SESSION_ID,
-        title: 't',
-        updatedAt: UPDATED_AT,
-        createdAt: UPDATED_AT,
-        status: 'interrupted',
+        ...session,
         durableResume: { runId: 'run-parked-1', mode: 'continue', interruptCause: 'user_stop', autoResumeCount: 0, maxAutoResumeCount: 3, canContinue: true },
       }] as never,
     });
@@ -204,22 +239,101 @@ describe('abandon clears the parked projection against the stale-guarded session
     window.domainAPI = {
       invoke: vi.fn(async () => ({
         success: true,
-        data: [{ id: SESSION_ID, title: 't', updatedAt: UPDATED_AT, createdAt: UPDATED_AT, status: 'interrupted' }],
+        data: [session],
       })),
     } as never;
   });
 
-  it('confirmed abandon removes the row even though the refreshed row is not newer and carries no projection', async () => {
+  it.each([
+    { timing: 'before reply text', stoppedSnapshot: null },
+    { timing: 'after reply text starts', stoppedSnapshot: snapshot },
+  ])('confirmed abandon after Stop $timing removes the decision through list refresh and forced session reload', async ({ stoppedSnapshot }) => {
+    const cancelled = { ...session, status: 'cancelled', messageCount: 1, turnCount: 1 };
+    const hostInvoke = vi.fn(async (_domain: string, action: string) => ({
+      success: true,
+      data: action === 'load' ? { ...cancelled, messages: [message] } : action === 'list' ? [cancelled] : [],
+    }));
+    window.domainAPI = { invoke: hostInvoke } as never;
+    useSessionStore.setState({ streamSnapshot: stoppedSnapshot });
     render(<StoreDrivenRow turnActive={false} />);
     expect(screen.getByTestId(ROW)).toBeTruthy();
+    expect(screen.getByTestId('continue-run-button')).toBeTruthy();
+    expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
+    expect(unfinishedCount()).toBe(1);
 
     fireEvent.click(screen.getByRole('button', { name: '放弃' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '放弃' }));
 
     await waitFor(() => {
       expect(screen.queryByTestId(ROW)).toBeNull();
+      expect(useSessionStore.getState().streamSnapshot).toBeNull();
+      expect(unfinishedCount()).toBe(0);
     }, { timeout: 2_000 });
+    expect(hostInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'list', expect.anything());
+    expect(ipcInvoke).toHaveBeenCalledExactlyOnceWith('agent:cancel', {
+      sessionId: SESSION_ID, runId: PARKED.runId, abandonParked: true,
+    });
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
+    expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
     expect(useSessionStore.getState().sessions.find((session) => session.id === SESSION_ID)?.durableResume).toBeUndefined();
+
+    await act(() => useSessionStore.getState().switchSession(SESSION_ID, { force: true }));
+    expect(hostInvoke).toHaveBeenCalledWith(IPC_DOMAINS.SESSION, 'load', { sessionId: SESSION_ID });
+    expect(useSessionStore.getState().streamSnapshot).toBeNull();
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
+    expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
+    expect(unfinishedCount()).toBe(0);
+  });
+
+  it('ignores a session load that read the snapshot before abandon settled', async () => {
+    const stale = { ...session, messages: [message], streamSnapshot: snapshot };
+    let releaseStaleLoad!: () => void;
+    let loads = 0;
+    window.domainAPI = {
+      invoke: vi.fn(async (_domain: string, action: string) => {
+        if (action === 'load' && ++loads === 1) {
+          return new Promise((resolve) => {
+            releaseStaleLoad = () => resolve({ success: true, data: stale });
+          });
+        }
+        return { success: true, data: action === 'load' ? { ...session, messages: [message] } : action === 'list' ? [session] : [] };
+      }),
+    } as never;
+    let staleLoad!: Promise<void>;
+    render(<StoreDrivenRow turnActive={false} />);
+    act(() => { staleLoad = useSessionStore.getState().switchSession(SESSION_ID, { force: true }); });
+    fireEvent.click(screen.getByRole('button', { name: '放弃' }));
+    fireEvent.click(dialogConfirmButton());
+    await waitFor(() => expect(loads).toBe(2));
+    await act(async () => {
+      releaseStaleLoad();
+      await staleLoad;
+    });
+    expect(useSessionStore.getState().streamSnapshot).toBeNull();
+    expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
+  });
+
+  it('preserves a newer run projection and snapshot when the abandon response arrives late', async () => {
+    let confirmAbandon!: () => void;
+    ipcInvoke.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      confirmAbandon = () => resolve(undefined);
+    }));
+    render(<StoreDrivenRow turnActive={false} />);
+    fireEvent.click(screen.getByRole('button', { name: '放弃' }));
+    fireEvent.click(dialogConfirmButton());
+
+    const newer = { ...snapshot, runId: 'run-newer' };
+    await act(async () => {
+      useSessionStore.setState((state) => ({
+        streamSnapshot: newer,
+        sessions: state.sessions.map((item) => ({
+          ...item, durableResume: item.durableResume && { ...item.durableResume, runId: newer.runId },
+        })),
+      }));
+      confirmAbandon();
+    });
+    expect(useSessionStore.getState().streamSnapshot).toEqual(newer);
+    expect(useSessionStore.getState().sessions[0].durableResume?.runId).toBe(newer.runId);
   });
 
   afterEach(() => {

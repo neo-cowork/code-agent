@@ -166,6 +166,7 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
           <p className="mt-1.5" data-testid="cron-event-chat-any-chosen">{cc.eventChatAnyChosen}</p>
         ) : (
           <Button
+            type="button"
             size="sm"
             variant="secondary"
             className="mt-1.5"
@@ -204,7 +205,7 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
       {!accountsLoading && accounts.length === 0 && !staleAccount && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
           <span>{cc.eventNoAccounts}</span>
-          <Button size="sm" variant="ghost" onClick={() => openSettingsTab('channels')}>
+          <Button type="button" size="sm" variant="ghost" onClick={() => openSettingsTab('channels')}>
             {cc.resultPushConnect}
           </Button>
         </div>

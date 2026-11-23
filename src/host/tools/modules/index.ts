@@ -26,6 +26,7 @@ import { toolResultArchiveSchema } from './file/toolResultArchive.schema';
 import { writeSchema } from './file/write.schema';
 import { appendSchema } from './file/append.schema';
 import { globSchema } from './file/glob.schema';
+import { libraryAddSchema } from './file/libraryAdd.schema';
 import { blobSchema } from './file/blob.schema';
 
 // shell/
@@ -740,6 +741,10 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     globSchema,
     async () => (await import('./file/glob')).globModule,
+  );
+  registry.register(
+    libraryAddSchema,
+    async () => (await import('./file/libraryAdd')).libraryAddModule,
   );
   registry.register(
     blobSchema,

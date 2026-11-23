@@ -35,6 +35,7 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getLSPManager } from '../../../lsp';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { lspSchema as schema } from './lsp.schema';
 
 // ============================================================================
@@ -240,7 +241,7 @@ export async function executeLsp(
     };
   }
 
-  const resolvedPath = path.resolve(ctx.workingDir, filePath);
+  const resolvedPath = path.resolve(resolveInputPath(filePath, ctx.workingDir));
   const workingDir = ctx.workingDir;
 
   const uri = pathToFileURL(resolvedPath).href;

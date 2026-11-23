@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
-import { parseModelFallbackNotice } from '../fallbackNotice';
+import { parseModelFallbackNotice, type ModelFallbackNoticePayload } from '../fallbackNotice';
 import type {
   ModelFallbackStrategy,
   ModelFallbackToolPolicy,
@@ -10,8 +10,14 @@ import type {
 import { useI18n } from '../../../../hooks/useI18n';
 import type { Translations } from '../../../../i18n';
 import { getHumanToolLabel } from '../../../../utils/toolHumanLabel';
+import { GhostButton } from '../../../primitives/Button';
 
 type FallbackCopy = Translations['rendererHumanPipe']['fallbackBanner'];
+
+// Host connection tokens. Used only after the named categories miss, so an
+// uncategorized ECONNREFUSED still gets the network sentence. The raw line
+// itself is not copied into the tooltip.
+const CONNECTION_ERROR_RE = /econnreset|econnrefused|enotfound|eai_again|socket hang up|fetch failed/;
 
 function formatStepTarget(step: ModelFallbackTraceStep): string {
   return step.model ? `${step.provider}/${step.model}` : step.provider;
@@ -21,8 +27,7 @@ function stepTitle(step: ModelFallbackTraceStep, copy: FallbackCopy): string {
   return [
     formatStepTarget(step),
     formatProviderIdentity(step.providerIdentity, copy),
-    step.reason,
-    step.detail,
+    humanizeFallbackReason(step.category, step.detail, copy),
   ].filter(Boolean).join(' · ');
 }
 
@@ -65,7 +70,11 @@ function strategyLabel(strategy: ModelFallbackStrategy, copy: FallbackCopy): str
   }
 }
 
-function humanizeFallbackReason(category: string | undefined, copy: FallbackCopy): string {
+function humanizeFallbackReason(
+  category: string | undefined,
+  rawReason: string | undefined,
+  copy: FallbackCopy,
+): string {
   const normalized = (category || '').toLowerCase();
   if (normalized.includes('capability') || normalized.includes('vision')) return copy.reasons.capability;
   if (normalized.includes('quota') || normalized.includes('balance')) return copy.reasons.quota;
@@ -75,7 +84,18 @@ function humanizeFallbackReason(category: string | undefined, copy: FallbackCopy
   if (normalized.includes('provider') || normalized.includes('unavailable') || normalized.includes('overload')) {
     return copy.reasons.providerUnavailable;
   }
+  if (CONNECTION_ERROR_RE.test((rawReason || '').toLowerCase())) return copy.reasons.network;
   return copy.reasons.generic;
+}
+
+function technicalDetailLines(notice: ModelFallbackNoticePayload): string[] {
+  const lines: string[] = [];
+  if (notice.reason) lines.push(notice.reason);
+  for (const step of [...(notice.tried ?? []), ...(notice.skipped ?? [])]) {
+    const line = [step.reason, step.detail].filter(Boolean).join(' · ');
+    if (line) lines.push(line);
+  }
+  return lines;
 }
 
 function renderStepGroup(label: string, steps: ModelFallbackTraceStep[], copy: FallbackCopy) {
@@ -146,6 +166,7 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
   defaultExpanded = false,
 }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [technicalOpen, setTechnicalOpen] = useState(false);
   const { t } = useI18n();
   const copy = t.rendererHumanPipe.fallbackBanner;
   const notice = parseModelFallbackNotice(content);
@@ -159,7 +180,10 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
     <div className="my-1 min-w-0 rounded-md border border-badge-warning/25 bg-amber-500/[0.06] text-sm">
       <button
         type="button"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          setExpanded((value) => !value);
+          setTechnicalOpen(false);
+        }}
         aria-expanded={expanded}
         className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left"
       >
@@ -167,7 +191,7 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
         <div className="min-w-0 flex-1">
           <div className="text-xs font-medium text-badge-warning">{copy.summary}</div>
           <div className="mt-0.5 text-[11px] text-zinc-400">
-            {humanizeFallbackReason(notice.category, copy)}
+            {humanizeFallbackReason(notice.category, notice.reason, copy)}
           </div>
         </div>
         {expanded
@@ -182,10 +206,11 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
             <span className="max-w-[180px] truncate font-mono text-zinc-400">{notice.from}</span>
             <span>→</span>
             <span>{copy.currentModel}</span>
-            <span className="max-w-[180px] truncate font-mono text-zinc-400">{notice.to}</span>
-          </div>
-          <div className="mt-1 truncate text-[10px] text-zinc-600" title={notice.reason}>
-            {copy.rawReason} · {notice.reason}
+            {/* 链耗尽（exhausted）时没有切到的模型可展示，按 UI 语言渲染"未切换"；
+                旧会话落盘的 zh 字面量 '未切换' 已在 parseModelFallbackNotice 里映射回 exhausted。 */}
+            <span className="max-w-[180px] truncate font-mono text-zinc-400">
+              {notice.exhausted ? copy.notSwitched : notice.to}
+            </span>
           </div>
           {notice.strategy && (
             <div className="mt-1">
@@ -200,6 +225,23 @@ export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boole
           {renderStepGroup(copy.selected, selected, copy)}
           {renderStepGroup(copy.exhausted, exhausted, copy)}
           {renderToolPolicy(notice.toolPolicy, copy, t)}
+          <div className="mt-1">
+            <GhostButton
+              type="button"
+              size="sm"
+              aria-expanded={technicalOpen}
+              onClick={() => setTechnicalOpen((open) => !open)}
+            >
+              {copy.technicalDetails}
+            </GhostButton>
+            {technicalOpen && (
+              <div className="mt-1 space-y-0.5 break-all font-mono text-[10px] text-zinc-500">
+                {technicalDetailLines(notice).map((line, index) => (
+                  <div key={`${index}-${line.slice(0, 24)}`}>{line}</div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

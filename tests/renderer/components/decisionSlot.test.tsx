@@ -172,7 +172,7 @@ describe('DecisionSlot', () => {
     expect(workflow).toBeGreaterThan(slot);
     expect(traceSource).not.toContain('PermissionCard');
     expect(traceSource).not.toContain('resolvedPermissionRequests');
-    expect(traceSource).toContain('<div className="h-6" aria-hidden="true" />');
+    expect(traceSource).toContain('calc(1.5rem + var(--toast-reserve, 0px))');
   });
 
   it('三张请求只展示危险卡，卡头显示剩余两项，并按展示请求 id 裁决', async () => {

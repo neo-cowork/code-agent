@@ -14,6 +14,7 @@ import { memoryTask } from '../model/quickModel';
 import { withTimeout } from '../services/infra/timeoutController';
 import { createLogger } from '../services/infra/logger';
 import { SESSION_JUDGE } from '../../shared/constants';
+import { stripTelemetryRecoveryNotice } from '../../shared/telemetryRecovery';
 import { listMemoryFiles } from './lightMemoryIpc';
 
 const logger = createLogger('ConversationJudge');
@@ -292,7 +293,9 @@ export async function judgeConversation(input: {
   userMessages: string[];
   lastAssistant?: string;
 }): Promise<ConversationJudgment> {
-  const userMessages = input.userMessages.filter((m) => m && m.trim().length > 0);
+  const userMessages = input.userMessages
+    .map((m) => (m ? stripTelemetryRecoveryNotice(m) : m))
+    .filter((m) => m && m.trim().length > 0);
   if (userMessages.length === 0) {
     return {
       worth: false,

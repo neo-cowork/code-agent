@@ -1,7 +1,7 @@
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
 // ============================================================================
 // ProjectArtifactsList —— 项目协作空间「资产」tab。
-// projectClient.getProjectArtifacts(projectId) 列表：名称/kind/时间/来源会话跳转。
+// projectClient.getProjectArtifacts(projectId) 列表：名称/本地化类型/时间/来源会话跳转。
 // 资料库无独立可复用列表组件（LibraryPanel 是单体），本列表按工单自建。
 // ============================================================================
 
@@ -11,6 +11,7 @@ import type { ProjectArtifact } from '@shared/contract/project';
 import { getProjectArtifacts } from '../../../services/projectClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
+import { projectArtifactKindLabel } from '../../../utils/projectArtifactKind';
 import { Badge } from '../../primitives/Badge';
 import { EmptyState } from '../../primitives/EmptyState';
 import { IconButton } from '../../primitives/IconButton';
@@ -79,7 +80,9 @@ export const ProjectArtifactsList: React.FC<ProjectArtifactsListProps> = ({
               <span className="mt-0.5 block truncate text-xs text-zinc-600">{getDisplaySessionTitle(artifact.sessionTitle, language)}</span>
             ) : null}
           </span>
-          <Badge className="flex-shrink-0 border-zinc-700 bg-zinc-800/60 text-[10px] text-zinc-400">{artifact.kind}</Badge>
+          <Badge className="flex-shrink-0 border-zinc-700 bg-zinc-800/60 text-[10px] text-zinc-400">
+            {projectArtifactKindLabel(artifact.kind, t.sidebarProject.artifactKind)}
+          </Badge>
           <span className="flex-shrink-0 text-[11px] text-zinc-600 tabular-nums">
             {formatRelativeTime(t, artifact.createdAt)}
           </span>

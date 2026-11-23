@@ -885,11 +885,17 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   cancel(
     sessionId?: string,
     reason?: 'user' | 'session-switch' | CancellationReason,
-    options?: { abandonParked?: boolean },
+    options?: { abandonParked?: boolean; runId?: string },
   ): Promise<void> {
-    const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(sessionId);
     if (!resolvedSessionId) return Promise.reject(new Error('No active session'));
+    if (options?.abandonParked && options.runId) {
+      // A stale confirmation must never fall through to stopping the session's current run.
+      return this.externalRunRegistry?.terminalRecoveredWaitingRun(
+        { sessionId: resolvedSessionId, runId: options.runId }, undefined, { abandonParked: true },
+      ).then(() => undefined) ?? Promise.resolve();
+    }
+    const tm = this.getTaskManager();
 
     // Normalize legacy 'user' alias to 'user-cancel' for the cascade contract.
     const normalizedReason: CancellationReason = reason === 'user'
@@ -958,11 +964,18 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
         const state = tm.getSessionState(resolvedSessionId);
         if (isTaskManagerOwnedRunState(state.status)) {
-          await tm.cancelTask(resolvedSessionId, { keepBackground: normalizedReason === 'session-switch' });
+          await tm.cancelTask(resolvedSessionId, {
+            keepBackground: normalizedReason === 'session-switch',
+            ...(normalizedReason === 'user-cancel' || normalizedReason === 'session-switch'
+              ? {}
+              : { persistUserStop: false }),
+          });
         } else {
           const backgroundSettled = normalizedReason === 'session-switch'
             ? Promise.resolve()
-            : tm.cancelSessionBackgroundWork(resolvedSessionId);
+            : normalizedReason === 'user-cancel'
+              ? tm.cancelSessionBackgroundWork(resolvedSessionId)
+              : tm.cancelSessionBackgroundWork(resolvedSessionId, false);
           try {
             // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
             // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
@@ -1126,6 +1139,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const sessions = await getSessionManager().listSessions({
       includeArchived: options?.includeArchived,
       archivedOnly: options?.archivedOnly,
+      ...(options?.projectScope ? { projectScope: options.projectScope } : {}),
       limit: options?.limit,
       offset: options?.offset,
     });
@@ -1148,8 +1162,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return getSessionManager().archiveSession(sessionId);
   }
 
-  async unarchiveSession(sessionId: string): Promise<Session | null> {
-    return getSessionManager().unarchiveSession(sessionId);
+  async unarchiveSession(sessionId: string, updatedAt?: number): Promise<Session | null> {
+    return getSessionManager().unarchiveSession(sessionId, undefined, updatedAt);
   }
 
   async getMessages(sessionId: string): Promise<Message[]> {

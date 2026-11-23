@@ -355,9 +355,9 @@ The linked community `DESIGN.md` files are **unofficial analyses of public produ
 ### Shared foundation
 
 - All user-visible renderer copy lives in the i18n dictionaries under `src/renderer/i18n/` (per-domain zh/en files, aggregated by `src/renderer/i18n/index.ts`), not in inline string literals inside components. zh and en blocks of the same domain stay adjacent in one file (`src/renderer/i18n/chatTranscript.ts` keeps `chatTranscriptZh` and its English counterpart side by side).
-- Pressure marketing words (轻松 / 一键 / 只需 / 立即体验) are banned at a zero baseline (`scripts/check-copy.mjs:34-41`); state what the product does instead of pushing the user to act.
-- Chinese copy uses the ellipsis character `…`, never three ASCII dots (`scripts/check-copy.mjs:35,47`). Both rules are hard gates; an exemption needs an inline `// copy-allow: <reason>` (`scripts/check-copy.mjs:37`).
-- Engineering jargon exposed to users (幂等 / 序列化 / 单一真源 / 落库, `scripts/check-copy.mjs:44`) is a warning-listed smell. Evaluation and ledger vocabulary (oracle, casebank, ledger line) belongs to diagnostic surfaces, not the product workbench; where a diagnostic surface must speak of ledger records it uses user language —「会话消息」(`src/renderer/i18n/sessionInspector.ts:79`), not「台账行」.
+- Pressure marketing words (轻松 / 一键 / 只需 / 立即体验) are banned at a zero baseline (`scripts/check-copy.mjs:34,44`); state what the product does instead of pushing the user to act.
+- Chinese copy uses the ellipsis character `…`, never three ASCII dots (`scripts/check-copy.mjs:35,50`). Both rules are hard gates; an exemption needs an inline `// copy-allow: <reason>` (`scripts/check-copy.mjs:40`).
+- Engineering jargon exposed to users (幂等 / 序列化 / 单一真源 / 落库, `scripts/check-copy.mjs:47`) is a hard per-word ratchet, not a warning: every jargon word has a ceiling in `JARGON_WORD_CEILINGS` (`scripts/check-copy.mjs:37`, default 0 for words not listed), and any word counted over its ceiling fails the gate with `process.exit(1)` (`scripts/check-copy.mjs:305-317`); only new violations are blocked. Evaluation and ledger vocabulary (oracle, casebank, ledger line) belongs to diagnostic surfaces, not the product workbench; where a diagnostic surface must speak of ledger records it uses user language —「会话消息」(`src/renderer/i18n/sessionInspector.ts:79`), not「台账行」.
 
 ### Product-family pattern
 

@@ -204,22 +204,38 @@ describe('skillInvocationResolver', () => {
     expect(resolved?.matchKind).toBe('inline-slash');
   });
 
-  it('uses metadata and frontmatter aliases without hardcoded product names', () => {
+  it('uses metadata and frontmatter aliases without hardcoded product names', async () => {
     const deploy = skill({
       name: 'deploy-box',
       description: 'Deploy helper.',
       aliases: ['小盒子'],
       metadata: { aliases: 'box deploy,盒子部署' },
+      loaded: true,
     });
 
-    expect(resolveSkillInvocationFromSkills('把小盒子发一下', [deploy])?.skill.name).toBe('deploy-box');
-    expect(resolveSkillInvocationFromSkills('盒子部署走一下', [deploy])?.skill.name).toBe('deploy-box');
+    for (const [message, matchedText, source] of [
+      ['把小盒子发一下', '小盒子', 'frontmatter'],
+      ['盒子部署走一下', '盒子部署', 'metadata'],
+    ]) {
+      const resolved = resolveSkillInvocationFromSkills(message, [...BUILTIN_SKILLS, deploy]);
+      expect(resolved).toMatchObject({ skill: deploy, matchKind: 'alias', matchedText, reason: `${source} alias matched` });
+      const { block } = await buildSkillInvocationContext(resolved!, '/repo');
+      expect(block).toContain([
+        'The user message mentioned words related to this skill (see matched text below). The user did not type a slash command for this skill. Whether to use it is your call.',
+        `Matched text: ${matchedText}`,
+        'Skill path: /tmp/deploy-box/SKILL.md',
+        `User message: ${message}`,
+      ].join('\n'));
+      expect(block).not.toContain('explicitly invoked');
+      expect(block).not.toContain('User arguments:');
+    }
   });
 
-  it('extracts conservative trigger aliases from descriptions', () => {
+  it('extracts conservative trigger aliases from descriptions', async () => {
     const lobster = skill({
       name: 'lobster',
       description: '龙虾(OpenClaw VPS)：当用户提到龙虾、lobster、VPS、OpenClaw 时使用。',
+      loaded: true,
     });
 
     const aliases = getSkillInvocationAliases(lobster).map((alias) => alias.value);
@@ -227,6 +243,12 @@ describe('skillInvocationResolver', () => {
     expect(aliases).toContain('龙虾');
     expect(aliases).toContain('lobster');
     expect(resolveSkillInvocationFromSkills('将我的龙虾升级到最新版本', [lobster])?.skill.name).toBe('lobster');
+    const resolved = resolveSkillInvocationFromSkills('upgrade my lobster', [lobster]);
+    expect(resolved).toMatchObject({ skill: lobster, matchKind: 'alias', reason: 'description alias matched' });
+    const { block } = await buildSkillInvocationContext(resolved!, '/repo');
+    expect(block).toContain('Whether to use it is your call.');
+    expect(block).toContain('User message: upgrade my lobster');
+    expect(block).not.toContain('explicitly invoked');
   });
 
   // skill-alias 词边界回归：description 里的否定声明（"不要因为用户提到 page 等关键词就
@@ -289,13 +311,49 @@ describe('skillInvocationResolver', () => {
   });
 
   // 11-17 真机：日程标题「neo-drive 测试」把用户的 neo 技能整段注入，模型把「查完删掉」做成了「再建一条」。
-  it('a skill name inside a hyphenated word is not an alias match', () => {
-    const neo = skill({ name: 'neo', description: 'switch to the neo project.' });
+  it('an authored Latin alias respects hyphenated word boundaries even when equal to the skill name', () => {
+    const neo = skill({ name: 'neo', description: 'switch to the neo project.', aliases: ['neo'] });
 
     expect(resolveSkillInvocationFromSkills('删除日程「neo-drive 测试 123」', [neo])).toBeNull();
     expect(resolveSkillInvocationFromSkills('看一下 agent-neo 的进度', [neo])).toBeNull();
-    expect(resolveSkillInvocationFromSkills('切到 neo 项目', [neo])?.skill.name).toBe('neo');
+    expect(resolveSkillInvocationFromSkills('切到 neo 项目', [neo])?.reason).toBe('frontmatter alias matched');
     expect(resolveSkillInvocationFromSkills('切到 neo-项目', [neo])?.skill.name).toBe('neo');
+  });
+
+  it.each([
+    'Please list the files in the workspace and review them',
+    '帮我 review 一下这个方案',
+    'What did this commit change?',
+    '帮我看一下这个 commit 改了什么',
+    'Find out when the test started',
+    '帮我看看这个 test 的结果',
+    'Can you explain what happened?',
+    '能 explain 一下这个结论吗',
+    'Show me the debug output',
+    '帮我找一下 debug 日志',
+    'Please open the research monitor notes',
+  ])('does not resolve a builtin skill name in ordinary prose: %s', (message) => {
+    expect(resolveSkillInvocationFromSkills(message, BUILTIN_SKILLS)).toBeNull();
+  });
+
+  it.each([
+    ['/review x', 'slash', 'x'],
+    ['see /review x', 'inline-slash', 'see /review x'],
+  ])('preserves the builtin review invocation and exact context for %s', async (message, matchKind, args) => {
+    const resolved = resolveSkillInvocationFromSkills(message, BUILTIN_SKILLS);
+    expect(resolved).toMatchObject({ skill: { name: 'review' }, matchKind, args });
+    const { block } = await buildSkillInvocationContext(resolved!, '/repo');
+    expect(block).toBe([
+      `<required-skill-invocation name="review" match="${matchKind}" source="builtin">`,
+      'The user explicitly invoked or clearly targeted this user-invocable skill. Treat these skill instructions as required for this turn, even if the skill has disable-model-invocation enabled.',
+      'Matched text: /review',
+      'Skill source: builtin inline skill',
+      `User arguments: ${args}`,
+      '<skill-instructions>',
+      resolved!.skill.promptContent,
+      '</skill-instructions>',
+      '</required-skill-invocation>',
+    ].join('\n'));
   });
 
   // 常设刷新真跑：prompt 里的目标路径 status.docx 被当成名为 docx 的 skill 别名。
@@ -304,6 +362,7 @@ describe('skillInvocationResolver', () => {
     const docx = skill({
       name: 'docx',
       description: 'Generate and manipulate Word documents. Use when the user asks to generate docx.',
+      aliases: ['docx'],
     });
     const prompt = 'Write the updated result back to the SAME file at "/tmp/workspace/status.docx", overwriting it in place.';
 
@@ -312,15 +371,17 @@ describe('skillInvocationResolver', () => {
     expect(resolveSkillInvocationFromSkills('/docx /tmp/workspace/status.docx', [docx])?.matchKind).toBe('slash');
   });
 
-  // N-HOME-STARTER-CARDS-FILES-FU2：单轮 Office 文件交付轮丢弃裸词别名注入。
-  // 起始卡片提示词只以 `.docx`/`.xlsx` 扩展名点出交付物——合入 main（aaa02413f）
-  // 后拉丁别名按词边界匹配且点算词内字符，这类提示词从源头就不产生 skill 注入；
-  // 但「请用 docx …」这种裸词点名仍会命中技能名别名，注入后 allowed-tools 边界
-  // （含 Bash）会把本轮从 docx_generate 原生直达挤去脚本工作流。
-  it('裸词别名在单轮文件交付轮被围栏丢弃，非交付轮与显式 /docx 保留', () => {
+  it('does not resolve docx from its name in ordinary prose', () => {
+    const docx = skill({ name: 'docx', description: 'Generate and manipulate Word documents.' });
+    expect(resolveSkillInvocationFromSkills('请用 docx 生成一份项目状态报告', [...BUILTIN_SKILLS, docx])).toBeNull();
+  });
+
+  // N-HOME-STARTER-CARDS-FILES-FU2：单轮 Office 文件交付轮丢弃作者定义别名注入。
+  it('drops a frontmatter alias on one-turn file delivery but keeps it on other turns and retains /docx', () => {
     const docx = skill({
       name: 'docx',
       description: 'Word 文档 AI 助手 — 读取、编辑、生成、审阅 DOCX 文件',
+      aliases: ['周报排版'],
       allowedTools: ['Bash', 'Read', 'docx_generate'],
     });
     const xlsx = skill({
@@ -339,17 +400,17 @@ describe('skillInvocationResolver', () => {
       [xlsx],
     )).toBeNull();
 
-    // (a) 裸词别名命中 + 文件交付轮 → 围栏丢弃
-    const bareWord = resolveSkillInvocationFromSkills(
-      '请用 docx 排版这份周报，交付 .docx 文件',
+    // (a) 作者定义别名命中 + 文件交付轮 → 围栏丢弃
+    const alias = resolveSkillInvocationFromSkills(
+      '请帮我做周报排版，交付 .docx 文件',
       [docx],
     );
-    expect(bareWord?.matchKind).toBe('alias');
-    expect(bareWord?.skill.name).toBe('docx');
-    expect(retainSkillInvocationForTurn(bareWord, true)).toBeNull();
+    expect(alias?.matchKind).toBe('alias');
+    expect(alias?.skill.name).toBe('docx');
+    expect(retainSkillInvocationForTurn(alias, true)).toBeNull();
 
     // (b) 同一命中 + 非交付轮 → 保留
-    expect(retainSkillInvocationForTurn(bareWord, false)?.skill.name).toBe('docx');
+    expect(retainSkillInvocationForTurn(alias, false)?.skill.name).toBe('docx');
 
     // (c) 显式 /docx 斜杠调用 → 文件交付轮也保留
     const slash = resolveSkillInvocationFromSkills('/docx 生成一份周报', [docx]);

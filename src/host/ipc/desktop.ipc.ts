@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import type { IpcMain } from '../platform';
 import type { IPCResponse } from '@shared/ipc';
 import type { RawDomainRouteHandlers } from '@shared/ipc/domainRoutes';
-import { DesktopSchemas, type DesktopDomainRequest } from '@shared/ipc/schemas/desktop';
+import { DesktopSchemas, managedBrowserLaunchPayloadSchema, type DesktopDomainRequest } from '@shared/ipc/schemas/desktop';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type {
   BrowserProfileSourceId,
@@ -136,6 +136,29 @@ function toComputerSurfaceAxQuality(value: unknown): ComputerSurfaceAxQuality | 
 
 type NativeDesktopService = ReturnType<typeof getNativeDesktopService>;
 
+function readManagedBrowserLaunchPayload(raw: unknown): {
+  url?: string;
+  mode?: ManagedBrowserMode;
+  provider?: ManagedBrowserProviderPreference;
+  profileMode?: ManagedBrowserProfileMode;
+  leaseOwner?: string;
+  leaseTtlMs?: number;
+  proxy?: ManagedBrowserProxyInput | null;
+  conversationId?: string;
+} {
+  const parsed = managedBrowserLaunchPayloadSchema.safeParse(raw ?? {});
+  return (parsed.success ? parsed.data : (raw ?? {})) as {
+    url?: string;
+    mode?: ManagedBrowserMode;
+    provider?: ManagedBrowserProviderPreference;
+    profileMode?: ManagedBrowserProfileMode;
+    leaseOwner?: string;
+    leaseTtlMs?: number;
+    proxy?: ManagedBrowserProxyInput | null;
+    conversationId?: string;
+  };
+}
+
 /**
  * desktop 域单源路由表（RQ-183 续作·DESKTOP 刀）：原 domain switch 逐 case 平移为 handler
  * （rawResponse：handler 仍返回完整 IPCResponse，含 observe/listElements/startAudio 带 data 的
@@ -158,22 +181,15 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     } satisfies IPCResponse<unknown>;
   },
   ensureManagedBrowserSession: async (_service, raw) => {
-    const payload = raw as {
-      url?: string;
-      mode?: ManagedBrowserMode;
-      provider?: ManagedBrowserProviderPreference;
-      profileMode?: ManagedBrowserProfileMode;
-      leaseOwner?: string;
-      leaseTtlMs?: number;
-      proxy?: ManagedBrowserProxyInput | null;
-    } | undefined;
+    const payload = readManagedBrowserLaunchPayload(raw);
     const launchOptions = {
-      mode: payload?.mode,
-      provider: payload?.provider,
-      profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
-      leaseOwner: payload?.leaseOwner || 'desktop-ipc',
-      leaseTtlMs: payload?.leaseTtlMs,
-      proxy: payload?.proxy,
+      mode: payload.mode,
+      provider: payload.provider,
+      profileMode: payload.profileMode || 'isolated' as ManagedBrowserProfileMode,
+      leaseOwner: payload.leaseOwner || 'desktop-ipc',
+      leaseTtlMs: payload.leaseTtlMs,
+      proxy: payload.proxy,
+      ...(payload.conversationId ? { conversationId: payload.conversationId } : {}),
     };
     return {
       success: true,
@@ -181,23 +197,16 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
     } satisfies IPCResponse<unknown>;
   },
   openManagedBrowserUrl: async (_service, raw) => {
-    const payload = raw as {
-      url?: string;
-      mode?: ManagedBrowserMode;
-      provider?: ManagedBrowserProviderPreference;
-      profileMode?: ManagedBrowserProfileMode;
-      leaseOwner?: string;
-      leaseTtlMs?: number;
-      proxy?: ManagedBrowserProxyInput | null;
-    } | undefined;
-    const url = normalizeBrowserUrl(payload?.url);
+    const payload = readManagedBrowserLaunchPayload(raw);
+    const url = normalizeBrowserUrl(payload.url);
     const launchOptions = {
-      mode: payload?.mode || 'visible' as ManagedBrowserMode,
-      provider: payload?.provider,
-      profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
-      leaseOwner: payload?.leaseOwner || 'browser-surface',
-      leaseTtlMs: payload?.leaseTtlMs,
-      proxy: payload?.proxy,
+      mode: payload.mode || 'visible' as ManagedBrowserMode,
+      provider: payload.provider,
+      profileMode: payload.profileMode || 'isolated' as ManagedBrowserProfileMode,
+      leaseOwner: payload.leaseOwner || 'browser-surface',
+      leaseTtlMs: payload.leaseTtlMs,
+      proxy: payload.proxy,
+      ...(payload.conversationId ? { conversationId: payload.conversationId } : {}),
     };
     const current = browserService.getSessionState();
     if (current.running && launchOptions.mode === 'visible' && current.mode === 'headless') {

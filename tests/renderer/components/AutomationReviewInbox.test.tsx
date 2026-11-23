@@ -721,6 +721,8 @@ describe('AutomationReviewInbox', () => {
     const { en } = await import('../../../src/renderer/i18n/en');
     expect(zh.cronCenter.parkedVoidedLabel).toBeTruthy();
     expect(en.cronCenter.parkedVoidedLabel).toBeTruthy();
+    // N-FIX-EN-MEMBER-NOTE-FULLWIDTH-COLON：分隔符进词条，en 不得带全角冒号。
+    expect(en.cronCenter.parkedVoidedLabel).not.toContain('：');
   });
 
   // voidReason 持久化的是中文收口原句（含重启前落库的老行）；英文 UI 按原句查表翻出英文句，
@@ -755,7 +757,7 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
-    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided：${enSentence}`);
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain(`Voided: ${enSentence}`);
     expect(screen.getByTestId('parked-approval-voided').textContent).not.toContain(zhSentence);
   });
 
@@ -768,7 +770,7 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
     });
-    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided：已手动取消');
+    expect(screen.getByTestId('parked-approval-voided').textContent).toContain('Voided: 已手动取消');
   });
 
   // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）

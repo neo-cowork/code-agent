@@ -131,7 +131,8 @@ describe('cron execution incremental cost persistence (N-CRON-RUN-LEDGER-VISIBLE
         exit_code INTEGER,
         trigger_json TEXT,
         cost_usd REAL,
-        push_note TEXT
+        push_note TEXT,
+        flat_fee INTEGER
       );
     `);
     databaseState.db = db;

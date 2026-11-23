@@ -10,6 +10,7 @@ import { zhSettingsExternalImport } from './zhSettingsExternalImport';
 import { zhSettingsExternalImportMcp } from './zhSettingsExternalImportMcp';
 import { zhSettingsPrivacyReceipt } from './zhSettingsPrivacyReceipt';
 import { zhSettingsMeeting } from './settingsMeeting';
+import { zhSettingsMemoryTidy } from './zhSettingsMemoryTidy';
 
 export const zhSettings = {
     title: '设置',
@@ -24,4 +25,5 @@ export const zhSettings = {
   ...zhSettingsExternalImportMcp,
   ...zhSettingsPrivacyReceipt,
   ...zhSettingsMeeting,
+  ...zhSettingsMemoryTidy,
 };

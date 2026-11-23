@@ -99,12 +99,12 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function stubApiKeyConfigured(configured: boolean) {
+function stubApiKeyConfigured(configured: boolean, settings = {}) {
   // 未知的 domain action 一律 reject，与真实 ipcService 在 jsdom（无 bridge）下的行为一致：
   // resolve undefined 会让调用方的 .then(data => data.x) 走进成功分支然后崩树。
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'checkApiKeyConfigured') return Promise.resolve(configured);
-    if (action === 'get') return Promise.resolve({});
+    if (action === 'get') return Promise.resolve(settings);
     return Promise.reject(new Error(`no bridge for ${_domain}:${action}`));
   });
 }
@@ -140,5 +140,30 @@ describe('first-run onboarding gating', () => {
       timeout: 8_000,
       interval: 150,
     });
+  });
+});
+
+describe('App startup font size', () => {
+  it.each([
+    { ui: { fontSize: 16 }, expected: '16px' },
+    { ui: { fontSize: 13 }, expected: '13px' },
+    { ui: { fontSize: 14 }, expected: '' },
+    { ui: { fontSize: 99 }, expected: '' },
+    { ui: {}, expected: '' },
+  ])('restores the CSS font size from $ui', async ({ ui, expected }) => {
+    const style = document.documentElement.style;
+    style.setProperty('--font-size-base', '20px');
+    const consoleError = vi.spyOn(console, 'error');
+    stubApiKeyConfigured(true, { ui });
+
+    try {
+      render(<App />);
+      await waitFor(() => expect(style.getPropertyValue('--font-size-base')).toBe(expected));
+      expect(consoleError.mock.calls.some(([message]) =>
+        String(message).includes('[App] Failed to load settings'))).toBe(false);
+    } finally {
+      consoleError.mockRestore();
+      style.removeProperty('--font-size-base');
+    }
   });
 });

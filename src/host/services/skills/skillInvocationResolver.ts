@@ -182,7 +182,7 @@ function descriptionTriggerAliases(description: string): string[] {
   return uniq(aliases);
 }
 
-export function getSkillInvocationAliases(skill: ParsedSkill): SkillAliasCandidate[] {
+export function getSkillInvocationAliases(skill: ParsedSkill, includeName = true): SkillAliasCandidate[] {
   const candidates: SkillAliasCandidate[] = [];
 
   candidates.push({ value: skill.name, source: 'name' });
@@ -207,6 +207,8 @@ export function getSkillInvocationAliases(skill: ParsedSkill): SkillAliasCandida
 
   const seen = new Set<string>();
   return candidates.filter((candidate) => {
+    // Skip names before deduplication so an author can still opt in to the same phrase.
+    if (!includeName && candidate.source === 'name') return false;
     const key = normalizeText(candidate.value);
     if (!isUsefulAlias(candidate.value) || seen.has(key)) return false;
     seen.add(key);
@@ -280,7 +282,8 @@ export function resolveSkillInvocationFromSkills(
   const normalizedMessage = normalizeText(message);
   const matches: ResolvedSkillInvocation[] = [];
   for (const skill of userInvocableSkills) {
-    for (const alias of getSkillInvocationAliases(skill)) {
+    const authoredAliases = getSkillInvocationAliases(skill, false);
+    for (const alias of authoredAliases) {
       const normalizedAlias = normalizeText(alias.value);
       if (!aliasAppearsInMessage(normalizedMessage, normalizedAlias)) continue;
 
@@ -413,12 +416,15 @@ export async function buildSkillInvocationContext(
     }
   }
 
+  const isAlias = invocation.matchKind === 'alias';
   const block = [
     `<required-skill-invocation name="${skill.name}" match="${invocation.matchKind}" source="${skill.source}">`,
-    `The user explicitly invoked or clearly targeted this user-invocable skill. Treat these skill instructions as required for this turn, even if the skill has disable-model-invocation enabled.`,
+    isAlias
+      ? 'The user message mentioned words related to this skill (see matched text below). The user did not type a slash command for this skill. Whether to use it is your call.'
+      : 'The user explicitly invoked or clearly targeted this user-invocable skill. Treat these skill instructions as required for this turn, even if the skill has disable-model-invocation enabled.',
     `Matched text: ${invocation.matchedText}`,
     formatSkillLocation(skill),
-    invocation.args ? `User arguments: ${invocation.args}` : '',
+    invocation.args ? `${isAlias ? 'User message' : 'User arguments'}: ${invocation.args}` : '',
     '<skill-instructions>',
     promptContent,
     '</skill-instructions>',

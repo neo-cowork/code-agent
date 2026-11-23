@@ -14,6 +14,8 @@ import {
 } from '../../cron/CronSimpleCreate';
 import { CronEventScheduleFields } from '../../cron/CronEventScheduleFields';
 import { CronMailEventFields } from '../../cron/CronMailEventFields';
+import { CronEventLimitFields } from '../../cron/CronEventLimitFields';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
 import { CRON_CLOUD_NOT_CONFIGURED } from '@shared/constants/cronErrors';
@@ -164,6 +166,13 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   }));
   const mailEditRef = useRef(mailEdit);
   const [budgetEdit, setBudgetEdit] = useState(() => String(draft.input.maxRunBudget ?? ''));
+  const initialLimits = () => {
+    const schedule = draft.input.schedule;
+    return schedule.type === 'event'
+      ? { prefilter: schedule.prefilter ?? '', maxRuns: schedule.maxRunsPerHour !== undefined ? String(schedule.maxRunsPerHour) : '' }
+      : { prefilter: '', maxRuns: '' };
+  };
+  const [limitsEdit, setLimitsEdit] = useState(initialLimits);
 
   // 草案身份变化（同会话旧卡未确认时再次 /schedule 整体替换草案，挂载点没有 key、
   // 卡片不重挂）时重置挂载期初始化的 event 编辑态（rework r1 Important 1）：否则上一份
@@ -185,6 +194,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     };
     setMailEdit(mailEditRef.current);
     setBudgetEdit(String(draft.input.maxRunBudget ?? ''));
+    setLimitsEdit(initialLimits());
     // 故意只依赖草案身份：卡内每次编辑都会产生新 draft 引用，重置必须只随「换了一份草案」发生。
   }, [draftId]);
 
@@ -220,6 +230,38 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       },
     });
   };
+
+  // 一句话筛选 + 每小时上限：channel/mail 草案共用同一写回；空白不落键（host 缺省 20 生效）。
+  const writeLimitsEdit = (patch: Partial<{ prefilter: string; maxRuns: string }>) => {
+    const schedule = draft.input.schedule;
+    if (schedule.type !== 'event' || !onDraftChange) return;
+    const next = { ...limitsEdit, ...patch };
+    setLimitsEdit(next);
+    const { prefilter: _p, maxRunsPerHour: _m, ...rest } = schedule;
+    const prefilter = next.prefilter.trim();
+    const cap = Number(next.maxRuns);
+    onDraftChange({
+      ...draft,
+      input: {
+        ...draft.input,
+        schedule: {
+          ...rest,
+          ...(prefilter ? { prefilter } : {}),
+          ...(next.maxRuns.trim() && Number.isFinite(cap)
+            ? { maxRunsPerHour: Math.min(CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR, Math.max(CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR, Math.floor(cap))) }
+            : {}),
+        },
+      } as CreateCronJobInput,
+    });
+  };
+  const limitFields = (
+    <CronEventLimitFields
+      prefilter={limitsEdit.prefilter}
+      maxRunsPerHour={limitsEdit.maxRuns}
+      onPrefilterChange={(prefilter) => writeLimitsEdit({ prefilter })}
+      onMaxRunsPerHourChange={(maxRuns) => writeLimitsEdit({ maxRuns })}
+    />
+  );
 
   // mail 草案的卡内编辑（账号/邮箱下拉）：与通道版同款走 ref 合并 + 整体写回；
   // mailbox 空串 = 缺省 INBOX，写回时不落键（空串会被 host 当字面量邮箱名）。
@@ -372,6 +414,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               validationMessage={eventViolation ? cc.eventValidation[eventViolation.reason] : null}
               preferredChatName={draft.eventGroupName}
             />
+            <div className="mt-3">{limitFields}</div>
           </div>
         )}
 
@@ -386,6 +429,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               onBudgetChange={handleEventBudgetChange}
               violation={eventViolation}
             />
+            <div className="mt-3">{limitFields}</div>
           </div>
         )}
 

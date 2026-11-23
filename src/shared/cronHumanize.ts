@@ -19,6 +19,19 @@ function parseClock(minute: string, hour: string): string | null {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+const WEEKDAYS_EN_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** 星期字段 → 人话；只认 `*`、`1-5`、逗号分隔的 0-6 单天，其余 null */
+function describeDaysOfWeek(dayOfWeek: string, lang: CronHumanLang): string | null {
+  if (dayOfWeek === '*') return lang === 'zh' ? '每天' : 'every day';
+  if (dayOfWeek === '1-5') return lang === 'zh' ? '工作日' : 'Mon–Fri';
+  if (!/^[0-6](,[0-6])*$/.test(dayOfWeek)) return null;
+  const days = dayOfWeek.split(',').map(Number);
+  return lang === 'zh'
+    ? days.map((d) => WEEKDAYS_ZH[d]).join('、')
+    : days.map((d) => WEEKDAYS_EN_SHORT[d]).join(', ');
+}
+
 /**
  * 5 段 cron 表达式 → 人话；不认识的形态返回 null。
  * 覆盖：分钟步进（每 n 分钟）、小时步进（每 n 小时）、
@@ -41,6 +54,20 @@ function humanizeCronExpression(expression: string, lang: CronHumanLang): string
     if (n <= 0 || n > 59) return null;
     if (lang === 'zh') return `每 ${n} 分钟`;
     return n === 1 ? 'Every minute' : `Every ${n} minutes`;
+  }
+
+  // 窗口内按分钟步进：`*/N A-B * * <dow>`（如 */15 9-17 * * 1-5）
+  const hourRange = /^(\d{1,2})-(\d{1,2})$/.exec(hour);
+  if (minuteStep && hourRange && dayOfMonth === '*') {
+    const n = Number(minuteStep[1]);
+    const from = Number(hourRange[1]);
+    const to = Number(hourRange[2]);
+    const days = describeDaysOfWeek(dayOfWeek, lang);
+    if (n <= 0 || n > 59 || from > to || to > 23 || !days) return null;
+    const window = `${String(from).padStart(2, '0')}:00–${String(to).padStart(2, '0')}:59`;
+    return lang === 'zh'
+      ? `${days} ${window} 每 ${n} 分钟`
+      : `Every ${n === 1 ? 'minute' : `${n} minutes`}, ${window}, ${days}`;
   }
 
   const hourStep = /^\*\/(\d+)$/.exec(hour);

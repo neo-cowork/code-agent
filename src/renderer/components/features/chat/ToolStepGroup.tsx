@@ -1,4 +1,5 @@
 import { CalendarDeleteUndo, canUndoCalendarDelete } from './MessageBubble/ToolCallDisplay/CalendarDeleteUndo';
+import { readHelperOutcomes } from '../../../utils/helperOutcomeCopy';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../utils/toolPreflightPresentation';
 // ============================================================================
 // ToolStepGroup - 把相邻的工具调用折成一行 "Explored 2 files, 2 lists"
@@ -128,7 +129,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         }
         const stepStatus = terminal.stepStatus;
         const preflight = toolPreflightCopy({ name: tc.name, arguments: tc.args, result: tc.result === undefined ? undefined : {
-          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result, metadata: tc.metadata,
+          toolCallId: tc.id, success: tc.success ?? true, error: tc.success === false ? tc.result : undefined, output: tc.result,
+          metadata: tc.recovered ? { ...tc.metadata, recovered: true } : tc.metadata,
         } }, t);
         const step = preflight?.action ?? humanizeToolStep(
           tc.name,
@@ -137,7 +139,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           tc.shortDescription,
           stepStatus,
           tc.stepLabel,
-          { notRun: terminal.notRun, connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
+          { notRun: terminal.notRun, skipped: terminal.skipped, handedOff: terminal.handedOff, helperOutcomes: readHelperOutcomes(tc.metadata), connectorPrefixRendered: Boolean(connectorId), delegationReceipt: tc.name === 'delegate_session'
             ? parseDelegateSessionReceipt({ success: tc.success, output: tc.result }) : undefined },
         );
         if (!connectorId) return step;
@@ -158,6 +160,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const byStatus = new Map<ToolStepStatus, string[]>();
     let blockedCommands = 0;
     let blockedSteps = 0;
+    let skippedBash = 0;
     let staleUnfinished = 0;
     const notRunNames: string[] = [];
     let envWaiting: string | undefined;
@@ -186,14 +189,20 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         else staleUnfinished += 1;
         continue;
       }
+      if (terminalById.get(tc.id)?.skipped) {
+        skippedBash += 1;
+        continue;
+      }
       const stepStatus = benign
         ? 'completed'
         : terminalById.get(tc.id)?.stepStatus ?? 'completed';
       byStatus.set(stepStatus, [...(byStatus.get(stepStatus) ?? []), tc.name]);
       if (!benign && terminalById.get(tc.id)?.notRun) notRunNames.push(tc.name);
     }
+    if (skippedBash && !byStatus.has('completed')) byStatus.set('completed', []);
     return [
       ...Array.from(byStatus, ([stepStatus, names]) => {
+        if (stepStatus === 'completed') return humanizeToolGroupLabel(names, t, stepStatus, false, skippedBash);
         if (stepStatus !== 'failed' || notRunNames.length === 0) return humanizeToolGroupLabel(names, t, stepStatus);
         const rest = [...names];
         for (const name of notRunNames) rest.splice(rest.indexOf(name), 1);
@@ -422,9 +431,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
   // 结局优先：这组里有多少次失败已被后续成功恢复——只用于安静地标个「已恢复」，不顶红。
+  // skipped（从未执行）的行虽会被投影层降级成 recovered，但不是「失败后恢复」，不计入。
   const recoveredCount = useMemo(
-    () => nodes.filter((n) => n.toolCall?.recovered).length,
-    [nodes],
+    () => nodes.filter((n) => n.toolCall?.recovered && !terminalById.get(n.toolCall.id)?.skipped).length,
+    [nodes, terminalById],
   );
   const totalDuration = useMemo(() => {
     const total = toolCalls.reduce((sum, toolCall) => sum + (toolCall.result?.duration ?? 0), 0);
@@ -539,7 +549,6 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span data-testid="tool-group-head-label" className="block break-words text-xs leading-5">{status === 'pending-approval' ? <span data-testid="tool-group-head-status">{`${t.toolStepHumanize.pendingApprovalStatus} · `}</span> : status === 'streaming' ? <span data-testid="tool-group-head-status">{`${t.toolGroup.statusRunning} · `}</span> : ''}{label}</span>
           {(status === 'partial' || status === 'error') && (
             <span className={`mt-0.5 block whitespace-normal break-words text-xs leading-5 ${hasEscalatedError ? 'text-badge-danger' : 'text-zinc-400'}`}>
-              {status === 'partial' ? `${t.toolGroup.statusPartial} · ` : ''}
               {permissionRequestOutcome?.reason ?? failureReason ?? t.toolStepHumanize.failureReasonMissing}
             </span>
           )}
@@ -679,6 +688,7 @@ function isReadOrSearchTool(name: string): boolean {
     'Glob',
     'LS',
     'list_directory',
+    'ListDirectory',
   ].includes(name);
 }
 

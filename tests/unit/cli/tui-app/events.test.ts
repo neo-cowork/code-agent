@@ -286,3 +286,29 @@ describe('task_progress 活动标签不闪', () => {
     expect(viaThinking.activity).toBe('Searching codebase');
   });
 });
+
+// N-FIX-FALLBACK-BANNER-TO-FIELD-ZH-LITERAL：链耗尽的 model_fallback 事件没有 `to`
+//（exhausted: true）——打印 not switched，不得出现 "undefined"。
+describe('model_fallback', () => {
+  it('耗尽事件（无 to）打印 not switched', () => {
+    const state = reduceAgentEvent(
+      createChatState(),
+      ev('model_fallback', { reason: 'Moonshot API error: 503 service unavailable', from: 'zhipu/glm-4.7-flash', exhausted: true }),
+    );
+    expect(state.messages.at(-1)).toMatchObject({
+      kind: 'system',
+      text: 'Model fallback: zhipu/glm-4.7-flash → not switched (Moonshot API error: 503 service unavailable)',
+    });
+  });
+
+  it('正常事件仍打印切换目标模型', () => {
+    const state = reduceAgentEvent(
+      createChatState(),
+      ev('model_fallback', { reason: 'Moonshot API error: 503 service unavailable', from: 'zhipu/glm-4.7-flash', to: 'moonshot/kimi-k2.5' }),
+    );
+    expect(state.messages.at(-1)).toMatchObject({
+      kind: 'system',
+      text: 'Model fallback: zhipu/glm-4.7-flash → moonshot/kimi-k2.5 (Moonshot API error: 503 service unavailable)',
+    });
+  });
+});

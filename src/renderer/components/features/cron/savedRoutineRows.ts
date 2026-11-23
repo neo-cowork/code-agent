@@ -62,6 +62,9 @@ interface SavedRoutineRestateLabels {
   /** cronCenter 新增：停用状态行的标签与值（仅 job.enabled === false 时出第四行）。 */
   savedStatusLabel: string;
   savedStatusPaused: string;
+  /** 归档行（N-FIX-CRON-CONFIRM-CARD-OMITS-ARCHIVE-PROJECT）：标签与名称读不到时的兜底。 */
+  archiveLabel: string;
+  archiveUnknown: string;
 }
 
 export interface SavedRoutineRestateInput {
@@ -79,16 +82,21 @@ export interface SavedRoutineRestateInput {
    * 通知判据只挂在 agent 执行链上，非 agent 出行等于给一个配不了的假口子。
    */
   notifyWhenRow?: boolean;
+  /**
+   * 归档项目的显示名（listProjects 解析）。仅当 agent 动作带 libraryProjectId 时出
+   * archive 行；名称读不到（加载中/已删除/global）落 labels.archiveUnknown，绝不透出 id。
+   */
+  archiveProjectName?: string;
 }
 
 export interface SavedRoutineRow {
-  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'status';
+  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'archive' | 'status';
   label: string;
   value: string;
 }
 
 export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): readonly SavedRoutineRow[] {
-  const { job, roleDisplayName = '', channelLabel, labels, lang = 'zh', notifyWhenRow = false } = input;
+  const { job, roleDisplayName = '', channelLabel, labels, lang = 'zh', notifyWhenRow = false, archiveProjectName } = input;
   // what/when 复用聊天侧确认卡口径：保存后的定义是 create 输入的超集，结构字段一致。
   // notifyWhen 行由本函数按 notifyWhenRow 自算（聊天侧口径只认 restatement，编辑器
   // 输入没有）；result 行的值是原始 resultChannel，交给 channelLabel，不透出。
@@ -140,6 +148,13 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
       : []),
     { key: 'result', label: labels.result, value: result },
   ];
+  if (agentAction?.libraryProjectId?.trim()) {
+    rows.push({
+      key: 'archive',
+      label: labels.archiveLabel,
+      value: archiveProjectName?.trim() || labels.archiveUnknown,
+    });
+  }
   if (job.enabled === false) {
     rows.push({ key: 'status', label: labels.savedStatusLabel, value: labels.savedStatusPaused });
   }

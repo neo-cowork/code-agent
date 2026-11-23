@@ -19,7 +19,8 @@ import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } 
 import { redactCommandKeywordSecrets, redactCredentialText } from '@shared/security/secretPatterns';
 import { cronEditorChromeZh } from '../../../i18n/cronEditorChrome';
 import { formatDateTime } from '../../../utils/formatDateTime';
-import { getBuiltinJobDisplay } from './builtinJobDisplay';
+import { readWakeSkipFromResult } from '@shared/cronRunLedger';
+import { getBuiltinJobDisplay, roleWakeActionLabel } from './builtinJobDisplay';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -55,6 +56,10 @@ export interface CronJobDraft {
    * 'event-mail' 调度：绑定的 Mail 账号名（mail connector 的账号名，非通道账号 id）。
    */
   eventMailAccountId: string;
+  /** 事件调度（三种来源共用）：只处理符合这句话的消息；空串 = 不筛。 */
+  eventPrefilter: string;
+  /** 事件调度（三种来源共用）：每小时最多运行次数；空串 = 缺省值（不落键）。 */
+  eventMaxRunsPerHour: string;
   /**
    * 'event-mail' 调度：监听邮箱名；空串 = 缺省 INBOX（保存时不落 mailbox 键）。
    */
@@ -128,6 +133,8 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     eventChatId: '',
     eventMailAccountId: '',
     eventMailMailbox: '',
+    eventPrefilter: '',
+    eventMaxRunsPerHour: '',
     actionType: 'shell',
     shellCommand: '',
     shellCwd: '',
@@ -201,6 +208,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     // 上，保存时仅覆盖 accountId/mailbox，可选窗口字段原样保留（round-trip）。
     // webhook 源没有账号表单：分型为 'event-webhook' 并带出原绑定。若落进通用 'event'
     // 分支，保存会当成 channel（没账号存不了；补上账号则 source 被改写、窗口被清掉）。
+    draft.eventPrefilter = job.schedule.prefilter ?? '';
+    draft.eventMaxRunsPerHour = job.schedule.maxRunsPerHour !== undefined ? String(job.schedule.maxRunsPerHour) : '';
     if (job.schedule.source === 'channel') {
       draft.eventAccountId = job.schedule.accountId;
       draft.eventChatId = job.schedule.chatId || '';
@@ -291,6 +300,16 @@ function normalizeWorkingDirectory(metadata: Record<string, unknown> | undefined
   return trimmed ? { ...rest, workingDirectory: trimmed } : rest;
 }
 
+/** 事件调度共用的两项限额：空值不落键（host 归一落缺省）；mail/webhook 的原绑定值被表单值覆盖。 */
+function eventLimitsFromDraft(draft: CronJobDraft): { prefilter?: string; maxRunsPerHour?: number } {
+  const prefilter = draft.eventPrefilter.trim();
+  const cap = Number(draft.eventMaxRunsPerHour);
+  return {
+    ...(prefilter ? { prefilter } : {}),
+    ...(draft.eventMaxRunsPerHour.trim() && Number.isFinite(cap) ? { maxRunsPerHour: cap } : {}),
+  };
+}
+
 export function buildCronJobInput(
   draft: CronJobDraft,
   validation = cronEditorChromeZh.editorChrome.validation,
@@ -378,6 +397,10 @@ export function buildCronJobInput(
       ...(mailbox ? { mailbox } : {}),
     };
     if (!mailbox) delete schedule.mailbox;
+    // 原绑定里的限额不能在用户清空表单后残留。
+    delete schedule.prefilter;
+    delete schedule.maxRunsPerHour;
+    Object.assign(schedule, eventLimitsFromDraft(draft));
   } else if (draft.scheduleType === 'event-webhook') {
     // 已落库的 webhook 任务：整份回写原绑定（含窗口）。通道账号字段不参与——
     // 补选账号不能把 source 改成 channel。改成别的调度类型则走对应分支，原绑定作废。
@@ -388,6 +411,7 @@ export function buildCronJobInput(
       eventName: 'message',
       ...(source?.batchWindowSec !== undefined ? { batchWindowSec: source.batchWindowSec } : {}),
       ...(source?.minRunIntervalSec !== undefined ? { minRunIntervalSec: source.minRunIntervalSec } : {}),
+      ...eventLimitsFromDraft(draft),
     };
   } else {
     // 'event'（通道源）：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号
@@ -399,6 +423,7 @@ export function buildCronJobInput(
       accountId: draft.eventAccountId.trim(),
       eventName: 'message',
       ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
+      ...eventLimitsFromDraft(draft),
     };
   }
 
@@ -523,9 +548,13 @@ export function formatDuration(ms?: number | null, lang: CronHumanLang = 'zh'): 
   return text.join(' ');
 }
 
-/** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
-export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud'): string {
-  if (runsOn === 'cloud' || value == null || !Number.isFinite(value)) return '—';
+/**
+ * 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash；
+ * 包月运行（无美元读数）传入 flatFeeLabel 显示「不按美元计费」，不编造美元数。
+ */
+export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud', flatFeeLabel?: string): string {
+  if (runsOn === 'cloud') return '—';
+  if (value == null || !Number.isFinite(value)) return flatFeeLabel ?? '—';
   return `$${value.toFixed(4)}`;
 }
 
@@ -594,6 +623,8 @@ export function formatActionSummary(job: CronJobDefinition, lang: CronHumanLang 
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':
       return job.action.channel;
+    case 'role-wake':
+      return roleWakeActionLabel(lang);
     default:
       return (job.action as { type: string }).type;
   }
@@ -654,12 +685,16 @@ export function prettyJson(value: unknown): string {
 export function getLatestExecutionStatus(
   execution: CronJobExecution | null | undefined,
   copy: { status: Record<CronJobStatus | 'none', string>; permissionDeniedBadge: string },
+  wakeCopy?: { skippedBadge: string },
 ): { label: string; className: string } {
   if (!execution) {
     return { label: copy.status.none, className: 'text-zinc-300 bg-zinc-500/10' };
   }
   if (isPermissionDeniedExecution(execution)) {
     return { label: copy.permissionDeniedBadge, className: 'text-badge-warning bg-amber-500/10' };
+  }
+  if (wakeCopy && readWakeSkipFromResult(execution.result)) {
+    return { label: wakeCopy.skippedBadge, className: 'text-zinc-300 bg-zinc-500/10' };
   }
   return { label: copy.status[execution.status], className: getExecutionStatusMeta(execution.status).className };
 }

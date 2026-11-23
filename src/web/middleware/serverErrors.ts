@@ -67,12 +67,8 @@ export function handleServerError(logger: WebRouteLogger): ErrorRequestHandler {
       reason: failureReason(error),
     });
     res.locals.serverErrorLogged = true;
-    if (isTrustError) {
-      res.status(status).json({
-        error: 'Project folder needs trust confirmation',
-        code: 'PROJECT_SOURCE_TRUST',
-        kind: (error as ProjectSourceTrustError).kind,
-      });
+    if (error instanceof ProjectSourceTrustError) {
+      res.status(status).json(error.toHttpBody());
       return;
     }
     if (status >= 500) {

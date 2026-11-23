@@ -6,13 +6,13 @@ import { toolStepVerbsEn, toolStepVerbsZh } from './toolStepVerbs';
 import { turnRailEn, turnRailZh } from './turnRail';
 import { projectTrustTurnCardEn, projectTrustTurnCardZh, projectTrustTurnRunEn, projectTrustTurnRunZh } from './projectTrust';
 import { chatErrorCopyEn, chatErrorCopyZh } from './chatErrorCopy';
+import { WAITING_ON_USER_LABELS } from '@shared/i18n/waitingOnUserLabels';
 export const chatTranscriptZh = {
   ...turnRailZh,
 chat: {
   thinking: '正在思考…',
-  // 回响信号（等模型）
   waitingModel: '信号传输中，正在等待模型回响…',
-  waitingApproval: '等你批准，请处理审批卡…',
+  waitingApproval: `${WAITING_ON_USER_LABELS.zh.approval}，请处理审批卡…`,
   // 编队信号（等子任务）：无数字版——单个子任务或计数不可用时用
   waitingSubagent: '代理工作中',
   // 编队信号带真实并发数版，{count} 来自当前回合仍在运行的子任务工具调用数
@@ -20,7 +20,7 @@ chat: {
   activityIdle: '正在整理任务…',
   delegationReceipt: {
     failureDetail: '{status}：{reason}',
-    headlines: { working: '{name}正在处理', completed: '{name}已完成', failed: '{name}没有完成', cancelled: '{name}已取消' },
+    headlines: { working: '{name} · 正在处理', completed: '{name} · 已完成', failed: '{name} · 没有完成', cancelled: '{name} · 已取消' },
     working: '代理工作中',
     completed: outcomeWordsZh.outcomeWords.completed.timeline.label,
     failed: outcomeWordsZh.outcomeWords['failed-unknown'].timeline.label,
@@ -139,6 +139,9 @@ chatSearch: {
   roleUser: '用户',
   roleAssistant: '助手',
   roleSystem: '系统',
+  roleTool: '工具输出',
+  messageHitPrefix: '消息命中',
+  toolHitPrefix: '工具输出命中',
   turnNumber: '第 {n} 轮',
 },
 forkLineage: {
@@ -260,6 +263,10 @@ toolStepHumanize: {
   searchFallback: '搜索了内容',
   listDir: '查看了 {target} 目录',
   listDirFallback: '查看了目录',
+  listDirWorking: '查看了当前工作目录',
+  listDirHome: '查看了主目录',
+  office: { excel: '导出了表格', docx: '生成了文档', ppt: '生成了演示文稿', pdf: '生成了 PDF', chart: '生成了图表', docEdit: '编辑了文档' },
+  fileStat: '查看了 {target} 的文件信息', fileStatFallback: '查看了文件信息',
   webSearch: '搜索了网页 {query}',
   webSearchFallback: '搜索了网页',
   webFetch: '打开了 {target}',
@@ -330,6 +337,7 @@ toolStatus: {
     Glob: { preparing: '准备搜索…', running: '搜索文件…' },
     Grep: { preparing: '准备搜索…', running: '搜索内容…' },
     list_directory: { preparing: '准备浏览…', running: '浏览目录…' },
+    ListDirectory: { preparing: '准备浏览…', running: '浏览目录…' },
     WebSearch: { preparing: '准备搜索…', running: '搜索网络…' },
     web_fetch: { preparing: '准备抓取…', running: '抓取网页…' },
     task: { preparing: '准备任务…', running: '执行任务…' },
@@ -492,7 +500,7 @@ chat: {
   thinking: 'Thinking…',
   // Echo signal (waiting on the model)
   waitingModel: 'Signal sent, awaiting model echo…',
-  waitingApproval: 'Waiting for your approval — please review the approval card…',
+  waitingApproval: `${WAITING_ON_USER_LABELS.en.approval} — please review the approval card…`,
   // Fleet signal (waiting on subtasks): no-count version — single subtask or count unavailable
   waitingSubagent: 'Agent working',
   // Fleet signal with the real concurrency count; {count} comes from the turn's still-running subtask tool calls
@@ -500,7 +508,7 @@ chat: {
   activityIdle: 'Organizing the task…',
   delegationReceipt: {
     failureDetail: '{status}: {reason}',
-    headlines: { working: '{name} is working', completed: '{name} finished', failed: "{name} didn't finish", cancelled: '{name} was cancelled' },
+    headlines: { working: '{name} · is working', completed: '{name} · finished', failed: "{name} · didn't finish", cancelled: '{name} · was cancelled' },
     working: 'Agent working',
     completed: 'Completed',
     failed: 'Not completed',
@@ -619,6 +627,9 @@ chatSearch: {
   roleUser: 'User',
   roleAssistant: 'Assistant',
   roleSystem: 'System',
+  roleTool: 'Tool output',
+  messageHitPrefix: 'Message match',
+  toolHitPrefix: 'Tool output match',
   turnNumber: 'Turn {n}',
 },
 forkLineage: {
@@ -744,6 +755,10 @@ toolStepHumanize: {
   searchFallback: 'Searched',
   listDir: 'Viewed the {target} directory',
   listDirFallback: 'Viewed a directory',
+  listDirWorking: 'Viewed the working folder',
+  listDirHome: 'Viewed the home folder',
+  office: { excel: 'Exported spreadsheet', docx: 'Created a document', ppt: 'Created a presentation', pdf: 'Created a PDF', chart: 'Created a chart', docEdit: 'Edited a document' },
+  fileStat: 'Checked file info for {target}', fileStatFallback: 'Checked file info',
   webSearch: 'Searched the web for {query}',
   webSearchFallback: 'Searched the web',
   webFetch: 'Opened {target}',
@@ -814,6 +829,7 @@ toolStatus: {
     Glob: { preparing: 'Preparing search…', running: 'Searching files…' },
     Grep: { preparing: 'Preparing search…', running: 'Searching content…' },
     list_directory: { preparing: 'Preparing…', running: 'Listing directory…' },
+    ListDirectory: { preparing: 'Preparing…', running: 'Listing directory…' },
     WebSearch: { preparing: 'Preparing search…', running: 'Searching the web…' },
     web_fetch: { preparing: 'Preparing fetch…', running: 'Fetching page…' },
     task: { preparing: 'Preparing task…', running: 'Running task…' },

@@ -15,11 +15,6 @@ function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
 }
 
-function basename(target: string): string {
-  const normalized = target.replace(/\\/g, '/').replace(/\/+$/u, '');
-  return normalized.split('/').pop() || target;
-}
-
 /**
  * /dev/null 的 basename 是 "null"，进标题会读成空值或普通文件名。
  * 设备节点与 DOS 保留名用完整路径展示，不当文件名截断。
@@ -38,9 +33,21 @@ function isDeviceOrSpecialPath(target: string): boolean {
   return false;
 }
 
-function compactFileTarget(target: string): string {
+function compactFileTarget(target: string, p: Translations['decisionCard']['permission']): string {
   const redacted = redactCredentialText(target);
-  return isDeviceOrSpecialPath(redacted) ? redacted : basename(redacted);
+  if (isDeviceOrSpecialPath(redacted)) return redacted;
+
+  const normalized = redacted.replace(/\\/g, '/');
+  const withoutTrailingSlashes = normalized.replace(/\/+$/u, '');
+  const withoutTrailingDots = withoutTrailingSlashes.replace(/(?:\/+\.)+$/u, '');
+  const name = withoutTrailingDots.split('/').pop();
+  if (!/^(?:\/|[a-z]:)/iu.test(normalized)) {
+    if (!name || name === '.') return p.targetCurrentFolder;
+    if (name === '..') {
+      return /^(?:\.\/+)*\.\.$/u.test(withoutTrailingDots) ? p.targetParentFolder : withoutTrailingDots;
+    }
+  }
+  return name || (withoutTrailingSlashes ? '/' : redacted);
 }
 
 function isOutsideWorkspace(request: PermissionRequest): boolean {
@@ -107,8 +114,8 @@ export function permissionSummary(request: PermissionRequest, t: Translations, l
   const p = t.decisionCard.permission;
   if (isGenericCommandRequest(request)) return p.genericApprovalQuestion;
   const target = fileTarget(request);
-  const compactTarget = target ? compactFileTarget(target) : undefined;
-  const qualifier = isOutsideWorkspace(request) ? `（${p.workspaceOutside}）` : '';
+  const compactTarget = target ? compactFileTarget(target, p) : undefined;
+  const qualifier = isOutsideWorkspace(request) ? p.workspaceOutsideQualifier : '';
   if (
     request.reasonCode === PermissionRequestReason.UncertainWriteTargetWithPathDeny
     && !isDeletionRequest(request)
@@ -216,7 +223,7 @@ export function permissionConsequence(request: PermissionRequest, t: Translation
     return p.consequenceUncertainWriteTarget;
   }
   if (request.boundary?.id === 'file.external_read') {
-    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target) : p.targetFallback);
+    return p.consequenceReadOutside.replace('{target}', target ? compactFileTarget(target, p) : p.targetFallback);
   }
   if (isOutsideWorkspace(request)) {
     return p.consequenceOutside

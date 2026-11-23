@@ -266,7 +266,7 @@ function LiveDecisionSlot({
     pendingPermissionSessionId,
     queuedPermissionRequests = {},
   } = useAppStore();
-  // 定时任务运行记录会话已由首气泡下方的 CronRunSessionStatusBar 原地承接「等你批准 · 批准/拒绝」，
+  // 定时任务运行记录会话已由首气泡下方的 CronRunSessionStatusBar 原地承接「等你确认 · 批准/拒绝」，
   // 底部不再叠一张重复的 PermissionCard。
   const candidates = isCronRunRecordSession
     ? []

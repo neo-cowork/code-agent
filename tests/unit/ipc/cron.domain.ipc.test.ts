@@ -55,6 +55,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: h.logWarn, error: h.logError, debug: vi.fn() }),
 }));
 
+import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
 import { registerCronHandlers } from '../../../src/host/ipc/cron.ipc';
 
 const call = (action: string, payload?: unknown) =>
@@ -513,5 +514,21 @@ describe('generateFromPrompt recurring machine timezone', () => {
       h.chat.mockResolvedValueOnce({ content: JSON.stringify({ schedule }) });
       expect(await call('generateFromPrompt', { prompt: '整理邮件' })).toEqual({ success: true, data: { schedule } });
     });
+  });
+});
+
+describe('generateFromPrompt event limits in the generation prompt', () => {
+  it('channel and mail bullets teach prefilter + maxRunsPerHour with the constants range', async () => {
+    h.chat.mockResolvedValueOnce({ content: '{"name":"x"}' });
+    await call('generateFromPrompt', { prompt: '盯着发布群，只处理催款的，每小时最多 10 次' });
+    const system = (h.chat.mock.calls.at(-1)?.[0] as { messages: Array<{ content: string }> }).messages[0].content;
+    const channel = system.split('\n').find((line) => line.startsWith('- 事件监听'))!;
+    const mail = system.split('\n').find((line) => line.startsWith('- 邮件监听'))!;
+    for (const line of [channel, mail]) {
+      expect(line).toContain('"prefilter"');
+      expect(line).toContain('"maxRunsPerHour"');
+      expect(line).toContain(`${CRON_EVENT_TRIGGER.MIN_MAX_RUNS_PER_HOUR}-${CRON_EVENT_TRIGGER.MAX_MAX_RUNS_PER_HOUR}`);
+      expect(line).toContain(String(CRON_EVENT_TRIGGER.MAX_PREFILTER_CHARS));
+    }
   });
 });

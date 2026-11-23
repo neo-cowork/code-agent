@@ -219,3 +219,91 @@ describe('ToolHeader/ToolDetails — user deny rule (real executor)', () => {
     expect(openPreview).toHaveBeenCalledWith(path.join(workspace, notesName));
   });
 });
+
+// ============================================================================
+// 内置安全硬拒（真实 ToolExecutor，N-FIX-PREFLIGHT-UNWRITTEN-TITLE-OPEN-PREVIEW-FAIL-FU1-FU1）：
+// Write 进系统目录（/usr/bin）被 block-root-write 在执行前硬拒（PERMISSION_DENIED_SAFETY_RULE），
+// 与用户 deny 规则走同一条 preflight 路径，但宿主码不同。修复前 APPROVAL_REQUIRED_HOST_CODES
+// 不认这个码 → getToolPreflightKind 返回 null → ToolHeader 标题仍是「打开预览」按钮，
+// 点开一个从未写出的文件，右栏红字「failed to load file」。metadata 形状不手写——
+// 直接跑真实 executor 拿硬拒结果喂 ToolHeader / ToolDetails（同上一个大块的夹具先例）。
+// ============================================================================
+describe('ToolHeader/ToolDetails — built-in safety hard deny (real executor)', () => {
+  const probeName = 'neo-probe-unwritten-title';
+  const probePath = `/usr/bin/${probeName}`;
+  const writeArgs = () => ({ file_path: probePath, content: '# 会议记录' });
+  const editArgs = () => ({ file_path: probePath, edits: [{ old_text: 'a', new_text: 'b' }] });
+
+  const asToolCall = (name: string, args: Record<string, unknown>, result: ToolExecutionResult): ToolCall =>
+    ({ id: `tc-safety-${name.toLowerCase()}`, name, arguments: args, result }) as unknown as ToolCall;
+
+  const makeExecutor = (requestPermission: () => Promise<boolean>) => {
+    const executor = new ToolExecutor({ workingDirectory: '/tmp', requestPermission });
+    executor.setAuditEnabled(false);
+    return executor;
+  };
+
+  let safetyWriteResult: ToolExecutionResult;
+  let safetyEditResult: ToolExecutionResult;
+
+  beforeAll(() => {
+    getProtocolRegistry();
+  });
+  beforeEach(async () => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+    getToolCache().clear();
+    // 审批回调一叫就炸：内置硬拒发生在审批之前，不加载任何用户规则——命中 block-root-write。
+    const executor = makeExecutor(async () => {
+      throw new Error('内置硬拒发生在审批之前，审批回调不该被叫起');
+    });
+    safetyWriteResult = await executor.execute('Write', writeArgs(), { sessionId: 'preview-click-safety' });
+    safetyEditResult = await executor.execute('Edit', editArgs(), { sessionId: 'preview-click-safety' });
+  });
+  afterEach(async () => {
+    resetPolicyEngine();
+    resetPermissionModeManager();
+  });
+
+  it('Write /usr/bin 被内置安全规则硬拒：hostReason=SAFETY_RULE、executionStarted=false、文件不存在', () => {
+    expect(safetyWriteResult.success).toBe(false);
+    expect(safetyWriteResult.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedSafetyRule });
+    // 外层结果带 executionStarted:false——封口证据：工具从未开始执行。
+    expect(safetyWriteResult.metadata?.executionStarted).toBe(false);
+    // 真实证据：硬拒发生在写盘之前，系统目录下从未写出这个文件。
+    expect(existsSync(probePath)).toBe(false);
+  });
+
+  it('硬拒 Write 的标题是「未写入 · 文件名」纯文本，点击不打开预览', () => {
+    render(<ToolHeader toolCall={asToolCall('Write', writeArgs(), safetyWriteResult)} status="error" />);
+    expect(screen.queryByTestId('tool-header-open-preview')).toBeNull();
+    const title = screen.getByText(/^未写入 · /);
+    expect(title.textContent).toBe(`未写入 · ${probeName}`);
+    expect(title.tagName).toBe('SPAN');
+    fireEvent.click(title);
+    expect(openPreview).not.toHaveBeenCalled();
+  });
+
+  it('同被硬拒的 Edit 行动词是「未修改」（钉住动词选择）', () => {
+    expect(safetyEditResult.success).toBe(false);
+    expect(safetyEditResult.metadata?.hostReason).toMatchObject({ code: HostReasonCode.PermissionDeniedSafetyRule });
+    render(<ToolHeader toolCall={asToolCall('Edit', editArgs(), safetyEditResult)} status="error" />);
+    expect(screen.queryByTestId('tool-header-open-preview')).toBeNull();
+    const title = screen.getByText(/^未修改 · /);
+    expect(title.textContent).toBe(`未修改 · ${probeName}`);
+    expect(title.tagName).toBe('SPAN');
+    fireEvent.click(title);
+    expect(openPreview).not.toHaveBeenCalled();
+  });
+
+  it('明细卡是内置安全底线登记文案，不是「需要人工确认」', () => {
+    render(<ToolDetails toolCall={asToolCall('Write', writeArgs(), safetyWriteResult)} />);
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('触碰了 Neo 的内置安全底线，已被拦截，没有执行');
+    expect(text).toContain('不会代做');
+    // approvalRequired 的 preflight reason（「这一步需要人工确认…」）不许顶掉登记文案；
+    // 模型可见的英文原句也不许漏到卡上。
+    expect(text).not.toContain('需要人工确认');
+    expect(text).not.toContain('Blocked by built-in safety rule');
+  });
+});

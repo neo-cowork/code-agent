@@ -369,10 +369,11 @@ export class TerminalOutput {
   /**
    * 模型降级
    */
-  modelFallback(from: string, to: string, reason: string): void {
-    console.log(chalk.yellow(`\n  ↻ ${from} → ${to}`) + chalk.dim(` (${reason})`));
+  modelFallback(from: string, to: string | undefined, reason: string): void {
+    // 链耗尽的事件没有 `to`（exhausted: true）——打印 not switched，且不更新跟踪的当前模型。
+    console.log(chalk.yellow(`\n  ↻ ${from} → ${to ?? 'not switched'}`) + chalk.dim(` (${reason})`));
     // Update tracked model
-    this.currentModel = to;
+    if (to) this.currentModel = to;
   }
 
   /**

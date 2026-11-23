@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
   installRolePack: vi.fn(async (..._a: unknown[]) => ({ installed: true })),
   uninstallRolePack: vi.fn(async (..._a: unknown[]) => ({ uninstalled: true })),
   retryMissingSkills: vi.fn(async (..._a: unknown[]) => ({ retried: 2 })),
-  firstWakeSnapshot: vi.fn(async (..._a: unknown[]) => ({ state: 'completed', sourcesMode: 'none', suggestions: [] }) as Record<string, unknown> | null),
+  firstWakeSnapshot: vi.fn(async (..._a: unknown[]) => ({ state: 'completed', sourcesMode: 'none', suggestions: [], startedAt: 1_700_000_000_000 }) as Record<string, unknown> | null),
   firstWakeSkip: vi.fn(async (..._a: unknown[]) => ({ success: true })),
   firstWakeConsumeSuggestion: vi.fn(async (..._a: unknown[]) => ({ success: true })),
 }));
@@ -136,7 +136,7 @@ describe('roles.ipc dispatch 特征：首次醒来', () => {
 
     expect(await call('firstWakeGet', { roleId: 'r1' })).toEqual({
       success: true,
-      data: { state: 'completed', sourcesMode: 'none', suggestions: [] },
+      data: { state: 'completed', sourcesMode: 'none', suggestions: [], startedAt: 1_700_000_000_000 },
     });
     expect(h.firstWakeSnapshot).toHaveBeenCalledWith('r1');
   });

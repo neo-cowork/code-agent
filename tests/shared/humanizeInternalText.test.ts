@@ -103,6 +103,29 @@ describe('humanizeInternalText', () => {
     },
   );
 
+  // /private 前缀必须与路径在同一个 match 里整体吃掉，不允许残留孤儿 "/private"；
+  // /var/tmp 也属于临时目录（N-FIX-HUMANIZE-TEMP-PATH-PRIVATE-PREFIX-LEFTOVER）。
+  it.each([
+    { raw: '/private/var/folders/xx/yyyy/T/neo/uploads/dogfood-upload-test.txt', name: 'dogfood-upload-test.txt' },
+    { raw: '/var/folders/xx/yyyy/T/neo/uploads/dogfood-upload-test.txt', name: 'dogfood-upload-test.txt' },
+    { raw: '/private/tmp/neo-run-98123/report.pdf', name: 'report.pdf' },
+    { raw: '/tmp/neo-run-98123/report.pdf', name: 'report.pdf' },
+    { raw: '/private/var/tmp/neo-upload/r.pdf', name: 'r.pdf' },
+    { raw: '/var/tmp/neo-upload/r.pdf', name: 'r.pdf' },
+  ])('rewrites macOS temp path $raw as one whole match in both zh and en', ({ raw, name }) => {
+    const zh = humanizeInternalText(raw, 'zh');
+    expect(zh.text).toBe(`临时文件（${name}）`);
+    expect(zh.text).not.toContain('/private');
+    expect(zh.text).not.toContain('/var');
+    expect(detectInternalTextLeaks(zh.text)).toEqual([]);
+
+    const en = humanizeInternalText(raw, 'en');
+    expect(en.text).toBe(`temporary file (${name})`);
+    expect(en.text).not.toContain('/private');
+    expect(en.text).not.toContain('/var');
+    expect(detectInternalTextLeaks(en.text)).toEqual([]);
+  });
+
   it('recognizes additional variants across the 9 formats (session-work-*, call_*, oc_*, etc.)', () => {
     expect(detectInternalTextLeaks('session-work-20261107-alpha')[0]?.format).toBe('session_id');
     expect(detectInternalTextLeaks('call_abc123xyz789')[0]?.format).toBe('call_id');
@@ -147,6 +170,64 @@ describe('humanizeInternalText', () => {
     expect(en).toContain('Hand off to another chat');
     const prose = 'Globally, the user wants a new chat for the picnic plan.';
     expect(humanizeInternalText(prose, 'en')).toEqual({ text: prose, detectedFormats: [] });
+  });
+
+  const STORAGE_UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  it('collapses a UUID directory path to the file name in zh and en', () => {
+    const samples = [
+      `/Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt`,
+      `…/${STORAGE_UUID}/notes.txt`,
+      `.../${STORAGE_UUID}/notes.txt`,
+    ];
+    for (const raw of samples) {
+      for (const lang of ['zh', 'en'] as const) {
+        const text = humanizeInternalText(raw, lang).text;
+        expect(text).toBe('notes.txt');
+        expect(text).not.toContain('内部记录');
+        expect(text).not.toMatch(/internal record/i);
+        expect(text).not.toContain(STORAGE_UUID);
+        expect(detectInternalTextLeaks(text)).toEqual([]);
+      }
+    }
+    expect(humanizeInternalText(`读取了 …/${STORAGE_UUID}/notes.txt`, 'zh').text).toBe('读取了 notes.txt');
+    expect(humanizeInternalText(`Read …/${STORAGE_UUID}/notes.txt`, 'en').text).toBe('Read notes.txt');
+    expect(humanizeInternalText(`…/${STORAGE_UUID}/会议笔记.txt`, 'zh').text).toBe('会议笔记.txt');
+  });
+
+  it('keeps prose glued to a storage path and still drops the UUID directory', () => {
+    const glued = `我已经把文件保存到/Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt中`;
+    const text = humanizeInternalText(glued, 'zh').text;
+    expect(text).toBe('我已经把文件保存到notes.txt中');
+    expect(text).not.toContain(STORAGE_UUID);
+    expect(text).not.toContain('内部记录');
+    const comma = humanizeInternalText(`saved to /Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt, then left`, 'en').text;
+    expect(comma).toBe('saved to notes.txt, then left');
+    expect(humanizeInternalText(`file_path=/Users/me/.code-agent/uploads/${STORAGE_UUID}/notes.txt`, 'en').text)
+      .toBe('file_path=notes.txt');
+    const url = humanizeInternalText(`https://example.com/uploads/${STORAGE_UUID}/notes.txt`, 'zh').text;
+    expect(url).toContain('https://');
+    expect(url).not.toContain(STORAGE_UUID);
+    expect(url).toContain('内部记录');
+  });
+
+  it('leaves a workspace-relative path unchanged', () => {
+    expect(humanizeInternalText('读取了 docs/报告.md', 'zh').text).toBe('读取了 docs/报告.md');
+    expect(humanizeInternalText('Read src/notes/weekly.md', 'en').text).toBe('Read src/notes/weekly.md');
+    expect(humanizeInternalText('读取了 …/docs/报告.md', 'zh').text).toBe('读取了 …/docs/报告.md');
+  });
+
+  it('keeps the in-place record replacement when the file name itself contains a UUID', () => {
+    const fileUuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const raw = `…/${STORAGE_UUID}/${fileUuid}.pdf`;
+    expect(humanizeInternalText(raw, 'zh').text).toBe('…/内部记录/内部记录.pdf');
+    expect(humanizeInternalText(raw, 'en').text).toBe('…/internal record/internal record.pdf');
+  });
+
+  it('still collapses a temp path that also has a UUID directory', () => {
+    const raw = `/tmp/${STORAGE_UUID}/notes.txt`;
+    expect(humanizeInternalText(raw, 'zh').text).toBe('临时文件（notes.txt）');
+    expect(humanizeInternalText(raw, 'en').text).toBe('temporary file (notes.txt)');
   });
 
   it('internal `active` state forms are humanized; ordinary prose with "active" is unchanged', () => {

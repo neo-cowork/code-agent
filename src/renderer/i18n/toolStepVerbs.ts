@@ -5,6 +5,9 @@ import { SANDBOX_APPROVED_RM_STILL_DENIED_FAILURE_CODE } from '@shared/constants
 
 type DeclaredVerbForms = Record<ToolStepLabelKey, string>;
 
+/** Office 文档工具的种类键（humanizeToolStep 的 OFFICE_TOOLS 名字表与之对齐）。 */
+export type OfficeToolKind = 'excel' | 'docx' | 'ppt' | 'pdf' | 'chart' | 'docEdit';
+
 interface ToolStepVerbSet {
   declared: DeclaredVerbForms;
   read: string;
@@ -19,6 +22,13 @@ interface ToolStepVerbSet {
   searchFallback: string;
   listDir: string;
   listDirFallback: string;
+  /** 列目录时 path 为 "."/"./"/缺省（= 工作目录本身）：不用裸点当目标 */
+  listDirWorking: string;
+  /** 列目录时 path 为 "~"/"~/"（= 主目录）：不用裸波浪号当目标 */
+  listDirHome: string;
+  office: Record<OfficeToolKind, string>;
+  fileStat: string;
+  fileStatFallback: string;
   webSearch: string;
   webSearchFallback: string;
   webFetch: string;
@@ -101,11 +111,19 @@ interface ToolStepVerbBundle {
   failureCode: string;
   failureReasonMissing: string;
   notRunPrefix: string;
+  /** 同一轮已交给后台任务的步骤（HANDED_OFF_TO_BACKGROUND）：整句 */
+  handedOffStep: string;
+  /** 并行助手各自结局：done / notDone 带 {name}，notDone 的 {reason} 是人话原因 */
+  helperOutcome: { done: string; notDone: string; notDoneTitle: string; separator: string };
+  /** 主机封存、从未执行的命令（metadata.skipped）：整句 / 混合组里的未执行计数 */
+  skippedCommands: { one: string; other: string };
+  skippedCount: { one: string; other: string };
   /** 裸工程错误码（metadata.code，未登记进 toolErrors.codes 的那批）→ 一句人话 + 下一步 */
   rawFailureCodes: {
     ENOENT: string;
     INVALID_ARGS: string;
     FS_ERROR: string;
+    COMMAND_FAILED: string;
   };
   /** 登记表外仍未翻译的全大写码（^[A-Z][A-Z0-9_]*$）的兜底句；数字退出码 / HTTP nnn 不走这里 */
   rawFailureCodeFallback: string;
@@ -162,6 +180,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
       read: '请求读取 {target}', readFallback: '请求读取一个文件', write: '请求写入 {target}', writeFallback: '请求写入一个文件',
       edit: '请求编辑 {target}', editFallback: '请求编辑一个文件', bash: '请求运行命令 {command}', bashFallback: '请求运行命令',
       search: '请求搜索 {query}', searchFallback: '请求搜索内容', listDir: '请求查看 {target} 目录', listDirFallback: '请求查看目录',
+      office: { excel: '请求导出表格', docx: '请求生成文档', ppt: '请求生成演示文稿', pdf: '请求生成 PDF', chart: '请求生成图表', docEdit: '请求编辑文档' },
+      listDirWorking: '请求查看当前工作目录', listDirHome: '请求查看主目录', fileStat: '请求查看 {target} 的文件信息', fileStatFallback: '请求查看文件信息',
       webSearch: '请求联网搜索 {query}', webSearchFallback: '请求联网搜索', webFetch: '请求打开 {target}', webFetchFallback: '请求打开网页',
       mcpTool: '请求调用 {server}', channelMessage: '请求在{channel}发消息', subagentSpawn: '请求启动代理 — {description}', subagentSpawnFallback: '请求启动代理', subagentSpawnParallel: '请求启动 {count} 个代理 — {names}',
       subagentMessage: '请求给代理发消息', agentConversation: '请求联系 {name}', agentConversationFallback: '请求联系代理', delegateTask: '请求派出后台任务：{description}', delegateTaskFallback: '请求派出后台任务',
@@ -177,6 +197,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
       read: '正在读取 {target}', readFallback: '正在读取文件', write: '正在写入 {target}', writeFallback: '正在写入文件',
       edit: '正在编辑 {target}', editFallback: '正在编辑文件', bash: '正在运行命令 {command}', bashFallback: '正在运行命令',
       search: '正在搜索 {query}', searchFallback: '正在搜索内容', listDir: '正在查看 {target} 目录', listDirFallback: '正在查看目录',
+      office: { excel: '正在导出表格', docx: '正在生成文档', ppt: '正在生成演示文稿', pdf: '正在生成 PDF', chart: '正在生成图表', docEdit: '正在编辑文档' },
+      listDirWorking: '正在查看当前工作目录', listDirHome: '正在查看主目录', fileStat: '正在查看 {target} 的文件信息', fileStatFallback: '正在查看文件信息',
       webSearch: '正在联网搜索 {query}', webSearchFallback: '正在联网搜索', webFetch: '正在打开 {target}', webFetchFallback: '正在打开网页',
       mcpTool: '正在调用 {server}', channelMessage: '正在{channel}发消息', subagentSpawn: '正在启动代理 — {description}', subagentSpawnFallback: '正在启动代理', subagentSpawnParallel: '正在启动 {count} 个代理 — {names}',
       subagentMessage: '正在给代理发消息', agentConversation: '正在跟 {name} 说话', agentConversationFallback: '正在跟代理说话', delegateTask: '正在派出后台任务：{description}', delegateTaskFallback: '正在派出后台任务',
@@ -192,6 +214,8 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
       read: '读取 {target} 未成功', readFallback: '读取文件未成功', write: '写入 {target} 未成功', writeFallback: '写入文件未成功',
       edit: '编辑 {target} 未成功', editFallback: '编辑文件未成功', bash: '运行命令 {command} 未成功', bashFallback: '运行命令未成功',
       search: '搜索 {query} 未成功', searchFallback: '搜索内容未成功', listDir: '查看 {target} 目录未成功', listDirFallback: '查看目录未成功',
+      office: { excel: '导出表格未成功', docx: '生成文档未成功', ppt: '生成演示文稿未成功', pdf: '生成 PDF 未成功', chart: '生成图表未成功', docEdit: '编辑文档未成功' },
+      listDirWorking: '查看当前工作目录未成功', listDirHome: '查看主目录未成功', fileStat: '查看 {target} 的文件信息未成功', fileStatFallback: '查看文件信息未成功',
       webSearch: '联网搜索 {query} 未成功', webSearchFallback: '联网搜索未成功', webFetch: '打开 {target} 未成功', webFetchFallback: '打开网页未成功',
       mcpTool: '调用 {server} 未成功', channelMessage: '在{channel}发消息未成功', subagentSpawn: '启动代理未成功 — {description}', subagentSpawnFallback: '启动代理未成功', subagentSpawnParallel: '启动 {count} 个代理未成功 — {names}',
       subagentMessage: '给代理发消息未成功', agentConversation: '联系 {name} 未成功', agentConversationFallback: '联系代理未成功', delegateTask: '派出后台任务未成功：{description}', delegateTaskFallback: '派出后台任务未成功',
@@ -232,10 +256,15 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   failureCode: '错误码 {code}',
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   notRunPrefix: '未执行',
+  handedOffStep: '这一步已交给后台任务去做',
+  helperOutcome: { done: '{name}已完成', notDone: '{name}未完成 — {reason}', notDoneTitle: '{name}未完成', separator: '；' },
+  skippedCommands: { one: '有一条命令没有执行', other: '有 {count} 条命令没有执行' },
+  skippedCount: { one: '{count} 条未执行', other: '{count} 条未执行' },
   rawFailureCodes: {
     ENOENT: '找不到这个文件或目录，请确认路径是否正确',
     INVALID_ARGS: '这一步准备的内容不完整，Neo 会调整后再试',
     FS_ERROR: '文件读写失败，请确认文件没被占用且有权限',
+    COMMAND_FAILED: '命令运行失败，可展开查看输出',
   },
   rawFailureCodeFallback: '这一步没有成功，展开可查看详情',
   delegationRejectionCodes: {
@@ -291,18 +320,24 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
     'pending-approval': {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Request to send the task to {target}', create_new: 'Request to create a conversation and send it the task', correct: 'Request to adjust the delegation to {target}', stop: 'Request to stop the delegation to {target}', resume: 'Request to resume the delegation to {target}', unknown: 'Request to handle a cross-conversation delegation', reused: 'Already delivered; not sent again' },
       listSessionCandidates: 'Request to find conversations for delegation',
+      office: { excel: 'Request to export spreadsheet', docx: 'Request to create a document', ppt: 'Request to create a presentation', pdf: 'Request to create a PDF', chart: 'Request to create a chart', docEdit: 'Request to edit a document' },
+      listDirWorking: 'Request to view the working folder', listDirHome: 'Request to view the home folder', fileStat: 'Request to check file info for {target}', fileStatFallback: 'Request to check file info',
       declared: { tmeetMeetingListUpcoming: 'Request to check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Request to check meetings ended in the last 30 days', tmeetMeetingCreate: 'Request to create a meeting', tmeetMeetingSearch: 'Request to search meetings', tmeetRecordList: 'Request to check Tencent Meeting recordings', tmeetRecordRead: 'Request to read a Tencent Meeting transcript', feishuMinutesSearch: 'Request to search Feishu Minutes', feishuMinutesRead: 'Request to read a Feishu Minutes record', meetingRecords: 'Request to check meeting records' },
       read: 'Request to read {target}', readFallback: 'Request to read a file', write: 'Request to write {target}', writeFallback: 'Request to write a file', edit: 'Request to edit {target}', editFallback: 'Request to edit a file', bash: 'Request to run command {command}', bashFallback: 'Request to run a command', search: 'Request to search for {query}', searchFallback: 'Request to search content', listDir: 'Request to view the {target} directory', listDirFallback: 'Request to view a directory', webSearch: 'Request to search the web for {query}', webSearchFallback: 'Request to search the web', webFetch: 'Request to open {target}', webFetchFallback: 'Request to open a web page', mcpTool: 'Request to call {server}', channelMessage: 'Request to send a message in {channel}', subagentSpawn: 'Request to start an agent — {description}', subagentSpawnFallback: 'Request to start an agent', subagentSpawnParallel: 'Request to start {count} agent tasks — {names}', subagentMessage: 'Request to message an agent', agentConversation: 'Request to contact {name}', agentConversationFallback: 'Request to contact an agent', delegateTask: 'Request to start background task: {description}', delegateTaskFallback: 'Request to start a background task', taskStatus: 'Request to check background task progress', steerTask: 'Request to adjust a background task', cancelTask: 'Request to cancel a background task', todo: 'Request to update the to-do list', planUpdate: 'Request to update the plan', planRead: 'Request to view the plan', taskManager: 'Request to update tasks', skill: 'Request to use the {skill} skill', skillFallback: 'Request to use a skill', screenshot: 'Request to take a screenshot', askUser: 'Request to ask you a question', memoryStore: 'Request to save a memory', memorySearch: 'Request to search memory', toolSearch: 'Request to look up available tools', fallbackNeutral: 'Request to run a tool operation', connectorFallbackAction: { queryStatus: 'Request to check connection status', queryCollections: 'Request to list available collections', queryItems: 'Request to query items', query: 'Request to query information', create: 'Request to create content', update: 'Request to update content', delete: 'Request to delete content' }, group: { explored: 'Request to inspect content {count} times', ran: 'Request to run {count} commands', searchedWeb: 'Request to search the web {count} times', mcp: 'Request to call tools {count} times', subagent: 'Request to dispatch {count} agent tasks', planned: 'Request to update tasks {count} times', skill: 'Request to use skills {count} times', used: 'Request to run {count} steps' },
     },
     running: {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Sending the task to {target}', create_new: 'Creating a conversation and sending it the task', correct: 'Adjusting the delegation to {target}', stop: 'Stopping the delegation to {target}', resume: 'Resuming the delegation to {target}', unknown: 'Handling a cross-conversation delegation', reused: 'Already delivered; not sent again' },
       listSessionCandidates: 'Finding conversations for delegation',
+      office: { excel: 'Exporting spreadsheet', docx: 'Creating a document', ppt: 'Creating a presentation', pdf: 'Creating a PDF', chart: 'Creating a chart', docEdit: 'Editing a document' },
+      listDirWorking: 'Viewing the working folder', listDirHome: 'Viewing the home folder', fileStat: 'Checking file info for {target}', fileStatFallback: 'Checking file info',
       declared: { tmeetMeetingListUpcoming: 'Checking upcoming/in-progress meetings', tmeetMeetingListEnded: 'Checking meetings ended in the last 30 days', tmeetMeetingCreate: 'Creating a meeting', tmeetMeetingSearch: 'Searching meetings', tmeetRecordList: 'Checking Tencent Meeting recordings', tmeetRecordRead: 'Reading a Tencent Meeting transcript', feishuMinutesSearch: 'Searching Feishu Minutes', feishuMinutesRead: 'Reading a Feishu Minutes record', meetingRecords: 'Checking meeting records' },
       read: 'Reading {target}', readFallback: 'Reading a file', write: 'Writing {target}', writeFallback: 'Writing a file', edit: 'Editing {target}', editFallback: 'Editing a file', bash: 'Running command {command}', bashFallback: 'Running a command', search: 'Searching for {query}', searchFallback: 'Searching content', listDir: 'Viewing the {target} directory', listDirFallback: 'Viewing a directory', webSearch: 'Searching the web for {query}', webSearchFallback: 'Searching the web', webFetch: 'Opening {target}', webFetchFallback: 'Opening a web page', mcpTool: 'Calling {server}', channelMessage: 'Sending a message in {channel}', subagentSpawn: 'Starting an agent — {description}', subagentSpawnFallback: 'Starting an agent', subagentSpawnParallel: 'Starting {count} agent tasks — {names}', subagentMessage: 'Messaging an agent', agentConversation: 'Talking to {name}', agentConversationFallback: 'Talking to an agent', delegateTask: 'Starting background task: {description}', delegateTaskFallback: 'Starting a background task', taskStatus: 'Checking background task progress', steerTask: 'Adjusting a background task', cancelTask: 'Cancelling a background task', todo: 'Updating the to-do list', planUpdate: 'Updating the plan', planRead: 'Viewing the plan', taskManager: 'Updating tasks', skill: 'Using the {skill} skill', skillFallback: 'Using a skill', screenshot: 'Taking a screenshot', askUser: 'Waiting for your answer', memoryStore: 'Saving a memory', memorySearch: 'Searching memory', toolSearch: 'Looking up available tools', fallbackNeutral: 'Running a tool operation', connectorFallbackAction: { queryStatus: 'Checking connection status', queryCollections: 'Listing available collections', queryItems: 'Querying items', query: 'Querying information', create: 'Creating content', update: 'Updating content', delete: 'Deleting content' }, group: { explored: 'Inspecting content {count} times', ran: 'Running {count} commands', searchedWeb: 'Searching the web {count} times', mcp: 'Calling tools {count} times', subagent: 'Dispatching {count} agent tasks', planned: 'Updating tasks {count} times', skill: 'Using skills {count} times', used: 'Running {count} steps' },
     },
     failed: {
       delegateSession: { target: '“{target}”', targetFallback: 'another conversation', delegate_existing: 'Could not send the task to {target}', create_new: 'Could not create a conversation and delegate the task', correct: 'Could not adjust the delegation to {target}', stop: 'Could not stop the delegation to {target}', resume: 'Could not resume the delegation to {target}', unknown: 'Could not handle the cross-conversation delegation', reused: 'Already delivered; not sent again' },
       listSessionCandidates: 'Could not find conversations for delegation',
+      office: { excel: 'Could not export spreadsheet', docx: 'Could not create a document', ppt: 'Could not create a presentation', pdf: 'Could not create a PDF', chart: 'Could not create a chart', docEdit: 'Could not edit a document' },
+      listDirWorking: 'Could not view the working folder', listDirHome: 'Could not view the home folder', fileStat: 'Could not check file info for {target}', fileStatFallback: 'Could not check file info',
       declared: { tmeetMeetingListUpcoming: 'Could not check upcoming/in-progress meetings', tmeetMeetingListEnded: 'Could not check meetings ended in the last 30 days', tmeetMeetingCreate: 'Could not create a meeting', tmeetMeetingSearch: 'Could not search meetings', tmeetRecordList: 'Could not check Tencent Meeting recordings', tmeetRecordRead: 'Could not read a Tencent Meeting transcript', feishuMinutesSearch: 'Could not search Feishu Minutes', feishuMinutesRead: 'Could not read a Feishu Minutes record', meetingRecords: 'Could not check meeting records' },
       read: 'Could not read {target}', readFallback: 'Could not read a file', write: 'Could not write {target}', writeFallback: 'Could not write a file', edit: 'Could not edit {target}', editFallback: 'Could not edit a file', bash: 'Could not run command {command}', bashFallback: 'Could not run a command', search: 'Could not search for {query}', searchFallback: 'Could not search content', listDir: 'Could not view the {target} directory', listDirFallback: 'Could not view a directory', webSearch: 'Could not search the web for {query}', webSearchFallback: 'Could not search the web', webFetch: 'Could not open {target}', webFetchFallback: 'Could not open a web page', mcpTool: 'Could not call {server}', channelMessage: 'Could not send a message in {channel}', subagentSpawn: 'Could not start an agent — {description}', subagentSpawnFallback: 'Could not start an agent', subagentSpawnParallel: 'Could not start {count} agent tasks — {names}', subagentMessage: 'Could not message an agent', agentConversation: 'Could not contact {name}', agentConversationFallback: 'Could not contact an agent', delegateTask: 'Could not start background task: {description}', delegateTaskFallback: 'Could not start a background task', taskStatus: 'Could not check background task progress', steerTask: 'Could not adjust a background task', cancelTask: 'Could not cancel a background task', todo: 'Could not update the to-do list', planUpdate: 'Could not update the plan', planRead: 'Could not view the plan', taskManager: 'Could not update tasks', skill: 'Could not use the {skill} skill', skillFallback: 'Could not use a skill', screenshot: 'Could not take a screenshot', askUser: 'Could not ask you a question', memoryStore: 'Could not save a memory', memorySearch: 'Could not search memory', toolSearch: 'Could not look up available tools', fallbackNeutral: 'Could not run the tool operation', connectorFallbackAction: { queryStatus: 'Could not check connection status', queryCollections: 'Could not list available collections', queryItems: 'Could not query items', query: 'Could not query information', create: 'Could not create content', update: 'Could not update content', delete: 'Could not delete content' }, group: { explored: 'Could not inspect content {count} times', ran: 'Could not run {count} commands', searchedWeb: 'Could not search the web {count} times', mcp: 'Could not call tools {count} times', subagent: 'Could not dispatch {count} agent tasks', planned: 'Could not update tasks {count} times', skill: 'Could not use skills {count} times', used: 'Could not run {count} steps' },
     },
@@ -318,10 +353,15 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   failureCode: 'Error code {code}',
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   notRunPrefix: 'Not run',
+  handedOffStep: 'Handed to a background task',
+  helperOutcome: { done: '{name} done', notDone: '{name} not done — {reason}', notDoneTitle: '{name} not done', separator: '; ' },
+  skippedCommands: { one: 'A command did not run', other: '{count} commands did not run' },
+  skippedCount: { one: '{count} not run', other: '{count} not run' },
   rawFailureCodes: {
     ENOENT: 'Could not find that file or folder; check the path',
     INVALID_ARGS: 'This step was set up incompletely; Neo will adjust and try again',
     FS_ERROR: 'Reading or writing the file failed; make sure it is not in use and you have access',
+    COMMAND_FAILED: 'The command failed to run; expand to see its output',
   },
   rawFailureCodeFallback: 'This step did not succeed; expand for details',
   delegationRejectionCodes: {

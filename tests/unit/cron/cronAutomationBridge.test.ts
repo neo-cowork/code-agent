@@ -264,6 +264,17 @@ describe('buildCronAutomationConfig', () => {
     expect(config.nextStage).toEqual({ prompt: 'go' });
   });
 
+  it('carries roleId for expert-bound agent and role-wake jobs; omits it for unbound jobs', () => {
+    const agent = (roleId?: string) => def({
+      action: { type: 'agent', agentType: 'coder', prompt: 'x', ...(roleId !== undefined ? { roleId } : {}) } as CronJobDefinition['action'],
+    });
+    expect(buildCronAutomationConfig(agent('role-weekly')).roleId).toBe('role-weekly');
+    expect(buildCronAutomationConfig(def({ action: { type: 'role-wake', roleId: 'role-weekly' } as CronJobDefinition['action'] })).roleId).toBe('role-weekly');
+    expect(buildCronAutomationConfig(agent())).not.toHaveProperty('roleId');
+    expect(buildCronAutomationConfig(agent('   '))).not.toHaveProperty('roleId');
+    expect(buildCronAutomationConfig(def())).not.toHaveProperty('roleId');
+  });
+
   it('drops a nextStage with only blank fields', () => {
     const config = buildCronAutomationConfig(def({ metadata: { nextStage: { prompt: '  ', goal: '' } } }));
     expect(config).not.toHaveProperty('nextStage');

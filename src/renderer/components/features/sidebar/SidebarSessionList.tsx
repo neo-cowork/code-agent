@@ -94,10 +94,10 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
   const listLoad = useSessionListLoadStore();
   const loadSessions = useSessionStore((state) => state.loadSessions);
   const p = t.sidebarProject;
-  // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpacePage。
+  // 分区节头交互状态（折叠持久化、solo 会话内）都在 sessionUIStore；新建空间入口复用 appStore 的 openProjectSpaceCreate。
   const collapsedTiers = useSessionUIStore((state) => state.collapsedTiers);
   const setTierCollapsed = useSessionUIStore((state) => state.setTierCollapsed);
-  const openProjectSpacePage = useAppStore((state) => state.openProjectSpacePage);
+  const openProjectSpaceCreate = useAppStore((state) => state.openProjectSpaceCreate);
   // 会话列表分页（2026-08-07：侧栏原只加载最近 50 条，历史会话翻不到）——
   // 三态页脚：加载中转圈 / 还有更早会话给「加载更多」钮 / 已翻到底给明确收尾文案。
   const loadedSessionCount = useSessionStore((state) => state.sessions.length);
@@ -236,9 +236,10 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
         </div>
       ) : listLoad.error && !hasAnySessions ? (
         listErrorNotice
-      ) : !hasAnySessions ? (
+      ) : !hasAnySessions && groups.length === 0 ? (
         /* 空态星球（2026-08-02 星球品牌升级）：列表空 = 地球（母星，"还没有勘测记录"），
-           替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。 */
+           替代原 MessageSquare 灰瓷砖；引导文案 startNewTask 保留。
+           没有任何会话、但已有协作空间组时不走这里：空空间也要出现在「协作空间」下。 */
         <div className="flex flex-col items-center justify-center h-full text-center px-4">
           <div className="mb-3">
             <PlanetSphere kind="earth" spinSeconds={24} glowColor="rgba(96,165,250,.20)" size={42} />
@@ -312,7 +313,7 @@ export const SidebarSessionList: React.FC<SidebarSessionListProps> = ({
                     data-testid="sidebar-tier-new-space"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openProjectSpacePage();
+                      openProjectSpaceCreate();
                     }}
                     className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 hover:bg-zinc-700/70 hover:text-zinc-300 focus:outline-hidden"
                   >

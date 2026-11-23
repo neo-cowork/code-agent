@@ -27,6 +27,15 @@ export const receiptPresentationZh = {
         readFile: toolUserLabel('read', 'zh'),
         findFiles: toolUserLabel('glob', 'zh'),
         memorySearch: toolUserLabel('memorysearch', 'zh'),
+        // cua-driver MCP 工具行的人话名（FB-2291）：复用 shared 的 computeruse 术语，不出现 server slug。
+        computerUse: toolUserLabel('computeruse', 'zh'),
+      },
+      // 只读工具读取的「对象」名词（审批卡「读取{对象}」用），区别于 tools 里的动作短语。
+      readObjects: {
+        meetingRecords: '会议记录',
+        clipboard: '剪贴板',
+        memory: '记忆',
+        pastConversations: '历史对话',
       },
       unknownTool: '工具',
     },
@@ -70,6 +79,13 @@ export const receiptPresentationEn: typeof receiptPresentationZh = {
         readFile: toolUserLabel('read', 'en'),
         findFiles: toolUserLabel('glob', 'en'),
         memorySearch: toolUserLabel('memorysearch', 'en'),
+        computerUse: toolUserLabel('computeruse', 'en'),
+      },
+      readObjects: {
+        meetingRecords: 'meeting records',
+        clipboard: 'clipboard',
+        memory: 'memory',
+        pastConversations: 'past conversations',
       },
       unknownTool: 'Tool',
     },

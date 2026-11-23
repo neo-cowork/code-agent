@@ -1,4 +1,5 @@
-import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
+import { formatExternalModelSwitcherTooltip, formatNativeModelSwitcherTooltip, formatModelSwitcherLabel } from '../../../src/renderer/components/StatusBar/modelSwitcherTooltips';
+import { buildRuntimeModelOptions } from '../../../src/shared/modelRuntime';
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -340,6 +341,40 @@ describe('ModelSwitcher Agent Engine selection', () => {
     expect(renderToStaticMarkup(React.createElement(ProviderTransportBadge, {}))).toBe('');
   });
 
+  it.each(['zh', 'en'] as const)('names the configured session provider in %s tooltips and duplicate labels', (language) => {
+    const settings = { models: { providers: {
+      xiaomi: { enabled: true, apiKeyConfigured: true, updatedAt: 200,
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+      'custom-tokenrhythm': { enabled: true, apiKeyConfigured: true, displayName: '基元', updatedAt: 100,
+        models: { 'mimo-v2.5-pro': { enabled: true } } },
+    } } } as unknown as AppSettings;
+    const options = buildRuntimeModelOptions(settings, ['xiaomi'], {
+      includeDisabledProviders: ['custom-tokenrhythm'],
+    });
+    const base = { language, settings, engineLabel: 'Neo', currentModel: 'main',
+      displayProvider: 'custom-tokenrhythm' as const, displayModel: 'mimo-v2.5-pro',
+      adaptive: false, overridden: true };
+    expect(formatNativeModelSwitcherTooltip(base)).toBe(language === 'zh'
+      ? '已覆盖: 基元/MiMo v2.5 Pro (原主任务: Main)'
+      : 'Selected: 基元/MiMo v2.5 Pro (original task model: Main)');
+    expect(formatNativeModelSwitcherTooltip({ ...base, overridden: false })).toBe(language === 'zh'
+      ? '主任务模型: 基元/MiMo v2.5 Pro' : 'Task model: 基元/MiMo v2.5 Pro');
+    const switched = formatNativeModelSwitcherTooltip({ ...base,
+      switchedFrom: { provider: 'custom-tokenrhythm', model: 'mimo-v2.5-pro', reason: 'fallback' },
+      shownProvider: 'xiaomi', shownModel: 'mimo-v2.6-flash' });
+    expect(switched).toBe(language === 'zh'
+      ? '这一轮实际在用: 小米 MiMo/MiMo v2.6 Flash（你选的是 基元/MiMo v2.5 Pro，已自动换过）'
+      : 'Actually in use this turn: Xiaomi MiMo/MiMo v2.6 Flash (you selected 基元/MiMo v2.5 Pro, switched automatically)');
+    expect(switched).not.toContain('custom-');
+    expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'custom-tokenrhythm', settings, options, language))
+      .toBe('MiMo v2.5 Pro · 基元');
+    expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'xiaomi', settings, options, language))
+      .toBe(language === 'zh' ? 'MiMo v2.5 Pro · 小米 MiMo' : 'MiMo v2.5 Pro · Xiaomi MiMo');
+    expect(formatModelSwitcherLabel('mimo-v2.5-pro', 'custom-tokenrhythm', settings,
+      options.filter((option) => option.provider === 'custom-tokenrhythm'), language)).toBe('MiMo v2.5 Pro');
+    expect(formatNativeModelSwitcherTooltip({ ...base, settings: null })).not.toContain('custom-');
+  });
+
   it('formats native trigger tooltip with main task strategy context', () => {
     expect(formatNativeModelSwitcherTooltip({
       engineLabel: 'Neo',
@@ -353,7 +388,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       effort: { label: 'High', shortLabel: '高' },
       thinkingLabel: '思考',
     })).toBe(
-      '自动路由（按任务、成本和能力切换，当前主任务 mimo-v2.5-pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
+      '自动路由（按任务、成本和能力切换，当前主任务 MiMo v2.5 Pro） · 计费: 按量 · 服务状态: 健康 · 推理强度: 高 · 思考: 思考',
     );
   });
 
@@ -369,7 +404,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'Default', shortLabel: '默认' },
     })).toBe(
-      '已覆盖: zhipu/glm-4.5v (原主任务: kimi-k2.5) · 计费: 计费未知 · 推理强度: 默认',
+      '已覆盖: Zhipu GLM/Glm 4.5v (原主任务: Kimi K2.5) · 计费: 计费未知 · 推理强度: 默认',
     );
   });
 
@@ -379,7 +414,7 @@ describe('ModelSwitcher Agent Engine selection', () => {
       model: 'sonnet',
       effort: { label: 'High', shortLabel: '高' },
       reliabilityLabel: '认证失败',
-    })).toBe('运行引擎: Claude · 主任务模型: sonnet · 推理强度: 高 · 服务状态: 认证失败');
+    })).toBe('运行引擎: Claude · 主任务模型: Sonnet · 推理强度: 高 · 服务状态: 认证失败');
   });
 
   it('preserves English tooltip field names and effort labels', () => {
@@ -388,11 +423,11 @@ describe('ModelSwitcher Agent Engine selection', () => {
       displayProvider: 'xiaomi', displayModel: 'main', adaptive: false, overridden: false,
       healthSummary: buildProviderHealthSummary(null),
       effort: { label: 'High', shortLabel: '高' }, thinkingLabel: 'Think',
-    })).toBe('Task model: xiaomi/main · Effort: High · Thinking: Think');
+    })).toBe('Task model: Xiaomi MiMo/Main · Effort: High · Thinking: Think');
     expect(formatExternalModelSwitcherTooltip({
       language: 'en', engineLabel: 'Claude', model: 'sonnet',
       effort: { label: 'High', shortLabel: '高' }, reliabilityLabel: 'ready',
-    })).toBe('Engine: Claude · Task model: sonnet · Effort: High · Provider: ready');
+    })).toBe('Engine: Claude · Task model: Sonnet · Effort: High · Provider: ready');
   });
 
   it('shows the model settings prompt only for native sessions after settings prove no configured models', () => {
