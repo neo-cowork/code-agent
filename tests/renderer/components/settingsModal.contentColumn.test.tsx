@@ -5,7 +5,7 @@
 // 容器带 data-testid="settings-content-column" 供编排者截图量左缘。
 // ============================================================================
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -38,12 +38,26 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/SearchSettings'
   SearchSettings: () => <div data-testid="stub-search-settings" />,
 }));
 
+vi.mock('../../../src/renderer/components/features/settings/tabs/AboutSettings', () => {
+  throw new TypeError('Importing a module script failed.');
+});
+
+vi.mock('@shared/keybindings/defaults', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/shared/keybindings/defaults')>(),
+  getCurrentKeybindingPlatform: () => 'darwin',
+}));
+
+import { ErrorBoundary } from '../../../src/renderer/components/ErrorBoundary';
+import { languages } from '../../../src/renderer/i18n';
+import { useServerConnectionStore } from '../../../src/renderer/stores/serverConnectionStore';
 import { SettingsModal } from '../../../src/renderer/components/features/settings/SettingsModal';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 afterEach(() => {
   cleanup();
-  useAppStore.setState({ settingsInitialTab: null });
+  useAppStore.setState({ language: 'zh', settingsInitialTab: null });
+  useServerConnectionStore.getState().setStatus('ok');
+  vi.unstubAllGlobals();
 });
 
 describe('SettingsModal 内容列左锚定（FB-215）', () => {
@@ -65,5 +79,51 @@ describe('SettingsModal 内容列左锚定（FB-215）', () => {
     expect(column.classList.contains('mr-auto')).toBe(true);
     expect(column.classList.contains('mx-auto')).toBe(false);
     expect(column.classList.contains('max-w-4xl')).toBe(true);
+  });
+});
+
+describe('SettingsModal service outage', () => {
+  it.each(['zh', 'en'] as const)('%s: shows the unavailable banner inside Settings on web', (language) => {
+    useAppStore.setState({ language, settingsInitialTab: 'search' });
+    useServerConnectionStore.getState().setStatus('unavailable');
+    render(<SettingsModal />);
+
+    const banner = within(screen.getByTestId('settings-panel')).getByTestId('server-connection-banner');
+    expect(banner.textContent).toContain(languages[language].serverConnection.unavailableHintWeb);
+  });
+
+  it.each(['zh', 'en'] as const)('%s: Settings banner shows the macOS reload shortcut in Tauri', (language) => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    useAppStore.setState({ language, settingsInitialTab: 'search' });
+    useServerConnectionStore.getState().setStatus('unavailable');
+    render(<SettingsModal />);
+
+    const panel = screen.getByTestId('settings-panel');
+    const banner = within(panel).getByTestId('server-connection-banner');
+    expect(banner.textContent).toContain(language === 'zh' ? '⌘R 重新载入' : 'press ⌘R to reload');
+    expect(banner.classList.contains('pl-[92px]')).toBe(true);
+    expect(panel.classList.contains('pt-7')).toBe(false);
+  });
+
+  it.each(['zh', 'en'] as const)('%s: a rejected lazy tab stays within Settings and other tabs still open', async (language) => {
+    const t = languages[language];
+    useAppStore.setState({ language, settingsInitialTab: 'search' });
+    useServerConnectionStore.getState().setStatus('unavailable');
+    render(<ErrorBoundary><SettingsModal /></ErrorBoundary>);
+    await screen.findByTestId('stub-search-settings');
+
+    const panel = within(screen.getByTestId('settings-panel'));
+    fireEvent.click(panel.getByRole('button', { name: t.settings.tabs.about }));
+    const main = within(panel.getByRole('main'));
+    expect(await main.findByText(t.settings.pageLoadFailed)).toBeTruthy();
+    expect(main.getByText(t.serverConnection.unavailableHintWeb)).toBeTruthy();
+    expect(main.getByRole('button', { name: t.settings.reloadPage })).toBeTruthy();
+    expect(panel.getByTestId('server-connection-banner')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/TypeError|Importing a module|任务执行失败|Task failed/);
+    expect(document.querySelector('pre')).toBeNull();
+
+    fireEvent.click(panel.getByRole('button', { name: t.settings.tabs.search }));
+    expect(await main.findByTestId('stub-search-settings')).toBeTruthy();
+    expect(main.queryByText(t.settings.pageLoadFailed)).toBeNull();
   });
 });
