@@ -126,6 +126,8 @@ export async function rejectLedgerToolApproval(
     toolCallId: string;
     sessionId: string;
     reason: string;
+    /** 「交回我亲手做」点了「我做完了」：同样不执行，但不是失败——reason 作为成功形结果的 output 落账。 */
+    doneByUser?: boolean;
   },
 ): Promise<LedgerToolApprovalRejection> {
   const persisted = persistedToolCall(input.messages, input.toolCallId);
@@ -135,12 +137,9 @@ export async function rejectLedgerToolApproval(
   const message = buildRecoveredToolMessage({
     assistantMessage: persisted.assistantMessage,
     toolCallId: persisted.toolCall.id,
-    result: {
-      toolCallId: persisted.toolCall.id,
-      success: false,
-      error: input.reason,
-      duration: 0,
-    },
+    result: input.doneByUser
+      ? { toolCallId: persisted.toolCall.id, success: true, output: input.reason, duration: 0 }
+      : { toolCallId: persisted.toolCall.id, success: false, error: input.reason, duration: 0 },
     now: ports.now(),
     kind: 'denied',
   });

@@ -251,6 +251,7 @@ async function resumeWithPorts(
     deniedReason: string,
     status: 'denied' | 'closed' = 'denied',
     reason?: 'expired_after_restart_24h' | 'args_unavailable' | 'run_ended_after_restart',
+    doneByUser = false,
   ): Promise<ParkedApprovalResumeOutcome> => {
     const changes = repo.resolve({
       id: input.requestId,
@@ -264,6 +265,7 @@ async function resumeWithPorts(
       toolCallId,
       sessionId,
       reason: deniedReason,
+      doneByUser,
     });
     if (status === 'closed') {
       return { handled: true, status: 'closed', reason: reason ?? 'args_unavailable' };
@@ -274,10 +276,10 @@ async function resumeWithPorts(
   // 放行判定单一真源（rework r2）：手写清单曾把 allow_run/allow_24h 当拒绝——
   // 用户在收件箱点的「到这次做完为止/24 小时内允许」经重启恢复反而落 rejected。
   if (!isApprovePermissionResponse(input.response)) {
-    // N-PERM-NL-RULES-K2：handback「我做完了」——重启后同样不执行，台账消息用 handback
-    // 口径（用户亲自做、勿重试），不落「已被拒绝」的误导文案。
+    // N-PERM-NL-RULES-K2：handback「我做完了」——重启后同样不执行，台账落成功形结果
+    // （用户亲自做、勿重试），与在线路径同形，不是失败也不是「已被拒绝」。
     if (input.response === 'user_did_it') {
-      return deny('user did it themselves after restart', NL_RULE_K2_TEXT.handbackDoneModelText(payload.tool));
+      return deny('user did it themselves after restart', NL_RULE_K2_TEXT.handbackDoneModelText(payload.tool), 'denied', undefined, true);
     }
     return deny('rejected by user after restart', permissionDenialError(payload.tool, 'user').modelText);
   }
