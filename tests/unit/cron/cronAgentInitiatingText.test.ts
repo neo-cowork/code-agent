@@ -18,6 +18,7 @@ vi.mock('../../../src/host/cron/cronAgentRoleContext', () => ({
 }));
 vi.mock('../../../src/host/task', () => ({
   getTaskManager: () => ({
+    waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: vi.fn(),
       getMessages: () => [{ role: 'assistant', content: '完成' }],
