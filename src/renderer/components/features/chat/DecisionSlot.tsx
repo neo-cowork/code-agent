@@ -308,7 +308,10 @@ function LiveDecisionSlot({
   const agentRowLevels = useAgentRowStallLevels(agentRows);
   // 行徽标只画在右栏「专家」页签里：页签没打开（或右栏收起）时用户看不到徽标，输入框提示必须留着
   const agentBadgeOnScreen = activeWorkbenchTab === 'experts' && workbenchCollapsed === false;
-  const agentRowFlagged = agentBadgeOnScreen && agentRows.some((row) => {
+  // 通知只带工具名，对不上具体哪一行：只有所有在干活的行都已静默才让位（任一行还在推进，说明
+  // 静默的那行未必是这次调用对应的，输入框提示留着，宁可多说一句也不能零提示）。
+  const workingRows = agentRows.filter((row) => row.status === 'working');
+  const agentRowFlagged = agentBadgeOnScreen && workingRows.length > 0 && workingRows.every((row) => {
     const level = agentRowLevels.get(row.key);
     return level === 'quiet' || level === 'long';
   });

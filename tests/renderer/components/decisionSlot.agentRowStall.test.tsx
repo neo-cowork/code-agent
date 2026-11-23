@@ -151,6 +151,27 @@ describe('DecisionSlot 与代理行「暂无进展」互让', () => {
     expect(screen.queryByTestId('stall-notice')).not.toBeNull();
   });
 
+  it('⑧ 还有别的行在推进：只有一行静默时输入框提示留着；全部静默才让位', async () => {
+    mockTree([
+      treeNode({ updatedAt: Date.now() - 130_000 }),
+      treeNode({ id: 'agent-10', updatedAt: Date.now() - 10_000 }),
+    ]);
+    await renderBoth();
+    emit(spawnNotice());
+    expect(screen.getByTestId('agents-panel-quiet-agent-9')).toBeTruthy();
+    expect(screen.queryByTestId('stall-notice')).not.toBeNull();
+    cleanup();
+
+    mockTree([
+      treeNode({ updatedAt: Date.now() - 130_000 }),
+      treeNode({ id: 'agent-10', updatedAt: Date.now() - 140_000 }),
+    ]);
+    await renderBoth();
+    emit(spawnNotice());
+    expect(screen.getByTestId('agents-panel-quiet-agent-10')).toBeTruthy();
+    expect(screen.queryByTestId('stall-notice')).toBeNull();
+  });
+
   it('③ 等审批的行不让位；放行后窗口重开，满 120s 行 quiet 了才让位', async () => {
     appState.pendingPermissionSessionId = 'session-1';
     appState.pendingPermissionRequest = {
