@@ -1,6 +1,7 @@
 import { isStandaloneSpawnTrace, reconcileAgentNodeLifecycle } from './agentNodeLifecycle';
 import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
 import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
@@ -249,11 +250,20 @@ export function buildAgentRows(input: {
 
   for (const task of tasks) {
     const status = agentRowStatus(task.status);
+    const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
     const linkedNodeId = taskLinkedNodeId(task, nodeIds);
     if (linkedNodeId) {
       // 同一个代理在 agentTree 与 Task 两边都有：只留节点行，把 Task 挂上去供成员视图取产出
       const row = rows.find((candidate) => candidate.key === linkedNodeId);
-      if (row) row.task = task;
+      if (row) {
+        row.task = task;
+        if (incomplete) {
+          row.status = 'failed';
+          row.outcomeKey = 'delete-incomplete';
+          row.failureReason = backgroundTaskFailureCopy(task, t) ?? undefined;
+          row.stoppable = false;
+        }
+      }
       continue;
     }
     rows.push({
@@ -263,6 +273,7 @@ export function buildAgentRows(input: {
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,
+      outcomeKey: incomplete ? 'delete-incomplete' : undefined,
       stoppable: status === 'working',
       task,
     });

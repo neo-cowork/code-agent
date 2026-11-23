@@ -17,7 +17,7 @@ import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-r
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
-import { RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
 import { useTaskStore } from '../../../stores/taskStore';
 import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutcomes';
 import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
@@ -27,6 +27,7 @@ interface BackgroundTaskLineLabels {
   /** 终态词：统一取 outcomeWords（与任务面板同一词表） */
   words: { completed: string; failed: string; cancelled: string; failedTool: string; warnings: string };
   maxIterations: string;
+  deleteIncomplete: string;
 }
 
 /**
@@ -44,6 +45,7 @@ function resolveBackgroundTaskStatusLine(
   const isRunning = session.status === 'running' && terminal !== 'cancelled-by-user';
   if (terminal === 'cancelled-by-user') return { isRunning, line: labels.words.cancelled };
   const message = session.completionMessage;
+  if (message === BACKGROUND_TASK_DELETE_INCOMPLETE) return { isRunning: false, line: labels.deleteIncomplete };
   if (message === RUN_ERROR_CODE_MAX_ITERATIONS) return { isRunning: false, line: labels.maxIterations };
   if (message) return { isRunning: false, line: message };
   const words: Partial<Record<typeof terminal, string>> = {
@@ -185,7 +187,9 @@ export const BackgroundSessionPanel: React.FC = () => {
     minutes: t.backgroundPanel.durationMinutes,
     hours: t.backgroundPanel.durationHours,
   };
+  const incomplete = t.outcomeWords['delete-incomplete'].detail;
   const lineLabels = {
+    deleteIncomplete: t.chat.delegationReceipt.failureDetail.replace('{status}', incomplete.label).replace('{reason}', incomplete.reason),
     words: {
       completed: t.outcomeWords.completed.timeline.label,
       failed: t.outcomeWords['failed-unknown'].timeline.label,

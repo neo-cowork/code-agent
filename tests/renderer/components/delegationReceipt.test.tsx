@@ -3,6 +3,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '../../../src/shared/constants';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import type { ToolCall } from '../../../src/shared/contract';
@@ -646,4 +647,30 @@ it.each([
     mocks.language = 'zh';
     cleanup();
   }
+});
+
+
+it.each([
+  ['zh', '未完成', '已完成', '删除没有成功，文件还在'],
+  ['en', 'Incomplete', 'finished', 'The files are still there because the deletion did not succeed'],
+] as const)('uses the %s incomplete title and reason in the delegation card', (language, incomplete, completed, reason) => {
+  mocks.language = language;
+  mocks.tasks = [task({
+    status: 'failed',
+    title: '已完成删除 / Deleted all files',
+    failure: { reason: BACKGROUND_TASK_DELETE_INCOMPLETE, message: 'rm output' },
+    leftoverPaths: ['/temporary/exports/export.csv'],
+  })];
+  const failed = renderCall();
+  expect(failed.getByTestId('delegation-headline').textContent).toBe(`export.csv · ${incomplete}`);
+  expect(failed.queryByTestId('delegation-retry')).toBeNull();
+  expect(failed.getByTestId('delegation-failure').textContent).toBe(reason);
+  expect((failed.container.textContent ?? '').replace(incomplete, '')).not.toMatch(/完成|completed|deleted all files|\/temporary/i);
+  failed.unmount();
+  mocks.tasks = [task({ status: 'completed' })];
+  const success = renderCall();
+  expect(success.getByTestId('delegation-headline').textContent?.toLowerCase()).toContain(completed.toLowerCase());
+  cleanup();
+  mocks.language = 'zh';
+  mocks.tasks = [];
 });

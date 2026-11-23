@@ -9,6 +9,7 @@ import type { ToolCall } from '@shared/contract';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../../../../../i18n/outcomeWords';
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
+import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
 import { agentFailureReason, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import {
@@ -210,6 +211,7 @@ function taskFailureCause(task: Task): string | undefined {
 }
 
 function fromTask(task: Task, t: Translations): DelegationPresentation {
+  const incomplete = task.failure?.reason === BACKGROUND_TASK_DELETE_INCOMPLETE;
   const terminal = isTaskTerminalStatus(task.status);
   const state: DelegationReceiptState = !terminal
     ? 'working'
@@ -220,7 +222,10 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
         : 'failed';
   return {
     state,
-    title: displayPaths(backgroundTaskLabel(task, t)),
+    outcomeKey: incomplete ? 'delete-incomplete' : undefined,
+    title: incomplete && task.leftoverPaths?.length
+      ? task.leftoverPaths.map((path) => path.split(/[\\/]/).at(-1)).join(', ')
+      : displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
     guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),
@@ -236,7 +241,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     memberId: task.id,
     failureCause: state === 'failed' ? taskFailureCause(task) : undefined,
     endedAt: state === 'failed' || state === 'cancelled' ? task.completedAt ?? task.updatedAt : undefined,
-    toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
+    toolFailure: !incomplete && isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
 
