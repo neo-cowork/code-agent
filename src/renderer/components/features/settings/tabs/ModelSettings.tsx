@@ -51,16 +51,17 @@ import {
   buildLegacyLongCatProviderMigration,
   buildProviderConfigForSave,
   buildProviderManagementRows,
+  buildProviderSavePromotion,
   buildProviderSettingsUpdate,
   createCustomProviderId,
   describeProviderIconValidationError,
+  getModelLabel,
   hasCustomEndpointOverride,
   isProviderIdentityManaged,
   mergeDiscoveredModelEntry,
   orderProviderManagementRows,
   providerRequiresApiKey,
   resolveModelForProvider,
-  buildProviderSavePromotion,
   type DiscoverModelsResult,
   type ProviderConfigMap,
   type ProviderDisplayInfo,
@@ -493,7 +494,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
           const promotedTaskStrategy = promotion.update.models?.taskStrategy;
           if (promotedTaskStrategy) setTaskStrategy(promotedTaskStrategy);
           setDefaultSelection({ provider: config.provider, model: promotedModel });
-          if (promotedTaskStrategy) toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedModel}`);
+          const promotedLabel = promotion.config === providerConfigForSave ? promotedModel : promotion.config.models?.[promotedModel]?.label || getModelLabel(currentModels, promotedModel);
+          if (promotedTaskStrategy) toast.success(`${modelText.toast.defaultPromotedPrefix}${selectedProviderRow?.name || config.provider} / ${promotedLabel}`);
         }
       } catch (promoteError) {
         logger.warn('Failed to auto-promote default model after provider save', {

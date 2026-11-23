@@ -18,7 +18,7 @@ import path from 'node:path';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import type { AppSettings, ModelConfig } from '../../../src/shared/contract';
 import { getProviderEndpointForProtocol, getProviderInfo } from '../../../src/shared/constants';
-import { hasConfiguredDefaultRuntimeModel } from '../../../src/shared/modelRuntime';
+import { buildRuntimeModelOptions, hasConfiguredDefaultRuntimeModel } from '../../../src/shared/modelRuntime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { toast, useToastStore } from '../../../src/renderer/hooks/useToast';
 import { DomainInvokeError } from '../../../src/renderer/services/ipcService';
@@ -244,12 +244,14 @@ describe('ModelSettings custom endpoint promotion', () => {
     const settings = await saveXiaomiKey();
     expect(settings.models.providers.xiaomi.model).toBe(expected);
     expect(getSecureStorage().getApiKey('xiaomi')).toBe(xiaomiKey);
+    if (expected !== endpointOnlyModel) expect(settings.models.providers.xiaomi.models?.[expected]).toBeUndefined();
+    if (expected === listedMiMo) expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('MiMo v2.6 Flash'));
     expect(discover).toHaveBeenCalledExactlyOnceWith({
       provider: 'xiaomi', baseUrl: customEndpoint, protocol: 'openai',
     });
     expect(settings.models.default).toBe('xiaomi');
     expect(settings.models.taskStrategy?.profiles.main).toMatchObject({ provider: 'xiaomi', model: expected });
-    expect(settings.models.providers.xiaomi.models?.[expected]?.enabled).toBe(true);
+    expect(buildRuntimeModelOptions(settings)).toContainEqual(expect.objectContaining({ provider: 'xiaomi', model: expected }));
   });
 
   it.each([

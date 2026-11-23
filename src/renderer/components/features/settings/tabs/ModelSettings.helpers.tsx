@@ -216,12 +216,19 @@ async function resolvePromotionModel(
       logger.warn('Default model discovery returned no models during provider save', { provider });
       return config;
     }
+    const existing = config.models?.[model.id];
+    const catalog = PROVIDER_MODELS_MAP[provider]?.models;
+    if (catalog?.some(({ id }) => id === model.id) && existing?.enabled !== false) {
+      return { ...config, model: model.id };
+    }
     return {
       ...config,
       model: model.id,
       models: {
         ...config.models,
-        [model.id]: mergeDiscoveredModelEntry(config.models?.[model.id], model, true, config.updatedAt ?? Date.now()),
+        [model.id]: existing
+          ? { ...existing, enabled: true }
+          : mergeDiscoveredModelEntry(undefined, model, true, config.updatedAt ?? Date.now()),
       },
     };
   } catch (error) {
