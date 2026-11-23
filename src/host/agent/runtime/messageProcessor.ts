@@ -1,4 +1,5 @@
 import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
+import { serializeToolResultsForModel } from './toolResultMessageContent';
 import type { TraceEventDataMap } from './turnTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';
@@ -19,7 +20,6 @@ import type { ModelResponse } from '../../agent/loopTypes';
 import {
   sanitizeToolCallsForHistory,
   sanitizeToolResultsForHistoryWithCalls,
-  serializeToolResultsForModel,
 } from '../../agent/messageHandling/converter';
 import { classifyExecutionPhase } from '../../tools/executionPhase';
 import { createLogger } from '../../services/infra/logger';
