@@ -1,10 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
 import { ErrorBoundary } from '../../ErrorBoundary';
 import { SettingsLoadFallback } from './SettingsLoadFallback';
 
-const SettingsModal = React.lazy(() => import('../../SettingsModal').then(({ SettingsModal }) => ({
-  default: SettingsModal,
+const SettingsModal = React.lazy(() => import('../../SettingsModal').then((module) => ({
+  default: module.SettingsModal,
 })));
 const REOPEN_SETTINGS_KEY = 'code-agent-reopen-settings-after-reload';
 
@@ -27,7 +27,20 @@ function SettingsShellFallback() {
   );
 }
 
-export function SettingsShell({ active }: { active: boolean }) {
+function MountedSettings({ onMountChange }: { onMountChange: (mounted: boolean) => void }) {
+  useLayoutEffect(() => {
+    onMountChange(true);
+    return () => onMountChange(false);
+  }, [onMountChange]);
+  return <SettingsModal />;
+}
+
+export function SettingsShell({ active, className, children }: React.PropsWithChildren<{
+  active: boolean;
+  className: string;
+}>) {
+  const [settingsMounted, setSettingsMounted] = useState(false);
+
   useEffect(() => {
     try {
       const reopen = sessionStorage.getItem(REOPEN_SETTINGS_KEY) === '1';
@@ -41,12 +54,16 @@ export function SettingsShell({ active }: { active: boolean }) {
     }
   }, []);
 
-  if (!active) return null;
   return (
-    <ErrorBoundary fallback={<SettingsShellFallback />}>
-      <React.Suspense fallback={null}>
-        <SettingsModal />
-      </React.Suspense>
-    </ErrorBoundary>
+    <>
+      {active && (
+        <ErrorBoundary fallback={<SettingsShellFallback />}>
+          <React.Suspense fallback={null}>
+            <MountedSettings onMountChange={setSettingsMounted} />
+          </React.Suspense>
+        </ErrorBoundary>
+      )}
+      <div className={className} inert={active && settingsMounted}>{children}</div>
+    </>
   );
 }

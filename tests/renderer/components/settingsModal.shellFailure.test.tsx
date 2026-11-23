@@ -46,6 +46,7 @@ it.each(['zh', 'en'] as const)('%s: a rejected Settings shell leaves the chat an
   fireEvent.click(notice.getByRole('button', { name: t.settings.reloadPage }));
   expect(retry).toHaveBeenCalledOnce();
   expect(container.querySelector('[data-chat-input]')).toBe(composer);
+  expect(composer?.closest('[inert]')).toBeNull();
   expect(screen.getByTestId('server-connection-banner').textContent).toContain(t.serverConnection.unavailable);
   expect(container.textContent).not.toMatch(/任务执行失败|Task failed|TypeError|Failed to fetch dynamically imported module/);
   expect(screen.queryByText(t.errorBoundary.viewDetails)).toBeNull();

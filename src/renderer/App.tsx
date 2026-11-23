@@ -736,10 +736,10 @@ export const App: React.FC = () => {
               <TitleBar secondaryPageActive />
             )}
 
-            <SettingsShell active={settingsActive} />
-
-            {/* Content Area */}
-            <div className="flex-1 min-h-0 flex overflow-hidden">
+            {/* The content stays mounted under Settings. Only the loaded overlay blocks interaction. */}
+            <SettingsShell active={settingsActive}
+              className="flex-1 min-h-0 flex overflow-hidden"
+            >
               {/* 账号菜单打开的页面统一排进同一条互斥级联（2026-07-29 拍板），
                   排在既有二级页之前 = 沿用 overlay 时代「后开者盖住先开者、关掉后露出」的语义；
                   提示词库排在设置前，于是设置内（SoulSettings）打开提示词库时盖住设置、关闭回到设置。
@@ -835,7 +835,7 @@ export const App: React.FC = () => {
                   )}
                   </PanelGroup>} />
               )}
-            </div>
+            </SettingsShell>
           </div>
       </div>
 
