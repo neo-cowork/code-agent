@@ -19,6 +19,7 @@ import { getConfigService, getSecureStorage } from '../core';
 import { bindCloudRunAccountSource } from '../cloudRun/cloudRunLedger';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
+import { devFaultOverrideCurrentUser } from '../infra/devFaultLoader';
 import { withTimeout } from '../infra/timeoutController';
 import { AUTH_TIMEOUTS } from '../../../shared/constants';
 
@@ -714,7 +715,7 @@ class AuthService {
   }
 
   getCurrentUser(): AuthUser | null {
-    return this.currentUser;
+    return devFaultOverrideCurrentUser(this.currentUser);
   }
 
   hasVerifiedSession(): boolean {
