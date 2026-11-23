@@ -551,6 +551,65 @@ describe('member GUI disclosures through SubagentExecutor.execute', () => {
     }
   });
 
+  it('dedups a pid lookup and later bundle-id launch through member progress', async () => {
+    const calls = [
+      tool('state-pid', 'mcp__cua-driver__get_window_state', { pid: 456 }),
+      tool('shot', 'mcp__cua-driver__screenshot', { window_id: 77 }),
+      tool('launch-bundle', 'mcp__cua-driver__launch_app', { bundle_id: 'com.apple.calculator' }),
+      tool('launch-notes', 'mcp__cua-driver__launch_app', { name: 'Notes' }),
+    ];
+    const run = await runMember('calc-member-bundle', calls);
+    expect(run.result).toMatchObject({ success: true });
+    const byId = (id: string) => run.starts.find((call) => call.id === id)?.guiTakeoverDisclosure;
+    expect(byId('state-pid')).toEqual({ code: 'gui_takeover', app: 'Calculator' });
+    expect(byId('shot')).toBeUndefined();
+    expect(byId('launch-bundle')).toBeUndefined();
+    expect(byId('launch-notes')).toEqual({ code: 'gui_takeover', app: 'Notes' });
+    const expected = [{ app: 'Calculator', callId: 'state-pid' }, { app: 'Notes', callId: 'launch-notes' }];
+    expect(run.record?.snapshot?.guiDisclosures).toEqual(expected);
+
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    const manager = new DisclosureTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+      wakeForegroundBrain: vi.fn(),
+    });
+    try {
+      const spawned = await center.spawn({
+        sessionId: 'session-gui-bundle',
+        title: '核对计算器显示',
+        shortName: '计算器',
+        laneKey: 'lane-calc-bundle',
+        submissionKey: 'submission-calc-bundle',
+        prompt: '读计算器窗口，再按 bundle id 启动同一应用',
+        workspaceScope: createWorkspaceScope('project-gui', [{
+          sourceId: 'source-gui',
+          path: '/tmp/gui-project',
+          role: 'primary',
+          access: 'read_write',
+        }]),
+      });
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      for (const data of run.starts) {
+        manager.emitAgent('session-gui-bundle', { type: 'tool_call_start', data } as AgentEvent, spawned.task.id);
+      }
+      const progress = TaskProgressSchema.parse(
+        getBackgroundTaskLedger().listTasks({ sessionId: 'session-gui-bundle' }).find((task) => task.id === spawned.task.id)?.progress,
+      );
+      expect(progress.guiDisclosures).toEqual(expected);
+      console.info(`GUI_DISCLOSURE_MEMBER_BUNDLE ${JSON.stringify({
+        statePid: byId('state-pid') ?? null,
+        shot: byId('shot') ?? null,
+        launchBundle: byId('launch-bundle') ?? null,
+        launchNotes: byId('launch-notes') ?? null,
+        guiDisclosures: progress.guiDisclosures,
+      })}`);
+    } finally {
+      center.dispose();
+    }
+  });
+
   it('unresolved cua call warns with the resolver reason and the tool call still ends', async () => {
     const toolSpy = vi.spyOn(logCollector, 'tool');
     try {

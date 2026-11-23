@@ -135,9 +135,9 @@ export function resetGuiTakeoverDisclosureState(ctx: RuntimeContext): void {
 /**
  * 给本批工具调用里「本 run 首次直接驱动某 app 界面」的调用挂上结构化披露。
  * 就地写 toolCall.guiTakeoverDisclosure：随后落库的 assistant 消息、tool_call_start
- * 事件（引擎展开整个 toolCall）与执行期审批卡按此顺序到达用户。主 run 同时按
- * appGrantKey 和名字键去重（只按授权键会让名字调用和 bundle 调用各说一次）；
- * 成员 run 按传输方式无关的应用名称去重。
+ * 事件（引擎展开整个 toolCall）与执行期审批卡按此顺序到达用户。主 run 与成员
+ * run 都同时按 appGrantKey 和名字键去重（只按授权键会让名字调用和 bundle 调用
+ * 各说一次）。
  */
 export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<string>, toolCalls: ToolCall[]): Promise<void> {
   if (toolCalls.length === 0) return;
@@ -168,13 +168,10 @@ export async function attachGuiTakeoverDisclosures(scope: RuntimeContext | Set<s
     }
     if (decision.kind !== 'app') continue;
     const app = decision.app;
-    // 成员行按应用名去重，跨 GUI 传输方式也算同一次。主 run 的 appGrantKey 有
-    // bundle 时不含名字：先按名字启动、反查补上 bundle、再按 bundle_id 启动会
-    // 挂出两条预告。披露不是授权，任一键已见过就跳过，并把这次带来的另一枚键
-    // 补进集合，后面的 bundle-only 调用才能并到同一次预告上。
-    const keys = memberRun
-      ? [app.name.trim().toLowerCase()]
-      : [appGrantKey(app), `name:${app.name.trim().toLowerCase()}`];
+    // appGrantKey 有 bundle 时不含名字：先按名字启动、反查补上 bundle、再按
+    // bundle_id 启动会挂出两条预告。披露不是授权，任一键已见过就跳过，并把这次
+    // 带来的另一枚键补进集合，后面的 bundle-only 调用才能并到同一次预告上。
+    const keys = [appGrantKey(app), `name:${app.name.trim().toLowerCase()}`];
     if (keys.some((key) => disclosed.has(key))) {
       for (const key of keys) disclosed.add(key);
       continue;
