@@ -202,7 +202,8 @@ export function buildAgentRows(input: {
       if (row) {
         row.node = candidate;
         row.outcomeKey = outcome;
-        if (node.background) {
+        if (node.background && (t === languages.en
+          || (node.role !== 'background' && Object.hasOwn(t.agentRoleLabels.roles, node.role)))) {
           row.name = agentNodeLabel(node, t.agentRoleLabels);
           row.displayName = undefined;
         }
