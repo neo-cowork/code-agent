@@ -33,8 +33,8 @@ export function resolveForegroundBrainMaxIterations(input: {
     : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS;
 }
 
-/** Hidden task-result wakes get a deliberately small reasoning budget. */
-export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
+/** Hidden task-result wakes get the default foreground budget for inspecting results. */
+export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS;
 
 /** Deferred foreground wakes surface a durable conversation note after this wait. */
 export const BACKGROUND_WAKE_DEFER_NOTICE_MS = 10_000;
