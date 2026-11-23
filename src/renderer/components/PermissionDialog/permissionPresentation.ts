@@ -43,7 +43,9 @@ function compactFileTarget(target: string, p: Translations['decisionCard']['perm
   const name = withoutTrailingDots.split('/').pop();
   if (!/^(?:\/|[a-z]:)/iu.test(normalized)) {
     if (!name || name === '.') return p.targetCurrentFolder;
-    if (name === '..') return p.targetParentFolder;
+    if (name === '..') {
+      return /^(?:\.\/+)*\.\.$/u.test(withoutTrailingDots) ? p.targetParentFolder : withoutTrailingDots;
+    }
   }
   return name || (withoutTrailingSlashes ? '/' : redacted);
 }
