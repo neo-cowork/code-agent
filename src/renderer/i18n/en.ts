@@ -6,7 +6,7 @@ import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
-import { attachmentPreviewEn } from './attachmentPreview';
+import { attachmentPreviewEn } from './attachmentPreview'; import { chatImageAnnotateEn } from './chatImageAnnotate';
 import { chatInputEn } from './chatInput';
 import { backgroundPanelEn } from './backgroundPanel';
 import { voiceEn } from './voice'; import { cronWorkingFolderEn } from './cronWorkingFolder'; import { cronWakeCadenceEn } from './cronWakeCadence';
@@ -940,7 +940,7 @@ export const en = {
   ...rolePackEn,
   ...knowledgeMemoryEn,
   ...chatTranscriptEn,
-  ...attachmentPreviewEn,
+  ...attachmentPreviewEn, ...chatImageAnnotateEn,
   ...chatInputEn,
   ...backgroundPanelEn,
   ...voiceEn,

@@ -73,6 +73,12 @@ export interface AppshotCapture {
   /** 窗口在屏幕上的位置（CoreGraphics 坐标），供 Phase 3 飞入动画用 */
   windowFrame: AppshotWindowFrame;
   capturedAtMs: number;
+  /**
+   * 为 true 时截图作为普通图片附件落库（id 非 appshot- 前缀、不带 appshot 元数据）：
+   * appshot- 附件落库时会被剥掉图片字节、回放要靠本机 appshots 目录，聊天图片批注没有那份文件，
+   * 走普通图片附件才能在重载/重启后仍看得到画好框的图。
+   */
+  asPlainImage?: boolean;
 }
 
 /**
@@ -115,6 +121,10 @@ export function buildAppshotXml(capture: AppshotCapture, origin: AppshotOrigin =
   const app = escapeXmlAttr(capture.bundleId ?? '');
   const name = escapeXmlAttr(capture.appName);
   const captured = escapeXmlAttr(new Date(capture.capturedAtMs).toISOString());
+  if (capture.asPlainImage) {
+    const intro = '用户在一张图片上框出了需要关注的区域（图中已画上编号框），框的位置和评论如下，作为本条消息的上下文：';
+    return `<appshot app="${app}" name="${name}" captured="${captured}">\n${intro}\n\n${text}\n</appshot>`;
+  }
   const context = describeAppshotOrigin(origin, header);
   if (!text) {
     return `<appshot app="${app}" name="${name}" captured="${captured}">\n${context}\n</appshot>`;
@@ -136,6 +146,18 @@ export function stripAppshotBlocks(content: string): string {
 export function buildAppshotAttachment(capture: AppshotCapture): MessageAttachment | null {
   if (!capture.screenshotDataUrl) return null;
   const approxBytes = Math.round((capture.screenshotDataUrl.length * 3) / 4);
+  if (capture.asPlainImage) {
+    return {
+      id: `annotated-${capture.requestId}`,
+      type: 'image',
+      category: 'image',
+      name: `${capture.appName}.png`,
+      size: approxBytes,
+      mimeType: 'image/png',
+      data: capture.screenshotDataUrl,
+      thumbnail: capture.screenshotDataUrl,
+    };
+  }
   return {
     id: `appshot-${capture.requestId}`,
     type: 'image',
