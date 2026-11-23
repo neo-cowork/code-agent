@@ -25,6 +25,7 @@ import type {
 import { dataFingerprintStore } from '../../dataFingerprint';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { buildExpiredChatUploadResult, isChatUploadPath } from '../../file/pathUtils';
+import { resolveInputPath } from '../../utils/resolveInputPath';
 import { readXlsxSchema as schema } from './readXlsx.schema';
 import {
   isNsPrefixedRelationshipsError,
@@ -87,9 +88,7 @@ export async function executeReadXlsx(
 
   onProgress?.({ stage: 'starting', detail: `read_xlsx:${format}` });
 
-  const absPath = path.isAbsolute(filePathArg)
-    ? filePathArg
-    : path.join(ctx.workingDir, filePathArg);
+  const absPath = resolveInputPath(filePathArg, ctx.workingDir);
 
   if (!fs.existsSync(absPath)) {
     if (isChatUploadPath(absPath)) return buildExpiredChatUploadResult(absPath);

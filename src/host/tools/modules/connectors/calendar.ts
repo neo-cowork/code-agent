@@ -16,6 +16,7 @@ import { isCalendarFailure } from '../../../connectors/native/calendar';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { calendarSchema as schema } from './calendar.schema';
 import { formatConnectorStatusOutput, formatConnectorUnavailableMessage } from './connectorStatusText';
+import type { NativeConnectorDetailCode } from '../../../../shared/ipc/types';
 import { formatConnectorNow, formatConnectorTime } from './connectorTime';
 
 type CalendarAction = 'get_status' | 'list_calendars' | 'list_events';
@@ -121,7 +122,7 @@ async function executeCalendar(
     ctx.logger.debug('calendar', { action });
 
     if (action === 'get_status') {
-      const status = result.data as { connected: boolean; detail?: string; capabilities: string[] };
+      const status = result.data as { connected: boolean; detail?: string; detailCode?: NativeConnectorDetailCode; capabilities: string[] };
       const output = formatConnectorStatusOutput('calendar', status);
       return {
         ok: true,
