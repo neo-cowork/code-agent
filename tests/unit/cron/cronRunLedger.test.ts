@@ -12,7 +12,7 @@ const texts = {
   silentLevel: '未运行：角色处于静默档，不主动醒来',
   dailyBudget: '未运行：今日唤醒次数已用满（{used}/{max}）',
   quietHours: '未运行：处于免打扰时段，本次不补',
-  connectorLost: '未运行：{names} 已退出登录，重新连接后会继续',
+  connectorLost: '未运行：{names}已退出登录，重新连接后会继续',
   nameLanguage: 'zh' as const,
 };
 
@@ -76,7 +76,7 @@ describe('wakeSkipReasonText', () => {
 
   it('connector_lost 用人话显示名，中英文都不露 id', () => {
     const info = { kind: 'connector_lost' as const, connectorIds: ['feishu', 'tmeet'] };
-    expect(wakeSkipReasonText(info, texts)).toBe('未运行：飞书、腾讯会议 已退出登录，重新连接后会继续');
+    expect(wakeSkipReasonText(info, texts)).toBe('未运行：飞书、腾讯会议已退出登录，重新连接后会继续');
     expect(wakeSkipReasonText(info, {
       ...texts,
       nameLanguage: 'en',

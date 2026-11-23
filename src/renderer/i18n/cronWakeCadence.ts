@@ -17,7 +17,7 @@ export const cronWakeCadenceZh: { cronWakeCadence: CronWakeCadenceCopy } = {
     decisionTitle: '本次醒来的决定',
     skipGeneric: '未运行：本次醒来被跳过',
     skippedBadge: '未运行',
-    connectorLost: '未运行：{names} 已退出登录，重新连接后会继续',
+    connectorLost: '未运行：{names}已退出登录，重新连接后会继续',
   },
 };
 

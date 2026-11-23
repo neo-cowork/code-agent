@@ -133,7 +133,7 @@ describe('RoleWakeLedger', () => {
     render(<RoleWakeLedger roleId="role-a" />);
     await waitFor(() => {
       expect(screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent))
-        .toContain('未运行：飞书 已退出登录，重新连接后会继续');
+        .toContain('未运行：飞书已退出登录，重新连接后会继续');
     });
     expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('feishu');
     expect(screen.getByTestId('role-wake-ledger-list').textContent).not.toContain('connector_lost');
