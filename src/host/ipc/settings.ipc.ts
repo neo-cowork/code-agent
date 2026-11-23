@@ -27,6 +27,7 @@ import { bindAppGrantDatabase } from '../permissions/appGrantStore';
 import { bindToolGrantDatabase } from '../permissions/toolGrantStore';
 import { listGrants as listLedgerGrants, revokeGrant as revokeLedgerGrant } from '../permissions/grantLedger';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
+import { buildExcelSheetPreview } from './excelSheetPreview';
 import {
   resolveSheetCoordinate,
   type SheetRangeStart,
@@ -880,16 +881,7 @@ export function registerSettingsHandlers(
   });
 
   // Excel → JSON (for SpreadsheetBlock interactive rendering)
-  ipcMain.handle('extract-excel-json', async (_, filePath: string): Promise<{
-    sheets: Array<{
-      name: string;
-      headers: string[];
-      rows: unknown[][];
-      rowCount: number;
-      rangeStart?: SheetRangeStart;
-    }>;
-    sheetCount: number;
-  }> => {
+  ipcMain.handle('extract-excel-json', async (_, filePath: string) => {
     const fs = await import('fs');
     const XLSX = await import('xlsx');
 
@@ -913,16 +905,7 @@ export function registerSettingsHandlers(
         // 数组下标是 UI 算 A1（B7）的依据，而定点反馈把这个 A1 交给 DocEdit 直接改
         // 源文件；模型侧看到的行号必须是同一套，否则两侧各错各的谁也照不出来。
         const { rows: trimmed, rangeStart } = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
-        const headers = (trimmed[0] || []) as string[];
-        const rows = trimmed.slice(1, 501); // Cap at 500 rows for UI performance
-        return {
-          name: sheetName,
-          headers,
-          rows,
-          rowCount: Math.max(trimmed.length - 1, 0),
-          // A1 是主路径，保持 JSON 逐字节不变；只有真实存在偏移时才扩展契约。
-          ...(rangeStart.row !== 0 || rangeStart.column !== 0 ? { rangeStart } : {}),
-        };
+        return buildExcelSheetPreview(sheetName, trimmed, rangeStart);
       });
 
       return { sheets, sheetCount: workbook.SheetNames.length };
