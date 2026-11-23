@@ -16,6 +16,7 @@ import { createLogger } from '../services/infra/logger';
 import { SESSION_JUDGE } from '../../shared/constants';
 import { stripTelemetryRecoveryNotice } from '../../shared/telemetryRecovery';
 import { listMemoryFiles } from './lightMemoryIpc';
+import { guardSensitiveText } from '../security/sensitiveDataGuard';
 
 const logger = createLogger('ConversationJudge');
 
@@ -98,7 +99,9 @@ function truncate(text: string, max: number): string {
  * Heuristic judgment — mirrors the previous extractAndSaveConversationSummary
  * behavior so behavior never regresses when the quick model is unavailable.
  */
-function heuristicJudgment(userMessages: string[]): ConversationJudgment {
+function heuristicJudgment(rawUserMessages: string[]): ConversationJudgment {
+  // 先脱敏再截断：卡号被截成半截就认不出来了，半截数字也会进 recent-conversations
+  const userMessages = rawUserMessages.map((msg) => guardSensitiveText(msg, { surface: 'memory', mode: 'local-persist' }));
   const latest = userMessages[userMessages.length - 1] ?? '';
   const title = truncate(latest, MAX_TITLE_CHARS);
 
