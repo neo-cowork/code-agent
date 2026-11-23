@@ -71,6 +71,34 @@ describe('role-wake 运行列表', () => {
     render(<CronExecutionDetail execution={exec({ roleId: 'r', trigger: 'cadence', status: 'completed', decision: 'report' })} />);
     expect(screen.getByTestId('cron-wake-decision-label').textContent).toBe('汇报');
   });
+
+  it('connector_lost 用显示名，列表和详情都不露连接器 id（中英）', () => {
+    const execution = exec(
+      { status: 'skipped', skipReason: 'connector_lost:feishu', skipped: true },
+      { status: 'completed', cost: undefined },
+    );
+    render(<CronExecutionList executions={[execution]} selectedExecutionId={null} onSelectExecution={() => undefined} />);
+    expect(screen.getAllByRole('row')[1].textContent).toContain('未运行');
+    expect(screen.getByTestId('cron-wake-skip-reason').textContent).toBe('未运行：飞书 已退出登录，重新连接后会继续');
+    expect(screen.getByTestId('cron-wake-skip-reason').textContent).not.toContain('feishu');
+    expect(screen.getByTestId('cron-wake-skip-reason').textContent).not.toContain('connector_lost');
+    cleanup();
+    render(<CronExecutionDetail execution={execution} />);
+    expect(screen.getByTestId('cron-wake-skip-sentence').textContent).toBe('未运行：飞书 已退出登录，重新连接后会继续');
+    expect(document.body.textContent).toContain('未运行');
+    expect(screen.getByTestId('cron-wake-skip-sentence').textContent).not.toContain('feishu');
+    cleanup();
+
+    language.value = 'en';
+    render(<CronExecutionList executions={[execution]} selectedExecutionId={null} onSelectExecution={() => undefined} />);
+    expect(screen.getAllByRole('row')[1].textContent).toContain('Not run');
+    expect(screen.getByTestId('cron-wake-skip-reason').textContent).toBe('Not run: Feishu signed out — it will resume after you reconnect');
+    expect(screen.getByTestId('cron-wake-skip-reason').textContent).not.toMatch(/飞书|feishu|connector_lost/);
+    cleanup();
+    render(<CronExecutionDetail execution={execution} />);
+    expect(screen.getByTestId('cron-wake-skip-sentence').textContent).toBe('Not run: Feishu signed out — it will resume after you reconnect');
+    expect(screen.getByTestId('cron-wake-skip-sentence').textContent).not.toMatch(/飞书|feishu/);
+  });
 });
 
 describe('role-wake 跳过行状态', () => {

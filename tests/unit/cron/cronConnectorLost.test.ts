@@ -15,6 +15,10 @@ const state = vi.hoisted(() => ({
   db: null as BetterSqlite3.Database | null,
   messages: [] as Array<{ id: string }>,
   orchestratorMessages: [] as unknown[],
+  sendMessage: vi.fn(async () => undefined),
+  createSession: vi.fn(async (_def: unknown, _action: unknown, executionId?: string) => ({
+    id: `session-of-${executionId}`, workingDirectory: undefined,
+  })),
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -30,9 +34,7 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   }),
 }));
 vi.mock('../../../src/host/cron/cronAgentSession', () => ({
-  createCronAgentSession: async (_def: unknown, _action: unknown, executionId?: string) => ({
-    id: `session-of-${executionId}`, workingDirectory: undefined,
-  }),
+  createCronAgentSession: (...args: unknown[]) => state.createSession(...args),
 }));
 vi.mock('../../../src/host/cron/cronAgentRoleContext', () => ({ buildCronAgentRunOptions: async () => ({}) }));
 vi.mock('../../../src/host/task', () => ({
@@ -40,7 +42,7 @@ vi.mock('../../../src/host/task', () => ({
     waitUntilReady: async () => true,
     getOrCreateCurrentOrchestrator: () => ({
       setExecutionTopology: vi.fn(),
-      sendMessage: async () => undefined,
+      sendMessage: (...args: unknown[]) => state.sendMessage(...args),
       getMessages: () => state.orchestratorMessages,
     }),
     setWorkingDirectory: vi.fn(),
@@ -52,7 +54,10 @@ vi.mock('../../../src/host/agent/agentRegistry', () => ({
   resolveAgent: (roleId: string) => (roleId === 'feishu-expert' ? { connectors: [{ id: 'feishu', level: 'core' }] } : undefined),
 }));
 
-import { replaceCliConnectorConnectionStatusCache } from '../../../src/host/connectors/cli/cliConnectorStatusCache';
+import {
+  registerCliConnectorStatusProbeStarter,
+  replaceCliConnectorConnectionStatusCache,
+} from '../../../src/host/connectors/cli/cliConnectorStatusCache';
 import { executeCronAgentAction } from '../../../src/host/cron/cronAgentAction';
 import { getSessionAutomationService } from '../../../src/host/services/sessionAutomation';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
@@ -96,6 +101,9 @@ beforeEach(async () => {
     config_json TEXT DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`);
   state.messages = [];
   state.orchestratorMessages = unauthorizedRun;
+  state.sendMessage.mockClear();
+  state.createSession.mockClear();
+  registerCliConnectorStatusProbeStarter(() => Promise.resolve());
   await getSessionAutomationService().recordCreated({
     id: 'cron:job-1', sourceSessionId: 'src-session', type: 'cron', status: 'active', title: '每日读飞书', sourceRefId: 'job-1',
   });
@@ -104,6 +112,8 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  registerCliConnectorStatusProbeStarter(undefined);
+  replaceCliConnectorConnectionStatusCache([]);
   state.db?.close();
   state.db = null;
   rmSync(dir, { recursive: true, force: true });
@@ -114,6 +124,8 @@ describe('cron 无人值守运行发现 MCP 401 → 收件箱每连接器每日�
     const action = job.action as never;
     vi.setSystemTime(new Date(2031, 2, 10, 9, 0, 0));
     await executeCronAgentAction(host, job, action, 'e1');
+    expect(state.sendMessage).toHaveBeenCalled();
+    expect(state.createSession).toHaveBeenCalled();
     vi.setSystemTime(new Date(2031, 2, 10, 21, 30, 0));
     await executeCronAgentAction(host, job, action, 'e2');
 
@@ -154,13 +166,18 @@ describe('cron 无人值守运行发现 MCP 401 → 收件箱每连接器每日�
     vi.setSystemTime(new Date(2031, 8, 1, 9, 0, 0));
     await executeCronAgentAction(host, job, action, 'e5');
     expect(state.messages).toEqual([]);
+    expect(state.createSession).toHaveBeenCalled();
 
+    state.createSession.mockClear();
+    state.sendMessage.mockClear();
     replaceCliConnectorConnectionStatusCache([{ id: 'feishu', connected: false, lostReason: 'cli_not_logged_in' }]);
-    await executeCronAgentAction(host, job, action, 'e6');
+    const skipped = await executeCronAgentAction(host, job, action, 'e6');
     await executeCronAgentAction(host, job, action, 'e7');
+    expect(skipped).toEqual({ skipped: true, status: 'skipped', skipReason: 'connector_lost:feishu' });
+    expect(state.createSession).not.toHaveBeenCalled();
+    expect(state.sendMessage).not.toHaveBeenCalled();
     expect(state.messages.map((m) => m.id)).toEqual(['automation:connector_lost:feishu:2031-09-01']);
     expect(JSON.stringify(automationRows())).toContain('今天的定时运行没能读取「');
-    replaceCliConnectorConnectionStatusCache([]);
   });
 
   it('同次运行随后的 recordCronAutomationExecution 不抹掉 connectorLost（提示行与同日去重记录保留）', async () => {
