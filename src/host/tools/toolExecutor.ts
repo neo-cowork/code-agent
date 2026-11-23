@@ -1335,7 +1335,12 @@ export class ToolExecutor {
         // 补上本次执行的 effective*：无人值守停车、用户原话引用、stall 时钟都靠它认会话。
         // 已带值的不覆盖也不换对象——permissionAskResults 是 WeakMap，shadowAdapter 用同一引用回查。
         const sessionId = rawRequest.sessionId || effectiveSessionId;
-        const runId = rawRequest.runId || effectiveRunId;
+        // runId 是后台 lane 身份：orchestratorPermissions 的 hasBackgroundRunIdentity 凭它把
+        // 请求归到后台 lane（停车 backgroundExactFile、收线 drain 跳过）。main（前台交互）
+        // 执行的体内审批若带上它，前台 upload_file 会从当场确认被改判停车、本 run 自己的卡
+        // 也躲过收线清理——「前台请求无 run 身份」是这条链路的既有约定，只为非 main lane 补。
+        const runId = rawRequest.runId
+          || (this.getExecutionTopology() !== 'main' ? effectiveRunId : undefined);
         const request = sessionId === rawRequest.sessionId && runId === rawRequest.runId
           ? rawRequest
           : { ...rawRequest, sessionId, runId };

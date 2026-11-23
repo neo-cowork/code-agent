@@ -1,7 +1,10 @@
 // 工具体内审批（context.requestPermission）请求归一化：toolExecutor 包装器把空缺的
-// sessionId/runId 补成本次执行的 effective*（11-22 option A），让无人值守停车、
-// 用户原话引用、stall 时钟认得出会话；已带值的请求（canUseTool→shadowAdapter 路径）
-// 不覆盖也不换对象——permissionAskResults 是 WeakMap，靠同一引用回查。
+// sessionId 补成本次执行的 effectiveSessionId（11-22 option A），让无人值守停车、
+// 用户原话引用、stall 时钟认得出会话；runId 只在非 main lane（async_agent 等后台
+// 执行）才补——runId 是 lane 身份，main（前台交互）请求带上它会被
+// hasBackgroundRunIdentity 误判成后台 lane（前台 upload_file 从当场确认改走停车）。
+// 已带值的请求（canUseTool→shadowAdapter 路径）不覆盖也不换对象——
+// permissionAskResults 是 WeakMap，靠同一引用回查。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const resolverState = vi.hoisted(() => ({
@@ -108,18 +111,37 @@ afterEach(() => {
 });
 
 describe('ToolExecutor in-tool requestPermission session/run id normalisation', () => {
-  it('(a) a request without ids is forwarded carrying the execution sessionId/runId', async () => {
+  it('(a) background lane: a request without ids is forwarded carrying the execution sessionId/runId', async () => {
     installProbe((context) => probeAsk(context, {}));
     const received: PermissionRequestData[] = [];
     const executor = new ToolExecutor({
       requestPermission: async (request) => { received.push(request); return true; },
       workingDirectory: '/tmp/in-tool-approval-session-a',
+      executionTopology: 'async_agent',
     });
     executor.setAuditEnabled(false);
     const result = await executor.execute('probe_tool', {}, { sessionId: 'sess-a', runId: 'run-a' });
     expect(result.success).toBe(true);
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({ sessionId: 'sess-a', runId: 'run-a', tool: 'probe_tool' });
+  });
+
+  it('(a2) foreground main lane: sessionId is filled but runId stays empty', async () => {
+    installProbe((context) => probeAsk(context, {}));
+    const received: PermissionRequestData[] = [];
+    const executor = new ToolExecutor({
+      requestPermission: async (request) => { received.push(request); return true; },
+      workingDirectory: '/tmp/in-tool-approval-session-a2',
+      executionTopology: 'main',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId: 'sess-a2', runId: 'run-a2' });
+    expect(result.success).toBe(true);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ sessionId: 'sess-a2', tool: 'probe_tool' });
+    // runId 是后台 lane 身份：main 请求带上它会被 hasBackgroundRunIdentity 误判
+    // （前台 browser_action.upload_file 从当场确认改走停车）。
+    expect(received[0].runId).toBeUndefined();
   });
 
   it('(b) a request that already carries other ids keeps them and its object identity', async () => {
@@ -209,15 +231,17 @@ describe('chain: in-tool approval reaches OrchestratorPermissionIsland with sess
     const executor = new ToolExecutor({
       requestPermission: (request) => island.requestPermission(request),
       workingDirectory: '/tmp/in-tool-approval-chain-unattended',
+      executionTopology: 'async_agent',
     });
     executor.setAuditEnabled(false);
     const result = await executor.execute('probe_tool', {}, { sessionId, runId: 'run-chain-1' });
     expect(result.success).toBe(true);
     expect(inserted).toHaveLength(1);
-    const payload = inserted[0].payload as { sessionId?: string | null };
+    const payload = inserted[0].payload as { sessionId?: string | null; backgroundLane?: boolean };
     expect(payload.sessionId).toBe(sessionId);
     expect(payload.sessionId).toBeTruthy();
     expect(inserted[0].coordinatorId).toBe(sessionId);
+    expect(payload.backgroundLane).toBe(true);
   });
 
   it('attended session with a user message: the card quotes details.userRequest', async () => {
@@ -252,7 +276,50 @@ describe('chain: in-tool approval reaches OrchestratorPermissionIsland with sess
     expect(result.success).toBe(true);
     expect(cards).toHaveLength(1);
     expect(cards[0].sessionId).toBe(sessionId);
+    expect(cards[0].runId).toBeUndefined();
     expect(cards[0].details?.userRequest).toEqual({ text: userWords, truncated: false });
     expect(repo.insert as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it('foreground main session: browser_action.upload_file forceConfirm stays interactive, never parked', async () => {
+    const sessionId = 'chain-foreground-upload';
+    dbState.session = { title: 'foreground chat' };
+    dbState.recentMessages = [{ role: 'user', content: 'upload the receipt photo to the form', isMeta: false }];
+    const insert = vi.fn();
+    const repo = { insert, resolve: () => 1 } as unknown as PendingApprovalRepository;
+    const cards: PermissionRequest[] = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: settings as never,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      hasApprovalUi: () => true,
+      injectedPendingApprovalRepo: repo,
+      onEvent: (event) => {
+        if (event.type !== 'permission_request' || event.data.resolved) return;
+        cards.push(event.data as PermissionRequest);
+        island.handlePermissionResponse((event.data as PermissionRequest).id, 'allow');
+      },
+    });
+    installProbe((context) =>
+      context.requestPermission({
+        type: 'file_read',
+        tool: 'browser_action.upload_file',
+        forceConfirm: true,
+        details: { action: 'upload_file' },
+        reason: 'probe foreground upload confirm',
+      } as Parameters<ToolContext['requestPermission']>[0]));
+    const executor = new ToolExecutor({
+      requestPermission: (request) => island.requestPermission(request),
+      workingDirectory: '/tmp/in-tool-approval-chain-fg-upload',
+    });
+    executor.setAuditEnabled(false);
+    const result = await executor.execute('probe_tool', {}, { sessionId, runId: 'run-foreground-1' });
+    expect(result.success).toBe(true);
+    // 前台 upload_file 是当场确认：带上 runId 会被 backgroundExactFile 改判停车，
+    // 横幅指向「自动化→运行记录」（只收 cron/heartbeat），请求挂到 24h 兜底才拒。
+    expect(insert).not.toHaveBeenCalled();
+    expect(cards).toHaveLength(1);
+    expect(cards[0].sessionId).toBe(sessionId);
+    expect(cards[0].runId).toBeUndefined();
   });
 });
