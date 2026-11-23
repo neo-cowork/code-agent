@@ -364,10 +364,10 @@ APPLESCRIPT` }, 'Keynote'],
       });
       if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
       const taskId = spawned.task.id;
-      ctx.onEvent = (event) => {
+      ctx.onEvent = vi.fn((event: AgentEvent) => {
         timeline.push(`event:${event.type}`);
         manager.emitAgent('session-calc', event, taskId);
-      };
+      });
       const engine = new ToolExecutionEngine(ctx as unknown as RuntimeContext);
       engine.setModules(
         deps.contextAssembly as never,
