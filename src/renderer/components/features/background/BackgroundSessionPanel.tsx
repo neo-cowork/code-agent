@@ -20,6 +20,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE, RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
 import { useTaskStore } from '../../../stores/taskStore';
 import { useBackgroundStepOutcomes } from '../../../hooks/useBackgroundStepOutcomes';
+import { deleteIncompleteFileNames } from '../../../utils/agentFailureCopy';
 import { resolveBackgroundTerminalKey } from '../../../utils/terminalWord';
 import { IconButton } from '../../primitives';
 
@@ -160,9 +161,9 @@ export const BackgroundSessionPanel: React.FC = () => {
   const { t, language } = useI18n();
   const liveSessions = useSessionStore((state) => state.sessions);
   // 实时标题：智能标题落地 / 用户改名后，host 快照里的标题是旧的
-  const titleOf = (session: BackgroundSessionInfo): string => getDisplaySessionTitle(
-    liveSessions.find((item) => item.id === session.sessionId)?.title || session.title,
-    language,
+  const titleOf = (session: BackgroundSessionInfo): string => (
+    (session.completionMessage === BACKGROUND_TASK_DELETE_INCOMPLETE ? deleteIncompleteFileNames(session.leftoverPaths) : undefined)
+    ?? getDisplaySessionTitle(liveSessions.find((item) => item.id === session.sessionId)?.title || session.title, language)
   );
   // 前台已判定停止、但后台条目还没被 host 收尾时，行里的词先跟终态走（只改词，不动 Stop/Clear 按钮）
   const sessionStates = useTaskStore((state) => state.sessionStates);

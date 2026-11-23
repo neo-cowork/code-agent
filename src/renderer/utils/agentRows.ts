@@ -2,7 +2,7 @@ import { isStandaloneSpawnTrace, reconcileAgentNodeLifecycle } from './agentNode
 import { parseSwarmTraceStorageId } from '@shared/contract/swarm';
 import { agentNodeLabel, agentRoleLabel, backgroundTaskLabel, backgroundTaskLabels } from './agentRoleLabel';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
-import { agentFailureCopy, backgroundTaskFailureCopy } from './agentFailureCopy';
+import { agentFailureCopy, backgroundTaskFailureCopy, deleteIncompleteFileNames } from './agentFailureCopy';
 import { languages, type Translations } from '../i18n';
 import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../i18n/outcomeWords';
 import { agentFailureHostPhrases } from '../i18n/agentFailureHostPhrases';
@@ -258,6 +258,7 @@ export function buildAgentRows(input: {
       if (row) {
         row.task = task;
         if (incomplete) {
+          row.displayName = deleteIncompleteFileNames(task.leftoverPaths) ?? row.displayName;
           row.status = 'failed';
           row.outcomeKey = 'delete-incomplete';
           row.failureReason = backgroundTaskFailureCopy(task, t) ?? undefined;
@@ -269,7 +270,8 @@ export function buildAgentRows(input: {
     rows.push({
       key: task.id,
       kind: 'task',
-      name: taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
+      name: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
+        ?? taskLabels.get(task.id) ?? backgroundTaskLabel(task, t),
       isLead: false,
       status,
       failureReason: backgroundTaskFailureCopy(task, t) ?? undefined,

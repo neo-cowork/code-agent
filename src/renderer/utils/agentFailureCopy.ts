@@ -58,6 +58,10 @@ export function backgroundTaskFailureCopy(task: Task, t: Translations): string |
   return agentFailureCopy(isAgentFailureCode(task.failure?.reason) ? task.failure.reason : undefined, t, task.failure?.message || task.summary);
 }
 
+export function deleteIncompleteFileNames(paths?: readonly string[]): string | undefined {
+  return paths?.length ? paths.map((path) => path.split(/[\\/]/).at(-1)).join(', ') : undefined;
+}
+
 export function isShellBackgroundTask(task: Pick<Task, 'source'>): boolean {
   return task.source === 'shell' || task.source === 'pty';
 }

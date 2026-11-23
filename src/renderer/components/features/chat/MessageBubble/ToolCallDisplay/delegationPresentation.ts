@@ -10,7 +10,7 @@ import { resolveAgentNodeOutcomeKey, type OutcomeKey } from '../../../../../i18n
 import { languages, type Translations } from '../../../../../i18n';
 import { useAppStore } from '../../../../../stores/appStore';
 import { BACKGROUND_TASK_DELETE_INCOMPLETE } from '@shared/constants';
-import { agentFailureReason, backgroundTaskFailureCopy } from '../../../../../utils/agentFailureCopy';
+import { agentFailureReason, backgroundTaskFailureCopy, deleteIncompleteFileNames } from '../../../../../utils/agentFailureCopy';
 import { isToolInterruptionPlaceholder } from '../../../../../utils/toolExecutionPresentation';
 import {
   isLastToolFailureVisible,
@@ -223,9 +223,8 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
   return {
     state,
     outcomeKey: incomplete ? 'delete-incomplete' : undefined,
-    title: incomplete && task.leftoverPaths?.length
-      ? task.leftoverPaths.map((path) => path.split(/[\\/]/).at(-1)).join(', ')
-      : displayPaths(backgroundTaskLabel(task, t)),
+    title: (incomplete ? deleteIncompleteFileNames(task.leftoverPaths) : undefined)
+      ?? displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
     guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),

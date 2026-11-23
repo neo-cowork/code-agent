@@ -91,10 +91,14 @@ describe('状态行映射（经渲染）', () => {
     useAppStore.setState({ language });
     try {
       renderPanelWith(backgroundTask({
+        title: '已完成删除 / Deleted all files',
         status: 'failed',
         completionMessage: BACKGROUND_TASK_DELETE_INCOMPLETE,
         leftoverPaths: ['/temporary/exports/export.csv'],
       }));
+      const row = screen.getByTestId('background-session-item');
+      expect(row.textContent).toContain('export.csv');
+      expect(row.textContent).not.toMatch(/已完成|Deleted all files/);
       expect(itemLine()).toContain(incomplete);
       expect(itemLine()).toContain(reason);
       expect(itemLine().replace(incomplete, '')).not.toMatch(/完成|completed|DELETE_INCOMPLETE|\/temporary/i);
