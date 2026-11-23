@@ -20,8 +20,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { NativeConnectorsSection } from '../../../src/renderer/components/features/settings/sections/NativeConnectorsSection';
 
-const DENIED_DETAIL = '日历访问被拒绝了：请在「系统设置 → 隐私与安全性 → 日历」里允许 Neo。';
-const UNDECIDED_DETAIL = '还没有允许 Neo 访问日历；用到日历时会请你允许一次。';
+const zhCodes = zh.settings.nativeConnectors.grid.detailCode;
+const enCodes = en.settings.nativeConnectors.grid.detailCode;
+const DENIED_DETAIL = zhCodes.calendar_denied;
+const UNDECIDED_DETAIL = zhCodes.calendar_undecided;
+const CJK = /[\u3400-\u9fff]/;
 
 const inventory: NativeConnectorInventoryItem[] = [{ id: 'calendar', label: 'Calendar', enabled: true }];
 
@@ -55,7 +58,7 @@ describe('NativeConnectorsSection calendar denial card', () => {
   });
 
   it('shows the denied sentence and opens Calendar settings from the card button', async () => {
-    mount(status({ detail: DENIED_DETAIL, checkedAt: 1_700_000_000_000, settingsPane: 'calendars' }));
+    mount(status({ detailCode: 'calendar_denied', checkedAt: 1_700_000_000_000, settingsPane: 'calendars' }));
     const card = await screen.findByTestId('native-connector-card-calendar');
     expect(card.querySelector('p')?.textContent).toBe(DENIED_DETAIL);
     expect(card.textContent).not.toContain(zh.settings.nativeConnectors.grid.statusDetail.unchecked);
@@ -68,7 +71,7 @@ describe('NativeConnectorsSection calendar denial card', () => {
   });
 
   it('after Check, an undecided calendar shows its sentence and no settings button', async () => {
-    mount(status({ detail: UNDECIDED_DETAIL, checkedAt: 1_700_000_000_000 }));
+    mount(status({ detailCode: 'calendar_undecided', checkedAt: 1_700_000_000_000 }));
     const card = await screen.findByTestId('native-connector-card-calendar');
     expect(card.querySelector('p')?.textContent).toBe(UNDECIDED_DETAIL);
     expect(screen.queryByRole('button', { name: zh.settings.nativeConnectors.openAutomationSettings })).toBeNull();
@@ -76,18 +79,26 @@ describe('NativeConnectorsSection calendar denial card', () => {
     process.stdout.write(`④ undecided-after-Check card: ${card.textContent}\n`);
   });
 
-  it('keeps the generic unchecked line until a check has run', async () => {
-    mount(status({ detail: UNDECIDED_DETAIL }));
+  it('shows the enabled-not-checked catalogue sentence before any check, never host prose', async () => {
+    mount(status({ detailCode: 'unchecked', detail: '宿主写的中文句子，不该出现' }));
     const card = await screen.findByTestId('native-connector-card-calendar');
-    expect(card.querySelector('p')?.textContent).toBe(zh.settings.nativeConnectors.grid.statusDetail.unchecked);
-    expect(card.textContent).not.toContain(UNDECIDED_DETAIL);
+    expect(card.querySelector('p')?.textContent).toBe(zhCodes.unchecked.replace('{name}', zh.settings.nativeConnectors.grid.labels.calendar));
+    expect(card.textContent).not.toContain('宿主写的中文句子');
   });
 
-  it('uses the English button label on an English card and still shows the host sentence', async () => {
-    testLocale.value = 'en';
-    mount(status({ detail: DENIED_DETAIL, checkedAt: 1_700_000_000_000, settingsPane: 'calendars' }));
+  it('shows no sentence from host prose when the status has no code', async () => {
+    mount(status({ detail: '宿主写的中文句子，不该出现', error: 'Command failed: osascript' }));
     const card = await screen.findByTestId('native-connector-card-calendar');
-    expect(card.querySelector('p')?.textContent).toBe(DENIED_DETAIL);
+    expect(card.querySelector('p')?.textContent).toBe(zh.settings.nativeConnectors.grid.statusDetail.unchecked);
+    expect(card.textContent).not.toMatch(/宿主写的|osascript|Command failed/);
+  });
+
+  it('uses the English button label and the English sentence on an English card', async () => {
+    testLocale.value = 'en';
+    mount(status({ detailCode: 'calendar_denied', checkedAt: 1_700_000_000_000, settingsPane: 'calendars' }));
+    const card = await screen.findByTestId('native-connector-card-calendar');
+    expect(card.querySelector('p')?.textContent).toBe(enCodes.calendar_denied);
+    expect(card.textContent).not.toMatch(CJK);
     expect(screen.getByRole('button', { name: en.settings.nativeConnectors.openAutomationSettings })).toBeTruthy();
     process.stdout.write(`④ en denied card: ${card.textContent}\n`);
   });

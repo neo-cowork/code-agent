@@ -49,8 +49,7 @@ const statuses: ConnectorStatusSummary[] = [
     label: 'Calendar',
     connected: false,
     readiness: 'failed',
-    detail: 'Calendar 授权/可用性检查失败',
-    error: 'Automation denied',
+    detailCode: 'automation_not_authorized',
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities: ['list_events'],
     checkedAt: 1_713_456_000_000,
@@ -84,7 +83,7 @@ describe('NativeConnectorsSection helpers', () => {
       enabled: true,
       status: {
         readiness: 'failed',
-        error: 'Automation denied',
+        detailCode: 'automation_not_authorized',
       },
     });
     expect(rows[1]).toMatchObject({
@@ -212,7 +211,7 @@ describe('NativeConnectorItems', () => {
     expect(html).toContain('日历');
     expect(html).toContain('检查失败');
     expect(html).toContain('可用动作: 检查、修复权限、断开、移除');
-    expect(html).toContain('Automation denied');
+    expect(html).toContain(zh.settings.nativeConnectors.grid.detailCode.automation_not_authorized.replaceAll('{name}', '日历').replaceAll('>', '&gt;'));
     expect(html).toContain('检查');
     expect(html).toContain('修复权限');
     expect(html).toContain('断开');

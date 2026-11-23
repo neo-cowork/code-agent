@@ -150,10 +150,14 @@ export const workbenchTabsZh = {
         keptHint: 'Neo 把这一页留给你了，可以继续操作。连续 30 分钟没有任何操作，窗口会自动关闭。每次操作都会重新计时。',
         keptOpen: '在 Neo 中打开',
         keptClosedHint: '这个窗口已关闭，可能是因为有一段时间没人操作，或是浏览器被关了。重新打开只恢复网址，不恢复表单里已填的内容。',
+        keptClosedSnapshotHint: '这个窗口已关闭。重新打开会显示当时保存的页面，只能看。',
         closedTitle: '结果页已关闭',
         reopen: '重新打开',
         reopenFailed: '打不开这一页：{error}',
         adoptFailed: '认领结果页失败：{error}',
+        snapshotTitle: '保存的页面',
+        snapshotNote: '这是 Neo 当时保存的页面，只能看，不能点或填写。',
+        snapshotTryOriginal: '仍尝试打开原网址',
       },
       // N-FIX-FIX-BROWSER-SECRETREF-HARDEN（FB-578）：secretRef 接管停靠的聊天卡（继续 / 已回收）。
       // 「继续」发送一条用户消息开启下一轮（绝不 resume 已完结的会话）；窗被回收后只说事实，不留死按钮。
@@ -354,10 +358,14 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
         keptHint: 'Neo left this page open so you can keep working. The window closes automatically after 30 minutes without any activity. Any action restarts the timer.',
         keptOpen: 'Open in Neo',
         keptClosedHint: 'This window closed because it hadn’t been used for a while or because the browser was closed. Reopening restores the address only, not anything typed into forms.',
+        keptClosedSnapshotHint: 'This window closed. Reopen shows the saved page (read-only).',
         closedTitle: 'Result page closed',
         reopen: 'Reopen',
         reopenFailed: 'Could not open this page: {error}',
         adoptFailed: 'Could not attach to the kept page: {error}',
+        snapshotTitle: 'Saved page',
+        snapshotNote: 'This is a saved copy of the page. You can look at it, but you cannot click or fill it in.',
+        snapshotTryOriginal: 'Try the original address',
       },
       // N-FIX-FIX-BROWSER-SECRETREF-HARDEN (FB-578): chat card for a takeover-parked
       // browser (Continue / reclaimed). Continue sends a user message to start the next

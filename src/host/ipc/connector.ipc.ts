@@ -143,6 +143,7 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       checkedAt: status.checkedAt,
       noAccessibleItems: status.noAccessibleItems,
       errorCode: status.errorCode,
+      detailCode: status.detailCode,
       settingsPane: status.settingsPane,
       actions: status.actions,
       capabilities: status.capabilities,

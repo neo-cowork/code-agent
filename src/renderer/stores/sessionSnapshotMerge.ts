@@ -23,14 +23,21 @@ function precedingUserId(messages: Message[], target: Message): string | undefin
   return undefined;
 }
 
+function hasStreamingBodyPrefix(left: string, right: string, minPrefix = 0): boolean {
+  const a = left.trimStart();
+  const b = right.trimStart();
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (!shorter) return a === b || left === '' || right === '';
+  return shorter.length >= minPrefix && longer.startsWith(shorter);
+}
+
 function isStreamingAssistantCounterpart(left: string | undefined, right: string | undefined): boolean {
   const a = left ?? '';
   const b = right ?? '';
   if (!a || !b) return false;
   if (a === b) return true;
-  const shorter = a.length <= b.length ? a : b;
-  const longer = a.length <= b.length ? b : a;
-  return shorter.length >= STREAMING_COUNTERPART_MIN_PREFIX && longer.startsWith(shorter);
+  return hasStreamingBodyPrefix(a, b, STREAMING_COUNTERPART_MIN_PREFIX);
 }
 
 function correlationTurnId(message: Message): string | undefined {
@@ -314,7 +321,7 @@ export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) 
       if (!snapshotBody && liveBody) {
         return message;
       }
-      if (!snapshotBody.startsWith(liveBody) && !liveBody.startsWith(snapshotBody)) {
+      if (!hasStreamingBodyPrefix(snapshotBody, liveBody)) {
         return message;
       }
     }
