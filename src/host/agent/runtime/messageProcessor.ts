@@ -1,5 +1,5 @@
 import { peekEnvBlockedNote, envBlockedCancelledClosures } from './envBlockedTurn';
-import { serializeToolResultsForModel } from './toolResultMessageContent';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { TraceEventDataMap } from './turnTrace';
 import { checkDocumentEvidenceClaims } from './documentEvidenceBoundary';
 import { hasUntrustedMemoryInput } from '../../memory/automaticMemoryPolicy';

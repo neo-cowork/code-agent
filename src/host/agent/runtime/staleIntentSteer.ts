@@ -1,4 +1,4 @@
-import { serializeToolResultsForModel } from './toolResultMessageContent';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ContextInjectionSource } from '../../../shared/contract/contextView';
 import { sanitizeToolResultsForHistoryWithCalls } from '../../agent/messageHandling/converter';

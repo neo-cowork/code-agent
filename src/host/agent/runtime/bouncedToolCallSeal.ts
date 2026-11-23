@@ -11,7 +11,7 @@ import { detectMessageLanguage } from '../../../shared/sessionTitlePrompt';
 import { extractUserRequest } from '../../../shared/utils/turnScaffold';
 import { readUiLanguage } from '../../session/sessionTitleHostPrompt';
 import { getInabilityReplyGuidance, INABILITY_REPLY_CONTRACT } from '../../../shared/inabilityReplyContract';
-import { serializeToolResultsForModel } from './toolResultMessageContent';
+import { serializeToolResultsForModel } from '../../tools/toolResultMessageContent';
 import type { Message, ToolCall, ToolResult } from '../../../shared/contract';
 import type { ModelResponse } from '../loopTypes';
 import { sanitizeToolCallsForHistory } from '../messageHandling/converter';
