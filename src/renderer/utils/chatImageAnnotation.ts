@@ -72,7 +72,7 @@ function gridIndex(centerPercent: number): 0 | 1 | 2 {
 }
 
 /** 框 → 人话方位（九宫格位置；很宽/很高的框改说「横跨/贯穿」）。 */
-export function describeRegionPosition(box: RegionPercentBox, copy: ChatImageAnnotationCopy): string {
+function describeRegionPosition(box: RegionPercentBox, copy: ChatImageAnnotationCopy): string {
   const width = box.right - box.left;
   const height = box.bottom - box.top;
   if (width >= 90 && height >= 90) return copy.positionWhole;

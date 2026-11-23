@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildChatImageAnnotationCapture,
   buildChatImageAnnotationMessage,
-  describeRegionPosition,
   toRegionPercentBox,
 } from '../../../src/renderer/utils/chatImageAnnotation';
 import { chatImageAnnotateEn, chatImageAnnotateZh } from '../../../src/renderer/i18n/chatImageAnnotate';
@@ -23,9 +22,16 @@ describe('toRegionPercentBox', () => {
   });
 });
 
-describe('describeRegionPosition', () => {
-  const at = (l: number, t: number, r: number, b: number, copy = zh) =>
-    describeRegionPosition({ left: l, top: t, right: r, bottom: b }, copy);
+describe('方位词（经消息文本）', () => {
+  // 方位词只经公共入口（消息文本）取：「区域 1（<方位>，约 …」/「Region 1 (<position>, about …」
+  const at = (l: number, t: number, r: number, b: number, copy = zh) => {
+    const line = buildChatImageAnnotationMessage({
+      regions: [{ index: 1, box: { left: l, top: t, right: r, bottom: b }, comment: 'c' }],
+      note: '',
+      copy,
+    }).split('\n')[1];
+    return (copy === zh ? /（(.*?)，约/ : /\((.*?), about/).exec(line)![1];
+  };
   it('四角', () => {
     expect(at(0, 0, 10, 10)).toBe('左上');
     expect(at(90, 0, 100, 10)).toBe('右上');
