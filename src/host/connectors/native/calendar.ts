@@ -6,6 +6,7 @@
 // 原生层每次读写前自己重查「完全访问」，这里不传、也不信任何授权状态。
 // ============================================================================
 
+import type { NativeConnectorDetailCode } from '../../../shared/ipc';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import type { CalendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
 import { calendarAccess } from '../../permissions/envAssist/probes/passiveProbes';
@@ -107,22 +108,22 @@ async function readCalendarAccess(): Promise<CalendarAccess> {
   return lastAccess;
 }
 
-const ACCESS_DETAIL: Record<Exclude<CalendarAccess, 'granted'>, string> = {
-  undecided: '还没有允许 Neo 访问日历；用到日历时会请你允许一次。',
-  denied: '日历访问被拒绝了：请在「系统设置 → 隐私与安全性 → 日历」里允许 Neo。',
-  write_only: '日历只给了「仅添加事件」：请在「系统设置 → 隐私与安全性 → 日历」里改成「完全访问」。',
-  restricted: '日历访问被系统限制（家长控制或公司管理），Neo 改不了。',
-  unavailable: '日历只能在 macOS 的 Agent Neo 桌面版里使用。',
+const ACCESS_DETAIL_CODE: Record<Exclude<CalendarAccess, 'granted'>, NativeConnectorDetailCode> = {
+  undecided: 'calendar_undecided',
+  denied: 'calendar_denied',
+  write_only: 'calendar_write_only',
+  restricted: 'calendar_restricted',
+  unavailable: 'calendar_desktop_only',
 };
 
 function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
   if (process.platform !== 'darwin') {
-    return { connected: false, readiness: 'unavailable', detail: 'Calendar connector 仅在 macOS 可用。', actions: [], capabilities };
+    return { connected: false, readiness: 'unavailable', detailCode: 'platform_unsupported', actions: [], capabilities };
   }
   if (lastAccess === 'granted') {
     return {
       connected: true, readiness: 'ready', checkedAt: lastCheckedAt,
-      detail: 'Calendar connector 已允许访问日历。', noAccessibleItems: lastListEmpty,
+      detailCode: 'ready', noAccessibleItems: lastListEmpty,
       actions: ['disconnect', 'remove'], capabilities,
     };
   }
@@ -131,7 +132,8 @@ function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
     // 未授权不是「坏了」：按需探测口径算 unchecked，工具照常可用，调用时出授权卡（不写 failed，免得整轮摘掉工具）
     readiness: 'unchecked',
     checkedAt: lastCheckedAt,
-    detail: lastAccess ? ACCESS_DETAIL[lastAccess] : 'Calendar connector 已启用，用到时才检查日历授权。',
+    detailCode: lastAccess ? ACCESS_DETAIL_CODE[lastAccess] : 'unchecked',
+    ...(lastAccess === 'denied' || lastAccess === 'write_only' ? { settingsPane: 'calendars' as const } : {}),
     actions: ['repair_permissions', 'disconnect', 'remove'],
     capabilities,
   };
@@ -279,7 +281,7 @@ async function probe(): Promise<number | null> {
 }
 
 function probeSummary(count: number | null): string {
-  if (count === null) return `Calendar 还没有允许访问：${ACCESS_DETAIL[(lastAccess ?? 'undecided') as Exclude<CalendarAccess, 'granted'>]}`;
+  if (count === null) return 'Calendar 还没有允许访问。';
   return count > 0 ? `Calendar 授权/可用性检查通过，可访问 ${count} 个日历` : 'Calendar 授权/可用性检查通过，但没有找到可访问的日历';
 }
 

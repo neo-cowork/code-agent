@@ -439,6 +439,48 @@ describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
     ]);
   });
 
+  it('tool_results 列里的写入结果也算进产物', () => {
+    const items = buildProjectArtifacts([{ id: 's1', title: '周报', workingDirectory: '/repo/task' }], () => [
+      {
+        role: 'assistant',
+        content: '',
+        timestamp: 10,
+        toolCalls: [{ id: 'call-write', name: 'Write', arguments: {} }],
+      },
+      {
+        role: 'tool',
+        content: '',
+        timestamp: 11,
+        toolResults: [{
+          toolCallId: 'call-write',
+          success: true,
+          metadata: {
+            outputPath: '/repo/task/summary.md',
+            artifact: {
+              artifactId: 'artifact-summary',
+              kind: 'text',
+              role: 'deliverable',
+              sourceTool: 'Write',
+              name: 'summary.md',
+              path: '/repo/task/summary.md',
+              mimeType: 'text/markdown',
+              sizeBytes: 548,
+              sha256: 'a'.repeat(64),
+            },
+          },
+        }],
+      },
+    ]);
+    expect(items).toEqual([
+      expect.objectContaining({
+        sessionId: 's1',
+        title: 'summary.md',
+        path: '/repo/task/summary.md',
+        toolName: 'Write',
+      }),
+    ]);
+  });
+
   it('limit 截断', () => {
     const msgs = Array.from({ length: 5 }, (_, i) => ({ role: 'assistant', content: chartBlock(`图${i}`), timestamp: i }));
     const items = buildProjectArtifacts([{ id: 's1', title: 'a' }], () => msgs, 3);

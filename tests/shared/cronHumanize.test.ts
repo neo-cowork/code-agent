@@ -10,6 +10,19 @@ import {
 } from '../../src/shared/cronHumanize';
 
 describe('humanize 覆盖面（经 formatCronExpressionLabel 验证）', () => {
+  it('窗口内分钟步进（*/N A-B * * 星期）说人话（zh/en）', () => {
+    const cases = [
+      ['*/15 9-17 * * 1-5', '工作日 09:00–17:59 每 15 分钟', 'Every 15 minutes, 09:00–17:59, Mon–Fri'],
+      ['*/30 8-20 * * *', '每天 08:00–20:59 每 30 分钟', 'Every 30 minutes, 08:00–20:59, every day'],
+      ['*/10 9-12 * * 1,3', '周一、周三 09:00–12:59 每 10 分钟', 'Every 10 minutes, 09:00–12:59, Mon, Wed'],
+    ] as const;
+    for (const [expression, zh, en] of cases) {
+      expect(formatCronExpressionLabel(expression, undefined, 'zh')).toBe(zh);
+      expect(formatCronExpressionLabel(expression, undefined, 'en')).toBe(en);
+    }
+    expect(formatCronExpressionLabel('*/15 17-9 * * *', undefined, 'zh')).toBe('自定义时间 · */15 17-9 * * *');
+  });
+
   it('6 段秒位为 0 时沿用 5 段人话模板（zh/en）', () => {
     const cases = [
       ['0 0 4 * * 1', '每周一 04:00', 'Weekly on Monday at 04:00'],

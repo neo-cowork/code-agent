@@ -198,6 +198,7 @@ export interface AppState {
   projectCollaborationPageProjectId: string | null;
   /** 项目列表页 + 项目协作空间页（批P）：页内 list/space 视图切换不进 store */
   showProjectSpacePage: boolean;
+  projectSpaceCreateRequested: boolean;
   showActivityPanel: boolean;
   showCapabilityHub: boolean;
   capabilityHubTab: CapabilityHubTab;
@@ -358,6 +359,8 @@ export interface AppState {
   openProjectCollaborationPage: (projectId?: string | null) => void;
   closeProjectCollaborationPage: () => void;
   openProjectSpacePage: () => void;
+  openProjectSpaceCreate: () => void;
+  consumeProjectSpaceCreate: () => void;
   closeProjectSpacePage: () => void;
   setPendingInAppValidationRequest: (
     request: import('@shared/contract/browserInteraction').InAppValidationRequest | null,

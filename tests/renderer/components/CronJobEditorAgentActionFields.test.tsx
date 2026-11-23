@@ -178,7 +178,7 @@ describe('manual cron agent action fields', () => {
     await openNewManualAgent();
     fireEvent.click(screen.getByText('基本设置'));
     let optionText = within(screen.getByTestId('cron-schedule-type-select')).getAllByRole('option').map((option) => option.textContent);
-    expect(optionText).toContain('按固定时间重复（Cron 表达式）');
+    expect(optionText).toContain('按计划重复（每天 / 每周 / 自定义）');
     expect(optionText).toContain('外部系统通知触发（Webhook 投递）');
 
     cleanup();
@@ -186,7 +186,7 @@ describe('manual cron agent action fields', () => {
     render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
     fireEvent.click(screen.getByText('Manual setup'));
     optionText = within(await screen.findByTestId('cron-schedule-type-select')).getAllByRole('option').map((option) => option.textContent);
-    expect(optionText).toContain('Repeat at fixed times (Cron expression)');
+    expect(optionText).toContain('Repeat on a schedule (daily / weekly / custom)');
     expect(optionText).toContain('Triggered by an external system (Webhook delivery)');
   });
 });

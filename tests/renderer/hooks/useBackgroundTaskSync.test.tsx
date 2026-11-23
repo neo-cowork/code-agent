@@ -150,7 +150,7 @@ describe('useBackgroundTaskSync', () => {
     expect(ipc.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('formats completion toast copy through zh/en i18n', async () => {
+  it('keeps the fallback copy for non-shell notifications', async () => {
     backgroundTaskStore.drainNotifications.mockResolvedValueOnce([{
       id: 'notice-1',
       taskId: 'task-1',
@@ -166,6 +166,29 @@ describe('useBackgroundTaskSync', () => {
     });
 
     expect(toast.success).toHaveBeenCalledWith('报告生成完成。可在任务面板查看日志。');
+  });
+
+  it.each([
+    ['zh', 'shell', 'completed', 'success', '归档笔记', '「归档笔记」已完成，耗时 不到 1 秒。'],
+    ['zh', 'pty', 'failed', 'error', '归档笔记', '「归档笔记」失败：命令未能成功完成，耗时 不到 1 秒。'],
+    ['en', 'pty', 'completed', 'success', 'Archive notes', '“Archive notes” finished, took under 1 second.'],
+    ['en', 'shell', 'failed', 'error', 'Archive notes', '“Archive notes” failed, took under 1 second. The command did not finish successfully.'],
+    ['en', 'shell', 'cancelled', 'info', 'Archive notes', '“Archive notes” was stopped, took under 1 second.'],
+  ] as const)('uses %s copy for %s %s', async (language, source, status, toastType, label, expected) => {
+    appState.language = language;
+    backgroundTaskStore.drainNotifications.mockResolvedValueOnce([{
+      id: 'notice-structured',
+      taskId: 'task-1',
+      sessionId: 'session-current',
+      type: `task_${status}`,
+      message: '后台任务失败，退出码 1，tasks/example.log',
+      createdAt: 1,
+      payload: { source, status, label, durationMs: 250, exitCode: 1, outputFile: 'tasks/example.log' },
+    }]);
+    renderHook(() => useBackgroundTaskSync({ pollInterval: 0 }));
+    await act(async () => {});
+
+    expect(toast[toastType]).toHaveBeenCalledExactlyOnceWith(expected);
   });
 
   it('renders task_cancelled as info toast and task_failed as error toast', async () => {

@@ -368,7 +368,6 @@ describe('Group listener receipt check', () => {
 
     it('中文界面下内置记忆任务详情显示「记忆整理」、一句无路径中文描述、动作「整理记忆」，删除确认使用中文名', () => {
       useAppStore.setState({ language: 'zh' });
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
       const { container } = render(<CronJobDetail job={builtinMemoryJob} />);
 
       expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('记忆整理');
@@ -379,8 +378,20 @@ describe('Group listener receipt check', () => {
       expect(container.textContent).not.toContain('Light Memory consolidation');
       expect(container.textContent).not.toContain('~/.code-agent/memory');
 
-      fireEvent.click(screen.getByText('删除'));
-      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('记忆整理'));
+      expect(screen.queryByText('删除')).toBeNull();
+      expect(screen.getByTestId('cron-detail-builtin-note').textContent).toBe('这是系统自动维护任务，不是你创建的；可以暂停或立即运行，不能删除。');
+      expect(screen.getByText('手动触发')).toBeTruthy();
+    });
+
+    it('英文界面下内置任务没有 Delete 按钮并显示系统维护说明；用户任务仍有删除', () => {
+      useAppStore.setState({ language: 'en' });
+      const { unmount } = render(<CronJobDetail job={builtinMemoryJob} />);
+      expect(screen.queryByText('Delete')).toBeNull();
+      expect(screen.getByTestId('cron-detail-builtin-note').textContent).toContain('not created by you');
+      unmount();
+      render(<CronJobDetail job={userJob} />);
+      expect(screen.getByText('Delete')).toBeTruthy();
+      expect(screen.queryByTestId('cron-detail-builtin-note')).toBeNull();
     });
 
     it('英文界面下内置记忆任务详情显示用户文案，动作显示 "Memory consolidation" 而非 memory-consolidation', () => {

@@ -173,7 +173,9 @@ function encodeImportProvenance(value: MemoryImportProvenance | undefined): stri
 }
 
 function sanitizeFrontmatterValue(value: string | number | boolean): string {
-  return String(value).replace(/\r?\n/g, ' ').replace(/:/g, ' -').trim();
+  // 仅折叠换行：parseFrontmatter 按「第一个冒号」切分 key/value，值里再带
+  // 半角冒号（时间 08:30、URL、比例 1:2）能原样往返，不能改写成 ' -'。
+  return String(value).replace(/\r?\n/g, ' ').trim();
 }
 
 /** sanitizeLightMemoryFilename 生成的去扩展名文件名上限（不含 .md）。 */

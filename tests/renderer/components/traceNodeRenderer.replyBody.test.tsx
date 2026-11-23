@@ -72,6 +72,6 @@ describe.each(['zh', 'en'] as const)('reply protocol scope (%s)', (language) => 
     render(<WakeRationaleNote fields={{ rationale: raw, evidence: 'Use `<evidence>` in the example.', missing: false }} />);
     fireEvent.click(screen.getByTestId('wake-rationale-why'));
     expect(screen.getByTestId('wake-rationale-text').textContent).toBe(raw);
-    expect(screen.getByTestId('wake-rationale-evidence').textContent).toContain('Use `<evidence>` in the example.');
+    expect(screen.getByTestId('wake-rationale-evidence').textContent).toContain('Use <evidence> in the example.');
   });
 });

@@ -79,6 +79,7 @@ function cloneSnapshot(snapshot?: SwarmAgentContextSnapshot): SwarmAgentContextS
   return {
     ...snapshot,
     tools: [...snapshot.tools],
+    ...(snapshot.guiDisclosures ? { guiDisclosures: snapshot.guiDisclosures.map((entry) => ({ ...entry })) } : {}),
     attachments: [...snapshot.attachments],
     previews: snapshot.previews.map((preview) => ({ ...preview })),
   };

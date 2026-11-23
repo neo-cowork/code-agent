@@ -279,6 +279,93 @@ ${body}
     });
   });
 
+  // --------------------------------------------------------------------------
+  // Frontmatter value round-trip（半角冒号不许被改写）
+  // parseFrontmatter 按第一个冒号切 key/value，值里再带冒号应原样往返。
+  // --------------------------------------------------------------------------
+
+  describe('frontmatter value round-trip', () => {
+    function frontmatterKeys(raw: string): string[] {
+      const block = raw.match(/^---\n([\s\S]*?)\n---/);
+      if (!block) return [];
+      return block[1].split('\n').map((line) => {
+        const idx = line.indexOf(':');
+        return idx > 0 ? line.slice(0, idx) : line;
+      });
+    }
+
+    it('keeps half-width colons in name, description and source verbatim through write and read', async () => {
+      const written = await writeLightMemoryFile({
+        filename: 'Colon Memory.md',
+        name: 'Weekly sync: 08:30 to 09:45, ratio 1:2 and 3:4',
+        description: '临时测试：时间 08:30，结束 09:45。',
+        type: 'project',
+        content: 'Sync notes: starts at 08:30, ends at 09:45.',
+        entryId: 'mem_entry_colon',
+        status: 'active',
+        source: 'https://example.com/a:b?x=1',
+        schemaVersion: 2,
+      });
+
+      expect(written.name).toBe('Weekly sync: 08:30 to 09:45, ratio 1:2 and 3:4');
+      expect(written.description).toBe('临时测试：时间 08:30，结束 09:45。');
+      expect(written.source).toBe('https://example.com/a:b?x=1');
+      expect(written.content).toBe('Sync notes: starts at 08:30, ends at 09:45.');
+
+      const read = await readMemoryFile(written.filename);
+      expect(read).not.toBeNull();
+      expect(read!.name).toBe('Weekly sync: 08:30 to 09:45, ratio 1:2 and 3:4');
+      expect(read!.description).toBe('临时测试：时间 08:30，结束 09:45。');
+      expect(read!.source).toBe('https://example.com/a:b?x=1');
+      expect(read!.content).toBe('Sync notes: starts at 08:30, ends at 09:45.');
+
+      const listed = (await listMemoryFiles()).find((file) => file.filename === written.filename);
+      expect(listed).toBeDefined();
+      expect(listed!.name).toBe('Weekly sync: 08:30 to 09:45, ratio 1:2 and 3:4');
+      expect(listed!.description).toBe('临时测试：时间 08:30，结束 09:45。');
+      expect(listed!.source).toBe('https://example.com/a:b?x=1');
+      expect(listed!.content).toBe('Sync notes: starts at 08:30, ends at 09:45.');
+    });
+
+    it('collapses an embedded newline to a single space while keeping colons and keys', async () => {
+      const written = await writeLightMemoryFile({
+        filename: 'newline-colon.md',
+        name: 'line one\nline two: 08:30',
+        description: 'desc a\ndesc b: 09:45',
+        type: 'project',
+        content: 'body',
+      });
+
+      expect(written.name).toBe('line one line two: 08:30');
+      expect(written.description).toBe('desc a desc b: 09:45');
+
+      const raw = await fs.readFile(path.join(memDir, written.filename), 'utf-8');
+      // 换行折叠为空格后每个字段仍占一行，没有把值的后半截拆成新的 frontmatter 行
+      expect(frontmatterKeys(raw)).toEqual(['name', 'description', 'type']);
+
+      const read = await readMemoryFile(written.filename);
+      expect(read!.name).toBe('line one line two: 08:30');
+      expect(read!.description).toBe('desc a desc b: 09:45');
+    });
+
+    it('writes exactly the intended frontmatter keys and keeps "note: see later" as a value', async () => {
+      const written = await writeLightMemoryFile({
+        filename: 'note-see-later.md',
+        name: 'Plain Name',
+        description: 'note: see later',
+        type: 'project',
+        content: 'body',
+      });
+
+      const raw = await fs.readFile(path.join(memDir, written.filename), 'utf-8');
+      expect(frontmatterKeys(raw)).toEqual(['name', 'description', 'type']);
+      expect(raw).toContain('description: note: see later');
+
+      const read = await readMemoryFile(written.filename);
+      expect(read!.description).toBe('note: see later');
+    });
+  });
+
   describe('archiveMemoryFile', () => {
     it('keeps original content while removing the entry from rebuilt INDEX', async () => {
       await writeLightMemoryFile({

@@ -143,7 +143,8 @@ function delegationWorkspace(ctx: RuntimeContext): Pick<ToolContext, 'workspace'
 async function handOffInThisTurn(ctx: RuntimeContext): Promise<boolean> {
   const userText = verbatimUserRequest(ctx);
   const turnId = turnKey(ctx);
-  const title = Array.from(userText.replace(/\s+/g, '')).slice(0, 24).join('') || 'Background task';
+  // 折叠空白为单个空格再截 24 个码点，保证英文请求的任务名可读（不再粘成 Runoneshell…）。
+  const title = Array.from(userText.replace(/\s+/g, ' ').trim()).slice(0, 24).join('').trimEnd() || 'Background task';
   const stableKey = `fg-handoff:${ctx.sessionId}:${turnId}`;
   const args: Record<string, unknown> = {
     title,
@@ -245,7 +246,12 @@ export async function settleForegroundToolDenial(input: ForegroundDenialInput): 
   if (eligible.length > 0 && !alreadyAttempted(ctx)) {
     markAttempted(ctx);
     if (await handOffInThisTurn(ctx)) {
-      await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds);
+      // The whole request went to the background task: the handed-off calls and their same-batch
+      // siblings (skipped, not themselves denied) are both "handed off". Other denials keep their code.
+      const handedOffIds = new Set(toolCalls
+        .filter((call) => !deniedIds.has(call.id) || eligible.includes(call))
+        .map((call) => call.id));
+      await sealBouncedToolCalls({ ctx, contextAssembly }, response, toolCalls, 'denied', deniedIds, handedOffIds);
       await emitAssistantClose(ctx, contextAssembly, response, backgroundHandoffUserSentence(ctx));
       return 'break';
     }

@@ -12,6 +12,7 @@
 import { AgentFailureCode, inferAgentFailureCode } from '../../../shared/contract/agentFailure';
 import type { MessageMetadata } from '../../../shared/contract';
 import { stripCardToolCallMarkup } from '../../../shared/modelMarkupStrip';
+import { formatBackgroundTaskStop } from '../../../shared/i18n/backgroundTaskStop';
 import { describeSubagentStopReason } from '../../agent/subagentFailureReason';
 import { formatSessionTaskDeliveryFailure } from '../../../shared/constants/sessionCommandCenter';
 
@@ -22,7 +23,7 @@ interface StoppedTaskOutcome {
   detail: string;
   /** 没做完就停下时给用户看的那一句（确定性、不依赖模型转述）；正常结束为 undefined。 */
   notice?: string;
-  kind?: NonNullable<MessageMetadata['backgroundTaskStopped']>['kind'];
+  kind?: Exclude<NonNullable<MessageMetadata['backgroundTaskStopped']>['kind'], 'cancelled'>;
 }
 
 /** 结论开头就承认没做成的措辞（封闭列表）。只认第一行行首，正文后面再出现不算。 */
@@ -42,17 +43,30 @@ function toPlainText(text: string): string {
     .join('\n');
 }
 
-function opensWithUnfinished(conclusion: string): boolean {
+/**
+ * 第二条规则：首句里有「做了某事，但结果是失败」的否定结果从句（不要求开头是封闭列表里的词）。
+ * 防误判：只看首句（正文后面、别的行里提到失败不算）；首句带「之前/上次/此前/已修复/已解决/已恢复」
+ * 这类历史或修复限定词时，说的是过去的失败，不是这次的结果，放行。
+ */
+const NEGATIVE_RESULT_CLAUSE = /失败了|没有成功|没成功|没能成功|未成功|未能成功|没有拿到任何|没拿到任何/;
+const HISTORICAL_QUALIFIER = /之前|上次|此前|已修复|已解决|已恢复/;
+
+function conclusionHead(conclusion: string): string {
   const first = conclusion.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
-  const head = first
+  return first
     .replace(/^(?:[>#*_`\-+\s]|\d+[.)、]\s*)+/, '')
     .replace(/^(?:结论|结果|总结|说明)\s*[:：]\s*/, '')
     .replace(/^[*_`\s]+/, '');
-  return UNFINISHED_OPENERS.some((opener) => head.startsWith(opener)) || UNFINISHED_OPENERS_EN.test(head);
 }
 
-function pageClause(lastUrl: string | undefined): string {
-  return lastUrl ? `最后停留在页面${lastUrl}，` : '';
+function admitsNegativeResultInFirstSentence(head: string): boolean {
+  const sentence = head.split(/[。！？!?]/)[0] ?? '';
+  return NEGATIVE_RESULT_CLAUSE.test(sentence) && !HISTORICAL_QUALIFIER.test(sentence);
+}
+
+function opensWithUnfinished(conclusion: string): boolean {
+  const head = conclusionHead(conclusion);
+  return UNFINISHED_OPENERS.some((opener) => head.startsWith(opener)) || UNFINISHED_OPENERS_EN.test(head) || admitsNegativeResultInFirstSentence(head);
 }
 
 /** 无需改写（已完成且有正常结论 / 已是白话失败说明）时原样返回。 */
@@ -69,11 +83,14 @@ export function resolveStoppedTaskOutcome(input: {
     const detail = stripCardToolCallMarkup(raw);
     if (input.stepCap) {
       const max = input.stepCap.max;
-      const head = `后台任务做到第 ${max} 步（上限 ${max} 步）就用完了步数，${pageClause(input.lastUrl)}还没有得出最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
+      const head = formatBackgroundTaskStop({
+        lastPage: input.lastUrl,
+        stepCap: { iterations: max, maxIterations: max },
+      });
       return { status: 'failed', detail: detail ? `${head}\n\n它停下前留下的说明：${detail}` : head, notice: head, kind: 'step_cap' };
     }
     if (!detail) {
-      const notice = `后台任务停下来了，${pageClause(input.lastUrl)}但没有留下最终结果。你可以回复「继续」让它接着做，或者把任务缩小一些（比如只看其中一个网站）再试一次。`;
+      const notice = formatBackgroundTaskStop({ lastPage: input.lastUrl });
       return { status: 'failed', detail: notice, notice, kind: 'no_conclusion' };
     }
     if (opensWithUnfinished(detail)) {

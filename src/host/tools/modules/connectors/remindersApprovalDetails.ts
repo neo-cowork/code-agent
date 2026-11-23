@@ -17,6 +17,22 @@ function reminderLookupNotFound(error: unknown): boolean {
   return NOT_FOUND.test(text);
 }
 
+/**
+ * reminders_update 是否带了至少一个真正的变更字段（与 reminders.ts updateReminder 的判定同一谓词）。
+ * 一个都没有（模型传了认不出的字段名，如 remind_at 别名）时返回给模型看的英文提示，否则 null。
+ * 调用方据此在弹批准卡前拒绝：空更新不该借查出来的旧时间伪装成一次时间修改。
+ */
+export function remindersUpdateNoChangeError(args: Record<string, unknown>): string | null {
+  const hasChange = typeof args.title === 'string'
+    || typeof args.notes === 'string'
+    || typeof args.completed === 'boolean'
+    || (typeof args.remind_at_ms === 'number' && Number.isFinite(args.remind_at_ms))
+    || args.clear_remind_at === true;
+  if (hasChange) return null;
+  return 'reminders_update changed nothing: pass at least one of title, notes, completed, '
+    + 'remind_at_ms (Unix milliseconds) or clear_remind_at=true. Unrecognised fields are ignored.';
+}
+
 export async function remindersApprovalDetails(
   toolName: string,
   params: Record<string, unknown>,

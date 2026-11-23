@@ -1,5 +1,5 @@
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { CronEventActionMode, CronEventDecision, CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
+import type { CronEventActionMode, CronEventDecision, CronEventStats, CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -105,6 +105,11 @@ export const cronClient = {
 
   getExecutions(jobId: string, limit = 20) {
     return invokeCron<CronJobExecution[]>('getExecutions', { jobId, limit });
+  },
+
+  /** 事件自动化累计计数（预筛调用 / 跳过 / 被每小时上限推迟）。 */
+  getEventStats(jobId: string) {
+    return invokeCron<CronEventStats>('getEventStats', { jobId });
   },
 
   /** 事件自动化最近的逐事件决策（新的在前；N-TRIGGER-OBSERVE-MODE）。 */

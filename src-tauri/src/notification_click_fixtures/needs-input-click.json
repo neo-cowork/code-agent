@@ -1,0 +1,12 @@
+{
+  "executable": "/Applications/Agent Neo.app/Contents/MacOS/code-agent-tauri",
+  "argv": [
+    "--notify-only",
+    "--title", "会议纪要",
+    "--body", "等你确认：写入文件",
+    "--id", "fixture-notification-id",
+    "--session", "sess-A"
+  ],
+  "event": "notification-clicked",
+  "payload": { "id": "fixture-notification-id", "sessionId": "sess-A" }
+}

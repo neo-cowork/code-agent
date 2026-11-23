@@ -99,10 +99,39 @@ describe('deriveDelegatedSessionTitle', () => {
     expect(truncated.endsWith('...')).toBe(false);
   });
 
-  it('真实工单示例：notes.txt 的句点被当句读，标题仍是 ≤20 的可读短主题', () => {
+  it('真实工单示例：截断来自 20 个 code points 上限，不是 notes.txt 的句点', () => {
     const title = deriveDelegatedSessionTitle('Open a new chat and have it turn the meeting notes in notes.txt into three key points and a short summary I can paste into an email');
     expect(cp(title)).toBe(20);
     expect(title).toBe('Open a new chat and…');
+    expect(title.endsWith('...')).toBe(false);
+  });
+
+  it('文件名里的点不断句，weekly.md 与 weekly.csv 各自保留扩展名', () => {
+    expect(deriveDelegatedSessionTitle('新建 weekly.md')).toBe('新建 weekly.md');
+    expect(deriveDelegatedSessionTitle('新建 weekly.csv')).toBe('新建 weekly.csv');
+    expect(cp('新建 detailed-weekly.md')).toBe(21);
+    expect(deriveDelegatedSessionTitle('新建 detailed-weekly.md')).toBe('新建 detailed-weekly.md');
+    const csv = deriveDelegatedSessionTitle('新建 detailed-weekly.csv');
+    expect(csv).toBe('新建 detailed-weekly.csv');
+    expect(csv).not.toBe('新建 detailed-weekly.md');
+    expect(deriveDelegatedSessionTitle('v1.2 发布说明')).toBe('v1.2 发布说明');
+  });
+
+  it('句点后有空白才断句；全角句号、问号、叹号、分号仍断', () => {
+    expect(deriveDelegatedSessionTitle('整理报告. 然后发送')).toBe('整理报告');
+    expect(deriveDelegatedSessionTitle('整理报告。然后发送')).toBe('整理报告');
+    expect(deriveDelegatedSessionTitle('完成了吗? 继续')).toBe('完成了吗');
+    expect(deriveDelegatedSessionTitle('太好了! 发送')).toBe('太好了');
+    expect(deriveDelegatedSessionTitle('a；b')).toBe('a');
+  });
+
+  it('超过 24 个 code points 且以 .md 结尾仍截到 19 位 + 一个 …', () => {
+    const task = `${'a'.repeat(27)}.md`;
+    expect(cp(task)).toBe(30);
+    const title = deriveDelegatedSessionTitle(task);
+    expect(cp(title)).toBe(20);
+    expect(title).toBe(`${'a'.repeat(19)}…`);
+    expect(title.endsWith('…')).toBe(true);
     expect(title.endsWith('...')).toBe(false);
   });
 });

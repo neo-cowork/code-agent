@@ -40,6 +40,8 @@ export const MCP_CATEGORIES: McpCategoryMeta[] = [
 // 推荐 MCP Server
 // ----------------------------------------------------------------------------
 
+export const MCP_OAUTH_CREDENTIAL = 'OAuth 授权';
+
 export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   // ---- 搜索与抓取 ----
   {
@@ -157,7 +159,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://mcp.notion.com/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: 'Notion 官方',
     // hosted Notion MCP 工具名录未公开稳定文档，宁缺毋滥
   },
@@ -173,7 +175,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://docs.qq.com/openapi/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -189,7 +191,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://saas.docs.qq.com/api/v6/open/agent/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -205,7 +207,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://wj.qq.com/api/v2/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -221,7 +223,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://www.weiyun.com/api/v3/mcpserver',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: '腾讯官方',
     chinaDirect: true,
   },
@@ -422,7 +424,7 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
       url: 'https://mcp.figma.com/mcp',
       auth: 'oauth',
     },
-    requiredCredentials: ['OAuth 授权'],
+    requiredCredentials: [MCP_OAUTH_CREDENTIAL],
     badge: 'Figma 官方',
     // hosted Figma MCP 工具名录未公开稳定文档，宁缺毋滥
   },

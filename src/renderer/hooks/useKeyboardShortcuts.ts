@@ -581,6 +581,12 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       ) {
         return;
       }
+      // sessionSearch.open 抢占 Cmd/Ctrl+P（系统打印）：必须在 keydown 派发内同步
+      // preventDefault，等 await 回来再拦就过了默认行为窗口，WebView2 会弹出打印框。
+      if (actionIds[0] === 'sessionSearch.open') {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       const handled = await runAction(actionIds[0], event);
       if (handled) {
         event.preventDefault();

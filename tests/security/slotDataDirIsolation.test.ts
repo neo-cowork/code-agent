@@ -276,19 +276,38 @@ describe('槽数据目录读隔离', () => {
     }
   });
 
-  it('真阴：当前槽递归 Glob/Grep 自己仍成功', async () => {
-    const globResult = await buildExecutor().execute(
+  it('真阴：当前槽递归 Glob/Grep 自己仍成功（数据目录根除外——根的发现被产品策略拒绝，见 refuseAppDataDiscovery）', async () => {
+    // 数据目录根本身：N-FIX-LIBRARY-ADD-FROM-CHAT-NO-TOOL 起由产品层拒绝枚举/搜索
+    // （配置与溯源文件不给模型扫）。这道断言咬在「不是槽隔离拦的」：拒绝文案不得出现槽隔离话术。
+    const rootGlob = await buildExecutor().execute(
       'Glob',
       { pattern: '**/*', path: devSlot },
+      { sessionId: 'slot-isolation-own-glob-root' },
+    );
+    expect(rootGlob.success).toBe(false);
+    expect(rootGlob.error ?? '').not.toContain('另一个槽');
+
+    const rootGrep = await buildExecutor().execute(
+      'Grep',
+      { pattern: OWN_SENTINEL, path: devSlot },
+      { sessionId: 'slot-isolation-own-grep-root' },
+    );
+    expect(rootGrep.success).toBe(false);
+    expect(rootGrep.error ?? '').not.toContain('另一个槽');
+
+    // 子目录递归：当前槽自己的内容仍可读——隔离层不得过度拦截（真阴保留）。
+    const globResult = await buildExecutor().execute(
+      'Glob',
+      { pattern: '**/*', path: path.join(devSlot, 'memory') },
       { sessionId: 'slot-isolation-own-glob' },
     );
     expect(globResult.success).toBe(true);
-    expect(leakedText(globResult)).toContain('memory/notes.md');
+    expect(leakedText(globResult)).toContain('notes.md');
     expect(globResult.error ?? '').not.toContain('另一个槽');
 
     const grepResult = await buildExecutor().execute(
       'Grep',
-      { pattern: OWN_SENTINEL, path: devSlot },
+      { pattern: OWN_SENTINEL, path: path.join(devSlot, 'memory') },
       { sessionId: 'slot-isolation-own-grep' },
     );
     expect(grepResult.success).toBe(true);

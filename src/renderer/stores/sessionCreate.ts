@@ -12,6 +12,7 @@ import { excludeBusySessions, type DraftBusySignals } from './sessionDraftBusyGu
 import { toast } from '../hooks/useToast';
 import { languages } from '../i18n';
 import { getSessionTitlePlaceholder } from '../utils/sessionTitlePlaceholder';
+import { SESSION_PROJECT_UNAVAILABLE } from '@shared/contract/project';
 
 export { observeSessionDraftUsage } from './sessionDraftBusyGuard';
 
@@ -68,6 +69,8 @@ interface SessionCreateMeta extends Session {
 
 export interface CreateSessionOptionsInput {
   workingDirectory?: string | null;
+  /** Explicit collaboration space. Passed through to the host create payload. */
+  projectId?: string;
   engine?: Partial<AgentEngineSessionMetadata> | null;
   expertRoleId?: string;
   /** Keep secondary pages mounted while a workflow creates a target session. */
@@ -118,13 +121,20 @@ export interface SessionCreateDeps {
     messages: Message[];
     todos: TodoItem[];
     workingDirectory?: string | null;
+    projectId?: string | null;
   }) => SessionCreateMeta | null;
+}
+
+function requestedProjectId(projectId?: string | null): string | undefined {
+  const trimmed = projectId?.trim();
+  return trimmed || undefined;
 }
 
 /** List metadata is only a shortlist; an unknown host response must never authorize reuse. */
 async function findVerifiedDraft(
   deps: SessionCreateDeps,
   workingDirectory: string | null,
+  projectId?: string | null,
 ): Promise<SessionCreateMeta | null> {
   const rejected = new Set<string>();
   for (;;) {
@@ -134,13 +144,14 @@ async function findVerifiedDraft(
       sessions: excludeBusySessions(state.sessions, state.currentSessionId, state.messages, state)
         .filter((session) => !rejected.has(session.id)),
       workingDirectory,
+      projectId,
     });
     if (!candidate) return null;
     rejected.add(candidate.id);
     try {
       const messages = await invokeSession<Message[]>('getMessages', { sessionId: candidate.id });
       logger.debug('Draft reuse host check', {
-        sessionId: candidate.id, workingDirectory,
+        sessionId: candidate.id, workingDirectory, projectId,
         messageCount: candidate.messageCount, turnCount: candidate.turnCount,
         hostMessageCount: Array.isArray(messages) ? messages.length : null,
       });
@@ -152,6 +163,7 @@ async function findVerifiedDraft(
         sessions: excludeBusySessions(live.sessions, live.currentSessionId, live.messages, live)
           .filter((session) => session.id === candidate.id),
         workingDirectory,
+        projectId,
       });
       if (stillEmpty) return stillEmpty;
     } catch (error) {
@@ -185,6 +197,7 @@ export async function executeCreateSession(
     // plain new chat to the previous chat's planned 任务_MMDD_ folder. Workspace/group entry
     // points opt in by passing workingDirectory explicitly; every other new chat starts folderless.
     const newSessionWorkingDirectory = options?.workingDirectory ?? null;
+    const newSessionProjectId = requestedProjectId(options?.projectId);
     const onboardingDefaultEnginePromise = !options?.engine
       ? readOnboardingDefaultEngine(newSessionWorkingDirectory).catch(() => null)
       : Promise.resolve(null);
@@ -192,7 +205,7 @@ export async function executeCreateSession(
     if (getSessionTitlePlaceholder(nextTitle, useAppStore.getState().language) !== null) {
       useAppshotsStore.getState().clear();
       const onboardingDefaultEngine = await onboardingDefaultEnginePromise;
-      let verifiedDraft = await findVerifiedDraft(deps, newSessionWorkingDirectory);
+      let verifiedDraft = await findVerifiedDraft(deps, newSessionWorkingDirectory, newSessionProjectId);
       if (verifiedDraft && get().currentSessionId !== verifiedDraft.id) {
         await get().switchSession(verifiedDraft.id);
         // load can observe a message that arrived after getMessages; never land there as "new".
@@ -264,6 +277,7 @@ export async function executeCreateSession(
       title: nextTitle,
       workingDirectory: newSessionWorkingDirectory,
       engine: options?.engine ?? null,
+      ...(newSessionProjectId ? { projectId: newSessionProjectId } : {}),
       ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
       // 首句话建会话即带 'off'（无竞态）：host 侧 create 白名单校验后落库
       ...(memoryOffIntent ? { memoryMode: 'off' as const } : {}),
@@ -333,8 +347,11 @@ export async function executeCreateSession(
     logger.error('Failed to create session', error);
     const reason = error instanceof Error ? error.message : 'Failed to create session';
     set({ error: reason, isLoading: false });
-    const prefix = languages[useAppStore.getState().language].sidebar.createSessionFailedPrefix;
-    toast.error(`${prefix}${reason}`);
+    const copy = languages[useAppStore.getState().language].sidebar;
+    const detail = reason.includes(SESSION_PROJECT_UNAVAILABLE)
+      ? copy.sessionProjectUnavailable
+      : reason;
+    toast.error(`${copy.createSessionFailedPrefix}${detail}`);
     return null;
   }
 }

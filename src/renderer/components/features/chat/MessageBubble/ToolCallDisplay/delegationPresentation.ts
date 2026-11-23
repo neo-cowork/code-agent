@@ -31,6 +31,7 @@ export interface DelegationPresentation {
   outcomeKey?: OutcomeKey;
   title: string;
   lastToolStep?: LastToolStep;
+  guiDisclosures?: AgentTreeNode['guiDisclosures'];
   stepCount?: number;
   outputs: DelegationReceiptOutput[];
   failure?: string;
@@ -221,6 +222,7 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     state,
     title: displayPaths(backgroundTaskLabel(task, t)),
     lastToolStep: task.progress?.lastToolStep,
+    guiDisclosures: task.progress?.guiDisclosures,
     activityIds: taskActivityIds(task),
     sessionId: task.sessionId,
     stepCount: terminal
@@ -232,7 +234,8 @@ function fromTask(task: Task, t: Translations): DelegationPresentation {
     }),
     failure: state === 'failed' ? backgroundTaskFailureCopy(task, t) ?? undefined : undefined,
     memberId: task.id,
-    ...(state === 'failed' ? { failureCause: taskFailureCause(task), endedAt: task.completedAt ?? task.updatedAt } : {}),
+    failureCause: state === 'failed' ? taskFailureCause(task) : undefined,
+    endedAt: state === 'failed' || state === 'cancelled' ? task.completedAt ?? task.updatedAt : undefined,
     toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
@@ -269,6 +272,7 @@ function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation
     outcomeKey,
     title: agentNodeLabel(node, t.agentRoleLabels),
     lastToolStep: node.lastToolStep,
+    guiDisclosures: node.guiDisclosures,
     activityIds: [node.id],
     stepCount: terminal ? completedStepCount(node.lastToolStep, undefined) : undefined,
     outputs: node.evidenceRefs.flatMap((ref) => {
@@ -282,6 +286,7 @@ function fromAgent(node: AgentTreeNode, t: Translations): DelegationPresentation
     }),
     failure: state === 'failed' ? agentFailureReason(node, t) : undefined,
     memberId: node.id,
+    endedAt: state === 'cancelled' ? node.completedAt ?? node.updatedAt : undefined,
     branch: terminal && node.worktreeState.status === 'preserved' ? node.worktreeState.branch : undefined,
     failureCode: state === 'failed' ? node.failureCode : undefined,
   };
@@ -307,8 +312,9 @@ export function deriveDelegationPresentation(
   const memberById = new Map(members.map((member) => [member.agentId, member]));
   const nodes = agentNodes.map((node) => reconcileAgentNodeLifecycle(node, memberById.get(node.id)));
   const presentation = derivePresentation(toolCall, tasks, nodes, t);
-  if (presentation?.state !== 'failed') return presentation;
-  return { ...presentation, retryTitle: retryTitleFrom(toolCall) ?? presentation.title };
+  if (presentation?.state !== 'failed' && presentation?.state !== 'cancelled') return presentation;
+  const retryTitle = retryTitleFrom(toolCall) ?? (presentation.state === 'failed' ? presentation.title : undefined);
+  return { ...presentation, retryTitle };
 }
 
 function derivePresentation(

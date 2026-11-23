@@ -8,7 +8,7 @@ import {
   type StallPhase,
 } from '../../../src/host/agent/stallObserver';
 import { createSubagentTurnObservability } from '../../../src/host/agent/subagentTurnTrace';
-import { isAgentRowQuiet } from '../../../src/renderer/utils/agentRowStall';
+import { agentRowStallLevel } from '../../../src/renderer/utils/agentRowStall';
 import type { AgentRow } from '../../../src/renderer/utils/agentRows';
 
 function quietWatch(detail: string) {
@@ -199,14 +199,14 @@ describe('StallObserver', () => {
     // At release + 90s (t = 120s), check composer hint vs row quiet
     stepTo(releaseAt + 90_000);
     const composerHintedAtReleasePlus90s = emit.mock.calls.length > 0;
-    const rowQuietAtReleasePlus90s = isAgentRowQuiet(currentRow(), now, releaseAt);
+    const rowQuietAtReleasePlus90s = agentRowStallLevel(currentRow(), now, releaseAt) !== 'none';
 
     // At release + 120s (t = 150s), still at boundary: row is not quiet; at release + 121s (t = 151s), both agree
     stepTo(releaseAt + 120_000);
-    const rowQuietAtReleasePlus120s = isAgentRowQuiet(currentRow(), now, releaseAt);
+    const rowQuietAtReleasePlus120s = agentRowStallLevel(currentRow(), now, releaseAt) !== 'none';
     stepTo(releaseAt + 121_000);
     const composerHintedAtReleasePlus121s = emit.mock.calls.length > 0;
-    const rowQuietAtReleasePlus121s = isAgentRowQuiet(currentRow(), now, releaseAt);
+    const rowQuietAtReleasePlus121s = agentRowStallLevel(currentRow(), now, releaseAt) !== 'none';
 
     // Now child makes visible tool progress at t = 160s: both composer and row reset their quiet window
     const clearsBeforeChildTool = clear.mock.calls.length;
@@ -225,7 +225,7 @@ describe('StallObserver', () => {
     const emitsAfterChildTool = emit.mock.calls.length;
     stepTo(160_000 + 90_000);
     const composerRehinted90sAfterChildStep = emit.mock.calls.length > emitsAfterChildTool;
-    const rowQuiet90sAfterChildStep = isAgentRowQuiet(currentRow(), now, releaseAt);
+    const rowQuiet90sAfterChildStep = agentRowStallLevel(currentRow(), now, releaseAt) !== 'none';
 
     const backgroundObservability = createSubagentTurnObservability({
       sessionId,

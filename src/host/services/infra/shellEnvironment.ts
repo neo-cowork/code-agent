@@ -20,8 +20,52 @@ const logger = createLogger('ShellEnvironment');
 let shellEnv: Record<string, string> | null = null;
 let shellPath: string | null = null;
 
-const SHELL_ENV_CACHE_SCHEMA_VERSION = 1;
+// Non-null while the in-memory shellEnv came from the filtered on-disk cache:
+// secret-named keys (ANTHROPIC_* / CLAUDE_CODE_* auth, read via
+// getShellEnvironmentValue by buildSafeEnv for Finder launches) were stripped
+// before that file was written, so the first read triggers ONE synchronous
+// re-capture to restore the full environment in memory. Cleared by any fresh
+// capture landing in memory (first-run capture, background refresh, or the
+// re-capture itself). Startup stays on the fast cache path: no shell is
+// spawned until a value is actually read.
+let shellEnvRecapture: { shell: string; cachePath: string } | null = null;
+
+// v2 (2026-11-21): cache files are now written with the secret filter below.
+// Bumping the version makes every legacy plaintext cache (schemaVersion 1,
+// which stored the raw captured environment verbatim) get rejected on the
+// next start and overwritten by a fresh filtered capture.
+const SHELL_ENV_CACHE_SCHEMA_VERSION = 2;
 const SHELL_ENV_CACHE_FILE = 'shell-environment.json';
+
+// Secret-looking variable NAMES, matched as case-insensitive SUBSTRINGS.
+// Deliberately broader than the suffix globs in src/host/utils/envSecretFilter.ts:
+// that file guards Bash-tool children with `*_KEY$`-style rules, which would
+// MISS cache leaks like VOLC_ACCESSKEY / VOLC_SECRETKEY / TAVILY_API_KEYS /
+// SECRET_ID (no `_` delimiter, plural, prefix). The cache is only needed for
+// PATH, proxy and locale-style values, so over-stripping here is fine.
+const CACHE_SECRET_NAME_PATTERN = /(key|token|secret|password|passwd|credential|auth)/i;
+
+// URL userinfo inside a VALUE (`://user:pass@`, e.g. a proxy URL with embedded
+// credentials; also matches the password-less `://user@` form). A credential
+// value does not need a secret-looking name to leak.
+const CACHE_URL_USERINFO_PATTERN = /:\/\/[^/@]+@/;
+
+/**
+ * Drop everything secret-looking from the environment BEFORE it is written to
+ * the on-disk cache. The in-memory environment stays unfiltered —
+ * buildSafeEnv() (claudeCodeAdapter) needs ANTHROPIC_* / CLAUDE_CODE_* values
+ * from getShellEnvironmentValue() to inherit Claude auth on Finder launches.
+ * Only what reaches the disk is filtered.
+ */
+function filterEnvironmentForCache(environment: Record<string, string>): Record<string, string> {
+  const filtered: Record<string, string> = {};
+  for (const [name, value] of Object.entries(environment)) {
+    if (CACHE_SECRET_NAME_PATTERN.test(name)) continue;
+    if (CACHE_URL_USERINFO_PATTERN.test(value)) continue;
+    filtered[name] = value;
+  }
+  return filtered;
+}
 
 const SYSTEM_BASE_PATHS = new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin']);
 const FALLBACK_CLI_PATHS = [
@@ -156,7 +200,7 @@ function persistShellEnvironmentCache(
     platform: process.platform,
     shell,
     capturedAt: new Date().toISOString(),
-    environment,
+    environment: filterEnvironmentForCache(environment),
   };
   const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
   try {
@@ -186,9 +230,58 @@ function refreshShellEnvironmentInBackground(shell: string, cachePath: string): 
 
     const environment = parseShellEnvironment(output);
     const pathEntries = applyShellEnvironment(environment);
+    // The in-memory environment is fresh (unfiltered) again — reads no longer
+    // need the synchronous re-capture.
+    shellEnvRecapture = null;
     persistShellEnvironmentCache(cachePath, shell, environment);
     logger.info('Shell environment cache refreshed', { shell, pathEntries });
   });
+}
+
+/**
+ * Capture the login-shell environment synchronously, apply it to memory
+ * (unfiltered — buildSafeEnv needs the auth keys) and persist the filtered
+ * form to the cache. Returns the merged PATH entry count, or null when the
+ * capture failed (caller keeps whatever is already in memory).
+ */
+function captureShellEnvironmentSynchronously(shell: string, cachePath: string): number | null {
+  try {
+    const output = execSync(`${shell} -i -l -c 'env'`, {
+      encoding: 'utf-8',
+      timeout: 5000,
+      env: { ...process.env },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const environment = parseShellEnvironment(output);
+    const pathEntries = applyShellEnvironment(environment);
+    persistShellEnvironmentCache(cachePath, shell, environment);
+    return pathEntries;
+  } catch (error) {
+    logger.warn('Failed to capture shell environment, using process.env', {
+      shell,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Restore the full (unfiltered) environment in memory before the first
+ * environment read after a cache-loaded start. The disk cache is filtered, so
+ * without this the cache path would leave ANTHROPIC_* and CLAUDE_CODE_* keys
+ * unavailable until the background refresh lands.
+ */
+function ensureShellEnvironmentFreshForReads(): void {
+  if (!shellEnvRecapture) return;
+  const { shell, cachePath } = shellEnvRecapture;
+  // Latch off before capturing: a broken login shell must not add a 5s
+  // synchronous timeout to every read for the rest of the process lifetime.
+  shellEnvRecapture = null;
+  const pathEntries = captureShellEnvironmentSynchronously(shell, cachePath);
+  if (pathEntries !== null) {
+    logger.info('Shell environment re-captured for in-memory reads', { shell, pathEntries });
+  }
 }
 
 /**
@@ -215,31 +308,20 @@ export function loadShellEnvironment(options: LoadShellEnvironmentOptions = {}):
   const cached = readShellEnvironmentCache(cachePath, shell);
   if (cached) {
     const pathEntries = applyShellEnvironment(cached.environment);
+    // The cache is filtered on disk; mark memory as stale so the first
+    // getShellEnvironmentValue read restores the full environment.
+    shellEnvRecapture = { shell, cachePath };
     logger.info('Shell environment loaded from cache', { shell, pathEntries });
     refreshShellEnvironmentInBackground(shell, cachePath);
     return;
   }
 
-  try {
-    const output = execSync(`${shell} -i -l -c 'env'`, {
-      encoding: 'utf-8',
-      timeout: 5000,
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    const environment = parseShellEnvironment(output);
-    const pathEntries = applyShellEnvironment(environment);
-    persistShellEnvironmentCache(cachePath, shell, environment);
-
+  const pathEntries = captureShellEnvironmentSynchronously(shell, cachePath);
+  if (pathEntries !== null) {
+    shellEnvRecapture = null;
     logger.info('Shell environment captured', {
       shell,
       pathEntries,
-    });
-  } catch (error) {
-    logger.warn('Failed to capture shell environment, using process.env', {
-      shell,
-      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -254,6 +336,7 @@ export function getShellPath(): string {
 }
 
 export function getShellEnvironmentValue(key: string): string | undefined {
+  ensureShellEnvironmentFreshForReads();
   return shellEnv?.[key];
 }
 

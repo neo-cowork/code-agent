@@ -18,11 +18,11 @@ interface Props {
 }
 
 export function ResultSummary({ toolCall, inline = false }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const isError = toolCall.result && !toolCall.result.success;
   const summary = isError
     ? resolveCollapsedFailureSummary(toolCall, t)
-    : collapsedSuccessSummary(summarizeTool(toolCall, t), toolCall);
+    : collapsedSuccessSummary(summarizeTool(toolCall, t, language), toolCall);
 
   if (!summary) return null;
 

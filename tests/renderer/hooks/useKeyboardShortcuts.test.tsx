@@ -285,13 +285,16 @@ describe('useKeyboardShortcuts session search', () => {
       renderHook(() => useKeyboardShortcuts());
       const modifiers = platform === 'darwin' ? { metaKey: true } : { ctrlKey: true };
       const find = new KeyboardEvent('keydown', { key: 'f', ...modifiers, bubbles: true, cancelable: true });
-      await act(async () => { document.dispatchEvent(find); });
+      document.dispatchEvent(find);
       expect(openSearch).not.toHaveBeenCalled();
       expect(find.defaultPrevented).toBe(false);
       const search = new KeyboardEvent('keydown', { key: 'p', ...modifiers, bubbles: true, cancelable: true });
-      await act(async () => { document.dispatchEvent(search); });
-      expect(openSearch).toHaveBeenCalledTimes(1);
+      // 同步派发、立即断言：preventDefault 必须在 dispatchEvent 返回前就生效，
+      // 否则真实 WebView2 上的系统打印框会漏出来（异步断言会掩盖这个时序）。
+      document.dispatchEvent(search);
       expect(search.defaultPrevented).toBe(true);
+      await act(async () => {});
+      expect(openSearch).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener('app:openSessionSearch', openSearch);
     }
@@ -306,13 +309,15 @@ describe('useKeyboardShortcuts session search', () => {
     window.addEventListener('app:openSessionSearch', openSearch);
     try {
       renderHook(() => useKeyboardShortcuts());
-      await act(async () => {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true }));
-      });
+      // 重绑定后 Cmd+P 不再归搜索，默认行为（打印）不得再被拦。
+      const oldBinding = new KeyboardEvent('keydown', { key: 'p', metaKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(oldBinding);
+      expect(oldBinding.defaultPrevented).toBe(false);
       expect(openSearch).not.toHaveBeenCalled();
-      await act(async () => {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, shiftKey: true, bubbles: true }));
-      });
+      const rebound = new KeyboardEvent('keydown', { key: 's', metaKey: true, shiftKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(rebound);
+      expect(rebound.defaultPrevented).toBe(true);
+      await act(async () => {});
       expect(openSearch).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener('app:openSessionSearch', openSearch);

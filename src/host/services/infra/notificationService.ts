@@ -7,6 +7,7 @@ import { localizeCronSessionTitle } from '../../../shared/cronSessionTitle';
 // ============================================================================
 
 import { Notification, broadcastToRenderer } from '../../platform';
+import { hasInteractiveUi } from '../../platform/windowBridge';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
@@ -33,14 +34,15 @@ const logger = createLogger('NotificationService');
 
 type NativeNotificationPayload = { title: string; body: string; id: string; sessionId: string };
 
-function sendNativeNotification(payload: NativeNotificationPayload): void {
+function sendNativeNotification(payload: NativeNotificationPayload, onDelivered?: () => void): void {
+  const source = onDelivered ? 'Native notification' : 'Native needs-input notification';
   if (process.platform !== 'darwin') {
-    logger.warn('Native needs-input notification unavailable', { reason: 'notify-only-platform-unsupported' });
+    logger.warn(`${source} unavailable`, { reason: 'notify-only-platform-unsupported' });
     return;
   }
   const executable = process.env.CODE_AGENT_SHELL_EXE;
   if (!executable) {
-    logger.warn('Native needs-input notification unavailable', { reason: 'notify-only-executable-missing' });
+    logger.warn(`${source} unavailable`, { reason: 'notify-only-executable-missing' });
     return;
   }
   try {
@@ -49,14 +51,15 @@ function sendNativeNotification(payload: NativeNotificationPayload): void {
       '--id', payload.id, '--session', payload.sessionId,
     ], { detached: true, stdio: 'ignore', shell: false });
     child.once('error', () => {
-      logger.warn('Native needs-input notification failed', { reason: 'notify-only-spawn-error' });
+      logger.warn(`${source} failed`, { reason: 'notify-only-spawn-error' });
     });
     child.once('exit', (code, signal) => {
-      if (code !== 0) logger.warn('Native needs-input notification failed', { reason: 'notify-only-exit-failed', code, signal });
+      if (code === 0) onDelivered?.();
+      else logger.warn(`${source} failed`, { reason: 'notify-only-exit-failed', code, signal });
     });
     child.unref();
   } catch {
-    logger.warn('Native needs-input notification failed', { reason: 'notify-only-spawn-threw' });
+    logger.warn(`${source} failed`, { reason: 'notify-only-spawn-threw' });
   }
 }
 
@@ -225,7 +228,10 @@ class NotificationService implements Disposable {
 
   /** Inject a native sender; null restores the bundled shell launch path. */
   setNativeNotificationSender(sender: ((payload: NativeNotificationPayload) => void) | null): void {
-    this.nativeNotificationSender = sender ?? sendNativeNotification;
+    this.nativeNotificationSender = sender ? (payload, onDelivered) => {
+      sender(payload);
+      onDelivered?.();
+    } : sendNativeNotification;
   }
 
   private isDryRun(): boolean {
@@ -295,11 +301,14 @@ class NotificationService implements Disposable {
   }
 
   /**
-   * 投递系统通知：交给渲染端用 Tauri 通知插件发送——原生通知自动带 app（Agent Neo）
-   * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
+   * 记录预算放行的通知，再按当前窗口状态选择投递路径。
    * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
    */
-  private deliverNow(item: BudgetedNotification, via: 'immediate' | 'window-end' | 'digest'): void {
+  private deliverNow(
+    item: BudgetedNotification,
+    via: 'immediate' | 'window-end' | 'digest',
+    nativeSessionId?: string,
+  ): void {
     const entry = this.record({
       id: item.id,
       type: item.type,
@@ -313,11 +322,7 @@ class NotificationService implements Disposable {
       body: entry.body,
       sessionId: entry.sessionId,
       ...item.delivery,
-    });
-    logger.info('Notification dispatched to renderer', {
-      notificationId: entry.id, intent: item.intent, type: item.type,
-      sessionId: entry.sessionId, title: entry.title, via,
-    });
+    }, { intent: item.intent, type: item.type, via }, nativeSessionId);
   }
 
   private logDropped(items: readonly BudgetedNotification[], reason: 'budget-cleared'): void {
@@ -339,16 +344,42 @@ class NotificationService implements Disposable {
       title: text.title(items.length),
       body: text.body(items.map((item) => item.title), items.length),
       delivery: {},
-    }, 'digest');
+    }, 'digest', items.findLast((item) => item.sessionId !== '')?.sessionId);
   }
 
-  private deliver(payload: NotificationDeliveryPayload): void {
+  private deliver(
+    payload: NotificationDeliveryPayload,
+    trace: { intent: NotificationIntent; type: RecordedNotification['type']; via: 'immediate' | 'window-end' | 'digest' },
+    nativeSessionId = payload.sessionId,
+  ): void {
     if (this.isDryRun()) return;
-    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
+    const delivery = {
       ...payload,
       title: sanitizeNotificationText(payload.title, 120, { omitIds: true }),
       body: sanitizeNotificationText(payload.body, 320),
-    });
+    };
+    const fields = { notificationId: delivery.id, sessionId: delivery.sessionId, title: delivery.title, ...trace };
+    if (!hasInteractiveUi()) {
+      if (getDaemonQuitIntent() !== 'background') {
+        logger.warn('Notification has no interactive window', { ...fields, reason: 'no-window-not-background' });
+      } else if (trace.type !== 'needs_input') {
+        if (nativeSessionId && delivery.title) {
+          this.nativeNotificationSender({
+            title: delivery.title,
+            // The shell requires a non-empty body argument even for a title-only notification.
+            body: delivery.body || ' ',
+            id: delivery.id,
+            sessionId: nativeSessionId,
+          }, () => logger.info('Notification delivered natively', {
+            ...fields, sessionId: nativeSessionId, reason: 'no-window-background',
+          }));
+          return;
+        }
+        logger.warn('Notification has no native delivery target', { ...fields, reason: 'notify-only-incomplete-payload' });
+      }
+    }
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, delivery);
+    logger.info('Notification dispatched to renderer', fields);
   }
 
   /**
